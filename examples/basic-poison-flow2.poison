@@ -1,0 +1,8 @@
+let get_sensor : unit -> int = fn x:unit => 42 in
+
+-- Implicit flow (control dependency)  
+let faulty : int = get_sensor unit in     (* poisoned *)
+if faulty > 0 then 
+    42  (* poisoned (implicit flow via pc) *)
+else 
+    17  (* poisoned (implicit flow via pc) *) 

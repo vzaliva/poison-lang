@@ -1,0 +1,248 @@
+import LeanPoison.Syntax
+import LeanPoison.Runtime
+import LeanPoison.Eval
+import LeanPoison.Parser
+
+-- Test structure to hold test cases
+structure TestCase where
+  name : String
+  expr : Expr
+  expectedValue : Option Value
+  description : String
+
+-- Helper function to run a test case
+def runTestCase (test : TestCase) (verbose : Bool := false) : IO Bool := do
+  IO.println s!"Running test: {test.name}"
+  IO.println s!"Description: {test.description}"
+
+  let (_, resultExpr) := run defaultFuel test.expr verbose
+  match Expr.toValue? resultExpr with
+  | some actualValue =>
+    let success := test.expectedValue.map (fun expected => actualValue == expected) |>.getD false
+    if success then
+      IO.println s!"✓ PASS: Expected {test.expectedValue}, got {actualValue}"
+      return true
+    else
+      IO.println s!"✗ FAIL: Expected {test.expectedValue}, got {actualValue}"
+      return false
+  | none =>
+    IO.println s!"✗ FAIL: Expression did not evaluate to a value: {repr resultExpr}"
+    return false
+
+-- Arithmetic example (arithmetic.poison)
+def arithmeticTests : List TestCase := [
+  TestCase.mk "arithmetic_literal" (Expr.num 42) (some (Value.num 42)) "arithmetic.poison: 42 literal",
+  TestCase.mk "arithmetic_add" (Expr.op (Expr.num 3) Op.add (Expr.num 4)) (some (Value.num 7)) "arithmetic.poison: 3 + 4",
+  TestCase.mk "arithmetic_gte" (Expr.op (Expr.num 10) Op.gte (Expr.num 5)) (some (Value.bool true)) "arithmetic.poison: 10 >= 5"
+]
+
+-- Conditionals example (conditionals.poison)
+def conditionalsTests : List TestCase := [
+  TestCase.mk "conditionals_true" (Expr.ite (Expr.bool true) (Expr.num 42) (Expr.num 0)) (some (Value.num 42)) "conditionals.poison: if true then 42 else 0",
+  TestCase.mk "conditionals_false" (Expr.ite (Expr.bool false) (Expr.num 1) (Expr.num 2)) (some (Value.num 2)) "conditionals.poison: if false then 1 else 2",
+  TestCase.mk "conditionals_gte" (Expr.ite (Expr.op (Expr.num 5) Op.gte (Expr.num 3)) (Expr.num 100) (Expr.num 200)) (some (Value.num 100)) "conditionals.poison: if 5 >= 3 then 100 else 200"
+]
+
+-- Sequences example (sequences.poison)
+def sequencesExampleTests : List TestCase := [
+  TestCase.mk "sequences_let_seq" (Expr.let "x" Typ.int (Expr.num 5) (Expr.seq (Expr.var "x") (Expr.num 42))) (some (Value.num 42)) "sequences.poison: let x = 5 in (x; 42)",
+  TestCase.mk "sequences_unit_seq" (Expr.seq Expr.unit (Expr.num 123)) (some (Value.num 123)) "sequences.poison: unit; 123"
+]
+
+-- References1 example (references1.poison)
+def references1ExampleTests : List TestCase := [
+  TestCase.mk "references1_basic" (Expr.let "r" (Typ.ref Typ.int) (Expr.newRef (Expr.num 42)) (Expr.deref (Expr.var "r"))) (some (Value.num 42)) "references1.poison: let r = ref 42 in !r"
+]
+
+-- References2 example (references2.poison)
+def references2ExampleTests : List TestCase := [
+  TestCase.mk "references2_assign" (Expr.let "r" (Typ.ref Typ.int) (Expr.newRef (Expr.num 10)) (Expr.seq (Expr.assign (Expr.var "r") (Expr.num 20)) (Expr.deref (Expr.var "r")))) (some (Value.num 20)) "references2.poison: let r = ref 10 in (r := 20; !r)"
+]
+
+-- While1 example (while1.poison)
+def while1ExampleTests : List TestCase := [
+  -- Only the second while loop is supported by the current AST (>=, not <)
+  TestCase.mk "while1_geq" (Expr.let "counter" (Typ.ref Typ.int) (Expr.newRef (Expr.num 0)) (Expr.while (Expr.op (Expr.deref (Expr.var "counter")) Op.gte (Expr.num 5)) (Expr.assign (Expr.var "counter") (Expr.op (Expr.deref (Expr.var "counter")) Op.add (Expr.num 1))))) (some Value.unit) "while1.poison: while !counter >= 5 do counter := !counter + 1"
+]
+
+-- Basic poison flow1 example (basic-poison-flow1.poison)
+def basicPoisonFlow1Tests : List TestCase := [
+  TestCase.mk "basic_poison_flow1_explicit"
+    (Expr.let "get_sensor" (Typ.arrow Typ.unit Typ.int) (Expr.fn "x" Typ.unit (Expr.num 42))
+      (Expr.let "faulty" Typ.int (Expr.app (Expr.var "get_sensor") Expr.unit)
+        (Expr.let "result" Typ.int (Expr.op (Expr.var "faulty") Op.add (Expr.num 1))
+          (Expr.var "result"))))
+    (some (Value.num 43))
+    "basic-poison-flow1.poison: explicit flow (data dependency)"
+]
+
+-- Basic poison flow2 example (basic-poison-flow2.poison)
+def basicPoisonFlow2Tests : List TestCase := [
+  TestCase.mk "basic_poison_flow2_implicit"
+    (Expr.let "get_sensor" (Typ.arrow Typ.unit Typ.int) (Expr.fn "x" Typ.unit (Expr.num 42))
+      (Expr.let "faulty" Typ.int (Expr.app (Expr.var "get_sensor") Expr.unit)
+        (Expr.ite (Expr.op (Expr.var "faulty") Op.gte (Expr.num 1)) (Expr.num 42) (Expr.num 17))))
+    (some (Value.num 42))
+    "basic-poison-flow2.poison: implicit flow (control dependency)"
+]
+
+-- Conditional poison example (conditional-poison.poison)
+def conditionalPoisonTests : List TestCase := [
+  TestCase.mk "conditional_poison_complex"
+    (Expr.let "get_sensor" (Typ.arrow Typ.unit Typ.int) (Expr.fn "x" Typ.unit (Expr.num 42))
+      (Expr.let "sensor" Typ.int (Expr.app (Expr.var "get_sensor") Expr.unit)
+        (Expr.let "threshold" Typ.int (Expr.num 50)
+          (Expr.ite (Expr.op (Expr.var "sensor") Op.gte (Expr.var "threshold"))
+            (Expr.op (Expr.var "sensor") Op.add (Expr.num 100))
+            (Expr.op (Expr.var "threshold") Op.add (Expr.num 100))))))
+    (some (Value.num 150))
+    "conditional-poison.poison: conditional poison with complex expressions (sensor >= threshold ? sensor+100 : threshold+100)"
+]
+
+-- Function composition poison example (function-composition-poison.poison)
+def functionCompositionPoisonTests : List TestCase := [
+  TestCase.mk "function_composition_poison"
+    (Expr.let "get_sensor" (Typ.arrow Typ.unit Typ.int) (Expr.fn "x" Typ.unit (Expr.num 42))
+      (Expr.let "f" (Typ.arrow Typ.int Typ.int) (Expr.fn "x" Typ.int (Expr.op (Expr.var "x") Op.add (Expr.num 1)))
+        (Expr.let "g" (Typ.arrow Typ.int Typ.int) (Expr.fn "x" Typ.int (Expr.op (Expr.var "x") Op.add (Expr.var "x")))
+          (Expr.let "poisoned_input" Typ.int (Expr.app (Expr.var "get_sensor") Expr.unit)
+            (Expr.let "result" Typ.int (Expr.app (Expr.var "g") (Expr.app (Expr.var "f") (Expr.var "poisoned_input")))
+              (Expr.var "result"))))))
+    (some (Value.num 86))
+    "function-composition-poison.poison: poison propagation through function composition"
+]
+
+-- Function poison example (function-poison.poison)
+def functionPoisonTests : List TestCase := [
+  TestCase.mk "function_poison_selection"
+    (Expr.let "get_sensor" (Typ.arrow Typ.unit Typ.int) (Expr.fn "x" Typ.unit (Expr.num 42))
+      (Expr.let "poisoned_cond" Typ.int (Expr.app (Expr.var "get_sensor") Expr.unit)
+        (Expr.let "f" (Typ.arrow Typ.int Typ.int)
+          (Expr.ite (Expr.op (Expr.var "poisoned_cond") Op.gte (Expr.num 1))
+            (Expr.fn "x" Typ.int (Expr.op (Expr.var "x") Op.add (Expr.num 1)))
+            (Expr.fn "x" Typ.int (Expr.op (Expr.var "x") Op.add (Expr.var "x"))))
+          (Expr.let "result" Typ.int (Expr.app (Expr.var "f") (Expr.num 10))
+            (Expr.var "result")))))
+    (some (Value.num 11))
+    "function-poison.poison: function calls and poisoned function selection"
+]
+
+-- Multiple poison sources example (multiple-poison-sources.poison)
+def multiplePoisonSourcesTests : List TestCase := [
+  TestCase.mk "multiple_poison_sources"
+    (Expr.let "get_sensor" (Typ.arrow Typ.unit Typ.int) (Expr.fn "x" Typ.unit (Expr.num 42))
+      (Expr.let "get_corrupted_ptr" (Typ.arrow Typ.unit (Typ.ref Typ.int)) (Expr.fn "x_unit" Typ.unit (Expr.newRef (Expr.num 42)))
+        (Expr.let "sensor1" Typ.int (Expr.app (Expr.var "get_sensor") Expr.unit)
+          (Expr.let "sensor2_ptr" (Typ.ref Typ.int) (Expr.app (Expr.var "get_corrupted_ptr") Expr.unit)
+            (Expr.let "result" Typ.int (Expr.op (Expr.op (Expr.var "sensor1") Op.add (Expr.num 10)) Op.add (Expr.deref (Expr.var "sensor2_ptr")))
+              (Expr.var "result"))))))
+    (some (Value.num 94))
+    "multiple-poison-sources.poison: poison propagation from multiple unreliable inputs"
+]
+
+-- Reference poison1 example (reference-poison1.poison)
+def referencePoison1Tests : List TestCase := [
+  TestCase.mk "reference_poison1_data"
+    (Expr.let "get_sensor" (Typ.arrow Typ.unit Typ.int) (Expr.fn "x" Typ.unit (Expr.num 42))
+      (Expr.let "r" (Typ.ref Typ.int) (Expr.newRef (Expr.num 0))
+        (Expr.seq (Expr.assign (Expr.var "r") (Expr.app (Expr.var "get_sensor") Expr.unit))
+          (Expr.deref (Expr.var "r")))))
+    (some (Value.num 42))
+    "reference-poison1.poison: reference operations with poisoned data"
+]
+
+-- Reference poison2 example (reference-poison2.poison)
+def referencePoison2Tests : List TestCase := [
+  TestCase.mk "reference_poison2_untrusted"
+    (Expr.let "get_corrupted_ptr" (Typ.arrow Typ.unit (Typ.ref Typ.int)) (Expr.fn "x_unit" Typ.unit (Expr.newRef (Expr.num 42)))
+      (Expr.let "bad_ref" (Typ.ref Typ.int) (Expr.app (Expr.var "get_corrupted_ptr") Expr.unit)
+        (Expr.seq (Expr.deref (Expr.var "bad_ref"))
+          (Expr.assign (Expr.var "bad_ref") (Expr.num 42)))))
+    (some Value.unit)
+    "reference-poison2.poison: poisoned references"
+]
+
+-- Sensor processing example (sensor-processing.poison)
+def sensorProcessingTests : List TestCase := [
+  TestCase.mk "sensor_processing_complex"
+    (Expr.let "get_sensor" (Typ.arrow Typ.unit Typ.int) (Expr.fn "x" Typ.unit (Expr.num 42))
+      (Expr.let "sensor1" Typ.int (Expr.app (Expr.var "get_sensor") Expr.unit)
+        (Expr.let "sensor2" Typ.int (Expr.app (Expr.var "get_sensor") Expr.unit)
+          (Expr.let "f" (Typ.arrow Typ.int Typ.int)
+            (Expr.fn "x" Typ.int
+              (Expr.ite (Expr.op (Expr.var "sensor1") Op.gte (Expr.num 0))
+                (Expr.ite (Expr.op (Expr.var "x") Op.gte (Expr.num 0))
+                  (Expr.op (Expr.var "sensor1") Op.add (Expr.var "x"))
+                  (Expr.num 0))
+                (Expr.num 0)))
+            (Expr.let "result" Typ.int (Expr.app (Expr.var "f") (Expr.var "sensor2"))
+              (Expr.var "result"))))))
+    (some (Value.num 84))
+    "sensor-processing.poison: sensor processing with de-poisoning"
+]
+
+-- Sensor reading example (sensor-reading.poison)
+def sensorReadingTests : List TestCase := [
+  TestCase.mk "sensor_reading_basic"
+    (Expr.let "get_sensor" (Typ.arrow Typ.unit Typ.int) (Expr.fn "x" Typ.unit (Expr.num 42))
+      (Expr.let "reading" Typ.int (Expr.app (Expr.var "get_sensor") Expr.unit)
+        (Expr.let "adjusted" Typ.int (Expr.op (Expr.var "reading") Op.add (Expr.num 10))
+          (Expr.var "adjusted"))))
+    (some (Value.num 52))
+    "sensor-reading.poison: basic sensor reading example"
+]
+
+-- Combine all test suites
+def allTests : List TestCase :=
+  arithmeticTests ++
+  conditionalsTests ++
+  sequencesExampleTests ++
+  references1ExampleTests ++
+  references2ExampleTests ++
+  while1ExampleTests ++
+  basicPoisonFlow1Tests ++
+  basicPoisonFlow2Tests ++
+  conditionalPoisonTests ++
+  functionCompositionPoisonTests ++
+  functionPoisonTests ++
+  multiplePoisonSourcesTests ++
+  referencePoison1Tests ++
+  referencePoison2Tests ++
+  sensorProcessingTests ++
+  sensorReadingTests
+
+-- Run selected tests by name, or all if names is empty
+def runSelectedTests (names : List String) (verbose : Bool := false) : IO Unit := do
+  let selected := if names.isEmpty then allTests else allTests.filter (fun t => names.contains t.name)
+  IO.println "Running Poison Language Test Suite"
+  IO.println "=================================="
+  IO.println ""
+
+  let mut passed := 0
+  let mut failed := 0
+
+  for test in selected do
+    let result ← runTestCase test verbose
+    if result then
+      passed := passed + 1
+    else
+      failed := failed + 1
+    IO.println ""
+
+  IO.println "Test Summary"
+  IO.println "============"
+  IO.println s!"Passed: {passed}"
+  IO.println s!"Failed: {failed}"
+  IO.println s!"Total: {selected.length}"
+
+  if failed > 0 then
+    IO.println "❌ Some tests failed!"
+    IO.Process.exit 1
+  else
+    IO.println "✅ All tests passed!"
+
+-- Main function for running tests
+def main (args : List String) : IO Unit := do
+  let verbose := args.any (fun a => a = "-v" || a = "--verbose")
+  let filtered := args.filter (fun a => a ≠ "-v" ∧ a ≠ "--verbose")
+  runSelectedTests filtered verbose

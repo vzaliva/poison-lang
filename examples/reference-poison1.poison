@@ -1,0 +1,7 @@
+let get_sensor : unit -> int = fn x:unit => 42 in
+
+-- Reference operations
+let r : ref int = ref 0 in        (* Clean reference, clean data *)
+r := get_sensor unit;   (* Data becomes poisoned, reference stays clean *)
+!r                      (* Result: poisoned (from data) *)
+

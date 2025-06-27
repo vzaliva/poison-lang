@@ -1,0 +1,7 @@
+let get_sensor : unit -> int = fn x:unit => 42 in
+
+-- Explicit flow (data dependency)
+let faulty : int = get_sensor unit in     (* poisoned *)
+let result : int = faulty + 1 in          (* poisoned (explicit flow) *)
+result
+

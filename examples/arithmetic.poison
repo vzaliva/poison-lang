@@ -1,0 +1,4 @@
+-- Basic arithmetic operations
+42;
+(3 + 4);
+(10 >= 5)

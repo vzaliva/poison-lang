@@ -1,0 +1,10 @@
+let get_sensor : unit -> int = fn x:unit => 42 in
+
+
+-- Conditional poison with complex expressions
+let sensor : int = get_sensor unit in
+let threshold : int = 50 in
+if sensor > threshold then
+    threshold + 100
+else
+    sensor + 100

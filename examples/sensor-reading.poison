@@ -1,0 +1,6 @@
+let get_sensor : unit -> int = fn x:unit => 42 in
+
+-- Basic sensor reading example
+let reading : int = get_sensor unit in  (* May be poisoned due to sensor fault *)
+let adjusted : int = reading + 10 in    (* Becomes poisoned if reading is poisoned *)
+adjusted 

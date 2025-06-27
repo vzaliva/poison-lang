@@ -1,0 +1,713 @@
+\documentclass[12pt]{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{letterpaper, margin=1in, top=0.5in, bottom=0.5in}
+
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{definition}{Definition}[section]
+
+\title{The Poison Language: Working Notes}
+\author{Vadim Zaliva}
+\date{\today}
+
+\lstdefinelanguage{poison}{
+  language=caml,
+  morekeywords={fn,pfn,unit},
+  comment=[s]{(*}{*)},
+  commentstyle=\color{green!60!black},
+  keywordstyle=\color{blue},
+  stringstyle=\color{red},
+  showstringspaces=false
+}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{red},
+    showstringspaces=false
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+    This is a working document. For complete formal definitions, see the
+    accompanying PDF document generated from the Ott specification.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:introduction}
+
+We start from the textbook two-point information-flow lattice
+($\mathrm{clean} < \mathrm{poisoned}$) and repurpose it to model data-fault
+propagation. On top of this we add four ingredients that,
+together, are not present in prior work:
+\begin{enumerate}
+    \item Region-parameterised reference types that distinguish pointer
+    reliability from payload reliability by giving every closure or
+    variable two orthogonal poison flags.
+    \item A flow-sensitive typestate map that is updated after every assignment
+    and joined at control-flow merge-points (à la \cite{DBLP:conf/popl/HuntS06})
+    so both explicit and implicit flows of faults are tracked.
+    \item A predicate system that allows selective de-poisoning based on runtime
+    conditions.
+    \item Support for higher-order functions that capture their body and typing
+    context at definition time, then type-check the body at application time
+    with the actual argument's predicates and current logical environment,
+    enabling predicate-based de-poisoning within function bodies while
+    ensuring fault taint cannot be hidden behind lambda abstraction.
+\end{enumerate}
+
+Together, these features give a single, uniform type system that provides a
+fail-safe-integrity guarantee: any fault -- whether injected by a corrupted
+sensor value, a poisoned pointer, or a control-flow decision -- propagates
+conservatively through both data and control paths, even in the presence of
+aliasing and higher-order code.
+
+
+
+\section{Language Overview}
+
+A simple imperative language with references and functions:
+
+\begin{lstlisting}[language=poison]
+e ::= n | b | x | l                    (* values and variables *)
+    | e1 op e2                          (* arithmetic/comparison *)
+    | if e1 then e2 else e3             (* conditionals *)
+    | ref e | e1 := e2 | !e             (* references *)
+    | unit | e1 ; e2                    (* sequencing *)
+    | while e1 do e2                    (* loops *)
+    | let x : T = e1 in e2              (* local bindings *)
+    | fn x : T => e | e1 e2             (* functions *)
+    | pfn x : T => pe | pe              (* pure functions *)
+
+pe ::= n | b | x | l                   (* pure expressions *)
+     | pe1 op pe2 | if pe1 then pe2 else pe3
+     | !pe | unit | pe1 ; pe2
+     | let x : T = pe1 in pe2 | pe1 pe2
+     | pfn x : T => pe
+     (* Note: no ref, :=, while, or fn allowed *)
+
+T ::= int | bool | unit 
+    | ref T @ l         (* region types with location indices *)
+    | T1 -> T2 # p typing_closure tcl (* function types with poison and typing closure *)
+
+Q ::= T :> p { P }      (* type with poison status and predicate *)
+
+P ::= guard k pred_closure (x, pe, r)  (* predicate as pure closure *)
+    | no_pred                          (* trivial predicate *)
+\end{lstlisting}
+
+\subsection*{Key features}
+\begin{itemize}
+    \item \textbf{References}: \texttt{ref e} creates, \texttt{e1 := e2} assigns, \texttt{!e} dereferences (memory stores only integers)
+    \item \textbf{Functions}: \texttt{fn x : T => e} creates, \texttt{e1 e2} applies, with closures
+    \item \textbf{Pure functions}: \texttt{pfn x : T => pe} creates pure functions that cannot have side effects
+    \item \textbf{Let bindings}: \texttt{let x : T = e1 in e2} requires explicit type annotations for all bindings
+    \item \textbf{Memory access only through references}: You need a valid
+    reference to access memory location. There is no pointer arithmetic (but
+    there is aliasing).
+    \item \textbf{Qualified types}: All values have qualified types \texttt{Q}
+    that combine base types with poison status and optional predicate.
+    \item \textbf{Predicate-based de-poisoning}: Guards allow selective de-poisoning when runtime conditions are met
+    \item \textbf{Sequencing}: \texttt{e1 ; e2} evaluates \texttt{e1} first (which can have any type), discards its value, then evaluates \texttt{e2}
+\end{itemize}
+
+Region annotations (\texttt{@l}) for references and typing closures
+(\texttt{typing\_closure tcl}) for functions are essential to the formal system,
+though not part of the language syntax. The \texttt{l} denotes a memory
+location, and \texttt{tcl} represents the typing closure containing the function
+parameter name, body, and captured variable typing context. The poison
+\texttt{p} represents the function's own poison status (from pc at definition
+time). See the formal specification for complete details. Similarly,
+qualified-types are essential to the formal system, though not part of the
+language syntax.
+
+\subsection{Pure Expressions}
+
+The language includes a syntactic subset called \emph{pure expressions} (\texttt{pe}) that exclude side-effecting operations. Pure expressions cannot:
+\begin{itemize}
+    \item Create new references (\texttt{ref})
+    \item Perform assignments (\texttt{:=})
+    \item Use \texttt{while} loops. (strictly speaking while loops could be
+    side-effects free, but we chose not include them in the ``pure'' subset for
+    simplicity. This design choice is motivated by intended use of pure
+    functions as type predicates which are likely to be simple expressions
+    without complicated control flow.)
+    \item Define regular functions (\texttt{fn})
+\end{itemize}
+
+Pure expressions can still dereference existing references, perform arithmetic,
+use conditionals, and define/apply pure functions. The \texttt{pfn} construct
+creates pure functions whose bodies must be pure expressions, ensuring they
+cannot introduce side effects. In the current system, pure expressions are
+simply a syntactic subset of normal expressions with identical typing and
+operational semantics.
+
+\section{Poison Tracking}
+
+\subsection{Basic Concept}
+
+Values can be \textbf{clean} (reliable) or \textbf{poisoned} (unreliable due to
+faults). Any dataflow from a poisoned value is poisoned. 
+
+\begin{lstlisting}[language=poison]
+let reading : int = get_sensor unit in  (* May be poisoned due to sensor fault *)
+let adjusted : int = reading + 10 in    (* Becomes poisoned if reading is poisoned *)
+adjusted
+\end{lstlisting}
+
+However, the language also supports \textbf{predicate-based de-poisoning}, where
+values can be conditionally cleaned based on runtime tests (discussed in more
+detail in Section~\ref{sec:de-poisoning}).
+
+\subsection{Poison Lattice}
+
+\begin{align*}
+\text{clean} \sqcup \text{clean} &= \text{clean} \\
+\text{clean} \sqcup \text{poisoned} &= \text{poisoned} \\
+\text{poisoned} \sqcup \text{poisoned} &= \text{poisoned}
+\end{align*}
+
+Conservative: may mark reliable data as poisoned, never marks unreliable data as clean.
+
+\subsection{Predicate-Based De-poisoning}
+\label{sec:de-poisoning}
+
+The language includes a predicate system that allows selective de-poisoning based on runtime conditions. Predicates are pure functions that test values and are associated with guard tags:
+
+\begin{itemize}
+    \item \textbf{Qualified types}: Values have types \texttt{T :> p \{P\}}
+    where \texttt{T} is the base type, \texttt{p} is the poison status, and
+    \texttt{P} is an optional predicate.
+    \item \textbf{Guard predicates}: \texttt{guard k pred\_closure (x, pe, r)}
+    creates a predicate with tag \texttt{k} and pure expression test \texttt{pe}
+    (pure function from \texttt{T} to \texttt{bool}). The \texttt{r} captures
+    value of variables used in \texttt{pe} at definition time.
+    \item \textbf{Conditional de-poisoning}: When an \texttt{if} condition
+    syntactically matches a guard's test, values are de-poisoned in the true
+    branch and poisoned in the false branch
+    \item \textbf{Logical environment}: Environment \texttt{L} tracks guard
+    valuations (\texttt{k : true/false}) to enable predicate evaluation
+\end{itemize}
+
+\begin{lstlisting}[language=poison]
+(* Example: Range check predicate *)
+let sensor_val : int = get_sensor unit in  (* Type: int :> poisoned {guard "range" ...} *)
+if sensor_val >= 0 then
+    sensor_val + 10                  (* De-poisoned: int :> clean *)
+else  
+    0                                (* Alternative when predicate fails *)
+\end{lstlisting}
+
+In this example, if the runtime value of \texttt{sensor\_val} satisfies the range check (\texttt{>= 0}), it becomes de-poisoned in the \texttt{then} branch, allowing safe computation.
+
+\subsection{Examples}
+
+\subsubsection*{Explicit flow} (data dependency)
+\begin{lstlisting}[language=poison]
+let faulty : int = get_sensor unit in     (* poisoned *)
+let result : int = faulty + 1 in          (* poisoned (explicit flow) *)
+result
+\end{lstlisting}
+
+\subsubsection*{Implicit flow} (control dependency)
+\begin{lstlisting}[language=poison]
+let faulty : int = get_sensor unit in     (* poisoned *)
+if faulty > 0 then 
+    42  (* poisoned (implicit flow via pc) *)
+else 
+    17  (* poisoned (implicit flow via pc) *)
+\end{lstlisting}
+
+\subsubsection*{Reference operations}
+\begin{lstlisting}[language=poison]
+let r : ref int = ref 0 in        (* Clean reference, clean data *)
+r := get_sensor unit;             (* Data becomes poisoned, reference stays clean *)
+!r                                (* Result: poisoned (from data) *)
+\end{lstlisting}
+
+\subsubsection*{Poisoned references}
+\begin{lstlisting}[language=poison]
+let bad_ref : ref int = get_corrupted_ptr unit in  (* Poisoned reference *)
+!bad_ref;      (* Result: poisoned (untrusted reference) *)
+bad_ref := 42  (* Poisons data at unknown location *)
+\end{lstlisting}
+
+\subsubsection*{Function calls and poisoned function selection}
+\begin{lstlisting}[language=poison]
+let poisoned_cond : int = get_sensor unit in     (* poisoned *)
+let f : int -> int = if poisoned_cond > 0 then   (* pc becomes poisoned *)
+    fn x : int => x + 1                          (* Function itself gets poisoned *)
+else
+    fn x : int => x * 2                          (* This function also gets poisoned *)
+in
+let result : int = f 10 in                        (* Application result is poisoned *)
+result
+\end{lstlisting}
+
+In this example, the function \texttt{f} definition is based on poisoned
+condition. The function type captures its own poison status (from pc at
+definition time), so both branches produce functions with poisoned status. When
+applied, the result inherits this poison. 
+
+\section{Poison Propagation Rules}
+
+\subsection{Core Principles}
+
+\begin{enumerate}
+    \item \textbf{Program counter poison} (\texttt{pc}): Tracks when control flow depends on poisoned data
+    \item \textbf{Conservative approximation}: All potentially affected computations become poisoned
+    \item \textbf{Reference distinction}: Separate tracking for reference reliability vs. data reliability
+    \item \textbf{Predicate-aware propagation}: When predicates are available, conditional de-poisoning can occur in if-then-else constructs
+    \item \textbf{Guard evaluation}: Environment $\mathcal{L}$ tracks predicate guard evaluations to enable precise poison analysis
+\end{enumerate}
+
+\subsection{Propagation Summary}
+
+\begin{itemize}
+    \item \textbf{Arithmetic/Logic}: $e_1 \text{ op } e_2 \rightarrow \text{pc} \sqcup \text{poison}(e_1) \sqcup \text{poison}(e_2)$
+    \item \textbf{Conditionals}: Both branches get $\text{pc} \sqcup \text{poison}(\text{condition})$, but predicate-based rules can enable de-poisoning
+    \item \textbf{Predicate conditionals}: When $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, branches are typed with $\mathcal{L}[k \mapsto \text{true}]$ and $\mathcal{L}[k \mapsto \text{false}]$
+    \item \textbf{Variable access}: De-poisoning when guard evaluates to true, definite poisoning when false, standard propagation when guard unknown
+    \item \textbf{Assignment}: Operation reliability = $\text{pc} \sqcup \text{poison}(\text{ref})$, Data = $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{value})$
+    \item \textbf{Dereference}: $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{data\_at\_location})$, with predicate-based de-poisoning support
+    \item \textbf{Let bindings}: Variable gets $\text{pc} \sqcup \text{poison}(\text{bound\_value})$ and preserves predicates
+    \item \textbf{Functions}: Abstraction gets $\text{pc}$ and captures body and
+    context, application types body with actual argument predicates and current
+    $\mathcal{L}$
+\end{itemize}
+
+\section{Operational Semantics}
+
+Hybrid small-step/big-step semantics with configurations $\langle e, \mu, \rho \rangle$:
+\begin{itemize}
+    \item $\mu$: Memory mapping locations to integers (only integers can be stored in memory)
+    \item $\rho$: Variable environment mapping variables to values
+\end{itemize}
+
+The semantics are primarily small-step (single reduction steps), but function application uses big-step evaluation for function bodies. The notation $\langle e, \mu, \rho \rangle \rightarrow^* \langle e', \mu', \rho' \rangle$ denotes the reflexive-transitive closure of the small-step relation, meaning zero or more reduction steps that evaluate expression $e$ to completion, producing final expression $e'$, memory $\mu'$, and environment $\rho'$.
+
+\subsection*{Key rules:}
+\begin{align*}
+\langle \text{ref } n, \mu, \rho \rangle &\rightarrow \langle l, \mu[l \mapsto n], \rho \rangle \text{ (fresh } l\text{)} \\
+\langle !l, \mu, \rho \rangle &\rightarrow \langle n, \mu, \rho \rangle \text{ (where } \mu(l) = n\text{)} \\
+\langle l := n, \mu, \rho \rangle &\rightarrow \langle \text{unit}, \mu[l \mapsto n], \rho \rangle \\
+\langle \text{let } x : T = v \text{ in } e, \mu, \rho \rangle &\rightarrow \langle e, \mu, \rho[x \mapsto v] \rangle \\
+\langle \text{fn } x : T \Rightarrow e, \mu, \rho \rangle &\rightarrow \langle \text{closure}(x, e, \rho), \mu, \rho \rangle \\
+\langle \text{closure}(x, e, \rho') v, \mu, \rho \rangle &\rightarrow \langle v', \mu', \rho \rangle \text{ (where } \langle e, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle v', \mu', \rho'' \rangle\text{)} \\
+\langle \text{pfn } x : T \Rightarrow pe, \mu, \rho \rangle &\rightarrow \langle \text{pe\_closure}(x, pe, \rho), \mu, \rho \rangle \\
+\langle \text{pe\_closure}(x, pe, \rho') v, \mu, \rho \rangle &\rightarrow \langle v', \mu', \rho \rangle \text{ (where } \langle pe, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle v', \mu', \rho'' \rangle\text{)} \\
+\langle v ; e, \mu, \rho \rangle &\rightarrow \langle e, \mu, \rho \rangle \text{ (sequence with any value type)}
+\end{align*}
+
+Poison tracking is purely static—runtime execution is standard. Note that closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_closure}(x, pe, \rho)$ are runtime values that only appear during execution; they are not part of the source language and do not have typing rules.
+
+\section{Type System (Typestate)}
+
+\subsection{Environments}
+
+\begin{itemize}
+    \item $\Gamma$: Memory typing environment $l : Q$ (memory location qualified types)
+    \item $\sigma$: Variable typing environment $x : Q$ (variable qualified types)
+    \item $\mathcal{L}$: Logical environment $k : \{\text{true}, \text{false}\}$ (predicate guard evaluations)
+    \item $\text{pc}$: Program counter poison (current context reliability)
+\end{itemize}
+
+Note that both $\Gamma$ and $\sigma$ store \emph{qualified types} $Q$ rather
+than simple types, and can include predicates that enable conditional
+de-poisoning.
+
+\subsection{Judgment Form}
+
+\[
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma'
+\]
+
+Reads: "In poison context $\text{pc}$, with memory typing environment $\Gamma$,
+variable typing environment $\sigma$, and logical environment $\mathcal{L}$,
+expression $e$ has qualified type $Q$, producing updated memory typing
+environment $\Gamma'$."
+
+The qualified type $Q$ encapsulates both the base type, poison status, and any
+associated predicates. The logical environment $\mathcal{L}$ tracks the current
+valuation of predicate guards, enabling predicate-based typing decisions.
+
+\subsection{Key Typing Rules}
+
+\subsubsection*{References with region types:}
+\[
+\frac{\Gamma(l) = Q}{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash l : \text{ref } T @ l \triangleright \text{clean} \{ \text{no\_pred} \} \dashv \Gamma}
+\]
+
+This rule type actual memory location value, which is always clean.
+
+\subsubsection*{Variable access with predicate support:}
+When variables have associated predicates, the typing rule checks the logical environment $\mathcal{L}$ to determine if de-poisoning can occur:
+
+\[
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true}}{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma}
+\]
+
+\[
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false}}{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma}
+\]
+
+\subsubsection*{Reference creation:}
+\[
+\frac{\text{pc} ; \Gamma ; \sigma \vdash e : T \rhd p \dashv \Gamma' \quad \text{fresh } l}
+{\text{pc} ; \Gamma ; \sigma \vdash \text{ref } e : \text{ref } T @ l \rhd \text{pc} \dashv \Gamma'[l \mapsto T \triangleright \text{pc} \sqcup p]}
+\]
+
+\subsubsection*{Assignment:}
+\[
+\frac{\text{pc} ; \Gamma ; \sigma \vdash e_1 : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \text{pc} ; \Gamma' ; \sigma \vdash e_2 : T \rhd p'' \dashv \Gamma''}
+{\text{pc} ; \Gamma ; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p' \dashv \Gamma''[l \mapsto T \triangleright \text{pc} \sqcup p' \sqcup p'']}
+\]
+
+\subsubsection*{Dereference:}
+\[
+\frac{\text{pc} ; \Gamma ; \sigma \vdash e : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \Gamma'(l) = T \triangleright p}
+{\text{pc} ; \Gamma ; \sigma \vdash !e : T \rhd \text{pc} \sqcup p' \sqcup p \dashv \Gamma'}
+\]
+
+\subsubsection*{Function abstraction:}
+Function types include a \emph{typing closure} that captures the function
+body and variable typing context at definition time. This enables
+predicate-based de-poisoning when the function is applied.
+\[
+\frac{\text{pc} ; \Gamma ; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] ; \mathcal{L} \vdash e : T_2 \triangleright p' \{ P' \} \dashv \Gamma'}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{fn } x : T_1 \Rightarrow e : T_1 \rightarrow T_2 \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma'}
+\]
+
+\subsubsection*{Function application:}
+The function application typing rule extracts the typing closure from the function type and types the body at application time. This enables predicate-based de-poisoning by using the actual argument's predicates and the current logical environment $\mathcal{L}$.
+
+\[
+\frac{\begin{array}{c}
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : T_1 \rightarrow T_2 \# p \; \text{typing\_closure}(x, e, \sigma') \triangleright p_1 \{ P_1 \} \dashv \Gamma' \\
+\text{pc} ; \Gamma' ; \sigma ; \mathcal{L} \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma'' \\
+\text{pc} ; \Gamma'' ; \sigma'[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L} \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma'''
+\end{array}}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 \; e_2 : T_2 \triangleright \text{pc} \sqcup p_3 \{ P_3 \} \dashv \Gamma'''}
+\]
+
+Key aspects of function application:
+\begin{itemize}
+    \item The typing closure $(x, e, \sigma')$ contains the parameter name, function body, and captured variable context
+    \item The function body $e$ is typed using the captured context $\sigma'$ extended with the actual argument's type
+    \item The argument's qualified type includes its predicates $P_2$, enabling de-poisoning in the function body
+    \item The current logical environment $\mathcal{L}$ is used, allowing guard-based de-poisoning
+    \item The result poison $p_3$ reflects any de-poisoning that occurred in the function body
+\end{itemize}
+
+
+Example of predicate-based de-poisoning in functions:
+\begin{lstlisting}[language=poison]
+let sensor1 : int = get_sensor unit in  (* Type: int :> poisoned {guard "temp" (y, y >= 0, _)} *)
+let sensor2 : int = get_sensor unit in  (* Type: int :> poisoned {guard "pressure" (z, z >= 0, _)} *)
+
+let f : int -> int = fn x : int =>      (* Captures sensor1 with its predicate *)
+    if sensor1 >= 0 then                (* Matches guard "temp" test expression *)
+        if x >= 0 then                  (* Matches guard "pressure" test expression *)
+            sensor1 + x                 (* Both de-poisoned: clean result *)
+        else
+            -1                          (* x still poisoned *)
+    else
+        -2                              (* sensor1 still poisoned *)
+in
+let result : int = f sensor2 in         (* Application types body with predicates *)
+result                                  (* Result: int :> clean *)
+\end{lstlisting}
+
+In this example:
+\begin{itemize}
+    \item \texttt{sensor1} has predicate \texttt{guard "temp" pred\_closure (y, y >= 0, \_)} - a test that checks if the value is non-negative
+    \item \texttt{sensor2} has predicate \texttt{guard "pressure" pred\_closure (z, z >= 0, \_)} - also tests for non-negative
+    \item When \texttt{f} is applied to \texttt{sensor2}, the function body is typed with:
+    \begin{itemize}
+        \item Captured context $\sigma'$ containing \texttt{sensor1} with its predicate
+        \item Parameter \texttt{x} bound to \texttt{sensor2}'s type with its predicate  
+        \item Current logical environment $\mathcal{L}$ (initially may be empty)
+    \end{itemize}
+    \item During typing of the function body:
+    \begin{itemize}
+        \item \texttt{if sensor1 >= 0} syntactically matches the test expression in \texttt{guard "temp"}, so the then branch is typed with $\mathcal{L}[$\texttt{"temp"} $\mapsto \text{true}]$
+        \item \texttt{if x >= 0} syntactically matches the test expression in \texttt{guard "pressure"}, so its then branch is typed with $\mathcal{L}[$\texttt{"temp"} $\mapsto \text{true}, $\texttt{"pressure"} $\mapsto \text{true}]$
+        \item In the innermost branch, both values are de-poisoned because their guards are true in $\mathcal{L}$
+        \item The result \texttt{sensor1 + x} has type \texttt{int} $\triangleright$ \texttt{clean}
+    \end{itemize}
+\end{itemize}
+
+\subsubsection*{Predicate-based conditional typing:}
+The type system includes two conditional typing rules that handle predicate-based de-poisoning:
+
+\textbf{Standard conditional rule (when no matching predicate found):}
+\[
+\frac{\begin{array}{c}
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p' \{ P' \} \dashv \Gamma' \\
+\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L} \vdash e_2 : T \triangleright p'' \{ P'' \} \dashv \Gamma'' \\
+\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L} \vdash e_3 : T \triangleright p''' \{ P''' \} \dashv \Gamma'''
+\end{array}}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p' p'' p''' \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma'' \Gamma'''}
+\]
+
+\textbf{Predicate-based conditional rule (when matching predicate found):}
+\[
+\frac{\begin{array}{c}
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p' \{ P' \} \dashv \Gamma' \\
+\text{match\_guard}(e_1, \Gamma, \sigma) = k \\
+\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L}[k \mapsto \text{true}] \vdash e_2 : T \triangleright p'' \{ P'' \} \dashv \Gamma'' \\
+\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L}[k \mapsto \text{false}] \vdash e_3 : T \triangleright p''' \{ P''' \} \dashv \Gamma'''
+\end{array}}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p' p'' p''' \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma'' \Gamma'''}
+\]
+
+The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, the branches are typed with different valuations of guard $k$ in environment $\mathcal{L}$. This enables:
+\begin{itemize}
+    \item \textbf{De-poisoning in then branch}: Values guarded by $k$ become clean when $k$ evaluates to true
+    \item \textbf{Definite poisoning in else branch}: Values guarded by $k$ become poisoned when $k$ evaluates to false
+    \item \textbf{Precise fault tracking}: The type system can track exactly which runtime conditions affect poison status
+\end{itemize}
+
+\subsubsection*{While loops} 
+
+While loop typing rule is flow-sensitive, based on Hunt \& Sands 2006. The
+environments $\Gamma_i$ and poison status $p_i$ are indexed by
+iteration $i$, with the fixpoint reached at the smallest $n$ where 
+$\Gamma_{n+1} = \Gamma_n$.
+
+\subsection{Region Types for Soundness}
+
+Region types $\text{ref } T @ l$ solve the soundness problem in dereference:
+\begin{itemize}
+    \item \textbf{Problem}: Without regions, $!e$ rule couldn't determine which location to check in $\Gamma$ for poison status
+    \item \textbf{Solution}: Type $\text{ref } T @ l$ explicitly encodes the target location $l$
+    \item \textbf{Benefit}: Statically tracks which specific location each reference points to
+\end{itemize}
+
+\subsection{Environment Evolution}
+
+Memory typing environment $\Gamma$ evolves through:
+\begin{itemize}
+    \item \textbf{Reference creation}: Extends $\Gamma$ with both type and poison status
+    \item \textbf{Assignment}: Updates poison status of data in $\Gamma$
+    \item \textbf{Control flow}: Joins environments from different branches
+    \item \textbf{Loops}: Iterative fixpoint computation for flow-sensitive analysis
+\end{itemize}
+
+\section{Formal Properties}
+
+\subsection{Poison Irrelevance}
+
+We formulate soundness as a property of the type system which ensures that
+poison annotations do not interfere with the computational behaviour of
+programs. Informally, soundness states that the poison status of the initial
+program state does not affect the program's observable behaviour—poison flags
+serve purely as static annotations for fault tracking without altering
+execution.
+
+We define the \textbf{initial program state} as the combination of values and
+poison flags associated with the program counter, variables, and memory locations
+at the beginning of execution. The \textbf{observable behaviour} comprises the
+return values of the program and the final values stored in memory locations.
+Notably, this definition excludes variable bindings and poison flags themselves
+from observable behaviour, as these are implementation details of the type
+system rather than computational outputs.
+
+\begin{definition}[Runtime Configuration]
+A runtime configuration is a triple $\langle e, \mu, \rho \rangle$ where:
+\begin{itemize}
+    \item $e$ is the expression being evaluated
+    \item $\mu$ is the memory mapping locations to values  
+    \item $\rho$ is the variable environment mapping variables to values
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Typing Context]
+A typing context is a tuple $\langle pc, \Gamma, \sigma, \mathcal{L} \rangle$ where:
+\begin{itemize}
+    \item $pc \in \{\text{clean}, \text{poisoned}\}$ is the program counter poison status
+    \item $\Gamma$ is the memory typing environment mapping locations to qualified types ($l : Q$)
+    \item $\sigma$ is the variable typing environment mapping variables to qualified types ($x : Q$)
+    \item $\mathcal{L}$ is the logical environment mapping predicate tags to boolean values ($k : \{\text{true}, \text{false}\}$)
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Observable Behaviour]
+A runtime configuration $\langle e, \mu_0, \rho \rangle$ evaluates to its observable behaviour $\langle \mu_f, v \rangle$, written as:
+\[
+\langle e, \mu_0, \rho \rangle \Downarrow \langle \mu_f, v \rangle
+\]
+where:
+\begin{itemize}
+    \item $\mu_0$ is the initial memory state
+    \item $\mu_f$ is the final memory state after execution
+    \item $v$ is the final value of the expression $e$
+\end{itemize}
+\end{definition}
+
+\begin{theorem}[Poison Irrelevance]
+Let $e$ be an expression.  Suppose there exist typing derivations
+\[
+pc_i ; \Gamma ; \sigma_i ; \mathcal{L}_i \;\vdash\; e : Q_i \dashv \Gamma_i'\qquad (i \in \{1,2\})
+\]
+that possess identical \emph{value} components (the base type elements of
+$\Gamma$, $\sigma_i$) but may vary arbitrarily in their poison annotations and
+predicates. The logical environments $\mathcal{L}_1$ and $\mathcal{L}_2$ and
+program counter poison $pc_1$ and $pc_2$ may also differ. For every memory $\mu$
+and run-time environment $\rho$ compatible with $\Gamma$ and $\sigma$ we have a
+unique big-step evaluation
+\[
+\langle e, \mu, \rho \rangle \Downarrow \langle \mu_f, v \rangle .
+\]
+Consequently the observable pair $\langle \mu_f, v \rangle$ is independent of the initial poison annotations $pc_i,\sigma_i$, the poison parts of $\Gamma$, and the predicate evaluations in $\mathcal{L}_i$.
+\end{theorem}
+
+This theorem establishes that poison annotations and predicate evaluations are purely static: programs with identical computational content but different poison labels and predicate valuations produce identical observable results. The typing judgment $pc ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma'$ conservatively tracks potential fault propagation and predicate-based de-poisoning without affecting the underlying computation as specified by the operational semantics $\langle e, \mu, \rho \rangle \rightarrow \langle e', \mu', \rho' \rangle$.
+
+\subsection{Non-interference}
+
+We define non-interference for poison flags to ensure that changes to poison
+status in non-critical inputs cannot affect the poison status of critical
+outputs. This property is crucial for reasoning about fault isolation in the
+presence of both critical and non-critical data.
+
+\begin{definition}[Location Partition]
+A location partition is a tuple $\langle L_{crit}, L_{noncrit} \rangle$ where:
+\begin{itemize}
+    \item $L_{crit}$ is the set of critical locations
+    \item $L_{noncrit}$ is the set of non-critical locations
+    \item $L_{crit} \cap L_{noncrit} = \emptyset$ and $L_{crit} \cup L_{noncrit}$ contains all locations
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Variable Partition]
+A variable partition is a tuple $\langle V_{crit}, V_{noncrit} \rangle$ where:
+\begin{itemize}
+    \item $V_{crit}$ is the set of critical variables
+    \item $V_{noncrit}$ is the set of non-critical variables
+    \item $V_{crit} \cap V_{noncrit} = \emptyset$ and $V_{crit} \cup V_{noncrit}$ contains all variables
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Poison Non-interference Property]
+A program $e$ satisfies poison non-interference with respect to input location
+partition $\langle L_{crit}, L_{noncrit} \rangle$, output location partition
+$\langle L'_{crit}, L'_{noncrit} \rangle$, input variable partition $\langle V_{crit},
+V_{noncrit} \rangle$, and final value criticality $v_{crit} \in \{\text{true},
+\text{false}\}$ if, when typed under any two different initial environments that agree on critical inputs, the typing derivations:
+\begin{itemize}
+    \item $\text{clean} ; \Gamma ; \sigma \vdash e : T \rhd p \dashv \Gamma_f$
+    \item $\text{clean} ; \Gamma' ; \sigma' \vdash e : T \rhd p' \dashv \Gamma_f'$
+\end{itemize}
+where the initial environments satisfy:
+\begin{itemize}
+    \item $\Gamma \equiv_{L_{crit}} \Gamma'$ (critical input locations have same type and poison)
+    \item $\sigma \equiv_{V_{crit}} \sigma'$ (critical variables have same values and poison)
+\end{itemize}
+produce final environments and poison status such that:
+\begin{itemize}
+    \item if $v_{crit}$ then $p = p'$ (final value poison is same when value is critical)
+    \item $\Gamma_f \equiv_{L'_{crit}} \Gamma_f'$ (critical output locations have same type and poison)
+\end{itemize}
+\end{definition}
+
+This property is not universal - it must be proven for each specific program and
+partition. Starting from clean control flow allows us to isolate the effects of
+non-critical input faults on critical outputs, independent of any control flow
+faults that may occur earlier, prior to program execution. The final value may
+be non-critical when the program is executed primarily for its side effects on
+critical locations rather than its return value. The input and output location
+partitions need not match - a location may be critical for input but
+non-critical for output, or vice versa.
+
+In the context of fault-tolerant computing, the term ``poison'' refers to faulty
+data, such as that arising from a sensor malfunction. The interpretation of this
+property is that the programme's outputs are contingent upon two sets of inputs.
+The reliability of ``critical'' inputs directly influences the reliability of
+the output. Conversely, the reliability of ``non-critical'' inputs does not
+impact the output's reliability, possibly due to the programme's internal
+mechanisms for managing faults. It is important to emphasise that this property
+does not pertain to the outcome of the computation (values), but rather to the
+reliability of the output.
+
+\subsection{Soundness}
+
+TODO: A soundness theorem would state that the type system correctly predicts
+fault propagation - it never misses a fault. In other words, if the type system
+marks a value as ``poisoned'', then that value truly could be affected by a
+fault in some execution path. This is a ``no false negatives'' guarantee.
+
+\subsection{Completeness}
+
+The Poison language's type system cannot achieve completeness due to its
+flow-sensitive nature and conservative fault propagation approximation. Tracking
+program counter poison ($pc$) and join operations at control flow merge points
+leads to over-approximation. Values in a poisoned $pc$ context are marked as
+poisoned, even if they are constants or depend on clean values. This is a
+trade-off for soundness, preferring to mark clean values as poisoned rather than
+miss poisoned ones. Thus, while clean-marked values are soundly clean,
+poisoned-marked values are not necessarily poisoned.
+
+\subsection{Progress}
+
+TODO: Progress theorem.
+
+\subsection{Preservation}
+
+Preservation ensures that a single small-step reduction cannot invalidate the
+static analysis.  If an expression \(e\) is well typed in typing environments
+\(\Gamma\) and \(\sigma\), then every immediate successor \(e'\) is well typed as
+well -- possibly in an enlarged environment that reflects concrete run-time effects
+such as the allocation of a fresh memory location or the introduction of a new variable
+binding.
+
+\begin{theorem}[Preservation]
+Suppose
+\[
+pc ; \Gamma ; \sigma \;\vdash\; e : T \,\rhd\, p \;\dashv\; \Gamma_1
+\qquad\text{and}\qquad
+\langle e , \mu , \rho \rangle \;\rightarrow\; \langle e' , \mu' , \rho' \rangle .
+\]
+Then there exists $\Gamma_2$ such that
+\[
+pc ; \Gamma_1 ; \sigma \;\vdash\; e' : T \,\rhd\, p' \;\dashv\; \Gamma_2,
+\]
+where $\Gamma_2$ extends $\Gamma_1$ in the following sense:
+\begin{itemize}
+    \item For all $l \in \text{dom}(\Gamma_1)$: if $\Gamma_1(l) = T \triangleright p_1$, then $\Gamma_2(l) = T \triangleright p_2$ for some $p_2$ (types are preserved, poison may change)
+    \item $\text{dom}(\Gamma_1) \subseteq \text{dom}(\Gamma_2)$ (new locations may be added)
+\end{itemize}
+\end{theorem}
+
+The typestate (memory typing environments $\Gamma$) is monotone only with
+respect to base types (\texttt{T}): once a location receives a type, that type
+is never changed, though its poison status may evolve through assignments and
+control flow. New locations may be added to the environment (e.g., through
+\texttt{ref} expressions), but existing locations retain their base types. The
+poison components (flag and predicate) within $\Gamma$ is permitted to change in
+both directions: ordinary computation and control-flow joins may mark additional
+entities as poisoned, whereas \emph{sanitisation} constructs could clear poison
+from selected data. Preservation therefore guarantees that the analysis remains
+sound while accommodating monotone growth of type information and non-monotone
+evolution of poison information.
+
+\bibliographystyle{plain}
+
+\nocite{*}
+\bibliography{poison-lang}
+
+\end{document} 

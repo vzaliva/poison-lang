@@ -1,0 +1,532 @@
+% Derived from `examples/1Bsemantics/l1.ott` in Ott distribution
+
+
+metavar n, i ::=
+  {{ com Numeric literals }}
+  {{ phantom }}
+  {{ coq nat }}
+
+metavar location, l ::= 
+  {{ com Memory locations }}
+  {{ coq nat }}
+
+metavar var, x ::=
+  {{ com Variables }}
+  {{ phantom }}
+  {{ coq string }}
+
+metavar tag, k ::=
+  {{ com Tags for predicates }}
+  {{ phantom }}
+  {{ coq string }}
+
+grammar 
+
+% Index expressions for use in formulas
+idx :: 'IDX_' ::=              {{ com index expressions }}
+  | 0                          ::   :: zero
+  | 1                          ::   :: one  
+  | 2                          ::   :: two
+  | i                          ::   :: var
+  | n                          ::   :: nat
+  | idx1 + idx2                ::   :: plus
+  | idx1 - idx2                ::   :: minus
+  | idx1 * idx2                ::   :: mult
+  | ( idx )                    :: M :: paren  {{ ichlo ([[idx]]) }}
+
+b :: 'B_' ::=              {{ com booleans }}  {{ phantom }} {{ coq bool }}
+  | true                    ::   :: true      {{ coq true }}
+  | false                   ::   :: false     {{ coq false }}
+
+operations, op :: 'Op_' ::=            {{ com operations }}
+  | +                       ::   :: plus
+  | >=                      ::   :: gteq
+
+e :: 'E_'  ::=	           {{ com expressions }}
+  | unit                    ::   :: unit
+  | n                       ::   :: num
+  | b                       ::   :: bool
+  | x                       ::   :: var
+  | l                       ::   :: location
+  | e1 op e2                ::   :: op
+  | if e1 then e2 else e3   ::   :: if
+  | ref e                   ::   :: new_ref
+  | e1 := e2                ::   :: assign
+  | ! e                     ::   :: deref
+  | e1 ; e2                 ::   :: sequence
+  | while e1 do e2          ::   :: while
+  | let x : T = e1 in e2    ::   :: let
+  | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
+  | fn x : T => e           ::   :: fn  
+  | pfn x : T => pe         ::   :: pfn  {{ com pure function }}
+  | e1 e2                   ::   :: app
+  | closure ( x , e , r )  ::   :: closure   {{ com closure value }}
+  | pe_closure ( x , pe , r )  ::   :: pe_closure   {{ com pure closure value }}
+
+pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
+  | n                       ::   :: num
+  | b                       ::   :: bool
+  | x                       ::   :: Var
+  | pe1 op pe2              ::   :: op
+  | if pe1 then pe2 else pe3 ::   :: if
+  | ! pe                    ::   :: deref
+  | unit                    ::   :: unit
+  | pe1 ; pe2               ::   :: sequence
+  | let x : T = pe1 in pe2  ::   :: let
+  | ( pe )                  :: M :: paren  {{ ichlo ([[pe]]) }}
+  | pe1 pe2                 ::   :: app
+  | pfn x : T => pe         ::   :: pfn  {{ com pure function }}
+  | pe_closure ( x , pe , r )   ::   :: pe_closure   {{ com pure closure value }}
+
+v :: 'V_' ::=              {{ com values }}
+  | n                       ::   :: num
+  | b                       ::   :: bool
+  | unit                    ::   :: unit    
+  | closure ( x , e , r )  ::   :: closure   {{ com closure value }}
+  | pe_closure ( x , pe , r )  ::   :: pe_closure   {{ com pure closure value }}
+
+memory , m {{ tex \mu }} :: 'Memory_' ::=  {{ com memory }} {{ phantom }} {{ coq list (location * integer) }}
+   | empty                  ::   :: empty {{ coq [] }}
+   | m [ l |-> n ]          ::   :: extend  {{ coq (([[l]],[[n]])::[[m]]) }}
+
+typ, T :: 'T_' ::=         {{ com types }}
+  | int                     ::   :: int
+  | bool                    ::   :: bool
+  | unit                    ::   :: unit
+  | ref T @ l               ::   :: ref {{ tex \mathsf{ref}\,[[T]]\,@\,[[l]] }}
+  | T1 -> T2 # p typing_closure tcl ::   :: arrow {{ tex [[T1]] \rightarrow [[T2]]\, \triangleright [[p]]\, \mathsf{typing\_closure}\, [[tcl]] }}
+
+% Predicate closure contents (for cleaner syntax)
+pcl :: 'PCL_' ::= {{ com predicate closure }}
+  | ( x , pe , r )          ::   :: tuple
+
+% Typing closure contents (for function types)
+tcl :: 'TCL_' ::= {{ com typing closure }}
+  | ( x , e , S )           ::   :: fn_closure
+  | ( x , pe , S )          ::   :: pfn_closure
+
+predicate, P :: 'P_' ::= {{ com predicate (pure function from T to bool) }}
+  | guard k pred_closure pcl ::   :: pred_closure {{ com predicate as pure closure }} {{tex \mathsf{guard}\,[[k]]\,\mathsf{pred\_closure}\,[[pcl]] }}
+  | no_pred                   ::   :: no_pred {{ com trivial predicate (always true) }} {{tex \lambda\, \_.\bot}}
+
+qualified_type, Q :: 'Q_' ::= {{ com qualified type (type with poison and optional predicate) }}
+  | T :> p                  ::   :: qualified {{ tex [[T]] \triangleright [[p]] }}
+  | T :> p { P }            ::   :: qualified_pred {{ tex [[T]] \triangleright [[p]]\, \{ [[P]] \} }}
+
+mem_type_assumption, ta :: 'TA_' ::= {{ com memory type assumption }}
+  | l : Q                ::   :: loc
+
+G {{ tex \Gamma }} :: G_ ::=     {{ com memory typing environments }} {{ phantom }} {{ coq list mem_type_assumption }}
+  | empty                   ::   :: empty {{ coq [] }}
+  | G , ta                  ::   :: extend {{ coq ([[ta]]::[[G]]) }}
+  | JoinG G1 G2             ::   :: JoinG {{ tex [[G1]] \cup [[G2]] }}
+  | G [ l |-> Q ]           ::   :: UpdateG {{ tex [[G]] [ l \mapsto [[Q]] ] }}
+  | IndexedG G idx          ::   :: IndexedG  {{ tex [[G]]_{[[idx]]} }}                  
+
+% Variable environment for let bindings
+var_type_assumption, va :: 'VA_' ::= {{ com variable type assumption }}
+  | x : Q                ::   :: var
+
+S {{ tex \sigma }} :: S_ ::=     {{ com variable typing environments }} {{ phantom }} {{ coq list var_type_assumption }}
+  | empty                   ::   :: empty {{ coq [] }}
+  | S [ x |-> Q ]       ::   :: update {{ coq (([[x]],[[Q]])::[[S]]) }}
+
+% Tag valuation environment
+tag_valuation, tv :: 'TV_' ::= {{ com tag valuation }}
+  | k : b                ::   :: tag
+
+L {{ tex \mathcal{L} }} :: L_ ::=     {{ com tag valuation environments }} {{ phantom }} {{ coq list tag_valuation }}
+  | empty                   ::   :: empty {{ coq [] }}
+  | L , tv                  ::   :: extend {{ coq ([[tv]]::[[L]]) }}
+  | L [ k |-> b ]           ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] ] }}
+
+poison, p, pc :: 'p_' ::= {{ com poison status }} 
+  | clean                    ::   :: clean
+  | poisoned                 ::   :: poisoned
+  | join p1 p2               ::   :: join {{ tex [[p1]] \sqcup [[p2]] }}
+  | indexedp p idx           ::   :: indexedp  {{ tex [[p]]_{[[idx]]} }}                  
+  
+% Variable substitution environment for operational semantics
+var_binding, vb :: 'VB_' ::= {{ com variable binding }}
+  | x |-> v                  ::   :: binding
+
+var_env, r {{ tex \rho }} :: 'VE_' ::=     {{ com variable substitution environment }} {{ phantom }} {{ coq list var_binding }}
+  | empty                   ::   :: empty {{ coq [] }}
+  | r [ x |-> v ]          ::   :: update {{ coq (([[x]],[[v]])::[[r]]) }}                  
+
+terminals :: terminals_ ::=
+  | +    :: :: plus
+  | >=   :: :: leq       {{ tex \geq }}
+  | |-   :: :: turnstile {{ tex \vdash }}
+  | -|   :: :: left_turnstile {{ tex \dashv }}
+  | |->  :: :: mapsto    {{ tex \mapsto }}
+  | ;    :: :: seq
+  | ->   :: :: red       {{ tex \longrightarrow }}
+  | <    :: :: la        {{ tex \langle }}
+  | >    :: :: ra        {{ tex \rangle }}
+  | :>   :: :: ty_poison {{ tex \triangleright }}
+  | ;    :: :: sep       {{ tex ; }}
+  | AND  :: :: and       {{ tex \land }}
+  | =    :: :: eq
+  | in   :: :: in
+  | [    :: :: lsquare   {{ tex [ }}
+  | ]    :: :: rsquare   {{ tex ] }}
+  | @    :: :: at        {{ tex @ }}
+  | ->*   :: :: mredstar   {{ tex \xrightarrow{\ast} }}
+
+subrules
+  v <:: e
+  pe <:: e
+
+grammar 
+formula :: formula_ ::=
+  | judgement              :: :: judgement
+  | n1 + n2 = n3           :: :: sum         {{ coq ([[n1]]+[[n2]]=[[n3]]) }}
+  | n1 >= n2 = b           :: :: leq         {{ coq ([[n1]]>=[[n2]]=[[b]]) }}
+  | m ( l ) = n            :: :: lookup      {{ coq (List.find [[l]] [[m]] = Some ([[n]])) }}   
+  | G ( l ) = Q        :: :: type_lookup {{ coq (lookup_location_type [[l]] [[G]] = Some ([[Q]])) }}   
+  | S ( x ) = Q        :: :: var_type_lookup {{ coq (lookup_var_type [[x]] [[S]] = Some ([[Q]])) }}   
+  | r ( x ) = v           :: :: var_lookup {{ coq (lookup_var [[x]] [[r]] = Some ([[v]])) }}   
+  | L ( k ) = b           :: :: tag_lookup {{ coq (lookup_tag [[k]] [[L]] = Some ([[b]])) }}   
+  | p1 = p2                :: :: poison_eq   {{ coq ([[p1]] = [[p2]]) }}   
+  | G1 = G2                :: :: type_env_eq {{ coq ([[G1]] = [[G2]]) }}   
+  | formula1 AND formula2  :: :: and         {{ tex [[formula1]] \quad [[formula2]] }} {{ coq ([[formula1]] /\ [[formula2]]) }}
+  | fresh l                :: :: fresh_loc       {{ com l is fresh }}
+  | fresh k                :: :: fresh_tag       {{ com k is fresh }}
+  | match_guard e G S = k  :: :: match_guard  {{ com match\_guard(e, G, S) scans the predicates attached to every heap cell in G and variable in S; if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to the condition e, it returns that k—otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] }}
+  
+  
+
+
+
+defns
+
+
+Jop :: '' ::=
+
+defn
+< e , m , r > ->* < e' , m' , r' > :: :: eval :: ''  {{ com $\langle[[e]],\,[[m]],\,[[r]]\rangle$ evaluates to $\langle[[e']],\,[[m']],\,[[r']]\rangle$ }} by
+
+% Reflexive case
+--------------------------------------------------------------- :: eval_refl
+< e, m, r > ->* < e, m, r >
+
+% Transitive case
+  < e, m, r > -> < e'', m'', r'' >
+  < e'', m'', r'' > ->* < e', m', r' >
+--------------------------------------------------------------- :: eval_step
+< e, m, r > ->* < e', m', r' >
+
+defn
+< e , m , r > -> < e' , m' , r' > :: :: reduce :: ''  {{ com $\langle[[e]],\,[[m]],\,[[r]]\rangle$ reduces to $\langle[[e']],\,[[m']],\,[[r']]\rangle$ }} by
+
+  n1 + n2 = n
+----------------------   :: op_plus
+<n1 + n2, m, r> -> <n, m, r>
+
+  n1 >= n2 = b
+----------------------   :: op_gteq
+<n1 >= n2, m, r> -> <b, m, r>
+
+  <e1,m,r> -> <e1',m',r'>
+------------------------------- :: op1
+<e1 op e2,m,r> -> <e1' op e2,m',r'>
+
+  <e2,m,r> -> <e2',m',r'>
+------------------------------- :: op2
+<e1 op e2,m,r> -> <e1 op e2',m',r'>
+
+% New ref creation - allocates fresh location
+  fresh l
+------------------------------ :: ref
+<ref n,m,r> -> <l, m [ l |-> n ], r>
+
+  <e,m,r> -> <e',m',r'>
+------------------------------ :: ref_eval
+<ref e,m,r> -> <ref e',m',r'>
+
+  m(l) = n
+------------------------------ :: deref_loc
+<!l,m,r> -> <n,m,r>
+
+  <e,m,r> -> <e',m',r'>
+------------------------------ :: deref_eval
+<!e,m,r> -> <!e',m',r'>
+
+-------------------------------------- :: assign
+< l := n, m, r > -> <unit, m [ l |-> n ], r >
+
+  <e1,m,r> -> <e1',m',r'>
+-------------------------------------- :: assign_eval_left
+< e1 := e2, m, r > -> < e1' := e2, m', r' >
+
+  <e2,m,r> -> <e2',m',r'>
+-------------------------------------- :: assign_eval_right
+< l := e2, m, r > -> < l := e2', m', r' >
+
+% Sequence: when first expression is a value, discard it and continue with second
+-------------------------------------- :: seq1
+< v ; e, m, r > -> < e, m, r >
+
+   <e1,m,r> -> <e1',m',r'>
+-------------------------------------- :: seq2
+< e1 ; e2, m, r > -> < e1' ; e2, m', r' >
+
+---------------------------------------------- :: if1
+< if true then e1 else e2, m, r > -> < e1, m, r >
+
+---------------------------------------------- :: if2
+< if false then e1 else e2, m, r > -> < e2, m, r >
+
+  <e,m,r> -> <e',m',r'>
+------------------------------------------------------------ :: if3
+< if e then e1 else e2, m, r > -> < if e' then e1 else e2, m', r' >
+
+--------------------------------------------------------------------------- :: while
+< while e1 do e2, m, r> -> < if e1 then ( e2 ; while e1 do e2 ) else unit, m, r >
+
+% Variable lookup
+  r(x) = v
+--------------------------- :: var
+< x, m, r > -> < v, m, r >
+
+% Let binding reduction
+  <e1,m,r> -> <e1',m',r'>
+-------------------------------------------------------- :: let1
+< let x : T = e1 in e2, m, r > -> < let x : T = e1' in e2, m', r' >
+
+--------------------------------------------------------------- :: let2
+< let x : T = v in e2, m, r > -> < e2, m, r[x |-> v] >
+
+% Function abstraction creates a closure
+--------------------------------------------------------------- :: fn_abs
+< fn x : T => e, m, r > -> < closure(x, e, r), m, r >
+
+% Pure function abstraction creates a pure closure
+--------------------------------------------------------------- :: pfn_abs
+< pfn x : T => pe, m, r > -> < pe_closure(x, pe, r), m, r >
+
+% Function application - evaluate argument first (call-by-value)
+  <e2,m,r> -> <e2',m',r'>
+--------------------------------------------------------------- :: app1
+< e1 e2, m, r > -> < e1 e2', m', r' >
+
+% Function application - evaluate function when argument is already a value
+  <e1,m,r> -> <e1',m',r'>
+--------------------------------------------------------------- :: app_func
+< e1 v, m, r > -> < e1' v, m', r' >
+
+% Function application - apply closure to value (evaluate body to completion)
+  <e,m,r'[x |-> v]> ->* <v,m',r''>
+--------------------------------------------------------------- :: app3
+<closure(x,e,r') v,m,r> -> <v,m',r>
+
+% Pure function application - apply pure closure to value (evaluate body to completion)
+  <pe,m,r'[x |-> v]> ->* <v,m',r''>
+--------------------------------------------------------------- :: app3_pe
+<pe_closure(x,pe,r') v,m,r> -> <v,m',r>
+
+
+%% --- Typing rules below ---
+
+defn
+pc ; G ; S ; L |- e : Q -| G' :: :: typing :: Ty_ by
+
+------------------  :: int
+  pc ; G ; S ; L |- n : int :> clean { no_pred } -| G
+
+------------------  :: bool
+  pc ; G ; S ; L |- b : bool :> clean { no_pred } -| G
+
+% Variable typing - standard case (no guard or guard not in L)
+  S(x) = T :> p { no_pred }
+------------------  :: var_no_pred
+  pc ; G ; S ; L |- x : T :> join pc p { no_pred } -| G
+
+% Variable typing - with guarded predicate that evaluates to true triggering de-poisoning.
+  S(x) = T :> p { guard k pred_closure pcl }
+  L(k) = true
+------------------  :: var_guard_true
+  pc ; G ; S ; L |- x : T :> pc { no_pred } -| G
+
+% Variable typing - with guarded predicate that evaluates to false, triggering poisoning.
+  S(x) = T :> p { guard k pred_closure pcl }
+  L(k) = false
+------------------  :: var_guard_false
+  pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G
+
+% Variable typing - with guarded predicate but tag not in L
+  S(x) = T :> p { guard k pred_closure pcl }
+------------------  :: var_guard_unknown
+  pc ; G ; S ; L |- x : T :> join pc p { guard k pred_closure pcl } -| G
+
+% Location typing with region types
+  G(l) = T :> p { P }
+------------------  :: location
+  pc ; G ; S ; L |- l : ref T @ l :> clean { no_pred } -| G
+
+  pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G'
+  pc ; G' ; S ; L |- e2 : int :> p'' { P2 } -| G''
+-------------------------------  :: op_plus
+  pc ; G ; S ; L |- e1 + e2 : int :> join pc join p' p'' { no_pred } -| G''
+
+  pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G'  
+  pc ; G' ; S ; L |- e2 : int :> p'' { P2 } -| G''
+-------------------------------  :: op_gteq
+  pc ; G ; S ; L |- e1 >= e2 : bool :> join pc join p' p'' { no_pred } -| G''
+
+% New ref creation with region types
+% ref creates a reference with pc poison status and allocates fresh location l
+% The region type ref T @ l precisely tracks which location is allocated
+% Predicate P is preserved in the memory location
+  pc ; G ; S ; L |- e : T :> p { P } -| G'
+  fresh l
+----------------------- :: ref
+  pc ; G ; S ; L |- ref e : ref T @ l :> pc { no_pred } -| G'[l |-> T :> join pc p { P }]
+
+% Assignment through reference with region types The result of the whole
+% assignment (unit) is poisoned if the reference is poisoned. The stored value
+% is poisoned if the assignment is poisoned, or reference is poisoned, or the
+% value is poisoned. Predicate from e2 is preserved in the memory location
+  pc ; G ; S ; L |- e1 : ref T @ l :> p' { P' } -| G'
+  pc ; G' ; S ; L |- e2 : T :> p'' { P'' } -| G''
+----------------------- :: assign
+  pc ; G ; S ; L |- e1 := e2 : unit :> join pc p' { no_pred } -| G''[l |-> T :> join pc join p' p'' { P'' }]
+
+% Dereference with region types - no predicate case
+  pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G'
+  G'(l) = T :> p { no_pred }
+----------------------- :: deref_no_pred
+  pc ; G ; S ; L |- !e : T :> join pc join p' p { no_pred } -| G'
+
+% Dereference - with guarded predicate that evaluates to true, triggering de-poisoning.
+  pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G'
+  G'(l) = T :> p { guard k pred_closure pcl }
+  L(k) = true
+----------------------- :: deref_guard_true
+  pc ; G ; S ; L |- !e : T :> join pc p' { no_pred } -| G'
+
+% Dereference - with guarded predicate that evaluates to false, triggering poisoning.
+  pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G'
+  G'(l) = T :> p { guard k pred_closure pcl }
+  L(k) = false
+----------------------- :: deref_guard_false
+  pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G'
+
+% Dereference - with guarded predicate but tag not in L
+  pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G'
+  G'(l) = T :> p { guard k pred_closure pcl }
+----------------------- :: deref_guard_unknown
+  pc ; G ; S ; L |- !e : T :> join pc join p' p { guard k pred_closure pcl } -| G'
+
+-------------------------------  :: unit
+  pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G
+
+% Sequence: e1's poison is included because e2 only executes if e1 completes
+% successfully. This captures the control dependency between e1 and e2. The
+% first expression can have any type T1, but its value is discarded. The result
+% type is the type of the second expression T2. This is  a conservative
+% approach. Alternatively, we could ignore e1's poison in result, as the e1's
+% value is propagated to e2.
+  pc ; G ; S ; L |- e1 : T1 :> p' { P' } -| G'
+  pc ; G' ; S ; L |- e2 : T2 :> p'' { P'' } -| G''
+-------------------------------  :: seq
+  pc ; G ; S ; L |- e1 ; e2  : T2 :> join p' p'' { P'' } -| G''
+
+% Function abstraction typing. Capture the function body and variable context for later use.
+% This enables predicate-based de-poisoning when the function is applied.
+  pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- e : T2 :> p' { P' } -| G'
+----------------------------------------------------------------------  :: fn_abs
+  pc ; G ; S ; L |- fn x : T1 => e : T1 -> T2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G'
+
+% Pure function abstraction typing. Capture the pure function body and variable context.
+% Note: pe body ensures no side effects in the function
+  pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- pe : T2 :> p' { P' } -| G'
+----------------------------------------------------------------------  :: pfn_abs
+  pc ; G ; S ; L |- pfn x : T1 => pe : T1 -> T2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G'
+
+% Function application typing - now uses captured body and context for precise typing
+% When applying a function, we extract the typing_closure containing the parameter name (x),
+% function body (e), and captured variable context (S'). We then type-check the body in
+% the captured context S' extended with the actual argument's type (including predicates)
+% and using the current logical environment L. This enables predicate-based de-poisoning.
+  pc ; G ; S ; L |- e1 : T1 -> T2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G'
+  pc ; G' ; S ; L |- e2 : T1 :> p2 { P2 } -| G''
+  pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L |- e : T2 :> p3 { P3 } -| G'''
+----------------------------------------------------------------------  :: app_fn
+  pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G'''
+
+% Pure function application typing - uses captured pure body and context
+  pc ; G ; S ; L |- e1 : T1 -> T2 # p typing_closure ( x , pe , S' ) :> p1 { P1 } -| G'
+  pc ; G' ; S ; L |- e2 : T1 :> p2 { P2 } -| G''
+  pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L |- pe : T2 :> p3 { P3 } -| G'''
+----------------------------------------------------------------------  :: app_pfn
+  pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G'''
+
+% Typing for Let Bindings
+%
+% A critical consideration is whether the context poison should be combined with
+% the variable poison in the result. The current approach integrates the context
+% poison with the variable poison. Consider the following illustrative example:
+%
+% if poisoned_sensor > 0 then      // pc = poisoned
+%    let y : int = 42 in 17       // e2 doesn't use y
+% else
+%    0
+% In this scenario, the let binding is deemed poisoned because the context
+% poison is indeed poisoned.
+%
+% Predicates are propagated from e1 to x, and the result gets predicate from e2
+  pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G'
+  pc ; G' ; S[x |-> T :> join pc p1 { P1 }] ; L |- e2 : T2 :> p2 { P2 } -| G''
+----------------------------------------------------------------------  :: let
+  pc ; G ; S ; L |- let x : T = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G''
+
+%  Flow‑sensitive WHILE à la Hunt & Sands 2006 https://doi.org/10.1145/1111037.1111045
+% TODO: this is a conservative approach. We could further refine it by adding de-poisoning support.
+
+  indexedp p i ; IndexedG G i ; S ; L |- e1 : bool :> indexedp p' i { P' }  -| IndexedG G' i
+  join indexedp p i indexedp p' i ; IndexedG G' i ; S ; L |- e2 : unit :> indexedp p'' i { P'' }  -| IndexedG G'' i
+  indexedp p 0 = pc AND indexedp p i+1 = join indexedp p i indexedp p'' i
+  IndexedG G 0 = G AND IndexedG G i+1 = JoinG IndexedG G i IndexedG G'' i
+  %  "where n is the smallest natural number satisfying the two equalities above."
+  indexedp p n+1 = indexedp p n 
+  IndexedG G n+1 = IndexedG G n
+---------------------------------------------------------------------------  :: while
+  pc ; G ; S ; L |- while e1 do e2  : unit :> indexedp p n { no_pred }  -| IndexedG G n
+
+% Conditional typing rules
+%
+% The conditional typing rules handle two cases:
+% 1. When match_guard(e1, G, S) = k for some k (predicate case)
+% 2. When no matching predicate is found (standard case)
+%
+% In the predicate case, we can update L with the guard's value in each branch.
+% In the standard case, we simply propagate poison through both branches.
+%
+% Note: The JoinG operation combines memory typing environments from both branches.
+% For example:
+%
+% if condition then 
+%     let r1 = ref 42 in ...     // Creates l1, G'' = G'[l1 ↦ int]
+% else 
+%     let r2 = ref true in ...   // Creates l2, G''' = G'[l2 ↦ bool]
+%
+% Result: JoinG G'' G''' = G'[l1 ↦ int, l2 ↦ bool]
+% This is sound because fresh locations are always distinct, so no conflicts arise.
+
+% Standard conditional typing rule (when no matching predicate found)
+  pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G'
+  join pc p' ; G' ; S ; L |- e2 : T :> p'' { P'' } -| G''
+  join pc p' ; G' ; S ; L |- e3 : T :> p''' { P''' } -| G'''
+----------------------------------  :: if_std
+  pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p' join p'' p''' { no_pred } -| JoinG G'' G'''
+
+% Predicate-based conditional typing rule (when matching predicate found)
+  pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G'
+  match_guard e1 G S = k
+  join pc p' ; G' ; S ; L[k |-> true] |- e2 : T :> p'' { P'' } -| G''
+  join pc p' ; G' ; S ; L[k |-> false] |- e3 : T :> p''' { P''' } -| G'''
+----------------------------------  :: if_pred
+  pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p' join p'' p''' { no_pred } -| JoinG G'' G'''
+

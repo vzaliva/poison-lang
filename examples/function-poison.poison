@@ -1,0 +1,11 @@
+let get_sensor : unit -> int = fn x:unit => 42 in
+
+-- Function calls and poisoned function selection
+let poisoned_cond : int = get_sensor unit in     (* poisoned *)
+let f : int -> int = if poisoned_cond > 0 then          (* pc becomes poisoned *)
+    fn x : int => x + 1                    (* Function itself gets poisoned *)
+else
+    fn x : int => x * 2                    (* This function also gets poisoned *)
+in
+let result : int = f 10 in                        (* Application result is poisoned *)
+result 
