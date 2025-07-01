@@ -3,6 +3,9 @@
 import Std.Data.HashMap
 open Std
 
+abbrev Address := Nat
+abbrev Name := String
+
 -- Basic types (corresponds to typ, T in Ott)
 inductive Typ : Type where
   | int : Typ
@@ -27,14 +30,14 @@ inductive Value : Type where
   | num : Nat → Value           -- n
   | bool : Bool → Value         -- b
   | unit : Value                -- unit
-  | loc : Nat → Value           -- l (locations are values in the operational semantics)
-  | closure : String → Expr → (String → Option Value) → Value      -- closure(x,e,r)
-  | peClosure : String → Expr → (String → Option Value) → Value    -- pe_closure(x,pe,r)
+  | loc : Address → Value           -- l (locations are values in the operational semantics)
+  | closure : Name → Expr → (Name → Option Value) → Value      -- closure(x,e,r)
+  | peClosure : Name → Expr → (Name → Option Value) → Value    -- pe_closure(x,pe,r)
 
 -- Expressions (corresponds to e in Ott)
 inductive Expr : Type where
   | value : Value → Expr                          -- Values embedded in expressions
-  | var : String → Expr                           -- x
+  | var : Name → Expr                           -- x
   | op : Expr → Op → Expr → Expr                  -- e1 op e2
   | ite : Expr → Expr → Expr → Expr               -- if e1 then e2 else e3
   | newRef : Expr → Expr                          -- ref e
@@ -42,9 +45,9 @@ inductive Expr : Type where
   | deref : Expr → Expr                           -- ! e
   | seq : Expr → Expr → Expr                      -- e1 ; e2
   | while : Expr → Expr → Expr                    -- while e1 do e2
-  | let : String → Typ → Expr → Expr → Expr       -- let x : T = e1 in e2
-  | fn : String → Typ → Expr → Expr               -- fn x : T => e
-  | pfn : String → Typ → Expr → Expr              -- pfn x : T => pe
+  | let : Name → Typ → Expr → Expr → Expr       -- let x : T = e1 in e2
+  | fn : Name → Typ → Expr → Expr               -- fn x : T => e
+  | pfn : Name → Typ → Expr → Expr              -- pfn x : T => pe
   | app : Expr → Expr → Expr                      -- e1 e2
 
 end
@@ -52,7 +55,7 @@ end
 -- Variable environment: variable name → value (function type) We do not use a
 -- HashMap here, as we do for Memory, because of the Lean restriction of
 -- inductive type definitions (insude pe_closure)
-abbrev VarEnv := String → Option Value
+abbrev VarEnv := Name → Option Value
 
 -- Manual Repr instance for Value (since closures contain functions)
 def reprValue : Value → Nat → Std.Format
@@ -130,7 +133,7 @@ def Value.toExpr : Value → Expr
 def Expr.num (n : Nat) : Expr := Expr.value (Value.num n)
 def Expr.bool (b : Bool) : Expr := Expr.value (Value.bool b)
 def Expr.unit : Expr := Expr.value Value.unit
-def Expr.loc (l : Nat) : Expr := Expr.value (Value.loc l)
+def Expr.loc (l : Address) : Expr := Expr.value (Value.loc l)
 
 -- Extract value from expression if possible
 def Expr.toValue? : Expr → Option Value
