@@ -32,6 +32,12 @@ lake exe poison-interpreter --verbose examples/basic-poison-flow1.poison
 
 # Run tests
 lake exe poison-tests
+
+# Run tests with different modes
+lake exe poison-tests --typecheck    # Type checking only
+lake exe poison-tests --eval         # Evaluation only  
+lake exe poison-tests --eval -v      # Evaluation only with verbose output
+lake exe poison-tests # both evaluation and typchecking
 ```
 
 ## Project Structure
