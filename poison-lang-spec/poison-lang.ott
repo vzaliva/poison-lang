@@ -482,19 +482,6 @@ pc ; G ; S ; L |- e : Q -| G' :: :: typing :: Ty_ by
 ----------------------------------------------------------------------  :: let
   pc ; G ; S ; L |- let x : T = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G''
 
-%  Flow‑sensitive WHILE à la Hunt & Sands 2006 https://doi.org/10.1145/1111037.1111045
-% TODO: this is a conservative approach. We could further refine it by adding de-poisoning support.
-
-  indexedp p i ; IndexedG G i ; S ; L |- e1 : bool :> indexedp p' i { P' }  -| IndexedG G' i
-  join indexedp p i indexedp p' i ; IndexedG G' i ; S ; L |- e2 : unit :> indexedp p'' i { P'' }  -| IndexedG G'' i
-  indexedp p 0 = pc AND indexedp p i+1 = join indexedp p i indexedp p'' i
-  IndexedG G 0 = G AND IndexedG G i+1 = JoinG IndexedG G i IndexedG G'' i
-  %  "where n is the smallest natural number satisfying the two equalities above."
-  indexedp p n+1 = indexedp p n 
-  IndexedG G n+1 = IndexedG G n
----------------------------------------------------------------------------  :: while
-  pc ; G ; S ; L |- while e1 do e2  : unit :> indexedp p n { no_pred }  -| IndexedG G n
-
 % Conditional typing rules
 %
 % The conditional typing rules handle two cases:
@@ -515,18 +502,50 @@ pc ; G ; S ; L |- e : Q -| G' :: :: typing :: Ty_ by
 % Result: JoinG G'' G''' = G'[l1 ↦ int, l2 ↦ bool]
 % This is sound because fresh locations are always distinct, so no conflicts arise.
 
+% Predicate-based conditional typing rule (when matching predicate found)
+  pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G'
+  match_guard e1 G S = k
+  join pc p' ; G' ; S ; L[k |-> true] |- e2 : T :> p'' { P'' } -| G''
+  join pc p' ; G' ; S ; L[k |-> false] |- e3 : T :> p''' { P''' } -| G'''
+----------------------------------  :: id_depoison
+  pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p' join p'' p''' { no_pred } -| JoinG G'' G'''
+
 % Standard conditional typing rule (when no matching predicate found)
+% (used as a fallback when match_guard fails)
   pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G'
   join pc p' ; G' ; S ; L |- e2 : T :> p'' { P'' } -| G''
   join pc p' ; G' ; S ; L |- e3 : T :> p''' { P''' } -| G'''
 ----------------------------------  :: if_std
   pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p' join p'' p''' { no_pred } -| JoinG G'' G'''
 
-% Predicate-based conditional typing rule (when matching predicate found)
-  pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G'
+
+%  Flow‑sensitive WHILE à la Hunt & Sands 2006 https://doi.org/10.1145/1111037.1111045
+
+% Predicate-based while typing rule (when matching predicate found)
+  indexedp p i ; IndexedG G i ; S ; L |- e1 : bool :> indexedp p' i { P' }  -| IndexedG G' i
   match_guard e1 G S = k
-  join pc p' ; G' ; S ; L[k |-> true] |- e2 : T :> p'' { P'' } -| G''
-  join pc p' ; G' ; S ; L[k |-> false] |- e3 : T :> p''' { P''' } -| G'''
-----------------------------------  :: if_pred
-  pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p' join p'' p''' { no_pred } -| JoinG G'' G'''
+  join indexedp p i indexedp p' i ; IndexedG G' i ; S ; L[k |-> true] |- e2 : unit :> indexedp p'' i { P'' }  -| IndexedG G'' i
+  indexedp p 0 = pc AND indexedp p i+1 = join indexedp p i indexedp p'' i
+  IndexedG G 0 = G AND IndexedG G i+1 = JoinG IndexedG G i IndexedG G'' i
+  %  "where n is the smallest natural number satisfying the two equalities above."
+  indexedp p n+1 = indexedp p n 
+  IndexedG G n+1 = IndexedG G n
+---------------------------------------------------------------------------  :: while_depoison
+  pc ; G ; S ; L |- while e1 do e2  : unit :> indexedp p n { no_pred }  -| IndexedG G n
+
+% Standard while typing rule (when no matching predicate found) (used as a
+% fallback when match_guard fails) 
+%
+% NOTE: miss the opportunity to de-poison tag *after* the loop. The reason is
+% that we do not modify logical environment in typing rules. Perhaps we should?
+  indexedp p i ; IndexedG G i ; S ; L |- e1 : bool :> indexedp p' i { P' }  -| IndexedG G' i
+  join indexedp p i indexedp p' i ; IndexedG G' i ; S ; L |- e2 : unit :> indexedp p'' i { P'' }  -| IndexedG G'' i
+  indexedp p 0 = pc AND indexedp p i+1 = join indexedp p i indexedp p'' i
+  IndexedG G 0 = G AND IndexedG G i+1 = JoinG IndexedG G i IndexedG G'' i
+  %  "where n is the smallest natural number satisfying the two equalities above."
+  indexedp p n+1 = indexedp p n 
+  IndexedG G n+1 = IndexedG G n
+---------------------------------------------------------------------------  :: while_std
+  pc ; G ; S ; L |- while e1 do e2  : unit :> indexedp p n { no_pred }  -| IndexedG G n
+
 

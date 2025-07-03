@@ -484,10 +484,47 @@ The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, 
 
 \subsubsection*{While loops} 
 
-While loop typing rule is flow-sensitive, based on Hunt \& Sands 2006. The
+While loop typing rule is flow-sensitive, based on Hunt \& Sands 2006~\cite{DBLP:conf/popl/HuntS06}. The
 environments $\Gamma_i$ and poison status $p_i$ are indexed by
 iteration $i$, with the fixpoint reached at the smallest $n$ where 
 $\Gamma_{n+1} = \Gamma_n$.
+
+The formal specification provides \emph{two} mutually exclusive typing
+rules for loops:
+\begin{itemize}
+  \item \textbf{\texttt{while\_depoison}}~-- applied when
+        \texttt{match\_guard}$(e_1,\Gamma,\sigma)=k$ detects that the loop
+        guard $e_1$ is syntactically identical to some predicate guard tagged
+        $k$.  The rule types the loop body $e_2$ under a logical environment
+        $\mathcal{L}[k\mapsto{}\text{true}]$, thereby treating every value
+        whose qualified type is guarded by $k$ as \emph{clean} within the body.
+        Poison information is accumulated across iterations via the recurrences
+        $p_{i+1}=p_i\sqcup p''_i$ and $\Gamma_{i+1}=\Gamma_i \cup
+        \Gamma''_i$, with the least fixpoint $n$ yielding the final poison
+        status $p_n$ and environment $\Gamma_n$ for the whole loop.
+
+  \item \textbf{\texttt{while\_std}}~-- the conservative fallback when no
+        suitable guard is found.  In this case the analysis coincides with the
+        original Hunt--Sands recipe: the context poison and the body poison are
+        simply joined on every iteration.
+\end{itemize}
+
+\paragraph{Precision gained.} By exploiting syntactic matching against guard
+predicates, the \texttt{while\_depoison} rule can identify cases where a loop
+condition constitutes a run-time validity check.  Inside the loop body the
+associated data are thus considered reliable, enabling more precise reasoning
+about fault propagation compared with the standard rule.
+
+\paragraph{Current limitation.}  When a loop terminates we have just observed
+the guard expression $e_1$ evaluate to \emph{false}.  Hence the matching tag
++$k$ is \textbf{known to be false at the loop exit}, and every value whose
+qualified type is guarded by $k$ ought to be marked \emph{poisoned}.  The
+present typing rule, however, leaves the logical environment $\mathcal{L}$
+unchanged, so the outside world still regards $k$ as \emph{unknown}.  This
+imprecision can only over-approximate reliability (never unsound), but it misses
+the opportunity to classify post-loop values more accurately.  A richer
+judgement that returns an \emph{output} logical environment would be necessary
+to capture this information.
 
 \subsection{Region Types for Soundness}
 
