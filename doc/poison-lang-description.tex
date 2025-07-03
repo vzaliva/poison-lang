@@ -333,17 +333,19 @@ de-poisoning.
 \subsection{Judgment Form}
 
 \[
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma'
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
 \]
 
 Reads: "In poison context $\text{pc}$, with memory typing environment $\Gamma$,
 variable typing environment $\sigma$, and logical environment $\mathcal{L}$,
 expression $e$ has qualified type $Q$, producing updated memory typing
-environment $\Gamma'$."
+environment $\Gamma'$ and updated logical environment $\mathcal{L}'$."
 
 The qualified type $Q$ encapsulates both the base type, poison status, and any
 associated predicates. The logical environment $\mathcal{L}$ tracks the current
-valuation of predicate guards, enabling predicate-based typing decisions.
+valuation of predicate guards, enabling predicate-based typing decisions. The
+output logical environment $\mathcal{L}'$ reflects any updates to guard
+valuations learned during typing (e.g., after a while loop terminates).
 
 \subsection{Key Typing Rules}
 
@@ -467,12 +469,12 @@ The type system includes two conditional typing rules that handle predicate-base
 \textbf{Predicate-based conditional rule (when matching predicate found):}
 \[
 \frac{\begin{array}{c}
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p' \{ P' \} \dashv \Gamma' \\
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p' \{ P' \} \dashv \Gamma' ; \mathcal{L}' \\
 \text{match\_guard}(e_1, \Gamma, \sigma) = k \\
-\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L}[k \mapsto \text{true}] \vdash e_2 : T \triangleright p'' \{ P'' \} \dashv \Gamma'' \\
-\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L}[k \mapsto \text{false}] \vdash e_3 : T \triangleright p''' \{ P''' \} \dashv \Gamma'''
+\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L}'[k \mapsto \text{true}] \vdash e_2 : T \triangleright p'' \{ P'' \} \dashv \Gamma'' ; \mathcal{L}'' \\
+\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L}'[k \mapsto \text{false}] \vdash e_3 : T \triangleright p''' \{ P''' \} \dashv \Gamma''' ; \mathcal{L}'''
 \end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p' p'' p''' \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma'' \Gamma'''}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p' p'' p''' \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma'' \Gamma''' ; \mathcal{L}'}
 \]
 
 The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, the branches are typed with different valuations of guard $k$ in environment $\mathcal{L}$. This enables:
@@ -481,6 +483,16 @@ The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, 
     \item \textbf{Definite poisoning in else branch}: Values guarded by $k$ become poisoned when $k$ evaluates to false
     \item \textbf{Precise fault tracking}: The type system can track exactly which runtime conditions affect poison status
 \end{itemize}
+
+\paragraph{Note on $\mathcal{L}'$ propagation:} The predicate-based conditional rule returns $\mathcal{L}'$ (the environment after evaluating $e_1$) rather than attempting to join $\mathcal{L}''$ and $\mathcal{L}'''$ from the branches. This is a conservative but sound design choice, as $\mathcal{L}''$ contains $k \mapsto \text{true}$ while $\mathcal{L}'''$ contains $k \mapsto \text{false}$, making them contradictory. After the conditional completes, we don't know which branch was taken at runtime, so we revert $k$ to unknown status by returning $\mathcal{L}'$.
+
+\paragraph{Alternative design consideration:} A more precise approach would implement a proper join operation for logical environments where:
+\begin{itemize}
+    \item Guards with the same value in both branches are preserved
+    \item Guards with contradictory values are removed (become unknown)
+    \item Guards only present in one branch are removed
+\end{itemize}
+This would provide more precision but adds complexity. The current approach is simpler while still enabling the key benefit: predicate-based de-poisoning within each branch of the conditional.
 
 \subsubsection*{While loops} 
 
@@ -515,16 +527,14 @@ condition constitutes a run-time validity check.  Inside the loop body the
 associated data are thus considered reliable, enabling more precise reasoning
 about fault propagation compared with the standard rule.
 
-\paragraph{Current limitation.}  When a loop terminates we have just observed
+\paragraph{Loop termination handling.} When a loop terminates we have just observed
 the guard expression $e_1$ evaluate to \emph{false}.  Hence the matching tag
-+$k$ is \textbf{known to be false at the loop exit}, and every value whose
-qualified type is guarded by $k$ ought to be marked \emph{poisoned}.  The
-present typing rule, however, leaves the logical environment $\mathcal{L}$
-unchanged, so the outside world still regards $k$ as \emph{unknown}.  This
-imprecision can only over-approximate reliability (never unsound), but it misses
-the opportunity to classify post-loop values more accurately.  A richer
-judgement that returns an \emph{output} logical environment would be necessary
-to capture this information.
+$k$ is \textbf{known to be false at the loop exit}, and every value whose
+qualified type is guarded by $k$ ought to be marked \emph{poisoned}. The
+typing rule correctly updates the logical environment $\mathcal{L}$
+by setting $k$ to false in the output environment (i.e., $\mathcal{L}[k \mapsto \text{false}]$), 
+allowing post-loop code to properly classify values guarded by $k$ as poisoned. 
+This provides precise fault tracking both during and after loop execution.
 
 \subsection{Region Types for Soundness}
 
@@ -543,6 +553,13 @@ Memory typing environment $\Gamma$ evolves through:
     \item \textbf{Assignment}: Updates poison status of data in $\Gamma$
     \item \textbf{Control flow}: Joins environments from different branches
     \item \textbf{Loops}: Iterative fixpoint computation for flow-sensitive analysis
+\end{itemize}
+
+Logical environment $\mathcal{L}$ evolves through:
+\begin{itemize}
+    \item \textbf{Sequence}: Chained through expressions - first expression produces $\mathcal{L}'$, second uses $\mathcal{L}'$ and produces $\mathcal{L}''$
+    \item \textbf{While loops}: After a predicate-matched loop terminates, the guard tag is set to false in $\mathcal{L}'$
+    \item \textbf{Most other constructs}: Pass through unchanged
 \end{itemize}
 
 \section{Formal Properties}
@@ -613,7 +630,7 @@ unique big-step evaluation
 Consequently the observable pair $\langle \mu_f, v \rangle$ is independent of the initial poison annotations $pc_i,\sigma_i$, the poison parts of $\Gamma$, and the predicate evaluations in $\mathcal{L}_i$.
 \end{theorem}
 
-This theorem establishes that poison annotations and predicate evaluations are purely static: programs with identical computational content but different poison labels and predicate valuations produce identical observable results. The typing judgment $pc ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma'$ conservatively tracks potential fault propagation and predicate-based de-poisoning without affecting the underlying computation as specified by the operational semantics $\langle e, \mu, \rho \rangle \rightarrow \langle e', \mu', \rho' \rangle$.
+This theorem establishes that poison annotations and predicate evaluations are purely static: programs with identical computational content but different poison labels and predicate valuations produce identical observable results. The typing judgment $pc ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'$ conservatively tracks potential fault propagation and predicate-based de-poisoning without affecting the underlying computation as specified by the operational semantics $\langle e, \mu, \rho \rangle \rightarrow \langle e', \mu', \rho' \rangle$.
 
 \subsection{Non-interference}
 

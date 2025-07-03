@@ -25,6 +25,7 @@ structure TypeContext where
 structure TypeResult where
   qualType : QTyp
   memEnv' : MemoryTypeEnv
+  tagEnv' : TagEnv  -- Updated logical environment
 
 /-- Type checking monad for error handling -/
 abbrev TypecheckM := Except String
