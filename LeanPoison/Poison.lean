@@ -20,10 +20,21 @@ inductive PExpr : Type where
   | let : Name → PTyp → PExpr → PExpr → PExpr      -- let x : T = e1 in e2
   | app : PExpr → PExpr → PExpr                    -- e1 e2
 
+-- Tagged predicate structure
+structure TPred where
+  tag : Tag
+  tclosure : TClosure
+
+-- Qualified type structure
+structure QTyp where
+  ptyp : PTyp
+  poison : Poison
+  pred : Option TPred
+
 -- Type closures for function types
 inductive TClosure : Type where
-  | fn_tclosure : Name → Expr → VarEnv → TClosure
-  | pfn_tclosure: Name → PExpr → VarEnv → TClosure
+  | fn_tclosure : Name → Expr → (Name → Option QTyp) → TClosure
+  | pfn_tclosure: Name → PExpr → (Name → Option QTyp) → TClosure
 
 -- Poison type (full type)
 inductive PTyp : Type where
@@ -35,11 +46,8 @@ inductive PTyp : Type where
 
 end
 
--- Tagged predicate: (tag, predicate closure)
-def TPred : Type := Tag × TClosure
-
--- Qualified type: (poison flag, optional tagged predicate)
-def QTyp : Type := PTyp × Poison × Option TPred
+-- Variable typing environment (σ in the Ott spec) - function type like VarEnv
+abbrev VarTypeEnv := Name → Option QTyp
 
 -- Manual Repr instances for mutual types
 mutual
@@ -66,11 +74,14 @@ def reprPTyp : PTyp → Nat → Std.Format
   | PTyp.arrow t1 t2 p tcl, _ => s!"PTyp.arrow {reprPTyp t1 0} {reprPTyp t2 0} {repr p} {reprTClosure tcl 0}"
 
 def reprQTyp : QTyp → Nat → Std.Format
-  | (ptyp, poison, tpred), _ =>
+  | QTyp.mk ptyp poison tpred, _ =>
     let tpredRepr := match tpred with
       | none => "none"
-      | some (tag, tcl) => s!"some ({repr tag}, {reprTClosure tcl 0})"
-    s!"QTyp {reprPTyp ptyp 0} {repr poison} {tpredRepr}"
+      | some tp => s!"some {reprTPred tp 0}"
+    s!"QTyp.mk {reprPTyp ptyp 0} {repr poison} {tpredRepr}"
+
+def reprTPred : TPred → Nat → Std.Format
+  | TPred.mk tag tcl, _ => s!"TPred.mk {repr tag} {reprTClosure tcl 0}"
 
 end
 
@@ -87,4 +98,4 @@ instance : Repr QTyp where
   reprPrec := reprQTyp
 
 instance : Repr TPred where
-  reprPrec := fun (tag, tcl) _ => s!"({repr tag}, {repr tcl})"
+  reprPrec := reprTPred
