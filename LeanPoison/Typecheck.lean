@@ -271,7 +271,8 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 (fuel - 1)
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
 
 
 /-- Rule: op_plus (Ott rule: op_plus)
@@ -297,7 +298,7 @@ def typecheckOpPlus (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: op_gteq (Ott rule: op_gteq)
 -- pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
@@ -322,7 +323,7 @@ def typecheckOpGte (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: ref (Ott rule: ref)
 -- pc ; G ; S ; L |- e : T :> p { P } -| G' ; L'
@@ -347,7 +348,7 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
     return { qualType := qt, memEnv' := memEnv', tagEnv' := result.tagEnv' }
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: assign (Ott rule: assign)
 -- pc ; G ; S ; L |- e1 : ref T @ l :> p' { P' } -| G' ; L'
@@ -377,7 +378,7 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
     | _ => throw "Left operand of assignment must be a reference"
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: deref_no_pred (Ott rule: deref_no_pred)
 -- pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G' ; L'
@@ -416,7 +417,7 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
     | _ => throw "Operand of dereference must be a reference"
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: seq (Ott rule: seq)
 -- pc ; G ; S ; L |- e1 : T1 :> p' { P' } -| G' ; L'
@@ -439,7 +440,7 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: fn_abs (Ott rule: fn_abs)
 -- pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- e : T2 :> p' { P' } -| G' ; L'
@@ -464,7 +465,7 @@ def typecheckFn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel : 
     return { qualType := qt, memEnv' := result.memEnv', tagEnv' := ctx.tagEnv }
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: pfn_abs (Ott rule: pfn_abs)
 -- pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- pe : T2 :> p' { P' } -| G' ; L'
@@ -490,7 +491,7 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel :
     return { qualType := qt, memEnv' := result.memEnv', tagEnv' := ctx.tagEnv }
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: app_fn (Ott rule: app_fn)
 -- pc ; G ; S ; L |- e1 : T1 -> T2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
@@ -535,7 +536,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     | _ => throw "Left operand of application must be a function"
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: let (Ott rule: let)
 -- pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G' ; L'
@@ -566,7 +567,7 @@ def typecheckLet (ctx : TypeContext) (x : Name) (t : Typ) (e1 e2 : Expr) (fuel :
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: if_std (Ott rule: if_std - standard conditional when no matching predicate found)
 -- pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
@@ -600,7 +601,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
     return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv }
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: while_std (Ott rule: while_std - standard while when no matching predicate found)
 -- Simplified implementation for termination
@@ -626,7 +627,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
 termination_by fuel
 decreasing_by
-  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  repeat exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 end
 
