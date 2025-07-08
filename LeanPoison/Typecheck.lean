@@ -99,6 +99,7 @@ instance : BEq TClosure where
   beq := beqTClosure
 
 -- Helper function to convert Typ to PTyp
+-- TODO: this is problematic and needs to be fixed
 def Typ.toPTyp (t : Typ) : PTyp :=
   match t with
   | Typ.int => PTyp.int
@@ -107,36 +108,76 @@ def Typ.toPTyp (t : Typ) : PTyp :=
   | Typ.ref t' => PTyp.ref (t'.toPTyp) 0  -- simplified location
   | Typ.arrow t1 t2 => PTyp.arrow (t1.toPTyp) (t2.toPTyp) false (TClosure.fn_tclosure "" (Expr.num 0) (fun _ => none))  -- placeholder
 
--- Helper function to convert Expr to PExpr (simplified - just for compilation)
-def Expr.toPExpr (e : Expr) : PExpr :=
+-- Helper function to convert Expr to PExpr
+def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   match e with
-  | Expr.value v => PExpr.value v
-  | Expr.var x => PExpr.var x
-  | Expr.op e1 opname e2 => PExpr.op (Expr.toPExpr e1) opname (Expr.toPExpr e2)
-  | Expr.ite e1 e2 e3 => PExpr.ite (Expr.toPExpr e1) (Expr.toPExpr e2) (Expr.toPExpr e3)
-  | Expr.deref e => PExpr.deref (Expr.toPExpr e)
-  | Expr.seq e1 e2 => PExpr.seq (Expr.toPExpr e1) (Expr.toPExpr e2)
-  | Expr.let x t e1 e2 => PExpr.let x (Typ.toPTyp t) (Expr.toPExpr e1) (Expr.toPExpr e2)
-  | Expr.app e1 e2 => PExpr.app (Expr.toPExpr e1) (Expr.toPExpr e2)
-  | _ => PExpr.value (Value.num 0)  -- fallback
+  | Expr.value v => return PExpr.value v
+  | Expr.var x => return PExpr.var x
+  | Expr.op e1 opname e2 => do
+    let pe1 ← Expr.toPExpr e1
+    let pe2 ← Expr.toPExpr e2
+    return PExpr.op pe1 opname pe2
+  | Expr.ite e1 e2 e3 => do
+    let pe1 ← Expr.toPExpr e1
+    let pe2 ← Expr.toPExpr e2
+    let pe3 ← Expr.toPExpr e3
+    return PExpr.ite pe1 pe2 pe3
+  | Expr.deref e => do
+    let pe ← Expr.toPExpr e
+    return PExpr.deref pe
+  | Expr.seq e1 e2 => do
+    let pe1 ← Expr.toPExpr e1
+    let pe2 ← Expr.toPExpr e2
+    return PExpr.seq pe1 pe2
+  | Expr.let x t e1 e2 => do
+    let pe1 ← Expr.toPExpr e1
+    let pe2 ← Expr.toPExpr e2
+    return PExpr.let x (Typ.toPTyp t) pe1 pe2
+  | Expr.app e1 e2 => do
+    let pe1 ← Expr.toPExpr e1
+    let pe2 ← Expr.toPExpr e2
+    return PExpr.app pe1 pe2
+  | _ => throw "Cannot convert expression to PExpr"
+
+-- Helper function to convert PTyp to Typ
+def toTyp (pt : PTyp) : Typ :=
+  match pt with
+  | PTyp.int => Typ.int
+  | PTyp.bool => Typ.bool
+  | PTyp.unit => Typ.unit
+  | PTyp.ref t _ => Typ.ref (toTyp t)
+  | PTyp.arrow t1 t2 _ _ => Typ.arrow (toTyp t1) (toTyp t2)
+
+-- Helper function to convert PExpr to Expr
+def toExpr (pe : PExpr) : Expr :=
+  match pe with
+  | PExpr.value v => Expr.value v
+  | PExpr.var x => Expr.var x
+  | PExpr.op e1 op e2 => Expr.op (toExpr e1) op (toExpr e2)
+  | PExpr.ite e1 e2 e3 => Expr.ite (toExpr e1) (toExpr e2) (toExpr e3)
+  | PExpr.deref e => Expr.deref (toExpr e)
+  | PExpr.seq e1 e2 => Expr.seq (toExpr e1) (toExpr e2)
+  | PExpr.let x t e1 e2 => Expr.let x (toTyp t) (toExpr e1) (toExpr e2)
+  | PExpr.app e1 e2 => Expr.app (toExpr e1) (toExpr e2)
+
+
 
 -- Type checking rules implementation
-
-mutual
 
 /-- Rule: int (Ott rule: int)
 -- pc ; G ; S ; L |- n : int :> clean { no_pred } -| G ; L
 -/
-def typecheckInt (ctx : TypeContext) (n : Nat) : TypecheckM TypeResult := do
+def typecheckInt (ctx : TypeContext) (_n : Nat) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨PTyp.int, false, none⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
 
 /-- Rule: bool (Ott rule: bool)
 -- pc ; G ; S ; L |- b : bool :> clean { no_pred } -| G ; L
 -/
-def typecheckBool (ctx : TypeContext) (b : Bool) : TypecheckM TypeResult := do
+def typecheckBool (ctx : TypeContext) (_b : Bool) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨PTyp.bool, false, none ⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
+
 
 /-- Rule: var_no_pred (Ott rule: var_no_pred)
 -- S(x) = T :> p { no_pred }
@@ -169,6 +210,7 @@ def typecheckVarNoPred (ctx : TypeContext) (x : Name) : TypecheckM TypeResult :=
         return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
   | none => throw s!"Variable {x} not found in environment"
 
+
 /-- Rule: location (Ott rule: location)
 -- G(l) = T :> p { P }
 -- ------------------
@@ -183,130 +225,6 @@ def typecheckLocation (ctx : TypeContext) (l : Address) : TypecheckM TypeResult 
     return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
   | none => throw s!"Location {l} not found in memory environment"
 
-/-- Rule: op_plus (Ott rule: op_plus)
--- pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
--- pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
--- --------------------------------
--- pc ; G ; S ; L |- e1 + e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
--/
-def typecheckOpPlus (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let result1 ← typecheckExpr ctx e1 (fuel - 1)
-  let ⟨ptyp1, p1, _  ⟩ := result1.qualType
-  if ptyp1 != PTyp.int then throw "Left operand of + must be int"
-
-  let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-  let result2 ← typecheckExpr ctx' e2 (fuel - 1)
-  let ⟨ptyp2, p2, _  ⟩ := result2.qualType
-  if ptyp2 != PTyp.int then throw "Right operand of + must be int"
-
-  let poison := joinPoison ctx.pc (joinPoison p1 p2)
-  let qt : QTyp := ⟨PTyp.int, poison, none  ⟩
-  return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
-
-/-- Rule: op_gteq (Ott rule: op_gteq)
--- pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
--- pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
--- --------------------------------
--- pc ; G ; S ; L |- e1 >= e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
--/
-def typecheckOpGte (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let result1 ← typecheckExpr ctx e1 (fuel - 1)
-  let ⟨ptyp1, p1, _  ⟩ := result1.qualType
-  if ptyp1 != PTyp.int then throw "Left operand of >= must be int"
-
-  let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-  let result2 ← typecheckExpr ctx' e2 (fuel - 1)
-  let ⟨ptyp2, p2, _  ⟩ := result2.qualType
-  if ptyp2 != PTyp.int then throw "Right operand of >= must be int"
-
-  let poison := joinPoison ctx.pc (joinPoison p1 p2)
-  let qt : QTyp := ⟨PTyp.bool, poison, none  ⟩
-  return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
-
-/-- Rule: ref (Ott rule: ref)
--- pc ; G ; S ; L |- e : T :> p { P } -| G' ; L'
--- fresh l
--- -----------------------
--- pc ; G ; S ; L |- ref e : ref T @ l :> pc { no_pred } -| G'[l |-> T :> join pc p { P }] ; L'
--/
-def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let result ← typecheckExpr ctx e (fuel - 1)
-  let ⟨ptyp, poison, pred ⟩ := result.qualType
-
-  -- Generate fresh location (simplified)
-  let l := ctx.memEnv.size
-  let refTyp := PTyp.ref ptyp l
-  let storedPoison := joinPoison ctx.pc poison
-  let storedQt : QTyp := ⟨refTyp, storedPoison, pred  ⟩
-  let memEnv' := updateMemEnv result.memEnv' l storedQt
-
-  let qt : QTyp := ⟨refTyp, ctx.pc, none  ⟩
-  return { qualType := qt, memEnv' := memEnv', tagEnv' := result.tagEnv' }
-
-/-- Rule: assign (Ott rule: assign)
--- pc ; G ; S ; L |- e1 : ref T @ l :> p' { P' } -| G' ; L'
--- pc ; G' ; S ; L' |- e2 : T :> p'' { P'' } -| G'' ; L''
--- -----------------------
--- pc ; G ; S ; L |- e1 := e2 : unit :> join pc p' { no_pred } -| G''[l |-> T :> join pc join p' p'' { P'' }] ; L''
--/
-def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let result1 ← typecheckExpr ctx e1 (fuel - 1)
-  let ⟨ptyp1, p1, _  ⟩ := result1.qualType
-  match ptyp1 with
-  | PTyp.ref t l =>
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-    let result2 ← typecheckExpr ctx' e2 (fuel - 1)
-    let ⟨ptyp2, p2, pred2  ⟩ := result2.qualType
-    if ptyp2 != t then throw "Type mismatch in assignment"
-
-    let storedPoison := joinPoison ctx.pc (joinPoison p1 p2)
-    let storedQt : QTyp := ⟨t, storedPoison, pred2  ⟩
-    let memEnv' := updateMemEnv result2.memEnv' l storedQt
-
-    let resultPoison := joinPoison ctx.pc p1
-    let qt : QTyp := ⟨PTyp.unit, resultPoison, none  ⟩
-    return { qualType := qt, memEnv' := memEnv', tagEnv' := result2.tagEnv' }
-  | _ => throw "Left operand of assignment must be a reference"
-
-/-- Rule: deref_no_pred (Ott rule: deref_no_pred)
--- pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G' ; L'
--- G'(l) = T :> p { no_pred }
--- -----------------------
--- pc ; G ; S ; L |- !e : T :> join pc join p' p { no_pred } -| G' ; L'
--/
-def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let result ← typecheckExpr ctx e (fuel - 1)
-  let ⟨ptyp, poison, pred ⟩ := result.qualType
-  match ptyp with
-  | PTyp.ref t l =>
-    match result.memEnv'.get? l with
-    | some ⟨ptyp', p2, none ⟩ =>  -- no_pred case
-      if ptyp' != t then throw "Type mismatch in dereference"
-      let poison := joinPoison ctx.pc (joinPoison poison p2)
-      let qt : QTyp := ⟨t, poison, none  ⟩
-      return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
-    | some ⟨ptyp', p2, some ⟨k, tcl ⟩ ⟩ =>  -- has predicate
-      if ptyp' != t then throw "Type mismatch in dereference"
-      match result.tagEnv'.get? k with
-      | some true =>  -- guard_true case
-        let poison := joinPoison ctx.pc poison
-        let qt : QTyp := ⟨t, poison, none  ⟩
-        return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
-      | some false =>  -- guard_false case
-        let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned
-        return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
-      | none =>  -- guard_unknown case
-        let poison := joinPoison ctx.pc (joinPoison poison p2)
-        let qt : QTyp := ⟨t, poison, some ⟨k, tcl ⟩ ⟩
-        return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
-    | none => throw s!"Location {l} not found in memory environment"
-  | _ => throw "Operand of dereference must be a reference"
-
 /-- Rule: unit (Ott rule: unit)
 -- pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G ; L
 -/
@@ -314,191 +232,24 @@ def typecheckUnit (ctx : TypeContext) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨PTyp.unit, false, none  ⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
 
-/-- Rule: seq (Ott rule: seq)
--- pc ; G ; S ; L |- e1 : T1 :> p' { P' } -| G' ; L'
--- pc ; G' ; S ; L' |- e2 : T2 :> p'' { P'' } -| G'' ; L''
--- --------------------------------
--- pc ; G ; S ; L |- e1 ; e2 : T2 :> join p' p'' { P'' } -| G'' ; L''
+
+/--
+  For any n ≠ 0, `n.pred < n`.
+  (Lean’s `termination_by` always gives you `h : n ≠ 0` in the context,
+   so this lines up perfectly.)
 -/
-def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let result1 ← typecheckExpr ctx e1 (fuel - 1)
-  let ⟨ptyp1, p1, _  ⟩ := result1.qualType
+theorem Nat.pred_lt_of_ne_zero {n : Nat} (h : n ≠ 0) : n - 1 < n := by
+  cases n
+  · contradiction
+  · apply Nat.lt_succ_self
 
-  let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-  let result2 ← typecheckExpr ctx' e2 (fuel - 1)
-  let ⟨ptyp2, p2, pred2  ⟩ := result2.qualType
 
-  let poison := joinPoison p1 p2
-  let qt : QTyp := ⟨ptyp2, poison, pred2  ⟩
-  return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
-
-/-- Rule: fn_abs (Ott rule: fn_abs)
--- pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- e : T2 :> p' { P' } -| G' ; L'
--- ----------------------------------------------------------------------
--- pc ; G ; S ; L |- fn x : T1 => e : T1 -> T2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G' ; L
--/
-def typecheckFn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let t1' := t1.toPTyp
-
-  let varQt : QTyp := ⟨t1', ctx.pc, none  ⟩
-  let varEnv' := updateVarEnv ctx.varEnv x varQt
-  let ctx' := { ctx with varEnv := varEnv' }
-
-  let result ← typecheckExpr ctx' body (fuel - 1)
-  let ⟨ptyp2, p', pred'  ⟩ := result.qualType
-
-  let tcl := TClosure.fn_tclosure x body ctx.varEnv
-  let arrowTyp := PTyp.arrow t1' ptyp2 ctx.pc tcl
-  let qt : QTyp := ⟨arrowTyp, ctx.pc, none  ⟩
-  return { qualType := qt, memEnv' := result.memEnv', tagEnv' := ctx.tagEnv }
-
-/-- Rule: pfn_abs (Ott rule: pfn_abs)
--- pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- pe : T2 :> p' { P' } -| G' ; L'
--- ----------------------------------------------------------------------
--- pc ; G ; S ; L |- pfn x : T1 => pe : T1 -> T2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G' ; L
--/
-def typecheckPfn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let t1' := t1.toPTyp
-
-  let varQt : QTyp := ⟨t1', ctx.pc, none  ⟩
-  let varEnv' := updateVarEnv ctx.varEnv x varQt
-  let ctx' := { ctx with varEnv := varEnv' }
-
-  let result ← typecheckExpr ctx' body (fuel - 1)
-  let ⟨ptyp2, p', pred'  ⟩ := result.qualType
-
-  let tcl := TClosure.pfn_tclosure x (body.toPExpr) ctx.varEnv
-  let arrowTyp := PTyp.arrow t1' ptyp2 ctx.pc tcl
-  let qt : QTyp := ⟨arrowTyp, ctx.pc, none  ⟩
-  return { qualType := qt, memEnv' := result.memEnv', tagEnv' := ctx.tagEnv }
-
-/-- Rule: app_fn (Ott rule: app_fn)
--- pc ; G ; S ; L |- e1 : T1 -> T2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
--- pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
--- pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
--- ----------------------------------------------------------------------
--- pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
--/
-def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let result1 ← typecheckExpr ctx e1 (fuel - 1)
-  let ⟨ptyp1, p1, _  ⟩ := result1.qualType
-  match ptyp1 with
-  | PTyp.arrow t1 t2 p tcl =>
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-    let result2 ← typecheckExpr ctx' e2 (fuel - 1)
-    let ⟨ptyp2, p2, pred2  ⟩ := result2.qualType
-    if ptyp2 != t1 then throw "Type mismatch in function application"
-
-    match tcl with
-    | TClosure.fn_tclosure x body env =>
-      let argQt : QTyp := ⟨t1, joinPoison ctx.pc p2, pred2  ⟩
-      let env' := updateVarEnv env x argQt
-      let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
-      let result3 ← typecheckExpr ctx'' body (fuel - 1)
-      let ⟨ptyp3, p3, pred3  ⟩ := result3.qualType
-
-      let poison := joinPoison ctx.pc p3
-      let qt : QTyp := ⟨ptyp3, poison, pred3  ⟩
-      return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv' }
-    | TClosure.pfn_tclosure x body env =>
-      let argQt : QTyp := ⟨t1, joinPoison ctx.pc p2, pred2  ⟩
-      let env' := updateVarEnv env x argQt
-      let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
-      let result3 ← typecheckExpr ctx'' (toExpr body) (fuel - 1)
-      let ⟨ptyp3, p3, pred3  ⟩ := result3.qualType
-
-      let poison := joinPoison ctx.pc p3
-      let qt : QTyp := ⟨ptyp3, poison, pred3  ⟩
-      return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv' }
-  | _ => throw "Left operand of application must be a function"
-
-/-- Rule: let (Ott rule: let)
--- pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G' ; L'
--- pc ; G' ; S[x |-> T :> join pc p1 { P1 }] ; L' |- e2 : T2 :> p2 { P2 } -| G'' ; L''
--- ----------------------------------------------------------------------
--- pc ; G ; S ; L |- let x : T = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G'' ; L''
--/
-def typecheckLet (ctx : TypeContext) (x : Name) (t : Typ) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let result1 ← typecheckExpr ctx e1 (fuel - 1)
-  let ⟨ptyp1, p1, pred1  ⟩ := result1.qualType
-
-  let t' := t.toPTyp
-
-  if ptyp1 != t' then throw "Type mismatch in let binding"
-
-  let varPoison := joinPoison ctx.pc p1
-  let varQt : QTyp := ⟨t', varPoison, pred1  ⟩
-  let varEnv' := updateVarEnv ctx.varEnv x varQt
-  let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv' }
-
-  let result2 ← typecheckExpr ctx' e2 (fuel - 1)
-  let ⟨ptyp2, p2, pred2  ⟩ := result2.qualType
-
-  let poison := joinPoison ctx.pc (joinPoison p1 p2)
-  let qt : QTyp := ⟨ptyp2, poison, pred2  ⟩
-  return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
-
-/-- Rule: if_std (Ott rule: if_std - standard conditional when no matching predicate found)
--- pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
--- join pc p' ; G' ; S ; L' |- e2 : T :> p'' { P'' } -| G'' ; L''
--- join pc p' ; G' ; S ; L' |- e3 : T :> p''' { P''' } -| G''' ; L'''
--- ----------------------------------
--- pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p' join p'' p''' { no_pred } -| JoinG G'' G''' ; L'
--/
-def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let result1 ← typecheckExpr ctx e1 (fuel - 1)
-  let ⟨ptyp1, p', _  ⟩ := result1.qualType
-  if ptyp1 != PTyp.bool then throw "Condition of if must be bool"
-
-  let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-  let branchPc := joinPoison ctx.pc p'
-  let ctx'' := { ctx' with pc := branchPc }
-
-  let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
-  let ⟨ptyp2, p'', _  ⟩ := result2.qualType
-
-  let result3 ← typecheckExpr ctx'' e3 (fuel - 1)
-  let ⟨ptyp3, p''', _  ⟩ := result3.qualType
-
-  if ptyp2 != ptyp3 then throw "Branches of if must have same type"
-
-  let poison := joinPoison ctx.pc (joinPoison p' (joinPoison p'' p'''))
-  let qt : QTyp := ⟨ptyp2, poison, none  ⟩
-  let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
-  return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv }
-
-/-- Rule: while_std (Ott rule: while_std - standard while when no matching predicate found)
--- Simplified implementation for termination
---/
-def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult := do
-  if fuel = 0 then throw "Out of fuel"
-  let result1 ← typecheckExpr ctx e1 (fuel - 1)
-  let ⟨ptyp1, p', _  ⟩ := result1.qualType
-  if ptyp1 != PTyp.bool then throw "Condition of while must be bool"
-
-  let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-  let branchPc := joinPoison ctx.pc p'
-  let ctx'' := { ctx' with pc := branchPc }
-
-  let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
-  let ⟨ptyp2, p'', _  ⟩ := result2.qualType
-  if ptyp2 != PTyp.unit then throw "Body of while must have unit type"
-
-  -- Simplified: just return unit with combined poison
-  let poison := joinPoison ctx.pc (joinPoison p' p'')
-  let qt : QTyp := ⟨PTyp.unit, poison, none  ⟩
-  return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
+mutual
 
 -- Helper function to type check an expression with context
 def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
-  else
+  else do
     match e with
     | Expr.value (Value.num n) => typecheckInt ctx n
     | Expr.value (Value.bool b) => typecheckBool ctx b
@@ -518,55 +269,366 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.pfn x t body => typecheckPfn ctx x t body (fuel - 1)
     | Expr.app e1 e2 => typecheckApp ctx e1 e2 (fuel - 1)
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 (fuel - 1)
-
--- Helper function to convert PExpr to Expr
-def toExpr (pe : PExpr) : Expr :=
-  match pe with
-  | PExpr.value v => Expr.value v
-  | PExpr.var x => Expr.var x
-  | PExpr.op e1 op e2 => Expr.op (toExpr e1) op (toExpr e2)
-  | PExpr.ite e1 e2 e3 => Expr.ite (toExpr e1) (toExpr e2) (toExpr e3)
-  | PExpr.deref e => Expr.deref (toExpr e)
-  | PExpr.seq e1 e2 => Expr.seq (toExpr e1) (toExpr e2)
-  | PExpr.let x t e1 e2 => Expr.let x (toTyp t) (toExpr e1) (toExpr e2)
-  | PExpr.app e1 e2 => Expr.app (toExpr e1) (toExpr e2)
-
--- Helper function to convert PTyp to Typ
-def toTyp (pt : PTyp) : Typ :=
-  match pt with
-  | PTyp.int => Typ.int
-  | PTyp.bool => Typ.bool
-  | PTyp.unit => Typ.unit
-  | PTyp.ref t _ => Typ.ref (toTyp t)
-  | PTyp.arrow t1 t2 _ _ => Typ.arrow (toTyp t1) (toTyp t2)
-
-end -- mutual
-
-termination_by
-  typecheckInt _ _ => 0
-  typecheckBool _ _ => 0
-  typecheckVarNoPred _ _ => 0
-  typecheckLocation _ _ => 0
-  typecheckUnit _ => 0
-  typecheckOpPlus _ _ _ fuel => fuel
-  typecheckOpGte _ _ _ fuel => fuel
-  typecheckNewRef _ _ fuel => fuel
-  typecheckAssign _ _ _ fuel => fuel
-  typecheckDeref _ _ fuel => fuel
-  typecheckSeq _ _ _ fuel => fuel
-  typecheckFn _ _ _ _ fuel => fuel
-  typecheckPfn _ _ _ _ fuel => fuel
-  typecheckApp _ _ _ fuel => fuel
-  typecheckLet _ _ _ _ _ fuel => fuel
-  typecheckIf _ _ _ _ fuel => fuel
-  typecheckWhile _ _ _ fuel => fuel
-  typecheckExpr _ _ fuel => fuel
-  toExpr _ => 0
-  toTyp _ => 0
-
+termination_by fuel
 decreasing_by
-  all_goals simp_wf
-  all_goals omega
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+
+/-- Rule: op_plus (Ott rule: op_plus)
+-- pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
+-- pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+-- --------------------------------
+-- pc ; G ; S ; L |- e1 + e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
+-/
+def typecheckOpPlus (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+    let ⟨ptyp1, p1, _  ⟩ := result1.qualType
+    if ptyp1 != PTyp.int then throw "Left operand of + must be int"
+
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+    let result2 ← typecheckExpr ctx' e2 (fuel - 1)
+    let ⟨ptyp2, p2, _  ⟩ := result2.qualType
+    if ptyp2 != PTyp.int then throw "Right operand of + must be int"
+
+    let poison := joinPoison ctx.pc (joinPoison p1 p2)
+    let qt : QTyp := ⟨PTyp.int, poison, none  ⟩
+    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+/-- Rule: op_gteq (Ott rule: op_gteq)
+-- pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
+-- pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+-- --------------------------------
+-- pc ; G ; S ; L |- e1 >= e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+-/
+def typecheckOpGte (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+    let ⟨ptyp1, p1, _  ⟩ := result1.qualType
+    if ptyp1 != PTyp.int then throw "Left operand of >= must be int"
+
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+    let result2 ← typecheckExpr ctx' e2 (fuel - 1)
+    let ⟨ptyp2, p2, _  ⟩ := result2.qualType
+    if ptyp2 != PTyp.int then throw "Right operand of >= must be int"
+
+    let poison := joinPoison ctx.pc (joinPoison p1 p2)
+    let qt : QTyp := ⟨PTyp.bool, poison, none  ⟩
+    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+/-- Rule: ref (Ott rule: ref)
+-- pc ; G ; S ; L |- e : T :> p { P } -| G' ; L'
+-- fresh l
+-- -----------------------
+-- pc ; G ; S ; L |- ref e : ref T @ l :> pc { no_pred } -| G'[l |-> T :> join pc p { P }] ; L'
+-/
+def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let result ← typecheckExpr ctx e (fuel - 1)
+    let ⟨ptyp, poison, pred ⟩ := result.qualType
+
+    -- Generate fresh location (simplified)
+    let l := ctx.memEnv.size
+    let refTyp := PTyp.ref ptyp l
+    let storedPoison := joinPoison ctx.pc poison
+    let storedQt : QTyp := ⟨refTyp, storedPoison, pred  ⟩
+    let memEnv' := updateMemEnv result.memEnv' l storedQt
+
+    let qt : QTyp := ⟨refTyp, ctx.pc, none  ⟩
+    return { qualType := qt, memEnv' := memEnv', tagEnv' := result.tagEnv' }
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+/-- Rule: assign (Ott rule: assign)
+-- pc ; G ; S ; L |- e1 : ref T @ l :> p' { P' } -| G' ; L'
+-- pc ; G' ; S ; L' |- e2 : T :> p'' { P'' } -| G'' ; L''
+-- -----------------------
+-- pc ; G ; S ; L |- e1 := e2 : unit :> join pc p' { no_pred } -| G''[l |-> T :> join pc join p' p'' { P'' }] ; L''
+-/
+def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+    let ⟨ptyp1, p1, _  ⟩ := result1.qualType
+    match ptyp1 with
+    | PTyp.ref t l =>
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+      let result2 ← typecheckExpr ctx' e2 (fuel - 1)
+      let ⟨ptyp2, p2, pred2  ⟩ := result2.qualType
+      if ptyp2 != t then throw "Type mismatch in assignment"
+
+      let storedPoison := joinPoison ctx.pc (joinPoison p1 p2)
+      let storedQt : QTyp := ⟨t, storedPoison, pred2  ⟩
+      let memEnv' := updateMemEnv result2.memEnv' l storedQt
+
+      let resultPoison := joinPoison ctx.pc p1
+      let qt : QTyp := ⟨PTyp.unit, resultPoison, none  ⟩
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := result2.tagEnv' }
+    | _ => throw "Left operand of assignment must be a reference"
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+/-- Rule: deref_no_pred (Ott rule: deref_no_pred)
+-- pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G' ; L'
+-- G'(l) = T :> p { no_pred }
+-- -----------------------
+-- pc ; G ; S ; L |- !e : T :> join pc join p' p { no_pred } -| G' ; L'
+-/
+def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let result ← typecheckExpr ctx e (fuel - 1)
+    let ⟨ptyp, poison, pred ⟩ := result.qualType
+    match ptyp with
+    | PTyp.ref t l =>
+      match result.memEnv'.get? l with
+      | some ⟨ptyp', p2, none ⟩ =>  -- no_pred case
+        if ptyp' != t then throw "Type mismatch in dereference"
+        let poison := joinPoison ctx.pc (joinPoison poison p2)
+        let qt : QTyp := ⟨t, poison, none  ⟩
+        return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
+      | some ⟨ptyp', p2, some ⟨k, tcl ⟩ ⟩ =>  -- has predicate
+        if ptyp' != t then throw "Type mismatch in dereference"
+        match result.tagEnv'.get? k with
+        | some true =>  -- guard_true case
+          let poison := joinPoison ctx.pc poison
+          let qt : QTyp := ⟨t, poison, none  ⟩
+          return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
+        | some false =>  -- guard_false case
+          let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned
+          return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
+        | none =>  -- guard_unknown case
+          let poison := joinPoison ctx.pc (joinPoison poison p2)
+          let qt : QTyp := ⟨t, poison, some ⟨k, tcl ⟩ ⟩
+          return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
+      | none => throw s!"Location {l} not found in memory environment"
+    | _ => throw "Operand of dereference must be a reference"
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+/-- Rule: seq (Ott rule: seq)
+-- pc ; G ; S ; L |- e1 : T1 :> p' { P' } -| G' ; L'
+-- pc ; G' ; S ; L' |- e2 : T2 :> p'' { P'' } -| G'' ; L''
+-- --------------------------------
+-- pc ; G ; S ; L |- e1 ; e2 : T2 :> join p' p'' { P'' } -| G'' ; L''
+-/
+def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+    let ⟨ptyp1, p1, _  ⟩ := result1.qualType
+
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+    let result2 ← typecheckExpr ctx' e2 (fuel - 1)
+    let ⟨ptyp2, p2, pred2  ⟩ := result2.qualType
+
+    let poison := joinPoison p1 p2
+    let qt : QTyp := ⟨ptyp2, poison, pred2  ⟩
+    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+/-- Rule: fn_abs (Ott rule: fn_abs)
+-- pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- e : T2 :> p' { P' } -| G' ; L'
+-- ----------------------------------------------------------------------
+-- pc ; G ; S ; L |- fn x : T1 => e : T1 -> T2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G' ; L
+-/
+def typecheckFn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let t1' := t1.toPTyp
+
+    let varQt : QTyp := ⟨t1', ctx.pc, none  ⟩
+    let varEnv' := updateVarEnv ctx.varEnv x varQt
+    let ctx' := { ctx with varEnv := varEnv' }
+
+    let result ← typecheckExpr ctx' body (fuel - 1)
+    let ⟨ptyp2, p', pred'  ⟩ := result.qualType
+
+    let tcl := TClosure.fn_tclosure x body ctx.varEnv
+    let arrowTyp := PTyp.arrow t1' ptyp2 ctx.pc tcl
+    let qt : QTyp := ⟨arrowTyp, ctx.pc, none  ⟩
+    return { qualType := qt, memEnv' := result.memEnv', tagEnv' := ctx.tagEnv }
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+/-- Rule: pfn_abs (Ott rule: pfn_abs)
+-- pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- pe : T2 :> p' { P' } -| G' ; L'
+-- ----------------------------------------------------------------------
+-- pc ; G ; S ; L |- pfn x : T1 => pe : T1 -> T2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G' ; L
+-/
+def typecheckPfn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let t1' := t1.toPTyp
+
+    let varQt : QTyp := ⟨t1', ctx.pc, none  ⟩
+    let varEnv' := updateVarEnv ctx.varEnv x varQt
+    let ctx' := { ctx with varEnv := varEnv' }
+
+    let result ← typecheckExpr ctx' body (fuel - 1)
+    let ⟨ptyp2, p', pred'  ⟩ := result.qualType
+
+    let pbody ← body.toPExpr
+    let tcl := TClosure.pfn_tclosure x pbody ctx.varEnv
+    let arrowTyp := PTyp.arrow t1' ptyp2 ctx.pc tcl
+    let qt : QTyp := ⟨arrowTyp, ctx.pc, none  ⟩
+    return { qualType := qt, memEnv' := result.memEnv', tagEnv' := ctx.tagEnv }
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+/-- Rule: app_fn (Ott rule: app_fn)
+-- pc ; G ; S ; L |- e1 : T1 -> T2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
+-- pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
+-- pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
+-- ----------------------------------------------------------------------
+-- pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
+-/
+def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+    let ⟨ptyp1, p1, _  ⟩ := result1.qualType
+    match ptyp1 with
+    | PTyp.arrow t1 t2 p tcl =>
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+      let result2 ← typecheckExpr ctx' e2 (fuel - 1)
+      let ⟨ptyp2, p2, pred2  ⟩ := result2.qualType
+      if ptyp2 != t1 then throw "Type mismatch in function application"
+
+      match tcl with
+      | TClosure.fn_tclosure x body env =>
+        let argQt : QTyp := ⟨t1, joinPoison ctx.pc p2, pred2  ⟩
+        let env' := updateVarEnv env x argQt
+        let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
+        let result3 ← typecheckExpr ctx'' body (fuel - 1)
+        let ⟨ptyp3, p3, pred3  ⟩ := result3.qualType
+
+        let poison := joinPoison ctx.pc p3
+        let qt : QTyp := ⟨ptyp3, poison, pred3  ⟩
+        return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv' }
+      | TClosure.pfn_tclosure x body env =>
+        let argQt : QTyp := ⟨t1, joinPoison ctx.pc p2, pred2  ⟩
+        let env' := updateVarEnv env x argQt
+        let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
+        let result3 ← typecheckExpr ctx'' (toExpr body) (fuel - 1)
+        let ⟨ptyp3, p3, pred3  ⟩ := result3.qualType
+
+        let poison := joinPoison ctx.pc p3
+        let qt : QTyp := ⟨ptyp3, poison, pred3  ⟩
+        return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv' }
+    | _ => throw "Left operand of application must be a function"
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+/-- Rule: let (Ott rule: let)
+-- pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G' ; L'
+-- pc ; G' ; S[x |-> T :> join pc p1 { P1 }] ; L' |- e2 : T2 :> p2 { P2 } -| G'' ; L''
+-- ----------------------------------------------------------------------
+-- pc ; G ; S ; L |- let x : T = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G'' ; L''
+-/
+def typecheckLet (ctx : TypeContext) (x : Name) (t : Typ) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+    let ⟨ptyp1, p1, pred1  ⟩ := result1.qualType
+
+    let t' := t.toPTyp
+
+    if ptyp1 != t' then throw "Type mismatch in let binding"
+
+    let varPoison := joinPoison ctx.pc p1
+    let varQt : QTyp := ⟨t', varPoison, pred1  ⟩
+    let varEnv' := updateVarEnv ctx.varEnv x varQt
+    let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv' }
+
+    let result2 ← typecheckExpr ctx' e2 (fuel - 1)
+    let ⟨ptyp2, p2, pred2  ⟩ := result2.qualType
+
+    let poison := joinPoison ctx.pc (joinPoison p1 p2)
+    let qt : QTyp := ⟨ptyp2, poison, pred2  ⟩
+    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+/-- Rule: if_std (Ott rule: if_std - standard conditional when no matching predicate found)
+-- pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
+-- join pc p' ; G' ; S ; L' |- e2 : T :> p'' { P'' } -| G'' ; L''
+-- join pc p' ; G' ; S ; L' |- e3 : T :> p''' { P''' } -| G''' ; L'''
+-- ----------------------------------
+-- pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p' join p'' p''' { no_pred } -| JoinG G'' G''' ; L'
+-/
+def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+    let ⟨ptyp1, p', _  ⟩ := result1.qualType
+    if ptyp1 != PTyp.bool then throw "Condition of if must be bool"
+
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+    let branchPc := joinPoison ctx.pc p'
+    let ctx'' := { ctx' with pc := branchPc }
+
+    let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
+    let ⟨ptyp2, p'', _  ⟩ := result2.qualType
+
+    let result3 ← typecheckExpr ctx'' e3 (fuel - 1)
+    let ⟨ptyp3, p''', _  ⟩ := result3.qualType
+
+    if ptyp2 != ptyp3 then throw "Branches of if must have same type"
+
+    let poison := joinPoison ctx.pc (joinPoison p' (joinPoison p'' p'''))
+    let qt : QTyp := ⟨ptyp2, poison, none  ⟩
+    let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
+    return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv }
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+/-- Rule: while_std (Ott rule: while_std - standard while when no matching predicate found)
+-- Simplified implementation for termination
+--/
+def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+    let ⟨ptyp1, p', _  ⟩ := result1.qualType
+    if ptyp1 != PTyp.bool then throw "Condition of while must be bool"
+
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+    let branchPc := joinPoison ctx.pc p'
+    let ctx'' := { ctx' with pc := branchPc }
+
+    let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
+    let ⟨ptyp2, p'', _  ⟩ := result2.qualType
+    if ptyp2 != PTyp.unit then throw "Body of while must have unit type"
+
+    -- Simplified: just return unit with combined poison
+    let poison := joinPoison ctx.pc (joinPoison p' p'')
+    let qt : QTyp := ⟨PTyp.unit, poison, none  ⟩
+    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
+termination_by fuel
+decreasing_by
+  exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
+end
 
 -- Main type checking function
 def typecheck (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
