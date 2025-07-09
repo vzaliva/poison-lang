@@ -118,8 +118,7 @@ def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   | Expr.let x e1 e2 => do
     let pe1 ← e1.toPExpr
     let pe2 ← e2.toPExpr
-    -- TODO: For now, use a placeholder type - proper type inference would require more complex logic
-    return PExpr.let x PTyp.int pe1 pe2
+    return PExpr.let x pe1 pe2
   | Expr.app e1 e2 => do
     let pe1 ← e1.toPExpr
     let pe2 ← e2.toPExpr
@@ -144,7 +143,7 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   | PExpr.ite e1 e2 e3 => Expr.ite (e1.toExpr) (e2.toExpr) (e3.toExpr)
   | PExpr.deref e => Expr.deref (e.toExpr)
   | PExpr.seq e1 e2 => Expr.seq (e1.toExpr) (e2.toExpr)
-  | PExpr.let x _t e1 e2 => Expr.let x (e1.toExpr) (e2.toExpr)
+  | PExpr.let x e1 e2 => Expr.let x (e1.toExpr) (e2.toExpr)
   | PExpr.app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
 

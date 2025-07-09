@@ -17,7 +17,7 @@ inductive PExpr : Type where
   | ite : PExpr → PExpr → PExpr → PExpr            -- if e1 then e2 else e3
   | deref : PExpr → PExpr                          -- ! e
   | seq : PExpr → PExpr → PExpr                    -- e1 ; e2
-  | let : Name → PTyp → PExpr → PExpr → PExpr      -- let x : T = e1 in e2
+  | let : Name → PExpr → PExpr → PExpr      -- let x : T = e1 in e2
   | app : PExpr → PExpr → PExpr                    -- e1 e2
 
 -- Tagged predicate structure
@@ -59,7 +59,7 @@ def reprPExpr : PExpr → Nat → Std.Format
   | PExpr.ite e1 e2 e3, _ => s!"PExpr.ite ({reprPExpr e1 0}) ({reprPExpr e2 0}) ({reprPExpr e3 0})"
   | PExpr.deref e, _ => s!"PExpr.deref ({reprPExpr e 0})"
   | PExpr.seq e1 e2, _ => s!"PExpr.seq ({reprPExpr e1 0}) ({reprPExpr e2 0})"
-  | PExpr.let x t e1 e2, _ => s!"PExpr.let {repr x} {reprPTyp t 0} ({reprPExpr e1 0}) ({reprPExpr e2 0})"
+  | PExpr.let x e1 e2, _ => s!"PExpr.let {repr x} ({reprPExpr e1 0}) ({reprPExpr e2 0})"
   | PExpr.app e1 e2, _ => s!"PExpr.app ({reprPExpr e1 0}) ({reprPExpr e2 0})"
 
 def reprTClosure : TClosure → Nat → Std.Format
