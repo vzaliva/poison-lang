@@ -55,11 +55,11 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | ! e                     ::   :: deref
   | e1 ; e2                 ::   :: sequence
   | while e1 do e2          ::   :: while
-  | let x : T = e1 in e2    ::   :: let
-  | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
-  | fn x : T => e           ::   :: fn  
-  | pfn x : T => pe         ::   :: pfn  {{ com pure function }}
+  | let x = e1 in e2        ::   :: let
+  | fn x => e               ::   :: fn  
+  | pfn x => pe             ::   :: pfn  {{ com pure function }}
   | e1 e2                   ::   :: app
+  | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
   | closure ( x , e , r )  ::   :: closure   {{ com closure value }}
   | pe_closure ( x , pe , r )  ::   :: pe_closure   {{ com pure closure value }}
 
@@ -72,10 +72,10 @@ pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | ! pe                    ::   :: deref
   | unit                    ::   :: unit
   | pe1 ; pe2               ::   :: sequence
-  | let x : T = pe1 in pe2  ::   :: let
+  | let x = pe1 in pe2      ::   :: let
+  | pfn x => pe             ::   :: pfn  {{ com pure function }}
   | ( pe )                  :: M :: paren  {{ ichlo ([[pe]]) }}
   | pe1 pe2                 ::   :: app
-  | pfn x : T => pe         ::   :: pfn  {{ com pure function }}
   | pe_closure ( x , pe , r )   ::   :: pe_closure   {{ com pure closure value }}
 
 v :: 'V_' ::=              {{ com values }}
@@ -293,18 +293,18 @@ defn
 % Let binding reduction
   <e1,m,r> -> <e1',m',r'>
 -------------------------------------------------------- :: let1
-< let x : T = e1 in e2, m, r > -> < let x : T = e1' in e2, m', r' >
+< let x = e1 in e2, m, r > -> < let x = e1' in e2, m', r' >
 
 --------------------------------------------------------------- :: let2
-< let x : T = v in e2, m, r > -> < e2, m, r[x |-> v] >
+< let x = v in e2, m, r > -> < e2, m, r[x |-> v] >
 
 % Function abstraction creates a closure
 --------------------------------------------------------------- :: fn_abs
-< fn x : T => e, m, r > -> < closure(x, e, r), m, r >
+< fn x => e, m, r > -> < closure(x, e, r), m, r >
 
 % Pure function abstraction creates a pure closure
 --------------------------------------------------------------- :: pfn_abs
-< pfn x : T => pe, m, r > -> < pe_closure(x, pe, r), m, r >
+< pfn x => pe, m, r > -> < pe_closure(x, pe, r), m, r >
 
 % Function application - evaluate argument first (call-by-value)
   <e2,m,r> -> <e2',m',r'>
@@ -437,13 +437,13 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
 % This enables predicate-based de-poisoning when the function is applied.
   pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- e : T2 :> p' { P' } -| G' ; L'
 ----------------------------------------------------------------------  :: fn_abs
-  pc ; G ; S ; L |- fn x : T1 => e : T1 -> T2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G' ; L
+  pc ; G ; S ; L |- fn x => e : T1 -> T2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G' ; L
 
 % Pure function abstraction typing. Capture the pure function body and variable context.
 % Note: pe body ensures no side effects in the function
   pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- pe : T2 :> p' { P' } -| G' ; L'
 ----------------------------------------------------------------------  :: pfn_abs
-  pc ; G ; S ; L |- pfn x : T1 => pe : T1 -> T2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G' ; L
+  pc ; G ; S ; L |- pfn x => pe : T1 -> T2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G' ; L
 
 % Function application typing - now uses captured body and context for precise typing
 % When applying a function, we extract the typing_closure containing the parameter name (x),
@@ -470,7 +470,7 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
 % poison with the variable poison. Consider the following illustrative example:
 %
 % if poisoned_sensor > 0 then      // pc = poisoned
-%    let y : int = 42 in 17       // e2 doesn't use y
+%    let y = 42 in 17       // e2 doesn't use y
 % else
 %    0
 % In this scenario, the let binding is deemed poisoned because the context
@@ -480,7 +480,7 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
   pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G' ; L'
   pc ; G' ; S[x |-> T :> join pc p1 { P1 }] ; L' |- e2 : T2 :> p2 { P2 } -| G'' ; L''
 ----------------------------------------------------------------------  :: let
-  pc ; G ; S ; L |- let x : T = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G'' ; L''
+  pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G'' ; L''
 
 % Conditional typing rules
 %

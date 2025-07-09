@@ -1,8 +1,7 @@
-let get_sensor : unit -> int = fn x:unit => 42 in
-
--- Poison propagation through function composition
-let f : int -> int = fn x : int => x + 1 in
-let g : int -> int = fn x : int => x + x in
-let poisoned_input : int = get_sensor unit in
-let result : int = g (f poisoned_input) in
+-- Function composition poison example
+let get_sensor = fn x => 42 in
+let f = fn x => x + 1 in
+let g = fn x => x + x in
+let poisoned_input = get_sensor unit in
+let result = g (f poisoned_input) in
 result 

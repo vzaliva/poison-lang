@@ -98,16 +98,6 @@ instance : BEq PTyp where
 instance : BEq TClosure where
   beq := beqTClosure
 
--- Helper function to convert Typ to PTyp
--- TODO: this is problematic and needs to be fixed
-def Typ.toPTyp (t : Typ) : PTyp :=
-  match t with
-  | Typ.int => PTyp.int
-  | Typ.bool => PTyp.bool
-  | Typ.unit => PTyp.unit
-  | Typ.ref t' => PTyp.ref (t'.toPTyp) 0  -- simplified location
-  | Typ.arrow t1 t2 => PTyp.arrow (t1.toPTyp) (t2.toPTyp) false (TClosure.fn_tclosure "" (Expr.num 0) (fun _ => none))  -- placeholder
-
 -- Helper function to convert Expr to PExpr
 def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   match e with
@@ -129,10 +119,11 @@ def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
     let pe1 ← Expr.toPExpr e1
     let pe2 ← Expr.toPExpr e2
     return PExpr.seq pe1 pe2
-  | Expr.let x t e1 e2 => do
+  | Expr.let x e1 e2 => do
     let pe1 ← Expr.toPExpr e1
     let pe2 ← Expr.toPExpr e2
-    return PExpr.let x (Typ.toPTyp t) pe1 pe2
+    -- TODO: For now, use a placeholder type - proper type inference would require more complex logic
+    return PExpr.let x PTyp.int pe1 pe2
   | Expr.app e1 e2 => do
     let pe1 ← Expr.toPExpr e1
     let pe2 ← Expr.toPExpr e2
@@ -157,7 +148,7 @@ def toExpr (pe : PExpr) : Expr :=
   | PExpr.ite e1 e2 e3 => Expr.ite (toExpr e1) (toExpr e2) (toExpr e3)
   | PExpr.deref e => Expr.deref (toExpr e)
   | PExpr.seq e1 e2 => Expr.seq (toExpr e1) (toExpr e2)
-  | PExpr.let x t e1 e2 => Expr.let x (toTyp t) (toExpr e1) (toExpr e2)
+  | PExpr.let x _t e1 e2 => Expr.let x (toExpr e1) (toExpr e2)
   | PExpr.app e1 e2 => Expr.app (toExpr e1) (toExpr e2)
 
 
@@ -282,9 +273,9 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.deref e => typecheckDeref ctx e (fuel - 1)
     | Expr.seq e1 e2 => typecheckSeq ctx e1 e2 (fuel - 1)
     | Expr.while e1 e2 => typecheckWhile ctx e1 e2 (fuel - 1)
-    | Expr.let x t e1 e2 => typecheckLet ctx x t e1 e2 (fuel - 1)
-    | Expr.fn x t body => typecheckFn ctx x t body (fuel - 1)
-    | Expr.pfn x t body => typecheckPfn ctx x t body (fuel - 1)
+    | Expr.let x e1 e2 => typecheckLet ctx x e1 e2 (fuel - 1)
+    | Expr.fn x body => typecheckFn ctx x body (fuel - 1)
+    | Expr.pfn x body => typecheckPfn ctx x body (fuel - 1)
     | Expr.app e1 e2 => typecheckApp ctx e1 e2 (fuel - 1)
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 (fuel - 1)
 termination_by fuel
@@ -465,10 +456,12 @@ decreasing_by
 -- ----------------------------------------------------------------------
 -- pc ; G ; S ; L |- fn x : T1 => e : T1 -> T2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G' ; L
 -/
-def typecheckFn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckFn (ctx : TypeContext) (x : Name) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
   else do
-    let t1' := t1.toPTyp
+    -- For type inference, we need to infer the parameter type from usage
+    -- For now, use a placeholder type - proper type inference would require more complex logic
+    let t1' := PTyp.int  -- Placeholder type
 
     let varQt : QTyp := ⟨t1', ctx.pc, none  ⟩
     let varEnv' := updateVarEnv ctx.varEnv x varQt
@@ -490,10 +483,12 @@ decreasing_by
 -- ----------------------------------------------------------------------
 -- pc ; G ; S ; L |- pfn x : T1 => pe : T1 -> T2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G' ; L
 -/
-def typecheckPfn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckPfn (ctx : TypeContext) (x : Name) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
   else do
-    let t1' := t1.toPTyp
+    -- For type inference, we need to infer the parameter type from usage
+    -- For now, use a placeholder type - proper type inference would require more complex logic
+    let t1' := PTyp.int  -- Placeholder type
 
     let varQt : QTyp := ⟨t1', ctx.pc, none  ⟩
     let varEnv' := updateVarEnv ctx.varEnv x varQt
@@ -562,18 +557,14 @@ decreasing_by
 -- ----------------------------------------------------------------------
 -- pc ; G ; S ; L |- let x : T = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G'' ; L''
 -/
-def typecheckLet (ctx : TypeContext) (x : Name) (t : Typ) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckLet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
   else do
     let result1 ← typecheckExpr ctx e1 (fuel - 1)
     let ⟨ptyp1, p1, pred1  ⟩ := result1.qualType
 
-    let t' := t.toPTyp
-
-    if ptyp1 != t' then throw "Type mismatch in let binding"
-
     let varPoison := joinPoison ctx.pc p1
-    let varQt : QTyp := ⟨t', varPoison, pred1  ⟩
+    let varQt : QTyp := ⟨ptyp1, varPoison, pred1  ⟩
     let varEnv' := updateVarEnv ctx.varEnv x varQt
     let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv' }
 

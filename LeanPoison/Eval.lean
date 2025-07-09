@@ -193,8 +193,8 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (expr : Expr) : Option 
 
   -- Rule: let2 (substitute value)
   -- ---------------------------------------------------------------
-  -- ⟨ let x : T = v in e2, m, r ⟩ → ⟨ e2, m, r[x |-> v] ⟩
-  | Expr.let x _ (Expr.value v) e2 =>
+  -- ⟨ let x = v in e2, m, r ⟩ → ⟨ e2, m, r[x |-> v] ⟩
+  | Expr.let x (Expr.value v) e2 =>
     dbg_trace s!"let {x} = {v}";
     let config' := { config with varEnv := config.varEnv.update x v }
     stepReturn fuel verbose (some (config', e2))
@@ -202,23 +202,23 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (expr : Expr) : Option 
   -- Rule: let1 (evaluate let binding)
   -- ⟨e1,m,r⟩ → ⟨e1',m',r'⟩
   -- --------------------------------------------------------
-  -- ⟨ let x : T = e1 in e2, m, r ⟩ → ⟨ let x : T = e1' in e2, m', r' ⟩
-  | Expr.let x t e1 e2 =>
+  -- ⟨ let x = e1 in e2, m, r ⟩ → ⟨ let x = e1' in e2, m', r' ⟩
+  | Expr.let x e1 e2 =>
     match step (fuel - 1) verbose config e1 with
-    | some (config', e1') => stepReturn fuel verbose (some (config', Expr.let x t e1' e2))
+    | some (config', e1') => stepReturn fuel verbose (some (config', Expr.let x e1' e2))
     | none => stepReturn fuel verbose none
 
   -- Rule: fn_abs (function abstraction creates closure)
   -- ---------------------------------------------------------------
-  -- ⟨ fn x : T => e, m, r ⟩ → ⟨ closure(x, e, r), m, r ⟩
-  | Expr.fn x _ body =>
+  -- ⟨ fn x => e, m, r ⟩ → ⟨ closure(x, e, r), m, r ⟩
+  | Expr.fn x body =>
     let closure := Value.closure x body config.varEnv
     stepReturn fuel verbose (some (config, closure.toExpr))
 
   -- Rule: pfn_abs (pure function abstraction creates pure closure)
   -- ---------------------------------------------------------------
-  -- ⟨ pfn x : T => pe, m, r ⟩ → ⟨ pe_closure(x, pe, r), m, r ⟩
-  | Expr.pfn x _ body =>
+  -- ⟨ pfn x => pe, m, r ⟩ → ⟨ pe_closure(x, pe, r), m, r ⟩
+  | Expr.pfn x body =>
     let closure := Value.peClosure x body config.varEnv
     stepReturn fuel verbose (some (config, closure.toExpr))
 

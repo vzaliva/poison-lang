@@ -69,25 +69,8 @@ def main (args : List String) : IO Unit := do
   | [filename] =>
     -- One argument: evaluate file
     runFile filename
-  | [] =>
-    -- No arguments: run a test case
-    IO.println "Running closure test..."
-    let testExpr := Expr.let "f" (Typ.arrow Typ.int Typ.int)
-      (Expr.fn "x" Typ.int (Expr.op (Expr.var "x") Op.add (Expr.num 1)))
-      (Expr.app (Expr.var "f") (Expr.num 5))
-    let (config, resultExpr) :=run defaultFuel testExpr
-    match Expr.toValue? resultExpr with
-    | some v =>
-      match v with
-      | Value.num n => IO.println s!"Closure test result: {n}"
-      | _ => IO.println s!"Closure test result: {v}"
-    | none =>
-      IO.println s!"Closure test not fully evaluated: {repr resultExpr}"
-    IO.println s!"Final state:"
-    IO.println s!"  Variable environment: <function>"
-    IO.println s!"  Memory: {config.memory.toList}"
   | _ =>
-    -- No arguments or too many: show usage
+    -- Too many arguments: show usage
     IO.println "Usage:"
     IO.println "  poison-interpreter <file>           # Evaluate expressions from file"
     IO.println "  poison-interpreter --verbose <file> # Evaluate with step-by-step output"
