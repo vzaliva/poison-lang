@@ -52,12 +52,14 @@ def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
   env1.fold (init := env2) fun acc l qt => acc.insert l qt
 
 /-- Fresh location generation -/
+-- TODO: why unused?
 def freshLocation : StateM Nat Address := do
   let l ← get
   modify (· + 1)
   return l
 
 /-- Fresh tag generation -/
+-- TODO: why unused?
 def freshTag : StateM Nat Tag := do
   let k ← get
   modify (· + 1)
@@ -68,12 +70,6 @@ def matchGuard (_e : Expr) (_G : MemoryTypeEnv) (_S : VarTypeEnv) : Option Tag :
   -- TODO: Implement proper match_guard logic
   -- For now, return none (no matching predicate found)
   none
-
-/-- Indexed poison (simplified) -/
-def indexedPoison (p : Poison) (_i : Nat) : Poison := p
-
-/-- Indexed memory environment (simplified) -/
-def indexedMemEnv (G : MemoryTypeEnv) (_i : Nat) : MemoryTypeEnv := G
 
 -- Manual BEq instance for PTyp (needed for type checking)
 mutual
@@ -104,34 +100,34 @@ def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   | Expr.value v => return PExpr.value v
   | Expr.var x => return PExpr.var x
   | Expr.op e1 opname e2 => do
-    let pe1 ← Expr.toPExpr e1
-    let pe2 ← Expr.toPExpr e2
+    let pe1 ← e1.toPExpr
+    let pe2 ← e2.toPExpr
     return PExpr.op pe1 opname pe2
   | Expr.ite e1 e2 e3 => do
-    let pe1 ← Expr.toPExpr e1
-    let pe2 ← Expr.toPExpr e2
-    let pe3 ← Expr.toPExpr e3
+    let pe1 ← e1.toPExpr
+    let pe2 ← e2.toPExpr
+    let pe3 ← e3.toPExpr
     return PExpr.ite pe1 pe2 pe3
   | Expr.deref e => do
-    let pe ← Expr.toPExpr e
+    let pe ← e.toPExpr
     return PExpr.deref pe
   | Expr.seq e1 e2 => do
-    let pe1 ← Expr.toPExpr e1
-    let pe2 ← Expr.toPExpr e2
+    let pe1 ← e1.toPExpr
+    let pe2 ← e2.toPExpr
     return PExpr.seq pe1 pe2
   | Expr.let x e1 e2 => do
-    let pe1 ← Expr.toPExpr e1
-    let pe2 ← Expr.toPExpr e2
+    let pe1 ← e1.toPExpr
+    let pe2 ← e2.toPExpr
     -- TODO: For now, use a placeholder type - proper type inference would require more complex logic
     return PExpr.let x PTyp.int pe1 pe2
   | Expr.app e1 e2 => do
-    let pe1 ← Expr.toPExpr e1
-    let pe2 ← Expr.toPExpr e2
+    let pe1 ← e1.toPExpr
+    let pe2 ← e2.toPExpr
     return PExpr.app pe1 pe2
   | _ => throw "Cannot convert expression to PExpr"
 
 -- Helper function to convert PTyp to Typ
-def toTyp (pt : PTyp) : Typ :=
+def PTyp.toTyp (pt : PTyp) : Typ :=
   match pt with
   | PTyp.int => Typ.int
   | PTyp.bool => Typ.bool
@@ -140,16 +136,16 @@ def toTyp (pt : PTyp) : Typ :=
   | PTyp.arrow t1 t2 _ _ => Typ.arrow (toTyp t1) (toTyp t2)
 
 -- Helper function to convert PExpr to Expr
-def toExpr (pe : PExpr) : Expr :=
+def PExpr.toExpr (pe : PExpr) : Expr :=
   match pe with
   | PExpr.value v => Expr.value v
   | PExpr.var x => Expr.var x
-  | PExpr.op e1 op e2 => Expr.op (toExpr e1) op (toExpr e2)
-  | PExpr.ite e1 e2 e3 => Expr.ite (toExpr e1) (toExpr e2) (toExpr e3)
-  | PExpr.deref e => Expr.deref (toExpr e)
-  | PExpr.seq e1 e2 => Expr.seq (toExpr e1) (toExpr e2)
-  | PExpr.let x _t e1 e2 => Expr.let x (toExpr e1) (toExpr e2)
-  | PExpr.app e1 e2 => Expr.app (toExpr e1) (toExpr e2)
+  | PExpr.op e1 o e2 => Expr.op (e1.toExpr) o (e2.toExpr)
+  | PExpr.ite e1 e2 e3 => Expr.ite (e1.toExpr) (e2.toExpr) (e3.toExpr)
+  | PExpr.deref e => Expr.deref (e.toExpr)
+  | PExpr.seq e1 e2 => Expr.seq (e1.toExpr) (e2.toExpr)
+  | PExpr.let x _t e1 e2 => Expr.let x (e1.toExpr) (e2.toExpr)
+  | PExpr.app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
 
 
@@ -540,7 +536,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         let argQt : QTyp := ⟨t1, joinPoison ctx.pc p2, pred2  ⟩
         let env' := updateVarEnv env x argQt
         let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
-        let result3 ← typecheckExpr ctx'' (toExpr body) (fuel - 1)
+        let result3 ← typecheckExpr ctx'' (body.toExpr) (fuel - 1)
         let ⟨ptyp3, p3, pred3  ⟩ := result3.qualType
 
         let poison := joinPoison ctx.pc p3
