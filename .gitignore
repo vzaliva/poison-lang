@@ -20,4 +20,6 @@ doc/*.fls
 doc/*.*_latexmk
 doc/*.synctex.gz
 
+practise.lean
+
 /.lake

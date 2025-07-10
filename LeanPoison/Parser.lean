@@ -6,22 +6,27 @@ open Alternative
 
 -- Whitespace parser
 def whitespace : Parser Unit := do
+  dbg_trace "Parsing whitespace"
   let _ ← many (satisfy Char.isWhitespace)
   return ()
 
 -- Parse a specific string followed by whitespace
 def token (s : String) : Parser Unit := do
+  whitespace
   let _ ← pstring s
+  dbg_trace ("Parsed " ++ s)
   whitespace
 
 -- Parse an identifier
 def identifier : Parser String := do
   let first ← satisfy Char.isAlpha
   let rest ← manyChars (satisfy (fun c => c.isAlphanum || c == '_'))
+  dbg_trace "Parsing identifier"
   return first.toString ++ rest
 
 -- Parse a natural number (no negative numbers)
 def naturalNumber : Parser Nat := do
+  dbg_trace "Parsing Nat"
   let digits ← many1Chars (satisfy Char.isDigit)
   match digits.toNat? with
   | some n => return n
@@ -65,6 +70,7 @@ end
 mutual
   -- Parse atomic expressions (highest precedence)
   partial def parseAtom : Parser Expr := do
+    dbg_trace "Parse atom called"
     whitespace
     (naturalNumber >>= fun n => return (Expr.num n)) <|>
     (token "true" *> return (Expr.bool true)) <|>
@@ -74,12 +80,14 @@ mutual
 
   -- Parse application (left associative)
   partial def parseApp : Parser Expr := do
+    dbg_trace "Parse app called"
     let first ← parseExpr
     let arg ← parseExpr
     return Expr.app first arg
 
   -- Parse arithmetic operations (left associative)
   partial def parseArith : Parser Expr := do
+    dbg_trace "Parse arith called"
     let left ← parseExpr
     let op ← (token "+" *> return Op.add) <|> (token ">=" *> return Op.gte)
     let right ← parseExpr
@@ -87,6 +95,7 @@ mutual
 
   -- Parse assignments (right associative)
   partial def parseAssign : Parser Expr := do
+    dbg_trace "Parse assign called"
     let left ← parseExpr
     token ":="
     let right ← parseExpr
@@ -94,6 +103,7 @@ mutual
 
   -- Parse conditionals
   partial def parseConditional : Parser Expr := do
+    dbg_trace "parse conditional called"
     token "if"
     let cond ← parseExpr
     token "then"
@@ -104,6 +114,7 @@ mutual
 
 
   partial def parseLet : Parser Expr := do
+    dbg_trace "Parse let called"
     token "let"
     let x ← identifier
     token ":"
@@ -116,6 +127,7 @@ mutual
 
   -- Parse sequences (right associative, lowest precedence)
   partial def parseSeq : Parser Expr := do
+    dbg_trace "Parse seq called"
     let e1 ← parseExpr
     token ";"
     let e2 ← parseExpr
@@ -123,18 +135,21 @@ mutual
 
   -- Parse ref creation
   partial def parseRef : Parser Expr := do
+    dbg_trace "Parse ref called"
     token "ref"
     let e ← parseExpr
     return Expr.newRef e
 
   -- Parse dereference
   partial def parseDeref : Parser Expr := do
+    dbg_trace "Parse deref called"
     token "!"
     let e ← parseExpr
     return Expr.deref e
 
   -- Parse while loops
   partial def parseWhile : Parser Expr := do
+    dbg_trace "Parse while called"
     token "while"
     let cond ← parseExpr
     token "do"
@@ -143,6 +158,7 @@ mutual
 
   -- Parse function abstractions
   partial def parseFn : Parser Expr := do
+    dbg_trace "Parse func called"
     token "fn"
     let x ← identifier
     token ":"
@@ -153,6 +169,7 @@ mutual
 
   -- Parse pure function abstractions
   partial def parsePfn : Parser Expr := do
+    dbg_trace "parse pure func called"
     token "pfn"
     let x ← identifier
     token ":"
@@ -168,13 +185,14 @@ mutual
   parseWhile <|>
   parseFn <|>
   parsePfn <|>
+  parseLet <|>
   parseAtom <|>
   parseApp <|>
   parseArith <|>
   parseAssign <|>
   parseConditional <|>
-  parseLet <|>
   parseSeq
+  <|> fail "parseExpr: no parser matched"
 
 end
 
@@ -191,3 +209,10 @@ def parseString (input : String) : Except String Expr :=
   match parseProgram.run input with
   | .ok expr => .ok expr
   | .error err => .error s!"Parse error: {err}"
+
+#eval parseString " fn x:int => 5 "
+#eval parseString " true "
+#eval parseString " false "
+#eval parseString " 5 "
+#eval parseString " let x : int = 3 in x"
+#eval parseString " 1 + 2 "
