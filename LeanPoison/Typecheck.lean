@@ -41,10 +41,6 @@ def joinPoisons (ps : List Poison) : Poison :=
 def updateMemEnv (env : MemoryTypeEnv) (l : Address) (qt : QTyp) : MemoryTypeEnv :=
   env.insert l qt
 
-/-- Update variable environment -/
-def updateVarEnv (env : VarTypeEnv) (x : Name) (qt : QTyp) : VarTypeEnv :=
-  fun y => if y == x then some qt else env y
-
 /-- Join two memory environments (for conditional branches) -/
 def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
   -- For now, return union preferring env2 for conflicts
@@ -148,12 +144,12 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   owning value, is syntactically identical to the condition e, it returns
   that k - otherwise it returns "none"
 --/
-def matchGuard (e : Expr) (G : MemoryTypeEnv) (_S : VarTypeEnv) : Option Tag :=
+def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : Option Tag :=
   -- Helper function to check if a predicate's test expression matches the condition
   let checkPredicate (qt : QTyp) : Option Tag :=
     match qt.pred with
     | none => none
-    | some ⟨tag, arg_name, pred_body, var_env⟩ =>
+    | some ⟨tag, _arg_name, pred_body, _var_env⟩ =>
       -- Convert the predicate body to an expression for comparison
       let testExpr := PExpr.toExpr pred_body
       -- Check if the test expression is syntactically identical to the condition
@@ -165,11 +161,11 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (_S : VarTypeEnv) : Option Tag :=
     | none => acc
     | some tag => tag :: acc
 
-  -- For variable environment, we can't easily iterate over all variables
-  -- since it's a function type. For now, we'll return none for variable matches.
-  -- TODO: Implement proper variable environment scanning when we have a way to
-  -- enumerate all variables in the environment.
-  let varMatches : List Tag := []
+  -- Collect all matching tags from variable environment
+  let varMatches := S.foldl (init := []) fun acc ⟨_name, qt⟩ =>
+    match checkPredicate qt with
+    | none => acc
+    | some tag => tag :: acc
 
   -- Combine all matches
   let allMatches := memMatches ++ varMatches
@@ -204,10 +200,9 @@ def typecheckBool (ctx : TypeContext) (_b : Bool) : TypecheckM TypeResult := do
 -- pc ; G ; S ; L |- x : T :> join pc p { no_pred } -| G ; L
 -/
 def typecheckVarNoPred (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
-  match ctx.varEnv x with
+  match lookupVarEnv ctx.varEnv x with
   | some qt =>
-    match qt with
-    | ⟨ptyp, poison, pred⟩ =>
+    let ⟨ptyp, poison, pred⟩ := qt
     match pred with
     | none =>  -- no_pred case
       let poison := joinPoison ctx.pc poison
@@ -677,7 +672,7 @@ def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
   let initialCtx : TypeContext := {
     pc := false  -- clean
     memEnv := {}
-    varEnv := fun _ => none
+    varEnv := []
     tagEnv := {}
   }
   let result ← typecheck initialCtx e 1000  -- Use 1000 as default fuel
