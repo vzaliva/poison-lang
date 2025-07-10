@@ -32,40 +32,6 @@ def naturalNumber : Parser Nat := do
   | some n => return n
   | none => fail "Invalid natural number"
 
--- Parse type annotations
-mutual
-  partial def parseBaseType : Parser Typ := do
-    whitespace
-    (token "int" *> return Typ.int) <|>
-    (token "bool" *> return Typ.bool) <|>
-    (token "unit" *> return Typ.unit) <|>
-    (do token "ref"
-        token "int"  -- Only allow ref int since memory can only store integers
-        return Typ.ref Typ.int) <|>
-    (do token "("
-        let t ← parseType
-        token ")"
-        return t)
-
-  -- Parse types with right-associative arrows
-  -- Note: Function types on the left of an arrow must be parenthesised to avoid left recursion
-  -- Examples:
-  --   int -> int -> bool        parses as  int -> (int -> bool)
-  --   (int -> int) -> bool      function taking function as argument (requires parentheses)
-  --   int -> bool -> int -> int parses as  int -> (bool -> (int -> int))
-  --   ((int -> bool) -> int) -> bool  higher-order function (requires parentheses)
-  partial def parseType : Parser Typ := do
-    let t1 ← parseBaseType  -- Start with a base type (which includes parenthesised types)
-    parseArrowType t1       -- Then try to parse arrow continuations
-
-  -- Parse arrow types with left-associativity
-  partial def parseArrowType (t1 : Typ) : Parser Typ := do
-    (do token "->"
-        let t2 ← parseType
-        return Typ.arrow t1 t2) <|>
-    return t1
-end
-
 -- Parse expressions with proper precedence
 mutual
   -- Parse atomic expressions (highest precedence)
@@ -117,13 +83,11 @@ mutual
     dbg_trace "Parse let called"
     token "let"
     let x ← identifier
-    token ":"
-    let t ← parseType
     token "="
     let e1 ← parseExpr
     token "in"
     let e2 ← parseExpr
-    return Expr.let x t e1 e2
+    return Expr.let x e1 e2
 
   -- Parse sequences (right associative, lowest precedence)
   partial def parseSeq : Parser Expr := do
@@ -161,22 +125,18 @@ mutual
     dbg_trace "Parse func called"
     token "fn"
     let x ← identifier
-    token ":"
-    let t ← parseType
     token "=>"
     let body ← parseExpr
-    return Expr.fn x t body
+    return Expr.fn x body
 
   -- Parse pure function abstractions
   partial def parsePfn : Parser Expr := do
     dbg_trace "parse pure func called"
     token "pfn"
     let x ← identifier
-    token ":"
-    let t ← parseType
     token "=>"
     let body ← parseExpr
-    return Expr.pfn x t body
+    return Expr.pfn x body
 
   -- Main expression parser (lowest precedence)
   partial def parseExpr : Parser Expr :=

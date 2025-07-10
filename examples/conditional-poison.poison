@@ -1,10 +1,8 @@
-let get_sensor : unit -> int = fn x:unit => 42 in
-
-
--- Conditional poison with complex expressions
-let sensor : int = get_sensor unit in
-let threshold : int = 50 in
-if sensor > threshold then
-    threshold + 100
-else
+-- Conditional poison example
+let get_sensor = fn x => 42 in
+let sensor = get_sensor unit in
+let threshold = 50 in
+if sensor >= threshold then
     sensor + 100
+else
+    threshold + 100

@@ -1,0 +1,2 @@
+* Type checker
+  - VarEnv needs to be iterable (e.g. HashMap)

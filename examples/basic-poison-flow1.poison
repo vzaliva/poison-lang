@@ -1,7 +1,6 @@
-let get_sensor : unit -> int = fn x:unit => 42 in
-
--- Explicit flow (data dependency)
-let faulty : int = get_sensor unit in     (* poisoned *)
-let result : int = faulty + 1 in          (* poisoned (explicit flow) *)
+-- Basic poison flow example 1: explicit flow (data dependency)
+let get_sensor = fn x => 42 in
+let faulty = get_sensor unit in     (* poisoned *)
+let result = faulty + 1 in          (* poisoned (explicit flow) *)
 result
 

@@ -1,3 +1,3 @@
 -- Sequence operations
-let x : int = 5 in (x; 42);
+let x = 5 in (x; 42);
 unit; 123 
