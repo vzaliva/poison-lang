@@ -23,7 +23,9 @@ inductive PExpr : Type where
 -- Tagged predicate structure
 structure TPred where
   tag : Tag
-  tclosure : TClosure
+  arg_name: Name
+  pred_body: PExpr
+  var_env: Name → Option QTyp
 
 -- Qualified type structure
 structure QTyp where
@@ -81,7 +83,7 @@ def reprQTyp : QTyp → Nat → Std.Format
     s!"QTyp.mk {reprPTyp ptyp 0} {repr poison} {tpredRepr}"
 
 def reprTPred : TPred → Nat → Std.Format
-  | TPred.mk tag tcl, _ => s!"TPred.mk {repr tag} {reprTClosure tcl 0}"
+  | TPred.mk tag arg_name pred_body _var_env, _ => s!"TPred.mk {repr tag} {repr arg_name} {reprPExpr pred_body 0} <var_env>"
 
 end
 

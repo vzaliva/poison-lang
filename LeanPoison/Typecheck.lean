@@ -65,11 +65,7 @@ def freshTag : StateM Nat Tag := do
   modify (· + 1)
   return k
 
-/-- Match guard function (simplified implementation) -/
-def matchGuard (_e : Expr) (_G : MemoryTypeEnv) (_S : VarTypeEnv) : Option Tag :=
-  -- TODO: Implement proper match_guard logic
-  -- For now, return none (no matching predicate found)
-  none
+
 
 -- Manual BEq instance for PTyp (needed for type checking)
 mutual
@@ -146,6 +142,43 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   | PExpr.let x e1 e2 => Expr.let x (e1.toExpr) (e2.toExpr)
   | PExpr.app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
+/--
+  Scans the predicates attached to every heap cell in G and variable in S; if it
+  finds exactly one guard k whose test expression, when applied to its
+  owning value, is syntactically identical to the condition e, it returns
+  that k - otherwise it returns "none"
+--/
+def matchGuard (e : Expr) (G : MemoryTypeEnv) (_S : VarTypeEnv) : Option Tag :=
+  -- Helper function to check if a predicate's test expression matches the condition
+  let checkPredicate (qt : QTyp) : Option Tag :=
+    match qt.pred with
+    | none => none
+    | some ⟨tag, arg_name, pred_body, var_env⟩ =>
+      -- Convert the predicate body to an expression for comparison
+      let testExpr := PExpr.toExpr pred_body
+      -- Check if the test expression is syntactically identical to the condition
+      if testExpr == e then some tag else none
+
+  -- Collect all matching tags from memory environment
+  let memMatches := G.fold (init := []) fun acc _ qt =>
+    match checkPredicate qt with
+    | none => acc
+    | some tag => tag :: acc
+
+  -- For variable environment, we can't easily iterate over all variables
+  -- since it's a function type. For now, we'll return none for variable matches.
+  -- TODO: Implement proper variable environment scanning when we have a way to
+  -- enumerate all variables in the environment.
+  let varMatches : List Tag := []
+
+  -- Combine all matches
+  let allMatches := memMatches ++ varMatches
+
+  -- Return the tag if exactly one match is found
+  match allMatches with
+  | [tag] => some tag
+  | _ => none
+
 
 
 -- Type checking rules implementation
@@ -181,7 +214,7 @@ def typecheckVarNoPred (ctx : TypeContext) (x : Name) : TypecheckM TypeResult :=
       let qt' : QTyp := ⟨ptyp, poison, none ⟩
       return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
     | some tp =>  -- has predicate
-      let ⟨k, tcl ⟩:= tp
+      let ⟨k, arg_name, pred_body, var_env⟩ := tp
       match ctx.tagEnv.get? k with
       | some true =>  -- guard_true case
         let qt' : QTyp := ⟨ptyp, ctx.pc, none ⟩
@@ -191,7 +224,7 @@ def typecheckVarNoPred (ctx : TypeContext) (x : Name) : TypecheckM TypeResult :=
         return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
       | none =>  -- guard_unknown case
         let poison := joinPoison ctx.pc poison
-        let tp' : TPred := ⟨k, tcl ⟩
+        let tp' : TPred := ⟨k, arg_name, pred_body, var_env⟩
         let qt' : QTyp := ⟨ptyp, poison, some tp' ⟩
         return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
   | none => throw s!"Variable {x} not found in environment"
@@ -403,7 +436,7 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
         let poison := joinPoison ctx.pc (joinPoison poison p2)
         let qt : QTyp := ⟨t, poison, none  ⟩
         return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
-      | some ⟨ptyp', p2, some ⟨k, tcl ⟩ ⟩ =>  -- has predicate
+      | some ⟨ptyp', p2, some ⟨k, arg_name, pred_body, var_env⟩ ⟩ =>  -- has predicate
         if ptyp' != t then throw "Type mismatch in dereference"
         match result.tagEnv'.get? k with
         | some true =>  -- guard_true case
@@ -415,7 +448,7 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
           return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
         | none =>  -- guard_unknown case
           let poison := joinPoison ctx.pc (joinPoison poison p2)
-          let qt : QTyp := ⟨t, poison, some ⟨k, tcl ⟩ ⟩
+          let qt : QTyp := ⟨t, poison, some ⟨k, arg_name, pred_body, var_env⟩ ⟩
           return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
       | none => throw s!"Location {l} not found in memory environment"
     | _ => throw "Operand of dereference must be a reference"
