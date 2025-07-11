@@ -1,2 +1,6 @@
+* Typing rules
+** predicate Type
+  - What is the type of the predicate? Now it is ~PExpr~ but it should be similar to ~PClosure~? Or an arrow type?
+  - How env. stored in predicate is used. Should it be closed form?
 * Type checker
-  - VarEnv needs to be iterable (e.g. HashMap)
+  - Print VarEnv (bug)

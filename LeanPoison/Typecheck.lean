@@ -151,9 +151,9 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : Option Tag :=
     | none => none
     | some ⟨tag, _arg_name, pred_body, _var_env⟩ =>
       -- Convert the predicate body to an expression for comparison
-      let testExpr := PExpr.toExpr pred_body
+      let pe := PExpr.toExpr pred_body
       -- Check if the test expression is syntactically identical to the condition
-      if testExpr == e then some tag else none
+      if pe == e then some tag else none
 
   -- Collect all matching tags from memory environment
   let memMatches := G.fold (init := []) fun acc _ qt =>

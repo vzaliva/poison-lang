@@ -107,7 +107,7 @@ tcl :: 'TCL_' ::= {{ com typing closure }}
 
 predicate, P :: 'P_' ::= {{ com predicate (pure function from T to bool) }}
   | guard k pred_closure pcl ::   :: pred_closure {{ com predicate as pure closure }} {{tex \mathsf{guard}\,[[k]]\,\mathsf{pred\_closure}\,[[pcl]] }}
-  | no_pred                   ::   :: no_pred {{ com trivial predicate (always true) }} {{tex \lambda\, \_.\bot}}
+  | no_pred                   ::   :: no_pred {{ com trivial predicate (always true) }} {{tex {} }}
 
 qualified_type, Q :: 'Q_' ::= {{ com qualified type (type with poison and optional predicate) }}
   | T :> p                  ::   :: qualified {{ tex [[T]] \triangleright [[p]] }}
@@ -338,11 +338,6 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
 ------------------  :: bool
   pc ; G ; S ; L |- b : bool :> clean { no_pred } -| G ; L
 
-% Variable typing - standard case (no guard or guard not in L)
-  S(x) = T :> p { no_pred }
-------------------  :: var_no_pred
-  pc ; G ; S ; L |- x : T :> join pc p { no_pred } -| G ; L
-
 % Variable typing - with guarded predicate that evaluates to true triggering de-poisoning.
   S(x) = T :> p { guard k pred_closure pcl }
   L(k) = true
@@ -359,6 +354,11 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
   S(x) = T :> p { guard k pred_closure pcl }
 ------------------  :: var_guard_unknown
   pc ; G ; S ; L |- x : T :> join pc p { guard k pred_closure pcl } -| G ; L
+
+% Variable typing - no guard case
+  S(x) = T :> p { no_pred }
+------------------  :: var_no_pred
+  pc ; G ; S ; L |- x : T :> join pc p { no_pred } -| G ; L
 
 % Location typing with region types
   G(l) = T :> p { P }
