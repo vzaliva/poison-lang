@@ -146,9 +146,16 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
 
 /--
   Scans the predicates attached to every heap cell in G and variable in S; if it
-  finds exactly one guard k whose test expression, when applied to its
-  owning value, is syntactically identical to the condition e, it returns
-  that k - otherwise it returns "none"
+  finds exactly one guard k whose test expression, when applied to its owning
+  value, is syntactically identical to the condition e, it returns that k -
+  otherwise it returns "none"
+
+  We peform variable substitution in the predicate body before comparing it to
+  the condition.
+
+  As an additional precaution, we need to check that all variables used in
+  predicate body have the same type in captured environment (Qt.var_env) as well
+  as in the current one (S)
 --/
 def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : Option Tag :=
   -- Helper function to check if a predicate's test expression matches the condition
