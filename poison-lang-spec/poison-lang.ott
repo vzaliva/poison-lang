@@ -98,7 +98,7 @@ typ, T :: 'T_' ::=         {{ com types }}
 
 % Predicate closure contents (for cleaner syntax)
 pcl :: 'PCL_' ::= {{ com predicate closure }}
-  | ( x , pe , r )          ::   :: tuple
+  | ( x , pe , S )          ::   :: pred_closure
 
 % Typing closure contents (for function types)
 tcl :: 'TCL_' ::= {{ com typing closure }}

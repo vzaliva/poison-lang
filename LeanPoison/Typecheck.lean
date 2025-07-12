@@ -45,6 +45,12 @@ def updateMemEnv (env : MemoryTypeEnv) (l : Address) (qt : QTyp) : MemoryTypeEnv
 def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
   -- For now, return union preferring env2 for conflicts
   -- TODO: Implement proper join operation as per Ott spec
+  -- TODO: Alternative design: Implement a proper join operation for logical environments where:
+  -- - Guards with same value in both branches are preserved
+  -- - Guards with contradictory values are removed (become unknown)
+  -- - Guards only present in one branch are removed
+  -- This would be more precise but adds complexity. The current approach is simpler while
+
   env1.fold (init := env2) fun acc l qt => acc.insert l qt
 
 /-- Fresh location generation -/
