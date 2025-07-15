@@ -1,8 +1,4 @@
 * Typing rules
-** Tag  
-  - Must `k` be unique?
-** Pexpr
-  - Consider dropping ~let~ 
 ** matchGuard
   - when we apply a predicate to reference, do we need to check if reference is poisoned?
     if so, should we try to de-poison it?

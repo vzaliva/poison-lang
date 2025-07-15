@@ -241,7 +241,7 @@ The language includes a predicate system that allows selective de-poisoning base
     \item \textbf{Conditional de-poisoning}: When an \texttt{if} condition
     syntactically matches a guard's test, values are de-poisoned in the true
     branch and poisoned in the false branch
-    \item \textbf{Logical environment}: Environment \texttt{L} tracks guard
+    \item \textbf{Logical environment}: Environment $\mathcal{L}$ tracks guard
     valuations (\texttt{k : true/false}) to enable predicate evaluation
 \end{itemize}
 
@@ -254,6 +254,13 @@ any predicate that successfully matches a well-typed condition is guaranteed to
 be type-compatible with that condition. This approach avoids redundant type
 information in predicates while maintaining type safety through the existing
 type system.
+
+\textbf{Tag Uniqueness:} The \texttt{match\_guard} function expects to find at
+most one matching predicate for any given condition. Predicates parametrised by
+their argument will naturally match at most once due to syntactic substitution
+differences. However, for predicates that ignore their argument, extra care must
+be taken to ensure no two distinct tags are assigned to identical predicate
+bodies, as this would cause multiple-match errors in \texttt{match\_guard}.
 
 \begin{lstlisting}[language=poison]
 (* Example: Range check predicate *)
