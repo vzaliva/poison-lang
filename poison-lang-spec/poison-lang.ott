@@ -71,9 +71,7 @@ pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | if pe1 then pe2 else pe3 ::   :: if
   | ! pe                    ::   :: deref
   | unit                    ::   :: unit
-  | pe1 ; pe2               ::   :: sequence
   | let x = pe1 in pe2      ::   :: let
-  | pfn x => pe             ::   :: pfn  {{ com pure function }}
   | ( pe )                  :: M :: paren  {{ ichlo ([[pe]]) }}
   | pe1 pe2                 ::   :: app
   | pe_closure ( x , pe , r )   ::   :: pe_closure   {{ com pure closure value }}

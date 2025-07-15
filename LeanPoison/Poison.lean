@@ -16,7 +16,6 @@ inductive PExpr : Type where
   | op : PExpr → Op → PExpr → PExpr                -- e1 op e2
   | ite : PExpr → PExpr → PExpr → PExpr            -- if e1 then e2 else e3
   | deref : PExpr → PExpr                          -- ! e
-  | seq : PExpr → PExpr → PExpr                    -- e1 ; e2
   | let : Name → PExpr → PExpr → PExpr      -- let x : T = e1 in e2
   | app : PExpr → PExpr → PExpr                    -- e1 e2
 
@@ -77,7 +76,6 @@ partial def reprPExpr : PExpr → Nat → Std.Format
   | PExpr.op e1 op e2, _ => s!"PExpr.op ({reprPExpr e1 0}) {repr op} ({reprPExpr e2 0})"
   | PExpr.ite e1 e2 e3, _ => s!"PExpr.ite ({reprPExpr e1 0}) ({reprPExpr e2 0}) ({reprPExpr e3 0})"
   | PExpr.deref e, _ => s!"PExpr.deref ({reprPExpr e 0})"
-  | PExpr.seq e1 e2, _ => s!"PExpr.seq ({reprPExpr e1 0}) ({reprPExpr e2 0})"
   | PExpr.let x e1 e2, _ => s!"PExpr.let {repr x} ({reprPExpr e1 0}) ({reprPExpr e2 0})"
   | PExpr.app e1 e2, _ => s!"PExpr.app ({reprPExpr e1 0}) ({reprPExpr e2 0})"
 

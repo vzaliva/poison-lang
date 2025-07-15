@@ -95,10 +95,9 @@ e ::= n | b | x | l                    (* values and variables *)
 
 pe ::= n | b | x | l                   (* pure expressions *)
      | pe1 op pe2 | if pe1 then pe2 else pe3
-     | !pe | unit | pe1 ; pe2
+     | !pe | unit
      | let x = pe1 in pe2 | pe1 pe2
-     | pfn x => pe
-     (* Note: no ref, :=, while, or fn allowed *)
+     (* Note: no ref, :=, while, fn, pfn, or ; allowed *)
 
 T ::= int | bool | unit 
     | ref T @ l         (* region types with location indices *)
@@ -114,7 +113,7 @@ P ::= guard k pred_closure (x, pe, r)  (* predicate as pure closure *)
 \begin{itemize}
     \item \textbf{References}: \texttt{ref e} creates, \texttt{e1 := e2} assigns, \texttt{!e} dereferences (memory stores only integers)
     \item \textbf{Functions}: \texttt{fn x => e} creates, \texttt{e1 e2} applies, with closures
-    \item \textbf{Pure functions}: \texttt{pfn x => pe} creates pure functions that cannot have side effects
+    \item \textbf{Pure functions}: \texttt{pfn x => pe} creates pure functions that cannot have side effects (note: no nested pure functions allowed)
     \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings
     \item \textbf{Memory access only through references}: You need a valid
     reference to access memory location. There is no pointer arithmetic (but
@@ -146,15 +145,58 @@ The language includes a syntactic subset called \emph{pure expressions} (\texttt
     simplicity. This design choice is motivated by intended use of pure
     functions as type predicates which are likely to be simple expressions
     without complicated control flow.)
-    \item Define regular functions (\texttt{fn})
+    \item Define functions, including pure functions (\texttt{fn} or \texttt{pfn})
+    \item Use sequencing (\texttt{;})
 \end{itemize}
 
 Pure expressions can still dereference existing references, perform arithmetic,
-use conditionals, and define/apply pure functions. The \texttt{pfn} construct
-creates pure functions whose bodies must be pure expressions, ensuring they
-cannot introduce side effects. In the current system, pure expressions are
-simply a syntactic subset of normal expressions with identical typing and
-operational semantics.
+use conditionals, and apply existing pure functions. 
+
+\textbf{Design rationale}: Pure expressions are primarily used within predicates
+for de-poisoning. By prohibiting function definition within pure expressions, we
+ensure predicates remain simple test expressions rather than complex computations.
+The absence of sequencing is natural since pure expressions have no side effects,
+making \texttt{pe1 ; pe2} equivalent to just \texttt{pe2}. However, pure
+expressions can still apply pre-existing pure functions, enabling code reuse and
+composition of predicates.
+
+The \texttt{pfn} construct creates pure functions whose bodies must be pure
+expressions, ensuring they cannot introduce side effects. These pure functions
+must be defined at the expression level, not within predicates themselves.
+
+\subsubsection{No Nested Pure Functions}
+
+An important consequence of our design is that pure functions cannot define nested
+pure functions. Since \texttt{pfn x => pe} requires a pure expression body, and
+pure expressions cannot contain \texttt{pfn}, the following patterns are not
+possible:
+
+\begin{lstlisting}[language=poison]
+(* Not allowed: nested pure function definition *)
+pfn outer => pfn inner => inner + 1
+
+(* Not allowed: higher-order pure function returning another function *)
+pfn make_adder => pfn n => pfn x => x + n
+\end{lstlisting}
+
+This restriction keeps pure functions \emph{flat} and simple. While it prevents
+some functional programming patterns, it aligns with our goal of maintaining
+simple, predictable predicates. Pure functions can still:
+\begin{itemize}
+    \item Call other pre-defined pure functions
+    \item Be passed as arguments (through variables)
+    \item Be composed through application
+\end{itemize}
+
+For example, function composition is still possible through explicit application:
+\begin{lstlisting}[language=poison]
+pfn add_one => x => x + 1
+pfn add_two => x => add_one (add_one x)  (* Composition by application *)
+\end{lstlisting}
+
+This design choice prioritises simplicity and clarity over full functional
+expressiveness, which is appropriate given that pure functions primarily serve
+as building blocks for predicates in our fault-tracking type system.
 
 \section{Poison Tracking}
 

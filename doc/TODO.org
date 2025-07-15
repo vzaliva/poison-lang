@@ -3,7 +3,7 @@
   - Must `k` be unique?
 ** Pexpr
   - Should we simplify it further to closed form? 
-  - Consider dropping ~let~ and ~pfn~. We can leave ~if~.
+  - Consider dropping ~let~ 
 ** matchGuard
   - we need to check for captured and current sigma for type conflicts (only for variables from captured environment)  
   - do we need to check the type of the argument?
