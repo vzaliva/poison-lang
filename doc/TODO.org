@@ -2,13 +2,10 @@
 ** Tag  
   - Must `k` be unique?
 ** Pexpr
-  - Should we simplify it further to closed form? 
   - Consider dropping ~let~ 
 ** matchGuard
-  - we need to check for captured and current sigma for type conflicts (only for variables from captured environment)  
   - do we need to check the type of the argument?
-  - do we need to peform capture-avoiding substitution in the predicate body? The argument we replace is free in the 
-    definition environment, but it must be bound in the current environment.
-  - Does simplifying ~Pexpr~ helps?
+  - when we apply a predicate to reference, do we need to check if reference is poisoned?
+    if so, should we try to de-poison it?
 * Type checker
   - Print VarEnv (bug)

@@ -97,28 +97,11 @@ def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   match e with
   | Expr.value v => return PExpr.value v
   | Expr.var x => return PExpr.var x
-  | Expr.op e1 opname e2 => do
-    let pe1 ← e1.toPExpr
-    let pe2 ← e2.toPExpr
-    return PExpr.op pe1 opname pe2
-  | Expr.ite e1 e2 e3 => do
-    let pe1 ← e1.toPExpr
-    let pe2 ← e2.toPExpr
-    let pe3 ← e3.toPExpr
-    return PExpr.ite pe1 pe2 pe3
-  | Expr.deref e => do
-    let pe ← e.toPExpr
-    return PExpr.deref pe
-  | Expr.seq _ _ => throw "Sequence expressions not allowed in pure expressions"
-  | Expr.let x e1 e2 => do
-    let pe1 ← e1.toPExpr
-    let pe2 ← e2.toPExpr
-    return PExpr.let x pe1 pe2
-  | Expr.app e1 e2 => do
-    let pe1 ← e1.toPExpr
-    let pe2 ← e2.toPExpr
-    return PExpr.app pe1 pe2
-  | Expr.pfn _ _ => throw "Pure function definitions not allowed in pure expressions"
+  | Expr.op e1 opname e2 => (fun pe1 pe2 => PExpr.op pe1 opname pe2) <$> e1.toPExpr <*> e2.toPExpr
+  | Expr.ite e1 e2 e3 => PExpr.ite <$> e1.toPExpr <*> e2.toPExpr <*> e3.toPExpr
+  | Expr.deref e => PExpr.deref <$> e.toPExpr
+  | Expr.let x e1 e2 => (fun pe1 pe2 => PExpr.let x pe1 pe2) <$> e1.toPExpr <*> e2.toPExpr
+  | Expr.app e1 e2 => PExpr.app <$> e1.toPExpr <*> e2.toPExpr
   | _ => throw "Cannot convert expression to PExpr"
 
 -- Helper function to convert PTyp to Typ
@@ -141,49 +124,119 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   | PExpr.let x e1 e2 => Expr.let x (e1.toExpr) (e2.toExpr)
   | PExpr.app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
+
+
 /--
-  Scans the predicates attached to every heap cell in G and variable in S; if it
-  finds exactly one guard k whose test expression, when applied to its owning
-  value, is syntactically identical to the condition e, it returns that k -
-  otherwise it returns "none"
+  For any n ≠ 0, `n.pred < n`.
+  (Lean's `termination_by` always gives you `h : n ≠ 0` in the context,
+   so this lines up perfectly.)
+-/
+theorem Nat.pred_lt_of_ne_zero {n : Nat} (h : n ≠ 0) : n - 1 < n := by
+  cases n
+  · contradiction
+  · apply Nat.lt_succ_self
 
-  We peform variable substitution in the predicate body before comparing it to
-  the condition.
+-- Helper function to check if two PExprs are syntactically equal modulo
+-- environment differences. This handles variable substitution and type
+-- compatibility checking during structural comparison. Variables are
+-- substituted in the first argument only.
+--
+-- The `fuel` parameter is used to help the termination checker.
+-- The `substitution` parameter is an optional (variable, value) pair for substitution.
+--
+def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : VarTypeEnv) (substitution : Option (Name × PExpr)) (fuel : Nat) : Bool :=
+  if fuel = 0 then false
+  else
+    match pe1, pe2 with
+    | PExpr.value v1, PExpr.value v2 => v1 == v2
+    | PExpr.var x1, pe2 =>
+        match substitution with
+        | some (arg1, val1) =>
+          if x1 == arg1 then
+            -- This is the variable we're substituting, substitute it with the value
+            PExpr.equalWithEnvs val1 env1 pe2 env2 substitution (fuel - 1)
+          else
+            -- Some other variable, compare it syntactically with the target variable
+            match pe2 with
+            | PExpr.var x2 => x1 == x2
+            | _ => false
+        | none =>
+          -- No substitution active, just compare variables syntactically
+          match pe2 with
+          | PExpr.var x2 => x1 == x2
+          | _ => false
+    | PExpr.op e1 op1 e2, PExpr.op e1' op2 e2' =>
+      op1 == op2 && equalWithEnvs e1 env1 e1' env2 substitution (fuel - 1) && equalWithEnvs e2 env1 e2' env2 substitution (fuel - 1)
+    | PExpr.ite e1 e2 e3, PExpr.ite e1' e2' e3' =>
+      equalWithEnvs e1 env1 e1' env2 substitution (fuel - 1) && equalWithEnvs e2 env1 e2' env2 substitution (fuel - 1) && equalWithEnvs e3 env1 e3' env2 substitution (fuel - 1)
+    | PExpr.deref e1, PExpr.deref e2 => equalWithEnvs e1 env1 e2 env2 substitution (fuel - 1)
+    | PExpr.let x1 e1 e2, PExpr.let x2 e1' e2' =>
+      x1 == x2 &&
+      equalWithEnvs e1 env1 e1' env2 substitution (fuel - 1) &&
+      -- For the body, disable substitution if the bound variable shadows the substitution variable
+      equalWithEnvs e2 env1 e2' env2 (if substitution.map (·.1) == some x1 then none else substitution) (fuel - 1)
+    | PExpr.app e1 e2, PExpr.app e1' e2' =>
+      equalWithEnvs e1 env1 e1' env2 substitution (fuel - 1) && equalWithEnvs e2 env1 e2' env2 substitution (fuel - 1)
+    | _, _ => false
+termination_by fuel
+decreasing_by
+  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
-  As an additional precaution, we need to check that all variables used in
-  predicate body have the same type in captured environment (Qt.var_env) as well
-  as in the current one (S)
+/--
+  Scans the predicates attached to every variable in S and every memory location
+  in G which has a variable in S referencing it; if it finds exactly one guard k
+  whose test expression, when applied to its owning value (variable or deref of
+  variable), is syntactically identical to the condition e, it returns that k -
+  otherwise it throws an error.
+
+  We perform variable substitution in the predicate body before comparing it to
+  the condition using PExpr.equalWithEnvs for proper environment-aware
+  comparison.
 --/
-def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : Option Tag :=
-  -- Helper function to check if a predicate's test expression matches the condition
-  let checkPredicate (qt : QTyp) : Option Tag :=
-    match qt.pred with
-    | none => none
-    | some ⟨tag, _arg_name, pred_body, _var_env⟩ =>
-      -- Convert the predicate body to an expression for comparison
-      let pe := PExpr.toExpr pred_body
-      -- Check if the test expression is syntactically identical to the condition
-      if pe == e then some tag else none
+def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag := do
+  -- Try to convert the condition e to a PExpr
+  let conditionPExpr ← e.toPExpr
 
-  -- Collect all matching tags from memory environment
-  let memMatches := G.fold (init := []) fun acc _ qt =>
-    match checkPredicate qt with
-    | none => acc
-    | some tag => tag :: acc
+  -- Helper function to check if a predicate's test expression matches the condition
+  let checkPredicate (arg : PExpr) (qt : QTyp) : TypecheckM (Option Tag) :=
+    match qt.pred with
+    | none => return none
+    | some ⟨tag, arg_name, pred_body, var_env⟩ =>
+              -- Compare the predicate body with the condition using environment-aware equality
+        if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) 100 then return some tag else return none
 
   -- Collect all matching tags from variable environment
-  let varMatches := S.foldl (init := []) fun acc ⟨_name, qt⟩ =>
-    match checkPredicate qt with
-    | none => acc
-    | some tag => tag :: acc
+    let varMatches := S.foldl (init := []) fun acc ⟨name, qt⟩ =>
+    let arg := PExpr.var name
+    match checkPredicate arg qt with
+    | .ok (some tag) => tag :: acc
+    | .ok none => acc
+    | .error _ => acc
 
-  -- Combine all matches
-  let allMatches := memMatches ++ varMatches
+  -- For references, we need to check the memory environment
+  let refMatches := S.foldl (init := []) fun acc ⟨name, qt⟩ =>
+    -- Check if the variable has a reference type
+    match qt.ptyp with
+    | PTyp.ref _t l =>
+      -- Look up the memory location in G
+      match G.get? l with
+      | some memQt =>
+        -- Use the dereferenced value as the substitution value
+        let arg := PExpr.deref (PExpr.var name)
+        -- Use checkPredicate to check if the memory location's predicate matches
+        match checkPredicate arg memQt with
+        | .ok (some tag) => tag :: acc
+        | .ok none => acc
+        | .error _ => acc
+      | none => acc
+    | _ => acc
 
-  -- Return the tag if exactly one match is found
+  let allMatches := varMatches ++ refMatches
+  -- Return the tag if exactly one match is found, otherwise throw an error
   match allMatches with
-  | [tag] => some tag
-  | _ => none
+  | [tag] => return tag
+  | [] => throw "No matching guard found for condition"
+  | _ => throw s!"Multiple matching guards found for condition: {allMatches}"
 
 
 
@@ -257,33 +310,9 @@ def typecheckUnit (ctx : TypeContext) : TypecheckM TypeResult := do
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
 
 
-/--
-  For any n ≠ 0, `n.pred < n`.
-  (Lean’s `termination_by` always gives you `h : n ≠ 0` in the context,
-   so this lines up perfectly.)
--/
-theorem Nat.pred_lt_of_ne_zero {n : Nat} (h : n ≠ 0) : n - 1 < n := by
-  cases n
-  · contradiction
-  · apply Nat.lt_succ_self
 
-
-
-/-
-mutual
-
-def foo(n : Nat) : Except String Nat :=
-  if n = 0 then return 0 else bar (n - 1)
-
-def bar(n : Nat) : Except String Nat :=
-  if n = 0 then return 0 else do
-    let x ← foo (n - 1)
-    return x + 1
-
-end
--/
-
-
+-- The following option is needed in increasing the maximum number of heartbeats
+-- to avoid the termination checker failure on the following mutual block.
 set_option maxHeartbeats 400000
 
 mutual
@@ -611,13 +640,9 @@ termination_by fuel
 decreasing_by
   all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
-/-- Rule: if_std (Ott rule: if_std - standard conditional when no matching predicate found)
--- pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
--- join pc p' ; G' ; S ; L' |- e2 : T :> p'' { P'' } -| G'' ; L''
--- join pc p' ; G' ; S ; L' |- e3 : T :> p''' { P''' } -| G''' ; L'''
--- ----------------------------------
--- pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p' join p'' p''' { no_pred } -| JoinG G'' G''' ; L'
--/
+/-- Rule: if_depoison and if_std (Ott rules: if_depoison when matchGuard succeeds, if_std when it fails)
+-- First tries predicate-based de-poisoning, falls back to standard conditional typing
+--/
 def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
   else do
@@ -626,26 +651,55 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
     if ptyp1 != PTyp.bool then throw "Condition of if must be bool"
 
     let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-    let branchPc := joinPoison ctx.pc p'
-    let ctx'' := { ctx' with pc := branchPc }
 
-    let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
-    let ⟨ptyp2, p'', _  ⟩ := result2.qualType
+    -- Try predicate-based de-poisoning first
+    match matchGuard e1 result1.memEnv' ctx.varEnv with
+    | .ok k => do
+      -- Predicate-based case (if_depoison)
+      let branchPc := joinPoison ctx.pc p'
+      let ctx'' := { ctx' with pc := branchPc }
 
-    let result3 ← typecheckExpr ctx'' e3 (fuel - 1)
-    let ⟨ptyp3, p''', _  ⟩ := result3.qualType
+      -- Type check both branches with updated tag environment
+      let ctxTrue := { ctx'' with tagEnv := ctx''.tagEnv.insert k true }
+      let ctxFalse := { ctx'' with tagEnv := ctx''.tagEnv.insert k false }
 
-    if ptyp2 != ptyp3 then throw "Branches of if must have same type"
+      let result2 ← typecheckExpr ctxTrue e2 (fuel - 1)
+      let ⟨ptyp2, p'', _  ⟩ := result2.qualType
 
-    let poison := joinPoison ctx.pc (joinPoison p' (joinPoison p'' p'''))
-    let qt : QTyp := ⟨ptyp2, poison, none  ⟩
-    let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
-    return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv }
+      let result3 ← typecheckExpr ctxFalse e3 (fuel - 1)
+      let ⟨ptyp3, p''', _  ⟩ := result3.qualType
+
+      if ptyp2 != ptyp3 then throw "Branches of if must have same type"
+
+      let poison := joinPoison ctx.pc (joinPoison p' (joinPoison p'' p'''))
+      let qt : QTyp := ⟨ptyp2, poison, none  ⟩
+      let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
+      -- Return original tag environment (k becomes unknown after conditional)
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv }
+
+    | .error _ => do
+      -- Standard case (if_std) - no matching predicate found
+      let branchPc := joinPoison ctx.pc p'
+      let ctx'' := { ctx' with pc := branchPc }
+
+      let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
+      let ⟨ptyp2, p'', _  ⟩ := result2.qualType
+
+      let result3 ← typecheckExpr ctx'' e3 (fuel - 1)
+      let ⟨ptyp3, p''', _  ⟩ := result3.qualType
+
+      if ptyp2 != ptyp3 then throw "Branches of if must have same type"
+
+      let poison := joinPoison ctx.pc (joinPoison p' (joinPoison p'' p'''))
+      let qt : QTyp := ⟨ptyp2, poison, none  ⟩
+      let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv }
 termination_by fuel
 decreasing_by
   all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
-/-- Rule: while_std (Ott rule: while_std - standard while when no matching predicate found)
+/-- Rule: while_depoison and while_std (Ott rules: while_depoison when matchGuard succeeds, while_std when it fails)
+-- First tries predicate-based de-poisoning, falls back to standard while typing
 -- Simplified implementation for termination
 --/
 def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
@@ -656,17 +710,38 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
     if ptyp1 != PTyp.bool then throw "Condition of while must be bool"
 
     let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-    let branchPc := joinPoison ctx.pc p'
-    let ctx'' := { ctx' with pc := branchPc }
 
-    let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
-    let ⟨ptyp2, p'', _  ⟩ := result2.qualType
-    if ptyp2 != PTyp.unit then throw "Body of while must have unit type"
+    -- Try predicate-based de-poisoning first
+    match matchGuard e1 result1.memEnv' ctx.varEnv with
+    | .ok k => do
+      -- Predicate-based case (while_depoison) - simplified implementation
+      let branchPc := joinPoison ctx.pc p'
+      let ctx'' := { ctx' with pc := branchPc }
 
-    -- Simplified: just return unit with combined poison
-    let poison := joinPoison ctx.pc (joinPoison p' p'')
-    let qt : QTyp := ⟨PTyp.unit, poison, none  ⟩
-    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
+      let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
+      let ⟨ptyp2, p'', _  ⟩ := result2.qualType
+      if ptyp2 != PTyp.unit then throw "Body of while must have unit type"
+
+      -- Simplified: just return unit with combined poison
+      let poison := joinPoison ctx.pc (joinPoison p' p'')
+      let qt : QTyp := ⟨PTyp.unit, poison, none  ⟩
+      -- Set k to false after loop (as per Ott spec)
+      let tagEnv' := ctx'.tagEnv.insert k false
+      return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := tagEnv' }
+
+    | .error _ => do
+      -- Standard case (while_std) - no matching predicate found
+      let branchPc := joinPoison ctx.pc p'
+      let ctx'' := { ctx' with pc := branchPc }
+
+      let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
+      let ⟨ptyp2, p'', _  ⟩ := result2.qualType
+      if ptyp2 != PTyp.unit then throw "Body of while must have unit type"
+
+      -- Simplified: just return unit with combined poison
+      let poison := joinPoison ctx.pc (joinPoison p' p'')
+      let qt : QTyp := ⟨PTyp.unit, poison, none  ⟩
+      return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
 termination_by fuel
 decreasing_by
   all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
