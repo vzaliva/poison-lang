@@ -245,6 +245,16 @@ The language includes a predicate system that allows selective de-poisoning base
     valuations (\texttt{k : true/false}) to enable predicate evaluation
 \end{itemize}
 
+\textbf{Design Note:} The predicate closure \texttt{pred\_closure (x, pe, r)}
+does not explicitly store the expected argument type for the predicate. This
+design is sound because predicate matching via \texttt{match\_guard} only occurs
+against conditions that have already passed type checking. Since syntactic
+matching requires exact structural correspondence with variable substitution,
+any predicate that successfully matches a well-typed condition is guaranteed to
+be type-compatible with that condition. This approach avoids redundant type
+information in predicates while maintaining type safety through the existing
+type system.
+
 \begin{lstlisting}[language=poison]
 (* Example: Range check predicate *)
 let sensor_val : int = get_sensor unit in  (* Type: int :> poisoned {guard "range" ...} *)

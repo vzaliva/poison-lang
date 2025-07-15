@@ -4,7 +4,6 @@
 ** Pexpr
   - Consider dropping ~let~ 
 ** matchGuard
-  - do we need to check the type of the argument?
   - when we apply a predicate to reference, do we need to check if reference is poisoned?
     if so, should we try to de-poison it?
 * Type checker
