@@ -3,4 +3,5 @@
   - when we apply a predicate to reference, do we need to check if reference is poisoned?
     if so, should we try to de-poison it?
 * Type checker
-  - Print VarEnv (bug)
+  - Print VarTypeEnv (bug)
+  - check how fresh location is generated

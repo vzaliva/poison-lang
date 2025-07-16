@@ -385,12 +385,11 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
 
     -- Generate fresh location (simplified)
     let l := ctx.memEnv.size
-    let refTyp := PTyp.ref ptyp l
     let storedPoison := joinPoison ctx.pc poison
-    let storedQt : QTyp := ⟨refTyp, storedPoison, pred  ⟩
+    let storedQt : QTyp := ⟨ptyp, storedPoison, pred  ⟩
     let memEnv' := updateMemEnv result.memEnv' l storedQt
 
-    let qt : QTyp := ⟨refTyp, ctx.pc, none  ⟩
+    let qt : QTyp := ⟨PTyp.ref ptyp l, ctx.pc, none  ⟩
     return { qualType := qt, memEnv' := memEnv', tagEnv' := result.tagEnv' }
 termination_by fuel
 decreasing_by
@@ -427,10 +426,10 @@ decreasing_by
   all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: deref_no_pred (Ott rule: deref_no_pred)
--- pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G' ; L'
--- G'(l) = T :> p { no_pred }
--- -----------------------
--- pc ; G ; S ; L |- !e : T :> join pc join p' p { no_pred } -| G' ; L'
+  pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G' ; L'
+  G'(l) = T :> p { no_pred }
+  ----------------------- :: deref_no_pred
+  pc ; G ; S ; L |- !e : T :> join pc join p' p { no_pred } -| G' ; L'
 -/
 def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
@@ -441,7 +440,7 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
     | PTyp.ref t l =>
       match result.memEnv'.get? l with
       | some ⟨ptyp', p2, none ⟩ =>  -- no_pred case
-        if ptyp' != t then throw "Type mismatch in dereference"
+        if ptyp' != t then throw s!"Type mismatch in dereference: {repr ptyp'} != {repr t}"
         let poison := joinPoison ctx.pc (joinPoison poison p2)
         let qt : QTyp := ⟨t, poison, none  ⟩
         return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
