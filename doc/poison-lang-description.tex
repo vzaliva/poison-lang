@@ -47,6 +47,8 @@
     accompanying PDF document generated from the Ott specification.
 \end{abstract}
 
+\sloppy
+
 \section{Introduction}
 \label{sec:introduction}
 
@@ -154,11 +156,11 @@ use conditionals, and apply existing pure functions.
 
 \textbf{Design rationale}: Pure expressions are primarily used within predicates
 for de-poisoning. By prohibiting function definition within pure expressions, we
-ensure predicates remain simple test expressions rather than complex computations.
-The absence of sequencing is natural since pure expressions have no side effects,
-making \texttt{pe1 ; pe2} equivalent to just \texttt{pe2}. However, pure
-expressions can still apply pre-existing pure functions, enabling code reuse and
-composition of predicates.
+ensure predicates remain simple test expressions rather than complex
+computations. The absence of sequencing is natural since pure expressions have
+no side effects, making \texttt{pe1 ; pe2} equivalent to just \texttt{pe2}.
+However, pure expressions can still apply pre-existing pure functions, enabling
+code reuse and composition of predicates.
 
 The \texttt{pfn} construct creates pure functions whose bodies must be pure
 expressions, ensuring they cannot introduce side effects. These pure functions
@@ -231,7 +233,7 @@ Conservative: may mark reliable data as poisoned, never marks unreliable data as
 The language includes a predicate system that allows selective de-poisoning based on runtime conditions. Predicates are pure functions that test values and are associated with guard tags:
 
 \begin{itemize}
-    \item \textbf{Qualified types}: Values have types \texttt{T :> p \{P\}}
+    \item \textbf{Qualified types}: Values have types $T\,\triangleright\,p\,\{P\}$
     where \texttt{T} is the base type, \texttt{p} is the poison status, and
     \texttt{P} is an optional predicate.
     \item \textbf{Guard predicates}: \texttt{guard k pred\_closure (x, pe, r)}
