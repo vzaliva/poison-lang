@@ -33,36 +33,30 @@ def runTestCase (test : TestCase) (mode : TestMode := TestMode.both) (verbose : 
 
   -- Type checking
   if mode == TestMode.both || mode == TestMode.typecheck then
-    typeResult ← match test.expectedType with
-    | some expectedQTyp => do
-      match typecheckExprSimple test.expr with
-      | .ok actualQTyp =>
-        -- For now, just check if we got a result (since typecheck is placeholder)
-        IO.println s!"  Type check: Expected {repr expectedQTyp}, got {repr actualQTyp}"
+    typeResult ←
+    match test.expectedType, typecheckExprSimple test.expr, test.expectedToFail with
+    | some expectedQTyp, .ok actualQTyp, false =>
+      if actualQTyp == expectedQTyp then
+        IO.println s!"  Type check: ✓ PASS"
         pure true
-      | .error msg =>
-        if test.expectedToFail then
-          IO.println s!"  Type check: ✓ PASS (expected failure) - {msg}"
-          pure true
-        else
-          IO.println s!"  Type check failed: {msg}"
-          pure false
-    | none => do
-      match typecheckExprSimple test.expr with
-      | .ok actualQTyp =>
-        if test.expectedToFail then
-          IO.println s!"  Type check: ✗ FAIL (expected failure but succeeded) - got {repr actualQTyp}"
-          pure false
-        else
-          IO.println s!"  Type check: ✓ PASS - got {repr actualQTyp}"
-          pure true
-      | .error msg =>
-        if test.expectedToFail then
-          IO.println s!"  Type check: ✓ PASS (expected failure) - {msg}"
-          pure true
-        else
-          IO.println s!"  Type check failed: {msg}"
-          pure false
+      else
+        IO.println s!"  Type check: ✗ FAIL - Expected {repr expectedQTyp}, got {repr actualQTyp}"
+        pure false
+    | some _expectedQTyp, .ok actualQTyp, true =>
+      IO.println s!"  Type check: ✗ FAIL (expected failure but succeeded) - got {repr actualQTyp}"
+      pure false
+    | _, .error msg, false =>
+      IO.println s!"  Type check: ✗ FAIL - {msg}"
+      pure false
+    | _, .error msg, true =>
+      IO.println s!"  Type check: ✓ PASS (expected failure) - {msg}"
+      pure true
+    | none, .ok actualQTyp, true =>
+      IO.println s!"  Type check: ✗ FAIL (expected failure but succeeded) - got {repr actualQTyp}"
+      pure false
+    | none, .ok actualQTyp, false =>
+      IO.println s!"  Type check: ✓ PASS - got {repr actualQTyp}"
+      pure true
 
   -- Evaluation
   if mode == TestMode.both || mode == TestMode.eval then

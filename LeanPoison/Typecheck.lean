@@ -67,31 +67,6 @@ def freshTag : StateM Nat Tag := do
   modify (· + 1)
   return k
 
-
-
--- Manual BEq instance for PTyp (needed for type checking)
-mutual
-def beqPTyp : PTyp → PTyp → Bool
-  | PTyp.int, PTyp.int => true
-  | PTyp.bool, PTyp.bool => true
-  | PTyp.unit, PTyp.unit => true
-  | PTyp.ref t1 l1, PTyp.ref t2 l2 => beqPTyp t1 t2 && l1 == l2
-  | PTyp.arrow t1 t2 p1 tcl1, PTyp.arrow t3 t4 p2 tcl2 =>
-    beqPTyp t1 t3 && beqPTyp t2 t4 && p1 == p2 && beqTClosure tcl1 tcl2
-  | _, _ => false
-
-def beqTClosure : TClosure → TClosure → Bool
-  | TClosure.fn_tclosure x1 _ _, TClosure.fn_tclosure x2 _ _ => x1 == x2
-  | TClosure.pfn_tclosure x1 _ _, TClosure.pfn_tclosure x2 _ _ => x1 == x2
-  | _, _ => false
-end
-
-instance : BEq PTyp where
-  beq := beqPTyp
-
-instance : BEq TClosure where
-  beq := beqTClosure
-
 -- Helper function to convert Expr to PExpr
 def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   match e with

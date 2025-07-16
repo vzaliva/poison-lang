@@ -121,3 +121,74 @@ instance : Repr QTyp where
 
 instance : Repr TPred where
   reprPrec := reprTPred
+
+
+-- Manual BEq instance for PTyp (needed for type checking)
+mutual
+def beqPTyp : PTyp → PTyp → Bool
+  | PTyp.int, PTyp.int => true
+  | PTyp.bool, PTyp.bool => true
+  | PTyp.unit, PTyp.unit => true
+  | PTyp.ref t1 l1, PTyp.ref t2 l2 => beqPTyp t1 t2 && l1 == l2
+  | PTyp.arrow t1 t2 p1 tcl1, PTyp.arrow t3 t4 p2 tcl2 =>
+    beqPTyp t1 t3 && beqPTyp t2 t4 && p1 == p2 && beqTClosure tcl1 tcl2
+  | _, _ => false
+
+def beqTClosure : TClosure → TClosure → Bool
+  | TClosure.fn_tclosure x1 _ _, TClosure.fn_tclosure x2 _ _ => x1 == x2
+  | TClosure.pfn_tclosure x1 _ _, TClosure.pfn_tclosure x2 _ _ => x1 == x2
+  | _, _ => false
+end
+
+instance : BEq PTyp where
+  beq := beqPTyp
+
+instance : BEq TClosure where
+  beq := beqTClosure
+
+
+-- Manual BEq instance for PExpr
+def beqPExpr : PExpr → PExpr → Bool
+  | PExpr.value v1, PExpr.value v2 => v1 == v2
+  | PExpr.var x1, PExpr.var x2 => x1 == x2
+  | PExpr.op e1 op1 e2, PExpr.op e1' op2 e2' => op1 == op2 && beqPExpr e1 e1' && beqPExpr e2 e2'
+  | PExpr.ite e1 e2 e3, PExpr.ite e1' e2' e3' => beqPExpr e1 e1' && beqPExpr e2 e2' && beqPExpr e3 e3'
+  | PExpr.deref e1, PExpr.deref e2 => beqPExpr e1 e2
+  | PExpr.let x1 e1 e2, PExpr.let x2 e1' e2' => x1 == x2 && beqPExpr e1 e1' && beqPExpr e2 e2'
+  | PExpr.app e1 e2, PExpr.app e1' e2' => beqPExpr e1 e1' && beqPExpr e2 e2'
+  | _, _ => false
+
+instance : BEq PExpr where
+  beq := beqPExpr
+
+
+mutual
+
+def beqVarEnv : List (Name × QTyp) → List (Name × QTyp) → Bool
+  | [], [] => true
+  | (x1, qt1) :: env1, (x2, qt2) :: env2 => x1 == x2 && beqQTyp qt1 qt2 && beqVarEnv env1 env2
+  | _, _ => false
+
+-- Manual BEq instance for TPred
+def beqTPred : TPred → TPred → Bool
+  | TPred.mk tag1 arg_name1 pred_body1 var_env1, TPred.mk tag2 arg_name2 pred_body2 var_env2 =>
+    tag1 == tag2 && arg_name1 == arg_name2 && pred_body1 == pred_body2 && beqVarEnv var_env1 var_env2
+
+-- Manual BEq instance for Option TPred
+def beqOptionTPred : Option TPred → Option TPred → Bool
+  | none, none => true
+  | some tp1, some tp2 => beqTPred tp1 tp2
+  | _, _ => false
+
+-- Manual BEq instance for QTyp
+def beqQTyp : QTyp → QTyp → Bool
+  | QTyp.mk ptyp1 poison1 pred1, QTyp.mk ptyp2 poison2 pred2 =>
+    ptyp1 == ptyp2 && poison1 == poison2 && beqOptionTPred pred1 pred2
+
+end
+
+instance : BEq TPred where
+  beq := beqTPred
+
+instance : BEq QTyp where
+  beq := beqQTyp

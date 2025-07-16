@@ -57,39 +57,18 @@ end
 -- inductive type definitions (insude pe_closure)
 abbrev VarEnv := Name → Option Value
 
--- Manual Repr instance for Value (since closures contain functions)
-def reprValue : Value → Nat → Std.Format
-  | Value.num n, _ => s!"Value.num {repr n}"
-  | Value.bool b, _ => s!"Value.bool {repr b}"
-  | Value.unit, _ => "Value.unit"
-  | Value.loc l, _ => s!"Value.loc {repr l}"
-  | Value.closure x _ _, _ => s!"Value.closure {repr x} <expr> <env>"
-  | Value.peClosure x _ _, _ => s!"Value.peClosure {repr x} <expr> <env>"
+-- Helper pattern synonyms for common value expressions
+def Expr.num (n : Nat) : Expr := Expr.value (Value.num n)
+def Expr.bool (b : Bool) : Expr := Expr.value (Value.bool b)
+def Expr.unit : Expr := Expr.value Value.unit
+def Expr.loc (l : Address) : Expr := Expr.value (Value.loc l)
 
-def reprExpr : Expr → Nat → Std.Format
-  | Expr.value v, prec => reprValue v prec
-  | Expr.var x, _ => s!"Expr.var {repr x}"
-  | Expr.op e1 op e2, _ => s!"Expr.op ({reprExpr e1 0}) {repr op} ({reprExpr e2 0})"
-  | Expr.ite e1 e2 e3, _ => s!"Expr.ite ({reprExpr e1 0}) ({reprExpr e2 0}) ({reprExpr e3 0})"
-  | Expr.newRef e, _ => s!"Expr.newRef ({reprExpr e 0})"
-  | Expr.assign e1 e2, _ => s!"Expr.assign ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.deref e, _ => s!"Expr.deref ({reprExpr e 0})"
-  | Expr.seq e1 e2, _ => s!"Expr.seq ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.while e1 e2, _ => s!"Expr.while ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.let x e1 e2, _ => s!"Expr.let {repr x} ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.fn x e, _ => s!"Expr.fn {repr x} ({reprExpr e 0})"
-  | Expr.pfn x e, _ => s!"Expr.pfn {repr x} ({reprExpr e 0})"
-  | Expr.app e1 e2, _ => s!"Expr.app ({reprExpr e1 0}) ({reprExpr e2 0})"
+-- Extract value from expression if possible
+def Expr.toValue? : Expr → Option Value
+  | Expr.value v => some v
+  | _ => none
 
-@[instance]
-instance : Repr Value where
-  reprPrec := reprValue
-
-@[instance]
-instance : Repr Expr where
-  reprPrec := reprExpr
-
--- Manual BEq instances
+-- BEq instances
 mutual
 
 def beqValue : Value → Value → Bool
@@ -125,20 +104,43 @@ instance : BEq Value where
 instance : BEq Expr where
   beq := beqExpr
 
+-- Repr instances
+
+-- Manual Repr instance for Value (since closures contain functions)
+def reprValue : Value → Nat → Std.Format
+  | Value.num n, _ => s!"Value.num {repr n}"
+  | Value.bool b, _ => s!"Value.bool {repr b}"
+  | Value.unit, _ => "Value.unit"
+  | Value.loc l, _ => s!"Value.loc {repr l}"
+  | Value.closure x _ _, _ => s!"Value.closure {repr x} <expr> <env>"
+  | Value.peClosure x _ _, _ => s!"Value.peClosure {repr x} <expr> <env>"
+
+def reprExpr : Expr → Nat → Std.Format
+  | Expr.value v, prec => reprValue v prec
+  | Expr.var x, _ => s!"Expr.var {repr x}"
+  | Expr.op e1 op e2, _ => s!"Expr.op ({reprExpr e1 0}) {repr op} ({reprExpr e2 0})"
+  | Expr.ite e1 e2 e3, _ => s!"Expr.ite ({reprExpr e1 0}) ({reprExpr e2 0}) ({reprExpr e3 0})"
+  | Expr.newRef e, _ => s!"Expr.newRef ({reprExpr e 0})"
+  | Expr.assign e1 e2, _ => s!"Expr.assign ({reprExpr e1 0}) ({reprExpr e2 0})"
+  | Expr.deref e, _ => s!"Expr.deref ({reprExpr e 0})"
+  | Expr.seq e1 e2, _ => s!"Expr.seq ({reprExpr e1 0}) ({reprExpr e2 0})"
+  | Expr.while e1 e2, _ => s!"Expr.while ({reprExpr e1 0}) ({reprExpr e2 0})"
+  | Expr.let x e1 e2, _ => s!"Expr.let {repr x} ({reprExpr e1 0}) ({reprExpr e2 0})"
+  | Expr.fn x e, _ => s!"Expr.fn {repr x} ({reprExpr e 0})"
+  | Expr.pfn x e, _ => s!"Expr.pfn {repr x} ({reprExpr e 0})"
+  | Expr.app e1 e2, _ => s!"Expr.app ({reprExpr e1 0}) ({reprExpr e2 0})"
+
+@[instance]
+instance : Repr Value where
+  reprPrec := reprValue
+
+@[instance]
+instance : Repr Expr where
+  reprPrec := reprExpr
+
 -- Helper functions to convert values to expressions
 def Value.toExpr : Value → Expr
   | v => Expr.value v
-
--- Helper pattern synonyms for common value expressions
-def Expr.num (n : Nat) : Expr := Expr.value (Value.num n)
-def Expr.bool (b : Bool) : Expr := Expr.value (Value.bool b)
-def Expr.unit : Expr := Expr.value Value.unit
-def Expr.loc (l : Address) : Expr := Expr.value (Value.loc l)
-
--- Extract value from expression if possible
-def Expr.toValue? : Expr → Option Value
-  | Expr.value v => some v
-  | _ => none
 
 @[instance]
 instance : ToString Value where
