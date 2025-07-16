@@ -559,7 +559,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
       let result2 ← typecheckExpr ctx' e2 (fuel - 1)
       let ⟨ptyp2, p2, pred2  ⟩ := result2.qualType
-      if ptyp2 != t1 then throw "Type mismatch in function application"
+      if ptyp2 != t1 then throw s!"Type mismatch in function application: {repr ptyp2} != {repr t1}"
 
       match tcl with
       | TClosure.fn_tclosure x body env =>
