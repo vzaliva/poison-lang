@@ -61,26 +61,27 @@ def runTestCase (test : TestCase) (mode : TestMode := TestMode.both) (verbose : 
   -- Evaluation
   if mode == TestMode.both || mode == TestMode.eval then
     let (_, resultExpr) := run defaultFuel test.expr verbose
-    evalResult ← match Expr.toValue? resultExpr with
-    | some actualValue => do
-      let success := test.expectedValue.map (fun expected => actualValue == expected) |>.getD false
-      if success then
-        IO.println s!"  Evaluation: ✓ PASS - Expected {test.expectedValue}, got {actualValue}"
+    evalResult ←
+    match test.expectedValue, Expr.toValue? resultExpr, test.expectedToFail with
+    | some expectedValue, some actualValue, false =>
+      if actualValue == expectedValue then
+        IO.println s!"  Evaluation: ✓ PASS"
         pure true
       else
-        if test.expectedToFail then
-          IO.println s!"  Evaluation: ✓ PASS (expected failure) - got {actualValue}"
-          pure true
-        else
-          IO.println s!"  Evaluation: ✗ FAIL - Expected {test.expectedValue}, got {actualValue}"
-          pure false
-    | none => do
-      if test.expectedToFail then
-        IO.println s!"  Evaluation: ✓ PASS (expected failure) - Expression did not evaluate to a value"
-        pure true
-      else
-        IO.println s!"  Evaluation: ✗ FAIL - Expression did not evaluate to a value: {repr resultExpr}"
+        IO.println s!"  Evaluation: ✗ FAIL - Expected {expectedValue}, got {actualValue}"
         pure false
+    | _, some actualValue, true =>
+      IO.println s!"  Evaluation: ✗ FAIL (expected failure but succeeded) - got {actualValue}"
+      pure false
+    | none, some actualValue, false =>
+      IO.println s!"  Evaluation: ✓ PASS - got {actualValue}"
+      pure true
+    | _, none, true =>
+      IO.println s!"  Evaluation: ✓ PASS (expected failure) - Expression did not evaluate to a value"
+      pure true
+    | _, none, false =>
+      IO.println s!"  Evaluation: ✗ FAIL - Expression did not evaluate to a value: {repr resultExpr}"
+      pure false
 
   return typeResult && evalResult
 
