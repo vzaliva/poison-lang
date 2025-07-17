@@ -1,4 +1,3 @@
--- Conditional expressions
 if true then 42 else 0;
 if false then 1 else 2;
-if (5 >= 3) then 100 else 200 
+if 5 >= 3 then 100 else 200 

@@ -2,6 +2,9 @@ name = "lean-poison"
 version = "0.1.0"
 defaultTargets = ["poison-interpreter", "poison-tests"]
 
+[dependencies]
+std = { git = "https://github.com/leanprover/std4", branch = "main" }
+
 [[lean_lib]]
 name = "LeanPoison"
 

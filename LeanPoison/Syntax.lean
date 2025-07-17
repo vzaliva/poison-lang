@@ -18,7 +18,14 @@ inductive Typ : Type where
 -- Operations (corresponds to operations, op in Ott)
 inductive Op : Type where
   | add : Op      -- +
+  --| sub : Op
+  --| mul : Op
+  --| div : Op
   | gte : Op      -- >=
+ -- | lte : Op
+  --| gt  : Op
+ -- | lt  : Op
+  --| eq  : Op
   deriving Repr, BEq
 
 -- Mutual inductive definitions for Value and Expr

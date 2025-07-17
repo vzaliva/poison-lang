@@ -1,5 +1,11 @@
+--import System.FilePath
+--import System.IO.Process
+--import System.IO
 import LeanPoison.Syntax
 import Std.Internal.Parsec
+import Lean.Data.Xml.Basic
+import Lean.Data.Xml.Parser
+
 
 open Std.Internal.Parsec Std.Internal.Parsec.String
 open Alternative
@@ -52,12 +58,33 @@ mutual
     return Expr.app first arg
 
   -- Parse arithmetic operations (left associative)
-  partial def parseArith : Parser Expr := do
-    dbg_trace "Parse arith called"
-    let left ← parseExpr
-    let op ← (token "+" *> return Op.add) <|> (token ">=" *> return Op.gte)
-    let right ← parseExpr
-    return Expr.op left op right
+  --partial def parseArith : Parser Expr := attempt do
+   -- dbg_trace "Parse Arith called"
+   -- let lhs ← attempt parseAtom
+    --let op ← attempt (token "+" *> return Op.add) <|> attempt (token ">=" *> return Op.gte)
+   -- let rhs ← attempt parseArith <|> attempt parseAtom
+   -- return (Expr.op lhs op rhs)
+
+partial def parseArith : Parser Expr := attempt do
+  let lhs ← parseAtom
+  let op ← attempt (token "+" *> return Op.add) <|> attempt (token ">=" *> return Op.gte)
+  let rhs ← attempt parseArith <|> attempt parseAtom
+  parseArithRest (Expr.op lhs op rhs)
+
+partial def parseArithRest (lhs : Expr) : Parser Expr := do
+  let maybeOp ← optional <| attempt (
+    (token "+" *> pure Op.add) <|>
+    (token ">=" *> pure Op.gte)
+  )
+  match maybeOp with
+  | some op =>
+    let rhs ←  attempt parseAtom
+    parseArithRest (Expr.op lhs op rhs)
+  | none =>
+    return lhs
+
+
+
 
   -- Parse assignments (right associative)
   partial def parseAssign : Parser Expr := do
@@ -92,7 +119,7 @@ mutual
   -- Parse sequences (right associative, lowest precedence)
   partial def parseSeq : Parser Expr := do
     dbg_trace "Parse seq called"
-    let e1 ← parseExpr
+    let e1 ← parseArith <|> parseAtom
     token ";"
     let e2 ← parseExpr
     return Expr.seq e1 e2
@@ -140,19 +167,20 @@ mutual
 
   -- Main expression parser (lowest precedence)
   partial def parseExpr : Parser Expr :=
-  parseRef <|>
-  parseDeref <|>
-  parseWhile <|>
-  parseFn <|>
-  parsePfn <|>
-  parseLet <|>
-  parseAtom <|>
-  parseApp <|>
-  parseArith <|>
-  parseAssign <|>
-  parseConditional <|>
-  parseSeq
-  <|> fail "parseExpr: no parser matched"
+    attempt parseSeq <|>
+    attempt parseArith <|>
+  --parseRef <|>
+  --parseDeref <|>
+  --parseWhile <|>
+  --parseFn <|>
+  --parsePfn <|>
+  --parseLet <|>
+  --parseAssign <|>
+    parseAtom <|>
+  --parseApp <|>
+
+  --parseConditional <|>
+  fail "parseExpr: no parser matched"
 
 end
 
@@ -170,9 +198,247 @@ def parseString (input : String) : Except String Expr :=
   | .ok expr => .ok expr
   | .error err => .error s!"Parse error: {err}"
 
-#eval parseString " fn x:int => 5 "
-#eval parseString " true "
-#eval parseString " false "
-#eval parseString " 5 "
-#eval parseString " let x : int = 3 in x"
-#eval parseString " 1 + 2 "
+
+------------------ XML TO Expr Functions---------------------------------------
+open Lean Xml
+open System
+
+-- Run the tree-sitter parser with `-x`
+def runTreeSitterXml (file : String) : IO String := do
+  let cmd := "tree-sitter"
+  let args := #["parse", file,"-x"]
+  let output ← IO.Process.output {
+    cmd := cmd,
+    args := args,
+    stderr := .piped,
+    stdout := .piped
+  }
+  if output.exitCode ≠ 0 then
+    throw <| IO.userError s!"Tree-sitter failed: {output.stderr}"
+  return output.stdout
+open Lean Xml
+
+-- Recursively convert parsed XML to Expr
+
+partial def xmlToExpr (x : Element) : Except String Expr :=
+    match x with
+  | Element.Element "expr" _ contents =>
+      let elements := contents.filterMap (fun
+        | Content.Element el => some el
+        | _ => none
+      )
+      match elements.toList with
+      | [e] => xmlToExpr e
+      | _ => .error s!"Invalid expr contents: {contents}"
+
+  | Element.Element "identifier" _ #[Content.Character name] =>
+      .ok (Expr.var name)
+
+  | Element.Element "atom" _ contents =>
+  let elems := contents.filterMap fun
+    | Content.Element el => some el
+    | _ => none
+
+  match elems.toList with
+    | [Element.Element "number" _ #[Content.Character nStr]] =>
+        match nStr.trim.toNat? with
+        | some n => .ok (Expr.num n)
+        | none => .error s!"Invalid number: {nStr}"
+
+    | _ =>
+      -- fallback: check for literal booleans or unit
+      match contents.find? (fun
+        | Content.Character _ => true
+        | _ => false
+      ) with
+      | some (Content.Character s) =>
+          match s.trim with
+          | "true" => .ok (Expr.bool true)
+          | "false" => .ok (Expr.bool false)
+          | "unit" => .ok Expr.unit
+          | unknown => .error s!"Unknown atom literal: {unknown}"
+      | _ => .error s!"Empty atom"
+
+  | Element.Element "binary_expr" _ contents => do
+    let exprs := contents.filterMap fun
+      | Content.Element el => some el
+      | _ => none
+    let validOps := ["+", "-", "*", "\\", ">", ">=", "<", "<=", "=="]
+    let ops := contents.filterMap fun
+      | Content.Character s =>
+          let trimmed := s.trim
+          if trimmed ∈ validOps then some trimmed else none
+      | _ => none
+
+    --dbg_trace (exprs.toList, ops.toList)
+    match (exprs.toList, ops.toList) with
+      | ([lhs,
+         rhs],
+        [opStr]) =>
+          let lhsExpr ← xmlToExpr lhs
+          let rhsExpr ← xmlToExpr rhs
+          match opStr with
+          | "+" => return Expr.op lhsExpr Op.add rhsExpr
+        --  | "-" => return Expr.op lhsExpr Op.sub rhsExpr
+         -- | "*" => return Expr.op lhsExpr Op.mul rhsExpr
+         -- | "\\" => return Expr.op lhsExpr Op.div rhsExpr
+         -- | ">" => return Expr.op lhsExpr Op.gt rhsExpr
+          | ">=" => return Expr.op lhsExpr Op.gte rhsExpr
+         -- | "<" => return Expr.op lhsExpr Op.lt rhsExpr
+         -- | "<=" => return Expr.op lhsExpr Op.lte rhsExpr
+         -- | "==" => return Expr.op lhsExpr Op.eq rhsExpr
+          | _ => .error s!"Unknown operator: {opStr}"
+      | _ => .error s!"Invalid binary_expr structure: {contents}"
+
+  | Element.Element "app_expr" _ contents =>
+    do
+     let exps := contents.filterMap (fun
+        | Content.Element el => some el
+        | _ => none
+      )
+      match exps.toList with
+      | [e1,e2] => return Expr.app (<- xmlToExpr e1) (<- xmlToExpr e2)
+      | _ => .error s!"Invalid Apply expr contents: {contents}"
+
+
+
+  | Element.Element "seq_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element el => some el
+      | _ => none
+    match elems.toList with
+    | [leftEl, rightEl] =>
+        return Expr.seq (← xmlToExpr leftEl) (← xmlToExpr rightEl)
+    | _ =>
+        .error s!"Invalid seq_expr structure: {contents}"
+
+
+  | Element.Element "if_expr" _ contents => do
+  let elems := contents.filterMap fun
+    | Content.Element el => some el
+    | _ => none
+    match elems.toList with
+    | [if_cond_expr,
+      then_expr,
+      else_expr] =>
+        return Expr.ite (← xmlToExpr if_cond_expr) (← xmlToExpr then_expr) (← xmlToExpr else_expr)
+    | _ => .error s!"Invalid if_expr structure: {contents}"
+
+  | Element.Element "let_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element el => some el
+      | _ => none
+
+    match elems.toList with
+    | [ Element.Element "identifier" _ #[Content.Character name],
+        v,
+        b ] =>
+          return Expr.let name (← xmlToExpr v) (← xmlToExpr b)
+    | _ => .error s!"Invalid let_expr structure: {contents}"
+
+  | Element.Element "assign_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element el => some el
+      | _ => none
+
+    match elems.toList with
+    | Element.Element "identifier" _ #[Content.Character name] :: rhsElem :: _ =>
+        let rhs ← xmlToExpr rhsElem
+        return Expr.assign (Expr.var name) rhs
+    | _ =>
+        .error s!"Invalid assign_expr structure: {contents}"
+
+  | Element.Element "ref_expr" _ contents =>
+        let elems := contents.filterMap fun
+      | Content.Element el => some el
+      | _ => none
+
+    match elems.toList with
+    | [element] =>
+          return Expr.newRef (<- xmlToExpr element)
+    | _ => .error s!"Invalid ref_expr structure: {contents}"
+
+  | Element.Element "deref_expr" _ contents =>
+          let elems := contents.filterMap fun
+        | Content.Element el => some el
+        | _ => none
+
+      match elems.toList with
+      | [element] =>
+            return Expr.deref (<- xmlToExpr element)
+      | _ => .error s!"Invalid deref_expr structure: {contents}"
+
+  | Element.Element "while_expr" _ contents => do
+       let elems := contents.filterMap fun
+        | Content.Element el => some el
+        | _ => none
+
+        match elems.toList with
+        | [condition,body] =>
+              return Expr.while (<- xmlToExpr condition) (<- xmlToExpr body)
+        | _ => .error s!"Invalid while_expr structure: {contents}"
+
+  | Element.Element "fn_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element el => some el
+      | _ => none
+    --dbg_trace elems.toList
+    match elems.toList with
+    | [Element.Element "identifier" _ #[Content.Character p],
+      body] =>
+        return Expr.fn p (← xmlToExpr body)
+    | _ => .error s!"Invalid fn_expr structure: {contents}"
+
+  | Element.Element "pfn_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element el => some el
+      | _ => none
+      match elems.toList with
+      | [Element.Element "identifier" _ #[Content.Character p],
+        body] =>
+          return Expr.pfn p (← xmlToExpr body)
+      | _ => .error s!"Invalid pfn_expr structure: {contents}"
+
+
+  | Element.Element "source_file" _ children => do
+      let elements := children.filterMap fun
+      | Content.Element el =>
+        match el with
+        | Element.Element "comment" _ _ => none  -- discard comment elements
+        | _ => some el
+      | _ => none
+
+        match elements with
+        | #[exprEl] => xmlToExpr exprEl
+        | #[]       => .error "Empty source file"
+        | _         => .error "Expected exactly one top-level <expr> in <source_file>"
+
+  | _ => .error s!"Unrecognized XML element: {x}"
+
+-- Final wrapper
+def parsePoisonFile (file : String) : IO Expr := do
+  let xmlStr ← runTreeSitterXml file
+  match parse xmlStr with
+  | .ok xml =>
+      match xmlToExpr xml with
+      | .ok expr => return expr
+      | .error e => throw <| IO.userError s!"XML to Expr error: {e}"
+  | .error err =>
+      throw <| IO.userError s!"Failed to parse XML: {err}"
+
+def myFilePath := "/home/jayc/poison-lang/parser/example.poison"
+
+--#eval parseString " fn x => 5 "
+--#eval parseString " true "
+--#eval parseString " false "
+--#eval parseString " 5 "
+--#eval parseString " 5 ; 6"
+--#eval parseString " 5 ; 6 ; 7"
+--#eval parseString " 6 + 10 "
+--#eval parseString " 6 >= 10 "
+--aAa**#eval parseString " 6 + 10 >= 10 + 2 "
+#eval (parsePoisonFile myFilePath)
+
+--#eval " let x = 3 in x"
+--#eval parseString " ref 100 "
+--#eval parseString " a := 100
