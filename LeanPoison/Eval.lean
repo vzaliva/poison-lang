@@ -210,15 +210,15 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (expr : Expr) : Option 
 
   -- Rule: fn_abs (function abstraction creates closure)
   -- ---------------------------------------------------------------
-  -- ⟨ fn x => e, m, r ⟩ → ⟨ closure(x, e, r), m, r ⟩
-  | Expr.fn x body =>
+  -- ⟨ fn x : T => e, m, r ⟩ → ⟨ closure(x, e, r), m, r ⟩
+  | Expr.fn x _t body =>
     let closure := Value.closure x body config.varEnv
     stepReturn fuel verbose (some (config, closure.toExpr))
 
   -- Rule: pfn_abs (pure function abstraction creates pure closure)
   -- ---------------------------------------------------------------
-  -- ⟨ pfn x => pe, m, r ⟩ → ⟨ pe_closure(x, pe, r), m, r ⟩
-  | Expr.pfn x body =>
+  -- ⟨ pfn x : T => pe, m, r ⟩ → ⟨ pe_closure(x, pe, r), m, r ⟩
+  | Expr.pfn x _t body =>
     let closure := Value.peClosure x body config.varEnv
     stepReturn fuel verbose (some (config, closure.toExpr))
 

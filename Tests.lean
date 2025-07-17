@@ -91,10 +91,10 @@ def runTestCase (test : TestCase) (mode : TestMode := TestMode.both) (verbose : 
 def functionTypeMismatchTests : List TestCase := [
   TestCase.mk
     "function_type_mismatch"
-    (Expr.app (Expr.fn "x" (Expr.op (Expr.var "x") Op.add (Expr.num 1))) (Expr.bool true))
+    (Expr.app (Expr.fn "x" Typ.int (Expr.op (Expr.var "x") Op.add (Expr.num 1))) (Expr.bool true))
     none -- No expected value, as evaluation should not occur
     none -- No expected type, as typechecking should fail
-    "Applying (fn x => x + 1) to a boolean value should fail type checking."
+    "Applying (fn x : int => x + 1) to a boolean value should fail type checking."
     true -- Expected to fail
 ]
 
@@ -140,7 +140,7 @@ def while1ExampleTests : List TestCase := [
 -- Basic poison flow1 example (basic-poison-flow1.poison)
 def basicPoisonFlow1Tests : List TestCase := [
   TestCase.mk "basic_poison_flow1_explicit"
-    (Expr.let "get_sensor" (Expr.fn "x" (Expr.num 42))
+    (Expr.let "get_sensor" (Expr.fn "x" Typ.unit (Expr.num 42))
       (Expr.let "faulty" (Expr.app (Expr.var "get_sensor") Expr.unit)
         (Expr.let "result" (Expr.op (Expr.var "faulty") Op.add (Expr.num 1))
           (Expr.var "result"))))
@@ -152,7 +152,7 @@ def basicPoisonFlow1Tests : List TestCase := [
 -- Basic poison flow2 example (basic-poison-flow2.poison)
 def basicPoisonFlow2Tests : List TestCase := [
   TestCase.mk "basic_poison_flow2_implicit"
-    (Expr.let "get_sensor" (Expr.fn "x" (Expr.num 42))
+    (Expr.let "get_sensor" (Expr.fn "x" Typ.unit (Expr.num 42))
       (Expr.let "faulty" (Expr.app (Expr.var "get_sensor") Expr.unit)
         (Expr.ite (Expr.op (Expr.var "faulty") Op.gte (Expr.num 1)) (Expr.num 42) (Expr.num 17))))
     (some (Value.num 42))
@@ -163,7 +163,7 @@ def basicPoisonFlow2Tests : List TestCase := [
 -- Conditional poison example (conditional-poison.poison)
 def conditionalPoisonTests : List TestCase := [
   TestCase.mk "conditional_poison_complex"
-    (Expr.let "get_sensor" (Expr.fn "x" (Expr.num 42))
+    (Expr.let "get_sensor" (Expr.fn "x" Typ.unit (Expr.num 42))
       (Expr.let "sensor" (Expr.app (Expr.var "get_sensor") Expr.unit)
         (Expr.let "threshold" (Expr.num 50)
           (Expr.ite (Expr.op (Expr.var "sensor") Op.gte (Expr.var "threshold"))
@@ -177,9 +177,9 @@ def conditionalPoisonTests : List TestCase := [
 -- Function composition poison example (function-composition-poison.poison)
 def functionCompositionPoisonTests : List TestCase := [
   TestCase.mk "function_composition_poison"
-    (Expr.let "get_sensor" (Expr.fn "x" (Expr.num 42))
-      (Expr.let "f" (Expr.fn "x" (Expr.op (Expr.var "x") Op.add (Expr.num 1)))
-        (Expr.let "g" (Expr.fn "x" (Expr.op (Expr.var "x") Op.add (Expr.var "x")))
+    (Expr.let "get_sensor" (Expr.fn "x" Typ.unit (Expr.num 42))
+      (Expr.let "f" (Expr.fn "x" Typ.int (Expr.op (Expr.var "x") Op.add (Expr.num 1)))
+        (Expr.let "g" (Expr.fn "x" Typ.int (Expr.op (Expr.var "x") Op.add (Expr.var "x")))
           (Expr.let "poisoned_input" (Expr.app (Expr.var "get_sensor") Expr.unit)
             (Expr.let "result" (Expr.app (Expr.var "g") (Expr.app (Expr.var "f") (Expr.var "poisoned_input")))
               (Expr.var "result"))))))
@@ -191,12 +191,12 @@ def functionCompositionPoisonTests : List TestCase := [
 -- Function poison example (function-poison.poison)
 def functionPoisonTests : List TestCase := [
   TestCase.mk "function_poison_selection"
-    (Expr.let "get_sensor" (Expr.fn "x" (Expr.num 42))
+    (Expr.let "get_sensor" (Expr.fn "x" Typ.unit (Expr.num 42))
       (Expr.let "poisoned_cond" (Expr.app (Expr.var "get_sensor") Expr.unit)
         (Expr.let "f"
           (Expr.ite (Expr.op (Expr.var "poisoned_cond") Op.gte (Expr.num 1))
-            (Expr.fn "x" (Expr.op (Expr.var "x") Op.add (Expr.num 1)))
-            (Expr.fn "x" (Expr.op (Expr.var "x") Op.add (Expr.var "x"))))
+            (Expr.fn "x" Typ.int (Expr.op (Expr.var "x") Op.add (Expr.num 1)))
+            (Expr.fn "x" Typ.int (Expr.op (Expr.var "x") Op.add (Expr.var "x"))))
           (Expr.let "result" (Expr.app (Expr.var "f") (Expr.num 10))
             (Expr.var "result")))))
     (some (Value.num 11))
@@ -207,8 +207,8 @@ def functionPoisonTests : List TestCase := [
 -- Multiple poison sources example (multiple-poison-sources.poison)
 def multiplePoisonSourcesTests : List TestCase := [
   TestCase.mk "multiple_poison_sources"
-    (Expr.let "get_sensor" (Expr.fn "x" (Expr.num 42))
-      (Expr.let "get_corrupted_ptr" (Expr.fn "x_unit" (Expr.newRef (Expr.num 42)))
+    (Expr.let "get_sensor" (Expr.fn "x" Typ.unit (Expr.num 42))
+      (Expr.let "get_corrupted_ptr" (Expr.fn "x_unit" Typ.unit (Expr.newRef (Expr.num 42)))
         (Expr.let "sensor1" (Expr.app (Expr.var "get_sensor") Expr.unit)
           (Expr.let "sensor2_ptr" (Expr.app (Expr.var "get_corrupted_ptr") Expr.unit)
             (Expr.let "result" (Expr.op (Expr.op (Expr.var "sensor1") Op.add (Expr.num 10)) Op.add (Expr.deref (Expr.var "sensor2_ptr")))
@@ -221,7 +221,7 @@ def multiplePoisonSourcesTests : List TestCase := [
 -- Reference poison1 example (reference-poison1.poison)
 def referencePoison1Tests : List TestCase := [
   TestCase.mk "reference_poison1_data"
-    (Expr.let "get_sensor" (Expr.fn "x" (Expr.num 42))
+    (Expr.let "get_sensor" (Expr.fn "x" Typ.unit (Expr.num 42))
       (Expr.let "r" (Expr.newRef (Expr.num 0))
         (Expr.seq (Expr.assign (Expr.var "r") (Expr.app (Expr.var "get_sensor") Expr.unit))
           (Expr.deref (Expr.var "r")))))
@@ -233,7 +233,7 @@ def referencePoison1Tests : List TestCase := [
 -- Reference poison2 example (reference-poison2.poison)
 def referencePoison2Tests : List TestCase := [
   TestCase.mk "reference_poison2_untrusted"
-    (Expr.let "get_corrupted_ptr" (Expr.fn "x_unit" (Expr.newRef (Expr.num 42)))
+    (Expr.let "get_corrupted_ptr" (Expr.fn "x_unit" Typ.unit (Expr.newRef (Expr.num 42)))
       (Expr.let "bad_ref" (Expr.app (Expr.var "get_corrupted_ptr") Expr.unit)
         (Expr.seq (Expr.deref (Expr.var "bad_ref"))
           (Expr.assign (Expr.var "bad_ref") (Expr.num 42)))))
@@ -245,11 +245,11 @@ def referencePoison2Tests : List TestCase := [
 -- Sensor processing example (sensor-processing.poison)
 def sensorProcessingTests : List TestCase := [
   TestCase.mk "sensor_processing_complex"
-    (Expr.let "get_sensor" (Expr.fn "x" (Expr.num 42))
+    (Expr.let "get_sensor" (Expr.fn "x" Typ.unit (Expr.num 42))
       (Expr.let "sensor1" (Expr.app (Expr.var "get_sensor") Expr.unit)
         (Expr.let "sensor2" (Expr.app (Expr.var "get_sensor") Expr.unit)
           (Expr.let "f"
-            (Expr.fn "x"
+            (Expr.fn "x" Typ.int
               (Expr.ite (Expr.op (Expr.var "sensor1") Op.gte (Expr.num 0))
                 (Expr.ite (Expr.op (Expr.var "x") Op.gte (Expr.num 0))
                   (Expr.op (Expr.var "sensor1") Op.add (Expr.var "x"))
@@ -265,7 +265,7 @@ def sensorProcessingTests : List TestCase := [
 -- Sensor reading example (sensor-reading.poison)
 def sensorReadingTests : List TestCase := [
   TestCase.mk "sensor_reading_basic"
-    (Expr.let "get_sensor" (Expr.fn "x" (Expr.num 42))
+    (Expr.let "get_sensor" (Expr.fn "x" Typ.unit (Expr.num 42))
       (Expr.let "reading" (Expr.app (Expr.var "get_sensor") Expr.unit)
         (Expr.let "adjusted" (Expr.op (Expr.var "reading") Op.add (Expr.num 10))
           (Expr.var "adjusted"))))

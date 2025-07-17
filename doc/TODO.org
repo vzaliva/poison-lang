@@ -5,3 +5,5 @@
 * Type checker
   - Print VarTypeEnv (bug)
   - check how fresh location is generated
+  - 0 for special NULL location
+  - alpha-equivalence for closure types

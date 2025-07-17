@@ -45,10 +45,10 @@ inductive Expr : Type where
   | deref : Expr → Expr                           -- ! e
   | seq : Expr → Expr → Expr                      -- e1 ; e2
   | while : Expr → Expr → Expr                    -- while e1 do e2
-  | let : Name → Expr → Expr → Expr             -- let x = e1 in e2 (no type annotation)
-  | fn : Name → Expr → Expr                     -- fn x => e (no type annotation)
-  | pfn : Name → Expr → Expr                    -- pfn x => pe (no type annotation)
-  | app : Expr → Expr → Expr                      -- e1 e2
+  | let : Name → Expr → Expr → Expr               -- let x = e1 in e2 (no type annotation)
+  | fn : Name → Typ → Expr → Expr                 -- fn x : T => e
+  | pfn : Name → Typ → Expr → Expr                -- pfn x : T => pe
+  | app : Expr → Expr → Expr                       -- e1 e2
 
 end
 
@@ -89,8 +89,8 @@ def beqExpr : Expr → Expr → Bool
   | Expr.seq e1 e2, Expr.seq e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
   | Expr.while e1 e2, Expr.while e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
   | Expr.let x1 e1 e2, Expr.let x2 e1' e2' => x1 == x2 && beqExpr e1 e1' && beqExpr e2 e2'
-  | Expr.fn x1 e1, Expr.fn x2 e2 => x1 == x2 && beqExpr e1 e2
-  | Expr.pfn x1 e1, Expr.pfn x2 e2 => x1 == x2 && beqExpr e1 e2
+  | Expr.fn x1 t1 e1, Expr.fn x2 t2 e2 => x1 == x2 && t1 == t2 && beqExpr e1 e2
+  | Expr.pfn x1 t1 e1, Expr.pfn x2 t2 e2 => x1 == x2 && t1 == t2 && beqExpr e1 e2
   | Expr.app e1 e2, Expr.app e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
   | _, _ => false
 
@@ -126,8 +126,8 @@ def reprExpr : Expr → Nat → Std.Format
   | Expr.seq e1 e2, _ => s!"Expr.seq ({reprExpr e1 0}) ({reprExpr e2 0})"
   | Expr.while e1 e2, _ => s!"Expr.while ({reprExpr e1 0}) ({reprExpr e2 0})"
   | Expr.let x e1 e2, _ => s!"Expr.let {repr x} ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.fn x e, _ => s!"Expr.fn {repr x} ({reprExpr e 0})"
-  | Expr.pfn x e, _ => s!"Expr.pfn {repr x} ({reprExpr e 0})"
+  | Expr.fn x t e, _ => s!"Expr.fn {repr x} : {repr t} => ({reprExpr e 0})"
+  | Expr.pfn x t e, _ => s!"Expr.pfn {repr x} : {repr t} => ({reprExpr e 0})"
   | Expr.app e1 e2, _ => s!"Expr.app ({reprExpr e1 0}) ({reprExpr e2 0})"
 
 @[instance]

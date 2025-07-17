@@ -1,5 +1,5 @@
 -- Conditional poison example
-let get_sensor = fn x => 42 in
+let get_sensor = fn x : unit => 42 in
 let sensor = get_sensor unit in
 let threshold = 50 in
 if sensor >= threshold then

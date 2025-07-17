@@ -1,5 +1,5 @@
 -- Basic poison flow example 1: explicit flow (data dependency)
-let get_sensor = fn x => 42 in
+let get_sensor = fn x : unit => 42 in
 let faulty = get_sensor unit in     (* poisoned *)
 let result = faulty + 1 in          (* poisoned (explicit flow) *)
 result

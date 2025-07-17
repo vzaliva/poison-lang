@@ -1,0 +1,18 @@
+-- Higher-order function example
+-- Tests that functions can take function parameters
+
+-- A simple function that applies its argument twice
+let twice = fn f : (int -> int) => fn x : int => f (f x) in
+
+-- Some simple functions to pass as arguments
+let add_one = fn x : int => x + 1 in
+let double = fn x : int => x + x in
+
+-- Apply twice with add_one: (5 + 1) + 1 = 7
+let result1 = (twice add_one) 5 in
+
+-- Apply twice with double: (3 * 2) * 2 = 12
+let result2 = (twice double) 3 in
+
+-- Return sum to show both worked
+result1 + result2  -- Should be 7 + 12 = 19 

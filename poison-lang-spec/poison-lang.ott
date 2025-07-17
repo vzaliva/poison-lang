@@ -56,8 +56,8 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | e1 ; e2                 ::   :: sequence
   | while e1 do e2          ::   :: while
   | let x = e1 in e2        ::   :: let
-  | fn x => e               ::   :: fn  
-  | pfn x => pe             ::   :: pfn  {{ com pure function }}
+  | fn x : T => e               ::   :: fn  
+  | pfn x : T => pe             ::   :: pfn  {{ com pure function }}
   | e1 e2                   ::   :: app
   | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
   | closure ( x , e , r )  ::   :: closure   {{ com closure value }}
@@ -298,11 +298,11 @@ defn
 
 % Function abstraction creates a closure
 --------------------------------------------------------------- :: fn_abs
-< fn x => e, m, r > -> < closure(x, e, r), m, r >
+< fn x : T => e, m, r > -> < closure(x, e, r), m, r >
 
 % Pure function abstraction creates a pure closure
 --------------------------------------------------------------- :: pfn_abs
-< pfn x => pe, m, r > -> < pe_closure(x, pe, r), m, r >
+< pfn x : T => pe, m, r > -> < pe_closure(x, pe, r), m, r >
 
 % Function application - evaluate argument first (call-by-value)
   <e2,m,r> -> <e2',m',r'>
@@ -435,13 +435,13 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
 % This enables predicate-based de-poisoning when the function is applied.
   pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- e : T2 :> p' { P' } -| G' ; L'
 ----------------------------------------------------------------------  :: fn_abs
-  pc ; G ; S ; L |- fn x => e : T1 -> T2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G' ; L
+  pc ; G ; S ; L |- fn x : T1 => e : T1 -> T2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G' ; L
 
 % Pure function abstraction typing. Capture the pure function body and variable context.
 % Note: pe body ensures no side effects in the function
   pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- pe : T2 :> p' { P' } -| G' ; L'
 ----------------------------------------------------------------------  :: pfn_abs
-  pc ; G ; S ; L |- pfn x => pe : T1 -> T2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G' ; L
+  pc ; G ; S ; L |- pfn x : T1 => pe : T1 -> T2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G' ; L
 
 % Function application typing - now uses captured body and context for precise typing
 % When applying a function, we extract the typing_closure containing the parameter name (x),

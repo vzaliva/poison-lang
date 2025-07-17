@@ -1,2 +1,2 @@
 -- Function application with type mismatch
-(fn x => x + 1) true 
+(fn x : int => x + 1) true 

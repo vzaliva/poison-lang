@@ -97,6 +97,15 @@ mutual
     let e ← parseExpr
     return Expr.deref e
 
+  -- Parse types (simple types only for now)
+  partial def parseTyp : Parser Typ := do
+    let t ← identifier
+    match t with
+    | "int" => return Typ.int
+    | "bool" => return Typ.bool
+    | "unit" => return Typ.unit
+    | _ => fail s!"Unknown type: {t}"
+
   -- Parse while loops
   partial def parseWhile : Parser Expr := do
     token "while"
@@ -109,17 +118,21 @@ mutual
   partial def parseFn : Parser Expr := do
     token "fn"
     let x ← identifier
+    token ":"
+    let t ← parseTyp
     token "=>"
     let body ← parseExpr
-    return Expr.fn x body
+    return Expr.fn x t body
 
   -- Parse pure function abstractions
   partial def parsePfn : Parser Expr := do
     token "pfn"
     let x ← identifier
+    token ":"
+    let t ← parseTyp
     token "=>"
     let body ← parseExpr
-    return Expr.pfn x body
+    return Expr.pfn x t body
 
   -- Main expression parser (lowest precedence)
   partial def parseExpr : Parser Expr :=

@@ -88,6 +88,19 @@ def PTyp.toTyp (pt : PTyp) : Typ :=
   | PTyp.ref t _ => Typ.ref (toTyp t)
   | PTyp.arrow t1 t2 _ _ => Typ.arrow (toTyp t1) (toTyp t2)
 
+-- Helper function to convert Typ to PTyp
+-- TODO: this is dummy implementation, we should use a proper conversion
+def Typ.toPTyp (t : Typ) : PTyp :=
+  match t with
+  | Typ.int => PTyp.int
+  | Typ.bool => PTyp.bool
+  | Typ.unit => PTyp.unit
+  | Typ.ref t' => PTyp.ref (toPTyp t') 0  -- Use dummy location 0
+  | Typ.arrow t1 t2 =>
+    -- Use dummy closure - this is a limitation when converting at declaration time
+    let dummyClosure := TClosure.fn_tclosure "" (Expr.unit) []
+    PTyp.arrow (toPTyp t1) (toPTyp t2) false dummyClosure
+
 -- Helper function to convert PExpr to Expr
 def PExpr.toExpr (pe : PExpr) : Expr :=
   match pe with
@@ -311,8 +324,8 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.seq e1 e2 => typecheckSeq ctx e1 e2 (fuel - 1)
     | Expr.while e1 e2 => typecheckWhile ctx e1 e2 (fuel - 1)
     | Expr.let x e1 e2 => typecheckLet ctx x e1 e2 (fuel - 1)
-    | Expr.fn x body => typecheckFn ctx x body (fuel - 1)
-    | Expr.pfn x body => typecheckPfn ctx x body (fuel - 1)
+    | Expr.fn x t body => typecheckFn ctx x t body (fuel - 1)
+    | Expr.pfn x t body => typecheckPfn ctx x t body (fuel - 1)
     | Expr.app e1 e2 => typecheckApp ctx e1 e2 (fuel - 1)
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 (fuel - 1)
 termination_by fuel
@@ -492,22 +505,24 @@ decreasing_by
 -- ----------------------------------------------------------------------
 -- pc ; G ; S ; L |- fn x : T1 => e : T1 -> T2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G' ; L
 -/
-def typecheckFn (ctx : TypeContext) (x : Name) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+-- TODO: this is dummy implementation. We need to review type system to fix the root cause.
+def typecheckFn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
   else do
-    -- For type inference, we need to infer the parameter type from usage
-    -- For now, use a placeholder type - proper type inference would require more complex logic
-    let t1' := PTyp.int  -- Placeholder type
-
-    let varQt : QTyp := ⟨t1', ctx.pc, none  ⟩
+    -- Ott rule: S[x |-> T1 :> pc { no_pred }]
+    -- Bind parameter with type T1, poison pc, and no predicate
+    let varQt : QTyp := ⟨Typ.toPTyp t1, ctx.pc, none  ⟩
     let varEnv' := updateVarEnv ctx.varEnv x varQt
     let ctx' := { ctx with varEnv := varEnv' }
 
+    -- Type-check body in extended environment
     let result ← typecheckExpr ctx' body (fuel - 1)
     let ⟨ptyp2, _p', _pred'  ⟩ := result.qualType
 
+    -- Ott rule: typing_closure ( x , e , S )
+    -- Create typing closure with parameter name, body, and captured environment
     let tcl := TClosure.fn_tclosure x body ctx.varEnv
-    let arrowTyp := PTyp.arrow t1' ptyp2 ctx.pc tcl
+    let arrowTyp := PTyp.arrow (Typ.toPTyp t1) ptyp2 ctx.pc tcl
     let qt : QTyp := ⟨arrowTyp, ctx.pc, none  ⟩
     return { qualType := qt, memEnv' := result.memEnv', tagEnv' := ctx.tagEnv }
 termination_by fuel
@@ -519,13 +534,27 @@ decreasing_by
 -- ----------------------------------------------------------------------
 -- pc ; G ; S ; L |- pfn x : T1 => pe : T1 -> T2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G' ; L
 -/
-def typecheckPfn (ctx : TypeContext) (x : Name) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+-- TODO: this is dummy implementation. We need to review type system to fix the root cause.
+def typecheckPfn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
   else do
-    -- For type inference, we need to infer the parameter type from usage
-    -- For now, use a placeholder type - proper type inference would require more complex logic
-    let t1' := PTyp.int  -- Placeholder type
+    -- Convert the parameter type from Typ to PTyp, using ctx.pc for all poison values
+    -- and empty/dummy values for unknown runtime information
+    let rec convertTyp (t : Typ) : PTyp := match t with
+      | Typ.int => PTyp.int
+      | Typ.bool => PTyp.bool
+      | Typ.unit => PTyp.unit
+      | Typ.ref t' =>
+          -- For ref types, we need a location but don't have one at parameter declaration
+          -- Using 0 as a dummy location - this is a limitation of the current approach
+          PTyp.ref (convertTyp t') 0
+      | Typ.arrow t1 t2 =>
+          -- For arrow types, use ctx.pc for poison and a dummy closure
+          -- This implements the Ott rule's intent: parameter has at least pc poison
+          let dummyClosure := TClosure.pfn_tclosure "" (PExpr.value Value.unit) []
+          PTyp.arrow (convertTyp t1) (convertTyp t2) ctx.pc dummyClosure
 
+    let t1' := convertTyp t1
     let varQt : QTyp := ⟨t1', ctx.pc, none  ⟩
     let varEnv' := updateVarEnv ctx.varEnv x varQt
     let ctx' := { ctx with varEnv := varEnv' }
@@ -549,6 +578,7 @@ decreasing_by
 -- ----------------------------------------------------------------------
 -- pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
 -/
+-- TODO: review this implementation.
 def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
   else do
