@@ -43,7 +43,8 @@ module.exports = grammar({
       $.binary_expr,
       $.app_expr,
       $.atom,
-      $.identifier
+      $.identifier ,
+      $.group_expr
     ),
     
     // 1. Sequencing: e1 ; e2
@@ -136,9 +137,13 @@ module.exports = grammar({
     )),
 
     number: $ => /\d+/,
-
+    group_expr: $ => prec(9, seq(
+                        "(",
+                        $.expr,
+                        ")"
+                      )),
     // 10. reserved words excluded
-    identifier: $ => token(prec(-1, /[a-zA-Z_]+/)),
+    identifier: $ => token(prec(-1, /[a-zA-Z_][a-zA-Z0-9_]*/)),
 
      
     comment: $ => token(seq("--", /.*/))

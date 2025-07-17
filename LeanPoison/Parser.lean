@@ -223,10 +223,12 @@ open Lean Xml
 partial def xmlToExpr (x : Element) : Except String Expr :=
     match x with
   | Element.Element "expr" _ contents =>
-      let elements := contents.filterMap (fun
-        | Content.Element el => some el
-        | _ => none
-      )
+     let elements := contents.filterMap fun
+      | Content.Element el =>
+        match el with
+        | Element.Element "comment" _ _ => none  -- discard comment elements
+        | _ => some el
+      | _ => none
       match elements.toList with
       | [e] => xmlToExpr e
       | _ => .error s!"Invalid expr contents: {contents}"
@@ -306,6 +308,8 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
     let elems := contents.filterMap fun
       | Content.Element el => some el
       | _ => none
+    let a:= elems.toList
+    dbg_trace a.length
     match elems.toList with
     | [leftEl, rightEl] =>
         return Expr.seq (← xmlToExpr leftEl) (← xmlToExpr rightEl)
@@ -399,6 +403,14 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
           return Expr.pfn p (← xmlToExpr body)
       | _ => .error s!"Invalid pfn_expr structure: {contents}"
 
+  | Element.Element "group_expr" _ contents => do
+    let elements := contents.filterMap (fun
+          | Content.Element el => some el
+          | _ => none
+        )
+        match elements.toList with
+        | [e] => xmlToExpr e
+        | _ => .error s!"Invalid parantheses expr contents: {contents}"
 
   | Element.Element "source_file" _ children => do
       let elements := children.filterMap fun
