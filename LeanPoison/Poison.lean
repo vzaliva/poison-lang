@@ -43,7 +43,7 @@ inductive PTyp : Type where
   | bool : PTyp
   | unit : PTyp
   | ref : PTyp → Address → PTyp
-  | arrow : Typ → Poison → TClosure → PTyp  -- Now stores surface type ST, not T1 -> T2
+  | arrow : Typ → Typ → Poison → TClosure → PTyp  -- Now stores surface type ST, not T1 -> T2
 
 end
 
@@ -88,7 +88,7 @@ partial def reprPTyp : PTyp → Nat → Std.Format
   | PTyp.bool, _ => "PTyp.bool"
   | PTyp.unit, _ => "PTyp.unit"
   | PTyp.ref t l, _ => s!"PTyp.ref {reprPTyp t 0} {repr l}"
-  | PTyp.arrow st p tcl, _ => s!"PTyp.arrow {repr st} {repr p} {reprTClosure tcl 0}"
+  | PTyp.arrow st1 st2 p tcl, _ => s!"PTyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprTClosure tcl 0}"
 
 partial def reprQTyp : QTyp → Nat → Std.Format
   | QTyp.mk ptyp poison tpred, _ =>
@@ -130,8 +130,8 @@ def beqPTyp : PTyp → PTyp → Bool
   | PTyp.bool, PTyp.bool => true
   | PTyp.unit, PTyp.unit => true
   | PTyp.ref t1 l1, PTyp.ref t2 l2 => beqPTyp t1 t2 && l1 == l2
-  | PTyp.arrow st1 p1 tcl1, PTyp.arrow st2 p2 tcl2 =>
-    st1 == st2 && p1 == p2 && beqTClosure tcl1 tcl2
+  | PTyp.arrow st1 st2 p1 tcl1, PTyp.arrow st1' st2' p2 tcl2 =>
+    st1 == st1' && st2 == st2' && p1 == p2 && beqTClosure tcl1 tcl2
   | _, _ => false
 
 def beqTClosure : TClosure → TClosure → Bool

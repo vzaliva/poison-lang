@@ -106,6 +106,13 @@ instance : BEq Expr where
 
 -- Repr instances
 
+def reprTyp : Typ → Nat → Std.Format
+  | Typ.int, _ => "Typ.int"
+  | Typ.bool, _ => "Typ.bool"
+  | Typ.unit, _ => "Typ.unit"
+  | Typ.ref t, _ => s!"Typ.ref {reprTyp t 0}"
+  | Typ.arrow t1 t2, _ => s!"Typ.arrow {reprTyp t1 0} {reprTyp t2 0}"
+
 -- Manual Repr instance for Value (since closures contain functions)
 def reprValue : Value → Nat → Std.Format
   | Value.num n, _ => s!"Value.num {repr n}"

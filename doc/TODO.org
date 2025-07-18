@@ -4,6 +4,11 @@
     if so, should we try to de-poison it?
 * Type checker
   - Print VarTypeEnv (bug)
-  - check how fresh location is generated
-  - 0 for special NULL location
+  - check how fresh location is generated (maybe add StateM to TypecheckM)
+  - Handle 0 for special Address.null
   - alpha-equivalence for closure types
+  - If current approcah does not work we can swtich to full surface type annotations for function returns.
+** makeDummyTyp
+  - Name.anonymous - check if it is OK (duplicates during recursive calls?)
+  - Check if empty environment is OK
+

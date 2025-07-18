@@ -100,7 +100,7 @@ typ, T :: 'T_' ::=         {{ com types }}
   | bool                    ::   :: bool
   | unit                    ::   :: unit
   | ref T @ l               ::   :: ref {{ tex \mathsf{ref}\,[[T]]\,@\,[[l]] }}
-  | ST # p typing_closure tcl ::   :: arrow {{ tex [[ST]] \, \triangleright [[p]]\, \mathsf{typing\_closure}\, [[tcl]] }}
+  | ST1 -> ST2 # p typing_closure tcl ::   :: arrow {{ tex [[ST1]] \rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{typing\_closure}\, [[tcl]] }}
 
 % Predicate closure contents (for cleaner syntax)
 pcl :: 'PCL_' ::= {{ com predicate closure }}
@@ -441,33 +441,40 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
   pc ; G ; S ; L |- e1 ; e2  : T2 :> join p' p'' { P'' } -| G'' ; L''
 
 % Function abstraction typing. Capture the function body and variable context for later use.
-% Body typing is delayed until application time when we have the actual argument type.
+% TODO: Review wether we should use G' in the conclusion.
+  pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- e : T2 :> p' { P' } -| G' ; L'
+  ST1 <: T1
+  ST2 <: T2
 ----------------------------------------------------------------------  :: fn_abs
-  pc ; G ; S ; L |- fn x : ST1 => e : ST1 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G ; L
+  pc ; G ; S ; L |- fn x : ST1 => e : ST1 -> ST2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G ; L
 
 % Pure function abstraction typing. Capture the pure function body and variable context.
 % Note: pe body ensures no side effects in the function
-% Body typing is delayed until application time when we have the actual argument type.
+  pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- pe : T2 :> p' { P' } -| G' ; L'
+  ST1 <: T1
+  ST2 <: T2
 ----------------------------------------------------------------------  :: pfn_abs
-  pc ; G ; S ; L |- pfn x : ST1 => pe : ST1 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
+  pc ; G ; S ; L |- pfn x : ST1 => pe : ST1 -> ST2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
 
 % Function application typing - now uses captured body and context for precise typing
 % When applying a function, we extract the typing_closure containing the parameter name (x),
 % function body (e), and captured variable context (S'). We then type-check the body in
 % the captured context S' extended with the actual argument's type (including predicates)
 % and using the current logical environment L. This enables predicate-based de-poisoning.
-  pc ; G ; S ; L |- e1 : ST1 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
+  pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
   pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
   ST1 <: T1
   pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
+  ST2 <: T2
 ----------------------------------------------------------------------  :: app_fn
   pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
 
 % Pure function application typing - uses captured pure body and context
-  pc ; G ; S ; L |- e1 : ST1 # p typing_closure ( x , pe , S' ) :> p1 { P1 } -| G' ; L'
+  pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , pe , S' ) :> p1 { P1 } -| G' ; L'
   pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
   ST1 <: T1
   pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
+  ST2 <: T2
 ----------------------------------------------------------------------  :: app_pfn
   pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
 
