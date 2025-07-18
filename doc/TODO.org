@@ -1,4 +1,7 @@
 * Typing rules
+** function handling
+  - If current approcah does not work we can swtich to full surface type annotations for function returns.
+  - Maybe do not use subtyping terminology for ST <: T as we do not have proper subtyping. It is just type stripping.
 ** matchGuard
   - when we apply a predicate to reference, do we need to check if reference is poisoned?
     if so, should we try to de-poison it?
@@ -7,8 +10,9 @@
   - check how fresh location is generated (maybe add StateM to TypecheckM)
   - Handle 0 for special Address.null
   - alpha-equivalence for closure types
-  - If current approcah does not work we can swtich to full surface type annotations for function returns.
 ** makeDummyTyp
   - Name.anonymous - check if it is OK (duplicates during recursive calls?)
   - Check if empty environment is OK
-
+* Documentation
+  - We have 3 types: surface, runtime, and qualified.
+  - We have 2 types of expressions: pure and stateful.

@@ -66,10 +66,11 @@ together, are not present in prior work:
     \item A predicate system that allows selective de-poisoning based on runtime
     conditions.
     \item Support for higher-order functions that capture their body and typing
-    context at definition time, then type-check the body at application time
-    with the actual argument's predicates and current logical environment,
-    enabling predicate-based de-poisoning within function bodies while
-    ensuring fault taint cannot be hidden behind lambda abstraction.
+    context at definition time, type-check the body to derive return types,
+    then re-type-check the body at application time with the actual argument's
+    predicates and current logical environment, enabling predicate-based
+    de-poisoning within function bodies while ensuring fault taint cannot be
+    hidden behind lambda abstraction.
 \end{enumerate}
 
 Together, these features give a single, uniform type system that provides a
@@ -103,7 +104,7 @@ pe ::= n | b | x | l                   (* pure expressions *)
 
 T ::= int | bool | unit 
     | ref T @ l         (* region types with location indices *)
-    | ST # p typing_closure tcl (* function types with surface parameter type and typing closure *)
+    | ST1 -> ST2 # p typing_closure tcl (* function types with surface parameter and return types and typing closure *)
 
 Q ::= T :> p { P }      (* type with poison status and predicate *)
 
@@ -114,7 +115,7 @@ P ::= guard k pred_closure (x, pe, r)  (* predicate as pure closure *)
 \subsection*{Key features}
 \begin{itemize}
     \item \textbf{References}: \texttt{ref e} creates, \texttt{e1 := e2} assigns, \texttt{!e} dereferences (memory stores only integers)
-    \item \textbf{Functions}: \texttt{fn x : T => e} creates functions with type-annotated parameters, \texttt{e1 e2} applies, with closures
+    \item \textbf{Functions}: \texttt{fn x : T => e} creates functions with type-annotated parameters and derived return types, \texttt{e1 e2} applies, with closures
     \item \textbf{Pure functions}: \texttt{pfn x : T => pe} creates pure functions with type-annotated parameters that cannot have side effects (note: no nested pure functions allowed)
     \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings
     \item \textbf{Memory access only through references}: You need a valid
@@ -347,8 +348,8 @@ applied, the result inherits this poison.
     \item \textbf{Dereference}: $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{data\_at\_location})$, with predicate-based de-poisoning support
     \item \textbf{Let bindings}: Variable gets $\text{pc} \sqcup \text{poison}(\text{bound\_value})$ and preserves predicates
     \item \textbf{Functions}: Abstraction gets $\text{pc}$ and captures body and
-    context, application types body with actual argument predicates and current
-    $\mathcal{L}$
+    context, typechecks body to derive return type, application re-typechecks body
+    with actual argument predicates and current $\mathcal{L}$
 \end{itemize}
 
 \section{Operational Semantics}
@@ -451,22 +452,28 @@ When variables have associated predicates, the typing rule checks the logical en
 
 \subsubsection*{Function abstraction:}
 Function types include a \emph{typing closure} that captures the function
-body and variable typing context at definition time. Body typing is delayed
-until application time when we have the actual argument type with its runtime
-information. The parameter type $ST$ is a surface type annotation.
+body and variable typing context at definition time. The function body is
+typechecked at definition time to derive the return type $ST_2$. The parameter
+type $ST_1$ and return type $ST_2$ are surface type annotations.
 \[
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{fn } x : ST \Rightarrow e : ST \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}
+\frac{\begin{array}{c}
+\text{pc} ; \Gamma ; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] ; \mathcal{L} \vdash e : T_2 \triangleright p' \{ P' \} \dashv \Gamma' ; \mathcal{L}' \\
+ST_1 <: T_1 \\
+ST_2 <: T_2
+\end{array}}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{fn } x : ST_1 \Rightarrow e : ST_1 \rightarrow ST_2 \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
 \]
 
 \subsubsection*{Function application:}
-The function application typing rule extracts the typing closure from the function type and types the body at application time. This enables predicate-based de-poisoning by using the actual argument's predicates and the current logical environment $\mathcal{L}$. The subtyping check $ST \!<:\! T_1$ ensures the surface parameter type is compatible with the actual argument type.
+The function application typing rule extracts the typing closure from the function type and types the body at application time. This enables predicate-based de-poisoning by using the actual argument's predicates and the current logical environment $\mathcal{L}$. The subtyping checks $ST_1 \!<:\! T_1$ and $ST_2 \!<:\! T_2$ ensure the surface parameter and return types are compatible with the actual argument and body types respectively.
 
 \[
 \frac{\begin{array}{c}
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : ST \# p \; \text{typing\_closure}(x, e, \sigma') \triangleright p_1 \{ P_1 \} \dashv \Gamma' ; \mathcal{L}' \\
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : ST_1 \rightarrow ST_2 \# p \; \text{typing\_closure}(x, e, \sigma') \triangleright p_1 \{ P_1 \} \dashv \Gamma' ; \mathcal{L}' \\
 \text{pc} ; \Gamma' ; \sigma ; \mathcal{L}' \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma'' ; \mathcal{L}'' \\
-ST \!<:\! T_1 \\
-\text{pc} ; \Gamma'' ; \sigma'[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L}'' \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}'''
+ST_1 \!<:\! T_1 \\
+\text{pc} ; \Gamma'' ; \sigma'[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L}'' \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}''' \\
+ST_2 \!<:\! T_2
 \end{array}}
 {\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 \; e_2 : T_2 \triangleright \text{pc} \sqcup p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}'''}
 \]
@@ -478,7 +485,7 @@ Key aspects of function application:
     \item The argument's qualified type includes its predicates $P_2$, enabling de-poisoning in the function body
     \item The current logical environment $\mathcal{L}''$ is used, allowing guard-based de-poisoning
     \item The result poison $p_3$ reflects any de-poisoning that occurred in the function body
-    \item Function types only store the surface parameter type $ST$, delaying body typing until application when runtime information is available
+    \item Function types store both surface parameter type $ST_1$ and return type $ST_2$, with body typing occurring at both definition and application time
 \end{itemize}
 
 
