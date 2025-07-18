@@ -100,6 +100,8 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   | PExpr.let x e1 e2 => Expr.let x (e1.toExpr) (e2.toExpr)
   | PExpr.app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
+
+
 /-- Convert qualified type to surface type by stripping poison and preducate info -/
 def QTyp.toTyp (qt : QTyp) : Typ :=
   qt.ptyp.toTyp
@@ -314,7 +316,7 @@ def typecheckUnit (ctx : TypeContext) : TypecheckM TypeResult := do
 
 -- The following option is needed in increasing the maximum number of heartbeats
 -- to avoid the termination checker failure on the following mutual block.
-set_option maxHeartbeats 400000
+set_option maxHeartbeats 800000
 
 
 mutual
@@ -346,6 +348,31 @@ termination_by fuel
 decreasing_by
   all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
+/-- Helper function to derive return type ST2 from function body
+   This implements the common logic for both fn_abs and pfn_abs rules:
+   - Create dummy type T1 from surface type ST1
+   - Typecheck body with dummy argument type T1
+   - Convert body type T2 to surface type ST2
+-/
+def deriveReturnType (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM Typ :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    -- Create dummy type T1 from surface type ST1 to typecheck the body
+    let t1 := makeDummyTyp st1
+
+    -- Update context with dummy argument type T1
+    let varEnv' := updateVarEnv ctx.varEnv x (⟨t1, ctx.pc, none⟩)
+    let ctx' := { ctx with varEnv := varEnv' }
+
+    -- Typecheck body with dummy argument type T1
+    let result ← typecheckExpr ctx' body (fuel - 1)
+    let ⟨t2, _p, _pred⟩ := result.qualType
+
+  -- Convert body type T2 to surface type ST2
+    return t2.toTyp
+termination_by fuel
+decreasing_by
+  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 
 /-- Rule: op_plus (Ott rule: op_plus)
@@ -524,19 +551,8 @@ decreasing_by
 def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
   else do
-    -- Create dummy type T1 from surface type ST1 to typecheck the body
-    let t1 := makeDummyTyp st1
-
-    -- update context with dummy argument type T1
-    let varEnv' := updateVarEnv ctx.varEnv x (⟨t1, ctx.pc, none⟩)
-    let ctx' := { ctx with varEnv := varEnv' }
-
-    -- Typecheck body with dummy argument type T1
-    let result ← typecheckExpr ctx' body (fuel - 1)
-    let ⟨t2, _p, _pred⟩ := result.qualType
-
-    -- Convert body type T2 to surface type ST2
-    let st2 := t2.toTyp
+    -- Derive return type ST2 from function body
+    let st2 ← deriveReturnType ctx x st1 body (fuel - 1)
 
     -- Create arrow type ST1 -> ST2
     let arrowTyp : PTyp := PTyp.arrow st1 st2 false (TClosure.fn_tclosure x body ctx.varEnv)
@@ -557,21 +573,10 @@ decreasing_by
   pc ; G ; S ; L |- pfn x : ST1 => pe : ST1 -> ST2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
 -/
 def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-    if fuel = 0 then throw "Out of fuel"
+  if fuel = 0 then throw "Out of fuel"
   else do
-    -- Create dummy type T1 from surface type ST1 to typecheck the body
-    let t1 := makeDummyTyp st1
-
-    -- update context with dummy argument type T1
-    let varEnv' := updateVarEnv ctx.varEnv x (⟨t1, ctx.pc, none⟩)
-    let ctx' := { ctx with varEnv := varEnv' }
-
-    -- Typecheck body with dummy argument type T1
-    let result ← typecheckExpr ctx' body (fuel - 1)
-    let ⟨t2, _p, _pred⟩ := result.qualType
-
-    -- Convert body type T2 to surface type ST2
-    let st2 := t2.toTyp
+    -- Derive return type ST2 from function body
+    let st2 ← deriveReturnType ctx x st1 body (fuel - 1)
 
     -- Convert body to PExpr
     let pbody ← body.toPExpr

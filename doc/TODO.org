@@ -1,5 +1,6 @@
 * Typing rules
 ** function handling
+  - Type derivation is probably not decidable.
   - If current approcah does not work we can swtich to full surface type annotations for function returns.
   - Maybe do not use subtyping terminology for ST <: T as we do not have proper subtyping. It is just type stripping.
 ** matchGuard
@@ -8,6 +9,7 @@
 * Type checker
   - Print VarTypeEnv (bug)
   - check how fresh location is generated (maybe add StateM to TypecheckM)
+** Type Derivation
   - Handle 0 for special Address.null
   - alpha-equivalence for closure types
 ** makeDummyTyp
