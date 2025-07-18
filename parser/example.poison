@@ -1,2 +1,5 @@
-a := 4 ;
-(!a + 1)
+--Comment 
+if true then 4 else 5 ; -- Comment
+(4 + 6 + (5 + (2 + 3))) ; -- Comment
+--Comment 
+let x = 4 in x + 1 --comment 

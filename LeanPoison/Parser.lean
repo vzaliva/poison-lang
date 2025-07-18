@@ -238,7 +238,9 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | Element.Element "atom" _ contents =>
   let elems := contents.filterMap fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
     | Content.Element el => some el
+
     | _ => none
 
   match elems.toList with
@@ -263,6 +265,8 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | Element.Element "binary_expr" _ contents => do
     let exprs := contents.filterMap fun
+
+      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
     let validOps := ["+", "-", "*", "\\", ">", ">=", "<", "<=", "=="]
@@ -295,6 +299,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
   | Element.Element "app_expr" _ contents =>
     do
      let exps := contents.filterMap (fun
+        | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
         | Content.Element el => some el
         | _ => none
       )
@@ -306,10 +311,11 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | Element.Element "seq_expr" _ contents => do
     let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
     let a:= elems.toList
-    dbg_trace a.length
+    --dbg_trace a.length
     match elems.toList with
     | [leftEl, rightEl] =>
         return Expr.seq (← xmlToExpr leftEl) (← xmlToExpr rightEl)
@@ -319,6 +325,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | Element.Element "if_expr" _ contents => do
   let elems := contents.filterMap fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
     | Content.Element el => some el
     | _ => none
     match elems.toList with
@@ -330,6 +337,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | Element.Element "let_expr" _ contents => do
     let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
 
@@ -342,18 +350,21 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | Element.Element "assign_expr" _ contents => do
     let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
 
     match elems.toList with
-    | Element.Element "identifier" _ #[Content.Character name] :: rhsElem :: _ =>
-        let rhs ← xmlToExpr rhsElem
-        return Expr.assign (Expr.var name) rhs
+    | [e1,e2] =>
+        let lhs <- xmlToExpr e1
+        let rhs ← xmlToExpr e2
+        return Expr.assign lhs rhs
     | _ =>
         .error s!"Invalid assign_expr structure: {contents}"
 
   | Element.Element "ref_expr" _ contents =>
         let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
 
@@ -364,6 +375,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | Element.Element "deref_expr" _ contents =>
           let elems := contents.filterMap fun
+        | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
         | Content.Element el => some el
         | _ => none
 
@@ -374,6 +386,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | Element.Element "while_expr" _ contents => do
        let elems := contents.filterMap fun
+        | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
         | Content.Element el => some el
         | _ => none
 
@@ -384,6 +397,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | Element.Element "fn_expr" _ contents => do
     let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
     --dbg_trace elems.toList
@@ -395,6 +409,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | Element.Element "pfn_expr" _ contents => do
     let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
       match elems.toList with
@@ -405,6 +420,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | Element.Element "group_expr" _ contents => do
     let elements := contents.filterMap (fun
+          | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
           | Content.Element el => some el
           | _ => none
         )

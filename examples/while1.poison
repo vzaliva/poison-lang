@@ -1,9 +1,11 @@
+(* Simple counter *)
 let counter = ref 0 in
-while !counter >= 5 do 
-    counter := !counter + 1;
-    unit ;
+while (!counter) < 5 do (
+    counter := (!counter) + 1;
+    unit
+);
 
-
+(* While loop example *)
 let counter = ref 0 in
 while !counter >= 5 do
   counter := !counter + 1

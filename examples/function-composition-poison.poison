@@ -1,8 +1,7 @@
-
+-- Function composition poison example
 let get_sensor = fn x => 42 in
 let f = fn x => x + 1 in
 let g = fn x => x + x in
 let poisoned_input = get_sensor unit in
-let i = f poisoned_input in 
-let result = g i in
+let result = g (f poisoned_input) in
 result 
