@@ -119,20 +119,24 @@ mutual
     token "fn"
     let x ← identifier
     token ":"
-    let t ← parseTyp
+    let paramType ← parseTyp
     token "=>"
     let body ← parseExpr
-    return Expr.fn x t body
+    token ":"
+    let returnType ← parseTyp
+    return Expr.fn x paramType body returnType
 
   -- Parse pure function abstractions
   partial def parsePfn : Parser Expr := do
     token "pfn"
     let x ← identifier
     token ":"
-    let t ← parseTyp
+    let paramType ← parseTyp
     token "=>"
     let body ← parseExpr
-    return Expr.pfn x t body
+    token ":"
+    let returnType ← parseTyp
+    return Expr.pfn x paramType body returnType
 
   -- Main expression parser (lowest precedence)
   partial def parseExpr : Parser Expr :=

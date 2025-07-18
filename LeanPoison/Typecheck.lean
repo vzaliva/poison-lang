@@ -106,18 +106,9 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
 def QTyp.toTyp (qt : QTyp) : Typ :=
   qt.ptyp.toTyp
 
-def Address.null : Address := 0
-def Name.anonymous : Name := ""
 
-/-- Create a dummy type from a surface type -/
-def makeDummyTyp (st : Typ) : PTyp :=
-  match st with
-  | Typ.int => PTyp.int
-  | Typ.bool => PTyp.bool
-  | Typ.unit => PTyp.unit
-  | Typ.ref t => PTyp.ref (makeDummyTyp t) Address.null
-  | Typ.arrow st1 st2 =>
-      PTyp.arrow st1 st2 false (TClosure.fn_tclosure Name.anonymous (Expr.value Value.unit) [])
+
+
 
 /-- Check if a surface type is a subtype of a qualified type. This implements ST
       <: T by comparing surface types.
@@ -319,6 +310,46 @@ def typecheckUnit (ctx : TypeContext) : TypecheckM TypeResult := do
 set_option maxHeartbeats 800000
 
 
+/-- Rule: fn_abs (Ott rule: fn_abs)
+----------------------------------------------------------------------  :: fn_abs
+  pc ; G ; S ; L |- fn x : ST1 => e : ST1 -> ST2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G ; L
+-/
+def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    -- Simply record the body and return type without typechecking the body
+    -- Body typechecking is deferred until application time
+
+    -- Create arrow type ST1 -> ST2
+    let arrowTyp : PTyp := PTyp.arrow st1 st2 false (TClosure.fn_tclosure x body ctx.varEnv)
+
+    -- Create qualified type ST1 -> ST2 # pc { no_pred }
+    let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
+
+    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
+
+/-- Rule: pfn_abs (Ott rule: pfn_abs)
+----------------------------------------------------------------------  :: pfn_abs
+  pc ; G ; S ; L |- pfn x : ST1 => pe : ST1 -> ST2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
+-/
+def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    -- Simply record the body and return type without typechecking the body
+    -- Body typechecking is deferred until application time
+
+    -- Convert body to PExpr
+    let pbody ← body.toPExpr
+
+    -- Create arrow type ST1 -> ST2
+    let arrowTyp : PTyp := PTyp.arrow st1 st2 false (TClosure.pfn_tclosure x pbody ctx.varEnv)
+
+    -- Create qualified type ST1 -> ST2 # pc { no_pred }
+    let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
+
+    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
+
+
 mutual
 
 -- Helper function to type check an expression with context
@@ -340,40 +371,13 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.seq e1 e2 => typecheckSeq ctx e1 e2 (fuel - 1)
     | Expr.while e1 e2 => typecheckWhile ctx e1 e2 (fuel - 1)
     | Expr.let x e1 e2 => typecheckLet ctx x e1 e2 (fuel - 1)
-    | Expr.fn x t body => typecheckFn ctx x t body (fuel - 1)
-    | Expr.pfn x t body => typecheckPfn ctx x t body (fuel - 1)
+    | Expr.fn x paramType body returnType => typecheckFn ctx x paramType body returnType (fuel - 1)
+    | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType (fuel - 1)
     | Expr.app e1 e2 => typecheckApp ctx e1 e2 (fuel - 1)
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 (fuel - 1)
 termination_by fuel
 decreasing_by
   all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
-
-/-- Helper function to derive return type ST2 from function body
-   This implements the common logic for both fn_abs and pfn_abs rules:
-   - Create dummy type T1 from surface type ST1
-   - Typecheck body with dummy argument type T1
-   - Convert body type T2 to surface type ST2
--/
-def deriveReturnType (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM Typ :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    -- Create dummy type T1 from surface type ST1 to typecheck the body
-    let t1 := makeDummyTyp st1
-
-    -- Update context with dummy argument type T1
-    let varEnv' := updateVarEnv ctx.varEnv x (⟨t1, ctx.pc, none⟩)
-    let ctx' := { ctx with varEnv := varEnv' }
-
-    -- Typecheck body with dummy argument type T1
-    let result ← typecheckExpr ctx' body (fuel - 1)
-    let ⟨t2, _p, _pred⟩ := result.qualType
-
-  -- Convert body type T2 to surface type ST2
-    return t2.toTyp
-termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
-
 
 /-- Rule: op_plus (Ott rule: op_plus)
 -- pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
@@ -540,58 +544,6 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
 termination_by fuel
 decreasing_by
   all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
-
-/-- Rule: fn_abs (Ott rule: fn_abs)
-  pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- e : T2 :> p' { P' } -| G' ; L'
-  ST1 <: T1
-  ST2 <: T2
-----------------------------------------------------------------------  :: fn_abs
-  pc ; G ; S ; L |- fn x : ST1 => e : ST1 -> ST2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G ; L
--/
-def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    -- Derive return type ST2 from function body
-    let st2 ← deriveReturnType ctx x st1 body (fuel - 1)
-
-    -- Create arrow type ST1 -> ST2
-    let arrowTyp : PTyp := PTyp.arrow st1 st2 false (TClosure.fn_tclosure x body ctx.varEnv)
-
-    -- Create qualified type ST1 -> ST2 # pc { no_pred }
-    let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
-
-    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
-termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
-
-/-- Rule: pfn_abs (Ott rule: pfn_abs)
-  pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- pe : T2 :> p' { P' } -| G' ; L'
-  ST1 <: T1
-  ST2 <: T2
-----------------------------------------------------------------------  :: pfn_abs
-  pc ; G ; S ; L |- pfn x : ST1 => pe : ST1 -> ST2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
--/
-def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    -- Derive return type ST2 from function body
-    let st2 ← deriveReturnType ctx x st1 body (fuel - 1)
-
-    -- Convert body to PExpr
-    let pbody ← body.toPExpr
-
-    -- Create arrow type ST1 -> ST2
-    let arrowTyp : PTyp := PTyp.arrow st1 st2 false (TClosure.pfn_tclosure x pbody ctx.varEnv)
-
-    -- Create qualified type ST1 -> ST2 # pc { no_pred }
-    let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
-
-    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
-termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
-
 
 /-- Rule: app_fn (Ott rules: app_fn, app_pfn)
   pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'

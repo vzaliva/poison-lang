@@ -65,9 +65,8 @@ together, are not present in prior work:
     so both explicit and implicit flows of faults are tracked.
     \item A predicate system that allows selective de-poisoning based on runtime
     conditions.
-    \item Support for higher-order functions that capture their body and typing
-    context at definition time, type-check the body to derive return types,
-    then re-type-check the body at application time with the actual argument's
+    \item Support for higher-order functions with explicit type annotations that capture their body and typing
+    context at definition time, then re-type-check the body at application time with the actual argument's
     predicates and current logical environment, enabling predicate-based
     de-poisoning within function bodies while ensuring fault taint cannot be
     hidden behind lambda abstraction.
@@ -93,8 +92,8 @@ e ::= n | b | x | l                    (* values and variables *)
     | unit | e1 ; e2                    (* sequencing *)
     | while e1 do e2                    (* loops *)
     | let x = e1 in e2                  (* local bindings *)
-    | fn x : T => e | e1 e2             (* functions *)
-    | pfn x : T => pe | pe              (* pure functions *)
+    | fn x : T1 => e : T2 | e1 e2       (* functions with explicit return types *)
+    | pfn x : T1 => pe : T2 | pe        (* pure functions with explicit return types *)
 
 pe ::= n | b | x | l                   (* pure expressions *)
      | pe1 op pe2 | if pe1 then pe2 else pe3
@@ -115,8 +114,8 @@ P ::= guard k pred_closure (x, pe, r)  (* predicate as pure closure *)
 \subsection*{Key features}
 \begin{itemize}
     \item \textbf{References}: \texttt{ref e} creates, \texttt{e1 := e2} assigns, \texttt{!e} dereferences (memory stores only integers)
-    \item \textbf{Functions}: \texttt{fn x : T => e} creates functions with type-annotated parameters and derived return types, \texttt{e1 e2} applies, with closures
-    \item \textbf{Pure functions}: \texttt{pfn x : T => pe} creates pure functions with type-annotated parameters that cannot have side effects (note: no nested pure functions allowed)
+    \item \textbf{Functions}: \texttt{fn x : T1 => e : T2} creates functions with explicit parameter and return type annotations, \texttt{e1 e2} applies, with closures
+    \item \textbf{Pure functions}: \texttt{pfn x : T1 => pe : T2} creates pure functions with explicit parameter and return type annotations that cannot have side effects (note: no nested pure functions allowed)
     \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings
     \item \textbf{Memory access only through references}: You need a valid
     reference to access memory location. There is no pointer arithmetic (but
@@ -170,16 +169,16 @@ must be defined at the expression level, not within predicates themselves.
 \subsubsection{No Nested Pure Functions}
 
 An important consequence of our design is that pure functions cannot define nested
-pure functions. Since \texttt{pfn x : T => pe} requires a pure expression body, and
+pure functions. Since \texttt{pfn x : T1 => pe : T2} requires a pure expression body, and
 pure expressions cannot contain \texttt{pfn}, the following patterns are not
 possible:
 
 \begin{lstlisting}[language=poison]
 (* Not allowed: nested pure function definition *)
-pfn outer : int => pfn inner : int => inner + 1
+pfn outer : int => pfn inner : int => inner + 1 : int : (int -> int)
 
 (* Not allowed: higher-order pure function returning another function *)
-pfn make_adder : int => pfn n : int => pfn x : int => x + n
+pfn make_adder : int => pfn n : int => pfn x : int => x + n : int : (int -> int) : (int -> (int -> int))
 \end{lstlisting}
 
 This restriction keeps pure functions \emph{flat} and simple. While it prevents
@@ -193,8 +192,8 @@ simple, predictable predicates. Pure functions can still:
 
 For example, function composition is still possible through explicit application:
 \begin{lstlisting}[language=poison]
-pfn add_one : int => x => x + 1
-pfn add_two : int => x => add_one (add_one x)  (* Composition by application *)
+pfn add_one : int => x + 1 : int
+pfn add_two : int => add_one (add_one x) : int  (* Composition by application *)
 \end{lstlisting}
 
 This design choice prioritises simplicity and clarity over full functional
@@ -312,9 +311,9 @@ bad_ref := 42  (* Poisons data at unknown location *)
 \begin{lstlisting}[language=poison]
 let poisoned_cond : int = get_sensor unit in     (* poisoned *)
 let f : int -> int = if poisoned_cond > 0 then   (* pc becomes poisoned *)
-    fn x : int => x + 1                   (* Function itself gets poisoned *)
+    fn x : int => x + 1 : int             (* Function itself gets poisoned *)
 else
-    fn x : int => x * 2                   (* This function also gets poisoned *)
+    fn x : int => x * 2 : int             (* This function also gets poisoned *)
 in
 let result : int = f 10 in                        (* Application result is poisoned *)
 result
@@ -452,9 +451,9 @@ When variables have associated predicates, the typing rule checks the logical en
 
 \subsubsection*{Function abstraction:}
 Function types include a \emph{typing closure} that captures the function
-body and variable typing context at definition time. The function body is
-typechecked at definition time to derive the return type $ST_2$. The parameter
-type $ST_1$ and return type $ST_2$ are surface type annotations.
+body and variable typing context at definition time. Both the parameter
+type $ST_1$ and return type $ST_2$ are explicitly provided as surface type annotations.
+The function body is typechecked at definition time to verify it produces a type compatible with the declared return type $ST_2$.
 \[
 \frac{\begin{array}{c}
 \text{pc} ; \Gamma ; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] ; \mathcal{L} \vdash e : T_2 \triangleright p' \{ P' \} \dashv \Gamma' ; \mathcal{L}' \\
@@ -502,6 +501,7 @@ let f : int -> int = fn x : int =>      (* Captures sensor1 with its predicate *
             -1                          (* x still poisoned *)
     else
         -2                              (* sensor1 still poisoned *)
+    : int                               (* Explicit return type annotation *)
 in
 let result : int = f sensor2 in         (* Application types body with predicates *)
 result                                  (* Result: int :> clean *)

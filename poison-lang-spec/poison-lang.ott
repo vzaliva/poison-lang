@@ -64,8 +64,8 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | e1 ; e2                 ::   :: sequence
   | while e1 do e2          ::   :: while
   | let x = e1 in e2        ::   :: let
-  | fn x : ST => e               ::   :: fn  
-  | pfn x : ST => pe             ::   :: pfn  {{ com pure function }}
+  | fn x : ST1 => e : ST2        ::   :: fn   {{ com function with return type annotation }}
+  | pfn x : ST1 => pe : ST2      ::   :: pfn  {{ com pure function with return type annotation }}
   | e1 e2                   ::   :: app
   | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
   | closure ( x , e , r )  ::   :: closure   {{ com closure value }}
@@ -307,11 +307,11 @@ defn
 
 % Function abstraction creates a closure
 --------------------------------------------------------------- :: fn_abs
-< fn x : ST => e, m, r > -> < closure(x, e, r), m, r >
+< fn x : ST1 => e : ST2, m, r > -> < closure(x, e, r), m, r >
 
 % Pure function abstraction creates a pure closure
 --------------------------------------------------------------- :: pfn_abs
-< pfn x : ST => pe, m, r > -> < pe_closure(x, pe, r), m, r >
+< pfn x : ST1 => pe : ST2, m, r > -> < pe_closure(x, pe, r), m, r >
 
 % Function application - evaluate argument first (call-by-value)
   <e2,m,r> -> <e2',m',r'>
@@ -440,21 +440,19 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
 -------------------------------  :: seq
   pc ; G ; S ; L |- e1 ; e2  : T2 :> join p' p'' { P'' } -| G'' ; L''
 
-% Function abstraction typing. Capture the function body and variable context for later use.
-% TODO: Review wether we should use G' in the conclusion.
-  pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- e : T2 :> p' { P' } -| G' ; L'
-  ST1 <: T1
-  ST2 <: T2
+% Function abstraction typing with explicit return type annotation.
+% The user provides both parameter type ST1 and return type ST2.
+% We simply record the body and return type without typechecking the body.
+% Body typechecking is deferred until application time.
 ----------------------------------------------------------------------  :: fn_abs
-  pc ; G ; S ; L |- fn x : ST1 => e : ST1 -> ST2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G ; L
+  pc ; G ; S ; L |- fn x : ST1 => e : ST2 : ST1 -> ST2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G ; L
 
-% Pure function abstraction typing. Capture the pure function body and variable context.
-% Note: pe body ensures no side effects in the function
-  pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- pe : T2 :> p' { P' } -| G' ; L'
-  ST1 <: T1
-  ST2 <: T2
+% Pure function abstraction typing with explicit return type annotation.
+% The user provides both parameter type ST1 and return type ST2.
+% We simply record the body and return type without typechecking the body.
+% Body typechecking is deferred until application time.
 ----------------------------------------------------------------------  :: pfn_abs
-  pc ; G ; S ; L |- pfn x : ST1 => pe : ST1 -> ST2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
+  pc ; G ; S ; L |- pfn x : ST1 => pe : ST2 : ST1 -> ST2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
 
 % Function application typing - now uses captured body and context for precise typing
 % When applying a function, we extract the typing_closure containing the parameter name (x),

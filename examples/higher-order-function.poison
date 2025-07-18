@@ -2,11 +2,11 @@
 -- Tests that functions can take function parameters
 
 -- A simple function that applies its argument twice
-let twice = fn f : (int -> int) => fn x : int => f (f x) in
+let twice = fn f : (int -> int) => fn x : int => f (f x) : int : (int -> int) in
 
 -- Some simple functions to pass as arguments
-let add_one = fn x : int => x + 1 in
-let double = fn x : int => x + x in
+let add_one = fn x : int => x + 1 : int in
+let double = fn x : int => x + x : int in
 
 -- Apply twice with add_one: (5 + 1) + 1 = 7
 let result1 = (twice add_one) 5 in
