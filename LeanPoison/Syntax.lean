@@ -6,7 +6,7 @@ open Std
 abbrev Address := Nat
 abbrev Name := String
 
--- Basic types (corresponds to typ, T in Ott)
+-- Surface types (corresponds to typ, ST in Ott)
 inductive Typ : Type where
   | int : Typ
   | bool : Typ

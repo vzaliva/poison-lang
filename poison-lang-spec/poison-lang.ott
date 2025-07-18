@@ -42,6 +42,14 @@ operations, op :: 'Op_' ::=            {{ com operations }}
   | +                       ::   :: plus
   | >=                      ::   :: gteq
 
+% Surface types for annotations (no runtime info)
+styp, ST :: 'ST_' ::=      {{ com surface types (for annotations) }}
+  | int                    ::   :: int
+  | bool                   ::   :: bool
+  | unit                   ::   :: unit
+  | ref ST                 ::   :: ref
+  | ST1 -> ST2             ::   :: arrow
+
 e :: 'E_'  ::=	           {{ com expressions }}
   | unit                    ::   :: unit
   | n                       ::   :: num
@@ -56,8 +64,8 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | e1 ; e2                 ::   :: sequence
   | while e1 do e2          ::   :: while
   | let x = e1 in e2        ::   :: let
-  | fn x : T => e               ::   :: fn  
-  | pfn x : T => pe             ::   :: pfn  {{ com pure function }}
+  | fn x : ST => e               ::   :: fn  
+  | pfn x : ST => pe             ::   :: pfn  {{ com pure function }}
   | e1 e2                   ::   :: app
   | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
   | closure ( x , e , r )  ::   :: closure   {{ com closure value }}
@@ -92,7 +100,7 @@ typ, T :: 'T_' ::=         {{ com types }}
   | bool                    ::   :: bool
   | unit                    ::   :: unit
   | ref T @ l               ::   :: ref {{ tex \mathsf{ref}\,[[T]]\,@\,[[l]] }}
-  | T1 -> T2 # p typing_closure tcl ::   :: arrow {{ tex [[T1]] \rightarrow [[T2]]\, \triangleright [[p]]\, \mathsf{typing\_closure}\, [[tcl]] }}
+  | ST # p typing_closure tcl ::   :: arrow {{ tex [[ST]] \, \triangleright [[p]]\, \mathsf{typing\_closure}\, [[tcl]] }}
 
 % Predicate closure contents (for cleaner syntax)
 pcl :: 'PCL_' ::= {{ com predicate closure }}
@@ -171,6 +179,7 @@ terminals :: terminals_ ::=
   | ]    :: :: rsquare   {{ tex ] }}
   | @    :: :: at        {{ tex @ }}
   | ->*   :: :: mredstar   {{ tex \xrightarrow{\ast} }}
+  | <:   :: :: subtype   {{ tex <: }}
 
 subrules
   v <:: e
@@ -192,8 +201,8 @@ formula :: formula_ ::=
   | fresh l                :: :: fresh_loc       {{ com l is fresh }}
   | fresh k                :: :: fresh_tag       {{ com k is fresh }}
   | match_guard e G S = k  :: :: match_guard  {{ com match\_guard(e, G, S) scans the predicates attached to every heap cell in G and variable in S; if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to the condition e, it returns that k—otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] }}
-  
-  
+  | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
+
 
 
 
@@ -298,11 +307,11 @@ defn
 
 % Function abstraction creates a closure
 --------------------------------------------------------------- :: fn_abs
-< fn x : T => e, m, r > -> < closure(x, e, r), m, r >
+< fn x : ST => e, m, r > -> < closure(x, e, r), m, r >
 
 % Pure function abstraction creates a pure closure
 --------------------------------------------------------------- :: pfn_abs
-< pfn x : T => pe, m, r > -> < pe_closure(x, pe, r), m, r >
+< pfn x : ST => pe, m, r > -> < pe_closure(x, pe, r), m, r >
 
 % Function application - evaluate argument first (call-by-value)
   <e2,m,r> -> <e2',m',r'>
@@ -432,31 +441,32 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
   pc ; G ; S ; L |- e1 ; e2  : T2 :> join p' p'' { P'' } -| G'' ; L''
 
 % Function abstraction typing. Capture the function body and variable context for later use.
-% This enables predicate-based de-poisoning when the function is applied.
-  pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- e : T2 :> p' { P' } -| G' ; L'
+% Body typing is delayed until application time when we have the actual argument type.
 ----------------------------------------------------------------------  :: fn_abs
-  pc ; G ; S ; L |- fn x : T1 => e : T1 -> T2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G' ; L
+  pc ; G ; S ; L |- fn x : ST1 => e : ST1 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G ; L
 
 % Pure function abstraction typing. Capture the pure function body and variable context.
 % Note: pe body ensures no side effects in the function
-  pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- pe : T2 :> p' { P' } -| G' ; L'
+% Body typing is delayed until application time when we have the actual argument type.
 ----------------------------------------------------------------------  :: pfn_abs
-  pc ; G ; S ; L |- pfn x : T1 => pe : T1 -> T2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G' ; L
+  pc ; G ; S ; L |- pfn x : ST1 => pe : ST1 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
 
 % Function application typing - now uses captured body and context for precise typing
 % When applying a function, we extract the typing_closure containing the parameter name (x),
 % function body (e), and captured variable context (S'). We then type-check the body in
 % the captured context S' extended with the actual argument's type (including predicates)
 % and using the current logical environment L. This enables predicate-based de-poisoning.
-  pc ; G ; S ; L |- e1 : T1 -> T2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
+  pc ; G ; S ; L |- e1 : ST1 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
   pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
+  ST1 <: T1
   pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
 ----------------------------------------------------------------------  :: app_fn
   pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
 
 % Pure function application typing - uses captured pure body and context
-  pc ; G ; S ; L |- e1 : T1 -> T2 # p typing_closure ( x , pe , S' ) :> p1 { P1 } -| G' ; L'
+  pc ; G ; S ; L |- e1 : ST1 # p typing_closure ( x , pe , S' ) :> p1 { P1 } -| G' ; L'
   pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
+  ST1 <: T1
   pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
 ----------------------------------------------------------------------  :: app_pfn
   pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''

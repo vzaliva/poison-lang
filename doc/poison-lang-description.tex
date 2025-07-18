@@ -103,7 +103,7 @@ pe ::= n | b | x | l                   (* pure expressions *)
 
 T ::= int | bool | unit 
     | ref T @ l         (* region types with location indices *)
-    | T1 -> T2 # p typing_closure tcl (* function types with poison and typing closure *)
+    | ST # p typing_closure tcl (* function types with surface parameter type and typing closure *)
 
 Q ::= T :> p { P }      (* type with poison status and predicate *)
 
@@ -374,7 +374,10 @@ The semantics are primarily small-step (single reduction steps), but function ap
 \langle v ; e, \mu, \rho \rangle &\rightarrow \langle e, \mu, \rho \rangle \text{ (sequence with any value type)}
 \end{align*}
 
-Poison tracking is purely static—runtime execution is standard. Note that closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_closure}(x, pe, \rho)$ are runtime values that only appear during execution; they are not part of the source language and do not have typing rules.
+Poison tracking is purely static—runtime execution is standard. Note that
+closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_closure}(x,
+pe, \rho)$ are runtime values that only appear during execution; they are not
+part of the source language and do not have typing rules.
 
 \section{Type System (Typestate)}
 
@@ -448,24 +451,24 @@ When variables have associated predicates, the typing rule checks the logical en
 
 \subsubsection*{Function abstraction:}
 Function types include a \emph{typing closure} that captures the function
-body and variable typing context at definition time. This enables
-predicate-based de-poisoning when the function is applied. The parameter
-type $T_1$ is explicitly annotated in the syntax.
+body and variable typing context at definition time. Body typing is delayed
+until application time when we have the actual argument type with its runtime
+information. The parameter type $ST$ is a surface type annotation.
 \[
-\frac{\text{pc} ; \Gamma ; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] ; \mathcal{L} \vdash e : T_2 \triangleright p' \{ P' \} \dashv \Gamma'}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{fn } x : T_1 \Rightarrow e : T_1 \rightarrow T_2 \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma'}
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{fn } x : ST \Rightarrow e : ST \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}
 \]
 
 \subsubsection*{Function application:}
-The function application typing rule extracts the typing closure from the function type and types the body at application time. This enables predicate-based de-poisoning by using the actual argument's predicates and the current logical environment $\mathcal{L}$.
+The function application typing rule extracts the typing closure from the function type and types the body at application time. This enables predicate-based de-poisoning by using the actual argument's predicates and the current logical environment $\mathcal{L}$. The subtyping check $ST \!<:\! T_1$ ensures the surface parameter type is compatible with the actual argument type.
 
 \[
 \frac{\begin{array}{c}
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : T_1 \rightarrow T_2 \# p \; \text{typing\_closure}(x, e, \sigma') \triangleright p_1 \{ P_1 \} \dashv \Gamma' \\
-\text{pc} ; \Gamma' ; \sigma ; \mathcal{L} \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma'' \\
-\text{pc} ; \Gamma'' ; \sigma'[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L} \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma'''
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : ST \# p \; \text{typing\_closure}(x, e, \sigma') \triangleright p_1 \{ P_1 \} \dashv \Gamma' ; \mathcal{L}' \\
+\text{pc} ; \Gamma' ; \sigma ; \mathcal{L}' \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma'' ; \mathcal{L}'' \\
+ST \!<:\! T_1 \\
+\text{pc} ; \Gamma'' ; \sigma'[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L}'' \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}'''
 \end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 \; e_2 : T_2 \triangleright \text{pc} \sqcup p_3 \{ P_3 \} \dashv \Gamma'''}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 \; e_2 : T_2 \triangleright \text{pc} \sqcup p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}'''}
 \]
 
 Key aspects of function application:
@@ -473,8 +476,9 @@ Key aspects of function application:
     \item The typing closure $(x, e, \sigma')$ contains the parameter name, function body, and captured variable context
     \item The function body $e$ is typed using the captured context $\sigma'$ extended with the actual argument's type
     \item The argument's qualified type includes its predicates $P_2$, enabling de-poisoning in the function body
-    \item The current logical environment $\mathcal{L}$ is used, allowing guard-based de-poisoning
+    \item The current logical environment $\mathcal{L}''$ is used, allowing guard-based de-poisoning
     \item The result poison $p_3$ reflects any de-poisoning that occurred in the function body
+    \item Function types only store the surface parameter type $ST$, delaying body typing until application when runtime information is available
 \end{itemize}
 
 

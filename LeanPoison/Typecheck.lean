@@ -80,26 +80,15 @@ def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   | _ => throw "Cannot convert expression to PExpr"
 
 -- Helper function to convert PTyp to Typ
-def PTyp.toTyp (pt : PTyp) : Typ :=
+-- For arrow types, returns none since we only store the parameter type,
+-- not the return type (which only emerges at application time)
+def PTyp.toTyp? (pt : PTyp) : Option Typ :=
   match pt with
-  | PTyp.int => Typ.int
-  | PTyp.bool => Typ.bool
-  | PTyp.unit => Typ.unit
-  | PTyp.ref t _ => Typ.ref (toTyp t)
-  | PTyp.arrow t1 t2 _ _ => Typ.arrow (toTyp t1) (toTyp t2)
-
--- Helper function to convert Typ to PTyp
--- TODO: this is dummy implementation, we should use a proper conversion
-def Typ.toPTyp (t : Typ) : PTyp :=
-  match t with
-  | Typ.int => PTyp.int
-  | Typ.bool => PTyp.bool
-  | Typ.unit => PTyp.unit
-  | Typ.ref t' => PTyp.ref (toPTyp t') 0  -- Use dummy location 0
-  | Typ.arrow t1 t2 =>
-    -- Use dummy closure - this is a limitation when converting at declaration time
-    let dummyClosure := TClosure.fn_tclosure "" (Expr.unit) []
-    PTyp.arrow (toPTyp t1) (toPTyp t2) false dummyClosure
+  | PTyp.int => some Typ.int
+  | PTyp.bool => some Typ.bool
+  | PTyp.unit => some Typ.unit
+  | PTyp.ref t _ => (toTyp? t).map Typ.ref
+  | PTyp.arrow _paramST _p _tcl => none  -- No return type stored!
 
 -- Helper function to convert PExpr to Expr
 def PExpr.toExpr (pe : PExpr) : Expr :=
@@ -112,6 +101,23 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   | PExpr.let x e1 e2 => Expr.let x (e1.toExpr) (e2.toExpr)
   | PExpr.app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
+/-- Convert qualified type to surface type by stripping poison and runtime info -/
+def QTyp.toTyp? (qt : QTyp) : Option Typ :=
+  qt.ptyp.toTyp?
+
+/-- Check if a surface type is a subtype of a qualified type.
+    This implements ST <: T by comparing surface types.
+    For most types, we convert the qualified type to surface type.
+    For arrow types, we only check parameter compatibility since
+    we don't store return types in our simplified design. -/
+def isSubtype (st : Typ) (qt : QTyp) : Bool :=
+  match qt.toTyp? with
+  | some t => st == t
+  | none =>
+    -- Special case for arrow types: check parameter compatibility only
+    match qt.ptyp, st with
+    | PTyp.arrow paramST _p _tcl, Typ.arrow st1 _st2 => paramST == st1
+    | _, _ => false
 
 
 /--
@@ -302,6 +308,36 @@ def typecheckUnit (ctx : TypeContext) : TypecheckM TypeResult := do
 -- The following option is needed in increasing the maximum number of heartbeats
 -- to avoid the termination checker failure on the following mutual block.
 set_option maxHeartbeats 400000
+
+/-- Rule: fn_abs (Ott rule: fn_abs)
+----------------------------------------------------------------------
+  pc ; G ; S ; L |- fn x : ST1 => e : ST1 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G ; L
+-/
+def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    -- We should not type-check the body at function definition time
+    -- Just create the typing closure with the surface type
+    let tcl := TClosure.fn_tclosure x body ctx.varEnv
+    let arrowTyp : PTyp := PTyp.arrow st1 ctx.pc tcl
+    let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
+    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
+
+/-- Rule: pfn_abs (Ott rule: pfn_abs)
+----------------------------------------------------------------------
+  pc ; G ; S ; L |- pfn x : ST1 => pe : ST1 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
+-/
+def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  if fuel = 0 then throw "Out of fuel"
+  else do
+    -- We should not type-check the body at function definition time
+    -- Just create the typing closure with the surface type
+    let pbody ← body.toPExpr
+    let tcl := TClosure.pfn_tclosure x pbody ctx.varEnv
+    let arrowTyp : PTyp := PTyp.arrow st1 ctx.pc tcl
+    let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
+    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
+
 
 mutual
 
@@ -500,83 +536,22 @@ termination_by fuel
 decreasing_by
   all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
-/-- Rule: fn_abs (Ott rule: fn_abs)
--- pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- e : T2 :> p' { P' } -| G' ; L'
--- ----------------------------------------------------------------------
--- pc ; G ; S ; L |- fn x : T1 => e : T1 -> T2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G' ; L
--/
--- TODO: this is dummy implementation. We need to review type system to fix the root cause.
-def typecheckFn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    -- Ott rule: S[x |-> T1 :> pc { no_pred }]
-    -- Bind parameter with type T1, poison pc, and no predicate
-    let varQt : QTyp := ⟨Typ.toPTyp t1, ctx.pc, none  ⟩
-    let varEnv' := updateVarEnv ctx.varEnv x varQt
-    let ctx' := { ctx with varEnv := varEnv' }
+/-- Rule: app_fn (Ott rules: app_fn, app_pfn)
+  pc ; G ; S ; L |- e1 : ST1 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
+  pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
+  ST1 <: T1
+  pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
+---------------------------------------------------------------------- :: app_fn
+  pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
 
-    -- Type-check body in extended environment
-    let result ← typecheckExpr ctx' body (fuel - 1)
-    let ⟨ptyp2, _p', _pred'  ⟩ := result.qualType
 
-    -- Ott rule: typing_closure ( x , e , S )
-    -- Create typing closure with parameter name, body, and captured environment
-    let tcl := TClosure.fn_tclosure x body ctx.varEnv
-    let arrowTyp := PTyp.arrow (Typ.toPTyp t1) ptyp2 ctx.pc tcl
-    let qt : QTyp := ⟨arrowTyp, ctx.pc, none  ⟩
-    return { qualType := qt, memEnv' := result.memEnv', tagEnv' := ctx.tagEnv }
-termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+  pc ; G ; S ; L |- e1 : ST1 # p typing_closure ( x , pe , S' ) :> p1 { P1 } -| G' ; L'
+  pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
+  ST1 <: T1
+  pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
+----------------------------------------------------------------------  :: app_pfn
+  pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
 
-/-- Rule: pfn_abs (Ott rule: pfn_abs)
--- pc ; G ; S[x |-> T1 :> pc { no_pred }] ; L |- pe : T2 :> p' { P' } -| G' ; L'
--- ----------------------------------------------------------------------
--- pc ; G ; S ; L |- pfn x : T1 => pe : T1 -> T2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G' ; L
--/
--- TODO: this is dummy implementation. We need to review type system to fix the root cause.
-def typecheckPfn (ctx : TypeContext) (x : Name) (t1 : Typ) (body : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    -- Convert the parameter type from Typ to PTyp, using ctx.pc for all poison values
-    -- and empty/dummy values for unknown runtime information
-    let rec convertTyp (t : Typ) : PTyp := match t with
-      | Typ.int => PTyp.int
-      | Typ.bool => PTyp.bool
-      | Typ.unit => PTyp.unit
-      | Typ.ref t' =>
-          -- For ref types, we need a location but don't have one at parameter declaration
-          -- Using 0 as a dummy location - this is a limitation of the current approach
-          PTyp.ref (convertTyp t') 0
-      | Typ.arrow t1 t2 =>
-          -- For arrow types, use ctx.pc for poison and a dummy closure
-          -- This implements the Ott rule's intent: parameter has at least pc poison
-          let dummyClosure := TClosure.pfn_tclosure "" (PExpr.value Value.unit) []
-          PTyp.arrow (convertTyp t1) (convertTyp t2) ctx.pc dummyClosure
-
-    let t1' := convertTyp t1
-    let varQt : QTyp := ⟨t1', ctx.pc, none  ⟩
-    let varEnv' := updateVarEnv ctx.varEnv x varQt
-    let ctx' := { ctx with varEnv := varEnv' }
-
-    let result ← typecheckExpr ctx' body (fuel - 1)
-    let ⟨ptyp2, _p', _pred'  ⟩ := result.qualType
-
-    let pbody ← body.toPExpr
-    let tcl := TClosure.pfn_tclosure x pbody ctx.varEnv
-    let arrowTyp := PTyp.arrow t1' ptyp2 ctx.pc tcl
-    let qt : QTyp := ⟨arrowTyp, ctx.pc, none  ⟩
-    return { qualType := qt, memEnv' := result.memEnv', tagEnv' := ctx.tagEnv }
-termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
-
-/-- Rule: app_fn (Ott rule: app_fn)
--- pc ; G ; S ; L |- e1 : T1 -> T2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
--- pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
--- pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
--- ----------------------------------------------------------------------
--- pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
 -/
 -- TODO: review this implementation.
 def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
@@ -585,32 +560,37 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     let result1 ← typecheckExpr ctx e1 (fuel - 1)
     let ⟨ptyp1, _p1, _  ⟩ := result1.qualType
     match ptyp1 with
-    | PTyp.arrow t1 _t2 _p tcl =>
+    | PTyp.arrow st1 _p tcl =>
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
       let result2 ← typecheckExpr ctx' e2 (fuel - 1)
       let ⟨ptyp2, p2, pred2  ⟩ := result2.qualType
-      if ptyp2 != t1 then throw s!"Type mismatch in function application: {repr ptyp2} != {repr t1}"
+
+      -- Check subtyping: ST1 <: T1 where T1 is the actual argument type
+      if not (isSubtype st1 result2.qualType) then
+        throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type"
 
       match tcl with
       | TClosure.fn_tclosure x body env =>
-        let argQt : QTyp := ⟨t1, joinPoison ctx.pc p2, pred2  ⟩
+        -- Use the actual argument's qualified type with updated poison
+        let argQt : QTyp := ⟨ptyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := updateVarEnv env x argQt
         let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
         let result3 ← typecheckExpr ctx'' body (fuel - 1)
-        let ⟨ptyp3, p3, pred3  ⟩ := result3.qualType
+        let ⟨ptyp3, p3, pred3⟩ := result3.qualType
 
         let poison := joinPoison ctx.pc p3
-        let qt : QTyp := ⟨ptyp3, poison, pred3  ⟩
+        let qt : QTyp := ⟨ptyp3, poison, pred3⟩
         return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv' }
       | TClosure.pfn_tclosure x body env =>
-        let argQt : QTyp := ⟨t1, joinPoison ctx.pc p2, pred2  ⟩
+        -- Use the actual argument's qualified type with updated poison
+        let argQt : QTyp := ⟨ptyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := updateVarEnv env x argQt
         let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
         let result3 ← typecheckExpr ctx'' (body.toExpr) (fuel - 1)
-        let ⟨ptyp3, p3, pred3  ⟩ := result3.qualType
+        let ⟨ptyp3, p3, pred3⟩ := result3.qualType
 
         let poison := joinPoison ctx.pc p3
-        let qt : QTyp := ⟨ptyp3, poison, pred3  ⟩
+        let qt : QTyp := ⟨ptyp3, poison, pred3⟩
         return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv' }
     | _ => throw "Left operand of application must be a function"
 termination_by fuel
