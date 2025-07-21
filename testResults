@@ -1,5 +1,8 @@
 File: examples/arithmetic.poison
-12 + 1 >= 1
+-- Basic arithmetic operations
+42;
+(3 + 4);
+(10 >= 5)
 Result:
 Evaluating file: examples/arithmetic.poison
 
@@ -10,9 +13,10 @@ Final state:
 ----------------------------
 
 File: examples/basic-poison-flow1.poison
+-- Basic poison flow example 1: explicit flow (data dependency)
 let get_sensor = fn x => 42 in
-let faulty = get_sensor unit in    
-let result = faulty + 1 in          
+let faulty = get_sensor unit in     --(* poisoned *)
+let result = faulty + 1 in         -- (* poisoned (explicit flow) *)
 result
 
 
@@ -26,19 +30,18 @@ Final state:
 ----------------------------
 
 File: examples/basic-poison-flow2.poison
+-- Basic poison flow example 2: implicit flow (control dependency)
 let get_sensor = fn x => 42 in
-let faulty = get_sensor unit in     
-if faulty >= 0 then 42 else 17      
+let faulty = get_sensor unit in     --(* poisoned *)
+if faulty > 0 then 42 else 17      --(* implicit flow (control dependency) *) 
 Result:
 Evaluating file: examples/basic-poison-flow2.poison
 
-Result: 42
-Final state:
-  Variable environment: <function>
-  Memory: []
+Error while building expression tree: Unknown operator: >
 ----------------------------
 
 File: examples/conditional-poison.poison
+-- Conditional poison example
 let get_sensor = fn x => 42 in
 let sensor = get_sensor unit in
 let threshold = 50 in
@@ -56,9 +59,10 @@ Final state:
 ----------------------------
 
 File: examples/conditionals.poison
+-- Conditional expressions
 if true then 42 else 0;
 if false then 1 else 2;
-if 5 >= 3 then 100 else 200 
+if (5 >= 3) then 100 else 200 
 Result:
 Evaluating file: examples/conditionals.poison
 
@@ -69,13 +73,12 @@ Final state:
 ----------------------------
 
 File: examples/function-composition-poison.poison
-
+-- Function composition poison example
 let get_sensor = fn x => 42 in
 let f = fn x => x + 1 in
 let g = fn x => x + x in
 let poisoned_input = get_sensor unit in
-let i = f poisoned_input in 
-let result = g i in
+let result = g (f poisoned_input) in
 result 
 Result:
 Evaluating file: examples/function-composition-poison.poison
@@ -87,58 +90,57 @@ Final state:
 ----------------------------
 
 File: examples/function-poison.poison
+-- Function poison example
 let get_sensor = fn x => 42 in
-let poisoned_cond = get_sensor unit in     
-let f = if poisoned_cond >= 0 then        
-    fn x => x + 1                   
+let poisoned_cond = get_sensor unit in    -- (* poisoned *)
+let f = if poisoned_cond > 0 then          --(* pc becomes poisoned *)
+    fn x => x + 1                   -- (* Function itself gets poisoned *)
 else
-    fn x => x + 2                   
+    fn x => x * 2                   -- (* This function also gets poisoned *)
 in
-let result = f 10 in                       
+let result = f 10 in                     --   (* Application result is poisoned *)
 result 
 
 Result:
 Evaluating file: examples/function-poison.poison
 
-Result: 11
-Final state:
-  Variable environment: <function>
-  Memory: []
+Error while building expression tree: Unknown operator: >
 ----------------------------
 
 File: examples/function-type-mismatch.poison
-fn x => x + 1 true 
+-- Function application with type mismatch
+(fn x => x + 1) true 
 Result:
 Evaluating file: examples/function-type-mismatch.poison
 
-Result: <closure>
+Expression is not fully evaluated.
+Remaining: Expr.op (Value.bool true) Op.add (Value.num 1)
 Final state:
   Variable environment: <function>
   Memory: []
 ----------------------------
 
 File: examples/multiple-poison-sources.poison
-let get_sensor = fn x => 42 in
+let get_sensor : unit -> int = fn x => 42 in
 let get_corrupted_ptr = fn x_unit  => ref 42 in
+
+-- Demonstrates poison propagation from multiple unreliable inputs
+
+-- Multiple poisoned sources
 let sensor1  = get_sensor unit in
 let sensor2_ptr = get_corrupted_ptr unit in
-let result = sensor1 + 10 + !sensor2_ptr in
+let result = (sensor1 + 10) + (!sensor2_ptr) in
 result 
 Result:
-Evaluating file: examples/multiple-poison-sources.poison
-
-Result: 94
-Final state:
-  Variable environment: <function>
-  Memory: [(0, 42)]
+Error reading file examples/multiple-poison-sources.poison: Tree-sitter failed: 
 ----------------------------
 
 File: examples/reference-poison1.poison
-
+-- Reference poison example 1: reference operations with poisoned data
 let get_sensor = fn x => 42 in
-let r = ref 0 in      
-(r := get_sensor unit;  
-!r        )             
+let r = ref 0 in       -- (* Clean reference, clean data *)
+r := get_sensor unit;  -- (* Data becomes poisoned, reference stays clean *)
+!r                     -- (* Result: poisoned (from data) *)
 
 
 Result:
@@ -154,8 +156,8 @@ File: examples/reference-poison2.poison
 -- Reference poison example 2: poisoned references
 let get_corrupted_ptr = fn x_unit => ref 42 in
 let bad_ref = get_corrupted_ptr unit in  --(* Poisoned reference *)
-!bad_ref;      --(* Result: poisoned (untrusted reference) *)
-bad_ref := 42  -- (* Poisons data at unknown location *) 
+!bad_ref;     -- (* Result: poisoned (untrusted reference) *)
+bad_ref := 42  --(* Poisons data at unknown location *) 
 Result:
 Evaluating file: examples/reference-poison2.poison
 
@@ -194,20 +196,20 @@ let get_sensor = fn x => 42 in
 
 -- Sensor processing example
 
-let sensor1 = get_sensor unit in  (* Type: int :> poisoned {guard "temp" (y, y >= 0, _)} *)
-let sensor2 = get_sensor unit in  (* Type: int :> poisoned {guard "pressure" (z, z >= 0, _)} *)
+let sensor1 = get_sensor unit in -- (* Type: int :> poisoned {guard "temp" (y, y >= 0, _)} *)
+let sensor2 = get_sensor unit in  --(* Type: int :> poisoned {guard "pressure" (z, z >= 0, _)} *)
 
-let f = fn x  =>             (* Captures sensor1 with its predicate *)
-    if sensor1 >= 0 then          (* Matches guard "temp" test expression *)
-        if x >= 0 then            (* Matches guard "pressure" test expression *)
-            sensor1 + x           (* Both de-poisoned: clean result *)
+let f = fn x  =>            -- (* Captures sensor1 with its predicate *)
+    if sensor1 >= 0 then         -- (* Matches guard "temp" test expression *)
+        if x >= 0 then          --  (* Matches guard "pressure" test expression *)
+            sensor1 + x          -- (* Both de-poisoned: clean result *)
         else
-            -1                    (* x still poisoned *)
+            -1                   -- (* x still poisoned *)
     else
-        -2                        (* sensor1 still poisoned *)
+        -2                       -- (* sensor1 still poisoned *)
 in
-let result = f sensor2 in         (* Application types body with predicates *)
-result                            (* Result: int :> clean *)
+let result = f sensor2 in        -- (* Application types body with predicates *)
+result                           -- (* Result: int :> clean *)
 
 Result:
 Error reading file examples/sensor-processing.poison: Tree-sitter failed: 
@@ -216,11 +218,16 @@ Error reading file examples/sensor-processing.poison: Tree-sitter failed:
 File: examples/sensor-reading.poison
 -- Basic sensor reading example
 let get_sensor = fn x => 42 in
-let reading = get_sensor unit in  (* May be poisoned due to sensor fault *)
-let adjusted = reading + 10 in    (* Becomes poisoned if reading is poisoned *)
+let reading = get_sensor unit in  --(* May be poisoned due to sensor fault *)
+let adjusted = reading + 10 in   -- (* Becomes poisoned if reading is poisoned *)
 adjusted 
 Result:
-Error reading file examples/sensor-reading.poison: Tree-sitter failed: 
+Evaluating file: examples/sensor-reading.poison
+
+Result: 52
+Final state:
+  Variable environment: <function>
+  Memory: []
 ----------------------------
 
 File: examples/sequences.poison
@@ -237,12 +244,14 @@ Final state:
 ----------------------------
 
 File: examples/while1.poison
+--(* Simple counter *)
 let counter = ref 0 in
-while !counter >= 5 do 
-    counter := !counter + 1;
-    unit ;
+while (!counter) < 5 do (
+    counter := (!counter) + 1;
+    unit
+);
 
-
+--(* While loop example *)
 let counter = ref 0 in
 while !counter >= 5 do
   counter := !counter + 1
@@ -251,9 +260,6 @@ while !counter >= 5 do
 Result:
 Evaluating file: examples/while1.poison
 
-Result: unit
-Final state:
-  Variable environment: <function>
-  Memory: [(0, 0), (1, 0)]
+Error while building expression tree: Unknown operator: <
 ----------------------------
 
