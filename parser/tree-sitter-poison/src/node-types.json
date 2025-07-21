@@ -67,6 +67,11 @@
     }
   },
   {
+    "type": "base_type",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "binary_expr",
     "named": true,
     "fields": {
@@ -213,6 +218,16 @@
     "type": "fn_expr",
     "named": true,
     "fields": {
+      "arg_type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_expr",
+            "named": true
+          }
+        ]
+      },
       "body": {
         "multiple": false,
         "required": true,
@@ -229,6 +244,16 @@
         "types": [
           {
             "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "return_type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_expr",
             "named": true
           }
         ]
@@ -323,9 +348,34 @@
     }
   },
   {
+    "type": "paren_type",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "type_expr",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "pfn_expr",
     "named": true,
     "fields": {
+      "arg_type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_expr",
+            "named": true
+          }
+        ]
+      },
       "body": {
         "multiple": false,
         "required": true,
@@ -342,6 +392,16 @@
         "types": [
           {
             "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "return_type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_expr",
             "named": true
           }
         ]
@@ -407,6 +467,36 @@
     }
   },
   {
+    "type": "type_expr",
+    "named": true,
+    "fields": {
+      "from": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "base_type",
+            "named": true
+          },
+          {
+            "type": "paren_type",
+            "named": true
+          }
+        ]
+      },
+      "to": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_expr",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "while_expr",
     "named": true,
     "fields": {
@@ -457,6 +547,14 @@
     "named": false
   },
   {
+    "type": "->",
+    "named": false
+  },
+  {
+    "type": ":",
+    "named": false
+  },
+  {
     "type": ":=",
     "named": false
   },
@@ -486,6 +584,10 @@
   },
   {
     "type": ">=",
+    "named": false
+  },
+  {
+    "type": "bool",
     "named": false
   },
   {
@@ -519,6 +621,10 @@
   },
   {
     "type": "in",
+    "named": false
+  },
+  {
+    "type": "int",
     "named": false
   },
   {

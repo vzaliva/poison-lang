@@ -63,19 +63,38 @@ module.exports = grammar({
       "in",
       field("body", $.expr)
     )),
+    base_type: $ => choice(
+                  "int",
+                  "bool",
+                  "unit"
+                ),
 
-      fn_expr: $ =>  prec.left(2,seq(
+    type_expr: $ => prec.right(seq(
+      field("from", choice($.base_type,$.paren_type)),
+      optional(seq("->", field("to", $.type_expr)))
+    )),
+    paren_type: $ => seq("(", $.type_expr, ")"), 
+
+    fn_expr: $ =>  prec.left(2,seq(
         "fn",
         field("param", $.identifier),
+        ":",
+        field("arg_type",$.type_expr),
         "=>",
-        field("body", $.expr)
+        field("body", $.expr),
+        ":",
+        field("return_type",$.type_expr)
       )),
 
       pfn_expr: $ =>  prec.left(2,seq(
         "pfn",
         field("param", $.identifier),
+        ":",
+        field("arg_type",$.type_expr),
         "=>",
-        field("body", $.expr)
+        field("body", $.expr),
+        ":",
+        field("return_type",$.type_expr)
       )),
 
     // 4. if e1 then e2 else e3
