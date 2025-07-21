@@ -138,6 +138,15 @@ partial def parseArithRest (lhs : Expr) : Parser Expr := do
     let e ← parseExpr
     return Expr.deref e
 
+  -- Parse types (simple types only for now)
+  partial def parseTyp : Parser Typ := do
+    let t ← identifier
+    match t with
+    | "int" => return Typ.int
+    | "bool" => return Typ.bool
+    | "unit" => return Typ.unit
+    | _ => fail s!"Unknown type: {t}"
+
   -- Parse while loops
   partial def parseWhile : Parser Expr := do
     dbg_trace "Parse while called"
@@ -152,18 +161,26 @@ partial def parseArithRest (lhs : Expr) : Parser Expr := do
     dbg_trace "Parse func called"
     token "fn"
     let x ← identifier
+    token ":"
+    let paramType ← parseTyp
     token "=>"
     let body ← parseExpr
-    return Expr.fn x body
+    token ":"
+    let returnType ← parseTyp
+    return Expr.fn x paramType body returnType
 
   -- Parse pure function abstractions
   partial def parsePfn : Parser Expr := do
     dbg_trace "parse pure func called"
     token "pfn"
     let x ← identifier
+    token ":"
+    let paramType ← parseTyp
     token "=>"
     let body ← parseExpr
-    return Expr.pfn x body
+    token ":"
+    let returnType ← parseTyp
+    return Expr.pfn x paramType body returnType
 
   -- Main expression parser (lowest precedence)
   partial def parseExpr : Parser Expr :=

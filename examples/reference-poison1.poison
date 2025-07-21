@@ -1,6 +1,13 @@
 -- Reference poison example 1: reference operations with poisoned data
+<<<<<<< HEAD
 let get_sensor = fn x => 42 in
 let r = ref 0 in       -- (* Clean reference, clean data *)
 r := get_sensor unit;  -- (* Data becomes poisoned, reference stays clean *)
 !r                     -- (* Result: poisoned (from data) *)
+=======
+let get_sensor = fn x : unit => 42 : int in
+let r = ref 0 in        (* Clean reference, clean data *)
+r := get_sensor unit;   (* Data becomes poisoned, reference stays clean *)
+!r                      (* Result: poisoned (from data) *)
+>>>>>>> upstream/main
 

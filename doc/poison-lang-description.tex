@@ -47,6 +47,8 @@
     accompanying PDF document generated from the Ott specification.
 \end{abstract}
 
+\sloppy
+
 \section{Introduction}
 \label{sec:introduction}
 
@@ -63,11 +65,11 @@ together, are not present in prior work:
     so both explicit and implicit flows of faults are tracked.
     \item A predicate system that allows selective de-poisoning based on runtime
     conditions.
-    \item Support for higher-order functions that capture their body and typing
-    context at definition time, then type-check the body at application time
-    with the actual argument's predicates and current logical environment,
-    enabling predicate-based de-poisoning within function bodies while
-    ensuring fault taint cannot be hidden behind lambda abstraction.
+    \item Support for higher-order functions with explicit type annotations that capture their body and typing
+    context at definition time, then re-type-check the body at application time with the actual argument's
+    predicates and current logical environment, enabling predicate-based
+    de-poisoning within function bodies while ensuring fault taint cannot be
+    hidden behind lambda abstraction.
 \end{enumerate}
 
 Together, these features give a single, uniform type system that provides a
@@ -90,49 +92,133 @@ e ::= n | b | x | l                    (* values and variables *)
     | unit | e1 ; e2                    (* sequencing *)
     | while e1 do e2                    (* loops *)
     | let x = e1 in e2                  (* local bindings *)
-    | fn x => e | e1 e2                 (* functions *)
-    | pfn x => pe | pe                  (* pure functions *)
+    | fn x : ST1 => e : ST2 | e1 e2       (* functions with explicit return types *)
+    | pfn x : ST1 => pe : ST2 | pe        (* pure functions with explicit return types *)
 
 pe ::= n | b | x | l                   (* pure expressions *)
      | pe1 op pe2 | if pe1 then pe2 else pe3
-     | !pe | unit | pe1 ; pe2
+     | !pe | unit
      | let x = pe1 in pe2 | pe1 pe2
-     | pfn x => pe
-     (* Note: no ref, :=, while, or fn allowed *)
+     (* Note: no ref, :=, while, fn, pfn, or ; allowed *)
 
+(* surface types for annotations *)     
+ST ::= int | bool | unit | ref ST | ST1 -> ST2  
+
+(* runtime types *)
 T ::= int | bool | unit 
     | ref T @ l         (* region types with location indices *)
-    | T1 -> T2 # p typing_closure tcl (* function types with poison and typing closure *)
+    | ST1 -> ST2 # p typing_closure tcl (* function types with surface parameter and return types and typing closure *)
 
-Q ::= T :> p { P }      (* type with poison status and predicate *)
+(* qualified types with poison status and predicate *)    
+Q ::= T :> p { P }      
 
 P ::= guard k pred_closure (x, pe, r)  (* predicate as pure closure *)
     | no_pred                          (* trivial predicate *)
 \end{lstlisting}
 
+\subsection{Three-Level Type System}
+
+The Poison language employs a three-level type hierarchy to separate concerns
+between user annotations, internal type system operations, and fault tracking:
+
+\subsubsection{Surface Types (\texttt{ST})}
+\textbf{Purpose:} User-facing type annotations for function signatures.
+\begin{itemize}
+    \item \textbf{Ott notation:} \texttt{styp, ST}
+    \item \textbf{Lean implementation:} \texttt{Typ}
+    \item \textbf{Grammar:} \texttt{ST ::= int | bool | unit | ref ST | ST1 -> ST2}
+    \item \textbf{Usage:} Written by programmers in function parameter and return type annotations
+    \item \textbf{Examples:} \texttt{fn x : int => x + 1 : int}, \texttt{pfn f : int -> bool => f 42 : bool}
+\end{itemize}
+
+Surface types are the \emph{interface} between the programmer and the type
+system. They are deliberately simple and free of implementation details like
+region annotations, poison flags, or typing closures. Users write surface types
+in their code but never see the more complex internal representations.
+
+\subsubsection{Runtime Types (\texttt{T})}
+\textbf{Purpose:} Internal type system representation with region information and typing closures.
+\begin{itemize}
+    \item \textbf{Ott notation:} \texttt{typ, T}
+    \item \textbf{Lean implementation:} \texttt{PTyp} (Poison Type)
+    \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | ref T @ l | ST1 -> ST2 \# p typing\_closure tcl}
+    \item \textbf{Usage:} Used internally by the type checker for sound reasoning about references and functions
+    \item \textbf{Key additions:}
+    \begin{itemize}
+        \item \textbf{Region annotations} (\texttt{@l}): Track which specific memory location each reference points to
+        \item \textbf{Typing closures} (\texttt{typing\_closure tcl}): Capture function bodies and variable contexts for re-typechecking at application time
+        \item \textbf{Function poison} (\texttt{\#p}): Track the poison status of the function itself (from the program counter at definition time)
+    \end{itemize}
+\end{itemize}
+
+Runtime types extend surface types with the machinery needed for sound type
+checking. The region annotation \texttt{ref T @ l} solves the soundness problem
+in dereference by statically tracking which location each reference targets.
+Function types \texttt{ST1 -> ST2 \# p typing\_closure tcl} store both the
+user-provided surface types and the implementation details needed for
+higher-order predicate-based de-poisoning.
+
+\subsubsection{Qualified Types (\texttt{Q})}
+\textbf{Purpose:} Complete type information including poison status and predicates for fault tracking.
+\begin{itemize}
+    \item \textbf{Ott notation:} \texttt{qualified\_type, Q}
+    \item \textbf{Lean implementation:} \texttt{QTyp}
+    \item \textbf{Grammar:} \texttt{Q ::= T :> p \{ P \}}
+    \item \textbf{Components:}
+    \begin{itemize}
+        \item \textbf{Base type} (\texttt{T}): The runtime type describing the value's structure
+        \item \textbf{Poison status} (\texttt{p}): Whether the value is \texttt{clean} or \texttt{poisoned}
+        \item \textbf{Predicate} (\texttt{P}): Optional guard for conditional de-poisoning
+    \end{itemize}
+    \item \textbf{Usage:} All values in typing environments (\texttt{$\Gamma$}, \texttt{$\sigma$}) have qualified types
+\end{itemize}
+
+Qualified types are the \emph{working currency} of our typestate system. Every
+typing judgement produces a qualified type that captures not just what kind of
+value we have, but also its reliability (poison status) and any conditions under
+which it might be considered reliable (predicates). The type system's primary
+job is to conservatively track poison propagation through qualified types.
+
+\subsubsection{Type Relationships}
+
+The three type levels are related through systematic transformations:
+
+\begin{itemize}
+    \item \textbf{Surface $\to$ Runtime:} Subtyping relation \texttt{ST <: T} (surface type erasure) adds region and closure information
+    \item \textbf{Runtime $\to$ Qualified:} Wrapping with poison status and predicates: \texttt{T $\triangleright$ p \{P\}}
+    \item \textbf{Function definitions:} Surface types in user syntax become runtime types in type checker, then qualified types in poison-propagating environments
+    \item \textbf{Function applications:} Function types store surface types for interface, use typing closures for implementation
+\end{itemize}
+
+\textbf{Design Rationale:} This three-level hierarchy cleanly separates the user
+interface (surface types), the implementation mechanism (runtime types), and the
+analysis results (qualified types). Users write simple, familiar types while the
+system performs sophisticated poison tracking and higher-order reasoning behind
+the scenes.
+
 \subsection*{Key features}
 \begin{itemize}
     \item \textbf{References}: \texttt{ref e} creates, \texttt{e1 := e2} assigns, \texttt{!e} dereferences (memory stores only integers)
-    \item \textbf{Functions}: \texttt{fn x => e} creates, \texttt{e1 e2} applies, with closures
-    \item \textbf{Pure functions}: \texttt{pfn x => pe} creates pure functions that cannot have side effects
+    \item \textbf{Functions}: \texttt{fn x : ST1 => e : ST2} creates functions with explicit parameter and return type annotations, \texttt{e1 e2} applies, with closures
+    \item \textbf{Pure functions}: \texttt{pfn x : ST1 => pe : ST2} creates pure functions with explicit parameter and return type annotations that cannot have side effects (note: no nested pure functions allowed)
     \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings
     \item \textbf{Memory access only through references}: You need a valid
     reference to access memory location. There is no pointer arithmetic (but
     there is aliasing).
     \item \textbf{Qualified types}: All values have qualified types \texttt{Q}
-    that combine base types with poison status and optional predicate.
+    that combine runtime types with poison status and optional predicate.
     \item \textbf{Predicate-based de-poisoning}: Guards allow selective de-poisoning when runtime conditions are met
     \item \textbf{Sequencing}: \texttt{e1 ; e2} evaluates \texttt{e1} first (which can have any type), discards its value, then evaluates \texttt{e2}
 \end{itemize}
 
-Region annotations (\texttt{@l}) for references and typing closures
+Runtime type annotations like region annotations (\texttt{@l}) for references and typing closures
 (\texttt{typing\_closure tcl}) for functions are essential to the formal system,
-though not part of the language syntax. The \texttt{l} denotes a memory
+though not part of the user-visible language syntax. The \texttt{l} denotes a memory
 location, and \texttt{tcl} represents the typing closure containing the function
 parameter name, body, and captured variable typing context. The poison
 \texttt{p} represents the function's own poison status (from pc at definition
 time). See the formal specification for complete details. Similarly,
-qualified-types are essential to the formal system, though not part of the
+qualified types are essential to the formal system, though not part of the
 language syntax.
 
 \subsection{Pure Expressions}
@@ -146,15 +232,58 @@ The language includes a syntactic subset called \emph{pure expressions} (\texttt
     simplicity. This design choice is motivated by intended use of pure
     functions as type predicates which are likely to be simple expressions
     without complicated control flow.)
-    \item Define regular functions (\texttt{fn})
+    \item Define functions, including pure functions (\texttt{fn} or \texttt{pfn})
+    \item Use sequencing (\texttt{;})
 \end{itemize}
 
 Pure expressions can still dereference existing references, perform arithmetic,
-use conditionals, and define/apply pure functions. The \texttt{pfn} construct
-creates pure functions whose bodies must be pure expressions, ensuring they
-cannot introduce side effects. In the current system, pure expressions are
-simply a syntactic subset of normal expressions with identical typing and
-operational semantics.
+use conditionals, and apply existing pure functions. 
+
+\textbf{Design rationale}: Pure expressions are primarily used within predicates
+for de-poisoning. By prohibiting function definition within pure expressions, we
+ensure predicates remain simple test expressions rather than complex
+computations. The absence of sequencing is natural since pure expressions have
+no side effects, making \texttt{pe1 ; pe2} equivalent to just \texttt{pe2}.
+However, pure expressions can still apply pre-existing pure functions, enabling
+code reuse and composition of predicates.
+
+The \texttt{pfn} construct creates pure functions whose bodies must be pure
+expressions, ensuring they cannot introduce side effects. These pure functions
+must be defined at the expression level, not within predicates themselves.
+
+\subsubsection{No Nested Pure Functions}
+
+An important consequence of our design is that pure functions cannot define nested
+pure functions. Since \texttt{pfn x : ST1 => pe : ST2} requires a pure expression body, and
+pure expressions cannot contain \texttt{pfn}, the following patterns are not
+possible:
+
+\begin{lstlisting}[language=poison]
+(* Not allowed: nested pure function definition *)
+pfn outer : int => pfn inner : int => inner + 1 : int : (int -> int)
+
+(* Not allowed: higher-order pure function returning another function *)
+pfn make_adder : int => pfn n : int => pfn x : int => x + n : int : (int -> int) : (int -> (int -> int))
+\end{lstlisting}
+
+This restriction keeps pure functions \emph{flat} and simple. While it prevents
+some functional programming patterns, it aligns with our goal of maintaining
+simple, predictable predicates. Pure functions can still:
+\begin{itemize}
+    \item Call other pre-defined pure functions
+    \item Be passed as arguments (through variables)
+    \item Be composed through application
+\end{itemize}
+
+For example, function composition is still possible through explicit application:
+\begin{lstlisting}[language=poison]
+pfn add_one : int => x + 1 : int
+pfn add_two : int => add_one (add_one x) : int  (* Composition by application *)
+\end{lstlisting}
+
+This design choice prioritises simplicity and clarity over full functional
+expressiveness, which is appropriate given that pure functions primarily serve
+as building blocks for predicates in our fault-tracking type system.
 
 \section{Poison Tracking}
 
@@ -189,8 +318,8 @@ Conservative: may mark reliable data as poisoned, never marks unreliable data as
 The language includes a predicate system that allows selective de-poisoning based on runtime conditions. Predicates are pure functions that test values and are associated with guard tags:
 
 \begin{itemize}
-    \item \textbf{Qualified types}: Values have types \texttt{T :> p \{P\}}
-    where \texttt{T} is the base type, \texttt{p} is the poison status, and
+    \item \textbf{Qualified types}: Values have types $T\,\triangleright\,p\,\{P\}$
+    where \texttt{T} is the runtime type, \texttt{p} is the poison status, and
     \texttt{P} is an optional predicate.
     \item \textbf{Guard predicates}: \texttt{guard k pred\_closure (x, pe, r)}
     creates a predicate with tag \texttt{k} and pure expression test \texttt{pe}
@@ -199,9 +328,26 @@ The language includes a predicate system that allows selective de-poisoning base
     \item \textbf{Conditional de-poisoning}: When an \texttt{if} condition
     syntactically matches a guard's test, values are de-poisoned in the true
     branch and poisoned in the false branch
-    \item \textbf{Logical environment}: Environment \texttt{L} tracks guard
+    \item \textbf{Logical environment}: Environment $\mathcal{L}$ tracks guard
     valuations (\texttt{k : true/false}) to enable predicate evaluation
 \end{itemize}
+
+\textbf{Design Note:} The predicate closure \texttt{pred\_closure (x, pe, r)}
+does not explicitly store the expected argument type for the predicate. This
+design is sound because predicate matching via \texttt{match\_guard} only occurs
+against conditions that have already passed type checking. Since syntactic
+matching requires exact structural correspondence with variable substitution,
+any predicate that successfully matches a well-typed condition is guaranteed to
+be type-compatible with that condition. This approach avoids redundant type
+information in predicates while maintaining type safety through the existing
+type system.
+
+\textbf{Tag Uniqueness:} The \texttt{match\_guard} function expects to find at
+most one matching predicate for any given condition. Predicates parametrised by
+their argument will naturally match at most once due to syntactic substitution
+differences. However, for predicates that ignore their argument, extra care must
+be taken to ensure no two distinct tags are assigned to identical predicate
+bodies, as this would cause multiple-match errors in \texttt{match\_guard}.
 
 \begin{lstlisting}[language=poison]
 (* Example: Range check predicate *)
@@ -250,9 +396,9 @@ bad_ref := 42  (* Poisons data at unknown location *)
 \begin{lstlisting}[language=poison]
 let poisoned_cond : int = get_sensor unit in     (* poisoned *)
 let f : int -> int = if poisoned_cond > 0 then   (* pc becomes poisoned *)
-    fn x => x + 1                          (* Function itself gets poisoned *)
+    fn x : int => x + 1 : int             (* Function itself gets poisoned *)
 else
-    fn x => x * 2                          (* This function also gets poisoned *)
+    fn x : int => x * 2 : int             (* This function also gets poisoned *)
 in
 let result : int = f 10 in                        (* Application result is poisoned *)
 result
@@ -286,8 +432,8 @@ applied, the result inherits this poison.
     \item \textbf{Dereference}: $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{data\_at\_location})$, with predicate-based de-poisoning support
     \item \textbf{Let bindings}: Variable gets $\text{pc} \sqcup \text{poison}(\text{bound\_value})$ and preserves predicates
     \item \textbf{Functions}: Abstraction gets $\text{pc}$ and captures body and
-    context, application types body with actual argument predicates and current
-    $\mathcal{L}$
+    context, typechecks body to derive return type, application re-typechecks body
+    with actual argument predicates and current $\mathcal{L}$
 \end{itemize}
 
 \section{Operational Semantics}
@@ -306,14 +452,17 @@ The semantics are primarily small-step (single reduction steps), but function ap
 \langle !l, \mu, \rho \rangle &\rightarrow \langle n, \mu, \rho \rangle \text{ (where } \mu(l) = n\text{)} \\
 \langle l := n, \mu, \rho \rangle &\rightarrow \langle \text{unit}, \mu[l \mapsto n], \rho \rangle \\
 \langle \text{let } x = v \text{ in } e, \mu, \rho \rangle &\rightarrow \langle e, \mu, \rho[x \mapsto v] \rangle \\
-\langle \text{fn } x \Rightarrow e, \mu, \rho \rangle &\rightarrow \langle \text{closure}(x, e, \rho), \mu, \rho \rangle \\
+\langle \text{fn } x : T \Rightarrow e, \mu, \rho \rangle &\rightarrow \langle \text{closure}(x, e, \rho), \mu, \rho \rangle \\
 \langle \text{closure}(x, e, \rho') v, \mu, \rho \rangle &\rightarrow \langle v', \mu', \rho \rangle \text{ (where } \langle e, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle v', \mu', \rho'' \rangle\text{)} \\
-\langle \text{pfn } x \Rightarrow pe, \mu, \rho \rangle &\rightarrow \langle \text{pe\_closure}(x, pe, \rho), \mu, \rho \rangle \\
+\langle \text{pfn } x : T \Rightarrow pe, \mu, \rho \rangle &\rightarrow \langle \text{pe\_closure}(x, pe, \rho), \mu, \rho \rangle \\
 \langle \text{pe\_closure}(x, pe, \rho') v, \mu, \rho \rangle &\rightarrow \langle v', \mu', \rho \rangle \text{ (where } \langle pe, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle v', \mu', \rho'' \rangle\text{)} \\
 \langle v ; e, \mu, \rho \rangle &\rightarrow \langle e, \mu, \rho \rangle \text{ (sequence with any value type)}
 \end{align*}
 
-Poison tracking is purely static—runtime execution is standard. Note that closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_closure}(x, pe, \rho)$ are runtime values that only appear during execution; they are not part of the source language and do not have typing rules.
+Poison tracking is purely static—runtime execution is standard. Note that
+closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_closure}(x,
+pe, \rho)$ are runtime values that only appear during execution; they are not
+part of the source language and do not have typing rules.
 
 \section{Type System (Typestate)}
 
@@ -387,23 +536,30 @@ When variables have associated predicates, the typing rule checks the logical en
 
 \subsubsection*{Function abstraction:}
 Function types include a \emph{typing closure} that captures the function
-body and variable typing context at definition time. This enables
-predicate-based de-poisoning when the function is applied.
+body and variable typing context at definition time. Both the parameter
+type $ST_1$ and return type $ST_2$ are explicitly provided as surface type annotations.
+The function body is typechecked at definition time to verify it produces a type compatible with the declared return type $ST_2$.
 \[
-\frac{\text{pc} ; \Gamma ; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] ; \mathcal{L} \vdash e : T_2 \triangleright p' \{ P' \} \dashv \Gamma'}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{fn } x \Rightarrow e : T_1 \rightarrow T_2 \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma'}
+\frac{\begin{array}{c}
+\text{pc} ; \Gamma ; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] ; \mathcal{L} \vdash e : T_2 \triangleright p' \{ P' \} \dashv \Gamma' ; \mathcal{L}' \\
+ST_1 <: T_1 \\
+ST_2 <: T_2
+\end{array}}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{fn } x : ST_1 \Rightarrow e : ST_1 \rightarrow ST_2 \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
 \]
 
 \subsubsection*{Function application:}
-The function application typing rule extracts the typing closure from the function type and types the body at application time. This enables predicate-based de-poisoning by using the actual argument's predicates and the current logical environment $\mathcal{L}$.
+The function application typing rule extracts the typing closure from the function type and types the body at application time. This enables predicate-based de-poisoning by using the actual argument's predicates and the current logical environment $\mathcal{L}$. The subtyping checks $ST_1 \!<:\! T_1$ and $ST_2 \!<:\! T_2$ ensure the surface parameter and return types are compatible with the actual argument and body types respectively.
 
 \[
 \frac{\begin{array}{c}
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : T_1 \rightarrow T_2 \# p \; \text{typing\_closure}(x, e, \sigma') \triangleright p_1 \{ P_1 \} \dashv \Gamma' \\
-\text{pc} ; \Gamma' ; \sigma ; \mathcal{L} \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma'' \\
-\text{pc} ; \Gamma'' ; \sigma'[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L} \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma'''
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : ST_1 \rightarrow ST_2 \# p \; \text{typing\_closure}(x, e, \sigma') \triangleright p_1 \{ P_1 \} \dashv \Gamma' ; \mathcal{L}' \\
+\text{pc} ; \Gamma' ; \sigma ; \mathcal{L}' \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma'' ; \mathcal{L}'' \\
+ST_1 \!<:\! T_1 \\
+\text{pc} ; \Gamma'' ; \sigma'[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L}'' \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}''' \\
+ST_2 \!<:\! T_2
 \end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 \; e_2 : T_2 \triangleright \text{pc} \sqcup p_3 \{ P_3 \} \dashv \Gamma'''}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 \; e_2 : T_2 \triangleright \text{pc} \sqcup p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}'''}
 \]
 
 Key aspects of function application:
@@ -411,8 +567,9 @@ Key aspects of function application:
     \item The typing closure $(x, e, \sigma')$ contains the parameter name, function body, and captured variable context
     \item The function body $e$ is typed using the captured context $\sigma'$ extended with the actual argument's type
     \item The argument's qualified type includes its predicates $P_2$, enabling de-poisoning in the function body
-    \item The current logical environment $\mathcal{L}$ is used, allowing guard-based de-poisoning
+    \item The current logical environment $\mathcal{L}''$ is used, allowing guard-based de-poisoning
     \item The result poison $p_3$ reflects any de-poisoning that occurred in the function body
+    \item Function types store both surface parameter type $ST_1$ and return type $ST_2$, with body typing occurring at both definition and application time
 \end{itemize}
 
 
@@ -421,7 +578,7 @@ Example of predicate-based de-poisoning in functions:
 let sensor1 : int = get_sensor unit in  (* Type: int :> poisoned {guard "temp" (y, y >= 0, _)} *)
 let sensor2 : int = get_sensor unit in  (* Type: int :> poisoned {guard "pressure" (z, z >= 0, _)} *)
 
-let f : int -> int = fn x =>      (* Captures sensor1 with its predicate *)
+let f : int -> int = fn x : int =>      (* Captures sensor1 with its predicate *)
     if sensor1 >= 0 then                (* Matches guard "temp" test expression *)
         if x >= 0 then                  (* Matches guard "pressure" test expression *)
             sensor1 + x                 (* Both de-poisoned: clean result *)
@@ -429,6 +586,7 @@ let f : int -> int = fn x =>      (* Captures sensor1 with its predicate *)
             -1                          (* x still poisoned *)
     else
         -2                              (* sensor1 still poisoned *)
+    : int                               (* Explicit return type annotation *)
 in
 let result : int = f sensor2 in         (* Application types body with predicates *)
 result                                  (* Result: int :> clean *)

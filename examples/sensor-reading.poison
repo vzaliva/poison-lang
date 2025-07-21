@@ -1,5 +1,11 @@
 -- Basic sensor reading example
+<<<<<<< HEAD
 let get_sensor = fn x => 42 in
 let reading = get_sensor unit in  --(* May be poisoned due to sensor fault *)
 let adjusted = reading + 10 in   -- (* Becomes poisoned if reading is poisoned *)
+=======
+let get_sensor = fn x : unit => 42 : int in
+let reading = get_sensor unit in  (* May be poisoned due to sensor fault *)
+let adjusted = reading + 10 in    (* Becomes poisoned if reading is poisoned *)
+>>>>>>> upstream/main
 adjusted 

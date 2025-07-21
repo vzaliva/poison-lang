@@ -1,2 +1,13 @@
+* Type system
+  - poison is now present in runtime types. It would be better to have all poison in qualified types.
+* Typing rules
+** matchGuard
+  - when we apply a predicate to reference, do we need to check if reference is poisoned?
+    if so, should we try to de-poison it?
 * Type checker
-  - VarEnv needs to be iterable (e.g. HashMap)
+  - Print VarTypeEnv (bug)
+  - check how fresh location is generated (maybe add StateM to TypecheckM)
+** Type Derivation
+  - alpha-equivalence for closure types
+* Documentation
+  - We have 2 types of expressions: pure and stateful.
