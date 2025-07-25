@@ -6,5 +6,5 @@ let get_corrupted_ptr = fn x_unit : unit => ref 42 : (ref int) in
 -- Multiple poisoned sources
 let sensor1  = get_sensor unit in
 let sensor2_ptr = get_corrupted_ptr unit in
-let result = (sensor1 + 10) + (!sensor2_ptr) in
+let result = sensor1 + 10 + !sensor2_ptr in
 result 

@@ -68,9 +68,10 @@ module.exports = grammar({
                   "bool",
                   "unit"
                 ),
+    
 
     type_expr: $ => prec.right(seq(
-      field("from", choice($.base_type,$.paren_type)),
+      field("from", choice($.base_type, seq("(", $.type_expr, ")"))),
       optional(seq("->", field("to", $.type_expr)))
     )),
     paren_type: $ => seq("(", $.type_expr, ")"), 
@@ -155,7 +156,7 @@ module.exports = grammar({
       field("value", $.expr)
     )),
 
-    number: $ => /\d+/,
+    number: $ => /-?\d+/,
     group_expr: $ => prec(9, seq(
                         "(",
                         $.expr,

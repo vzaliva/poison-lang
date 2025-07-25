@@ -34,7 +34,7 @@ mutual
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
 inductive Value : Type where
-  | num : Nat → Value           -- n
+  | num : Int → Value           -- n
   | bool : Bool → Value         -- b
   | unit : Value                -- unit
   | loc : Address → Value           -- l (locations are values in the operational semantics)
@@ -65,7 +65,7 @@ end
 abbrev VarEnv := Name → Option Value
 
 -- Helper pattern synonyms for common value expressions
-def Expr.num (n : Nat) : Expr := Expr.value (Value.num n)
+def Expr.num (n : Int) : Expr := Expr.value (Value.num n)
 def Expr.bool (b : Bool) : Expr := Expr.value (Value.bool b)
 def Expr.unit : Expr := Expr.value Value.unit
 def Expr.loc (l : Address) : Expr := Expr.value (Value.loc l)
@@ -155,6 +155,14 @@ instance : Repr Expr where
 -- Helper functions to convert values to expressions
 def Value.toExpr : Value → Expr
   | v => Expr.value v
+
+-- Helper function to convert string to type
+def strToType (str : String) : Except String Typ :=
+ match str with
+ | "int" => .ok Typ.int
+ | "bool" => .ok Typ.bool
+ | "unit" => .ok Typ.unit
+ | _ => .error "Invalid argument"
 
 @[instance]
 instance : ToString Value where

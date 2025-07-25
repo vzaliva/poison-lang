@@ -239,7 +239,7 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag 
 /-- Rule: int (Ott rule: int)
 -- pc ; G ; S ; L |- n : int :> clean { no_pred } -| G ; L
 -/
-def typecheckInt (ctx : TypeContext) (_n : Nat) : TypecheckM TypeResult := do
+def typecheckInt (ctx : TypeContext) (_n : Int) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨PTyp.int, false, none⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv }
 

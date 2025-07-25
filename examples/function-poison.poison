@@ -1,19 +1,10 @@
 -- Function poison example
-<<<<<<< HEAD
-let get_sensor = fn x => 42 in
+let get_sensor = fn x : unit => 42 : int in
 let poisoned_cond = get_sensor unit in    -- (* poisoned *)
 let f = if poisoned_cond > 0 then          --(* pc becomes poisoned *)
-    fn x => x + 1                   -- (* Function itself gets poisoned *)
+    fn x : int => x + 1 : int             -- (* Function itself gets poisoned *)
 else
-    fn x => x * 2                   -- (* This function also gets poisoned *)
-=======
-let get_sensor = fn x : unit => 42 : int in
-let poisoned_cond = get_sensor unit in     (* poisoned *)
-let f = if poisoned_cond > 0 then          (* pc becomes poisoned *)
-    fn x : int => x + 1 : int              (* Function itself gets poisoned *)
-else
-    fn x : int => x * 2 : int              (* This function also gets poisoned *)
->>>>>>> upstream/main
+    fn x : int => x * 2 : int             -- (* This function also gets poisoned *)
 in
-let result = f 10 in                     --   (* Application result is poisoned *)
+let result = f 10 in                       
 result 

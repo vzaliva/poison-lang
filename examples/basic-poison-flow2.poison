@@ -1,10 +1,4 @@
 -- Basic poison flow example 2: implicit flow (control dependency)
-<<<<<<< HEAD
-let get_sensor = fn x => 42 in
-let faulty = get_sensor unit in     --(* poisoned *)
-if faulty > 0 then 42 else 17      --(* implicit flow (control dependency) *) 
-=======
 let get_sensor = fn x : unit => 42 : int in
-let faulty = get_sensor unit in     (* poisoned *)
-if faulty > 0 then 42 else 17      (* implicit flow (control dependency) *) 
->>>>>>> upstream/main
+let faulty = get_sensor unit in    -- (* poisoned *)
+if faulty > 0 then 42 else 17      --(* implicit flow (control dependency) *) 

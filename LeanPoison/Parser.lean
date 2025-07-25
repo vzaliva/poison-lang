@@ -5,220 +5,66 @@ import LeanPoison.Syntax
 import Std.Internal.Parsec
 import Lean.Data.Xml.Basic
 import Lean.Data.Xml.Parser
-
-
-open Std.Internal.Parsec Std.Internal.Parsec.String
-open Alternative
-
--- Whitespace parser
-def whitespace : Parser Unit := do
-  dbg_trace "Parsing whitespace"
-  let _ ← many (satisfy Char.isWhitespace)
-  return ()
-
--- Parse a specific string followed by whitespace
-def token (s : String) : Parser Unit := do
-  whitespace
-  let _ ← pstring s
-  dbg_trace ("Parsed " ++ s)
-  whitespace
-
--- Parse an identifier
-def identifier : Parser String := do
-  let first ← satisfy Char.isAlpha
-  let rest ← manyChars (satisfy (fun c => c.isAlphanum || c == '_'))
-  dbg_trace "Parsing identifier"
-  return first.toString ++ rest
-
--- Parse a natural number (no negative numbers)
-def naturalNumber : Parser Nat := do
-  dbg_trace "Parsing Nat"
-  let digits ← many1Chars (satisfy Char.isDigit)
-  match digits.toNat? with
-  | some n => return n
-  | none => fail "Invalid natural number"
-
--- Parse expressions with proper precedence
-mutual
-  -- Parse atomic expressions (highest precedence)
-  partial def parseAtom : Parser Expr := do
-    dbg_trace "Parse atom called"
-    whitespace
-    (naturalNumber >>= fun n => return (Expr.num n)) <|>
-    (token "true" *> return (Expr.bool true)) <|>
-    (token "false" *> return (Expr.bool false)) <|>
-    (token "unit" *> return Expr.unit) <|>
-    (identifier >>= fun x => return Expr.var x)
-
-  -- Parse application (left associative)
-  partial def parseApp : Parser Expr := do
-    dbg_trace "Parse app called"
-    let first ← parseExpr
-    let arg ← parseExpr
-    return Expr.app first arg
-
-  -- Parse arithmetic operations (left associative)
-  --partial def parseArith : Parser Expr := attempt do
-   -- dbg_trace "Parse Arith called"
-   -- let lhs ← attempt parseAtom
-    --let op ← attempt (token "+" *> return Op.add) <|> attempt (token ">=" *> return Op.gte)
-   -- let rhs ← attempt parseArith <|> attempt parseAtom
-   -- return (Expr.op lhs op rhs)
-
-partial def parseArith : Parser Expr := attempt do
-  let lhs ← parseAtom
-  let op ← attempt (token "+" *> return Op.add) <|> attempt (token ">=" *> return Op.gte)
-  let rhs ← attempt parseArith <|> attempt parseAtom
-  parseArithRest (Expr.op lhs op rhs)
-
-partial def parseArithRest (lhs : Expr) : Parser Expr := do
-  let maybeOp ← optional <| attempt (
-    (token "+" *> pure Op.add) <|>
-    (token ">=" *> pure Op.gte)
-  )
-  match maybeOp with
-  | some op =>
-    let rhs ←  attempt parseAtom
-    parseArithRest (Expr.op lhs op rhs)
-  | none =>
-    return lhs
-
-
-
-
-  -- Parse assignments (right associative)
-  partial def parseAssign : Parser Expr := do
-    dbg_trace "Parse assign called"
-    let left ← parseExpr
-    token ":="
-    let right ← parseExpr
-    return Expr.assign left right
-
-  -- Parse conditionals
-  partial def parseConditional : Parser Expr := do
-    dbg_trace "parse conditional called"
-    token "if"
-    let cond ← parseExpr
-    token "then"
-    let thenExpr ← parseExpr  -- Parse then/else at top level
-    token "else"
-    let elseExpr ← parseExpr
-    return Expr.ite cond thenExpr elseExpr
-
-
-  partial def parseLet : Parser Expr := do
-    dbg_trace "Parse let called"
-    token "let"
-    let x ← identifier
-    token "="
-    let e1 ← parseExpr
-    token "in"
-    let e2 ← parseExpr
-    return Expr.let x e1 e2
-
-  -- Parse sequences (right associative, lowest precedence)
-  partial def parseSeq : Parser Expr := do
-    dbg_trace "Parse seq called"
-    let e1 ← parseArith <|> parseAtom
-    token ";"
-    let e2 ← parseExpr
-    return Expr.seq e1 e2
-
-  -- Parse ref creation
-  partial def parseRef : Parser Expr := do
-    dbg_trace "Parse ref called"
-    token "ref"
-    let e ← parseExpr
-    return Expr.newRef e
-
-  -- Parse dereference
-  partial def parseDeref : Parser Expr := do
-    dbg_trace "Parse deref called"
-    token "!"
-    let e ← parseExpr
-    return Expr.deref e
-
-  -- Parse types (simple types only for now)
-  partial def parseTyp : Parser Typ := do
-    let t ← identifier
-    match t with
-    | "int" => return Typ.int
-    | "bool" => return Typ.bool
-    | "unit" => return Typ.unit
-    | _ => fail s!"Unknown type: {t}"
-
-  -- Parse while loops
-  partial def parseWhile : Parser Expr := do
-    dbg_trace "Parse while called"
-    token "while"
-    let cond ← parseExpr
-    token "do"
-    let body ← parseExpr
-    return Expr.while cond body
-
-  -- Parse function abstractions
-  partial def parseFn : Parser Expr := do
-    dbg_trace "Parse func called"
-    token "fn"
-    let x ← identifier
-    token ":"
-    let paramType ← parseTyp
-    token "=>"
-    let body ← parseExpr
-    token ":"
-    let returnType ← parseTyp
-    return Expr.fn x paramType body returnType
-
-  -- Parse pure function abstractions
-  partial def parsePfn : Parser Expr := do
-    dbg_trace "parse pure func called"
-    token "pfn"
-    let x ← identifier
-    token ":"
-    let paramType ← parseTyp
-    token "=>"
-    let body ← parseExpr
-    token ":"
-    let returnType ← parseTyp
-    return Expr.pfn x paramType body returnType
-
-  -- Main expression parser (lowest precedence)
-  partial def parseExpr : Parser Expr :=
-    attempt parseSeq <|>
-    attempt parseArith <|>
-  --parseRef <|>
-  --parseDeref <|>
-  --parseWhile <|>
-  --parseFn <|>
-  --parsePfn <|>
-  --parseLet <|>
-  --parseAssign <|>
-    parseAtom <|>
-  --parseApp <|>
-
-  --parseConditional <|>
-  fail "parseExpr: no parser matched"
-
-end
-
--- Parse a complete program
-def parseProgram : Parser Expr := do
-  whitespace
-  let expr ← parseExpr
-  whitespace
-  eof
-  return expr
-
--- Helper function to parse from string
-def parseString (input : String) : Except String Expr :=
-  match parseProgram.run input with
-  | .ok expr => .ok expr
-  | .error err => .error s!"Parse error: {err}"
-
-
------------------- XML TO Expr Functions---------------------------------------
 open Lean Xml
 open System
+
+
+-------------Helpers for XML To Expr-------------------------------------------
+partial def flattenTypeExpr (contents : Array Content) : Except String (List Typ) := do
+  let mut result : List Typ := []
+  let mut current := contents
+ -- dbg_trace "Calling flattentypeExpr¬"
+ -- dbg_trace contents
+  while true do
+    match current with
+    | #[Content.Element (Element.Element "base_type" _ #[Content.Character name]),
+        Content.Element (Element.Element "type_expr" _ tail)] =>
+         -- dbg_trace "Nested type is "
+         -- dbg_trace name
+          let typ <- strToType (name.trim)
+         -- dbg_trace "Type parsed is "
+         -- dbg_trace (reprTyp typ 0)
+          result := typ :: result
+          let tailFiltered := tail.filterMap fun
+          | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+          | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
+          | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
+          | _ => none
+          current := tailFiltered
+
+    | #[Content.Element (Element.Element "base_type" _ #[Content.Character name])] =>
+          result := (← strToType (name.trim)) :: result
+          -- dbg_trace "Nested type is "
+         -- dbg_trace name
+          --  dbg_trace "Type parsed is "
+         -- dbg_trace (reprTyp (← strToType (name.trim)) 0)
+          break
+     -- Case: (type_expr) inside parentheses → just recurse into it
+    | #[Content.Element (Element.Element "type_expr" _ tail)] => do
+         let tailFiltered := tail.filterMap fun
+          | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+          | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
+          | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
+          | _ => none
+
+         let innerResult ← flattenTypeExpr tailFiltered
+         result := result ++ innerResult
+         break
+    | _ => .error s!"Invalid type_expr shape: {current}"
+
+  return result
+--------------------------------------------------------------------------------
+-- Helper Wrapper function to parse a Type Expression into a Type
+
+def parseTypeExpr (typeExpElements : Array Content ) : Except String Typ := do
+ -- dbg_trace "Calling parseTypeExpr¬"
+  --dbg_trace typeExpElements.toList
+  let listTyp <- flattenTypeExpr typeExpElements
+  match listTyp with
+  | [] => .error "Empty type list"
+  | t :: rest => return rest.reverse.foldr Typ.arrow t
+
+------------------ XML TO Expr Functions---------------------------------------
 
 -- Run the tree-sitter parser with `-x`
 def runTreeSitterXml (file : String) : IO String := do
@@ -262,7 +108,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   match elems.toList with
     | [Element.Element "number" _ #[Content.Character nStr]] =>
-        match nStr.trim.toNat? with
+        match nStr.trim.toInt? with
         | some n => .ok (Expr.num n)
         | none => .error s!"Invalid number: {nStr}"
 
@@ -331,8 +177,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
       | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
-    let a:= elems.toList
-    --dbg_trace a.length
+
     match elems.toList with
     | [leftEl, rightEl] =>
         return Expr.seq (← xmlToExpr leftEl) (← xmlToExpr rightEl)
@@ -413,27 +258,86 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
         | _ => .error s!"Invalid while_expr structure: {contents}"
 
   | Element.Element "fn_expr" _ contents => do
-    let elems := contents.filterMap fun
-      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
-      | Content.Element el => some el
-      | _ => none
-    --dbg_trace elems.toList
+  let elems := contents.filterMap fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+    | Content.Element el => some el
+    | _ => none
+
+  -- dbg_trace "fn_expr called"
+  --dbg_trace elems.toList
     match elems.toList with
-    | [Element.Element "identifier" _ #[Content.Character p],
-      body] =>
-        return Expr.fn p (← xmlToExpr body)
+    | [Element.Element "identifier" _ #[(Content.Character paramName)],
+      Element.Element "type_expr" _ argTypeContent,
+      Element.Element "expr" attr bodyContent,
+      Element.Element "type_expr" _ retTypeContent] => do
+
+      -- Confirm the fields to guard against malformed trees
+     -- guard (attrsArgType.any (·.name = "field" ∧ ·.val = "arg_type"))
+     --   | .error "Expected type_expr with field='arg_type'"
+     -- guard (attrsRetType.any (·.name = "field" ∧ ·.val = "return_type"))
+    --    | .error "Expected type_expr with field='return_type'"
+
+    let argTypeFiltered := argTypeContent.filterMap (fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+    | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
+    | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
+    | _ => none)
+
+    let returnTypeFiltered := retTypeContent.filterMap (fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+    | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
+    | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
+    | _ => none)
+
+      let argType ← parseTypeExpr  argTypeFiltered
+      let body ← xmlToExpr (Element.Element "expr" attr bodyContent)
+      let returnType ← parseTypeExpr returnTypeFiltered
+
+      return (Expr.fn paramName argType body returnType)
+
+     -- return Expr.fn paramName argType body returnType
+
     | _ => .error s!"Invalid fn_expr structure: {contents}"
 
   | Element.Element "pfn_expr" _ contents => do
-    let elems := contents.filterMap fun
-      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
-      | Content.Element el => some el
-      | _ => none
-      match elems.toList with
-      | [Element.Element "identifier" _ #[Content.Character p],
-        body] =>
-          return Expr.pfn p (← xmlToExpr body)
-      | _ => .error s!"Invalid pfn_expr structure: {contents}"
+  let elems := contents.filterMap (fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+    | Content.Element el => some el
+    | _ => none)
+
+   --dbg_trace "pfn_expr called"
+     match elems.toList with
+    | [Element.Element "identifier" _ #[(Content.Character paramName)],
+      Element.Element "type_expr" _ argTypeContent,
+      Element.Element "expr" attr bodyContent,
+      Element.Element "type_expr" _ retTypeContent] => do
+
+      -- Confirm the fields to guard against malformed trees
+     -- guard (attrsArgType.any (·.name = "field" ∧ ·.val = "arg_type"))
+     --   | .error "Expected type_expr with field='arg_type'"
+     -- guard (attrsRetType.any (·.name = "field" ∧ ·.val = "return_type"))
+    --    | .error "Expected type_expr with field='return_type'"
+
+    let argTypeFiltered := argTypeContent.filterMap (fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+    | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
+    | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
+    | _ => none)
+    let returnTypeFiltered := retTypeContent.filterMap (fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+    | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
+    | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
+    | _ => none)
+      let argType ← parseTypeExpr  argTypeFiltered
+      let body ← xmlToExpr (Element.Element "expr" attr bodyContent)
+      let returnType ← parseTypeExpr returnTypeFiltered
+
+      return (Expr.pfn paramName argType body returnType)
+
+     -- return Expr.fn paramName argType body returnType
+
+    | _ => .error s!"Invalid fn_expr structure: {contents}"
+
 
   | Element.Element "group_expr" _ contents => do
     let elements := contents.filterMap (fun
@@ -460,6 +364,9 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | _ => .error s!"Unrecognized XML element: {x}"
 
+  --------------------------------------------------
+
+--------------------------------------------------------------------------------
 -- Final wrapper
 def parsePoisonFile (file : String) : IO Expr := do
   let xmlStr ← runTreeSitterXml file

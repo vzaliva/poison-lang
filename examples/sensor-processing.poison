@@ -5,26 +5,15 @@ let get_sensor = fn x : unit => 42 : int in
 let sensor1 = get_sensor unit in -- (* Type: int :> poisoned {guard "temp" (y, y >= 0, _)} *)
 let sensor2 = get_sensor unit in  --(* Type: int :> poisoned {guard "pressure" (z, z >= 0, _)} *)
 
-<<<<<<< HEAD
-let f = fn x  =>            -- (* Captures sensor1 with its predicate *)
+let f = fn x : int =>            -- (* Captures sensor1 with its predicate *)
     if sensor1 >= 0 then         -- (* Matches guard "temp" test expression *)
-        if x >= 0 then          --  (* Matches guard "pressure" test expression *)
+        if x >= 0 then           -- (* Matches guard "pressure" test expression *)
             sensor1 + x          -- (* Both de-poisoned: clean result *)
-=======
-let f = fn x : int =>             (* Captures sensor1 with its predicate *)
-    if sensor1 >= 0 then          (* Matches guard "temp" test expression *)
-        if x >= 0 then            (* Matches guard "pressure" test expression *)
-            sensor1 + x           (* Both de-poisoned: clean result *)
->>>>>>> upstream/main
         else
             -1                   -- (* x still poisoned *)
     else
-<<<<<<< HEAD
         -2                       -- (* sensor1 still poisoned *)
-=======
-        -2                        (* sensor1 still poisoned *)
     : int
->>>>>>> upstream/main
 in
 let result = f sensor2 in        -- (* Application types body with predicates *)
 result                           -- (* Result: int :> clean *)
