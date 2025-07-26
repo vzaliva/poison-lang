@@ -10,59 +10,73 @@ open System
 
 
 -------------Helpers for XML To Expr-------------------------------------------
-partial def flattenTypeExpr (contents : Array Content) : Except String (List Typ) := do
-  let mut result : List Typ := []
-  let mut current := contents
+partial def flattenTypeExpr (fuel:Nat ) (content : Array Content) : Except String Typ := do
+
+      -- Possible cases for contents Array ( Should have one Top Level Element only)
+      -- i) Just a Base Type (int,bool..) ,
+      -- ii ) Paren Type ( TypeExp ),
+      -- iii ) Arrow Type tye1 -> tye2 ,
+      --iv) Ref Type
+      -- v ) TypeExp
  -- dbg_trace "Calling flattentypeExpr¬"
- -- dbg_trace contents
-  while true do
-    match current with
-    | #[Content.Element (Element.Element "base_type" _ #[Content.Character name]),
-        Content.Element (Element.Element "type_expr" _ tail)] =>
+ -- dbg_trace content
+   let contents := content.filterMap fun
+    | Content.Element (Element.Element "base_type" attr #[Content.Character name]) => some (Content.Element (Element.Element "base_type" attr #[Content.Character name]))
+    | Content.Element (Element.Element "type_expr" attr conts) => some (Content.Element (Element.Element "type_expr" attr conts))
+    | Content.Element (Element.Element "arrow_type" attr conts) => some (Content.Element (Element.Element "arrow_type" attr conts))
+    | Content.Element (Element.Element "ref_type" attr conts) => some (Content.Element (Element.Element "ref_type" attr conts))
+    | Content.Element (Element.Element "paren_type" attr contents) => some (Content.Element (Element.Element "paren_type" attr contents))
+    | _ => none
+
+    match contents with
+    -- Embedded only Base Types - int , bool , unit
+    | #[Content.Element (Element.Element "base_type" _ #[Content.Character name])] =>
          -- dbg_trace "Nested type is "
          -- dbg_trace name
           let typ <- strToType (name.trim)
          -- dbg_trace "Type parsed is "
          -- dbg_trace (reprTyp typ 0)
-          result := typ :: result
-          let tailFiltered := tail.filterMap fun
-          | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-          | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
-          | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
-          | _ => none
-          current := tailFiltered
+          return typ
 
-    | #[Content.Element (Element.Element "base_type" _ #[Content.Character name])] =>
-          result := (← strToType (name.trim)) :: result
-          -- dbg_trace "Nested type is "
-         -- dbg_trace name
-          --  dbg_trace "Type parsed is "
-         -- dbg_trace (reprTyp (← strToType (name.trim)) 0)
-          break
-     -- Case: (type_expr) inside parentheses → just recurse into it
-    | #[Content.Element (Element.Element "type_expr" _ tail)] => do
-         let tailFiltered := tail.filterMap fun
-          | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-          | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
-          | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
+    -- Type expression embedded in  ()
+    | #[Content.Element (Element.Element "paren_type" _ contents)] => do
+
+         return (<- flattenTypeExpr (fuel - 1) contents)
+
+     -- Arrow Type (tye1 -> tye2)
+    | #[Content.Element (Element.Element "arrow_type" _ contents)] => do
+         let contentsFiltered := contents.filterMap fun
+          | Content.Element (Element.Element "type_expr" a b) => some (Content.Element (Element.Element "type_expr" a b))
           | _ => none
 
-         let innerResult ← flattenTypeExpr tailFiltered
-         result := result ++ innerResult
-         break
-    | _ => .error s!"Invalid type_expr shape: {current}"
+          match contentsFiltered with
+          | #[Content.Element (Element.Element "type_expr" _ tyeExpFrom) , Content.Element (Element.Element "type_expr" _ tyeExpTo)]
+            =>  let fromType <- flattenTypeExpr (fuel-1) tyeExpFrom
+                let toType <- flattenTypeExpr (fuel-2) tyeExpTo
+                return Typ.arrow fromType toType
+          | _ => .error "Invalid arrow type expression"
 
-  return result
+      --Ref Types (ref tye)
+    | #[Content.Element (Element.Element "ref_type" _ contents)] => do
+         let contentsFiltered := contents.filterMap fun
+          | Content.Element (Element.Element "type_expr" a b) => some (Content.Element (Element.Element "type_expr" a b))
+          | _ => none
+         return Typ.ref (<- flattenTypeExpr (fuel-1) contentsFiltered)
+    | #[Content.Element (Element.Element "type_expr" _ contents)] => do
+       return (<- flattenTypeExpr (fuel - 1) contents)
+
+    | _ => .error s!"Invalid type_expr shape: {contents}"
+
 --------------------------------------------------------------------------------
 -- Helper Wrapper function to parse a Type Expression into a Type
 
 def parseTypeExpr (typeExpElements : Array Content ) : Except String Typ := do
  -- dbg_trace "Calling parseTypeExpr¬"
   --dbg_trace typeExpElements.toList
-  let listTyp <- flattenTypeExpr typeExpElements
-  match listTyp with
-  | [] => .error "Empty type list"
-  | t :: rest => return rest.reverse.foldr Typ.arrow t
+  let TypExp := flattenTypeExpr 1000 typeExpElements
+  match TypExp with
+   | .ok typeExpression => .ok typeExpression
+   | .error e => .error e
 
 ------------------ XML TO Expr Functions---------------------------------------
 
@@ -271,22 +285,17 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
       Element.Element "expr" attr bodyContent,
       Element.Element "type_expr" _ retTypeContent] => do
 
-      -- Confirm the fields to guard against malformed trees
-     -- guard (attrsArgType.any (·.name = "field" ∧ ·.val = "arg_type"))
-     --   | .error "Expected type_expr with field='arg_type'"
-     -- guard (attrsRetType.any (·.name = "field" ∧ ·.val = "return_type"))
-    --    | .error "Expected type_expr with field='return_type'"
-
     let argTypeFiltered := argTypeContent.filterMap (fun
     | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-    | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
-    | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
+
+    | Content.Element e => some (Content.Element e)
     | _ => none)
+
 
     let returnTypeFiltered := retTypeContent.filterMap (fun
     | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-    | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
-    | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
+
+    | Content.Element e => some (Content.Element e)
     | _ => none)
 
       let argType ← parseTypeExpr  argTypeFiltered
@@ -295,46 +304,42 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
       return (Expr.fn paramName argType body returnType)
 
-     -- return Expr.fn paramName argType body returnType
 
     | _ => .error s!"Invalid fn_expr structure: {contents}"
 
   | Element.Element "pfn_expr" _ contents => do
-  let elems := contents.filterMap (fun
+   let elems := contents.filterMap fun
     | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
     | Content.Element el => some el
-    | _ => none)
+    | _ => none
 
-   --dbg_trace "pfn_expr called"
-     match elems.toList with
+  -- dbg_trace "fn_expr called"
+  --dbg_trace elems.toList
+    match elems.toList with
     | [Element.Element "identifier" _ #[(Content.Character paramName)],
       Element.Element "type_expr" _ argTypeContent,
       Element.Element "expr" attr bodyContent,
       Element.Element "type_expr" _ retTypeContent] => do
 
-      -- Confirm the fields to guard against malformed trees
-     -- guard (attrsArgType.any (·.name = "field" ∧ ·.val = "arg_type"))
-     --   | .error "Expected type_expr with field='arg_type'"
-     -- guard (attrsRetType.any (·.name = "field" ∧ ·.val = "return_type"))
-    --    | .error "Expected type_expr with field='return_type'"
-
     let argTypeFiltered := argTypeContent.filterMap (fun
     | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-    | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
-    | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
+
+    | Content.Element e => some (Content.Element e)
     | _ => none)
+
+
     let returnTypeFiltered := retTypeContent.filterMap (fun
     | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-    | Content.Element (Element.Element "type_expr" attr c) => some (Content.Element (Element.Element "type_expr" attr c))
-    | Content.Element (Element.Element "base_type" attr c) => some (Content.Element (Element.Element "base_type" attr c))
+
+    | Content.Element e => some (Content.Element e)
     | _ => none)
+
       let argType ← parseTypeExpr  argTypeFiltered
       let body ← xmlToExpr (Element.Element "expr" attr bodyContent)
       let returnType ← parseTypeExpr returnTypeFiltered
 
-      return (Expr.pfn paramName argType body returnType)
+      return (Expr.fn paramName argType body returnType)
 
-     -- return Expr.fn paramName argType body returnType
 
     | _ => .error s!"Invalid fn_expr structure: {contents}"
 

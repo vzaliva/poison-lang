@@ -67,13 +67,25 @@ module.exports = grammar({
                   "int",
                   "bool",
                   "unit"
-                ),
-    
+                      ),
+                      
+    type_expr: $ => choice(
+        $.arrow_type,
+        $.ref_type,
+        $.base_type,
+        $.paren_type
+      ),
 
-    type_expr: $ => prec.right(seq(
-      field("from", choice($.base_type, seq("(", $.type_expr, ")"))),
-      optional(seq("->", field("to", $.type_expr)))
-    )),
+      arrow_type: $ => prec.right(1, seq(
+        field("from", $.type_expr),
+        "->",
+        field("to", $.type_expr)
+      )),
+
+      ref_type: $ => prec.left(2, seq(
+        "ref",
+        field("to", $.type_expr)
+      )),
     paren_type: $ => seq("(", $.type_expr, ")"), 
 
     fn_expr: $ =>  prec.left(2,seq(
