@@ -82,6 +82,7 @@ def parseTypeExpr (typeExpElements : Array Content ) : Except String Typ := do
 
 -- Run the tree-sitter parser with `-x`
 def runTreeSitterXml (file : String) : IO String := do
+  --IO.print file
   let cmd := "tree-sitter"
   let args := #["parse", file,"-x"]
   let output ← IO.Process.output {
@@ -91,7 +92,7 @@ def runTreeSitterXml (file : String) : IO String := do
     stdout := .piped
   }
   if output.exitCode ≠ 0 then
-    throw <| IO.userError s!"Tree-sitter failed: {output.stderr}"
+    throw <| IO.userError s!"Parsing failed: {output.stderr}"
   return output.stdout
 open Lean Xml
 
@@ -146,7 +147,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
       | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
-    let validOps := ["+", "-", "*", "\\", ">", ">=", "<", "<=", "=="]
+    let validOps := ["+", "-", "*", "/", ">", ">=", "<", "<=", "=="]
     let ops := contents.filterMap fun
       | Content.Character s =>
           let trimmed := s.trim
@@ -162,14 +163,14 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
           let rhsExpr ← xmlToExpr rhs
           match opStr with
           | "+" => return Expr.op lhsExpr Op.add rhsExpr
-        --  | "-" => return Expr.op lhsExpr Op.sub rhsExpr
-         -- | "*" => return Expr.op lhsExpr Op.mul rhsExpr
-         -- | "\\" => return Expr.op lhsExpr Op.div rhsExpr
-         -- | ">" => return Expr.op lhsExpr Op.gt rhsExpr
+          | "-" => return Expr.op lhsExpr Op.sub rhsExpr
+          | "*" => return Expr.op lhsExpr Op.mul rhsExpr
+          | "/" => return Expr.op lhsExpr Op.div rhsExpr
+          | ">" => return Expr.op lhsExpr Op.gt rhsExpr
           | ">=" => return Expr.op lhsExpr Op.gte rhsExpr
-         -- | "<" => return Expr.op lhsExpr Op.lt rhsExpr
-         -- | "<=" => return Expr.op lhsExpr Op.lte rhsExpr
-         -- | "==" => return Expr.op lhsExpr Op.eq rhsExpr
+          | "<" => return Expr.op lhsExpr Op.lt rhsExpr
+          | "<=" => return Expr.op lhsExpr Op.lte rhsExpr
+          | "==" => return Expr.op lhsExpr Op.eq rhsExpr
           | _ => .error s!"Unknown operator: {opStr}"
       | _ => .error s!"Invalid binary_expr structure: {contents}"
 
@@ -394,7 +395,7 @@ def myFilePath := "/home/jayc/poison-lang/parser/example.poison"
 --#eval parseString " 6 + 10 "
 --#eval parseString " 6 >= 10 "
 --aAa**#eval parseString " 6 + 10 >= 10 + 2 "
-#eval (parsePoisonFile myFilePath)
+--#eval (parsePoisonFile myFilePath)
 
 --#eval " let x = 3 in x"
 --#eval parseString " ref 100 "

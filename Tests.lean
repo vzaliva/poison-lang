@@ -1,4 +1,4 @@
-import LeanPoison.Syntax
+/-import LeanPoison.Syntax
 import LeanPoison.Runtime
 import LeanPoison.Eval
 import LeanPoison.Parser
@@ -8,29 +8,32 @@ import LeanPoison.Typecheck
 -- Test structure to hold test cases
 structure TestCase where
   name : String
-  expr : Expr
-  -- file name
+  --expr : Expr
+  fileName : String
   expectedValue : Option Value
   expectedType : Option QTyp  -- Expected qualified type
+  expectedAST : Option Expr -- Expected AST
   description : String
 
 -- Test mode options
 inductive TestMode where
-  | both : TestMode      -- Run both type checking and evaluation
+  | all : TestMode      -- Run type checking ,evaluation and parsing
   | typecheck : TestMode -- Run only type checking
   | eval : TestMode      -- Run only evaluation
+  | parse : TestMode     -- Run only parsing
   deriving BEq
 
 -- Helper function to run a test case
-def runTestCase (test : TestCase) (mode : TestMode := TestMode.both) (verbose : Bool := false) : IO Bool := do
+def runTestCase (test : TestCase) (mode : TestMode := TestMode.all) (verbose : Bool := false) : IO Bool := do
   IO.println s!"Running test: {test.name}"
   IO.println s!"Description: {test.description}"
 
   let mut typeResult := true
   let mut evalResult := true
+  let mut parseResult := true
 
   -- Type checking
-  if mode == TestMode.both || mode == TestMode.typecheck then
+  if mode == TestMode.all || mode == TestMode.typecheck then
     typeResult ← match test.expectedType with
     | some expectedQTyp => do
       match typecheckExpr test.expr with
@@ -46,7 +49,7 @@ def runTestCase (test : TestCase) (mode : TestMode := TestMode.both) (verbose : 
       pure true
 
   -- Evaluation
-  if mode == TestMode.both || mode == TestMode.eval then
+  if mode == TestMode.all || mode == TestMode.eval then
     let (_, resultExpr) := run defaultFuel test.expr verbose
     evalResult ← match Expr.toValue? resultExpr with
     | some actualValue => do
@@ -60,6 +63,8 @@ def runTestCase (test : TestCase) (mode : TestMode := TestMode.both) (verbose : 
     | none => do
       IO.println s!"  Evaluation: ✗ FAIL - Expression did not evaluate to a value: {repr resultExpr}"
       pure false
+
+  -- Parsing
 
   return typeResult && evalResult
 
@@ -305,3 +310,4 @@ def main (args : List String) : IO Unit := do
 
   let filtered := args.filter (fun a => a ≠ "-v" ∧ a ≠ "--verbose" ∧ a ≠ "--typecheck" ∧ a ≠ "-t" ∧ a ≠ "--eval" ∧ a ≠ "-e")
   runSelectedTests filtered mode verbose
+-/

@@ -364,7 +364,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.value _ => throw "Unsupported value type"
     | Expr.var x => typecheckVarNoPred ctx x
     | Expr.op e1 Op.add e2 => typecheckOpPlus ctx e1 e2 (fuel - 1)
-    | Expr.op e1 Op.gte e2 => typecheckOpGte ctx e1 e2 (fuel - 1)
+    | Expr.op e1 _ e2 => typecheckOpGte ctx e1 e2 (fuel - 1)
     | Expr.newRef e => typecheckNewRef ctx e (fuel - 1)
     | Expr.assign e1 e2 => typecheckAssign ctx e1 e2 (fuel - 1)
     | Expr.deref e => typecheckDeref ctx e (fuel - 1)

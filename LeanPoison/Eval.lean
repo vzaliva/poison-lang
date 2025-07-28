@@ -18,7 +18,7 @@ def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
     | Value.num n1, Value.num n2 => some (Value.bool (n1 >= n2))
     | _, _ => none
 
-  /- | Op.gt =>
+  | Op.gt =>
     match v1, v2 with
     | Value.num n1, Value.num n2 => some (Value.bool (n1 > n2))
     | _, _ => none
@@ -45,7 +45,7 @@ def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
   | Op.sub =>
     match v1, v2 with
     | Value.num n1, Value.num n2 => if n1 < n2 then some (Value.num 0) else some (Value.num (n1 - n2))
-    | _, _ => none -/
+    | _, _ => none
 
 -- Wrapper function to print return values
 def stepReturn (fuel : Nat) (verbose : Bool) (result : Option (Config × Expr)) : Option (Config × Expr) :=

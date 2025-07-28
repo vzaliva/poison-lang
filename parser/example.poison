@@ -3,4 +3,5 @@
 --let f = fn x : int => x + 2 : int in f -11
 --fn x :  int -> bool -> unit    => x + 1 : int -> bool -> (int -> bool)
 -- fn x : ref (ref int ) => x : bool -> ref ref bool
-fn z : int -> ((ref int -> bool) -> unit ) => z : unit 
+-- fn z : int -> ((ref int -> bool) -> unit ) => z : unit 
+5 / 2
