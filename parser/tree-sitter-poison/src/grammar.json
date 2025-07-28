@@ -696,40 +696,7 @@
       "name": "comment"
     }
   ],
-  "conflicts": [
-    [
-      "seq_expr",
-      "ref_expr"
-    ],
-    [
-      "seq_expr",
-      "deref_expr"
-    ],
-    [
-      "seq_expr",
-      "assign_expr"
-    ],
-    [
-      "seq_expr",
-      "fn_expr"
-    ],
-    [
-      "seq_expr",
-      "pfn_expr"
-    ],
-    [
-      "seq_expr",
-      "while_expr"
-    ],
-    [
-      "seq_expr",
-      "let_expr"
-    ],
-    [
-      "seq_expr",
-      "if_expr"
-    ]
-  ],
+  "conflicts": [],
   "precedences": [],
   "externals": [],
   "inline": [],

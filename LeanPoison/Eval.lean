@@ -224,7 +224,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (expr : Expr) : Option 
   -- ---------------------------------------------------------------
   -- ⟨ let x = v in e2, m, r ⟩ → ⟨ e2, m, r[x |-> v] ⟩
   | Expr.let x (Expr.value v) e2 =>
-    dbg_trace s!"let {x} = {v}";
+   --dbg_trace s!"let {x} = {v}";
     let config' := { config with varEnv := config.varEnv.update x v }
     stepReturn fuel verbose (some (config', e2))
 

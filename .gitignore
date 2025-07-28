@@ -1,25 +1,41 @@
-_build
-poison-lang-spec/poison-lang.tex
+# Lean build artifacts
+lake-manifest.json
+lakefile.lean
+build/
+
+# Tree-sitter build artifacts
+parser/tree-sitter-poison/build/
+parser/tree-sitter-poison/src/parser.c
+parser/tree-sitter-poison/src/scanner.c
+parser/tree-sitter-poison/src/parser.o
+parser/tree-sitter-poison/src/scanner.o
+parser/tree-sitter-poison/tree-sitter-poison.js
+parser/tree-sitter-poison/binding.gyp
+
+# Node modules (in case used by tree-sitter parser)
+parser/tree-sitter-poison/node_modules/
+parser/tree-sitter-poison/package-lock.json
+
+# Latex build artifacts (from poison-lang-spec)
 poison-lang-spec/*.aux
 poison-lang-spec/*.log
 poison-lang-spec/*.out
-poison-lang-spec/*.bbl
-poison-lang-spec/*.blg
+poison-lang-spec/*.pdf
 poison-lang-spec/*.toc
 poison-lang-spec/*.fdb_latexmk
 poison-lang-spec/*.fls
-poison-lang-spec/poison-lang.synctex.gz
-poison-lang-spec/*.backup
+poison-lang-spec/poison-lang.tex
 
-doc/*.aux
-doc/*.bbl
-doc/*.blg
-doc/*.log
-doc/*.out
-doc/*.fls
-doc/*.*_latexmk
-doc/*.synctex.gz
+# OCaml/OTT temporary files (if any)
+poison-lang-spec/*.ott~
 
-practise.lean
+# REPL scratch or temp files
+ReplInput.poison
 
-/.lake
+# Editor & OS noise
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode/
+.idea/

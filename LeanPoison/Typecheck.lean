@@ -363,8 +363,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.value (Value.loc l) => typecheckLocation ctx l
     | Expr.value _ => throw "Unsupported value type"
     | Expr.var x => typecheckVarNoPred ctx x
-    | Expr.op e1 Op.add e2 => typecheckOpPlus ctx e1 e2 (fuel - 1)
-    | Expr.op e1 _ e2 => typecheckOpGte ctx e1 e2 (fuel - 1)
+    | Expr.op e1 _ e2 => typecheckOp ctx e1 e2 (fuel - 1)
     | Expr.newRef e => typecheckNewRef ctx e (fuel - 1)
     | Expr.assign e1 e2 => typecheckAssign ctx e1 e2 (fuel - 1)
     | Expr.deref e => typecheckDeref ctx e (fuel - 1)
@@ -385,7 +384,7 @@ decreasing_by
 -- --------------------------------
 -- pc ; G ; S ; L |- e1 + e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
 -/
-def typecheckOpPlus (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
   else do
     let result1 ← typecheckExpr ctx e1 (fuel - 1)
@@ -399,31 +398,6 @@ def typecheckOpPlus (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
 
     let poison := joinPoison ctx.pc (joinPoison p1 p2)
     let qt : QTyp := ⟨PTyp.int, poison, none  ⟩
-    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
-termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
-
-/-- Rule: op_gteq (Ott rule: op_gteq)
--- pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
--- pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
--- --------------------------------
--- pc ; G ; S ; L |- e1 >= e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
--/
-def typecheckOpGte (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    let result1 ← typecheckExpr ctx e1 (fuel - 1)
-    let ⟨ptyp1, p1, _  ⟩ := result1.qualType
-    if ptyp1 != PTyp.int then throw "Left operand of >= must be int"
-
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-    let result2 ← typecheckExpr ctx' e2 (fuel - 1)
-    let ⟨ptyp2, p2, _  ⟩ := result2.qualType
-    if ptyp2 != PTyp.int then throw "Right operand of >= must be int"
-
-    let poison := joinPoison ctx.pc (joinPoison p1 p2)
-    let qt : QTyp := ⟨PTyp.bool, poison, none  ⟩
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
 termination_by fuel
 decreasing_by

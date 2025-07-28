@@ -1,9 +1,12 @@
-.PHONY: all clean test poison-lang-spec lean-build lean-clean
+.PHONY: all clean test poison-lang-spec lean-build lean-clean parser parser-clean parser-test
 
-all: poison-lang-spec lean-build
+all: poison-lang-spec lean-build parser 
+
+parser:
+	cd parser/tree-sitter-poison && tree-sitter generate
 
 poison-lang-spec:
-	$(MAKE) -C poison-lang-spec
+	$(MAKE) -C poison-lang-spec || true
 
 lean-build:
 	lake build
@@ -11,8 +14,18 @@ lean-build:
 lean-clean:
 	lake clean
 
-clean: lean-clean
-	$(MAKE) -C poison-lang-spec clean
+
+parser-clean:
+	rm -rf parser/tree-sitter-poison/build \
+	       parser/tree-sitter-poison/src/parser.c \
+	       parser/tree-sitter-poison/src/scanner.c \
+	       parser/tree-sitter-poison/src/parser.o \
+	       parser/tree-sitter-poison/src/scanner.o \
+	       parser/tree-sitter-poison/tree-sitter-poison.js \
+	       parser/tree-sitter-poison/binding.gyp
+
+clean: lean-clean parser-clean 
+	-$(MAKE) -C poison-lang-spec clean || true
 
 parser-test: lean-build
 	@echo "Running Poison language tests..."
@@ -21,6 +34,7 @@ parser-test: lean-build
 		lake exe poison-interpreter "$$test"; \
 	done
 
-test: lean-build
-	lake exe poison-tests
 
+test: lean-build
+	chmod +x run_tests.sh
+	./run_tests.sh

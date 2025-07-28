@@ -8,6 +8,8 @@ prebuilds/
 node_modules/
 package-lock.json
 
+Tests.lean
+
 # Swift artifacts
 .build/
 Package.resolved

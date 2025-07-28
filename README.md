@@ -18,6 +18,21 @@ For detailed language features and syntax, see the formal documentation in `doc/
 ### Prerequisites
 - [Lean 4](https://leanprover.github.io/lean4/doc/quickstart.html)
 - LaTeX and latexmk (for building documentation)
+-- tree-sitter 0.25.6
+
+-- Tree sitter setup :
+    - Detailed Instructions : https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html 
+    - Usual Setup :  npm install -g tree-sitter-cli
+
+    -- Run 'make' which should generate the parser that the language uses
+    
+    -- If there are some issues , navigate to parser/tree-sitter-poison and run npm-install 
+       , also try 'tree-sitter init-config'  from parser/tree-sitter-poison 
+       and then modify  '~/.config/tree-sitter/config.json' and add 
+                  {
+                    "parser-directories": ["Path to base poison directory/parser"]
+                  }
+
 
 ### Build
 ```bash
@@ -30,15 +45,12 @@ lake exe poison-interpreter examples/arithmetic.poison
 # Run with verbose output
 lake exe poison-interpreter --verbose examples/basic-poison-flow1.poison
 
-# Run tests
-lake exe poison-tests
+# Run repl
+lake exe poison-interpreter --repl
 
-# Run tests with different modes
-lake exe poison-tests --typecheck    # Type checking only
-lake exe poison-tests --eval         # Evaluation only  
-lake exe poison-tests --eval -v      # Evaluation only with verbose output
-lake exe poison-tests # both evaluation and typchecking
-```
+# Run tests
+make test ( Runs run_tests.sh)
+
 
 ## Project Structure
 
@@ -47,11 +59,12 @@ lake exe poison-tests # both evaluation and typchecking
   - `Eval.lean` - Executable semantics
   - `Parser.lean` - Syntax parser
   - `Runtime.lean` - Runtime environment
+-  `parser/     - Contains grammar and packages to generate parser
 - `examples/` - Sample programs demonstrating language features
 - `doc/` - Documentation
 - `poison-lang-spec/` - Ott specification files
 - `Main.lean` - Main interpreter entry point
-- `Tests.lean` - Test suite
+- `run_tests.sh - Currently runs programs in examples/
 
 ## Formal Specification
 

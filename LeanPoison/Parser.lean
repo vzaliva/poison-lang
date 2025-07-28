@@ -1,6 +1,3 @@
---import System.FilePath
---import System.IO.Process
---import System.IO
 import LeanPoison.Syntax
 import Std.Internal.Parsec
 import Lean.Data.Xml.Basic
@@ -18,8 +15,6 @@ partial def flattenTypeExpr (fuel:Nat ) (content : Array Content) : Except Strin
       -- iii ) Arrow Type tye1 -> tye2 ,
       --iv) Ref Type
       -- v ) TypeExp
- -- dbg_trace "Calling flattentypeExpr¬"
- -- dbg_trace content
    let contents := content.filterMap fun
     | Content.Element (Element.Element "base_type" attr #[Content.Character name]) => some (Content.Element (Element.Element "base_type" attr #[Content.Character name]))
     | Content.Element (Element.Element "type_expr" attr conts) => some (Content.Element (Element.Element "type_expr" attr conts))
@@ -31,16 +26,11 @@ partial def flattenTypeExpr (fuel:Nat ) (content : Array Content) : Except Strin
     match contents with
     -- Embedded only Base Types - int , bool , unit
     | #[Content.Element (Element.Element "base_type" _ #[Content.Character name])] =>
-         -- dbg_trace "Nested type is "
-         -- dbg_trace name
           let typ <- strToType (name.trim)
-         -- dbg_trace "Type parsed is "
-         -- dbg_trace (reprTyp typ 0)
           return typ
 
     -- Type expression embedded in  ()
     | #[Content.Element (Element.Element "paren_type" _ contents)] => do
-
          return (<- flattenTypeExpr (fuel - 1) contents)
 
      -- Arrow Type (tye1 -> tye2)
@@ -62,6 +52,7 @@ partial def flattenTypeExpr (fuel:Nat ) (content : Array Content) : Except Strin
           | Content.Element (Element.Element "type_expr" a b) => some (Content.Element (Element.Element "type_expr" a b))
           | _ => none
          return Typ.ref (<- flattenTypeExpr (fuel-1) contentsFiltered)
+
     | #[Content.Element (Element.Element "type_expr" _ contents)] => do
        return (<- flattenTypeExpr (fuel - 1) contents)
 
@@ -71,8 +62,6 @@ partial def flattenTypeExpr (fuel:Nat ) (content : Array Content) : Except Strin
 -- Helper Wrapper function to parse a Type Expression into a Type
 
 def parseTypeExpr (typeExpElements : Array Content ) : Except String Typ := do
- -- dbg_trace "Calling parseTypeExpr¬"
-  --dbg_trace typeExpElements.toList
   let TypExp := flattenTypeExpr 1000 typeExpElements
   match TypExp with
    | .ok typeExpression => .ok typeExpression
@@ -154,7 +143,6 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
           if trimmed ∈ validOps then some trimmed else none
       | _ => none
 
-    --dbg_trace (exprs.toList, ops.toList)
     match (exprs.toList, ops.toList) with
       | ([lhs,
          rhs],
@@ -278,8 +266,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
     | Content.Element el => some el
     | _ => none
 
-  -- dbg_trace "fn_expr called"
-  --dbg_trace elems.toList
+
     match elems.toList with
     | [Element.Element "identifier" _ #[(Content.Character paramName)],
       Element.Element "type_expr" _ argTypeContent,
@@ -314,8 +301,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
     | Content.Element el => some el
     | _ => none
 
-  -- dbg_trace "fn_expr called"
-  --dbg_trace elems.toList
+
     match elems.toList with
     | [Element.Element "identifier" _ #[(Content.Character paramName)],
       Element.Element "type_expr" _ argTypeContent,
@@ -339,10 +325,10 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
       let body ← xmlToExpr (Element.Element "expr" attr bodyContent)
       let returnType ← parseTypeExpr returnTypeFiltered
 
-      return (Expr.fn paramName argType body returnType)
+      return (Expr.pfn paramName argType body returnType)
 
 
-    | _ => .error s!"Invalid fn_expr structure: {contents}"
+    | _ => .error s!"Invalid pfn_expr structure: {contents}"
 
 
   | Element.Element "group_expr" _ contents => do
@@ -370,8 +356,6 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
   | _ => .error s!"Unrecognized XML element: {x}"
 
-  --------------------------------------------------
-
 --------------------------------------------------------------------------------
 -- Final wrapper
 def parsePoisonFile (file : String) : IO Expr := do
@@ -384,19 +368,4 @@ def parsePoisonFile (file : String) : IO Expr := do
   | .error err =>
       throw <| IO.userError s!"Failed to parse XML: {err}"
 
-def myFilePath := "/home/jayc/poison-lang/parser/example.poison"
-
---#eval parseString " fn x => 5 "
---#eval parseString " true "
---#eval parseString " false "
---#eval parseString " 5 "
---#eval parseString " 5 ; 6"
---#eval parseString " 5 ; 6 ; 7"
---#eval parseString " 6 + 10 "
---#eval parseString " 6 >= 10 "
---aAa**#eval parseString " 6 + 10 >= 10 + 2 "
---#eval (parsePoisonFile myFilePath)
-
---#eval " let x = 3 in x"
---#eval parseString " ref 100 "
---#eval parseString " a := 100
+--------------------------------------------------------------------------------
