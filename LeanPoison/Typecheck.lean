@@ -212,17 +212,21 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag 
     -- Check if the variable has a reference type
     match qt.ptyp with
     | PTyp.ref _t l =>
-      -- Look up the memory location in G
-      match G.get? l with
-      | some memQt =>
-        -- Use the dereferenced value as the substitution value
-        let arg := PExpr.deref (PExpr.var name)
-        -- Use checkPredicate to check if the memory location's predicate matches
-        match checkPredicate arg memQt with
-        | .ok (some tag) => tag :: acc
-        | .ok none => acc
-        | .error _ => acc
-      | none => acc
+      if qt.poison then
+        -- Poisoned reference: it could never be de-poisoned, so we don't need to check the predicate
+        acc
+      else
+        -- Look up the type of the memory location in G
+        match G.get? l with
+        | some memQt =>
+          -- Use the dereferenced value as the substitution value
+          let arg := PExpr.deref (PExpr.var name)
+          -- Use checkPredicate to check if the memory location's predicate matches
+          match checkPredicate arg memQt with
+          | .ok (some tag) => tag :: acc
+          | .ok none => acc
+          | .error _ => acc
+        | none => acc
     | _ => acc
 
   let allMatches := varMatches ++ refMatches
