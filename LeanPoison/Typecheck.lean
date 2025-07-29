@@ -5,6 +5,9 @@ open Std
 
 -- Type checking environment definitions
 
+/-- Default fuel for type checking -/
+private def defaultFuel : Nat := 1000
+
 /-- Memory typing environment (Γ in the Ott spec) -/
 abbrev MemoryTypeEnv := HashMap Address QTyp
 
@@ -197,7 +200,7 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag 
     | none => return none
     | some ⟨tag, arg_name, pred_body, var_env⟩ =>
               -- Compare the predicate body with the condition using environment-aware equality
-        if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) 100 then return some tag else return none
+        if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) defaultFuel then return some tag else return none
 
   -- Collect all matching tags from variable environment
     let varMatches := S.foldl (init := []) fun acc ⟨name, qt⟩ =>
@@ -779,7 +782,7 @@ def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
     varEnv := []
     tagEnv := {}
   }
-  let result ← typecheck initialCtx e 1000  -- Use 1000 as default fuel
+  let result ← typecheck initialCtx e defaultFuel
   return result.qualType
 
 /-- Type check a program (expression) and return a human-readable result -/

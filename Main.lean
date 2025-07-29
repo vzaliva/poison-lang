@@ -3,6 +3,9 @@ import LeanPoison.Runtime
 import LeanPoison.Eval
 import LeanPoison.Parser
 
+-- Default fuel amount for evaluation
+def defaultFuel : Nat := 1000
+
 def evalProgram (input : String) : IO Unit := do
   match parseString input with
   | Except.ok expr =>

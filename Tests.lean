@@ -5,6 +5,10 @@ import LeanPoison.Parser
 import LeanPoison.Poison
 import LeanPoison.Typecheck
 
+
+-- Default fuel amount for evaluation
+def defaultFuel : Nat := 1000
+
 -- Test structure to hold test cases
 structure TestCase where
   name : String
