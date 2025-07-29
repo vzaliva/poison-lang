@@ -48,10 +48,6 @@ lake exe poison-interpreter --verbose examples/basic-poison-flow1.poison
 # Run repl
 lake exe poison-interpreter --repl
 
-# Run tests
-make test ( Runs run_tests.sh)
-
-
 ## Project Structure
 
 - `LeanPoison/` - Core language implementation
@@ -64,7 +60,6 @@ make test ( Runs run_tests.sh)
 - `doc/` - Documentation
 - `poison-lang-spec/` - Ott specification files
 - `Main.lean` - Main interpreter entry point
-- `run_tests.sh - Currently runs programs in examples/
 
 ## Formal Specification
 
