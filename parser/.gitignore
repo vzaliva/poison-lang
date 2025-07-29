@@ -1,33 +1,22 @@
-# Rust artifacts
-target/
-Cargo.lock
-
 # Node artifacts
 build/
-prebuilds/
 node_modules/
-package-lock.json
 
-pyproject.toml
-Cargo.toml
-Package.swift
-go.mod
-package-lock.json
-setup.py
+
+#Files generated on tree-sitter generate
+src/
+
+#File generated on tree-sitter build
+*.so 
+
+
 .gitattributes
 .editorconfig
 
-# C artifacts
-*.a
-*.so
-*.so.*
-*.dylib
-*.dll
-*.pc
-*.exp
-*.lib
 
-# Grammar volatiles
+# generated on build --wasm
 *.wasm
-*.obj
-*.o
+
+# Files generated on tree-sitter init  -- Should be tracked 
+# CMakeLists.txt  Cargo.toml  Makefile  Package.swift  binding.gyp  bindings 
+# go.mod  grammar.js  package.json  pyproject.toml  setup.py tree-sitter.json

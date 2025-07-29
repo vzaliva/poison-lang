@@ -1,9 +1,6 @@
 name = "lean-poison"
 version = "0.1.0"
-defaultTargets = ["poison-interpreter"]
-
-[dependencies]
-std = { git = "https://github.com/leanprover/std4", branch = "main" }
+defaultTargets = ["poison-interpreter", "poison-tests"]
 
 [[lean_lib]]
 name = "LeanPoison"
@@ -12,3 +9,6 @@ name = "LeanPoison"
 name = "poison-interpreter"
 root = "Main"
 
+[[lean_exe]]
+name = "poison-tests"
+root = "Tests"

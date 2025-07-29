@@ -3,7 +3,7 @@
 all: poison-lang-spec lean-build parser 
 
 parser:
-	cd parser/tree-sitter-poison && tree-sitter generate
+	cd parser/tree-sitter-poison && tree-sitter generate && tree-sitter build 
 
 poison-lang-spec:
 	$(MAKE) -C poison-lang-spec || true
@@ -23,6 +23,16 @@ parser-clean:
 	       parser/tree-sitter-poison/src/scanner.o \
 	       parser/tree-sitter-poison/tree-sitter-poison.js \
 	       parser/tree-sitter-poison/binding.gyp
+
+parser-test: lean-build
+	@echo "Running Poison language tests..."
+	@for test in examples/*.poison; do \
+		echo "\nTesting $$test:"; \
+		lake exe poison-interpreter "$$test"; \
+	done
+
+test: lean-build
+	lake exe poison-tests
 
 clean: lean-clean parser-clean 
 	-$(MAKE) -C poison-lang-spec clean || true
