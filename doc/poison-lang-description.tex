@@ -5,6 +5,13 @@
 \usepackage{listings}
 \usepackage{xcolor}
 \usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue,
+    citecolor=blue,
+    filecolor=black
+}
 \usepackage{geometry}
 \geometry{letterpaper, margin=1in, top=0.5in, bottom=0.5in}
 
@@ -46,6 +53,8 @@
     This is a working document. For complete formal definitions, see the
     accompanying PDF document generated from the Ott specification.
 \end{abstract}
+
+\tableofcontents
 
 \sloppy
 
@@ -312,7 +321,7 @@ detail in Section~\ref{sec:de-poisoning}).
 
 Conservative: may mark reliable data as poisoned, never marks unreliable data as clean.
 
-\subsection{Predicate-Based De-poisoning}
+\subsection{Predicate-based de-poisoning}
 \label{sec:de-poisoning}
 
 The language includes a predicate system that allows selective de-poisoning based on runtime conditions. Predicates are pure functions that test values and are associated with guard tags:
@@ -349,9 +358,17 @@ differences. However, for predicates that ignore their argument, extra care must
 be taken to ensure no two distinct tags are assigned to identical predicate
 bodies, as this would cause multiple-match errors in \texttt{match\_guard}.
 
+\textbf{Poisoned references and de-poisoning} Any value obtained from a poisoned
+reference is poisoned and could not be de-poisoned further via predicate-based
+de-poisoning. To implement this, there is a special typing rule
+\texttt{deref\_poisoned} for dereferencing a poisoned reference, which not only
+returns a poisoned result but also strips the predicate from its type so it can
+no longer be de-poisoned later.
+
+\textbf{Example:}
+
 \begin{lstlisting}[language=poison]
-(* Example: Range check predicate *)
-let sensor_val : int = get_sensor unit in  (* Type: int :> poisoned {guard "range" ...} *)
+let sensor_val : int = get_sensor unit in   (* Type: int :> poisoned {guard "range" ...} *)
 if sensor_val >= 0 then
     sensor_val + 10                  (* De-poisoned: int :> clean *)
 else  

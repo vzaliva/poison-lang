@@ -400,31 +400,38 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
 ----------------------- :: assign
   pc ; G ; S ; L |- e1 := e2 : unit :> join pc p' { no_pred } -| G''[l |-> T :> join pc join p' p'' { P'' }] ; L''
 
-% Dereference with region types - no predicate case
-  pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G' ; L'
+% Dereference - with poisoned reference always strips predicate and returns
+% poisoned result.
+  pc ; G ; S ; L |- e : ref T @ l :> poisoned { P } -| G' ; L'
+  G'(l) = T :> p { P' }
+----------------------- :: deref_poisoned
+  pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G' ; L'
+
+% Dereference - no predicate case.
+  pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
   G'(l) = T :> p { no_pred }
 ----------------------- :: deref_no_pred
-  pc ; G ; S ; L |- !e : T :> join pc join p' p { no_pred } -| G' ; L'
+  pc ; G ; S ; L |- !e : T :> join pc p { no_pred } -| G' ; L'
 
 % Dereference - with guarded predicate that evaluates to true, triggering de-poisoning.
-  pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G' ; L'
+  pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
   G'(l) = T :> p { guard k pred_closure pcl }
   L'(k) = true
 ----------------------- :: deref_guard_true
-  pc ; G ; S ; L |- !e : T :> join pc p' { no_pred } -| G' ; L'
+  pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G' ; L'
 
 % Dereference - with guarded predicate that evaluates to false, triggering poisoning.
-  pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G' ; L'
+  pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
   G'(l) = T :> p { guard k pred_closure pcl }
   L'(k) = false
 ----------------------- :: deref_guard_false
   pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G' ; L'
 
 % Dereference - with guarded predicate but tag not in L
-  pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G' ; L'
+  pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
   G'(l) = T :> p { guard k pred_closure pcl }
 ----------------------- :: deref_guard_unknown
-  pc ; G ; S ; L |- !e : T :> join pc join p' p { guard k pred_closure pcl } -| G' ; L'
+  pc ; G ; S ; L |- !e : T :> join pc p { guard k pred_closure pcl } -| G' ; L'
 
 -------------------------------  :: unit
   pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G ; L
