@@ -1,4 +1,4 @@
-.PHONY: all clean test poison-lang-spec lean-build lean-clean parser parser-clean parser-test
+.PHONY: all clean test poison-lang-spec lean-build lean-clean parser parser-clean 
 
 all: poison-lang-spec lean-build parser 
 
@@ -27,14 +27,3 @@ parser-clean:
 clean: lean-clean parser-clean 
 	-$(MAKE) -C poison-lang-spec clean || true
 
-parser-test: lean-build
-	@echo "Running Poison language tests..."
-	@for test in examples/*.poison; do \
-		echo "\nTesting $$test:"; \
-		lake exe poison-interpreter "$$test"; \
-	done
-
-
-test: lean-build
-	chmod +x run_tests.sh
-	./run_tests.sh

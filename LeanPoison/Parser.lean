@@ -1,5 +1,4 @@
 import LeanPoison.Syntax
-import Std.Internal.Parsec
 import Lean.Data.Xml.Basic
 import Lean.Data.Xml.Parser
 open Lean Xml
@@ -26,7 +25,7 @@ partial def flattenTypeExpr (fuel:Nat ) (content : Array Content) : Except Strin
     match contents with
     -- Embedded only Base Types - int , bool , unit
     | #[Content.Element (Element.Element "base_type" _ #[Content.Character name])] =>
-          let typ <- strToType (name.trim)
+          let typ <- strToBasicType (name.trim)
           return typ
 
     -- Type expression embedded in  ()

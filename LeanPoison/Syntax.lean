@@ -157,7 +157,7 @@ def Value.toExpr : Value → Expr
   | v => Expr.value v
 
 -- Helper function to convert string to type
-def strToType (str : String) : Except String Typ :=
+def strToBasicType (str : String) : Except String Typ :=
  match str with
  | "int" => .ok Typ.int
  | "bool" => .ok Typ.bool
@@ -174,3 +174,18 @@ instance : ToString Value where
     | Value.loc l => s!"@{l}"
     | Value.closure x _ _ => s!"(closure {x} <expr> <env>)"
     | Value.peClosure x _ _ => s!"(peClosure {x} <expr> <env>)"
+
+
+@[instance]
+instance : ToString Op where
+  toString op :=
+    match op with
+    | .add => s!"+"     -- +
+    | .sub => s!"-"
+    | .mul => s!"*"
+    | .div => s!"-"
+    | .gte => s!">="     -- >=
+    | .lte => s!"<="
+    | .gt  => s!">"
+    | .lt  => s!"<"
+    | .eq  => s!"=="
