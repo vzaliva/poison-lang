@@ -19,12 +19,10 @@ For detailed language features and syntax, see the formal documentation in `doc/
 - [Lean 4](https://leanprover.github.io/lean4/doc/quickstart.html)
 - LaTeX and latexmk (for building documentation)
 - tree-sitter 0.25.6
-
 - Tree sitter setup :
     - Detailed Instructions : https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html 
     - Required : node , C compiler 
     - Usual Setup :  npm install -g tree-sitter-cli
-
     - Run 'make' which will generate the parser that the language uses
 
 ### Build
@@ -49,6 +47,7 @@ lake exe poison-tests --typecheck    # Type checking only
 lake exe poison-tests --eval         # Evaluation only  
 lake exe poison-tests --eval -v      # Evaluation only with verbose output
 lake exe poison-tests # both evaluation and typchecking
+```
 
 ## Project Structure
 
@@ -57,7 +56,7 @@ lake exe poison-tests # both evaluation and typchecking
   - `Eval.lean` - Executable semantics
   - `Parser.lean` - Syntax parser
   - `Runtime.lean` - Runtime environment
--  `parser/     - Contains grammar and packages to generate parser
+-  `parser/`     - Contains grammar and packages to generate parser
 - `examples/` - Sample programs demonstrating language features
 - `doc/` - Documentation
 - `poison-lang-spec/` - Ott specification files
@@ -81,5 +80,4 @@ The system provides a uniform type system for tracking faults through both data 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 
