@@ -7,7 +7,7 @@ license = "MIT"
 readme = "README.md"
 keywords = ["incremental", "parsing", "tree-sitter", "poison"]
 categories = ["parser-implementations", "parsing", "text-editors"]
-repository = "https://github.com/jayc1323/poison-lang"
+repository = "https://github.com/vzaliva/poison-lang"
 edition = "2021"
 autoexamples = false
 

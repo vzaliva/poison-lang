@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.13)
 project(tree-sitter-poison
         VERSION "0.1.0"
         DESCRIPTION "Poison grammar for tree-sitter"
-        HOMEPAGE_URL "https://github.com/jayc1323/poison-lang"
+        HOMEPAGE_URL "https://github.com/vzaliva/poison-lang"
         LANGUAGES C)
 
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)

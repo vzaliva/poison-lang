@@ -3,7 +3,7 @@ $(error Windows is not supported)
 endif
 
 LANGUAGE_NAME := tree-sitter-poison
-HOMEPAGE_URL := https://github.com/jayc1323/poison-lang
+HOMEPAGE_URL := https://github.com/vzaliva/poison-lang
 VERSION := 0.1.0
 
 # repository

@@ -6,7 +6,7 @@ parser:
 	cd parser/tree-sitter-poison && tree-sitter generate && tree-sitter build 
 
 poison-lang-spec:
-	$(MAKE) -C poison-lang-spec || true
+	$(MAKE) -C poison-lang-spec
 
 lean-build:
 	lake build
@@ -35,5 +35,5 @@ test: lean-build
 	lake exe poison-tests
 
 clean: lean-clean parser-clean 
-	-$(MAKE) -C poison-lang-spec clean || true
+	-$(MAKE) -C poison-lang-spec clean
 

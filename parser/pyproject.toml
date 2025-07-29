@@ -19,7 +19,7 @@ license.text = "MIT"
 readme = "README.md"
 
 [project.urls]
-Homepage = "https://github.com/jayc1323/poison-lang"
+Homepage = "https://github.com/vzaliva/poison-lang"
 
 [project.optional-dependencies]
 core = ["tree-sitter~=0.24"]

@@ -18,12 +18,7 @@ For detailed language features and syntax, see the formal documentation in `doc/
 ### Prerequisites
 - [Lean 4](https://leanprover.github.io/lean4/doc/quickstart.html)
 - LaTeX and latexmk (for building documentation)
-- tree-sitter 0.25.6
-- Tree sitter setup :
-    - Detailed Instructions : https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html 
-    - Required : node , C compiler 
-    - Usual Setup :  npm install -g tree-sitter-cli
-    - Run 'make' which will generate the parser that the language uses
+- [tree-sitter 0.25.6](https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html)
 
 ### Build
 ```bash

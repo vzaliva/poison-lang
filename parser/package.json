@@ -2,7 +2,7 @@
   "name": "tree-sitter-poison",
   "version": "0.1.0",
   "description": "Poison grammar for tree-sitter",
-  "repository": "https://github.com/jayc1323/poison-lang",
+  "repository": "https://github.com/vzaliva/poison-lang",
   "license": "MIT",
   "author": {
     "name": "Jay Choudhary"

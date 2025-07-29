@@ -1,4 +1,4 @@
-module github.com/jayc1323/poison-lang
+module github.com/vzaliva/poison-lang
 
 go 1.22
 
