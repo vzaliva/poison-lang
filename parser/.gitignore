@@ -14,7 +14,8 @@ Package.swift
 go.mod
 package-lock.json
 setup.py
-
+.gitattributes
+.editorconfig
 
 # C artifacts
 *.a

@@ -1,7 +1,3 @@
-
-lake-manifest.json
-
-
 #previous gitignores
 _build
 poison-lang-spec/poison-lang.tex
@@ -30,8 +26,4 @@ doc/*.synctex.gz
 # REPL scratch
 ReplInput.poison
 
-
 .vscode/
-
-
-Tests.lean
