@@ -462,12 +462,8 @@ termination_by fuel
 decreasing_by
   all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
-/-- Rule: deref_no_pred (Ott rule: deref_no_pred)
-  pc ; G ; S ; L |- e : ref T @ l :> p' { P' } -| G' ; L'
-  G'(l) = T :> p { no_pred }
-  ----------------------- :: deref_no_pred
-  pc ; G ; S ; L |- !e : T :> join pc join p' p { no_pred } -| G' ; L'
--/
+/-- Rules: deref_* (Ott rules: deref_poisoned, deref_no_pred, deref_guard_true, deref_guard_false, deref_guard_unknown)
+--/
 def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   if fuel = 0 then throw "Out of fuel"
   else do
