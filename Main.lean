@@ -7,6 +7,9 @@ import Init.System.IO
 open Lean IO
 open Lean Xml
 
+-- Default fuel amount for evaluation
+def defaultFuel : Nat := 1000
+
 def evalProgram (input : String) : IO Unit := do
   match parse input with
   | Except.ok xmlElement =>

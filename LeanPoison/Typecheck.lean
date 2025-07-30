@@ -5,6 +5,9 @@ open Std
 
 -- Type checking environment definitions
 
+/-- Default fuel for type checking -/
+private def defaultFuel : Nat := 1000
+
 /-- Memory typing environment (Γ in the Ott spec) -/
 abbrev MemoryTypeEnv := HashMap Address QTyp
 
@@ -197,7 +200,7 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag 
     | none => return none
     | some ⟨tag, arg_name, pred_body, var_env⟩ =>
               -- Compare the predicate body with the condition using environment-aware equality
-        if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) 100 then return some tag else return none
+        if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) defaultFuel then return some tag else return none
 
   -- Collect all matching tags from variable environment
     let varMatches := S.foldl (init := []) fun acc ⟨name, qt⟩ =>
@@ -212,17 +215,21 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag 
     -- Check if the variable has a reference type
     match qt.ptyp with
     | PTyp.ref _t l =>
-      -- Look up the memory location in G
-      match G.get? l with
-      | some memQt =>
-        -- Use the dereferenced value as the substitution value
-        let arg := PExpr.deref (PExpr.var name)
-        -- Use checkPredicate to check if the memory location's predicate matches
-        match checkPredicate arg memQt with
-        | .ok (some tag) => tag :: acc
-        | .ok none => acc
-        | .error _ => acc
-      | none => acc
+      if qt.poison then
+        -- Poisoned reference: it could never be de-poisoned, so we don't need to check the predicate
+        acc
+      else
+        -- Look up the type of the memory location in G
+        match G.get? l with
+        | some memQt =>
+          -- Use the dereferenced value as the substitution value
+          let arg := PExpr.deref (PExpr.var name)
+          -- Use checkPredicate to check if the memory location's predicate matches
+          match checkPredicate arg memQt with
+          | .ok (some tag) => tag :: acc
+          | .ok none => acc
+          | .error _ => acc
+        | none => acc
     | _ => acc
 
   let allMatches := varMatches ++ refMatches
@@ -471,27 +478,38 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
     let ⟨ptyp, poison, _pred ⟩ := result.qualType
     match ptyp with
     | PTyp.ref t l =>
-      match result.memEnv'.get? l with
-      | some ⟨ptyp', p2, none ⟩ =>  -- no_pred case
-        if ptyp' != t then throw s!"Type mismatch in dereference: {repr ptyp'} != {repr t}"
-        let poison := joinPoison ctx.pc (joinPoison poison p2)
-        let qt : QTyp := ⟨t, poison, none  ⟩
+      -- Check if reference itself is poisoned
+      if poison then
+        -- Reference is poisoned: always return poisoned with no predicate
+        -- Ott rule: deref_poisoned
+        let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned, no_pred
         return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
-      | some ⟨ptyp', p2, some ⟨k, arg_name, pred_body, var_env⟩ ⟩ =>  -- has predicate
-        if ptyp' != t then throw "Type mismatch in dereference"
-        match result.tagEnv'.get? k with
-        | some true =>  -- guard_true case
-          let poison := joinPoison ctx.pc poison
+      else
+        -- Reference is clean: proceed with normal predicate handling
+        match result.memEnv'.get? l with
+        | some ⟨ptyp', p2, none ⟩ =>  -- Ott rule: deref_no_pred
+          if ptyp' != t then throw s!"Type mismatch in dereference: {repr ptyp'} != {repr t}"
+          let poison := joinPoison ctx.pc p2
           let qt : QTyp := ⟨t, poison, none  ⟩
           return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
-        | some false =>  -- guard_false case
-          let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned
-          return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
-        | none =>  -- guard_unknown case
-          let poison := joinPoison ctx.pc (joinPoison poison p2)
-          let qt : QTyp := ⟨t, poison, some ⟨k, arg_name, pred_body, var_env⟩ ⟩
-          return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
-      | none => throw s!"Location {l} not found in memory environment"
+        | some ⟨ptyp', p2, some ⟨k, arg_name, pred_body, var_env⟩ ⟩ =>  -- Ott rule: deref_guard_true, deref_guard_false, deref_guard_unknown
+          if ptyp' != t then throw "Type mismatch in dereference"
+          match result.tagEnv'.get? k with
+          | some true =>
+            -- Ott rule: deref_guard_true
+            let poison := ctx.pc
+            let qt : QTyp := ⟨t, poison, none  ⟩
+            return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
+          | some false =>
+            -- Ott rule: deref_guard_false
+            let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned
+            return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
+          | none =>
+            -- Ott rule: deref_guard_unknown
+            let poison := joinPoison ctx.pc p2
+            let qt : QTyp := ⟨t, poison, some ⟨k, arg_name, pred_body, var_env⟩ ⟩
+            return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv' }
+        | none => throw s!"Location {l} not found in memory environment"
     | _ => throw "Operand of dereference must be a reference"
 termination_by fuel
 decreasing_by
@@ -743,7 +761,7 @@ def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
     varEnv := []
     tagEnv := {}
   }
-  let result ← typecheck initialCtx e 1000  -- Use 1000 as default fuel
+  let result ← typecheck initialCtx e defaultFuel
   return result.qualType
 
 /-- Type check a program (expression) and return a human-readable result -/

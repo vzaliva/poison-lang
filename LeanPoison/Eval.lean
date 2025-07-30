@@ -291,6 +291,3 @@ end -- mutual (step, eval)
 def run (fuel : Nat) (expr : Expr) (verbose : Bool := false) : (Config × Expr) :=
   let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0⟩
   eval fuel initialConfig expr verbose
-
--- Default fuel amount
-def defaultFuel : Nat := 1000
