@@ -3,7 +3,7 @@
 all: poison-lang-spec lean-build parser 
 
 parser:
-	cd parser/tree-sitter-poison && tree-sitter generate && tree-sitter build 
+	$(MAKE) -C parser
 
 poison-lang-spec:
 	$(MAKE) -C poison-lang-spec
@@ -14,15 +14,8 @@ lean-build:
 lean-clean:
 	lake clean
 
-
 parser-clean:
-	rm -rf parser/tree-sitter-poison/build \
-	       parser/tree-sitter-poison/src/parser.c \
-	       parser/tree-sitter-poison/src/scanner.c \
-	       parser/tree-sitter-poison/src/parser.o \
-	       parser/tree-sitter-poison/src/scanner.o \
-	       parser/tree-sitter-poison/tree-sitter-poison.js \
-	       parser/tree-sitter-poison/binding.gyp
+	$(MAKE) -C parser clean
 
 parser-test: lean-build
 	@echo "Running Poison language tests..."
@@ -35,5 +28,5 @@ test: lean-build
 	lake exe poison-tests
 
 clean: lean-clean parser-clean 
-	-$(MAKE) -C poison-lang-spec clean
+	 $(MAKE) -C poison-lang-spec clean
 

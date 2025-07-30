@@ -51,7 +51,7 @@ lake exe poison-tests # both evaluation and typchecking
   - `Eval.lean` - Executable semantics
   - `Parser.lean` - Syntax parser
   - `Runtime.lean` - Runtime environment
--  `parser/`     - Contains grammar and packages to generate parser
+- `parser/`     - Contains grammar and packages to generate parser
 - `examples/` - Sample programs demonstrating language features
 - `doc/` - Documentation
 - `poison-lang-spec/` - Ott specification files

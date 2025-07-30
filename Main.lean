@@ -7,10 +7,13 @@ import Init.System.IO
 open Lean IO
 open Lean Xml
 
+
 -- Default fuel amount for evaluation
 def defaultFuel : Nat := 1000
+-- Language Version No
+def versionNo := 1.0
 
-def evalProgram (input : String) : IO Unit := do
+def evalProgram (input : String) : IO Int := do
   match parse input with
   | Except.ok xmlElement =>
 
@@ -26,20 +29,28 @@ def evalProgram (input : String) : IO Unit := do
         | Value.loc l => IO.println s!"Result: loc {l}"
         | Value.closure _ _ _ => IO.println s!"Result: <closure>"
         | Value.peClosure _ _ _ => IO.println s!"Result: <pure closure>"
+        IO.println s!"Final state:"
+        IO.println s!"  Variable environment: <function>"
+        IO.println s!"  Memory: {repr config.memory}"
+        return 0
       | none =>
         IO.println "Expression is not fully evaluated."
         IO.println s!"Remaining: {repr resultExpr}"
       -- Print final state
-      IO.println s!"Final state:"
-      IO.println s!"  Variable environment: <function>"
-      IO.println s!"  Memory: {repr config.memory}"
+        IO.println s!"Final state:"
+        IO.println s!"  Variable environment: <function>"
+        IO.println s!"  Memory: {repr config.memory}"
+         return 1
+
     | Except.error err =>
       IO.println s!"Error while building expression tree: {err}"
+      return 1
 
   | Except.error e => IO.println s!"Parse error: {e}"
+                      return 1
 
 -- Read and evaluate a file
-def runFile (filename : String) : IO Unit := do
+def runFile (filename : String) : IO Int := do
   try
     let xmlStr ← runTreeSitterXml filename
     IO.println s!"Evaluating file: {filename}"
@@ -47,6 +58,7 @@ def runFile (filename : String) : IO Unit := do
     evalProgram xmlStr
   catch e =>
     IO.println s!"Error reading file {filename}: {e}"
+    return 1
 -------------------------------------------------------------------------------
 partial def readMultiline (acc : String := "") : IO String := do
   IO.print " > "
@@ -58,34 +70,32 @@ partial def readMultiline (acc : String := "") : IO String := do
   else
     readMultiline newAcc
   ----------------------------------------------------------------------------
-partial def replLoop (config : Config) : IO Unit := do
+partial def replLoop (config : Config) : IO Int := do
 
   let trimmed ← readMultiline
   if trimmed == ":quit" then
     IO.println "Goodbye!"
-
+    return 0
   else
     let tempFile := (System.FilePath.join (← IO.currentDir) "ReplInput.poison").toString
-
     IO.FS.writeFile tempFile trimmed
     try
-
       let expr ← parsePoisonFile tempFile
       let (newConfig, resultExpr) := eval defaultFuel config expr false
       match Expr.toValue? resultExpr with
       | some v =>
           IO.println s!"Result: {v}"
           IO.println s!"Memory: {newConfig.memory}"
-
       | none =>
           IO.println s!"Not fully evaluated: {repr resultExpr}"
+      IO.FS.removeFile "ReplInput.poison"
       replLoop newConfig
     catch e =>
       IO.eprintln s!"Error: {e}"
       replLoop config
 
 -------------------------------------------------------------------------------
-def main (args : List String) : IO Unit := do
+def main (args : List String) : IO UInt32 := do
   match args with
   | ["--verbose", filename] =>
     -- Verbose mode: evaluate file with step-by-step output
@@ -105,17 +115,24 @@ def main (args : List String) : IO Unit := do
           | Value.loc l => IO.println s!"Result: loc {l}"
           | Value.closure _ _ _ => IO.println s!"Result: <closure>"
           | Value.peClosure _ _ _ => IO.println s!"Result: <pure closure>"
+          IO.println s!"Final state:"
+          IO.println s!"  Variable environment: <function>"
+          IO.println s!"  Memory: {repr config.memory}"
+          return 0
         | none =>
           IO.println "Expression is not fully evaluated."
           IO.println s!"Remaining: {repr resultExpr}"
-        IO.println s!"Final state:"
-        IO.println s!"  Variable environment: <function>"
-        IO.println s!"  Memory: {repr config.memory}"
+          IO.println s!"Final state:"
+          IO.println s!"  Variable environment: <function>"
+          IO.println s!"  Memory: {repr config.memory}"
+          return 1
+
     catch e =>
       IO.println s!"Error reading file {filename}: {e}"
+      return 1
 
   | ["--repl"] =>
-    IO.println "Poison 1.0 - Tufts University."
+    IO.println s!"Poison {versionNo} - Tufts University."
     IO.println "Type :quit to exit."
     IO.println "Enter a blank line after an expression to evaluate it."
     let initialConfig := ⟨ emptyMemory, emptyVarEnv,  0 ⟩
@@ -132,3 +149,4 @@ def main (args : List String) : IO Unit := do
     IO.println "  poison-interpreter --repl          # Runs read-eval-print loop"
     IO.println "  poison-interpreter <file>           # Evaluate expressions from file"
     IO.println "  poison-interpreter --verbose <file> # Evaluate with step-by-step output"
+    return 1

@@ -409,7 +409,11 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
     if ptyp2 != PTyp.int then throw ("Right operand of" ++ toString op ++ "must be int")
 
     let poison := joinPoison ctx.pc (joinPoison p1 p2)
-    let qt : QTyp := ⟨PTyp.int, poison, none  ⟩
+    let qt : QTyp :=
+      if [Op.eq, Op.gt, Op.gte, Op.lt, Op.lte].contains op then
+        ⟨PTyp.bool, poison, none⟩
+      else
+        ⟨PTyp.int, poison, none⟩
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv' }
 termination_by fuel
 decreasing_by
