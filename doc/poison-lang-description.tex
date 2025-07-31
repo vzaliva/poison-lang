@@ -113,7 +113,7 @@ pe ::= n | b | x | l                   (* pure expressions *)
 (* surface types for annotations *)     
 ST ::= int | bool | unit | ref ST | ST1 -> ST2  
 
-(* runtime types *)
+(* enriched types *)
 T ::= int | bool | unit 
     | ref T @ l         (* region types with location indices *)
     | ST1 -> ST2 # p typing_closure tcl (* function types with surface parameter and return types and typing closure *)
@@ -145,11 +145,11 @@ system. They are deliberately simple and free of implementation details like
 region annotations, poison flags, or typing closures. Users write surface types
 in their code but never see the more complex internal representations.
 
-\subsubsection{Runtime Types (\texttt{T})}
+\subsubsection{Enriched Types (\texttt{T})}
 \textbf{Purpose:} Internal type system representation with region information and typing closures.
 \begin{itemize}
     \item \textbf{Ott notation:} \texttt{typ, T}
-    \item \textbf{Lean implementation:} \texttt{PTyp} (Poison Type)
+    \item \textbf{Lean implementation:} \texttt{ETyp} (Enriched Type)
     \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | ref T @ l | ST1 -> ST2 \# p typing\_closure tcl}
     \item \textbf{Usage:} Used internally by the type checker for sound reasoning about references and functions
     \item \textbf{Key additions:}
@@ -160,12 +160,13 @@ in their code but never see the more complex internal representations.
     \end{itemize}
 \end{itemize}
 
-Runtime types extend surface types with the machinery needed for sound type
-checking. The region annotation \texttt{ref T @ l} solves the soundness problem
-in dereference by statically tracking which location each reference targets.
-Function types \texttt{ST1 -> ST2 \# p typing\_closure tcl} store both the
-user-provided surface types and the implementation details needed for
-higher-order predicate-based de-poisoning.
+Enriched types extend surface types with the machinery needed for sound type
+checking. \emph{Once assigned, an enriched type is \emph{immutable} during
+analysis—only the environments grow around it.} The region annotation
+\texttt{ref T @ l} solves the soundness problem in dereference by statically
+tracking which location each reference targets. Function types \texttt{ST1 ->
+ST2 \# p typing\_closure tcl} store both the user-provided surface types and the
+implementation details needed for higher-order predicate-based de-poisoning.
 
 \subsubsection{Qualified Types (\texttt{Q})}
 \textbf{Purpose:} Complete type information including poison status and predicates for fault tracking.
@@ -175,7 +176,7 @@ higher-order predicate-based de-poisoning.
     \item \textbf{Grammar:} \texttt{Q ::= T :> p \{ P \}}
     \item \textbf{Components:}
     \begin{itemize}
-        \item \textbf{Base type} (\texttt{T}): The runtime type describing the value's structure
+        \item \textbf{Base type} (\texttt{T}): The enriched type describing the value's structure
         \item \textbf{Poison status} (\texttt{p}): Whether the value is \texttt{clean} or \texttt{poisoned}
         \item \textbf{Predicate} (\texttt{P}): Optional guard for conditional de-poisoning
     \end{itemize}
@@ -185,8 +186,10 @@ higher-order predicate-based de-poisoning.
 Qualified types are the \emph{working currency} of our typestate system. Every
 typing judgement produces a qualified type that captures not just what kind of
 value we have, but also its reliability (poison status) and any conditions under
-which it might be considered reliable (predicates). The type system's primary
-job is to conservatively track poison propagation through qualified types.
+which it might be considered reliable (predicates). \underline{The $(p,P)$
+decoration is \emph{mutable}: typing rules may rewrite it as faults propagate,
+while the embedded $T$ remains unchanged}. The type system's primary job is to
+conservatively track poison propagation through qualified types.
 
 \subsubsection{Type Relationships}
 
@@ -195,12 +198,12 @@ The three type levels are related through systematic transformations:
 \begin{itemize}
     \item \textbf{Surface $\to$ Runtime:} Subtyping relation \texttt{ST <: T} (surface type erasure) adds region and closure information
     \item \textbf{Runtime $\to$ Qualified:} Wrapping with poison status and predicates: \texttt{T $\triangleright$ p \{P\}}
-    \item \textbf{Function definitions:} Surface types in user syntax become runtime types in type checker, then qualified types in poison-propagating environments
+    \item \textbf{Function definitions:} Surface types in user syntax become enriched types in type checker, then qualified types in poison-propagating environments
     \item \textbf{Function applications:} Function types store surface types for interface, use typing closures for implementation
 \end{itemize}
 
 \textbf{Design Rationale:} This three-level hierarchy cleanly separates the user
-interface (surface types), the implementation mechanism (runtime types), and the
+interface (surface types), the implementation mechanism (enriched types), and the
 analysis results (qualified types). Users write simple, familiar types while the
 system performs sophisticated poison tracking and higher-order reasoning behind
 the scenes.
@@ -215,12 +218,12 @@ the scenes.
     reference to access memory location. There is no pointer arithmetic (but
     there is aliasing).
     \item \textbf{Qualified types}: All values have qualified types \texttt{Q}
-    that combine runtime types with poison status and optional predicate.
+    that combine enriched types with poison status and optional predicate.
     \item \textbf{Predicate-based de-poisoning}: Guards allow selective de-poisoning when runtime conditions are met
     \item \textbf{Sequencing}: \texttt{e1 ; e2} evaluates \texttt{e1} first (which can have any type), discards its value, then evaluates \texttt{e2}
 \end{itemize}
 
-Runtime type annotations like region annotations (\texttt{@l}) for references and typing closures
+Enriched type annotations like region annotations (\texttt{@l}) for references and typing closures
 (\texttt{typing\_closure tcl}) for functions are essential to the formal system,
 though not part of the user-visible language syntax. The \texttt{l} denotes a memory
 location, and \texttt{tcl} represents the typing closure containing the function
@@ -328,7 +331,7 @@ The language includes a predicate system that allows selective de-poisoning base
 
 \begin{itemize}
     \item \textbf{Qualified types}: Values have types $T\,\triangleright\,p\,\{P\}$
-    where \texttt{T} is the runtime type, \texttt{p} is the poison status, and
+    where \texttt{T} is the enriched type, \texttt{p} is the poison status, and
     \texttt{P} is an optional predicate.
     \item \textbf{Guard predicates}: \texttt{guard k pred\_closure (x, pe, r)}
     creates a predicate with tag \texttt{k} and pure expression test \texttt{pe}

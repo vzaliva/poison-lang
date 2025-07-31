@@ -5,6 +5,7 @@ node_modules/
 Cargo.lock
 #Files generated on tree-sitter generate
 src/
+target/
 
 #File generated on tree-sitter build
 *.so 

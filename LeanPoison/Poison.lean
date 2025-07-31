@@ -28,7 +28,7 @@ structure TPred where
 
 -- Qualified type structure
 structure QTyp where
-  ptyp : PTyp
+  etyp : ETyp
   poison : Poison
   pred : Option TPred
 
@@ -37,13 +37,13 @@ inductive TClosure : Type where
   | fn_tclosure : Name → Expr → List (Name × QTyp) → TClosure
   | pfn_tclosure: Name → PExpr → List (Name × QTyp) → TClosure
 
--- Poison type (full type)
-inductive PTyp : Type where
-  | int : PTyp
-  | bool : PTyp
-  | unit : PTyp
-  | ref : PTyp → Address → PTyp
-  | arrow : Typ → Typ → Poison → TClosure → PTyp  -- Now stores surface type ST, not T1 -> T2
+-- Enriched type (full type)
+inductive ETyp : Type where
+  | int : ETyp
+  | bool : ETyp
+  | unit : ETyp
+  | ref : ETyp → Address → ETyp
+  | arrow : Typ → Typ → Poison → TClosure → ETyp  -- Now stores surface type ST, not T1 -> T2
 
 end
 
@@ -83,19 +83,19 @@ partial def reprTClosure : TClosure → Nat → Std.Format
   | TClosure.fn_tclosure x _ _ , _ => s!"TClosure.fn_tclosure {repr x} <expr>"
   | TClosure.pfn_tclosure x _ _ , _ => s!"TClosure.pfn_tclosure {repr x} <pexpr>"
 
-partial def reprPTyp : PTyp → Nat → Std.Format
-  | PTyp.int, _ => "PTyp.int"
-  | PTyp.bool, _ => "PTyp.bool"
-  | PTyp.unit, _ => "PTyp.unit"
-  | PTyp.ref t l, _ => s!"PTyp.ref {reprPTyp t 0} {repr l}"
-  | PTyp.arrow st1 st2 p tcl, _ => s!"PTyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprTClosure tcl 0}"
+partial def reprETyp : ETyp → Nat → Std.Format
+  | ETyp.int, _ => "ETyp.int"
+  | ETyp.bool, _ => "ETyp.bool"
+  | ETyp.unit, _ => "ETyp.unit"
+  | ETyp.ref t l, _ => s!"ETyp.ref {reprETyp t 0} {repr l}"
+  | ETyp.arrow st1 st2 p tcl, _ => s!"ETyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprTClosure tcl 0}"
 
 partial def reprQTyp : QTyp → Nat → Std.Format
-  | QTyp.mk ptyp poison tpred, _ =>
+  | QTyp.mk etyp poison tpred, _ =>
     let tpredRepr := match tpred with
       | none => "none"
       | some tp => s!"{reprTPred tp 0}"
-    s!"QTyp.mk {reprPTyp ptyp 0} {repr poison} {tpredRepr}"
+    s!"QTyp.mk {reprETyp etyp 0} {repr poison} {tpredRepr}"
 
 partial def reprVarEnv (env: VarTypeEnv) (_:Nat): Std.Format :=
     Std.Format.text "[" ++
@@ -113,8 +113,8 @@ instance : Repr PExpr where
 instance : Repr TClosure where
   reprPrec := reprTClosure
 
-instance : Repr PTyp where
-  reprPrec := reprPTyp
+instance : Repr ETyp where
+  reprPrec := reprETyp
 
 instance : Repr QTyp where
   reprPrec := reprQTyp
@@ -123,14 +123,14 @@ instance : Repr TPred where
   reprPrec := reprTPred
 
 
--- Manual BEq instance for PTyp (needed for type checking)
+-- Manual BEq instance for ETyp (needed for type checking)
 mutual
-def beqPTyp : PTyp → PTyp → Bool
-  | PTyp.int, PTyp.int => true
-  | PTyp.bool, PTyp.bool => true
-  | PTyp.unit, PTyp.unit => true
-  | PTyp.ref t1 l1, PTyp.ref t2 l2 => beqPTyp t1 t2 && l1 == l2
-  | PTyp.arrow st1 st2 p1 tcl1, PTyp.arrow st1' st2' p2 tcl2 =>
+def beqETyp : ETyp → ETyp → Bool
+  | ETyp.int, ETyp.int => true
+  | ETyp.bool, ETyp.bool => true
+  | ETyp.unit, ETyp.unit => true
+  | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETyp t1 t2 && l1 == l2
+  | ETyp.arrow st1 st2 p1 tcl1, ETyp.arrow st1' st2' p2 tcl2 =>
     st1 == st1' && st2 == st2' && p1 == p2 && beqTClosure tcl1 tcl2
   | _, _ => false
 
@@ -140,8 +140,8 @@ def beqTClosure : TClosure → TClosure → Bool
   | _, _ => false
 end
 
-instance : BEq PTyp where
-  beq := beqPTyp
+instance : BEq ETyp where
+  beq := beqETyp
 
 instance : BEq TClosure where
   beq := beqTClosure
@@ -182,8 +182,8 @@ def beqOptionTPred : Option TPred → Option TPred → Bool
 
 -- Manual BEq instance for QTyp
 def beqQTyp : QTyp → QTyp → Bool
-  | QTyp.mk ptyp1 poison1 pred1, QTyp.mk ptyp2 poison2 pred2 =>
-    ptyp1 == ptyp2 && poison1 == poison2 && beqOptionTPred pred1 pred2
+  | QTyp.mk etyp1 poison1 pred1, QTyp.mk etyp2 poison2 pred2 =>
+    etyp1 == etyp2 && poison1 == poison2 && beqOptionTPred pred1 pred2
 
 end
 

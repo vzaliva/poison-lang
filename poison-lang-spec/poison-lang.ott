@@ -94,7 +94,7 @@ memory , m {{ tex \mu }} :: 'Memory_' ::=  {{ com memory }} {{ phantom }} {{ coq
    | empty                  ::   :: empty {{ coq [] }}
    | m [ l |-> n ]          ::   :: extend  {{ coq (([[l]],[[n]])::[[m]]) }}
 
-typ, T :: 'T_' ::=         {{ com types }}
+typ, T :: 'T_' ::=         {{ com enriched types }}
   | int                     ::   :: int
   | bool                    ::   :: bool
   | unit                    ::   :: unit

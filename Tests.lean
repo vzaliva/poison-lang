@@ -103,42 +103,42 @@ def functionTypeMismatchTests : List TestCase := [
 ]
 
 -- Helper to create clean qualified type
-def cleanQTyp (t : PTyp) : QTyp := ⟨t, false, none⟩
+def cleanQTyp (t : ETyp) : QTyp := ⟨t, false, none⟩
 
 -- Arithmetic example (arithmetic.poison)
 def arithmeticTests : List TestCase := [
-  TestCase.mk "arithmetic_literal" (Expr.num 42) (some (Value.num 42)) (some (cleanQTyp PTyp.int)) "arithmetic.poison: 42 literal" false,
-  TestCase.mk "arithmetic_add" (Expr.op (Expr.num 3) Op.add (Expr.num 4)) (some (Value.num 7)) (some (cleanQTyp PTyp.int)) "arithmetic.poison: 3 + 4" false,
-  TestCase.mk "arithmetic_gte" (Expr.op (Expr.num 10) Op.gte (Expr.num 5)) (some (Value.bool true)) (some (cleanQTyp PTyp.bool)) "arithmetic.poison: 10 >= 5" false
+  TestCase.mk "arithmetic_literal" (Expr.num 42) (some (Value.num 42)) (some (cleanQTyp ETyp.int)) "arithmetic.poison: 42 literal" false,
+      TestCase.mk "arithmetic_add" (Expr.op (Expr.num 3) Op.add (Expr.num 4)) (some (Value.num 7)) (some (cleanQTyp ETyp.int)) "arithmetic.poison: 3 + 4" false,
+    TestCase.mk "arithmetic_gte" (Expr.op (Expr.num 10) Op.gte (Expr.num 5)) (some (Value.bool true)) (some (cleanQTyp ETyp.bool)) "arithmetic.poison: 10 >= 5" false
 ]
 
 -- Conditionals example (conditionals.poison)
 def conditionalsTests : List TestCase := [
-  TestCase.mk "conditionals_true" (Expr.ite (Expr.bool true) (Expr.num 42) (Expr.num 0)) (some (Value.num 42)) (some (cleanQTyp PTyp.int)) "conditionals.poison: if true then 42 else 0" false,
-  TestCase.mk "conditionals_false" (Expr.ite (Expr.bool false) (Expr.num 1) (Expr.num 2)) (some (Value.num 2)) (some (cleanQTyp PTyp.int)) "conditionals.poison: if false then 1 else 2" false,
-  TestCase.mk "conditionals_gte" (Expr.ite (Expr.op (Expr.num 5) Op.gte (Expr.num 3)) (Expr.num 100) (Expr.num 200)) (some (Value.num 100)) (some (cleanQTyp PTyp.int)) "conditionals.poison: if 5 >= 3 then 100 else 200" false
+  TestCase.mk "conditionals_true" (Expr.ite (Expr.bool true) (Expr.num 42) (Expr.num 0)) (some (Value.num 42)) (some (cleanQTyp ETyp.int)) "conditionals.poison: if true then 42 else 0" false,
+  TestCase.mk "conditionals_false" (Expr.ite (Expr.bool false) (Expr.num 1) (Expr.num 2)) (some (Value.num 2)) (some (cleanQTyp ETyp.int)) "conditionals.poison: if false then 1 else 2" false,
+  TestCase.mk "conditionals_gte" (Expr.ite (Expr.op (Expr.num 5) Op.gte (Expr.num 3)) (Expr.num 100) (Expr.num 200)) (some (Value.num 100)) (some (cleanQTyp ETyp.int)) "conditionals.poison: if 5 >= 3 then 100 else 200" false
 ]
 
 -- Sequences example (sequences.poison)
 def sequencesExampleTests : List TestCase := [
-  TestCase.mk "sequences_let_seq" (Expr.let "x" (Expr.num 5) (Expr.seq (Expr.var "x") (Expr.num 42))) (some (Value.num 42)) (some (cleanQTyp PTyp.int)) "sequences.poison: let x = 5 in (x; 42)" false,
-  TestCase.mk "sequences_unit_seq" (Expr.seq Expr.unit (Expr.num 123)) (some (Value.num 123)) (some (cleanQTyp PTyp.int)) "sequences.poison: unit; 123" false
+  TestCase.mk "sequences_let_seq" (Expr.let "x" (Expr.num 5) (Expr.seq (Expr.var "x") (Expr.num 42))) (some (Value.num 42)) (some (cleanQTyp ETyp.int)) "sequences.poison: let x = 5 in (x; 42)" false,
+  TestCase.mk "sequences_unit_seq" (Expr.seq Expr.unit (Expr.num 123)) (some (Value.num 123)) (some (cleanQTyp ETyp.int)) "sequences.poison: unit; 123" false
 ]
 
 -- References1 example (references1.poison)
 def references1ExampleTests : List TestCase := [
-  TestCase.mk "references1_basic" (Expr.let "r" (Expr.newRef (Expr.num 42)) (Expr.deref (Expr.var "r"))) (some (Value.num 42)) (some (cleanQTyp PTyp.int)) "references1.poison: let r = ref 42 in !r" false
+  TestCase.mk "references1_basic" (Expr.let "r" (Expr.newRef (Expr.num 42)) (Expr.deref (Expr.var "r"))) (some (Value.num 42)) (some (cleanQTyp ETyp.int)) "references1.poison: let r = ref 42 in !r" false
 ]
 
 -- References2 example (references2.poison)
 def references2ExampleTests : List TestCase := [
-  TestCase.mk "references2_assign" (Expr.let "r" (Expr.newRef (Expr.num 10)) (Expr.seq (Expr.assign (Expr.var "r") (Expr.num 20)) (Expr.deref (Expr.var "r")))) (some (Value.num 20)) (some (cleanQTyp PTyp.int)) "references2.poison: let r = ref 10 in (r := 20; !r)" false
+  TestCase.mk "references2_assign" (Expr.let "r" (Expr.newRef (Expr.num 10)) (Expr.seq (Expr.assign (Expr.var "r") (Expr.num 20)) (Expr.deref (Expr.var "r")))) (some (Value.num 20)) (some (cleanQTyp ETyp.int)) "references2.poison: let r = ref 10 in (r := 20; !r)" false
 ]
 
 -- While1 example (while1.poison)
 def while1ExampleTests : List TestCase := [
   -- Only the second while loop is supported by the current AST (>=, not <)
-  TestCase.mk "while1_geq" (Expr.let "counter" (Expr.newRef (Expr.num 0)) (Expr.while (Expr.op (Expr.deref (Expr.var "counter")) Op.gte (Expr.num 5)) (Expr.assign (Expr.var "counter") (Expr.op (Expr.deref (Expr.var "counter")) Op.add (Expr.num 1))))) (some Value.unit) (some (cleanQTyp PTyp.unit)) "while1.poison: while !counter >= 5 do counter := !counter + 1" false
+  TestCase.mk "while1_geq" (Expr.let "counter" (Expr.newRef (Expr.num 0)) (Expr.while (Expr.op (Expr.deref (Expr.var "counter")) Op.gte (Expr.num 5)) (Expr.assign (Expr.var "counter") (Expr.op (Expr.deref (Expr.var "counter")) Op.add (Expr.num 1))))) (some Value.unit) (some (cleanQTyp ETyp.unit)) "while1.poison: while !counter >= 5 do counter := !counter + 1" false
 ]
 
 -- Basic poison flow1 example (basic-poison-flow1.poison)
@@ -149,7 +149,7 @@ def basicPoisonFlow1Tests : List TestCase := [
         (Expr.let "result" (Expr.op (Expr.var "faulty") Op.add (Expr.num 1))
           (Expr.var "result"))))
     (some (Value.num 43))
-    (some (cleanQTyp PTyp.int))
+    (some (cleanQTyp ETyp.int))
     "basic-poison-flow1.poison: explicit flow (data dependency)" false
 ]
 
@@ -160,7 +160,7 @@ def basicPoisonFlow2Tests : List TestCase := [
       (Expr.let "faulty" (Expr.app (Expr.var "get_sensor") Expr.unit)
         (Expr.ite (Expr.op (Expr.var "faulty") Op.gte (Expr.num 1)) (Expr.num 42) (Expr.num 17))))
     (some (Value.num 42))
-    (some (cleanQTyp PTyp.int))
+    (some (cleanQTyp ETyp.int))
     "basic-poison-flow2.poison: implicit flow (control dependency)" false
 ]
 
@@ -174,7 +174,7 @@ def conditionalPoisonTests : List TestCase := [
             (Expr.op (Expr.var "sensor") Op.add (Expr.num 100))
             (Expr.op (Expr.var "threshold") Op.add (Expr.num 100))))))
     (some (Value.num 150))
-    (some (cleanQTyp PTyp.int))
+    (some (cleanQTyp ETyp.int))
     "conditional-poison.poison: conditional poison with complex expressions (sensor >= threshold ? sensor+100 : threshold+100)" false
 ]
 
@@ -188,7 +188,7 @@ def functionCompositionPoisonTests : List TestCase := [
             (Expr.let "result" (Expr.app (Expr.var "g") (Expr.app (Expr.var "f") (Expr.var "poisoned_input")))
               (Expr.var "result"))))))
     (some (Value.num 86))
-    (some (cleanQTyp PTyp.int))
+    (some (cleanQTyp ETyp.int))
     "function-composition-poison.poison: poison propagation through function composition" false
 ]
 
@@ -204,7 +204,7 @@ def functionPoisonTests : List TestCase := [
           (Expr.let "result" (Expr.app (Expr.var "f") (Expr.num 10))
             (Expr.var "result")))))
     (some (Value.num 11))
-    (some (cleanQTyp PTyp.int))
+    (some (cleanQTyp ETyp.int))
     "function-poison.poison: function calls and poisoned function selection" false
 ]
 
@@ -218,7 +218,7 @@ def multiplePoisonSourcesTests : List TestCase := [
             (Expr.let "result" (Expr.op (Expr.op (Expr.var "sensor1") Op.add (Expr.num 10)) Op.add (Expr.deref (Expr.var "sensor2_ptr")))
               (Expr.var "result"))))))
     (some (Value.num 94))
-    (some (cleanQTyp PTyp.int))
+    (some (cleanQTyp ETyp.int))
     "multiple-poison-sources.poison: poison propagation from multiple unreliable inputs" false
 ]
 
@@ -230,7 +230,7 @@ def referencePoison1Tests : List TestCase := [
         (Expr.seq (Expr.assign (Expr.var "r") (Expr.app (Expr.var "get_sensor") Expr.unit))
           (Expr.deref (Expr.var "r")))))
     (some (Value.num 42))
-    (some (cleanQTyp PTyp.int))
+    (some (cleanQTyp ETyp.int))
     "reference-poison1.poison: reference operations with poisoned data" false
 ]
 
@@ -242,7 +242,7 @@ def referencePoison2Tests : List TestCase := [
         (Expr.seq (Expr.deref (Expr.var "bad_ref"))
           (Expr.assign (Expr.var "bad_ref") (Expr.num 42)))))
     (some Value.unit)
-    (some (cleanQTyp PTyp.unit))
+    (some (cleanQTyp ETyp.unit))
     "reference-poison2.poison: poisoned references" false
 ]
 
@@ -263,7 +263,7 @@ def sensorProcessingTests : List TestCase := [
             (Expr.let "result" (Expr.app (Expr.var "f") (Expr.var "sensor2"))
               (Expr.var "result"))))))
     (some (Value.num 84))
-    (some (cleanQTyp PTyp.int))
+    (some (cleanQTyp ETyp.int))
     "sensor-processing.poison: sensor processing with de-poisoning" false
 ]
 
@@ -275,7 +275,7 @@ def sensorReadingTests : List TestCase := [
         (Expr.let "adjusted" (Expr.op (Expr.var "reading") Op.add (Expr.num 10))
           (Expr.var "adjusted"))))
     (some (Value.num 52))
-    (some (cleanQTyp PTyp.int))
+    (some (cleanQTyp ETyp.int))
     "sensor-reading.poison: basic sensor reading example" false
 ]
 

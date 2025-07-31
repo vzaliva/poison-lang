@@ -1,8 +1,4 @@
-* Type system
-  - poison is now present in runtime types. It would be better to have all poison in qualified types.
 * Type checker
   - Print VarTypeEnv (bug)
   - check how fresh location is generated (maybe add StateM to TypecheckM)
   - alpha-equivalence for closure types
-* Documentation
-  - We have 2 types of expressions: pure and stateful.
