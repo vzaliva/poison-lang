@@ -18,6 +18,7 @@ For detailed language features and syntax, see the formal documentation in `doc/
 ### Prerequisites
 - [Lean 4](https://leanprover.github.io/lean4/doc/quickstart.html)
 - LaTeX and latexmk (for building documentation)
+- [tree-sitter 0.25.6](https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html)
 
 ### Build
 ```bash
@@ -29,6 +30,9 @@ lake exe poison-interpreter examples/arithmetic.poison
 
 # Run with verbose output
 lake exe poison-interpreter --verbose examples/basic-poison-flow1.poison
+
+# Run repl
+lake exe poison-interpreter --repl
 
 # Run tests
 lake exe poison-tests
@@ -47,6 +51,7 @@ lake exe poison-tests # both evaluation and typchecking
   - `Eval.lean` - Executable semantics
   - `Parser.lean` - Syntax parser
   - `Runtime.lean` - Runtime environment
+- `parser/`     - Contains grammar and packages to generate parser
 - `examples/` - Sample programs demonstrating language features
 - `doc/` - Documentation
 - `poison-lang-spec/` - Ott specification files
@@ -70,5 +75,4 @@ The system provides a uniform type system for tracking faults through both data 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 

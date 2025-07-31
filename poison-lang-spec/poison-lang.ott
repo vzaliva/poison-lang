@@ -4,11 +4,10 @@
 metavar n, i ::=
   {{ com Numeric literals }}
   {{ phantom }}
-  {{ coq nat }}
+
 
 metavar location, l ::= 
   {{ com Memory locations }}
-  {{ coq nat }}
 
 metavar var, x ::=
   {{ com Variables }}

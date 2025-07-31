@@ -18,6 +18,35 @@ def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
     | Value.num n1, Value.num n2 => some (Value.bool (n1 >= n2))
     | _, _ => none
 
+  | Op.gt =>
+    match v1, v2 with
+    | Value.num n1, Value.num n2 => some (Value.bool (n1 > n2))
+    | _, _ => none
+  | Op.lte =>
+    match v1, v2 with
+    | Value.num n1, Value.num n2 => some (Value.bool (n1 <= n2))
+    | _, _ => none
+  | Op.lt =>
+    match v1, v2 with
+    | Value.num n1, Value.num n2 => some (Value.bool (n1 < n2))
+    | _, _ => none
+  | Op.mul =>
+    match v1, v2 with
+    | Value.num n1, Value.num n2 => some (Value.num (n1 * n2))
+    | _, _ => none
+  | Op.div =>
+    match v1, v2 with
+    | Value.num n1, Value.num n2 => some (Value.num (n1 / n2))
+    | _, _ => none
+  | Op.eq =>
+    match v1, v2 with
+    | Value.num n1, Value.num n2 => some (Value.bool (n1 == n2))
+    | _, _ => none
+  | Op.sub =>
+    match v1, v2 with
+    | Value.num n1, Value.num n2 => some (Value.num (n1 - n2))
+    | _, _ => none
+
 -- Wrapper function to print return values
 def stepReturn (fuel : Nat) (verbose : Bool) (result : Option (Config × Expr)) : Option (Config × Expr) :=
   if verbose then
@@ -195,7 +224,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (expr : Expr) : Option 
   -- ---------------------------------------------------------------
   -- ⟨ let x = v in e2, m, r ⟩ → ⟨ e2, m, r[x |-> v] ⟩
   | Expr.let x (Expr.value v) e2 =>
-    dbg_trace s!"let {x} = {v}";
+   --dbg_trace s!"let {x} = {v}";
     let config' := { config with varEnv := config.varEnv.update x v }
     stepReturn fuel verbose (some (config', e2))
 

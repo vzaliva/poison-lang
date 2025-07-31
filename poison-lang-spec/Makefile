@@ -9,6 +9,5 @@ poison-lang.pdf: poison-lang.tex
 	latexmk -pdf poison-lang.tex
 
 clean:
-	latexmk -C poison-lang.tex
-	rm -f poison-lang.tex
-
+	-latexmk -C 
+	-rm -f poison-lang.tex

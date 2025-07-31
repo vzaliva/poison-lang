@@ -2,8 +2,8 @@ import Std.Data.HashMap
 import LeanPoison.Syntax
 open Std
 
--- Memory: location → value (only natural numbers can be stored)
-abbrev Memory := HashMap Nat Nat
+-- Memory: location → value (Storing integers)
+abbrev Memory := HashMap Nat Int
 
 -- Empty environments
 def emptyMemory : Memory := HashMap.emptyWithCapacity 0
@@ -11,7 +11,7 @@ def emptyMemory : Memory := HashMap.emptyWithCapacity 0
 def emptyVarEnv : VarEnv := fun _ => none
 
 -- Environment operations
-def Memory.update (m : Memory) (loc : Nat) (val : Nat) : Memory :=
+def Memory.update (m : Memory) (loc : Nat) (val : Int) : Memory :=
   m.insert loc val
 
 def VarEnv.update (env : VarEnv) (var : String) (val : Value) : VarEnv :=
@@ -28,7 +28,7 @@ instance : Repr Config where
   reprPrec c _ := s!"(Config {repr c.memory} <varEnv> {c.nextLoc})"
 
 instance : Repr Memory where
-  reprPrec m _ := repr (m.toList : List (Nat × Nat))
+  reprPrec m _ := repr (m.toList : List (Nat × Int))
 
 -- ToString instance for Memory
 instance : ToString Memory where

@@ -18,7 +18,14 @@ inductive Typ : Type where
 -- Operations (corresponds to operations, op in Ott)
 inductive Op : Type where
   | add : Op      -- +
+  | sub : Op
+  | mul : Op
+  | div : Op
   | gte : Op      -- >=
+  | lte : Op
+  | gt  : Op
+  | lt  : Op
+  | eq  : Op
   deriving Repr, BEq
 
 -- Mutual inductive definitions for Value and Expr
@@ -27,7 +34,7 @@ mutual
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
 inductive Value : Type where
-  | num : Nat → Value           -- n
+  | num : Int → Value           -- n
   | bool : Bool → Value         -- b
   | unit : Value                -- unit
   | loc : Address → Value           -- l (locations are values in the operational semantics)
@@ -58,7 +65,7 @@ end
 abbrev VarEnv := Name → Option Value
 
 -- Helper pattern synonyms for common value expressions
-def Expr.num (n : Nat) : Expr := Expr.value (Value.num n)
+def Expr.num (n : Int) : Expr := Expr.value (Value.num n)
 def Expr.bool (b : Bool) : Expr := Expr.value (Value.bool b)
 def Expr.unit : Expr := Expr.value Value.unit
 def Expr.loc (l : Address) : Expr := Expr.value (Value.loc l)
@@ -149,6 +156,14 @@ instance : Repr Expr where
 def Value.toExpr : Value → Expr
   | v => Expr.value v
 
+-- Helper function to convert string to type
+def strToBasicType (str : String) : Except String Typ :=
+ match str with
+ | "int" => .ok Typ.int
+ | "bool" => .ok Typ.bool
+ | "unit" => .ok Typ.unit
+ | _ => .error "Invalid argument"
+
 @[instance]
 instance : ToString Value where
   toString v :=
@@ -159,3 +174,18 @@ instance : ToString Value where
     | Value.loc l => s!"@{l}"
     | Value.closure x _ _ => s!"(closure {x} <expr> <env>)"
     | Value.peClosure x _ _ => s!"(peClosure {x} <expr> <env>)"
+
+
+@[instance]
+instance : ToString Op where
+  toString op :=
+    match op with
+    | .add => s!"+"     -- +
+    | .sub => s!"-"
+    | .mul => s!"*"
+    | .div => s!"-"
+    | .gte => s!">="     -- >=
+    | .lte => s!"<="
+    | .gt  => s!">"
+    | .lt  => s!"<"
+    | .eq  => s!"=="

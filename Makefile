@@ -1,6 +1,12 @@
-.PHONY: all clean test poison-lang-spec lean-build lean-clean
+.PHONY: all clean test poison-lang-spec lean-build lean-clean parser parser-clean 
 
-all: poison-lang-spec lean-build
+all: poison-lang-spec lean-build parser 
+
+config.json:
+	@echo '{ "parser-directories": [ "'$(shell pwd)'/parser" ] }' > config.json
+
+parser: config.json
+	$(MAKE) -C parser
 
 poison-lang-spec:
 	$(MAKE) -C poison-lang-spec
@@ -11,8 +17,8 @@ lean-build:
 lean-clean:
 	lake clean
 
-clean: lean-clean
-	$(MAKE) -C poison-lang-spec clean
+parser-clean:
+	$(MAKE) -C parser clean
 
 parser-test: lean-build
 	@echo "Running Poison language tests..."
@@ -23,4 +29,7 @@ parser-test: lean-build
 
 test: lean-build
 	lake exe poison-tests
+
+clean: lean-clean parser-clean 
+	 $(MAKE) -C poison-lang-spec clean
 
