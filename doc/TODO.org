@@ -1,4 +1,4 @@
 * Type checker
-  - Print VarTypeEnv (bug)
-  - check how fresh location is generated (maybe add StateM to TypecheckM)
-  - alpha-equivalence for closure types
+  - Check how fresh location is generated (maybe add StateM to TypecheckM)
+  - Implement alpha-equivalence for TClosure type
+  - Do we need alpha-equivalence for `Valie.peClosure` and `Value.closure`?
