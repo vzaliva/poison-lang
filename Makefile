@@ -3,6 +3,7 @@
 all: poison-lang-spec lean-build parser 
 
 config.json:
+	rm -f config.json
 	@echo '{ "parser-directories": [ "'$(shell pwd)'/parser" ] }' > config.json
 
 parser: config.json
@@ -19,6 +20,7 @@ lean-clean:
 
 parser-clean:
 	$(MAKE) -C parser clean
+	rm -f config.json
 
 parser-test: lean-build
 	@echo "Running Poison language tests..."
