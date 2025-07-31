@@ -11,7 +11,7 @@ open Lean Xml
 -- Default fuel amount for evaluation
 def defaultFuel : Nat := 1000
 -- Language Version No
-def versionNo := 1.0
+def versionNo := "1.0"
 
 def evalProgram (input : String) : IO Int := do
   match parse input with
