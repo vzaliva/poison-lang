@@ -2,7 +2,7 @@
 build/
 node_modules/
 
-
+Cargo.lock
 #Files generated on tree-sitter generate
 src/
 

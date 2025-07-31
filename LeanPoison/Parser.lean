@@ -70,9 +70,10 @@ def parseTypeExpr (typeExpElements : Array Content ) : Except String Typ := do
 
 -- Run the tree-sitter parser with `-x`
 def runTreeSitterXml (file : String) : IO String := do
-  --IO.print file
+  let cwd ← IO.currentDir
+  let configPath := cwd / "config.json"
   let cmd := "tree-sitter"
-  let args := #["parse", file,"-x"]
+  let args := #["parse", "-x", file, "--config-path", toString configPath]
   let output ← IO.Process.output {
     cmd := cmd,
     args := args,

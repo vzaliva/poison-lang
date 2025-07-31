@@ -2,7 +2,10 @@
 
 all: poison-lang-spec lean-build parser 
 
-parser:
+config.json:
+	@echo '{ "parser-directories": [ "'$(shell pwd)'/parser" ] }' > config.json
+
+parser: config.json
 	$(MAKE) -C parser
 
 poison-lang-spec:
