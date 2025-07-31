@@ -21,9 +21,12 @@ For detailed language features and syntax, see the formal documentation in `doc/
 - [tree-sitter](https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html)  version 0.25.6+
 
 ### Build
+
 ```bash
 lake build
-```### Run Examples
+```
+
+### Run Examples
 ```bash
 # Run a specific file
 lake exe poison-interpreter examples/arithmetic.poison
