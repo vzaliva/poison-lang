@@ -1,4 +1,5 @@
 * Type checker
-  - Check how fresh location is generated (maybe add StateM to TypecheckM)
+  - The combination of TypeResult, TypeContext and TypecheckM is essentialy a monad transformer stack of StateT and ExceptT.
+    Consider using a more standard monad transformer stack.
   - Implement alpha-equivalence for TClosure type
   - Do we need alpha-equivalence for `Valie.peClosure` and `Value.closure`?

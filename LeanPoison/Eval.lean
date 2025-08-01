@@ -136,12 +136,9 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (expr : Expr) : Option 
   -- ------------------------------
   -- ⟨ref n,m,r⟩ → ⟨l, m [ l |-> n ], r⟩
   | Expr.newRef (Expr.value (Value.num n)) =>
-    let l := config.nextLoc
-    let config' := { config with
-      memory := config.memory.update l n,
-      nextLoc := l + 1
-    }
-    stepReturn fuel verbose (some (config', Expr.loc l))
+    let (l, config') := freshLoc config
+    let config'' := { config' with memory := config'.memory.update l n }
+    stepReturn fuel verbose (some (config'', Expr.loc l))
 
   -- Rule: ref_eval (evaluate argument of ref)
   -- ⟨e,m,r⟩ → ⟨e',m',r'⟩
