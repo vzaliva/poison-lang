@@ -26,6 +26,7 @@ inductive Op : Type where
   | gt  : Op
   | lt  : Op
   | eq  : Op
+  -- TODO: add and, or
   deriving Repr, BEq
 
 -- Mutual inductive definitions for Value and Expr

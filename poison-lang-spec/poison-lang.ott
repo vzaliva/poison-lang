@@ -39,7 +39,16 @@ b :: 'B_' ::=              {{ com booleans }}  {{ phantom }} {{ coq bool }}
 
 operations, op :: 'Op_' ::=            {{ com operations }}
   | +                       ::   :: plus
+  | -                       ::   :: minus
+  | *                       ::   :: mult
+  | /                       ::   :: div
   | >=                      ::   :: gteq
+  | <=                      ::   :: lteq
+  | >                       ::   :: gt
+  | <                       ::   :: lt
+  | =                       ::   :: eq
+  | &                       ::   :: and 
+  | |                       ::   :: or
 
 % Surface types for annotations (no runtime info)
 styp, ST :: 'ST_' ::=      {{ com surface types (for annotations) }}
@@ -48,6 +57,8 @@ styp, ST :: 'ST_' ::=      {{ com surface types (for annotations) }}
   | unit                   ::   :: unit
   | ref ST                 ::   :: ref
   | ST1 -> ST2             ::   :: arrow
+
+
 
 e :: 'E_'  ::=	           {{ com expressions }}
   | unit                    ::   :: unit
@@ -67,8 +78,10 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | pfn x : ST1 => pe : ST2      ::   :: pfn  {{ com pure function with return type annotation }}
   | e1 e2                   ::   :: app
   | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
-  | closure ( x , e , r )  ::   :: closure   {{ com closure value }}
+  | closure ( x , e , r )   ::   :: closure   {{ com closure value }}
   | pe_closure ( x , pe , r )  ::   :: pe_closure   {{ com pure closure value }}
+  | rand e                  ::   :: rand_app   {{ com random integer generation }}
+  | frand e                 ::   :: frand_app  {{ com random float generation }}
 
 pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | n                       ::   :: num
@@ -82,6 +95,8 @@ pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | ( pe )                  :: M :: paren  {{ ichlo ([[pe]]) }}
   | pe1 pe2                 ::   :: app
   | pe_closure ( x , pe , r )   ::   :: pe_closure   {{ com pure closure value }}
+  | rand pe                 ::   :: rand_app   {{ com random integer generation }}
+  | frand pe                ::   :: frand_app  {{ com random float generation }}
 
 v :: 'V_' ::=              {{ com values }}
   | n                       ::   :: num
@@ -161,7 +176,13 @@ var_env, r {{ tex \rho }} :: 'VE_' ::=     {{ com variable substitution environm
 
 terminals :: terminals_ ::=
   | +    :: :: plus
-  | >=   :: :: leq       {{ tex \geq }}
+  | -    :: :: minus
+  | *    :: :: mult
+  | /    :: :: div
+  | >=   :: :: gteq      {{ tex \geq }}
+  | <=   :: :: lteq      {{ tex \leq }}
+  | >    :: :: gt
+  | <    :: :: lt
   | |-   :: :: turnstile {{ tex \vdash }}
   | -|   :: :: left_turnstile {{ tex \dashv }}
   | |->  :: :: mapsto    {{ tex \mapsto }}
@@ -188,7 +209,16 @@ grammar
 formula :: formula_ ::=
   | judgement              :: :: judgement
   | n1 + n2 = n3           :: :: sum         {{ coq ([[n1]]+[[n2]]=[[n3]]) }}
-  | n1 >= n2 = b           :: :: leq         {{ coq ([[n1]]>=[[n2]]=[[b]]) }}
+  | n1 - n2 = n3           :: :: diff        {{ coq ([[n1]]-[[n2]]=[[n3]]) }}
+  | n1 * n2 = n3           :: :: mult        {{ coq ([[n1]]*[[n2]]=[[n3]]) }}
+  | n1 / n2 = n3           :: :: div         {{ coq ([[n1]]/[[n2]]=[[n3]]) }}
+  | n1 >= n2 = b           :: :: geq         {{ coq ([[n1]]>=[[n2]]=[[b]]) }}
+  | n1 <= n2 = b           :: :: leq         {{ coq ([[n1]]<=[[n2]]=[[b]]) }}
+  | n1 > n2 = b            :: :: gt          {{ coq ([[n1]]>[[n2]]=[[b]]) }}
+  | n1 < n2 = b            :: :: lt          {{ coq ([[n1]]<[[n2]]=[[b]]) }}
+  | n1 = n2 = b            :: :: eq          {{ coq ([[n1]]=[[n2]]=[[b]]) }}
+  | b1 & b2 = b3           :: :: band        {{ coq ([[b1]]&&[[b2]]=[[b3]]) }}
+  | b1 | b2 = b3           :: :: bor         {{ coq ([[b1]]||[[b2]]=[[b3]]) }}
   | m ( l ) = n            :: :: lookup      {{ coq (List.find [[l]] [[m]] = Some ([[n]])) }}   
   | G ( l ) = Q        :: :: type_lookup {{ coq (lookup_location_type [[l]] [[G]] = Some ([[Q]])) }}   
   | S ( x ) = Q        :: :: var_type_lookup {{ coq (lookup_var_type [[x]] [[S]] = Some ([[Q]])) }}   
@@ -226,15 +256,51 @@ defn
 defn
 < e , m , r > -> < e' , m' , r' > :: :: reduce :: ''  {{ com $\langle[[e]],\,[[m]],\,[[r]]\rangle$ reduces to $\langle[[e']],\,[[m']],\,[[r']]\rangle$ }} by
 
-  n1 + n2 = n
+n1 + n2 = n
 ----------------------   :: op_plus
 <n1 + n2, m, r> -> <n, m, r>
 
-  n1 >= n2 = b
+n1 - n2 = n
+----------------------   :: op_minus
+<n1 - n2, m, r> -> <n, m, r>
+
+n1 * n2 = n
+----------------------   :: op_mult
+<n1 * n2, m, r> -> <n, m, r>
+
+n1 / n2 = n
+----------------------   :: op_div
+<n1 / n2, m, r> -> <n, m, r>
+
+n1 >= n2 = b
 ----------------------   :: op_gteq
 <n1 >= n2, m, r> -> <b, m, r>
 
-  <e1,m,r> -> <e1',m',r'>
+n1 <= n2 = b
+----------------------   :: op_lteq
+<n1 <= n2, m, r> -> <b, m, r>
+
+n1 > n2 = b
+----------------------   :: op_gt
+<n1 > n2, m, r> -> <b, m, r>
+
+n1 < n2 = b
+----------------------   :: op_lt
+<n1 < n2, m, r> -> <b, m, r>
+
+n1 = n2 = b
+----------------------   :: op_eq
+<n1 = n2, m, r> -> <b, m, r>
+
+b1 & b2 = b3
+----------------------   :: op_and
+<b1 & b2, m, r> -> <b3, m, r>
+
+b1 | b2 = b3
+----------------------   :: op_or
+<b1 | b2, m, r> -> <b3, m, r>
+
+<e1,m,r> -> <e1',m',r'>
 ------------------------------- :: op1
 <e1 op e2,m,r> -> <e1' op e2,m',r'>
 
@@ -313,24 +379,36 @@ defn
 < pfn x : ST1 => pe : ST2, m, r > -> < pe_closure(x, pe, r), m, r >
 
 % Function application - evaluate argument first (call-by-value)
-  <e2,m,r> -> <e2',m',r'>
+<e2,m,r> -> <e2',m',r'>
 --------------------------------------------------------------- :: app1
 < e1 e2, m, r > -> < e1 e2', m', r' >
 
 % Function application - evaluate function when argument is already a value
-  <e1,m,r> -> <e1',m',r'>
+<e1,m,r> -> <e1',m',r'>
 --------------------------------------------------------------- :: app_func
 < e1 v, m, r > -> < e1' v, m', r' >
 
 % Function application - apply closure to value (evaluate body to completion)
-  <e,m,r'[x |-> v]> ->* <v,m',r''>
+<e,m,r'[x |-> v]> ->* <v,m',r''>
 --------------------------------------------------------------- :: app3
 <closure(x,e,r') v,m,r> -> <v,m',r>
 
 % Pure function application - apply pure closure to value (evaluate body to completion)
-  <pe,m,r'[x |-> v]> ->* <v,m',r''>
+<pe,m,r'[x |-> v]> ->* <v,m',r''>
 --------------------------------------------------------------- :: app3_pe
 <pe_closure(x,pe,r') v,m,r> -> <v,m',r>
+
+% Evaluate argument for rand
+<e,m,r> -> <e',m',r'>
+--------------------------------------------------------------- :: rand_arg
+<rand e,m,r> -> <rand e',m',r'>
+
+% Evaluate argument for frand
+<e,m,r> -> <e',m',r'>
+--------------------------------------------------------------- :: frand_arg
+<frand e,m,r> -> <frand e',m',r'>
+
+
 
 
 %% --- Typing rules below ---
@@ -380,6 +458,51 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
   pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
 -------------------------------  :: op_gteq
   pc ; G ; S ; L |- e1 >= e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+
+  pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
+  pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+-------------------------------  :: op_minus
+  pc ; G ; S ; L |- e1 - e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
+
+  pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
+  pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+-------------------------------  :: op_mult
+  pc ; G ; S ; L |- e1 * e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
+
+  pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
+  pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+-------------------------------  :: op_div
+  pc ; G ; S ; L |- e1 / e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
+
+  pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
+  pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+-------------------------------  :: op_lteq
+  pc ; G ; S ; L |- e1 <= e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+
+  pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
+  pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+-------------------------------  :: op_gt
+  pc ; G ; S ; L |- e1 > e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+
+  pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
+  pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+-------------------------------  :: op_lt
+  pc ; G ; S ; L |- e1 < e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+
+  pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
+  pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+-------------------------------  :: op_eq
+  pc ; G ; S ; L |- e1 = e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+
+  pc ; G ; S ; L |- e1 : bool :> p' { P1 } -| G' ; L'  
+  pc ; G' ; S ; L' |- e2 : bool :> p'' { P2 } -| G'' ; L''
+-------------------------------  :: op_and
+  pc ; G ; S ; L |- e1 & e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+
+  pc ; G ; S ; L |- e1 : bool :> p' { P1 } -| G' ; L'  
+  pc ; G' ; S ; L' |- e2 : bool :> p'' { P2 } -| G'' ; L''
+-------------------------------  :: op_or
+  pc ; G ; S ; L |- e1 | e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
 
 % New ref creation with region types
 % ref creates a reference with pc poison status and allocates fresh location l
@@ -481,6 +604,20 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
   ST2 <: T2
 ----------------------------------------------------------------------  :: app_pfn
   pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
+
+% Typing for rand - takes integer argument, returns random integer
+  pc ; G ; S ; L |- e : int :> p { P } -| G' ; L'
+----------------------------------------------------------------------  :: rand_typing
+  pc ; G ; S ; L |- rand e : int :> join pc p { no_pred } -| G' ; L'
+
+% Typing for frand - takes integer argument n, returns faulty random integer with predicate
+  % Semantically, the predicate should check: (result >= 0) & (result <= n)
+  % Due to Ott limitations, we use a metavariable pcl to represent this predicate
+  pc ; G ; S ; L |- e : int :> p { P } -| G' ; L'
+  fresh k
+  % pcl represents the predicate closure (x, (x >= 0) & (x <= e), S)
+----------------------------------------------------------------------  :: frand_typing
+  pc ; G ; S ; L |- frand e : int :> poisoned { guard k pred_closure pcl } -| G' ; L'
 
 % Typing for Let Bindings
 %
