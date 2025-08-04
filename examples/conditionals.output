@@ -1,0 +1,7 @@
+Evaluating file: examples/conditionals.poison
+
+Result: 100
+Type: QTyp.mk ETyp.int false none
+Final state:
+  Variable environment: <function>
+  Memory: []

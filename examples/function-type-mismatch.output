@@ -1,0 +1,7 @@
+Evaluating file: examples/function-type-mismatch.poison
+
+Expression is not fully evaluated.
+Remaining: Expr.op (Value.bool true) Op.add (Value.num 1)
+Final state:
+  Variable environment: <function>
+  Memory: []

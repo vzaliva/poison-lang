@@ -1,0 +1,7 @@
+Evaluating file: examples/reference-poison2.poison
+
+Result: unit
+Type error: Variable bad_ref not found in environment
+Final state:
+  Variable environment: <function>
+  Memory: [(0, 42)]

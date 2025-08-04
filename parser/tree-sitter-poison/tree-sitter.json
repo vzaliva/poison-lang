@@ -10,7 +10,10 @@
         "poison"
       ],
       "injection-regex": "^poison$",
-      "class-name": "TreeSitterPoison"
+      "class-name": "TreeSitterPoison",
+      "highlights": [
+    "queries/highlights.scm"
+  ]
     }
   ],
   "metadata": {

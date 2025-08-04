@@ -1,0 +1,7 @@
+Evaluating file: examples/sensor-reading.poison
+
+Result: 52
+Type: QTyp.mk ETyp.int false none
+Final state:
+  Variable environment: <function>
+  Memory: []
