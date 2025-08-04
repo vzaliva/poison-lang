@@ -1,0 +1,7 @@
+Evaluating file: examples/function-composition-poison.poison
+
+Result: 86
+Type: QTyp.mk ETyp.int false none
+Final state:
+  Variable environment: <function>
+  Memory: []

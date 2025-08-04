@@ -4,7 +4,20 @@ all: poison-lang-spec lean-build parser
 
 config.json:
 	rm -f config.json
-	@echo '{ "parser-directories": [ "'$(shell pwd)'/parser" ] }' > config.json
+	@printf '%s\n' '{' \
+  '  "parser-directories": [ "'$(shell pwd)'/parser" ],' \
+  '  "theme": {' \
+  '    "comment": "green",' \
+  '    "keyword": "yellow",' \
+  '    "atom": "blue",' \
+  '    "symbol": "white",' \
+  '    "paren": "orange",' \
+  '    "base_type": "red",' \
+  '    "operator": "black",' \
+  '    "funcName": "red",' \
+  '    "arg": "yellow"' \
+  '  }' \
+  '}' > config.json
 
 parser: config.json
 	$(MAKE) -C parser
@@ -22,15 +35,9 @@ parser-clean:
 	$(MAKE) -C parser clean
 	rm -f config.json
 
-parser-test: lean-build
-	@echo "Running Poison language tests..."
-	@for test in examples/*.poison; do \
-		echo "\nTesting $$test:"; \
-		lake exe poison-interpreter "$$test"; \
-	done
-
 test: lean-build
-	lake exe poison-tests
+	chmod +x run_tests.sh
+	./run_tests.sh 
 
 clean: lean-clean parser-clean 
 	 $(MAKE) -C poison-lang-spec clean

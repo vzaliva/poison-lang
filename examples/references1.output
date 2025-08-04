@@ -1,0 +1,7 @@
+Evaluating file: examples/references1.poison
+
+Result: 42
+Type: QTyp.mk ETyp.int false none
+Final state:
+  Variable environment: <function>
+  Memory: [(0, 42)]

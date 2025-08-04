@@ -1,0 +1,7 @@
+Evaluating file: examples/sequences.poison
+
+Result: 123
+Type: QTyp.mk ETyp.int false none
+Final state:
+  Variable environment: <function>
+  Memory: []

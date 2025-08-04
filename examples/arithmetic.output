@@ -1,0 +1,7 @@
+Evaluating file: examples/arithmetic.poison
+
+Result: true
+Type: QTyp.mk ETyp.bool false none
+Final state:
+  Variable environment: <function>
+  Memory: []
