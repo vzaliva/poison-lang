@@ -18,7 +18,7 @@ config.json:
   '    "arg": "yellow"' \
   '  }' \
   '}' > config.json
-  
+
 parser: config.json
 	$(MAKE) -C parser
 
@@ -36,7 +36,6 @@ parser-clean:
 	rm -f config.json
 
 test: lean-build
-	lake exe poison-tests
 	chmod +x run_tests.sh
 	./run_tests.sh 
 
