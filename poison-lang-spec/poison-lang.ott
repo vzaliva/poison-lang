@@ -193,6 +193,7 @@ terminals :: terminals_ ::=
   | :>   :: :: ty_poison {{ tex \triangleright }}
   | ;    :: :: sep       {{ tex ; }}
   | AND  :: :: and       {{ tex \land }}
+  | range :: :: range   {{ tex range }}
   | =    :: :: eq
   | in   :: :: in
   | [    :: :: lsquare   {{ tex [ }}
@@ -229,8 +230,10 @@ formula :: formula_ ::=
   | formula1 AND formula2  :: :: and         {{ tex [[formula1]] \quad [[formula2]] }} {{ coq ([[formula1]] /\ [[formula2]]) }}
   | fresh l                :: :: fresh_loc       {{ com l is fresh }}
   | fresh k                :: :: fresh_tag       {{ com k is fresh }}
+  | fresh x                :: :: fresh_var       {{ com x is fresh }}
   | match_guard e G S = k  :: :: match_guard  {{ com match\_guard(e, G, S) scans the predicates attached to every heap cell in G and variable in S; if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to the condition e, it returns that k—otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] }}
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
+  | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
 
 
 
@@ -611,15 +614,15 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
   pc ; G ; S ; L |- rand e : int :> join pc p { no_pred } -| G' ; L'
 
 % Typing for frand - takes integer argument n, returns faulty random integer with predicate
-  % Semantically, the predicate should check: (result >= 0) & (result <= n)
-  % Due to Ott limitations, we use a metavariable pcl to represent this predicate
-  pc ; G ; S ; L |- e : int :> p { P } -| G' ; L'
+  pc ; G ; S ; L |- pe : int :> p { P } -| G' ; L'
   fresh k
-  % pcl represents the predicate closure (x, (x >= 0) & (x <= e), S)
+  fresh x
+  pcl = range x pe S
 ----------------------------------------------------------------------  :: frand_typing
-  pc ; G ; S ; L |- frand e : int :> poisoned { guard k pred_closure pcl } -| G' ; L'
+  pc ; G ; S ; L |- frand pe : int :> poisoned { guard k pred_closure pcl } -| G' ; L'
 
 % Typing for Let Bindings
+
 %
 % A critical consideration is whether the context poison should be combined with
 % the variable poison in the result. The current approach integrates the context
