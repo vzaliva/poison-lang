@@ -230,7 +230,7 @@ formula :: formula_ ::=
   | formula1 AND formula2  :: :: and         {{ tex [[formula1]] \quad [[formula2]] }} {{ coq ([[formula1]] /\ [[formula2]]) }}
   | fresh l                :: :: fresh_loc       {{ com l is fresh }}
   | fresh k                :: :: fresh_tag       {{ com k is fresh }}
-  | fresh x                :: :: fresh_var       {{ com x is fresh }}
+  | fresh x S              :: :: fresh_var       {{ com x is fresh in S }}
   | match_guard e G S = k  :: :: match_guard  {{ com match\_guard(e, G, S) scans the predicates attached to every heap cell in G and variable in S; if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to the condition e, it returns that k—otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] }}
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
   | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
@@ -616,7 +616,7 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
 % Typing for frand - takes integer argument n, returns faulty random integer with predicate
   pc ; G ; S ; L |- pe : int :> p { P } -| G' ; L'
   fresh k
-  fresh x
+  fresh x S
   pcl = range x pe S
 ----------------------------------------------------------------------  :: frand_typing
   pc ; G ; S ; L |- frand pe : int :> poisoned { guard k pred_closure pcl } -| G' ; L'
