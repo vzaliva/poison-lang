@@ -1,0 +1,78 @@
+-- Drone dual control system in poison language
+-- The position control is independent from the altitude control.
+-- And we can show that faulty barometer does not affect the position control.
+
+let land_thresh = 50 in
+let descent_time = 10 in
+
+-- Barometer reading function (may return poisoned value)
+let read_barometer = fn x : unit => frand 100 : int
+
+-- User landing command (external input)
+-- For this demo random 50/50 input is used
+let read_user_land = fn x : unit => 
+  if (rand 1) = 0 then true else false 
+  : bool in
+
+-- User control input for lateral position
+-- Simulate user providing new lateral position
+-- pos: distance in centimeters from central divider (negative = left, positive = right) 
+let read_user_control = fn pos : int => 
+  -- Sumulated user adjustement reading could be faulty.
+  -- we using `frand` here which will return poisoned value with
+  -- de-poisoning predicate
+  let raw_adjustment = frand 200 in
+  if raw_adjustement >= 0 & raw_adjustement <= 200 then
+    -- since `if` condition matches de-poisoning predicate for `raw_adjustement`
+    -- in this brach it will be de-poisoned
+    let adjustment = raw_adjustment - 100 in  -- -100 to 100 cm
+    pos + adjustment 
+  else
+    pos -- skip faulty input
+  : int in
+
+-- Calculate descent rate
+let descent_rate = fn alt : int => 
+  alt / descent_time 
+  : int in
+
+-- Maintain altitude action
+let maintain_altitude = fn x : unit => 
+  printStr "[ALT] maintaining altitude"
+  : unit in
+
+-- Initiate landing action
+let initiate_landing = fn alt : int => 
+  printStr "[ALT] LAND from ";
+  printInt alt;
+  printStr " m (";
+  printInt (descent_rate alt);
+  printStr " m/s)"
+  : unit in
+
+-- Hold position action
+let hold_position = fn pos : int => 
+  printStr "[LAT] holding position ";
+  printInt pos;
+  printStr " cm from center"
+  : unit in
+
+-- Altitude control logic
+let altitude_control = fn user_land : bool => fn alt : int => 
+  if user_land & (alt < land_thresh) then
+    initiate_landing alt  -- may consume poisoned value
+  else
+    maintain_altitude unit  -- independent of alt when user_land = false
+  : unit in
+
+-- Main control loop using while
+let n = ref 0 in
+let target_pos = ref 0 in
+while (!n) < 10 do
+  let altitude = read_barometer unit in  -- error unchecked → poison
+  let user_land = read_user_land unit in  -- external command
+  altitude_control user_land altitude;  -- affected iff user_land=true
+  hold_position (!target_pos);  -- position control (independent)
+  let new_target = read_user_control (!target_pos) in  -- Get new target position from user
+  target_pos := new_target;
+  n := (!n) + 1 
