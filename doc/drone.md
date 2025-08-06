@@ -7,6 +7,20 @@ subsystems: altitude control and lateral position control. The system shows how
 poison tracking models fault propagation and how de-poisoning predicates can
 recover from certain types of faults.
 
+## Drone Model
+
+The drone system includes two user inputs: a self-landing trigger and a lateral
+control, alongside a barometric altitude sensor. Both inputs and the sensor may
+intermittently fault, causing reading errors.
+
+In non-landing mode, the drone maintains its current altitude. Automatic landing
+is allowed only when altitude is below a set threshold and can be halted once
+initiated.
+
+Altitude is measured in millimetres above ground level and must be non-negative.
+Lateral position is measured in millimetres from the origin and can be positive
+or negative.
+
 ## System Architecture
 
 The drone control system consists of two main components:
@@ -39,10 +53,10 @@ The system simulates two distinct user inputs:
    faulty. The lateral position control system demonstrates de-poisoning through
    predicates. This user control input uses a simulated random generator that
    may return poisoned values. However, the system includes a de-poisoning
-   predicate that checks if the adjustment value falls within a valid range (0
-   to 200). When the predicate is satisfied, the poisoned value is de-poisoned
-   and used normally. If the predicate fails, the system gracefully skips the
-   faulty input and maintains the current position.
+   predicate that checks if the adjustment value falls within a valid range.
+   When the predicate is satisfied, the poisoned value is de-poisoned and used
+   normally. If the predicate fails, the system gracefully skips the faulty
+   input and maintains the current position.
 
 ## Control Logic
 
@@ -78,12 +92,10 @@ sources. Even when the barometer is faulty and returning poisoned values, the
 lateral position control continues to function correctly due to its independence
 and de-poisoning mechanisms.
 
-## Fault Tolerance Properties
-
 ## Key Insights
 
 1. **Subsystem Independence**: The design ensures that altitude and lateral position control are truly independent
-2. **Poison Tracking**: The type system tracks poison propagat
+2. **Poison Tracking**: The type system tracks poison propagation
 3. **De-poisoning Recovery**: Predicate-based de-poisoning allows graceful recovery from certain faults
 4. **Fault Isolation**: Lateral position control remains functional even when altitude sensors are faulty
 
