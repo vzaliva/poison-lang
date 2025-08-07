@@ -390,5 +390,3 @@ def parsePoisonFile (file : String) : IO Expr := do
       throw <| IO.userError s!"Failed to parse XML: {err}"
 
 --------------------------------------------------------------------------------
---def file := "/home/jayc/poison-lang/parser/example.poison"
---#eval parsePoisonFile file
