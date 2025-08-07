@@ -358,23 +358,9 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType
     | Expr.app e1 e2 => typecheckApp ctx e1 e2 fuel
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
-    | Expr.op e1 op e2 => typecheckOp ctx e1 e2 (fuel - 1) op
-    | Expr.newRef e => typecheckNewRef ctx e (fuel - 1)
-    | Expr.assign e1 e2 => typecheckAssign ctx e1 e2 (fuel - 1)
-    | Expr.deref e => typecheckDeref ctx e (fuel - 1)
-    | Expr.seq e1 e2 => typecheckSeq ctx e1 e2 (fuel - 1)
-    | Expr.while e1 e2 => typecheckWhile ctx e1 e2 (fuel - 1)
-    | Expr.let x e1 e2 => typecheckLet ctx x e1 e2 (fuel - 1)
-    | Expr.fn x paramType body returnType => typecheckFn ctx x paramType body returnType (fuel - 1)
-    | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType (fuel - 1)
-    | Expr.app e1 e2 => typecheckApp ctx e1 e2 (fuel - 1)
-    | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 (fuel - 1)
-    | Expr.builtIn (builtInExpr.rand e) => typecheckRand ctx  e (fuel - 1)
-    | Expr.builtIn (builtInExpr.frand e) => typecheckfRand ctx e (fuel - 1)
+    | Expr.builtIn (builtInExpr.rand e) => typecheckRand ctx  e fuel
+    | Expr.builtIn (builtInExpr.frand e) => typecheckfRand ctx e fuel
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
-
 
 def generateFresh (ctx : TypeContext) : Name :=
  "x"
@@ -384,17 +370,18 @@ def generateFresh (ctx : TypeContext) : Name :=
                 pc; Γ; σ; L ⊢ rand e : int ▷ pc ⊔ p {} ⊣ Γ′; L′
 -/
 def typecheckRand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-     let result ← typecheckExpr ctx e (fuel - 1)
-     let ⟨etyp, poison, _  ⟩ := result.qualType
-     if etyp != ETyp.int then throw ("Argument Expression to rand must have type int")
-     else
-     let qt' : QTyp := ⟨ETyp.int , joinPoison ctx.pc poison, none ⟩
-     return {result with qualType := qt' }
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 =>
+          do
+            let result ← typecheckExpr ctx e (fuel - 1)
+            let ⟨etyp, poison, _  ⟩ := result.qualType
+            if etyp != ETyp.int then throw ("Argument Expression to rand must have type int")
+            else
+            let qt' : QTyp := ⟨ETyp.int , joinPoison ctx.pc poison, none ⟩
+            return {result with qualType := qt' }
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
+
 /- Rule: Ty frand typing
                   pc; Γ; σ; L ⊢ pe : int ▷ p {P} ⊣ Γ; L
                   fresh k
@@ -405,26 +392,26 @@ decreasing_by
 
 -/
 def typecheckfRand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-     let result ← typecheckExpr ctx e (fuel - 1)
-     let ⟨etyp, poison, _  ⟩ := result.qualType
-     if etyp != ETyp.int then throw ("Argument Expression to frand must have type int")
-     else
-     let listkeys := result.tagEnv'.keys
-     let newTag := match listkeys.max? with
-                    | none => 1
-                    | some num => num + 1
-     let varName := generateFresh ctx
-     let predBody : PExpr <- Expr.toPExpr (Expr.op (Expr.op (Expr.var varName) Op.gte (Expr.value (Value.num 0))) Op.and
-                              (Expr.op (Expr.var varName) Op.lte ( e)) )
-     let depoisoningPred : TPred := ⟨ newTag  , varName  , predBody , ctx.varEnv⟩
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 =>
+    do
+      let result ← typecheckExpr ctx e (fuel - 1)
+      let ⟨etyp, poison, _  ⟩ := result.qualType
+      if etyp != ETyp.int then throw ("Argument Expression to frand must have type int")
+      else
+      let listkeys := result.tagEnv'.keys
+      let newTag := match listkeys.max? with
+                      | none => 1
+                      | some num => num + 1
+      let varName := generateFresh ctx
+      let predBody : PExpr <- Expr.toPExpr (Expr.op (Expr.op (Expr.var varName) Op.gte (Expr.value (Value.num 0))) Op.and
+                                (Expr.op (Expr.var varName) Op.lte ( e)) )
+      let depoisoningPred : TPred := ⟨ newTag  , varName  , predBody , ctx.varEnv⟩
 
-     let qt' : QTyp := ⟨ETyp.int , true, some depoisoningPred ⟩
-     return {result with qualType := qt'}
+      let qt' : QTyp := ⟨ETyp.int , true, some depoisoningPred ⟩
+      return {result with qualType := qt'}
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /- Function to typecheck expressions in a binary-operation Expression, ensuring
    both expressions in a binary-op expression must be Integers .
