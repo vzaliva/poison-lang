@@ -614,12 +614,13 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
   pc ; G ; S ; L |- rand e : int :> join pc p { no_pred } -| G' ; L'
 
 % Typing for frand - takes integer argument n, returns faulty random integer with predicate
-  pc ; G ; S ; L |- pe : int :> p { P } -| G' ; L'
+% the argument is a pure expression, so typechking it does not affect the typing environment
+  pc ; G ; S ; L |- pe : int :> p { P } -| G ; L
   fresh k
   fresh x S
   pcl = range x pe S
 ----------------------------------------------------------------------  :: frand_typing
-  pc ; G ; S ; L |- frand pe : int :> poisoned { guard k pred_closure pcl } -| G' ; L'
+  pc ; G ; S ; L |- frand pe : int :> poisoned { guard k pred_closure pcl } -| G ; L
 
 % Typing for Let Bindings
 
