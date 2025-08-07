@@ -21,7 +21,7 @@ def evalProgram (input : String) : IO Int := do
 
     match xmlToExpr xmlElement with
     | Except.ok expr =>
-      let (config, resultExpr) :=run defaultFuel expr
+      let (config, resultExpr) <- run defaultFuel expr
       let resultType := typecheckProgram expr
       match Expr.toValue? resultExpr with
       | some v =>
@@ -85,7 +85,7 @@ partial def replLoop (config : Config) (tmpPath : String) : IO Int := do
     IO.FS.writeFile tmpPath trimmed
     try
       let expr ← parsePoisonFile tmpPath
-      let (newConfig, resultExpr) := eval defaultFuel config expr false
+      let (newConfig, resultExpr) <- eval defaultFuel config expr false
       match Expr.toValue? resultExpr with
       | some v =>
           IO.println s!"Result: {v}"
@@ -108,7 +108,7 @@ def main (args : List String) : IO UInt32 := do
       IO.println ""
       match ExprTree with
       | expr =>
-        let (config, resultExpr) := run defaultFuel expr true  -- verbose = true
+        let (config, resultExpr) <- run defaultFuel expr true  -- verbose = true
         match Expr.toValue? resultExpr with
         | some v =>
           match v with

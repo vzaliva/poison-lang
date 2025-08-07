@@ -26,6 +26,8 @@ inductive Op : Type where
   | gt  : Op
   | lt  : Op
   | eq  : Op
+  | and : Op
+  | or  : Op
   -- TODO: add and, or
   deriving Repr, BEq
 
@@ -42,6 +44,12 @@ inductive Value : Type where
   | closure : Name → Expr → (Name → Option Value) → Value      -- closure(x,e,r)
   | peClosure : Name → Expr → (Name → Option Value) → Value    -- pe_closure(x,pe,r)
 
+
+-- builtInExpr (Type to represent built in expressions in poison lang)
+inductive builtInExpr : Type where
+  | rand  : Expr -> builtInExpr
+  | frand : Expr -> builtInExpr
+
 -- Expressions (corresponds to e in Ott)
 inductive Expr : Type where
   | value : Value → Expr                          -- Values embedded in expressions
@@ -57,7 +65,7 @@ inductive Expr : Type where
   | fn : Name → Typ → Expr → Typ → Expr           -- fn x : ST1 => e : ST2
   | pfn : Name → Typ → Expr → Typ → Expr          -- pfn x : ST1 => pe : ST2
   | app : Expr → Expr → Expr                       -- e1 e2
-
+  | builtIn : builtInExpr -> Expr
 end
 
 -- Variable environment: variable name → value (function type) We do not use a
@@ -144,6 +152,8 @@ def reprExpr : Expr → Nat → Std.Format
   | Expr.fn x t1 e t2, _ => s!"Expr.fn {repr x} : {repr t1} => ({reprExpr e 0}) : {repr t2}"
   | Expr.pfn x t1 e t2, _ => s!"Expr.pfn {repr x} : {repr t1} => ({reprExpr e 0}) : {repr t2}"
   | Expr.app e1 e2, _ => s!"Expr.app ({reprExpr e1 0}) ({reprExpr e2 0})"
+  | Expr.builtIn (builtInExpr.rand e),_ => s!"Expr.builtin.rand ({reprExpr e 0})"
+  | Expr.builtIn (builtInExpr.frand e),_ => s!"Expr.builtin.frand ({reprExpr e 0})"
 
 @[instance]
 instance : Repr Value where
@@ -190,3 +200,5 @@ instance : ToString Op where
     | .gt  => s!">"
     | .lt  => s!"<"
     | .eq  => s!"=="
+    | .or  => s!"|"
+    | .and => s!"&"
