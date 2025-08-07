@@ -119,16 +119,6 @@ def QTyp.toTyp (qt : QTyp) : Typ :=
 def isSubtype (st : Typ) (qt : QTyp) : Bool :=
   qt.toTyp == st
 
-/--
-  For any n ≠ 0, `n.pred < n`.
-  (Lean's `termination_by` always gives you `h : n ≠ 0` in the context,
-   so this lines up perfectly.)
--/
-theorem Nat.pred_lt_of_ne_zero {n : Nat} (h : n ≠ 0) : n - 1 < n := by
-  cases n
-  · contradiction
-  · apply Nat.lt_succ_self
-
 -- Helper function to check if two PExprs are syntactically equal modulo
 -- environment differences. This handles variable substitution and type
 -- compatibility checking during structural comparison. Variables are
@@ -138,8 +128,9 @@ theorem Nat.pred_lt_of_ne_zero {n : Nat} (h : n ≠ 0) : n - 1 < n := by
 -- The `substitution` parameter is an optional (variable, value) pair for substitution.
 --
 def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : VarTypeEnv) (substitution : Option (Name × PExpr)) (fuel : Nat) : Bool :=
-  if fuel = 0 then false
-  else
+  match fuel with
+  | 0 => false
+  | fuel + 1 =>
     match pe1, pe2 with
     | PExpr.value v1, PExpr.value v2 => v1 == v2
     | PExpr.var x1, pe2 =>
@@ -147,7 +138,7 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
         | some (arg1, val1) =>
           if x1 == arg1 then
             -- This is the variable we're substituting, substitute it with the value
-            PExpr.equalWithEnvs val1 env1 pe2 env2 substitution (fuel - 1)
+            PExpr.equalWithEnvs val1 env1 pe2 env2 substitution fuel
           else
             -- Some other variable, compare it syntactically with the target variable
             match pe2 with
@@ -159,21 +150,18 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
           | PExpr.var x2 => x1 == x2
           | _ => false
     | PExpr.op e1 op1 e2, PExpr.op e1' op2 e2' =>
-      op1 == op2 && equalWithEnvs e1 env1 e1' env2 substitution (fuel - 1) && equalWithEnvs e2 env1 e2' env2 substitution (fuel - 1)
+      op1 == op2 && equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel
     | PExpr.ite e1 e2 e3, PExpr.ite e1' e2' e3' =>
-      equalWithEnvs e1 env1 e1' env2 substitution (fuel - 1) && equalWithEnvs e2 env1 e2' env2 substitution (fuel - 1) && equalWithEnvs e3 env1 e3' env2 substitution (fuel - 1)
-    | PExpr.deref e1, PExpr.deref e2 => equalWithEnvs e1 env1 e2 env2 substitution (fuel - 1)
+      equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel && equalWithEnvs e3 env1 e3' env2 substitution fuel
+    | PExpr.deref e1, PExpr.deref e2 => equalWithEnvs e1 env1 e2 env2 substitution fuel
     | PExpr.let x1 e1 e2, PExpr.let x2 e1' e2' =>
       x1 == x2 &&
-      equalWithEnvs e1 env1 e1' env2 substitution (fuel - 1) &&
+      equalWithEnvs e1 env1 e1' env2 substitution fuel &&
       -- For the body, disable substitution if the bound variable shadows the substitution variable
-      equalWithEnvs e2 env1 e2' env2 (if substitution.map (·.1) == some x1 then none else substitution) (fuel - 1)
+      equalWithEnvs e2 env1 e2' env2 (if substitution.map (·.1) == some x1 then none else substitution) fuel
     | PExpr.app e1 e2, PExpr.app e1' e2' =>
-      equalWithEnvs e1 env1 e1' env2 substitution (fuel - 1) && equalWithEnvs e2 env1 e2' env2 substitution (fuel - 1)
+      equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel
     | _, _ => false
-termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /--
   Scans the predicates attached to every variable in S and every memory location
@@ -317,48 +305,41 @@ set_option maxHeartbeats 800000
 ----------------------------------------------------------------------  :: fn_abs
   pc ; G ; S ; L |- fn x : ST1 => e : ST1 -> ST2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G ; L
 -/
-def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    -- Simply record the body and return type without typechecking the body
-    -- Body typechecking is deferred until application time
+def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) : TypecheckM TypeResult :=
+  -- Simply record the body and return type without typechecking the body
+  -- Body typechecking is deferred until application time
 
-    -- Create arrow type ST1 -> ST2
-    let arrowTyp : ETyp := ETyp.arrow st1 st2 false (TClosure.fn_tclosure x body ctx.varEnv)
-
-    -- Create qualified type ST1 -> ST2 # pc { no_pred }
-    let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
-
-    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+  -- Create arrow type ST1 -> ST2
+  let arrowTyp : ETyp := ETyp.arrow st1 st2 false (TClosure.fn_tclosure x body ctx.varEnv)
+  -- Create qualified type ST1 -> ST2 # pc { no_pred }
+  let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
+   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
 
 /-- Rule: pfn_abs (Ott rule: pfn_abs)
 ----------------------------------------------------------------------  :: pfn_abs
   pc ; G ; S ; L |- pfn x : ST1 => pe : ST1 -> ST2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
 -/
-def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    -- Simply record the body and return type without typechecking the body
-    -- Body typechecking is deferred until application time
+def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) : TypecheckM TypeResult := do
+  -- Simply record the body and return type without typechecking the body
+  -- Body typechecking is deferred until application time
 
-    -- Convert body to PExpr
-    let pbody ← body.toPExpr
+   -- Convert body to PExpr
+  let pbody ← body.toPExpr
+  -- Create arrow type ST1 -> ST2
+  let arrowTyp : ETyp := ETyp.arrow st1 st2 false (TClosure.pfn_tclosure x pbody ctx.varEnv)
+  -- Create qualified type ST1 -> ST2 # pc { no_pred }
+  let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
 
-    -- Create arrow type ST1 -> ST2
-    let arrowTyp : ETyp := ETyp.arrow st1 st2 false (TClosure.pfn_tclosure x pbody ctx.varEnv)
-
-    -- Create qualified type ST1 -> ST2 # pc { no_pred }
-    let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
-
-    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
 
 
 mutual
 
 -- Helper function to type check an expression with context
 def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
     match e with
     | Expr.value (Value.num n) => typecheckInt ctx n
     | Expr.value (Value.bool b) => typecheckBool ctx b
@@ -366,20 +347,18 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.value (Value.loc l) => typecheckLocation ctx l
     | Expr.value _ => throw "Unsupported value type"
     | Expr.var x => typecheckVarNoPred ctx x
-    | Expr.op e1 op e2 => typecheckOp ctx e1 e2 (fuel - 1) op
-    | Expr.newRef e => typecheckNewRef ctx e (fuel - 1)
-    | Expr.assign e1 e2 => typecheckAssign ctx e1 e2 (fuel - 1)
-    | Expr.deref e => typecheckDeref ctx e (fuel - 1)
-    | Expr.seq e1 e2 => typecheckSeq ctx e1 e2 (fuel - 1)
-    | Expr.while e1 e2 => typecheckWhile ctx e1 e2 (fuel - 1)
-    | Expr.let x e1 e2 => typecheckLet ctx x e1 e2 (fuel - 1)
-    | Expr.fn x paramType body returnType => typecheckFn ctx x paramType body returnType (fuel - 1)
-    | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType (fuel - 1)
-    | Expr.app e1 e2 => typecheckApp ctx e1 e2 (fuel - 1)
-    | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 (fuel - 1)
+    | Expr.op e1 op e2 => typecheckOp ctx e1 e2 fuel op
+    | Expr.newRef e => typecheckNewRef ctx e fuel
+    | Expr.assign e1 e2 => typecheckAssign ctx e1 e2 fuel
+    | Expr.deref e => typecheckDeref ctx e fuel
+    | Expr.seq e1 e2 => typecheckSeq ctx e1 e2 fuel
+    | Expr.while e1 e2 => typecheckWhile ctx e1 e2 fuel
+    | Expr.let x e1 e2 => typecheckLet ctx x e1 e2 fuel
+    | Expr.fn x paramType body returnType => typecheckFn ctx x paramType body returnType
+    | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType
+    | Expr.app e1 e2 => typecheckApp ctx e1 e2 fuel
+    | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 
 /- Function to typecheck expressions in a binary-operation Expression, ensuring
@@ -393,14 +372,15 @@ decreasing_by
 -- pc ; G ; S ; L |- e1 op e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
 -/
 def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
+    let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
     if etyp1 != ETyp.int then throw ("Left operand of" ++ toString op ++ "must be int")
 
     let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-    let result2 ← typecheckExpr ctx' e2 (fuel - 1)
+    let result2 ← typecheckExpr ctx' e2 fuel
     let ⟨etyp2, p2, _  ⟩ := result2.qualType
     if etyp2 != ETyp.int then throw ("Right operand of" ++ toString op ++ "must be int")
 
@@ -412,8 +392,6 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
         ⟨ETyp.int, poison, none⟩
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: ref (Ott rule: ref)
 -- pc ; G ; S ; L |- e : T :> p { P } -| G' ; L'
@@ -422,9 +400,10 @@ decreasing_by
 -- pc ; G ; S ; L |- ref e : ref T @ l :> pc { no_pred } -| G'[l |-> T :> join pc p { P }] ; L'
 -/
 def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    let result ← typecheckExpr ctx e (fuel - 1)
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
+    let result ← typecheckExpr ctx e fuel
     let ⟨etyp, poison, pred ⟩ := result.qualType
 
     -- Generate fresh location (simplified)
@@ -436,8 +415,6 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
     let qt : QTyp := ⟨ETyp.ref etyp l, ctx.pc, none  ⟩
     return { qualType := qt, memEnv' := memEnv', tagEnv' := result'.tagEnv', nextLoc' := result'.nextLoc' }
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: assign (Ott rule: assign)
 -- pc ; G ; S ; L |- e1 : ref T @ l :> p' { P' } -| G' ; L'
@@ -446,14 +423,15 @@ decreasing_by
 -- pc ; G ; S ; L |- e1 := e2 : unit :> join pc p' { no_pred } -| G''[l |-> T :> join pc join p' p'' { P'' }] ; L''
 -/
 def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
+    let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
     match etyp1 with
     | ETyp.ref t l =>
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-      let result2 ← typecheckExpr ctx' e2 (fuel - 1)
+      let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
       if etyp2 != t then throw "Type mismatch in assignment"
 
@@ -466,15 +444,14 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
       return { qualType := qt, memEnv' := memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc'  }
     | _ => throw "Left operand of assignment must be a reference"
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rules: deref_* (Ott rules: deref_poisoned, deref_no_pred, deref_guard_true, deref_guard_false, deref_guard_unknown)
 --/
 def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    let result ← typecheckExpr ctx e (fuel - 1)
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
+    let result ← typecheckExpr ctx e fuel
     let ⟨etyp, poison, _pred ⟩ := result.qualType
     match etyp with
     | ETyp.ref t l =>
@@ -512,8 +489,6 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
         | none => throw s!"Location {l} not found in memory environment"
     | _ => throw "Operand of dereference must be a reference"
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: seq (Ott rule: seq)
 -- pc ; G ; S ; L |- e1 : T1 :> p' { P' } -| G' ; L'
@@ -522,21 +497,20 @@ decreasing_by
 -- pc ; G ; S ; L |- e1 ; e2 : T2 :> join p' p'' { P'' } -| G'' ; L''
 -/
 def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
+    let result1 ← typecheckExpr ctx e1 fuel
     let ⟨_etyp1, p1, _  ⟩ := result1.qualType
 
     let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-    let result2 ← typecheckExpr ctx' e2 (fuel - 1)
+    let result2 ← typecheckExpr ctx' e2 fuel
     let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
 
     let poison := joinPoison p1 p2
     let qt : QTyp := ⟨etyp2, poison, pred2  ⟩
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: app_fn (Ott rules: app_fn, app_pfn)
   pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
@@ -558,16 +532,17 @@ decreasing_by
 
 -/
 def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
     -- Premise 1: pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
-    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+    let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, _p1, _pred1⟩ := result1.qualType
     match etyp1 with
     | ETyp.arrow st1 st2 _p tcl =>
       -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-      let result2 ← typecheckExpr ctx' e2 (fuel - 1)
+      let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2⟩ := result2.qualType
 
       -- Premise 3: ST1 <: T1 (check subtyping)
@@ -580,7 +555,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := updateVarEnv env x argQt
         let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
-        let result3 ← typecheckExpr ctx'' body (fuel - 1)
+        let result3 ← typecheckExpr ctx'' body fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
 
         -- Premise 5: ST2 <: T2 (check subtyping)
@@ -597,7 +572,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := updateVarEnv env x argQt
         let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
-        let result3 ← typecheckExpr ctx'' (body.toExpr) (fuel - 1)
+        let result3 ← typecheckExpr ctx'' (body.toExpr) fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
 
         -- Premise 5: ST2 <: T2 (check subtyping)
@@ -611,8 +586,6 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
 
     | _ => throw "Left operand of application must be a function"
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: let (Ott rule: let)
 -- pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G' ; L'
@@ -621,9 +594,10 @@ decreasing_by
 -- pc ; G ; S ; L |- let x : T = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G'' ; L''
 -/
 def typecheckLet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
+    let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p1, pred1  ⟩ := result1.qualType
 
     let varPoison := joinPoison ctx.pc p1
@@ -631,23 +605,22 @@ def typecheckLet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel : 
     let varEnv' := updateVarEnv ctx.varEnv x varQt
     let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv' }
 
-    let result2 ← typecheckExpr ctx' e2 (fuel - 1)
+    let result2 ← typecheckExpr ctx' e2 fuel
     let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
 
     let poison := joinPoison ctx.pc (joinPoison p1 p2)
     let qt : QTyp := ⟨etyp2, poison, pred2  ⟩
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: if_depoison and if_std (Ott rules: if_depoison when matchGuard succeeds, if_std when it fails)
 -- First tries predicate-based de-poisoning, falls back to standard conditional typing
 --/
 def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
+    let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p', _  ⟩ := result1.qualType
     if etyp1 != ETyp.bool then throw "Condition of if must be bool"
 
@@ -664,10 +637,10 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let ctxTrue := { ctx'' with tagEnv := ctx''.tagEnv.insert k true }
       let ctxFalse := { ctx'' with tagEnv := ctx''.tagEnv.insert k false }
 
-      let result2 ← typecheckExpr ctxTrue e2 (fuel - 1)
+      let result2 ← typecheckExpr ctxTrue e2 fuel
       let ⟨etyp2, p'', _  ⟩ := result2.qualType
 
-      let result3 ← typecheckExpr ctxFalse e3 (fuel - 1)
+      let result3 ← typecheckExpr ctxFalse e3 fuel
       let ⟨etyp3, p''', _  ⟩ := result3.qualType
 
       if etyp2 != etyp3 then throw "Branches of if must have same type"
@@ -684,10 +657,10 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let branchPc := joinPoison ctx.pc p'
       let ctx'' := { ctx' with pc := branchPc }
 
-      let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
+      let result2 ← typecheckExpr ctx'' e2 fuel
       let ⟨etyp2, p'', _  ⟩ := result2.qualType
 
-      let result3 ← typecheckExpr ctx'' e3 (fuel - 1)
+      let result3 ← typecheckExpr ctx'' e3 fuel
       let ⟨etyp3, p''', _  ⟩ := result3.qualType
 
       if etyp2 != etyp3 then throw "Branches of if must have same type"
@@ -698,17 +671,16 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let nextLoc' := max result2.nextLoc' result3.nextLoc'
       return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv, nextLoc' := nextLoc' }
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 /-- Rule: while_depoison and while_std (Ott rules: while_depoison when matchGuard succeeds, while_std when it fails)
 -- First tries predicate-based de-poisoning, falls back to standard while typing
 -- Simplified implementation for termination
 --/
 def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  if fuel = 0 then throw "Out of fuel"
-  else do
-    let result1 ← typecheckExpr ctx e1 (fuel - 1)
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
+    let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p', _  ⟩ := result1.qualType
     if etyp1 != ETyp.bool then throw "Condition of while must be bool"
 
@@ -721,7 +693,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
       let branchPc := joinPoison ctx.pc p'
       let ctx'' := { ctx' with pc := branchPc }
 
-      let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
+      let result2 ← typecheckExpr ctx'' e2 fuel
       let ⟨etyp2, p'', _  ⟩ := result2.qualType
       if etyp2 != ETyp.unit then throw "Body of while must have unit type"
 
@@ -737,7 +709,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
       let branchPc := joinPoison ctx.pc p'
       let ctx'' := { ctx' with pc := branchPc }
 
-      let result2 ← typecheckExpr ctx'' e2 (fuel - 1)
+      let result2 ← typecheckExpr ctx'' e2 fuel
       let ⟨etyp2, p'', _  ⟩ := result2.qualType
       if etyp2 != ETyp.unit then throw "Body of while must have unit type"
 
@@ -746,8 +718,6 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
       let qt : QTyp := ⟨ETyp.unit, poison, none  ⟩
       return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
 termination_by fuel
-decreasing_by
-  all_goals exact Nat.pred_lt_of_ne_zero ‹fuel ≠ 0›
 
 end
 
