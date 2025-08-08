@@ -22,5 +22,5 @@ conducted at Tufts University's TuPL group as part of a larger DARPA-funded
 programme addressing both software and hardware fault detection and recovery.
 
 
-Talk Duration: 20 min
+Talk Duration: 10-15 min
 Presenter: Vadim Zaliva <Vadim.Zaliva@tufts.edu>
