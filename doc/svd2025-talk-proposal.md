@@ -1,26 +1,28 @@
 ### SVD'25 Talk proposal
 
-We present ongoing work on Poison-lang, a typestate system designed for formal
-fault propagation analysis with selective sanitisation (termed "de-poisoning").
-The language tracks data faults, which we call "poison", that may arise from
-potential hardware or software failures, using a static, flow-sensitive type
-system that facilitates principled sanitisation through guard-tagged predicates.
-The design combines a two-point poison lattice with region-parameterised
-reference types that separate pointer from payload reliability, a typestate map
-joined at control-flow merge points, and higher-order functions whose typing
-closures prevent taint from being hidden behind abstraction; a three-level type
-hierarchy (surface, enriched, qualified) cleanly separates the user interface,
-runtime, and analysis artefacts. We will give a high-level account of the
-theory: operational semantics and definitional interpreter in Lean 4, and
-guard-aware typing rules, together with formal properties, we aim to prove such
-as poison irrelevance, non-interference, soundness, as well as progress, and
-preservation. A key practical contribution is that our prototype typechecker can
-analyse existing code to conservatively identify fault flows and pinpoint
-opportunities for de-poisoning under verified guards, offering a fail-safe
-integrity guarantees without changing runtime behaviour. This work is being
-conducted at Tufts University's TuPL group as part of a larger DARPA-funded
-programme addressing both software and hardware fault detection and recovery.
+Title: Fault Flow Analysis and Verification with Typestate and Predicate Guards
 
+Abstract:
 
-Talk Duration: 10-15 min
+Faults in hardware and software systems are common and can spread through
+programs hard-to-predict ways, raising crucial questions: which parts of a
+program are affected and which remain unaffected, and can we verify the adequacy
+of fault-handling code in containing these effects? We are developing a
+typestate system for fault propagation analysis with selective sanitisation.
+This language utilises a static, flow-sensitive type system with guard-tagged
+predicates to track data faults from hardware or software failures, combining a
+two-point taint lattice with region-parameterised reference types that separate
+pointer from payload reliability, and a typestate map joined at control-flow
+merge points. It supports higher-order functions whose typing closures prevent
+taint from being obscured by abstraction. A three-level type hierarchy (surface,
+enriched, qualified) clearly separates user interface, runtime, and analysis
+components. The theoretical core consists of a small-step operational semantics
+and typing rules, with their executable counterparts in Lean 4 as a definitional
+interpreter and a type checker. This foundation allows us to define and prove
+formal properties and develop a framework for formal proofs of custom
+non-interference properties for any program. This ongoing research at Tufts
+University's TuPL group forms part of a DARPA-funded initiative focused on
+detecting and recovering from software and hardware faults.
+
+Talk duration: 10–15 minutes
 Presenter: Vadim Zaliva <Vadim.Zaliva@tufts.edu>
