@@ -47,6 +47,17 @@ inductive ETyp : Type where
 
 end
 
+
+def PExpr.occurs (x : Name) : PExpr → Bool
+  | .value _ => false
+  | .var y => x == y
+  | .op e1 _ e2 => occurs x e1 || occurs x e2
+  | .ite e1 e2 e3 => occurs x e1 || occurs x e2 || occurs x e3
+  | .deref e => occurs x e
+  | .let y e1 e2 => occurs x e1 || (if x == y then false else occurs x e2)
+  | .app e1 e2 => occurs x e1 || occurs x e2
+
+
 -- Variable typing environment (σ in the Ott spec) Because we use it in a
 -- mutually inductive type above which requires types you’re defining must be
 -- strictly positive and may only appear in constructors you’re declaring in
@@ -65,6 +76,7 @@ def lookupVarEnv : VarTypeEnv → Name → Option QTyp
 -- returns the first mapping with a given key.
 def updateVarEnv : VarTypeEnv → Name → QTyp → VarTypeEnv
   | env, x, qt => (x, qt) :: env
+
 
 -- Manual Repr instances for mutual types
 
