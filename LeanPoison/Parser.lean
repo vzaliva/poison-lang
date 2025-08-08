@@ -314,7 +314,6 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
     | Content.Element e => some (Content.Element e)
     | _ => none)
 
-
     let returnTypeFiltered := retTypeContent.filterMap (fun
     | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
 
@@ -329,6 +328,28 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
 
     | _ => .error s!"Invalid pfn_expr structure: {contents}"
+
+  | Element.Element "rand_expr" _ contents => do
+   let elems := contents.filterMap fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+    | Content.Element el => some el
+    | _ => none
+
+
+    match elems.toList with
+    | [e1] => return Expr.builtIn (builtInExpr.rand (<- xmlToExpr e1))
+    | _ => .error "Invalid argument to rand"
+
+  | Element.Element "frand_expr" _ contents => do
+   let elems := contents.filterMap fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+    | Content.Element el => some el
+    | _ => none
+
+
+    match elems.toList with
+    | [e1] => return Expr.builtIn (builtInExpr.frand (<- xmlToExpr e1))
+    | _ => .error "Invalid argument to frand"
 
 
   | Element.Element "group_expr" _ contents => do

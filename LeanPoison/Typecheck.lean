@@ -374,8 +374,66 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType
     | Expr.app e1 e2 => typecheckApp ctx e1 e2 fuel
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
+    | Expr.builtIn (builtInExpr.rand e) => typecheckRand ctx  e fuel
+    | Expr.builtIn (builtInExpr.frand e) => typecheckfRand ctx e fuel
 termination_by fuel
 
+-- TODO , Currently a placeholder function
+def generateFreshVar (ctx : TypeContext) : Name := "x"
+
+-- Function to get a fresh Tag Value From the environment
+def generateFreshTag (result : TypeResult) : Tag :=
+    let listkeys := result.tagEnv'.keys
+    match listkeys.max? with
+      | none     => 1
+      | some num => num + 1
+
+
+/- Rule : Ty rand typing
+                pc; Γ; σ; L ⊢ e : int ▷ p {P} ⊣ Γ′; L′
+                ---------------------------------------------------
+                pc; Γ; σ; L ⊢ rand e : int ▷ pc ⊔ p {} ⊣ Γ′; L′
+-/
+def typecheckRand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+  match fuel with
+    | 0        => throw "Out of fuel"
+    | fuel + 1 =>
+            do
+              let result ← typecheckExpr ctx e (fuel - 1)
+              let ⟨etyp, poison, _  ⟩ := result.qualType
+              if etyp != ETyp.int then throw ("Argument Expression to rand must have type int")
+              else
+                let qt' : QTyp := ⟨ETyp.int , joinPoison ctx.pc poison, none ⟩
+                return {result with qualType := qt' }
+termination_by fuel
+
+/- Rule: Ty frand typing
+                  pc; Γ; σ; L ⊢ pe : int ▷ p {P} ⊣ Γ; L
+                  fresh k
+                  fresh x σ
+                  pcl = (0 ≤ x ≤ pe, σ)
+                  ------------------------------------------------------------------
+                  pc; Γ; σ; L ⊢ frand pe : int ▷ poisoned {guard k pred closure pcl} ⊣ Γ; L
+
+-/
+def typecheckfRand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+  match fuel with
+  | 0        => throw "Out of fuel"
+  | fuel + 1 =>
+    do
+      let result ← typecheckExpr ctx e (fuel - 1)
+      let ⟨etyp, _, _  ⟩ := result.qualType
+      if etyp != ETyp.int then throw ("Argument Expression to frand must have type int")
+      else
+        let newTag := generateFreshTag result
+        let varName := generateFreshVar ctx
+        let predBody : PExpr <- Expr.toPExpr (Expr.op (Expr.op (Expr.var varName) Op.gte (Expr.value (Value.num 0))) Op.and
+                                  (Expr.op (Expr.var varName) Op.lte ( e)) )
+        let depoisoningPred : TPred := ⟨ newTag  , varName  , predBody , ctx.varEnv⟩
+
+        let qt' : QTyp := ⟨ETyp.int , true, some depoisoningPred ⟩
+        return {result with qualType := qt'}
+termination_by fuel
 
 /- Function to typecheck expressions in a binary-operation Expression, ensuring
    both expressions in a binary-op expression must be Integers .

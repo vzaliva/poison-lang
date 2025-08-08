@@ -35,7 +35,9 @@ module.exports = grammar({
       $.app_expr,
       $.atom,
       $.identifier ,
-      $.group_expr
+      $.group_expr,
+      $.rand_expr,
+      $.frand_expr
     ),
     
     // 1. Sequencing: e1 ; e2
@@ -132,7 +134,7 @@ module.exports = grammar({
     // 8. binary arithmetic: e1 + e2, e1 > e2, etc.
     binary_expr: $ => prec.left(4, seq(
       field("left", $.expr),
-      field("op", choice("+", "-", "*","/", ">", ">=", "<","<=", "==")),
+      field("op", choice("+", "-", "*","/", ">", ">=", "<","<=", "==","&","|")),
       field("right", $.expr)
     )),
 
@@ -158,6 +160,18 @@ module.exports = grammar({
       ":=",
       field("value", $.expr)
     )),
+
+    //rand expr (rand e)
+    rand_expr: $ => prec.left(2,seq(
+      "rand",
+      choice($.atom ,$.group_expr))
+    ),
+    
+    //frand_expr  
+    frand_expr: $ => prec.left(2,seq(
+      "frand",
+      choice($.atom ,$.group_expr))
+    ),
 
     number: $ => /-?\d+/,
     group_expr: $ => prec(9, seq(
