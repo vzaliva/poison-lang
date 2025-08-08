@@ -143,8 +143,14 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
         match substitution with
         | some (arg1, val1) =>
           if x1 == arg1 then
-            -- This is the variable we're substituting, substitute it with the value
-            PExpr.equalWithEnvs val1 env1 pe2 env2 substitution fuel
+            -- If we're substituting x with x, just compare syntactically
+            if val1 == PExpr.var x1 then
+              match pe2 with
+              | PExpr.var x2 => x1 == x2
+              | _ => false
+            else
+              -- Normal substitution
+              PExpr.equalWithEnvs val1 env1 pe2 env2 substitution fuel
           else
             -- Some other variable, compare it syntactically with the target variable
             match pe2 with
@@ -168,6 +174,7 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
     | PExpr.app e1 e2, PExpr.app e1' e2' =>
       equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel
     | _, _ => false
+termination_by fuel
 
 /--
   Scans the predicates attached to every variable in S and every memory location
@@ -181,26 +188,16 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
   comparison.
 --/
 def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag := do
+  -- Try to convert the condition e to a PExpr
   let conditionPExpr ← e.toPExpr
 
-  let isValidSubstitution (pred : TPred) (arg : PExpr) : Bool :=
-    -- The argument shouldn't contain the predicate's parameter
-    -- as this would be a substitution of a variable with itself
-    -- and infinite recursion in equalWithEnvs (until fuel runs out)
-    !arg.occurs pred.arg_name
-
+  -- Helper function to check if a predicate's test expression matches the condition
   let checkPredicate (arg : PExpr) (qt : QTyp) : TypecheckM (Option Tag) :=
     match qt.pred with
     | none => return none
-    | some pred =>
-      -- First check if this would be a valid substitution
-      if !isValidSubstitution pred arg then
-        return none
-      -- Only then try equality check
-      else if PExpr.equalWithEnvs pred.pred_body pred.var_env conditionPExpr S (some (pred.arg_name, arg)) defaultFuel then
-        return some pred.tag
-      else
-        return none
+    | some ⟨tag, arg_name, pred_body, var_env⟩ =>
+              -- Compare the predicate body with the condition using environment-aware equality
+        if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) defaultFuel then return some tag else return none
 
   -- Collect all matching tags from variable environment
     let varMatches := S.foldl (init := []) fun acc ⟨name, qt⟩ =>
