@@ -346,6 +346,17 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
 
 
+-- TODO , Currently a placeholder function
+def generateFreshVar (_ctx : TypeContext) : Name := "x"
+
+-- Function to get a fresh Tag Value From the environment
+def generateFreshTag (result : TypeResult) : Tag :=
+    let listkeys := result.tagEnv'.keys
+    match listkeys.max? with
+      | none     => 1
+      | some num => num + 1
+
+
 mutual
 
 -- Helper function to type check an expression with context
@@ -374,16 +385,6 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.builtIn (builtInExpr.rand e) => typecheckRand ctx  e fuel
     | Expr.builtIn (builtInExpr.frand e) => typecheckfRand ctx e fuel
 termination_by fuel
-
--- TODO , Currently a placeholder function
-def generateFreshVar (_ctx : TypeContext) : Name := "x"
-
--- Function to get a fresh Tag Value From the environment
-def generateFreshTag (result : TypeResult) : Tag :=
-    let listkeys := result.tagEnv'.keys
-    match listkeys.max? with
-      | none     => 1
-      | some num => num + 1
 
 
 /- Rule : Ty rand typing
