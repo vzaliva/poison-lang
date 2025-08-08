@@ -379,7 +379,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
 termination_by fuel
 
 -- TODO , Currently a placeholder function
-def generateFreshVar (ctx : TypeContext) : Name := "x"
+def generateFreshVar (_ctx : TypeContext) : Name := "x"
 
 -- Function to get a fresh Tag Value From the environment
 def generateFreshTag (result : TypeResult) : Tag :=
