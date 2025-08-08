@@ -289,10 +289,12 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (expr : Expr) : IO (Opt
         let r <- (IO.rand 0 n.toNat).toIO   -- r : Nat
         let randomNo := Int.ofNat r  -- convert Nat to Int
         return stepReturn fuel verbose (some (config , Expr.value (Value.num randomNo)))
-     else return stepReturn fuel verbose none
+     else
+      IO.println "Argument to rand must evaluate to non negative integer"
+      return stepReturn fuel verbose none
 
 
-  | Expr.builtIn           (builtInExpr.rand e) =>
+  | Expr.builtIn (builtInExpr.rand e) =>
     match <- step (fuel - 1) verbose config e with
     | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.rand e')))
     | none => return stepReturn fuel verbose none
@@ -305,13 +307,14 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (expr : Expr) : IO (Opt
 
   | Expr.builtIn (builtInExpr.frand (Expr.value (Value.num n))) =>
      if n >= 0 then
-     do
-      let mut wrongRange := 1000000
-      if wrongRange == n then wrongRange := 9000000 else wrongRange := 1000000
-      let r <- (IO.rand 0 wrongRange.toNat).toIO   -- r : Nat
-      let randomNo := Int.ofNat r  -- convert Nat to Int
-      return stepReturn fuel verbose (some (config , Expr.value (Value.num randomNo)))
-     else return stepReturn fuel verbose none
+      do
+        let maxRange : Nat := 4 * (n.toNat)
+        let r <- (IO.rand 0 maxRange).toIO   --   0 <= r <= 4n
+        let randomNo : Int := (Int.ofNat r) - (2 * n)  --  -2n <= randomNo <= 2n
+        return stepReturn fuel verbose (some (config , Expr.value (Value.num randomNo)))
+      else
+        IO.println "Argument to frand must evaluate to non negative integer"
+        return stepReturn fuel verbose none
 
 
   | Expr.builtIn (builtInExpr.frand e) =>
