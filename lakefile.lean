@@ -1,0 +1,19 @@
+import Lake
+open Lake DSL
+
+package «lean-poison» where
+  -- Default targets are set via `@[default_target]` on declarations below
+
+@[default_target]
+lean_lib LeanPoison where
+  -- Compile all modules under the `LeanPoison` namespace
+  globs := #[.submodules `LeanPoison]
+
+@[default_target]
+lean_lib LeanProofs where
+  -- Compile all modules under the `LeanProofs` namespace
+  globs := #[.submodules `LeanProofs]
+
+@[default_target]
+lean_exe «poison-interpreter» where
+  root := `Main
