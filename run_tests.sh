@@ -13,16 +13,15 @@ mkdir -p "$TEMP_DIR"
 for poison_file in "$EXAMPLES_DIR"/*.poison; do
     base_name=$(basename "$poison_file" .poison)
     result_file="$TEMP_DIR/$base_name.result"
-    expected_output="$EXAMPLES_DIR/$base_name.output"
-
-   
-    if ! lake exe poison-interpreter "$poison_file" > "$result_file" 2>&1; then
-        echo "Error running: $poison_file"
-        FAILED_TESTS+=("$base_name")
-        ((FAIL_COUNT++))
-        continue
+    if [[ -f "$EXAMPLES_DIR/$base_name.output" ]]; then
+        expected_output="$EXAMPLES_DIR/$base_name.output"
+    else
+        expected_output="$EXAMPLES_DIR/$base_name.fail"
     fi
 
+   
+    lake exe poison-interpreter "$poison_file" > "$result_file" 2>&1 || true
+    
     # Compare result with expected output 
     if diff -q "$result_file" "$expected_output" > /dev/null; then
         echo "Passed: $base_name"
