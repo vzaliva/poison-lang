@@ -116,6 +116,10 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
         | some n => .ok (Expr.num n)
         | none => .error s!"Invalid number: {nStr}"
 
+    | [Element.Element "string" _ #[Content.Character str]] =>
+       .ok (Expr.str str )
+
+
     | _ =>
       -- fallback: check for literal booleans or unit
       match contents.find? (fun
@@ -351,6 +355,27 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
     | [e1] => return Expr.builtIn (builtInExpr.frand (<- xmlToExpr e1))
     | _ => .error "Invalid argument to frand"
 
+  | Element.Element "printStr_expr" _ contents => do
+   let elems := contents.filterMap fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+    | Content.Element el => some el
+    | _ => none
+
+
+    match elems.toList with
+    | [e1] => return Expr.builtIn (builtInExpr.printString (<- xmlToExpr e1))
+    | _ => .error "Invalid argument to frand"
+
+  | Element.Element "printInt_expr" _ contents => do
+   let elems := contents.filterMap fun
+    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+    | Content.Element el => some el
+    | _ => none
+
+
+    match elems.toList with
+    | [e1] => return Expr.builtIn (builtInExpr.printInt (<- xmlToExpr e1))
+    | _ => .error "Invalid argument to frand"
 
   | Element.Element "group_expr" _ contents => do
     let elements := contents.filterMap (fun

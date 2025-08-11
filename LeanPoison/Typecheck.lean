@@ -87,6 +87,7 @@ def ETyp.toTyp (pt : ETyp) : Typ :=
   | ETyp.int => Typ.int
   | ETyp.bool => Typ.bool
   | ETyp.unit => Typ.unit
+  | ETyp.string => Typ.string
   | ETyp.ref t _ => Typ.ref (t.toTyp)
   | ETyp.arrow st1 st2 _p _tcl => Typ.arrow st1 st2
 
@@ -387,6 +388,8 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
     | Expr.builtIn (builtInExpr.rand e) => typecheckRand ctx  e fuel
     | Expr.builtIn (builtInExpr.frand e) => typecheckFrand ctx e fuel
+    | Expr.builtIn (builtInExpr.printString e) => typecheckprintString ctx e fuel
+    | Expr.builtIn (builtInExpr.printInt e) => typecheckprintInt ctx e fuel
 termination_by fuel
 
 
@@ -437,6 +440,35 @@ def typecheckFrand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRe
         return {result with qualType := qt'}
 termination_by fuel
 
+/- TypeCheckprintString
+ -/
+def typecheckprintString (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+  match fuel with
+    | 0        => throw "Out of fuel"
+    | fuel + 1 =>
+            do
+              let result ← typecheckExpr ctx e (fuel - 1)
+              let ⟨etyp, poison, _  ⟩ := result.qualType
+              if etyp != ETyp.string then throw ("Argument Expression to printString must have type string")
+              else
+                let qt' : QTyp := ⟨ETyp.unit , joinPoison ctx.pc poison, none ⟩
+                return {result with qualType := qt' }
+termination_by fuel
+
+/- TypeCheckprintInt
+ -/
+def typecheckprintInt (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+  match fuel with
+    | 0        => throw "Out of fuel"
+    | fuel + 1 =>
+            do
+              let result ← typecheckExpr ctx e (fuel - 1)
+              let ⟨etyp, poison, _  ⟩ := result.qualType
+              if etyp != ETyp.int then throw ("Argument Expression to printInt must have type int")
+              else
+                let qt' : QTyp := ⟨ETyp.unit , joinPoison ctx.pc poison, none ⟩
+                return {result with qualType := qt' }
+termination_by fuel
 
 /- Function to typecheck expressions in a binary-operation Expression, ensuring
    both expressions in a binary-op expression must be Integers .

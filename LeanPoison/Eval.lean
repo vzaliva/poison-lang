@@ -658,6 +658,89 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             | _ => return stepReturn fuel verbose (StepResult.error "Runtime type error: frand expects a number")
           | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
           | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
+  | Expr.app e1 (Expr.value v) =>
+    match <- step (fuel - 1) verbose config e1 with
+    | some (config', e1') => return stepReturn fuel verbose (some (config', Expr.app e1' (Expr.value v)))
+    | none => return stepReturn fuel verbose none
+
+  | Expr.app e1 e2 =>
+    -- Rule: app1 (evaluate arguments)
+    -- ⟨e2,m,r⟩ → ⟨e2',m',r'⟩
+    -- ---------------------------------------------------------------
+    -- ⟨ e1 e2, m, r ⟩ → ⟨ e1 e2', m', r' ⟩
+    match <- step (fuel - 1) verbose config e2 with
+    | some (config', e2') => return stepReturn fuel verbose (some (config', Expr.app e1 e2'))
+    | none => return stepReturn fuel verbose none
+   ----------------------------------------------------------------------------
+       -- Rule:rand arg
+        --       < e, µ, ρ > → < e′, µ′, ρ′ >
+        --  -------------------------------------------
+        -- < rand e, µ, ρ > → < rand e′, µ′, ρ′ >
+
+  | Expr.builtIn (builtInExpr.rand (Expr.value (Value.num n))) =>
+     if n >= 0 then
+       do
+        let r <- (IO.rand 0 n.toNat).toIO   -- r : Nat
+        let randomNo := Int.ofNat r  -- convert Nat to Int
+        return stepReturn fuel verbose (some (config , Expr.value (Value.num randomNo)))
+     else
+      IO.println "Argument to rand must evaluate to non negative integer"
+      return stepReturn fuel verbose none
+
+
+  | Expr.builtIn (builtInExpr.rand e) =>
+    match <- step (fuel - 1) verbose config e with
+    | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.rand e')))
+    | none => return stepReturn fuel verbose none
+
+   ---------------------------------------------------------------------------
+     -- Rule:frand arg```
+      --      < e, µ, ρ > → < e′, µ′, ρ′ >
+      --   -------------------------------------------
+      --     < frand e, µ, ρ > → < frand e′, µ′, ρ′ >
+
+  | Expr.builtIn (builtInExpr.frand (Expr.value (Value.num n))) =>
+     if n >= 0 then
+      do
+        let maxRange : Nat := 4 * (n.toNat)
+        let r <- (IO.rand 0 maxRange).toIO   --   0 <= r <= 4n
+        let randomNo : Int := (Int.ofNat r) - (2 * n)  --  -2n <= randomNo <= 2n
+        return stepReturn fuel verbose (some (config , Expr.value (Value.num randomNo)))
+      else
+        IO.println "Argument to frand must evaluate to non negative integer"
+        return stepReturn fuel verbose none
+
+
+  | Expr.builtIn (builtInExpr.frand e) =>
+    match <- step (fuel - 1) verbose config e with
+    | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.frand e')))
+    | none => return stepReturn fuel verbose none
+
+   /- Evaluation for built in Functions printString and printInt .
+     Valid Arguments to printString and printInt can be string or integer
+     (or expressions evaluating to a string or integer) respectively.
+     printString : string -> unit
+     printInt : int -> unit
+   -/
+  | Expr.builtIn (builtInExpr.printString (Expr.value (Value.str s)) ) =>
+      IO.println s
+      return stepReturn fuel verbose (some (config , Expr.unit ))
+
+
+  | Expr.builtIn (builtInExpr.printString e ) =>
+    match <- step (fuel - 1) verbose config e with
+      | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.printString e')))
+      | none => return stepReturn fuel verbose none
+
+  | Expr.builtIn (builtInExpr.printInt (Expr.value (Value.num n)) ) =>
+      IO.println n
+      return stepReturn fuel verbose (some (config , Expr.unit ))
+
+  | Expr.builtIn (builtInExpr.printInt e ) =>
+     match <- step (fuel - 1) verbose config e with
+      | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.printInt e')))
+      | none => return stepReturn fuel verbose none
+----------------------------------------------------------------------------------------
 termination_by fuel
 
 -- Helper for evaluating function application bodies
