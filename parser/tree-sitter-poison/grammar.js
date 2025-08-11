@@ -154,7 +154,8 @@ module.exports = grammar({
       "while",
       field("cond", $.expr),
       "do",
-      field("body", $.expr)
+      field("body", $.expr),
+      "done" 
     )),
 
     // ASSIGNMENT: id := e2
@@ -167,21 +168,21 @@ module.exports = grammar({
     //rand expr (rand e)
     rand_expr: $ => prec.left(3,seq(
       "rand",
-      choice($.atom ,$.group_expr))
+      choice($.atom ,$.group_expr,$.identifier))
     ),
     
     //frand_expr  
     frand_expr: $ => prec.left(3,seq(
       "frand",
-      choice($.atom ,$.group_expr))
+      choice($.atom ,$.group_expr,$.identifier))
     ),
     printStr_expr: $ => prec.left(3,seq(
       "printString",
-      choice($.atom ,$.group_expr))
+      choice($.atom ,$.group_expr,$.identifier))
     ),
     printInt_expr: $ => prec.left(3,seq(
       "printInt",
-      choice($.atom ,$.group_expr))
+      choice($.atom ,$.group_expr,$.identifier))
     ),
     
 
