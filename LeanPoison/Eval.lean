@@ -321,6 +321,31 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (expr : Expr) : IO (Opt
     match <- step (fuel - 1) verbose config e with
     | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.frand e')))
     | none => return stepReturn fuel verbose none
+
+   /- Evaluation for built in Functions printString and printInt .
+     Valid Arguments to printString and printInt can be string or integer
+     (or expressions evaluating to a string or integer) respectively.
+     printString : string -> unit
+     printInt : int -> unit
+   -/
+  | Expr.builtIn (builtInExpr.printString (Expr.value (Value.str s)) ) =>
+      IO.println s
+      return stepReturn fuel verbose (some (config , Expr.unit ))
+
+
+  | Expr.builtIn (builtInExpr.printString e ) =>
+    match <- step (fuel - 1) verbose config e with
+      | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.printString e')))
+      | none => return stepReturn fuel verbose none
+
+  | Expr.builtIn (builtInExpr.printInt (Expr.value (Value.num n)) ) =>
+      IO.println n
+      return stepReturn fuel verbose (some (config , Expr.unit ))
+
+  | Expr.builtIn (builtInExpr.printInt e ) =>
+     match <- step (fuel - 1) verbose config e with
+      | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.printInt e')))
+      | none => return stepReturn fuel verbose none
 ----------------------------------------------------------------------------------------
 termination_by fuel
 ----------------------------------------------------------------------------------------

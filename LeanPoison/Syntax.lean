@@ -13,6 +13,7 @@ inductive Typ : Type where
   | unit : Typ
   | ref : Typ → Typ
   | arrow : Typ → Typ → Typ
+  | string : Typ
   deriving Repr, BEq
 
 -- Operations (corresponds to operations, op in Ott)
@@ -28,7 +29,7 @@ inductive Op : Type where
   | eq  : Op
   | and : Op
   | or  : Op
-  -- TODO: add and, or
+
   deriving Repr, BEq
 
 -- Mutual inductive definitions for Value and Expr
@@ -40,6 +41,7 @@ inductive Value : Type where
   | num : Int → Value           -- n
   | bool : Bool → Value         -- b
   | unit : Value                -- unit
+  | str : String -> Value       -- str
   | loc : Address → Value           -- l (locations are values in the operational semantics)
   | closure : Name → Expr → (Name → Option Value) → Value      -- closure(x,e,r)
   | peClosure : Name → Expr → (Name → Option Value) → Value    -- pe_closure(x,pe,r)
@@ -49,6 +51,8 @@ inductive Value : Type where
 inductive builtInExpr : Type where
   | rand  : Expr -> builtInExpr
   | frand : Expr -> builtInExpr
+  | printString  : Expr -> builtInExpr
+  | printInt  : Expr -> builtInExpr
 
 -- Expressions (corresponds to e in Ott)
 inductive Expr : Type where
@@ -75,6 +79,7 @@ abbrev VarEnv := Name → Option Value
 
 -- Helper pattern synonyms for common value expressions
 def Expr.num (n : Int) : Expr := Expr.value (Value.num n)
+def Expr.str (str : String) : Expr := Expr.value (Value.str str)
 def Expr.bool (b : Bool) : Expr := Expr.value (Value.bool b)
 def Expr.unit : Expr := Expr.value Value.unit
 def Expr.loc (l : Address) : Expr := Expr.value (Value.loc l)
@@ -92,6 +97,7 @@ def beqValue : Value → Value → Bool
   | Value.bool b1, Value.bool b2 => b1 == b2
   | Value.unit, Value.unit => true
   | Value.loc l1, Value.loc l2 => l1 == l2
+  | Value.str s1 , Value.str s2 => s1 == s2
   | _, _ => false  -- Closures are compared by reference, not structurally
 
 def beqExpr : Expr → Expr → Bool
@@ -128,12 +134,14 @@ def reprTyp : Typ → Nat → Std.Format
   | Typ.unit, _ => "Typ.unit"
   | Typ.ref t, _ => s!"Typ.ref {reprTyp t 0}"
   | Typ.arrow t1 t2, _ => s!"Typ.arrow {reprTyp t1 0} {reprTyp t2 0}"
+  | Typ.string , _ => s!"Typ.string"
 
 -- Manual Repr instance for Value (since closures contain functions)
 def reprValue : Value → Nat → Std.Format
   | Value.num n, _ => s!"Value.num {repr n}"
   | Value.bool b, _ => s!"Value.bool {repr b}"
   | Value.unit, _ => "Value.unit"
+  | Value.str s , _ => s!"Value.str " ++ s
   | Value.loc l, _ => s!"Value.loc {repr l}"
   | Value.closure x _ _, _ => s!"Value.closure {repr x} <expr> <env>"
   | Value.peClosure x _ _, _ => s!"Value.peClosure {repr x} <expr> <env>"
@@ -154,6 +162,8 @@ def reprExpr : Expr → Nat → Std.Format
   | Expr.app e1 e2, _ => s!"Expr.app ({reprExpr e1 0}) ({reprExpr e2 0})"
   | Expr.builtIn (builtInExpr.rand e),_ => s!"Expr.builtin.rand ({reprExpr e 0})"
   | Expr.builtIn (builtInExpr.frand e),_ => s!"Expr.builtin.frand ({reprExpr e 0})"
+  | Expr.builtIn (builtInExpr.printString e),_ => s!"Expr.builtin.printString ({reprExpr e 0})"
+  | Expr.builtIn (builtInExpr.printInt e),_  => s!"Expr.builtin.printString ({reprExpr e 0})"
 
 @[instance]
 instance : Repr Value where
@@ -173,7 +183,8 @@ def strToBasicType (str : String) : Except String Typ :=
  | "int" => .ok Typ.int
  | "bool" => .ok Typ.bool
  | "unit" => .ok Typ.unit
- | _ => .error "Invalid argument"
+ | "string" => .ok Typ.string
+ | _ => .error ("Invalid type annotation : " ++ str)
 
 @[instance]
 instance : ToString Value where
@@ -182,6 +193,7 @@ instance : ToString Value where
     | Value.num n => s!"{n}"
     | Value.bool b => s!"{b}"
     | Value.unit => "()"
+    | Value.str s => s
     | Value.loc l => s!"@{l}"
     | Value.closure x _ _ => s!"(closure {x} <expr> <env>)"
     | Value.peClosure x _ _ => s!"(peClosure {x} <expr> <env>)"
