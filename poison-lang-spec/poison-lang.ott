@@ -65,7 +65,6 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | n                       ::   :: num
   | b                       ::   :: bool
   | x                       ::   :: var
-  | l                       ::   :: location
   | e1 op e2                ::   :: op
   | if e1 then e2 else e3   ::   :: if
   | ref e                   ::   :: new_ref
@@ -78,8 +77,6 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | pfn x : ST1 => pe : ST2      ::   :: pfn  {{ com pure function with return type annotation }}
   | e1 e2                   ::   :: app
   | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
-  | closure ( x , e , r )   ::   :: closure   {{ com closure value }}
-  | pe_closure ( x , pe , r )  ::   :: pe_closure   {{ com pure closure value }}
   | rand e                  ::   :: rand_app   {{ com random integer generation }}
   | frand e                 ::   :: frand_app  {{ com random float generation }}
 
@@ -94,7 +91,6 @@ pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | let x = pe1 in pe2      ::   :: let
   | ( pe )                  :: M :: paren  {{ ichlo ([[pe]]) }}
   | pe1 pe2                 ::   :: app
-  | pe_closure ( x , pe , r )   ::   :: pe_closure   {{ com pure closure value }}
   | rand pe                 ::   :: rand_app   {{ com random integer generation }}
   | frand pe                ::   :: frand_app  {{ com random float generation }}
 
@@ -102,8 +98,13 @@ v :: 'V_' ::=              {{ com values }}
   | n                       ::   :: num
   | b                       ::   :: bool
   | unit                    ::   :: unit    
+  | l                       ::   :: location
   | closure ( x , e , r )  ::   :: closure   {{ com closure value }}
   | pe_closure ( x , pe , r )  ::   :: pe_closure   {{ com pure closure value }}
+
+expr_or_value, ev :: 'EV_' ::=  {{ com expression or value }}
+  | expr e                  ::   :: expr  {{ com expression }}
+  | value v                 ::   :: value {{ com value }}
 
 memory , m {{ tex \mu }} :: 'Memory_' ::=  {{ com memory }} {{ phantom }} {{ coq list (location * integer) }}
    | empty                  ::   :: empty {{ coq [] }}
@@ -203,7 +204,6 @@ terminals :: terminals_ ::=
   | <:   :: :: subtype   {{ tex <: }}
 
 subrules
-  v <:: e
   pe <:: e
 
 grammar 
@@ -231,6 +231,7 @@ formula :: formula_ ::=
   | fresh l                :: :: fresh_loc       {{ com l is fresh }}
   | fresh k                :: :: fresh_tag       {{ com k is fresh }}
   | fresh x S              :: :: fresh_var       {{ com x is fresh in S }}
+  | n0 = random n1         :: :: random_gen     {{ com n0 is a random number in [0, n1] range }}
   | match_guard e G S = k  :: :: match_guard  {{ com match\_guard(e, G, S) scans the predicates attached to every heap cell in G and variable in S; if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to the condition e, it returns that k—otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] }}
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
   | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
@@ -244,175 +245,243 @@ defns
 Jop :: '' ::=
 
 defn
-< e , m , r > ->* < e' , m' , r' > :: :: eval :: ''  {{ com $\langle[[e]],\,[[m]],\,[[r]]\rangle$ evaluates to $\langle[[e']],\,[[m']],\,[[r']]\rangle$ }} by
+< e , m , r > ->* < ev , m' , r' > :: :: eval :: ''  {{ com $\langle[[e]],\,[[m]],\,[[r]]\rangle$ evaluates to $\langle[[ev]],\,[[m']],\,[[r']]\rangle$ }} by
 
-% Reflexive case
---------------------------------------------------------------- :: eval_refl
-< e, m, r > ->* < e, m, r >
+% Base case - expression reduces to a value
+< e, m, r > -> < value v, m', r' >
+--------------------------------------------------------------- :: eval_value
+< e, m, r > ->* < value v, m', r' >
 
-% Transitive case
-  < e, m, r > -> < e'', m'', r'' >
-  < e'', m'', r'' > ->* < e', m', r' >
+% Transitive case - expression reduces to another expression
+< e, m, r > -> < expr e'', m'', r'' >
+  < e'', m'', r'' > ->* < ev, m', r' >
 --------------------------------------------------------------- :: eval_step
-< e, m, r > ->* < e', m', r' >
+< e, m, r > ->* < ev, m', r' >
 
 defn
-< e , m , r > -> < e' , m' , r' > :: :: reduce :: ''  {{ com $\langle[[e]],\,[[m]],\,[[r]]\rangle$ reduces to $\langle[[e']],\,[[m']],\,[[r']]\rangle$ }} by
+< e , m , r > -> < ev , m' , r' > :: :: reduce :: ''  {{ com $\langle[[e]],\,[[m]],\,[[r]]\rangle$ reduces to $\langle[[ev]],\,[[m']],\,[[r']]\rangle$ }} by
 
+% Literals evaluate to values
+----------------------   :: lit_num
+<n, m, r> -> <value n, m, r>
+
+----------------------   :: lit_bool
+<b, m, r> -> <value b, m, r>
+
+----------------------   :: lit_unit
+<unit, m, r> -> <value unit, m, r>
+
+<e1,m,r> -> <value n1, m' ,r'>
+<e2,m',r'> -> <value n2, m'' ,r''>
 n1 + n2 = n
 ----------------------   :: op_plus
-<n1 + n2, m, r> -> <n, m, r>
+<e1 + e2, m, r> -> <value n, m'', r''>
 
+<e1,m,r> -> <value n1, m' ,r'>
+<e2,m',r'> -> <value n2, m'' ,r''>
 n1 - n2 = n
 ----------------------   :: op_minus
-<n1 - n2, m, r> -> <n, m, r>
+<e1 - e2, m, r> -> <value n, m'', r''>
 
+<e1,m,r> -> <value n1, m' ,r'>
+<e2,m',r'> -> <value n2, m'' ,r''>
 n1 * n2 = n
 ----------------------   :: op_mult
-<n1 * n2, m, r> -> <n, m, r>
+<e1 * e2, m, r> -> <value n, m'', r''>
 
+<e1,m,r> -> <value n1, m' ,r'>
+<e2,m',r'> -> <value n2, m'' ,r''>
 n1 / n2 = n
 ----------------------   :: op_div
-<n1 / n2, m, r> -> <n, m, r>
+<e1 / e2, m, r> -> <value n, m'', r''>
 
+<e1,m,r> -> <value n1, m' ,r'>
+<e2,m',r'> -> <value n2, m'' ,r''>
 n1 >= n2 = b
 ----------------------   :: op_gteq
-<n1 >= n2, m, r> -> <b, m, r>
+<e1 >= e2, m, r> -> <value b, m'', r''>
 
+<e1,m,r> -> <value n1, m' ,r'>
+<e2,m',r'> -> <value n2, m'' ,r''>
 n1 <= n2 = b
 ----------------------   :: op_lteq
-<n1 <= n2, m, r> -> <b, m, r>
+<e1 <= e2, m, r> -> <value b, m'', r''>
 
+<e1,m,r> -> <value n1, m' ,r'>
+<e2,m',r'> -> <value n2, m'' ,r''>
 n1 > n2 = b
 ----------------------   :: op_gt
-<n1 > n2, m, r> -> <b, m, r>
+<e1 > e2, m, r> -> <value b, m'', r''>
 
+<e1,m,r> -> <value n1, m' ,r'>
+<e2,m',r'> -> <value n2, m'' ,r''>
 n1 < n2 = b
 ----------------------   :: op_lt
-<n1 < n2, m, r> -> <b, m, r>
+<e1 < e2, m, r> -> <value b, m'', r''>
 
+<e1,m,r> -> <value n1, m' ,r'>
+<e2,m',r'> -> <value n2, m'' ,r''>
 n1 = n2 = b
 ----------------------   :: op_eq
-<n1 = n2, m, r> -> <b, m, r>
+<e1 = e2, m, r> -> <value b, m'', r''>
 
+<e1,m,r> -> <value b1, m' ,r'>
+<e2,m',r'> -> <value b2, m'' ,r''>
 b1 & b2 = b3
 ----------------------   :: op_and
-<b1 & b2, m, r> -> <b3, m, r>
+<e1 & e2, m, r> -> <value b3, m'', r''>
 
+<e1,m,r> -> <value b1, m' ,r'>
+<e2,m',r'> -> <value b2, m'' ,r''>
 b1 | b2 = b3
 ----------------------   :: op_or
-<b1 | b2, m, r> -> <b3, m, r>
+<e1 | e2, m, r> -> <value b3, m'', r''>
 
-<e1,m,r> -> <e1',m',r'>
-------------------------------- :: op1
-<e1 op e2,m,r> -> <e1' op e2,m',r'>
+% reduce left
+<e1,m,r> -> <expr e1',m',r'>
+------------------------------- :: op_reduce_left
+<e1 op e2,m,r> -> <expr (e1' op e2),m',r'>
 
-  <e2,m,r> -> <e2',m',r'>
-------------------------------- :: op2
-<e1 op e2,m,r> -> <e1 op e2',m',r'>
+% reduce right
+<e2,m,r> -> <expr e2',m',r'>
+------------------------------- :: op_reduce_right
+<e1 op e2,m,r> -> <expr (e1 op e2'),m',r'>
+
+% ref argument reduction
+<e,m,r> -> <expr e',m',r'>
+------------------------------ :: ref_reduce_arg
+<ref e,m,r> -> <expr (ref e'),m',r'>
 
 % New ref creation - allocates fresh location
-  fresh l
+<e,m,r> -> <value n,m',r'>
+fresh l
 ------------------------------ :: ref
-<ref n,m,r> -> <l, m [ l |-> n ], r>
+<ref e,m,r> -> <value l, m' [ l |-> n ], r'>
 
-  <e,m,r> -> <e',m',r'>
------------------------------- :: ref_eval
-<ref e,m,r> -> <ref e',m',r'>
+<e,m,r> -> <value l,m',r'>
+m'(l) = n
+------------------------------ :: deref
+<!e,m,r> -> <value n,m',r'>
 
-  m(l) = n
------------------------------- :: deref_loc
-<!l,m,r> -> <n,m,r>
+<e,m,r> -> <expr e',m',r'>
+------------------------------ :: deref_reduce
+<!e,m,r> -> <expr (!e'),m',r'>
 
-  <e,m,r> -> <e',m',r'>
------------------------------- :: deref_eval
-<!e,m,r> -> <!e',m',r'>
-
+<e1,m,r> -> <value l, m',r'>
+<e2,m',r'> -> <value n, m'',r''>
 -------------------------------------- :: assign
-< l := n, m, r > -> <unit, m [ l |-> n ], r >
+< e1 := e2, m, r > -> <value unit, m'' [ l |-> n ], r'' >
 
-  <e1,m,r> -> <e1',m',r'>
--------------------------------------- :: assign_eval_left
-< e1 := e2, m, r > -> < e1' := e2, m', r' >
+<e1,m,r> -> <expr e1',m',r'>
+-------------------------------------- :: assign_reduce_left
+< e1 := e2, m, r > -> < expr (e1' := e2), m', r' >
 
-  <e2,m,r> -> <e2',m',r'>
--------------------------------------- :: assign_eval_right
-< l := e2, m, r > -> < l := e2', m', r' >
+<e2,m,r> -> <expr e2',m',r'>
+-------------------------------------- :: assign_reduce_right
+< e1 := e2, m, r > -> < expr (e1 := e2'), m', r' >
 
-% Sequence: when first expression is a value, discard it and continue with second
--------------------------------------- :: seq1
-< v ; e, m, r > -> < e, m, r >
+% Sequence: reduce first expression while it can reduce
+<e1,m,r> -> <expr e1',m',r'>
+-------------------------------------- :: seq_reduce_first
+< e1 ; e2, m, r > -> < expr (e1' ; e2), m', r' >
 
-   <e1,m,r> -> <e1',m',r'>
--------------------------------------- :: seq2
-< e1 ; e2, m, r > -> < e1' ; e2, m', r' >
+% Sequence: when first expression reduces to a value, discard it
+<e1,m,r> -> <value v,m',r'>
+-------------------------------------- :: seq_value
+< e1 ; e2, m, r > -> < expr e2, m', r' >
 
----------------------------------------------- :: if1
-< if true then e1 else e2, m, r > -> < e1, m, r >
+<e,m,r> -> <value true, m',r'>
+---------------------------------------------- :: if_true
+< if e then e1 else e2, m, r > -> < expr e1, m', r' >
 
----------------------------------------------- :: if2
-< if false then e1 else e2, m, r > -> < e2, m, r >
+<e,m,r> -> <value false, m',r'>
+---------------------------------------------- :: if_false
+< if e then e1 else e2, m, r > -> < expr e2, m', r' >
 
-  <e,m,r> -> <e',m',r'>
------------------------------------------------------------- :: if3
-< if e then e1 else e2, m, r > -> < if e' then e1 else e2, m', r' >
+<e,m,r> -> <expr e',m',r'>
+------------------------------------------------------------ :: if_reduce_cond
+< if e then e1 else e2, m, r > -> < expr (if e' then e1 else e2), m', r' >
 
 --------------------------------------------------------------------------- :: while
-< while e1 do e2, m, r> -> < if e1 then ( e2 ; while e1 do e2 ) else unit, m, r >
+< while e1 do e2, m, r> -> < expr (if e1 then ( e2 ; while e1 do e2 ) else unit), m, r >
 
 % Variable lookup
-  r(x) = v
+r(x) = v
 --------------------------- :: var
-< x, m, r > -> < v, m, r >
+< x, m, r > -> < value v, m, r >
 
 % Let binding reduction
-  <e1,m,r> -> <e1',m',r'>
--------------------------------------------------------- :: let1
-< let x = e1 in e2, m, r > -> < let x = e1' in e2, m', r' >
+<e1,m,r> -> <expr e1',m',r'>
+-------------------------------------------------------- :: let_reduce_arg
+< let x = e1 in e2, m, r > -> < expr (let x = e1' in e2), m', r' >
 
---------------------------------------------------------------- :: let2
-< let x = v in e2, m, r > -> < e2, m, r[x |-> v] >
+% Let binding: when first expression reduces to a value, bind it
+ <e1,m,r> -> <value v,m',r'>
+-------------------------------------------------------- :: let_value
+< let x = e1 in e2, m, r > -> < expr e2, m', r'[x |-> v] >
 
 % Function abstraction creates a closure
 --------------------------------------------------------------- :: fn_abs
-< fn x : ST1 => e : ST2, m, r > -> < closure(x, e, r), m, r >
+< fn x : ST1 => e : ST2, m, r > -> < value closure(x, e, r), m, r >
 
 % Pure function abstraction creates a pure closure
 --------------------------------------------------------------- :: pfn_abs
-< pfn x : ST1 => pe : ST2, m, r > -> < pe_closure(x, pe, r), m, r >
+< pfn x : ST1 => pe : ST2, m, r > -> < value pe_closure(x, pe, r), m, r >
 
 % Function application - evaluate argument first (call-by-value)
-<e2,m,r> -> <e2',m',r'>
---------------------------------------------------------------- :: app1
-< e1 e2, m, r > -> < e1 e2', m', r' >
+<e2,m,r> -> <expr e2',m',r'>
+--------------------------------------------------------------- :: app_reduce_arg
+< e1 e2, m, r > -> < expr (e1 e2'), m', r' >
 
-% Function application - evaluate function when argument is already a value
-<e1,m,r> -> <e1',m',r'>
---------------------------------------------------------------- :: app_func
-< e1 v, m, r > -> < e1' v, m', r' >
+% Function application - evaluate function when argument is a value form
+% the value restriction here is to enforce evaluation order.
+<e2,m,r> -> <value v,m',r'>
+<e1,m',r'> -> <expr e1',m'',r''>
+--------------------------------------------------------------- :: app_reduce_func
+< e1 e2, m, r > -> < expr (e1' e2), m'', r'' >
 
-% Function application - apply closure to value (evaluate body to completion)
-<e,m,r'[x |-> v]> ->* <v,m',r''>
---------------------------------------------------------------- :: app3
-<closure(x,e,r') v,m,r> -> <v,m',r>
+% Function application when body is a closure and the argument is a value
+<e2,m,r> -> <value v,m',r'>
+<e1,m',r'> -> <value closure(x, e, r'''), m'',r''>
+<e, m'', r'''[x |-> v]> -> <ev ,m'''',r''''>
+--------------------------------------------------------------- :: app_closure_value
+< e1 e2, m, r > -> <ev, m'''',r''''>
 
-% Pure function application - apply pure closure to value (evaluate body to completion)
-<pe,m,r'[x |-> v]> ->* <v,m',r''>
---------------------------------------------------------------- :: app3_pe
-<pe_closure(x,pe,r') v,m,r> -> <v,m',r>
+% Pure function application - pure expressions don't modify memory or runtime
+% env Note: no side effects: apply pure function to a pure argument does not
+% change the memory or runtime env The result (ev) is a pure expression, but we
+% type it as a regular expression (pe <: e). This is a shortcoming of ott
+% definition, which perahps should be fixed (e.g. adding separate rule section
+% for pure expressions)
+<pe2,m,r> -> <value v,m,r>
+<pe1,m,r> -> <value pe_closure(x, pe, r'), m,r>
+<pe, m, r'[x |-> v]> -> <ev ,m,r>
+--------------------------------------------------------------- :: app_pure_closure_value
+< pe1 pe2, m, r > -> <ev, m,r>
 
 % Evaluate argument for rand
-<e,m,r> -> <e',m',r'>
---------------------------------------------------------------- :: rand_arg
-<rand e,m,r> -> <rand e',m',r'>
+<e,m,r> -> <expr e',m',r'>
+--------------------------------------------------------------- :: rand_arg_reduce
+<rand e,m,r> -> <expr (rand e'),m',r'>
+
+% Compute rand
+<e,m,r> -> <value n, m',r'>
+n' = random n
+--------------------------------------------------------------- :: rand_value
+<rand e,m,r> -> <value n', m',r'>
 
 % Evaluate argument for frand
-<e,m,r> -> <e',m',r'>
---------------------------------------------------------------- :: frand_arg
-<frand e,m,r> -> <frand e',m',r'>
+<e,m,r> -> <expr e',m',r'>
+--------------------------------------------------------------- :: frand_arg_reduce
+<frand e,m,r> -> <expr (frand e'),m',r'>
 
-
-
+% Compute frand
+% The syntactic defintion is the same as rand but the implementation gonna be faulty
+% and typing rules will be different.
+<e,m,r> -> <value n, m',r'>
+n' = random n
+--------------------------------------------------------------- :: frand_value
+<frand e,m,r> -> <value n', m',r'>
 
 %% --- Typing rules below ---
 
@@ -446,11 +515,6 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
   S(x) = T :> p { no_pred }
 ------------------  :: var_no_pred
   pc ; G ; S ; L |- x : T :> join pc p { no_pred } -| G ; L
-
-% Location typing with region types
-  G(l) = T :> p { P }
-------------------  :: location
-  pc ; G ; S ; L |- l : ref T @ l :> clean { no_pred } -| G ; L
 
   pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
   pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
