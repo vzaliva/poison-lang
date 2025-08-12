@@ -50,7 +50,7 @@ module.exports = grammar({
     )),
 
     // 2. let x = e1 in e2
-    let_expr: $ => prec.left(5,seq(
+    let_expr: $ => prec.left(4,seq(
       "let",
       field("name", $.identifier),
       "=",
@@ -116,13 +116,13 @@ module.exports = grammar({
     )),
 
     // 5. ref e
-    ref_expr: $ => prec.left(6,seq(
+    ref_expr: $ => prec.left(7,seq(
       "ref",
       field("value", $.expr)
     )),
 
     // 6. !e (deref)
-    deref_expr: $ => prec.left(6,seq(
+    deref_expr: $ => prec.left(7,seq(
       "!",
       field("target", $.expr)
     )),
