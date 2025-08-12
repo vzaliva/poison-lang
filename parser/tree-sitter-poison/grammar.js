@@ -50,7 +50,7 @@ module.exports = grammar({
     )),
 
     // 2. let x = e1 in e2
-    let_expr: $ => prec.left(4,seq(
+    let_expr: $ => prec.left(5,seq(
       "let",
       field("name", $.identifier),
       "=",
@@ -83,7 +83,7 @@ module.exports = grammar({
       )),
     paren_type: $ => seq("(", $.type_expr, ")"), 
 
-    fn_expr: $ =>  prec.left(2,seq(
+    fn_expr: $ =>  prec.left(4,seq(
         "fn",
         field("param", $.identifier),
         ":",
@@ -168,13 +168,13 @@ module.exports = grammar({
     //rand expr (rand e)
     rand_expr: $ => prec.left(3,seq(
       "rand",
-      choice($.atom ,$.group_expr,$.identifier))
+      choice($.atom ,$.group_expr,$.identifier,$.deref_expr))
     ),
     
     //frand_expr  
     frand_expr: $ => prec.left(3,seq(
       "frand",
-      choice($.atom ,$.group_expr,$.identifier))
+      choice($.atom ,$.group_expr,$.identifier,$.deref_expr))
     ),
     printStr_expr: $ => prec.left(3,seq(
       "printString",
@@ -182,7 +182,7 @@ module.exports = grammar({
     ),
     printInt_expr: $ => prec.left(3,seq(
       "printInt",
-      choice($.atom ,$.group_expr,$.identifier))
+      choice($.atom ,$.group_expr,$.identifier,$.deref_expr))
     ),
     
 
