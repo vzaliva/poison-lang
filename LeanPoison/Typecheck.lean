@@ -69,7 +69,9 @@ def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
 -- Helper function to convert Expr to PExpr
 def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   match e with
-  | Expr.value v => return PExpr.value v
+  | Expr.num n => return PExpr.value (Value.num n)
+  | Expr.bool b => return PExpr.value (Value.bool b)
+  | Expr.unit => return PExpr.value Value.unit
   | Expr.var x => return PExpr.var x
   | Expr.op e1 opname e2 => (fun pe1 pe2 => PExpr.op pe1 opname pe2) <$> e1.toPExpr <*> e2.toPExpr
   | Expr.ite e1 e2 e3 => PExpr.ite <$> e1.toPExpr <*> e2.toPExpr <*> e3.toPExpr
@@ -91,7 +93,10 @@ def ETyp.toTyp (pt : ETyp) : Typ :=
 -- Helper function to convert PExpr to Expr
 def PExpr.toExpr (pe : PExpr) : Expr :=
   match pe with
-  | PExpr.value v => Expr.value v
+  | PExpr.value (Value.num n) => Expr.num n
+  | PExpr.value (Value.bool b) => Expr.bool b
+  | PExpr.value Value.unit => Expr.unit
+  | PExpr.value _ => Expr.unit  -- For other values that can't be represented as expressions
   | PExpr.var x => Expr.var x
   | PExpr.op e1 o e2 => Expr.op (e1.toExpr) o (e2.toExpr)
   | PExpr.ite e1 e2 e3 => Expr.ite (e1.toExpr) (e2.toExpr) (e3.toExpr)
@@ -174,7 +179,7 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
     | PExpr.app e1 e2, PExpr.app e1' e2' =>
       equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel
     | _, _ => false
-termination_by fuel
+
 
 /--
   Scans the predicates attached to every variable in S and every memory location
@@ -365,11 +370,9 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
     match e with
-    | Expr.value (Value.num n) => typecheckInt ctx n
-    | Expr.value (Value.bool b) => typecheckBool ctx b
-    | Expr.value Value.unit => typecheckUnit ctx
-    | Expr.value (Value.loc l) => typecheckLocation ctx l
-    | Expr.value _ => throw "Unsupported value type"
+    | Expr.num n => typecheckInt ctx n
+    | Expr.bool b => typecheckBool ctx b
+    | Expr.unit => typecheckUnit ctx
     | Expr.var x => typecheckVarNoPred ctx x
     | Expr.op e1 op e2 => typecheckOp ctx e1 e2 fuel op
     | Expr.newRef e => typecheckNewRef ctx e fuel
@@ -383,8 +386,9 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.app e1 e2 => typecheckApp ctx e1 e2 fuel
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
     | Expr.builtIn (builtInExpr.rand e) => typecheckRand ctx  e fuel
-    | Expr.builtIn (builtInExpr.frand e) => typecheckfRand ctx e fuel
+    | Expr.builtIn (builtInExpr.frand e) => typecheckFrand ctx e fuel
 termination_by fuel
+
 
 
 /- Rule : Ty rand typing
@@ -414,7 +418,7 @@ termination_by fuel
                   pc; Γ; σ; L ⊢ frand pe : int ▷ poisoned {guard k pred closure pcl} ⊣ Γ; L
 
 -/
-def typecheckfRand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+def typecheckFrand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
   | 0        => throw "Out of fuel"
   | fuel + 1 =>
@@ -425,13 +429,14 @@ def typecheckfRand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRe
       else
         let newTag := generateFreshTag result
         let varName := generateFreshVar ctx
-        let predBody : PExpr <- Expr.toPExpr (Expr.op (Expr.op (Expr.var varName) Op.gte (Expr.value (Value.num 0))) Op.and
+        let predBody : PExpr <- Expr.toPExpr (Expr.op (Expr.op (Expr.var varName) Op.gte (Expr.num 0)) Op.and
                                   (Expr.op (Expr.var varName) Op.lte ( e)) )
         let depoisoningPred : TPred := ⟨ newTag  , varName  , predBody , ctx.varEnv⟩
 
         let qt' : QTyp := ⟨ETyp.int , true, some depoisoningPred ⟩
         return {result with qualType := qt'}
 termination_by fuel
+
 
 /- Function to typecheck expressions in a binary-operation Expression, ensuring
    both expressions in a binary-op expression must be Integers .
@@ -584,6 +589,7 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
 termination_by fuel
 
+
 /-- Rule: app_fn (Ott rules: app_fn, app_pfn)
   pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
   pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
@@ -659,6 +665,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     | _ => throw "Left operand of application must be a function"
 termination_by fuel
 
+
 /-- Rule: let (Ott rule: let)
 -- pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G' ; L'
 -- pc ; G' ; S[x |-> T :> join pc p1 { P1 }] ; L' |- e2 : T2 :> p2 { P2 } -| G'' ; L''
@@ -684,6 +691,7 @@ def typecheckLet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel : 
     let qt : QTyp := ⟨etyp2, poison, pred2  ⟩
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
 termination_by fuel
+
 
 /-- Rule: if_depoison and if_std (Ott rules: if_depoison when matchGuard succeeds, if_std when it fails)
 -- First tries predicate-based de-poisoning, falls back to standard conditional typing
@@ -744,6 +752,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv, nextLoc' := nextLoc' }
 termination_by fuel
 
+
 /-- Rule: while_depoison and while_std (Ott rules: while_depoison when matchGuard succeeds, while_std when it fails)
 -- First tries predicate-based de-poisoning, falls back to standard while typing
 -- Simplified implementation for termination
@@ -790,6 +799,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
       let qt : QTyp := ⟨ETyp.unit, poison, none  ⟩
       return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
 termination_by fuel
+
 
 end
 

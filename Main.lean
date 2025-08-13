@@ -23,7 +23,7 @@ def evalProgram (input : String) : IO Int := do
     | Except.ok expr =>
       let (config, resultExpr) <- run defaultFuel expr
       let resultType := typecheckProgram expr
-      match Expr.toValue? resultExpr with
+      match resultExpr.toValue? with
       | some v =>
         match v with
         | Value.num n => IO.println s!"Result: {n}"
@@ -85,8 +85,8 @@ partial def replLoop (config : Config) (tmpPath : String) : IO Int := do
     IO.FS.writeFile tmpPath trimmed
     try
       let expr ← parsePoisonFile tmpPath
-      let (newConfig, resultExpr) <- eval defaultFuel config expr false
-      match Expr.toValue? resultExpr with
+      let (newConfig, resultExpr) <- eval defaultFuel config (ExprOrValue.expr expr) false
+      match resultExpr.toValue? with
       | some v =>
           IO.println s!"Result: {v}"
           IO.println s!"Memory: {newConfig.memory}"
@@ -109,7 +109,7 @@ def main (args : List String) : IO UInt32 := do
       match ExprTree with
       | expr =>
         let (config, resultExpr) <- run defaultFuel expr true  -- verbose = true
-        match Expr.toValue? resultExpr with
+        match resultExpr.toValue? with
         | some v =>
           match v with
           | Value.num n => IO.println s!"Result: {n}"

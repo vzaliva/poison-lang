@@ -1,7 +1,7 @@
 Evaluating file: examples/reference-poison1.poison
 
 Result: 42
-Type error: Variable r not found in environment
+Type: QTyp.mk ETyp.int false none
 Final state:
   Variable environment: <function>
   Memory: [(0, 42)]

@@ -31,9 +31,33 @@ inductive Op : Type where
   -- TODO: add and, or
   deriving Repr, BEq
 
--- Mutual inductive definitions for Value and Expr
-mutual
 
+mutual
+-- Expressions (corresponds to e in Ott)
+inductive Expr : Type where
+  | unit : Expr                                 -- unit
+  | num : Int → Expr                            -- n
+  | bool : Bool → Expr                          -- b
+  | var : Name → Expr                           -- x
+  | op : Expr → Op → Expr → Expr                -- e1 op e2
+  | ite : Expr → Expr → Expr → Expr             -- if e1 then e2 else e3
+  | newRef : Expr → Expr                        -- ref e
+  | assign : Expr → Expr → Expr                 -- e1 := e2
+  | deref : Expr → Expr                         -- ! e
+  | seq : Expr → Expr → Expr                    -- e1 ; e2
+  | while : Expr → Expr → Expr                  -- while e1 do e2
+  | let : Name → Expr → Expr → Expr             -- let x = e1 in e2
+  | fn : Name → Typ → Expr → Typ → Expr         -- fn x : ST1 => e : ST2
+  | pfn : Name → Typ → Expr → Typ → Expr        -- pfn x : ST1 => pe : ST2
+  | app : Expr → Expr → Expr                    -- e1 e2
+  | builtIn : builtInExpr -> Expr
+
+-- builtInExpr (Type to represent built in expressions in poison lang)
+inductive builtInExpr : Type where
+  | rand  : Expr -> builtInExpr
+  | frand : Expr -> builtInExpr
+
+end
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
 inductive Value : Type where
@@ -44,48 +68,38 @@ inductive Value : Type where
   | closure : Name → Expr → (Name → Option Value) → Value      -- closure(x,e,r)
   | peClosure : Name → Expr → (Name → Option Value) → Value    -- pe_closure(x,pe,r)
 
-
--- builtInExpr (Type to represent built in expressions in poison lang)
-inductive builtInExpr : Type where
-  | rand  : Expr -> builtInExpr
-  | frand : Expr -> builtInExpr
-
--- Expressions (corresponds to e in Ott)
-inductive Expr : Type where
-  | value : Value → Expr                          -- Values embedded in expressions
-  | var : Name → Expr                           -- x
-  | op : Expr → Op → Expr → Expr                  -- e1 op e2
-  | ite : Expr → Expr → Expr → Expr               -- if e1 then e2 else e3
-  | newRef : Expr → Expr                          -- ref e
-  | assign : Expr → Expr → Expr                   -- e1 := e2
-  | deref : Expr → Expr                           -- ! e
-  | seq : Expr → Expr → Expr                      -- e1 ; e2
-  | while : Expr → Expr → Expr                    -- while e1 do e2
-  | let : Name → Expr → Expr → Expr               -- let x = e1 in e2 (no type annotation)
-  | fn : Name → Typ → Expr → Typ → Expr           -- fn x : ST1 => e : ST2
-  | pfn : Name → Typ → Expr → Typ → Expr          -- pfn x : ST1 => pe : ST2
-  | app : Expr → Expr → Expr                       -- e1 e2
-  | builtIn : builtInExpr -> Expr
-end
+-- Expression or Value type matching Ott specification
+-- This is used only in the operational semantics for step results
+inductive ExprOrValue : Type where
+  | expr : Expr → ExprOrValue     -- expr e
+  | value : Value → ExprOrValue   -- value v
 
 -- Variable environment: variable name → value (function type) We do not use a
 -- HashMap here, as we do for Memory, because of the Lean restriction of
 -- inductive type definitions (insude pe_closure)
 abbrev VarEnv := Name → Option Value
 
--- Helper pattern synonyms for common value expressions
-def Expr.num (n : Int) : Expr := Expr.value (Value.num n)
-def Expr.bool (b : Bool) : Expr := Expr.value (Value.bool b)
-def Expr.unit : Expr := Expr.value Value.unit
-def Expr.loc (l : Address) : Expr := Expr.value (Value.loc l)
+-- Note: No helper functions needed for literals since they are now direct constructors
+-- Locations cannot be created as expressions - they only exist at runtime
 
--- Extract value from expression if possible
+-- Extract value from expression if it's a literal
 def Expr.toValue? : Expr → Option Value
-  | Expr.value v => some v
+  | Expr.num n => some (Value.num n)
+  | Expr.bool b => some (Value.bool b)
+  | Expr.unit => some Value.unit
+  | _ => none
+
+-- Extract value from ExprOrValue if possible
+def ExprOrValue.toValue? : ExprOrValue → Option Value
+  | ExprOrValue.value v => some v
+  | _ => none
+
+-- Extract expression from ExprOrValue if possible
+def ExprOrValue.toExpr? : ExprOrValue → Option Expr
+  | ExprOrValue.expr e => some e
   | _ => none
 
 -- BEq instances
-mutual
 
 def beqValue : Value → Value → Bool
   | Value.num n1, Value.num n2 => n1 == n2
@@ -94,8 +108,12 @@ def beqValue : Value → Value → Bool
   | Value.loc l1, Value.loc l2 => l1 == l2
   | _, _ => false  -- Closures are compared by reference, not structurally
 
+mutual
+
 def beqExpr : Expr → Expr → Bool
-  | Expr.value v1, Expr.value v2 => beqValue v1 v2
+  | Expr.unit, Expr.unit => true
+  | Expr.num n1, Expr.num n2 => n1 == n2
+  | Expr.bool b1, Expr.bool b2 => b1 == b2
   | Expr.var x1, Expr.var x2 => x1 == x2
   | Expr.op e1 op1 e2, Expr.op e1' op2 e2' => beqExpr e1 e1' && op1 == op2 && beqExpr e2 e2'
   | Expr.ite e1 e2 e3, Expr.ite e1' e2' e3' => beqExpr e1 e1' && beqExpr e2 e2' && beqExpr e3 e3'
@@ -110,7 +128,13 @@ def beqExpr : Expr → Expr → Bool
   | Expr.app e1 e2, Expr.app e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
   | _, _ => false
 
+def beqExprOrValue : ExprOrValue → ExprOrValue → Bool
+  | ExprOrValue.expr e1, ExprOrValue.expr e2 => beqExpr e1 e2
+  | ExprOrValue.value v1, ExprOrValue.value v2 => beqValue v1 v2
+  | _, _ => false
+
 end
+
 
 @[instance]
 instance : BEq Value where
@@ -119,6 +143,10 @@ instance : BEq Value where
 @[instance]
 instance : BEq Expr where
   beq := beqExpr
+
+@[instance]
+instance : BEq ExprOrValue where
+  beq := beqExprOrValue
 
 -- Repr instances
 
@@ -129,7 +157,9 @@ def reprTyp : Typ → Nat → Std.Format
   | Typ.ref t, _ => s!"Typ.ref {reprTyp t 0}"
   | Typ.arrow t1 t2, _ => s!"Typ.arrow {reprTyp t1 0} {reprTyp t2 0}"
 
--- Manual Repr instance for Value (since closures contain functions)
+-- Manual Repr instances (mutual recursion needed due to ExprOrValue)
+mutual
+
 def reprValue : Value → Nat → Std.Format
   | Value.num n, _ => s!"Value.num {repr n}"
   | Value.bool b, _ => s!"Value.bool {repr b}"
@@ -139,7 +169,9 @@ def reprValue : Value → Nat → Std.Format
   | Value.peClosure x _ _, _ => s!"Value.peClosure {repr x} <expr> <env>"
 
 def reprExpr : Expr → Nat → Std.Format
-  | Expr.value v, prec => reprValue v prec
+  | Expr.unit, _ => "Expr.unit"
+  | Expr.num n, _ => s!"Expr.num {repr n}"
+  | Expr.bool b, _ => s!"Expr.bool {repr b}"
   | Expr.var x, _ => s!"Expr.var {repr x}"
   | Expr.op e1 op e2, _ => s!"Expr.op ({reprExpr e1 0}) {repr op} ({reprExpr e2 0})"
   | Expr.ite e1 e2 e3, _ => s!"Expr.ite ({reprExpr e1 0}) ({reprExpr e2 0}) ({reprExpr e3 0})"
@@ -155,6 +187,12 @@ def reprExpr : Expr → Nat → Std.Format
   | Expr.builtIn (builtInExpr.rand e),_ => s!"Expr.builtin.rand ({reprExpr e 0})"
   | Expr.builtIn (builtInExpr.frand e),_ => s!"Expr.builtin.frand ({reprExpr e 0})"
 
+def reprExprOrValue : ExprOrValue → Nat → Std.Format
+  | ExprOrValue.expr e, prec => reprExpr e prec
+  | ExprOrValue.value v, prec => reprValue v prec
+
+end
+
 @[instance]
 instance : Repr Value where
   reprPrec := reprValue
@@ -163,9 +201,20 @@ instance : Repr Value where
 instance : Repr Expr where
   reprPrec := reprExpr
 
--- Helper functions to convert values to expressions
-def Value.toExpr : Value → Expr
-  | v => Expr.value v
+@[instance]
+instance : Repr ExprOrValue where
+  reprPrec := reprExprOrValue
+
+-- Note: We cannot convert arbitrary values to expressions
+-- Only literals (num, bool, unit) can appear in both
+-- Locations and closures are runtime-only
+
+-- Helper functions to convert between types for ExprOrValue
+def Value.toExprOrValue : Value → ExprOrValue
+  | v => ExprOrValue.value v
+
+def Expr.toExprOrValue : Expr → ExprOrValue
+  | e => ExprOrValue.expr e
 
 -- Helper function to convert string to type
 def strToBasicType (str : String) : Except String Typ :=
