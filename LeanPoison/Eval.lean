@@ -162,7 +162,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             | Op.eq => "="
             | Op.and => "&"
             | Op.or => "|"
-          return stepReturn fuel verbose (StepResult.error s!"Type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
+          return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
       -- Rule: op_reduce_right (OTT rule 346-348)
       -- <e2,m,r> -> <expr e2',m',r'>
       -- ------------------------------- :: op_reduce_right
@@ -203,7 +203,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                 | Op.eq => "="
                 | Op.and => "&"
                 | Op.or => "|"
-              return stepReturn fuel verbose (StepResult.error s!"Type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
+              return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
         | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
@@ -250,7 +250,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                   | Op.eq => "="
                   | Op.and => "&"
                   | Op.or => "|"
-                return stepReturn fuel verbose (StepResult.error s!"Type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
+                return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
             | none =>
               -- Left is value, right needs evaluation - reconstruct with literal
               let e1' := match v1 with
@@ -285,7 +285,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           | ExprOrValue.expr e1' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.ite e1' e2 e3)))
           | ExprOrValue.value (Value.bool true) => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr e2))
           | ExprOrValue.value (Value.bool false) => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr e3))
-          | _ => return stepReturn fuel verbose (StepResult.error "type error: condition must be boolean")
+          | _ => return stepReturn fuel verbose (StepResult.error "Runtime type error: condition must be boolean")
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
         | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
@@ -314,7 +314,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             let (l, config'') := freshLoc config'
             let config''' := { config'' with memory := config''.memory.update l n }
             return stepReturn fuel verbose (StepResult.progress config''' (ExprOrValue.value (Value.loc l)))
-          | _ => return stepReturn fuel verbose (StepResult.error "type error: ref expects a number")
+          | _ => return stepReturn fuel verbose (StepResult.error "Runtime type error: ref expects a number")
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
         | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
@@ -348,7 +348,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             match config'.memory.get? l with
             | some n => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.value (Value.num n)))
             | none => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.value (Value.num 0)))
-          | _ => return stepReturn fuel verbose (StepResult.error "type error: deref expects a location")
+          | _ => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location")
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
         | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
@@ -376,7 +376,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           let config''' := { config'' with memory := config''.memory.update l n }
           return stepReturn fuel verbose (StepResult.progress config''' (ExprOrValue.value Value.unit))
         | StepResult.progress _config'' (ExprOrValue.value _) =>
-          return stepReturn fuel verbose (StepResult.error "type error: assignment expects number on right side")
+          return stepReturn fuel verbose (StepResult.error "Runtime type error: assignment expects number on right side")
         | StepResult.progress config'' (ExprOrValue.expr e2') =>
           -- e2 still needs evaluation
           -- Problem: we can't represent "loc l := e2'" in our AST
@@ -394,7 +394,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
         | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
       | StepResult.progress _config' (ExprOrValue.value _) =>
-        return stepReturn fuel verbose (StepResult.error "type error: assignment expects location on left side")
+        return stepReturn fuel verbose (StepResult.error "Runtime type error: assignment expects location on left side")
       | StepResult.progress config' (ExprOrValue.expr e1') =>
         -- e1 still needs evaluation, reduce it first (assign_reduce_left)
         return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.assign e1' e2)))
@@ -417,7 +417,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               | ExprOrValue.value (Value.num n) =>
                 let config'' := { config' with memory := config'.memory.update l n }
                 return stepReturn fuel verbose (StepResult.progress config'' (ExprOrValue.value Value.unit))
-              | _ => return stepReturn fuel verbose (StepResult.error "type error: assignment expects number")
+              | _ => return stepReturn fuel verbose (StepResult.error "Runtime type error: assignment expects number")
             | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
             | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
         | _ => return stepReturn fuel verbose StepResult.stuck
@@ -525,7 +525,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                   | Value.peClosure x body env =>
                     evalFunctionBody (fuel - 1) verbose config'' env x v2 body true
                   | _ =>
-                    return stepReturn fuel verbose (StepResult.error "type error: expected function in application")
+                    return stepReturn fuel verbose (StepResult.error "Runtime type error: expected function in application")
               | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
               | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
             | some v1 =>
@@ -536,7 +536,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               | Value.peClosure x body env =>
                 evalFunctionBody (fuel - 1) verbose config' env x v2 body true
               | _ =>
-                return stepReturn fuel verbose (StepResult.error "type error: expected function in application")
+                return stepReturn fuel verbose (StepResult.error "Runtime type error: expected function in application")
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
         | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
       | some v2 =>
@@ -555,7 +555,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         | some (Value.bool _)
         | some (Value.unit)
         | some (Value.loc _) =>
-          return stepReturn fuel verbose (StepResult.error "type error: expected function in application")
+          return stepReturn fuel verbose (StepResult.error "Runtime type error: expected function in application")
         | none =>
           -- Rule: app_reduce_func (OTT rule 437-441)
           -- <e2,m,r> -> <value v,m',r'>
@@ -575,7 +575,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               | Value.peClosure x body env =>
                 evalFunctionBody (fuel - 1) verbose config' env x v2 body true
               | _ =>
-                return stepReturn fuel verbose (StepResult.error "type error: expected function in application")
+                return stepReturn fuel verbose (StepResult.error "Runtime type error: expected function in application")
           | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
           | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
@@ -615,7 +615,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                   return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.value (Value.num randomNo)))
               else
                 return stepReturn fuel verbose (StepResult.error "Argument to rand must evaluate to non negative integer")
-            | _ => return stepReturn fuel verbose (StepResult.error "type error: rand expects a number")
+            | _ => return stepReturn fuel verbose (StepResult.error "Runtime type error: rand expects a number")
           | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
           | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
@@ -655,7 +655,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                   return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.value (Value.num randomNo)))
               else
                 return stepReturn fuel verbose (StepResult.error "Argument to frand must evaluate to non negative integer")
-            | _ => return stepReturn fuel verbose (StepResult.error "type error: frand expects a number")
+            | _ => return stepReturn fuel verbose (StepResult.error "Runtime type error: frand expects a number")
           | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
           | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 termination_by fuel
@@ -696,8 +696,7 @@ def eval (fuel : Nat) (config : Config) (ev : ExprOrValue) (verbose : Bool) : IO
       match ev with
       | ExprOrValue.value _ => return StepResult.progress config ev
       | ExprOrValue.expr _ => return StepResult.stuck
-    | StepResult.error msg => do
-      if verbose then IO.println s!"Evaluation error: {msg}"
+    | StepResult.error msg =>
       return StepResult.error msg
 termination_by fuel
 

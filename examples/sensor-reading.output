@@ -1,6 +1,6 @@
 Evaluating file: examples/sensor-reading.poison
 
-Typcheck result: Type: QTyp.mk ETyp.int false none
+Type checking passed: Type: QTyp.mk ETyp.int false none
 Result: 52
 Final state:
   Variable environment: <function>
