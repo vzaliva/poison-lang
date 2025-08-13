@@ -1,0 +1,8 @@
+Evaluating file: examples/function-type-mismatch.poison
+
+Error: Type error: cannot apply operation + to boolean and number
+Typcheck result: Type error: Type mismatch in function application: parameter type Typ.int is not compatible with argument type Typ.bool
+Expression is not fully evaluated.
+Remaining: Expr.app (Expr.fn "x" : Typ.int => (Expr.op (Expr.var "x") Op.add (Expr.num 1)) : Typ.int) (Expr.bool true)
+  Variable environment: <function>
+  Memory: []

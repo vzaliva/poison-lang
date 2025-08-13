@@ -1,7 +1,7 @@
 Evaluating file: examples/basic-poison-flow2.poison
 
+Typcheck result: Type: QTyp.mk ETyp.int false none
 Result: 42
-Type: QTyp.mk ETyp.int false none
 Final state:
   Variable environment: <function>
   Memory: []

@@ -23,6 +23,7 @@ def evalProgram (input : String) : IO Int := do
     | Except.ok expr =>
       let (config, resultExpr) <- run defaultFuel expr
       let resultType := typecheckProgram expr
+      IO.println s!"Typcheck result: {resultType}"
       match resultExpr.toValue? with
       | some v =>
         match v with
@@ -32,7 +33,6 @@ def evalProgram (input : String) : IO Int := do
         | Value.loc l => IO.println s!"Result: loc {l}"
         | Value.closure _ _ _ => IO.println s!"Result: <closure>"
         | Value.peClosure _ _ _ => IO.println s!"Result: <pure closure>"
-        IO.println resultType
         IO.println s!"Final state:"
         IO.println s!"  Variable environment: <function>"
         IO.println s!"  Memory: {repr config.memory}"
@@ -41,7 +41,6 @@ def evalProgram (input : String) : IO Int := do
         IO.println "Expression is not fully evaluated."
         IO.println s!"Remaining: {repr resultExpr}"
       -- Print final state
-        IO.println s!"Final state:"
         IO.println s!"  Variable environment: <function>"
         IO.println s!"  Memory: {repr config.memory}"
          return 1

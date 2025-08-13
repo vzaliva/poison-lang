@@ -1,7 +1,7 @@
 Evaluating file: examples/reference-poison2.poison
 
+Typcheck result: Type: QTyp.mk ETyp.unit false none
 Result: unit
-Type: QTyp.mk ETyp.unit false none
 Final state:
   Variable environment: <function>
   Memory: [(0, 42)]

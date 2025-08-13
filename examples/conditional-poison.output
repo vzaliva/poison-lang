@@ -1,7 +1,7 @@
 Evaluating file: examples/conditional-poison.poison
 
+Typcheck result: Type: QTyp.mk ETyp.int false none
 Result: 150
-Type: QTyp.mk ETyp.int false none
 Final state:
   Variable environment: <function>
   Memory: []
