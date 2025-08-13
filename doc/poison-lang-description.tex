@@ -305,6 +305,7 @@ Values can be \textbf{clean} (reliable) or \textbf{poisoned} (unreliable due to
 faults). Any dataflow from a poisoned value is poisoned. 
 
 \begin{lstlisting}[language=poison]
+(* Assume get_sensor is a built-in or external function *)
 let reading : int = get_sensor unit in  (* May be poisoned due to sensor fault *)
 let adjusted : int = reading + 10 in    (* Becomes poisoned if reading is poisoned *)
 adjusted
@@ -479,8 +480,7 @@ The semantics are primarily small-step (single reduction steps), but function ap
 \langle v ; e, \mu, \rho \rangle &\rightarrow \langle e, \mu, \rho \rangle \text{ (sequence with any value type)}
 \end{align*}
 
-Poison tracking is purely static—runtime execution is standard. Note that
-closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_closure}(x,
+Note that closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_closure}(x,
 pe, \rho)$ are runtime values that only appear during execution; they are not
 part of the source language and do not have typing rules.
 
@@ -595,6 +595,7 @@ Key aspects of function application:
 
 Example of predicate-based de-poisoning in functions:
 \begin{lstlisting}[language=poison]
+(* Assume get_sensor is a built-in that returns poisoned sensor readings with predicates *)
 let sensor1 : int = get_sensor unit in  (* Type: int :> poisoned {guard "temp" (y, y >= 0, _)} *)
 let sensor2 : int = get_sensor unit in  (* Type: int :> poisoned {guard "pressure" (z, z >= 0, _)} *)
 
