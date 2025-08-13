@@ -1,7 +1,10 @@
 Evaluating file: examples/function-type-mismatch.poison
 
+Error: Type error: cannot apply operation + to boolean and number
 Expression is not fully evaluated.
-Remaining: Expr.op (Value.bool true) Op.add (Value.num 1)
+Remaining: Expr.app (Expr.fn "x" : Typ.int => (Expr.op (Expr.var "x") Op.add (Expr.num 1))
+: Typ.int) (Expr.bool true)
+
 Final state:
   Variable environment: <function>
   Memory: []

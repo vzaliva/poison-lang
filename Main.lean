@@ -85,15 +85,24 @@ partial def replLoop (config : Config) (tmpPath : String) : IO Int := do
     IO.FS.writeFile tmpPath trimmed
     try
       let expr ← parsePoisonFile tmpPath
-      let (newConfig, resultExpr) <- eval defaultFuel config (ExprOrValue.expr expr) false
-      match resultExpr.toValue? with
-      | some v =>
-          IO.println s!"Result: {v}"
-          IO.println s!"Memory: {newConfig.memory}"
-      | none =>
-          IO.println s!"Not fully evaluated: {repr resultExpr}"
-      IO.FS.removeFile tmpPath
-      replLoop newConfig tmpPath
+      match <- eval defaultFuel config (ExprOrValue.expr expr) false with
+      | StepResult.progress newConfig resultExpr =>
+        match resultExpr.toValue? with
+        | some v =>
+            IO.println s!"Result: {v}"
+            IO.println s!"Memory: {newConfig.memory}"
+        | none =>
+            IO.println s!"Not fully evaluated: {repr resultExpr}"
+        IO.FS.removeFile tmpPath
+        replLoop newConfig tmpPath
+      | StepResult.stuck =>
+        IO.println "Evaluation stuck"
+        IO.FS.removeFile tmpPath
+        replLoop config tmpPath
+      | StepResult.error msg =>
+        IO.println s!"Error: {msg}"
+        IO.FS.removeFile tmpPath
+        replLoop config tmpPath
     catch e =>
       IO.eprintln s!"Error: {e}"
       replLoop config tmpPath

@@ -135,7 +135,34 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       | some v1, some v2 =>
         match evalOp op v1 v2 with
         | some v => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value v))
-        | none => return stepReturn fuel verbose (StepResult.error "type error in operation")
+        | none =>
+          let v1Str := match v1 with
+            | Value.num _ => "number"
+            | Value.bool _ => "boolean"
+            | Value.unit => "unit"
+            | Value.loc _ => "location"
+            | Value.closure _ _ _ => "function"
+            | Value.peClosure _ _ _ => "pure function"
+          let v2Str := match v2 with
+            | Value.num _ => "number"
+            | Value.bool _ => "boolean"
+            | Value.unit => "unit"
+            | Value.loc _ => "location"
+            | Value.closure _ _ _ => "function"
+            | Value.peClosure _ _ _ => "pure function"
+          let opStr := match op with
+            | Op.add => "+"
+            | Op.sub => "-"
+            | Op.mul => "*"
+            | Op.div => "/"
+            | Op.gte => ">="
+            | Op.lte => "<="
+            | Op.gt => ">"
+            | Op.lt => "<"
+            | Op.eq => "="
+            | Op.and => "&"
+            | Op.or => "|"
+          return stepReturn fuel verbose (StepResult.error s!"Type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
       -- Rule: op_reduce_right (OTT rule 346-348)
       -- <e2,m,r> -> <expr e2',m',r'>
       -- ------------------------------- :: op_reduce_right
@@ -149,7 +176,34 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             -- Right operand reduced to value, retry the operation
             match evalOp op v1 v2 with
             | some v => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.value v))
-            | none => return stepReturn fuel verbose (StepResult.error "type error in operation")
+            | none =>
+              let v1Str := match v1 with
+                | Value.num _ => "number"
+                | Value.bool _ => "boolean"
+                | Value.unit => "unit"
+                | Value.loc _ => "location"
+                | Value.closure _ _ _ => "function"
+                | Value.peClosure _ _ _ => "pure function"
+              let v2Str := match v2 with
+                | Value.num _ => "number"
+                | Value.bool _ => "boolean"
+                | Value.unit => "unit"
+                | Value.loc _ => "location"
+                | Value.closure _ _ _ => "function"
+                | Value.peClosure _ _ _ => "pure function"
+              let opStr := match op with
+                | Op.add => "+"
+                | Op.sub => "-"
+                | Op.mul => "*"
+                | Op.div => "/"
+                | Op.gte => ">="
+                | Op.lte => "<="
+                | Op.gt => ">"
+                | Op.lt => "<"
+                | Op.eq => "="
+                | Op.and => "&"
+                | Op.or => "|"
+              return stepReturn fuel verbose (StepResult.error s!"Type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
         | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
@@ -169,7 +223,34 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               -- Both are values now
               match evalOp op v1 v2 with
               | some v => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.value v))
-              | none => return stepReturn fuel verbose (StepResult.error "type error in operation")
+              | none =>
+                let v1Str := match v1 with
+                  | Value.num _ => "number"
+                  | Value.bool _ => "boolean"
+                  | Value.unit => "unit"
+                  | Value.loc _ => "location"
+                  | Value.closure _ _ _ => "function"
+                  | Value.peClosure _ _ _ => "pure function"
+                let v2Str := match v2 with
+                  | Value.num _ => "number"
+                  | Value.bool _ => "boolean"
+                  | Value.unit => "unit"
+                  | Value.loc _ => "location"
+                  | Value.closure _ _ _ => "function"
+                  | Value.peClosure _ _ _ => "pure function"
+                let opStr := match op with
+                  | Op.add => "+"
+                  | Op.sub => "-"
+                  | Op.mul => "*"
+                  | Op.div => "/"
+                  | Op.gte => ">="
+                  | Op.lte => "<="
+                  | Op.gt => ">"
+                  | Op.lt => "<"
+                  | Op.eq => "="
+                  | Op.and => "&"
+                  | Op.or => "|"
+                return stepReturn fuel verbose (StepResult.error s!"Type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
             | none =>
               -- Left is value, right needs evaluation - reconstruct with literal
               let e1' := match v1 with
@@ -300,13 +381,16 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           -- e2 still needs evaluation
           -- Problem: we can't represent "loc l := e2'" in our AST
           -- Workaround: Use eval to fully evaluate e2 before assignment
-          let (finalConfig, result) <- eval (fuel - 2) config'' (ExprOrValue.expr e2') verbose
-          match result with
-          | ExprOrValue.value (Value.num n) =>
+          match <- eval (fuel - 2) config'' (ExprOrValue.expr e2') verbose with
+          | StepResult.progress finalConfig (ExprOrValue.value (Value.num n)) =>
             let assignConfig := { finalConfig with memory := finalConfig.memory.update l n }
             return stepReturn fuel verbose (StepResult.progress assignConfig (ExprOrValue.value Value.unit))
-          | _ =>
+          | StepResult.progress _ _ =>
             return stepReturn fuel verbose (StepResult.error "assignment right side did not evaluate to number")
+          | StepResult.stuck =>
+            return stepReturn fuel verbose (StepResult.error "assignment right side evaluation stuck")
+          | StepResult.error msg =>
+            return stepReturn fuel verbose (StepResult.error msg)
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
         | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
       | StepResult.progress _config' (ExprOrValue.value _) =>
@@ -437,16 +521,9 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                   -- Both are now values, apply
                   match v1 with
                   | Value.closure x body env =>
-                    -- Use closure's captured environment, not current environment
-                    let closureConfig := { config'' with varEnv := VarEnv.update env x v2 }
-                    let (evalConfig, ev') <- eval (fuel-1) closureConfig (ExprOrValue.expr body) verbose
-                    -- Preserve original environment, only take memory changes
-                    let finalConfig := { config'' with memory := evalConfig.memory, nextLoc := evalConfig.nextLoc }
-                    return stepReturn fuel verbose (StepResult.progress finalConfig ev')
+                    evalFunctionBody (fuel - 1) verbose config'' env x v2 body false
                   | Value.peClosure x body env =>
-                    let tempConfig := { config'' with varEnv := VarEnv.update env x v2 }
-                    let (_finalConfig, ev') <- eval (fuel-1) tempConfig (ExprOrValue.expr body) verbose
-                    return stepReturn fuel verbose (StepResult.progress config'' ev')
+                    evalFunctionBody (fuel - 1) verbose config'' env x v2 body true
                   | _ =>
                     return stepReturn fuel verbose (StepResult.error "type error: expected function in application")
               | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
@@ -455,16 +532,9 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               -- Function is already a value, apply
               match v1 with
               | Value.closure x body env =>
-                -- Use only the closure's environment plus the argument
-                let closureConfig := { config' with varEnv := VarEnv.update env x v2 }
-                let (config''', ev') <- eval (fuel-1) closureConfig (ExprOrValue.expr body) verbose
-                -- Preserve original environment, only take memory changes
-                let finalConfig := { config' with memory := config'''.memory, nextLoc := config'''.nextLoc }
-                return stepReturn fuel verbose (StepResult.progress finalConfig ev')
+                evalFunctionBody (fuel - 1) verbose config' env x v2 body false
               | Value.peClosure x body env =>
-                let tempConfig := { config' with varEnv := VarEnv.update env x v2 }
-                let (_finalConfig, ev') <- eval (fuel-1) tempConfig (ExprOrValue.expr body) verbose
-                return stepReturn fuel verbose (StepResult.progress config' ev')
+                evalFunctionBody (fuel - 1) verbose config' env x v2 body true
               | _ =>
                 return stepReturn fuel verbose (StepResult.error "type error: expected function in application")
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
@@ -475,19 +545,11 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         | some (Value.closure x body env) =>
           -- Rule: app_closure_value (OTT rule 444-448)
           -- Both function and argument are values, apply
-          -- Use only the closure's environment plus the argument
-          let closureConfig := { config with varEnv := VarEnv.update env x v2 }
-          let (config'', ev') <- eval (fuel-1) closureConfig (ExprOrValue.expr body) verbose
-          -- Preserve original environment, only take memory changes
-          let finalConfig := { config with memory := config''.memory, nextLoc := config''.nextLoc }
-          return stepReturn fuel verbose (StepResult.progress finalConfig ev')
+          evalFunctionBody (fuel - 1) verbose config env x v2 body false
         | some (Value.peClosure x body env) =>
           -- Rule: app_pure_closure_value (OTT rule 455-460)
           -- Pure function application - no side effects
-          let tempConfig := { config with varEnv := VarEnv.update env x v2 }
-          let (_finalConfig, ev') <- eval (fuel-1) tempConfig (ExprOrValue.expr body) verbose
-          -- Return original config to preserve no side effects for pure functions
-          return stepReturn fuel verbose (StepResult.progress config ev')
+          evalFunctionBody (fuel - 1) verbose config env x v2 body true
         -- Non-function values in function position
         | some (Value.num _)
         | some (Value.bool _)
@@ -509,16 +571,9 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               -- Function is now a value, apply it
               match v1 with
               | Value.closure x body env =>
-                let config'' := { config' with varEnv := VarEnv.update env x v2 }
-                let (config''', ev') <- eval (fuel-1) config'' (ExprOrValue.expr body) verbose
-                -- Preserve original environment, only take memory changes
-                let finalConfig := { config' with memory := config'''.memory, nextLoc := config'''.nextLoc }
-                return stepReturn fuel verbose (StepResult.progress finalConfig ev')
+                evalFunctionBody (fuel - 1) verbose config' env x v2 body false
               | Value.peClosure x body env =>
-                let tempConfig := { config' with varEnv := VarEnv.update env x v2 }
-                let (_finalConfig, ev') <- eval (fuel-1) tempConfig (ExprOrValue.expr body) verbose
-                -- Return original config' to preserve no side effects for pure functions
-                return stepReturn fuel verbose (StepResult.progress config' ev')
+                evalFunctionBody (fuel - 1) verbose config' env x v2 body true
               | _ =>
                 return stepReturn fuel verbose (StepResult.error "type error: expected function in application")
           | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
@@ -604,24 +659,56 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
           | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 termination_by fuel
+
+-- Helper for evaluating function application bodies
+def evalFunctionBody (fuel : Nat) (verbose : Bool) (currentConfig : Config) (closureEnv : VarEnv)
+                     (paramName : String) (argValue : Value) (body : Expr)
+                     (isPure : Bool) : IO StepResult := do
+  match fuel with
+  | 0 => return StepResult.error "out of fuel in function evaluation"
+  | fuel' + 1 =>
+    let bodyConfig := { currentConfig with varEnv := VarEnv.update closureEnv paramName argValue }
+    match <- eval fuel' bodyConfig (ExprOrValue.expr body) verbose with
+    | StepResult.progress evalConfig ev' =>
+      if isPure then
+        -- Pure functions don't affect memory or environment
+        return StepResult.progress currentConfig ev'
+      else
+        -- Regular functions preserve original environment but keep memory changes
+        let finalConfig := { currentConfig with memory := evalConfig.memory, nextLoc := evalConfig.nextLoc }
+        return StepResult.progress finalConfig ev'
+    | StepResult.stuck =>
+      return StepResult.error "function body evaluation stuck"
+    | StepResult.error msg =>
+      return StepResult.error msg
+termination_by fuel
+
 -- Multi-step evaluation
-def eval (fuel : Nat) (config : Config) (ev : ExprOrValue) (verbose : Bool) : IO (Config × ExprOrValue) := do
+def eval (fuel : Nat) (config : Config) (ev : ExprOrValue) (verbose : Bool) : IO StepResult := do
   if fuel < 2 then
-    return (config, ev)
+    return StepResult.error "out of fuel"
   else
     match <- step (fuel - 1) verbose config ev with
     | StepResult.progress config' ev' =>
       eval (fuel - 2) config' ev' verbose
     | StepResult.stuck =>
-      return (config, ev)
+      -- Check if we have a value
+      match ev with
+      | ExprOrValue.value _ => return StepResult.progress config ev
+      | ExprOrValue.expr _ => return StepResult.stuck
     | StepResult.error msg => do
       if verbose then IO.println s!"Evaluation error: {msg}"
-      return (config, ev)
+      return StepResult.error msg
 termination_by fuel
 
 end -- mutual (step, eval)
 
 -- Helper to run an expression with empty environments
-def run (fuel : Nat) (expr : Expr) (verbose : Bool := false) : IO (Config × ExprOrValue) :=
+def run (fuel : Nat) (expr : Expr) (verbose : Bool := false) : IO (Config × ExprOrValue) := do
   let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0⟩
-  eval fuel initialConfig (ExprOrValue.expr expr) verbose
+  match <- eval fuel initialConfig (ExprOrValue.expr expr) verbose with
+  | StepResult.progress config ev => return (config, ev)
+  | StepResult.stuck => return (initialConfig, ExprOrValue.expr expr)
+  | StepResult.error msg => do
+    IO.println s!"Error: {msg}"
+    return (initialConfig, ExprOrValue.expr expr)
