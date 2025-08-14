@@ -314,7 +314,7 @@ def typecheckUnit (ctx : TypeContext) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨ETyp.unit, false, none  ⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
 
-/--  Rule: string (Ott rule: TODO)
+/--  Rule: string (Ott rule: string)
 -- pc ; G ; S ; L |- string : string :> clean { no_pred } -| G ; L
 -/
 def typecheckString (ctx : TypeContext) (_s : String) : TypecheckM TypeResult := do
@@ -447,7 +447,10 @@ def typecheckFrand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRe
         return {result with qualType := qt'}
 termination_by fuel
 
-/- TypeCheckprintString
+/-
+      pc ; G ; S ; L |- e : string :> p { P } -| G' ; L'
+    ----------------------------------------------------------------------  :: printString_typing
+      pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
  -/
 def typecheckprintString (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
@@ -462,7 +465,11 @@ def typecheckprintString (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM 
                 return {result with qualType := qt' }
 termination_by fuel
 
-/- TypeCheckprintInt
+/-
+              pc ; G ; S ; L |- e : int :> p { P } -| G' ; L'
+    ----------------------------------------------------------------------  :: printInt_typing
+      pc ; G ; S ; L |- printInt e : unit :> join pc p { no_pred } -| G' ; L'
+
  -/
 def typecheckprintInt (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with

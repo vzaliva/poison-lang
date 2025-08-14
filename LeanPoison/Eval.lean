@@ -115,8 +115,14 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
 
     | Expr.unit => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value Value.unit))
 
-    -- TODO Rule lit_string
+    --  Rule : lit_string
+    --  ----------------------   :: lit_string
+    -- <s, m, r> -> <value s, m, r>
+
     | Expr.str s => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.str s)))
+
+
+
     -- Rule: var (OTT rule 410-411)
     -- r(x) = v
     -- --------------------------- :: var
@@ -692,11 +698,20 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
       | builtInExpr.printInt e =>
-        match e.toValue? with
+            match e.toValue? with
+         -- Rule : printInt_value
+         --                       <e,m,r> -> <value n, m',r'>
+         --       ---------------------------------------------------------------
+         --             <printInt e,m,r> -> <value unit, m',r'>
+
         | some (Value.num n) =>
            IO.println n
            return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr (Expr.unit)))
         | _ =>
+            -- Rule : printInt_arg_reduce
+            --                     <e,m,r> -> <expr e',m',r'>
+            --    ---------------------------------------------------------------
+            --           <printInt e,m,r> -> <expr (printInt e'),m',r'>
 
 
           match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
@@ -713,10 +728,19 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
 
       | builtInExpr.printString e =>
           match e.toValue? with
+                  -- Rule :  printString_value
+                  --              <e,m,r> -> <value s, m',r'>
+                  --   ---------------------------------------------------------------
+                  --  <printString e,m,r> -> <value unit, m',r'>
+
           | some (Value.str s) =>
             IO.println s
             return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr (Expr.unit)))
           | _ =>
+               -- Rule :  printString_arg_reduce
+               --              <e,m,r> -> <expr e',m',r'>
+               --    ---------------------------------------------------------------
+               --       <printString e,m,r> -> <expr (printString e'),m',r'>
 
 
             match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
