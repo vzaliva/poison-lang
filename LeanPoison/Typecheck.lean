@@ -36,6 +36,7 @@ abbrev TypecheckM := Except String
 def freshTLoc (ctx : TypeContext): (Address × TypeContext) :=
   (ctx.nextLoc, { ctx with nextLoc := ctx.nextLoc + 1 })
 
+
 -- Allocate a fresh location and return it along with updated typing context
 def freshTLocRes (result : TypeResult): (Address × TypeResult) :=
   (result.nextLoc', { result with nextLoc' := result.nextLoc' + 1 })
@@ -76,7 +77,7 @@ def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   | Expr.op e1 opname e2 => (fun pe1 pe2 => PExpr.op pe1 opname pe2) <$> e1.toPExpr <*> e2.toPExpr
   | Expr.ite e1 e2 e3 => PExpr.ite <$> e1.toPExpr <*> e2.toPExpr <*> e3.toPExpr
   | Expr.deref e => PExpr.deref <$> e.toPExpr
-  | Expr.let x e1 e2 => (fun pe1 pe2 => PExpr.let x pe1 pe2) <$> e1.toPExpr <*> e2.toPExpr
+  | Expr.vlet x e1 e2 => (fun pe1 pe2 => PExpr.vlet x pe1 pe2) <$> e1.toPExpr <*> e2.toPExpr
   | Expr.app e1 e2 => PExpr.app <$> e1.toPExpr <*> e2.toPExpr
   | _ => throw "Cannot convert expression to PExpr"
 
@@ -101,7 +102,7 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   | PExpr.op e1 o e2 => Expr.op (e1.toExpr) o (e2.toExpr)
   | PExpr.ite e1 e2 e3 => Expr.ite (e1.toExpr) (e2.toExpr) (e3.toExpr)
   | PExpr.deref e => Expr.deref (e.toExpr)
-  | PExpr.let x e1 e2 => Expr.let x (e1.toExpr) (e2.toExpr)
+  | PExpr.vlet x e1 e2 => Expr.vlet x (e1.toExpr) (e2.toExpr)
   | PExpr.app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
 
@@ -171,7 +172,7 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
     | PExpr.ite e1 e2 e3, PExpr.ite e1' e2' e3' =>
       equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel && equalWithEnvs e3 env1 e3' env2 substitution fuel
     | PExpr.deref e1, PExpr.deref e2 => equalWithEnvs e1 env1 e2 env2 substitution fuel
-    | PExpr.let x1 e1 e2, PExpr.let x2 e1' e2' =>
+    | PExpr.vlet x1 e1 e2, PExpr.vlet x2 e1' e2' =>
       x1 == x2 &&
       equalWithEnvs e1 env1 e1' env2 substitution fuel &&
       -- For the body, disable substitution if the bound variable shadows the substitution variable
@@ -380,7 +381,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.deref e => typecheckDeref ctx e fuel
     | Expr.seq e1 e2 => typecheckSeq ctx e1 e2 fuel
     | Expr.while e1 e2 => typecheckWhile ctx e1 e2 fuel
-    | Expr.let x e1 e2 => typecheckLet ctx x e1 e2 fuel
+    | Expr.vlet x e1 e2 => typecheckVlet ctx x e1 e2 fuel
     | Expr.fn x paramType body returnType => typecheckFn ctx x paramType body returnType
     | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType
     | Expr.app e1 e2 => typecheckApp ctx e1 e2 fuel
@@ -672,7 +673,7 @@ termination_by fuel
 -- ----------------------------------------------------------------------
 -- pc ; G ; S ; L |- let x : T = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G'' ; L''
 -/
-def typecheckLet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
