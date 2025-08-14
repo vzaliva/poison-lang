@@ -382,7 +382,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.assign e1 e2 => typecheckAssign ctx e1 e2 fuel
     | Expr.deref e => typecheckDeref ctx e fuel
     | Expr.seq e1 e2 => typecheckSeq ctx e1 e2 fuel
-    | Expr.while e1 e2 => typecheckWhile ctx e1 e2 fuel
+    | Expr.kwhile e1 e2 => typecheckWhile ctx e1 e2 fuel
     | Expr.vlet x e1 e2 => typecheckVlet ctx x e1 e2 fuel
     | Expr.fn x paramType body returnType => typecheckFn ctx x paramType body returnType
     | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType

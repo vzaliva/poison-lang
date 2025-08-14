@@ -257,7 +257,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
         match elems.toList with
         | [condition,body] =>
-              return Expr.while (<- xmlToExpr condition) (<- xmlToExpr body)
+              return Expr.kwhile (<- xmlToExpr condition) (<- xmlToExpr body)
         | _ => .error s!"Invalid while_expr structure: {contents}"
 
   | Element.Element "fn_expr" _ contents => do
