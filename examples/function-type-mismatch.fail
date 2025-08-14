@@ -2,8 +2,3 @@ Evaluating file: examples/function-type-mismatch.poison
 
 Type checking error:  Type mismatch in function application: parameter type Typ.int is not compatible with argument type Typ.bool
 Runtime error: Runtime type error: cannot apply operation + to boolean and number
-Expression is not fully evaluated.
-Remaining: Expr.op (Value.bool true) Op.add (Value.num 1)
-Final state:
-  Variable environment: <function>
-  Memory: []

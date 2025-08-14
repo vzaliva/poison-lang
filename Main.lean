@@ -21,6 +21,7 @@ def printValue (v : Value) : IO Unit := do
   | Value.num n => IO.println s!"Result: {n}"
   | Value.bool b => IO.println s!"Result: {b}"
   | Value.unit => IO.println s!"Result: unit"
+  | Value.str s => IO.println s!"Result: {s}"
   | Value.loc l => IO.println s!"Result: loc {l}"
   | Value.closure _ _ _ => IO.println s!"Result: <closure>"
   | Value.peClosure _ _ _ => IO.println s!"Result: <pure closure>"

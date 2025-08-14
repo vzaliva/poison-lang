@@ -39,6 +39,7 @@ inductive Expr : Type where
   | unit : Expr                                 -- unit
   | num : Int → Expr                            -- n
   | bool : Bool → Expr                          -- b
+  | str : String -> Expr
   | var : Name → Expr                           -- x
   | op : Expr → Op → Expr → Expr                -- e1 op e2
   | ite : Expr → Expr → Expr → Expr             -- if e1 then e2 else e3
@@ -53,12 +54,6 @@ inductive Expr : Type where
   | app : Expr → Expr → Expr                    -- e1 e2
   | builtIn : builtInExpr -> Expr
 
--- builtInExpr (Type to represent built in expressions in poison lang)
-inductive builtInExpr : Type where
-  | rand  : Expr -> builtInExpr
-  | frand : Expr -> builtInExpr
-
-end
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
 inductive Value : Type where
@@ -82,41 +77,14 @@ inductive builtInExpr : Type where
   | frand : Expr -> builtInExpr
   | printString  : Expr -> builtInExpr
   | printInt  : Expr -> builtInExpr
-
--- Expressions (corresponds to e in Ott)
-inductive Expr : Type where
-  | value : Value → Expr                          -- Values embedded in expressions
-  | var : Name → Expr                           -- x
-  | op : Expr → Op → Expr → Expr                  -- e1 op e2
-  | ite : Expr → Expr → Expr → Expr               -- if e1 then e2 else e3
-  | newRef : Expr → Expr                          -- ref e
-  | assign : Expr → Expr → Expr                   -- e1 := e2
-  | deref : Expr → Expr                           -- ! e
-  | seq : Expr → Expr → Expr                      -- e1 ; e2
-  | while : Expr → Expr → Expr                    -- while e1 do e2
-  | let : Name → Expr → Expr → Expr               -- let x = e1 in e2 (no type annotation)
-  | fn : Name → Typ → Expr → Typ → Expr           -- fn x : ST1 => e : ST2
-  | pfn : Name → Typ → Expr → Typ → Expr          -- pfn x : ST1 => pe : ST2
-  | app : Expr → Expr → Expr                       -- e1 e2
-  | builtIn : builtInExpr -> Expr
 end
-
 -- Variable environment: variable name → value (function type) We do not use a
 -- HashMap here, as we do for Memory, because of the Lean restriction of
 -- inductive type definitions (insude pe_closure)
 abbrev VarEnv := Name → Option Value
 
-<<<<<<< HEAD
 -- Note: No helper functions needed for literals since they are now direct constructors
 -- Locations cannot be created as expressions - they only exist at runtime
-=======
--- Helper pattern synonyms for common value expressions
-def Expr.num (n : Int) : Expr := Expr.value (Value.num n)
-def Expr.str (str : String) : Expr := Expr.value (Value.str str)
-def Expr.bool (b : Bool) : Expr := Expr.value (Value.bool b)
-def Expr.unit : Expr := Expr.value Value.unit
-def Expr.loc (l : Address) : Expr := Expr.value (Value.loc l)
->>>>>>> f92d4f6 (Added printString,printInt and modified testing)
 
 -- Extract value from expression if it's a literal
 def Expr.toValue? : Expr → Option Value
@@ -209,6 +177,7 @@ def reprValue : Value → Nat → Std.Format
 
 def reprExpr : Expr → Nat → Std.Format
   | Expr.unit, _ => "Expr.unit"
+  | Expr.str s , _ => "Expr.string " ++ s
   | Expr.num n, _ => s!"Expr.num {repr n}"
   | Expr.bool b, _ => s!"Expr.bool {repr b}"
   | Expr.var x, _ => s!"Expr.var {repr x}"

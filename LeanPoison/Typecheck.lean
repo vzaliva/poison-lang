@@ -313,7 +313,12 @@ def typecheckUnit (ctx : TypeContext) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨ETyp.unit, false, none  ⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
 
-
+/--  Rule: string (Ott rule: TODO)
+-- pc ; G ; S ; L |- string : string :> clean { no_pred } -| G ; L
+-/
+def typecheckString (ctx : TypeContext) (_s : String) : TypecheckM TypeResult := do
+  let qt : QTyp := ⟨ETyp.string, false, none  ⟩  -- clean, no predicate
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
 
 -- The following option is needed in increasing the maximum number of heartbeats
 -- to avoid the termination checker failure on the following mutual block.
@@ -374,6 +379,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.num n => typecheckInt ctx n
     | Expr.bool b => typecheckBool ctx b
     | Expr.unit => typecheckUnit ctx
+    | Expr.str s => typecheckString ctx s
     | Expr.var x => typecheckVarNoPred ctx x
     | Expr.op e1 op e2 => typecheckOp ctx e1 e2 fuel op
     | Expr.newRef e => typecheckNewRef ctx e fuel

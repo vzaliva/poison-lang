@@ -100,22 +100,28 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
     -- Rule: lit_num (OTT rule 265-266)
     -- ---------------------- :: lit_num
     -- <n, m, r> -> <value n, m, r>
+
     | Expr.num n => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.num n)))
 
     -- Rule: lit_bool (OTT rule 268-269)
     -- ---------------------- :: lit_bool
     -- <b, m, r> -> <value b, m, r>
+
     | Expr.bool b => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.bool b)))
 
     -- Rule: lit_unit (OTT rule 271-272)
     -- ---------------------- :: lit_unit
     -- <unit, m, r> -> <value unit, m, r>
+
     | Expr.unit => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value Value.unit))
 
+    -- TODO Rule lit_string
+    | Expr.str s => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.str s)))
     -- Rule: var (OTT rule 410-411)
     -- r(x) = v
     -- --------------------------- :: var
     -- < x, m, r > -> < value v, m, r >
+
     | Expr.var x =>
             match config.varEnv x with
       | some v => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value v))
@@ -129,6 +135,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
     -- n = v1 op v2  (or b = v1 op v2 for comparisons)
     -- ---------------------- :: op_*
     -- <e1 op e2, m, r> -> <value n, m'', r''>
+
     | Expr.op e1 op e2 =>
       -- Check if both operands are values
       match e1.toValue?, e2.toValue? with
@@ -143,6 +150,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             | Value.loc _ => "location"
             | Value.closure _ _ _ => "function"
             | Value.peClosure _ _ _ => "pure function"
+            | Value.str _ => "string"
           let v2Str := match v2 with
             | Value.num _ => "number"
             | Value.bool _ => "boolean"
@@ -150,6 +158,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             | Value.loc _ => "location"
             | Value.closure _ _ _ => "function"
             | Value.peClosure _ _ _ => "pure function"
+            | Value.str _ => "string"
           let opStr := match op with
             | Op.add => "+"
             | Op.sub => "-"
@@ -167,6 +176,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       -- <e2,m,r> -> <expr e2',m',r'>
       -- ------------------------------- :: op_reduce_right
       -- <e1 op e2,m,r> -> <expr (e1 op e2'),m',r'>
+
       | some v1, none =>
         match (<- step (fuel - 1) verbose config (ExprOrValue.expr e2)) with
         | StepResult.progress config' ev2' =>
@@ -184,6 +194,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                 | Value.loc _ => "location"
                 | Value.closure _ _ _ => "function"
                 | Value.peClosure _ _ _ => "pure function"
+                | Value.str _ => "string"
               let v2Str := match v2 with
                 | Value.num _ => "number"
                 | Value.bool _ => "boolean"
@@ -191,6 +202,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                 | Value.loc _ => "location"
                 | Value.closure _ _ _ => "function"
                 | Value.peClosure _ _ _ => "pure function"
+                | Value.str _ => "string"
               let opStr := match op with
                 | Op.add => "+"
                 | Op.sub => "-"
@@ -211,6 +223,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       -- <e1,m,r> -> <expr e1',m',r'>
       -- ------------------------------- :: op_reduce_left
       -- <e1 op e2,m,r> -> <expr (e1' op e2),m',r'>
+
       | none, _ =>
         match <- step (fuel - 1) verbose config (ExprOrValue.expr e1) with
         | StepResult.progress config' ev1' =>
@@ -231,6 +244,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                   | Value.loc _ => "location"
                   | Value.closure _ _ _ => "function"
                   | Value.peClosure _ _ _ => "pure function"
+                  | Value.str _ => "string"
                 let v2Str := match v2 with
                   | Value.num _ => "number"
                   | Value.bool _ => "boolean"
@@ -238,6 +252,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                   | Value.loc _ => "location"
                   | Value.closure _ _ _ => "function"
                   | Value.peClosure _ _ _ => "pure function"
+                  | Value.str _ => "string"
                 let opStr := match op with
                   | Op.add => "+"
                   | Op.sub => "-"
@@ -270,6 +285,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
     -- <e,m,r> -> <value false, m',r'>
     -- ---------------------------------------------- :: if_false
     -- < if e then e1 else e2, m, r > -> < expr e2, m', r' >
+
     | Expr.ite e1 e2 e3 =>
       match e1 with
       | Expr.bool true => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr e2))
@@ -294,6 +310,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
     -- fresh l
     -- ------------------------------ :: ref
     -- <ref e,m,r> -> <value l, m' [ l |-> n ], r'>
+
     | Expr.newRef e =>
       match e with
       | Expr.num n =>
@@ -305,6 +322,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       -- <e,m,r> -> <expr e',m',r'>
       -- ------------------------------ :: ref_reduce_arg
       -- <ref e,m,r> -> <expr (ref e'),m',r'>
+
       | _ =>
         match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
         | StepResult.progress config' ev' =>
@@ -328,6 +346,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         -- m'(l) = n
         -- ------------------------------ :: deref
         -- <!e,m,r> -> <value n,m',r'>
+
         match config.memory.get? l with
         | some n => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.num n)))
         | none =>
@@ -340,6 +359,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         -- <e,m,r> -> <expr e',m',r'>
         -- ------------------------------ :: deref_reduce
         -- <!e,m,r> -> <expr (!e'),m',r'>
+
         match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
         | StepResult.progress config' ev' =>
           match ev' with
@@ -357,6 +377,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
     -- <e2,m',r'> -> <value n, m'',r''>
     -- -------------------------------------- :: assign
     -- < e1 := e2, m, r > -> <value unit, m'' [ l |-> n ], r'' >
+
     | Expr.assign e1 e2 =>
       -- The OTT rules specify we should evaluate e1 first, then e2
       -- We need a two-phase approach:
@@ -430,12 +451,14 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       -- <e1,m,r> -> <value v, m',r'>
       -- -------------------------------------- :: seq_value
       -- < e1 ; e2, m, r > -> < expr e2, m', r' >
+
       | some _v => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr e2))
       | none =>
         -- Rule: seq_reduce_first (OTT rule 384-386)
         -- <e1,m,r> -> <expr e1',m',r'>
         -- -------------------------------------- :: seq_reduce_first
         -- < e1 ; e2, m, r > -> < expr (e1' ; e2), m', r' >
+
         match <- step (fuel - 1) verbose config (ExprOrValue.expr e1) with
         | StepResult.progress config' ev1' =>
           match ev1' with
@@ -458,6 +481,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       -- <e1,m,r> -> <value v, m',r'>
       -- -------------------------------------------------------- :: let_value
       -- < let x = e1 in e2, m, r > -> < expr e2, m', r'[x |-> v] >
+
       | some v =>
         let config' := { config with varEnv := config.varEnv.update x v }
         return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr e2))
@@ -466,6 +490,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         -- <e1,m,r> -> <expr e1',m',r'>
         -- -------------------------------------------------------- :: let_reduce_arg
         -- < let x = e1 in e2, m, r > -> < expr (let x = e1' in e2), m', r' >
+
         match <- step (fuel - 1) verbose config (ExprOrValue.expr e1) with
         | StepResult.progress config' ev1' =>
           match ev1' with
@@ -500,6 +525,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         -- <e2,m,r> -> <expr e2',m',r'>
         -- --------------------------------------------------------------- :: app_reduce_arg
         -- < e1 e2, m, r > -> < expr (e1 e2'), m', r' >
+
         match <- step (fuel - 1) verbose config (ExprOrValue.expr e2) with
         | StepResult.progress config' ev2' =>
           match ev2' with
@@ -554,6 +580,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         | some (Value.num _)
         | some (Value.bool _)
         | some (Value.unit)
+        | some (Value.str _)
         | some (Value.loc _) =>
           return stepReturn fuel verbose (StepResult.error "Runtime type error: expected function in application")
         | none =>
@@ -562,6 +589,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           -- <e1,m',r'> -> <expr e1',m'',r''>
           -- --------------------------------------------------------------- :: app_reduce_func
           -- < e1 e2, m, r > -> < expr (e1' e2), m'', r'' >
+
           match <- step (fuel - 1) verbose config (ExprOrValue.expr e1) with
           | StepResult.progress config' ev1' =>
             match ev1' with
@@ -589,6 +617,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         -- n' = random n
         -- --------------------------------------------------------------- :: rand_value
         -- <rand e,m,r> -> <value n', m',r'>
+
         | some (Value.num n) =>
           if n >= 0 then
             do
@@ -603,6 +632,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           -- <e,m,r> -> <expr e',m',r'>
           -- --------------------------------------------------------------- :: rand_arg_reduce
           -- <rand e,m,r> -> <expr (rand e'),m',r'>
+
           match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
           | StepResult.progress config' ev' =>
             match ev' with
@@ -627,6 +657,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         -- --------------------------------------------------------------- :: frand_value
         -- <frand e,m,r> -> <value n', m',r'>
         -- The syntactic definition is the same as rand but the implementation is faulty
+
         | some (Value.num n) =>
           if n >= 0 then
             do
@@ -642,6 +673,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           -- <e,m,r> -> <expr e',m',r'>
           -- --------------------------------------------------------------- :: frand_arg_reduce
           -- <frand e,m,r> -> <expr (frand e'),m',r'>
+
           match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
           | StepResult.progress config' ev' =>
             match ev' with
@@ -658,88 +690,45 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             | _ => return stepReturn fuel verbose (StepResult.error "Runtime type error: frand expects a number")
           | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
           | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
-  | Expr.app e1 (Expr.value v) =>
-    match <- step (fuel - 1) verbose config e1 with
-    | some (config', e1') => return stepReturn fuel verbose (some (config', Expr.app e1' (Expr.value v)))
-    | none => return stepReturn fuel verbose none
 
-  | Expr.app e1 e2 =>
-    -- Rule: app1 (evaluate arguments)
-    -- ⟨e2,m,r⟩ → ⟨e2',m',r'⟩
-    -- ---------------------------------------------------------------
-    -- ⟨ e1 e2, m, r ⟩ → ⟨ e1 e2', m', r' ⟩
-    match <- step (fuel - 1) verbose config e2 with
-    | some (config', e2') => return stepReturn fuel verbose (some (config', Expr.app e1 e2'))
-    | none => return stepReturn fuel verbose none
-   ----------------------------------------------------------------------------
-       -- Rule:rand arg
-        --       < e, µ, ρ > → < e′, µ′, ρ′ >
-        --  -------------------------------------------
-        -- < rand e, µ, ρ > → < rand e′, µ′, ρ′ >
-
-  | Expr.builtIn (builtInExpr.rand (Expr.value (Value.num n))) =>
-     if n >= 0 then
-       do
-        let r <- (IO.rand 0 n.toNat).toIO   -- r : Nat
-        let randomNo := Int.ofNat r  -- convert Nat to Int
-        return stepReturn fuel verbose (some (config , Expr.value (Value.num randomNo)))
-     else
-      IO.println "Argument to rand must evaluate to non negative integer"
-      return stepReturn fuel verbose none
+      | builtInExpr.printInt e =>
+        match e.toValue? with
+        | some (Value.num n) =>
+           IO.println n
+           return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr (Expr.unit)))
+        | _ =>
 
 
-  | Expr.builtIn (builtInExpr.rand e) =>
-    match <- step (fuel - 1) verbose config e with
-    | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.rand e')))
-    | none => return stepReturn fuel verbose none
-
-   ---------------------------------------------------------------------------
-     -- Rule:frand arg```
-      --      < e, µ, ρ > → < e′, µ′, ρ′ >
-      --   -------------------------------------------
-      --     < frand e, µ, ρ > → < frand e′, µ′, ρ′ >
-
-  | Expr.builtIn (builtInExpr.frand (Expr.value (Value.num n))) =>
-     if n >= 0 then
-      do
-        let maxRange : Nat := 4 * (n.toNat)
-        let r <- (IO.rand 0 maxRange).toIO   --   0 <= r <= 4n
-        let randomNo : Int := (Int.ofNat r) - (2 * n)  --  -2n <= randomNo <= 2n
-        return stepReturn fuel verbose (some (config , Expr.value (Value.num randomNo)))
-      else
-        IO.println "Argument to frand must evaluate to non negative integer"
-        return stepReturn fuel verbose none
+          match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
+          | StepResult.progress config' ev' =>
+            match ev' with
+            | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.builtIn (builtInExpr.printInt e'))))
+            | ExprOrValue.value (Value.num n) =>
+                IO.println n
+                return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr (Expr.unit)))
+            | _ => return stepReturn fuel verbose (StepResult.error "printInt expects argument to evaluate to an integer.")
+          | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
+          | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
 
-  | Expr.builtIn (builtInExpr.frand e) =>
-    match <- step (fuel - 1) verbose config e with
-    | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.frand e')))
-    | none => return stepReturn fuel verbose none
-
-   /- Evaluation for built in Functions printString and printInt .
-     Valid Arguments to printString and printInt can be string or integer
-     (or expressions evaluating to a string or integer) respectively.
-     printString : string -> unit
-     printInt : int -> unit
-   -/
-  | Expr.builtIn (builtInExpr.printString (Expr.value (Value.str s)) ) =>
-      IO.println s
-      return stepReturn fuel verbose (some (config , Expr.unit ))
+      | builtInExpr.printString e =>
+          match e.toValue? with
+          | some (Value.str s) =>
+            IO.println s
+            return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr (Expr.unit)))
+          | _ =>
 
 
-  | Expr.builtIn (builtInExpr.printString e ) =>
-    match <- step (fuel - 1) verbose config e with
-      | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.printString e')))
-      | none => return stepReturn fuel verbose none
-
-  | Expr.builtIn (builtInExpr.printInt (Expr.value (Value.num n)) ) =>
-      IO.println n
-      return stepReturn fuel verbose (some (config , Expr.unit ))
-
-  | Expr.builtIn (builtInExpr.printInt e ) =>
-     match <- step (fuel - 1) verbose config e with
-      | some (config',e') => return stepReturn fuel verbose (some (config',Expr.builtIn (builtInExpr.printInt e')))
-      | none => return stepReturn fuel verbose none
+            match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
+            | StepResult.progress config' ev' =>
+              match ev' with
+              | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.builtIn (builtInExpr.printString e'))))
+              | ExprOrValue.value (Value.str s) =>
+                  IO.println s
+                  return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr (Expr.unit)))
+              | _ => return stepReturn fuel verbose (StepResult.error "printString expects argument to evaluate to a string.")
+            | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
+            | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 ----------------------------------------------------------------------------------------
 termination_by fuel
 
