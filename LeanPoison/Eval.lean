@@ -475,7 +475,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr unfolded))
 
     -- Rule: let (let binding)
-    | Expr.let x e1 e2 =>
+    | Expr.vlet x e1 e2 =>
       match e1.toValue? with
       -- Rule: let_value (OTT rule 419-421)
       -- <e1,m,r> -> <value v, m',r'>
@@ -494,7 +494,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         match <- step (fuel - 1) verbose config (ExprOrValue.expr e1) with
         | StepResult.progress config' ev1' =>
           match ev1' with
-          | ExprOrValue.expr e1' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.let x e1' e2)))
+          | ExprOrValue.expr e1' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.vlet x e1' e2)))
           | ExprOrValue.value v =>
             let config'' := { config' with varEnv := config'.varEnv.update x v }
 

@@ -48,7 +48,7 @@ inductive Expr : Type where
   | deref : Expr → Expr                         -- ! e
   | seq : Expr → Expr → Expr                    -- e1 ; e2
   | while : Expr → Expr → Expr                  -- while e1 do e2
-  | let : Name → Expr → Expr → Expr             -- let x = e1 in e2
+  | vlet : Name → Expr → Expr → Expr             -- let x = e1 in e2
   | fn : Name → Typ → Expr → Typ → Expr         -- fn x : ST1 => e : ST2
   | pfn : Name → Typ → Expr → Typ → Expr        -- pfn x : ST1 => pe : ST2
   | app : Expr → Expr → Expr                    -- e1 e2
@@ -127,7 +127,7 @@ def beqExpr : Expr → Expr → Bool
   | Expr.deref e1, Expr.deref e2 => beqExpr e1 e2
   | Expr.seq e1 e2, Expr.seq e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
   | Expr.while e1 e2, Expr.while e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
-  | Expr.let x1 e1 e2, Expr.let x2 e1' e2' => x1 == x2 && beqExpr e1 e1' && beqExpr e2 e2'
+  | Expr.vlet x1 e1 e2, Expr.vlet x2 e1' e2' => x1 == x2 && beqExpr e1 e1' && beqExpr e2 e2'
   | Expr.fn x1 t1 e1 t1', Expr.fn x2 t2 e2 t2' => x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2'
   | Expr.pfn x1 t1 e1 t1', Expr.pfn x2 t2 e2 t2' => x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2'
   | Expr.app e1 e2, Expr.app e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
@@ -188,7 +188,7 @@ def reprExpr : Expr → Nat → Std.Format
   | Expr.deref e, _ => s!"Expr.deref ({reprExpr e 0})"
   | Expr.seq e1 e2, _ => s!"Expr.seq ({reprExpr e1 0}) ({reprExpr e2 0})"
   | Expr.while e1 e2, _ => s!"Expr.while ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.let x e1 e2, _ => s!"Expr.let {repr x} ({reprExpr e1 0}) ({reprExpr e2 0})"
+  | Expr.vlet x e1 e2, _ => s!"Expr.vlet {repr x} ({reprExpr e1 0}) ({reprExpr e2 0})"
   | Expr.fn x t1 e t2, _ => s!"Expr.fn {repr x} : {repr t1} => ({reprExpr e 0}) : {repr t2}"
   | Expr.pfn x t1 e t2, _ => s!"Expr.pfn {repr x} : {repr t1} => ({reprExpr e 0}) : {repr t2}"
   | Expr.app e1 e2, _ => s!"Expr.app ({reprExpr e1 0}) ({reprExpr e2 0})"

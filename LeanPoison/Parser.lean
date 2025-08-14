@@ -214,7 +214,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
     | [ Element.Element "identifier" _ #[Content.Character name],
         v,
         b ] =>
-          return Expr.let name (← xmlToExpr v) (← xmlToExpr b)
+          return Expr.vlet name (← xmlToExpr v) (← xmlToExpr b)
     | _ => .error s!"Invalid let_expr structure: {contents}"
 
   | Element.Element "assign_expr" _ contents => do
