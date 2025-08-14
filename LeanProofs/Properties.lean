@@ -23,9 +23,7 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
     | unit
     | num _
     | bool _ =>
-      simp [Expr.toPExpr] at h1
-      injection h1 with h1'
-      simp [typecheckExpr, typecheckUnit] at h2
+      simp [typecheckExpr] at h2
       cases h2
       exact ⟨rfl, rfl, rfl⟩
     | var _ =>
@@ -42,4 +40,4 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
       sorry
     | _  =>
       /- These cases are not possible to convert to PExpr -/
-      sorry
+      simp [Expr.toPExpr] at h1
