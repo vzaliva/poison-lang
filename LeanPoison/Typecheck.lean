@@ -382,6 +382,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.num n => typecheckInt ctx n
     | Expr.bool b => typecheckBool ctx b
     | Expr.unit => typecheckUnit ctx
+    | Expr.str s => typecheckString ctx s
     | Expr.var x => typecheckVar ctx x
     | Expr.op e1 op e2 => typecheckOp ctx e1 e2 fuel op
     | Expr.newRef e => typecheckNewRef ctx e fuel
