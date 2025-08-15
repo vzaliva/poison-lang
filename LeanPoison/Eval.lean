@@ -433,8 +433,8 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
     -- Rule: while (OTT rule 405-406)
     -- --------------------------------------------------------------------------- :: while
     -- < while e1 do e2, m, r> -> < expr (if e1 then ( e2 ; while e1 do e2 ) else unit), m, r >
-    | Expr.while e1 e2 =>
-      let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.while e1 e2)) Expr.unit
+    | Expr.kwhile e1 e2 =>
+      let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
       return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr unfolded))
 
     -- Rule: let (let binding)

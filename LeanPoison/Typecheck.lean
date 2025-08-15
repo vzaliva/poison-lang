@@ -262,12 +262,14 @@ def typecheckBool (ctx : TypeContext) (_b : Bool) : TypecheckM TypeResult := do
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
 
 
-/-- Rule: var_no_pred (Ott rule: var_no_pred)
--- S(x) = T :> p { no_pred }
--- ------------------
--- pc ; G ; S ; L |- x : T :> join pc p { no_pred } -| G ; L
--/
-def typecheckVarNoPred (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
+/-- Rules: var_guard_true, var_guard_false, var_guard_unknown, var_no_pred (Ott rules)
+-- Variable typing with predicate handling:
+-- - var_guard_true: S(x) = T :> p { guard k pred_closure pcl }, L(k) = true
+-- - var_guard_false: S(x) = T :> p { guard k pred_closure pcl }, L(k) = false
+-- - var_guard_unknown: S(x) = T :> p { guard k pred_closure pcl }, k not in L
+-- - var_no_pred: S(x) = T :> p { no_pred }
+--/
+def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
   match lookupVarEnv ctx.varEnv x with
   | some qt =>
     let ⟨etyp, poison, pred⟩ := qt
@@ -380,14 +382,13 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.num n => typecheckInt ctx n
     | Expr.bool b => typecheckBool ctx b
     | Expr.unit => typecheckUnit ctx
-    | Expr.str s => typecheckString ctx s
-    | Expr.var x => typecheckVarNoPred ctx x
+    | Expr.var x => typecheckVar ctx x
     | Expr.op e1 op e2 => typecheckOp ctx e1 e2 fuel op
     | Expr.newRef e => typecheckNewRef ctx e fuel
     | Expr.assign e1 e2 => typecheckAssign ctx e1 e2 fuel
     | Expr.deref e => typecheckDeref ctx e fuel
     | Expr.seq e1 e2 => typecheckSeq ctx e1 e2 fuel
-    | Expr.while e1 e2 => typecheckWhile ctx e1 e2 fuel
+    | Expr.kwhile e1 e2 => typecheckWhile ctx e1 e2 fuel
     | Expr.vlet x e1 e2 => typecheckVlet ctx x e1 e2 fuel
     | Expr.fn x paramType body returnType => typecheckFn ctx x paramType body returnType
     | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType
