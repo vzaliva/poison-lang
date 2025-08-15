@@ -54,6 +54,14 @@ inductive Expr : Type where
   | app : Expr → Expr → Expr                    -- e1 e2
   | builtIn : builtInExpr -> Expr
 
+-- builtInExpr (Type to represent built in expressions in poison lang)
+inductive builtInExpr : Type where
+  | rand  : Expr -> builtInExpr
+  | frand : Expr -> builtInExpr
+  | printString  : Expr -> builtInExpr
+  | printInt  : Expr -> builtInExpr
+end
+
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
 inductive Value : Type where
@@ -71,13 +79,6 @@ inductive ExprOrValue : Type where
   | expr : Expr → ExprOrValue     -- expr e
   | value : Value → ExprOrValue   -- value v
 
--- builtInExpr (Type to represent built in expressions in poison lang)
-inductive builtInExpr : Type where
-  | rand  : Expr -> builtInExpr
-  | frand : Expr -> builtInExpr
-  | printString  : Expr -> builtInExpr
-  | printInt  : Expr -> builtInExpr
-end
 -- Variable environment: variable name → value (function type) We do not use a
 -- HashMap here, as we do for Memory, because of the Lean restriction of
 -- inductive type definitions (insude pe_closure)
