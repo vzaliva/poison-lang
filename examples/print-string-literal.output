@@ -1,11 +1,8 @@
-Evaluating file: examples/print-int.poison
+Evaluating file: examples/print-string-literal.poison
 
 Type checking passed: Type: QTyp.mk ETyp.unit false none
-12
--5
-100
-20
+"Hello World!"
 Result: unit
 Final state:
   Variable environment: <function>
-  Memory: [(0, 100)]
+  Memory: []

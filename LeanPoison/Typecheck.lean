@@ -459,6 +459,7 @@ def typecheckPrintString (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM 
     | 0        => throw "Out of fuel"
     | fuel + 1 =>
             do
+
               let result ← typecheckExpr ctx e fuel
               let ⟨etyp, poison, _  ⟩ := result.qualType
               if etyp != ETyp.string then throw ("Argument Expression to printString must have type string")

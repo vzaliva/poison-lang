@@ -91,6 +91,7 @@ def Expr.toValue? : Expr → Option Value
   | Expr.num n => some (Value.num n)
   | Expr.bool b => some (Value.bool b)
   | Expr.unit => some Value.unit
+  | Expr.str s => some (Value.str s)
   | _ => none
 
 -- Extract value from ExprOrValue if possible
@@ -119,6 +120,7 @@ def beqExpr : Expr → Expr → Bool
   | Expr.unit, Expr.unit => true
   | Expr.num n1, Expr.num n2 => n1 == n2
   | Expr.bool b1, Expr.bool b2 => b1 == b2
+  | Expr.str s1 , Expr.str s2 => s1 == s2
   | Expr.var x1, Expr.var x2 => x1 == x2
   | Expr.op e1 op1 e2, Expr.op e1' op2 e2' => beqExpr e1 e1' && op1 == op2 && beqExpr e2 e2'
   | Expr.ite e1 e2 e3, Expr.ite e1' e2' e3' => beqExpr e1 e1' && beqExpr e2 e2' && beqExpr e3 e3'
@@ -177,7 +179,7 @@ def reprValue : Value → Nat → Std.Format
 
 def reprExpr : Expr → Nat → Std.Format
   | Expr.unit, _ => "Expr.unit"
-  | Expr.str s , _ => "Expr.string " ++ s
+  | Expr.str s , _ => s!"Expr.string {s} "
   | Expr.num n, _ => s!"Expr.num {repr n}"
   | Expr.bool b, _ => s!"Expr.bool {repr b}"
   | Expr.var x, _ => s!"Expr.var {repr x}"

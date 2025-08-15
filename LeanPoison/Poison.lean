@@ -133,6 +133,7 @@ def beqETyp : ETyp → ETyp → Bool
   | ETyp.int, ETyp.int => true
   | ETyp.bool, ETyp.bool => true
   | ETyp.unit, ETyp.unit => true
+  | ETyp.string , ETyp.string => true
   | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETyp t1 t2 && l1 == l2
   | ETyp.arrow st1 st2 p1 tcl1, ETyp.arrow st1' st2' p2 tcl2 =>
     st1 == st1' && st2 == st2' && p1 == p2 && beqTClosure tcl1 tcl2

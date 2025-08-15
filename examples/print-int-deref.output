@@ -1,0 +1,8 @@
+Evaluating file: examples/print-int-deref.poison
+
+Type checking passed: Type: QTyp.mk ETyp.unit false none
+100
+Result: unit
+Final state:
+  Variable environment: <function>
+  Memory: [(0, 100)]
