@@ -26,8 +26,53 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
       simp [typecheckExpr] at h2
       cases h2
       exact ⟨rfl, rfl, rfl⟩
-    | var _ =>
-      sorry
+    | var name =>
+      simp [typecheckExpr, typecheckVar] at h2
+      cases h0: lookupVarEnv ctx.varEnv name with
+      | none =>
+        simp [h0] at h2
+      | some qt =>
+        simp [h0] at h2
+        cases h1: qt with
+        | mk etyp poison pred =>
+          simp [h0, h1] at h2
+          cases h3: pred with
+          | none =>
+            simp [h0, h1, h3, pure, Except.pure] at h2
+            cases result
+            cases ctx
+            simp [h2]
+            injection h2
+            trivial
+          | some tp =>
+            simp [h0, h1, h3] at h2
+            cases h4: tp with
+            | mk tag etyp =>
+              simp [h0,h1,h3,h4] at h2
+              cases h5: ctx.tagEnv[tag]? with
+              | none =>
+                simp [h0, h1, h3, h4, h5, pure, Except.pure] at h2
+                cases result
+                cases ctx
+                simp [h2]
+                injection h2
+                trivial
+              | some b =>
+                cases h6: b with
+                | true =>
+                  simp [h0, h1, h3, h4, h5, h6, pure, Except.pure] at h2
+                  cases result
+                  cases ctx
+                  simp [h2]
+                  injection h2
+                  trivial
+                | false =>
+                  simp [h0, h1, h3, h4, h5, h6, pure, Except.pure] at h2
+                  cases result
+                  cases ctx
+                  simp [h2]
+                  injection h2
+                  trivial
     | op _ _ _ =>
       sorry
     | ite _ _ _ =>
