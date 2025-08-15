@@ -13,6 +13,7 @@ inductive Typ : Type where
   | unit : Typ
   | ref : Typ → Typ
   | arrow : Typ → Typ → Typ
+  | string : Typ
   deriving Repr, BEq
 
 -- Operations (corresponds to operations, op in Ott)
@@ -28,7 +29,7 @@ inductive Op : Type where
   | eq  : Op
   | and : Op
   | or  : Op
-  -- TODO: add and, or
+
   deriving Repr, BEq
 
 
@@ -38,6 +39,7 @@ inductive Expr : Type where
   | unit : Expr                                 -- unit
   | num : Int → Expr                            -- n
   | bool : Bool → Expr                          -- b
+  | str : String -> Expr
   | var : Name → Expr                           -- x
   | op : Expr → Op → Expr → Expr                -- e1 op e2
   | ite : Expr → Expr → Expr → Expr             -- if e1 then e2 else e3
@@ -52,18 +54,13 @@ inductive Expr : Type where
   | app : Expr → Expr → Expr                    -- e1 e2
   | builtIn : builtInExpr -> Expr
 
--- builtInExpr (Type to represent built in expressions in poison lang)
-inductive builtInExpr : Type where
-  | rand  : Expr -> builtInExpr
-  | frand : Expr -> builtInExpr
-
-end
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
 inductive Value : Type where
   | num : Int → Value           -- n
   | bool : Bool → Value         -- b
   | unit : Value                -- unit
+  | str : String -> Value       -- str
   | loc : Address → Value           -- l (locations are values in the operational semantics)
   | closure : Name → Expr → (Name → Option Value) → Value      -- closure(x,e,r)
   | peClosure : Name → Expr → (Name → Option Value) → Value    -- pe_closure(x,pe,r)
@@ -74,6 +71,13 @@ inductive ExprOrValue : Type where
   | expr : Expr → ExprOrValue     -- expr e
   | value : Value → ExprOrValue   -- value v
 
+-- builtInExpr (Type to represent built in expressions in poison lang)
+inductive builtInExpr : Type where
+  | rand  : Expr -> builtInExpr
+  | frand : Expr -> builtInExpr
+  | printString  : Expr -> builtInExpr
+  | printInt  : Expr -> builtInExpr
+end
 -- Variable environment: variable name → value (function type) We do not use a
 -- HashMap here, as we do for Memory, because of the Lean restriction of
 -- inductive type definitions (insude pe_closure)
@@ -87,6 +91,7 @@ def Expr.toValue? : Expr → Option Value
   | Expr.num n => some (Value.num n)
   | Expr.bool b => some (Value.bool b)
   | Expr.unit => some Value.unit
+  | Expr.str s => some (Value.str s)
   | _ => none
 
 -- Extract value from ExprOrValue if possible
@@ -106,6 +111,7 @@ def beqValue : Value → Value → Bool
   | Value.bool b1, Value.bool b2 => b1 == b2
   | Value.unit, Value.unit => true
   | Value.loc l1, Value.loc l2 => l1 == l2
+  | Value.str s1 , Value.str s2 => s1 == s2
   | _, _ => false  -- Closures are compared by reference, not structurally
 
 mutual
@@ -114,6 +120,7 @@ def beqExpr : Expr → Expr → Bool
   | Expr.unit, Expr.unit => true
   | Expr.num n1, Expr.num n2 => n1 == n2
   | Expr.bool b1, Expr.bool b2 => b1 == b2
+  | Expr.str s1 , Expr.str s2 => s1 == s2
   | Expr.var x1, Expr.var x2 => x1 == x2
   | Expr.op e1 op1 e2, Expr.op e1' op2 e2' => beqExpr e1 e1' && op1 == op2 && beqExpr e2 e2'
   | Expr.ite e1 e2 e3, Expr.ite e1' e2' e3' => beqExpr e1 e1' && beqExpr e2 e2' && beqExpr e3 e3'
@@ -156,6 +163,7 @@ def reprTyp : Typ → Nat → Std.Format
   | Typ.unit, _ => "Typ.unit"
   | Typ.ref t, _ => s!"Typ.ref {reprTyp t 0}"
   | Typ.arrow t1 t2, _ => s!"Typ.arrow {reprTyp t1 0} {reprTyp t2 0}"
+  | Typ.string , _ => s!"Typ.string"
 
 -- Manual Repr instances (mutual recursion needed due to ExprOrValue)
 mutual
@@ -164,12 +172,14 @@ def reprValue : Value → Nat → Std.Format
   | Value.num n, _ => s!"Value.num {repr n}"
   | Value.bool b, _ => s!"Value.bool {repr b}"
   | Value.unit, _ => "Value.unit"
+  | Value.str s , _ => s!"Value.str " ++ s
   | Value.loc l, _ => s!"Value.loc {repr l}"
   | Value.closure x _ _, _ => s!"Value.closure {repr x} <expr> <env>"
   | Value.peClosure x _ _, _ => s!"Value.peClosure {repr x} <expr> <env>"
 
 def reprExpr : Expr → Nat → Std.Format
   | Expr.unit, _ => "Expr.unit"
+  | Expr.str s , _ => s!"Expr.string {s} "
   | Expr.num n, _ => s!"Expr.num {repr n}"
   | Expr.bool b, _ => s!"Expr.bool {repr b}"
   | Expr.var x, _ => s!"Expr.var {repr x}"
@@ -186,6 +196,8 @@ def reprExpr : Expr → Nat → Std.Format
   | Expr.app e1 e2, _ => s!"Expr.app ({reprExpr e1 0}) ({reprExpr e2 0})"
   | Expr.builtIn (builtInExpr.rand e),_ => s!"Expr.builtin.rand ({reprExpr e 0})"
   | Expr.builtIn (builtInExpr.frand e),_ => s!"Expr.builtin.frand ({reprExpr e 0})"
+  | Expr.builtIn (builtInExpr.printString e),_ => s!"Expr.builtin.printString ({reprExpr e 0})"
+  | Expr.builtIn (builtInExpr.printInt e),_  => s!"Expr.builtin.printString ({reprExpr e 0})"
 
 def reprExprOrValue : ExprOrValue → Nat → Std.Format
   | ExprOrValue.expr e, prec => reprExpr e prec
@@ -222,7 +234,8 @@ def strToBasicType (str : String) : Except String Typ :=
  | "int" => .ok Typ.int
  | "bool" => .ok Typ.bool
  | "unit" => .ok Typ.unit
- | _ => .error "Invalid argument"
+ | "string" => .ok Typ.string
+ | _ => .error ("Invalid type annotation : " ++ str)
 
 @[instance]
 instance : ToString Value where
@@ -231,6 +244,7 @@ instance : ToString Value where
     | Value.num n => s!"{n}"
     | Value.bool b => s!"{b}"
     | Value.unit => "()"
+    | Value.str s => s!"{s}"
     | Value.loc l => s!"@{l}"
     | Value.closure x _ _ => s!"(closure {x} <expr> <env>)"
     | Value.peClosure x _ _ => s!"(peClosure {x} <expr> <env>)"
@@ -251,3 +265,15 @@ instance : ToString Op where
     | .eq  => s!"=="
     | .or  => s!"|"
     | .and => s!"&"
+
+
+ -- Helper function to print the type of Value
+def ValueToTypeString (val : Value) : String :=
+  match val with
+    | Value.num _  => "number"
+    | Value.bool _ => "boolean"
+    | Value.unit   => "unit"
+    | Value.loc _  => "location"
+    | Value.closure _ _ _   => "function"
+    | Value.peClosure _ _ _ => "pure function"
+    | Value.str _  => "string"

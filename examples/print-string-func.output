@@ -1,0 +1,8 @@
+Evaluating file: examples/print-string-func.poison
+
+Type checking passed: Type: QTyp.mk ETyp.unit false none
+" Testing Print String expr "
+Result: unit
+Final state:
+  Variable environment: <function>
+  Memory: []

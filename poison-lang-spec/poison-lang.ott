@@ -55,6 +55,7 @@ styp, ST :: 'ST_' ::=      {{ com surface types (for annotations) }}
   | int                    ::   :: int
   | bool                   ::   :: bool
   | unit                   ::   :: unit
+  | string                 ::   :: string 
   | ref ST                 ::   :: ref
   | ST1 -> ST2             ::   :: arrow
 
@@ -64,6 +65,7 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | unit                    ::   :: unit
   | n                       ::   :: num
   | b                       ::   :: bool
+  | s                       ::   :: str
   | x                       ::   :: var
   | e1 op e2                ::   :: op
   | if e1 then e2 else e3   ::   :: if
@@ -79,11 +81,14 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
   | rand e                  ::   :: rand_app   {{ com random integer generation }}
   | frand e                 ::   :: frand_app  {{ com random float generation }}
+  | printInt e              ::   :: printInt_app
+  | printString e           ::   :: printString_app 
 
 pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | n                       ::   :: num
   | b                       ::   :: bool
   | x                       ::   :: Var
+  | s                       ::   :: string 
   | pe1 op pe2              ::   :: op
   | if pe1 then pe2 else pe3 ::   :: if
   | ! pe                    ::   :: deref
@@ -93,13 +98,16 @@ pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | pe1 pe2                 ::   :: app
   | rand pe                 ::   :: rand_app   {{ com random integer generation }}
   | frand pe                ::   :: frand_app  {{ com random float generation }}
+  | printInt pe             ::   :: printInt_app 
+  | printString pe          ::   :: printString_app 
 
 v :: 'V_' ::=              {{ com values }}
   | n                       ::   :: num
   | b                       ::   :: bool
+  | s                       ::   :: str
   | unit                    ::   :: unit    
   | l                       ::   :: location
-  | closure ( x , e , r )  ::   :: closure   {{ com closure value }}
+  | closure ( x , e , r )   ::   :: closure   {{ com closure value }}
   | pe_closure ( x , pe , r )  ::   :: pe_closure   {{ com pure closure value }}
 
 expr_or_value, ev :: 'EV_' ::=  {{ com expression or value }}
@@ -114,6 +122,7 @@ typ, T :: 'T_' ::=         {{ com enriched types }}
   | int                     ::   :: int
   | bool                    ::   :: bool
   | unit                    ::   :: unit
+  | string                  ::   :: string 
   | ref T @ l               ::   :: ref {{ tex \mathsf{ref}\,[[T]]\,@\,[[l]] }}
   | ST1 -> ST2 # p typing_closure tcl ::   :: arrow {{ tex [[ST1]] \rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{typing\_closure}\, [[tcl]] }}
 
@@ -270,6 +279,9 @@ defn
 
 ----------------------   :: lit_unit
 <unit, m, r> -> <value unit, m, r>
+
+----------------------   :: lit_string
+<s, m, r> -> <value s, m, r>
 
 <e1,m,r> -> <value n1, m' ,r'>
 <e2,m',r'> -> <value n2, m'' ,r''>
@@ -483,6 +495,27 @@ n' = random n
 --------------------------------------------------------------- :: frand_value
 <frand e,m,r> -> <value n', m',r'>
 
+% Evaluate argument for printInt
+<e,m,r> -> <expr e',m',r'>
+--------------------------------------------------------------- :: printInt_arg_reduce
+<printInt e,m,r> -> <expr (printInt e'),m',r'>
+
+% Compute printInt 
+<e,m,r> -> <value n, m',r'>
+--------------------------------------------------------------- :: printInt_value
+<printInt e,m,r> -> <value unit, m',r'>
+
+% Evaluate argument for printString 
+<e,m,r> -> <expr e',m',r'>
+--------------------------------------------------------------- :: printString_arg_reduce
+<printString e,m,r> -> <expr (printString e'),m',r'>
+
+% Compute printString 
+<e,m,r> -> <value s, m',r'>
+--------------------------------------------------------------- :: printString_value
+<printString e,m,r> -> <value unit, m',r'>
+
+
 %% --- Typing rules below ---
 
 defn
@@ -493,6 +526,9 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
 
 ------------------  :: bool
   pc ; G ; S ; L |- b : bool :> clean { no_pred } -| G ; L
+
+------------------  :: string 
+  pc ; G ; S ; L |- s : string :> clean { no_pred } -| G ; L
 
 % Variable typing - with guarded predicate that evaluates to true triggering de-poisoning.
   S(x) = T :> p { guard k pred_closure pcl }
@@ -685,6 +721,16 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
   pcl = range x pe S
 ----------------------------------------------------------------------  :: frand_typing
   pc ; G ; S ; L |- frand pe : int :> poisoned { guard k pred_closure pcl } -| G ; L
+
+% Typing for printInt - takes integer argument, returns unit 
+  pc ; G ; S ; L |- e : int :> p { P } -| G' ; L'
+----------------------------------------------------------------------  :: printInt_typing
+  pc ; G ; S ; L |- printInt e : unit :> join pc p { no_pred } -| G' ; L'
+
+% Typing for printString - takes string argument, returns unit 
+  pc ; G ; S ; L |- e : string :> p { P } -| G' ; L'
+----------------------------------------------------------------------  :: printString_typing
+  pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
 
 % Typing for Let Bindings
 

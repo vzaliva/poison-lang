@@ -37,7 +37,9 @@ module.exports = grammar({
       $.identifier ,
       $.group_expr,
       $.rand_expr,
-      $.frand_expr
+      $.frand_expr ,
+      $.printStr_expr,
+      $.printInt_expr
     ),
     
     // 1. Sequencing: e1 ; e2
@@ -48,7 +50,7 @@ module.exports = grammar({
     )),
 
     // 2. let x = e1 in e2
-    let_expr: $ => prec.left(2,seq(
+    let_expr: $ => prec.left(4,seq(
       "let",
       field("name", $.identifier),
       "=",
@@ -59,7 +61,7 @@ module.exports = grammar({
     base_type: $ => choice(
                   "int",
                   "bool",
-                  "unit"
+                  "unit" , "string"
                       ),
                       
     type_expr: $ => choice(
@@ -81,7 +83,7 @@ module.exports = grammar({
       )),
     paren_type: $ => seq("(", $.type_expr, ")"), 
 
-    fn_expr: $ =>  prec.left(2,seq(
+    fn_expr: $ =>  prec.left(4,seq(
         "fn",
         field("param", $.identifier),
         ":",
@@ -114,13 +116,13 @@ module.exports = grammar({
     )),
 
     // 5. ref e
-    ref_expr: $ => prec.left(5,seq(
+    ref_expr: $ => prec.left(7,seq(
       "ref",
       field("value", $.expr)
     )),
 
     // 6. !e (deref)
-    deref_expr: $ => prec.left(5,seq(
+    deref_expr: $ => prec.left(7,seq(
       "!",
       field("target", $.expr)
     )),
@@ -132,7 +134,7 @@ module.exports = grammar({
     )),
 
     // 8. binary arithmetic: e1 + e2, e1 > e2, etc.
-    binary_expr: $ => prec.left(4, seq(
+    binary_expr: $ => prec.left(5, seq(
       field("left", $.expr),
       field("op", choice("+", "-", "*","/", ">", ">=", "<","<=", "==","&","|")),
       field("right", $.expr)
@@ -141,6 +143,7 @@ module.exports = grammar({
     // 9. atoms: number, true, false, unit
     atom: $ => prec.left(10,choice(
       $.number,
+      $.string ,
       "true",
       "false",
       "unit"
@@ -151,7 +154,8 @@ module.exports = grammar({
       "while",
       field("cond", $.expr),
       "do",
-      field("body", $.expr)
+      field("body", $.expr),
+      "done" 
     )),
 
     // ASSIGNMENT: id := e2
@@ -162,18 +166,29 @@ module.exports = grammar({
     )),
 
     //rand expr (rand e)
-    rand_expr: $ => prec.left(2,seq(
+    rand_expr: $ => prec.left(3,seq(
       "rand",
-      choice($.atom ,$.group_expr))
+      choice($.atom ,$.group_expr,$.identifier,$.deref_expr))
     ),
     
     //frand_expr  
-    frand_expr: $ => prec.left(2,seq(
+    frand_expr: $ => prec.left(3,seq(
       "frand",
-      choice($.atom ,$.group_expr))
+      choice($.atom ,$.group_expr,$.identifier,$.deref_expr))
     ),
+    printStr_expr: $ => prec.left(3,seq(
+      "printString",
+      choice($.atom ,$.group_expr,$.identifier))
+    ),
+    printInt_expr: $ => prec.left(3,seq(
+      "printInt",
+      choice($.atom ,$.group_expr,$.identifier,$.deref_expr))
+    ),
+    
 
     number: $ => /-?\d+/,
+    string: $ => /"(?:[^"\\]|\\.)*"/ ,
+
     group_expr: $ => prec(9, seq(
                         "(",
                         $.expr,

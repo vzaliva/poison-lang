@@ -88,6 +88,7 @@ def ETyp.toTyp (pt : ETyp) : Typ :=
   | ETyp.int => Typ.int
   | ETyp.bool => Typ.bool
   | ETyp.unit => Typ.unit
+  | ETyp.string => Typ.string
   | ETyp.ref t _ => Typ.ref (t.toTyp)
   | ETyp.arrow st1 st2 _p _tcl => Typ.arrow st1 st2
 
@@ -315,7 +316,12 @@ def typecheckUnit (ctx : TypeContext) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨ETyp.unit, false, none  ⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
 
-
+/--  Rule: string (Ott rule: string)
+-- pc ; G ; S ; L |- string : string :> clean { no_pred } -| G ; L
+-/
+def typecheckString (ctx : TypeContext) (_s : String) : TypecheckM TypeResult := do
+  let qt : QTyp := ⟨ETyp.string, false, none  ⟩  -- clean, no predicate
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
 
 -- The following option is needed in increasing the maximum number of heartbeats
 -- to avoid the termination checker failure on the following mutual block.
@@ -376,6 +382,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.num n => typecheckInt ctx n
     | Expr.bool b => typecheckBool ctx b
     | Expr.unit => typecheckUnit ctx
+    | Expr.str s => typecheckString ctx s
     | Expr.var x => typecheckVar ctx x
     | Expr.op e1 op e2 => typecheckOp ctx e1 e2 fuel op
     | Expr.newRef e => typecheckNewRef ctx e fuel
@@ -390,6 +397,8 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
     | Expr.builtIn (builtInExpr.rand e) => typecheckRand ctx  e fuel
     | Expr.builtIn (builtInExpr.frand e) => typecheckFrand ctx e fuel
+    | Expr.builtIn (builtInExpr.printString e) => typecheckPrintString ctx e fuel
+    | Expr.builtIn (builtInExpr.printInt e) => typecheckPrintInt ctx e fuel
 termination_by fuel
 
 
@@ -440,6 +449,43 @@ def typecheckFrand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRe
         return {result with qualType := qt'}
 termination_by fuel
 
+/-
+      pc ; G ; S ; L |- e : string :> p { P } -| G' ; L'
+    ----------------------------------------------------------------------  :: printString_typing
+      pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
+ -/
+def typecheckPrintString (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+  match fuel with
+    | 0        => throw "Out of fuel"
+    | fuel + 1 =>
+            do
+
+              let result ← typecheckExpr ctx e fuel
+              let ⟨etyp, poison, _  ⟩ := result.qualType
+              if etyp != ETyp.string then throw ("Argument Expression to printString must have type string")
+              else
+                let qt' : QTyp := ⟨ETyp.unit , joinPoison ctx.pc poison, none ⟩
+                return {result with qualType := qt' }
+termination_by fuel
+
+/-
+              pc ; G ; S ; L |- e : int :> p { P } -| G' ; L'
+    ----------------------------------------------------------------------  :: printInt_typing
+      pc ; G ; S ; L |- printInt e : unit :> join pc p { no_pred } -| G' ; L'
+
+ -/
+def typecheckPrintInt (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+  match fuel with
+    | 0        => throw "Out of fuel"
+    | fuel + 1 =>
+            do
+              let result ← typecheckExpr ctx e fuel
+              let ⟨etyp, poison, _  ⟩ := result.qualType
+              if etyp != ETyp.int then throw ("Argument Expression to printInt must have type int")
+              else
+                let qt' : QTyp := ⟨ETyp.unit , joinPoison ctx.pc poison, none ⟩
+                return {result with qualType := qt' }
+termination_by fuel
 
 /- Function to typecheck expressions in a binary-operation Expression, ensuring
    both expressions in a binary-op expression must be Integers .

@@ -42,6 +42,7 @@ inductive ETyp : Type where
   | int : ETyp
   | bool : ETyp
   | unit : ETyp
+  | string : ETyp
   | ref : ETyp → Address → ETyp
   | arrow : Typ → Typ → Poison → TClosure → ETyp  -- Now stores surface type ST, not T1 -> T2
 
@@ -89,6 +90,7 @@ partial def reprETyp : ETyp → Nat → Std.Format
   | ETyp.int, _ => "ETyp.int"
   | ETyp.bool, _ => "ETyp.bool"
   | ETyp.unit, _ => "ETyp.unit"
+  | ETyp.string , _ => "ETyp.string"
   | ETyp.ref t l, _ => s!"ETyp.ref {reprETyp t 0} {repr l}"
   | ETyp.arrow st1 st2 p tcl, _ => s!"ETyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprTClosure tcl 0}"
 
@@ -131,6 +133,7 @@ def beqETyp : ETyp → ETyp → Bool
   | ETyp.int, ETyp.int => true
   | ETyp.bool, ETyp.bool => true
   | ETyp.unit, ETyp.unit => true
+  | ETyp.string , ETyp.string => true
   | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETyp t1 t2 && l1 == l2
   | ETyp.arrow st1 st2 p1 tcl1, ETyp.arrow st1' st2' p2 tcl2 =>
     st1 == st1' && st2 == st2' && p1 == p2 && beqTClosure tcl1 tcl2
