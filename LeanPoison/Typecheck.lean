@@ -395,8 +395,8 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
     | Expr.builtIn (builtInExpr.rand e) => typecheckRand ctx  e fuel
     | Expr.builtIn (builtInExpr.frand e) => typecheckFrand ctx e fuel
-    | Expr.builtIn (builtInExpr.printString e) => typecheckprintString ctx e fuel
-    | Expr.builtIn (builtInExpr.printInt e) => typecheckprintInt ctx e fuel
+    | Expr.builtIn (builtInExpr.printString e) => typecheckPrintString ctx e fuel
+    | Expr.builtIn (builtInExpr.printInt e) => typecheckPrintInt ctx e fuel
 termination_by fuel
 
 
@@ -452,12 +452,12 @@ termination_by fuel
     ----------------------------------------------------------------------  :: printString_typing
       pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
  -/
-def typecheckprintString (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+def typecheckPrintString (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
     | 0        => throw "Out of fuel"
     | fuel + 1 =>
             do
-              let result ← typecheckExpr ctx e (fuel - 1)
+              let result ← typecheckExpr ctx e fuel
               let ⟨etyp, poison, _  ⟩ := result.qualType
               if etyp != ETyp.string then throw ("Argument Expression to printString must have type string")
               else
@@ -471,12 +471,12 @@ termination_by fuel
       pc ; G ; S ; L |- printInt e : unit :> join pc p { no_pred } -| G' ; L'
 
  -/
-def typecheckprintInt (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+def typecheckPrintInt (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
     | 0        => throw "Out of fuel"
     | fuel + 1 =>
             do
-              let result ← typecheckExpr ctx e (fuel - 1)
+              let result ← typecheckExpr ctx e fuel
               let ⟨etyp, poison, _  ⟩ := result.qualType
               if etyp != ETyp.int then throw ("Argument Expression to printInt must have type int")
               else

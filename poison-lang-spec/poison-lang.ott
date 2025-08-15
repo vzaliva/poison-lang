@@ -98,6 +98,8 @@ pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | pe1 pe2                 ::   :: app
   | rand pe                 ::   :: rand_app   {{ com random integer generation }}
   | frand pe                ::   :: frand_app  {{ com random float generation }}
+  | printInt pe             ::   :: printInt_app 
+  | printString pe          ::   :: printString_app 
 
 v :: 'V_' ::=              {{ com values }}
   | n                       ::   :: num
@@ -105,7 +107,7 @@ v :: 'V_' ::=              {{ com values }}
   | s                       ::   :: str
   | unit                    ::   :: unit    
   | l                       ::   :: location
-  | closure ( x , e , r )  ::   :: closure   {{ com closure value }}
+  | closure ( x , e , r )   ::   :: closure   {{ com closure value }}
   | pe_closure ( x , pe , r )  ::   :: pe_closure   {{ com pure closure value }}
 
 expr_or_value, ev :: 'EV_' ::=  {{ com expression or value }}

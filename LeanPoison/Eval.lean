@@ -80,7 +80,6 @@ def stepReturn (fuel : Nat) (verbose : Bool) (result : StepResult) : StepResult 
 def stepEntryTrace (fuel : Nat) (verbose : Bool) (_config : Config) (ev : ExprOrValue) : Unit :=
   if verbose then dbg_trace s!"→ Step [{fuel}]:\t⟨{repr ev}⟩"; () else ()
 
-
 mutual
 
 -- Small-step reduction relation: ⟨e, m, r⟩ → ⟨ev', m', r'⟩
@@ -149,22 +148,8 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         match evalOp op v1 v2 with
         | some v => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value v))
         | none =>
-          let v1Str := match v1 with
-            | Value.num _ => "number"
-            | Value.bool _ => "boolean"
-            | Value.unit => "unit"
-            | Value.loc _ => "location"
-            | Value.closure _ _ _ => "function"
-            | Value.peClosure _ _ _ => "pure function"
-            | Value.str _ => "string"
-          let v2Str := match v2 with
-            | Value.num _ => "number"
-            | Value.bool _ => "boolean"
-            | Value.unit => "unit"
-            | Value.loc _ => "location"
-            | Value.closure _ _ _ => "function"
-            | Value.peClosure _ _ _ => "pure function"
-            | Value.str _ => "string"
+          let v1Str := ValueToTypeString v1
+          let v2Str := ValueToTypeString v2
           let opStr := match op with
             | Op.add => "+"
             | Op.sub => "-"
@@ -193,22 +178,8 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             match evalOp op v1 v2 with
             | some v => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.value v))
             | none =>
-              let v1Str := match v1 with
-                | Value.num _ => "number"
-                | Value.bool _ => "boolean"
-                | Value.unit => "unit"
-                | Value.loc _ => "location"
-                | Value.closure _ _ _ => "function"
-                | Value.peClosure _ _ _ => "pure function"
-                | Value.str _ => "string"
-              let v2Str := match v2 with
-                | Value.num _ => "number"
-                | Value.bool _ => "boolean"
-                | Value.unit => "unit"
-                | Value.loc _ => "location"
-                | Value.closure _ _ _ => "function"
-                | Value.peClosure _ _ _ => "pure function"
-                | Value.str _ => "string"
+              let v1Str := ValueToTypeString v1
+              let v2Str := ValueToTypeString v2
               let opStr := match op with
                 | Op.add => "+"
                 | Op.sub => "-"
@@ -243,22 +214,8 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               match evalOp op v1 v2 with
               | some v => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.value v))
               | none =>
-                let v1Str := match v1 with
-                  | Value.num _ => "number"
-                  | Value.bool _ => "boolean"
-                  | Value.unit => "unit"
-                  | Value.loc _ => "location"
-                  | Value.closure _ _ _ => "function"
-                  | Value.peClosure _ _ _ => "pure function"
-                  | Value.str _ => "string"
-                let v2Str := match v2 with
-                  | Value.num _ => "number"
-                  | Value.bool _ => "boolean"
-                  | Value.unit => "unit"
-                  | Value.loc _ => "location"
-                  | Value.closure _ _ _ => "function"
-                  | Value.peClosure _ _ _ => "pure function"
-                  | Value.str _ => "string"
+                let v1Str := ValueToTypeString v1
+                let v2Str := ValueToTypeString v2
                 let opStr := match op with
                   | Op.add => "+"
                   | Op.sub => "-"

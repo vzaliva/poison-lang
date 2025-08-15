@@ -10,7 +10,7 @@ let read_barometric_altitude = fn x : unit => frand 100000 : int
 -- User landing command (external input)
 -- For this demo random 50/50 input is used
 let is_pilot_requesting_landing = fn x : unit => 
-  (rand 1) == 0
+  rand 1 == 0
   : bool in
 
 -- User control input for lateral position

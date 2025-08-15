@@ -1,0 +1,3 @@
+printString "Hello World!";
+let x = " Poison lang " in printString x ;
+let f = fn x : unit => " Testing Print String expr " : string in printString (f unit)

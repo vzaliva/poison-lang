@@ -1,0 +1,4 @@
+printInt 12 ;
+let a = -5 in printInt a ;
+let x = ref 100 in printInt !x ;
+let f = fn i : int => i * 2 : int in printInt (f 10)

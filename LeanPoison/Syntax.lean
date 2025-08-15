@@ -242,7 +242,7 @@ instance : ToString Value where
     | Value.num n => s!"{n}"
     | Value.bool b => s!"{b}"
     | Value.unit => "()"
-    | Value.str s => s
+    | Value.str s => s!"{s}"
     | Value.loc l => s!"@{l}"
     | Value.closure x _ _ => s!"(closure {x} <expr> <env>)"
     | Value.peClosure x _ _ => s!"(peClosure {x} <expr> <env>)"
@@ -263,3 +263,15 @@ instance : ToString Op where
     | .eq  => s!"=="
     | .or  => s!"|"
     | .and => s!"&"
+
+
+ -- Helper function to print the type of Value
+def ValueToTypeString (val : Value) : String :=
+  match val with
+    | Value.num _  => "number"
+    | Value.bool _ => "boolean"
+    | Value.unit   => "unit"
+    | Value.loc _  => "location"
+    | Value.closure _ _ _   => "function"
+    | Value.peClosure _ _ _ => "pure function"
+    | Value.str _  => "string"
