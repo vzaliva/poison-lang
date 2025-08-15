@@ -23,6 +23,7 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
     -- We need to narrow down the type of e (constructors) based on h1
     cases e with
     | unit
+    | str _
     | num _
     | bool _ =>
       simp [typecheckExpr] at h2
@@ -59,11 +60,34 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
                 | false =>
                   simp [h0, h1, h3, h4, h5, h6, pure, Except.pure] at h2
                   cases result; cases ctx; simp [h2]; injection h2; trivial
+    | deref e =>
+      simp [typecheckExpr] at h2
+      cases fuel' with
+      | zero =>
+        simp [typecheckDeref] at h2
+      | succ fuel'' =>
+        simp [typecheckDeref, bind, Except.bind] at h2
+        cases h0: typecheckExpr ctx e fuel'' with
+        | error err =>
+          simp [h0] at h2
+        | ok v =>
+          -- TODO: use IH (but fuel' does not match)
+          simp [h0] at h2
+          cases h1: v.qualType with
+          | mk etyp poison _pred =>
+            simp [h1] at h2
+            cases h3: etyp <;> simp [h3] at h2
+            cases h4: poison with
+            | true =>
+              simp [h4] at h2
+              simp [pure, Except.pure] at h2
+              cases result; cases ctx; simp [h2]; injection h2
+              sorry
+            | false =>
+              sorry
     | op _ _ _ =>
       sorry
     | ite _ _ _ =>
-      sorry
-    | deref _ =>
       sorry
     | vlet _ _ _ =>
       sorry
