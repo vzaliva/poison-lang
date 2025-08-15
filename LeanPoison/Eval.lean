@@ -150,18 +150,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         | none =>
           let v1Str := ValueToTypeString v1
           let v2Str := ValueToTypeString v2
-          let opStr := match op with
-            | Op.add => "+"
-            | Op.sub => "-"
-            | Op.mul => "*"
-            | Op.div => "/"
-            | Op.gte => ">="
-            | Op.lte => "<="
-            | Op.gt => ">"
-            | Op.lt => "<"
-            | Op.eq => "="
-            | Op.and => "&"
-            | Op.or => "|"
+          let opStr := toString op
           return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
       -- Rule: op_reduce_right (OTT rule 346-348)
       -- <e2,m,r> -> <expr e2',m',r'>
@@ -180,18 +169,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             | none =>
               let v1Str := ValueToTypeString v1
               let v2Str := ValueToTypeString v2
-              let opStr := match op with
-                | Op.add => "+"
-                | Op.sub => "-"
-                | Op.mul => "*"
-                | Op.div => "/"
-                | Op.gte => ">="
-                | Op.lte => "<="
-                | Op.gt => ">"
-                | Op.lt => "<"
-                | Op.eq => "="
-                | Op.and => "&"
-                | Op.or => "|"
+              let opStr := toString op
               return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
         | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
@@ -216,18 +194,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               | none =>
                 let v1Str := ValueToTypeString v1
                 let v2Str := ValueToTypeString v2
-                let opStr := match op with
-                  | Op.add => "+"
-                  | Op.sub => "-"
-                  | Op.mul => "*"
-                  | Op.div => "/"
-                  | Op.gte => ">="
-                  | Op.lte => "<="
-                  | Op.gt => ">"
-                  | Op.lt => "<"
-                  | Op.eq => "="
-                  | Op.and => "&"
-                  | Op.or => "|"
+                let opStr := toString op
                 return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {v1Str} and {v2Str}")
             | none =>
               -- Left is value, right needs evaluation - reconstruct with literal
