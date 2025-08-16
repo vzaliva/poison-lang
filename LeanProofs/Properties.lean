@@ -52,8 +52,45 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
               | false =>
                 simp [h0, h1, h3, h4, h5, h6, pure, Except.pure] at H
                 cases result; cases ctx; simp [H]; injection H; trivial
-  | deref e IH =>
-    sorry
+  | deref e1 IH =>
+    /-
+     simp [Expr.toPExpr, Functor.map, Except.map] at P
+     cases h2: e1.toPExpr with
+     | error err =>
+       simp [h2] at P
+     | ok pe1 =>
+       simp [h2] at P
+    -/
+
+    cases fuel with
+    | zero =>
+      simp [typecheckExpr] at H
+    | succ fuel =>
+      simp [typecheckExpr] at H
+      cases fuel with
+      | zero =>
+        simp [typecheckDeref] at H
+      | succ fuel' =>
+        simp [typecheckDeref, bind, Except.bind] at H
+        cases h0: typecheckExpr ctx e1 fuel' with
+        | error err =>
+          simp [h0] at H
+        | ok v =>
+          -- use IH
+          specialize IH fuel' ctx result
+          simp [h0] at H
+          cases h1: v.qualType with
+          | mk etyp poison _pred =>
+            simp [h1] at H
+            cases h3: etyp <;> simp [h3] at H
+            cases h4: poison with
+            | true =>
+              simp [h4] at H
+              simp [pure, Except.pure] at H
+              cases result; cases ctx; simp [H]; injection H
+              sorry
+            | false =>
+              sorry
   | op e1 op e2 IH1 IH2 =>
     sorry
   | ite e1 e2 e3 IH1 IH2 IH3 =>

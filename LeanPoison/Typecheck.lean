@@ -387,7 +387,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.op e1 op e2 => typecheckOp ctx e1 e2 fuel op
     | Expr.newRef e => typecheckNewRef ctx e fuel
     | Expr.assign e1 e2 => typecheckAssign ctx e1 e2 fuel
-    | Expr.deref e => typecheckDeref ctx e fuel
+    | Expr.deref e1 => typecheckDeref ctx e1 fuel
     | Expr.seq e1 e2 => typecheckSeq ctx e1 e2 fuel
     | Expr.kwhile e1 e2 => typecheckWhile ctx e1 e2 fuel
     | Expr.vlet x e1 e2 => typecheckVlet ctx x e1 e2 fuel
