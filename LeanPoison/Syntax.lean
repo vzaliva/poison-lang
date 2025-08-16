@@ -33,13 +33,14 @@ inductive Op : Type where
   deriving Repr, BEq
 
 
-mutual
 -- Expressions (corresponds to e in Ott)
 inductive Expr : Type where
+  /- literals -/
   | unit : Expr                                 -- unit
   | num : Int → Expr                            -- n
   | bool : Bool → Expr                          -- b
   | str : String -> Expr
+  /- expressions -/
   | var : Name → Expr                           -- x
   | op : Expr → Op → Expr → Expr                -- e1 op e2
   | ite : Expr → Expr → Expr → Expr             -- if e1 then e2 else e3
@@ -52,15 +53,11 @@ inductive Expr : Type where
   | fn : Name → Typ → Expr → Typ → Expr         -- fn x : ST1 => e : ST2
   | pfn : Name → Typ → Expr → Typ → Expr        -- pfn x : ST1 => pe : ST2
   | app : Expr → Expr → Expr                    -- e1 e2
-  | builtIn : builtInExpr -> Expr
-
--- builtInExpr (Type to represent built in expressions in poison lang)
-inductive builtInExpr : Type where
-  | rand  : Expr -> builtInExpr
-  | frand : Expr -> builtInExpr
-  | printString  : Expr -> builtInExpr
-  | printInt  : Expr -> builtInExpr
-end
+  /- built-in expressions -/
+  | rand  : Expr -> Expr
+  | frand : Expr -> Expr
+  | printString  : Expr -> Expr
+  | printInt  : Expr -> Expr
 
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
@@ -195,10 +192,10 @@ def reprExpr : Expr → Nat → Std.Format
   | Expr.fn x t1 e t2, _ => s!"Expr.fn {repr x} : {repr t1} => ({reprExpr e 0}) : {repr t2}"
   | Expr.pfn x t1 e t2, _ => s!"Expr.pfn {repr x} : {repr t1} => ({reprExpr e 0}) : {repr t2}"
   | Expr.app e1 e2, _ => s!"Expr.app ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.builtIn (builtInExpr.rand e),_ => s!"Expr.builtin.rand ({reprExpr e 0})"
-  | Expr.builtIn (builtInExpr.frand e),_ => s!"Expr.builtin.frand ({reprExpr e 0})"
-  | Expr.builtIn (builtInExpr.printString e),_ => s!"Expr.builtin.printString ({reprExpr e 0})"
-  | Expr.builtIn (builtInExpr.printInt e),_  => s!"Expr.builtin.printString ({reprExpr e 0})"
+  | Expr.rand e, _ => s!"Expr.rand ({reprExpr e 0})"
+  | Expr.frand e, _ => s!"Expr.frand ({reprExpr e 0})"
+  | Expr.printString e, _ => s!"Expr.printString ({reprExpr e 0})"
+  | Expr.printInt e, _  => s!"Expr.printInt ({reprExpr e 0})"
 
 def reprExprOrValue : ExprOrValue → Nat → Std.Format
   | ExprOrValue.expr e, prec => reprExpr e prec

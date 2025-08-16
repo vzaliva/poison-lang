@@ -538,9 +538,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
     -- Built-in expressions
-    | Expr.builtIn builtin =>
-      match builtin with
-      | builtInExpr.rand e =>
+    | Expr.rand e =>
         match e.toValue? with
         -- Rule: rand_value (OTT rule 468-471)
         -- <e,m,r> -> <value n, m',r'>
@@ -566,7 +564,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
           | StepResult.progress config' ev' =>
             match ev' with
-            | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.builtIn (builtInExpr.rand e'))))
+            | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.rand e')))
             | ExprOrValue.value (Value.num n) =>
               if n >= 0 then
                 do
@@ -579,7 +577,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
           | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
-      | builtInExpr.frand e =>
+      | Expr.frand e =>
         match e.toValue? with
         -- Rule: frand_value (OTT rule 481-484)
         -- <e,m,r> -> <value n, m',r'>
@@ -607,7 +605,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
           | StepResult.progress config' ev' =>
             match ev' with
-            | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.builtIn (builtInExpr.frand e'))))
+            | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.frand e')))
             | ExprOrValue.value (Value.num n) =>
               if n >= 0 then
                 do
@@ -621,7 +619,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
           | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
-      | builtInExpr.printInt e =>
+      | Expr.printInt e =>
             match e.toValue? with
          -- Rule : printInt_value
          --                       <e,m,r> -> <value n, m',r'>
@@ -641,7 +639,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
           | StepResult.progress config' ev' =>
             match ev' with
-            | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.builtIn (builtInExpr.printInt e'))))
+            | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.printInt e')))
             | ExprOrValue.value (Value.num n) =>
                 IO.println n
                 return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr (Expr.unit)))
@@ -650,7 +648,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
 
-      | builtInExpr.printString e =>
+      | Expr.printString e =>
           match e.toValue? with
                   -- Rule :  printString_value
                   --              <e,m,r> -> <value s, m',r'>
@@ -670,7 +668,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
             | StepResult.progress config' ev' =>
               match ev' with
-              | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.builtIn (builtInExpr.printString e'))))
+              | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.printString e')))
               | ExprOrValue.value (Value.str s) =>
                   IO.println s
                   return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr (Expr.unit)))

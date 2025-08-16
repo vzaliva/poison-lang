@@ -395,10 +395,10 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType
     | Expr.app e1 e2 => typecheckApp ctx e1 e2 fuel
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
-    | Expr.builtIn (builtInExpr.rand e) => typecheckRand ctx  e fuel
-    | Expr.builtIn (builtInExpr.frand e) => typecheckFrand ctx e fuel
-    | Expr.builtIn (builtInExpr.printString e) => typecheckPrintString ctx e fuel
-    | Expr.builtIn (builtInExpr.printInt e) => typecheckPrintInt ctx e fuel
+    | Expr.rand e => typecheckRand ctx  e fuel
+    | Expr.frand e => typecheckFrand ctx e fuel
+    | Expr.printString e => typecheckPrintString ctx e fuel
+    | Expr.printInt e => typecheckPrintInt ctx e fuel
 termination_by fuel
 
 

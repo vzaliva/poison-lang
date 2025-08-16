@@ -341,7 +341,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
 
     match elems.toList with
-    | [e1] => return Expr.builtIn (builtInExpr.rand (<- xmlToExpr e1))
+    | [e1] => return Expr.rand (<- xmlToExpr e1)
     | _ => .error "Invalid argument to rand"
 
   | Element.Element "frand_expr" _ contents => do
@@ -352,7 +352,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
 
     match elems.toList with
-    | [e1] => return Expr.builtIn (builtInExpr.frand (<- xmlToExpr e1))
+    | [e1] => return Expr.frand (<- xmlToExpr e1)
     | _ => .error "Invalid argument to frand"
 
   | Element.Element "printStr_expr" _ contents => do
@@ -363,7 +363,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
 
     match elems.toList with
-    | [e1] => return Expr.builtIn (builtInExpr.printString (<- xmlToExpr e1))
+    | [e1] => return Expr.printString (<- xmlToExpr e1)
     | _ => .error "Invalid argument to frand"
 
   | Element.Element "printInt_expr" _ contents => do
@@ -374,7 +374,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
 
     match elems.toList with
-    | [e1] => return Expr.builtIn (builtInExpr.printInt (<- xmlToExpr e1))
+    | [e1] => return Expr.printInt (<- xmlToExpr e1)
     | _ => .error "Invalid argument to frand"
 
   | Element.Element "group_expr" _ contents => do
