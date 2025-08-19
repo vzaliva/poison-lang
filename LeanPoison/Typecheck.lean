@@ -361,7 +361,18 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
 
 
 -- TODO , Currently a placeholder function
-def generateFreshVar (_ctx : TypeContext) : Name := "x"
+def generateFreshVar (ctx : TypeContext) : Name :=
+  let rec loop (n : Nat) (fuel : Nat) : Name :=
+    if fuel = 0 then s!"x{n}"
+    else
+
+      let candidate := if n = 0 then "x" else s!"x{n}"
+      if candidate ∈ ctx.varEnv.map (·.fst) then
+        loop (n+1) (fuel - 1)
+      else
+        candidate
+  termination_by fuel
+  loop 0 1000
 
 -- Function to get a fresh Tag Value From the environment
 def generateFreshTag (result : TypeResult) : Tag :=
@@ -856,6 +867,8 @@ end
 def typecheck (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   typecheckExpr ctx e fuel
 
+
+
 /-- Type check an expression in an initial empty context -/
 def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
   let initialCtx : TypeContext := {
@@ -868,8 +881,24 @@ def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
   let result ← typecheck initialCtx e defaultFuel
   return result.qualType
 
+def typecheckExprVerbose (e : Expr) : TypecheckM TypeResult := do
+  let initialCtx : TypeContext := {
+    pc := false  -- clean
+    memEnv := {}
+    varEnv := []
+    tagEnv := {}
+    nextLoc := 0
+  }
+  let result ← typecheck initialCtx e defaultFuel
+  return result
+
 /-- Type check a program (expression) and return a human-readable result -/
-def typecheckProgram (e : Expr) : String :=
-  match typecheckExprSimple e with
-  | .ok qualType => s!"Type: {repr qualType}"
+def typecheckProgram (e : Expr) (verbose : Bool) : String :=
+  if verbose then
+   match typecheckExprVerbose e with
+   | .ok result => s!"Type: {repr result.qualType} , MemoryTypeEnv : {repr result.memEnv'} , tagEnv : {repr result.tagEnv'} , nextLoc : {repr result.nextLoc'} "
+   | .error msg => s!"Type error: {msg}"
+   else
+  match typecheckExprSimple e   with
+  | .ok qualType  => s!"Type: {repr qualType}"
   | .error msg => s!"Type error: {msg}"

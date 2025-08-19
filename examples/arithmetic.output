@@ -3,5 +3,5 @@ Evaluating file: examples/arithmetic.poison
 Type checking passed: Type: QTyp.mk ETyp.bool false none
 Result: true
 Final state:
-  Variable environment: <function>
+  Variable environment: []
   Memory: []

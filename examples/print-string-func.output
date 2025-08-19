@@ -4,5 +4,5 @@ Type checking passed: Type: QTyp.mk ETyp.unit false none
 " Testing Print String expr "
 Result: unit
 Final state:
-  Variable environment: <function>
+  Variable environment: [("f", Value.closure "x" <expr> <env>)]
   Memory: []

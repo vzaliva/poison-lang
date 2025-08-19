@@ -3,5 +3,9 @@ Evaluating file: examples/multiple-poison-sources.poison
 Type checking passed: Type: QTyp.mk ETyp.int false none
 Result: 94
 Final state:
-  Variable environment: <function>
+  Variable environment: [("result", Value.num 94),
+ ("sensor2_ptr", Value.loc 0),
+ ("sensor1", Value.num 42),
+ ("get_corrupted_ptr", Value.closure "x_unit" <expr> <env>),
+ ("get_sensor", Value.closure "x" <expr> <env>)]
   Memory: [(0, 42)]

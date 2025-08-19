@@ -3,5 +3,9 @@ Evaluating file: examples/higher-order-function.poison
 Type checking passed: Type: QTyp.mk ETyp.int false none
 Result: 19
 Final state:
-  Variable environment: <function>
+  Variable environment: [("result2", Value.num 12),
+ ("result1", Value.num 7),
+ ("double", Value.closure "x" <expr> <env>),
+ ("add_one", Value.closure "x" <expr> <env>),
+ ("twice", Value.closure "f" <expr> <env>)]
   Memory: []
