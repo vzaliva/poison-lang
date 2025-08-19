@@ -590,28 +590,30 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
       else
         -- Reference is clean: proceed with normal predicate handling
         match result.memEnv'.get? l with
-        | some ⟨etyp', p2, none ⟩ =>  -- Ott rule: deref_no_pred
-          if etyp' != t then throw s!"Type mismatch in dereference: {repr etyp'} != {repr t}"
-          let poison := joinPoison ctx.pc p2
-          let qt : QTyp := ⟨t, poison, none  ⟩
-          return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
-        | some ⟨etyp', p2, some ⟨k, arg_name, pred_body, var_env⟩ ⟩ =>  -- Ott rule: deref_guard_true, deref_guard_false, deref_guard_unknown
-          if etyp' != t then throw "Type mismatch in dereference"
-          match result.tagEnv'.get? k with
-          | some true =>
-            -- Ott rule: deref_guard_true
-            let poison := ctx.pc
+        | some ⟨etyp', p2, tp ⟩ =>
+          match tp with
+          | none =>  -- Ott rule: deref_no_pred
+            if etyp' != t then throw s!"Type mismatch in dereference: {repr etyp'} != {repr t}"
+            let poison := joinPoison ctx.pc p2
             let qt : QTyp := ⟨t, poison, none  ⟩
             return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
-          | some false =>
-            -- Ott rule: deref_guard_false
-            let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned
-            return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
-          | none =>
-            -- Ott rule: deref_guard_unknown
-            let poison := joinPoison ctx.pc p2
-            let qt : QTyp := ⟨t, poison, some ⟨k, arg_name, pred_body, var_env⟩ ⟩
-            return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
+          | some ⟨k, arg_name, pred_body, var_env⟩ =>  -- Ott rule: deref_guard_true, deref_guard_false, deref_guard_unknown
+            if etyp' != t then throw "Type mismatch in dereference"
+            match result.tagEnv'.get? k with
+            | some true =>
+              -- Ott rule: deref_guard_true
+              let poison := ctx.pc
+              let qt : QTyp := ⟨t, poison, none  ⟩
+              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
+            | some false =>
+              -- Ott rule: deref_guard_false
+              let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned
+              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
+            | none =>
+              -- Ott rule: deref_guard_unknown
+              let poison := joinPoison ctx.pc p2
+              let qt : QTyp := ⟨t, poison, some ⟨k, arg_name, pred_body, var_env⟩ ⟩
+              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
         | none => throw s!"Location {l} not found in memory environment"
     | _ => throw "Operand of dereference must be a reference"
 termination_by fuel
