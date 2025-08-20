@@ -360,19 +360,17 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
 
 
--- TODO , Currently a placeholder function
-def generateFreshVar (ctx : TypeContext) : Name :=
-  let rec loop (n : Nat) (fuel : Nat) : Name :=
-    if fuel = 0 then s!"x{n}"
-    else
 
-      let candidate := if n = 0 then "x" else s!"x{n}"
+def generateFreshVar (ctx : TypeContext) (pref : Name) (suffix : Nat) (fuel : Nat) : Name :=
+  match fuel with
+  | 0 => s!"{pref}{suffix}"
+  | fuel + 1 =>
+      let candidate := if suffix = 0 then pref else s!"{pref}{suffix}"
       if candidate ∈ ctx.varEnv.map (·.fst) then
-        loop (n+1) (fuel - 1)
+       generateFreshVar ctx pref (suffix + 1) fuel
       else
-        candidate
-  termination_by fuel
-  loop 0 1000
+       candidate
+termination_by fuel
 
 -- Function to get a fresh Tag Value From the environment
 def generateFreshTag (result : TypeResult) : Tag :=
@@ -451,7 +449,7 @@ def typecheckFrand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRe
       if etyp != ETyp.int then throw ("Argument Expression to frand must have type int")
       else
         let newTag := generateFreshTag result
-        let varName := generateFreshVar ctx
+        let varName := generateFreshVar ctx "x" 0 1000
         let predBody : PExpr <- Expr.toPExpr (Expr.op (Expr.op (Expr.var varName) Op.gte (Expr.num 0)) Op.and
                                   (Expr.op (Expr.var varName) Op.lte ( e)) )
         let depoisoningPred : TPred := ⟨ newTag  , varName  , predBody , ctx.varEnv⟩
@@ -889,8 +887,8 @@ def typecheckExprVerbose (e : Expr) : TypecheckM TypeResult := do
     tagEnv := {}
     nextLoc := 0
   }
-  let result ← typecheck initialCtx e defaultFuel
-  return result
+  typecheck initialCtx e defaultFuel
+
 
 /-- Type check a program (expression) and return a human-readable result -/
 def typecheckProgram (e : Expr) (verbose : Bool) : String :=
