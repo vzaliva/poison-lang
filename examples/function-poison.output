@@ -1,10 +1,10 @@
 Evaluating file: examples/function-poison.poison
 
-Type checking passed: Type: QTyp.mk ETyp.int false none
-Result: 11
+Type checking passed: Type: QTyp.mk ETyp.int true none
+Result: 20
 Final state:
-  Variable environment: [("result", Value.num 11),
+  Variable environment: [("result", Value.num 20),
  ("f", Value.closure "x" <expr> <env>),
- ("poisoned_cond", Value.num 42),
+ ("poisoned_cond", Value.num 0),
  ("get_sensor", Value.closure "x" <expr> <env>)]
   Memory: []

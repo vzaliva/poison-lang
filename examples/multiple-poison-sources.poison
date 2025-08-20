@@ -1,5 +1,5 @@
-let get_sensor = fn x : unit => 42 : int in
-let get_corrupted_ptr = fn x_unit : unit => ref 42 : (ref int) in
+let get_sensor = fn x : unit => frand 0 : int in
+let get_corrupted_ptr = fn x_unit : unit => ref (frand 0) : (ref int) in
 
 -- Demonstrates poison propagation from multiple unreliable inputs
 

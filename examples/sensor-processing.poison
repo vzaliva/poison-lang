@@ -1,4 +1,4 @@
-let get_sensor = fn x : unit => 42 : int in
+let get_sensor = fn x : unit => frand 0 : int in
 
 -- Sensor processing example
 

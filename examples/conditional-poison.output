@@ -1,7 +1,7 @@
 Evaluating file: examples/conditional-poison.poison
 
-Type checking passed: Type: QTyp.mk ETyp.int false none
+Type checking passed: Type: QTyp.mk ETyp.int true none
 Result: 150
 Final state:
-  Variable environment: [("threshold", Value.num 50), ("sensor", Value.num 42), ("get_sensor", Value.closure "x" <expr> <env>)]
+  Variable environment: [("threshold", Value.num 50), ("sensor", Value.num 0), ("get_sensor", Value.closure "x" <expr> <env>)]
   Memory: []
