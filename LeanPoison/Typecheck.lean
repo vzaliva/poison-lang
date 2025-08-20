@@ -449,7 +449,7 @@ def typecheckFrand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRe
       if etyp != ETyp.int then throw ("Argument Expression to frand must have type int")
       else
         let newTag := generateFreshTag result
-        let varName := generateFreshVar ctx "x" 0 1000
+        let varName := generateFreshVar ctx "limit" 0 fuel
         let predBody : PExpr <- Expr.toPExpr (Expr.op (Expr.op (Expr.var varName) Op.gte (Expr.num 0)) Op.and
                                   (Expr.op (Expr.var varName) Op.lte ( e)) )
         let depoisoningPred : TPred := ⟨ newTag  , varName  , predBody , ctx.varEnv⟩
