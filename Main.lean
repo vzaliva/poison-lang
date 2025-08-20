@@ -27,28 +27,33 @@ def printValue (v : Value) : IO Unit := do
   | Value.peClosure _ _ _ => IO.println s!"Result: <pure closure>"
 
 -- Helper function to print final state
-def printFinalState (config : Config) : IO Unit := do
-  IO.println s!"Final state:"
-  IO.println s!"  Variable environment: <function>"
-  IO.println s!"  Memory: {repr config.memory}"
+def printFinalState (config : Config) (verbose : Bool) : IO Unit := do
+  if verbose then
+    IO.println s!"Final state:"
+    IO.println ("Variable environment: " ++ toString config.varEnv)
+    IO.println s!"  Memory: {repr config.memory}"
+  else
+    IO.println s!"Final state:"
+    IO.println s!"  Variable environment: {repr config.varEnv}"
+    IO.println s!"  Memory: {repr config.memory}"
 
 -- Helper function to handle evaluation results
-def handleEvalResult (result : StepResult) (initialConfig : Config) : IO Int := do
+def handleEvalResult (result : StepResult) (initialConfig : Config) (verbose : Bool) : IO Int := do
   match result with
   | StepResult.progress config resultExpr =>
     match resultExpr.toValue? with
     | some v =>
       printValue v
-      printFinalState config
+      printFinalState config verbose
       return 0
     | none =>
       IO.println "Expression is not fully evaluated."
       IO.println s!"Remaining: {repr resultExpr}"
-      printFinalState config
+      printFinalState config verbose
       return 1
   | StepResult.stuck =>
     IO.println "Evaluation stuck."
-    printFinalState initialConfig
+    printFinalState initialConfig verbose
     return 1
   | StepResult.error msg =>
     IO.println s!"Runtime error: {msg}"
@@ -60,14 +65,14 @@ def evalProgram (input : String) : IO Int := do
 
     match xmlToExpr xmlElement with
     | Except.ok expr =>
-      let resultType := typecheckProgram expr
+      let resultType := typecheckProgram expr false
       if resultType.startsWith "Type error:" then
         IO.println s!"Type checking error: {resultType.drop 11}"
       else
         IO.println s!"Type checking passed: {resultType}"
       let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0⟩
       let result <- eval defaultFuel initialConfig (ExprOrValue.expr expr) false
-      handleEvalResult result initialConfig
+      handleEvalResult result initialConfig false
 
     | Except.error err =>
       IO.println s!"Error while building expression tree: {err}"
@@ -140,7 +145,7 @@ def main (args : List String) : IO UInt32 := do
       IO.println ""
       match ExprTree with
       | expr =>
-       let resultType := typecheckProgram expr
+       let resultType := typecheckProgram expr true
         if resultType.startsWith "Type error:" then
           IO.println s!"Type checking error: {resultType.drop 11}"
         else
@@ -148,7 +153,7 @@ def main (args : List String) : IO UInt32 := do
         IO.println ""
         let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0⟩
         let result <- eval defaultFuel initialConfig (ExprOrValue.expr expr) true  -- verbose = true
-        handleEvalResult result initialConfig
+        handleEvalResult result initialConfig true
 
     catch e =>
       IO.println s!"Error reading file {filename}: {e}"

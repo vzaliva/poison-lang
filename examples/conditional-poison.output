@@ -3,5 +3,5 @@ Evaluating file: examples/conditional-poison.poison
 Type checking passed: Type: QTyp.mk ETyp.int false none
 Result: 150
 Final state:
-  Variable environment: <function>
+  Variable environment: [("threshold", Value.num 50), ("sensor", Value.num 42), ("get_sensor", Value.closure "x" <expr> <env>)]
   Memory: []

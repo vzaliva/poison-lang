@@ -3,5 +3,9 @@ Evaluating file: examples/sensor-processing.poison
 Type checking passed: Type: QTyp.mk ETyp.int false none
 Result: 84
 Final state:
-  Variable environment: <function>
+  Variable environment: [("result", Value.num 84),
+ ("f", Value.closure "x" <expr> <env>),
+ ("sensor2", Value.num 42),
+ ("sensor1", Value.num 42),
+ ("get_sensor", Value.closure "x" <expr> <env>)]
   Memory: []

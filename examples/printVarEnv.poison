@@ -1,0 +1,7 @@
+let s = "Hello" in
+let n = 13 in 
+let u = unit in
+let b = true in
+let a = ref 100 in 
+let f = fn x : int => printString s : unit in 
+f 100

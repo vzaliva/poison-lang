@@ -3,5 +3,5 @@ Evaluating file: examples/sequences.poison
 Type checking passed: Type: QTyp.mk ETyp.int false none
 Result: 123
 Final state:
-  Variable environment: <function>
+  Variable environment: [("x", Value.num 5)]
   Memory: []

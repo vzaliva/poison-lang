@@ -4,5 +4,5 @@ Type checking passed: Type: QTyp.mk ETyp.unit false none
 " Poison lang "
 Result: unit
 Final state:
-  Variable environment: <function>
+  Variable environment: [("x", Value.str " Poison lang ")]
   Memory: []

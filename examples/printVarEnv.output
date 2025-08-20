@@ -1,0 +1,13 @@
+Evaluating file: examples/printVarEnv.poison
+
+Type checking passed: Type: QTyp.mk ETyp.unit false none
+"Hello"
+Result: unit
+Final state:
+  Variable environment: [("f", Value.closure "x" <expr> <env>),
+ ("a", Value.loc 0),
+ ("b", Value.bool true),
+ ("u", Value.unit),
+ ("n", Value.num 13),
+ ("s", Value.str "Hello")]
+  Memory: [(0, 100)]

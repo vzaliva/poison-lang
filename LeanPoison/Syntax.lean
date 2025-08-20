@@ -67,8 +67,8 @@ inductive Value : Type where
   | unit : Value                -- unit
   | str : String -> Value       -- str
   | loc : Address → Value           -- l (locations are values in the operational semantics)
-  | closure : Name → Expr → (Name → Option Value) → Value      -- closure(x,e,r)
-  | peClosure : Name → Expr → (Name → Option Value) → Value    -- pe_closure(x,pe,r)
+  | closure : Name → Expr → List (Name × Value) → Value      -- closure(x,e,r)
+  | peClosure : Name → Expr → List (Name × Value) → Value    -- pe_closure(x,pe,r)
 
 -- Expression or Value type matching Ott specification
 -- This is used only in the operational semantics for step results
@@ -76,10 +76,10 @@ inductive ExprOrValue : Type where
   | expr : Expr → ExprOrValue     -- expr e
   | value : Value → ExprOrValue   -- value v
 
--- Variable environment: variable name → value (function type) We do not use a
+-- Variable environment: List (name × value) . We do not use a
 -- HashMap here, as we do for Memory, because of the Lean restriction of
 -- inductive type definitions (insude pe_closure)
-abbrev VarEnv := Name → Option Value
+abbrev VarEnv := List (Name × Value)
 
 -- Note: No helper functions needed for literals since they are now direct constructors
 -- Locations cannot be created as expressions - they only exist at runtime
@@ -244,8 +244,8 @@ instance : ToString Value where
     | Value.unit => "()"
     | Value.str s => s!"{s}"
     | Value.loc l => s!"@{l}"
-    | Value.closure x _ _ => s!"(closure {x} <expr> <env>)"
-    | Value.peClosure x _ _ => s!"(peClosure {x} <expr> <env>)"
+    | Value.closure x e env => s!"(closure {x} <body> {repr e} <env> {repr env})"
+    | Value.peClosure x e env => s!"(peClosure {x} <body> {repr e} <env> {repr env})"
 
 
 @[instance]
