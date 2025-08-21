@@ -50,72 +50,64 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
               cases result <;> cases ctx <;> cases H <;> trivial
 
   | deref e1 IH =>
-    cases fuel with
-    | zero =>
-      simp_all [typecheckExpr]
-    | succ fuel =>
-      simp_all [typecheckExpr]
-      cases fuel with
-      | zero =>
-        simp_all [typecheckDeref]
-      | succ fuel' =>
-        simp_all [typecheckDeref, bind, Except.bind]
-        cases h0: typecheckExpr ctx e1 fuel' with
-        | error err =>
+    (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
+    (cases fuel with | zero |succ fuel') <;> simp_all [typecheckDeref, bind, Except.bind]
+    cases h0: typecheckExpr ctx e1 fuel' with
+    | error err =>
+      simp_all
+    | ok result1 =>
+      -- use IH
+      simp [Expr.toPExpr, Functor.map, Except.map] at P
+      cases h1: e1.toPExpr with
+      | error err =>
+        simp_all
+      | ok pe1 =>
+        simp [h1] at P
+        specialize IH fuel' ctx pe1 result1 h1 h0
+        rcases IH with ⟨H1, H2, H3⟩
+        simp_all
+        cases h2: result1.qualType with
+        | mk etyp poison _pred =>
           simp_all
-        | ok result1 =>
-          -- use IH
-          simp [Expr.toPExpr, Functor.map, Except.map] at P
-          cases h1: e1.toPExpr with
-          | error err =>
+          cases h3: etyp with
+          | ref t l =>
             simp_all
-          | ok pe1 =>
-            simp [h1] at P
-            specialize IH fuel' ctx pe1 result1 h1 h0
-            rcases IH with ⟨H1, H2, H3⟩
-            simp_all
-            cases h2: result1.qualType with
-            | mk etyp poison _pred =>
-              simp_all
-              cases h3: etyp with
-              | ref t l =>
+            cases h4: poison with
+            | true =>
+              simp_all [pure, Except.pure]
+              cases result; cases result1; cases ctx; cases H; trivial
+            | false =>
+              simp [h4] at H
+              cases h5: result1.memEnv'[l]? with
+              | none =>
                 simp_all
-                cases h4: poison with
-                | true =>
-                  simp_all [pure, Except.pure]
-                  cases result; cases result1; cases ctx; cases H; trivial
-                | false =>
-                  simp [h4] at H
-                  cases h5: result1.memEnv'[l]? with
+              | some qt =>
+                cases h6: qt with
+                | mk etyp' p2 tp =>
+                  simp_all
+                  cases h7: tp with
                   | none =>
                     simp_all
-                  | some qt =>
-                    cases h6: qt with
-                    | mk etyp' p2 tp =>
+                    cases h9: etyp' != t with
+                    | true =>
                       simp_all
-                      cases h7: tp with
-                      | none =>
+                    | false =>
+                      simp_all [pure, Except.pure]
+                      cases result; cases result1; cases ctx; cases H; trivial
+                  | some tp =>
+                    cases h8: tp with
+                    | mk k arg_name pred_body var_env =>
+                      simp_all
+                      cases h9: etyp' != t with
+                      | true =>
                         simp_all
-                        cases h9: etyp' != t with
-                        | true =>
-                          simp_all
-                        | false =>
-                          simp_all [pure, Except.pure]
-                          cases result; cases result1; cases ctx; cases H; trivial
-                      | some tp =>
-                        cases h8: tp with
-                        | mk k arg_name pred_body var_env =>
-                          simp_all
-                          cases h9: etyp' != t with
-                          | true =>
-                            simp_all
-                          | false =>
-                            simp_all [pure, Except.pure]
-                            match h10 : result1.tagEnv'[k]? with
-                            | some true | some false | none =>
-                            simp_all <;>
-                            cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
-              | _ => simp_all
+                      | false =>
+                        simp_all [pure, Except.pure]
+                        match h10 : result1.tagEnv'[k]? with
+                        | some true | some false | none =>
+                        simp_all <;>
+                        cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
+          | _ => simp_all
   | op e1 op e2 IH1 IH2 =>
     sorry
   | ite e1 e2 e3 IH1 IH2 IH3 =>
