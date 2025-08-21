@@ -4,6 +4,12 @@ import LeanPoison.Syntax
 import LeanPoison.Typecheck
 
 
+@[simp]
+theorem joinMemEnv_idempotent : ∀ (m1 : MemoryTypeEnv), joinMemEnvs m1 m1 = m1 := by
+  intros m1
+  simp [joinMemEnvs]
+  sorry
+
 -- Pure expression type checking does not modify typestates
 theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
   ∀ (ctx : TypeContext) (e : Expr) (pe : PExpr) (result : TypeResult),
@@ -108,13 +114,119 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
                         simp_all <;>
                         cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
           | _ => simp_all
-  | op e1 op e2 IH1 IH2 =>
-    sorry
   | ite e1 e2 e3 IH1 IH2 IH3 =>
+    (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
+    (cases fuel with | zero |succ fuel') <;> simp_all [typecheckIf, bind, Except.bind]
+    simp [Expr.toPExpr, Functor.map, Except.map] at P
+    (cases h1: e1.toPExpr with| error err | ok pe1 ) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
+    (cases h3: e2.toPExpr with | error err | ok pe2) <;> simp [h3] at P
+    (cases h4: e3.toPExpr with | error err | ok pe3) <;> simp [h4] at P
+    cases h5: typecheckExpr ctx e1 fuel' with
+    | error err =>
+      simp_all
+    | ok result1 =>
+      simp [h5] at H
+      specialize IH1 fuel' ctx pe1 result1 h1 h5
+      rcases IH1 with ⟨H1, H2, H3⟩
+      simp_all
+      cases h6: result1.qualType with
+      | mk etyp' poison' pred' =>
+        simp_all
+        cases h7: etyp' != ETyp.bool with
+        | true =>
+          simp_all
+        | false =>
+          simp_all [pure, Except.pure]
+          cases h8: matchGuard e1 result1.memEnv' ctx.varEnv with
+          | ok k =>
+            simp_all
+            cases h9: typecheckExpr
+                        { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                          tagEnv := Std.HashMap.insert result1.tagEnv' k true, nextLoc := result1.nextLoc' }
+                        e2 fuel' with
+            | error err =>
+              simp_all
+            | ok result2 =>
+              simp_all
+              cases h10: result2.qualType with
+              | mk etyp2 p'' pred =>
+                simp_all
+                cases h11: typecheckExpr
+                        { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                          tagEnv := Std.HashMap.insert result1.tagEnv' k false, nextLoc := result1.nextLoc' }
+                        e3 fuel' with
+                | error err =>
+                  simp_all
+                | ok result3 =>
+                  simp_all
+                  cases h12: result3.qualType with
+                  | mk etyp3 p''' pred =>
+                    simp_all
+                    cases h13: etyp2 != etyp3 with
+                    | true =>
+                      simp_all
+                    | false =>
+                      simp_all
+                      have hpe2 : pe2 = pe2 := rfl
+                      specialize IH2 fuel'
+                           { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := Std.HashMap.insert result1.tagEnv' k true, nextLoc := result1.nextLoc' }
+                           pe2 result2 hpe2 h9
+                      have hpe3 : pe3 = pe3 := rfl
+                      specialize IH3 fuel' { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := Std.HashMap.insert result1.tagEnv' k false, nextLoc := result1.nextLoc' }
+                          pe3 result3 hpe3 h11
+                      rcases IH2 with ⟨H14, H15, H16⟩
+                      rcases IH3 with ⟨H17, H18, H19⟩
+                      cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
+          | error err =>
+            simp_all
+            cases h9: typecheckExpr
+                        { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                          tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+                        e2 fuel' with
+            | error err =>
+              simp_all
+            | ok result2 =>
+              simp_all
+              cases h10: result2.qualType with
+              | mk etyp2 p'' pred =>
+                simp_all
+                cases h11: typecheckExpr
+                        { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                          tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+                        e3 fuel' with
+                | error err =>
+                  simp_all
+                | ok result3 =>
+                  simp_all
+                  cases h12: result3.qualType with
+                  | mk etyp3 p''' pred =>
+                    simp_all
+                    cases h13: etyp2 != etyp3 with
+                    | true =>
+                      simp_all
+                    | false =>
+                      simp_all [pure, Except.pure]
+                      have hpe2 : pe2 = pe2 := rfl
+                      specialize IH2 fuel'
+                           { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+                           pe2 result2 hpe2 h9
+                      have hpe3 : pe3 = pe3 := rfl
+                      specialize IH3 fuel' { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+                          pe3 result3 hpe3 h11
+                      rcases IH2 with ⟨H14, H15, H16⟩
+                      rcases IH3 with ⟨H17, H18, H19⟩
+                      cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
+  | op e1 op e2 IH1 IH2 =>
+    (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
+    (cases fuel with | zero |succ fuel') <;> simp_all [typecheckOp, bind, Except.bind]
     sorry
   | vlet x e1 e2 IH1 IH2 =>
+    (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
+    (cases fuel with | zero |succ fuel') <;> simp_all [typecheckVlet, bind, Except.bind]
     sorry
   | app e1 e2 IH1 IH2 =>
+    (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
+    (cases fuel with | zero |succ fuel') <;> simp_all [typecheckApp, bind, Except.bind]
     sorry
   /- The following cases are not possible to convert to PExpr -/
   | newRef _
