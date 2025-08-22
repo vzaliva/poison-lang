@@ -255,7 +255,69 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
   | app e1 e2 IH1 IH2 =>
     (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
     (cases fuel with | zero |succ fuel') <;> simp_all [typecheckApp, bind, Except.bind]
-    sorry
+    simp [Expr.toPExpr, Functor.map, Except.map] at P
+    (cases h1: e1.toPExpr with | error err | ok pe1) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
+    (cases h2: e2.toPExpr with | error err | ok pe2) <;> simp [h2, Seq.seq, Except.bind, Except.map] at P
+    cases h3: typecheckExpr ctx e1 fuel' with
+    | error err =>
+      simp_all
+    | ok result1 =>
+      simp [h3] at H
+      specialize IH1 fuel' ctx pe1 result1 h1 h3
+      rcases IH1 with ⟨H1, H2, H3⟩
+      simp_all
+      cases h4: result1.qualType with
+      | mk etyp1 _p1 pred1 =>
+        simp [h4] at H
+        cases h5: etyp1 with
+        | arrow st1 st2 _p tcl =>
+          simp [h5] at H
+          cases h6: typecheckExpr
+                        { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv',
+                          nextLoc := result1.nextLoc' }
+                        e2 fuel' with
+          | error err =>
+            simp_all
+          | ok result2 =>
+            simp [h6] at H
+            have hpe2 : pe2 = pe2 := rfl
+            specialize IH2 fuel' { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' } pe2 result2 hpe2 h6
+            rcases IH2 with ⟨H7, H8, H9⟩
+            simp_all
+            cases h7: result2.qualType with
+            | mk etyp2 p2 pred2 =>
+              simp_all
+              cases h7: isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } with
+              | false =>
+                simp_all
+              | true =>
+                simp_all [pure, Except.pure]
+                cases tcl with
+                | fn_tclosure x body env =>
+                  -- should not be possible to have a fn_tclosure here
+                  sorry
+                | pfn_tclosure x body env =>
+                  simp_all
+                  cases h8: typecheckExpr
+                        { pc := ctx.pc, memEnv := result2.memEnv',
+                          varEnv := updateVarEnv env x { etyp := etyp2, poison := joinPoison ctx.pc p2, pred := pred2 },
+                          tagEnv := result2.tagEnv', nextLoc := result1.nextLoc' }
+                        body.toExpr fuel' with
+                | error err =>
+                  simp_all
+                | ok result3 =>
+                  simp_all
+                  cases h9: result3.qualType with
+                  | mk etyp3 p3 pred3 =>
+                    simp_all
+                    cases h10: isSubtype st2 { etyp := etyp3, poison := p3, pred := pred3 } with
+                    | false =>
+                      simp_all
+                    | true =>
+                      simp_all [pure, Except.pure]
+                      cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
+                      sorry
+        | _ => simp_all
   /- The following cases are not possible to convert to PExpr -/
   | newRef _
   | assign _ _
