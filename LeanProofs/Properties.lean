@@ -223,7 +223,35 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
   | vlet x e1 e2 IH1 IH2 =>
     (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
     (cases fuel with | zero |succ fuel') <;> simp_all [typecheckVlet, bind, Except.bind]
-    sorry
+    simp [Expr.toPExpr, Functor.map, Except.map] at P
+    (cases h1: e1.toPExpr with | error err | ok pe1) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
+    (cases h2: e2.toPExpr with | error err | ok pe2) <;> simp [h2, Seq.seq, Except.bind, Except.map] at P
+    cases h3: typecheckExpr ctx e1 fuel' with
+    | error err =>
+      simp_all
+    | ok result1 =>
+      simp [h3] at H
+      specialize IH1 fuel' ctx pe1 result1 h1 h3
+      rcases IH1 with ⟨H1, H2, H3⟩
+      cases h4: result1.qualType with
+      | mk etyp1 p1 pred1 =>
+        simp_all
+        cases h4: typecheckExpr
+                        { pc := ctx.pc, memEnv := result1.memEnv', varEnv := updateVarEnv ctx.varEnv x { etyp := etyp1, poison := joinPoison ctx.pc p1, pred := pred1 }, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+                        e2 fuel' with
+        | error err =>
+          simp_all
+        | ok result2 =>
+          simp_all
+          cases h5: result2.qualType with
+          | mk etyp2 p2 pred2 =>
+            simp_all [pure, Except.pure]
+            have hpe2 : pe2 = pe2 := rfl
+            specialize IH2 fuel'
+             { pc := ctx.pc, memEnv := result1.memEnv', varEnv := updateVarEnv ctx.varEnv x { etyp := etyp1, poison := joinPoison ctx.pc p1, pred := pred1 }, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+             pe2 result2 hpe2 h4
+            simp_all
+            cases result; cases result1; cases result2; cases ctx; cases H; simp_all
   | app e1 e2 IH1 IH2 =>
     (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
     (cases fuel with | zero |succ fuel') <;> simp_all [typecheckApp, bind, Except.bind]
