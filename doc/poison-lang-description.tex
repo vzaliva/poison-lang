@@ -650,10 +650,10 @@ The type system includes two conditional typing rules that handle predicate-base
 \frac{\begin{array}{c}
 \text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p' \{ P' \} \dashv \Gamma' ; \mathcal{L}' \\
 \text{match\_guard}(e_1, \Gamma, \sigma) = k \\
-\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L}'[k \mapsto \text{true}] \vdash e_2 : T \triangleright p'' \{ P'' \} \dashv \Gamma'' ; \mathcal{L}'' \\
-\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L}'[k \mapsto \text{false}] \vdash e_3 : T \triangleright p''' \{ P''' \} \dashv \Gamma''' ; \mathcal{L}'''
+pc ; \Gamma' ; \sigma ; \mathcal{L}'[k \mapsto \text{true}] \vdash e_2 : T \triangleright p'' \{ P'' \} \dashv \Gamma'' ; \mathcal{L}'' \\
+pc ; \Gamma' ; \sigma ; \mathcal{L}'[k \mapsto \text{false}] \vdash e_3 : T \triangleright p''' \{ P''' \} \dashv \Gamma''' ; \mathcal{L}'''
 \end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p' p'' p''' \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma'' \Gamma''' ; \mathcal{L}'}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p'' p''' \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma'' \Gamma''' ; \mathcal{L}'}
 \]
 
 The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, the branches are typed with different valuations of guard $k$ in environment $\mathcal{L}$. This enables:
@@ -662,6 +662,8 @@ The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, 
     \item \textbf{Definite poisoning in else branch}: Values guarded by $k$ become poisoned when $k$ evaluates to false
     \item \textbf{Precise fault tracking}: The type system can track exactly which runtime conditions affect poison status
 \end{itemize}
+
+NOTE: In de-poisoning case when predicate is matched we do not propage poison from condition check to the branches.
 
 \paragraph{Note on $\mathcal{L}'$ propagation:} The predicate-based conditional rule returns $\mathcal{L}'$ (the environment after evaluating $e_1$) rather than attempting to join $\mathcal{L}''$ and $\mathcal{L}'''$ from the branches. This is a conservative but sound design choice, as $\mathcal{L}''$ contains $k \mapsto \text{true}$ while $\mathcal{L}'''$ contains $k \mapsto \text{false}$, making them contradictory. After the conditional completes, we don't know which branch was taken at runtime, so we revert $k$ to unknown status by returning $\mathcal{L}'$.
 

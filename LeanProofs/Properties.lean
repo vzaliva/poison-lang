@@ -142,7 +142,7 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
             simp_all
             cases h9: typecheckExpr
                         { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                          tagEnv := Std.HashMap.insert result1.tagEnv' k true, nextLoc := result1.nextLoc' }
+                          tagEnv := Std.HashMap.insert result1.tagEnv' k true, nextLoc := result1.nextLoc', nextTag := ctx.nextTag}
                         e2 fuel' with
             | error err =>
               simp_all
@@ -153,7 +153,7 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
                 simp_all
                 cases h11: typecheckExpr
                         { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                          tagEnv := Std.HashMap.insert result1.tagEnv' k false, nextLoc := result1.nextLoc' }
+                          tagEnv := Std.HashMap.insert result1.tagEnv' k false, nextLoc := result1.nextLoc', nextTag := ctx.nextTag}
                         e3 fuel' with
                 | error err =>
                   simp_all
@@ -169,10 +169,14 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
                       simp_all
                       have hpe2 : pe2 = pe2 := rfl
                       specialize IH2 fuel'
-                           { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := Std.HashMap.insert result1.tagEnv' k true, nextLoc := result1.nextLoc' }
+                           { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                             tagEnv := Std.HashMap.insert result1.tagEnv' k true,
+                             nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
                            pe2 result2 hpe2 h9
                       have hpe3 : pe3 = pe3 := rfl
-                      specialize IH3 fuel' { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := Std.HashMap.insert result1.tagEnv' k false, nextLoc := result1.nextLoc' }
+                      specialize IH3 fuel' { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                             tagEnv := Std.HashMap.insert result1.tagEnv' k false,
+                                             nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
                           pe3 result3 hpe3 h11
                       rcases IH2 with ⟨H14, H15, H16⟩
                       rcases IH3 with ⟨H17, H18, H19⟩
@@ -181,7 +185,7 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
             simp_all
             cases h9: typecheckExpr
                         { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                          tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+                          tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
                         e2 fuel' with
             | error err =>
               simp_all
@@ -192,7 +196,7 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
                 simp_all
                 cases h11: typecheckExpr
                         { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                          tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+                          tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
                         e3 fuel' with
                 | error err =>
                   simp_all
@@ -208,10 +212,14 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
                       simp_all [pure, Except.pure]
                       have hpe2 : pe2 = pe2 := rfl
                       specialize IH2 fuel'
-                           { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+                           { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                             tagEnv := result1.tagEnv',
+                             nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
                            pe2 result2 hpe2 h9
                       have hpe3 : pe3 = pe3 := rfl
-                      specialize IH3 fuel' { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+                      specialize IH3 fuel' {pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                            tagEnv := result1.tagEnv',
+                                            nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
                           pe3 result3 hpe3 h11
                       rcases IH2 with ⟨H14, H15, H16⟩
                       rcases IH3 with ⟨H17, H18, H19⟩
@@ -237,7 +245,11 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
       | mk etyp1 p1 pred1 =>
         simp_all
         cases h4: typecheckExpr
-                        { pc := ctx.pc, memEnv := result1.memEnv', varEnv := updateVarEnv ctx.varEnv x { etyp := etyp1, poison := joinPoison ctx.pc p1, pred := pred1 }, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+                        { pc := ctx.pc, memEnv := result1.memEnv',
+                          varEnv := updateVarEnv ctx.varEnv x { etyp := etyp1, poison := joinPoison ctx.pc p1, pred := pred1 },
+                          tagEnv := result1.tagEnv',
+                          nextLoc := result1.nextLoc',
+                          nextTag := ctx.nextTag }
                         e2 fuel' with
         | error err =>
           simp_all
@@ -248,7 +260,11 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
             simp_all [pure, Except.pure]
             have hpe2 : pe2 = pe2 := rfl
             specialize IH2 fuel'
-             { pc := ctx.pc, memEnv := result1.memEnv', varEnv := updateVarEnv ctx.varEnv x { etyp := etyp1, poison := joinPoison ctx.pc p1, pred := pred1 }, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' }
+             { pc := ctx.pc, memEnv := result1.memEnv',
+               varEnv := updateVarEnv ctx.varEnv x { etyp := etyp1, poison := joinPoison ctx.pc p1, pred := pred1 },
+               tagEnv := result1.tagEnv',
+               nextLoc := result1.nextLoc',
+               nextTag := ctx.nextTag }
              pe2 result2 hpe2 h4
             simp_all
             cases result; cases result1; cases result2; cases ctx; cases H; simp_all
@@ -274,14 +290,19 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
           simp [h5] at H
           cases h6: typecheckExpr
                         { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv',
-                          nextLoc := result1.nextLoc' }
+                          nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
                         e2 fuel' with
           | error err =>
             simp_all
           | ok result2 =>
             simp [h6] at H
             have hpe2 : pe2 = pe2 := rfl
-            specialize IH2 fuel' { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc' } pe2 result2 hpe2 h6
+            specialize IH2 fuel' { pc := ctx.pc, memEnv := result1.memEnv',
+                                   varEnv := ctx.varEnv,
+                                   tagEnv := result1.tagEnv',
+                                   nextLoc := result1.nextLoc',
+                                   nextTag := ctx.nextTag }
+                                   pe2 result2 hpe2 h6
             rcases IH2 with ⟨H7, H8, H9⟩
             simp_all
             cases h7: result2.qualType with
@@ -301,7 +322,7 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
                   cases h8: typecheckExpr
                         { pc := ctx.pc, memEnv := result2.memEnv',
                           varEnv := updateVarEnv env x { etyp := etyp2, poison := joinPoison ctx.pc p2, pred := pred2 },
-                          tagEnv := result2.tagEnv', nextLoc := result1.nextLoc' }
+                          tagEnv := result2.tagEnv', nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
                         body.toExpr fuel' with
                 | error err =>
                   simp_all

@@ -21,6 +21,7 @@ structure TypeContext where
   varEnv : VarTypeEnv    -- σ
   tagEnv : TagEnv        -- ℒ
   nextLoc : Address  -- for fresh location generation
+  nextTag : Tag  -- for fresh location generation
 
 /-- Type checking result: qualified type and updated memory environment -/
 structure TypeResult where
@@ -28,6 +29,7 @@ structure TypeResult where
   memEnv' : MemoryTypeEnv -- Updated memory typing environment
   tagEnv' : TagEnv  -- Updated logical environment
   nextLoc' : Address -- Updated next location
+  nextTag' : Tag -- Updated next location
 
 /-- Type checking monad for error handling -/
 abbrev TypecheckM := Except String
@@ -36,10 +38,18 @@ abbrev TypecheckM := Except String
 def freshTLoc (ctx : TypeContext): (Address × TypeContext) :=
   (ctx.nextLoc, { ctx with nextLoc := ctx.nextLoc + 1 })
 
-
 -- Allocate a fresh location and return it along with updated typing context
 def freshTLocRes (result : TypeResult): (Address × TypeResult) :=
   (result.nextLoc', { result with nextLoc' := result.nextLoc' + 1 })
+
+-- Function to get a fresh Tag Value From the environment
+def generateFreshTag (ctx : TypeContext) : (Tag × TypeContext) :=
+  (ctx.nextTag, { ctx with nextTag := ctx.nextTag + 1 })
+
+-- Allocate a fresh Tag Value and return it along with updated typing result
+def generateFreshTagRes (result : TypeResult): (Tag × TypeResult) :=
+  (result.nextTag', { result with nextTag' := result.nextTag' + 1 })
+
 
 -- Helper functions
 
@@ -252,14 +262,14 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag 
 -/
 def typecheckInt (ctx : TypeContext) (_n : Int) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨ETyp.int, false, none⟩  -- clean, no predicate
-  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 /-- Rule: bool (Ott rule: bool)
 -- pc ; G ; S ; L |- b : bool :> clean { no_pred } -| G ; L
 -/
 def typecheckBool (ctx : TypeContext) (_b : Bool) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨ETyp.bool, false, none ⟩  -- clean, no predicate
-  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 
 /-- Rules: var_guard_true, var_guard_false, var_guard_unknown, var_no_pred (Ott rules)
@@ -277,21 +287,21 @@ def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
     | none =>  -- no_pred case
       let poison := joinPoison ctx.pc poison
       let qt' : QTyp := ⟨etyp, poison, none ⟩
-      return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+      return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
     | some tp =>  -- has predicate
       let ⟨k, arg_name, pred_body, var_env⟩ := tp
       match ctx.tagEnv.get? k with
       | some true =>  -- guard_true case
         let qt' : QTyp := ⟨etyp, ctx.pc, none ⟩
-        return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+        return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
       | some false =>  -- guard_false case
         let qt' : QTyp := ⟨etyp, true, none ⟩  -- poisoned
-        return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+        return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
       | none =>  -- guard_unknown case
         let poison := joinPoison ctx.pc poison
         let tp' : TPred := ⟨k, arg_name, pred_body, var_env⟩
         let qt' : QTyp := ⟨etyp, poison, some tp' ⟩
-        return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+        return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
   | none => throw s!"Variable {x} not found in environment"
 
 
@@ -306,7 +316,7 @@ def typecheckLocation (ctx : TypeContext) (l : Address) : TypecheckM TypeResult 
     let ⟨etyp, _p, pred ⟩ := qt
     let refTyp := ETyp.ref etyp l
     let qt' : QTyp := ⟨refTyp, false, pred ⟩  -- clean, no predicate
-    return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+    return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
   | none => throw s!"Location {l} not found in memory environment"
 
 /-- Rule: unit (Ott rule: unit)
@@ -314,14 +324,14 @@ def typecheckLocation (ctx : TypeContext) (l : Address) : TypecheckM TypeResult 
 -/
 def typecheckUnit (ctx : TypeContext) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨ETyp.unit, false, none  ⟩  -- clean, no predicate
-  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 /--  Rule: string (Ott rule: string)
 -- pc ; G ; S ; L |- string : string :> clean { no_pred } -| G ; L
 -/
 def typecheckString (ctx : TypeContext) (_s : String) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨ETyp.string, false, none  ⟩  -- clean, no predicate
-  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 -- The following option is needed in increasing the maximum number of heartbeats
 -- to avoid the termination checker failure on the following mutual block.
@@ -340,7 +350,7 @@ def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : 
   let arrowTyp : ETyp := ETyp.arrow st1 st2 false (TClosure.fn_tclosure x body ctx.varEnv)
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
-   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 /-- Rule: pfn_abs (Ott rule: pfn_abs)
 ----------------------------------------------------------------------  :: pfn_abs
@@ -357,7 +367,7 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
 
-  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc }
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 
 
@@ -371,13 +381,6 @@ def generateFreshVar (ctx : TypeContext) (pref : Name) (suffix : Nat) (fuel : Na
       else
        candidate
 termination_by fuel
-
--- Function to get a fresh Tag Value From the environment
-def generateFreshTag (result : TypeResult) : Tag :=
-    let listkeys := result.tagEnv'.keys
-    match listkeys.max? with
-      | none     => 1
-      | some num => num + 1
 
 
 mutual
@@ -448,14 +451,14 @@ def typecheckFrand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRe
       let ⟨etyp, _, _  ⟩ := result.qualType
       if etyp != ETyp.int then throw ("Argument Expression to frand must have type int")
       else
-        let newTag := generateFreshTag result
+        let (newTag,result') := generateFreshTagRes result
         let varName := generateFreshVar ctx "limit" 0 fuel
         let predBody : PExpr <- Expr.toPExpr (Expr.op (Expr.op (Expr.var varName) Op.gte (Expr.num 0)) Op.and
                                   (Expr.op (Expr.var varName) Op.lte ( e)) )
         let depoisoningPred : TPred := ⟨ newTag  , varName  , predBody , ctx.varEnv⟩
 
         let qt' : QTyp := ⟨ETyp.int , true, some depoisoningPred ⟩
-        return {result with qualType := qt'}
+        return {result' with qualType := qt'}
 termination_by fuel
 
 /-
@@ -525,7 +528,7 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
         ⟨ETyp.bool, poison, none⟩
       else
         ⟨ETyp.int, poison, none⟩
-    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
+    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
 
 /-- Rule: ref (Ott rule: ref)
@@ -548,7 +551,7 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
     let memEnv' := updateMemEnv result'.memEnv' l storedQt
 
     let qt : QTyp := ⟨ETyp.ref etyp l, ctx.pc, none  ⟩
-    return { qualType := qt, memEnv' := memEnv', tagEnv' := result'.tagEnv', nextLoc' := result'.nextLoc' }
+    return { qualType := qt, memEnv' := memEnv', tagEnv' := result'.tagEnv', nextLoc' := result'.nextLoc', nextTag' := result'.nextTag' }
 termination_by fuel
 
 /-- Rule: assign (Ott rule: assign)
@@ -576,7 +579,7 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
 
       let resultPoison := joinPoison ctx.pc p1
       let qt : QTyp := ⟨ETyp.unit, resultPoison, none  ⟩
-      return { qualType := qt, memEnv' := memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc'  }
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag'  }
     | _ => throw "Left operand of assignment must be a reference"
 termination_by fuel
 
@@ -595,7 +598,7 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
         -- Reference is poisoned: always return poisoned with no predicate
         -- Ott rule: deref_poisoned
         let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned, no_pred
-        return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
+        return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
       else
         -- Reference is clean: proceed with normal predicate handling
         match result.memEnv'.get? l with
@@ -605,7 +608,7 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
             if etyp' != t then throw s!"Type mismatch in dereference: {repr etyp'} != {repr t}"
             let poison := joinPoison ctx.pc p2
             let qt : QTyp := ⟨t, poison, none  ⟩
-            return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
+            return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
           | some ⟨k, arg_name, pred_body, var_env⟩ =>  -- Ott rule: deref_guard_true, deref_guard_false, deref_guard_unknown
             if etyp' != t then throw "Type mismatch in dereference"
             match result.tagEnv'.get? k with
@@ -613,16 +616,16 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
               -- Ott rule: deref_guard_true
               let poison := ctx.pc
               let qt : QTyp := ⟨t, poison, none  ⟩
-              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
+              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
             | some false =>
               -- Ott rule: deref_guard_false
               let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned
-              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
+              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
             | none =>
               -- Ott rule: deref_guard_unknown
               let poison := joinPoison ctx.pc p2
               let qt : QTyp := ⟨t, poison, some ⟨k, arg_name, pred_body, var_env⟩ ⟩
-              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc' }
+              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
         | none => throw s!"Location {l} not found in memory environment"
     | _ => throw "Operand of dereference must be a reference"
 termination_by fuel
@@ -646,7 +649,7 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
 
     let poison := joinPoison p1 p2
     let qt : QTyp := ⟨etyp2, poison, pred2  ⟩
-    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
+    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
 
 
@@ -703,7 +706,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         -- Conclusion: pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
         let poison := joinPoison ctx.pc p3
         let qt : QTyp := ⟨etyp3, poison, pred3⟩
-        return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc' }
+        return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc', nextTag' := result3.nextTag' }
 
       | TClosure.pfn_tclosure x body env =>
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
@@ -720,7 +723,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         -- Conclusion: pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
         let poison := joinPoison ctx.pc p3
         let qt : QTyp := ⟨etyp3, poison, pred3⟩
-        return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc' }
+        return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc', nextTag' := result3.nextTag' }
 
     | _ => throw "Left operand of application must be a function"
 termination_by fuel
@@ -749,7 +752,7 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
 
     let poison := joinPoison ctx.pc (joinPoison p1 p2)
     let qt : QTyp := ⟨etyp2, poison, pred2  ⟩
-    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
+    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
 
 
@@ -789,8 +792,9 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let qt : QTyp := ⟨etyp2, poison, none  ⟩
       let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
       let nextLoc' := max result2.nextLoc' result3.nextLoc'
+      let nextTag' := max result2.nextTag' result3.nextTag'
       -- Return original tag environment (k becomes unknown after conditional)
-      return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv, nextLoc' := nextLoc' }
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv, nextLoc' := nextLoc', nextTag' := nextTag' }
 
     | .error _ => do
       -- Standard case (if_std) - no matching predicate found
@@ -809,7 +813,8 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let qt : QTyp := ⟨etyp2, poison, none  ⟩
       let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
       let nextLoc' := max result2.nextLoc' result3.nextLoc'
-      return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv, nextLoc' := nextLoc' }
+      let nextTag' := max result2.nextTag' result3.nextTag'
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv, nextLoc' := nextLoc', nextTag' := nextTag' }
 termination_by fuel
 
 
@@ -843,7 +848,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
       let qt : QTyp := ⟨ETyp.unit, poison, none  ⟩
       -- Set k to false after loop (as per Ott spec)
       let tagEnv' := ctx'.tagEnv.insert k false
-      return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := tagEnv', nextLoc' := result2.nextLoc' }
+      return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 
     | .error _ => do
       -- Standard case (while_std) - no matching predicate found
@@ -857,7 +862,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
       -- Simplified: just return unit with combined poison
       let poison := joinPoison ctx.pc (joinPoison p' p'')
       let qt : QTyp := ⟨ETyp.unit, poison, none  ⟩
-      return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
+      return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
 
 
@@ -877,6 +882,7 @@ def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
     varEnv := []
     tagEnv := {}
     nextLoc := 0
+    nextTag := 1
   }
   let result ← typecheck initialCtx e defaultFuel
   return result.qualType
@@ -888,6 +894,7 @@ def typecheckExprVerbose (e : Expr) : TypecheckM TypeResult := do
     varEnv := []
     tagEnv := {}
     nextLoc := 0
+    nextTag := 1
   }
   typecheck initialCtx e defaultFuel
 
