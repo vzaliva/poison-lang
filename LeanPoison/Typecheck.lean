@@ -280,10 +280,10 @@ def typecheckBool (ctx : TypeContext) (_b : Bool) : TypecheckM TypeResult := do
 -- - var_no_pred: S(x) = T :> p { no_pred }
 --/
 def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
-  dbg_trace "Typechecking var Name "
-  dbg_trace x
-  dbg_trace "ctx.pc is"
-  dbg_trace ctx.pc
+  --dbg_trace "Typechecking var "
+  --dbg_trace x
+  --dbg_trace "ctx.pc is"
+  --dbg_trace ctx.pc
   match lookupVarEnv ctx.varEnv x with
   | some qt =>
     let ⟨etyp, poison, pred⟩ := qt
@@ -294,19 +294,19 @@ def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
       return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
     | some tp =>  -- has predicate
       let ⟨k, arg_name, pred_body, var_env⟩ := tp
-      dbg_trace "In typeCheckVar"
-      dbg_trace k
+     -- dbg_trace "In typeCheckVar"
+     -- dbg_trace k
       match ctx.tagEnv.get? k with
       | some true =>  -- guard_true case
-        dbg_trace "Guard True case"
+       -- dbg_trace "Guard True case"
         let qt' : QTyp := ⟨etyp, ctx.pc, none ⟩
         return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
       | some false =>  -- guard_false case
-        dbg_trace "Guard False case"
+       -- dbg_trace "Guard False case"
         let qt' : QTyp := ⟨etyp, true, none ⟩  -- poisoned
         return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
       | none =>  -- guard_unknown case
-        dbg_trace "Guard Unknown case"
+       -- dbg_trace "Guard Unknown case"
         let poison := joinPoison ctx.pc poison
         let tp' : TPred := ⟨k, arg_name, pred_body, var_env⟩
         let qt' : QTyp := ⟨etyp, poison, some tp' ⟩
@@ -538,7 +538,7 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
         let poison := joinPoison ctx.pc (joinPoison p1 p2)
         let qt : QTyp :=
          ⟨ETyp.bool, poison, none⟩
-        return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
+        return { result2 with qualType := qt }
     else
       let result1 ← typecheckExpr ctx e1 fuel
       let ⟨etyp1, p1, _  ⟩ := result1.qualType
@@ -555,7 +555,7 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
           ⟨ETyp.bool, poison, none⟩
         else
           ⟨ETyp.int, poison, none⟩
-      return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc' }
+      return { result2 with qualType := qt }
 termination_by fuel
 
 /-- Rule: ref (Ott rule: ref)
@@ -822,7 +822,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv, nextLoc' := nextLoc', nextTag' := nextTag' }
 
     | .error _ => do
-      dbg_trace "No tag found"
+    --  dbg_trace "No tag found"
       -- Standard case (if_std) - no matching predicate found
       let branchPc := joinPoison ctx.pc p'
       let ctx'' := { ctx' with pc := branchPc }
