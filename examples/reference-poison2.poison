@@ -1,5 +1,5 @@
 -- Reference poison example 2: poisoned references
 let get_corrupted_ptr = fn x_unit : unit => ref (frand 0) : (ref int) in
-let bad_ref = get_corrupted_ptr unit in  --(* Poisoned reference *)
-(!bad_ref;     -- (* Result: poisoned (untrusted reference) *)
-bad_ref := 42)  --(* Poisons data at unknown location *) 
+let bad_ref = get_corrupted_ptr unit in  -- Poisoned reference
+(!bad_ref;     -- Result: poisoned (untrusted reference) 
+bad_ref := 42)  --Poisons data at unknown location
