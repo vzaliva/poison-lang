@@ -140,7 +140,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
       | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
-    let validOps := ["+", "-", "*", "/", ">", ">=", "<", "<=", "=="]
+    let validOps := ["+", "-", "*", "/", ">", ">=", "<", "<=", "==","&","|"]
     let ops := contents.filterMap fun
       | Content.Character s =>
           let trimmed := s.trim
@@ -154,15 +154,17 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
           let lhsExpr ← xmlToExpr lhs
           let rhsExpr ← xmlToExpr rhs
           match opStr with
-          | "+" => return Expr.op lhsExpr Op.add rhsExpr
-          | "-" => return Expr.op lhsExpr Op.sub rhsExpr
-          | "*" => return Expr.op lhsExpr Op.mul rhsExpr
-          | "/" => return Expr.op lhsExpr Op.div rhsExpr
-          | ">" => return Expr.op lhsExpr Op.gt rhsExpr
+          | "+"  => return Expr.op lhsExpr Op.add rhsExpr
+          | "-"  => return Expr.op lhsExpr Op.sub rhsExpr
+          | "*"  => return Expr.op lhsExpr Op.mul rhsExpr
+          | "/"  => return Expr.op lhsExpr Op.div rhsExpr
+          | ">"  => return Expr.op lhsExpr Op.gt rhsExpr
           | ">=" => return Expr.op lhsExpr Op.gte rhsExpr
-          | "<" => return Expr.op lhsExpr Op.lt rhsExpr
+          | "<"  => return Expr.op lhsExpr Op.lt rhsExpr
           | "<=" => return Expr.op lhsExpr Op.lte rhsExpr
           | "==" => return Expr.op lhsExpr Op.eq rhsExpr
+          | "&"  => return Expr.op lhsExpr Op.and rhsExpr
+          | "|"  => return Expr.op lhsExpr Op.or rhsExpr
           | _ => .error s!"Unknown operator: {opStr}"
       | _ => .error s!"Invalid binary_expr structure: {contents}"
 

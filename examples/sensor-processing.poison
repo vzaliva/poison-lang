@@ -6,8 +6,8 @@ let sensor1 = get_sensor unit in -- (* Type: int :> poisoned {guard "temp" (y, y
 let sensor2 = get_sensor unit in  --(* Type: int :> poisoned {guard "pressure" (z, z >= 0, _)} *)
 
 let f = fn x : int =>            -- (* Captures sensor1 with its predicate *)
-    if sensor1 >= 0 then         -- (* Matches guard "temp" test expression *)
-        if x >= 0 then           -- (* Matches guard "pressure" test expression *)
+    if ((sensor1 >= 0) & (sensor1 <= 0)) then         -- (* Matches guard "temp" test expression *)
+        if ((x >= 0) & (x <= 0)) then           -- (* Matches guard "pressure" test expression *)
             sensor1 + x          -- (* Both de-poisoned: clean result *)
         else
             -1                   -- (* x still poisoned *)
