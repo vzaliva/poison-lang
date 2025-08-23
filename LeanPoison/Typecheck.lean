@@ -773,12 +773,10 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
     match matchGuard e1 result1.memEnv' ctx.varEnv with
     | .ok k => do
       -- Predicate-based case (if_depoison)
-      let branchPc := joinPoison ctx.pc p'
-      let ctx'' := { ctx' with pc := branchPc }
 
       -- Type check both branches with updated tag environment
-      let ctxTrue := { ctx'' with tagEnv := ctx''.tagEnv.insert k true }
-      let ctxFalse := { ctx'' with tagEnv := ctx''.tagEnv.insert k false }
+      let ctxTrue := { ctx' with tagEnv := ctx'.tagEnv.insert k true }
+      let ctxFalse := { ctx' with tagEnv := ctx'.tagEnv.insert k false }
 
       let result2 ← typecheckExpr ctxTrue e2 fuel
       let ⟨etyp2, p'', _  ⟩ := result2.qualType
@@ -788,7 +786,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
 
       if etyp2 != etyp3 then throw "Branches of if must have same type"
 
-      let poison := joinPoison ctx.pc (joinPoison p' (joinPoison p'' p'''))
+      let poison := joinPoison ctx.pc (joinPoison p'' p''')
       let qt : QTyp := ⟨etyp2, poison, none  ⟩
       let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
       let nextLoc' := max result2.nextLoc' result3.nextLoc'
