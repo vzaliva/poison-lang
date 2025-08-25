@@ -509,6 +509,19 @@ def typecheckPrintInt (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM Typ
                 return {result with qualType := qt' }
 termination_by fuel
 
+def BinaryOpType (op : Op) : (ETyp × ETyp × ETyp) :=
+ match op with
+ | Op.add => (ETyp.int , ETyp.int , ETyp.int)
+ | Op.sub => (ETyp.int , ETyp.int , ETyp.int)
+ | Op.mul => (ETyp.int , ETyp.int , ETyp.int)
+ | Op.div => (ETyp.int , ETyp.int , ETyp.int)
+ | Op.gt  => (ETyp.int , ETyp.int , ETyp.bool)
+ | Op.gte => (ETyp.int , ETyp.int , ETyp.bool)
+ | Op.lt  => (ETyp.int , ETyp.int , ETyp.bool)
+ | Op.lte => (ETyp.int , ETyp.int , ETyp.bool)
+ | Op.eq  => (ETyp.int , ETyp.int , ETyp.bool)
+ | Op.and => (ETyp.bool , ETyp.bool , ETyp.bool)
+ | Op.or  => (ETyp.bool , ETyp.bool , ETyp.bool)
 /- Function to typecheck expressions in a binary-operation Expression, ensuring
    both expressions in a binary-op expression must be Integers .
 -/
@@ -524,7 +537,22 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
 
-    if (op == Op.and || op == Op.or)
+    let (expTyp1,expTyp2,return_type) := BinaryOpType op
+    let result1 ← typecheckExpr ctx e1 fuel
+    let ⟨acTyp1, p1, _  ⟩ := result1.qualType
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+    let result2 ← typecheckExpr ctx' e2 fuel
+    let ⟨acTyp2, p2, _  ⟩ := result2.qualType
+    let poison := joinPoison ctx.pc (joinPoison p1 p2)
+
+    match expTyp1 == acTyp1,expTyp2 == acTyp2 with
+     | false,false => throw ("Left operand of" ++ toString op ++ "must be" ++ (toStringETyp expTyp1) ++ "and right operand of must be " ++ (toStringETyp expTyp2 ))
+     | false,true  => throw ("Left operand of" ++ toString op ++ "must be" ++ (toStringETyp expTyp1 ) ++ "but got" ++(toStringETyp acTyp1 ) )
+     | true,false  => throw ("Right operand of" ++ toString op ++ "must be" ++ (toStringETyp expTyp2 ) ++ "but got" ++(toStringETyp acTyp2 ))
+     | _,_         =>  let qt : QTyp :=  ⟨return_type, poison, none⟩
+                       return { result2 with qualType := qt }
+
+    /-if (op == Op.and || op == Op.or)
      then
         let result1 ← typecheckExpr ctx e1 fuel
         let ⟨etyp1, p1, _  ⟩ := result1.qualType
@@ -555,7 +583,7 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
           ⟨ETyp.bool, poison, none⟩
         else
           ⟨ETyp.int, poison, none⟩
-      return { result2 with qualType := qt }
+      return { result2 with qualType := qt }-/
 termination_by fuel
 
 /-- Rule: ref (Ott rule: ref)

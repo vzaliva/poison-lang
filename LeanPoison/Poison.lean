@@ -197,3 +197,11 @@ instance : BEq TPred where
 
 instance : BEq QTyp where
   beq := beqQTyp
+
+def toStringETyp : ETyp → String
+  | ETyp.int => "ETyp.int"
+  | ETyp.bool => "ETyp.bool"
+  | ETyp.unit => "ETyp.unit"
+  | ETyp.string => "ETyp.string"
+  | ETyp.ref t l => s!"ETyp.ref {reprETyp t 0} {repr l}"
+  | ETyp.arrow st1 st2 p tcl => s!"ETyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprTClosure tcl 0}"
