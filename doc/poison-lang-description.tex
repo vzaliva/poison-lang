@@ -745,148 +745,144 @@ Logical environment $\mathcal{L}$ evolves through:
 
 \section{Formal Properties}
 
-\subsection{Poison Irrelevance}
-
-We formulate soundness as a property of the type system which ensures that
-poison annotations do not interfere with the computational behaviour of
-programs. Informally, soundness states that the poison status of the initial
-program state does not affect the program's observable behaviour—poison flags
-serve purely as static annotations for fault tracking without altering
-execution.
-
-We define the \textbf{initial program state} as the combination of values and
-poison flags associated with the program counter, variables, and memory locations
-at the beginning of execution. The \textbf{observable behaviour} comprises the
-return values of the program and the final values stored in memory locations.
-Notably, this definition excludes variable bindings and poison flags themselves
-from observable behaviour, as these are implementation details of the type
-system rather than computational outputs.
-
-\begin{definition}[Runtime Configuration]
-A runtime configuration is a triple $\langle e, \mu, \rho \rangle$ where:
-\begin{itemize}
-    \item $e$ is the expression being evaluated
-    \item $\mu$ is the memory mapping locations to values  
-    \item $\rho$ is the variable environment mapping variables to values
-\end{itemize}
-\end{definition}
-
-\begin{definition}[Typing Context]
-A typing context is a tuple $\langle pc, \Gamma, \sigma, \mathcal{L} \rangle$ where:
-\begin{itemize}
-    \item $pc \in \{\text{clean}, \text{poisoned}\}$ is the program counter poison status
-    \item $\Gamma$ is the memory typing environment mapping locations to qualified types ($l : Q$)
-    \item $\sigma$ is the variable typing environment mapping variables to qualified types ($x : Q$)
-    \item $\mathcal{L}$ is the logical environment mapping predicate tags to boolean values ($k : \{\text{true}, \text{false}\}$)
-\end{itemize}
-\end{definition}
-
-\begin{definition}[Observable Behaviour]
-A runtime configuration $\langle e, \mu_0, \rho \rangle$ evaluates to its observable behaviour $\langle \mu_f, v \rangle$, written as:
-\[
-\langle e, \mu_0, \rho \rangle \Downarrow \langle \mu_f, v \rangle
-\]
-where:
-\begin{itemize}
-    \item $\mu_0$ is the initial memory state
-    \item $\mu_f$ is the final memory state after execution
-    \item $v$ is the final value of the expression $e$
-\end{itemize}
-\end{definition}
-
-\begin{theorem}[Poison Irrelevance]
-Let $e$ be an expression.  Suppose there exist typing derivations
-\[
-pc_i ; \Gamma ; \sigma_i ; \mathcal{L}_i \;\vdash\; e : Q_i \dashv \Gamma_i'\qquad (i \in \{1,2\})
-\]
-that possess identical \emph{value} components (the base type elements of
-$\Gamma$, $\sigma_i$) but may vary arbitrarily in their poison annotations and
-predicates. The logical environments $\mathcal{L}_1$ and $\mathcal{L}_2$ and
-program counter poison $pc_1$ and $pc_2$ may also differ. For every memory $\mu$
-and run-time environment $\rho$ compatible with $\Gamma$ and $\sigma$ we have a
-unique big-step evaluation
-\[
-\langle e, \mu, \rho \rangle \Downarrow \langle \mu_f, v \rangle .
-\]
-Consequently the observable pair $\langle \mu_f, v \rangle$ is independent of the initial poison annotations $pc_i,\sigma_i$, the poison parts of $\Gamma$, and the predicate evaluations in $\mathcal{L}_i$.
-\end{theorem}
-
-This theorem establishes that poison annotations and predicate evaluations are purely static: programs with identical computational content but different poison labels and predicate valuations produce identical observable results. The typing judgment $pc ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'$ conservatively tracks potential fault propagation and predicate-based de-poisoning without affecting the underlying computation as specified by the operational semantics $\langle e, \mu, \rho \rangle \rightarrow \langle e', \mu', \rho' \rangle$.
-
 \subsection{Non-interference}
 
-We define non-interference for poison flags to ensure that changes to poison
-status in non-critical inputs cannot affect the poison status of critical
-outputs. This property is crucial for reasoning about fault isolation in the
-presence of both critical and non-critical data.
+We define the non-interference property for the Poison language, which ensures
+that the program's observable behaviour depends solely on critical inputs.
+Additionally, the property allows for fault isolation, where some critical
+inputs must be checked for validity before use.
 
-\begin{definition}[Location Partition]
-A location partition is a tuple $\langle L_{crit}, L_{noncrit} \rangle$ where:
+
+\begin{definition}[Input/Output Classification]
+Inputs consist of:
 \begin{itemize}
-    \item $L_{crit}$ is the set of critical locations
-    \item $L_{noncrit}$ is the set of non-critical locations
-    \item $L_{crit} \cap L_{noncrit} = \emptyset$ and $L_{crit} \cup L_{noncrit}$ contains all locations
+    \item Initial memory locations: $\mu_0 : \text{Location} \rightarrow \text{Value}$
+    \item Initial variable environment: $\rho_0 : \text{Variable} \rightarrow \text{Value}$
+\end{itemize}
+These are partitioned into two disjoint categories:
+\begin{itemize}
+    \item $(L_{crit}, V_{crit})$: Critical locations/variables (may have associated predicates)
+    \item $(L_{noncrit}, V_{noncrit})$: Non-critical locations/variables (values irrelevant to observable outputs)
+\end{itemize}
+
+Outputs consist of:
+\begin{itemize}
+    \item Final memory locations: $\mu_f : \text{Location} \rightarrow \text{Value}$
+    \item Program return value: $v$
+\end{itemize}
+With observable outputs designated as $(L_{obs}, v_{obs})$ where $v_{obs} \in \{\text{true}, \text{false}\}$ indicates whether the return value is observable.
+
+Note: Variable bindings are local to expressions and do not persist as program outputs. Only memory locations and the return value constitute observable outputs.
+\end{definition}
+
+\begin{definition}[Regime Vector]
+Let the critical inputs be indexed as $(inp_1, \ldots, inp_n)$ where each $inp_i$ is either
+a location $l \in L_{crit}$ or a variable $x \in V_{crit}$.
+
+For a given execution, the regime vector $R = (r_1, \ldots, r_n)$ where $r_i \in \{\text{true}, \text{false}\}$ captures
+the validity of each critical input:
+\begin{itemize}
+    \item If $inp_i$ has no predicate: $r_i = \text{true}$ (always valid)
+    \item If $inp_i$ has predicate $P_i$: $r_i = \text{true}$ iff the input value satisfies $P_i$
+\end{itemize}
+
+\textbf{Note:} We deliberately exclude non-critical inputs from the regime
+vector, even if they have predicates. This yields a stronger non-interference
+property: it forbids any non-critical-driven error-handling differences in
+observable outputs. In other words, predicate checks on non-critical inputs
+cannot influence how critical inputs are processed or how observable outputs are
+computed. For example, with critical input $h$ and non-critical input $y$ with
+predicate $y > 0$, the program \texttt{if y>0 then return h+1 else return 0}
+violates non-interference because the observable output depends on $y$'s
+predicate check.
+\end{definition}
+
+\begin{definition}[Non-Interference Property]
+A program $e$ satisfies non-interference with respect to
+the input partitions and observable outputs if, for each regime vector $R$:
+
+Given two executions with the same observable behaviour form as defined above:
+$\langle e, \mu_1, \rho_1 \rangle \Downarrow \langle \mu'_1, v_1 \rangle$
+and $\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu'_2, v_2 \rangle$ where:
+\begin{itemize}
+    \item Regime consistency: Both executions have the same regime vector $R$ (note: for inputs without predicates, $r_i$ is always \text{true})
+    \item Valid critical inputs identical:
+    \begin{itemize}
+        \item $\forall i$ where $r_i = \text{true}$ and input $i$ is location $l$: $\mu_1(l) = \mu_2(l)$
+        \item $\forall i$ where $r_i = \text{true}$ and input $i$ is variable $x$: $\rho_1(x) = \rho_2(x)$
+    \end{itemize}
+    \item Invalid critical inputs arbitrary (but must fail predicate):
+    \begin{itemize}
+        \item $\forall i$ where $r_i = \text{false}$ and input $i$ is location $l$ with predicate $P_i$: $\mu_1(l), \mu_2(l)$ can differ but both must fail $P_i$
+        \item $\forall i$ where $r_i = \text{false}$ and input $i$ is variable $x$ with predicate $P_i$: $\rho_1(x), \rho_2(x)$ can differ but both must fail $P_i$
+    \end{itemize}
+    \item Non-critical inputs arbitrary:
+    \begin{itemize}
+        \item $\forall l \in L_{noncrit}.$ $\mu_1(l), \mu_2(l)$ arbitrary
+        \item $\forall x \in V_{noncrit}.$ $\rho_1(x), \rho_2(x)$ arbitrary
+    \end{itemize}
+\end{itemize}
+Then observable outputs are identical:
+\begin{itemize}
+    \item $\forall l \in L_{obs}.$ $\mu'_1(l) = \mu'_2(l)$
+    \item If $v_{obs} = \text{true}$ then $v_1 = v_2$
 \end{itemize}
 \end{definition}
 
-\begin{definition}[Variable Partition]
-A variable partition is a tuple $\langle V_{crit}, V_{noncrit} \rangle$ where:
+The key insight is the asymmetry in how critical inputs are treated based on their validity:
 \begin{itemize}
-    \item $V_{crit}$ is the set of critical variables
-    \item $V_{noncrit}$ is the set of non-critical variables
-    \item $V_{crit} \cap V_{noncrit} = \emptyset$ and $V_{crit} \cup V_{noncrit}$ contains all variables
+    \item When valid ($r_i = \text{true}$): inputs are reliable and could affect
+    outputs - output depends on their actual values
+    \item When invalid ($r_i = \text{false}$): inputs are faulty, but fault
+    isolation logic should be able to handle them.
 \end{itemize}
-\end{definition}
 
-\begin{definition}[Poison Non-interference Property]
-A program $e$ satisfies poison non-interference with respect to input location
-partition $\langle L_{crit}, L_{noncrit} \rangle$, output location partition
-$\langle L'_{crit}, L'_{noncrit} \rangle$, input variable partition $\langle V_{crit},
-V_{noncrit} \rangle$, and final value criticality $v_{crit} \in \{\text{true},
-\text{false}\}$ if, when typed under any two different initial environments that agree on critical inputs, the typing derivations:
+This is a runtime property which is impossible to guarantee statically. However,
+in the next definition, we will show that we can conservatively approximate it
+via the type system.
+
+\begin{theorem}[Type System Enforces Non-Interference]
+The poison type system enforces the non-interference property through
+conservative fault tracking. Given initial typing environments that reflect the
+critical and non-critical inputs classification:
+
+\textbf{Initial setup:}
 \begin{itemize}
-    \item $\text{clean} ; \Gamma ; \sigma \vdash e : T \rhd p \dashv \Gamma_f$
-    \item $\text{clean} ; \Gamma' ; \sigma' \vdash e : T \rhd p' \dashv \Gamma_f'$
+    \item For critical inputs: 
+    \begin{itemize}
+        \item Without predicates: $\Gamma(l) = T \triangleright \text{clean} \{ \text{no\_pred} \}$ or $\sigma(x) = T \triangleright \text{clean} \{ \text{no\_pred} \}$
+        \item With predicates: $\Gamma(l) = T \triangleright \text{poisoned} \{ P \}$ or $\sigma(x) = T \triangleright \text{poisoned} \{ P \}$
+    \end{itemize}
+    \item For non-critical inputs: $\Gamma(l) = T \triangleright \text{poisoned} \{ \text{no\_pred} \}$ or $\sigma(x) = T \triangleright \text{poisoned} \{ \text{no\_pred} \}$ (poisoned without predicates)
 \end{itemize}
-where the initial environments satisfy:
+
+\textbf{Soundness guarantee:} If the typing derivation starting with $pc = \text{clean}$ yields:
 \begin{itemize}
-    \item $\Gamma \equiv_{L_{crit}} \Gamma'$ (critical input locations have same type and poison)
-    \item $\sigma \equiv_{V_{crit}} \sigma'$ (critical variables have same values and poison)
+    \item $\text{clean} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : T \triangleright \text{clean} \{ P \} \dashv \Gamma' ; \mathcal{L}'$ (when $v_{obs} = \text{true}$)
+    \item $\Gamma'(l) = T_l \triangleright \text{clean} \{ P_l \}$ for each $l \in L_{obs}$
 \end{itemize}
-produce final environments and poison status such that:
+
+Then the program satisfies the non-interference property because:
 \begin{itemize}
-    \item if $v_{crit}$ then $p = p'$ (final value poison is same when value is critical)
-    \item $\Gamma_f \equiv_{L'_{crit}} \Gamma_f'$ (critical output locations have same type and poison)
+    \item The type system's conservative poison propagation ensures that any
+    value marked \texttt{clean} has no data or control dependencies on poisoned
+    values
+    \item Since non-critical inputs are marked as poisoned without predicates
+    (and thus cannot be de-poisoned), a clean observable output implies no
+    dependency on non-critical inputs
+    \item For critical inputs with predicates, the type system tracks when
+    predicates are checked (via $\mathcal{L}$) to enable de-poisoning.
 \end{itemize}
-\end{definition}
 
-This property is not universal - it must be proven for each specific program and
-partition. Starting from clean control flow allows us to isolate the effects of
-non-critical input faults on critical outputs, independent of any control flow
-faults that may occur earlier, prior to program execution. The final value may
-be non-critical when the program is executed primarily for its side effects on
-critical locations rather than its return value. The input and output location
-partitions need not match - a location may be critical for input but
-non-critical for output, or vice versa.
+This shows how the type system's poison tracking (a syntactic property) ensures
+semantic non-interference (a behavioural property).
+\end{theorem}
 
-In the context of fault-tolerant computing, the term ``poison'' refers to faulty
-data, such as that arising from a sensor malfunction. The interpretation of this
-property is that the programme's outputs are contingent upon two sets of inputs.
-The reliability of ``critical'' inputs directly influences the reliability of
-the output. Conversely, the reliability of ``non-critical'' inputs does not
-impact the output's reliability, possibly due to the programme's internal
-mechanisms for managing faults. It is important to emphasise that this property
-does not pertain to the outcome of the computation (values), but rather to the
-reliability of the output.
+The predicate system enables graceful degradation: programs can produce correct 
+outputs even when some critical inputs are faulty, provided those inputs have 
+associated validity checks that are properly exercised.
 
-\subsection{Soundness}
-
-TODO: A soundness theorem would state that the type system correctly predicts
-fault propagation - it never misses a fault. In other words, if the type system
-marks a value as ``poisoned'', then that value truly could be affected by a
-fault in some execution path. This is a ``no false negatives'' guarantee.
-
-\subsection{Completeness}
+\subsection{Non-Completeness}
 
 The Poison language's type system cannot achieve completeness due to its
 flow-sensitive nature and conservative fault propagation approximation. Tracking
@@ -899,12 +895,24 @@ poisoned-marked values are not necessarily poisoned.
 
 \subsection{Progress}
 
-TODO: Progress theorem.
+Progress ensures that well-typed expressions do not get stuck during evaluation.
+If an expression $e$ is well-typed in environments $\Gamma$ and $\sigma$, then
+either:
+\begin{itemize}
+    \item $e$ is a value (already fully evaluated), or
+    \item $e$ can take a step to some expression $e'$ according to the operational semantics
+\end{itemize}
+
+This property guarantees that the type system prevents runtime errors that would
+cause the program to halt unexpectedly. In the context of poison tracking,
+progress ensures that poison propagation rules are consistent with the
+operational semantics - well-typed expressions can always proceed to their next
+evaluation step, maintaining the poison state tracking throughout execution.
 
 \subsection{Preservation}
 
 Preservation ensures that a single small-step reduction cannot invalidate the
-static analysis.  If an expression \(e\) is well typed in typing environments
+static analysis. If an expression \(e\) is well typed in typing environments
 \(\Gamma\) and \(\sigma\), then every immediate successor \(e'\) is well typed as
 well -- possibly in an enlarged environment that reflects concrete run-time effects
 such as the allocation of a fresh memory location or the introduction of a new variable
