@@ -522,6 +522,8 @@ def BinaryOpType (op : Op) : (ETyp × ETyp × ETyp) :=
  | Op.eq  => (ETyp.int , ETyp.int , ETyp.bool)
  | Op.and => (ETyp.bool , ETyp.bool , ETyp.bool)
  | Op.or  => (ETyp.bool , ETyp.bool , ETyp.bool)
+
+
 /- Function to typecheck expressions in a binary-operation Expression, ensuring
    both expressions in a binary-op expression must be Integers .
 -/
