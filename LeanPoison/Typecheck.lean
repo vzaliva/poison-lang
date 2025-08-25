@@ -552,38 +552,6 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
      | _,_         =>  let qt : QTyp :=  ⟨return_type, poison, none⟩
                        return { result2 with qualType := qt }
 
-    /-if (op == Op.and || op == Op.or)
-     then
-        let result1 ← typecheckExpr ctx e1 fuel
-        let ⟨etyp1, p1, _  ⟩ := result1.qualType
-        if etyp1 != ETyp.bool then throw ("Left operand of" ++ toString op ++ "must be bool")
-
-        let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-        let result2 ← typecheckExpr ctx' e2 fuel
-        let ⟨etyp2, p2, _  ⟩ := result2.qualType
-        if etyp2 != ETyp.bool then throw ("Right operand of" ++ toString op ++ "must be bool")
-
-        let poison := joinPoison ctx.pc (joinPoison p1 p2)
-        let qt : QTyp :=
-         ⟨ETyp.bool, poison, none⟩
-        return { result2 with qualType := qt }
-    else
-      let result1 ← typecheckExpr ctx e1 fuel
-      let ⟨etyp1, p1, _  ⟩ := result1.qualType
-      if etyp1 != ETyp.int then throw ("Left operand of" ++ toString op ++ "must be int")
-
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-      let result2 ← typecheckExpr ctx' e2 fuel
-      let ⟨etyp2, p2, _  ⟩ := result2.qualType
-      if etyp2 != ETyp.int then throw ("Right operand of" ++ toString op ++ "must be int")
-
-      let poison := joinPoison ctx.pc (joinPoison p1 p2)
-      let qt : QTyp :=
-        if [Op.eq, Op.gt, Op.gte, Op.lt, Op.lte].contains op then
-          ⟨ETyp.bool, poison, none⟩
-        else
-          ⟨ETyp.int, poison, none⟩
-      return { result2 with qualType := qt }-/
 termination_by fuel
 
 /-- Rule: ref (Ott rule: ref)
