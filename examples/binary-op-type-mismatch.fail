@@ -1,0 +1,7 @@
+Evaluating file: examples/binary-op-type-mismatch.poison
+
+Type checking error:  Operation argument types do not match.
+  Left: string
+  Op:   >=
+  Right: bool
+Runtime error: Runtime type error: cannot apply operation >= to string and boolean

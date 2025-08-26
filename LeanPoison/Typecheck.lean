@@ -556,7 +556,6 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-
     let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
 
@@ -569,7 +568,9 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
         let poison := joinPoison ctx.pc (joinPoison p1 p2)
         let qt : QTyp := ⟨r, poison, none⟩
         return { result2 with qualType := qt }
-    | none => throw ("Operation argument types do not match: {etyp1} {op} {etyp2}")
+    | none => throw s!"Operation argument types do not match.\n  Left: {etyp1}\n  Op:   {op}\n  Right: {etyp2}"
+
+
 
 termination_by fuel
 
