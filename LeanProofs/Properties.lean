@@ -240,7 +240,51 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
   | op e1 op e2 IH1 IH2 =>
     (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
     (cases fuel with | zero |succ fuel') <;> simp_all [typecheckOp, bind, Except.bind]
-    sorry
+    simp [Expr.toPExpr, Functor.map, Except.map] at P
+    (cases h1: e1.toPExpr with | error err | ok pe1) <;> simp_all [h1, Seq.seq, Except.bind, Except.map]
+    (cases h2: e2.toPExpr with | error err | ok pe2) <;> simp_all [h2, Seq.seq, Except.bind, Except.map]
+    cases h3: typecheckExpr ctx e1 fuel' with
+    | error err =>
+      simp_all
+    | ok result1 =>
+      simp [h3] at H
+      have hpe1 : pe1 = pe1 := rfl
+      specialize IH1 fuel' ctx pe1 result1 hpe1 h3
+      rcases IH1 with ⟨H1, H2, H3⟩
+      simp_all
+      cases h4: result1.qualType with
+      | mk etyp1 p1 pred1 =>
+        simp_all
+        cases h5: typecheckExpr
+                        { pc := ctx.pc, memEnv := result1.memEnv',
+                          varEnv := ctx.varEnv,
+                          tagEnv := result1.tagEnv',
+                          nextLoc := result1.nextLoc',
+                          nextTag := ctx.nextTag }
+                        e2 fuel' with
+        | error err =>
+          simp_all
+        | ok result2 =>
+          simp_all
+          cases h6: result2.qualType with
+          | mk etyp2 p2 pred2 =>
+            simp_all
+            cases h7: opEType? op etyp1 etyp2 with
+            | some etyp3 =>
+              simp_all [pure, Except.pure]
+              have hpe2 : pe2 = pe2 := rfl
+              specialize IH2 fuel'
+                        { pc := ctx.pc, memEnv := result1.memEnv',
+                          varEnv := ctx.varEnv,
+                          tagEnv := result1.tagEnv',
+                          nextLoc := result1.nextLoc',
+                          nextTag := ctx.nextTag }
+                        pe2 result2 hpe2 h5
+              rcases IH2 with ⟨H8, H9, H10⟩
+              simp_all
+              cases result; cases result1; cases result2; cases ctx; cases H; simp_all
+            | none =>
+              simp_all
   | vlet x e1 e2 IH1 IH2 =>
     (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
     (cases fuel with | zero |succ fuel') <;> simp_all [typecheckVlet, bind, Except.bind]

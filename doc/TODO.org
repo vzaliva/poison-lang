@@ -3,3 +3,7 @@
     Consider using a more standard monad transformer stack.
   - Implement alpha-equivalence for TClosure type
   - Do we need alpha-equivalence for `Valie.peClosure` and `Value.closure`?
+* Paper
+  - Refined types formulation for predicated types  
+* Proofs
+  - Formuate Non-interference theorem
