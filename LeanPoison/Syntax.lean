@@ -235,47 +235,19 @@ def strToBasicType (str : String) : Except String Typ :=
  | "string" => .ok Typ.string
  | _ => .error ("Invalid type annotation : " ++ str)
 
--- Helper function to convert Typ to string
-def Typ.toString : Typ → String
-  | Typ.int => "int"
-  | Typ.bool => "bool"
-  | Typ.unit => "unit"
-  | Typ.string => "string"
-  | Typ.ref t' => s!"ref {t'.toString}"
-  | Typ.arrow t1 t2 => s!"{t1.toString} -> {t2.toString}"
 
 @[instance]
 instance : ToString Typ where
-  toString := Typ.toString
+  toString t := Std.Format.pretty (repr t)
 
 @[instance]
 instance : ToString Value where
-  toString v :=
-    match v with
-    | Value.num n => s!"{n}"
-    | Value.bool b => s!"{b}"
-    | Value.unit => "()"
-    | Value.str s => s!"{s}"
-    | Value.loc l => s!"@{l}"
-    | Value.closure x e env => s!"(closure {x} <body> {repr e} <env> {repr env})"
-    | Value.peClosure x e env => s!"(peClosure {x} <body> {repr e} <env> {repr env})"
+  toString v := Std.Format.pretty (repr v)
 
 
 @[instance]
 instance : ToString Op where
-  toString op :=
-    match op with
-    | .add => s!"+"     -- +
-    | .sub => s!"-"
-    | .mul => s!"*"
-    | .div => s!"-"
-    | .gte => s!">="     -- >=
-    | .lte => s!"<="
-    | .gt  => s!">"
-    | .lt  => s!"<"
-    | .eq  => s!"=="
-    | .or  => s!"|"
-    | .and => s!"&"
+  toString op := Std.Format.pretty (repr op)
 
 
  -- Helper function to print the type of Value

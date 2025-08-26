@@ -200,11 +200,4 @@ instance : BEq QTyp where
 
 @[instance]
 instance : ToString ETyp where
-  toString e :=
-    match e with
-     | ETyp.int => "int"
-     | ETyp.bool => "bool"
-     | ETyp.string => "string"
-     | ETyp.unit => "unit"
-     | ETyp.ref _ _ => "ref"
-     | ETyp.arrow _ _ _ _  => "arrow"
+  toString e := Std.Format.pretty (repr e)
