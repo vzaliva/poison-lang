@@ -136,6 +136,39 @@ def QTyp.toTyp (qt : QTyp) : Typ :=
 def isSubtype (st : Typ) (qt : QTyp) : Bool :=
   qt.toTyp == st
 
+
+-- Typing judgement for operations
+inductive OpEType : Op → ETyp → ETyp → ETyp → Prop where
+  | add_int : OpEType Op.add ETyp.int ETyp.int ETyp.int
+  | sub_int : OpEType Op.sub ETyp.int ETyp.int ETyp.int
+  | mul_int : OpEType Op.mul ETyp.int ETyp.int ETyp.int
+  | div_int : OpEType Op.div ETyp.int ETyp.int ETyp.int
+
+  | gte_int : OpEType Op.gte ETyp.int ETyp.int ETyp.bool
+  | lte_int : OpEType Op.lte ETyp.int ETyp.int ETyp.bool
+  | gt_int  : OpEType Op.gt  ETyp.int ETyp.int ETyp.bool
+  | lt_int  : OpEType Op.lt  ETyp.int ETyp.int ETyp.bool
+  | eq_int  : OpEType Op.eq  ETyp.int ETyp.int ETyp.bool
+
+  | and_bool : OpEType Op.and ETyp.bool ETyp.bool ETyp.bool
+  | or_bool  : OpEType Op.or  ETyp.bool ETyp.bool ETyp.bool
+
+def opEType? : Op → ETyp → ETyp → Option ETyp
+  | .add, .int,  .int  => some .int
+  | .sub, .int,  .int  => some .int
+  | .mul, .int,  .int  => some .int
+  | .div, .int,  .int  => some .int
+  | .gte, .int,  .int  => some .bool
+  | .lte, .int,  .int  => some .bool
+  | .gt,  .int,  .int  => some .bool
+  | .lt,  .int,  .int  => some .bool
+  | .eq,  .int,  .int  => some .bool
+  | .and, .bool, .bool => some .bool
+  | .or,  .bool, .bool => some .bool
+  | _,    _,     _     => none
+
+
+
 /--
  Helper function to check if two PExprs are syntactically equal modulo
  environment differences. This handles variable substitution and type
@@ -524,38 +557,20 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
 
-    if (op == Op.and || op == Op.or)
-     then
-        let result1 ← typecheckExpr ctx e1 fuel
-        let ⟨etyp1, p1, _  ⟩ := result1.qualType
-        if etyp1 != ETyp.bool then throw ("Left operand of" ++ toString op ++ "must be bool")
+    let result1 ← typecheckExpr ctx e1 fuel
+    let ⟨etyp1, p1, _  ⟩ := result1.qualType
 
-        let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-        let result2 ← typecheckExpr ctx' e2 fuel
-        let ⟨etyp2, p2, _  ⟩ := result2.qualType
-        if etyp2 != ETyp.bool then throw ("Right operand of" ++ toString op ++ "must be bool")
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+    let result2 ← typecheckExpr ctx' e2 fuel
+    let ⟨etyp2, p2, _  ⟩ := result2.qualType
 
+    match opEType? op etyp1 etyp2 with
+    | some r =>
         let poison := joinPoison ctx.pc (joinPoison p1 p2)
-        let qt : QTyp :=
-         ⟨ETyp.bool, poison, none⟩
+        let qt : QTyp := ⟨r, poison, none⟩
         return { result2 with qualType := qt }
-    else
-      let result1 ← typecheckExpr ctx e1 fuel
-      let ⟨etyp1, p1, _  ⟩ := result1.qualType
-      if etyp1 != ETyp.int then throw ("Left operand of" ++ toString op ++ "must be int")
+    | none => throw ("Operation argument types do not match: {etyp1} {op} {etyp2}")
 
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
-      let result2 ← typecheckExpr ctx' e2 fuel
-      let ⟨etyp2, p2, _  ⟩ := result2.qualType
-      if etyp2 != ETyp.int then throw ("Right operand of" ++ toString op ++ "must be int")
-
-      let poison := joinPoison ctx.pc (joinPoison p1 p2)
-      let qt : QTyp :=
-        if [Op.eq, Op.gt, Op.gte, Op.lt, Op.lte].contains op then
-          ⟨ETyp.bool, poison, none⟩
-        else
-          ⟨ETyp.int, poison, none⟩
-      return { result2 with qualType := qt }
 termination_by fuel
 
 /-- Rule: ref (Ott rule: ref)

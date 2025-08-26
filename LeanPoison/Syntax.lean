@@ -235,6 +235,19 @@ def strToBasicType (str : String) : Except String Typ :=
  | "string" => .ok Typ.string
  | _ => .error ("Invalid type annotation : " ++ str)
 
+-- Helper function to convert Typ to string
+def Typ.toString : Typ → String
+  | Typ.int => "int"
+  | Typ.bool => "bool"
+  | Typ.unit => "unit"
+  | Typ.string => "string"
+  | Typ.ref t' => s!"ref {t'.toString}"
+  | Typ.arrow t1 t2 => s!"{t1.toString} -> {t2.toString}"
+
+@[instance]
+instance : ToString Typ where
+  toString := Typ.toString
+
 @[instance]
 instance : ToString Value where
   toString v :=
