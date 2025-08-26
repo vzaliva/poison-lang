@@ -548,9 +548,9 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
     let poison := joinPoison ctx.pc (joinPoison p1 p2)
 
     match expTyp1 == acTyp1,expTyp2 == acTyp2 with
-     | false,false => throw ("Left operand of" ++ toString op ++ "must be" ++ (toStringETyp expTyp1) ++ "and right operand of must be " ++ (toStringETyp expTyp2 ))
-     | false,true  => throw ("Left operand of" ++ toString op ++ "must be" ++ (toStringETyp expTyp1 ) ++ "but got" ++(toStringETyp acTyp1 ) )
-     | true,false  => throw ("Right operand of" ++ toString op ++ "must be" ++ (toStringETyp expTyp2 ) ++ "but got" ++(toStringETyp acTyp2 ))
+     | false,false => throw ("Left operand of " ++ toString op ++ " must be " ++ (toStringETyp expTyp1) ++ "and right operand of must be " ++ (toStringETyp expTyp2 ))
+     | false,true  => throw ("Left operand of " ++ toString op ++ " must be " ++ (toStringETyp expTyp1 ) ++ " but got " ++(toStringETyp acTyp1 ) )
+     | true,false  => throw ("Right operand of " ++ toString op ++ " must be " ++ (toStringETyp expTyp2 ) ++ " but got " ++(toStringETyp acTyp2 ))
      | _,_         =>  let qt : QTyp :=  ⟨return_type, poison, none⟩
                        return { result2 with qualType := qt }
 
