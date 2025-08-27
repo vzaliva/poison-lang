@@ -244,14 +244,14 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
     (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
     (cases fuel with | zero |succ fuel') <;> simp_all [typecheckOp, bind, Except.bind]
     simp [Expr.toPExpr, Functor.map, Except.map] at P
-    (cases h1: e1.toPExpr with | error err | ok pe1) <;> simp_all [h1, Seq.seq, Except.bind, Except.map]
-    (cases h2: e2.toPExpr with | error err | ok pe2) <;> simp_all [h2, Seq.seq, Except.bind, Except.map]
+    (cases h1: e1.toPExpr with | error err | ok pe1) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
+    (cases h2: e2.toPExpr with | error err | ok pe2) <;> simp [h2, Seq.seq, Except.bind, Except.map] at P
     cases h3: typecheckExpr ctx e1 fuel' with
     | error err =>
       simp_all
     | ok result1 =>
       simp [h3] at H
-      have hpe1 : pe1 = pe1 := rfl
+      have hpe1 : e1.toPExpr = .ok pe1 := by simp [h1]
       specialize IH1 fuel' ctx pe1 result1 hpe1 h3
       rcases IH1 with ⟨H1, H2, H3⟩
       simp_all
@@ -431,106 +431,183 @@ namespace NonInterference
     ∃ (fuel : Nat) (verbose : Bool),
       eval fuel c₀ (ExprOrValue.expr e) verbose = pure (StepResult.progress c₁ out)
 
-  -- Input partition: which initial locations/variables are critical vs non-critical
-  structure InputPartition where
-    Lcrit    : List Address
-    Vcrit    : List Name
-    Lnoncrit : List Address
-    Vnoncrit : List Name
-  deriving Repr
-
-  def disjointList {α} [DecidableEq α] (xs ys : List α) : Prop :=
-    ∀ a, a ∈ xs → a ∉ ys
-
-  def wfPartition (p : InputPartition) : Prop :=
-    disjointList p.Lcrit p.Lnoncrit ∧ disjointList p.Vcrit p.Vnoncrit
-
-  -- Types for critical inputs (use QTyp so we can attach optional predicates)
-  structure InputTyping where
-    critLocTypes : List (Address × QTyp)
-    critVarTypes : VarTypeEnv
-  deriving Repr
-
-  def keysLoc (it : InputTyping) : List Address := it.critLocTypes.map (·.1)
-  def keysVar (it : InputTyping) : List Name := it.critVarTypes.map (·.1)
-
   def sameElems {α} [DecidableEq α] (xs ys : List α) : Prop :=
     ∀ a, a ∈ xs ↔ a ∈ ys
 
-  def wfTyping (p : InputPartition) (it : InputTyping) : Prop :=
-    sameElems p.Lcrit (keysLoc it) ∧ sameElems p.Vcrit (keysVar it)
-
   -- What parts of the final state are observable
   structure ObservableSpec where
-    Lobs       : List Address
-    observeRet : Bool
+    Lobs       : List (Address × ETyp)
+    retEtyp?   : Option ETyp
   deriving Repr
 
-  -- Regime vector (one boolean per critical input, in some fixed order).
-  -- We keep the ordering abstract and only require consistency via
-  -- the abstract predicates below.
+  -- Regime vector (split: locations and variables, fixed order given by s.locs/s.vars)
   structure Regime where
-    bits : List Bool
+    locBits : List Bool
+    varBits : List Bool
   deriving Repr
-
-  def numCritical (p : InputPartition) : Nat := p.Lcrit.length + p.Vcrit.length
-  def regimeWellSized (R : Regime) (p : InputPartition) : Prop :=
-    R.bits.length = numCritical p
 
   -- Abstract predicate: does the QTyp-attached predicate hold for the given
   -- input value under the initial environments? For locations the value will
   -- be encoded as Value.num n; for variables it is the variable's Value.
   axiom qtypPredHolds : QTyp → Memory → VarEnv → Value → Prop
 
-  -- Abstract consistency predicate: the regime vector R reflects, for the
-  -- given initial memory/varenv, whether each critical input is valid under
-  -- its (optional) predicate from InputTyping. This glues together the chosen
-  -- ordering of critical inputs with predicate evaluation. Details elided.
-  axiom consistentRegime
-    : Regime → InputPartition → InputTyping → Memory → VarEnv → Prop
+  -- Check if a runtime value has the specified enriched type
+  def valueHasType : Value → ETyp → Prop
+    | Value.num _, ETyp.int => True
+    | Value.bool _, ETyp.bool => True
+    | Value.unit, ETyp.unit => True
+    | Value.str _, ETyp.string => True
+    | Value.loc _, ETyp.ref _ _ => True  -- We only care about the type, not the specific address
+    | Value.closure _ _ _, ETyp.arrow _ _ _ _ => True -- TODO: may need additional checks for arguments
+    | Value.peClosure _ _ _, ETyp.arrow _ _ _ _ => True -- TODO: may need additional checks for arguments
+    | _, _ => False
 
-  -- Abstract agreement predicate: when a regime bit for a critical input is
-  -- true, the corresponding initial inputs in (μ₁,ρ₁) and (μ₂,ρ₂) are equal.
-  -- When the bit is false and there is a predicate, both inputs must fail it.
-  -- (We separate this from consistentRegime to keep responsibilities clear.)
-  axiom agreeOnCriticalInputsUnderRegime
-    : Regime → InputPartition → InputTyping
-      → Memory → VarEnv
-      → Memory → VarEnv → Prop
+  -- Domains of typing environments
+  def memDom (Γ : MemoryTypeEnv) : List Address := Γ.keys
+  def varDom (σ : VarTypeEnv) : List Name := σ.map (·.1)
 
-  axiom valueHasType : Value → ETyp → Prop
-
-  def inputsConform (it : InputTyping) (μ : Memory) (ρ : VarEnv) : Prop :=
-    (∀ {l qt}, (l, qt) ∈ it.critLocTypes → μ.get? l ≠ none ∧ qt.etyp = ETyp.int) ∧
-    (∀ {x qt v}, (x, qt) ∈ it.critVarTypes → VarEnv.get ρ x = some v → valueHasType v qt.etyp)
+  -- Runtime instantiates the context: values exist for every typed variable
+  -- and memory contains entries for each typed location.
+  def runtimeInstantiatesCtx (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) : Prop :=
+    (∀ {l}, l ∈ memDom ctx.memEnv → μ.get? l ≠ none) ∧
+    (∀ {x qt}, (x, qt) ∈ ctx.varEnv → ∃ v, VarEnv.get ρ x = some v ∧ valueHasType v qt.etyp)
 
   -- Helper: equality of observables in the final states
   def observablesEqual (obs : ObservableSpec)
       (c₁ c₂ : Config) (o₁ o₂ : ExprOrValue) : Prop :=
-    let sameMem : Prop := ∀ l, l ∈ obs.Lobs → c₁.memory.get? l = c₂.memory.get? l
-    let sameRet : Prop := if obs.observeRet then o₁ = o₂ else True
+    let addrs : List Address := obs.Lobs.map (·.fst)
+    let sameMem : Prop := ∀ l, l ∈ addrs → c₁.memory.get? l = c₂.memory.get? l
+    let sameRet : Prop := match obs.retEtyp? with | some _ => o₁ = o₂ | none => True
     sameMem ∧ sameRet
 
   -- Build initial configurations from initial inputs
   def mkInit (μ : Memory) (ρ : VarEnv) : Config :=
     { memory := μ, varEnv := ρ, nextLoc := 0 }
 
-  -- Non-Interference property (semantic form)
-  def Holds (e : Expr)
-      (part : InputPartition)
-      (ityp : InputTyping)
-      (obs : ObservableSpec) : Prop :=
-    wfPartition part ∧ wfTyping part ityp →
+  -- =================================================
+  -- Combined input specification (partition + typing)
+  -- =================================================
+
+  structure LocEntry where
+    addr : Address
+    qt   : QTyp
+    is_critical : Bool
+  deriving Repr
+
+  structure VarEntry where
+    name : Name
+    qt   : QTyp
+    is_critical : Bool
+  deriving Repr
+
+  structure InputSpec where
+    locs : List LocEntry
+    vars : List VarEntry
+  deriving Repr
+
+  def specLocAddrs (s : InputSpec) : List Address := s.locs.map (·.addr)
+  def specVarNames (s : InputSpec) : List Name := s.vars.map (·.name)
+
+  def isCritLoc (s : InputSpec) (a : Address) : Prop :=
+    ∃ le, le ∈ s.locs ∧ le.addr = a ∧ le.is_critical = true
+  def isCritVar (s : InputSpec) (x : Name) : Prop :=
+    ∃ ve, ve ∈ s.vars ∧ ve.name = x ∧ ve.is_critical = true
+
+  -- critical lists in the fixed order of the spec
+  def critLocs (s : InputSpec) : List LocEntry := s.locs.filter (·.is_critical)
+  def critVars (s : InputSpec) : List VarEntry := s.vars.filter (·.is_critical)
+
+  def numCritLocs (s : InputSpec) : Nat := (critLocs s).length
+  def numCritVars (s : InputSpec) : Nat := (critVars s).length
+  def numCriticalSpec (s : InputSpec) : Nat := numCritLocs s + numCritVars s
+
+  def regimeWellSizedSpec (R : Regime) (s : InputSpec) : Prop :=
+    R.locBits.length = numCritLocs s ∧ R.varBits.length = numCritVars s
+
+  -- Well-formedness of combined spec
+  def wfInputSpec (s : InputSpec) : Prop :=
+    (∀ {le}, le ∈ s.locs → le.qt.etyp = ETyp.int ∧ (le.is_critical = false → le.qt.poison = true ∧ le.qt.pred = none)) ∧
+    (∀ {ve}, ve ∈ s.vars → (ve.is_critical = false → ve.qt.poison = true ∧ ve.qt.pred = none))
+
+  -- Context matches the spec exactly (pc clean, empty logical env, exact coverage, exact typings)
+  def ctxMatchesSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
+    ctx.pc = false ∧ ctx.tagEnv = {} ∧
+    sameElems (specLocAddrs s) (memDom ctx.memEnv) ∧
+    sameElems (specVarNames s) (varDom ctx.varEnv) ∧
+    (∀ {le}, le ∈ s.locs → ctx.memEnv.get? le.addr = some le.qt) ∧
+    (∀ {ve}, ve ∈ s.vars → lookupVarEnv ctx.varEnv ve.name = some ve.qt)
+
+  -- Runtime conforms to spec (availability + dynamic type compatibility for vars)
+  def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
+    (∀ {le}, le ∈ s.locs → μ.get? le.addr ≠ none) ∧
+    (∀ {ve v}, ve ∈ s.vars → VarEnv.get ρ ve.name = some v → valueHasType v ve.qt.etyp)
+
+  -- Regime consistency (fixed order): each bit i corresponds to the i-th
+  -- critical location/variable in critLocs/critVars, respectively.
+  def consistentRegimeSpec (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
+    regimeWellSizedSpec R s ∧
+    (∀ (i : Nat) (le : LocEntry), (critLocs s)[i]? = some le →
+      (∃ n, μ.get? le.addr = some n) ∧
+      ((R.locBits[i]? = some true) ↔ (∃ n, μ.get? le.addr = some n ∧ qtypPredHolds le.qt μ ρ (Value.num n)))) ∧
+    (∀ (i : Nat) (ve : VarEntry), (critVars s)[i]? = some ve →
+      (∃ v, VarEnv.get ρ ve.name = some v) ∧
+      ((R.varBits[i]? = some true) ↔ (∃ v, VarEnv.get ρ ve.name = some v ∧ qtypPredHolds ve.qt μ ρ v)))
+
+  def agreeOnCriticalInputsUnderRegimeSpec
+    (R : Regime) (s : InputSpec)
+    (μ₁ : Memory) (ρ₁ : VarEnv)
+    (μ₂ : Memory) (ρ₂ : VarEnv) : Prop :=
+    -- Locations: when bit is true, values must be equal; when false and a predicate exists, both must fail it
+    (∀ (i : Nat) (le : LocEntry), (critLocs s)[i]? = some le →
+      match R.locBits[i]? with
+      | some true => μ₁.get? le.addr = μ₂.get? le.addr
+      | some false =>
+          match le.qt.pred with
+          | none => True
+          | some _ =>
+              (∃ n1, μ₁.get? le.addr = some n1 ∧ ¬ qtypPredHolds le.qt μ₁ ρ₁ (Value.num n1)) ∧
+              (∃ n2, μ₂.get? le.addr = some n2 ∧ ¬ qtypPredHolds le.qt μ₂ ρ₂ (Value.num n2))
+      | none => True) ∧
+    -- Variables: when bit is true, values must be equal; when false and a predicate exists, both must fail it
+    (∀ (i : Nat) (ve : VarEntry), (critVars s)[i]? = some ve →
+      match R.varBits[i]? with
+      | some true => VarEnv.get ρ₁ ve.name = VarEnv.get ρ₂ ve.name
+      | some false =>
+          match ve.qt.pred with
+          | none => True
+          | some _ =>
+              (∃ v1, VarEnv.get ρ₁ ve.name = some v1 ∧ ¬ qtypPredHolds ve.qt μ₁ ρ₁ v1) ∧
+              (∃ v2, VarEnv.get ρ₂ ve.name = some v2 ∧ ¬ qtypPredHolds ve.qt μ₂ ρ₂ v2)
+      | none => True)
+
+  -- =================================================
+  -- Non-Interference property
+  -- =================================================
+  def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) : Prop :=
+    wfInputSpec s →
     ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (R : Regime)
       (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
-      regimeWellSized R part →
-      inputsConform ityp μ₁ ρ₁ →
-      inputsConform ityp μ₂ ρ₂ →
-      consistentRegime R part ityp μ₁ ρ₁ →
-      consistentRegime R part ityp μ₂ ρ₂ →
-      agreeOnCriticalInputsUnderRegime R part ityp μ₁ ρ₁ μ₂ ρ₂ →
+      inputsConformSpec s μ₁ ρ₁ → inputsConformSpec s μ₂ ρ₂ →
+      consistentRegimeSpec R s μ₁ ρ₁ → consistentRegimeSpec R s μ₂ ρ₂ →
+      agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂ →
       terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ →
       terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
       observablesEqual obs cf₁ cf₂ o₁ o₂
+
+  -- Type system enforces Non-Interference (spec-based statement only)
+  theorem TypeSystemEnforcesNonInterference_spec
+    (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
+    wfInputSpec s →
+    (∃ (ctx0 : TypeContext),
+        ctxMatchesSpec s ctx0 ∧
+        ∃ (fuel : Nat) (res : TypeResult),
+          typecheck ctx0 e fuel = .ok res ∧
+          ((match obs.retEtyp? with | some et => res.qualType.etyp = et | none => True) ∧
+           (∀ l et, (l, et) ∈ obs.Lobs → ∃ qt, res.memEnv'.get? l = some qt ∧ qt.etyp = et)) ∧
+        (∀ (μ : Memory) (ρ : VarEnv), inputsConformSpec s μ ρ → runtimeInstantiatesCtx ctx0 μ ρ)) →
+    NonInterferenceSpec e s obs := by
+    intro _wf _assm
+    -- Proof to be developed
+    sorry
 
 end NonInterference
