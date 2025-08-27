@@ -6,6 +6,11 @@ import LeanPoison.Runtime
 import LeanPoison.Poison
 import LeanPoison.Eval
 
+-- TODO: Ideally we would not need this but for brevity sometimes we close some
+-- proofs with <;> followed by simp [...] and for some branches some args are
+-- not used. We should fix this to avoid disabling the linter warning.
+set_option linter.unusedSimpArgs false
+
 theorem OpEType.sound {o t₁ t₂ r}
   (h : OpEType o t₁ t₂ r) : opEType? o t₁ t₂ = some r := by
   cases h <;> simp [opEType?]
