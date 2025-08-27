@@ -2,6 +2,9 @@
 
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
+import LeanPoison.Runtime
+import LeanPoison.Poison
+import LeanPoison.Eval
 
 theorem OpEType.sound {o t₁ t₂ r}
   (h : OpEType o t₁ t₂ r) : opEType? o t₁ t₂ = some r := by
@@ -408,3 +411,126 @@ theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
   | printString _
   | printInt _ =>
     contradiction
+
+namespace NonInterference
+
+-- ================================================================
+-- Non-Interference (semantic formulation)
+-- ================================================================
+
+-- We formulate the Non-Interference Property using the operational
+-- semantics carriers (Expr, Config, ExprOrValue) and use QTyp/TPred to
+-- describe predicates attached to critical inputs. We deliberately keep
+-- some components abstract (as constants), to be instantiated later with
+-- concrete predicate/application machinery.
+
+-- Big-step termination relation to a final configuration and result.
+-- Intended to coincide with repeated small-step evaluation to a value
+-- (or irreducible expression) as implemented in LeanPoison.Eval.
+  def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : ExprOrValue) : Prop :=
+    ∃ (fuel : Nat) (verbose : Bool),
+      eval fuel c₀ (ExprOrValue.expr e) verbose = pure (StepResult.progress c₁ out)
+
+  -- Input partition: which initial locations/variables are critical vs non-critical
+  structure InputPartition where
+    Lcrit    : List Address
+    Vcrit    : List Name
+    Lnoncrit : List Address
+    Vnoncrit : List Name
+  deriving Repr
+
+  def disjointList {α} [DecidableEq α] (xs ys : List α) : Prop :=
+    ∀ a, a ∈ xs → a ∉ ys
+
+  def wfPartition (p : InputPartition) : Prop :=
+    disjointList p.Lcrit p.Lnoncrit ∧ disjointList p.Vcrit p.Vnoncrit
+
+  -- Types for critical inputs (use QTyp so we can attach optional predicates)
+  structure InputTyping where
+    critLocTypes : List (Address × QTyp)
+    critVarTypes : VarTypeEnv
+  deriving Repr
+
+  def keysLoc (it : InputTyping) : List Address := it.critLocTypes.map (·.1)
+  def keysVar (it : InputTyping) : List Name := it.critVarTypes.map (·.1)
+
+  def sameElems {α} [DecidableEq α] (xs ys : List α) : Prop :=
+    ∀ a, a ∈ xs ↔ a ∈ ys
+
+  def wfTyping (p : InputPartition) (it : InputTyping) : Prop :=
+    sameElems p.Lcrit (keysLoc it) ∧ sameElems p.Vcrit (keysVar it)
+
+  -- What parts of the final state are observable
+  structure ObservableSpec where
+    Lobs       : List Address
+    observeRet : Bool
+  deriving Repr
+
+  -- Regime vector (one boolean per critical input, in some fixed order).
+  -- We keep the ordering abstract and only require consistency via
+  -- the abstract predicates below.
+  structure Regime where
+    bits : List Bool
+  deriving Repr
+
+  def numCritical (p : InputPartition) : Nat := p.Lcrit.length + p.Vcrit.length
+  def regimeWellSized (R : Regime) (p : InputPartition) : Prop :=
+    R.bits.length = numCritical p
+
+  -- Abstract predicate: does the QTyp-attached predicate hold for the given
+  -- input value under the initial environments? For locations the value will
+  -- be encoded as Value.num n; for variables it is the variable's Value.
+  axiom qtypPredHolds : QTyp → Memory → VarEnv → Value → Prop
+
+  -- Abstract consistency predicate: the regime vector R reflects, for the
+  -- given initial memory/varenv, whether each critical input is valid under
+  -- its (optional) predicate from InputTyping. This glues together the chosen
+  -- ordering of critical inputs with predicate evaluation. Details elided.
+  axiom consistentRegime
+    : Regime → InputPartition → InputTyping → Memory → VarEnv → Prop
+
+  -- Abstract agreement predicate: when a regime bit for a critical input is
+  -- true, the corresponding initial inputs in (μ₁,ρ₁) and (μ₂,ρ₂) are equal.
+  -- When the bit is false and there is a predicate, both inputs must fail it.
+  -- (We separate this from consistentRegime to keep responsibilities clear.)
+  axiom agreeOnCriticalInputsUnderRegime
+    : Regime → InputPartition → InputTyping
+      → Memory → VarEnv
+      → Memory → VarEnv → Prop
+
+  axiom valueHasType : Value → ETyp → Prop
+
+  def inputsConform (it : InputTyping) (μ : Memory) (ρ : VarEnv) : Prop :=
+    (∀ {l qt}, (l, qt) ∈ it.critLocTypes → μ.get? l ≠ none ∧ qt.etyp = ETyp.int) ∧
+    (∀ {x qt v}, (x, qt) ∈ it.critVarTypes → VarEnv.get ρ x = some v → valueHasType v qt.etyp)
+
+  -- Helper: equality of observables in the final states
+  def observablesEqual (obs : ObservableSpec)
+      (c₁ c₂ : Config) (o₁ o₂ : ExprOrValue) : Prop :=
+    let sameMem : Prop := ∀ l, l ∈ obs.Lobs → c₁.memory.get? l = c₂.memory.get? l
+    let sameRet : Prop := if obs.observeRet then o₁ = o₂ else True
+    sameMem ∧ sameRet
+
+  -- Build initial configurations from initial inputs
+  def mkInit (μ : Memory) (ρ : VarEnv) : Config :=
+    { memory := μ, varEnv := ρ, nextLoc := 0 }
+
+  -- Non-Interference property (semantic form)
+  def Holds (e : Expr)
+      (part : InputPartition)
+      (ityp : InputTyping)
+      (obs : ObservableSpec) : Prop :=
+    wfPartition part ∧ wfTyping part ityp →
+    ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (R : Regime)
+      (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
+      regimeWellSized R part →
+      inputsConform ityp μ₁ ρ₁ →
+      inputsConform ityp μ₂ ρ₂ →
+      consistentRegime R part ityp μ₁ ρ₁ →
+      consistentRegime R part ityp μ₂ ρ₂ →
+      agreeOnCriticalInputsUnderRegime R part ityp μ₁ ρ₁ μ₂ ρ₂ →
+      terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ →
+      terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
+      observablesEqual obs cf₁ cf₂ o₁ o₂
+
+end NonInterference
