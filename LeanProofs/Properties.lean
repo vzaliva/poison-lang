@@ -431,7 +431,7 @@ namespace NonInterference
     ∃ (fuel : Nat) (verbose : Bool),
       eval fuel c₀ (ExprOrValue.expr e) verbose = pure (StepResult.progress c₁ out)
 
-  def sameElems {α} [DecidableEq α] (xs ys : List α) : Prop :=
+  def sameElems {α} (xs ys : List α) : Prop :=
     ∀ a, a ∈ xs ↔ a ∈ ys
 
   -- What parts of the final state are observable
@@ -452,15 +452,21 @@ namespace NonInterference
   axiom qtypPredHolds : QTyp → Memory → VarEnv → Value → Prop
 
   -- Check if a runtime value has the specified enriched type
-  def valueHasType : Value → ETyp → Prop
-    | Value.num _, ETyp.int => True
-    | Value.bool _, ETyp.bool => True
-    | Value.unit, ETyp.unit => True
-    | Value.str _, ETyp.string => True
-    | Value.loc _, ETyp.ref _ _ => True  -- We only care about the type, not the specific address
-    | Value.closure _ _ _, ETyp.arrow _ _ _ _ => True -- TODO: may need additional checks for arguments
-    | Value.peClosure _ _ _, ETyp.arrow _ _ _ _ => True -- TODO: may need additional checks for arguments
-    | _, _ => False
+  inductive valueHasType : Value → ETyp → Prop where
+    | num (n): valueHasType (Value.num n) ETyp.int
+    | bool (b): valueHasType (Value.bool b) ETyp.bool
+    | unit : valueHasType Value.unit ETyp.unit
+    | str (s): valueHasType (Value.str s) ETyp.string
+    | loc (l t l'): valueHasType (Value.loc l) (ETyp.ref t l')  -- ignore concrete address in type
+    | closure (x e env st1 st2 p tcl):
+        valueHasType (Value.closure x e env) (ETyp.arrow st1 st2 p tcl)
+    | peClosure (x pe env st1 st2 p tcl):
+        valueHasType (Value.peClosure x pe env) (ETyp.arrow st1 st2 p tcl)
+
+  -- Relational alignment of two lists (length equality + pointwise relation)
+  inductive Forall2 {α β} (R : α → β → Prop) : List α → List β → Prop where
+    | nil : Forall2 R [] []
+    | cons : ∀ {a b l₁ l₂}, R a b → Forall2 R l₁ l₂ → Forall2 R (a :: l₁) (b :: l₂)
 
   -- Domains of typing environments
   def memDom (Γ : MemoryTypeEnv) : List Address := Γ.keys
@@ -475,8 +481,7 @@ namespace NonInterference
   -- Helper: equality of observables in the final states
   def observablesEqual (obs : ObservableSpec)
       (c₁ c₂ : Config) (o₁ o₂ : ExprOrValue) : Prop :=
-    let addrs : List Address := obs.Lobs.map (·.fst)
-    let sameMem : Prop := ∀ l, l ∈ addrs → c₁.memory.get? l = c₂.memory.get? l
+    let sameMem : Prop := ∀ {l et}, (l, et) ∈ obs.Lobs → c₁.memory.get? l = c₂.memory.get? l
     let sameRet : Prop := match obs.retEtyp? with | some _ => o₁ = o₂ | none => True
     sameMem ∧ sameRet
 
@@ -521,9 +526,6 @@ namespace NonInterference
   def numCritVars (s : InputSpec) : Nat := (critVars s).length
   def numCriticalSpec (s : InputSpec) : Nat := numCritLocs s + numCritVars s
 
-  def regimeWellSizedSpec (R : Regime) (s : InputSpec) : Prop :=
-    R.locBits.length = numCritLocs s ∧ R.varBits.length = numCritVars s
-
   -- Well-formedness of combined spec
   def wfInputSpec (s : InputSpec) : Prop :=
     (∀ {le}, le ∈ s.locs → le.qt.etyp = ETyp.int ∧ (le.is_critical = false → le.qt.poison = true ∧ le.qt.pred = none)) ∧
@@ -542,43 +544,68 @@ namespace NonInterference
     (∀ {le}, le ∈ s.locs → μ.get? le.addr ≠ none) ∧
     (∀ {ve v}, ve ∈ s.vars → VarEnv.get ρ ve.name = some v → valueHasType v ve.qt.etyp)
 
-  -- Regime consistency (fixed order): each bit i corresponds to the i-th
-  -- critical location/variable in critLocs/critVars, respectively.
+  -- Elementwise predicates for regimes (inductive for easy inversion)
+  inductive holdsLocBit (μ : Memory) (ρ : VarEnv) : Bool → LocEntry → Prop where
+    | true_ok (le : LocEntry) (n : Int)
+        (hmem : μ.get? le.addr = some n)
+        (hpred : qtypPredHolds le.qt μ ρ (Value.num n)) :
+        holdsLocBit μ ρ true le
+    | false_ok (le : LocEntry)
+        (hexists : ∃ n, μ.get? le.addr = some n)
+        (hno : ∀ n, ¬ (μ.get? le.addr = some n ∧ qtypPredHolds le.qt μ ρ (Value.num n))) :
+        holdsLocBit μ ρ false le
+
+  inductive holdsVarBit (μ : Memory) (ρ : VarEnv) : Bool → VarEntry → Prop where
+    | true_ok (ve : VarEntry) (v : Value)
+        (hget : VarEnv.get ρ ve.name = some v)
+        (hpred : qtypPredHolds ve.qt μ ρ v) :
+        holdsVarBit μ ρ true ve
+    | false_ok (ve : VarEntry)
+        (hexists : ∃ v, VarEnv.get ρ ve.name = some v)
+        (hno : ∀ v, ¬ (VarEnv.get ρ ve.name = some v ∧ qtypPredHolds ve.qt μ ρ v)) :
+        holdsVarBit μ ρ false ve
+
+  -- Regime consistency (aligned pairs via Forall₂ over fixed-order lists)
+  -- Forall2 also enforces that the lists are the same length.
   def consistentRegimeSpec (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
-    regimeWellSizedSpec R s ∧
-    (∀ (i : Nat) (le : LocEntry), (critLocs s)[i]? = some le →
-      (∃ n, μ.get? le.addr = some n) ∧
-      ((R.locBits[i]? = some true) ↔ (∃ n, μ.get? le.addr = some n ∧ qtypPredHolds le.qt μ ρ (Value.num n)))) ∧
-    (∀ (i : Nat) (ve : VarEntry), (critVars s)[i]? = some ve →
-      (∃ v, VarEnv.get ρ ve.name = some v) ∧
-      ((R.varBits[i]? = some true) ↔ (∃ v, VarEnv.get ρ ve.name = some v ∧ qtypPredHolds ve.qt μ ρ v)))
+    Forall2 (holdsLocBit μ ρ) R.locBits (critLocs s) ∧
+    Forall2 (holdsVarBit μ ρ) R.varBits (critVars s)
+
+  -- Agreement under regime as an elementwise relation, then lifted with Forall₂
+  inductive agreeLocUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
+      : Bool → LocEntry → Prop where
+    | true_eq (le : LocEntry)
+        (h : μ₁.get? le.addr = μ₂.get? le.addr) :
+        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ true le
+    | false_none (le : LocEntry)
+        (hnone : le.qt.pred = none) :
+        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false le
+    | false_some (le : LocEntry)
+        (hsome : ∃ tp, le.qt.pred = some tp)
+        (h1 : ∃ n1, μ₁.get? le.addr = some n1 ∧ ¬ qtypPredHolds le.qt μ₁ ρ₁ (Value.num n1))
+        (h2 : ∃ n2, μ₂.get? le.addr = some n2 ∧ ¬ qtypPredHolds le.qt μ₂ ρ₂ (Value.num n2)) :
+        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false le
+
+  inductive agreeVarUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
+      : Bool → VarEntry → Prop where
+    | true_eq (ve : VarEntry)
+        (h : VarEnv.get ρ₁ ve.name = VarEnv.get ρ₂ ve.name) :
+        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ true ve
+    | false_none (ve : VarEntry)
+        (hnone : ve.qt.pred = none) :
+        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false ve
+    | false_some (ve : VarEntry)
+        (hsome : ∃ tp, ve.qt.pred = some tp)
+        (h1 : ∃ v1, VarEnv.get ρ₁ ve.name = some v1 ∧ ¬ qtypPredHolds ve.qt μ₁ ρ₁ v1)
+        (h2 : ∃ v2, VarEnv.get ρ₂ ve.name = some v2 ∧ ¬ qtypPredHolds ve.qt μ₂ ρ₂ v2) :
+        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false ve
 
   def agreeOnCriticalInputsUnderRegimeSpec
     (R : Regime) (s : InputSpec)
     (μ₁ : Memory) (ρ₁ : VarEnv)
     (μ₂ : Memory) (ρ₂ : VarEnv) : Prop :=
-    -- Locations: when bit is true, values must be equal; when false and a predicate exists, both must fail it
-    (∀ (i : Nat) (le : LocEntry), (critLocs s)[i]? = some le →
-      match R.locBits[i]? with
-      | some true => μ₁.get? le.addr = μ₂.get? le.addr
-      | some false =>
-          match le.qt.pred with
-          | none => True
-          | some _ =>
-              (∃ n1, μ₁.get? le.addr = some n1 ∧ ¬ qtypPredHolds le.qt μ₁ ρ₁ (Value.num n1)) ∧
-              (∃ n2, μ₂.get? le.addr = some n2 ∧ ¬ qtypPredHolds le.qt μ₂ ρ₂ (Value.num n2))
-      | none => True) ∧
-    -- Variables: when bit is true, values must be equal; when false and a predicate exists, both must fail it
-    (∀ (i : Nat) (ve : VarEntry), (critVars s)[i]? = some ve →
-      match R.varBits[i]? with
-      | some true => VarEnv.get ρ₁ ve.name = VarEnv.get ρ₂ ve.name
-      | some false =>
-          match ve.qt.pred with
-          | none => True
-          | some _ =>
-              (∃ v1, VarEnv.get ρ₁ ve.name = some v1 ∧ ¬ qtypPredHolds ve.qt μ₁ ρ₁ v1) ∧
-              (∃ v2, VarEnv.get ρ₂ ve.name = some v2 ∧ ¬ qtypPredHolds ve.qt μ₂ ρ₂ v2)
-      | none => True)
+    Forall2 (agreeLocUnder μ₁ ρ₁ μ₂ ρ₂) R.locBits (critLocs s) ∧
+    Forall2 (agreeVarUnder μ₁ ρ₁ μ₂ ρ₂) R.varBits (critVars s)
 
   -- =================================================
   -- Non-Interference property
