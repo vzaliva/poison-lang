@@ -704,12 +704,12 @@ termination_by fuel
 
 -- Multi-step evaluation
 def eval (fuel : Nat) (config : Config) (ev : ExprOrValue) (verbose : Bool) : IO StepResult := do
-  if fuel < 2 then
-    return StepResult.error "out of fuel"
-  else
-    match <- step (fuel - 1) verbose config ev with
+  match fuel with
+  | 0 => return StepResult.error "out of fuel"
+  | fuel' + 1 =>
+    match <- step fuel' verbose config ev with
     | StepResult.progress config' ev' =>
-      eval (fuel - 2) config' ev' verbose
+      eval fuel' config' ev' verbose
     | StepResult.stuck =>
       -- Check if we have a value
       match ev with
