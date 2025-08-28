@@ -6,4 +6,4 @@
 * Paper
   - Refined types formulation for predicated types  
 * Proofs
-  - Formuate Non-interference theorem
+  - Some warnings were disabled in Properties.lean. Fix that.
