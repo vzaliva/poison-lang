@@ -5,11 +5,13 @@ import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.Poison
 import LeanPoison.Eval
+import Mathlib.Data.List.Forall2
 
 -- TODO: Ideally we would not need this but for brevity sometimes we close some
 -- proofs with <;> followed by simp [...] and for some branches some args are
 -- not used. We should fix this to avoid disabling the linter warning.
 set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
 
 theorem OpEType.sound {o t₁ t₂ r}
   (h : OpEType o t₁ t₂ r) : opEType? o t₁ t₂ = some r := by
@@ -30,6 +32,8 @@ theorem joinMemEnv_idempotent : ∀ (m1 : MemoryTypeEnv), joinMemEnvs m1 m1 = m1
   intros m1
   simp [joinMemEnvs]
   sorry
+
+set_option maxHeartbeats 800000
 
 -- Pure expression type checking does not modify typestates
 theorem typecheck_preserves_typestate : ∀ (fuel : Nat),
@@ -468,11 +472,6 @@ namespace NonInterference
     | peClosure (x pe env st1 st2 p tcl):
         valueHasType (Value.peClosure x pe env) (ETyp.arrow st1 st2 p tcl)
 
-  -- Relational alignment of two lists (length equality + pointwise relation)
-  inductive Forall2 {α β} (R : α → β → Prop) : List α → List β → Prop where
-    | nil : Forall2 R [] []
-    | cons : ∀ {a b l₁ l₂}, R a b → Forall2 R l₁ l₂ → Forall2 R (a :: l₁) (b :: l₂)
-
   -- Domains of typing environments
   def memDom (Γ : MemoryTypeEnv) : List Address := Γ.keys
   def varDom (σ : VarTypeEnv) : List Name := σ.map (·.1)
@@ -573,8 +572,8 @@ namespace NonInterference
   -- Regime consistency (aligned pairs via Forall₂ over fixed-order lists)
   -- Forall2 also enforces that the lists are the same length.
   def consistentRegimeSpec (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
-    Forall2 (holdsLocBit μ ρ) R.locBits (critLocs s) ∧
-    Forall2 (holdsVarBit μ ρ) R.varBits (critVars s)
+    List.Forall₂ (holdsLocBit μ ρ) R.locBits (critLocs s) ∧
+    List.Forall₂ (holdsVarBit μ ρ) R.varBits (critVars s)
 
   -- Agreement under regime as an elementwise relation, then lifted with Forall₂
   inductive agreeLocUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
@@ -609,8 +608,8 @@ namespace NonInterference
     (R : Regime) (s : InputSpec)
     (μ₁ : Memory) (ρ₁ : VarEnv)
     (μ₂ : Memory) (ρ₂ : VarEnv) : Prop :=
-    Forall2 (agreeLocUnder μ₁ ρ₁ μ₂ ρ₂) R.locBits (critLocs s) ∧
-    Forall2 (agreeVarUnder μ₁ ρ₁ μ₂ ρ₂) R.varBits (critVars s)
+    List.Forall₂ (agreeLocUnder μ₁ ρ₁ μ₂ ρ₂) R.locBits (critLocs s) ∧
+    List.Forall₂ (agreeVarUnder μ₁ ρ₁ μ₂ ρ₂) R.varBits (critVars s)
 
   -- =================================================
   -- Non-Interference property

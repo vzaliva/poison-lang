@@ -1,4 +1,4 @@
-.PHONY: all clean test poison-lang-spec lean-build lean-clean parser parser-clean 
+.PHONY: all clean test poison-lang-spec lean-build lean-clean parser parser-clean cache cache-refresh distclean
 
 all: poison-lang-spec lean-build parser 
 
@@ -25,7 +25,17 @@ parser: config.json
 poison-lang-spec:
 	$(MAKE) -C poison-lang-spec
 
-lean-build:
+# Download precompiled lean caches for mathlib/upstreams (idempotent)
+cache:
+	lake exe cache get
+
+# Force a fresh cache (good after toolchain/mathlib bumps)
+cache-refresh:
+	lake clean
+	rm -rf .lake
+	lake exe cache get!
+
+lean-build: cache
 	lake build
 
 lean-clean:
@@ -42,3 +52,7 @@ test: lean-build
 clean: lean-clean parser-clean 
 	 $(MAKE) -C poison-lang-spec clean
 
+# If you really want to reset everything, including the lock file
+distclean: clean
+	rm -rf .lake
+	rm -f lake-manifest.json
