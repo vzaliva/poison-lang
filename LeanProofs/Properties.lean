@@ -517,26 +517,17 @@ namespace NonInterference
   def specLocAddrs (s : InputSpec) : List Address := s.locs.map (·.addr)
   def specVarNames (s : InputSpec) : List Name := s.vars.map (·.name)
 
-  def isCritLoc (s : InputSpec) (a : Address) : Prop :=
-    ∃ le, le ∈ s.locs ∧ le.addr = a ∧ le.is_critical = true
-  def isCritVar (s : InputSpec) (x : Name) : Prop :=
-    ∃ ve, ve ∈ s.vars ∧ ve.name = x ∧ ve.is_critical = true
-
   -- critical lists in the fixed order of the spec
   def critLocs (s : InputSpec) : List LocEntry := s.locs.filter (·.is_critical)
   def critVars (s : InputSpec) : List VarEntry := s.vars.filter (·.is_critical)
-
-  def numCritLocs (s : InputSpec) : Nat := (critLocs s).length
-  def numCritVars (s : InputSpec) : Nat := (critVars s).length
-  def numCriticalSpec (s : InputSpec) : Nat := numCritLocs s + numCritVars s
 
   -- Well-formedness of combined spec
   def wfInputSpec (s : InputSpec) : Prop :=
     (∀ {le}, le ∈ s.locs → le.qt.etyp = ETyp.int ∧ (le.is_critical = false → le.qt.poison = true ∧ le.qt.pred = none)) ∧
     (∀ {ve}, ve ∈ s.vars → (ve.is_critical = false → ve.qt.poison = true ∧ ve.qt.pred = none))
 
-  -- Context matches the spec exactly (pc clean, empty logical env, exact coverage, exact typings)
-  def ctxMatchesSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
+  -- Context matches input spec exactly (pc clean, empty logical env, exact coverage, exact typings)
+  def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
     ctx.pc = false ∧ ctx.tagEnv = {} ∧
     sameElems (specLocAddrs s) (memDom ctx.memEnv) ∧
     sameElems (specVarNames s) (varDom ctx.varEnv) ∧
@@ -630,7 +621,7 @@ namespace NonInterference
     (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
     wfInputSpec s →
     (∃ (ctx0 : TypeContext),
-        ctxMatchesSpec s ctx0 ∧
+        ctxMatchesInputSpec s ctx0 ∧
         ∃ (fuel : Nat) (res : TypeResult),
           typecheck ctx0 e fuel = .ok res ∧
           ((match obs.retEtyp? with | some et => res.qualType.etyp = et | none => True) ∧
