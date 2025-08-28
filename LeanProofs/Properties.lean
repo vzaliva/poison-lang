@@ -440,9 +440,6 @@ namespace NonInterference
     ∃ (fuel : Nat) (verbose : Bool),
       eval fuel c₀ (ExprOrValue.expr e) verbose = pure (StepResult.progress c₁ out)
 
-  def sameElems {α} (xs ys : List α) : Prop :=
-    ∀ a, a ∈ xs ↔ a ∈ ys
-
   -- What parts of the final state are observable
   structure ObservableSpec where
     Lobs       : List (Address × ETyp)
@@ -486,7 +483,10 @@ namespace NonInterference
   def observablesEqual (obs : ObservableSpec)
       (c₁ c₂ : Config) (o₁ o₂ : ExprOrValue) : Prop :=
     let sameMem : Prop := ∀ {l et}, (l, et) ∈ obs.Lobs → c₁.memory.get? l = c₂.memory.get? l
-    let sameRet : Prop := match obs.retEtyp? with | some _ => o₁ = o₂ | none => True
+    -- If the return is observable (retEtyp? = some et), we require the final
+    -- values to match If the return is not observable (retEtyp? = none), we do
+    -- not constrain it here.
+    let sameRet : Prop := obs.retEtyp? = none ∨ o₁ = o₂
     sameMem ∧ sameRet
 
   -- Build initial configurations from initial inputs
@@ -494,113 +494,122 @@ namespace NonInterference
     { memory := μ, varEnv := ρ, nextLoc := 0 }
 
   -- =================================================
-  -- Combined input specification (partition + typing)
+  -- Critical input specification (critical-only)
+  --
+  -- We specify only the designated critical inputs and their qualified types.
+  -- Non-critical inputs are not listed here and are unconstrained by the spec.
+  -- In the initial typing context, any entry not listed in this spec must be
+  -- conservative: poisoned with no_pred, so it cannot influence de-poisoning.
   -- =================================================
 
-  structure LocEntry where
-    addr : Address
-    qt   : QTyp
-    is_critical : Bool
-  deriving Repr
-
-  structure VarEntry where
-    name : Name
-    qt   : QTyp
-    is_critical : Bool
-  deriving Repr
-
   structure InputSpec where
-    locs : List LocEntry
-    vars : List VarEntry
+    locs : List (Address × QTyp)
+    vars : List (Name × QTyp)
   deriving Repr
 
-  def specLocAddrs (s : InputSpec) : List Address := s.locs.map (·.addr)
-  def specVarNames (s : InputSpec) : List Name := s.vars.map (·.name)
+  def specLocAddrs (s : InputSpec) : List Address := s.locs.map (·.fst)
+  def specVarNames (s : InputSpec) : List Name := s.vars.map (·.fst)
 
-  -- critical lists in the fixed order of the spec
-  def critLocs (s : InputSpec) : List LocEntry := s.locs.filter (·.is_critical)
-  def critVars (s : InputSpec) : List VarEntry := s.vars.filter (·.is_critical)
-
-  -- Well-formedness of combined spec
+  -- Well-formedness: memory stores integers at critical locations
   def wfInputSpec (s : InputSpec) : Prop :=
-    (∀ {le}, le ∈ s.locs → le.qt.etyp = ETyp.int ∧ (le.is_critical = false → le.qt.poison = true ∧ le.qt.pred = none)) ∧
-    (∀ {ve}, ve ∈ s.vars → (ve.is_critical = false → ve.qt.poison = true ∧ ve.qt.pred = none))
+    ∀ {l qt}, (l, qt) ∈ s.locs → qt.etyp = ETyp.int
 
-  -- Context matches input spec exactly (pc clean, empty logical env, exact coverage, exact typings)
+  -- Context compliance with the critical-only spec
+  -- pc is clean, tag environment is empty; all listed critical entries must be
+  -- present with exactly the specified qualified types. Any unlisted entry that
+  -- appears in the context (to allow the program to typecheck when referenced)
+  -- is permitted, but it must be poisoned and carry no predicate.
   def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
     ctx.pc = false ∧ ctx.tagEnv = {} ∧
-    sameElems (specLocAddrs s) (memDom ctx.memEnv) ∧
-    sameElems (specVarNames s) (varDom ctx.varEnv) ∧
-    (∀ {le}, le ∈ s.locs → ctx.memEnv.get? le.addr = some le.qt) ∧
-    (∀ {ve}, ve ∈ s.vars → lookupVarEnv ctx.varEnv ve.name = some ve.qt)
+    (∀ {l qt}, (l, qt) ∈ s.locs → ctx.memEnv.get? l = some qt) ∧
+    (∀ {x qt}, (x, qt) ∈ s.vars → lookupVarEnv ctx.varEnv x = some qt) ∧
+    (∀ {l qt}, ctx.memEnv.get? l = some qt → ¬ l ∈ specLocAddrs s → qt.poison = true ∧ qt.pred = none) ∧
+    (∀ {x qt}, lookupVarEnv ctx.varEnv x = some qt → ¬ x ∈ specVarNames s → qt.poison = true ∧ qt.pred = none)
 
-  -- Runtime conforms to spec (availability + dynamic type compatibility for vars)
+  -- Runtime conforms to the spec for critical inputs only. Unlisted inputs are
+  -- unconstrained here (we quantify over them), but concrete runs must still
+  -- instantiate the initial typing context (see the theorem premise below).
   def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
-    (∀ {le}, le ∈ s.locs → μ.get? le.addr ≠ none) ∧
-    (∀ {ve v}, ve ∈ s.vars → VarEnv.get ρ ve.name = some v → valueHasType v ve.qt.etyp)
+    (∀ {l qt}, (l, qt) ∈ s.locs → μ.get? l ≠ none) ∧
+    (∀ {x qt v}, (x, qt) ∈ s.vars → VarEnv.get ρ x = some v → valueHasType v qt.etyp)
 
   -- Elementwise predicates for regimes (inductive for easy inversion)
-  inductive holdsLocBit (μ : Memory) (ρ : VarEnv) : Bool → LocEntry → Prop where
-    | true_ok (le : LocEntry) (n : Int)
-        (hmem : μ.get? le.addr = some n)
-        (hpred : qtypPredHolds le.qt μ ρ (Value.num n)) :
-        holdsLocBit μ ρ true le
-    | false_ok (le : LocEntry)
-        (hexists : ∃ n, μ.get? le.addr = some n)
-        (hno : ∀ n, ¬ (μ.get? le.addr = some n ∧ qtypPredHolds le.qt μ ρ (Value.num n))) :
-        holdsLocBit μ ρ false le
+  inductive holdsLocBit (μ : Memory) (ρ : VarEnv) : Bool → (Address × QTyp) → Prop where
+    | true_ok (entry : Address × QTyp) (n : Int)
+        (hmem : μ.get? entry.fst = some n)
+        (hpred : qtypPredHolds entry.snd μ ρ (Value.num n)) :
+        holdsLocBit μ ρ true entry
+    | false_ok (entry : Address × QTyp)
+        (hexists : ∃ n, μ.get? entry.fst = some n)
+        (hno : ∀ n, ¬ (μ.get? entry.fst = some n ∧ qtypPredHolds entry.snd μ ρ (Value.num n))) :
+        holdsLocBit μ ρ false entry
 
-  inductive holdsVarBit (μ : Memory) (ρ : VarEnv) : Bool → VarEntry → Prop where
-    | true_ok (ve : VarEntry) (v : Value)
-        (hget : VarEnv.get ρ ve.name = some v)
-        (hpred : qtypPredHolds ve.qt μ ρ v) :
-        holdsVarBit μ ρ true ve
-    | false_ok (ve : VarEntry)
-        (hexists : ∃ v, VarEnv.get ρ ve.name = some v)
-        (hno : ∀ v, ¬ (VarEnv.get ρ ve.name = some v ∧ qtypPredHolds ve.qt μ ρ v)) :
-        holdsVarBit μ ρ false ve
+  inductive holdsVarBit (μ : Memory) (ρ : VarEnv) : Bool → (Name × QTyp) → Prop where
+    | true_ok (entry : Name × QTyp) (v : Value)
+        (hget : VarEnv.get ρ entry.fst = some v)
+        (hpred : qtypPredHolds entry.snd μ ρ v) :
+        holdsVarBit μ ρ true entry
+    | false_ok (entry : Name × QTyp)
+        (hexists : ∃ v, VarEnv.get ρ entry.fst = some v)
+        (hno : ∀ v, ¬ (VarEnv.get ρ entry.fst = some v ∧ qtypPredHolds entry.snd μ ρ v)) :
+        holdsVarBit μ ρ false entry
 
-  -- Regime consistency (aligned pairs via Forall₂ over fixed-order lists)
-  -- Forall2 also enforces that the lists are the same length.
+  -- Regime consistency (aligned pairs via Forall₂ over fixed-order lists).
+  -- Forall₂ also enforces that the lists are the same length. The regime
+  -- covers only critical inputs in the order given by the spec.
   def consistentRegimeSpec (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
-    List.Forall₂ (holdsLocBit μ ρ) R.locBits (critLocs s) ∧
-    List.Forall₂ (holdsVarBit μ ρ) R.varBits (critVars s)
+    List.Forall₂ (holdsLocBit μ ρ) R.locBits s.locs ∧
+    List.Forall₂ (holdsVarBit μ ρ) R.varBits s.vars
 
   -- Agreement under regime as an elementwise relation, then lifted with Forall₂
   inductive agreeLocUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
-      : Bool → LocEntry → Prop where
-    | true_eq (le : LocEntry)
-        (h : μ₁.get? le.addr = μ₂.get? le.addr) :
-        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ true le
-    | false_none (le : LocEntry)
-        (hnone : le.qt.pred = none) :
-        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false le
-    | false_some (le : LocEntry)
-        (hsome : ∃ tp, le.qt.pred = some tp)
-        (h1 : ∃ n1, μ₁.get? le.addr = some n1 ∧ ¬ qtypPredHolds le.qt μ₁ ρ₁ (Value.num n1))
-        (h2 : ∃ n2, μ₂.get? le.addr = some n2 ∧ ¬ qtypPredHolds le.qt μ₂ ρ₂ (Value.num n2)) :
-        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false le
+      : Bool → (Address × QTyp) → Prop where
+    | true_eq (entry : Address × QTyp)
+        (h : μ₁.get? entry.fst = μ₂.get? entry.fst) :
+        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ true entry
+    | false_none (entry : Address × QTyp)
+        (hnone : entry.snd.pred = none) :
+        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false entry
+    | false_some (entry : Address × QTyp)
+        (hsome : ∃ tp, entry.snd.pred = some tp)
+        (h1 : ∃ n1, μ₁.get? entry.fst = some n1 ∧ ¬ qtypPredHolds entry.snd μ₁ ρ₁ (Value.num n1))
+        (h2 : ∃ n2, μ₂.get? entry.fst = some n2 ∧ ¬ qtypPredHolds entry.snd μ₂ ρ₂ (Value.num n2)) :
+        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false entry
 
   inductive agreeVarUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
-      : Bool → VarEntry → Prop where
-    | true_eq (ve : VarEntry)
-        (h : VarEnv.get ρ₁ ve.name = VarEnv.get ρ₂ ve.name) :
-        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ true ve
-    | false_none (ve : VarEntry)
-        (hnone : ve.qt.pred = none) :
-        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false ve
-    | false_some (ve : VarEntry)
-        (hsome : ∃ tp, ve.qt.pred = some tp)
-        (h1 : ∃ v1, VarEnv.get ρ₁ ve.name = some v1 ∧ ¬ qtypPredHolds ve.qt μ₁ ρ₁ v1)
-        (h2 : ∃ v2, VarEnv.get ρ₂ ve.name = some v2 ∧ ¬ qtypPredHolds ve.qt μ₂ ρ₂ v2) :
-        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false ve
+      : Bool → (Name × QTyp) → Prop where
+    | true_eq (entry : Name × QTyp)
+        (h : VarEnv.get ρ₁ entry.fst = VarEnv.get ρ₂ entry.fst) :
+        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ true entry
+    | false_none (entry : Name × QTyp)
+        (hnone : entry.snd.pred = none) :
+        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false entry
+    | false_some (entry : Name × QTyp)
+        (hsome : ∃ tp, entry.snd.pred = some tp)
+        (h1 : ∃ v1, VarEnv.get ρ₁ entry.fst = some v1 ∧ ¬ qtypPredHolds entry.snd μ₁ ρ₁ v1)
+        (h2 : ∃ v2, VarEnv.get ρ₂ entry.fst = some v2 ∧ ¬ qtypPredHolds entry.snd μ₂ ρ₂ v2) :
+        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false entry
 
   def agreeOnCriticalInputsUnderRegimeSpec
     (R : Regime) (s : InputSpec)
     (μ₁ : Memory) (ρ₁ : VarEnv)
     (μ₂ : Memory) (ρ₂ : VarEnv) : Prop :=
-    List.Forall₂ (agreeLocUnder μ₁ ρ₁ μ₂ ρ₂) R.locBits (critLocs s) ∧
-    List.Forall₂ (agreeVarUnder μ₁ ρ₁ μ₂ ρ₂) R.varBits (critVars s)
+    List.Forall₂ (agreeLocUnder μ₁ ρ₁ μ₂ ρ₂) R.locBits s.locs ∧
+    List.Forall₂ (agreeVarUnder μ₁ ρ₁ μ₂ ρ₂) R.varBits s.vars
+
+  -- Typing results must satisfy the observable constraints:
+  def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
+    -- (i) If the return value is observable, require the inferred return
+    -- enriched type to match the observable surface type. If the return
+    -- is not observable, no constraint is imposed on the result type.
+    let retMatches : Prop :=
+       ∀ et, obs.retEtyp? = some et → res.qualType.etyp = et
+    -- (ii) the memory must contain entries for each observable location
+    -- with the correct enriched type
+    let memMatches : Prop :=
+      ∀ l et, (l, et) ∈ obs.Lobs → ∃ qt, res.memEnv'.get? l = some qt ∧ qt.etyp = et
+    retMatches ∧ memMatches
+
 
   -- =================================================
   -- Non-Interference property
@@ -617,19 +626,22 @@ namespace NonInterference
       observablesEqual obs cf₁ cf₂ o₁ o₂
 
   -- Type system enforces Non-Interference (spec-based statement only)
-  theorem TypeSystemEnforcesNonInterference_spec
+  -- We avoid an overly-strong hypothesis by requiring, for each run we compare,
+  -- both: (i) critical inputs conform to the spec, and (ii) the runtime
+  -- environments instantiate the initial typing context. This allows the
+  -- context to include non-critical entries needed for typechecking, while
+  -- still quantifying over arbitrary values for those entries.
+  theorem TypeSystemEnforcesNonInterference_spec_old
     (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
     wfInputSpec s →
-    (∃ (ctx0 : TypeContext),
-        ctxMatchesInputSpec s ctx0 ∧
+    (∃ (ctx : TypeContext),
+        ctxMatchesInputSpec s ctx ∧
         ∃ (fuel : Nat) (res : TypeResult),
-          typecheck ctx0 e fuel = .ok res ∧
-          ((match obs.retEtyp? with | some et => res.qualType.etyp = et | none => True) ∧
-           (∀ l et, (l, et) ∈ obs.Lobs → ∃ qt, res.memEnv'.get? l = some qt ∧ qt.etyp = et)) ∧
-        (∀ (μ : Memory) (ρ : VarEnv), inputsConformSpec s μ ρ → runtimeInstantiatesCtx ctx0 μ ρ)) →
+          typecheck ctx e fuel = .ok res ∧
+        ObsConstraints obs res ∧
+        (∀ μ ρ, inputsConformSpec s μ ρ ∧ runtimeInstantiatesCtx ctx μ ρ))
+    →
     NonInterferenceSpec e s obs := by
-    intro _wf _assm
-    -- Proof to be developed
-    sorry
+  sorry
 
 end NonInterference

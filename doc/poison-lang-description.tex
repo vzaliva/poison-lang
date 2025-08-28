@@ -754,16 +754,17 @@ inputs must be checked for validity before use.
 
 
 \begin{definition}[Input/Output Classification]
-Inputs consist of:
+Inputs consist of initial memory and variables:
 \begin{itemize}
-    \item Initial memory locations: $\mu_0 : \text{Location} \rightarrow \text{Value}$
-    \item Initial variable environment: $\rho_0 : \text{Variable} \rightarrow \text{Value}$
+    \item Initial memory: $\mu_0 : \text{Location} \rightarrow \text{Value}$
+    \item Initial variables: $\rho_0 : \text{Variable} \rightarrow \text{Value}$
 \end{itemize}
-These are partitioned into two disjoint categories:
-\begin{itemize}
-    \item $(L_{crit}, V_{crit})$: Critical locations/variables (may have associated predicates)
-    \item $(L_{noncrit}, V_{noncrit})$: Non-critical locations/variables (values irrelevant to observable outputs)
-\end{itemize}
+We fix a \emph{critical-input specification} $S$ comprising \emph{ordered} lists of critical entries with their qualified types:
+\[
+  S.\mathrm{locs} = \bigl[(\ell_1, Q_1),\ldots,(\ell_m, Q_m)\bigr],\qquad
+  S.\mathrm{vars} = \bigl[(x_1, Q'_1),\ldots,(x_n, Q'_n)\bigr].
+\]
+Entries not listed in $S$ are considered non-critical and are \emph{unconstrained by the specification}.
 
 Outputs consist of:
 \begin{itemize}
@@ -771,13 +772,14 @@ Outputs consist of:
     \item Program return value: $v$
 \end{itemize}
 With observable outputs designated as $(L_{obs}, v_{obs})$ where $v_{obs} \in \{\text{true}, \text{false}\}$ indicates whether the return value is observable.
+Non-observable outputs are unconstrained.
 
 Note: Variable bindings are local to expressions and do not persist as program outputs. Only memory locations and the return value constitute observable outputs.
 \end{definition}
 
 \begin{definition}[Regime Vector]
-Let the critical inputs be indexed as $(inp_1, \ldots, inp_n)$ where each $inp_i$ is either
-a location $l \in L_{crit}$ or a variable $x \in V_{crit}$.
+Let the critical inputs be the entries of $S$ in order, written $(inp_1, \ldots, inp_{m+n})$, where each $inp_i$ is either
+one of the listed locations or one of the listed variables.
 
 For a given execution, the regime vector $R = (r_1, \ldots, r_n)$ where $r_i \in \{\text{true}, \text{false}\}$ captures
 the validity of each critical input:
@@ -816,11 +818,7 @@ and $\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu'_2, v_2 \rangle$ wh
         \item $\forall i$ where $r_i = \text{false}$ and input $i$ is location $l$ with predicate $P_i$: $\mu_1(l), \mu_2(l)$ can differ but both must fail $P_i$
         \item $\forall i$ where $r_i = \text{false}$ and input $i$ is variable $x$ with predicate $P_i$: $\rho_1(x), \rho_2(x)$ can differ but both must fail $P_i$
     \end{itemize}
-    \item Non-critical inputs arbitrary:
-    \begin{itemize}
-        \item $\forall l \in L_{noncrit}.$ $\mu_1(l), \mu_2(l)$ arbitrary
-        \item $\forall x \in V_{noncrit}.$ $\rho_1(x), \rho_2(x)$ arbitrary
-    \end{itemize}
+    \item Non-critical inputs arbitrary.
 \end{itemize}
 Then observable outputs are identical:
 \begin{itemize}
@@ -834,31 +832,37 @@ The key insight is the asymmetry in how critical inputs are treated based on the
     \item When valid ($r_i = \text{true}$): inputs are reliable and could affect
     outputs - output depends on their actual values
     \item When invalid ($r_i = \text{false}$): inputs are faulty, but fault
-    isolation logic should be able to handle them.
+    isolation logic should be able to handle them, still producing predictable
+    outputs, not dependent on the faulty values.
 \end{itemize}
 
-This is a runtime property which is impossible to guarantee statically. However,
+This is a runtime property which is impossible, in general, to guarantee statically. However,
 in the next definition, we will show that we can conservatively approximate it
 via the type system.
 
 \begin{theorem}[Type System Enforces Non-Interference]
 The poison type system enforces the non-interference property through
-conservative fault tracking. Given initial typing environments that reflect the
-critical and non-critical inputs classification:
+conservative fault tracking, assuming a \emph{critical-only specification} and a
+\emph{conjunctive runtime premise}.
 
-\textbf{Initial setup:}
+\textbf{Initial typing context:} There exists an initial typing context $(pc,\Gamma,\sigma,\mathcal{L})$ with $pc=\text{clean}$ and empty $\mathcal{L}$ such that:
 \begin{itemize}
-    \item For critical inputs: 
-    \begin{itemize}
-        \item Without predicates: $\Gamma(l) = T \triangleright \text{clean} \{ \text{no\_pred} \}$ or $\sigma(x) = T \triangleright \text{clean} \{ \text{no\_pred} \}$
-        \item With predicates: $\Gamma(l) = T \triangleright \text{poisoned} \{ P \}$ or $\sigma(x) = T \triangleright \text{poisoned} \{ P \}$
-    \end{itemize}
-    \item For non-critical inputs: $\Gamma(l) = T \triangleright \text{poisoned} \{ \text{no\_pred} \}$ or $\sigma(x) = T \triangleright \text{poisoned} \{ \text{no\_pred} \}$ (poisoned without predicates)
+    \item For each $(\ell,Q) \in S.\mathrm{locs}$, we have $\Gamma(\ell)=Q$.
+    \item For each $(x,Q) \in S.\mathrm{vars}$, we have $\sigma(x)=Q$.
+    \item For any entry $(\ell,Q) \in \Gamma$ not listed in $S.\mathrm{locs}$, $Q$ is poisoned and has no predicate.
+    \item For any entry $(x,Q) \in \sigma$ not listed in $S.\mathrm{vars}$, $Q$ is poisoned and has no predicate.
+\end{itemize}
+
+\textbf{Conjunctive runtime premise:} For each run, the initial concrete inputs $(\mu_0,\rho_0)$ satisfy \emph{both}:
+\begin{itemize}
+    \item \emph{Spec conformance}: for every $(\ell,Q) \in S.\mathrm{locs}$, the location $\ell$ is present in $\mu_0$; for every $(x,Q) \in S.\mathrm{vars}$, if $\rho_0(x)=v$ then $v$ has base type $Q$'s enriched type.
+    \item \emph{Context instantiation}: for every $(\ell,Q) \in \Gamma$ there exists a value stored at $\ell$ in $\mu_0$; for every $(x,Q) \in \sigma$ there exists a value bound to $x$ in $\rho_0$ of the appropriate base type.
 \end{itemize}
 
 \textbf{Soundness guarantee:} If the typing derivation starting with $pc = \text{clean}$ yields:
 \begin{itemize}
-    \item $\text{clean} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : T \triangleright \text{clean} \{ P \} \dashv \Gamma' ; \mathcal{L}'$ (when $v_{obs} = \text{true}$)
+    \item If $v_{obs} = \text{true}$ then $\text{clean} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : T \triangleright \text{clean} \{ P \} \dashv \Gamma' ; \mathcal{L}'$;
+    otherwise, no constraint is imposed on the returned type (typechecking still produces $\Gamma'$).
     \item $\Gamma'(l) = T_l \triangleright \text{clean} \{ P_l \}$ for each $l \in L_{obs}$
 \end{itemize}
 
@@ -867,9 +871,9 @@ Then the program satisfies the non-interference property because:
     \item The type system's conservative poison propagation ensures that any
     value marked \texttt{clean} has no data or control dependencies on poisoned
     values
-    \item Since non-critical inputs are marked as poisoned without predicates
-    (and thus cannot be de-poisoned), a clean observable output implies no
-    dependency on non-critical inputs
+    \item Since any unlisted inputs that appear in the initial context are marked
+    as poisoned without predicates (and thus cannot be de-poisoned), a clean
+    observable output implies no dependency on non-critical inputs
     \item For critical inputs with predicates, the type system tracks when
     predicates are checked (via $\mathcal{L}$) to enable de-poisoning.
 \end{itemize}
