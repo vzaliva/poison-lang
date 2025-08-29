@@ -128,7 +128,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
     -- < x, m, r > -> < value v, m, r >
 
     | Expr.var x =>
-        match (config.varEnv.get x) with
+        match (config.varEnv.lookup x) with
       | some v => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value v))
       | none =>
         return stepReturn fuel verbose (StepResult.error s!"var {x} not found")

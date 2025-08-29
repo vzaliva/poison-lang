@@ -11,6 +11,21 @@ private def defaultFuel : Nat := 1000
 /-- Memory typing environment (Γ in the Ott spec) -/
 abbrev MemoryTypeEnv := HashMap Address QTyp
 
+namespace MemoryTypeEnv
+
+  @[inline] def lookup (m : MemoryTypeEnv) (a : Address) : Option QTyp :=
+    m.get? a
+
+  @[inline] def update (m : MemoryTypeEnv) (a : Address) (qt : QTyp) : MemoryTypeEnv :=
+    m.insert a qt
+
+  /-- `m` contains a binding for `a`. -/
+  def hasKey (m : MemoryTypeEnv) (a : Address) : Prop :=
+    m.contains a
+
+end MemoryTypeEnv
+
+
 /-- Tag valuation environment (ℒ in the Ott spec) -/
 abbrev TagEnv := HashMap Tag Bool
 
@@ -317,7 +332,7 @@ def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
   --dbg_trace x
   --dbg_trace "ctx.pc is"
   --dbg_trace ctx.pc
-  match lookupVarEnv ctx.varEnv x with
+  match ctx.varEnv.lookup x with
   | some qt =>
     let ⟨etyp, poison, pred⟩ := qt
     match pred with
@@ -737,7 +752,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       | TClosure.fn_tclosure x body env =>
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
-        let env' := updateVarEnv env x argQt
+        let env' := VarTypeEnv.update env x argQt
         let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
         let result3 ← typecheckExpr ctx'' body fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
@@ -754,7 +769,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       | TClosure.pfn_tclosure x body env =>
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
-        let env' := updateVarEnv env x argQt
+        let env' := VarTypeEnv.update env x argQt
         let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
         let result3 ← typecheckExpr ctx'' (body.toExpr) fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
@@ -787,7 +802,7 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
 
     let varPoison := joinPoison ctx.pc p1
     let varQt : QTyp := ⟨etyp1, varPoison, pred1  ⟩
-    let varEnv' := updateVarEnv ctx.varEnv x varQt
+    let varEnv' := ctx.varEnv.update x varQt
     let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv' }
 
     let result2 ← typecheckExpr ctx' e2 fuel

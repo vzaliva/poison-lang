@@ -56,18 +56,24 @@ end
 -- list of key-value pairs.
 abbrev VarTypeEnv := List (Name × QTyp)
 
+namespace VarTypeEnv
+
 -- helper function to lookup a variable in the variable typing environment
-def lookupVarEnv : VarTypeEnv → Name → Option QTyp
-  | [], _ => none
-  | (x, qt) :: env, y => if x == y then some qt else lookupVarEnv env y
+@[inline] def lookup (env : VarTypeEnv) (x : Name) : Option QTyp :=
+  List.lookup x env
 
 -- helper function to update a variable in the variable typing environment the
 -- implementation is not very efficient as mappings with existing keys are just
 -- added to the front of the list. However this is sound, as lookupVarEnv always
 -- returns the first mapping with a given key.
-def updateVarEnv : VarTypeEnv → Name → QTyp → VarTypeEnv
-  | env, x, qt => (x, qt) :: env
+@[inline] def update (env : VarTypeEnv) (x : Name) (qt : QTyp) : VarTypeEnv :=
+  (x, qt) :: env
 
+/-- `env` contains a binding for `x`. -/
+def hasKey (env : VarTypeEnv) (x : Name) : Prop :=
+  env.lookup x ≠ none
+
+end VarTypeEnv
 
 -- Manual Repr instances for mutual types
 
