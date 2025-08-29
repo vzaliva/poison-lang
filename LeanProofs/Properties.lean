@@ -469,9 +469,20 @@ namespace NonInterference
   -- input value under the initial environments? For locations the value will be
   -- encoded as Value.num n; for variables it is the variable's Value.
   --
-  -- TODO: this is a placeholder for the actual implementation of predicate
-  -- evluation
-  axiom qtypPredHolds : QTyp → Memory → VarEnv → Value → Prop
+  -- We implement this as an inductive predicate for easier inversion in proofs.
+  -- The `none` case holds trivially; the `some` case requires evidence that the
+  -- predicate body terminates to `true` when evaluated with the argument bound.
+  inductive qtypPredHolds : QTyp → Memory → VarEnv → Value → Prop where
+    | none_ok {qt : QTyp} {μ ρ v}
+        (h : qt.pred = none) :
+        qtypPredHolds qt μ ρ v
+    | some_ok {qt : QTyp} {μ ρ v}
+        (tp : TPred) (cfg : Config)
+        (h : qt.pred = some tp)
+        (hterm : terminatesTo (PExpr.toExpr tp.pred_body)
+                    { memory := μ, varEnv := VarEnv.update ρ tp.arg_name v, nextLoc := 0 }
+                    cfg (ExprOrValue.value (Value.bool true))) :
+        qtypPredHolds qt μ ρ v
 
   -- Relational predicate for typing values as enriched types
   inductive valueHasETyp : Value → ETyp → Prop where
