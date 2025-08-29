@@ -531,7 +531,7 @@ namespace NonInterference
   -- unconstrained here (we quantify over them), but concrete runs must still
   -- instantiate the initial typing context (see the theorem premise below).
   def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
-    (∀ {l qt}, s.locs.lookup l = some qt → μ.contains l) ∧
+    (∀ {l}, s.locs.contains l → μ.contains l) ∧
     (∀ {x qt v}, s.vars.lookup x = some qt → ρ.lookup x = some v → valueHasETyp v qt.etyp)
 
   -- Elementwise predicates for regimes (inductive for easy inversion)
@@ -621,8 +621,10 @@ namespace NonInterference
     wfObsSpec obs →
     ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (R : Regime)
       (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
-      inputsConformSpec s μ₁ ρ₁ → inputsConformSpec s μ₂ ρ₂ →
-      consistentRegimeSpec R s μ₁ ρ₁ → consistentRegimeSpec R s μ₂ ρ₂ →
+      inputsConformSpec s μ₁ ρ₁ →
+      inputsConformSpec s μ₂ ρ₂ →
+      consistentRegimeSpec R s μ₁ ρ₁ →
+      consistentRegimeSpec R s μ₂ ρ₂ →
       agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂ →
       terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ →
       terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
