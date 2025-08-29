@@ -496,7 +496,7 @@ namespace NonInterference
   -- Helper: equality of observables in the final states
   def observablesEqual (obs : ObservableSpec)
       (c₁ c₂ : Config) (o₁ o₂ : ExprOrValue) : Prop :=
-    let sameMem : Prop := ∀ {l et}, obs.Lobs.lookup l = some et → c₁.memory.get? l = c₂.memory.get? l
+    let sameMem : Prop := ∀ {l et}, obs.Lobs.lookup l = some et → c₁.memory.lookup l = c₂.memory.lookup l
     -- If the return is observable (retEtyp? = some et), we require the final
     -- values to match If the return is not observable (retEtyp? = none), we do
     -- not constrain it here.
@@ -522,9 +522,9 @@ namespace NonInterference
   -- is permitted, but it must be poisoned and carry no predicate.
   def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
     ctx.pc = false ∧ ctx.tagEnv = {} ∧
-    (∀ {l qt}, s.locs.lookup l = some qt → ctx.memEnv.get? l = some qt) ∧
+    (∀ {l qt}, s.locs.lookup l = some qt → ctx.memEnv.lookup l = some qt) ∧
     (∀ {x qt}, s.vars.lookup x = some qt → ctx.varEnv.lookup x = some qt) ∧
-    (∀ {l qt}, ctx.memEnv.get? l = some qt → ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none) ∧
+    (∀ {l qt}, ctx.memEnv.lookup l = some qt → ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none) ∧
     (∀ {x qt}, ctx.varEnv.lookup x = some qt → ¬ s.vars.hasKey x → qt.poison = true ∧ qt.pred = none)
 
   -- Runtime conforms to the spec for critical inputs only. Unlisted inputs are
@@ -535,61 +535,62 @@ namespace NonInterference
     (∀ {x qt v}, s.vars.lookup x = some qt → ρ.lookup x = some v → valueHasETyp v qt.etyp)
 
   -- Elementwise predicates for regimes (inductive for easy inversion)
-  inductive holdsLocBit (μ : Memory) (ρ : VarEnv) : Bool → (Address × QTyp) → Prop where
+  inductive locsRegime (μ : Memory) (ρ : VarEnv) : Bool → (Address × QTyp) → Prop where
     | true_ok (entry : Address × QTyp) (n : Int)
-        (hmem : μ.get? entry.fst = some n)
+        (hmem : μ.lookup entry.fst = some n)
         (hpred : qtypPredHolds entry.snd μ ρ (Value.num n)) :
-        holdsLocBit μ ρ true entry
+        locsRegime μ ρ true entry
     | false_ok (entry : Address × QTyp)
-        (hexists : ∃ n, μ.get? entry.fst = some n)
-        (hno : ∀ n, ¬ (μ.get? entry.fst = some n ∧ qtypPredHolds entry.snd μ ρ (Value.num n))) :
-        holdsLocBit μ ρ false entry
+        (hexists : ∃ n, μ.lookup entry.fst = some n)
+        (hno : ∀ n, ¬ (μ.lookup entry.fst = some n ∧ qtypPredHolds entry.snd μ ρ (Value.num n))) :
+        locsRegime μ ρ false entry
 
-  inductive holdsVarBit (μ : Memory) (ρ : VarEnv) : Bool → (Name × QTyp) → Prop where
+  inductive varsRegime (μ : Memory) (ρ : VarEnv) : Bool → (Name × QTyp) → Prop where
     | true_ok (entry : Name × QTyp) (v : Value)
         (hget : ρ.lookup entry.fst = some v)
         (hpred : qtypPredHolds entry.snd μ ρ v) :
-        holdsVarBit μ ρ true entry
+        varsRegime μ ρ true entry
     | false_ok (entry : Name × QTyp)
         (hexists : ∃ v, ρ.lookup entry.fst = some v)
         (hno : ∀ v, ¬ (ρ.lookup entry.fst = some v ∧ qtypPredHolds entry.snd μ ρ v)) :
-        holdsVarBit μ ρ false entry
+        varsRegime μ ρ false entry
 
   -- Regime consistency (aligned pairs via Forall₂ over fixed-order lists).
   -- Forall₂ also enforces that the lists are the same length. The regime
   -- covers only critical inputs in the order given by the spec.
   def consistentRegimeSpec (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
-    List.Forall₂ (holdsLocBit μ ρ) R.locBits s.locs.toList ∧
-    List.Forall₂ (holdsVarBit μ ρ) R.varBits s.vars
+    List.Forall₂ (locsRegime μ ρ) R.locBits s.locs.toList ∧
+    List.Forall₂ (varsRegime μ ρ) R.varBits s.vars
 
-  -- Agreement under regime as an elementwise relation, then lifted with Forall₂
+  -- Two initial states agree on a critical location under a given regime bit.
   inductive agreeLocUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
       : Bool → (Address × QTyp) → Prop where
-    | true_eq (entry : Address × QTyp)
-        (h : μ₁.get? entry.fst = μ₂.get? entry.fst) :
-        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ true entry
-    | false_none (entry : Address × QTyp)
-        (hnone : entry.snd.pred = none) :
-        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false entry
-    | false_some (entry : Address × QTyp)
-        (hsome : ∃ tp, entry.snd.pred = some tp)
-        (h1 : ∃ n1, μ₁.get? entry.fst = some n1 ∧ ¬ qtypPredHolds entry.snd μ₁ ρ₁ (Value.num n1))
-        (h2 : ∃ n2, μ₂.get? entry.fst = some n2 ∧ ¬ qtypPredHolds entry.snd μ₂ ρ₂ (Value.num n2)) :
-        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false entry
+    | true_eq (addr : Address) (qt : QTyp)
+        (h : μ₁.lookup addr = μ₂.lookup addr) :
+        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ true (addr, qt)
+    | false_none (addr : Address) (qt : QTyp)
+        (hnone : qt.pred = none) :
+        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false (addr, qt)
+    | false_some (addr : Address) (qt : QTyp)
+        (hsome : ∃ tp, qt.pred = some tp)
+        (h1 : ∃ n1, μ₁.lookup addr = some n1 ∧ ¬ qtypPredHolds qt μ₁ ρ₁ (Value.num n1))
+        (h2 : ∃ n2, μ₂.lookup addr = some n2 ∧ ¬ qtypPredHolds qt μ₂ ρ₂ (Value.num n2)) :
+        agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false (addr, qt)
 
-  inductive agreeVarUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
+    -- Two initial states agree on a critical variable under a given regime bit.
+    inductive agreeVarUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
       : Bool → (Name × QTyp) → Prop where
-    | true_eq (entry : Name × QTyp)
-        (h : ρ₁.lookup entry.fst = ρ₂.lookup entry.fst) :
-        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ true entry
-    | false_none (entry : Name × QTyp)
-        (hnone : entry.snd.pred = none) :
-        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false entry
-    | false_some (entry : Name × QTyp)
-        (hsome : ∃ tp, entry.snd.pred = some tp)
-        (h1 : ∃ v1, ρ₁.lookup entry.fst = some v1 ∧ ¬ qtypPredHolds entry.snd μ₁ ρ₁ v1)
-        (h2 : ∃ v2, ρ₂.lookup entry.fst = some v2 ∧ ¬ qtypPredHolds entry.snd μ₂ ρ₂ v2) :
-        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false entry
+    | true_eq (x : Name) (qt : QTyp)
+        (h : ρ₁.lookup x = ρ₂.lookup x) :
+        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ true (x, qt)
+    | false_none (x : Name) (qt : QTyp)
+        (hnone : qt.pred = none) :
+        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false (x, qt)
+    | false_some (x : Name) (qt : QTyp)
+        (hsome : ∃ tp, qt.pred = some tp)
+        (h1 : ∃ v1, ρ₁.lookup x = some v1 ∧ ¬ qtypPredHolds qt μ₁ ρ₁ v1)
+        (h2 : ∃ v2, ρ₂.lookup x = some v2 ∧ ¬ qtypPredHolds qt μ₂ ρ₂ v2) :
+        agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false (x, qt)
 
   def agreeOnCriticalInputsUnderRegimeSpec
     (R : Regime) (s : InputSpec)
@@ -608,7 +609,7 @@ namespace NonInterference
     -- (ii) the memory must contain entries for each observable location
     -- with the correct enriched type
     let memMatches : Prop :=
-      ∀ l et, obs.Lobs.lookup l = some et → res.memEnv'.get? l = some et
+      ∀ l et, obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et
     retMatches ∧ memMatches
 
 
