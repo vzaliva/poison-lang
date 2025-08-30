@@ -6,11 +6,15 @@ import LeanPoison.Runtime
 import LeanPoison.Poison
 import Mathlib.Data.Nat.Basic  -- for Nat.strong_induction_on
 import Mathlib.Tactic
+import Mathlib.Tactic.Linarith
 
 -- TODO: Ideally we would not need this but for brevity sometimes we close some
 -- proofs with <;> followed by simp [...] and for some branches some args are
 -- not used. We should fix this to avoid disabling the linter warning.
 set_option linter.unusedSimpArgs false
+
+-- TODO: review these warnings
+set_option linter.unnecessarySeqFocus false
 
 theorem OpEType.sound {o t₁ t₂ r}
   (h : OpEType o t₁ t₂ r) : opEType? o t₁ t₂ = some r := by
@@ -32,7 +36,7 @@ theorem joinMemEnv_idempotent : ∀ (m1 : MemoryTypeEnv), joinMemEnvs m1 m1 = m1
   simp [joinMemEnvs]
   sorry
 
-set_option maxHeartbeats 800000
+set_option maxHeartbeats 1000000
 
 theorem typecheck_PExpr_preserves_typestate :
   ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (pe : PExpr) (result : TypeResult),
@@ -101,8 +105,8 @@ theorem typecheck_PExpr_preserves_typestate :
             simp_all
           | ok pe1 =>
             simp [h1] at P
-            have hfuel : fuel' < fuel' + 1 + 1 := linarith
-            specialize IH fuel' hfuel ctx e1 pe1 result1 h1
+            have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+            specialize IH fuel' hfuel ctx e1 pe1 result1 h1 h0
             rcases IH with ⟨H1, H2, H3⟩
             simp_all
             cases h2: result1.qualType with
@@ -147,8 +151,8 @@ theorem typecheck_PExpr_preserves_typestate :
                             simp_all <;>
                             cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
               | _ => simp_all
-      | ite e1 e2 e3 IH1 IH2 IH3 =>
-        (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
+      | ite e1 e2 e3  =>
+        simp [typecheckExpr] at H
         (cases fuel with | zero |succ fuel') <;> simp_all [typecheckIf, bind, Except.bind]
         simp [Expr.toPExpr, Functor.map, Except.map] at P
         (cases h1: e1.toPExpr with| error err | ok pe1 ) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
@@ -159,7 +163,8 @@ theorem typecheck_PExpr_preserves_typestate :
           simp_all
         | ok result1 =>
           simp [h5] at H
-          specialize IH1 fuel' ctx pe1 result1 h1 h5
+          have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+          have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 h5
           rcases IH1 with ⟨H1, H2, H3⟩
           simp_all
           cases h6: result1.qualType with
@@ -200,17 +205,17 @@ theorem typecheck_PExpr_preserves_typestate :
                           simp_all
                         | false =>
                           simp_all
-                          have hpe2 : pe2 = pe2 := rfl
-                          specialize IH2 fuel'
+                          have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+                          have IH2 := IH fuel' hfuel
                               { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
                                 tagEnv := Std.HashMap.insert result1.tagEnv' k true,
                                 nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
-                              pe2 result2 hpe2 h9
-                          have hpe3 : pe3 = pe3 := rfl
-                          specialize IH3 fuel' { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                                tagEnv := Std.HashMap.insert result1.tagEnv' k false,
-                                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
-                              pe3 result3 hpe3 h11
+                              e2 pe2 result2 h3 h9
+                          have IH3 := IH fuel' hfuel
+                              { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                tagEnv := Std.HashMap.insert result1.tagEnv' k false,
+                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                              e3 pe3 result3 h4 h11
                           rcases IH2 with ⟨H14, H15, H16⟩
                           rcases IH3 with ⟨H17, H18, H19⟩
                           cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
@@ -229,7 +234,8 @@ theorem typecheck_PExpr_preserves_typestate :
                     simp_all
                     cases h11: typecheckExpr
                             { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                              tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                              tagEnv := result1.tagEnv',
+                              nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
                             e3 fuel' with
                     | error err =>
                       simp_all
@@ -243,22 +249,21 @@ theorem typecheck_PExpr_preserves_typestate :
                           simp_all
                         | false =>
                           simp_all [pure, Except.pure]
-                          have hpe2 : pe2 = pe2 := rfl
-                          specialize IH2 fuel'
+                          have IH2 := IH fuel' hfuel
                               { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
                                 tagEnv := result1.tagEnv',
                                 nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
-                              pe2 result2 hpe2 h9
-                          have hpe3 : pe3 = pe3 := rfl
-                          specialize IH3 fuel' {pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                                tagEnv := result1.tagEnv',
-                                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
-                              pe3 result3 hpe3 h11
+                              e2 pe2 result2 h3 h9
+                          have IH3 := IH fuel' hfuel
+                              { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                tagEnv := result1.tagEnv',
+                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                              e3 pe3 result3 h4 h11
                           rcases IH2 with ⟨H14, H15, H16⟩
                           rcases IH3 with ⟨H17, H18, H19⟩
                           cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
-      | op e1 op e2 IH1 IH2 =>
-        (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
+      | op e1 op e2 =>
+        simp [typecheckExpr] at H
         (cases fuel with | zero |succ fuel') <;> simp_all [typecheckOp, bind, Except.bind]
         simp [Expr.toPExpr, Functor.map, Except.map] at P
         (cases h1: e1.toPExpr with | error err | ok pe1) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
@@ -268,8 +273,8 @@ theorem typecheck_PExpr_preserves_typestate :
           simp_all
         | ok result1 =>
           simp [h3] at H
-          have hpe1 : e1.toPExpr = .ok pe1 := by simp [h1]
-          specialize IH1 fuel' ctx pe1 result1 hpe1 h3
+          have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+          have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 h3
           rcases IH1 with ⟨H1, H2, H3⟩
           simp_all
           cases h4: result1.qualType with
@@ -292,21 +297,20 @@ theorem typecheck_PExpr_preserves_typestate :
                 cases h7: opEType? op etyp1 etyp2 with
                 | some etyp3 =>
                   simp_all [pure, Except.pure]
-                  have hpe2 : pe2 = pe2 := rfl
-                  specialize IH2 fuel'
+                  have IH2 := IH fuel' hfuel
                             { pc := ctx.pc, memEnv := result1.memEnv',
                               varEnv := ctx.varEnv,
                               tagEnv := result1.tagEnv',
                               nextLoc := result1.nextLoc',
                               nextTag := ctx.nextTag }
-                            pe2 result2 hpe2 h5
+                            e2 pe2 result2 h2 h5
                   rcases IH2 with ⟨H8, H9, H10⟩
                   simp_all
                   cases result; cases result1; cases result2; cases ctx; cases H; simp_all
                 | none =>
                   simp_all
-      | vlet x e1 e2 IH1 IH2 =>
-        (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
+      | vlet x e1 e2 =>
+        simp [typecheckExpr] at H
         (cases fuel with | zero |succ fuel') <;> simp_all [typecheckVlet, bind, Except.bind]
         simp [Expr.toPExpr, Functor.map, Except.map] at P
         (cases h1: e1.toPExpr with | error err | ok pe1) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
@@ -316,7 +320,8 @@ theorem typecheck_PExpr_preserves_typestate :
           simp_all
         | ok result1 =>
           simp [h3] at H
-          specialize IH1 fuel' ctx pe1 result1 h1 h3
+          have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+          have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 h3
           rcases IH1 with ⟨H1, H2, H3⟩
           cases h4: result1.qualType with
           | mk etyp1 p1 pred1 =>
@@ -335,18 +340,17 @@ theorem typecheck_PExpr_preserves_typestate :
               cases h5: result2.qualType with
               | mk etyp2 p2 pred2 =>
                 simp_all [pure, Except.pure]
-                have hpe2 : pe2 = pe2 := rfl
-                specialize IH2 fuel'
-                { pc := ctx.pc, memEnv := result1.memEnv',
-                  varEnv := ctx.varEnv.update x { etyp := etyp1, poison := joinPoison ctx.pc p1, pred := pred1 },
-                  tagEnv := result1.tagEnv',
-                  nextLoc := result1.nextLoc',
-                  nextTag := ctx.nextTag }
-                pe2 result2 hpe2 h4
+                have IH2 := IH fuel' hfuel
+                  { pc := ctx.pc, memEnv := result1.memEnv',
+                    varEnv := ctx.varEnv.update x { etyp := etyp1, poison := joinPoison ctx.pc p1, pred := pred1 },
+                    tagEnv := result1.tagEnv',
+                    nextLoc := result1.nextLoc',
+                    nextTag := ctx.nextTag }
+                  e2 pe2 result2 h2 h4
                 simp_all
                 cases result; cases result1; cases result2; cases ctx; cases H; simp_all
-      | app e1 e2 IH1 IH2 =>
-        (cases fuel with | zero |succ fuel) <;> simp_all [typecheckExpr]
+      | app e1 e2 =>
+        simp [typecheckExpr] at H
         (cases fuel with | zero |succ fuel') <;> simp_all [typecheckApp, bind, Except.bind]
         simp [Expr.toPExpr, Functor.map, Except.map] at P
         (cases h1: e1.toPExpr with | error err | ok pe1) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
@@ -356,7 +360,8 @@ theorem typecheck_PExpr_preserves_typestate :
           simp_all
         | ok result1 =>
           simp [h3] at H
-          specialize IH1 fuel' ctx pe1 result1 h1 h3
+          have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+          have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 h3
           rcases IH1 with ⟨H1, H2, H3⟩
           simp_all
           cases h4: result1.qualType with
@@ -373,13 +378,13 @@ theorem typecheck_PExpr_preserves_typestate :
                 simp_all
               | ok result2 =>
                 simp [h6] at H
-                have hpe2 : pe2 = pe2 := rfl
-                specialize IH2 fuel' { pc := ctx.pc, memEnv := result1.memEnv',
-                                      varEnv := ctx.varEnv,
-                                      tagEnv := result1.tagEnv',
-                                      nextLoc := result1.nextLoc',
-                                      nextTag := ctx.nextTag }
-                                      pe2 result2 hpe2 h6
+                have IH2 := IH fuel' hfuel
+                  { pc := ctx.pc, memEnv := result1.memEnv',
+                                        varEnv := ctx.varEnv,
+                                        tagEnv := result1.tagEnv',
+                                        nextLoc := result1.nextLoc',
+                                        nextTag := ctx.nextTag }
+                  e2 pe2 result2 h2 h6
                 rcases IH2 with ⟨H7, H8, H9⟩
                 simp_all
                 cases h7: result2.qualType with
