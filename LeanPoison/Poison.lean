@@ -16,7 +16,7 @@ inductive PExpr : Type where
   | op : PExpr → Op → PExpr → PExpr                -- e1 op e2
   | ite : PExpr → PExpr → PExpr → PExpr            -- if e1 then e2 else e3
   | deref : PExpr → PExpr                          -- ! e
-  | vlet : Name → PExpr → PExpr → PExpr      -- let x : T = e1 in e2
+  | vlet : Name → PExpr → PExpr → PExpr            -- let x : T = e1 in e2
   | app : PExpr → PExpr → PExpr                    -- e1 e2
 
 -- Tagged predicate structure
@@ -32,10 +32,12 @@ structure QTyp where
   poison : Poison
   pred : Option TPred
 
--- Type closures for function types
-inductive TClosure : Type where
-  | fn_tclosure : Name → Expr → List (Name × QTyp) → TClosure
-  | pfn_tclosure: Name → PExpr → List (Name × QTyp) → TClosure
+-- Separate typing closures for impure and pure functions
+inductive FnTClosure : Type where
+  | mk : Name → Expr → List (Name × QTyp) → FnTClosure
+
+inductive PFnTClosure : Type where
+  | mk : Name → PExpr → List (Name × QTyp) → PFnTClosure
 
 -- Enriched type (full type)
 inductive ETyp : Type where
@@ -44,7 +46,8 @@ inductive ETyp : Type where
   | unit : ETyp
   | string : ETyp
   | ref : ETyp → Address → ETyp
-  | arrow : Typ → Typ → Poison → TClosure → ETyp  -- Now stores surface type ST, not T1 -> T2
+  | arrow : Typ → Typ → Poison → FnTClosure → ETyp
+  | parrow : Typ → Typ → Poison → PFnTClosure → ETyp
 
 end
 
@@ -88,9 +91,11 @@ partial def reprPExpr : PExpr → Nat → Std.Format
   | PExpr.vlet x e1 e2, _ => s!"PExpr.vlet {repr x} ({reprPExpr e1 0}) ({reprPExpr e2 0})"
   | PExpr.app e1 e2, _ => s!"PExpr.app ({reprPExpr e1 0}) ({reprPExpr e2 0})"
 
-partial def reprTClosure : TClosure → Nat → Std.Format
-  | TClosure.fn_tclosure x _ _ , _ => s!"TClosure.fn_tclosure {repr x} <expr>"
-  | TClosure.pfn_tclosure x _ _ , _ => s!"TClosure.pfn_tclosure {repr x} <pexpr>"
+partial def reprFnTClosure : FnTClosure → Nat → Std.Format
+  | FnTClosure.mk x _ _ , _ => s!"FnTClosure {repr x} <expr>"
+
+partial def reprPFnTClosure : PFnTClosure → Nat → Std.Format
+  | PFnTClosure.mk x _ _ , _ => s!"PFnTClosure {repr x} <pexpr>"
 
 partial def reprETyp : ETyp → Nat → Std.Format
   | ETyp.int, _ => "ETyp.int"
@@ -98,7 +103,8 @@ partial def reprETyp : ETyp → Nat → Std.Format
   | ETyp.unit, _ => "ETyp.unit"
   | ETyp.string , _ => "ETyp.string"
   | ETyp.ref t l, _ => s!"ETyp.ref {reprETyp t 0} {repr l}"
-  | ETyp.arrow st1 st2 p tcl, _ => s!"ETyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprTClosure tcl 0}"
+  | ETyp.arrow st1 st2 p tcl, _ => s!"ETyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprFnTClosure tcl 0}"
+  | ETyp.parrow st1 st2 p tcl, _ => s!"ETyp.parrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprPFnTClosure tcl 0}"
 
 partial def reprQTyp : QTyp → Nat → Std.Format
   | QTyp.mk etyp poison tpred, _ =>
@@ -120,8 +126,11 @@ end
 instance : Repr PExpr where
   reprPrec := reprPExpr
 
-instance : Repr TClosure where
-  reprPrec := reprTClosure
+instance : Repr FnTClosure where
+  reprPrec := reprFnTClosure
+
+instance : Repr PFnTClosure where
+  reprPrec := reprPFnTClosure
 
 instance : Repr ETyp where
   reprPrec := reprETyp
@@ -142,20 +151,26 @@ def beqETyp : ETyp → ETyp → Bool
   | ETyp.string , ETyp.string => true
   | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETyp t1 t2 && l1 == l2
   | ETyp.arrow st1 st2 p1 tcl1, ETyp.arrow st1' st2' p2 tcl2 =>
-    st1 == st1' && st2 == st2' && p1 == p2 && beqTClosure tcl1 tcl2
+    st1 == st1' && st2 == st2' && p1 == p2 && beqFnTClosure tcl1 tcl2
+  | ETyp.parrow st1 st2 p1 tcl1, ETyp.parrow st1' st2' p2 tcl2 =>
+    st1 == st1' && st2 == st2' && p1 == p2 && beqPFnTClosure tcl1 tcl2
   | _, _ => false
 
-def beqTClosure : TClosure → TClosure → Bool
-  | TClosure.fn_tclosure x1 _ _, TClosure.fn_tclosure x2 _ _ => x1 == x2
-  | TClosure.pfn_tclosure x1 _ _, TClosure.pfn_tclosure x2 _ _ => x1 == x2
-  | _, _ => false
+def beqFnTClosure : FnTClosure → FnTClosure → Bool
+  | FnTClosure.mk x1 _ _, FnTClosure.mk x2 _ _ => x1 == x2
+
+def beqPFnTClosure : PFnTClosure → PFnTClosure → Bool
+  | PFnTClosure.mk x1 _ _, PFnTClosure.mk x2 _ _ => x1 == x2
 end
 
 instance : BEq ETyp where
   beq := beqETyp
 
-instance : BEq TClosure where
-  beq := beqTClosure
+instance : BEq FnTClosure where
+  beq := beqFnTClosure
+
+instance : BEq PFnTClosure where
+  beq := beqPFnTClosure
 
 
 -- Manual BEq instance for PExpr

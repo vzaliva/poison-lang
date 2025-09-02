@@ -116,6 +116,7 @@ def ETyp.toTyp (pt : ETyp) : Typ :=
   | ETyp.string => Typ.string
   | ETyp.ref t _ => Typ.ref (t.toTyp)
   | ETyp.arrow st1 st2 _p _tcl => Typ.arrow st1 st2
+  | ETyp.parrow st1 st2 _p _tcl => Typ.arrow st1 st2
 
 -- Helper function to convert PExpr to Expr
 def PExpr.toExpr (pe : PExpr) : Expr :=
@@ -404,7 +405,7 @@ def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : 
   -- Body typechecking is deferred until application time
 
   -- Create arrow type ST1 -> ST2
-  let arrowTyp : ETyp := ETyp.arrow st1 st2 false (TClosure.fn_tclosure x body ctx.varEnv)
+  let arrowTyp : ETyp := ETyp.arrow st1 st2 false (FnTClosure.mk x body ctx.varEnv)
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
@@ -420,7 +421,7 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
    -- Convert body to PExpr
   let pbody ← body.toPExpr
   -- Create arrow type ST1 -> ST2
-  let arrowTyp : ETyp := ETyp.arrow st1 st2 false (TClosure.pfn_tclosure x pbody ctx.varEnv)
+  let arrowTyp : ETyp := ETyp.parrow st1 st2 false (PFnTClosure.mk x pbody ctx.varEnv)
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
 
@@ -749,7 +750,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr result2.qualType.toTyp}"
 
       match tcl with
-      | TClosure.fn_tclosure x body env =>
+      | FnTClosure.mk x body env =>
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt
@@ -765,8 +766,18 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         let poison := joinPoison ctx.pc p3
         let qt : QTyp := ⟨etyp3, poison, pred3⟩
         return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc', nextTag' := result3.nextTag' }
+    | ETyp.parrow st1 st2 _p tcl =>
+      -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+      let result2 ← typecheckExpr ctx' e2 fuel
+      let ⟨etyp2, p2, pred2⟩ := result2.qualType
 
-      | TClosure.pfn_tclosure x body env =>
+      -- Premise 3: ST1 <: T1 (check subtyping)
+      if not (isSubtype st1 result2.qualType) then
+        throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr result2.qualType.toTyp}"
+
+      match tcl with
+      | PFnTClosure.mk x body env =>
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt

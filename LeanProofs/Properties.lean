@@ -396,10 +396,38 @@ theorem typecheck_PExpr_preserves_typestate :
                   | true =>
                     simp_all [pure, Except.pure]
                     cases tcl with
-                    | fn_tclosure x body env =>
-                      -- should not be possible to have a fn_tclosure here
+                    | mk x body env =>
+                      -- impure function case; not expected under PExpr hypothesis
                       sorry
-                    | pfn_tclosure x body env =>
+            | parrow st1 st2 _p tcl =>
+              simp [h5] at H
+              cases h6: typecheckExpr
+                            { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv',
+                              nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                            e2 fuel' with
+              | error err =>
+                simp_all
+              | ok result2 =>
+                simp [h6] at H
+                have IH2 := IH fuel' hfuel
+                  { pc := ctx.pc, memEnv := result1.memEnv',
+                                        varEnv := ctx.varEnv,
+                                        tagEnv := result1.tagEnv',
+                                        nextLoc := result1.nextLoc',
+                                        nextTag := ctx.nextTag }
+                  e2 pe2 result2 h2 h6
+                rcases IH2 with ⟨H7, H8, H9⟩
+                simp_all
+                cases h7: result2.qualType with
+                | mk etyp2 p2 pred2 =>
+                  simp_all
+                  cases h7: isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } with
+                  | false =>
+                    simp_all
+                  | true =>
+                    simp_all [pure, Except.pure]
+                    cases tcl with
+                    | mk x body env =>
                       simp_all
                       cases h8: typecheckExpr
                             { pc := ctx.pc, memEnv := result2.memEnv',

@@ -78,7 +78,7 @@ inductive valueHasETyp : Value → ETyp → Prop where
   | closure (x e env st1 st2 p tcl):
       valueHasETyp (Value.closure x e env) (ETyp.arrow st1 st2 p tcl)
   | peClosure (x pe env st1 st2 p tcl):
-      valueHasETyp (Value.peClosure x pe env) (ETyp.arrow st1 st2 p tcl)
+      valueHasETyp (Value.peClosure x pe env) (ETyp.parrow st1 st2 p tcl)
 
 -- A predicate for runtime instantiating the context: values must exist for
 -- every typed variable and memory must contain entries for each typed

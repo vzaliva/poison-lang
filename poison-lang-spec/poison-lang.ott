@@ -125,14 +125,17 @@ typ, T :: 'T_' ::=         {{ com enriched types }}
   | string                  ::   :: string 
   | ref T @ l               ::   :: ref {{ tex \mathsf{ref}\,[[T]]\,@\,[[l]] }}
   | ST1 -> ST2 # p typing_closure tcl ::   :: arrow {{ tex [[ST1]] \rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{typing\_closure}\, [[tcl]] }}
+  | ST1 -> ST2 # p typing_pclosure ptcl ::   :: parrow {{ tex [[ST1]] \Rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{typing\_pclosure}\, [[ptcl]] }}
 
 % Predicate closure contents (for cleaner syntax)
 pcl :: 'PCL_' ::= {{ com predicate closure }}
   | ( x , pe , S )          ::   :: pred_closure
 
-% Typing closure contents (for function types)
-tcl :: 'TCL_' ::= {{ com typing closure }}
+% Typing closures (separate for impure fn and pure pfn)
+tcl :: 'TCL_' ::= {{ com typing closure for impure functions }}
   | ( x , e , S )           ::   :: fn_closure
+
+ptcl :: 'PTCL_' ::= {{ com typing closure for pure functions }}
   | ( x , pe , S )          ::   :: pfn_closure
 
 predicate, P :: 'P_' ::= {{ com predicate (pure function from T to bool) }}
@@ -684,7 +687,7 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
 % We simply record the body and return type without typechecking the body.
 % Body typechecking is deferred until application time.
 ----------------------------------------------------------------------  :: pfn_abs
-  pc ; G ; S ; L |- pfn x : ST1 => pe : ST2 : ST1 -> ST2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
+  pc ; G ; S ; L |- pfn x : ST1 => pe : ST2 : ST1 -> ST2 # pc typing_pclosure ( x , pe , S ) :> pc { no_pred } -| G ; L
 
 % Function application typing - now uses captured body and context for precise typing
 % When applying a function, we extract the typing_closure containing the parameter name (x),
@@ -700,7 +703,7 @@ pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
   pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
 
 % Pure function application typing - uses captured pure body and context
-  pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , pe , S' ) :> p1 { P1 } -| G' ; L'
+  pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_pclosure ( x , pe , S' ) :> p1 { P1 } -| G' ; L'
   pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
   ST1 <: T1
   pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
