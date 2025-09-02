@@ -485,6 +485,16 @@ Note that closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_clo
 pe, \rho)$ are runtime values that only appear during execution; they are not
 part of the source language and do not have typing rules.
 
+\paragraph{Pure-mode in the small-step semantics.} The runtime configuration
+carries a purity flag $\pi$ as the first component $\langle\pi, e, \mu,
+\rho\rangle$. Entering a pure closure evaluates its body under $\pi :=
+\text{pure}$; function application forbids applying impure closures while $\pi$
+is pure. No further dynamic checks are required because pfn bodies are
+syntactically pure (no \texttt{ref}, \texttt{:=}, \texttt{while}, or
+sequencing), and evaluation uses rollback for pure bodies so memory and the
+caller's variable environment are restored on return. Together these ensure
+observational purity, including in higher-order cases.
+
 \section{Type System (Typestate)}
 
 \subsection{Environments}
@@ -569,7 +579,23 @@ ST_2 <: T_2
 {\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{fn } x : ST_1 \Rightarrow e : ST_1 \rightarrow ST_2 \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
 \]
 
-\noindent For pure functions, the enriched type uses a separate pure arrow and closure: $ST_1 \rightarrow ST_2 \# p\; \text{typing\_pclosure}(x,pe,\sigma)$, and application uses the pure closure in place of the impure one.
+\noindent For pure functions, the enriched type uses a separate pure arrow and
+closure: $ST_1 \rightarrow ST_2 \# p\; \text{typing\_pclosure}(x,pe,\sigma)$,
+and application uses the pure closure in place of the impure one.
+
+\paragraph{Pure-mode typing.} The core higher-order risk is that function
+\emph{values} (parameters or captured closures) may be impure even when their
+\emph{surface} types ($ST_1 \to ST_2$) do not record purity; without an
+additional discipline, a purportedly pure body could call an impure function via
+such a path. When typing the body at application time for a callee of pure type
+($ST_1 \rightarrow ST_2 \# p\; \text{typing\_pclosure}$), the checker enters a
+\emph{pure context} and enforces that every application in the body targets a
+pure function (the callee must have the pure arrow). No other dynamic checks are
+needed on the body because it is a \texttt{pe} by construction, excluding all
+side-effecting forms (\texttt{ref}, \texttt{:=}, \texttt{;}, \texttt{while},
+nested \texttt{fn}/\texttt{pfn}). This suffices for higher-order purity: even
+calls via parameters or captured closures are rejected if impure, since their
+enriched types carry the impure arrow.
 
 \subsubsection*{Function application:}
 The function application typing rule extracts the typing closure from the function type and types the body at application time. This enables predicate-based de-poisoning by using the actual argument's predicates and the current logical environment $\mathcal{L}$. The subtyping checks $ST_1 \!<:\! T_1$ and $ST_2 \!<:\! T_2$ ensure the surface parameter and return types are compatible with the actual argument and body types respectively.

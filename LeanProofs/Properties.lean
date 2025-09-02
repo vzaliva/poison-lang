@@ -180,7 +180,7 @@ theorem typecheck_PExpr_preserves_typestate :
                 simp_all
                 cases h9: typecheckExpr
                             { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                              tagEnv := Std.HashMap.insert result1.tagEnv' k true, nextLoc := result1.nextLoc', nextTag := ctx.nextTag}
+                              tagEnv := Std.HashMap.insert result1.tagEnv' k true, nextLoc := result1.nextLoc', nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                             e2 fuel' with
                 | error err =>
                   simp_all
@@ -191,7 +191,7 @@ theorem typecheck_PExpr_preserves_typestate :
                     simp_all
                     cases h11: typecheckExpr
                             { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                              tagEnv := Std.HashMap.insert result1.tagEnv' k false, nextLoc := result1.nextLoc', nextTag := ctx.nextTag}
+                              tagEnv := Std.HashMap.insert result1.tagEnv' k false, nextLoc := result1.nextLoc', nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                             e3 fuel' with
                     | error err =>
                       simp_all
@@ -209,12 +209,12 @@ theorem typecheck_PExpr_preserves_typestate :
                           have IH2 := IH fuel' hfuel
                               { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
                                 tagEnv := Std.HashMap.insert result1.tagEnv' k true,
-                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                               e2 pe2 result2 h3 h9
                           have IH3 := IH fuel' hfuel
                               { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
                                 tagEnv := Std.HashMap.insert result1.tagEnv' k false,
-                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                               e3 pe3 result3 h4 h11
                           rcases IH2 with ⟨H14, H15, H16⟩
                           rcases IH3 with ⟨H17, H18, H19⟩
@@ -223,7 +223,7 @@ theorem typecheck_PExpr_preserves_typestate :
                 simp_all
                 cases h9: typecheckExpr
                             { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                              tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                              tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                             e2 fuel' with
                 | error err =>
                   simp_all
@@ -235,7 +235,7 @@ theorem typecheck_PExpr_preserves_typestate :
                     cases h11: typecheckExpr
                             { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
                               tagEnv := result1.tagEnv',
-                              nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                              nextLoc := result1.nextLoc', nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                             e3 fuel' with
                     | error err =>
                       simp_all
@@ -252,12 +252,12 @@ theorem typecheck_PExpr_preserves_typestate :
                           have IH2 := IH fuel' hfuel
                               { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
                                 tagEnv := result1.tagEnv',
-                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                               e2 pe2 result2 h3 h9
                           have IH3 := IH fuel' hfuel
                               { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
                                 tagEnv := result1.tagEnv',
-                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                                nextLoc := result1.nextLoc', nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                               e3 pe3 result3 h4 h11
                           rcases IH2 with ⟨H14, H15, H16⟩
                           rcases IH3 with ⟨H17, H18, H19⟩
@@ -285,7 +285,7 @@ theorem typecheck_PExpr_preserves_typestate :
                               varEnv := ctx.varEnv,
                               tagEnv := result1.tagEnv',
                               nextLoc := result1.nextLoc',
-                              nextTag := ctx.nextTag }
+                              nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                             e2 fuel' with
             | error err =>
               simp_all
@@ -331,7 +331,7 @@ theorem typecheck_PExpr_preserves_typestate :
                               varEnv := ctx.varEnv.update x { etyp := etyp1, poison := joinPoison ctx.pc p1, pred := pred1 },
                               tagEnv := result1.tagEnv',
                               nextLoc := result1.nextLoc',
-                              nextTag := ctx.nextTag }
+                              nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                             e2 fuel' with
             | error err =>
               simp_all
@@ -345,7 +345,7 @@ theorem typecheck_PExpr_preserves_typestate :
                     varEnv := ctx.varEnv.update x { etyp := etyp1, poison := joinPoison ctx.pc p1, pred := pred1 },
                     tagEnv := result1.tagEnv',
                     nextLoc := result1.nextLoc',
-                    nextTag := ctx.nextTag }
+                    nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                   e2 pe2 result2 h2 h4
                 simp_all
                 cases result; cases result1; cases result2; cases ctx; cases H; simp_all
@@ -372,7 +372,7 @@ theorem typecheck_PExpr_preserves_typestate :
               simp [h5] at H
               cases h6: typecheckExpr
                             { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv',
-                              nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                              nextLoc := result1.nextLoc', nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                             e2 fuel' with
               | error err =>
                 simp_all
@@ -383,7 +383,7 @@ theorem typecheck_PExpr_preserves_typestate :
                                         varEnv := ctx.varEnv,
                                         tagEnv := result1.tagEnv',
                                         nextLoc := result1.nextLoc',
-                                        nextTag := ctx.nextTag }
+                                        nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                   e2 pe2 result2 h2 h6
                 rcases IH2 with ⟨H7, H8, H9⟩
                 simp_all
@@ -403,7 +403,7 @@ theorem typecheck_PExpr_preserves_typestate :
               simp [h5] at H
               cases h6: typecheckExpr
                             { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv',
-                              nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                              nextLoc := result1.nextLoc', nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                             e2 fuel' with
               | error err =>
                 simp_all
@@ -414,7 +414,7 @@ theorem typecheck_PExpr_preserves_typestate :
                                         varEnv := ctx.varEnv,
                                         tagEnv := result1.tagEnv',
                                         nextLoc := result1.nextLoc',
-                                        nextTag := ctx.nextTag }
+                                        nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                   e2 pe2 result2 h2 h6
                 rcases IH2 with ⟨H7, H8, H9⟩
                 simp_all
@@ -432,7 +432,7 @@ theorem typecheck_PExpr_preserves_typestate :
                       cases h8: typecheckExpr
                             { pc := ctx.pc, memEnv := result2.memEnv',
                               varEnv := VarTypeEnv.update env x { etyp := etyp2, poison := joinPoison ctx.pc p2, pred := pred2 },
-                              tagEnv := result2.tagEnv', nextLoc := result1.nextLoc', nextTag := ctx.nextTag }
+                              tagEnv := result2.tagEnv', nextLoc := result1.nextLoc', nextTag := ctx.nextTag, pureCtx := ctx.pureCtx }
                             body.toExpr fuel' with
                     | error err =>
                       simp_all

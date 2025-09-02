@@ -70,7 +70,7 @@ def evalProgram (input : String) : IO UInt32 := do
         IO.println s!"Type checking error: {resultType.drop 11}"
       else
         IO.println s!"Type checking passed: {resultType}"
-      let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0⟩
+      let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
       let result <- eval defaultFuel initialConfig (ExprOrValue.expr expr) false
       handleEvalResult result initialConfig false
 
@@ -151,7 +151,7 @@ def main (args : List String) : IO UInt32 := do
         else
           IO.println s!"Type checking passed: {resultType}"
         IO.println ""
-        let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0⟩
+        let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
         let result <- eval defaultFuel initialConfig (ExprOrValue.expr expr) true  -- verbose = true
         handleEvalResult result initialConfig true
 
@@ -165,7 +165,7 @@ def main (args : List String) : IO UInt32 := do
     IO.println "Enter a blank line after an expression to evaluate it."
     let tmp ← IO.Process.output { cmd := "mktemp", args := #["--tmpdir", "repl-XXXXXX.poison"] }
     let tmpPath := tmp.stdout.trim
-    let initialConfig := ⟨ emptyMemory, emptyVarEnv,  0 ⟩
+    let initialConfig := ⟨ emptyMemory, emptyVarEnv,  0, false ⟩
     replLoop initialConfig tmpPath
 
   | [filename] =>

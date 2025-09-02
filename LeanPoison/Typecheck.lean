@@ -37,6 +37,7 @@ structure TypeContext where
   tagEnv : TagEnv        -- ℒ
   nextLoc : Address  -- for fresh location generation
   nextTag : Tag  -- for fresh location generation
+  pureCtx : Bool -- whether we are inside a pure function body typing
 
 /-- Type checking result: qualified type and updated memory environment -/
 structure TypeResult where
@@ -740,6 +741,9 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     let ⟨etyp1, _p1, _pred1⟩ := result1.qualType
     match etyp1 with
     | ETyp.arrow st1 st2 _p tcl =>
+      -- In pure context, disallow applying impure arrow
+      if ctx.pureCtx then
+        throw "Pure context disallows application of impure function"
       -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
       let result2 ← typecheckExpr ctx' e2 fuel
@@ -781,7 +785,8 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt
-        let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
+        -- Set pure context for the body re-typechecking
+        let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv', pureCtx := true }
         let result3 ← typecheckExpr ctx'' (body.toExpr) fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
 
@@ -951,6 +956,7 @@ def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
     tagEnv := {}
     nextLoc := 0
     nextTag := 1
+    pureCtx := false
   }
   let result ← typecheck initialCtx e defaultFuel
   return result.qualType
@@ -963,6 +969,7 @@ def typecheckExprVerbose (e : Expr) : TypecheckM TypeResult := do
     tagEnv := {}
     nextLoc := 0
     nextTag := 1
+    pureCtx := false
   }
   typecheck initialCtx e defaultFuel
 

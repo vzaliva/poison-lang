@@ -48,6 +48,7 @@ structure Config where
   memory : Memory
   varEnv : VarEnv  -- List (Name × Value)
   nextLoc : Address  -- for fresh location generation
+  pureMode : Bool   -- whether evaluation is inside a pure function body
 
 -- Allocate a fresh location and return it along with updated config
 def freshLoc (config : Config) : Address × Config :=
@@ -55,7 +56,7 @@ def freshLoc (config : Config) : Address × Config :=
 
 -- Manual Repr instance for Config
 instance : Repr Config where
-  reprPrec c _ := s!"(Config {repr c.memory} <varEnv> {repr c.varEnv})"
+  reprPrec c _ := s!"(Config {repr c.memory} <varEnv> {repr c.varEnv} pure={c.pureMode})"
 
 instance : Repr Memory where
   reprPrec m _ := repr (m.toList : List (Address × Int))
@@ -70,4 +71,4 @@ instance : ToString Memory where
 
 -- ToString instance for config
 instance : ToString Config where
-  toString config := toString config.memory ++ toString config.varEnv ++ toString config.nextLoc
+  toString config := toString config.memory ++ toString config.varEnv ++ toString config.nextLoc ++ s!" pure={config.pureMode}"

@@ -1,0 +1,15 @@
+-- Global memory reference
+let m = ref 0 in
+
+-- Impure function (modifies memory)
+let f = fn x : int => m := !m + 1 : unit in
+
+-- Pure function calling its argument, then reading memory
+-- This body is syntactically a PExpr (uses let/app/deref only),
+-- but semantically calls an impure closure when applied to `f`.
+let pf = pfn g : int -> unit => let tmp = g 0 in !m : int in
+
+let result = pf f in
+result
+
+
