@@ -259,210 +259,210 @@ defns
 Jop :: '' ::=
 
 defn
-< e , m , r > ->* < ev , m' , r' > :: :: eval :: ''  {{ com $\langle[[e]],\,[[m]],\,[[r]]\rangle$ evaluates to $\langle[[ev]],\,[[m']],\,[[r']]\rangle$ }} by
+< pm , e , m , r > ->* < ev , m' , r' > :: :: eval :: ''  {{ com $\langle[[pm]],\,[[e]],\,[[m]],\,[[r]]\rangle$ evaluates to $\langle[[ev]],\,[[m']],\,[[r']]\rangle$ }} by
 
 % Base case - expression reduces to a value
-< e, m, r > -> < value v, m', r' >
+< pm, e, m, r > -> < pm, value v, m', r' >
 --------------------------------------------------------------- :: eval_value
-< e, m, r > ->* < value v, m', r' >
+< pm, e, m, r > ->* < value v, m', r' >
 
 % Transitive case - expression reduces to another expression
-< e, m, r > -> < expr e'', m'', r'' >
-  < e'', m'', r'' > ->* < ev, m', r' >
+< pm, e, m, r > -> < pm, expr e'', m'', r'' >
+  < pm, e'', m'', r'' > ->* < ev, m', r' >
 --------------------------------------------------------------- :: eval_step
-< e, m, r > ->* < ev, m', r' >
+< pm, e, m, r > ->* < ev, m', r' >
 
 defn
-< e , m , r > -> < ev , m' , r' > :: :: reduce :: ''  {{ com $\langle[[e]],\,[[m]],\,[[r]]\rangle$ reduces to $\langle[[ev]],\,[[m']],\,[[r']]\rangle$ }} by
+< pm , e , m , r > -> < pm' , ev , m' , r' > :: :: reduce :: ''  {{ com $\langle[[pm]],\,[[e]],\,[[m]],\,[[r]]\rangle$ reduces to $\langle[[pm']],\,[[ev]],\,[[m']],\,[[r']]\rangle$ }} by
 
 % Literals evaluate to values
 ----------------------   :: lit_num
-<n, m, r> -> <value n, m, r>
+< pm, n, m, r > -> < pm, value n, m, r >
 
 ----------------------   :: lit_bool
-<b, m, r> -> <value b, m, r>
+< pm, b, m, r > -> < pm, value b, m, r >
 
 ----------------------   :: lit_unit
-<unit, m, r> -> <value unit, m, r>
+< pm, unit, m, r > -> < pm, value unit, m, r >
 
 ----------------------   :: lit_string
-<s, m, r> -> <value s, m, r>
+< pm, s, m, r > -> < pm, value s, m, r >
 
-<e1,m,r> -> <value n1, m' ,r'>
-<e2,m',r'> -> <value n2, m'' ,r''>
+<pm, e1,m,r> -> <pm, value n1, m' ,r'>
+<pm, e2,m',r'> -> <pm, value n2, m'' ,r''>
 n1 + n2 = n
 ----------------------   :: op_plus
-<e1 + e2, m, r> -> <value n, m'', r''>
+<pm, e1 + e2, m, r> -> <pm, value n, m'', r''>
 
-<e1,m,r> -> <value n1, m' ,r'>
-<e2,m',r'> -> <value n2, m'' ,r''>
+<pm, e1,m,r> -> <pm, value n1, m' ,r'>
+<pm, e2,m',r'> -> <pm, value n2, m'' ,r''>
 n1 - n2 = n
 ----------------------   :: op_minus
-<e1 - e2, m, r> -> <value n, m'', r''>
+<pm, e1 - e2, m, r> -> <pm, value n, m'', r''>
 
-<e1,m,r> -> <value n1, m' ,r'>
-<e2,m',r'> -> <value n2, m'' ,r''>
+<pm, e1,m,r> -> <pm, value n1, m' ,r'>
+<pm, e2,m',r'> -> <pm, value n2, m'' ,r''>
 n1 * n2 = n
 ----------------------   :: op_mult
-<e1 * e2, m, r> -> <value n, m'', r''>
+<pm, e1 * e2, m, r> -> <pm, value n, m'', r''>
 
-<e1,m,r> -> <value n1, m' ,r'>
-<e2,m',r'> -> <value n2, m'' ,r''>
+<pm, e1,m,r> -> <pm, value n1, m' ,r'>
+<pm, e2,m',r'> -> <pm, value n2, m'' ,r''>
 n1 / n2 = n
 ----------------------   :: op_div
-<e1 / e2, m, r> -> <value n, m'', r''>
+<pm, e1 / e2, m, r> -> <pm, value n, m'', r''>
 
-<e1,m,r> -> <value n1, m' ,r'>
-<e2,m',r'> -> <value n2, m'' ,r''>
+<pm, e1,m,r> -> <pm, value n1, m' ,r'>
+<pm, e2,m',r'> -> <pm, value n2, m'' ,r''>
 n1 >= n2 = b
 ----------------------   :: op_gteq
-<e1 >= e2, m, r> -> <value b, m'', r''>
+<pm, e1 >= e2, m, r> -> <pm, value b, m'', r''>
 
-<e1,m,r> -> <value n1, m' ,r'>
-<e2,m',r'> -> <value n2, m'' ,r''>
+<pm, e1,m,r> -> <pm, value n1, m' ,r'>
+<pm, e2,m',r'> -> <pm, value n2, m'' ,r''>
 n1 <= n2 = b
 ----------------------   :: op_lteq
-<e1 <= e2, m, r> -> <value b, m'', r''>
+<pm, e1 <= e2, m, r> -> <pm, value b, m'', r''>
 
-<e1,m,r> -> <value n1, m' ,r'>
-<e2,m',r'> -> <value n2, m'' ,r''>
+<pm, e1,m,r> -> <pm, value n1, m' ,r'>
+<pm, e2,m',r'> -> <pm, value n2, m'' ,r''>
 n1 > n2 = b
 ----------------------   :: op_gt
-<e1 > e2, m, r> -> <value b, m'', r''>
+<pm, e1 > e2, m, r> -> <pm, value b, m'', r''>
 
-<e1,m,r> -> <value n1, m' ,r'>
-<e2,m',r'> -> <value n2, m'' ,r''>
+<pm, e1,m,r> -> <pm, value n1, m' ,r'>
+<pm, e2,m',r'> -> <pm, value n2, m'' ,r''>
 n1 < n2 = b
 ----------------------   :: op_lt
-<e1 < e2, m, r> -> <value b, m'', r''>
+<pm, e1 < e2, m, r> -> <pm, value b, m'', r''>
 
-<e1,m,r> -> <value n1, m' ,r'>
-<e2,m',r'> -> <value n2, m'' ,r''>
+<pm, e1,m,r> -> <pm, value n1, m' ,r'>
+<pm, e2,m',r'> -> <pm, value n2, m'' ,r''>
 n1 = n2 = b
 ----------------------   :: op_eq
-<e1 = e2, m, r> -> <value b, m'', r''>
+<pm, e1 = e2, m, r> -> <pm, value b, m'', r''>
 
-<e1,m,r> -> <value b1, m' ,r'>
-<e2,m',r'> -> <value b2, m'' ,r''>
+<pm, e1,m,r> -> <pm, value b1, m' ,r'>
+<pm, e2,m',r'> -> <pm, value b2, m'' ,r''>
 b1 & b2 = b3
 ----------------------   :: op_and
-<e1 & e2, m, r> -> <value b3, m'', r''>
+<pm, e1 & e2, m, r> -> <pm, value b3, m'', r''>
 
-<e1,m,r> -> <value b1, m' ,r'>
-<e2,m',r'> -> <value b2, m'' ,r''>
+<pm, e1,m,r> -> <pm, value b1, m' ,r'>
+<pm, e2,m',r'> -> <pm, value b2, m'' ,r''>
 b1 | b2 = b3
 ----------------------   :: op_or
-<e1 | e2, m, r> -> <value b3, m'', r''>
+<pm, e1 | e2, m, r> -> <pm, value b3, m'', r''>
 
 % reduce left
-<e1,m,r> -> <expr e1',m',r'>
+<pm, e1,m,r> -> <pm, expr e1',m',r'>
 ------------------------------- :: op_reduce_left
-<e1 op e2,m,r> -> <expr (e1' op e2),m',r'>
+<pm, e1 op e2,m,r> -> <pm, expr (e1' op e2),m',r'>
 
 % reduce right
-<e2,m,r> -> <expr e2',m',r'>
+<pm, e2,m,r> -> <pm, expr e2',m',r'>
 ------------------------------- :: op_reduce_right
-<e1 op e2,m,r> -> <expr (e1 op e2'),m',r'>
+<pm, e1 op e2,m,r> -> <pm, expr (e1 op e2'),m',r'>
 
 % ref argument reduction
-<e,m,r> -> <expr e',m',r'>
+<pm, e,m,r> -> <pm, expr e',m',r'>
 ------------------------------ :: ref_reduce_arg
-<ref e,m,r> -> <expr (ref e'),m',r'>
+<pm, ref e,m,r> -> <pm, expr (ref e'),m',r'>
 
 % New ref creation - allocates fresh location
-<e,m,r> -> <value n,m',r'>
+<pm, e,m,r> -> <pm, value n,m',r'>
 fresh l
 ------------------------------ :: ref
-<ref e,m,r> -> <value l, m' [ l |-> n ], r'>
+<pm, ref e,m,r> -> <pm, value l, m' [ l |-> n ], r'>
 
-<e,m,r> -> <value l,m',r'>
+<pm, e,m,r> -> <pm, value l,m',r'>
 m'(l) = n
 ------------------------------ :: deref
-<!e,m,r> -> <value n,m',r'>
+<pm, !e,m,r> -> <pm, value n,m',r'>
 
-<e,m,r> -> <expr e',m',r'>
+<pm, e,m,r> -> <pm, expr e',m',r'>
 ------------------------------ :: deref_reduce
-<!e,m,r> -> <expr (!e'),m',r'>
+<pm, !e,m,r> -> <pm, expr (!e'),m',r'>
 
-<e1,m,r> -> <value l, m',r'>
-<e2,m',r'> -> <value n, m'',r''>
+<pm, e1,m,r> -> <pm, value l, m',r'>
+<pm, e2,m',r'> -> <pm, value n, m'',r''>
 -------------------------------------- :: assign
-< e1 := e2, m, r > -> <value unit, m'' [ l |-> n ], r'' >
+< pm, e1 := e2, m, r > -> < pm, value unit, m'' [ l |-> n ], r'' >
 
-<e1,m,r> -> <expr e1',m',r'>
+<pm, e1,m,r> -> <pm, expr e1',m',r'>
 -------------------------------------- :: assign_reduce_left
-< e1 := e2, m, r > -> < expr (e1' := e2), m', r' >
+< pm, e1 := e2, m, r > -> < pm, expr (e1' := e2), m', r' >
 
-<e2,m,r> -> <expr e2',m',r'>
+<pm, e2,m,r> -> <pm, expr e2',m',r'>
 -------------------------------------- :: assign_reduce_right
-< e1 := e2, m, r > -> < expr (e1 := e2'), m', r' >
+< pm, e1 := e2, m, r > -> < pm, expr (e1 := e2'), m', r' >
 
 % Sequence: reduce first expression while it can reduce
-<e1,m,r> -> <expr e1',m',r'>
+<pm, e1,m,r> -> <pm, expr e1',m',r'>
 -------------------------------------- :: seq_reduce_first
-< e1 ; e2, m, r > -> < expr (e1' ; e2), m', r' >
+< pm, e1 ; e2, m, r > -> < pm, expr (e1' ; e2), m', r' >
 
 % Sequence: when first expression reduces to a value, discard it
-<e1,m,r> -> <value v,m',r'>
+<pm, e1,m,r> -> <pm, value v,m',r'>
 -------------------------------------- :: seq_value
-< e1 ; e2, m, r > -> < expr e2, m', r' >
+< pm, e1 ; e2, m, r > -> < pm, expr e2, m', r' >
 
-<e,m,r> -> <value true, m',r'>
+<pm, e,m,r> -> <pm, value true, m',r'>
 ---------------------------------------------- :: if_true
-< if e then e1 else e2, m, r > -> < expr e1, m', r' >
+< pm, if e then e1 else e2, m, r > -> < pm, expr e1, m', r' >
 
-<e,m,r> -> <value false, m',r'>
+<pm, e,m,r> -> <pm, value false, m',r'>
 ---------------------------------------------- :: if_false
-< if e then e1 else e2, m, r > -> < expr e2, m', r' >
+< pm, if e then e1 else e2, m, r > -> < pm, expr e2, m', r' >
 
-<e,m,r> -> <expr e',m',r'>
+<pm, e,m,r> -> <pm, expr e',m',r'>
 ------------------------------------------------------------ :: if_reduce_cond
-< if e then e1 else e2, m, r > -> < expr (if e' then e1 else e2), m', r' >
+< pm, if e then e1 else e2, m, r > -> < pm, expr (if e' then e1 else e2), m', r' >
 
 --------------------------------------------------------------------------- :: while
-< while e1 do e2, m, r> -> < expr (if e1 then ( e2 ; while e1 do e2 ) else unit), m, r >
+< pm, while e1 do e2, m, r> -> < pm, expr (if e1 then ( e2 ; while e1 do e2 ) else unit), m, r >
 
 % Variable lookup
-r(x) = v
+ r(x) = v
 --------------------------- :: var
-< x, m, r > -> < value v, m, r >
+< pm, x, m, r > -> < pm, value v, m, r >
 
 % Let binding reduction
-<e1,m,r> -> <expr e1',m',r'>
+<pm, e1,m,r> -> <pm, expr e1',m',r'>
 -------------------------------------------------------- :: let_reduce_arg
-< let x = e1 in e2, m, r > -> < expr (let x = e1' in e2), m', r' >
+< pm, let x = e1 in e2, m, r > -> < pm, expr (let x = e1' in e2), m', r' >
 
 % Let binding: when first expression reduces to a value, bind it
- <e1,m,r> -> <value v,m',r'>
+ <pm, e1,m,r> -> <pm, value v,m',r'>
 -------------------------------------------------------- :: let_value
-< let x = e1 in e2, m, r > -> < expr e2, m', r'[x |-> v] >
+< pm, let x = e1 in e2, m, r > -> < pm, expr e2, m', r'[x |-> v] >
 
 % Function abstraction creates a closure
 --------------------------------------------------------------- :: fn_abs
-< fn x : ST1 => e : ST2, m, r > -> < value closure(x, e, r), m, r >
+< pm, fn x : ST1 => e : ST2, m, r > -> < pm, value closure(x, e, r), m, r >
 
 % Pure function abstraction creates a pure closure
 --------------------------------------------------------------- :: pfn_abs
-< pfn x : ST1 => pe : ST2, m, r > -> < value pe_closure(x, pe, r), m, r >
+< pm, pfn x : ST1 => pe : ST2, m, r > -> < pm, value pe_closure(x, pe, r), m, r >
 
 % Function application - evaluate argument first (call-by-value)
-<e2,m,r> -> <expr e2',m',r'>
+<pm, e2,m,r> -> <pm, expr e2',m',r'>
 --------------------------------------------------------------- :: app_reduce_arg
-< e1 e2, m, r > -> < expr (e1 e2'), m', r' >
+< pm, e1 e2, m, r > -> < pm, expr (e1 e2'), m', r' >
 
 % Function application - evaluate function when argument is a value form
 % the value restriction here is to enforce evaluation order.
-<e2,m,r> -> <value v,m',r'>
-<e1,m',r'> -> <expr e1',m'',r''>
+<pm, e2,m,r> -> <pm, value v,m',r'>
+<pm, e1,m',r'> -> <pm, expr e1',m'',r''>
 --------------------------------------------------------------- :: app_reduce_func
-< e1 e2, m, r > -> < expr (e1' e2), m'', r'' >
+< pm, e1 e2, m, r > -> < pm, expr (e1' e2), m'', r'' >
 
 % Function application when body is a closure and the argument is a value
-<e2,m,r> -> <value v,m',r'>
-<e1,m',r'> -> <value closure(x, e, r'''), m'',r''>
-<e, m'', r'''[x |-> v]> -> <ev ,m'''',r''''>
+< impure , e2 , m , r > -> < impure , value v , m' , r' >
+< impure , e1 , m' , r' > -> < impure , value closure ( x , e , r''' ) , m'' , r'' >
+< impure , e , m'' , r''' [ x |-> v ] > -> < impure , ev , m'''' , r'''' >
 --------------------------------------------------------------- :: app_closure_value
-< e1 e2, m, r > -> <ev, m'''',r''''>
+< impure , e1 e2 , m , r > -> < impure , ev , m'''' , r'''' >
 
 % Pure function application - pure expressions don't modify memory or runtime
 % env Note: no side effects: apply pure function to a pure argument does not
@@ -470,55 +470,55 @@ r(x) = v
 % type it as a regular expression (pe <: e). This is a shortcoming of ott
 % definition, which perahps should be fixed (e.g. adding separate rule section
 % for pure expressions)
-<pe2,m,r> -> <value v,m,r>
-<pe1,m,r> -> <value pe_closure(x, pe, r'), m,r>
-<pe, m, r'[x |-> v]> -> <ev ,m,r>
+< pm , pe2 , m , r > -> < pm , value v , m , r >
+< pm , pe1 , m , r > -> < pm , value pe_closure ( x , pe , r' ) , m , r >
+< pure , pe , m , r' [ x |-> v ] > -> < pure , ev , m , r >
 --------------------------------------------------------------- :: app_pure_closure_value
-< pe1 pe2, m, r > -> <ev, m,r>
+< pm , pe1 pe2 , m , r > -> < pm , ev , m , r >
 
 % Evaluate argument for rand
-<e,m,r> -> <expr e',m',r'>
+<pm, e,m,r> -> <pm, expr e',m',r'>
 --------------------------------------------------------------- :: rand_arg_reduce
-<rand e,m,r> -> <expr (rand e'),m',r'>
+<pm, rand e,m,r> -> <pm, expr (rand e'),m',r'>
 
 % Compute rand
-<e,m,r> -> <value n, m',r'>
+<pm, e,m,r> -> <pm, value n, m',r'>
 n' = random n
 --------------------------------------------------------------- :: rand_value
-<rand e,m,r> -> <value n', m',r'>
+<pm, rand e,m,r> -> <pm, value n', m',r'>
 
 % Evaluate argument for frand
-<e,m,r> -> <expr e',m',r'>
+<pm, e,m,r> -> <pm, expr e',m',r'>
 --------------------------------------------------------------- :: frand_arg_reduce
-<frand e,m,r> -> <expr (frand e'),m',r'>
+<pm, frand e,m,r> -> <pm, expr (frand e'),m',r'>
 
 % Compute frand
 % The syntactic defintion is the same as rand but the implementation gonna be faulty
 % and typing rules will be different.
-<e,m,r> -> <value n, m',r'>
+<pm, e,m,r> -> <pm, value n, m',r'>
 n' = random n
 --------------------------------------------------------------- :: frand_value
-<frand e,m,r> -> <value n', m',r'>
+<pm, frand e,m,r> -> <pm, value n', m',r'>
 
 % Evaluate argument for printInt
-<e,m,r> -> <expr e',m',r'>
+<pm, e,m,r> -> <pm, expr e',m',r'>
 --------------------------------------------------------------- :: printInt_arg_reduce
-<printInt e,m,r> -> <expr (printInt e'),m',r'>
+<pm, printInt e,m,r> -> <pm, expr (printInt e'),m',r'>
 
 % Compute printInt 
-<e,m,r> -> <value n, m',r'>
+<pm, e,m,r> -> <pm, value n, m',r'>
 --------------------------------------------------------------- :: printInt_value
-<printInt e,m,r> -> <value unit, m',r'>
+<pm, printInt e,m,r> -> <pm, value unit, m',r'>
 
 % Evaluate argument for printString 
-<e,m,r> -> <expr e',m',r'>
+<pm, e,m,r> -> <pm, expr e',m',r'>
 --------------------------------------------------------------- :: printString_arg_reduce
-<printString e,m,r> -> <expr (printString e'),m',r'>
+<pm, printString e,m,r> -> <pm, expr (printString e'),m',r'>
 
 % Compute printString 
-<e,m,r> -> <value s, m',r'>
+<pm, e,m,r> -> <pm, value s, m',r'>
 --------------------------------------------------------------- :: printString_value
-<printString e,m,r> -> <value unit, m',r'>
+<pm, printString e,m,r> -> <pm, value unit, m',r'>
 
 
 %% --- Typing rules below ---

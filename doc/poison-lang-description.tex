@@ -460,40 +460,40 @@ applied, the result inherits this poison.
 
 \section{Operational Semantics}
 
-Hybrid small-step/big-step semantics with configurations $\langle e, \mu, \rho \rangle$:
+Hybrid small-step/big-step semantics with configurations $\langle \pi, e, \mu, \rho \rangle$:
 \begin{itemize}
+    \item $\pi$: Pure-mode flag (\textit{pure} or \textit{impure})
     \item $\mu$: Memory mapping locations to integers (only integers can be stored in memory)
     \item $\rho$: Variable environment mapping variables to values
 \end{itemize}
 
-The semantics are primarily small-step (single reduction steps), but function application uses big-step evaluation for function bodies. The notation $\langle e, \mu, \rho \rangle \rightarrow^* \langle e', \mu', \rho' \rangle$ denotes the reflexive-transitive closure of the small-step relation, meaning zero or more reduction steps that evaluate expression $e$ to completion, producing final expression $e'$, memory $\mu'$, and environment $\rho'$.
+The semantics are primarily small-step (single reduction steps), but function application uses big-step evaluation for function bodies. The notation $\langle \pi, e, \mu, \rho \rangle \rightarrow^* \langle \pi', e', \mu', \rho' \rangle$ denotes the reflexive-transitive closure of the small-step relation, meaning zero or more reduction steps that evaluate expression $e$ to completion, producing final expression $e'$, memory $\mu'$, and environment $\rho'$.
 
 \subsection*{Key rules:}
 \begin{align*}
-\langle \text{ref } n, \mu, \rho \rangle &\rightarrow \langle l, \mu[l \mapsto n], \rho \rangle \text{ (fresh } l\text{)} \\
-\langle !l, \mu, \rho \rangle &\rightarrow \langle n, \mu, \rho \rangle \text{ (where } \mu(l) = n\text{)} \\
-\langle l := n, \mu, \rho \rangle &\rightarrow \langle \text{unit}, \mu[l \mapsto n], \rho \rangle \\
-\langle \text{let } x = v \text{ in } e, \mu, \rho \rangle &\rightarrow \langle e, \mu, \rho[x \mapsto v] \rangle \\
-\langle \text{fn } x : T \Rightarrow e, \mu, \rho \rangle &\rightarrow \langle \text{closure}(x, e, \rho), \mu, \rho \rangle \\
-\langle \text{closure}(x, e, \rho') v, \mu, \rho \rangle &\rightarrow \langle v', \mu', \rho \rangle \text{ (where } \langle e, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle v', \mu', \rho'' \rangle\text{)} \\
-\langle \text{pfn } x : T \Rightarrow pe, \mu, \rho \rangle &\rightarrow \langle \text{pe\_closure}(x, pe, \rho), \mu, \rho \rangle \\
-\langle \text{pe\_closure}(x, pe, \rho') v, \mu, \rho \rangle &\rightarrow \langle v', \mu', \rho \rangle \text{ (where } \langle pe, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle v', \mu', \rho'' \rangle\text{)} \\
-\langle v ; e, \mu, \rho \rangle &\rightarrow \langle e, \mu, \rho \rangle \text{ (sequence with any value type)}
+\langle \pi, \text{ref } n, \mu, \rho \rangle &\rightarrow \langle \pi, l, \mu[l \mapsto n], \rho \rangle \text{ (fresh } l\text{)} \\
+\langle \pi, !l, \mu, \rho \rangle &\rightarrow \langle \pi, n, \mu, \rho \rangle \text{ (where } \mu(l) = n\text{)} \\
+\langle \pi, l := n, \mu, \rho \rangle &\rightarrow \langle \pi, \text{unit}, \mu[l \mapsto n], \rho \rangle \\
+\langle \pi, \text{let } x = v \text{ in } e, \mu, \rho \rangle &\rightarrow \langle \pi, e, \mu, \rho[x \mapsto v] \rangle \\
+\langle \pi, \text{fn } x : T \Rightarrow e, \mu, \rho \rangle &\rightarrow \langle \pi, \text{closure}(x, e, \rho), \mu, \rho \rangle \\
+\langle \pi, \text{closure}(x, e, \rho')\; v, \mu, \rho \rangle &\rightarrow \langle \pi, v', \mu', \rho \rangle \,\,\text{(where } \langle \pi, e, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle \pi, v', \mu', \rho'' \rangle\text{)} \\
+\langle \pi, \text{pfn } x : T \Rightarrow pe, \mu, \rho \rangle &\rightarrow \langle \pi, \text{pe\_closure}(x, pe, \rho), \mu, \rho \rangle \\
+\langle \pi, \text{pe\_closure}(x, pe, \rho')\; v, \mu, \rho \rangle &\rightarrow \langle \pi, v', \mu, \rho \rangle \,\,\text{(where } \langle \text{pure}, pe, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle \text{pure}, v', \mu, \rho'' \rangle\text{)} \\
+\langle \pi, v ; e, \mu, \rho \rangle &\rightarrow \langle \pi, e, \mu, \rho \rangle \text{ (sequence with any value type)}
 \end{align*}
 
 Note that closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_closure}(x,
 pe, \rho)$ are runtime values that only appear during execution; they are not
 part of the source language and do not have typing rules.
 
-\paragraph{Pure-mode in the small-step semantics.} The runtime configuration
-carries a purity flag $\pi$ as the first component $\langle\pi, e, \mu,
-\rho\rangle$. Entering a pure closure evaluates its body under $\pi :=
-\text{pure}$; function application forbids applying impure closures while $\pi$
-is pure. No further dynamic checks are required because pfn bodies are
-syntactically pure (no \texttt{ref}, \texttt{:=}, \texttt{while}, or
-sequencing), and evaluation uses rollback for pure bodies so memory and the
-caller's variable environment are restored on return. Together these ensure
-observational purity, including in higher-order cases.
+\paragraph{Pure-mode in the small-step semantics.} The Ott semantics carries the
+mode as the first component of configurations and steps: $\langle\pi, e, \mu,
+\rho\rangle \to \langle\pi', ev, \mu', \rho'\rangle$. All rules thread $\pi$
+unchanged except function application: \textsc{app\_closure\_value} applies only
+in impure mode (both sides headed by $\textit{impure}$), while
+\textsc{app\_pure\_closure\_value} evaluates the pure closure body under
+$\textit{pure}$ and returns to the caller's mode in the conclusion. This
+enforces that pure contexts can only apply pure closures.
 
 \section{Type System (Typestate)}
 
