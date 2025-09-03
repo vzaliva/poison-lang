@@ -64,7 +64,7 @@ inductive qtypPredHolds : QTyp → Memory → VarEnv → Value → Prop where
       (tp : TPred) (cfg : Config)
       (h : qt.pred = some tp)
       (hterm : terminatesTo (PExpr.toExpr tp.pred_body)
-                  { memory := μ, varEnv := VarEnv.update ρ tp.arg_name v, nextLoc := 0 }
+                  { memory := μ, varEnv := VarEnv.update ρ tp.arg_name v, nextLoc := 0, pureMode := true }
                   cfg (ExprOrValue.value (Value.bool true))) :
       qtypPredHolds qt μ ρ v
 
@@ -100,7 +100,7 @@ def observablesEqual (obs : ObservableSpec)
 
 -- Build initial configurations from initial inputs
 def mkInit (μ : Memory) (ρ : VarEnv) : Config :=
-  { memory := μ, varEnv := ρ, nextLoc := 0 }
+  { memory := μ, varEnv := ρ, nextLoc := 0, pureMode := false }
 
 -- Well-formedness: memory stores integers at critical locations
 def wfInputSpec (s : InputSpec) : Prop :=

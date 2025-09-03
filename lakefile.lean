@@ -12,8 +12,9 @@ lean_lib LeanPoison where
   -- Compile all modules under the `LeanPoison` namespace
   globs := #[.submodules `LeanPoison]
 
+@[default_target]
 lean_lib LeanProofs where
-  -- Compile all modules under the `LeanProofs` namespace (not a default target)
+  -- Compile all modules under the `LeanProofs` namespace
   globs := #[.submodules `LeanProofs]
 
 @[default_target]
