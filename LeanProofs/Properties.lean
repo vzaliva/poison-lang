@@ -29,6 +29,9 @@ theorem OpEType.complete {o t₁ t₂ r}
   opEType? o t₁ t₂ = some r ↔ OpEType o t₁ t₂ r :=
   ⟨OpEType.complete, OpEType.sound⟩
 
+
+-- TODO: this theorem could not be proven because PExpr could contain closures
+-- or other values that cannot be represented as expressions
 @[simp] theorem toExpr_toPExpr : ∀ (pe : PExpr),
   pe.toExpr.toPExpr = Except.ok pe
 := by sorry
@@ -41,6 +44,9 @@ theorem joinMemEnv_idempotent : ∀ (m1 : MemoryTypeEnv), joinMemEnvs m1 m1 = m1
 
 set_option maxHeartbeats 1000000
 
+-- TODO: This theorem was proven based on false lemma toExpr_toPExpr. we need a
+-- better general approach to fix this, maybe changing how PExpr is defined and
+-- used.
 theorem typecheck_PExpr_preserves_typestate :
   ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (pe : PExpr) (result : TypeResult),
     e.toPExpr = .ok pe →
