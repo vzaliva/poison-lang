@@ -513,10 +513,10 @@ de-poisoning.
 \subsection{Judgment Form}
 
 \[
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
 \]
 
-Reads: "In poison context $\text{pc}$, with memory typing environment $\Gamma$,
+Reads: "In pure mode $\pi$ and poison context $\text{pc}$, with memory typing environment $\Gamma$,
 variable typing environment $\sigma$, and logical environment $\mathcal{L}$,
 expression $e$ has qualified type $Q$, producing updated memory typing
 environment $\Gamma'$ and updated logical environment $\mathcal{L}'$."
@@ -531,7 +531,7 @@ valuations learned during typing (e.g., after a while loop terminates).
 
 \subsubsection*{References with region types:}
 \[
-\frac{\Gamma(l) = Q}{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash l : \text{ref } T @ l \triangleright \text{clean} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\Gamma(l) = Q}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash l : \text{ref } T @ l \triangleright \text{clean} \{ \text{no\_pred} \} \dashv \Gamma}
 \]
 
 This rule type actual memory location value, which is always clean.
@@ -540,29 +540,29 @@ This rule type actual memory location value, which is always clean.
 When variables have associated predicates, the typing rule checks the logical environment $\mathcal{L}$ to determine if de-poisoning can occur:
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true}}{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma}
 \]
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false}}{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma}
 \]
 
 \subsubsection*{Reference creation:}
 \[
-\frac{\text{pc} ; \Gamma ; \sigma \vdash e : T \rhd p \dashv \Gamma' \quad \text{fresh } l}
-{\text{pc} ; \Gamma ; \sigma \vdash \text{ref } e : \text{ref } T @ l \rhd \text{pc} \dashv \Gamma'[l \mapsto T \triangleright \text{pc} \sqcup p]}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : T \rhd p \dashv \Gamma' \quad \text{fresh } l}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash \text{ref } e : \text{ref } T @ l \rhd \text{pc} \dashv \Gamma'[l \mapsto T \triangleright \text{pc} \sqcup p]}
 \]
 
 \subsubsection*{Assignment:}
 \[
-\frac{\text{pc} ; \Gamma ; \sigma \vdash e_1 : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \text{pc} ; \Gamma' ; \sigma \vdash e_2 : T \rhd p'' \dashv \Gamma''}
-{\text{pc} ; \Gamma ; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p' \dashv \Gamma''[l \mapsto T \triangleright \text{pc} \sqcup p' \sqcup p'']}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \pi \; ;\; \text{pc} \; ;\; \Gamma' \; ;\; \sigma \vdash e_2 : T \rhd p'' \dashv \Gamma''}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p' \dashv \Gamma''[l \mapsto T \triangleright \text{pc} \sqcup p' \sqcup p'']}
 \]
 
 \subsubsection*{Dereference:}
 \[
-\frac{\text{pc} ; \Gamma ; \sigma \vdash e : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \Gamma'(l) = T \triangleright p}
-{\text{pc} ; \Gamma ; \sigma \vdash !e : T \rhd \text{pc} \sqcup p' \sqcup p \dashv \Gamma'}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \Gamma'(l) = T \triangleright p}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash !e : T \rhd \text{pc} \sqcup p' \sqcup p \dashv \Gamma'}
 \]
 
 \subsubsection*{Function abstraction:}
@@ -572,30 +572,25 @@ type $ST_1$ and return type $ST_2$ are explicitly provided as surface type annot
 The function body is typechecked at definition time to verify it produces a type compatible with the declared return type $ST_2$.
 \[
 \frac{\begin{array}{c}
-\text{pc} ; \Gamma ; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] ; \mathcal{L} \vdash e : T_2 \triangleright p' \{ P' \} \dashv \Gamma' ; \mathcal{L}' \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] \; ;\; \mathcal{L} \vdash e : T_2 \triangleright p' \{ P' \} \dashv \Gamma' ; \mathcal{L}' \\
 ST_1 <: T_1 \\
 ST_2 <: T_2
 \end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{fn } x : ST_1 \Rightarrow e : ST_1 \rightarrow ST_2 \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash \text{fn } x : ST_1 \Rightarrow e : ST_1 \rightarrow ST_2 \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
 \]
 
 \noindent For pure functions, the enriched type uses a separate pure arrow and
 closure: $ST_1 \rightarrow ST_2 \# p\; \text{typing\_pclosure}(x,pe,\sigma)$,
 and application uses the pure closure in place of the impure one.
 
-\paragraph{Pure-mode typing.} The core higher-order risk is that function
-\emph{values} (parameters or captured closures) may be impure even when their
-\emph{surface} types ($ST_1 \to ST_2$) do not record purity; without an
-additional discipline, a purportedly pure body could call an impure function via
-such a path. When typing the body at application time for a callee of pure type
-($ST_1 \rightarrow ST_2 \# p\; \text{typing\_pclosure}$), the checker enters a
-\emph{pure context} and enforces that every application in the body targets a
-pure function (the callee must have the pure arrow). No other dynamic checks are
-needed on the body because it is a \texttt{pe} by construction, excluding all
-side-effecting forms (\texttt{ref}, \texttt{:=}, \texttt{;}, \texttt{while},
-nested \texttt{fn}/\texttt{pfn}). This suffices for higher-order purity: even
-calls via parameters or captured closures are rejected if impure, since their
-enriched types carry the impure arrow.
+\paragraph{Pure-mode typing.} We thread a pure-mode parameter \(\pi\) through
+all typing judgements. Impure function application (\textsc{app\_fn}) is only
+available in impure mode, expressed by a conclusion headed with \textit{impure}.
+Pure function application (\textsc{app\_pfn}) types the callee’s body in pure
+mode but preserves the caller’s \(\pi\) in the conclusion. Thus, pure code can
+only call pure functions; impure code can call either. The mode \(\pi\) is
+orthogonal to the poison \(pc\): standard poison joins and propagation are
+unchanged. We enter programs with \(\pi = \textit{impure}\).
 
 \subsubsection*{Function application:}
 The function application typing rule extracts the typing closure from the function type and types the body at application time. This enables predicate-based de-poisoning by using the actual argument's predicates and the current logical environment $\mathcal{L}$. The subtyping checks $ST_1 \!<:\! T_1$ and $ST_2 \!<:\! T_2$ ensure the surface parameter and return types are compatible with the actual argument and body types respectively.
