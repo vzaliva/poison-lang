@@ -6,9 +6,6 @@ abbrev Tag := Nat
 -- Poison flag
 abbrev Poison := Bool
 
--- Use mutual block to define interdependent types
-mutual
-
 -- Predicate expressions (subset of expressions that can appear in predicates)
 inductive PExpr : Type where
   | unit : PExpr                                   -- unit
@@ -21,6 +18,9 @@ inductive PExpr : Type where
   | deref : PExpr → PExpr                          -- ! e
   | vlet : Name → PExpr → PExpr → PExpr            -- let x : T = e1 in e2
   | app : PExpr → PExpr → PExpr                    -- e1 e2
+
+-- Use mutual block to define interdependent types
+mutual
 
 -- Tagged predicate structure
 structure TPred where

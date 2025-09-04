@@ -29,20 +29,27 @@ theorem OpEType.complete {o t₁ t₂ r}
   opEType? o t₁ t₂ = some r ↔ OpEType o t₁ t₂ r :=
   ⟨OpEType.complete, OpEType.sound⟩
 
-
--- TODO: this theorem could not be proven because PExpr could contain closures
--- or other values that cannot be represented as expressions
--- We leave this lemma to be completed later; the new PExpr design makes it provable by
--- straightforward structural reasoning.
-@[simp] theorem toExpr_toPExpr (pe : PExpr) :
-  pe.toExpr.toPExpr = Except.ok pe := by
-  admit
-
 @[simp]
 theorem joinMemEnv_idempotent : ∀ (m1 : MemoryTypeEnv), joinMemEnvs m1 m1 = m1 := by
   intros m1
   simp [joinMemEnvs]
   sorry
+
+@[simp] theorem toExpr_toPExpr (pe : PExpr) :
+  pe.toExpr.toPExpr = Except.ok pe := by
+  induction pe with
+  | unit | num _ | bool _ | str _ | var _ =>
+    simp [PExpr.toExpr, Expr.toPExpr, pure, Except.pure]
+  | vlet x e1 e2 IH1 IH2 =>
+    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2]
+  | app e1 e2 IH1 IH2 =>
+    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2]
+  | op e1 o e2 IH1 IH2 =>
+    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2]
+  | ite e1 e2 e3 IH1 IH2 IH3 =>
+    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2, IH3]
+  | deref e IH =>
+    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH]
 
 set_option maxHeartbeats 1000000
 
