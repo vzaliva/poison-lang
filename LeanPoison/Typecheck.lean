@@ -96,15 +96,16 @@ def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
 -- Helper function to convert Expr to PExpr
 def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   match e with
-  | Expr.num n => return PExpr.value (Value.num n)
-  | Expr.bool b => return PExpr.value (Value.bool b)
-  | Expr.unit => return PExpr.value Value.unit
-  | Expr.var x => return PExpr.var x
+  | Expr.unit => return .unit
+  | Expr.num n => return .num n
+  | Expr.bool b => return .bool b
+  | Expr.str s => return .str s
+  | Expr.var x => return .var x
   | Expr.op e1 opname e2 => (fun pe1 pe2 => PExpr.op pe1 opname pe2) <$> e1.toPExpr <*> e2.toPExpr
   | Expr.ite e1 e2 e3 => PExpr.ite <$> e1.toPExpr <*> e2.toPExpr <*> e3.toPExpr
-  | Expr.deref e => PExpr.deref <$> e.toPExpr
-  | Expr.vlet x e1 e2 => (fun pe1 pe2 => PExpr.vlet x pe1 pe2) <$> e1.toPExpr <*> e2.toPExpr
-  | Expr.app e1 e2 => PExpr.app <$> e1.toPExpr <*> e2.toPExpr
+  | Expr.deref e => .deref <$> e.toPExpr
+  | Expr.vlet x e1 e2 => (fun pe1 pe2 => .vlet x pe1 pe2) <$> e1.toPExpr <*> e2.toPExpr
+  | Expr.app e1 e2 => .app <$> e1.toPExpr <*> e2.toPExpr
   | _ => throw "Cannot convert expression to PExpr"
 
 -- Helper function to project ETyp to Typ By stripping poison and closure
@@ -122,16 +123,16 @@ def ETyp.toTyp (pt : ETyp) : Typ :=
 -- Helper function to convert PExpr to Expr
 def PExpr.toExpr (pe : PExpr) : Expr :=
   match pe with
-  | PExpr.value (Value.num n) => Expr.num n
-  | PExpr.value (Value.bool b) => Expr.bool b
-  | PExpr.value Value.unit => Expr.unit
-  | PExpr.value _ => Expr.unit  -- For other values that can't be represented as expressions
-  | PExpr.var x => Expr.var x
-  | PExpr.op e1 o e2 => Expr.op (e1.toExpr) o (e2.toExpr)
-  | PExpr.ite e1 e2 e3 => Expr.ite (e1.toExpr) (e2.toExpr) (e3.toExpr)
-  | PExpr.deref e => Expr.deref (e.toExpr)
-  | PExpr.vlet x e1 e2 => Expr.vlet x (e1.toExpr) (e2.toExpr)
-  | PExpr.app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
+  | .unit => Expr.unit
+  | .num n => Expr.num n
+  | .bool b => Expr.bool b
+  | .str s => Expr.str s
+  | .var x => Expr.var x
+  | .op e1 o e2 => Expr.op (e1.toExpr) o (e2.toExpr)
+  | .ite e1 e2 e3 => Expr.ite (e1.toExpr) (e2.toExpr) (e3.toExpr)
+  | .deref e => Expr.deref (e.toExpr)
+  | .vlet x e1 e2 => Expr.vlet x (e1.toExpr) (e2.toExpr)
+  | .app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
 
 
@@ -205,8 +206,11 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
   | 0 => false
   | fuel + 1 =>
     match pe1, pe2 with
-    | PExpr.value v1, PExpr.value v2 => v1 == v2
-    | PExpr.var x1, pe2 =>
+    | .unit, .unit => true
+    | .num n1, .num n2 => n1 == n2
+    | .bool b1, .bool b2 => b1 == b2
+    | .str s1, .str s2 => s1 == s2
+    | .var x1, pe2 =>
         match substitution with
         | some (arg1, val1) =>
           if x1 == arg1 then
@@ -221,24 +225,24 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
           else
             -- Some other variable, compare it syntactically with the target variable
             match pe2 with
-            | PExpr.var x2 => x1 == x2
+            | .var x2 => x1 == x2
             | _ => false
         | none =>
           -- No substitution active, just compare variables syntactically
           match pe2 with
-          | PExpr.var x2 => x1 == x2
+          | .var x2 => x1 == x2
           | _ => false
-    | PExpr.op e1 op1 e2, PExpr.op e1' op2 e2' =>
+    | .op e1 op1 e2, .op e1' op2 e2' =>
       op1 == op2 && equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel
-    | PExpr.ite e1 e2 e3, PExpr.ite e1' e2' e3' =>
+    | .ite e1 e2 e3, .ite e1' e2' e3' =>
       equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel && equalWithEnvs e3 env1 e3' env2 substitution fuel
-    | PExpr.deref e1, PExpr.deref e2 => equalWithEnvs e1 env1 e2 env2 substitution fuel
-    | PExpr.vlet x1 e1 e2, PExpr.vlet x2 e1' e2' =>
+    | .deref e1, .deref e2 => equalWithEnvs e1 env1 e2 env2 substitution fuel
+    | .vlet x1 e1 e2, .vlet x2 e1' e2' =>
       x1 == x2 &&
       equalWithEnvs e1 env1 e1' env2 substitution fuel &&
       -- For the body, disable substitution if the bound variable shadows the substitution variable
       equalWithEnvs e2 env1 e2' env2 (if substitution.map (·.1) == some x1 then none else substitution) fuel
-    | PExpr.app e1 e2, PExpr.app e1' e2' =>
+    | .app e1 e2, .app e1' e2' =>
       equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel
     | _, _ => false
 
@@ -751,7 +755,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
 
       -- Premise 3: ST1 <: T1 (check subtyping)
       if not (isSubtype st1 result2.qualType) then
-        throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr result2.qualType.toTyp}"
+        throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
       match tcl with
       | FnTClosure.mk x body env =>
@@ -764,7 +768,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
 
         -- Premise 5: ST2 <: T2 (check subtyping)
         if not (isSubtype st2 result3.qualType) then
-          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr result3.qualType.toTyp}"
+          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Conclusion: pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
         let poison := joinPoison ctx.pc p3
@@ -778,7 +782,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
 
       -- Premise 3: ST1 <: T1 (check subtyping)
       if not (isSubtype st1 result2.qualType) then
-        throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr result2.qualType.toTyp}"
+        throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
       match tcl with
       | PFnTClosure.mk x body env =>
@@ -787,12 +791,12 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         let env' := VarTypeEnv.update env x argQt
         -- Set pure context for the body re-typechecking
         let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv', pureCtx := true }
-        let result3 ← typecheckExpr ctx'' (body.toExpr) fuel
+        let result3 ← typecheckExpr ctx'' (PExpr.toExpr body) fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
 
         -- Premise 5: ST2 <: T2 (check subtyping)
         if not (isSubtype st2 result3.qualType) then
-          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr result3.qualType.toTyp}"
+          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Conclusion: pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
         let poison := joinPoison ctx.pc p3

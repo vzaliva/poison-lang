@@ -1,6 +1,6 @@
 Evaluating file: examples/reference-poison1.poison
 
-Type checking passed: Type: QTyp.mk ETyp.int true TPred.mk 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.value Value.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.value Value.num 0)) [("x", QTyp.mk ETyp.unit false none)]
+Type checking passed: Type: QTyp.mk ETyp.int true TPred.mk 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [("x", QTyp.mk ETyp.unit false none)]
 Result: 0
 Final state:
   Variable environment: [("r", Value.loc 0), ("get_sensor", Value.closure "x" <expr> <env>)]

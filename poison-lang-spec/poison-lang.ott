@@ -96,10 +96,6 @@ pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | let x = pe1 in pe2      ::   :: let
   | ( pe )                  :: M :: paren  {{ ichlo ([[pe]]) }}
   | pe1 pe2                 ::   :: app
-  | rand pe                 ::   :: rand_app   {{ com random integer generation }}
-  | frand pe                ::   :: frand_app  {{ com random float generation }}
-  | printInt pe             ::   :: printInt_app 
-  | printString pe          ::   :: printString_app 
 
 v :: 'V_' ::=              {{ com values }}
   | n                       ::   :: num

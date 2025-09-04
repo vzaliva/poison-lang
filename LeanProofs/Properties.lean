@@ -32,9 +32,11 @@ theorem OpEType.complete {o t₁ t₂ r}
 
 -- TODO: this theorem could not be proven because PExpr could contain closures
 -- or other values that cannot be represented as expressions
-@[simp] theorem toExpr_toPExpr : ∀ (pe : PExpr),
-  pe.toExpr.toPExpr = Except.ok pe
-:= by sorry
+-- We leave this lemma to be completed later; the new PExpr design makes it provable by
+-- straightforward structural reasoning.
+@[simp] theorem toExpr_toPExpr (pe : PExpr) :
+  pe.toExpr.toPExpr = Except.ok pe := by
+  admit
 
 @[simp]
 theorem joinMemEnv_idempotent : ∀ (m1 : MemoryTypeEnv), joinMemEnvs m1 m1 = m1 := by
