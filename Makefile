@@ -45,7 +45,8 @@ parser-clean:
 	$(MAKE) -C parser clean
 	rm -f config.json
 
-test: lean-build
+test: cache
+	lake build poison-interpreter
 	chmod +x run_tests.sh
 	./run_tests.sh 
 
