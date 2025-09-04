@@ -771,10 +771,11 @@ pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G''
 % if condition then 
 %     let r1 = ref 42 in ...     // Creates l1, G'' = G'[l1 ↦ int]
 % else 
-%     let r2 = ref true in ...   // Creates l2, G''' = G'[l2 ↦ bool]
+%     let r2 = ref 7 in ...      // Creates l2, G''' = G'[l2 ↦ int]
 %
-% Result: JoinG G'' G''' = G'[l1 ↦ int, l2 ↦ bool]
-% This is sound because fresh locations are always distinct, so no conflicts arise.
+% Result: JoinG G'' G''' = G'[l1 ↦ int, l2 ↦ int]
+% Freshness side conditions (fresh l) allow the branch witnesses l1 and l2 to be chosen
+% distinct (alpha-renamed if necessary), so the union is well-defined and conflict-free.
 
 % Predicate-based conditional typing rule (when matching predicate found)
 % 

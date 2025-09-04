@@ -580,7 +580,8 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
     let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
 
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+    -- Propagate fresh-name supplies from the condition into branch contexts
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
     let result2 ← typecheckExpr ctx' e2 fuel
     let ⟨etyp2, p2, _  ⟩ := result2.qualType
 
@@ -632,7 +633,7 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
     match etyp1 with
     | ETyp.ref t l =>
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
       if etyp2 != t then throw "Type mismatch in assignment"
@@ -707,7 +708,7 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     let result1 ← typecheckExpr ctx e1 fuel
     let ⟨_etyp1, p1, _  ⟩ := result1.qualType
 
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
     let result2 ← typecheckExpr ctx' e2 fuel
     let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
 
@@ -749,7 +750,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if ctx.pureCtx then
         throw "Pure context disallows application of impure function"
       -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2⟩ := result2.qualType
 
@@ -762,7 +763,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt
-        let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' }
+        let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
         let result3 ← typecheckExpr ctx'' body fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
 
@@ -776,7 +777,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc', nextTag' := result3.nextTag' }
     | ETyp.parrow st1 st2 _p tcl =>
       -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2⟩ := result2.qualType
 
@@ -790,7 +791,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt
         -- Set pure context for the body re-typechecking
-        let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv', pureCtx := true }
+        let ctx'' := { ctx with memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv', pureCtx := true, nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
         let result3 ← typecheckExpr ctx'' (PExpr.toExpr body) fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
 
@@ -823,7 +824,7 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
     let varPoison := joinPoison ctx.pc p1
     let varQt : QTyp := ⟨etyp1, varPoison, pred1  ⟩
     let varEnv' := ctx.varEnv.update x varQt
-    let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv' }
+    let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
 
     let result2 ← typecheckExpr ctx' e2 fuel
     let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
@@ -845,7 +846,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
     let ⟨etyp1, p', _  ⟩ := result1.qualType
     if etyp1 != ETyp.bool then throw "Condition of if must be bool"
 
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
 
     -- Try predicate-based de-poisoning first
     match matchGuard e1 result1.memEnv' ctx.varEnv with
@@ -859,7 +860,9 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let result2 ← typecheckExpr ctxTrue e2 fuel
       let ⟨etyp2, p'', _  ⟩ := result2.qualType
 
-      let result3 ← typecheckExpr ctxFalse e3 fuel
+      -- Ensure disjoint fresh supplies across branches by advancing the false-branch supply
+      let ctxFalse' := { ctxFalse with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+      let result3 ← typecheckExpr ctxFalse' e3 fuel
       let ⟨etyp3, p''', _  ⟩ := result3.qualType
 
       if etyp2 != etyp3 then throw "Branches of if must have same type"
@@ -881,7 +884,9 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let result2 ← typecheckExpr ctx'' e2 fuel
       let ⟨etyp2, p'', _  ⟩ := result2.qualType
 
-      let result3 ← typecheckExpr ctx'' e3 fuel
+      -- Ensure disjoint fresh supplies across branches by advancing the second branch supply
+      let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+      let result3 ← typecheckExpr ctxForE3 e3 fuel
       let ⟨etyp3, p''', _  ⟩ := result3.qualType
 
       if etyp2 != etyp3 then throw "Branches of if must have same type"
@@ -907,7 +912,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
     let ⟨etyp1, p', _  ⟩ := result1.qualType
     if etyp1 != ETyp.bool then throw "Condition of while must be bool"
 
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
 
     -- Try predicate-based de-poisoning first
     match matchGuard e1 result1.memEnv' ctx.varEnv with
