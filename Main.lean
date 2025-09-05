@@ -38,28 +38,28 @@ def printFinalState (config : Config) (verbose : Bool) : IO Unit := do
     IO.println s!"  Memory: {repr config.memory}"
 
 -- Helper function to handle evaluation results
-def handleEvalResult (result : StepResult) (initialConfig : Config) (verbose : Bool) : IO Int := do
+def handleEvalResult (result : StepResult) (initialConfig : Config) (verbose : Bool) : IO UInt32 := do
   match result with
   | StepResult.progress config resultExpr =>
     match resultExpr.toValue? with
     | some v =>
       printValue v
       printFinalState config verbose
-      return 0
+      return (0 : UInt32)
     | none =>
       IO.println "Expression is not fully evaluated."
       IO.println s!"Remaining: {repr resultExpr}"
       printFinalState config verbose
-      return 1
+      return (1 : UInt32)
   | StepResult.stuck =>
     IO.println "Evaluation stuck."
     printFinalState initialConfig verbose
-    return 1
+    return (1 : UInt32)
   | StepResult.error msg =>
     IO.println s!"Runtime error: {msg}"
-    return 1
+    return (1 : UInt32)
 
-def evalProgram (input : String) : IO Int := do
+def evalProgram (input : String) : IO UInt32 := do
   match parse input with
   | Except.ok xmlElement =>
 
@@ -70,19 +70,19 @@ def evalProgram (input : String) : IO Int := do
         IO.println s!"Type checking error: {resultType.drop 11}"
       else
         IO.println s!"Type checking passed: {resultType}"
-      let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0⟩
+      let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
       let result <- eval defaultFuel initialConfig (ExprOrValue.expr expr) false
       handleEvalResult result initialConfig false
 
     | Except.error err =>
       IO.println s!"Error while building expression tree: {err}"
-      return 1
+      return (1 : UInt32)
 
   | Except.error e => IO.println s!"Parse error: {e}"
-                      return 1
+                      return (1 : UInt32)
 
 -- Read and evaluate a file
-def runFile (filename : String) : IO Int := do
+def runFile (filename : String) : IO UInt32 := do
   try
     let xmlStr ← runTreeSitterXml filename
     IO.println s!"Evaluating file: {filename}"
@@ -90,7 +90,7 @@ def runFile (filename : String) : IO Int := do
     evalProgram xmlStr
   catch e =>
     IO.println s!"Error reading file {filename}: {e}"
-    return 1
+    return (1 : UInt32)
 -------------------------------------------------------------------------------
 partial def readMultiline (acc : String := "") : IO String := do
   IO.print " > "
@@ -102,12 +102,12 @@ partial def readMultiline (acc : String := "") : IO String := do
   else
     readMultiline newAcc
   ----------------------------------------------------------------------------
-partial def replLoop (config : Config) (tmpPath : String) : IO Int := do
+partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
 
   let trimmed ← readMultiline
   if trimmed == ":quit" then
     IO.println "Goodbye!"
-    return 0
+    return (0 : UInt32)
   else
 
     IO.FS.writeFile tmpPath trimmed
@@ -151,13 +151,13 @@ def main (args : List String) : IO UInt32 := do
         else
           IO.println s!"Type checking passed: {resultType}"
         IO.println ""
-        let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0⟩
+        let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
         let result <- eval defaultFuel initialConfig (ExprOrValue.expr expr) true  -- verbose = true
         handleEvalResult result initialConfig true
 
     catch e =>
       IO.println s!"Error reading file {filename}: {e}"
-      return 1
+      return (1 : UInt32)
 
   | ["--repl"] =>
     IO.println s!"Poison {versionNo} - Tufts University."
@@ -165,7 +165,7 @@ def main (args : List String) : IO UInt32 := do
     IO.println "Enter a blank line after an expression to evaluate it."
     let tmp ← IO.Process.output { cmd := "mktemp", args := #["--tmpdir", "repl-XXXXXX.poison"] }
     let tmpPath := tmp.stdout.trim
-    let initialConfig := ⟨ emptyMemory, emptyVarEnv,  0 ⟩
+    let initialConfig := ⟨ emptyMemory, emptyVarEnv,  0, false ⟩
     replLoop initialConfig tmpPath
 
   | [filename] =>
@@ -179,4 +179,4 @@ def main (args : List String) : IO UInt32 := do
     IO.println "  poison-interpreter --repl          # Runs read-eval-print loop"
     IO.println "  poison-interpreter <file>           # Evaluate expressions from file"
     IO.println "  poison-interpreter --verbose <file> # Evaluate with step-by-step output"
-    return 1
+    return (1 : UInt32)

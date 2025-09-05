@@ -116,7 +116,8 @@ ST ::= int | bool | unit | ref ST | ST1 -> ST2
 (* enriched types *)
 T ::= int | bool | unit 
     | ref T @ l         (* region types with location indices *)
-    | ST1 -> ST2 # p typing_closure tcl (* function types with surface parameter and return types and typing closure *)
+    | ST1 -> ST2 # p typing_closure tcl (* impure function types with surface parameter and return types and typing closure *)
+    | ST1 -> ST2 # p typing_pclosure ptcl (* pure function types with pure typing closure *)
 
 (* qualified types with poison status and predicate *)    
 Q ::= T :> p { P }      
@@ -459,30 +460,40 @@ applied, the result inherits this poison.
 
 \section{Operational Semantics}
 
-Hybrid small-step/big-step semantics with configurations $\langle e, \mu, \rho \rangle$:
+Hybrid small-step/big-step semantics with configurations $\langle \pi, e, \mu, \rho \rangle$:
 \begin{itemize}
+    \item $\pi$: Pure-mode flag (\textit{pure} or \textit{impure})
     \item $\mu$: Memory mapping locations to integers (only integers can be stored in memory)
     \item $\rho$: Variable environment mapping variables to values
 \end{itemize}
 
-The semantics are primarily small-step (single reduction steps), but function application uses big-step evaluation for function bodies. The notation $\langle e, \mu, \rho \rangle \rightarrow^* \langle e', \mu', \rho' \rangle$ denotes the reflexive-transitive closure of the small-step relation, meaning zero or more reduction steps that evaluate expression $e$ to completion, producing final expression $e'$, memory $\mu'$, and environment $\rho'$.
+The semantics are primarily small-step (single reduction steps), but function application uses big-step evaluation for function bodies. The notation $\langle \pi, e, \mu, \rho \rangle \rightarrow^* \langle \pi', e', \mu', \rho' \rangle$ denotes the reflexive-transitive closure of the small-step relation, meaning zero or more reduction steps that evaluate expression $e$ to completion, producing final expression $e'$, memory $\mu'$, and environment $\rho'$.
 
 \subsection*{Key rules:}
 \begin{align*}
-\langle \text{ref } n, \mu, \rho \rangle &\rightarrow \langle l, \mu[l \mapsto n], \rho \rangle \text{ (fresh } l\text{)} \\
-\langle !l, \mu, \rho \rangle &\rightarrow \langle n, \mu, \rho \rangle \text{ (where } \mu(l) = n\text{)} \\
-\langle l := n, \mu, \rho \rangle &\rightarrow \langle \text{unit}, \mu[l \mapsto n], \rho \rangle \\
-\langle \text{let } x = v \text{ in } e, \mu, \rho \rangle &\rightarrow \langle e, \mu, \rho[x \mapsto v] \rangle \\
-\langle \text{fn } x : T \Rightarrow e, \mu, \rho \rangle &\rightarrow \langle \text{closure}(x, e, \rho), \mu, \rho \rangle \\
-\langle \text{closure}(x, e, \rho') v, \mu, \rho \rangle &\rightarrow \langle v', \mu', \rho \rangle \text{ (where } \langle e, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle v', \mu', \rho'' \rangle\text{)} \\
-\langle \text{pfn } x : T \Rightarrow pe, \mu, \rho \rangle &\rightarrow \langle \text{pe\_closure}(x, pe, \rho), \mu, \rho \rangle \\
-\langle \text{pe\_closure}(x, pe, \rho') v, \mu, \rho \rangle &\rightarrow \langle v', \mu', \rho \rangle \text{ (where } \langle pe, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle v', \mu', \rho'' \rangle\text{)} \\
-\langle v ; e, \mu, \rho \rangle &\rightarrow \langle e, \mu, \rho \rangle \text{ (sequence with any value type)}
+\langle \pi, \text{ref } n, \mu, \rho \rangle &\rightarrow \langle \pi, l, \mu[l \mapsto n], \rho \rangle \text{ (fresh } l\text{)} \\
+\langle \pi, !l, \mu, \rho \rangle &\rightarrow \langle \pi, n, \mu, \rho \rangle \text{ (where } \mu(l) = n\text{)} \\
+\langle \pi, l := n, \mu, \rho \rangle &\rightarrow \langle \pi, \text{unit}, \mu[l \mapsto n], \rho \rangle \\
+\langle \pi, \text{let } x = v \text{ in } e, \mu, \rho \rangle &\rightarrow \langle \pi, e, \mu, \rho[x \mapsto v] \rangle \\
+\langle \pi, \text{fn } x : T \Rightarrow e, \mu, \rho \rangle &\rightarrow \langle \pi, \text{closure}(x, e, \rho), \mu, \rho \rangle \\
+\langle \pi, \text{closure}(x, e, \rho')\; v, \mu, \rho \rangle &\rightarrow \langle \pi, v', \mu', \rho \rangle \,\,\text{(where } \langle \pi, e, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle \pi, v', \mu', \rho'' \rangle\text{)} \\
+\langle \pi, \text{pfn } x : T \Rightarrow pe, \mu, \rho \rangle &\rightarrow \langle \pi, \text{pe\_closure}(x, pe, \rho), \mu, \rho \rangle \\
+\langle \pi, \text{pe\_closure}(x, pe, \rho')\; v, \mu, \rho \rangle &\rightarrow \langle \pi, v', \mu, \rho \rangle \,\,\text{(where } \langle \text{pure}, pe, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle \text{pure}, v', \mu, \rho'' \rangle\text{)} \\
+\langle \pi, v ; e, \mu, \rho \rangle &\rightarrow \langle \pi, e, \mu, \rho \rangle \text{ (sequence with any value type)}
 \end{align*}
 
 Note that closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_closure}(x,
 pe, \rho)$ are runtime values that only appear during execution; they are not
 part of the source language and do not have typing rules.
+
+\paragraph{Pure-mode in the small-step semantics.} The Ott semantics carries the
+mode as the first component of configurations and steps: $\langle\pi, e, \mu,
+\rho\rangle \to \langle\pi', ev, \mu', \rho'\rangle$. All rules thread $\pi$
+unchanged except function application: \textsc{app\_closure\_value} applies only
+in impure mode (both sides headed by $\textit{impure}$), while
+\textsc{app\_pure\_closure\_value} evaluates the pure closure body under
+$\textit{pure}$ and returns to the caller's mode in the conclusion. This
+enforces that pure contexts can only apply pure closures.
 
 \section{Type System (Typestate)}
 
@@ -502,10 +513,10 @@ de-poisoning.
 \subsection{Judgment Form}
 
 \[
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
 \]
 
-Reads: "In poison context $\text{pc}$, with memory typing environment $\Gamma$,
+Reads: "In pure mode $\pi$ and poison context $\text{pc}$, with memory typing environment $\Gamma$,
 variable typing environment $\sigma$, and logical environment $\mathcal{L}$,
 expression $e$ has qualified type $Q$, producing updated memory typing
 environment $\Gamma'$ and updated logical environment $\mathcal{L}'$."
@@ -520,7 +531,7 @@ valuations learned during typing (e.g., after a while loop terminates).
 
 \subsubsection*{References with region types:}
 \[
-\frac{\Gamma(l) = Q}{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash l : \text{ref } T @ l \triangleright \text{clean} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\Gamma(l) = Q}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash l : \text{ref } T @ l \triangleright \text{clean} \{ \text{no\_pred} \} \dashv \Gamma}
 \]
 
 This rule type actual memory location value, which is always clean.
@@ -529,29 +540,29 @@ This rule type actual memory location value, which is always clean.
 When variables have associated predicates, the typing rule checks the logical environment $\mathcal{L}$ to determine if de-poisoning can occur:
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true}}{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma}
 \]
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false}}{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma}
 \]
 
 \subsubsection*{Reference creation:}
 \[
-\frac{\text{pc} ; \Gamma ; \sigma \vdash e : T \rhd p \dashv \Gamma' \quad \text{fresh } l}
-{\text{pc} ; \Gamma ; \sigma \vdash \text{ref } e : \text{ref } T @ l \rhd \text{pc} \dashv \Gamma'[l \mapsto T \triangleright \text{pc} \sqcup p]}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : T \rhd p \dashv \Gamma' \quad \text{fresh } l}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash \text{ref } e : \text{ref } T @ l \rhd \text{pc} \dashv \Gamma'[l \mapsto T \triangleright \text{pc} \sqcup p]}
 \]
 
 \subsubsection*{Assignment:}
 \[
-\frac{\text{pc} ; \Gamma ; \sigma \vdash e_1 : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \text{pc} ; \Gamma' ; \sigma \vdash e_2 : T \rhd p'' \dashv \Gamma''}
-{\text{pc} ; \Gamma ; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p' \dashv \Gamma''[l \mapsto T \triangleright \text{pc} \sqcup p' \sqcup p'']}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \pi \; ;\; \text{pc} \; ;\; \Gamma' \; ;\; \sigma \vdash e_2 : T \rhd p'' \dashv \Gamma''}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p' \dashv \Gamma''[l \mapsto T \triangleright \text{pc} \sqcup p' \sqcup p'']}
 \]
 
 \subsubsection*{Dereference:}
 \[
-\frac{\text{pc} ; \Gamma ; \sigma \vdash e : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \Gamma'(l) = T \triangleright p}
-{\text{pc} ; \Gamma ; \sigma \vdash !e : T \rhd \text{pc} \sqcup p' \sqcup p \dashv \Gamma'}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \Gamma'(l) = T \triangleright p}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash !e : T \rhd \text{pc} \sqcup p' \sqcup p \dashv \Gamma'}
 \]
 
 \subsubsection*{Function abstraction:}
@@ -561,12 +572,25 @@ type $ST_1$ and return type $ST_2$ are explicitly provided as surface type annot
 The function body is typechecked at definition time to verify it produces a type compatible with the declared return type $ST_2$.
 \[
 \frac{\begin{array}{c}
-\text{pc} ; \Gamma ; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] ; \mathcal{L} \vdash e : T_2 \triangleright p' \{ P' \} \dashv \Gamma' ; \mathcal{L}' \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] \; ;\; \mathcal{L} \vdash e : T_2 \triangleright p' \{ P' \} \dashv \Gamma' ; \mathcal{L}' \\
 ST_1 <: T_1 \\
 ST_2 <: T_2
 \end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{fn } x : ST_1 \Rightarrow e : ST_1 \rightarrow ST_2 \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash \text{fn } x : ST_1 \Rightarrow e : ST_1 \rightarrow ST_2 \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
 \]
+
+\noindent For pure functions, the enriched type uses a separate pure arrow and
+closure: $ST_1 \rightarrow ST_2 \# p\; \text{typing\_pclosure}(x,pe,\sigma)$,
+and application uses the pure closure in place of the impure one.
+
+\paragraph{Pure-mode typing.} We thread a pure-mode parameter \(\pi\) through
+all typing judgements. Impure function application (\textsc{app\_fn}) is only
+available in impure mode, expressed by a conclusion headed with \textit{impure}.
+Pure function application (\textsc{app\_pfn}) types the callee’s body in pure
+mode but preserves the caller’s \(\pi\) in the conclusion. Thus, pure code can
+only call pure functions; impure code can call either. The mode \(\pi\) is
+orthogonal to the poison \(pc\): standard poison joins and propagation are
+unchanged. We enter programs with \(\pi = \textit{impure}\).
 
 \subsubsection*{Function application:}
 The function application typing rule extracts the typing closure from the function type and types the body at application time. This enables predicate-based de-poisoning by using the actual argument's predicates and the current logical environment $\mathcal{L}$. The subtyping checks $ST_1 \!<:\! T_1$ and $ST_2 \!<:\! T_2$ ensure the surface parameter and return types are compatible with the actual argument and body types respectively.
@@ -754,16 +778,17 @@ inputs must be checked for validity before use.
 
 
 \begin{definition}[Input/Output Classification]
-Inputs consist of:
+Inputs consist of initial memory and variables:
 \begin{itemize}
-    \item Initial memory locations: $\mu_0 : \text{Location} \rightarrow \text{Value}$
-    \item Initial variable environment: $\rho_0 : \text{Variable} \rightarrow \text{Value}$
+    \item Initial memory: $\mu_0 : \text{Location} \rightarrow \text{Value}$
+    \item Initial variables: $\rho_0 : \text{Variable} \rightarrow \text{Value}$
 \end{itemize}
-These are partitioned into two disjoint categories:
-\begin{itemize}
-    \item $(L_{crit}, V_{crit})$: Critical locations/variables (may have associated predicates)
-    \item $(L_{noncrit}, V_{noncrit})$: Non-critical locations/variables (values irrelevant to observable outputs)
-\end{itemize}
+We fix a \emph{critical-input specification} $S$ comprising \emph{ordered} lists of critical entries with their qualified types:
+\[
+  S.\mathrm{locs} = \bigl[(\ell_1, Q_1),\ldots,(\ell_m, Q_m)\bigr],\qquad
+  S.\mathrm{vars} = \bigl[(x_1, Q'_1),\ldots,(x_n, Q'_n)\bigr].
+\]
+Entries not listed in $S$ are considered non-critical and are \emph{unconstrained by the specification}.
 
 Outputs consist of:
 \begin{itemize}
@@ -771,13 +796,14 @@ Outputs consist of:
     \item Program return value: $v$
 \end{itemize}
 With observable outputs designated as $(L_{obs}, v_{obs})$ where $v_{obs} \in \{\text{true}, \text{false}\}$ indicates whether the return value is observable.
+Non-observable outputs are unconstrained.
 
 Note: Variable bindings are local to expressions and do not persist as program outputs. Only memory locations and the return value constitute observable outputs.
 \end{definition}
 
 \begin{definition}[Regime Vector]
-Let the critical inputs be indexed as $(inp_1, \ldots, inp_n)$ where each $inp_i$ is either
-a location $l \in L_{crit}$ or a variable $x \in V_{crit}$.
+Let the critical inputs be the entries of $S$ in order, written $(inp_1, \ldots, inp_{m+n})$, where each $inp_i$ is either
+one of the listed locations or one of the listed variables.
 
 For a given execution, the regime vector $R = (r_1, \ldots, r_n)$ where $r_i \in \{\text{true}, \text{false}\}$ captures
 the validity of each critical input:
@@ -816,11 +842,7 @@ and $\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu'_2, v_2 \rangle$ wh
         \item $\forall i$ where $r_i = \text{false}$ and input $i$ is location $l$ with predicate $P_i$: $\mu_1(l), \mu_2(l)$ can differ but both must fail $P_i$
         \item $\forall i$ where $r_i = \text{false}$ and input $i$ is variable $x$ with predicate $P_i$: $\rho_1(x), \rho_2(x)$ can differ but both must fail $P_i$
     \end{itemize}
-    \item Non-critical inputs arbitrary:
-    \begin{itemize}
-        \item $\forall l \in L_{noncrit}.$ $\mu_1(l), \mu_2(l)$ arbitrary
-        \item $\forall x \in V_{noncrit}.$ $\rho_1(x), \rho_2(x)$ arbitrary
-    \end{itemize}
+    \item Non-critical inputs arbitrary.
 \end{itemize}
 Then observable outputs are identical:
 \begin{itemize}
@@ -834,31 +856,37 @@ The key insight is the asymmetry in how critical inputs are treated based on the
     \item When valid ($r_i = \text{true}$): inputs are reliable and could affect
     outputs - output depends on their actual values
     \item When invalid ($r_i = \text{false}$): inputs are faulty, but fault
-    isolation logic should be able to handle them.
+    isolation logic should be able to handle them, still producing predictable
+    outputs, not dependent on the faulty values.
 \end{itemize}
 
-This is a runtime property which is impossible to guarantee statically. However,
+This is a runtime property which is impossible, in general, to guarantee statically. However,
 in the next definition, we will show that we can conservatively approximate it
 via the type system.
 
 \begin{theorem}[Type System Enforces Non-Interference]
 The poison type system enforces the non-interference property through
-conservative fault tracking. Given initial typing environments that reflect the
-critical and non-critical inputs classification:
+conservative fault tracking, assuming a \emph{critical-only specification} and a
+\emph{conjunctive runtime premise}.
 
-\textbf{Initial setup:}
+\textbf{Initial typing context:} There exists an initial typing context $(pc,\Gamma,\sigma,\mathcal{L})$ with $pc=\text{clean}$ and empty $\mathcal{L}$ such that:
 \begin{itemize}
-    \item For critical inputs: 
-    \begin{itemize}
-        \item Without predicates: $\Gamma(l) = T \triangleright \text{clean} \{ \text{no\_pred} \}$ or $\sigma(x) = T \triangleright \text{clean} \{ \text{no\_pred} \}$
-        \item With predicates: $\Gamma(l) = T \triangleright \text{poisoned} \{ P \}$ or $\sigma(x) = T \triangleright \text{poisoned} \{ P \}$
-    \end{itemize}
-    \item For non-critical inputs: $\Gamma(l) = T \triangleright \text{poisoned} \{ \text{no\_pred} \}$ or $\sigma(x) = T \triangleright \text{poisoned} \{ \text{no\_pred} \}$ (poisoned without predicates)
+    \item For each $(\ell,Q) \in S.\mathrm{locs}$, we have $\Gamma(\ell)=Q$.
+    \item For each $(x,Q) \in S.\mathrm{vars}$, we have $\sigma(x)=Q$.
+    \item For any entry $(\ell,Q) \in \Gamma$ not listed in $S.\mathrm{locs}$, $Q$ is poisoned and has no predicate.
+    \item For any entry $(x,Q) \in \sigma$ not listed in $S.\mathrm{vars}$, $Q$ is poisoned and has no predicate.
+\end{itemize}
+
+\textbf{Conjunctive runtime premise:} For each run, the initial concrete inputs $(\mu_0,\rho_0)$ satisfy \emph{both}:
+\begin{itemize}
+    \item \emph{Spec conformance}: for every $(\ell,Q) \in S.\mathrm{locs}$, the location $\ell$ is present in $\mu_0$; for every $(x,Q) \in S.\mathrm{vars}$, if $\rho_0(x)=v$ then $v$ has base type $Q$'s enriched type.
+    \item \emph{Context instantiation}: for every $(\ell,Q) \in \Gamma$ there exists a value stored at $\ell$ in $\mu_0$; for every $(x,Q) \in \sigma$ there exists a value bound to $x$ in $\rho_0$ of the appropriate base type.
 \end{itemize}
 
 \textbf{Soundness guarantee:} If the typing derivation starting with $pc = \text{clean}$ yields:
 \begin{itemize}
-    \item $\text{clean} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : T \triangleright \text{clean} \{ P \} \dashv \Gamma' ; \mathcal{L}'$ (when $v_{obs} = \text{true}$)
+    \item If $v_{obs} = \text{true}$ then $\text{clean} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : T \triangleright \text{clean} \{ P \} \dashv \Gamma' ; \mathcal{L}'$;
+    otherwise, no constraint is imposed on the returned type (typechecking still produces $\Gamma'$).
     \item $\Gamma'(l) = T_l \triangleright \text{clean} \{ P_l \}$ for each $l \in L_{obs}$
 \end{itemize}
 
@@ -867,9 +895,9 @@ Then the program satisfies the non-interference property because:
     \item The type system's conservative poison propagation ensures that any
     value marked \texttt{clean} has no data or control dependencies on poisoned
     values
-    \item Since non-critical inputs are marked as poisoned without predicates
-    (and thus cannot be de-poisoned), a clean observable output implies no
-    dependency on non-critical inputs
+    \item Since any unlisted inputs that appear in the initial context are marked
+    as poisoned without predicates (and thus cannot be de-poisoned), a clean
+    observable output implies no dependency on non-critical inputs
     \item For critical inputs with predicates, the type system tracks when
     predicates are checked (via $\mathcal{L}$) to enable de-poisoning.
 \end{itemize}

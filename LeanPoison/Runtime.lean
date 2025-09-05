@@ -5,28 +5,50 @@ open Std
 -- Memory: location → value (Storing integers)
 abbrev Memory := HashMap Address Int
 
+namespace Memory
+
+  @[inline] def lookup (m : Memory) (a : Address) : Option Int :=
+    m.get? a
+
+  @[inline] def update (m : Memory) (a : Address) (v : Int) : Memory :=
+    m.insert a v
+
+  /-- `m` contains a binding for `a`. -/
+  def hasKey (m : Memory) (a : Address) : Prop :=
+    m.contains a
+
+end Memory
+
 -- Empty environments
 def emptyMemory : Memory := HashMap.emptyWithCapacity 0
 
 def emptyVarEnv : VarEnv := []
 
--- Environment operations
-def Memory.update (m : Memory) (loc : Nat) (val : Int) : Memory :=
-  m.insert loc val
+namespace VarEnv
 
-def VarEnv.update (env : VarEnv) (var : Name) (val : Value) : VarEnv :=
-   (var,val)::env
+-- helper function to lookup a variable in the variable typing environment
+@[inline] def lookup (env : VarEnv) (x : Name) : Option Value :=
+  List.lookup x env
 
+-- helper function to update a variable in the variable typing environment the
+-- implementation is not very efficient as mappings with existing keys are just
+-- added to the front of the list. However this is sound, as lookupVarEnv always
+-- returns the first mapping with a given key.
+@[inline] def update (env : VarEnv) (x : Name) (v : Value) : VarEnv :=
+  (x, v) :: env
 
-def VarEnv.get (env : VarEnv) (var : Name) : Option Value :=
-  env.lookup var
+/-- `env` contains a binding for `x`. -/
+def hasKey (env : VarEnv) (x : Name) : Prop :=
+  env.lookup x ≠ none
 
+end VarEnv
 
 -- Configuration for operational semantics
 structure Config where
   memory : Memory
   varEnv : VarEnv  -- List (Name × Value)
   nextLoc : Address  -- for fresh location generation
+  pureMode : Bool   -- whether evaluation is inside a pure function body
 
 -- Allocate a fresh location and return it along with updated config
 def freshLoc (config : Config) : Address × Config :=
@@ -34,7 +56,7 @@ def freshLoc (config : Config) : Address × Config :=
 
 -- Manual Repr instance for Config
 instance : Repr Config where
-  reprPrec c _ := s!"(Config {repr c.memory} <varEnv> {repr c.varEnv})"
+  reprPrec c _ := s!"(Config {repr c.memory} <varEnv> {repr c.varEnv} pure={c.pureMode})"
 
 instance : Repr Memory where
   reprPrec m _ := repr (m.toList : List (Address × Int))
@@ -49,4 +71,4 @@ instance : ToString Memory where
 
 -- ToString instance for config
 instance : ToString Config where
-  toString config := toString config.memory ++ toString config.varEnv ++ toString config.nextLoc
+  toString config := toString config.memory ++ toString config.varEnv ++ toString config.nextLoc ++ s!" pure={config.pureMode}"

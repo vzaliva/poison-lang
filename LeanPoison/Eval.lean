@@ -128,7 +128,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
     -- < x, m, r > -> < value v, m, r >
 
     | Expr.var x =>
-        match (config.varEnv.get x) with
+        match (config.varEnv.lookup x) with
       | some v => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value v))
       | none =>
         return stepReturn fuel verbose (StepResult.error s!"var {x} not found")
@@ -478,7 +478,10 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                   -- Both are now values, apply
                   match v1 with
                   | Value.closure x body env =>
-                    evalFunctionBody (fuel - 1) verbose config'' env x v2 body false
+                    if config''.pureMode then
+                      return stepReturn fuel verbose (StepResult.error "Pure function cannot apply impure closure")
+                    else
+                      evalFunctionBody (fuel - 1) verbose config'' env x v2 body false
                   | Value.peClosure x body env =>
                     evalFunctionBody (fuel - 1) verbose config'' env x v2 body true
                   | _ =>
@@ -489,7 +492,10 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               -- Function is already a value, apply
               match v1 with
               | Value.closure x body env =>
-                evalFunctionBody (fuel - 1) verbose config' env x v2 body false
+                if config'.pureMode then
+                  return stepReturn fuel verbose (StepResult.error "Pure function cannot apply impure closure")
+                else
+                  evalFunctionBody (fuel - 1) verbose config' env x v2 body false
               | Value.peClosure x body env =>
                 evalFunctionBody (fuel - 1) verbose config' env x v2 body true
               | _ =>
@@ -502,7 +508,10 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         | some (Value.closure x body env) =>
           -- Rule: app_closure_value (OTT rule 444-448)
           -- Both function and argument are values, apply
-          evalFunctionBody (fuel - 1) verbose config env x v2 body false
+          if config.pureMode then
+            return stepReturn fuel verbose (StepResult.error "Pure function cannot apply impure closure")
+          else
+            evalFunctionBody (fuel - 1) verbose config env x v2 body false
         | some (Value.peClosure x body env) =>
           -- Rule: app_pure_closure_value (OTT rule 455-460)
           -- Pure function application - no side effects
@@ -530,7 +539,10 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               -- Function is now a value, apply it
               match v1 with
               | Value.closure x body env =>
-                evalFunctionBody (fuel - 1) verbose config' env x v2 body false
+                if config'.pureMode then
+                  return stepReturn fuel verbose (StepResult.error "Pure function cannot apply impure closure")
+                else
+                  evalFunctionBody (fuel - 1) verbose config' env x v2 body false
               | Value.peClosure x body env =>
                 evalFunctionBody (fuel - 1) verbose config' env x v2 body true
               | _ =>
@@ -686,12 +698,13 @@ def evalFunctionBody (fuel : Nat) (verbose : Bool) (currentConfig : Config) (clo
   match fuel with
   | 0 => return StepResult.error "out of fuel in function evaluation"
   | fuel' + 1 =>
-    let bodyConfig := { currentConfig with varEnv := VarEnv.update closureEnv paramName argValue }
+    let updatedEnv := VarEnv.update closureEnv paramName argValue
+    let bodyConfig := { currentConfig with varEnv := updatedEnv, pureMode := isPure }
     match <- eval fuel' bodyConfig (ExprOrValue.expr body) verbose with
     | StepResult.progress evalConfig ev' =>
       if isPure then
         -- Pure functions don't affect memory or environment
-        return StepResult.progress currentConfig ev'
+        return StepResult.progress { currentConfig with pureMode := false } ev'
       else
         -- Regular functions preserve original environment but keep memory changes
         let finalConfig := { currentConfig with memory := evalConfig.memory, nextLoc := evalConfig.nextLoc }
@@ -704,12 +717,12 @@ termination_by fuel
 
 -- Multi-step evaluation
 def eval (fuel : Nat) (config : Config) (ev : ExprOrValue) (verbose : Bool) : IO StepResult := do
-  if fuel < 2 then
-    return StepResult.error "out of fuel"
-  else
-    match <- step (fuel - 1) verbose config ev with
+  match fuel with
+  | 0 => return StepResult.error "out of fuel"
+  | fuel' + 1 =>
+    match <- step fuel' verbose config ev with
     | StepResult.progress config' ev' =>
-      eval (fuel - 2) config' ev' verbose
+      eval fuel' config' ev' verbose
     | StepResult.stuck =>
       -- Check if we have a value
       match ev with
@@ -723,7 +736,7 @@ end -- mutual (step, eval)
 
 -- Helper to run an expression with empty environments
 def run (fuel : Nat) (expr : Expr) (verbose : Bool := false) : IO (Config × ExprOrValue) := do
-  let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0⟩
+  let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
   match <- eval fuel initialConfig (ExprOrValue.expr expr) verbose with
   | StepResult.progress config ev => return (config, ev)
   | StepResult.stuck => return (initialConfig, ExprOrValue.expr expr)
