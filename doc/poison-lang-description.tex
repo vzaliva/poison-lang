@@ -576,8 +576,8 @@ The function application typing rule extracts the typing closure from the functi
 \text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : ST_1 \rightarrow ST_2 \# p \; \text{typing\_closure}(x, e, \sigma') \triangleright p_1 \{ P_1 \} \dashv \Gamma' ; \mathcal{L}' \\
 \text{pc} ; \Gamma' ; \sigma ; \mathcal{L}' \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma'' ; \mathcal{L}'' \\
 ST_1 \!<:\! T_1 \\
-\text{pc} ; \Gamma'' ; \sigma'[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L}'' \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}''' \\
-ST_2 \!<:\! T_2
+\text{join p_1 pc} ; \Gamma'' ; \sigma'[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L}'' \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}''' \\
+ST_2 \!<:\! T_2  
 \end{array}}
 {\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 \; e_2 : T_2 \triangleright \text{pc} \sqcup p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}'''}
 \]
