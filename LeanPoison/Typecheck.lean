@@ -332,7 +332,7 @@ def typecheckBool (ctx : TypeContext) (_b : Bool) : TypecheckM TypeResult := do
 def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
   --dbg_trace ("Typechecking var " ++ x)
   --dbg_trace s!"ctx.pc is {ctx.pc}"
-  match lookupVarEnv ctx.varEnv x with
+  match VarTypeEnv.lookup ctx.varEnv x with
   | some qt =>
     let ⟨etyp, poison, pred⟩ := qt
     match pred with
@@ -758,7 +758,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       | FnTClosure.mk x body env =>
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
-        let env' := updateVarEnv env x argQt
+        let env' := VarTypeEnv.update env x argQt
         let ctx'' := { ctx with pc := joinPoison ctx.pc p1, memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' ,nextTag := result2.nextTag' }
         let result3 ← typecheckExpr ctx'' body fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
@@ -785,7 +785,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       | PFnTClosure.mk x body env =>
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
-        let env' := updateVarEnv env x argQt
+        let env' := VarTypeEnv.update env x argQt
         let ctx'' := { ctx with pc := joinPoison ctx.pc p1, memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' , nextTag := result2.nextTag'}
         let result3 ← typecheckExpr ctx'' (body.toExpr) fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
@@ -818,7 +818,7 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
 
 
     let varQt : QTyp := ⟨etyp1, p1, pred1  ⟩
-    let varEnv' := updateVarEnv ctx.varEnv x varQt
+    let varEnv' := VarTypeEnv.update ctx.varEnv x varQt
     let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv' , nextTag := result1.nextTag' }
 
     let result2 ← typecheckExpr ctx' e2 fuel
