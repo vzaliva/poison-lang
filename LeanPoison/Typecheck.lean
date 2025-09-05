@@ -786,7 +786,8 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt
-        let ctx'' := { ctx with pc := joinPoison ctx.pc p1, memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' , nextTag := result2.nextTag'}
+        -- Set pure context for the body re-typechecking
+        let ctx'' := { ctx with pc := joinPoison ctx.pc p1, memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' , nextTag := result2.nextTag', pureCtx := true}
         let result3 ← typecheckExpr ctx'' (body.toExpr) fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
 
