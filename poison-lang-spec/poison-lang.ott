@@ -790,7 +790,6 @@ pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G''
 % - Guards only present in one branch are removed
 % This would be more precise but adds complexity. The current approach is simpler while
 % still enabling predicate-based de-poisoning within each branch.
-% TODO: Consider again wether typechecking of `e3` (else branch) sould incoporate p' in PC (like in if_std case)
 pm ; pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
   match_guard e1 G S = k
 pm ; pc ; G' ; S ; L'[k |-> true] |- e2 : T :> p'' { P'' } -| G'' ; L''

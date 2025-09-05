@@ -1,5 +1,7 @@
 import LeanPoison.Syntax
 import LeanPoison.Poison
+import LeanPoison.Misc
+
 import Std.Data.HashMap
 open Std
 
@@ -81,17 +83,29 @@ def joinPoisons (ps : List Poison) : Poison :=
 def updateMemEnv (env : MemoryTypeEnv) (l : Address) (qt : QTyp) : MemoryTypeEnv :=
   env.insert l qt
 
-/-- Join two memory environments (for conditional branches) -/
+/-- Join two memory environments (branch join). See JoinG in the Ott spec. -/
 def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
-  -- For now, return union preferring env2 for conflicts
-  -- TODO: Implement proper join operation as per Ott spec
-  -- TODO: Alternative design: Implement a proper join operation for logical environments where:
-  -- - Guards with same value in both branches are preserved
-  -- - Guards with contradictory values are removed (become unknown)
-  -- - Guards only present in one branch are removed
-  -- This would be more precise but adds complexity. The current approach is simpler while
-
-  env1.fold (init := env2) fun acc l qt => acc.insert l qt
+  combineMaps env1 env2 (fun _ oq1 oq2 =>
+    match oq1, oq2 with
+    | some qt1, none => some qt1
+    | none, some qt2 => some qt2
+    | some qt1, some qt2 =>
+      let ⟨t1, p1, pred1⟩ := qt1
+      let ⟨t2, p2, pred2⟩ := qt2
+      if t1 == t2 then
+        let p := joinPoison p1 p2
+        let pred :=
+          match pred1, pred2 with
+          | some ⟨k1, an1, pb1, ve1⟩, some ⟨k2, _, _, _⟩ =>
+              if k1 == k2 then some ⟨k1, an1, pb1, ve1⟩ else none
+          | _, _ => none
+        some ⟨t1, p, pred⟩
+      else
+        -- Unreachable under well-typedness: location types are immutable.
+        -- Symmetric, conservative fallback: drop the conflicting binding.
+        -- TODO: consider running this in Exception monad to report an error.
+        none
+    | none, none => none)
 
 -- Helper function to convert Expr to PExpr
 def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
