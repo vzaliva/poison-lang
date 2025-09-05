@@ -213,6 +213,8 @@ terminals :: terminals_ ::=
   | ]    :: :: rsquare   {{ tex ] }}
   | @    :: :: at        {{ tex @ }}
   | ->*   :: :: mredstar   {{ tex \xrightarrow{\ast} }}
+  | =>   :: :: lmbd   {{ tex \Rightarrow }}
+  | ==>   :: :: beval   {{ tex \Downarrow }}
   | <:   :: :: subtype   {{ tex <: }}
 
 subrules
@@ -516,6 +518,186 @@ n' = random n
 --------------------------------------------------------------- :: printString_value
 <pm, printString e,m,r> -> <pm, value unit, m',r'>
 
+
+% --- Big-step (natural) semantics below ---
+
+defn
+< pm , e , m , r > ==> < v , m' , r' > :: :: beval :: ''  {{ com Big-step evaluation }} by
+
+% Literals
+----------------------   :: b_lit_num
+< pm, n, m, r > ==> < n, m, r >
+
+----------------------   :: b_lit_bool
+< pm, b, m, r > ==> < b, m, r >
+
+----------------------   :: b_lit_unit
+< pm, unit, m, r > ==> < unit, m, r >
+
+----------------------   :: b_lit_string
+< pm, s, m, r > ==> < s, m, r >
+
+% Variables
+r(x) = v
+--------------------------- :: b_var
+< pm, x, m, r > ==> < v, m, r >
+
+% Binary operations (evaluate both operands to values, then compute)
+<pm, e1, m, r> ==> < n1, m', r'>
+<pm, e2, m', r'> ==> < n2, m'', r''>
+n1 + n2 = n
+----------------------   :: b_op_plus
+<pm, e1 + e2, m, r> ==> < n, m'', r''>
+
+<pm, e1, m, r> ==> < n1, m', r'>
+<pm, e2, m', r'> ==> < n2, m'', r''>
+n1 - n2 = n
+----------------------   :: b_op_minus
+<pm, e1 - e2, m, r> ==> < n, m'', r''>
+
+<pm, e1, m, r> ==> < n1, m', r'>
+<pm, e2, m', r'> ==> < n2, m'', r''>
+n1 * n2 = n
+----------------------   :: b_op_mult
+<pm, e1 * e2, m, r> ==> < n, m'', r''>
+
+<pm, e1, m, r> ==> < n1, m', r'>
+<pm, e2, m', r'> ==> < n2, m'', r''>
+n1 / n2 = n
+----------------------   :: b_op_div
+<pm, e1 / e2, m, r> ==> < n, m'', r''>
+
+<pm, e1, m, r> ==> < n1, m', r'>
+<pm, e2, m', r'> ==> < n2, m'', r''>
+n1 >= n2 = b
+----------------------   :: b_op_gteq
+<pm, e1 >= e2, m, r> ==> < b, m'', r''>
+
+<pm, e1, m, r> ==> < n1, m', r'>
+<pm, e2, m', r'> ==> < n2, m'', r''>
+n1 <= n2 = b
+----------------------   :: b_op_lteq
+<pm, e1 <= e2, m, r> ==> < b, m'', r''>
+
+<pm, e1, m, r> ==> < n1, m', r'>
+<pm, e2, m', r'> ==> < n2, m'', r''>
+n1 > n2 = b
+----------------------   :: b_op_gt
+<pm, e1 > e2, m, r> ==> < b, m'', r''>
+
+<pm, e1, m, r> ==> < n1, m', r'>
+<pm, e2, m', r'> ==> < n2, m'', r''>
+n1 < n2 = b
+----------------------   :: b_op_lt
+<pm, e1 < e2, m, r> ==> < b, m'', r''>
+
+<pm, e1, m, r> ==> < n1, m', r'>
+<pm, e2, m', r'> ==> < n2, m'', r''>
+n1 = n2 = b
+----------------------   :: b_op_eq
+<pm, e1 = e2, m, r> ==> < b, m'', r''>
+
+<pm, e1, m, r> ==> < b1, m', r'>
+<pm, e2, m', r'> ==> < b2, m'', r''>
+b1 & b2 = b3
+----------------------   :: b_op_and
+<pm, e1 & e2, m, r> ==> < b3, m'', r''>
+
+<pm, e1, m, r> ==> < b1, m', r'>
+<pm, e2, m', r'> ==> < b2, m'', r''>
+b1 | b2 = b3
+----------------------   :: b_op_or
+<pm, e1 | e2, m, r> ==> < b3, m'', r''>
+
+% References
+<pm, e, m, r> ==> < n, m', r'>
+fresh l
+------------------------------ :: b_ref
+<pm, ref e, m, r> ==> < l, m' [ l |-> n ], r'>
+
+% Dereference
+<pm, e, m, r> ==> < l, m', r'>
+m'(l) = n
+------------------------------ :: b_deref
+<pm, !e, m, r> ==> < n, m', r'>
+
+% Assignment
+<pm, e1, m, r> ==> < l, m', r'>
+<pm, e2, m', r'> ==> < n, m'', r''>
+-------------------------------------- :: b_assign
+< pm, e1 := e2, m, r > ==> < unit, m'' [ l |-> n ], r'' >
+
+% Sequencing
+<pm, e1, m, r> ==> < v1, m', r'>
+<pm, e2, m', r'> ==> < v2, m'', r''>
+-------------------------------------- :: b_seq
+< pm, e1 ; e2, m, r > ==> < v2, m'', r'' >
+
+% Conditionals
+<pm, e, m, r> ==> < true, m', r'>
+<pm, e1, m', r'> ==> < v, m'', r''>
+---------------------------------------------- :: b_if_true
+< pm, if e then e1 else e2, m, r > ==> < v, m'', r'' >
+
+<pm, e, m, r> ==> < false, m', r'>
+<pm, e2, m', r'> ==> < v, m'', r''>
+---------------------------------------------- :: b_if_false
+< pm, if e then e1 else e2, m, r > ==> < v, m'', r'' >
+
+% While via if-expansion (keeps close to small step rule)
+< pm, if e1 then ( e2 ; while e1 do e2 ) else unit, m, r > ==> < unit, m', r' >
+--------------------------------------------------------------------------- :: b_while
+< pm, while e1 do e2, m, r> ==> < unit, m', r' >
+
+% Let binding
+<pm, e1, m, r> ==> < v, m', r'>
+<pm, e2, m', r'[x |-> v]> ==> < v2, m'', r''>
+-------------------------------------------------------- :: b_let
+< pm, let x = e1 in e2, m, r > ==> < v2, m'', r'' >
+
+% Function abstraction
+--------------------------------------------------------------- :: b_fn_abs
+< pm, fn x : ST1 => e : ST2, m, r > ==> < closure(x, e, r), m, r >
+
+% Pure function abstraction
+--------------------------------------------------------------- :: b_pfn_abs
+< pm, pfn x : ST1 => pe : ST2, m, r > ==> < pe_closure(x, pe, r), m, r >
+
+% Impure function application (call-by-value)
+< impure , e2 , m , r > ==> < v , m' , r' >
+< impure , e1 , m' , r' > ==> < closure ( x , e , r''' ) , m'' , r'' >
+< impure , e , m'' , r''' [ x |-> v ] > ==> < v0 , m''' , r'''' >
+--------------------------------------------------------------- :: b_app_closure
+< impure , e1 e2 , m , r > ==> < v0 , m''' , r'''' >
+
+% Pure function application (no effects)
+< pm , pe2 , m , r > ==> < v , m , r >
+< pm , pe1 , m , r > ==> < pe_closure ( x , pe , r' ) , m , r >
+< pure , pe , m , r' [ x |-> v ] > ==> < v0 , m , r >
+--------------------------------------------------------------- :: b_app_pure_closure
+< pm , pe1 pe2 , m , r > ==> < v0 , m , r >
+
+% Random integer
+<pm, e, m, r> ==> < n, m', r'>
+n' = random n
+--------------------------------------------------------------- :: b_rand
+<pm, rand e, m, r> ==> < n', m', r'>
+
+% Faulty random (same extensional behaviour; typing distinguishes it)
+<pm, e, m, r> ==> < n, m', r'>
+n' = random n
+--------------------------------------------------------------- :: b_frand
+<pm, frand e, m, r> ==> < n', m', r'>
+
+% printInt
+<pm, e, m, r> ==> < n, m', r'>
+--------------------------------------------------------------- :: b_printInt
+<pm, printInt e, m, r> ==> < unit, m', r'>
+
+% printString
+<pm, e, m, r> ==> < s, m', r'>
+--------------------------------------------------------------- :: b_printString
+<pm, printString e, m, r> ==> < unit, m', r'>
 
 %% --- Typing rules below ---
 
