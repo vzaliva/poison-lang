@@ -96,10 +96,6 @@ pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | let x = pe1 in pe2      ::   :: let
   | ( pe )                  :: M :: paren  {{ ichlo ([[pe]]) }}
   | pe1 pe2                 ::   :: app
-  | rand pe                 ::   :: rand_app   {{ com random integer generation }}
-  | frand pe                ::   :: frand_app  {{ com random float generation }}
-  | printInt pe             ::   :: printInt_app 
-  | printString pe          ::   :: printString_app 
 
 v :: 'V_' ::=              {{ com values }}
   | n                       ::   :: num
@@ -772,10 +768,11 @@ pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G''
 % if condition then 
 %     let r1 = ref 42 in ...     // Creates l1, G'' = G'[l1 ↦ int]
 % else 
-%     let r2 = ref true in ...   // Creates l2, G''' = G'[l2 ↦ bool]
+%     let r2 = ref 7 in ...      // Creates l2, G''' = G'[l2 ↦ int]
 %
-% Result: JoinG G'' G''' = G'[l1 ↦ int, l2 ↦ bool]
-% This is sound because fresh locations are always distinct, so no conflicts arise.
+% Result: JoinG G'' G''' = G'[l1 ↦ int, l2 ↦ int]
+% Freshness side conditions (fresh l) allow the branch witnesses l1 and l2 to be chosen
+% distinct (alpha-renamed if necessary), so the union is well-defined and conflict-free.
 
 % Predicate-based conditional typing rule (when matching predicate found)
 % 
@@ -790,7 +787,6 @@ pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G''
 % - Guards only present in one branch are removed
 % This would be more precise but adds complexity. The current approach is simpler while
 % still enabling predicate-based de-poisoning within each branch.
-% TODO: Consider again wether typechecking of `e3` (else branch) sould incoporate p' in PC (like in if_std case)
 pm ; pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
   match_guard e1 G S = k
 pm ; pc ; G' ; S ; L'[k |-> true] |- e2 : T :> p'' { P'' } -| G'' ; L''

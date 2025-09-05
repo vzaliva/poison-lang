@@ -6,18 +6,21 @@ abbrev Tag := Nat
 -- Poison flag
 abbrev Poison := Bool
 
--- Use mutual block to define interdependent types
-mutual
-
 -- Predicate expressions (subset of expressions that can appear in predicates)
 inductive PExpr : Type where
-  | value : Value → PExpr                          -- Values embedded in expressions
+  | unit : PExpr                                   -- unit
+  | num : Int → PExpr                              -- n
+  | bool : Bool → PExpr                            -- b
+  | str : String → PExpr                           -- string
   | var : Name → PExpr                             -- x
   | op : PExpr → Op → PExpr → PExpr                -- e1 op e2
   | ite : PExpr → PExpr → PExpr → PExpr            -- if e1 then e2 else e3
   | deref : PExpr → PExpr                          -- ! e
   | vlet : Name → PExpr → PExpr → PExpr            -- let x : T = e1 in e2
   | app : PExpr → PExpr → PExpr                    -- e1 e2
+
+-- Use mutual block to define interdependent types
+mutual
 
 -- Tagged predicate structure
 structure TPred where
@@ -83,7 +86,10 @@ end VarTypeEnv
 mutual
 
 partial def reprPExpr : PExpr → Nat → Std.Format
-  | PExpr.value v, _ => s!"PExpr.value {repr v}"
+  | PExpr.unit, _ => "PExpr.unit"
+  | PExpr.num n, _ => s!"PExpr.num {repr n}"
+  | PExpr.bool b, _ => s!"PExpr.bool {repr b}"
+  | PExpr.str s, _ => s!"PExpr.str " ++ s
   | PExpr.var x, _ => s!"PExpr.var {repr x}"
   | PExpr.op e1 op e2, _ => s!"PExpr.op ({reprPExpr e1 0}) {repr op} ({reprPExpr e2 0})"
   | PExpr.ite e1 e2 e3, _ => s!"PExpr.ite ({reprPExpr e1 0}) ({reprPExpr e2 0}) ({reprPExpr e3 0})"
@@ -175,13 +181,16 @@ instance : BEq PFnTClosure where
 
 -- Manual BEq instance for PExpr
 def beqPExpr : PExpr → PExpr → Bool
-  | PExpr.value v1, PExpr.value v2 => v1 == v2
-  | PExpr.var x1, PExpr.var x2 => x1 == x2
-  | PExpr.op e1 op1 e2, PExpr.op e1' op2 e2' => op1 == op2 && beqPExpr e1 e1' && beqPExpr e2 e2'
-  | PExpr.ite e1 e2 e3, PExpr.ite e1' e2' e3' => beqPExpr e1 e1' && beqPExpr e2 e2' && beqPExpr e3 e3'
-  | PExpr.deref e1, PExpr.deref e2 => beqPExpr e1 e2
-  | PExpr.vlet x1 e1 e2, PExpr.vlet x2 e1' e2' => x1 == x2 && beqPExpr e1 e1' && beqPExpr e2 e2'
-  | PExpr.app e1 e2, PExpr.app e1' e2' => beqPExpr e1 e1' && beqPExpr e2 e2'
+  | .unit, .unit => true
+  | .num n1, .num n2 => n1 == n2
+  | .bool b1, .bool b2 => b1 == b2
+  | .str s1, .str s2 => s1 == s2
+  | .var x1, .var x2 => x1 == x2
+  | .op e1 op1 e2, .op e1' op2 e2' => op1 == op2 && beqPExpr e1 e1' && beqPExpr e2 e2'
+  | .ite e1 e2 e3, .ite e1' e2' e3' => beqPExpr e1 e1' && beqPExpr e2 e2' && beqPExpr e3 e3'
+  | .deref e1, .deref e2 => beqPExpr e1 e2
+  | .vlet x1 e1 e2, .vlet x2 e1' e2' => x1 == x2 && beqPExpr e1 e1' && beqPExpr e2 e2'
+  | .app e1 e2, .app e1' e2' => beqPExpr e1 e1' && beqPExpr e2 e2'
   | _, _ => false
 
 instance : BEq PExpr where

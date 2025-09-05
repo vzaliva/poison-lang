@@ -1,5 +1,7 @@
 import LeanPoison.Syntax
 import LeanPoison.Poison
+import LeanPoison.Misc
+
 import Std.Data.HashMap
 open Std
 
@@ -81,30 +83,43 @@ def joinPoisons (ps : List Poison) : Poison :=
 def updateMemEnv (env : MemoryTypeEnv) (l : Address) (qt : QTyp) : MemoryTypeEnv :=
   env.insert l qt
 
-/-- Join two memory environments (for conditional branches) -/
+/-- Join two memory environments (branch join). See JoinG in the Ott spec. -/
 def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
-  -- For now, return union preferring env2 for conflicts
-  -- TODO: Implement proper join operation as per Ott spec
-  -- TODO: Alternative design: Implement a proper join operation for logical environments where:
-  -- - Guards with same value in both branches are preserved
-  -- - Guards with contradictory values are removed (become unknown)
-  -- - Guards only present in one branch are removed
-  -- This would be more precise but adds complexity. The current approach is simpler while
-
-  env1.fold (init := env2) fun acc l qt => acc.insert l qt
+  combineMaps env1 env2 (fun _ oq1 oq2 =>
+    match oq1, oq2 with
+    | some qt1, none => some qt1
+    | none, some qt2 => some qt2
+    | some qt1, some qt2 =>
+      let ⟨t1, p1, pred1⟩ := qt1
+      let ⟨t2, p2, pred2⟩ := qt2
+      if t1 == t2 then
+        let p := joinPoison p1 p2
+        let pred :=
+          match pred1, pred2 with
+          | some ⟨k1, an1, pb1, ve1⟩, some ⟨k2, _, _, _⟩ =>
+              if k1 == k2 then some ⟨k1, an1, pb1, ve1⟩ else none
+          | _, _ => none
+        some ⟨t1, p, pred⟩
+      else
+        -- Unreachable under well-typedness: location types are immutable.
+        -- Symmetric, conservative fallback: drop the conflicting binding.
+        -- TODO: consider running this in Exception monad to report an error.
+        none
+    | none, none => none)
 
 -- Helper function to convert Expr to PExpr
 def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   match e with
-  | Expr.num n => return PExpr.value (Value.num n)
-  | Expr.bool b => return PExpr.value (Value.bool b)
-  | Expr.unit => return PExpr.value Value.unit
-  | Expr.var x => return PExpr.var x
+  | Expr.unit => return .unit
+  | Expr.num n => return .num n
+  | Expr.bool b => return .bool b
+  | Expr.str s => return .str s
+  | Expr.var x => return .var x
   | Expr.op e1 opname e2 => (fun pe1 pe2 => PExpr.op pe1 opname pe2) <$> e1.toPExpr <*> e2.toPExpr
   | Expr.ite e1 e2 e3 => PExpr.ite <$> e1.toPExpr <*> e2.toPExpr <*> e3.toPExpr
-  | Expr.deref e => PExpr.deref <$> e.toPExpr
-  | Expr.vlet x e1 e2 => (fun pe1 pe2 => PExpr.vlet x pe1 pe2) <$> e1.toPExpr <*> e2.toPExpr
-  | Expr.app e1 e2 => PExpr.app <$> e1.toPExpr <*> e2.toPExpr
+  | Expr.deref e => .deref <$> e.toPExpr
+  | Expr.vlet x e1 e2 => (fun pe1 pe2 => .vlet x pe1 pe2) <$> e1.toPExpr <*> e2.toPExpr
+  | Expr.app e1 e2 => .app <$> e1.toPExpr <*> e2.toPExpr
   | _ => throw "Cannot convert expression to PExpr"
 
 -- Helper function to project ETyp to Typ By stripping poison and closure
@@ -122,16 +137,16 @@ def ETyp.toTyp (pt : ETyp) : Typ :=
 -- Helper function to convert PExpr to Expr
 def PExpr.toExpr (pe : PExpr) : Expr :=
   match pe with
-  | PExpr.value (Value.num n) => Expr.num n
-  | PExpr.value (Value.bool b) => Expr.bool b
-  | PExpr.value Value.unit => Expr.unit
-  | PExpr.value _ => Expr.unit  -- For other values that can't be represented as expressions
-  | PExpr.var x => Expr.var x
-  | PExpr.op e1 o e2 => Expr.op (e1.toExpr) o (e2.toExpr)
-  | PExpr.ite e1 e2 e3 => Expr.ite (e1.toExpr) (e2.toExpr) (e3.toExpr)
-  | PExpr.deref e => Expr.deref (e.toExpr)
-  | PExpr.vlet x e1 e2 => Expr.vlet x (e1.toExpr) (e2.toExpr)
-  | PExpr.app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
+  | .unit => Expr.unit
+  | .num n => Expr.num n
+  | .bool b => Expr.bool b
+  | .str s => Expr.str s
+  | .var x => Expr.var x
+  | .op e1 o e2 => Expr.op (e1.toExpr) o (e2.toExpr)
+  | .ite e1 e2 e3 => Expr.ite (e1.toExpr) (e2.toExpr) (e3.toExpr)
+  | .deref e => Expr.deref (e.toExpr)
+  | .vlet x e1 e2 => Expr.vlet x (e1.toExpr) (e2.toExpr)
+  | .app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
 
 
@@ -205,8 +220,11 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
   | 0 => false
   | fuel + 1 =>
     match pe1, pe2 with
-    | PExpr.value v1, PExpr.value v2 => v1 == v2
-    | PExpr.var x1, pe2 =>
+    | .unit, .unit => true
+    | .num n1, .num n2 => n1 == n2
+    | .bool b1, .bool b2 => b1 == b2
+    | .str s1, .str s2 => s1 == s2
+    | .var x1, pe2 =>
         match substitution with
         | some (arg1, val1) =>
           if x1 == arg1 then
@@ -221,24 +239,24 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
           else
             -- Some other variable, compare it syntactically with the target variable
             match pe2 with
-            | PExpr.var x2 => x1 == x2
+            | .var x2 => x1 == x2
             | _ => false
         | none =>
           -- No substitution active, just compare variables syntactically
           match pe2 with
-          | PExpr.var x2 => x1 == x2
+          | .var x2 => x1 == x2
           | _ => false
-    | PExpr.op e1 op1 e2, PExpr.op e1' op2 e2' =>
+    | .op e1 op1 e2, .op e1' op2 e2' =>
       op1 == op2 && equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel
-    | PExpr.ite e1 e2 e3, PExpr.ite e1' e2' e3' =>
+    | .ite e1 e2 e3, .ite e1' e2' e3' =>
       equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel && equalWithEnvs e3 env1 e3' env2 substitution fuel
-    | PExpr.deref e1, PExpr.deref e2 => equalWithEnvs e1 env1 e2 env2 substitution fuel
-    | PExpr.vlet x1 e1 e2, PExpr.vlet x2 e1' e2' =>
+    | .deref e1, .deref e2 => equalWithEnvs e1 env1 e2 env2 substitution fuel
+    | .vlet x1 e1 e2, .vlet x2 e1' e2' =>
       x1 == x2 &&
       equalWithEnvs e1 env1 e1' env2 substitution fuel &&
       -- For the body, disable substitution if the bound variable shadows the substitution variable
       equalWithEnvs e2 env1 e2' env2 (if substitution.map (·.1) == some x1 then none else substitution) fuel
-    | PExpr.app e1 e2, PExpr.app e1' e2' =>
+    | .app e1 e2, .app e1' e2' =>
       equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel
     | _, _ => false
 
@@ -577,7 +595,8 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
     let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
 
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' , nextTag := result1.nextTag' }
+    -- Propagate fresh-name supplies from the condition into branch contexts
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
     let result2 ← typecheckExpr ctx' e2 fuel
     let ⟨etyp2, p2, _  ⟩ := result2.qualType
 
@@ -629,7 +648,7 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
     match etyp1 with
     | ETyp.ref t l =>
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' ,nextTag := result1.nextTag' }
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
       if etyp2 != t then throw "Type mismatch in assignment"
@@ -704,7 +723,7 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     let result1 ← typecheckExpr ctx e1 fuel
     let ⟨_etyp1, p1, _  ⟩ := result1.qualType
 
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',nextTag := result1.nextTag' }
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
     let result2 ← typecheckExpr ctx' e2 fuel
     let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
 
@@ -746,26 +765,27 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if ctx.pureCtx then
         throw "Pure context disallows application of impure function"
       -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',nextTag := result1.nextTag' }
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2⟩ := result2.qualType
 
       -- Premise 3: ST1 <: T1 (check subtyping)
       if not (isSubtype st1 result2.qualType) then
-        throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr result2.qualType.toTyp}"
+        throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
       match tcl with
       | FnTClosure.mk x body env =>
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt
-        let ctx'' := { ctx with pc := joinPoison ctx.pc p1, memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' ,nextTag := result2.nextTag' }
+        let ctx'' := { ctx with pc := joinPoison ctx.pc p1, memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' ,nextTag := result2.nextTag', nextLoc := result2.nextLoc' }
+
         let result3 ← typecheckExpr ctx'' body fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
 
         -- Premise 5: ST2 <: T2 (check subtyping)
         if not (isSubtype st2 result3.qualType) then
-          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr result3.qualType.toTyp}"
+          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Conclusion: pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
         let poison := joinPoison ctx.pc p3
@@ -773,13 +793,13 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc', nextTag' := result3.nextTag' }
     | ETyp.parrow st1 st2 _p tcl =>
       -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' }
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2⟩ := result2.qualType
 
       -- Premise 3: ST1 <: T1 (check subtyping)
       if not (isSubtype st1 result2.qualType) then
-        throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr result2.qualType.toTyp}"
+        throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
       match tcl with
       | PFnTClosure.mk x body env =>
@@ -787,13 +807,13 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt
         -- Set pure context for the body re-typechecking
-        let ctx'' := { ctx with pc := joinPoison ctx.pc p1, memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' , nextTag := result2.nextTag', pureCtx := true}
-        let result3 ← typecheckExpr ctx'' (body.toExpr) fuel
+        let ctx'' := { ctx with memEnv := result2.memEnv',pc := joinPoison ctx.pc p1, varEnv := env', tagEnv := result2.tagEnv', pureCtx := true, nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+        let result3 ← typecheckExpr ctx'' (PExpr.toExpr body) fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
 
         -- Premise 5: ST2 <: T2 (check subtyping)
         if not (isSubtype st2 result3.qualType) then
-          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr result3.qualType.toTyp}"
+          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Conclusion: pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
         let poison := joinPoison ctx.pc p3
@@ -817,10 +837,10 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
     let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p1, pred1  ⟩ := result1.qualType
 
-
-    let varQt : QTyp := ⟨etyp1, p1, pred1  ⟩
-    let varEnv' := VarTypeEnv.update ctx.varEnv x varQt
-    let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv' , nextTag := result1.nextTag' }
+    let varPoison := joinPoison ctx.pc p1
+    let varQt : QTyp := ⟨etyp1, varPoison, pred1  ⟩
+    let varEnv' := ctx.varEnv.update x varQt
+    let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
 
     let result2 ← typecheckExpr ctx' e2 fuel
     let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
@@ -844,7 +864,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
     let ⟨etyp1, p', _  ⟩ := result1.qualType
     if etyp1 != ETyp.bool then throw "Condition of if must be bool"
 
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' ,nextTag := result1.nextTag' }
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
 
     -- Try predicate-based de-poisoning first
     match matchGuard e1 result1.memEnv' ctx.varEnv with
@@ -860,7 +880,9 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       --dbg_trace s!" Poison val for {e2} is {p''}"
 
 
-      let result3 ← typecheckExpr ctxFalse e3 fuel
+      -- Ensure disjoint fresh supplies across branches by advancing the false-branch supply
+      let ctxFalse' := { ctxFalse with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+      let result3 ← typecheckExpr ctxFalse' e3 fuel
       let ⟨etyp3, p''', _  ⟩ := result3.qualType
       --dbg_trace s!" Poison val for {e3} is {p'''}"
 
@@ -885,7 +907,9 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let result2 ← typecheckExpr ctx'' e2 fuel
       let ⟨etyp2, p'', _  ⟩ := result2.qualType
 
-      let result3 ← typecheckExpr ctx'' e3 fuel
+      -- Ensure disjoint fresh supplies across branches by advancing the second branch supply
+      let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+      let result3 ← typecheckExpr ctxForE3 e3 fuel
       let ⟨etyp3, p''', _  ⟩ := result3.qualType
 
       if etyp2 != etyp3 then throw "Branches of if must have same type"
@@ -911,7 +935,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
     let ⟨etyp1, p', _  ⟩ := result1.qualType
     if etyp1 != ETyp.bool then throw "Condition of while must be bool"
 
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv' , nextTag := result1.nextTag' }
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
 
     -- Try predicate-based de-poisoning first
     match matchGuard e1 result1.memEnv' ctx.varEnv with
