@@ -350,7 +350,7 @@ def typecheckBool (ctx : TypeContext) (_b : Bool) : TypecheckM TypeResult := do
 def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
   --dbg_trace ("Typechecking var " ++ x)
   --dbg_trace s!"ctx.pc is {ctx.pc}"
-  match VarTypeEnv.lookup ctx.varEnv x with
+   match ctx.varEnv.lookup x with
   | some qt =>
     let ⟨etyp, poison, pred⟩ := qt
     match pred with
@@ -465,7 +465,6 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-  let result <-
     match e with
     | Expr.num n => typecheckInt ctx n
     | Expr.bool b => typecheckBool ctx b
@@ -487,8 +486,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.frand e => typecheckFrand ctx e fuel
     | Expr.printString e => typecheckPrintString ctx e fuel
     | Expr.printInt e => typecheckPrintInt ctx e fuel
-   --dbg_trace s!"Typechecked expr {e} with result {result.qualType}"
-    return result
+
 termination_by fuel
 
 

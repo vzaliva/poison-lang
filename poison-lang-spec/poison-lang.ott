@@ -692,20 +692,23 @@ pm ; pc ; G ; S ; L |- pfn x : ST1 => pe : ST2 : ST1 -> ST2 # pc typing_pclosure
 % function body (e), and captured variable context (S'). We then type-check the body in
 % the captured context S' extended with the actual argument's type (including predicates)
 % and using the current logical environment L. This enables predicate-based de-poisoning.
-  impure; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure tcl :> p1 { P1 } -| G' ; L'
-  impure; pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
-  ST1 <: T1
-  impure ; join p1 pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
-  ST2 <: T2
+% Please note that impure function application is disallowed in pure context.
+impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
+impure ; pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
+ST1 <: T1
+impure ; join p1 pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
+ST2 <: T2
 ----------------------------------------------------------------------  :: app_fn
 impure ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
 
 % Pure function application typing - uses captured pure body and context
-  pure; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_pclosure ptcl :> p1 { P1 } -| G' ; L'
-  pure; pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
-  ST1 <: T1
-  pure ; join p1 pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L''
-  ST2 <: T2
+% Please note that pure function application is allowed in either impure or pure context, but
+% the body is always typed in pure context (to prevent use of impure forms)
+pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_pclosure ( x , pe , S' ) :> p1 { P1 } -| G' ; L'
+pm ; pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
+ST1 <: T1
+pure ; join p1 pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L''
+ST2 <: T2
 ----------------------------------------------------------------------  :: app_pfn
 pm ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
 
