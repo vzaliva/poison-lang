@@ -8,52 +8,19 @@ open Std
 
 -- Helper functions for operations
 def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
-  match op with
-  | Op.add =>
-    match v1, v2 with
-    | Value.num n1, Value.num n2 => some (Value.num (n1 + n2))
-    | _, _ => none
-  | Op.gte =>
-    match v1, v2 with
-    | Value.num n1, Value.num n2 => some (Value.bool (n1 >= n2))
-    | _, _ => none
-
-  | Op.gt =>
-    match v1, v2 with
-    | Value.num n1, Value.num n2 => some (Value.bool (n1 > n2))
-    | _, _ => none
-  | Op.lte =>
-    match v1, v2 with
-    | Value.num n1, Value.num n2 => some (Value.bool (n1 <= n2))
-    | _, _ => none
-  | Op.lt =>
-    match v1, v2 with
-    | Value.num n1, Value.num n2 => some (Value.bool (n1 < n2))
-    | _, _ => none
-  | Op.mul =>
-    match v1, v2 with
-    | Value.num n1, Value.num n2 => some (Value.num (n1 * n2))
-    | _, _ => none
-  | Op.div =>
-    match v1, v2 with
-    | Value.num n1, Value.num n2 => some (Value.num (n1 / n2))
-    | _, _ => none
-  | Op.eq =>
-    match v1, v2 with
-    | Value.num n1, Value.num n2 => some (Value.bool (n1 == n2))
-    | _, _ => none
-  | Op.sub =>
-    match v1, v2 with
-    | Value.num n1, Value.num n2 => some (Value.num (n1 - n2))
-    | _, _ => none
-  | Op.or =>
-    match v1,v2 with
-    | Value.bool b1 , Value.bool b2 => some (Value.bool (b1 || b2))
-    | _,_ => none
-  | Op.and =>
-    match v1,v2 with
-    | Value.bool b1 , Value.bool b2 => some (Value.bool (b1 && b2))
-        | _,_ => none
+  match op, v1, v2 with
+  | Op.add, Value.num n1, Value.num n2 => some (Value.num (n1 + n2))
+  | Op.sub, Value.num n1, Value.num n2 => some (Value.num (n1 - n2))
+  | Op.mul, Value.num n1, Value.num n2 => some (Value.num (n1 * n2))
+  | Op.div, Value.num n1, Value.num n2 => some (Value.num (n1 / n2))
+  | Op.gte, Value.num n1, Value.num n2 => some (Value.bool (n1 >= n2))
+  | Op.lte, Value.num n1, Value.num n2 => some (Value.bool (n1 <= n2))
+  | Op.gt,  Value.num n1, Value.num n2 => some (Value.bool (n1 > n2))
+  | Op.lt,  Value.num n1, Value.num n2 => some (Value.bool (n1 < n2))
+  | Op.eq,  Value.num n1, Value.num n2 => some (Value.bool (n1 == n2))
+  | Op.and, Value.bool b1, Value.bool b2 => some (Value.bool (b1 && b2))
+  | Op.or,  Value.bool b1, Value.bool b2 => some (Value.bool (b1 || b2))
+  | _, _, _ => none
 
 -- Result of a single evaluation step
 inductive StepResult where

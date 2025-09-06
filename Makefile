@@ -48,7 +48,10 @@ parser-clean:
 test: cache
 	lake build poison-interpreter
 	chmod +x run_tests.sh
+	echo "Running tests with small-step semantics"
 	./run_tests.sh 
+	echo "Running tests with big-step semantics"
+	./run_tests.sh --big
 
 clean: lean-clean parser-clean 
 	 $(MAKE) -C poison-lang-spec clean
