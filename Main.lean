@@ -1,6 +1,7 @@
 import LeanPoison.Syntax
 import LeanPoison.Runtime
-import LeanPoison.Eval
+import LeanPoison.SmallStep
+import LeanPoison.BigStep
 import LeanPoison.Parser
 import LeanPoison.Typecheck
 import Lean.Data.Xml.Parser
@@ -59,7 +60,15 @@ def handleEvalResult (result : StepResult) (initialConfig : Config) (verbose : B
     IO.println s!"Runtime error: {msg}"
     return (1 : UInt32)
 
-def evalProgram (input : String) : IO UInt32 := do
+def runExpr (useBig : Bool) (fuel : Nat) (config : Config) (expr : _root_.Expr) (verbose : Bool) : IO StepResult := do
+  if useBig then
+    match (← LeanPoison.beval fuel config expr verbose) with
+    | .ok (cfg, v) => return StepResult.progress cfg (ExprOrValue.value v)
+    | .error msg => return StepResult.error msg
+  else
+    eval fuel config (ExprOrValue.expr expr) verbose
+
+def evalProgram (input : String) (useBig : Bool) : IO UInt32 := do
   match parse input with
   | Except.ok xmlElement =>
 
@@ -71,7 +80,7 @@ def evalProgram (input : String) : IO UInt32 := do
       else
         IO.println s!"Type checking passed: {resultType}"
       let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
-      let result <- eval defaultFuel initialConfig (ExprOrValue.expr expr) false
+      let result <- runExpr useBig defaultFuel initialConfig expr false
       handleEvalResult result initialConfig false
 
     | Except.error err =>
@@ -82,12 +91,12 @@ def evalProgram (input : String) : IO UInt32 := do
                       return (1 : UInt32)
 
 -- Read and evaluate a file
-def runFile (filename : String) : IO UInt32 := do
+def runFile (filename : String) (useBig : Bool := false) : IO UInt32 := do
   try
     let xmlStr ← runTreeSitterXml filename
     IO.println s!"Evaluating file: {filename}"
     IO.println ""
-    evalProgram xmlStr
+    evalProgram xmlStr useBig
   catch e =>
     IO.println s!"Error reading file {filename}: {e}"
     return (1 : UInt32)
@@ -102,7 +111,7 @@ partial def readMultiline (acc : String := "") : IO String := do
   else
     readMultiline newAcc
   ----------------------------------------------------------------------------
-partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
+partial def replLoop (config : Config) (tmpPath : String) (useBig : Bool := false) : IO UInt32 := do
 
   let trimmed ← readMultiline
   if trimmed == ":quit" then
@@ -113,7 +122,7 @@ partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
     IO.FS.writeFile tmpPath trimmed
     try
       let expr ← parsePoisonFile tmpPath
-      match <- eval defaultFuel config (ExprOrValue.expr expr) false with
+      match <- runExpr useBig defaultFuel config expr false with
       | StepResult.progress newConfig resultExpr =>
         match resultExpr.toValue? with
         | some v =>
@@ -122,21 +131,44 @@ partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
         | none =>
             IO.println s!"Not fully evaluated: {repr resultExpr}"
         IO.FS.removeFile tmpPath
-        replLoop newConfig tmpPath
+        replLoop newConfig tmpPath useBig
       | StepResult.stuck =>
         IO.println "Evaluation stuck"
         IO.FS.removeFile tmpPath
-        replLoop config tmpPath
+        replLoop config tmpPath useBig
       | StepResult.error msg =>
         IO.println s!"Runtime error: {msg}"
         IO.FS.removeFile tmpPath
-        replLoop config tmpPath
+        replLoop config tmpPath useBig
     catch e =>
       IO.eprintln s!"Error: {e}"
-      replLoop config tmpPath
+      replLoop config tmpPath useBig
 -------------------------------------------------------------------------------
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["--verbose", "--big", filename]
+  | ["--big", "--verbose", filename] =>
+    -- Verbose mode + big-step: evaluate file with step-by-step output
+    try
+      let ExprTree ← parsePoisonFile filename
+      IO.println s!"Evaluating file: {filename} (verbose mode, big-step)"
+      IO.println ""
+      match ExprTree with
+      | expr =>
+       let resultType := typecheckProgram expr true
+        if resultType.startsWith "Type error:" then
+          IO.println s!"Type checking error: {resultType.drop 11}"
+        else
+          IO.println s!"Type checking passed: {resultType}"
+        IO.println ""
+        let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
+        let result <- runExpr true defaultFuel initialConfig expr true  -- verbose = true
+        handleEvalResult result initialConfig true
+
+    catch e =>
+      IO.println s!"Error reading file {filename}: {e}"
+      return (1 : UInt32)
+
   | ["--verbose", filename] =>
     -- Verbose mode: evaluate file with step-by-step output
     try
@@ -152,7 +184,7 @@ def main (args : List String) : IO UInt32 := do
           IO.println s!"Type checking passed: {resultType}"
         IO.println ""
         let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
-        let result <- eval defaultFuel initialConfig (ExprOrValue.expr expr) true  -- verbose = true
+        let result <- runExpr false defaultFuel initialConfig expr true  -- verbose = true
         handleEvalResult result initialConfig true
 
     catch e =>
@@ -166,17 +198,29 @@ def main (args : List String) : IO UInt32 := do
     let tmp ← IO.Process.output { cmd := "mktemp", args := #["--tmpdir", "repl-XXXXXX.poison"] }
     let tmpPath := tmp.stdout.trim
     let initialConfig := ⟨ emptyMemory, emptyVarEnv,  0, false ⟩
-    replLoop initialConfig tmpPath
+    replLoop initialConfig tmpPath false
+
+  | ["--repl", "--big"] =>
+    IO.println s!"Poison {versionNo} - Tufts University. (big-step)"
+    IO.println "Type :quit to exit."
+    IO.println "Enter a blank line after an expression to evaluate it."
+    let tmp ← IO.Process.output { cmd := "mktemp", args := #["--tmpdir", "repl-XXXXXX.poison"] }
+    let tmpPath := tmp.stdout.trim
+    let initialConfig := ⟨ emptyMemory, emptyVarEnv,  0, false ⟩
+    replLoop initialConfig tmpPath true
 
   | [filename] =>
     -- One argument: evaluate file
-    runFile filename
+    runFile filename false
+
+  | ["--big", filename] =>
+    -- Evaluate file using big-step semantics
+    runFile filename true
 
 
   | _ =>
     -- Too many arguments: show usage
     IO.println "Usage:"
-    IO.println "  poison-interpreter --repl          # Runs read-eval-print loop"
-    IO.println "  poison-interpreter <file>           # Evaluate expressions from file"
-    IO.println "  poison-interpreter --verbose <file> # Evaluate with step-by-step output"
+    IO.println "  poison-interpreter --repl [--big]"
+    IO.println "  poison-interpreter [--verbose] [--big] <file>"
     return (1 : UInt32)

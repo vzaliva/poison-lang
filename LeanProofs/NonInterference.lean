@@ -4,19 +4,19 @@ import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.Poison
-import LeanPoison.Eval
+import LeanPoison.BigStep
 import Mathlib.Data.List.Forall2
 
 -- ================================================================
 -- Non-Interference (semantic formulation)
 -- ================================================================
 
--- Big-step termination relation to a final configuration and result.
--- Intended to coincide with repeated small-step evaluation to a value
--- (or irreducible expression) as implemented in LeanPoison.Eval.
+-- Big-step termination relation to a final configuration and result
+-- (coincides with the reflexive-transitive closure of small-step evaluation).
 def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : ExprOrValue) : Prop :=
   ∃ (fuel : Nat) (verbose : Bool),
-    eval fuel c₀ (ExprOrValue.expr e) verbose = pure (StepResult.progress c₁ out)
+    LeanPoison.beval fuel c₀ e verbose = pure (Except.ok (c₁, out.toValue?.getD Value.unit)) ∧
+    out.toExpr? = none
 
 -- What parts of the final state are observable
 structure ObservableSpec where
