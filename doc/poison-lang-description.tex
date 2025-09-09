@@ -469,7 +469,12 @@ Hybrid small-step/big-step semantics with configurations $\langle \pi, e, \mu, \
     \item $\rho$: Variable environment mapping variables to values
 \end{itemize}
 
-The semantics are primarily small-step (single reduction steps), but function application uses big-step evaluation for function bodies. The notation $\langle \pi, e, \mu, \rho \rangle \rightarrow^* \langle \pi', e', \mu', \rho' \rangle$ denotes the reflexive-transitive closure of the small-step relation, meaning zero or more reduction steps that evaluate expression $e$ to completion, producing final expression $e'$, memory $\mu'$, and environment $\rho'$.
+The semantics are provided in two complementary styles:
+\begin{itemize}
+  \item \textbf{Small-step} (single reduction steps), with multi-step notation $\langle \pi, e, \mu, \rho \rangle \rightarrow^* \langle \pi', e', \mu', \rho' \rangle$ for the reflexive-transitive closure.
+  \item \textbf{Big-step} (natural) semantics that evaluate expressions directly to values and a final configuration; we write informally $\langle \pi, e, \mu, \rho \rangle \Downarrow \langle \mu', v \rangle$.
+\end{itemize}
+We intentionally keep the two definitions close: while-loops are defined via if-expansion in both, function bodies are evaluated under captured environments, and the pure-mode discipline is preserved. Practically, both interpreters are implemented and selectable at runtime.
 
 \subsection*{Key rules:}
 \begin{align*}
@@ -981,6 +986,20 @@ entities as poisoned, whereas \emph{sanitisation} constructs could clear poison
 from selected data. Preservation therefore guarantees that the analysis remains
 sound while accommodating monotone growth of type information and non-monotone
 evolution of poison information.
+
+\subsection{Equivalence of Small-step and Big-step Semantics}
+We aim to establish that the two operational definitions coincide on terminating
+programs. Concretely, for any expression $e$ and initial configuration $\langle
+\pi, e, \mu, \rho \rangle$:
+\begin{itemize}
+  \item (\emph{Soundness}) If $\langle \pi, e, \mu, \rho \rangle \rightarrow^* \langle \pi, v, \mu', \rho' \rangle$ in the small-step semantics with $v$ a value, then the big-step semantics yields $\langle \pi, e, \mu, \rho \rangle \Downarrow \langle \mu', v \rangle$.
+  \item (\emph{Completeness}) If $\langle \pi, e, \mu, \rho \rangle \Downarrow \langle \mu', v \rangle$ in the big-step semantics, then there exists a small-step derivation $\langle \pi, e, \mu, \rho \rangle \rightarrow^* \langle \pi, v, \mu', \rho' \rangle$.
+\end{itemize}
+
+\emph{Note.} For many practical purposes (for example, using big-step as an
+executable evaluator consistent with small-step), soundness alone may suffice,
+with completeness only needed to claim full equivalence.
+
 
 \bibliographystyle{plain}
 
