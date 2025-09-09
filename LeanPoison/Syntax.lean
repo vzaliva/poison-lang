@@ -248,6 +248,10 @@ instance : ToString Value where
 @[instance]
 instance : ToString Op where
   toString op := Std.Format.pretty (repr op)
+@[instance]
+instance : ToString Expr where
+  toString e := Std.Format.pretty (repr e)
+
 
 
  -- Helper function to print the type of Value
