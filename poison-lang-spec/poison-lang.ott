@@ -934,9 +934,11 @@ pm ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
 %
 % Predicates are propagated from e1 to x, and the result gets predicate from e2
 pm ; pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G' ; L'
-pm ; pc ; G' ; S[x |-> T :> join pc p1 { P1 }] ; L' |- e2 : T2 :> p2 { P2 } -| G'' ; L''
+pm ; pc ; G' ; S[x |-> T :> p1  { P1 }] ; L' |- e2 : T2 :> p2 { P2 } -| G'' ; L''
 ----------------------------------------------------------------------  :: let
-pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G'' ; L''
+
+
 
 % Conditional typing rules
 %

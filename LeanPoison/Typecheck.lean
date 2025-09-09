@@ -833,11 +833,7 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
     let result1 ← typecheckExpr ctx e1 fuel
-    let ⟨etyp1, p1, pred1  ⟩ := result1.qualType
-
-    let varPoison := joinPoison ctx.pc p1
-    let varQt : QTyp := ⟨etyp1, varPoison, pred1  ⟩
-    let varEnv' := ctx.varEnv.update x varQt
+    let varEnv' := ctx.varEnv.update x result1.qualType
     let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
 
     let result2 ← typecheckExpr ctx' e2 fuel
@@ -845,7 +841,7 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
    --dbg_trace s!" In typecheck Let ,Poison val for exp {e1} is {p1}"
    -- dbg_trace s!"In typecheck Let ,Poison val for exp {e2} is {p2}"
 
-    let poison :=  p2
+    let poison := joinPoison ctx.pc p2
     let qt : QTyp := ⟨etyp2, poison, pred2  ⟩
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
