@@ -181,9 +181,10 @@ inductive OpEType : Op → ETyp → ETyp → ETyp → Prop where
   | gt_int  : OpEType Op.gt  ETyp.int ETyp.int ETyp.bool
   | lt_int  : OpEType Op.lt  ETyp.int ETyp.int ETyp.bool
   | eq_int  : OpEType Op.eq  ETyp.int ETyp.int ETyp.bool
-
+  | neq_int : OpEType Op.neq ETyp.int ETyp.int ETyp.bool
   | and_bool : OpEType Op.and ETyp.bool ETyp.bool ETyp.bool
   | or_bool  : OpEType Op.or  ETyp.bool ETyp.bool ETyp.bool
+  | and_int  : OpEType Op.and  ETyp.int  ETyp.int  ETyp.int
 
 def opEType? : Op → ETyp → ETyp → Option ETyp
   | .add, .int,  .int  => some .int
@@ -197,6 +198,8 @@ def opEType? : Op → ETyp → ETyp → Option ETyp
   | .eq,  .int,  .int  => some .bool
   | .and, .bool, .bool => some .bool
   | .or,  .bool, .bool => some .bool
+  | .and,  .int,   .int  => some .int
+  | .neq,  .int,   .int  => some .bool
   | _,    _,     _     => none
 
 
@@ -486,6 +489,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.frand e => typecheckFrand ctx e fuel
     | Expr.printString e => typecheckPrintString ctx e fuel
     | Expr.printInt e => typecheckPrintInt ctx e fuel
+    | Expr.not_expr e => typecheckNot ctx e fuel
 
 termination_by fuel
 
@@ -964,6 +968,18 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
       return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
 
+def typecheckNot (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+  match fuel with
+    | 0        => throw "Out of fuel"
+    | fuel + 1 =>
+            do
+              let result ← typecheckExpr ctx e (fuel - 1)
+              let ⟨etyp, poison, _  ⟩ := result.qualType
+              if etyp != ETyp.bool then throw ("Argument Expression to not must have type bool")
+              else
+                let qt' : QTyp := ⟨ETyp.bool , joinPoison ctx.pc poison, none ⟩
+                return {result with qualType := qt' }
+termination_by fuel
 
 end
 

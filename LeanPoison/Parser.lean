@@ -140,12 +140,13 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
       | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
-    let validOps := ["+", "-", "*", "/", ">", ">=", "<", "<=", "==","&","|"]
+    let validOps := ["+", "-", "*", "/", ">", ">=", "<", "<=", "==","&","|","!="]
     let ops := contents.filterMap fun
       | Content.Character s =>
           let trimmed := s.trim
           if trimmed ∈ validOps then some trimmed else none
       | _ => none
+
 
     match (exprs.toList, ops.toList) with
       | ([lhs,
@@ -165,8 +166,20 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
           | "==" => return Expr.op lhsExpr Op.eq rhsExpr
           | "&"  => return Expr.op lhsExpr Op.and rhsExpr
           | "|"  => return Expr.op lhsExpr Op.or rhsExpr
+          | "!=" => return Expr.op lhsExpr Op.neq rhsExpr
           | _ => .error s!"Unknown operator: {opStr}"
       | _ => .error s!"Invalid binary_expr structure: {contents}"
+
+  | Element.Element "not_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
+      | Content.Element el => some el
+      | _ => none
+
+    match elems.toList with
+    | [element] =>
+          return Expr.not_expr (<- xmlToExpr element)
+    | _ => .error s!"Invalid not_expr structure: {contents}"
 
   | Element.Element "app_expr" _ contents =>
     do

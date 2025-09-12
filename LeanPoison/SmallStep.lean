@@ -4,6 +4,7 @@
 import LeanPoison.Syntax
 import LeanPoison.Runtime
 import Std.Data.HashMap
+import Mathlib.Data.Int.Bitwise
 open Std
 
 -- Helper functions for operations
@@ -20,7 +21,10 @@ def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
   | Op.eq,  Value.num n1, Value.num n2 => some (Value.bool (n1 == n2))
   | Op.and, Value.bool b1, Value.bool b2 => some (Value.bool (b1 && b2))
   | Op.or,  Value.bool b1, Value.bool b2 => some (Value.bool (b1 || b2))
+  | Op.neq, Value.num n1, Value.num n2 => some (Value.bool (n1 != n2))
+  | Op.and, Value.num n1, Value.num n2 => some (Value.num (Int.land n1 n2))
   | _, _, _ => none
+
 
 -- Result of a single evaluation step
 inductive StepResult where
@@ -653,6 +657,33 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
                   IO.println s
                   return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.expr (Expr.unit)))
               | _ => return stepReturn fuel verbose (StepResult.error "printString expects argument to evaluate to a string.")
+            | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
+            | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
+
+      | Expr.not_expr e =>
+          match e.toValue? with
+                  -- Rule :  not_expr
+                  --              <e,m,r> -> <value s, m',r'>
+                  --   ---------------------------------------------------------------
+                  --  <printString e,m,r> -> <value unit, m',r'>
+
+          | some (Value.bool b) =>
+
+            return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.bool (!b))))
+          | _ =>
+               -- Rule :  not_expr_arg_reduce
+               --              <e,m,r> -> <expr e',m',r'>
+               --    ---------------------------------------------------------------
+               --       <printString e,m,r> -> <expr (printString e'),m',r'>
+
+
+            match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
+            | StepResult.progress config' ev' =>
+              match ev' with
+              | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.not_expr e')))
+              | ExprOrValue.value (Value.bool b) =>
+                  return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.bool (!b))))
+              | _ => return stepReturn fuel verbose (StepResult.error "Not operator expects argument to evaluate to a boolean.")
             | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
             | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 ----------------------------------------------------------------------------------------
