@@ -878,7 +878,7 @@ pm ; pc ; G ; S ; L |- pfn x : ST1 => pe : ST2 : ST1 -> ST2 # pc typing_pclosure
 impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
 impure ; pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
 ST1 <: T1
-impure ; pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
+impure ; join p1 pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
 ST2 <: T2
 ----------------------------------------------------------------------  :: app_fn
 impure ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
@@ -889,7 +889,7 @@ impure ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
 pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_pclosure ( x , pe , S' ) :> p1 { P1 } -| G' ; L'
 pm ; pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
 ST1 <: T1
-pure ; pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
+pure ; join p1 pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L''
 ST2 <: T2
 ----------------------------------------------------------------------  :: app_pfn
 pm ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
@@ -934,9 +934,11 @@ pm ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
 %
 % Predicates are propagated from e1 to x, and the result gets predicate from e2
 pm ; pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G' ; L'
-pm ; pc ; G' ; S[x |-> T :> join pc p1 { P1 }] ; L' |- e2 : T2 :> p2 { P2 } -| G'' ; L''
+pm ; pc ; G' ; S[x |-> T :> p1  { P1 }] ; L' |- e2 : T2 :> p2 { P2 } -| G'' ; L''
 ----------------------------------------------------------------------  :: let
-pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc join p1 p2 { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G'' ; L''
+
+
 
 % Conditional typing rules
 %

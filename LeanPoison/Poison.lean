@@ -231,3 +231,8 @@ instance : BEq QTyp where
 @[instance]
 instance : ToString ETyp where
   toString e := Std.Format.pretty (repr e)
+
+
+@[instance]
+instance : ToString QTyp where
+  toString e := Std.Format.pretty (repr e)
