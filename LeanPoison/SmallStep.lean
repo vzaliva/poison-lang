@@ -104,7 +104,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       | none =>
         return stepReturn fuel verbose (StepResult.error s!"var {x} not found")
 
-    -- Rule: op_plus, op_minus, op_mult, op_div, op_gteq, op_lteq, op_gt, op_lt, op_eq, op_and, op_or
+    -- Rule: op_plus, op_minus, op_mult, op_div, op_gteq, op_lteq, op_gt, op_lt, op_eq, op_and, op_or,op_neq,op_bitwise_and
     -- (OTT rules 276-337)
     -- <e1,m,r> -> <value v1, m',r'>
     -- <e2,m',r'> -> <value v2, m'',r''>
@@ -662,19 +662,20 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
 
       | Expr.not_expr e =>
           match e.toValue? with
-                  -- Rule :  not_expr
-                  --              <e,m,r> -> <value s, m',r'>
-                  --   ---------------------------------------------------------------
-                  --  <printString e,m,r> -> <value unit, m',r'>
+            -- Rule :  not_expr_value
+            --              <pm, e,m,r> -> <pm, value b, m',r'>
+            --                not b = b'
+            --    ---------------------------------------------------------------
+            --           <pm, not_expr e,m,r> -> <pm, value b', m',r'>
 
           | some (Value.bool b) =>
 
             return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.bool (!b))))
           | _ =>
-               -- Rule :  not_expr_arg_reduce
-               --              <e,m,r> -> <expr e',m',r'>
-               --    ---------------------------------------------------------------
-               --       <printString e,m,r> -> <expr (printString e'),m',r'>
+                  --        Rule :  not_expr_reduce_arg
+                  --         <pm, e,m,r> -> <pm, expr e',m',r'>
+                  --    -----------------------------------------------------
+                  --    <pm, not_expr e,m,r> -> <pm, expr (not_expr e'),m',r'>
 
 
             match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with

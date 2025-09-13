@@ -436,7 +436,7 @@ theorem typecheck_PExpr_preserves_typestate :
             | arrow st1 st2 _p tcl =>
               -- non-pure arrow case; not expected under pureCtx hypothesis
               simp_all
-            | parrow st1 st2 _p tcl =>
+            | parrow st1 st2 p tcl =>
               simp [h5] at H
               cases h6: typecheckExpr
                             { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv',
@@ -477,7 +477,7 @@ theorem typecheck_PExpr_preserves_typestate :
                     | mk x body env =>
                       simp_all
                       cases h8: typecheckExpr
-                            { pc := joinPoison ctx.pc p1,
+                            { pc := joinPoison p (joinPoison ctx.pc p1),
                               memEnv := result2.memEnv',
                               varEnv := VarTypeEnv.update env x { etyp := etyp2, poison := joinPoison ctx.pc p2, pred := pred2 },
                               tagEnv := result2.tagEnv',
@@ -497,7 +497,7 @@ theorem typecheck_PExpr_preserves_typestate :
                             simp_all
                           | true =>
                             simp_all [pure, Except.pure]
-                            have C'' : ({ pc := joinPoison ctx.pc p1,
+                            have C'' : ({ pc := joinPoison p (joinPoison ctx.pc p1),
                                           memEnv := result2.memEnv',
                                           varEnv := VarTypeEnv.update env x { etyp := etyp2, poison := joinPoison ctx.pc p2, pred := pred2 },
                                           tagEnv := result2.tagEnv',
@@ -507,7 +507,7 @@ theorem typecheck_PExpr_preserves_typestate :
                                 := by simp_all
                             have hb : body.toExpr.toPExpr = Except.ok body := by simp
                             have IH3 := IH fuel' hfuel
-                              { pc := joinPoison ctx.pc p1,
+                              { pc := joinPoison p (joinPoison ctx.pc p1),
                                 memEnv := result2.memEnv',
                                 varEnv := VarTypeEnv.update env x { etyp := etyp2, poison := joinPoison ctx.pc p2, pred := pred2 },
                                 tagEnv := result2.tagEnv',

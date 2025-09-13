@@ -762,7 +762,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p1, _pred1⟩ := result1.qualType
     match etyp1 with
-    | ETyp.arrow st1 st2 _p tcl =>
+    | ETyp.arrow st1 st2 p tcl =>
       -- In pure context, disallow applying impure arrow
       if ctx.pureCtx then
         throw "Pure context disallows application of impure function"
@@ -780,7 +780,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt
-        let ctx'' := { ctx with pc := joinPoison ctx.pc p1, memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' ,nextTag := result2.nextTag', nextLoc := result2.nextLoc' }
+        let ctx'' := { ctx with pc := joinPoison p (joinPoison ctx.pc p1), memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' ,nextTag := result2.nextTag', nextLoc := result2.nextLoc' }
 
         let result3 ← typecheckExpr ctx'' body fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
@@ -793,7 +793,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         let poison := joinPoison ctx.pc p3
         let qt : QTyp := ⟨etyp3, poison, pred3⟩
         return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc', nextTag' := result3.nextTag' }
-    | ETyp.parrow st1 st2 _p tcl =>
+    | ETyp.parrow st1 st2 p tcl =>
       -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
@@ -809,7 +809,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt
         -- Set pure context for the body re-typechecking
-        let ctx'' := { ctx with memEnv := result2.memEnv',pc := joinPoison ctx.pc p1, varEnv := env', tagEnv := result2.tagEnv', pureCtx := true, nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+        let ctx'' := { ctx with memEnv := result2.memEnv',pc := joinPoison p (joinPoison ctx.pc p1), varEnv := env', tagEnv := result2.tagEnv', pureCtx := true, nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
         let result3 ← typecheckExpr ctx'' (PExpr.toExpr body) fuel
         let ⟨etyp3, p3, pred3⟩ := result3.qualType
 
@@ -967,6 +967,14 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
       let qt : QTyp := ⟨ETyp.unit, poison, none  ⟩
       return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
+
+/- Rule: not_expr_typing (Ott rule: not_expr_typing)
+
+pm ; pc ; G ; S ; L |- e : bool :> p { P } -| G' ; L'
+----------------------------------------------------------------------  :: not_expr_typing
+pm ; pc ; G ; S ; L |- not_expr e : bool :> join pc p { no_pred } -| G' ; L'
+
+-/
 
 def typecheckNot (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
