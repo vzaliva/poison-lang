@@ -25,6 +25,10 @@ def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
   | Op.and, Value.num n1, Value.num n2 => some (Value.num (Int.land n1 n2))
   | _, _, _ => none
 
+def evalUnaryOp (op : UnaryOp) (v : Value) : Option Value :=
+  match op, v  with
+  | UnaryOp.not, Value.bool b => some (Value.bool (!b))
+  | _, _ => none
 
 -- Result of a single evaluation step
 inductive StepResult where
@@ -660,33 +664,34 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
             | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
-      | Expr.not_expr e =>
+      -- Unary operations
+      | Expr.unaryop e op =>
+      -- Check if operand is a value
           match e.toValue? with
-            -- Rule :  not_expr_value
-            --              <pm, e,m,r> -> <pm, value b, m',r'>
-            --                not b = b'
-            --    ---------------------------------------------------------------
-            --           <pm, not_expr e,m,r> -> <pm, value b', m',r'>
+          | some v =>
+            match evalUnaryOp op v with
+            | some v' => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value v'))
+            | none =>
+              let vStr := ValueToTypeString v
+              let opStr := toString op
+              return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {vStr}")
 
-          | some (Value.bool b) =>
-
-            return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.bool (!b))))
-          | _ =>
-                  --        Rule :  not_expr_reduce_arg
-                  --         <pm, e,m,r> -> <pm, expr e',m',r'>
-                  --    -----------------------------------------------------
-                  --    <pm, not_expr e,m,r> -> <pm, expr (not_expr e'),m',r'>
-
-
-            match <- step (fuel - 1) verbose config (ExprOrValue.expr e) with
+          | none =>
+            match (<- step (fuel - 1) verbose config (ExprOrValue.expr e)) with
             | StepResult.progress config' ev' =>
               match ev' with
-              | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.not_expr e')))
-              | ExprOrValue.value (Value.bool b) =>
-                  return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.bool (!b))))
-              | _ => return stepReturn fuel verbose (StepResult.error "Not operator expects argument to evaluate to a boolean.")
+              | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.unaryop e' op)))
+              | ExprOrValue.value v =>
+                --  operand reduced to value, retry the operation
+                match evalUnaryOp op v with
+                | some v' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.value v'))
+                | none =>
+                  let vStr := ValueToTypeString v
+                  let opStr := toString op
+                  return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {vStr}")
             | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
             | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
+
 ----------------------------------------------------------------------------------------
 termination_by fuel
 

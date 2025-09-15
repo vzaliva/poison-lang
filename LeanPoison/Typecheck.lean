@@ -202,7 +202,12 @@ def opEType? : Op → ETyp → ETyp → Option ETyp
   | .neq,  .int,   .int  => some .bool
   | _,    _,     _     => none
 
+inductive OpUnaryEType : UnaryOp → ETyp → ETyp → Prop where
+  | not_bool : OpUnaryEType UnaryOp.not ETyp.bool ETyp.bool
 
+def opUnaryEType? : UnaryOp → ETyp → Option ETyp
+  | .not, .bool  => some .bool
+  | _,    _     => none
 
 /--
  Helper function to check if two PExprs are syntactically equal modulo
@@ -489,7 +494,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.frand e => typecheckFrand ctx e fuel
     | Expr.printString e => typecheckPrintString ctx e fuel
     | Expr.printInt e => typecheckPrintInt ctx e fuel
-    | Expr.not_expr e => typecheckNot ctx e fuel
+    | Expr.unaryop e op => typecheckUnaryOp ctx e op fuel
 
 termination_by fuel
 
@@ -976,17 +981,19 @@ pm ; pc ; G ; S ; L |- not_expr e : bool :> join pc p { no_pred } -| G' ; L'
 
 -/
 
-def typecheckNot (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+def typecheckUnaryOp (ctx : TypeContext) (e : Expr) (op : UnaryOp) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
-    | 0        => throw "Out of fuel"
-    | fuel + 1 =>
-            do
-              let result ← typecheckExpr ctx e (fuel - 1)
-              let ⟨etyp, poison, _  ⟩ := result.qualType
-              if etyp != ETyp.bool then throw ("Argument Expression to not must have type bool")
-              else
-                let qt' : QTyp := ⟨ETyp.bool , joinPoison ctx.pc poison, none ⟩
-                return {result with qualType := qt' }
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
+    let result ← typecheckExpr ctx e fuel
+    let ⟨etyp, p, _  ⟩ := result.qualType
+
+    match opUnaryEType? op etyp with
+    | some r =>
+        let poison := joinPoison ctx.pc p
+        let qt : QTyp := ⟨r, poison, none⟩
+        return { result with qualType := qt }
+    | none => throw s!"Operation argument types do not match.\n  Expression Type: {etyp}\n  UnaryOp: {op}"
 termination_by fuel
 
 end

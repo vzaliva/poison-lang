@@ -31,6 +31,10 @@ def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
   | Op.and, Value.num n1, Value.num n2 => some (Value.num (Int.land n1 n2))
   | _, _, _ => none
 
+def evalUnaryOp (op : UnaryOp) (v : Value) : Option Value :=
+  match op, v  with
+  | UnaryOp.not, Value.bool b => some (Value.bool (!b))
+  | _, _ => none
 mutual
 
   /-- Big-step evaluation: evaluates an expression to a value using fuel.
@@ -73,14 +77,18 @@ mutual
           | .error msg => return .error msg
         | .error msg => return .error msg
 
-      -- Not expression
-      | Expr.not_expr e => do
+      -- Unary operations
+      | Expr.unaryop e op => do
         match <- beval (fuel - 1) config e verbose with
-        | .ok (config', Value.bool b) =>
-          return .ok (config', Value.bool (!b))
-        | .ok _ => let expStr := reprExpr e 0
-                   return .error s!"Runtime type error: not expects a boolean , {expStr} evaluated to non-boolean"
-        | .error msg => return .error msg
+         | .ok (config', v) =>
+            match evalUnaryOp op v with
+            | some v' => return .ok (config', v')
+            | none =>
+              let vStr := ValueToTypeString v
+              let opStr := toString op
+              return .error s!"Runtime type error: cannot apply operation {opStr} to {vStr}"
+         | .error msg => return .error msg
+
 
       -- References
       | Expr.newRef e => do

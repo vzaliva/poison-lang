@@ -51,6 +51,9 @@ operations, op :: 'Op_' ::=            {{ com operations }}
   | &                       ::   :: and 
   | |                       ::   :: or
 
+unary_op :: 'UnaryOp_' ::=      {{ com operations }}
+  | not                     ::   :: not 
+
 % Surface types for annotations (no runtime info)
 styp, ST :: 'ST_' ::=      {{ com surface types (for annotations) }}
   | int                    ::   :: int
@@ -69,6 +72,7 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | s                       ::   :: str
   | x                       ::   :: var
   | e1 op e2                ::   :: op
+  | unary_op e              ::   :: unary_op
   | if e1 then e2 else e3   ::   :: if
   | ref e                   ::   :: new_ref
   | e1 := e2                ::   :: assign
@@ -84,7 +88,7 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | frand e                 ::   :: frand_app  {{ com random float generation }}
   | printInt e              ::   :: printInt_app
   | printString e           ::   :: printString_app 
-  | not_expr e              ::   :: not_expr  
+
 
 pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | n                       ::   :: num
@@ -380,17 +384,17 @@ b1 | b2 = b3
 ------------------------------- :: op_reduce_right
 <pm, e1 op e2,m,r> -> <pm, expr (e1 op e2'),m',r'>
 
-
-% notExpr argument reduction
-<pm, e,m,r> -> <pm, expr e',m',r'>
------------------------------- :: not_expr_reduce_arg
-<pm, not_expr e,m,r> -> <pm, expr (not_expr e'),m',r'>
-
-% Compute notExpr 
-<pm, e,m,r> -> <pm, value b, m',r'>
+<pm, e,m,r> -> <pm, value b, m' ,r'>
 not b = b'
---------------------------------------------------------------- :: not_expr_value
-<pm, not_expr e,m,r> -> <pm, value b', m',r'>
+--------------------------------------------------------------- :: unary_op_not_value
+<pm, not e,m,r> -> <pm, value b', m',r'>
+
+% reduce argument unary op 
+<pm, e,m,r> -> <pm, expr e',m',r'>
+------------------------------ :: unary_op_reduce_arg
+<pm, unary_op e,m,r> -> <pm, expr (unary_op e'),m',r'>
+
+
 
 
 % ref argument reduction
@@ -652,11 +656,10 @@ b1 | b2 = b3
 ----------------------   :: b_op_or
 <pm, e1 | e2, m, r> ==> < b3, m'', r''>
 
-% Not expression  
 <pm, e, m, r> ==> < b, m', r'>
 not b = b'
---------------------------------------------------------------- :: b_not_expr
-<pm, not_expr e, m, r> ==> < b', m', r'>
+--------------------------------------------------------------- :: unary_op_not 
+<pm, not e, m, r> ==> < b', m', r'>
 
 % References
 <pm, e, m, r> ==> < n, m', r'>
@@ -849,6 +852,11 @@ pm ; pc ; G' ; S ; L' |- e2 : bool :> p'' { P2 } -| G'' ; L''
 -------------------------------  :: op_or
 pm ; pc ; G ; S ; L |- e1 | e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
 
+% Typing for unary operators
+pm ; pc ; G ; S ; L |- e : bool :> p { P } -| G' ; L'
+----------------------------------------------------------------------  :: unary_op_not_typing
+pm ; pc ; G ; S ; L |- not e : bool :> join pc p { no_pred } -| G' ; L'
+
 % New ref creation with region types
 % ref creates a reference with pc poison status and allocates fresh location l
 % The region type ref T @ l precisely tracks which location is allocated
@@ -977,10 +985,6 @@ pm ; pc ; G ; S ; L |- e : string :> p { P } -| G' ; L'
 ----------------------------------------------------------------------  :: printString_typing
 pm ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
 
-% Typing for not_expr - takes boolean argument, returns boolean 
-pm ; pc ; G ; S ; L |- e : bool :> p { P } -| G' ; L'
-----------------------------------------------------------------------  :: not_expr_typing
-pm ; pc ; G ; S ; L |- not_expr e : bool :> join pc p { no_pred } -| G' ; L'
 
 % Typing for Let Bindings
 

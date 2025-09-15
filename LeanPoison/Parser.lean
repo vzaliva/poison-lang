@@ -170,16 +170,24 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
           | _ => .error s!"Unknown operator: {opStr}"
       | _ => .error s!"Invalid binary_expr structure: {contents}"
 
-  | Element.Element "not_expr" _ contents => do
+  | Element.Element "unary_expr" _ contents => do
     let elems := contents.filterMap fun
       | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
-
-    match elems.toList with
-    | [element] =>
-          return Expr.not_expr (<- xmlToExpr element)
-    | _ => .error s!"Invalid not_expr structure: {contents}"
+    let validOps := ["not"]
+    let ops := contents.filterMap fun
+      | Content.Character s =>
+          let trimmed := s.trim
+          if trimmed ∈ validOps then some trimmed else none
+      | _ => none
+    match (elems.toList,ops.toList) with
+    | ([expr],[opStr]) =>
+        let expr ← xmlToExpr expr
+        match opStr with
+        | "not" => return Expr.unaryop expr UnaryOp.not
+        | _ => .error s!"Unknown unary operator: {opStr}"
+    | _ => .error s!"Invalid Unary expression structure: {contents}"
 
   | Element.Element "app_expr" _ contents =>
     do

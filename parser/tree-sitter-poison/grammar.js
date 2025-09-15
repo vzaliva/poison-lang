@@ -40,7 +40,7 @@ module.exports = grammar({
       $.frand_expr ,
       $.printStr_expr,
       $.printInt_expr,
-      $.not_expr
+      $.unary_expr
     ),
     
     // 1. Sequencing: e1 ; e2
@@ -140,8 +140,8 @@ module.exports = grammar({
       field("op", choice("+", "-", "*","/", ">", ">=", "<","<=", "==","&","|","!=")),
       field("right", $.expr)
     )),
-    not_expr: $ => prec.left(8,seq(
-      "not",
+    unary_expr: $ => prec.left(8,seq(
+      field("op", choice("not")),
       field("value", $.expr)
     )),
 
