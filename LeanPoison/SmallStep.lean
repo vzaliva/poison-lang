@@ -665,7 +665,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
       -- Unary operations
-      | Expr.unaryop e op =>
+      | Expr.unaryop op e =>
       -- Check if operand is a value
           match e.toValue? with
           | some v =>
@@ -680,7 +680,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
             match (<- step (fuel - 1) verbose config (ExprOrValue.expr e)) with
             | StepResult.progress config' ev' =>
               match ev' with
-              | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.unaryop e' op)))
+              | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.unaryop op e')))
               | ExprOrValue.value v =>
                 --  operand reduced to value, retry the operation
                 match evalUnaryOp op v with

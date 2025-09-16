@@ -50,7 +50,7 @@ operations, op :: 'Op_' ::=            {{ com operations }}
   | !=                      ::   :: neq
   | &&                      ::   :: and 
   | &                       ::   :: bitwise_and
-  | |                       ::   :: or
+  | ||                      ::   :: or
 
 unary_op :: 'UnaryOp_' ::=      {{ com operations }}
   | not                     ::   :: not 
@@ -243,7 +243,7 @@ formula :: formula_ ::=
   | n1 != n2 = b           :: :: neq         {{ coq ([[n1]]!=[[n2]]=[[b]]) }}
   | n1 & n2 = n3           :: :: bitwise_and {{ coq ([[n1]]&[[n2]]=[[n3]]) }}
   | b1 && b2 = b3          :: :: band        {{ coq ([[b1]]&&[[b2]]=[[b3]]) }}
-  | b1 | b2 = b3           :: :: bor         {{ coq ([[b1]]||[[b2]]=[[b3]]) }}
+  | b1 || b2 = b3          :: :: bor         {{ coq ([[b1]]||[[b2]]=[[b3]]) }}
   | not b = b'             :: :: not_bool   {{ coq ([[b']] = not [[b]]) }}
   | m ( l ) = n            :: :: lookup      {{ coq (List.find [[l]] [[m]] = Some ([[n]])) }}   
   | G ( l ) = Q        :: :: type_lookup {{ coq (lookup_location_type [[l]] [[G]] = Some ([[Q]])) }}   
@@ -371,9 +371,9 @@ n1 & n2 = n3
 
 <pm, e1,m,r> -> <pm, value b1, m' ,r'>
 <pm, e2,m',r'> -> <pm, value b2, m'' ,r''>
-b1 | b2 = b3
+b1 || b2 = b3
 ----------------------   :: op_or
-<pm, e1 | e2, m, r> -> <pm, value b3, m'', r''>
+<pm, e1 || e2, m, r> -> <pm, value b3, m'', r''>
 
 % reduce left
 <pm, e1,m,r> -> <pm, expr e1',m',r'>
@@ -637,7 +637,7 @@ n1 = n2 = b
 <pm, e2, m', r'> ==> < n2, m'', r''>
 n1 != n2 = b
 ----------------------   :: b_op_neq
-<pm, e1 = e2, m, r> ==> < b, m'', r''>
+<pm, e1 != e2, m, r> ==> < b, m'', r''>
 
 <pm, e1, m, r> ==> < b1, m', r'>
 <pm, e2, m', r'> ==> < b2, m'', r''>
@@ -653,9 +653,9 @@ n1 & n2 = n3
 
 <pm, e1, m, r> ==> < b1, m', r'>
 <pm, e2, m', r'> ==> < b2, m'', r''>
-b1 | b2 = b3
+b1 || b2 = b3
 ----------------------   :: b_op_or
-<pm, e1 | e2, m, r> ==> < b3, m'', r''>
+<pm, e1 || e2, m, r> ==> < b3, m'', r''>
 
 <pm, e, m, r> ==> < b, m', r'>
 not b = b'
@@ -851,7 +851,7 @@ pm ; pc ; G ; S ; L |- e1 & e2 : int :> join pc join p' p'' { no_pred } -| G'' ;
 pm ; pc ; G ; S ; L |- e1 : bool :> p' { P1 } -| G' ; L'  
 pm ; pc ; G' ; S ; L' |- e2 : bool :> p'' { P2 } -| G'' ; L''
 -------------------------------  :: op_or
-pm ; pc ; G ; S ; L |- e1 | e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 || e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
 
 % Typing for unary operators
 pm ; pc ; G ; S ; L |- e : bool :> p { P } -| G' ; L'

@@ -494,7 +494,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.frand e => typecheckFrand ctx e fuel
     | Expr.printString e => typecheckPrintString ctx e fuel
     | Expr.printInt e => typecheckPrintInt ctx e fuel
-    | Expr.unaryop e op => typecheckUnaryOp ctx e op fuel
+    | Expr.unaryop op e => typecheckUnaryOp ctx op e fuel
 
 termination_by fuel
 
@@ -981,7 +981,7 @@ pm ; pc ; G ; S ; L |- not_expr e : bool :> join pc p { no_pred } -| G' ; L'
 
 -/
 
-def typecheckUnaryOp (ctx : TypeContext) (e : Expr) (op : UnaryOp) (fuel : Nat):TypecheckM TypeResult :=
+def typecheckUnaryOp (ctx : TypeContext) (op : UnaryOp) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do

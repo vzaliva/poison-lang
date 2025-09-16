@@ -78,7 +78,7 @@ mutual
         | .error msg => return .error msg
 
       -- Unary operations
-      | Expr.unaryop e op => do
+      | Expr.unaryop op e => do
         match <- beval (fuel - 1) config e verbose with
          | .ok (config', v) =>
             match evalUnaryOp op v with
