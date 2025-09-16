@@ -816,11 +816,15 @@ Note: Variable bindings are local to expressions and do not persist as program o
 Let the critical inputs be the entries of $S$ in order, written $(inp_1, \ldots, inp_{m+n})$, where each $inp_i$ is either
 one of the listed locations or one of the listed variables.
 
-For a given execution, the regime vector $R = (r_1, \ldots, r_n)$ where $r_i \in \{\text{true}, \text{false}\}$ captures
-the validity of each critical input:
+For a given execution, the regime vector $R = (r_1, \ldots, r_n)$ where $r_i \in \{\text{true}, \text{false}\}$ records for each critical input whether it is \emph{valid}. We enforce an invariant on the specification $S$ for critical inputs:
 \begin{itemize}
-    \item If $inp_i$ has no predicate: $r_i = \text{true}$ (always valid)
-    \item If $inp_i$ has predicate $P_i$: $r_i = \text{true}$ iff the input value satisfies $P_i$
+    \item If an input has no predicate, it is \emph{statically clean} in $S$.
+    \item If an input has a predicate $P_i$, it is \emph{initially poisoned} in $S$ and may be de-poisoned when $P_i$ holds at points where the program checks the corresponding guard.
+\end{itemize}
+Under this invariant, we define the regime bits as follows:
+\begin{itemize}
+    \item If $inp_i$ has no predicate: $r_i = \text{true}$ (trivially valid by construction).
+    \item If $inp_i$ has predicate $P_i$: $r_i = \text{true}$ iff the input's runtime value satisfies $P_i$; otherwise $r_i = \text{false}$.
 \end{itemize}
 
 \textbf{Note:} We deliberately exclude non-critical inputs from the regime
@@ -842,7 +846,7 @@ Given two executions with the same observable behaviour form as defined above:
 $\langle e, \mu_1, \rho_1 \rangle \Downarrow \langle \mu'_1, v_1 \rangle$
 and $\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu'_2, v_2 \rangle$ where:
 \begin{itemize}
-    \item Regime consistency: Both executions have the same regime vector $R$ (note: for inputs without predicates, $r_i$ is always \text{true})
+    \item Regime consistency: Both executions have the same regime vector $R$ (for inputs without predicates, $r_i$ is always \text{true} by the above invariant)
     \item Valid critical inputs identical:
     \begin{itemize}
         \item $\forall i$ where $r_i = \text{true}$ and input $i$ is location $l$: $\mu_1(l) = \mu_2(l)$

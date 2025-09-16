@@ -42,8 +42,10 @@ def inputKeysUnique (s : InputSpec) : Prop :=
   Nodup (s.vars.map Prod.fst)
 
 -- Regime vector (split: locations and variables, fixed order given by
--- s.locs/s.vars) Specifies whether given criticial input value satisfies the
--- predicate (if any). Always True for inputs without predicates.
+-- s.locs/s.vars) records, for each critical input, whether it is valid:
+-- for entries with a predicate, whether the predicate holds on the runtime value;
+-- for entries without a predicate (which by invariant are statically clean),
+-- the bit is trivially true.
 structure Regime where
   locBits : List Bool
   varBits : List Bool
@@ -102,10 +104,17 @@ def observablesEqual (obs : ObservableSpec)
 def mkInit (μ : Memory) (ρ : VarEnv) : Config :=
   { memory := μ, varEnv := ρ, nextLoc := 0, pureMode := false }
 
--- Well-formedness: memory stores integers at critical locations
+-- Well-formedness: memory stores integers at critical locations; additionally,
+-- align predicate and poison for critical inputs: no predicate ⇒ clean;
+-- predicate present ⇒ initially poisoned. Note: we us boolean functon isSome,
+-- but if needed to simplify proofs we can replace it with similar inductive
+-- predicate.
 def wfInputSpec (s : InputSpec) : Prop :=
   inputKeysUnique s ∧
-  (∀ l qt, s.locs.lookup l = some qt → qt.etyp = ETyp.int)
+  (∀ l qt, s.locs.lookup l = some qt →
+     qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome) ∧
+  (∀ x qt, s.vars.lookup x = some qt →
+     qt.poison = qt.pred.isSome)
 
 -- Well-formedness: observable spec
 def wfObsSpec (_obs : ObservableSpec) : Prop := True
@@ -163,9 +172,6 @@ inductive agreeLocUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ�
   | true_eq (addr : Address) (qt : QTyp)
       (h : μ₁.lookup addr = μ₂.lookup addr) :
       agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ true (addr, qt)
-  | false_none (addr : Address) (qt : QTyp)
-      (hnone : qt.pred = none) :
-      agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false (addr, qt)
   | false_some (addr : Address) (qt : QTyp)
       (hsome : ∃ tp, qt.pred = some tp)
       (h1 : ∃ n1, μ₁.lookup addr = some n1 ∧ ¬ qtypPredHolds qt μ₁ ρ₁ (Value.num n1))
@@ -178,9 +184,6 @@ inductive agreeVarUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ�
   | true_eq (x : Name) (qt : QTyp)
       (h : ρ₁.lookup x = ρ₂.lookup x) :
       agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ true (x, qt)
-  | false_none (x : Name) (qt : QTyp)
-      (hnone : qt.pred = none) :
-      agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false (x, qt)
   | false_some (x : Name) (qt : QTyp)
       (hsome : ∃ tp, qt.pred = some tp)
       (h1 : ∃ v1, ρ₁.lookup x = some v1 ∧ ¬ qtypPredHolds qt μ₁ ρ₁ v1)
