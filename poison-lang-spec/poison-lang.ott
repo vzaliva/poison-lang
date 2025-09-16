@@ -48,7 +48,8 @@ operations, op :: 'Op_' ::=            {{ com operations }}
   | <                       ::   :: lt
   | =                       ::   :: eq
   | !=                      ::   :: neq
-  | &                       ::   :: and 
+  | &&                      ::   :: and 
+  | &                       ::   :: bitwise_and
   | |                       ::   :: or
 
 unary_op :: 'UnaryOp_' ::=      {{ com operations }}
@@ -241,7 +242,7 @@ formula :: formula_ ::=
   | n1 = n2 = b            :: :: eq          {{ coq ([[n1]]=[[n2]]=[[b]]) }}
   | n1 != n2 = b           :: :: neq         {{ coq ([[n1]]!=[[n2]]=[[b]]) }}
   | n1 & n2 = n3           :: :: bitwise_and {{ coq ([[n1]]&[[n2]]=[[n3]]) }}
-  | b1 & b2 = b3           :: :: band        {{ coq ([[b1]]&&[[b2]]=[[b3]]) }}
+  | b1 && b2 = b3          :: :: band        {{ coq ([[b1]]&&[[b2]]=[[b3]]) }}
   | b1 | b2 = b3           :: :: bor         {{ coq ([[b1]]||[[b2]]=[[b3]]) }}
   | not b = b'             :: :: not_bool   {{ coq ([[b']] = not [[b]]) }}
   | m ( l ) = n            :: :: lookup      {{ coq (List.find [[l]] [[m]] = Some ([[n]])) }}   
@@ -358,9 +359,9 @@ n1 != n2 = b
 
 <pm, e1,m,r> -> <pm, value b1, m' ,r'>
 <pm, e2,m',r'> -> <pm, value b2, m'' ,r''>
-b1 & b2 = b3
+b1 && b2 = b3
 ----------------------   :: op_and
-<pm, e1 & e2, m, r> -> <pm, value b3, m'', r''>
+<pm, e1 && e2, m, r> -> <pm, value b3, m'', r''>
 
 <pm, e1,m,r> -> <pm, value n1, m' ,r'>
 <pm, e2,m',r'> -> <pm, value n2, m'' ,r''>
@@ -640,9 +641,9 @@ n1 != n2 = b
 
 <pm, e1, m, r> ==> < b1, m', r'>
 <pm, e2, m', r'> ==> < b2, m'', r''>
-b1 & b2 = b3
+b1 && b2 = b3
 ----------------------   :: b_op_and
-<pm, e1 & e2, m, r> ==> < b3, m'', r''>
+<pm, e1 && e2, m, r> ==> < b3, m'', r''>
 
 <pm, e1, m, r> ==> < n1, m', r'>
 <pm, e2, m', r'> ==> < n2, m'', r''>
@@ -658,7 +659,7 @@ b1 | b2 = b3
 
 <pm, e, m, r> ==> < b, m', r'>
 not b = b'
---------------------------------------------------------------- :: unary_op_not 
+--------------------------------------------------------------- :: b_unary_op_not 
 <pm, not e, m, r> ==> < b', m', r'>
 
 % References
@@ -840,7 +841,7 @@ pm ; pc ; G ; S ; L |- e1 != e2 : bool :> join pc join p' p'' { no_pred } -| G''
 pm ; pc ; G ; S ; L |- e1 : bool :> p' { P1 } -| G' ; L'  
 pm ; pc ; G' ; S ; L' |- e2 : bool :> p'' { P2 } -| G'' ; L''
 -------------------------------  :: op_and
-pm ; pc ; G ; S ; L |- e1 & e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 && e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
 
 pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
 pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''

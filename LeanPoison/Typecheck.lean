@@ -184,7 +184,7 @@ inductive OpEType : Op → ETyp → ETyp → ETyp → Prop where
   | neq_int : OpEType Op.neq ETyp.int ETyp.int ETyp.bool
   | and_bool : OpEType Op.and ETyp.bool ETyp.bool ETyp.bool
   | or_bool  : OpEType Op.or  ETyp.bool ETyp.bool ETyp.bool
-  | and_int  : OpEType Op.and  ETyp.int  ETyp.int  ETyp.int
+  | bitand_int  : OpEType Op.bitand  ETyp.int  ETyp.int  ETyp.int
 
 def opEType? : Op → ETyp → ETyp → Option ETyp
   | .add, .int,  .int  => some .int
@@ -198,7 +198,7 @@ def opEType? : Op → ETyp → ETyp → Option ETyp
   | .eq,  .int,  .int  => some .bool
   | .and, .bool, .bool => some .bool
   | .or,  .bool, .bool => some .bool
-  | .and,  .int,   .int  => some .int
+  | .bitand, .int,.int  => some .int
   | .neq,  .int,   .int  => some .bool
   | _,    _,     _     => none
 

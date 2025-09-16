@@ -28,6 +28,7 @@ inductive Op : Type where
   | lt  : Op
   | eq  : Op
   | and : Op
+  | bitand : Op
   | or  : Op
   | neq : Op
 

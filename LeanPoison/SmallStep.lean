@@ -22,7 +22,7 @@ def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
   | Op.and, Value.bool b1, Value.bool b2 => some (Value.bool (b1 && b2))
   | Op.or,  Value.bool b1, Value.bool b2 => some (Value.bool (b1 || b2))
   | Op.neq, Value.num n1, Value.num n2 => some (Value.bool (n1 != n2))
-  | Op.and, Value.num n1, Value.num n2 => some (Value.num (Int.land n1 n2))
+  | Op.bitand, Value.num n1, Value.num n2 => some (Value.num (Int.land n1 n2))
   | _, _, _ => none
 
 def evalUnaryOp (op : UnaryOp) (v : Value) : Option Value :=
