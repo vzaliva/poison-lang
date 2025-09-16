@@ -144,9 +144,9 @@ inductive locsRegime (μ : Memory) (ρ : VarEnv) : Bool → (Address × QTyp) �
       (hmem : μ.lookup entry.fst = some n)
       (hpred : qtypPredHolds entry.snd μ ρ (Value.num n)) :
       locsRegime μ ρ true entry
-  | false_ok (entry : Address × QTyp)
-      (hexists : ∃ n, μ.lookup entry.fst = some n)
-      (hno : ∀ n, ¬ (μ.lookup entry.fst = some n ∧ qtypPredHolds entry.snd μ ρ (Value.num n))) :
+  | false_ok (entry : Address × QTyp) (n : Int)
+      (hmem : μ.lookup entry.fst = some n)
+      (hpred : ¬qtypPredHolds entry.snd μ ρ (Value.num n)) :
       locsRegime μ ρ false entry
 
 inductive varsRegime (μ : Memory) (ρ : VarEnv) : Bool → (Name × QTyp) → Prop where
@@ -155,8 +155,8 @@ inductive varsRegime (μ : Memory) (ρ : VarEnv) : Bool → (Name × QTyp) → P
       (hpred : qtypPredHolds entry.snd μ ρ v) :
       varsRegime μ ρ true entry
   | false_ok (entry : Name × QTyp)
-      (hexists : ∃ v, ρ.lookup entry.fst = some v)
-      (hno : ∀ v, ¬ (ρ.lookup entry.fst = some v ∧ qtypPredHolds entry.snd μ ρ v)) :
+      (hget : ρ.lookup entry.fst = some v)
+      (hpred : ¬qtypPredHolds entry.snd μ ρ v) :
       varsRegime μ ρ false entry
 
 -- Regime consistency (aligned pairs via Forall₂ over fixed-order lists).
@@ -203,11 +203,11 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
   -- enriched type to match the observable surface type. If the return
   -- is not observable, no constraint is imposed on the result type.
   let retMatches : Prop :=
-     ∀ et, obs.retEtyp? = some et → res.qualType.etyp = et
+    ∀ et, obs.retEtyp? = some et → res.qualType.etyp = et ∧ res.qualType.poison = false
   -- (ii) the memory must contain entries for each observable location
   -- with the correct enriched type
   let memMatches : Prop :=
-    ∀ l et, obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et
+    ∀ l et, obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et ∧ et.poison = false
   retMatches ∧ memMatches
 
 -- =================================================
@@ -233,15 +233,14 @@ def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) : Prop
 -- environments instantiate the initial typing context. This allows the
 -- context to include non-critical entries needed for typechecking, while
 -- still quantifying over arbitrary values for those entries.
-theorem TypeSystemEnforcesNonInterference_spec_old
+theorem TypeSystemEnforcesNonInterference_spec
   (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
   wfInputSpec s →
   (∃ (ctx : TypeContext),
       ctxMatchesInputSpec s ctx ∧
       ∃ (fuel : Nat) (res : TypeResult),
         typecheck ctx e fuel = .ok res ∧
-      ObsConstraints obs res ∧
-      (∀ μ ρ, inputsConformSpec s μ ρ ∧ runtimeInstantiatesCtx ctx μ ρ))
+      ObsConstraints obs res)
   →
   NonInterferenceSpec e s obs := by
 sorry
