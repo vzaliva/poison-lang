@@ -787,6 +787,17 @@ that the program's observable behaviour depends solely on critical inputs.
 Additionally, the property allows for fault isolation, where some critical
 inputs must be checked for validity before use.
 
+\paragraph{We distinguish three classes of inputs:}
+\begin{itemize}
+  \item \textbf{Critical inputs}: exactly those listed in the specification $S$;
+  they determine the regime vector and thus govern non-interference.
+  \item \textbf{Contextual non-critical inputs}: not listed in $S$ but present
+  in the initial typing context because the program refers to them. They are
+  always recorded as poisoned with \texttt{no\_pred} in the context and must be
+  instantiated at runtime to avoid stuckness; they cannot be de-poisoned.
+  \item \textbf{Unused inputs}: neither listed in $S$ nor present in the initial
+  typing context; they are irrelevant and may be absent at runtime.
+\end{itemize}
 
 \begin{definition}[Input/Output Classification]
 Inputs consist of initial memory and variables:
@@ -880,49 +891,25 @@ in the next definition, we will show that we can conservatively approximate it
 via the type system.
 
 \begin{theorem}[Type System Enforces Non-Interference]
-The poison type system enforces the non-interference property through
-conservative fault tracking, assuming a \emph{critical-only specification} and a
-\emph{conjunctive runtime premise}.
+Assume a well-formed critical-only input specification $S$ and observable spec
+$\text{obs}$. For any initial typing context $(pc,\Gamma,\sigma,\mathcal{L})$
+that matches $S$ (namely: $pc=\text{clean}$, $\mathcal{L}=\emptyset$; the
+entries of $S$ appear in $\Gamma$ and $\sigma$ with exactly the specified
+qualified types; any other entries present are poisoned with $\text{no\_pred}$),
+the following implication holds:
 
-\textbf{Initial typing context:} There exists an initial typing context $(pc,\Gamma,\sigma,\mathcal{L})$ with $pc=\text{clean}$ and empty $\mathcal{L}$ such that:
-\begin{itemize}
-    \item For each $(\ell,Q) \in S.\mathrm{locs}$, we have $\Gamma(\ell)=Q$.
-    \item For each $(x,Q) \in S.\mathrm{vars}$, we have $\sigma(x)=Q$.
-    \item For any entry $(\ell,Q) \in \Gamma$ not listed in $S.\mathrm{locs}$, $Q$ is poisoned and has no predicate.
-    \item For any entry $(x,Q) \in \sigma$ not listed in $S.\mathrm{vars}$, $Q$ is poisoned and has no predicate.
-\end{itemize}
+If typechecking $e$ under this context succeeds and the inferred
+result satisfies the observable constraints (observable locations and, if
+requested, the return are clean), then $e$ satisfies the non-interference
+property with respect to $S$ and $\text{obs}$.
 
-\textbf{Conjunctive runtime premise:} For each run, the initial concrete inputs $(\mu_0,\rho_0)$ satisfy \emph{both}:
-\begin{itemize}
-    \item \emph{Spec conformance}: for every $(\ell,Q) \in S.\mathrm{locs}$, the location $\ell$ is present in $\mu_0$; for every $(x,Q) \in S.\mathrm{vars}$, if $\rho_0(x)=v$ then $v$ has base type $Q$'s enriched type.
-    \item \emph{Context instantiation}: for every $(\ell,Q) \in \Gamma$ there exists a value stored at $\ell$ in $\mu_0$; for every $(x,Q) \in \sigma$ there exists a value bound to $x$ in $\rho_0$ of the appropriate base type.
-\end{itemize}
-
-\textbf{Soundness guarantee:} If the typing derivation starting with $pc = \text{clean}$ yields:
-\begin{itemize}
-    \item If $v_{obs} = \text{true}$ then $\text{clean} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : T \triangleright \text{clean} \{ P \} \dashv \Gamma' ; \mathcal{L}'$;
-    otherwise, no constraint is imposed on the returned type (typechecking still produces $\Gamma'$).
-    \item $\Gamma'(l) = T_l \triangleright \text{clean} \{ P_l \}$ for each $l \in L_{obs}$
-\end{itemize}
-
-Then the program satisfies the non-interference property because:
-\begin{itemize}
-    \item The type system's conservative poison propagation ensures that any
-    value marked \texttt{clean} has no data or control dependencies on poisoned
-    values
-    \item Since any unlisted inputs that appear in the initial context are marked
-    as poisoned without predicates (and thus cannot be de-poisoned), a clean
-    observable output implies no dependency on non-critical inputs
-    \item For critical inputs with predicates, the type system tracks when
-    predicates are checked (via $\mathcal{L}$) to enable de-poisoning.
-\end{itemize}
-
-This shows how the type system's poison tracking (a syntactic property) ensures
-semantic non-interference (a behavioural property).
+The runtime premises for each compared run are: (i) critical inputs conform to
+$S$, and (ii) the concrete initial memory and environment instantiate the whole
+context $(pc,\Gamma,\sigma,\mathcal{L})$.
 \end{theorem}
 
-The predicate system enables graceful degradation: programs can produce correct 
-outputs even when some critical inputs are faulty, provided those inputs have 
+The predicate system enables graceful degradation: programs can produce correct
+outputs even when some critical inputs are faulty, provided those inputs have
 associated validity checks that are properly exercised.
 
 \subsection{Non-Completeness}

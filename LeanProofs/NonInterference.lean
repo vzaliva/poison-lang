@@ -40,6 +40,7 @@ open List
 /-- Keys are unique in both `s.locs` (addresses) and `s.vars` (names). -/
 def inputKeysUnique (s : InputSpec) : Prop :=
   Nodup (s.vars.map Prod.fst)
+  -- for `s.locs` we don't need to check uniqueness because it is implemented as a HashMap
 
 -- Regime vector (split: locations and variables, fixed order given by
 -- s.locs/s.vars) records, for each critical input, whether it is valid:
@@ -210,37 +211,34 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
     ∀ l et, obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et ∧ et.poison = false
   retMatches ∧ memMatches
 
--- =================================================
+-- ==========================
 -- Non-Interference property
--- =================================================
-def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) : Prop :=
+-- ==========================
+def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) : Prop :=
+  -- the following three premises are the same as in the theorem premise,
+  -- we include them here to make NonInterferenceSpec more self-contained
   wfInputSpec s →
   wfObsSpec obs →
+  ctxMatchesInputSpec s ctx ->
+
   ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (R : Regime)
     (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
-    inputsConformSpec s μ₁ ρ₁ →
-    inputsConformSpec s μ₂ ρ₂ →
-    consistentRegimeSpec R s μ₁ ρ₁ →
-    consistentRegimeSpec R s μ₂ ρ₂ →
+    inputsConformSpec s μ₁ ρ₁ →  inputsConformSpec s μ₂ ρ₂ →
+    runtimeInstantiatesCtx ctx μ₁ ρ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ →
+    consistentRegimeSpec R s μ₁ ρ₁ →  consistentRegimeSpec R s μ₂ ρ₂ →
     agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂ →
-    terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ →
-    terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
+    terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ → terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
     observablesEqual obs cf₁ cf₂ o₁ o₂
 
--- Type system enforces Non-Interference (spec-based statement only)
--- We avoid an overly-strong hypothesis by requiring, for each run we compare,
--- both: (i) critical inputs conform to the spec, and (ii) the runtime
--- environments instantiate the initial typing context. This allows the
--- context to include non-critical entries needed for typechecking, while
--- still quantifying over arbitrary values for those entries.
+-- Type system enforces Non-Interference
 theorem TypeSystemEnforcesNonInterference_spec
   (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
   wfInputSpec s →
-  (∃ (ctx : TypeContext),
-      ctxMatchesInputSpec s ctx ∧
-      ∃ (fuel : Nat) (res : TypeResult),
+  wfObsSpec obs →
+  ∀ (ctx : TypeContext),
+      ctxMatchesInputSpec s ctx →
+      ((∃ (fuel : Nat) (res : TypeResult),
         typecheck ctx e fuel = .ok res ∧
-      ObsConstraints obs res)
-  →
-  NonInterferenceSpec e s obs := by
-sorry
+        ObsConstraints obs res) →
+        NonInterferenceSpec e s obs ctx) := by
+  sorry
