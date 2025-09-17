@@ -40,10 +40,13 @@ open List
 /-- Keys are unique in both `s.locs` (addresses) and `s.vars` (names). -/
 def inputKeysUnique (s : InputSpec) : Prop :=
   Nodup (s.vars.map Prod.fst)
+  -- for `s.locs` we don't need to check uniqueness because it is implemented as a HashMap
 
 -- Regime vector (split: locations and variables, fixed order given by
--- s.locs/s.vars) Specifies whether given criticial input value satisfies the
--- predicate (if any). Always True for inputs without predicates.
+-- s.locs/s.vars) records, for each critical input, whether it is valid:
+-- for entries with a predicate, whether the predicate holds on the runtime value;
+-- for entries without a predicate (which by invariant are statically clean),
+-- the bit is trivially true.
 structure Regime where
   locBits : List Bool
   varBits : List Bool
@@ -102,10 +105,17 @@ def observablesEqual (obs : ObservableSpec)
 def mkInit (μ : Memory) (ρ : VarEnv) : Config :=
   { memory := μ, varEnv := ρ, nextLoc := 0, pureMode := false }
 
--- Well-formedness: memory stores integers at critical locations
+-- Well-formedness: memory stores integers at critical locations; additionally,
+-- align predicate and poison for critical inputs: no predicate ⇒ clean;
+-- predicate present ⇒ initially poisoned. Note: we us boolean functon isSome,
+-- but if needed to simplify proofs we can replace it with similar inductive
+-- predicate.
 def wfInputSpec (s : InputSpec) : Prop :=
   inputKeysUnique s ∧
-  (∀ l qt, s.locs.lookup l = some qt → qt.etyp = ETyp.int)
+  (∀ l qt, s.locs.lookup l = some qt →
+     qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome) ∧
+  (∀ x qt, s.vars.lookup x = some qt →
+     qt.poison = qt.pred.isSome)
 
 -- Well-formedness: observable spec
 def wfObsSpec (_obs : ObservableSpec) : Prop := True
@@ -135,9 +145,9 @@ inductive locsRegime (μ : Memory) (ρ : VarEnv) : Bool → (Address × QTyp) �
       (hmem : μ.lookup entry.fst = some n)
       (hpred : qtypPredHolds entry.snd μ ρ (Value.num n)) :
       locsRegime μ ρ true entry
-  | false_ok (entry : Address × QTyp)
-      (hexists : ∃ n, μ.lookup entry.fst = some n)
-      (hno : ∀ n, ¬ (μ.lookup entry.fst = some n ∧ qtypPredHolds entry.snd μ ρ (Value.num n))) :
+  | false_ok (entry : Address × QTyp) (n : Int)
+      (hmem : μ.lookup entry.fst = some n)
+      (hpred : ¬qtypPredHolds entry.snd μ ρ (Value.num n)) :
       locsRegime μ ρ false entry
 
 inductive varsRegime (μ : Memory) (ρ : VarEnv) : Bool → (Name × QTyp) → Prop where
@@ -146,8 +156,8 @@ inductive varsRegime (μ : Memory) (ρ : VarEnv) : Bool → (Name × QTyp) → P
       (hpred : qtypPredHolds entry.snd μ ρ v) :
       varsRegime μ ρ true entry
   | false_ok (entry : Name × QTyp)
-      (hexists : ∃ v, ρ.lookup entry.fst = some v)
-      (hno : ∀ v, ¬ (ρ.lookup entry.fst = some v ∧ qtypPredHolds entry.snd μ ρ v)) :
+      (hget : ρ.lookup entry.fst = some v)
+      (hpred : ¬qtypPredHolds entry.snd μ ρ v) :
       varsRegime μ ρ false entry
 
 -- Regime consistency (aligned pairs via Forall₂ over fixed-order lists).
@@ -163,9 +173,6 @@ inductive agreeLocUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ�
   | true_eq (addr : Address) (qt : QTyp)
       (h : μ₁.lookup addr = μ₂.lookup addr) :
       agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ true (addr, qt)
-  | false_none (addr : Address) (qt : QTyp)
-      (hnone : qt.pred = none) :
-      agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false (addr, qt)
   | false_some (addr : Address) (qt : QTyp)
       (hsome : ∃ tp, qt.pred = some tp)
       (h1 : ∃ n1, μ₁.lookup addr = some n1 ∧ ¬ qtypPredHolds qt μ₁ ρ₁ (Value.num n1))
@@ -178,9 +185,6 @@ inductive agreeVarUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ�
   | true_eq (x : Name) (qt : QTyp)
       (h : ρ₁.lookup x = ρ₂.lookup x) :
       agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ true (x, qt)
-  | false_none (x : Name) (qt : QTyp)
-      (hnone : qt.pred = none) :
-      agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false (x, qt)
   | false_some (x : Name) (qt : QTyp)
       (hsome : ∃ tp, qt.pred = some tp)
       (h1 : ∃ v1, ρ₁.lookup x = some v1 ∧ ¬ qtypPredHolds qt μ₁ ρ₁ v1)
@@ -200,45 +204,41 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
   -- enriched type to match the observable surface type. If the return
   -- is not observable, no constraint is imposed on the result type.
   let retMatches : Prop :=
-     ∀ et, obs.retEtyp? = some et → res.qualType.etyp = et
+    ∀ et, obs.retEtyp? = some et → res.qualType.etyp = et ∧ res.qualType.poison = false
   -- (ii) the memory must contain entries for each observable location
   -- with the correct enriched type
   let memMatches : Prop :=
-    ∀ l et, obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et
+    ∀ l et, obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et ∧ et.poison = false
   retMatches ∧ memMatches
 
--- =================================================
+-- ==========================
 -- Non-Interference property
--- =================================================
-def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) : Prop :=
+-- ==========================
+def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) : Prop :=
+  -- the following three premises are the same as in the theorem premise,
+  -- we include them here to make NonInterferenceSpec more self-contained
   wfInputSpec s →
   wfObsSpec obs →
+  ctxMatchesInputSpec s ctx ->
+
   ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (R : Regime)
     (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
-    inputsConformSpec s μ₁ ρ₁ →
-    inputsConformSpec s μ₂ ρ₂ →
-    consistentRegimeSpec R s μ₁ ρ₁ →
-    consistentRegimeSpec R s μ₂ ρ₂ →
+    inputsConformSpec s μ₁ ρ₁ →  inputsConformSpec s μ₂ ρ₂ →
+    runtimeInstantiatesCtx ctx μ₁ ρ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ →
+    consistentRegimeSpec R s μ₁ ρ₁ →  consistentRegimeSpec R s μ₂ ρ₂ →
     agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂ →
-    terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ →
-    terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
+    terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ → terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
     observablesEqual obs cf₁ cf₂ o₁ o₂
 
--- Type system enforces Non-Interference (spec-based statement only)
--- We avoid an overly-strong hypothesis by requiring, for each run we compare,
--- both: (i) critical inputs conform to the spec, and (ii) the runtime
--- environments instantiate the initial typing context. This allows the
--- context to include non-critical entries needed for typechecking, while
--- still quantifying over arbitrary values for those entries.
-theorem TypeSystemEnforcesNonInterference_spec_old
+-- Type system enforces Non-Interference
+theorem TypeSystemEnforcesNonInterference_spec
   (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
   wfInputSpec s →
-  (∃ (ctx : TypeContext),
-      ctxMatchesInputSpec s ctx ∧
-      ∃ (fuel : Nat) (res : TypeResult),
+  wfObsSpec obs →
+  ∀ (ctx : TypeContext),
+      ctxMatchesInputSpec s ctx →
+      ((∃ (fuel : Nat) (res : TypeResult),
         typecheck ctx e fuel = .ok res ∧
-      ObsConstraints obs res ∧
-      (∀ μ ρ, inputsConformSpec s μ ρ ∧ runtimeInstantiatesCtx ctx μ ρ))
-  →
-  NonInterferenceSpec e s obs := by
-sorry
+        ObsConstraints obs res) →
+        NonInterferenceSpec e s obs ctx) := by
+  sorry

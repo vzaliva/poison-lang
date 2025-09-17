@@ -1,0 +1,7 @@
+Evaluating file: examples/binary-op-type-mismatch.poison
+
+Type checking error:  Operation argument types do not match.
+  Left: ETyp.string
+  Op:   Op.gte
+  Right: ETyp.bool
+Runtime error: Runtime type error: cannot apply operation Op.gte to string and boolean
