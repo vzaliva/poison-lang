@@ -35,7 +35,7 @@ cache-refresh:
 	rm -rf .lake
 	lake exe cache get!
 
-lean-build: cache
+lean-build: cache config.json
 	lake build
 
 lean-clean:
@@ -45,7 +45,7 @@ parser-clean:
 	$(MAKE) -C parser clean
 	rm -f config.json
 
-test: cache
+test: cache parser   
 	lake build poison-interpreter
 	chmod +x run_tests.sh
 	echo "Running tests with small-step semantics"
