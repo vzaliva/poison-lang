@@ -31,13 +31,10 @@ inductive Op : Type where
   | bitand : Op
   | or  : Op
   | neq : Op
-
   deriving Repr, BEq
 
 inductive UnaryOp : Type where
   | not : UnaryOp   -- unary boolean negation
-
-
   deriving Repr, BEq
 
 
@@ -191,7 +188,7 @@ def reprExpr : Expr → Nat → Std.Format
   | Expr.bool b, _ => s!"Expr.bool {repr b}"
   | Expr.var x, _ => s!"Expr.var {repr x}"
   | Expr.op e1 op e2, _ => s!"Expr.op ({reprExpr e1 0}) {repr op} ({reprExpr e2 0})"
-  | Expr.unaryop op e, _ => s!"Expr.unaryop {repr op} ({reprExpr e 0})"
+  | Expr.unaryop opname e, _ => s!"Expr.unaryop {repr opname} ({reprExpr e 0})"
   | Expr.ite e1 e2 e3, _ => s!"Expr.ite ({reprExpr e1 0}) ({reprExpr e2 0}) ({reprExpr e3 0})"
   | Expr.newRef e, _ => s!"Expr.newRef ({reprExpr e 0})"
   | Expr.assign e1 e2, _ => s!"Expr.assign ({reprExpr e1 0}) ({reprExpr e2 0})"
@@ -261,12 +258,11 @@ instance : ToString Op where
 
 @[instance]
 instance : ToString UnaryOp where
-  toString op := Std.Format.pretty (repr op)
+  toString opname := Std.Format.pretty (repr opname)
 
 @[instance]
 instance : ToString Expr where
   toString e := Std.Format.pretty (repr e)
-
 
 
  -- Helper function to print the type of Value

@@ -116,6 +116,7 @@ def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   | Expr.str s => return .str s
   | Expr.var x => return .var x
   | Expr.op e1 opname e2 => (fun pe1 pe2 => PExpr.op pe1 opname pe2) <$> e1.toPExpr <*> e2.toPExpr
+  | Expr.unaryop opname e => PExpr.unaryop opname <$> e.toPExpr
   | Expr.ite e1 e2 e3 => PExpr.ite <$> e1.toPExpr <*> e2.toPExpr <*> e3.toPExpr
   | Expr.deref e => .deref <$> e.toPExpr
   | Expr.vlet x e1 e2 => (fun pe1 pe2 => .vlet x pe1 pe2) <$> e1.toPExpr <*> e2.toPExpr
@@ -143,6 +144,7 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   | .str s => Expr.str s
   | .var x => Expr.var x
   | .op e1 o e2 => Expr.op (e1.toExpr) o (e2.toExpr)
+  | .unaryop opname e => Expr.unaryop opname (e.toExpr)
   | .ite e1 e2 e3 => Expr.ite (e1.toExpr) (e2.toExpr) (e3.toExpr)
   | .deref e => Expr.deref (e.toExpr)
   | .vlet x e1 e2 => Expr.vlet x (e1.toExpr) (e2.toExpr)

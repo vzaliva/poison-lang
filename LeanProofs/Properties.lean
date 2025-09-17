@@ -46,6 +46,8 @@ theorem joinMemEnv_idempotent : ∀ (m1 : MemoryTypeEnv), joinMemEnvs m1 m1 = m1
     simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2]
   | op e1 o e2 IH1 IH2 =>
     simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2]
+  | unaryop opname e IH =>
+    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH]
   | ite e1 e2 e3 IH1 IH2 IH3 =>
     simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2, IH3]
   | deref e IH =>
@@ -364,8 +366,8 @@ theorem typecheck_PExpr_preserves_typestate :
                 | none =>
                   simp_all
 
-      | unaryop e op =>
-         simp [typecheckExpr] at H
+      | unaryop op e =>
+        simp [typecheckExpr] at H
         (cases fuel with | zero |succ fuel') <;> simp_all [typecheckUnaryOp, bind, Except.bind]
         simp [Expr.toPExpr, Functor.map, Except.map] at P
         (cases h1: e.toPExpr with | error err | ok pe1) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
@@ -373,38 +375,20 @@ theorem typecheck_PExpr_preserves_typestate :
         | error err =>
           simp_all
         | ok result1 =>
-          simp [h3] at H
+          simp [h2] at H
           have hfuel : fuel' < fuel' + 1 + 1 := by linarith
-          have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 C h3
-          rcases IH1 with ⟨H1, H2, H3, H4⟩
-          simp_all
           cases h4: result1.qualType with
-                cases h7: opUnaryEType? op etyp1 with
-                | some etyp3 =>
-                  simp_all [pure, Except.pure]
-                  have C' : ({ pc := ctx.pc,
-                               memEnv := result1.memEnv',
-                               varEnv := ctx.varEnv,
-                               tagEnv := result1.tagEnv',
-                               nextLoc := result1.nextLoc',
-                               nextTag := result1.nextTag',
-                               pureCtx := true } : TypeContext).pureCtx = true
-                              := by simp_all
-                  have IH2 := IH fuel' hfuel
-                            { pc := ctx.pc,
-                              memEnv := result1.memEnv',
-                              varEnv := ctx.varEnv,
-                              tagEnv := result1.tagEnv',
-                              nextLoc := result1.nextLoc',
-                              nextTag := result1.nextTag',
-                              pureCtx := true }
-                            e2 pe2 result2 h2 C' h5
-                  rcases IH2 with ⟨H8, H9, H10⟩
-                  simp_all
-                  cases result; cases result1; cases result2; cases ctx; cases H; simp_all
-                | none =>
-                  simp_all
-
+          | mk etyp p pred =>
+            simp_all
+            cases h7: opUnaryEType? op etyp with
+            | some r =>
+              simp_all [pure, Except.pure]
+              specialize IH fuel' hfuel ctx e pe1 result1 h1 C h2
+              rcases IH with ⟨H8, H9, H10⟩
+              simp_all
+              cases result; cases result1; cases ctx; cases H; simp_all
+            | none =>
+              simp_all
       | vlet x e1 e2 =>
         simp [typecheckExpr] at H
         (cases fuel with | zero |succ fuel') <;> simp_all [typecheckVlet, bind, Except.bind]
