@@ -45,7 +45,7 @@ parser-clean:
 	$(MAKE) -C parser clean
 	rm -f config.json
 
-test: cache config.json
+test: cache parser   
 	lake build poison-interpreter
 	chmod +x run_tests.sh
 	echo "Running tests with small-step semantics"

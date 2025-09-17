@@ -4,6 +4,7 @@
 import LeanPoison.Syntax
 import LeanPoison.Runtime
 import Std.Data.HashMap
+import Mathlib.Data.Int.Bitwise
 open Std
 
 -- Helper functions for operations
@@ -20,7 +21,14 @@ def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
   | Op.eq,  Value.num n1, Value.num n2 => some (Value.bool (n1 == n2))
   | Op.and, Value.bool b1, Value.bool b2 => some (Value.bool (b1 && b2))
   | Op.or,  Value.bool b1, Value.bool b2 => some (Value.bool (b1 || b2))
+  | Op.neq, Value.num n1, Value.num n2 => some (Value.bool (n1 != n2))
+  | Op.bitand, Value.num n1, Value.num n2 => some (Value.num (Int.land n1 n2))
   | _, _, _ => none
+
+def evalUnaryOp (op : UnaryOp) (v : Value) : Option Value :=
+  match op, v  with
+  | UnaryOp.not, Value.bool b => some (Value.bool (!b))
+  | _, _ => none
 
 -- Result of a single evaluation step
 inductive StepResult where
@@ -100,7 +108,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       | none =>
         return stepReturn fuel verbose (StepResult.error s!"var {x} not found")
 
-    -- Rule: op_plus, op_minus, op_mult, op_div, op_gteq, op_lteq, op_gt, op_lt, op_eq, op_and, op_or
+    -- Rule: op_plus, op_minus, op_mult, op_div, op_gteq, op_lteq, op_gt, op_lt, op_eq, op_and, op_or,op_neq,op_bitwise_and
     -- (OTT rules 276-337)
     -- <e1,m,r> -> <value v1, m',r'>
     -- <e2,m',r'> -> <value v2, m'',r''>
@@ -655,6 +663,35 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               | _ => return stepReturn fuel verbose (StepResult.error "printString expects argument to evaluate to a string.")
             | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
             | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
+
+      -- Unary operations
+      | Expr.unaryop op e =>
+      -- Check if operand is a value
+          match e.toValue? with
+          | some v =>
+            match evalUnaryOp op v with
+            | some v' => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value v'))
+            | none =>
+              let vStr := ValueToTypeString v
+              let opStr := toString op
+              return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {vStr}")
+
+          | none =>
+            match (<- step (fuel - 1) verbose config (ExprOrValue.expr e)) with
+            | StepResult.progress config' ev' =>
+              match ev' with
+              | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.unaryop op e')))
+              | ExprOrValue.value v =>
+                --  operand reduced to value, retry the operation
+                match evalUnaryOp op v with
+                | some v' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.value v'))
+                | none =>
+                  let vStr := ValueToTypeString v
+                  let opStr := toString op
+                  return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {vStr}")
+            | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
+            | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
+
 ----------------------------------------------------------------------------------------
 termination_by fuel
 

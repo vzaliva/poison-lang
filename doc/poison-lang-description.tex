@@ -96,6 +96,7 @@ A simple imperative language with references and functions:
 \begin{lstlisting}[language=poison]
 e ::= n | b | x | l                    (* values and variables *)
     | e1 op e2                          (* arithmetic/comparison *)
+    | unary_op e                        (* unary operations *)
     | if e1 then e2 else e3             (* conditionals *)
     | ref e | e1 := e2 | !e             (* references *)
     | unit | e1 ; e2                    (* sequencing *)
@@ -106,6 +107,7 @@ e ::= n | b | x | l                    (* values and variables *)
 
 pe ::= n | b | x | l                   (* pure expressions *)
      | pe1 op pe2 | if pe1 then pe2 else pe3
+     | unary_op pe
      | !pe | unit
      | let x = pe1 in pe2 | pe1 pe2
      (* Note: no ref, :=, while, fn, pfn, or ; allowed *)

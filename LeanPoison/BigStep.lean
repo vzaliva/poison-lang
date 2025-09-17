@@ -4,6 +4,7 @@
 import LeanPoison.Syntax
 import LeanPoison.Runtime
 import Std.Data.HashMap
+import Mathlib.Data.Int.Bitwise
 open Std
 
 namespace LeanPoison
@@ -26,8 +27,14 @@ def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
   | Op.eq,  Value.num n1, Value.num n2 => some (Value.bool (n1 == n2))
   | Op.and, Value.bool b1, Value.bool b2 => some (Value.bool (b1 && b2))
   | Op.or,  Value.bool b1, Value.bool b2 => some (Value.bool (b1 || b2))
+  | Op.neq, Value.num n1, Value.num n2 => some (Value.bool (n1 != n2))
+  | Op.bitand, Value.num n1, Value.num n2 => some (Value.num (Int.land n1 n2))
   | _, _, _ => none
 
+def evalUnaryOp (op : UnaryOp) (v : Value) : Option Value :=
+  match op, v  with
+  | UnaryOp.not, Value.bool b => some (Value.bool (!b))
+  | _, _ => none
 mutual
 
   /-- Big-step evaluation: evaluates an expression to a value using fuel.
@@ -69,6 +76,19 @@ mutual
               return .error s!"Runtime type error: cannot apply operation {opStr} to {v1Str} and {v2Str}"
           | .error msg => return .error msg
         | .error msg => return .error msg
+
+      -- Unary operations
+      | Expr.unaryop op e => do
+        match <- beval (fuel - 1) config e verbose with
+         | .ok (config', v) =>
+            match evalUnaryOp op v with
+            | some v' => return .ok (config', v')
+            | none =>
+              let vStr := ValueToTypeString v
+              let opStr := toString op
+              return .error s!"Runtime type error: cannot apply operation {opStr} to {vStr}"
+         | .error msg => return .error msg
+
 
       -- References
       | Expr.newRef e => do
