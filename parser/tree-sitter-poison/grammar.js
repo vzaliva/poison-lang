@@ -129,7 +129,7 @@ module.exports = grammar({
     )),
 
     // 7. application: e1 e2
-    app_expr: $ => prec.left(3, seq(
+    app_expr: $ => prec.left(6, seq(
       field("func", $.expr),
       field("arg", $.expr)
     )),
