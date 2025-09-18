@@ -762,6 +762,7 @@ termination_by fuel
 
 -/
 def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  dbg_trace s!"TypecheckApp ({repr e1}) ({repr e2}) {fuel}" ;
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
@@ -1036,10 +1037,11 @@ def typecheckExprVerbose (e : Expr) : TypecheckM TypeResult := do
 /-- Type check a program (expression) and return a human-readable result -/
 def typecheckProgram (e : Expr) (verbose : Bool) : String :=
   if verbose then
-   match typecheckExprVerbose e with
-   | .ok result => s!"Type: {repr result.qualType} , MemoryTypeEnv : {repr result.memEnv'} , tagEnv : {repr result.tagEnv'} , nextLoc : {repr result.nextLoc'} "
-   | .error msg => s!"Type error: {msg}"
-   else
-  match typecheckExprSimple e   with
-  | .ok qualType  => s!"Type: {repr qualType}"
-  | .error msg => s!"Type error: {msg}"
+    dbg_trace s!"TypecheckProgram {repr e}" ;
+    match typecheckExprVerbose e with
+    | .ok result => s!"Type: {repr result.qualType} , MemoryTypeEnv : {repr result.memEnv'} , tagEnv : {repr result.tagEnv'} , nextLoc : {repr result.nextLoc'} "
+    | .error msg => s!"Type error: {msg}"
+  else
+    match typecheckExprSimple e   with
+    | .ok qualType  => s!"Type: {repr qualType}"
+    | .error msg => s!"Type error: {msg}"
