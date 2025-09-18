@@ -7,6 +7,9 @@ import LeanPoison.Poison
 import Mathlib.Data.Nat.Basic  -- for Nat.strong_induction_on
 import Mathlib.Tactic
 import Mathlib.Tactic.Linarith
+import Std.Data.HashMap
+
+open Std
 
 -- TODO: Ideally we would not need this but for brevity sometimes we close some
 -- proofs with <;> followed by simp [...] and for some branches some args are
@@ -28,6 +31,35 @@ theorem OpEType.complete {o t₁ t₂ r}
 @[simp] theorem opEType?_iff (o t₁ t₂ r) :
   opEType? o t₁ t₂ = some r ↔ OpEType o t₁ t₂ r :=
   ⟨OpEType.complete, OpEType.sound⟩
+
+theorem combineMaps_idempotent [BEq α] [LawfulBEq α] [Hashable α]
+  (m : HashMap α β)
+  (f : α → Option β → Option β → Option β)
+  (hLL : ∀ k v, f k (some v) none = some v)
+  (hRR : ∀ k v, f k none (some v) = some v)
+  (hLR : ∀ k v, f k (some v) (some v) = some v) :
+  HashMap.Equiv (combineMaps m m f) m := by
+  apply HashMap.Equiv.of_forall_getElem?_eq
+  intros k
+  sorry
+
+theorem joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
+  cases p <;> rfl
+
+theorem joinMemEnv_idempotent' :
+  ∀ (m1 : MemoryTypeEnv), HashMap.Equiv (joinMemEnvs m1 m1) m1 := by
+  intros m1
+  simp [joinMemEnvs]
+  apply combineMaps_idempotent
+  · intros k v; dsimp
+  · intros k v; dsimp
+  · intros k v; dsimp
+    rcases v with ⟨t, p, pred⟩; dsimp
+    rw [beq_self_eq_true]; dsimp
+    congr
+    · apply joinPoison_idempotent
+    · rcases pred with _ | ⟨k, an, pb, ve⟩ <;> dsimp
+      rw [if_pos rfl]
 
 @[simp]
 theorem joinMemEnv_idempotent : ∀ (m1 : MemoryTypeEnv), joinMemEnvs m1 m1 = m1 := by

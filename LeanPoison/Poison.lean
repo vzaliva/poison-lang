@@ -180,6 +180,15 @@ instance : BEq FnTClosure where
 instance : BEq PFnTClosure where
   beq := beqPFnTClosure
 
+theorem rfl_ETyp {t : ETyp} : (beqETyp t t) = true := by
+  sorry
+
+theorem eq_of_beq_ETyp {t1 t2 : ETyp} : (beqETyp t1 t2) = true → t1 = t2 := by
+  sorry
+
+instance : LawfulBEq ETyp where
+  rfl := rfl_ETyp
+  eq_of_beq := eq_of_beq_ETyp
 
 -- Manual BEq instance for PExpr
 def beqPExpr : PExpr → PExpr → Bool
