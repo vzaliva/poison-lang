@@ -762,7 +762,6 @@ termination_by fuel
 
 -/
 def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  dbg_trace s!"TypecheckApp ({repr e1}) ({repr e2}) {fuel}" ;
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
