@@ -3,5 +3,5 @@ Evaluating file: examples/bool-negation.poison
 Type checking passed: Type: QTyp.mk ETyp.bool false none
 Result: false
 Final state:
-  Variable environment: [("z", Value.num 10), ("y", Value.num 5)]
+  Variable environment: []
   Memory: []

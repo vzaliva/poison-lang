@@ -3,5 +3,5 @@ Evaluating file: examples/nested-let-function.poison
 Type checking passed: Type: QTyp.mk ETyp.int false none
 Result: 0
 Final state:
-  Variable environment: [("r", Value.loc 0), ("foo", Value.closure "s" <expr> <env>)]
+  Variable environment: []
   Memory: [(0, 1)]

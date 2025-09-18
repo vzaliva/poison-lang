@@ -3,5 +3,5 @@ Evaluating file: examples/binary-and-or.poison
 Type checking passed: Type: QTyp.mk ETyp.bool false none
 Result: true
 Final state:
-  Variable environment: [("d", Value.bool true), ("c", Value.bool false), ("b", Value.num 10), ("a", Value.num 1)]
+  Variable environment: []
   Memory: []

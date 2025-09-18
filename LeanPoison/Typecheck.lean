@@ -848,12 +848,12 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
     let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
 
     let result2 ← typecheckExpr ctx' e2 fuel
-    let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
+    let ⟨etyp2, p2, pred2⟩ := result2.qualType
    --dbg_trace s!" In typecheck Let ,Poison val for exp {e1} is {p1}"
    -- dbg_trace s!"In typecheck Let ,Poison val for exp {e2} is {p2}"
 
     let poison := joinPoison ctx.pc p2
-    let qt : QTyp := ⟨etyp2, poison, pred2  ⟩
+    let qt : QTyp := ⟨etyp2, poison, pred2⟩
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
 

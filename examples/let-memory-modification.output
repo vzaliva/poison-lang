@@ -1,0 +1,7 @@
+Evaluating file: examples/let-memory-modification.poison
+
+Type checking passed: Type: QTyp.mk ETyp.int false none
+Result: 42
+Final state:
+  Variable environment: []
+  Memory: [(0, 42)]

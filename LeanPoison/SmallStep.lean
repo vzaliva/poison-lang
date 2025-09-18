@@ -395,10 +395,20 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       -- <e1,m,r> -> <value v, m',r'>
       -- -------------------------------------------------------- :: let_value
       -- < let x = e1 in e2, m, r > -> < expr e2, m', r'[x |-> v] >
+      -- Note: The variable x should only be available during evaluation of e2,
+      -- not in the final result environment.
 
       | some v =>
-        let config' := { config with varEnv := config.varEnv.update x v }
-        return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr e2))
+        let extendedEnv := config.varEnv.update x v
+        let config' := { config with varEnv := extendedEnv }
+        -- We need to evaluate e2 in the extended environment, but then restore the original environment
+        match <- eval (fuel - 1) config' (ExprOrValue.expr e2) verbose with
+        | StepResult.progress evalConfig ev =>
+          -- Restore original variable environment, keeping memory changes
+          let finalConfig := { evalConfig with varEnv := config.varEnv }
+          return stepReturn fuel verbose (StepResult.progress finalConfig ev)
+        | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
+        | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
       | none =>
         -- Rule: let_reduce_arg (OTT rule 414-416)
         -- <e1,m,r> -> <expr e1',m',r'>
@@ -410,9 +420,16 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           match ev1' with
           | ExprOrValue.expr e1' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.vlet x e1' e2)))
           | ExprOrValue.value v =>
-            let config'' := { config' with varEnv := config'.varEnv.update x v }
-
-            return stepReturn fuel verbose (StepResult.progress config'' (ExprOrValue.expr e2))
+            let extendedEnv := config'.varEnv.update x v
+            let config'' := { config' with varEnv := extendedEnv }
+            -- We need to evaluate e2 in the extended environment, but then restore the original environment
+            match <- eval (fuel - 2) config'' (ExprOrValue.expr e2) verbose with
+            | StepResult.progress evalConfig ev =>
+              -- Restore original variable environment, keeping memory changes
+              let finalConfig := { evalConfig with varEnv := config'.varEnv }
+              return stepReturn fuel verbose (StepResult.progress finalConfig ev)
+            | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
+            | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
         | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 

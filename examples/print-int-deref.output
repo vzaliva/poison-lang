@@ -4,5 +4,5 @@ Type checking passed: Type: QTyp.mk ETyp.unit false none
 100
 Result: unit
 Final state:
-  Variable environment: [("x", Value.loc 0)]
+  Variable environment: []
   Memory: [(0, 100)]

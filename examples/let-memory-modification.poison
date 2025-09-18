@@ -1,0 +1,2 @@
+let s = ref 0 in
+  ((let x = 42 in s := x); !s)

@@ -3,5 +3,5 @@ Evaluating file: examples/while1.poison
 Type checking passed: Type: QTyp.mk ETyp.unit false none
 Result: unit
 Final state:
-  Variable environment: [("counter", Value.loc 1), ("counter", Value.loc 0)]
+  Variable environment: []
   Memory: [(0, 5), (1, 0)]

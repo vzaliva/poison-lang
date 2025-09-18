@@ -3,5 +3,5 @@ Evaluating file: examples/not-equals.poison
 Type checking passed: Type: QTyp.mk ETyp.bool false none
 Result: true
 Final state:
-  Variable environment: [("y", Value.num -5), ("x", Value.num 5)]
+  Variable environment: []
   Memory: []

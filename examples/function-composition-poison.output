@@ -3,10 +3,5 @@ Evaluating file: examples/function-composition-poison.poison
 Type checking passed: Type: QTyp.mk ETyp.int true none
 Result: 2
 Final state:
-  Variable environment: [("result", Value.num 2),
- ("i", Value.num 1),
- ("poisoned_input", Value.num 0),
- ("g", Value.closure "x" <expr> <env>),
- ("f", Value.closure "x" <expr> <env>),
- ("get_sensor", Value.closure "x" <expr> <env>)]
+  Variable environment: []
   Memory: []

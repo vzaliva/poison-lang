@@ -467,6 +467,7 @@ m'(l) = n
 < pm, let x = e1 in e2, m, r > -> < pm, expr (let x = e1' in e2), m', r' >
 
 % Let binding: when first expression reduces to a value, bind it
+% TODO: This rule is incorrect, it does not allow lexical scoping!
  <pm, e1,m,r> -> <pm, value v,m',r'>
 -------------------------------------------------------- :: let_value
 < pm, let x = e1 in e2, m, r > -> < pm, expr e2, m', r'[x |-> v] >
@@ -703,10 +704,11 @@ m'(l) = n
 < pm, while e1 do e2, m, r> ==> < unit, m', r' >
 
 % Let binding
+% Note: The final environment r' excludes the let-bound variable x (lexical scoping)
 <pm, e1, m, r> ==> < v, m', r'>
 <pm, e2, m', r'[x |-> v]> ==> < v2, m'', r''>
 -------------------------------------------------------- :: b_let
-< pm, let x = e1 in e2, m, r > ==> < v2, m'', r'' >
+< pm, let x = e1 in e2, m, r > ==> < v2, m'', r' >
 
 % Function abstraction
 --------------------------------------------------------------- :: b_fn_abs
@@ -1002,6 +1004,8 @@ pm ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
 % poison is indeed poisoned.
 %
 % Predicates are propagated from e1 to x, and the result gets predicate from e2
+% Note: Lexical scoping - the final variable environment S excludes the let-bound variable x
+% The logical environment L'' from evaluating e2 is preserved (knowledge about predicates persists)
 pm ; pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G' ; L'
 pm ; pc ; G' ; S[x |-> T :> p1  { P1 }] ; L' |- e2 : T2 :> p2 { P2 } -| G'' ; L''
 ----------------------------------------------------------------------  :: let

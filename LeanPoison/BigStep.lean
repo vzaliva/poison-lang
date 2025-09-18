@@ -157,7 +157,11 @@ mutual
         | .ok (config', v) =>
           let config'' := { config' with varEnv := config'.varEnv.update x v }
           match <- beval (fuel - 1) config'' e2 verbose with
-          | .ok (config''', v2) => return .ok (config''', v2)
+          | .ok (config''', v2) =>
+            -- Restore original variable environment, keeping memory changes
+            -- According to OTT semantics, let-bound variables should not escape their scope
+            let finalConfig := { config''' with varEnv := config'.varEnv }
+            return .ok (finalConfig, v2)
           | .error msg => return .error msg
         | .error msg => return .error msg
 
