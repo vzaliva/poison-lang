@@ -246,6 +246,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
     -- We need to check if the expression evaluates to a location
     | Expr.deref e =>
       match e.toValue? with
+      -- We already reduced location to value, so we can just get the value from the memory
       | some (Value.loc l) =>
         -- Rule: deref (OTT rule 362-364)
         -- <e,m,r> -> <value l,m',r'>
@@ -257,10 +258,17 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         | some n => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.num n)))
         | none =>
           --dbg_trace s!"deref {l} not found";
-          -- Dereferencing a location that is not in the memory returns default value 0
-          -- this is an example of poisoned value
-          return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.num 0)))
-      | _ =>
+          return stepReturn fuel verbose (StepResult.error s!"Runtime type error: deref uninitialized location {l}")
+      -- Location argument reduced to a value, so we can't reduce further,
+      -- but it is not a right type!
+      | some (Value.num _) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got num")
+      | some (Value.str _) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got str")
+      | some (Value.bool _) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got bool")
+      | some (Value.unit) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got unit")
+      | some (Value.closure _ _ _) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got closure")
+      | some (Value.peClosure _ _ _) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got pe_closure")
+      -- Location argument is not a value, so we need to reduce it further
+      | none =>
         -- Rule: deref_reduce (OTT rule 366-368)
         -- <e,m,r> -> <expr e',m',r'>
         -- ------------------------------ :: deref_reduce

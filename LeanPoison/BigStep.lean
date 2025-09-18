@@ -106,8 +106,8 @@ mutual
         | .ok (config', Value.loc l) =>
           match config'.memory.get? l with
           | some n => return .ok (config', Value.num n)
-          | none   => return .ok (config', Value.num 0)
-        | .ok _ => return .error "Runtime type error: deref expects a location"
+          | none   => return .error s!"Runtime type error: deref uninitialized location {l}"
+        | .ok (_, v) => return .error s!"Runtime type error: deref expects a location but got {v}"
         | .error msg => return .error msg
 
       -- Assignment
