@@ -116,6 +116,7 @@ def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   | Expr.str s => return .str s
   | Expr.var x => return .var x
   | Expr.op e1 opname e2 => (fun pe1 pe2 => PExpr.op pe1 opname pe2) <$> e1.toPExpr <*> e2.toPExpr
+  | Expr.unaryop opname e => PExpr.unaryop opname <$> e.toPExpr
   | Expr.ite e1 e2 e3 => PExpr.ite <$> e1.toPExpr <*> e2.toPExpr <*> e3.toPExpr
   | Expr.deref e => .deref <$> e.toPExpr
   | Expr.vlet x e1 e2 => (fun pe1 pe2 => .vlet x pe1 pe2) <$> e1.toPExpr <*> e2.toPExpr
@@ -143,6 +144,7 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   | .str s => Expr.str s
   | .var x => Expr.var x
   | .op e1 o e2 => Expr.op (e1.toExpr) o (e2.toExpr)
+  | .unaryop opname e => Expr.unaryop opname (e.toExpr)
   | .ite e1 e2 e3 => Expr.ite (e1.toExpr) (e2.toExpr) (e3.toExpr)
   | .deref e => Expr.deref (e.toExpr)
   | .vlet x e1 e2 => Expr.vlet x (e1.toExpr) (e2.toExpr)
@@ -181,9 +183,10 @@ inductive OpEType : Op → ETyp → ETyp → ETyp → Prop where
   | gt_int  : OpEType Op.gt  ETyp.int ETyp.int ETyp.bool
   | lt_int  : OpEType Op.lt  ETyp.int ETyp.int ETyp.bool
   | eq_int  : OpEType Op.eq  ETyp.int ETyp.int ETyp.bool
-
+  | neq_int : OpEType Op.neq ETyp.int ETyp.int ETyp.bool
   | and_bool : OpEType Op.and ETyp.bool ETyp.bool ETyp.bool
   | or_bool  : OpEType Op.or  ETyp.bool ETyp.bool ETyp.bool
+  | bitand_int  : OpEType Op.bitand  ETyp.int  ETyp.int  ETyp.int
 
 def opEType? : Op → ETyp → ETyp → Option ETyp
   | .add, .int,  .int  => some .int
@@ -197,9 +200,16 @@ def opEType? : Op → ETyp → ETyp → Option ETyp
   | .eq,  .int,  .int  => some .bool
   | .and, .bool, .bool => some .bool
   | .or,  .bool, .bool => some .bool
+  | .bitand, .int,.int  => some .int
+  | .neq,  .int,   .int  => some .bool
   | _,    _,     _     => none
 
+inductive OpUnaryEType : UnaryOp → ETyp → ETyp → Prop where
+  | not_bool : OpUnaryEType UnaryOp.not ETyp.bool ETyp.bool
 
+def opUnaryEType? : UnaryOp → ETyp → Option ETyp
+  | .not, .bool  => some .bool
+  | _,    _     => none
 
 /--
  Helper function to check if two PExprs are syntactically equal modulo
@@ -486,6 +496,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.frand e => typecheckFrand ctx e fuel
     | Expr.printString e => typecheckPrintString ctx e fuel
     | Expr.printInt e => typecheckPrintInt ctx e fuel
+    | Expr.unaryop op e => typecheckUnaryOp ctx op e fuel
 
 termination_by fuel
 
@@ -837,12 +848,12 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
     let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
 
     let result2 ← typecheckExpr ctx' e2 fuel
-    let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
+    let ⟨etyp2, p2, pred2⟩ := result2.qualType
    --dbg_trace s!" In typecheck Let ,Poison val for exp {e1} is {p1}"
    -- dbg_trace s!"In typecheck Let ,Poison val for exp {e2} is {p2}"
 
     let poison := joinPoison ctx.pc p2
-    let qt : QTyp := ⟨etyp2, poison, pred2  ⟩
+    let qt : QTyp := ⟨etyp2, poison, pred2⟩
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
 
@@ -964,6 +975,28 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
       return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
 
+/- Rule: not_expr_typing (Ott rule: not_expr_typing)
+
+pm ; pc ; G ; S ; L |- e : bool :> p { P } -| G' ; L'
+----------------------------------------------------------------------  :: not_expr_typing
+pm ; pc ; G ; S ; L |- not_expr e : bool :> join pc p { no_pred } -| G' ; L'
+
+-/
+
+def typecheckUnaryOp (ctx : TypeContext) (op : UnaryOp) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+  match fuel with
+  | 0 => throw "Out of fuel"
+  | fuel + 1 => do
+    let result ← typecheckExpr ctx e fuel
+    let ⟨etyp, p, _  ⟩ := result.qualType
+
+    match opUnaryEType? op etyp with
+    | some r =>
+        let poison := joinPoison ctx.pc p
+        let qt : QTyp := ⟨r, poison, none⟩
+        return { result with qualType := qt }
+    | none => throw s!"Operation argument types do not match.\n  Expression Type: {etyp}\n  UnaryOp: {op}"
+termination_by fuel
 
 end
 
@@ -1003,10 +1036,11 @@ def typecheckExprVerbose (e : Expr) : TypecheckM TypeResult := do
 /-- Type check a program (expression) and return a human-readable result -/
 def typecheckProgram (e : Expr) (verbose : Bool) : String :=
   if verbose then
-   match typecheckExprVerbose e with
-   | .ok result => s!"Type: {repr result.qualType} , MemoryTypeEnv : {repr result.memEnv'} , tagEnv : {repr result.tagEnv'} , nextLoc : {repr result.nextLoc'} "
-   | .error msg => s!"Type error: {msg}"
-   else
-  match typecheckExprSimple e   with
-  | .ok qualType  => s!"Type: {repr qualType}"
-  | .error msg => s!"Type error: {msg}"
+    dbg_trace s!"TypecheckProgram {repr e}" ;
+    match typecheckExprVerbose e with
+    | .ok result => s!"Type: {repr result.qualType} , MemoryTypeEnv : {repr result.memEnv'} , tagEnv : {repr result.tagEnv'} , nextLoc : {repr result.nextLoc'} "
+    | .error msg => s!"Type error: {msg}"
+  else
+    match typecheckExprSimple e   with
+    | .ok qualType  => s!"Type: {repr qualType}"
+    | .error msg => s!"Type error: {msg}"

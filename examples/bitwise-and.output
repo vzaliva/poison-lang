@@ -1,0 +1,8 @@
+Evaluating file: examples/bitwise-and.poison
+
+Type checking passed: Type: QTyp.mk ETyp.int false none
+31
+Result: 36
+Final state:
+  Variable environment: []
+  Memory: []

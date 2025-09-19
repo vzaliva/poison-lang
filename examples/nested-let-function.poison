@@ -1,0 +1,2 @@
+let foo = fn s : ref int => s := 1 ; 0 : int in
+(let r = ref 0 in foo r)

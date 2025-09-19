@@ -4,5 +4,5 @@ Type checking passed: Type: QTyp.mk ETyp.unit false none
 20
 Result: unit
 Final state:
-  Variable environment: [("f", Value.closure "i" <expr> <env>)]
+  Variable environment: []
   Memory: []

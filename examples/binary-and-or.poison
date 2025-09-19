@@ -1,5 +1,5 @@
 let a = 1 in
 let b = 10 in 
-let c =  ( (a < 5) & (b < 5) ) in 
-let d =  ( (a > 0) | (b < 5) ) in
+let c =  ( (a < 5) && (b < 5) ) in 
+let d =  ( (a > 0) || (b < 5) ) in
 ( c ; d)

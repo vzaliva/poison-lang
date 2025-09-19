@@ -16,7 +16,7 @@ inductive Typ : Type where
   | string : Typ
   deriving Repr, BEq
 
--- Operations (corresponds to operations, op in Ott)
+-- Operations (corresponds to binary operations, op in Ott)
 inductive Op : Type where
   | add : Op      -- +
   | sub : Op
@@ -28,8 +28,13 @@ inductive Op : Type where
   | lt  : Op
   | eq  : Op
   | and : Op
+  | bitand : Op
   | or  : Op
+  | neq : Op
+  deriving Repr, BEq
 
+inductive UnaryOp : Type where
+  | not : UnaryOp   -- unary boolean negation
   deriving Repr, BEq
 
 
@@ -43,6 +48,7 @@ inductive Expr : Type where
   /- expressions -/
   | var : Name → Expr                           -- x
   | op : Expr → Op → Expr → Expr                -- e1 op e2
+  | unaryop :  UnaryOp → Expr → Expr             -- e op
   | ite : Expr → Expr → Expr → Expr             -- if e1 then e2 else e3
   | newRef : Expr → Expr                        -- ref e
   | assign : Expr → Expr → Expr                 -- e1 := e2
@@ -182,6 +188,7 @@ def reprExpr : Expr → Nat → Std.Format
   | Expr.bool b, _ => s!"Expr.bool {repr b}"
   | Expr.var x, _ => s!"Expr.var {repr x}"
   | Expr.op e1 op e2, _ => s!"Expr.op ({reprExpr e1 0}) {repr op} ({reprExpr e2 0})"
+  | Expr.unaryop opname e, _ => s!"Expr.unaryop {repr opname} ({reprExpr e 0})"
   | Expr.ite e1 e2 e3, _ => s!"Expr.ite ({reprExpr e1 0}) ({reprExpr e2 0}) ({reprExpr e3 0})"
   | Expr.newRef e, _ => s!"Expr.newRef ({reprExpr e 0})"
   | Expr.assign e1 e2, _ => s!"Expr.assign ({reprExpr e1 0}) ({reprExpr e2 0})"
@@ -248,10 +255,14 @@ instance : ToString Value where
 @[instance]
 instance : ToString Op where
   toString op := Std.Format.pretty (repr op)
+
+@[instance]
+instance : ToString UnaryOp where
+  toString opname := Std.Format.pretty (repr opname)
+
 @[instance]
 instance : ToString Expr where
   toString e := Std.Format.pretty (repr e)
-
 
 
  -- Helper function to print the type of Value

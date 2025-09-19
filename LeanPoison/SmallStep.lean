@@ -4,6 +4,7 @@
 import LeanPoison.Syntax
 import LeanPoison.Runtime
 import Std.Data.HashMap
+import Mathlib.Data.Int.Bitwise
 open Std
 
 -- Helper functions for operations
@@ -20,7 +21,14 @@ def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
   | Op.eq,  Value.num n1, Value.num n2 => some (Value.bool (n1 == n2))
   | Op.and, Value.bool b1, Value.bool b2 => some (Value.bool (b1 && b2))
   | Op.or,  Value.bool b1, Value.bool b2 => some (Value.bool (b1 || b2))
+  | Op.neq, Value.num n1, Value.num n2 => some (Value.bool (n1 != n2))
+  | Op.bitand, Value.num n1, Value.num n2 => some (Value.num (Int.land n1 n2))
   | _, _, _ => none
+
+def evalUnaryOp (op : UnaryOp) (v : Value) : Option Value :=
+  match op, v  with
+  | UnaryOp.not, Value.bool b => some (Value.bool (!b))
+  | _, _ => none
 
 -- Result of a single evaluation step
 inductive StepResult where
@@ -100,7 +108,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       | none =>
         return stepReturn fuel verbose (StepResult.error s!"var {x} not found")
 
-    -- Rule: op_plus, op_minus, op_mult, op_div, op_gteq, op_lteq, op_gt, op_lt, op_eq, op_and, op_or
+    -- Rule: op_plus, op_minus, op_mult, op_div, op_gteq, op_lteq, op_gt, op_lt, op_eq, op_and, op_or,op_neq,op_bitwise_and
     -- (OTT rules 276-337)
     -- <e1,m,r> -> <value v1, m',r'>
     -- <e2,m',r'> -> <value v2, m'',r''>
@@ -238,6 +246,7 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
     -- We need to check if the expression evaluates to a location
     | Expr.deref e =>
       match e.toValue? with
+      -- We already reduced location to value, so we can just get the value from the memory
       | some (Value.loc l) =>
         -- Rule: deref (OTT rule 362-364)
         -- <e,m,r> -> <value l,m',r'>
@@ -249,10 +258,17 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
         | some n => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.num n)))
         | none =>
           --dbg_trace s!"deref {l} not found";
-          -- Dereferencing a location that is not in the memory returns default value 0
-          -- this is an example of poisoned value
-          return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value (Value.num 0)))
-      | _ =>
+          return stepReturn fuel verbose (StepResult.error s!"Runtime type error: deref uninitialized location {l}")
+      -- Location argument reduced to a value, so we can't reduce further,
+      -- but it is not a right type!
+      | some (Value.num _) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got num")
+      | some (Value.str _) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got str")
+      | some (Value.bool _) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got bool")
+      | some (Value.unit) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got unit")
+      | some (Value.closure _ _ _) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got closure")
+      | some (Value.peClosure _ _ _) => return stepReturn fuel verbose (StepResult.error "Runtime type error: deref expects a location but got pe_closure")
+      -- Location argument is not a value, so we need to reduce it further
+      | none =>
         -- Rule: deref_reduce (OTT rule 366-368)
         -- <e,m,r> -> <expr e',m',r'>
         -- ------------------------------ :: deref_reduce
@@ -379,10 +395,20 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
       -- <e1,m,r> -> <value v, m',r'>
       -- -------------------------------------------------------- :: let_value
       -- < let x = e1 in e2, m, r > -> < expr e2, m', r'[x |-> v] >
+      -- Note: The variable x should only be available during evaluation of e2,
+      -- not in the final result environment.
 
       | some v =>
-        let config' := { config with varEnv := config.varEnv.update x v }
-        return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr e2))
+        let extendedEnv := config.varEnv.update x v
+        let config' := { config with varEnv := extendedEnv }
+        -- We need to evaluate e2 in the extended environment, but then restore the original environment
+        match <- eval (fuel - 1) config' (ExprOrValue.expr e2) verbose with
+        | StepResult.progress evalConfig ev =>
+          -- Restore original variable environment, keeping memory changes
+          let finalConfig := { evalConfig with varEnv := config.varEnv }
+          return stepReturn fuel verbose (StepResult.progress finalConfig ev)
+        | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
+        | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
       | none =>
         -- Rule: let_reduce_arg (OTT rule 414-416)
         -- <e1,m,r> -> <expr e1',m',r'>
@@ -394,9 +420,16 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
           match ev1' with
           | ExprOrValue.expr e1' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.vlet x e1' e2)))
           | ExprOrValue.value v =>
-            let config'' := { config' with varEnv := config'.varEnv.update x v }
-
-            return stepReturn fuel verbose (StepResult.progress config'' (ExprOrValue.expr e2))
+            let extendedEnv := config'.varEnv.update x v
+            let config'' := { config' with varEnv := extendedEnv }
+            -- We need to evaluate e2 in the extended environment, but then restore the original environment
+            match <- eval (fuel - 2) config'' (ExprOrValue.expr e2) verbose with
+            | StepResult.progress evalConfig ev =>
+              -- Restore original variable environment, keeping memory changes
+              let finalConfig := { evalConfig with varEnv := config'.varEnv }
+              return stepReturn fuel verbose (StepResult.progress finalConfig ev)
+            | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
+            | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
         | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
         | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
 
@@ -655,6 +688,35 @@ def step (fuel : Nat) (verbose : Bool) (config : Config) (ev : ExprOrValue) : IO
               | _ => return stepReturn fuel verbose (StepResult.error "printString expects argument to evaluate to a string.")
             | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
             | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
+
+      -- Unary operations
+      | Expr.unaryop op e =>
+      -- Check if operand is a value
+          match e.toValue? with
+          | some v =>
+            match evalUnaryOp op v with
+            | some v' => return stepReturn fuel verbose (StepResult.progress config (ExprOrValue.value v'))
+            | none =>
+              let vStr := ValueToTypeString v
+              let opStr := toString op
+              return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {vStr}")
+
+          | none =>
+            match (<- step (fuel - 1) verbose config (ExprOrValue.expr e)) with
+            | StepResult.progress config' ev' =>
+              match ev' with
+              | ExprOrValue.expr e' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.expr (Expr.unaryop op e')))
+              | ExprOrValue.value v =>
+                --  operand reduced to value, retry the operation
+                match evalUnaryOp op v with
+                | some v' => return stepReturn fuel verbose (StepResult.progress config' (ExprOrValue.value v'))
+                | none =>
+                  let vStr := ValueToTypeString v
+                  let opStr := toString op
+                  return stepReturn fuel verbose (StepResult.error s!"Runtime type error: cannot apply operation {opStr} to {vStr}")
+            | StepResult.stuck => return stepReturn fuel verbose StepResult.stuck
+            | StepResult.error msg => return stepReturn fuel verbose (StepResult.error msg)
+
 ----------------------------------------------------------------------------------------
 termination_by fuel
 

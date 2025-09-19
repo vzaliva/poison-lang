@@ -1,0 +1,7 @@
+Evaluating file: examples/bool-negation.poison
+
+Type checking passed: Type: QTyp.mk ETyp.bool false none
+Result: false
+Final state:
+  Variable environment: []
+  Memory: []

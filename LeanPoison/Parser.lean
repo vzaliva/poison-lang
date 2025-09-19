@@ -140,12 +140,13 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
       | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
-    let validOps := ["+", "-", "*", "/", ">", ">=", "<", "<=", "==","&","|"]
+    let validOps := ["+", "-", "*", "/", ">", ">=", "<", "<=", "==","&","||","!=","&&"]
     let ops := contents.filterMap fun
       | Content.Character s =>
           let trimmed := s.trim
           if trimmed ∈ validOps then some trimmed else none
       | _ => none
+
 
     match (exprs.toList, ops.toList) with
       | ([lhs,
@@ -163,10 +164,31 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
           | "<"  => return Expr.op lhsExpr Op.lt rhsExpr
           | "<=" => return Expr.op lhsExpr Op.lte rhsExpr
           | "==" => return Expr.op lhsExpr Op.eq rhsExpr
-          | "&"  => return Expr.op lhsExpr Op.and rhsExpr
-          | "|"  => return Expr.op lhsExpr Op.or rhsExpr
+          | "&"  => return Expr.op lhsExpr Op.bitand rhsExpr
+          | "||"  => return Expr.op lhsExpr Op.or rhsExpr
+          | "!=" => return Expr.op lhsExpr Op.neq rhsExpr
+          | "&&" => return Expr.op lhsExpr Op.and rhsExpr
           | _ => .error s!"Unknown operator: {opStr}"
       | _ => .error s!"Invalid binary_expr structure: {contents}"
+
+  | Element.Element "unary_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
+      | Content.Element el => some el
+      | _ => none
+    let validOps := ["not"]
+    let ops := contents.filterMap fun
+      | Content.Character s =>
+          let trimmed := s.trim
+          if trimmed ∈ validOps then some trimmed else none
+      | _ => none
+    match (elems.toList,ops.toList) with
+    | ([expr],[opStr]) =>
+        let expr_arg ← xmlToExpr expr
+        match opStr with
+        | "not" => return Expr.unaryop UnaryOp.not expr_arg
+        | _ => .error s!"Unknown unary operator: {opStr}"
+    | _ => .error s!"Invalid Unary expression structure: {contents}"
 
   | Element.Element "app_expr" _ contents =>
     do

@@ -3,5 +3,5 @@ Evaluating file: examples/references1.poison
 Type checking passed: Type: QTyp.mk ETyp.int false none
 Result: 42
 Final state:
-  Variable environment: [("r", Value.loc 0)]
+  Variable environment: []
   Memory: [(0, 42)]

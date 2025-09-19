@@ -19,11 +19,12 @@ For detailed language features and syntax, see the formal documentation in `doc/
 - [Lean 4](https://leanprover.github.io/lean4/doc/quickstart.html)
 - LaTeX and latexmk (for building documentation)
 - [tree-sitter](https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html)  version 0.25.6+
+- [ott](https://github.com/ott-lang/ott)
 
 ### Build
 
 ```bash
-lake build
+make
 ```
 
 ### Run Examples
@@ -38,28 +39,25 @@ lake exe poison-interpreter --verbose examples/basic-poison-flow1.poison
 lake exe poison-interpreter --repl
 
 # Run tests
-lake exe poison-tests
+make test
 
 # Run tests with different modes
 lake exe poison-tests --typecheck    # Type checking only
 lake exe poison-tests --eval         # Evaluation only  
+lake exe poison-tests --eval --big   # Evaluation only using big-step semantics
 lake exe poison-tests --eval -v      # Evaluation only with verbose output
 lake exe poison-tests # both evaluation and typchecking
 ```
 
 ## Project Structure
 
-- `LeanPoison/` - Core language implementation
-  - `Syntax.lean` - Abstract syntax definitions
-  - `Eval.lean` - Executable semantics
-  - `Parser.lean` - Syntax parser
-  - `Runtime.lean` - Runtime environment
+- `LeanPoison/` - Core language implementation and operational semantics
+- `LeanProofs/` - Proofs of non-inference and other properties
 - `parser/`     - Contains grammar and packages to generate parser
 - `examples/` - Sample programs demonstrating language features
 - `doc/` - Documentation
-- `poison-lang-spec/` - Ott specification files
+- `poison-lang-spec/` - Ott specification of language big and small step semantics, and typing rule
 - `Main.lean` - Main interpreter entry point
-- `Tests.lean` - Test suite
 
 ## Formal Specification
 

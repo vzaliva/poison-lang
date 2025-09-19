@@ -14,6 +14,7 @@ inductive PExpr : Type where
   | str : String → PExpr                           -- string
   | var : Name → PExpr                             -- x
   | op : PExpr → Op → PExpr → PExpr                -- e1 op e2
+  | unaryop :  UnaryOp → PExpr → PExpr             -- e op
   | ite : PExpr → PExpr → PExpr → PExpr            -- if e1 then e2 else e3
   | deref : PExpr → PExpr                          -- ! e
   | vlet : Name → PExpr → PExpr → PExpr            -- let x : T = e1 in e2
@@ -92,6 +93,7 @@ partial def reprPExpr : PExpr → Nat → Std.Format
   | PExpr.str s, _ => s!"PExpr.str " ++ s
   | PExpr.var x, _ => s!"PExpr.var {repr x}"
   | PExpr.op e1 op e2, _ => s!"PExpr.op ({reprPExpr e1 0}) {repr op} ({reprPExpr e2 0})"
+  | PExpr.unaryop opname e, _ => s!"PExpr.unaryop {repr opname} ({reprPExpr e 0})"
   | PExpr.ite e1 e2 e3, _ => s!"PExpr.ite ({reprPExpr e1 0}) ({reprPExpr e2 0}) ({reprPExpr e3 0})"
   | PExpr.deref e, _ => s!"PExpr.deref ({reprPExpr e 0})"
   | PExpr.vlet x e1 e2, _ => s!"PExpr.vlet {repr x} ({reprPExpr e1 0}) ({reprPExpr e2 0})"
@@ -187,6 +189,7 @@ def beqPExpr : PExpr → PExpr → Bool
   | .str s1, .str s2 => s1 == s2
   | .var x1, .var x2 => x1 == x2
   | .op e1 op1 e2, .op e1' op2 e2' => op1 == op2 && beqPExpr e1 e1' && beqPExpr e2 e2'
+  | .unaryop op1 e1, .unaryop op2 e2 => op1 == op2 && beqPExpr e1 e2
   | .ite e1 e2 e3, .ite e1' e2' e3' => beqPExpr e1 e1' && beqPExpr e2 e2' && beqPExpr e3 e3'
   | .deref e1, .deref e2 => beqPExpr e1 e2
   | .vlet x1 e1 e2, .vlet x2 e1' e2' => x1 == x2 && beqPExpr e1 e1' && beqPExpr e2 e2'
