@@ -11,6 +11,21 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+      # Install system dependencies
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y latexmk texlive-latex-extra texlive-fonts-recommended texlive-latex-recommended texlive-lang-english
+          sudo apt-get install -y npm
+          sudo npm install -g tree-sitter-cli
+          # Install Ott (requires OCaml and OPAM)
+          sudo apt-get install -y opam
+          opam init -y --disable-sandboxing
+          opam install -y ott
+          echo 'eval $(opam env)' >> $GITHUB_ENV
+          source $HOME/.opam/opam-init/init.sh > /dev/null 2> /dev/null || true
+          export PATH="$HOME/.opam/default/bin:$PATH"
+
 
       # Set up Lean with cache (handled by lean-action)
       - uses: leanprover/lean-action@v1
@@ -20,7 +35,7 @@ jobs:
 
       # Build parser + spec first
       - name: Build Ott + parser
-        run: make poison-lang-spec parser
+        run: make all
 
       # Run tests (small + big step)
       - name: Run tests
