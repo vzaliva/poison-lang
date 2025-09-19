@@ -11,7 +11,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      # Install system dependencies
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -28,13 +27,13 @@ jobs:
       # Set up Lean with cache (handled by lean-action)
       - uses: leanprover/lean-action@v1
         with:
-          build: true   # runs `lake build` automatically
-          test: false   # we'll run tests separately
+          build: true   
+          test: false   
 
-      # Build parser + spec first
-      - name: Build Ott + parser
+      # Build the project
+      - name: Build all
         run: make all
 
-      # Run tests (small + big step)
+      # Run tests  
       - name: Run tests
         run: make test
