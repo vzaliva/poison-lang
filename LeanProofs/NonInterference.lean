@@ -241,4 +241,162 @@ theorem TypeSystemEnforcesNonInterference_spec
         typecheck ctx e fuel = .ok res ∧
         ObsConstraints obs res) →
         NonInterferenceSpec e s obs ctx) := by
-  sorry
+  rintro _ _ ctx hctx ⟨fuel_tc, res, htc, ⟨hocrm, hocmm⟩⟩
+  induction fuel_tc using Nat.strong_induction_on
+    generalizing e s obs ctx hctx res hocrm hocmm with
+  | _ n IH =>
+    rintro ⟨hiq1, hppt, hppf⟩ _ _ μ₁ μ₂ ρ₁ ρ₂ R cf₁ cf₂ o₁ o₂
+           hics1 hics2 hric1 hric2 hcrs1 hcrs2 haociurs
+           ⟨fuel1, v1, heval1, hte1⟩ ⟨fuel2, v2, heval2, hte2⟩
+    rcases hctx with ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩
+    simp [NonInterferenceSpec] at IH
+    cases e with
+    | unit =>
+      simp [observablesEqual]
+      rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
+      simp [typecheckUnit] at htc
+      injection htc with htc
+      subst res
+      dsimp at hocrm
+      constructor
+      · intros l et hocl
+        have ⟨hocmm', hp⟩ := hocmm l et hocl
+        dsimp at hocmm'
+        rcases hslm : s.locs.lookup l with _ | ⟨qt⟩
+        · simp [MemoryTypeEnv.hasKey] at hctxm
+          simp [MemoryTypeEnv.lookup] at hslm
+          have ⟨hctxm', _⟩ := hctxm hocmm' (fun h => hslm h)
+          rw [hp] at hctxm'
+          cases hctxm'
+        · have hctxsm' := hctxsm hslm
+          rw [hctxsm'] at hocmm'
+          injection hocmm' with hocmm'
+          subst hocmm'
+          have ⟨hqtt, hqtp⟩ := hppt l qt hslm
+          rw [hp] at hqtp
+          simp [agreeOnCriticalInputsUnderRegimeSpec] at haociurs
+          have ⟨havu, halu⟩ := haociurs
+          rw [List.forall₂_iff_get] at havu
+          rcases havu with ⟨hsrle, havu⟩
+          simp [MemoryTypeEnv.lookup] at hslm
+          rw [← Std.HashMap.mem_toList_iff_getElem?_eq_some] at hslm
+          rw [List.mem_iff_get] at hslm
+          rcases hslm with ⟨⟨i, hsi⟩ , hslm⟩
+          have hri := hsi
+          rw [← hsrle] at hri
+          specialize havu i hri hsi
+          rw [hslm] at havu
+          cases hr : R.locBits.get ⟨i, hri⟩
+          · rw [hr] at havu
+            rcases havu with _ | ⟨_, _, ⟨tp, hqtp'⟩, hmu1, hmu2⟩
+            apply congrArg Option.isSome at hqtp'
+            dsimp at hqtp'
+            rw [hqtp'] at hqtp
+            cases hqtp
+          · rw [hr] at havu
+            rcases havu with ⟨_, _, hmu⟩ | _
+            rcases Nat.decEq fuel1 0 with (hnf1 | hf1)
+            · simp [LeanPoison.beval] at heval1
+              rw [if_neg hnf1] at heval1
+              apply congrFun (a := ()) at heval1
+              injection heval1 with heval1 _
+              injection heval1 with heval1
+              injection heval1 with heval1m heval1v
+              rcases Nat.decEq fuel2 0 with (hnf2 | hf2)
+              · simp [LeanPoison.beval] at heval2
+                rw [if_neg hnf2] at heval2
+                apply congrFun (a := ()) at heval2
+                injection heval2 with heval2 _
+                injection heval2 with heval2
+                injection heval2 with heval2m heval2v
+                rw [← heval1m, ← heval2m]
+                simp [mkInit]
+                apply hmu
+              · simp [LeanPoison.beval] at heval2
+                rw [if_pos hf2] at heval2
+                apply congrFun (a := ()) at heval2
+                injection heval2 with heval2 _
+                injection heval2
+            · simp [LeanPoison.beval] at heval1
+              rw [if_pos hf1] at heval1
+              apply congrFun (a := ()) at heval1
+              injection heval1 with heval1 _
+              injection heval1
+      · rcases Nat.decEq fuel1 0 with (hnf1 | hf1)
+        · simp [LeanPoison.beval] at heval1
+          rw [if_neg hnf1] at heval1
+          apply congrFun (a := ()) at heval1
+          injection heval1 with heval1 _
+          injection heval1 with heval1
+          injection heval1 with heval1m heval1v
+          rcases Nat.decEq fuel2 0 with (hnf2 | hf2)
+          · simp [LeanPoison.beval] at heval2
+            rw [if_neg hnf2] at heval2
+            apply congrFun (a := ()) at heval2
+            injection heval2 with heval2 _
+            injection heval2 with heval2
+            injection heval2 with heval2m heval2v
+            simp [ExprOrValue.toValue?, Option.getD] at heval1v
+            simp [ExprOrValue.toValue?, Option.getD] at heval2v
+            have ho1 : o₁ = ExprOrValue.value (Value.unit) := by
+              rcases o₁ with ⟨o₁⟩ | ⟨o₁⟩
+              · simp [ExprOrValue.toExpr?] at hte1
+              · dsimp at heval1v
+                rw [← heval1v]
+            have ho2 : o₂ = ExprOrValue.value (Value.unit) := by
+              rcases o₂ with ⟨o₂⟩ | ⟨o₂⟩
+              · simp [ExprOrValue.toExpr?] at hte2
+              · dsimp at heval2v
+                rw [← heval2v]
+            right
+            rw [ho1, ho2]
+          · simp [LeanPoison.beval] at heval2
+            rw [if_pos hf2] at heval2
+            apply congrFun (a := ()) at heval2
+            injection heval2 with heval2 _
+            injection heval2
+        · simp [LeanPoison.beval] at heval1
+          rw [if_pos hf1] at heval1
+          apply congrFun (a := ()) at heval1
+          injection heval1 with heval1 _
+          injection heval1
+    | num _ =>
+      sorry
+    | bool _ =>
+      sorry
+    | str _ =>
+      sorry
+    | var _ =>
+      sorry
+    | unaryop _ _ =>
+      sorry
+    | op _ _ _ =>
+      sorry
+    | ite _ _ _ =>
+      sorry
+    | newRef _ =>
+      sorry
+    | assign _ _ =>
+      sorry
+    | deref _ =>
+      sorry
+    | seq _ _ =>
+      sorry
+    | kwhile _ _ =>
+      sorry
+    | vlet _ _ _ =>
+      sorry
+    | fn _ _ _ _ =>
+      sorry
+    | pfn _ _ _ _ =>
+      sorry
+    | app _ _ =>
+      sorry
+    | rand _ =>
+      sorry
+    | frand _ =>
+      sorry
+    | printString _ =>
+      sorry
+    | printInt _ =>
+      sorry
