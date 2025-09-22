@@ -48,15 +48,6 @@ def handleEvalResult (result : Except String (Config × Value)) (verbose : Bool)
       IO.println s!"Runtime error: {msg}"
       return (1 : UInt32)
 
-
-/-def runExpr (useBig : Bool) (fuel : Nat) (config : Config) (expr : _root_.Expr) (verbose : Bool) : IO StepResult := do
-  if useBig then
-    match (← LeanPoison.beval fuel config expr verbose) with
-    | .ok (cfg, v) => return StepResult.progress cfg (ExprOrValue.value v)
-    | .error msg => return StepResult.error msg
-  else
-    eval fuel config (ExprOrValue.expr expr) verbose-/
-
 def evalProgram (input : String) (verbose : Bool) : IO UInt32 := do
   match parse input with
   | Except.ok xmlElement =>
