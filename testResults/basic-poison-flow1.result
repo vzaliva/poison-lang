@@ -1,7 +1,0 @@
-Evaluating file: examples/basic-poison-flow1.poison
-
-Type checking passed: Type: QTyp.mk ETyp.int true none
-Result: 1
-Final state:
-  Variable environment: [("result", Value.num 1), ("faulty", Value.num 0), ("get_sensor", Value.closure "x" <expr> <env>)]
-  Memory: []
