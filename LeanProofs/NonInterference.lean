@@ -211,6 +211,136 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
     ∀ l et, obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et ∧ et.poison = false
   retMatches ∧ memMatches
 
+private lemma TypeSystemEnforcesNonInterference_unit
+    {n fuel1 fuel2 : Nat}
+    {s : InputSpec} {obs : ObservableSpec} {ctx : TypeContext} {res : TypeResult}
+    {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv} {R : Regime}
+    {cf₁ cf₂ : Config} {o₁ o₂ : ExprOrValue}
+    {v1 v2 : Bool}
+    (hocmm : ∀ (l : Address) (et : QTyp), obs.Lobs.lookup l = some et →
+        res.memEnv'.lookup l = some et ∧ et.poison = false)
+    (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt →
+        qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
+    (hctxsm : ∀ {l : Address} {qt : QTyp}, s.locs.lookup l = some qt →
+        ctx.memEnv.lookup l = some qt)
+    (hctxm : ∀ {l : Address} {qt : QTyp}, ctx.memEnv.lookup l = some qt →
+        ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none)
+    (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
+    (htc : typecheck ctx Expr.unit n = Except.ok res)
+    (heval1 : LeanPoison.beval fuel1 (mkInit μ₁ ρ₁) Expr.unit v1 =
+        pure (Except.ok (cf₁, o₁.toValue?.getD Value.unit)))
+    (heval2 : LeanPoison.beval fuel2 (mkInit μ₂ ρ₂) Expr.unit v2 =
+        pure (Except.ok (cf₂, o₂.toValue?.getD Value.unit)))
+    (hte1 : o₁.toExpr? = none) (hte2 : o₂.toExpr? = none) :
+    observablesEqual obs cf₁ cf₂ o₁ o₂ := by
+  simp [observablesEqual]
+  rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
+  simp [typecheckUnit] at htc
+  injection htc with htc
+  subst res
+  constructor
+  · intro l et hocl
+    have ⟨hocmm', hp⟩ := hocmm l et hocl
+    dsimp at hocmm'
+    rcases hslm : s.locs.lookup l with _ | ⟨qt⟩
+    · simp [MemoryTypeEnv.hasKey] at hctxm
+      simp [MemoryTypeEnv.lookup] at hslm
+      have ⟨hctxm', _⟩ := hctxm hocmm' (fun h => hslm h)
+      rw [hp] at hctxm'
+      cases hctxm'
+    · have hctxsm' := hctxsm hslm
+      rw [hctxsm'] at hocmm'
+      injection hocmm' with hocmm'
+      subst hocmm'
+      have ⟨hqtt, hqtp⟩ := hppt l qt hslm
+      rw [hp] at hqtp
+      simp [agreeOnCriticalInputsUnderRegimeSpec] at haociurs
+      have ⟨havu, halu⟩ := haociurs
+      rw [List.forall₂_iff_get] at havu
+      rcases havu with ⟨hsrle, havu⟩
+      simp [MemoryTypeEnv.lookup] at hslm
+      rw [← Std.HashMap.mem_toList_iff_getElem?_eq_some] at hslm
+      rw [List.mem_iff_get] at hslm
+      rcases hslm with ⟨⟨i, hsi⟩, hslm⟩
+      have hri := hsi
+      rw [← hsrle] at hri
+      specialize havu i hri hsi
+      rw [hslm] at havu
+      cases hr : R.locBits.get ⟨i, hri⟩
+      · rw [hr] at havu
+        rcases havu with _ | ⟨_, _, ⟨tp, hqtp'⟩, hmu1, hmu2⟩
+        apply congrArg Option.isSome at hqtp'
+        dsimp at hqtp'
+        rw [hqtp'] at hqtp
+        cases hqtp
+      · rw [hr] at havu
+        rcases havu with ⟨_, _, hmu⟩ | _
+        rcases Nat.decEq fuel1 0 with (hnf1 | hf1)
+        · simp [LeanPoison.beval] at heval1
+          rw [if_neg hnf1] at heval1
+          apply congrFun (a := ()) at heval1
+          injection heval1 with heval1 _
+          injection heval1 with heval1
+          injection heval1 with heval1m heval1v
+          rcases Nat.decEq fuel2 0 with (hnf2 | hf2)
+          · simp [LeanPoison.beval] at heval2
+            rw [if_neg hnf2] at heval2
+            apply congrFun (a := ()) at heval2
+            injection heval2 with heval2 _
+            injection heval2 with heval2
+            injection heval2 with heval2m heval2v
+            rw [← heval1m, ← heval2m]
+            simp [mkInit]
+            exact hmu
+          · simp [LeanPoison.beval] at heval2
+            rw [if_pos hf2] at heval2
+            apply congrFun (a := ()) at heval2
+            injection heval2 with heval2 _
+            injection heval2
+        · simp [LeanPoison.beval] at heval1
+          rw [if_pos hf1] at heval1
+          apply congrFun (a := ()) at heval1
+          injection heval1 with heval1 _
+          injection heval1
+  · rcases Nat.decEq fuel1 0 with (hnf1 | hf1)
+    · simp [LeanPoison.beval] at heval1
+      rw [if_neg hnf1] at heval1
+      apply congrFun (a := ()) at heval1
+      injection heval1 with heval1 _
+      injection heval1 with heval1
+      injection heval1 with heval1m heval1v
+      rcases Nat.decEq fuel2 0 with (hnf2 | hf2)
+      · simp [LeanPoison.beval] at heval2
+        rw [if_neg hnf2] at heval2
+        apply congrFun (a := ()) at heval2
+        injection heval2 with heval2 _
+        injection heval2 with heval2
+        injection heval2 with heval2m heval2v
+        simp [ExprOrValue.toValue?, Option.getD] at heval1v
+        simp [ExprOrValue.toValue?, Option.getD] at heval2v
+        have ho1 : o₁ = ExprOrValue.value Value.unit := by
+          rcases o₁ with ⟨o₁⟩ | ⟨o₁⟩
+          · simp [ExprOrValue.toExpr?] at hte1
+          · dsimp at heval1v
+            rw [← heval1v]
+        have ho2 : o₂ = ExprOrValue.value Value.unit := by
+          rcases o₂ with ⟨o₂⟩ | ⟨o₂⟩
+          · simp [ExprOrValue.toExpr?] at hte2
+          · dsimp at heval2v
+            rw [← heval2v]
+        right
+        rw [ho1, ho2]
+      · simp [LeanPoison.beval] at heval2
+        rw [if_pos hf2] at heval2
+        apply congrFun (a := ()) at heval2
+        injection heval2 with heval2 _
+        injection heval2
+    · simp [LeanPoison.beval] at heval1
+      rw [if_pos hf1] at heval1
+      apply congrFun (a := ()) at heval1
+      injection heval1 with heval1 _
+      injection heval1
+
 -- ==========================
 -- Non-Interference property
 -- ==========================
@@ -252,114 +382,11 @@ theorem TypeSystemEnforcesNonInterference_spec
     simp [NonInterferenceSpec] at IH
     cases e with
     | unit =>
-      simp [observablesEqual]
-      rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
-      simp [typecheckUnit] at htc
-      injection htc with htc
-      subst res
-      dsimp at hocrm
-      constructor
-      · intros l et hocl
-        have ⟨hocmm', hp⟩ := hocmm l et hocl
-        dsimp at hocmm'
-        rcases hslm : s.locs.lookup l with _ | ⟨qt⟩
-        · simp [MemoryTypeEnv.hasKey] at hctxm
-          simp [MemoryTypeEnv.lookup] at hslm
-          have ⟨hctxm', _⟩ := hctxm hocmm' (fun h => hslm h)
-          rw [hp] at hctxm'
-          cases hctxm'
-        · have hctxsm' := hctxsm hslm
-          rw [hctxsm'] at hocmm'
-          injection hocmm' with hocmm'
-          subst hocmm'
-          have ⟨hqtt, hqtp⟩ := hppt l qt hslm
-          rw [hp] at hqtp
-          simp [agreeOnCriticalInputsUnderRegimeSpec] at haociurs
-          have ⟨havu, halu⟩ := haociurs
-          rw [List.forall₂_iff_get] at havu
-          rcases havu with ⟨hsrle, havu⟩
-          simp [MemoryTypeEnv.lookup] at hslm
-          rw [← Std.HashMap.mem_toList_iff_getElem?_eq_some] at hslm
-          rw [List.mem_iff_get] at hslm
-          rcases hslm with ⟨⟨i, hsi⟩ , hslm⟩
-          have hri := hsi
-          rw [← hsrle] at hri
-          specialize havu i hri hsi
-          rw [hslm] at havu
-          cases hr : R.locBits.get ⟨i, hri⟩
-          · rw [hr] at havu
-            rcases havu with _ | ⟨_, _, ⟨tp, hqtp'⟩, hmu1, hmu2⟩
-            apply congrArg Option.isSome at hqtp'
-            dsimp at hqtp'
-            rw [hqtp'] at hqtp
-            cases hqtp
-          · rw [hr] at havu
-            rcases havu with ⟨_, _, hmu⟩ | _
-            rcases Nat.decEq fuel1 0 with (hnf1 | hf1)
-            · simp [LeanPoison.beval] at heval1
-              rw [if_neg hnf1] at heval1
-              apply congrFun (a := ()) at heval1
-              injection heval1 with heval1 _
-              injection heval1 with heval1
-              injection heval1 with heval1m heval1v
-              rcases Nat.decEq fuel2 0 with (hnf2 | hf2)
-              · simp [LeanPoison.beval] at heval2
-                rw [if_neg hnf2] at heval2
-                apply congrFun (a := ()) at heval2
-                injection heval2 with heval2 _
-                injection heval2 with heval2
-                injection heval2 with heval2m heval2v
-                rw [← heval1m, ← heval2m]
-                simp [mkInit]
-                apply hmu
-              · simp [LeanPoison.beval] at heval2
-                rw [if_pos hf2] at heval2
-                apply congrFun (a := ()) at heval2
-                injection heval2 with heval2 _
-                injection heval2
-            · simp [LeanPoison.beval] at heval1
-              rw [if_pos hf1] at heval1
-              apply congrFun (a := ()) at heval1
-              injection heval1 with heval1 _
-              injection heval1
-      · rcases Nat.decEq fuel1 0 with (hnf1 | hf1)
-        · simp [LeanPoison.beval] at heval1
-          rw [if_neg hnf1] at heval1
-          apply congrFun (a := ()) at heval1
-          injection heval1 with heval1 _
-          injection heval1 with heval1
-          injection heval1 with heval1m heval1v
-          rcases Nat.decEq fuel2 0 with (hnf2 | hf2)
-          · simp [LeanPoison.beval] at heval2
-            rw [if_neg hnf2] at heval2
-            apply congrFun (a := ()) at heval2
-            injection heval2 with heval2 _
-            injection heval2 with heval2
-            injection heval2 with heval2m heval2v
-            simp [ExprOrValue.toValue?, Option.getD] at heval1v
-            simp [ExprOrValue.toValue?, Option.getD] at heval2v
-            have ho1 : o₁ = ExprOrValue.value (Value.unit) := by
-              rcases o₁ with ⟨o₁⟩ | ⟨o₁⟩
-              · simp [ExprOrValue.toExpr?] at hte1
-              · dsimp at heval1v
-                rw [← heval1v]
-            have ho2 : o₂ = ExprOrValue.value (Value.unit) := by
-              rcases o₂ with ⟨o₂⟩ | ⟨o₂⟩
-              · simp [ExprOrValue.toExpr?] at hte2
-              · dsimp at heval2v
-                rw [← heval2v]
-            right
-            rw [ho1, ho2]
-          · simp [LeanPoison.beval] at heval2
-            rw [if_pos hf2] at heval2
-            apply congrFun (a := ()) at heval2
-            injection heval2 with heval2 _
-            injection heval2
-        · simp [LeanPoison.beval] at heval1
-          rw [if_pos hf1] at heval1
-          apply congrFun (a := ()) at heval1
-          injection heval1 with heval1 _
-          injection heval1
+      exact
+        TypeSystemEnforcesNonInterference_unit
+          (hocmm := hocmm) (hppt := hppt)
+          (hctxsm := hctxsm) (hctxm := hctxm)
+          (haociurs := haociurs) htc heval1 heval2 hte1 hte2
     | num _ =>
       sorry
     | bool _ =>
