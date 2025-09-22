@@ -198,6 +198,44 @@ def agreeOnCriticalInputsUnderRegimeSpec
   List.Forall₂ (agreeLocUnder μ₁ ρ₁ μ₂ ρ₂) R.locBits s.locs.toList ∧
   List.Forall₂ (agreeVarUnder μ₁ ρ₁ μ₂ ρ₂) R.varBits s.vars
 
+lemma agreeOnCriticalInputsUnderRegimeSpec.mem_eq_of_poison_false
+    {R : Regime} {s : InputSpec} {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv}
+    (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
+    (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt →
+        qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
+    {l : Address} {qt : QTyp}
+    (hlookup : s.locs.lookup l = some qt)
+    (hpoison : qt.poison = false) :
+    μ₁.lookup l = μ₂.lookup l := by
+  have hpred := (hppt l qt hlookup).2
+  have hpred_false : qt.pred.isSome = false := by
+    simpa [hpoison] using hpred.symm
+  simp [agreeOnCriticalInputsUnderRegimeSpec] at haociurs
+  obtain ⟨hlocs, _⟩ := haociurs
+  rw [List.forall₂_iff_get] at hlocs
+  rcases hlocs with ⟨hsrle, hlocs⟩
+  have hlookup_hash : s.locs.get? l = some qt := by
+    simpa [MemoryTypeEnv.lookup] using hlookup
+  have hmem_pair : (l, qt) ∈ s.locs.toList := by
+    simpa using (Std.HashMap.mem_toList_iff_getElem?_eq_some (m := s.locs) (k := l) (v := qt)).2 hlookup_hash
+  have hmem := hmem_pair
+  rw [List.mem_iff_get] at hmem
+  rcases hmem with ⟨⟨i, hsi⟩, hmem⟩
+  have hri := hsi
+  rw [← hsrle] at hri
+  specialize hlocs i hri hsi
+  rw [hmem] at hlocs
+  cases hr : R.locBits.get ⟨i, hri⟩
+  · rw [hr] at hlocs
+    rcases hlocs with _ | ⟨_, _, ⟨tp, hpred_some⟩, _, _⟩
+    have : False := by
+      have h := hpred_false
+      simp [hpred_some, Option.isSome] at h
+    exact this.elim
+  · rw [hr] at hlocs
+    rcases hlocs with ⟨_, _, hmu⟩ | _
+    exact hmu
+
 -- Typing results must satisfy the observable constraints:
 def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
   -- (i) If the return value is observable, require the inferred return
@@ -210,6 +248,118 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
   let memMatches : Prop :=
     ∀ l et, obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et ∧ et.poison = false
   retMatches ∧ memMatches
+
+private lemma TypeSystemEnforcesNonInterference_unit
+    {n fuel1 fuel2 : Nat}
+    {s : InputSpec} {obs : ObservableSpec} {ctx : TypeContext} {res : TypeResult}
+    {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv} {R : Regime}
+    {cf₁ cf₂ : Config} {o₁ o₂ : ExprOrValue}
+    {v1 v2 : Bool}
+    (hocmm : ∀ (l : Address) (et : QTyp), obs.Lobs.lookup l = some et →
+        res.memEnv'.lookup l = some et ∧ et.poison = false)
+    (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt →
+        qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
+    (hctxsm : ∀ {l : Address} {qt : QTyp}, s.locs.lookup l = some qt →
+        ctx.memEnv.lookup l = some qt)
+    (hctxm : ∀ {l : Address} {qt : QTyp}, ctx.memEnv.lookup l = some qt →
+        ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none)
+    (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
+    (htc : typecheck ctx Expr.unit n = Except.ok res)
+    (heval1 : LeanPoison.beval fuel1 (mkInit μ₁ ρ₁) Expr.unit v1 =
+        pure (Except.ok (cf₁, o₁.toValue?.getD Value.unit)))
+    (heval2 : LeanPoison.beval fuel2 (mkInit μ₂ ρ₂) Expr.unit v2 =
+        pure (Except.ok (cf₂, o₂.toValue?.getD Value.unit)))
+    (hte1 : o₁.toExpr? = none) (hte2 : o₂.toExpr? = none) :
+    observablesEqual obs cf₁ cf₂ o₁ o₂ := by
+  simp [observablesEqual]
+  rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
+  simp [typecheckUnit] at htc
+  injection htc with htc
+  subst res
+  constructor
+  · intro l et hocl
+    have ⟨hocmm', hp⟩ := hocmm l et hocl
+    dsimp at hocmm'
+    rcases hslm : s.locs.lookup l with _ | ⟨qt⟩
+    · simp [MemoryTypeEnv.hasKey] at hctxm
+      simp [MemoryTypeEnv.lookup] at hslm
+      have ⟨hctxm', _⟩ := hctxm hocmm' (fun h => hslm h)
+      rw [hp] at hctxm'
+      cases hctxm'
+    · have hctxsm' := hctxsm hslm
+      rw [hctxsm'] at hocmm'
+      injection hocmm' with hocmm'
+      subst hocmm'
+      have hqt_poison : qt.poison = false := by
+        simpa using hp
+      have hmu :=
+        agreeOnCriticalInputsUnderRegimeSpec.mem_eq_of_poison_false
+          (haociurs := haociurs) (hppt := hppt) (hlookup := hslm) (hpoison := hqt_poison)
+      rcases Nat.decEq fuel1 0 with (hnf1 | hf1)
+      · simp [LeanPoison.beval] at heval1
+        rw [if_neg hnf1] at heval1
+        apply congrFun (a := ()) at heval1
+        injection heval1 with heval1 _
+        injection heval1 with heval1
+        injection heval1 with heval1m heval1v
+        rcases Nat.decEq fuel2 0 with (hnf2 | hf2)
+        · simp [LeanPoison.beval] at heval2
+          rw [if_neg hnf2] at heval2
+          apply congrFun (a := ()) at heval2
+          injection heval2 with heval2 _
+          injection heval2 with heval2
+          injection heval2 with heval2m heval2v
+          rw [← heval1m, ← heval2m]
+          simp [mkInit]
+          exact hmu
+        · simp [LeanPoison.beval] at heval2
+          rw [if_pos hf2] at heval2
+          apply congrFun (a := ()) at heval2
+          injection heval2 with heval2 _
+          injection heval2
+      · simp [LeanPoison.beval] at heval1
+        rw [if_pos hf1] at heval1
+        apply congrFun (a := ()) at heval1
+        injection heval1 with heval1 _
+        injection heval1
+  · rcases Nat.decEq fuel1 0 with (hnf1 | hf1)
+    · simp [LeanPoison.beval] at heval1
+      rw [if_neg hnf1] at heval1
+      apply congrFun (a := ()) at heval1
+      injection heval1 with heval1 _
+      injection heval1 with heval1
+      injection heval1 with heval1m heval1v
+      rcases Nat.decEq fuel2 0 with (hnf2 | hf2)
+      · simp [LeanPoison.beval] at heval2
+        rw [if_neg hnf2] at heval2
+        apply congrFun (a := ()) at heval2
+        injection heval2 with heval2 _
+        injection heval2 with heval2
+        injection heval2 with heval2m heval2v
+        simp [ExprOrValue.toValue?, Option.getD] at heval1v
+        simp [ExprOrValue.toValue?, Option.getD] at heval2v
+        have ho1 : o₁ = ExprOrValue.value Value.unit := by
+          rcases o₁ with ⟨o₁⟩ | ⟨o₁⟩
+          · simp [ExprOrValue.toExpr?] at hte1
+          · dsimp at heval1v
+            rw [← heval1v]
+        have ho2 : o₂ = ExprOrValue.value Value.unit := by
+          rcases o₂ with ⟨o₂⟩ | ⟨o₂⟩
+          · simp [ExprOrValue.toExpr?] at hte2
+          · dsimp at heval2v
+            rw [← heval2v]
+        right
+        rw [ho1, ho2]
+      · simp [LeanPoison.beval] at heval2
+        rw [if_pos hf2] at heval2
+        apply congrFun (a := ()) at heval2
+        injection heval2 with heval2 _
+        injection heval2
+    · simp [LeanPoison.beval] at heval1
+      rw [if_pos hf1] at heval1
+      apply congrFun (a := ()) at heval1
+      injection heval1 with heval1 _
+      injection heval1
 
 -- ==========================
 -- Non-Interference property
@@ -241,4 +391,59 @@ theorem TypeSystemEnforcesNonInterference_spec
         typecheck ctx e fuel = .ok res ∧
         ObsConstraints obs res) →
         NonInterferenceSpec e s obs ctx) := by
-  sorry
+  rintro _ _ ctx hctx ⟨fuel_tc, res, htc, ⟨hocrm, hocmm⟩⟩
+  induction fuel_tc using Nat.strong_induction_on
+    generalizing e s obs ctx hctx res hocrm hocmm with
+  | _ n IH =>
+    rintro ⟨hiq1, hppt, hppf⟩ _ _ μ₁ μ₂ ρ₁ ρ₂ R cf₁ cf₂ o₁ o₂
+           hics1 hics2 hric1 hric2 hcrs1 hcrs2 haociurs
+           ⟨fuel1, v1, heval1, hte1⟩ ⟨fuel2, v2, heval2, hte2⟩
+    rcases hctx with ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩
+    simp [NonInterferenceSpec] at IH
+    cases e with
+    | unit =>
+      exact
+        TypeSystemEnforcesNonInterference_unit
+          (hocmm := hocmm) (hppt := hppt)
+          (hctxsm := hctxsm) (hctxm := hctxm)
+          (haociurs := haociurs) htc heval1 heval2 hte1 hte2
+    | num _ =>
+      sorry
+    | bool _ =>
+      sorry
+    | str _ =>
+      sorry
+    | var _ =>
+      sorry
+    | unaryop _ _ =>
+      sorry
+    | op _ _ _ =>
+      sorry
+    | ite _ _ _ =>
+      sorry
+    | newRef _ =>
+      sorry
+    | assign _ _ =>
+      sorry
+    | deref _ =>
+      sorry
+    | seq _ _ =>
+      sorry
+    | kwhile _ _ =>
+      sorry
+    | vlet _ _ _ =>
+      sorry
+    | fn _ _ _ _ =>
+      sorry
+    | pfn _ _ _ _ =>
+      sorry
+    | app _ _ =>
+      sorry
+    | rand _ =>
+      sorry
+    | frand _ =>
+      sorry
+    | printString _ =>
+      sorry
+    | printInt _ =>
+      sorry
