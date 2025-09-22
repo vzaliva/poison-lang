@@ -220,7 +220,6 @@ terminals :: terminals_ ::=
   | [    :: :: lsquare   {{ tex [ }}
   | ]    :: :: rsquare   {{ tex ] }}
   | @    :: :: at        {{ tex @ }}
-  | ->*   :: :: mredstar   {{ tex \xrightarrow{\ast} }}
   | =>   :: :: lmbd   {{ tex \Rightarrow }}
   | ==>   :: :: beval   {{ tex \Downarrow }}
   | <:   :: :: subtype   {{ tex <: }}

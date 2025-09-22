@@ -907,23 +907,6 @@ miss poisoned ones. Thus, while clean-marked values are soundly clean,
 poisoned-marked values are not necessarily poisoned.
 
 
-\begin{theorem}[Preservation]
-Suppose
-\[
-pc ; \Gamma ; \sigma \;\vdash\; e : T \,\rhd\, p \;\dashv\; \Gamma_1
-\qquad\text{and}\qquad
-\langle e , \mu , \rho \rangle \;\rightarrow\; \langle e' , \mu' , \rho' \rangle .
-\]
-Then there exists $\Gamma_2$ such that
-\[
-pc ; \Gamma_1 ; \sigma \;\vdash\; e' : T \,\rhd\, p' \;\dashv\; \Gamma_2,
-\]
-where $\Gamma_2$ extends $\Gamma_1$ in the following sense:
-\begin{itemize}
-    \item For all $l \in \text{dom}(\Gamma_1)$: if $\Gamma_1(l) = T \triangleright p_1$, then $\Gamma_2(l) = T \triangleright p_2$ for some $p_2$ (types are preserved, poison may change)
-    \item $\text{dom}(\Gamma_1) \subseteq \text{dom}(\Gamma_2)$ (new locations may be added)
-\end{itemize}
-\end{theorem}
 
 The typestate (memory typing environments $\Gamma$) is monotone only with
 respect to base types (\texttt{T}): once a location receives a type, that type
