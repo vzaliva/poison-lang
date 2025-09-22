@@ -224,7 +224,6 @@ lemma agreeOnCriticalInputsUnderRegimeSpec.mem_eq_of_poison_false
   have hri := hsi
   rw [← hsrle] at hri
   specialize hlocs i hri hsi
-  -- hlocs corresponds to the pair at index i
   rw [hmem] at hlocs
   cases hr : R.locBits.get ⟨i, hri⟩
   · rw [hr] at hlocs
