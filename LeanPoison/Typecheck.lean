@@ -65,20 +65,12 @@ structure TypeResult where
 /-- Type checking monad for error handling -/
 abbrev TypecheckM := Except String
 
-/-- Extract conservative set of heap locations that predicate expression pe may read from -/
-def extractDeps (pe : PExpr) : Deps :=
-  match pe with
-  | PExpr.deref _pe' =>
-    -- For now, conservatively assume all dereferences might read any location
-    -- In a more precise implementation, we would analyze the expression to determine specific locations
-    []
-  | PExpr.op pe1 _ pe2 => extractDeps pe1 ++ extractDeps pe2
-  | PExpr.unaryop _ pe' => extractDeps pe'
-  | PExpr.ite pe1 pe2 pe3 => extractDeps pe1 ++ extractDeps pe2 ++ extractDeps pe3
-  | PExpr.app pe1 pe2 => extractDeps pe1 ++ extractDeps pe2
-  | PExpr.vlet _ pe1 pe2 => extractDeps pe1 ++ extractDeps pe2
-  | _ => []  -- literals, variables, etc. don't read from heap
 
+/-- Extract dependencies from a predicate - placeholder implementation -/
+def extractDepsFromPred (_pred : TPred) : Deps :=
+  -- TODO: Implement proper dependency extraction from predicate
+  -- For now, return empty dependencies as placeholder
+  []
 
 -- Allocate a fresh location and return it along with updated typing context
 def freshTLoc (ctx : TypeContext): (Address × TypeContext) :=
@@ -150,12 +142,6 @@ def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
   | Expr.vlet x e1 e2 => (fun pe1 pe2 => .vlet x pe1 pe2) <$> e1.toPExpr <*> e2.toPExpr
   | Expr.app e1 e2 => .app <$> e1.toPExpr <*> e2.toPExpr
   | _ => throw "Cannot convert expression to PExpr"
-
-/-- Extract dependencies from Expr, returning empty deps if conversion to PExpr fails -/
-def extractDepsFromExpr (e : Expr) : Deps :=
-  match Expr.toPExpr e with
-  | .ok pe => extractDeps pe
-  | .error _ => []  -- If conversion fails, conservatively return empty deps
 
 -- Helper function to project ETyp to Typ By stripping poison and closure
 -- information from arrows and locations from references.
@@ -316,23 +302,26 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
   the condition using PExpr.equalWithEnvs for proper environment-aware
   comparison.
 --/
-def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag := do
+def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag × Deps) := do
   -- Try to convert the condition e to a PExpr
   let conditionPExpr ← e.toPExpr
 
   -- Helper function to check if a predicate's test expression matches the condition
-  let checkPredicate (arg : PExpr) (qt : QTyp) : TypecheckM (Option Tag) :=
+  let checkPredicate (arg : PExpr) (qt : QTyp) : TypecheckM (Option (Tag × Deps)) :=
     match qt.pred with
     | none => return none
-    | some ⟨tag, arg_name, pred_body, var_env⟩ =>
+    | some pred =>
               -- Compare the predicate body with the condition using environment-aware equality
-        if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) defaultFuel then return some tag else return none
+        if PExpr.equalWithEnvs pred.pred_body pred.var_env conditionPExpr S (some (pred.arg_name, arg)) defaultFuel then
+          let deps := extractDepsFromPred pred
+          return some (pred.tag, deps)
+        else return none
 
   -- Collect all matching tags from variable environment
     let varMatches := S.foldl (init := []) fun acc ⟨name, qt⟩ =>
     let arg := PExpr.var name
     match checkPredicate arg qt with
-    | .ok (some tag) => tag :: acc
+    | .ok (some (tag, deps)) => (tag, deps) :: acc
     | .ok none => acc
     | .error _ => acc
 
@@ -352,16 +341,16 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag 
           let arg := PExpr.deref (PExpr.var name)
           -- Use checkPredicate to check if the memory location's predicate matches
           match checkPredicate arg memQt with
-          | .ok (some tag) => tag :: acc
+          | .ok (some (tag, deps)) => (tag, deps) :: acc
           | .ok none => acc
           | .error _ => acc
         | none => acc
     | _ => acc
 
   let allMatches := varMatches ++ refMatches
-  -- Return the tag if exactly one match is found, otherwise throw an error
+  -- Return the tag and dependencies if exactly one match is found, otherwise throw an error
   match allMatches with
-  | [tag] => return tag
+  | [(tag, deps)] => return (tag, deps)
   | [] => throw "No matching guard found for condition"
   | _ => throw s!"Multiple matching guards found for condition: {allMatches}"
 
@@ -909,11 +898,8 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
 
     -- Try predicate-based de-poisoning first
     match matchGuard e1 result1.memEnv' ctx.varEnv with
-    | .ok k => do
+    | .ok (k, deps) => do
       -- Predicate-based case (if_depoison)
-
-      -- Extract dependencies from the condition expression
-      let deps := extractDepsFromExpr e1
 
       -- Type check both branches with updated tag environment
       let ctxTrue := { ctx' with tagEnv := ctx'.tagEnv.insert k ⟨true, deps⟩ }
@@ -983,7 +969,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
 
     -- Try predicate-based de-poisoning first
     match matchGuard e1 result1.memEnv' ctx.varEnv with
-    | .ok k => do
+    | .ok (k, deps) => do
       -- Predicate-based case (while_depoison) - simplified implementation
       let branchPc := joinPoison ctx.pc p'
       let ctx'' := { ctx' with pc := branchPc }
@@ -995,8 +981,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
       -- Simplified: just return unit with combined poison
       let poison := joinPoison ctx.pc (joinPoison p' p'')
       let qt : QTyp := ⟨ETyp.unit, poison, none  ⟩
-      -- Extract dependencies and set k to false after loop (as per Ott spec)
-      let deps := extractDepsFromExpr e1
+      -- Set k to false after loop (as per Ott spec)
       let tagEnv' := ctx'.tagEnv.insert k ⟨false, deps⟩
       return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 

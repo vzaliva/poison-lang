@@ -261,8 +261,7 @@ formula :: formula_ ::=
   | fresh k                :: :: fresh_tag       {{ com k is fresh }}
   | fresh x S              :: :: fresh_var       {{ com x is fresh in S }}
   | n0 = random n1         :: :: random_gen     {{ com n0 is a random number in [0, n1] range }}
-  | match_guard e G S = k  :: :: match_guard  {{ com match\_guard(e, G, S) scans the predicates attached to every heap cell in G and variable in S; if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to the condition e, it returns that k—otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] }}
-  | extract_deps e = deps  :: :: extract_deps {{ com extract\_deps(e) returns a conservative set of heap locations that expression e may read from }}  {{ tex extract\_deps([[e]]) = [[deps]] }}
+  | match_guard e G S = k with deps  :: :: match_guard  {{ com match\_guard(e, G, S) scans the predicates attached to every heap cell in G and variable in S; if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to the condition e, it returns that k along with the dependencies deps—otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] \text{ with } [[deps]] }}
   | invalidate_deps L l = L' :: :: invalidate_deps {{ com invalidate\_deps(L, l) removes from L all entries that have location l in their dependency set }}  {{ tex invalidate\_deps([[L]], [[l]]) = [[L']] }}
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
   | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
@@ -766,8 +765,7 @@ pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G'' ; L''
 % This would be more precise but adds complexity. The current approach is simpler while
 % still enabling predicate-based de-poisoning within each branch.
 pm ; pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
-match_guard e1 G S = k
-extract_deps e1 = deps
+match_guard e1 G S = k with deps
 pm ; pc ; G' ; S ; L'[k |-> true using deps] |- e2 : T :> p'' { P'' } -| G'' ; L''
 pm ; pc ; G' ; S ; L'[k |-> false using deps] |- e3 : T :> p''' { P''' } -| G''' ; L'''
 ----------------------------------  :: if_depoison
@@ -786,13 +784,12 @@ pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p' join p'' p''
 
 % Predicate-based while typing rule (when matching predicate found)
 pm; indexedp p i ; IndexedG G i ; S ; L |- e1 : bool :> indexedp p' i { P' }  -| IndexedG G' i ; L
-match_guard e1 G S = k
-extract_deps e1 = deps
+match_guard e1 G S = k with deps
 pm; join indexedp p i indexedp p' i ; IndexedG G' i ; S ; L[k |-> true using deps] |- e2 : unit :> indexedp p'' i { P'' }  -| IndexedG G'' i ; L
 indexedp p 0 = pc AND indexedp p i+1 = join indexedp p i indexedp p'' i
 IndexedG G 0 = G AND IndexedG G i+1 = JoinG IndexedG G i IndexedG G'' i
 %  "where n is the smallest natural number satisfying the two equalities above."
-indexedp p n+1 = indexedp p n 
+indexedp p n+1 = indexedp p n
 IndexedG G n+1 = IndexedG G n
 ---------------------------------------------------------------------------  :: while_depoison
 pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexedp p n { no_pred }  -| IndexedG G n ; L[k |-> false using deps]
