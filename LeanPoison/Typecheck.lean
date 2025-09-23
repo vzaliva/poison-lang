@@ -378,7 +378,7 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
           let arg := PExpr.deref (PExpr.var name)
           -- Use checkPredicate to check if the memory location's predicate matches
           match checkPredicate arg memQt with
-          | .ok (some (tag, deps)) => (tag, deps) :: acc
+          | .ok (some (tag, deps)) => (tag, l :: deps) :: acc  -- Add the memory location l that arg refers to
           | .ok none => acc
           | .error _ => acc
         | none => acc
