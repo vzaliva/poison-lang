@@ -1,0 +1,7 @@
+Evaluating file: examples/invalidation-example2.poison
+
+Type checking passed: Type: QTyp.mk ETyp.int false none
+Result: 5
+Final state:
+  Variable environment: []
+  Memory: [(0, 10)]

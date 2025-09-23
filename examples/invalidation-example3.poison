@@ -1,0 +1,26 @@
+-- Example 3: Predicate calling function with captured dependency
+-- This tests dependency tracking through function closures
+-- NOTE: Currently returns clean because predicates are not specified
+-- Once predicates specificatoin is implemented, this should return poisoned due to invalidation
+
+let a = ref 5 in
+let b = 10 in
+
+-- Define a function that captures 'a' in its closure
+let check_a = fn x : int => x > !a : bool in
+
+-- b has a predicate that calls the function: pcl(x) := check_a(x)
+-- The predicate depends on 'a' through the function closure
+if check_a b then
+  -- b is initially de-poisoned here
+  -- L[k] = true with deps = [a] (extracted from function closure)
+  
+  -- This write invalidates L[k] because a is in deps
+  a := 100;
+  
+  -- The function closure's dependency on 'a' is now stale
+  -- We should fall back to conservative typing
+  b
+else
+  -- we return clean value in this branch
+  5

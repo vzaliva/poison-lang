@@ -454,7 +454,7 @@ applied, the result inherits this poison.
     \item \textbf{Conditionals}: Both branches get $\text{pc} \sqcup \text{poison}(\text{condition})$, but predicate-based rules can enable de-poisoning
     \item \textbf{Predicate conditionals}: When $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, branches are typed with $\mathcal{L}[k \mapsto \text{true}]$ and $\mathcal{L}[k \mapsto \text{false}]$
     \item \textbf{Variable access}: De-poisoning when guard evaluates to true, definite poisoning when false, standard propagation when guard unknown
-    \item \textbf{Assignment}: Operation reliability = $\text{pc} \sqcup \text{poison}(\text{ref})$, Data = $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{value})$
+    \item \textbf{Assignment}: Operation reliability = $\text{pc} \sqcup \text{poison}(\text{ref})$, Data = $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{value})$, invalidates $\mathcal{L}$ entries dependent on written location
     \item \textbf{Dereference}: $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{data\_at\_location})$, with predicate-based de-poisoning support
     \item \textbf{Let bindings}: Variable gets $\text{pc} \sqcup \text{poison}(\text{bound\_value})$ and preserves predicates
     \item \textbf{Functions}: Abstraction gets $\text{pc}$ and captures body and
@@ -492,13 +492,34 @@ part of the source language and do not have typing rules.
 \begin{itemize}
     \item $\Gamma$: Memory typing environment $l : Q$ (memory location qualified types)
     \item $\sigma$: Variable typing environment $x : Q$ (variable qualified types)
-    \item $\mathcal{L}$: Logical environment $k : \{\text{true}, \text{false}\}$ (predicate guard evaluations)
+    \item $\mathcal{L}$: Logical environment $k : bool \times \text{deps}$ (predicate guard evaluations with dependency tracking)
     \item $\text{pc}$: Program counter poison (current context reliability)
 \end{itemize}
 
 Note that both $\Gamma$ and $\sigma$ store \emph{qualified types} $Q$ rather
 than simple types, and can include predicates that enable conditional
 de-poisoning.
+
+\subsection{Dependency Tracking and Invalidation}
+
+To ensure type system soundness, the logical environment $\mathcal{L}$ tracks
+dependencies alongside guard valuations. This prevents unsound de-poisoning when
+predicate dependencies are modified:
+
+\begin{itemize}
+    \item \textbf{Dependency extraction}: When a guard $k$ is introduced via \texttt{match\_guard}, 
+    the system computes a conservative set of heap locations that the predicate may read from
+    \item \textbf{Dependency storage}: Guard valuations are stored as $k : bool \times \text{deps}$ 
+    where \texttt{deps} is a set ofthe heap locations the predicate depends on
+    \item \textbf{Invalidation on write}: When writing to location $l$, all entries in $\mathcal{L}$ 
+    whose dependency sets contain $l$ are removed from $\mathcal{L}$
+    \item \textbf{Conservative analysis}: Dependency extraction uses syntactic analysis of 
+    predicate expressions to identify heap reads through variables and dereferences
+\end{itemize}
+
+This mechanism ensures that predicate-based de-poisoning remains sound even when
+the heap locations that predicates depend on are modified between guard introduction
+and consumption.
 
 \subsection{Judgment Form}
 
@@ -515,7 +536,8 @@ The qualified type $Q$ encapsulates both the base type, poison status, and any
 associated predicates. The logical environment $\mathcal{L}$ tracks the current
 valuation of predicate guards, enabling predicate-based typing decisions. The
 output logical environment $\mathcal{L}'$ reflects any updates to guard
-valuations learned during typing (e.g., after a while loop terminates).
+valuations learned during typing (e.g., after a while loop terminates) or
+because of invalidation. due to changed dependencies.
 
 \subsection{Key Typing Rules}
 
@@ -758,6 +780,7 @@ Logical environment $\mathcal{L}$ evolves through:
 \begin{itemize}
     \item \textbf{Sequence}: Chained through expressions - first expression produces $\mathcal{L}'$, second uses $\mathcal{L}'$ and produces $\mathcal{L}''$
     \item \textbf{While loops}: After a predicate-matched loop terminates, the guard tag is set to false in $\mathcal{L}'$
+    \item \textbf{Assignment}: Invalidates entries whose dependencies include the written location
     \item \textbf{Most other constructs}: Pass through unchanged
 \end{itemize}
 

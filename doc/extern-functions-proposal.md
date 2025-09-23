@@ -217,6 +217,28 @@ Extend the parser to accept the new forms, including:
 All test programs that reference externs should typecheck but abort at runtime
 if evaluation reaches an extern expression.
 
+### Use in the existing test suite
+
+Once extern functions are implemented, they can be used to test the dependency
+invalidation mechanism described in GitHub issue #37. The invalidation examples
+(`invalidation-example1.poison`, `invalidation-example2.poison`,
+`invalidation-example3.poison`) can be enhanced with extern functions to create
+predicates that depend on heap locations. For example,
+`invalidation-example1.poison` could be enhanced with:
+
+```poison
+let a = ref 5 in
+let r = extern val : (int :> poisoned { guard g, x => x > !a }) in
+if r > !a then
+  a := r + 1;
+  r
+else 
+  5
+```
+
+This would allow testing whether the dependency tracking and invalidation mechanism
+correctly handles predicates that read from heap locations.
+
 ### Basic functionality
 
 ```poison
