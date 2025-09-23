@@ -66,11 +66,43 @@ structure TypeResult where
 abbrev TypecheckM := Except String
 
 
-/-- Extract dependencies from a predicate - placeholder implementation -/
-def extractDepsFromPred (_pred : TPred) : Deps :=
-  -- TODO: Implement proper dependency extraction from predicate
-  -- For now, return empty dependencies as placeholder
-  []
+/-- Extract dependencies from a predicate by analyzing free variables in the predicate body -/
+def extractDepsFromPred (pred : TPred) : Deps :=
+  let rec extractDepsFromPExpr (pe : PExpr) (boundVars : List Name) (env : VarTypeEnv) (fuel : Nat) : Deps :=
+    match fuel with
+    | 0 => []  -- Out of fuel, return empty dependencies
+    | fuel + 1 =>
+      match pe with
+      | PExpr.var x =>
+        if boundVars.contains x then []  -- Bound variable, not free
+        else
+          match env.find? (fun (name, _) => name == x) with
+          | some (_, qt) =>
+            match qt.etyp with
+            | ETyp.ref _t l => [l]  -- Reference type, add location
+            | ETyp.parrow _argTy _retTy _poison (PFnTClosure.mk argName body varEnv') =>
+              -- Pure function, recurse into its closure
+              extractDepsFromPExpr body (argName :: boundVars) varEnv' fuel
+            | _ => []  -- Other types don't read from heap
+          | none => []  -- Variable not found in environment
+      | PExpr.deref pe' => extractDepsFromPExpr pe' boundVars env fuel
+      | PExpr.op pe1 _ pe2 =>
+        extractDepsFromPExpr pe1 boundVars env fuel ++ extractDepsFromPExpr pe2 boundVars env fuel
+      | PExpr.unaryop _ pe' => extractDepsFromPExpr pe' boundVars env fuel
+      | PExpr.ite pe1 pe2 pe3 =>
+        extractDepsFromPExpr pe1 boundVars env fuel ++
+        extractDepsFromPExpr pe2 boundVars env fuel ++
+        extractDepsFromPExpr pe3 boundVars env fuel
+      | PExpr.app pe1 pe2 =>
+        extractDepsFromPExpr pe1 boundVars env fuel ++ extractDepsFromPExpr pe2 boundVars env fuel
+      | PExpr.vlet x pe1 pe2 =>
+        let deps1 := extractDepsFromPExpr pe1 boundVars env fuel
+        let deps2 := extractDepsFromPExpr pe2 (x :: boundVars) env fuel
+        deps1 ++ deps2
+      | _ => []  -- literals, unit, etc. don't read from heap
+
+  -- Start with the bound parameter in the bound variables list
+  extractDepsFromPExpr pred.pred_body [pred.arg_name] pred.var_env defaultFuel
 
 -- Allocate a fresh location and return it along with updated typing context
 def freshTLoc (ctx : TypeContext): (Address × TypeContext) :=
@@ -311,7 +343,7 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
     match qt.pred with
     | none => return none
     | some pred =>
-              -- Compare the predicate body with the condition using environment-aware equality
+        -- Compare the predicate body with the condition using environment-aware equality
         if PExpr.equalWithEnvs pred.pred_body pred.var_env conditionPExpr S (some (pred.arg_name, arg)) defaultFuel then
           let deps := extractDepsFromPred pred
           return some (pred.tag, deps)
