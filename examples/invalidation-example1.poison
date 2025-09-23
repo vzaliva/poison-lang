@@ -1,0 +1,16 @@
+-- Example 1: Simple dependency invalidation
+-- r carries guard k with predicate pcl(x) := x > !a
+-- NOTE: Currently returns clean because predicates are not specified
+-- Once predicates specificatoin is implemented, this should return poisoned due to invalidation
+let a = ref 5 in
+let r = 10 in
+if r > !a then
+  -- r is intitially dep-poisoned here
+  -- record L[k]=true with deps=[a]
+  a := r + 1;
+  -- write invalidates L[k], making r no longer de-poisoned in this branch
+  r
+  -- later de-poisoning may wrongly use stale L[k]
+else 
+  -- we return clean value in this branch
+  5

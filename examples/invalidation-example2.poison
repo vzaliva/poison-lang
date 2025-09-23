@@ -1,0 +1,22 @@
+-- Example 2: Value being de-poisoned is modified
+-- This tests if we handle invalidation when the de-poisoned value itself changes
+-- NOTE: Currently returns clean because predicates are not specified
+-- Once predicates specificatoin is implemented, this should return poisoned due to invalidation
+let r = ref 10 in
+
+-- r has predicate pcl(x) := x < 10, no external dependencies
+if !r < 10 then
+  -- r is initially de-poisoned here
+  -- record L[k]=true with deps=[r]
+  
+  -- Now we modify the value that was being de-poisoned
+  -- This should invalidate the predicate since the value changed
+  -- and the predicate may no longer hold
+  r := !r + 1;
+  
+  -- The predicate information is stale, so we fall back to conservative typing
+  !r
+else
+  -- we return clean value in this branch
+  5
+  
