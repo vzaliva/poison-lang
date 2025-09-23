@@ -766,8 +766,8 @@ pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G'' ; L''
 % This would be more precise but adds complexity. The current approach is simpler while
 % still enabling predicate-based de-poisoning within each branch.
 pm ; pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
-  match_guard e1 G S = k
-  extract_deps e1 = deps
+match_guard e1 G S = k
+extract_deps e1 = deps
 pm ; pc ; G' ; S ; L'[k |-> true using deps] |- e2 : T :> p'' { P'' } -| G'' ; L''
 pm ; pc ; G' ; S ; L'[k |-> false using deps] |- e3 : T :> p''' { P''' } -| G''' ; L'''
 ----------------------------------  :: if_depoison
