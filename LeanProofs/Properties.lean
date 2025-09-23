@@ -99,14 +99,17 @@ private lemma typecheck_var_preserves_typestate (ctx : TypeContext) (pe : PExpr)
   cases h0: ctx.varEnv.lookup name with
   | none => simp_all
   | some qt =>
+    simp [h0] at H
     cases h1: qt with
     | mk etyp poison pred =>
+      simp [h1] at H
       cases h3: pred with
       | none =>
         -- No predicate case: preserves environment
         simp_all [pure, Except.pure]
         cases result; cases ctx; cases H; trivial
       | some tp =>
+        simp [h3] at H
         -- Has predicate: all cases preserve environment
         cases h4: tp with
         | mk tag etyp =>
@@ -115,11 +118,13 @@ private lemma typecheck_var_preserves_typestate (ctx : TypeContext) (pe : PExpr)
             -- Guard unknown: preserves environment
             simp_all [pure, Except.pure]
             cases result; cases ctx; cases H; trivial
-          | some b =>
-            -- Guard known (true/false): both preserve environment
-            cases b <;>
-            simp_all <;>
-            cases result <;> cases ctx <;> cases H <;> trivial
+          | some bd =>
+            cases bd with
+            | mk value _deps =>
+              -- Guard known (true/false): both preserve environment
+              cases value <;>
+              simp_all <;>
+              cases result <;> cases ctx <;> cases H <;> trivial
 
 -- Private lemma for deref case
 private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (e1 : Expr)
@@ -186,9 +191,15 @@ private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExp
                     | false =>
                       simp_all [pure, Except.pure]
                       match h10 : result1.tagEnv'[k]? with
-                      | some true | some false | none =>
-                      simp_all <;>
-                      cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
+                      | none =>
+                        simp_all <;>
+                        cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
+                      | some bd =>
+                        cases bd with
+                        | mk value _deps =>
+                          cases value <;>
+                          simp_all <;>
+                          cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
         | _ => simp_all
 
 -- Private lemma for ite case
@@ -229,7 +240,7 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
           cases h9: typecheckExpr { pc := ctx.pc,
                                     memEnv := result1.memEnv',
                                     varEnv := ctx.varEnv,
-                                    tagEnv := Std.HashMap.insert result1.tagEnv' k true,
+                                    tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := true, deps := k.2 },
                                     nextLoc := result1.nextLoc',
                                     nextTag := result1.nextTag',
                                     pureCtx := true } e2 fuel'
@@ -245,7 +256,7 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                       { pc := ctx.pc,
                         memEnv := result1.memEnv',
                         varEnv := ctx.varEnv,
-                        tagEnv := Std.HashMap.insert result1.tagEnv' k false,
+                        tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := false, deps := k.2 },
                         nextLoc := result2.nextLoc',
                         nextTag := result2.nextTag',
                         pureCtx := true }
@@ -264,23 +275,23 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                     simp_all
                     have hfuel : fuel' < fuel' + 1 + 1 := by linarith
                     have C' : ({ pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                       tagEnv := Std.HashMap.insert result1.tagEnv' k true,
+                                       tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := true, deps := k.2 },
                                        nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := true } : TypeContext).pureCtx = true
                             := by simp_all
                     have IH2 :=
                       IH fuel' hfuel { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                       tagEnv := Std.HashMap.insert result1.tagEnv' k true,
+                                       tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := true, deps := k.2 },
                                        nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := true }
                                        e2 pe2 result2 h3 C' h9
 
                     have C'' : ({ pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                       tagEnv := Std.HashMap.insert result1.tagEnv' k false,
+                                       tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := false, deps := k.2 },
                                        nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true } : TypeContext).pureCtx = true
                             := by simp_all
                     have IH3 :=
                       IH fuel' hfuel
                         { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                          tagEnv := Std.HashMap.insert result1.tagEnv' k false,
+                          tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := false, deps := k.2 },
                           nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
                         e3 pe3 result3 h4 C'' h11
                     rcases IH2 with ⟨H14, H15, H16⟩
