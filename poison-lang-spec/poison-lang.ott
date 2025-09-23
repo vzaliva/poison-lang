@@ -19,6 +19,11 @@ metavar tag, k ::=
   {{ phantom }}
   {{ coq string }}
 
+metavar deps ::=
+  {{ com Dependency sets for tracking heap locations read by predicates }}
+  {{ phantom }}
+  {{ coq list location }}
+
 grammar 
 
 % Index expressions for use in formulas
@@ -169,12 +174,12 @@ S {{ tex \sigma }} :: S_ ::=     {{ com variable typing environments }} {{ phant
 
 % Tag valuation environment
 tag_valuation, tv :: 'TV_' ::= {{ com tag valuation }}
-  | k : b                ::   :: tag
+  | k : b using deps     ::   :: tag_deps {{ com tag with boolean value and dependency set }}
 
 L {{ tex \mathcal{L} }} :: L_ ::=     {{ com tag valuation environments }} {{ phantom }} {{ coq list tag_valuation }}
   | empty                   ::   :: empty {{ coq [] }}
-  | L , tv                  ::   :: extend {{ coq ([[tv]]::[[L]]) }}
-  | L [ k |-> b ]           ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] ] }}
+  | L [ k |-> b using deps ] ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] \text{ using } [[deps]] ] }}
+  | invalidate_deps L l     ::   :: InvalidateDeps {{ tex invalidate\_deps([[L]], [[l]]) }} {{ com remove from L all entries whose dependency sets contain location l }}
 
 poison, p, pc :: 'p_' ::= {{ com poison status }} 
   | clean                    ::   :: clean
@@ -248,7 +253,7 @@ formula :: formula_ ::=
   | G ( l ) = Q        :: :: type_lookup {{ coq (lookup_location_type [[l]] [[G]] = Some ([[Q]])) }}   
   | S ( x ) = Q        :: :: var_type_lookup {{ coq (lookup_var_type [[x]] [[S]] = Some ([[Q]])) }}   
   | r ( x ) = v           :: :: var_lookup {{ coq (lookup_var [[x]] [[r]] = Some ([[v]])) }}   
-  | L ( k ) = b           :: :: tag_lookup {{ coq (lookup_tag [[k]] [[L]] = Some ([[b]])) }}   
+  | L ( k ) = b using deps :: :: tag_lookup {{ coq (lookup_tag [[k]] [[L]] = Some ([[b]], [[deps]])) }}   
   | p1 = p2                :: :: poison_eq   {{ coq ([[p1]] = [[p2]]) }}   
   | G1 = G2                :: :: type_env_eq {{ coq ([[G1]] = [[G2]]) }}   
   | formula1 AND formula2  :: :: and         {{ tex [[formula1]] \quad [[formula2]] }} {{ coq ([[formula1]] /\ [[formula2]]) }}
@@ -257,6 +262,8 @@ formula :: formula_ ::=
   | fresh x S              :: :: fresh_var       {{ com x is fresh in S }}
   | n0 = random n1         :: :: random_gen     {{ com n0 is a random number in [0, n1] range }}
   | match_guard e G S = k  :: :: match_guard  {{ com match\_guard(e, G, S) scans the predicates attached to every heap cell in G and variable in S; if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to the condition e, it returns that k—otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] }}
+  | extract_deps e = deps  :: :: extract_deps {{ com extract\_deps(e) returns a conservative set of heap locations that expression e may read from }}  {{ tex extract\_deps([[e]]) = [[deps]] }}
+  | invalidate_deps L l = L' :: :: invalidate_deps {{ com invalidate\_deps(L, l) removes from L all entries that have location l in their dependency set }}  {{ tex invalidate\_deps([[L]], [[l]]) = [[L']] }}
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
   | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
 
@@ -480,13 +487,13 @@ pm ; pc ; G ; S ; L |- s : string :> clean { no_pred } -| G ; L
 
 % Variable typing - with guarded predicate that evaluates to true triggering de-poisoning.
 S(x) = T :> p { guard k pred_closure pcl }
-L(k) = true
+L(k) = true using deps
 ------------------  :: var_guard_true
 pm ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L
 
 % Variable typing - with guarded predicate that evaluates to false, triggering poisoning.
 S(x) = T :> p { guard k pred_closure pcl }
-L(k) = false
+L(k) = false using deps
 ------------------  :: var_guard_false
 pm ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L
 
@@ -582,11 +589,12 @@ pm ; pc ; G ; S ; L |- ref e : ref T @ l :> pc { no_pred } -| G'[l |-> T :> join
 % Assignment through reference with region types The result of the whole
 % assignment (unit) is poisoned if the reference is poisoned. The stored value
 % is poisoned if the assignment is poisoned, or reference is poisoned, or the
-% value is poisoned. Predicate from e2 is preserved in the memory location
+% value is poisoned. Predicate from e2 is preserved in the memory location.
+% On write to location l, invalidate all L entries whose predicates may read l.
 pm ; pc ; G ; S ; L |- e1 : ref T @ l :> p' { P' } -| G' ; L'
 pm ; pc ; G' ; S ; L' |- e2 : T :> p'' { P'' } -| G'' ; L''
 ----------------------- :: assign
-pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p' { no_pred } -| G''[l |-> T :> join pc join p' p'' { P'' }] ; L''
+pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p' { no_pred } -| G''[l |-> T :> join pc join p' p'' { P'' }] ; invalidate_deps L'' l
 
 % Dereference - with poisoned reference always strips predicate and returns
 % poisoned result.
@@ -604,14 +612,14 @@ pm ; pc ; G ; S ; L |- !e : T :> join pc p { no_pred } -| G' ; L'
 % Dereference - with guarded predicate that evaluates to true, triggering de-poisoning.
 pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
   G'(l) = T :> p { guard k pred_closure pcl }
-  L'(k) = true
+  L'(k) = true using deps
 ----------------------- :: deref_guard_true
 pm ; pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G' ; L'
 
 % Dereference - with guarded predicate that evaluates to false, triggering poisoning.
 pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
   G'(l) = T :> p { guard k pred_closure pcl }
-  L'(k) = false
+  L'(k) = false using deps
 ----------------------- :: deref_guard_false
 pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G' ; L'
 
@@ -759,8 +767,9 @@ pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G'' ; L''
 % still enabling predicate-based de-poisoning within each branch.
 pm ; pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
   match_guard e1 G S = k
-pm ; pc ; G' ; S ; L'[k |-> true] |- e2 : T :> p'' { P'' } -| G'' ; L''
-pm ; pc ; G' ; S ; L'[k |-> false] |- e3 : T :> p''' { P''' } -| G''' ; L'''
+  extract_deps e1 = deps
+pm ; pc ; G' ; S ; L'[k |-> true using deps] |- e2 : T :> p'' { P'' } -| G'' ; L''
+pm ; pc ; G' ; S ; L'[k |-> false using deps] |- e3 : T :> p''' { P''' } -| G''' ; L'''
 ----------------------------------  :: if_depoison
 pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p'' p''' { no_pred } -| JoinG G'' G''' ; L'
 
@@ -778,14 +787,15 @@ pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p' join p'' p''
 % Predicate-based while typing rule (when matching predicate found)
 pm; indexedp p i ; IndexedG G i ; S ; L |- e1 : bool :> indexedp p' i { P' }  -| IndexedG G' i ; L
 match_guard e1 G S = k
-pm; join indexedp p i indexedp p' i ; IndexedG G' i ; S ; L[k |-> true] |- e2 : unit :> indexedp p'' i { P'' }  -| IndexedG G'' i ; L
+extract_deps e1 = deps
+pm; join indexedp p i indexedp p' i ; IndexedG G' i ; S ; L[k |-> true using deps] |- e2 : unit :> indexedp p'' i { P'' }  -| IndexedG G'' i ; L
 indexedp p 0 = pc AND indexedp p i+1 = join indexedp p i indexedp p'' i
 IndexedG G 0 = G AND IndexedG G i+1 = JoinG IndexedG G i IndexedG G'' i
 %  "where n is the smallest natural number satisfying the two equalities above."
 indexedp p n+1 = indexedp p n 
 IndexedG G n+1 = IndexedG G n
 ---------------------------------------------------------------------------  :: while_depoison
-pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexedp p n { no_pred }  -| IndexedG G n ; L[k |-> false]
+pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexedp p n { no_pred }  -| IndexedG G n ; L[k |-> false using deps]
 
 % Standard while typing rule (when no matching predicate found) (used as a
 % fallback when match_guard fails) 
