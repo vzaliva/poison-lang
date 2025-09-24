@@ -2,13 +2,7 @@
 set -u
 
 EXAMPLES_DIR="examples"
-INTERP_FLAGS=""
 
-# Optional flag: --big to use big-step semantics
-if [[ ${1-} == "--big" ]]; then
-  INTERP_FLAGS="--big"
-  shift
-fi
 TEMP_DIR="testResults"
 mkdir -p "$TEMP_DIR"
 
@@ -32,7 +26,7 @@ for poison_file in "$EXAMPLES_DIR"/*.poison; do
   fi
 
   # Run interpreter and capture exit code (stdout+stderr -> result_file)
-  lake exe poison-interpreter $INTERP_FLAGS "$poison_file" > "$result_file" 2>&1
+  lake exe poison-interpreter "$poison_file" > "$result_file" 2>&1
   exit_code=$?
 
   # Check whether output matches expected

@@ -454,7 +454,7 @@ applied, the result inherits this poison.
     \item \textbf{Conditionals}: Both branches get $\text{pc} \sqcup \text{poison}(\text{condition})$, but predicate-based rules can enable de-poisoning
     \item \textbf{Predicate conditionals}: When $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, branches are typed with $\mathcal{L}[k \mapsto \text{true}]$ and $\mathcal{L}[k \mapsto \text{false}]$
     \item \textbf{Variable access}: De-poisoning when guard evaluates to true, definite poisoning when false, standard propagation when guard unknown
-    \item \textbf{Assignment}: Operation reliability = $\text{pc} \sqcup \text{poison}(\text{ref})$, Data = $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{value})$
+    \item \textbf{Assignment}: Operation reliability = $\text{pc} \sqcup \text{poison}(\text{ref})$, Data = $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{value})$, invalidates $\mathcal{L}$ entries dependent on written location
     \item \textbf{Dereference}: $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{data\_at\_location})$, with predicate-based de-poisoning support
     \item \textbf{Let bindings}: Variable gets $\text{pc} \sqcup \text{poison}(\text{bound\_value})$ and preserves predicates
     \item \textbf{Functions}: Abstraction gets $\text{pc}$ and captures body and
@@ -464,45 +464,26 @@ applied, the result inherits this poison.
 
 \section{Operational Semantics}
 
-Hybrid small-step/big-step semantics with configurations $\langle \pi, e, \mu, \rho \rangle$:
 \begin{itemize}
     \item $\pi$: Pure-mode flag (\textit{pure} or \textit{impure})
     \item $\mu$: Memory mapping locations to integers (only integers can be stored in memory)
     \item $\rho$: Variable environment mapping variables to values
 \end{itemize}
 
-The semantics are provided in two complementary styles:
+The semantics :
 \begin{itemize}
-  \item \textbf{Small-step} (single reduction steps), with multi-step notation $\langle \pi, e, \mu, \rho \rangle \rightarrow^* \langle \pi', e', \mu', \rho' \rangle$ for the reflexive-transitive closure.
   \item \textbf{Big-step} (natural) semantics that evaluate expressions directly to values and a final configuration; we write informally $\langle \pi, e, \mu, \rho \rangle \Downarrow \langle \mu', v \rangle$.
 \end{itemize}
-We intentionally keep the two definitions close: while-loops are defined via if-expansion in both, function bodies are evaluated under captured environments, and the pure-mode discipline is preserved. Practically, both interpreters are implemented and selectable at runtime.
+
 
 \subsection*{Key rules:}
-\begin{align*}
-\langle \pi, \text{ref } n, \mu, \rho \rangle &\rightarrow \langle \pi, l, \mu[l \mapsto n], \rho \rangle \text{ (fresh } l\text{)} \\
-\langle \pi, !l, \mu, \rho \rangle &\rightarrow \langle \pi, n, \mu, \rho \rangle \text{ (where } \mu(l) = n\text{)} \\
-\langle \pi, l := n, \mu, \rho \rangle &\rightarrow \langle \pi, \text{unit}, \mu[l \mapsto n], \rho \rangle \\
-\langle \pi, \text{let } x = v \text{ in } e, \mu, \rho \rangle &\rightarrow \langle \pi, e, \mu, \rho[x \mapsto v] \rangle \\
-\langle \pi, \text{fn } x : T \Rightarrow e, \mu, \rho \rangle &\rightarrow \langle \pi, \text{closure}(x, e, \rho), \mu, \rho \rangle \\
-\langle \pi, \text{closure}(x, e, \rho')\; v, \mu, \rho \rangle &\rightarrow \langle \pi, v', \mu', \rho \rangle \,\,\text{(where } \langle \pi, e, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle \pi, v', \mu', \rho'' \rangle\text{)} \\
-\langle \pi, \text{pfn } x : T \Rightarrow pe, \mu, \rho \rangle &\rightarrow \langle \pi, \text{pe\_closure}(x, pe, \rho), \mu, \rho \rangle \\
-\langle \pi, \text{pe\_closure}(x, pe, \rho')\; v, \mu, \rho \rangle &\rightarrow \langle \pi, v', \mu, \rho \rangle \,\,\text{(where } \langle \text{pure}, pe, \mu, \rho'[x \mapsto v] \rangle \rightarrow^* \langle \text{pure}, v', \mu, \rho'' \rangle\text{)} \\
-\langle \pi, v ; e, \mu, \rho \rangle &\rightarrow \langle \pi, e, \mu, \rho \rangle \text{ (sequence with any value type)}
-\end{align*}
+
 
 Note that closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_closure}(x,
 pe, \rho)$ are runtime values that only appear during execution; they are not
 part of the source language and do not have typing rules.
 
-\paragraph{Pure-mode in the small-step semantics.} The Ott semantics carries the
-mode as the first component of configurations and steps: $\langle\pi, e, \mu,
-\rho\rangle \to \langle\pi', ev, \mu', \rho'\rangle$. All rules thread $\pi$
-unchanged except function application: \textsc{app\_closure\_value} applies only
-in impure mode (both sides headed by $\textit{impure}$), while
-\textsc{app\_pure\_closure\_value} evaluates the pure closure body under
-$\textit{pure}$ and returns to the caller's mode in the conclusion. This
-enforces that pure contexts can only apply pure closures.
+
 
 \section{Type System (Typestate)}
 
@@ -511,13 +492,34 @@ enforces that pure contexts can only apply pure closures.
 \begin{itemize}
     \item $\Gamma$: Memory typing environment $l : Q$ (memory location qualified types)
     \item $\sigma$: Variable typing environment $x : Q$ (variable qualified types)
-    \item $\mathcal{L}$: Logical environment $k : \{\text{true}, \text{false}\}$ (predicate guard evaluations)
+    \item $\mathcal{L}$: Logical environment $k : bool \times \text{deps}$ (predicate guard evaluations with dependency tracking)
     \item $\text{pc}$: Program counter poison (current context reliability)
 \end{itemize}
 
 Note that both $\Gamma$ and $\sigma$ store \emph{qualified types} $Q$ rather
 than simple types, and can include predicates that enable conditional
 de-poisoning.
+
+\subsection{Dependency Tracking and Invalidation}
+
+To ensure type system soundness, the logical environment $\mathcal{L}$ tracks
+dependencies alongside guard valuations. This prevents unsound de-poisoning when
+predicate dependencies are modified:
+
+\begin{itemize}
+    \item \textbf{Dependency extraction}: When a guard $k$ is introduced via \texttt{match\_guard}, 
+    the system computes a conservative set of heap locations that the predicate may read from
+    \item \textbf{Dependency storage}: Guard valuations are stored as $k : bool \times \text{deps}$ 
+    where \texttt{deps} is a set ofthe heap locations the predicate depends on
+    \item \textbf{Invalidation on write}: When writing to location $l$, all entries in $\mathcal{L}$ 
+    whose dependency sets contain $l$ are removed from $\mathcal{L}$
+    \item \textbf{Conservative analysis}: Dependency extraction uses syntactic analysis of 
+    predicate expressions to identify heap reads through variables and dereferences
+\end{itemize}
+
+This mechanism ensures that predicate-based de-poisoning remains sound even when
+the heap locations that predicates depend on are modified between guard introduction
+and consumption.
 
 \subsection{Judgment Form}
 
@@ -534,7 +536,8 @@ The qualified type $Q$ encapsulates both the base type, poison status, and any
 associated predicates. The logical environment $\mathcal{L}$ tracks the current
 valuation of predicate guards, enabling predicate-based typing decisions. The
 output logical environment $\mathcal{L}'$ reflects any updates to guard
-valuations learned during typing (e.g., after a while loop terminates).
+valuations learned during typing (e.g., after a while loop terminates) or
+because of invalidation. due to changed dependencies.
 
 \subsection{Key Typing Rules}
 
@@ -777,6 +780,7 @@ Logical environment $\mathcal{L}$ evolves through:
 \begin{itemize}
     \item \textbf{Sequence}: Chained through expressions - first expression produces $\mathcal{L}'$, second uses $\mathcal{L}'$ and produces $\mathcal{L}''$
     \item \textbf{While loops}: After a predicate-matched loop terminates, the guard tag is set to false in $\mathcal{L}'$
+    \item \textbf{Assignment}: Invalidates entries whose dependencies include the written location
     \item \textbf{Most other constructs}: Pass through unchanged
 \end{itemize}
 
@@ -925,48 +929,7 @@ trade-off for soundness, preferring to mark clean values as poisoned rather than
 miss poisoned ones. Thus, while clean-marked values are soundly clean,
 poisoned-marked values are not necessarily poisoned.
 
-\subsection{Progress}
 
-Progress ensures that well-typed expressions do not get stuck during evaluation.
-If an expression $e$ is well-typed in environments $\Gamma$ and $\sigma$, then
-either:
-\begin{itemize}
-    \item $e$ is a value (already fully evaluated), or
-    \item $e$ can take a step to some expression $e'$ according to the operational semantics
-\end{itemize}
-
-This property guarantees that the type system prevents runtime errors that would
-cause the program to halt unexpectedly. In the context of poison tracking,
-progress ensures that poison propagation rules are consistent with the
-operational semantics - well-typed expressions can always proceed to their next
-evaluation step, maintaining the poison state tracking throughout execution.
-
-\subsection{Preservation}
-
-Preservation ensures that a single small-step reduction cannot invalidate the
-static analysis. If an expression \(e\) is well typed in typing environments
-\(\Gamma\) and \(\sigma\), then every immediate successor \(e'\) is well typed as
-well -- possibly in an enlarged environment that reflects concrete run-time effects
-such as the allocation of a fresh memory location or the introduction of a new variable
-binding.
-
-\begin{theorem}[Preservation]
-Suppose
-\[
-pc ; \Gamma ; \sigma \;\vdash\; e : T \,\rhd\, p \;\dashv\; \Gamma_1
-\qquad\text{and}\qquad
-\langle e , \mu , \rho \rangle \;\rightarrow\; \langle e' , \mu' , \rho' \rangle .
-\]
-Then there exists $\Gamma_2$ such that
-\[
-pc ; \Gamma_1 ; \sigma \;\vdash\; e' : T \,\rhd\, p' \;\dashv\; \Gamma_2,
-\]
-where $\Gamma_2$ extends $\Gamma_1$ in the following sense:
-\begin{itemize}
-    \item For all $l \in \text{dom}(\Gamma_1)$: if $\Gamma_1(l) = T \triangleright p_1$, then $\Gamma_2(l) = T \triangleright p_2$ for some $p_2$ (types are preserved, poison may change)
-    \item $\text{dom}(\Gamma_1) \subseteq \text{dom}(\Gamma_2)$ (new locations may be added)
-\end{itemize}
-\end{theorem}
 
 The typestate (memory typing environments $\Gamma$) is monotone only with
 respect to base types (\texttt{T}): once a location receives a type, that type
@@ -980,18 +943,6 @@ from selected data. Preservation therefore guarantees that the analysis remains
 sound while accommodating monotone growth of type information and non-monotone
 evolution of poison information.
 
-\subsection{Equivalence of Small-step and Big-step Semantics}
-We aim to establish that the two operational definitions coincide on terminating
-programs. Concretely, for any expression $e$ and initial configuration $\langle
-\pi, e, \mu, \rho \rangle$:
-\begin{itemize}
-  \item (\emph{Soundness}) If $\langle \pi, e, \mu, \rho \rangle \rightarrow^* \langle \pi, v, \mu', \rho' \rangle$ in the small-step semantics with $v$ a value, then the big-step semantics yields $\langle \pi, e, \mu, \rho \rangle \Downarrow \langle \mu', v \rangle$.
-  \item (\emph{Completeness}) If $\langle \pi, e, \mu, \rho \rangle \Downarrow \langle \mu', v \rangle$ in the big-step semantics, then there exists a small-step derivation $\langle \pi, e, \mu, \rho \rangle \rightarrow^* \langle \pi, v, \mu', \rho' \rangle$.
-\end{itemize}
-
-\emph{Note.} For many practical purposes (for example, using big-step as an
-executable evaluator consistent with small-step), soundness alone may suffice,
-with completeness only needed to claim full equivalence.
 
 
 \bibliographystyle{plain}

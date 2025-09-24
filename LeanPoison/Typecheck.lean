@@ -27,9 +27,22 @@ namespace MemoryTypeEnv
 
 end MemoryTypeEnv
 
+/-- Dependency set for tracking heap locations read by predicates -/
+abbrev Deps := List Address
+
+/-- Tag valuation with dependency information -/
+structure TagVal where
+  value : Bool
+  deps : Deps
+  deriving Repr, BEq
 
 /-- Tag valuation environment (ℒ in the Ott spec) -/
-abbrev TagEnv := HashMap Tag Bool
+abbrev TagEnv := HashMap Tag TagVal
+
+/-- Remove from tag environment all entries whose dependency sets contain location l -/
+def invalidateTagDeps (env : TagEnv) (l : Address) : TagEnv :=
+  Std.HashMap.fold (fun acc k tv =>
+    if tv.deps.contains l then acc else acc.insert k tv) (∅ : TagEnv) env
 
 /-- Type checking context containing all environments -/
 structure TypeContext where
@@ -51,6 +64,50 @@ structure TypeResult where
 
 /-- Type checking monad for error handling -/
 abbrev TypecheckM := Except String
+
+
+/-- Extract dependencies from a predicate by analyzing free variables in the predicate body -/
+def extractDepsFromPred (pred : TPred) : TypecheckM Deps :=
+  let rec extractDepsFromPExpr (pe : PExpr) (boundVars : List Name) (env : VarTypeEnv) (fuel : Nat) : TypecheckM Deps :=
+    match fuel with
+    | 0 => throw "Out of fuel while extracting dependencies"
+    | fuel + 1 =>
+      match pe with
+      | PExpr.var x =>
+        if boundVars.contains x then return []  -- Bound variable, not free
+        else
+          match env.find? (fun (name, _) => name == x) with
+          | some (_, qt) =>
+            match qt.etyp with
+            | ETyp.ref _t l => return [l]  -- Reference type, add location
+            | ETyp.parrow _argTy _retTy _poison (PFnTClosure.mk argName body varEnv') =>
+              -- Pure function, recurse into its closure
+              extractDepsFromPExpr body (argName :: boundVars) varEnv' fuel
+            | _ => return []  -- Other types don't read from heap
+          | none => throw s!"Variable {x} not found in environment while extracting dependencies"
+      | PExpr.deref pe' => extractDepsFromPExpr pe' boundVars env fuel
+      | PExpr.op pe1 _ pe2 => do
+        let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
+        let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
+        return deps1 ++ deps2
+      | PExpr.unaryop _ pe' => extractDepsFromPExpr pe' boundVars env fuel
+      | PExpr.ite pe1 pe2 pe3 => do
+        let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
+        let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
+        let deps3 ← extractDepsFromPExpr pe3 boundVars env fuel
+        return deps1 ++ deps2 ++ deps3
+      | PExpr.app pe1 pe2 => do
+        let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
+        let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
+        return deps1 ++ deps2
+      | PExpr.vlet x pe1 pe2 => do
+        let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
+        let deps2 ← extractDepsFromPExpr pe2 (x :: boundVars) env fuel
+        return deps1 ++ deps2
+      | _ => return []  -- literals, unit, etc. don't read from heap
+
+  -- Start with the bound parameter in the bound variables list
+  extractDepsFromPExpr pred.pred_body [pred.arg_name] pred.var_env defaultFuel
 
 -- Allocate a fresh location and return it along with updated typing context
 def freshTLoc (ctx : TypeContext): (Address × TypeContext) :=
@@ -282,23 +339,26 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
   the condition using PExpr.equalWithEnvs for proper environment-aware
   comparison.
 --/
-def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag := do
+def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag × Deps) := do
   -- Try to convert the condition e to a PExpr
   let conditionPExpr ← e.toPExpr
 
   -- Helper function to check if a predicate's test expression matches the condition
-  let checkPredicate (arg : PExpr) (qt : QTyp) : TypecheckM (Option Tag) :=
+  let checkPredicate (arg : PExpr) (qt : QTyp) : TypecheckM (Option (Tag × Deps)) :=
     match qt.pred with
     | none => return none
-    | some ⟨tag, arg_name, pred_body, var_env⟩ =>
-              -- Compare the predicate body with the condition using environment-aware equality
-        if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) defaultFuel then return some tag else return none
+    | some pred =>
+        -- Compare the predicate body with the condition using environment-aware equality
+        if PExpr.equalWithEnvs pred.pred_body pred.var_env conditionPExpr S (some (pred.arg_name, arg)) defaultFuel then do
+          let deps ← extractDepsFromPred pred
+          return some (pred.tag, deps)
+        else return none
 
   -- Collect all matching tags from variable environment
     let varMatches := S.foldl (init := []) fun acc ⟨name, qt⟩ =>
     let arg := PExpr.var name
     match checkPredicate arg qt with
-    | .ok (some tag) => tag :: acc
+    | .ok (some (tag, deps)) => (tag, deps) :: acc
     | .ok none => acc
     | .error _ => acc
 
@@ -318,16 +378,16 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM Tag 
           let arg := PExpr.deref (PExpr.var name)
           -- Use checkPredicate to check if the memory location's predicate matches
           match checkPredicate arg memQt with
-          | .ok (some tag) => tag :: acc
+          | .ok (some (tag, deps)) => (tag, l :: deps) :: acc  -- Add the memory location l that arg refers to
           | .ok none => acc
           | .error _ => acc
         | none => acc
     | _ => acc
 
   let allMatches := varMatches ++ refMatches
-  -- Return the tag if exactly one match is found, otherwise throw an error
+  -- Return the tag and dependencies if exactly one match is found, otherwise throw an error
   match allMatches with
-  | [tag] => return tag
+  | [(tag, deps)] => return (tag, deps)
   | [] => throw "No matching guard found for condition"
   | _ => throw s!"Multiple matching guards found for condition: {allMatches}"
 
@@ -372,11 +432,11 @@ def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
       let ⟨k, arg_name, pred_body, var_env⟩ := tp
       --dbg_trace s!"Predicate found with tag {k}"
       match ctx.tagEnv.get? k with
-      | some true =>  -- guard_true case
+      | some ⟨true, _deps⟩ =>  -- guard_true case
         -- dbg_trace "Guard True case"
         let qt' : QTyp := ⟨etyp, ctx.pc, none ⟩
         return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
-      | some false =>  -- guard_false case
+      | some ⟨false, _deps⟩ =>  -- guard_false case
         -- dbg_trace "Guard False case"
         let qt' : QTyp := ⟨etyp, true, none ⟩  -- poisoned
         return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
@@ -668,7 +728,9 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
 
       let resultPoison := joinPoison ctx.pc p1
       let qt : QTyp := ⟨ETyp.unit, resultPoison, none  ⟩
-      return { qualType := qt, memEnv' := memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag'  }
+      -- Invalidate dependencies on write (Ott rule: assign)
+      let tagEnv' := invalidateTagDeps result2.tagEnv' l
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag'  }
     | _ => throw "Left operand of assignment must be a reference"
 termination_by fuel
 
@@ -701,12 +763,12 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
           | some ⟨k, arg_name, pred_body, var_env⟩ =>  -- Ott rule: deref_guard_true, deref_guard_false, deref_guard_unknown
             if etyp' != t then throw "Type mismatch in dereference"
             match result.tagEnv'.get? k with
-            | some true =>
+            | some ⟨true, _deps⟩ =>
               -- Ott rule: deref_guard_true
               let poison := ctx.pc
               let qt : QTyp := ⟨t, poison, none  ⟩
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
-            | some false =>
+            | some ⟨false, _deps⟩ =>
               -- Ott rule: deref_guard_false
               let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
@@ -873,12 +935,12 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
 
     -- Try predicate-based de-poisoning first
     match matchGuard e1 result1.memEnv' ctx.varEnv with
-    | .ok k => do
+    | .ok (k, deps) => do
       -- Predicate-based case (if_depoison)
 
       -- Type check both branches with updated tag environment
-      let ctxTrue := { ctx' with tagEnv := ctx'.tagEnv.insert k true }
-      let ctxFalse := { ctx' with tagEnv := ctx'.tagEnv.insert k false }
+      let ctxTrue := { ctx' with tagEnv := ctx'.tagEnv.insert k ⟨true, deps⟩ }
+      let ctxFalse := { ctx' with tagEnv := ctx'.tagEnv.insert k ⟨false, deps⟩ }
 
       let result2 ← typecheckExpr ctxTrue e2 fuel
       let ⟨etyp2, p'', _  ⟩ := result2.qualType
@@ -944,7 +1006,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
 
     -- Try predicate-based de-poisoning first
     match matchGuard e1 result1.memEnv' ctx.varEnv with
-    | .ok k => do
+    | .ok (k, deps) => do
       -- Predicate-based case (while_depoison) - simplified implementation
       let branchPc := joinPoison ctx.pc p'
       let ctx'' := { ctx' with pc := branchPc }
@@ -957,7 +1019,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
       let poison := joinPoison ctx.pc (joinPoison p' p'')
       let qt : QTyp := ⟨ETyp.unit, poison, none  ⟩
       -- Set k to false after loop (as per Ott spec)
-      let tagEnv' := ctx'.tagEnv.insert k false
+      let tagEnv' := ctx'.tagEnv.insert k ⟨false, deps⟩
       return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 
     | .error _ => do
