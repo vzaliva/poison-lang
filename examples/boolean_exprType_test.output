@@ -1,0 +1,8 @@
+Evaluating file: examples/boolean_exprType_test.poison
+
+Type checking passed: Type: QTyp.mk ETyp.unit false none
+"New parsing works"
+Result: unit
+Final state:
+  Variable environment: []
+  Memory: []
