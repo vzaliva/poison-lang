@@ -40,7 +40,9 @@ module.exports = grammar({
       $.frand_expr ,
       $.printStr_expr,
       $.printInt_expr,
-      $.unary_expr
+      $.unary_expr,
+      $.boolean_expr
+
     ),
     
     // 1. Sequencing: e1 ; e2
@@ -137,13 +139,19 @@ module.exports = grammar({
     // 8. binary arithmetic: e1 + e2, e1 > e2, etc.
     binary_expr: $ => prec.left(5, seq(
       field("left", $.expr),
-      field("op", choice("+", "-", "*","/", ">", ">=", "<","<=", "==","&","&&","||","!=")),
+      field("op", choice("+", "-", "*","/", ">", ">=", "<","<=", "==","&","!=")),
       field("right", $.expr)
     )),
     unary_expr: $ => prec.left(8,seq(
-      field("op", choice("not")),
+      field("op", "not"),
       field("value", $.expr)
     )),
+    boolean_expr: $ => prec.left(4,seq(
+       field("left", $.expr),
+      field("op", choice("&&","||")),
+       field("right", $.expr)
+    )),
+
 
     // 9. atoms: number, true, false, unit
     atom: $ => prec.left(10,choice(
