@@ -202,7 +202,7 @@ lemma agreeOnCriticalInputsUnderRegimeSpec.mem_eq_of_poison_false
     {R : Regime} {s : InputSpec} {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv}
     (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
     (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt →
-        qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
+      qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
     {l : Address} {qt : QTyp}
     (hlookup : s.locs.lookup l = some qt)
     (hpoison : qt.poison = false) :
@@ -248,6 +248,8 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
   let memMatches : Prop :=
     ∀ l et, obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et ∧ et.poison = false
   retMatches ∧ memMatches
+
+section TypeSystemEnforcesNonInterference
 
 private lemma TypeSystemEnforcesNonInterference_unit
     {n fuel1 fuel2 : Nat}
@@ -447,3 +449,5 @@ theorem TypeSystemEnforcesNonInterference_spec
       sorry
     | printInt _ =>
       sorry
+
+end TypeSystemEnforcesNonInterference
