@@ -33,8 +33,14 @@ Externs are introduced with `let` and one of `extern val`, `extern fn`, or `exte
 
 ### Extern value (any type)
 
+With guard closure:
 ```poison
 let x = extern val : (T :> poisoned|clean { guard gX, a => P(a, ...) })
+```
+
+With guard-only (no predicate body for syntactic matching):
+```poison
+let y = extern val : (T :> poisoned { guard gY })
 ```
 
 ### Extern impure function with effects
@@ -65,7 +71,11 @@ Notes:
 ## Guard placeholders – scoping and instantiation
 
 - Placeholders are names local to one extern binding. The same placeholder name may appear in the observable return and in multiple effects to express correlation.
-- A single placeholder denotes one predicate closure. All occurrences with the same placeholder must use an identical predicate body (up to renaming of the formal argument); otherwise the specification is ill-formed and should be rejected by the checker.
+- A single placeholder denotes one predicate, which may be either:
+  - A **guard closure** (`guard k pred_closure (x, pe, r)`) when a predicate body is provided
+  - A **guard-only** (`guard k`) when no predicate body is provided (just `guard gX` without the lambda)
+- All occurrences with the same placeholder must use an identical predicate body (up to renaming of the formal argument) if a body is provided; otherwise the specification is ill-formed and should be rejected by the checker.
+- Guard-only predicates cannot be matched syntactically via `match_guard` but can be de-poisoned when the guard tag is known to be true in the logical environment.
 - Instantiation happens at first application of the outermost extern function. Each distinct placeholder is assigned a fresh tag, and the mapping is reused for all nested externs produced by that application.
 - For extern values, placeholders are instantiated at the let-binding typing time.
 
@@ -174,7 +184,9 @@ with named parameters, observable qualified return annotations, and an optional
 implementation choice and are not specified here.
 
 Grammar additions:
-- `extern val : (T :> poisoned|clean { guard g, x => pred })`
+- `extern val : (T :> poisoned|clean { guard g, x => pred })` – with guard closure
+- `extern val : (T :> poisoned|clean { guard g })` – with guard-only
+- `extern val : (T :> poisoned|clean { no_pred })` – with no predicate
 - `extern fn a : (ST₁) -> (RET)` where `RET` is either `(T₂ :> …)` or another `extern fn|pfn …`
 - `extern pfn a : (ST₁) -> (RET)` with no `effects:` block
 - `effects: { !name :> (T :> …), ... }` for impure externs
@@ -249,6 +261,15 @@ let frand_ext =
 
 let _ = simple in
 let _ = frand_ext 100
+```
+
+### Guard-only (no syntactic matching)
+
+```poison
+-- extern-guard-only.poison
+let sensor_value = extern val : (int :> poisoned { guard g })
+-- Cannot syntactically match guard g, but can be de-poisoned if g becomes true in L
+let result = sensor_value + 1  -- result is also poisoned with guard g
 ```
 
 ### Effects on argument and captured references
