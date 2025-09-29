@@ -219,7 +219,7 @@ def terminatesToSucc (e : Expr) (c₀ c₁ : Config) (out : ExprOrValue) : Prop 
     out.toExpr? = none
 
 private lemma terminatesToSucc_of_terminatesTo :
-  ∀ (e : Expr) (c₀ c₁ : Config) (out : ExprOrValue),
+  ∀ {e : Expr} {c₀ c₁ : Config} {out : ExprOrValue},
     terminatesTo e c₀ c₁ out → terminatesToSucc e c₀ c₁ out := by
   rintro e c₀ c₁ out ⟨n, v, h1, h2⟩
   rcases n with _ | ⟨n'⟩
@@ -229,6 +229,16 @@ private lemma terminatesToSucc_of_terminatesTo :
     injection h1 with h1 _
     injection h1
   · exists n', v
+
+def terminatesToWithFuel (fuel : Nat) (verbose : Bool) (e : Expr) (c₀ c₁ : Config) (out : ExprOrValue) : Prop :=
+  LeanPoison.beval fuel c₀ e verbose = pure (Except.ok (c₁, out.toValue?.getD Value.unit)) ∧
+  out.toExpr? = none
+
+private lemma terminatesTo_of_terminatesToWithFuel :
+  ∀ {fuel : Nat} {v : Bool} {e : Expr} {c₀ c₁ : Config} {out : ExprOrValue},
+    terminatesToWithFuel fuel v e c₀ c₁ out → terminatesTo e c₀ c₁ out := by
+  rintro fuel v e c₀ c₁ out ⟨h1, h2⟩
+  exists fuel, v
 
 private lemma ExprOrValue.eq_value_of_toExpr?_eq_none_getD
     {o : ExprOrValue} {d v : Value}
@@ -342,10 +352,8 @@ private lemma TypeSystemEnforcesNonInterference_unit
     (ht1 : terminatesTo Expr.unit (mkInit μ₁ ρ₁) cf₁ o₁)
     (ht2 : terminatesTo Expr.unit (mkInit μ₂ ρ₂) cf₂ o₂) :
     observablesEqual obs cf₁ cf₂ o₁ o₂ := by
-  obtain ⟨fuel1, v1, heval1, hte1⟩ :=
-    terminatesToSucc_of_terminatesTo _ _ _ _ ht1
-  obtain ⟨fuel2, v2, heval2, hte2⟩ :=
-    terminatesToSucc_of_terminatesTo _ _ _ _ ht2
+  have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
+  have ⟨fuel2, v2, heval2, hte2⟩ := terminatesToSucc_of_terminatesTo ht2
   simp [observablesEqual]
   rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
   simp [typecheckUnit] at htc
@@ -406,10 +414,8 @@ private lemma TypeSystemEnforcesNonInterference_num
     (ht1 : terminatesTo (Expr.num x) (mkInit μ₁ ρ₁) cf₁ o₁)
     (ht2 : terminatesTo (Expr.num x) (mkInit μ₂ ρ₂) cf₂ o₂) :
     observablesEqual obs cf₁ cf₂ o₁ o₂ := by
-  obtain ⟨fuel1, v1, heval1, hte1⟩ :=
-    terminatesToSucc_of_terminatesTo _ _ _ _ ht1
-  obtain ⟨fuel2, v2, heval2, hte2⟩ :=
-    terminatesToSucc_of_terminatesTo _ _ _ _ ht2
+  have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
+  have ⟨fuel2, v2, heval2, hte2⟩ := terminatesToSucc_of_terminatesTo ht2
   simp [observablesEqual]
   rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
   simp [typecheckInt] at htc
@@ -470,10 +476,8 @@ private lemma TypeSystemEnforcesNonInterference_bool
     (ht1 : terminatesTo (Expr.bool x) (mkInit μ₁ ρ₁) cf₁ o₁)
     (ht2 : terminatesTo (Expr.bool x) (mkInit μ₂ ρ₂) cf₂ o₂) :
     observablesEqual obs cf₁ cf₂ o₁ o₂ := by
-  obtain ⟨fuel1, v1, heval1, hte1⟩ :=
-    terminatesToSucc_of_terminatesTo _ _ _ _ ht1
-  obtain ⟨fuel2, v2, heval2, hte2⟩ :=
-    terminatesToSucc_of_terminatesTo _ _ _ _ ht2
+  have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
+  have ⟨fuel2, v2, heval2, hte2⟩ := terminatesToSucc_of_terminatesTo ht2
   simp [observablesEqual]
   rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
   simp [typecheckBool] at htc
@@ -534,10 +538,8 @@ private lemma TypeSystemEnforcesNonInterference_str
     (ht1 : terminatesTo (Expr.str x) (mkInit μ₁ ρ₁) cf₁ o₁)
     (ht2 : terminatesTo (Expr.str x) (mkInit μ₂ ρ₂) cf₂ o₂) :
     observablesEqual obs cf₁ cf₂ o₁ o₂ := by
-  obtain ⟨fuel1, v1, heval1, hte1⟩ :=
-    terminatesToSucc_of_terminatesTo _ _ _ _ ht1
-  obtain ⟨fuel2, v2, heval2, hte2⟩ :=
-    terminatesToSucc_of_terminatesTo _ _ _ _ ht2
+  have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
+  have ⟨fuel2, v2, heval2, hte2⟩ := terminatesToSucc_of_terminatesTo ht2
   simp [observablesEqual]
   rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
   simp [typecheckString] at htc
@@ -608,10 +610,8 @@ private lemma TypeSystemEnforcesNonInterference_var
     (ht1 : terminatesTo (Expr.var x) (mkInit μ₁ ρ₁) cf₁ o₁)
     (ht2 : terminatesTo (Expr.var x) (mkInit μ₂ ρ₂) cf₂ o₂) :
     observablesEqual obs cf₁ cf₂ o₁ o₂ := by
-  obtain ⟨fuel1, v1, heval1, hte1⟩ :=
-    terminatesToSucc_of_terminatesTo _ _ _ _ ht1
-  obtain ⟨fuel2, v2, heval2, hte2⟩ :=
-    terminatesToSucc_of_terminatesTo _ _ _ _ ht2
+  have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
+  have ⟨fuel2, v2, heval2, hte2⟩ := terminatesToSucc_of_terminatesTo ht2
   simp [observablesEqual]
   rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
   have heval1_rw := heval1
@@ -737,6 +737,185 @@ private lemma TypeSystemEnforcesNonInterference_var
         rw [hctxp, hqtpo] at hrp
         simp [joinPoison] at hrp
 
+private lemma TypeSystemEnforcesNonInterference_unaryop
+    {op : UnaryOp} {e : Expr} {n : Nat}
+    {s : InputSpec} {obs : ObservableSpec} {ctx : TypeContext} {res : TypeResult}
+    {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv} {R : Regime}
+    {cf₁ cf₂ : Config} {o₁ o₂ : ExprOrValue}
+    (ih :
+      ∀ (m : ℕ), m < n →
+      ∀ (e : Expr) (s : InputSpec) (obs : ObservableSpec),
+      wfInputSpec s → wfObsSpec obs →
+      ∀ (ctx : TypeContext), ctxMatchesInputSpec s ctx →
+      ∀ (res : TypeResult), typecheck ctx e m = Except.ok res →
+      (∀ (et : ETyp), obs.retEtyp? = some et →
+        res.qualType.etyp = et ∧ res.qualType.poison = false) →
+      (∀ (l : Address) (et : QTyp), obs.Lobs.lookup l = some et →
+        res.memEnv'.lookup l = some et ∧ et.poison = false) →
+      wfInputSpec s → wfObsSpec obs → ctxMatchesInputSpec s ctx →
+      ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (R : Regime)
+        (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
+      inputsConformSpec s μ₁ ρ₁ → inputsConformSpec s μ₂ ρ₂ →
+      runtimeInstantiatesCtx ctx μ₁ ρ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ →
+      consistentRegimeSpec R s μ₁ ρ₁ → consistentRegimeSpec R s μ₂ ρ₂ →
+      agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂ →
+      terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ → terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
+      observablesEqual obs cf₁ cf₂ o₁ o₂)
+    (hiq1 : inputKeysUnique s)
+    (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt → qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
+    (hppf : ∀ (x : Name) (qt : QTyp), s.vars.lookup x = some qt → qt.poison = qt.pred.isSome)
+    (hos : wfObsSpec obs)
+    (hctxp : ctx.pc = false)
+    (hctxte : ctx.tagEnv = ∅)
+    (hctxsm : ∀ {l : Address} {qt : QTyp}, s.locs.lookup l = some qt → ctx.memEnv.lookup l = some qt)
+    (hctxsv : ∀ {x : Name} {qt : QTyp}, s.vars.lookup x = some qt → ctx.varEnv.lookup x = some qt)
+    (hctxm : ∀ {l : Address} {qt : QTyp}, ctx.memEnv.lookup l = some qt → ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none)
+    (hctxv : ∀ {x : Name} {qt : QTyp}, ctx.varEnv.lookup x = some qt → ¬ s.vars.hasKey x → qt.poison = true ∧ qt.pred = none)
+    (hocrm : ∀ (et : ETyp), obs.retEtyp? = some et → res.qualType.etyp = et ∧ res.qualType.poison = false)
+    (hocmm : ∀ (l : Address) (et : QTyp), obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et ∧ et.poison = false)
+    (hics1 : inputsConformSpec s μ₁ ρ₁)
+    (hics2 : inputsConformSpec s μ₂ ρ₂)
+    (hric1 : runtimeInstantiatesCtx ctx μ₁ ρ₁)
+    (hric2 : runtimeInstantiatesCtx ctx μ₂ ρ₂)
+    (hcrs1 : consistentRegimeSpec R s μ₁ ρ₁)
+    (hcrs2 : consistentRegimeSpec R s μ₂ ρ₂)
+    (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
+    (htc : typecheck ctx (Expr.unaryop op e) n = Except.ok res)
+    (ht1 : terminatesTo (Expr.unaryop op e) (mkInit μ₁ ρ₁) cf₁ o₁)
+    (ht2 : terminatesTo (Expr.unaryop op e) (mkInit μ₂ ρ₂) cf₂ o₂) :
+    observablesEqual obs cf₁ cf₂ o₁ o₂ := by
+  rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
+  rcases n with _ | n <;> try (simp [typecheckUnaryOp] at htc; done)
+  have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
+  have ⟨fuel2, v2, heval2, hte2⟩ := terminatesToSucc_of_terminatesTo ht2
+  have ⟨res', htc'⟩ : ∃ res', typecheckExpr ctx e n = Except.ok res' := by
+    simp [typecheckUnaryOp] at htc
+    rcases hres' : typecheckExpr ctx e n with _ | ⟨res'⟩
+    · rw [hres'] at htc
+      simp [bind, Except.bind] at htc
+    · exists res'
+  have ⟨hocrm', hocmm'⟩ : ObsConstraints obs res' := by
+    simp [ObsConstraints]
+    simp [typecheckUnaryOp] at htc
+    simp [bind, Except.bind] at htc
+    rw [htc'] at htc
+    dsimp at htc
+    rcases res with ⟨⟨et, po, pred⟩, me, te, nl, nt⟩
+    rcases res' with ⟨⟨et', po', pred'⟩, me', te', nl', nt'⟩
+    dsimp at *
+    have ⟨r, hr⟩ : ∃ r, opUnaryEType? op et' = some r := by
+      rcases hr : opUnaryEType? op et' with _ | ⟨r⟩
+      · rw [hr] at htc
+        dsimp at htc
+        injection htc
+      · exists r
+    rw [hr] at htc
+    dsimp at htc
+    dsimp [pure, Except.pure] at htc
+    injection htc with htc
+    injection htc with hqt hme hte hnl hnt
+    injection hqt with het hpo hpred
+    subst r me' te' nl' nt' pred
+    constructor
+    · rintro qt hqt
+      have ⟨hrqt, hrp⟩ := hocrm qt hqt
+      subst qt
+      constructor
+      · simp [opUnaryEType?] at hr
+        rcases op; rcases et' <;> injection hr
+      · rw [hctxp] at hpo
+        simp [joinPoison] at hpo
+        rw [hpo, hrp]
+    · rintro l qt hqt
+      have ⟨hmqt, hmp⟩ := hocmm l qt hqt
+      constructor
+      · apply hmqt
+      · apply hmp
+  have terminatesToUnaryOp :
+      ∀ {fuel : Nat} {verbose : Bool} {μ : Memory} {ρ : VarEnv}
+        {cf : Config} {out : ExprOrValue},
+        LeanPoison.beval fuel.succ (mkInit μ ρ) (Expr.unaryop op e) verbose =
+            pure (Except.ok (cf, out.toValue?.getD Value.unit)) →
+        out.toExpr? = none →
+        ∃ o',
+          terminatesToWithFuel fuel verbose e (mkInit μ ρ) cf o' ∧
+            LeanPoison.evalUnaryOp op (o'.toValue?.getD Value.unit) =
+              some (out.toValue?.getD Value.unit) := by
+    intro fuel verbose μ ρ cf out heval hout
+    simp [LeanPoison.beval] at heval
+    simp [pure, bind] at heval
+    unfold EStateM.pure at heval
+    unfold EStateM.bind at heval
+    apply congrFun (a := ()) at heval
+    rcases heval' : LeanPoison.beval fuel (mkInit μ ρ) e verbose () with ⟨⟨e'⟩ | ⟨cf', r⟩⟩
+    · rw [heval'] at heval
+      dsimp at heval
+      injection heval with heval
+      injection heval
+    · rw [heval'] at heval
+      dsimp at heval
+      rcases heop : LeanPoison.evalUnaryOp op r with _ | ⟨val⟩
+      · rw [heop] at heval
+        dsimp at heval
+        injection heval with heval
+        injection heval
+      · rw [heop] at heval
+        dsimp at heval
+        injection heval with heval
+        injection heval with heval
+        injection heval with hcf hval
+        subst cf'
+        have hval' : val = out.toValue?.getD Value.unit := by
+          simpa using hval
+        have heop_out : LeanPoison.evalUnaryOp op r =
+            some (out.toValue?.getD Value.unit) := by
+          simpa [hval'] using heop
+        refine ⟨ExprOrValue.value r, ?_, ?_⟩
+        · constructor
+          · simp [pure]
+            unfold EStateM.pure
+            funext x
+            rcases x with ⟨⟩
+            simp [ExprOrValue.toValue?]
+            exact heval'
+          · simp [ExprOrValue.toExpr?]
+        · simpa [ExprOrValue.toValue?, Option.getD] using heop_out
+    · rw [heval'] at heval
+      dsimp at heval
+      injection heval
+  have ⟨o₁', ⟨heval1', hte1'⟩, heop1'⟩ := terminatesToUnaryOp heval1 hte1
+  have ⟨o₂', ⟨heval2', hte2'⟩, heop2'⟩ := terminatesToUnaryOp heval2 hte2
+  have ⟨hom, hor⟩ : observablesEqual obs cf₁ cf₂ o₁' o₂' := by
+    have hn := Nat.lt_add_right 1 (Nat.lt_add_one n)
+    have his : wfInputSpec s := ⟨hiq1, hppt, hppf⟩
+    have hctx : ctxMatchesInputSpec s ctx :=
+      ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩
+    have ht1' := terminatesTo_of_terminatesToWithFuel ⟨heval1', hte1'⟩
+    have ht2' := terminatesTo_of_terminatesToWithFuel ⟨heval2', hte2'⟩
+    apply ih
+      n hn e s obs his hos ctx hctx
+      res' htc' hocrm' hocmm' his hos hctx
+      μ₁ μ₂ ρ₁ ρ₂ R cf₁ cf₂ o₁' o₂'
+      hics1 hics2 hric1 hric2 hcrs1 hcrs2 haociurs
+      ht1' ht2'
+  simp [observablesEqual]
+  constructor
+  · exact hom
+  · rcases hor with (hor | hor) <;> try (left; exact hor)
+    right
+    have ⟨v₁, hv1⟩ : ∃v₁, o₁ = ExprOrValue.value v₁ := by
+      exists (o₁.toValue?.getD Value.unit)
+      exact ExprOrValue.eq_value_of_toExpr?_eq_none_getD hte1 rfl
+    have ⟨v₂, hv2⟩: ∃v₂, o₂ = ExprOrValue.value v₂ := by
+      exists (o₂.toValue?.getD Value.unit)
+      exact ExprOrValue.eq_value_of_toExpr?_eq_none_getD hte2 rfl
+    rw [hor] at heop1'
+    rw [heop1'] at heop2'
+    injection heop2' with ho
+    rw [hv1, hv2] at ho
+    simp [ExprOrValue.toValue?] at ho
+    rw [hv1, hv2, ho]
+
 -- ==========================
 -- Non-Interference property
 -- ==========================
@@ -770,41 +949,36 @@ theorem TypeSystemEnforcesNonInterference_spec
   rintro _ _ ctx hctx ⟨fuel_tc, res, htc, ⟨hocrm, hocmm⟩⟩
   induction fuel_tc using Nat.strong_induction_on
     generalizing e s obs ctx hctx res hocrm hocmm with
-  | _ n IH =>
-    rintro ⟨hiq1, hppt, hppf⟩ _ _ μ₁ μ₂ ρ₁ ρ₂ R cf₁ cf₂ o₁ o₂
-           hics1 hics2 hric1 hric2 hcrs1 hcrs2 haociurs
-           ⟨fuel1, v1, heval1, hte1⟩ ⟨fuel2, v2, heval2, hte2⟩
+  | _ n ih =>
+    rintro ⟨hiq1, hppt, hppf⟩ hos _ μ₁ μ₂ ρ₁ ρ₂ R cf₁ cf₂ o₁ o₂
+           hics1 hics2 hric1 hric2 hcrs1 hcrs2 haociurs ht1 ht2
     rcases hctx with ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩
-    simp [NonInterferenceSpec] at IH
+    simp [NonInterferenceSpec] at ih
     cases e with
     | unit =>
       exact
         TypeSystemEnforcesNonInterference_unit
           (hocmm := hocmm) (hppt := hppt)
           (hctxsm := hctxsm) (hctxm := hctxm)
-          (haociurs := haociurs) htc
-          ⟨fuel1, v1, heval1, hte1⟩ ⟨fuel2, v2, heval2, hte2⟩
+          (haociurs := haociurs) htc ht1 ht2
     | num _ =>
       exact
         TypeSystemEnforcesNonInterference_num
           (hocmm := hocmm) (hppt := hppt)
           (hctxsm := hctxsm) (hctxm := hctxm)
-          (haociurs := haociurs) htc
-          ⟨fuel1, v1, heval1, hte1⟩ ⟨fuel2, v2, heval2, hte2⟩
+          (haociurs := haociurs) htc ht1 ht2
     | bool _ =>
       exact
         TypeSystemEnforcesNonInterference_bool
           (hocmm := hocmm) (hppt := hppt)
           (hctxsm := hctxsm) (hctxm := hctxm)
-          (haociurs := haociurs) htc
-          ⟨fuel1, v1, heval1, hte1⟩ ⟨fuel2, v2, heval2, hte2⟩
+          (haociurs := haociurs) htc ht1 ht2
     | str _ =>
       exact
         TypeSystemEnforcesNonInterference_str
           (hocmm := hocmm) (hppt := hppt)
           (hctxsm := hctxsm) (hctxm := hctxm)
-          (haociurs := haociurs) htc
-          ⟨fuel1, v1, heval1, hte1⟩ ⟨fuel2, v2, heval2, hte2⟩
+          (haociurs := haociurs) htc ht1 ht2
     | var _ =>
       exact
         TypeSystemEnforcesNonInterference_var
@@ -813,10 +987,21 @@ theorem TypeSystemEnforcesNonInterference_spec
           (hctxp := hctxp) (hctxe := hctxte)
           (hctxsm := hctxsm) (hctxm := hctxm)
           (hctxsv := hctxsv) (hctxv := hctxv)
-          (haociurs := haociurs) htc
-          ⟨fuel1, v1, heval1, hte1⟩ ⟨fuel2, v2, heval2, hte2⟩
+          (haociurs := haociurs) htc ht1 ht2
     | unaryop _ _ =>
-      sorry
+      exact
+        TypeSystemEnforcesNonInterference_unaryop
+          (ih := ih)
+          (hiq1 := hiq1) (hppt := hppt) (hppf := hppf) (hos := hos)
+          (hctxp := hctxp) (hctxte := hctxte)
+          (hctxsm := hctxsm) (hctxsv := hctxsv)
+          (hctxm := hctxm) (hctxv := hctxv)
+          (hocrm := hocrm) (hocmm := hocmm)
+          (hics1 := hics1) (hics2 := hics2)
+          (hric1 := hric1) (hric2 := hric2)
+          (hcrs1 := hcrs1) (hcrs2 := hcrs2)
+          (haociurs := haociurs)
+          htc ht1 ht2
     | op _ _ _ =>
       sorry
     | ite _ _ _ =>
