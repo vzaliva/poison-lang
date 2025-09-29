@@ -148,6 +148,7 @@ ptcl :: 'PTCL_' ::= {{ com typing closure for pure functions }}
 
 predicate, P :: 'P_' ::= {{ com predicate (pure function from T to bool) }}
   | guard k pred_closure pcl ::   :: pred_closure {{ com predicate as pure closure }} {{tex \mathsf{guard}\,[[k]]\,\mathsf{pred\_closure}\,[[pcl]] }}
+  | guard k                   ::   :: guard_only {{ com guard tag only }} {{tex \mathsf{guard}\,[[k]] }}
   | no_pred                   ::   :: no_pred {{ com trivial predicate (always true) }} {{tex {} }}
 
 qualified_type, Q :: 'Q_' ::= {{ com qualified type (type with poison and optional predicate) }}
@@ -490,16 +491,33 @@ L(k) = true using deps
 ------------------  :: var_guard_true
 pm ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L
 
+% Variable typing - with guard only that evaluates to true triggering de-poisoning.
+S(x) = T :> p { guard k }
+L(k) = true using deps
+------------------  :: var_guard_only_true
+pm ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L
+
 % Variable typing - with guarded predicate that evaluates to false, triggering poisoning.
 S(x) = T :> p { guard k pred_closure pcl }
 L(k) = false using deps
 ------------------  :: var_guard_false
 pm ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L
 
+% Variable typing - with guard only that evaluates to false, triggering poisoning.
+S(x) = T :> p { guard k }
+L(k) = false using deps
+------------------  :: var_guard_only_false
+pm ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L
+
 % Variable typing - with guarded predicate but tag not in L
 S(x) = T :> p { guard k pred_closure pcl }
 ------------------  :: var_guard_unknown
 pm ; pc ; G ; S ; L |- x : T :> join pc p { guard k pred_closure pcl } -| G ; L
+
+% Variable typing - with guard only but tag not in L
+S(x) = T :> p { guard k }
+------------------  :: var_guard_only_unknown
+pm ; pc ; G ; S ; L |- x : T :> join pc p { guard k } -| G ; L
 
 % Variable typing - no guard case
 S(x) = T :> p { no_pred }
@@ -615,6 +633,13 @@ pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
 ----------------------- :: deref_guard_true
 pm ; pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G' ; L'
 
+% Dereference - with guard only that evaluates to true, triggering de-poisoning.
+pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
+  G'(l) = T :> p { guard k }
+  L'(k) = true using deps
+----------------------- :: deref_guard_only_true
+pm ; pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G' ; L'
+
 % Dereference - with guarded predicate that evaluates to false, triggering poisoning.
 pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
   G'(l) = T :> p { guard k pred_closure pcl }
@@ -622,11 +647,24 @@ pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
 ----------------------- :: deref_guard_false
 pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G' ; L'
 
+% Dereference - with guard only that evaluates to false, triggering poisoning.
+pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
+  G'(l) = T :> p { guard k }
+  L'(k) = false using deps
+----------------------- :: deref_guard_only_false
+pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G' ; L'
+
 % Dereference - with guarded predicate but tag not in L
 pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
   G'(l) = T :> p { guard k pred_closure pcl }
 ----------------------- :: deref_guard_unknown
 pm ; pc ; G ; S ; L |- !e : T :> join pc p { guard k pred_closure pcl } -| G' ; L'
+
+% Dereference - with guard only but tag not in L
+pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
+  G'(l) = T :> p { guard k }
+----------------------- :: deref_guard_only_unknown
+pm ; pc ; G ; S ; L |- !e : T :> join pc p { guard k } -| G' ; L'
 
 -------------------------------  :: unit
 pm ; pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G ; L
