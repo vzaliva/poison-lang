@@ -125,6 +125,7 @@ T ::= int | bool | unit
 Q ::= T :> p { P }      
 
 P ::= guard k pred_closure (x, pe, r)  (* predicate as pure closure *)
+    | guard k                          (* guard tag only *)
     | no_pred                          (* trivial predicate *)
 \end{lstlisting}
 
@@ -333,21 +334,27 @@ Conservative: may mark reliable data as poisoned, never marks unreliable data as
 \subsection{Predicate-based de-poisoning}
 \label{sec:de-poisoning}
 
-The language includes a predicate system that allows selective de-poisoning based on runtime conditions. Predicates are pure functions that test values and are associated with guard tags:
+The language includes a predicate system that allows selective de-poisoning based on runtime conditions. Predicates come in three forms and are associated with guard tags:
 
 \begin{itemize}
     \item \textbf{Qualified types}: Values have types $T\,\triangleright\,p\,\{P\}$
     where \texttt{T} is the enriched type, \texttt{p} is the poison status, and
     \texttt{P} is an optional predicate.
-    \item \textbf{Guard predicates}: \texttt{guard k pred\_closure (x, pe, r)}
+    \item \textbf{Guard predicates with closure}: \texttt{guard k pred\_closure (x, pe, r)}
     creates a predicate with tag \texttt{k} and pure expression test \texttt{pe}
     (pure function from \texttt{T} to \texttt{bool}). The \texttt{r} captures
-    value of variables used in \texttt{pe} at definition time.
+    value of variables used in \texttt{pe} at definition time. These enable
+    syntactic matching for conditional de-poisoning.
+    \item \textbf{Guard-only predicates}: \texttt{guard k} associates a guard tag
+    \texttt{k} with a value without a syntactically matchable predicate closure.
+    These can be de-poisoned when the tag is known to be true in the logical
+    environment, but cannot be matched syntactically via \texttt{match\_guard}.
     \item \textbf{Conditional de-poisoning}: When an \texttt{if} condition
-    syntactically matches a guard's test, values are de-poisoned in the true
-    branch and poisoned in the false branch
+    syntactically matches a guard's test (via \texttt{match\_guard}), values are
+    de-poisoned in the true branch and poisoned in the false branch
     \item \textbf{Logical environment}: Environment $\mathcal{L}$ tracks guard
-    valuations (\texttt{k : true/false}) to enable predicate evaluation
+    valuations (\texttt{k : true/false}) to enable predicate evaluation for both
+    guard closure and guard-only predicates
 \end{itemize}
 
 \textbf{Design Note:} The predicate closure \texttt{pred\_closure (x, pe, r)}
@@ -366,6 +373,15 @@ their argument will naturally match at most once due to syntactic substitution
 differences. However, for predicates that ignore their argument, extra care must
 be taken to ensure no two distinct tags are assigned to identical predicate
 bodies, as this would cause multiple-match errors in \texttt{match\_guard}.
+
+\textbf{Guard-only limitations:} Guard-only predicates (\texttt{guard k} without
+a closure) cannot be matched via \texttt{match\_guard} because they lack the
+predicate body required for syntactic comparison. These predicates can only be
+de-poisoned when the guard tag \texttt{k} is already known to be true in the
+logical environment $\mathcal{L}$ (e.g., from a previous matched guard in an
+outer scope or from a while loop guard). This makes guard-only predicates
+suitable for propagating guard information without enabling new syntactic
+matches.
 
 \textbf{Poisoned references and de-poisoning} Any value obtained from a poisoned
 reference is poisoned and could not be de-poisoned further via predicate-based
@@ -549,15 +565,17 @@ because of invalidation. due to changed dependencies.
 This rule type actual memory location value, which is always clean.
 
 \subsubsection*{Variable access with predicate support:}
-When variables have associated predicates, the typing rule checks the logical environment $\mathcal{L}$ to determine if de-poisoning can occur:
+When variables have associated predicates, the typing rule checks the logical environment $\mathcal{L}$ to determine if de-poisoning can occur. Both guard closures and guard-only predicates behave identically when checking $\mathcal{L}$:
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma}
 \]
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma}
 \]
+
+where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{guard k pred\_closure (y, pe, r)} or simply \texttt{guard k}. The presence or absence of the closure does not affect the typing behaviour when the guard tag is known in $\mathcal{L}$.
 
 \subsubsection*{Reference creation:}
 \[
