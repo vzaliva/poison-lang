@@ -1,6 +1,6 @@
 Evaluating file: examples/let-memory-modification.poison
 
-Type checking passed: Type: QTyp.mk ETyp.int false none
+Type checking passed: Type: QTyp.mk ETyp.int false Predicate.noPred
 Result: 42
 Final state:
   Variable environment: []

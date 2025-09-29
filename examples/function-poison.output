@@ -1,6 +1,6 @@
 Evaluating file: examples/function-poison.poison
 
-Type checking passed: Type: QTyp.mk ETyp.int true none
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.noPred
 Result: 20
 Final state:
   Variable environment: []

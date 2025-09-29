@@ -1,6 +1,6 @@
 Evaluating file: examples/print-string-func.poison
 
-Type checking passed: Type: QTyp.mk ETyp.unit false none
+Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred
 " Testing Print String expr "
 Result: unit
 Final state:
