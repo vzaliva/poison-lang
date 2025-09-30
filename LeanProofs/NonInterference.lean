@@ -278,7 +278,7 @@ def agreeOnCriticalInputsUnderRegimeSpec
 -- Typing results must satisfy the observable constraints:
 def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
   -- (i) If the return value is observable, require the inferred return
-  -- enriched type to match the observable surface type. If the return
+  -- enriched type to match the observable enriched type. If the return
   -- is not observable, no constraint is imposed on the result type.
   let retMatches : Prop :=
     ∀ et, obs.retEtyp? = some et → res.qualType.etyp = et ∧ res.qualType.poison = false
