@@ -62,6 +62,13 @@ def inputSpecTags (s : InputSpec) : List Tag :=
   let varTags := s.vars.filterMap (fun (_, qt) => qtypGuardTag qt)
   locTags ++ varTags
 
+-- Predicate-shape helpers
+def isGuardClosure (qt : QTyp) : Prop :=
+  ∃ k arg_name pred_body var_env, qt.pred = Predicate.guardClosure k arg_name pred_body var_env
+
+def isGuardOnly (qt : QTyp) : Prop :=
+  ∃ k, qt.pred = Predicate.guardOnly k
+
 -- Regime is well-formed with respect to spec S if it's defined exactly for tags in S
 def wfRegime (R : Regime) (s : InputSpec) : Prop :=
   let tags := inputSpecTags s
@@ -169,8 +176,14 @@ inductive locsRegime (R : Regime) (μ : Memory) (ρ : VarEnv) : (Address × QTyp
   | noPred_ok (entry : Address × QTyp)
       (hpred : qtypGuardTag entry.snd = none) :
       locsRegime R μ ρ entry
-  | withPred_ok (entry : Address × QTyp) (k : Tag) (n : Int) (b : Bool)
-      (htag : qtypGuardTag entry.snd = some k)
+  -- Guard-only predicates impose no regime consistency beyond tag presence in S
+  | guardOnly_ok (entry : Address × QTyp) (k : Tag)
+      (hgo : entry.snd.pred = Predicate.guardOnly k) :
+      locsRegime R μ ρ entry
+  -- Guard-closure predicates must align with the regime: holds iff R(k)=true
+  | withPred_ok (entry : Address × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : List (Name × QTyp))
+      (n : Int) (b : Bool)
+      (hclos : entry.snd.pred = Predicate.guardClosure k arg_name pred_body var_env)
       (hregime : R k = some b)
       (hmem : μ.lookup entry.fst = some n)
       (hconsist : (b = true → qtypPredHolds entry.snd μ ρ (Value.num n)) ∧
@@ -182,8 +195,14 @@ inductive varsRegime (R : Regime) (μ : Memory) (ρ : VarEnv) : (Name × QTyp) �
   | noPred_ok (entry : Name × QTyp)
       (hpred : qtypGuardTag entry.snd = none) :
       varsRegime R μ ρ entry
-  | withPred_ok (entry : Name × QTyp) (k : Tag) (v : Value) (b : Bool)
-      (htag : qtypGuardTag entry.snd = some k)
+  -- Guard-only predicates impose no regime consistency beyond tag presence in S
+  | guardOnly_ok (entry : Name × QTyp) (k : Tag)
+      (hgo : entry.snd.pred = Predicate.guardOnly k) :
+      varsRegime R μ ρ entry
+  -- Guard-closure predicates must align with the regime: holds iff R(k)=true
+  | withPred_ok (entry : Name × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : List (Name × QTyp))
+      (v : Value) (b : Bool)
+      (hclos : entry.snd.pred = Predicate.guardClosure k arg_name pred_body var_env)
       (hregime : R k = some b)
       (hvar : ρ.lookup entry.fst = some v)
       (hconsist : (b = true → qtypPredHolds entry.snd μ ρ v) ∧
@@ -208,11 +227,18 @@ inductive agreeLocUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : 
       (hregime : R k = some true)
       (hagree : μ₁.lookup addr = μ₂.lookup addr) :
       agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
+  -- False-regime case for guard-closures: both runs fail the predicate
   | withPred_false_both_fail (addr : Address) (qt : QTyp) (k : Tag)
+      (hclos : isGuardClosure qt)
       (htag : qtypGuardTag qt = some k)
       (hregime : R k = some false)
       (hfail1 : ∃ n1, μ₁.lookup addr = some n1 ∧ ¬qtypPredHolds qt μ₁ ρ₁ (Value.num n1))
       (hfail2 : ∃ n2, μ₂.lookup addr = some n2 ∧ ¬qtypPredHolds qt μ₂ ρ₂ (Value.num n2)) :
+      agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
+  -- False-regime case for guard-only: unconstrained (values may differ)
+  | guardOnly_false_any (addr : Address) (qt : QTyp) (k : Tag)
+      (hgo : qt.pred = Predicate.guardOnly k)
+      (hregime : R k = some false) :
       agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
 
 -- Two initial states agree on a critical variable under a given regime.
@@ -227,11 +253,18 @@ inductive agreeVarUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : 
       (hregime : R k = some true)
       (hagree : ρ₁.lookup x = ρ₂.lookup x) :
       agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
+  -- False-regime case for guard-closures: both runs fail the predicate
   | withPred_false_both_fail (x : Name) (qt : QTyp) (k : Tag)
+      (hclos : isGuardClosure qt)
       (htag : qtypGuardTag qt = some k)
       (hregime : R k = some false)
       (hfail1 : ∃ v1, ρ₁.lookup x = some v1 ∧ ¬qtypPredHolds qt μ₁ ρ₁ v1)
       (hfail2 : ∃ v2, ρ₂.lookup x = some v2 ∧ ¬qtypPredHolds qt μ₂ ρ₂ v2) :
+      agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
+  -- False-regime case for guard-only: unconstrained (values may differ)
+  | guardOnly_false_any (x : Name) (qt : QTyp) (k : Tag)
+      (hgo : qt.pred = Predicate.guardOnly k)
+      (hregime : R k = some false) :
       agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
 
 -- Two initial states agree on critical inputs under a given regime.
