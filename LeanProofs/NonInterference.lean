@@ -42,33 +42,53 @@ def inputKeysUnique (s : InputSpec) : Prop :=
   Nodup (s.vars.map Prod.fst)
   -- for `s.locs` we don't need to check uniqueness because it is implemented as a HashMap
 
--- Regime vector (split: locations and variables, fixed order given by
--- s.locs/s.vars) records, for each critical input, whether it is valid:
--- for entries with a predicate, whether the predicate holds on the runtime value;
--- for entries without a predicate (which by invariant are statically clean),
--- the bit is trivially true.
-structure Regime where
-  locBits : List Bool
-  varBits : List Bool
-deriving Repr
+-- Regime: partial mapping from guard tags to their truth values.
+-- A regime R : K_S → {true, false} assigns a truth value to each guard tag
+-- that occurs in predicates attached to entries of the input specification S.
+-- We model this as Tag → Option Bool where the regime is defined exactly for
+-- tags appearing in S (enforced by wfRegime predicate).
+abbrev Regime := Tag → Option Bool
+
+-- Extract the guard tag from a QTyp's predicate (if it has one)
+def qtypGuardTag (qt : QTyp) : Option Tag :=
+  match qt.pred with
+  | Predicate.guardClosure k _ _ _ => some k
+  | Predicate.guardOnly k => some k
+  | Predicate.noPred => none
+
+-- Extract all guard tags from the input specification
+def inputSpecTags (s : InputSpec) : List Tag :=
+  let locTags := s.locs.toList.filterMap (fun (_, qt) => qtypGuardTag qt)
+  let varTags := s.vars.filterMap (fun (_, qt) => qtypGuardTag qt)
+  locTags ++ varTags
+
+-- Regime is well-formed with respect to spec S if it's defined exactly for tags in S
+def wfRegime (R : Regime) (s : InputSpec) : Prop :=
+  let tags := inputSpecTags s
+  (∀ k, k ∈ tags → (R k).isSome) ∧
+  (∀ k, (R k).isSome → k ∈ tags)
 
 -- Abstract predicate: does the QTyp-attached predicate hold for the given
 -- input value under the initial environments? For locations the value will be
 -- encoded as Value.num n; for variables it is the variable's Value.
 --
 -- We implement this as an inductive predicate for easier inversion in proofs.
--- The `none` case holds trivially; the `some` case requires evidence that the
--- predicate body terminates to `true` when evaluated with the argument bound.
+-- The noPred case holds trivially; the guardClosure case requires evidence that the
+-- predicate body terminates to `true` when evaluated with the argument bound;
+-- the guardOnly case holds trivially (no syntactic test to check).
 inductive qtypPredHolds : QTyp → Memory → VarEnv → Value → Prop where
-  | none_ok {qt : QTyp} {μ ρ v}
-      (h : qt.pred = none) :
+  | noPred_ok {qt : QTyp} {μ ρ v}
+      (h : qt.pred = Predicate.noPred) :
       qtypPredHolds qt μ ρ v
-  | some_ok {qt : QTyp} {μ ρ v}
-      (tp : TPred) (cfg : Config)
-      (h : qt.pred = some tp)
-      (hterm : terminatesTo (PExpr.toExpr tp.pred_body)
-                  { memory := μ, varEnv := VarEnv.update ρ tp.arg_name v, nextLoc := 0, pureMode := true }
+  | guardClosure_ok {qt : QTyp} {μ ρ v k arg_name pred_body var_env}
+      (cfg : Config)
+      (h : qt.pred = Predicate.guardClosure k arg_name pred_body var_env)
+      (hterm : terminatesTo (PExpr.toExpr pred_body)
+                  { memory := μ, varEnv := VarEnv.update ρ arg_name v, nextLoc := 0, pureMode := true }
                   cfg (ExprOrValue.value (Value.bool true))) :
+      qtypPredHolds qt μ ρ v
+  | guardOnly_ok {qt : QTyp} {μ ρ v k}
+      (h : qt.pred = Predicate.guardOnly k) :
       qtypPredHolds qt μ ρ v
 
 -- Relational predicate for typing values as enriched types
@@ -105,19 +125,24 @@ def observablesEqual (obs : ObservableSpec)
 def mkInit (μ : Memory) (ρ : VarEnv) : Config :=
   { memory := μ, varEnv := ρ, nextLoc := 0, pureMode := false }
 
+-- Helper: check if guard tag present
+def hasGuardTag (p : Predicate) : Bool :=
+  match p with
+  | Predicate.noPred => false
+  | _ => true
+
 -- Well-formedness: memory stores integers at critical locations; additionally,
 -- align predicate and poison for critical inputs: no predicate ⇒ clean;
--- predicate present ⇒ initially poisoned. Note: we us boolean functon isSome,
--- but if needed to simplify proofs we can replace it with similar inductive
--- predicate.
+-- predicate present ⇒ initially poisoned.
 def wfInputSpec (s : InputSpec) : Prop :=
   inputKeysUnique s ∧
   (∀ l qt, s.locs.lookup l = some qt →
-     qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome) ∧
+     qt.etyp = ETyp.int ∧ qt.poison = hasGuardTag qt.pred) ∧
   (∀ x qt, s.vars.lookup x = some qt →
-     qt.poison = qt.pred.isSome)
+     qt.poison = hasGuardTag qt.pred)
 
 -- Well-formedness: observable spec
+-- Always correct by construction
 def wfObsSpec (_obs : ObservableSpec) : Prop := True
 
 -- Context compliance with the critical-only spec
@@ -129,8 +154,8 @@ def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
   ctx.pc = false ∧ ctx.tagEnv = {} ∧
   (∀ {l qt}, s.locs.lookup l = some qt → ctx.memEnv.lookup l = some qt) ∧
   (∀ {x qt}, s.vars.lookup x = some qt → ctx.varEnv.lookup x = some qt) ∧
-  (∀ {l qt}, ctx.memEnv.lookup l = some qt → ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none) ∧
-  (∀ {x qt}, ctx.varEnv.lookup x = some qt → ¬ s.vars.hasKey x → qt.poison = true ∧ qt.pred = none)
+  (∀ {l qt}, ctx.memEnv.lookup l = some qt → ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = Predicate.noPred) ∧
+  (∀ {x qt}, ctx.varEnv.lookup x = some qt → ¬ s.vars.hasKey x → qt.poison = true ∧ qt.pred = Predicate.noPred)
 
 -- Runtime conforms to the spec for critical inputs only. Unlisted inputs are
 -- unconstrained here (we quantify over them), but concrete runs must still
@@ -139,64 +164,83 @@ def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
   (∀ {l}, s.locs.contains l → μ.contains l) ∧
   (∀ {x qt v}, s.vars.lookup x = some qt → ρ.lookup x = some v → valueHasETyp v qt.etyp)
 
--- Elementwise predicates for regimes (inductive for easy inversion)
-inductive locsRegime (μ : Memory) (ρ : VarEnv) : Bool → (Address × QTyp) → Prop where
-  | true_ok (entry : Address × QTyp) (n : Int)
+-- Elementwise predicate for location regime consistency (inductive for easy inversion)
+inductive locsRegime (R : Regime) (μ : Memory) (ρ : VarEnv) : (Address × QTyp) → Prop where
+  | noPred_ok (entry : Address × QTyp)
+      (hpred : qtypGuardTag entry.snd = none) :
+      locsRegime R μ ρ entry
+  | withPred_ok (entry : Address × QTyp) (k : Tag) (n : Int) (b : Bool)
+      (htag : qtypGuardTag entry.snd = some k)
+      (hregime : R k = some b)
       (hmem : μ.lookup entry.fst = some n)
-      (hpred : qtypPredHolds entry.snd μ ρ (Value.num n)) :
-      locsRegime μ ρ true entry
-  | false_ok (entry : Address × QTyp) (n : Int)
-      (hmem : μ.lookup entry.fst = some n)
-      (hpred : ¬qtypPredHolds entry.snd μ ρ (Value.num n)) :
-      locsRegime μ ρ false entry
+      (hconsist : (b = true → qtypPredHolds entry.snd μ ρ (Value.num n)) ∧
+                  (b = false → ¬qtypPredHolds entry.snd μ ρ (Value.num n))) :
+      locsRegime R μ ρ entry
 
-inductive varsRegime (μ : Memory) (ρ : VarEnv) : Bool → (Name × QTyp) → Prop where
-  | true_ok (entry : Name × QTyp) (v : Value)
-      (hget : ρ.lookup entry.fst = some v)
-      (hpred : qtypPredHolds entry.snd μ ρ v) :
-      varsRegime μ ρ true entry
-  | false_ok (entry : Name × QTyp)
-      (hget : ρ.lookup entry.fst = some v)
-      (hpred : ¬qtypPredHolds entry.snd μ ρ v) :
-      varsRegime μ ρ false entry
+-- Elementwise predicate for variable regime consistency (inductive for easy inversion)
+inductive varsRegime (R : Regime) (μ : Memory) (ρ : VarEnv) : (Name × QTyp) → Prop where
+  | noPred_ok (entry : Name × QTyp)
+      (hpred : qtypGuardTag entry.snd = none) :
+      varsRegime R μ ρ entry
+  | withPred_ok (entry : Name × QTyp) (k : Tag) (v : Value) (b : Bool)
+      (htag : qtypGuardTag entry.snd = some k)
+      (hregime : R k = some b)
+      (hvar : ρ.lookup entry.fst = some v)
+      (hconsist : (b = true → qtypPredHolds entry.snd μ ρ v) ∧
+                  (b = false → ¬qtypPredHolds entry.snd μ ρ v)) :
+      varsRegime R μ ρ entry
 
--- Regime consistency (aligned pairs via Forall₂ over fixed-order lists).
--- Forall₂ also enforces that the lists are the same length. The regime
--- covers only critical inputs in the order given by the spec.
+-- Regime consistency (via Forall over fixed-order lists).
+-- The regime covers all critical inputs in the order given by the spec.
 def consistentRegimeSpec (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
-  List.Forall₂ (locsRegime μ ρ) R.locBits s.locs.toList ∧
-  List.Forall₂ (varsRegime μ ρ) R.varBits s.vars
+  List.Forall (locsRegime R μ ρ) s.locs.toList ∧
+  List.Forall (varsRegime R μ ρ) s.vars
 
--- Two initial states agree on a critical location under a given regime bit.
-inductive agreeLocUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
-    : Bool → (Address × QTyp) → Prop where
-  | true_eq (addr : Address) (qt : QTyp)
-      (h : μ₁.lookup addr = μ₂.lookup addr) :
-      agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ true (addr, qt)
-  | false_some (addr : Address) (qt : QTyp)
-      (hsome : ∃ tp, qt.pred = some tp)
-      (h1 : ∃ n1, μ₁.lookup addr = some n1 ∧ ¬ qtypPredHolds qt μ₁ ρ₁ (Value.num n1))
-      (h2 : ∃ n2, μ₂.lookup addr = some n2 ∧ ¬ qtypPredHolds qt μ₂ ρ₂ (Value.num n2)) :
-      agreeLocUnder μ₁ ρ₁ μ₂ ρ₂ false (addr, qt)
+-- Two initial states agree on a critical location under a given regime.
+inductive agreeLocUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
+    : (Address × QTyp) → Prop where
+  | noPred_eq (addr : Address) (qt : QTyp)
+      (hpred : qtypGuardTag qt = none)
+      (hagree : μ₁.lookup addr = μ₂.lookup addr) :
+      agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
+  | withPred_true_eq (addr : Address) (qt : QTyp) (k : Tag)
+      (htag : qtypGuardTag qt = some k)
+      (hregime : R k = some true)
+      (hagree : μ₁.lookup addr = μ₂.lookup addr) :
+      agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
+  | withPred_false_both_fail (addr : Address) (qt : QTyp) (k : Tag)
+      (htag : qtypGuardTag qt = some k)
+      (hregime : R k = some false)
+      (hfail1 : ∃ n1, μ₁.lookup addr = some n1 ∧ ¬qtypPredHolds qt μ₁ ρ₁ (Value.num n1))
+      (hfail2 : ∃ n2, μ₂.lookup addr = some n2 ∧ ¬qtypPredHolds qt μ₂ ρ₂ (Value.num n2)) :
+      agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
 
--- Two initial states agree on a critical variable under a given regime bit.
-inductive agreeVarUnder (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
-    : Bool → (Name × QTyp) → Prop where
-  | true_eq (x : Name) (qt : QTyp)
-      (h : ρ₁.lookup x = ρ₂.lookup x) :
-      agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ true (x, qt)
-  | false_some (x : Name) (qt : QTyp)
-      (hsome : ∃ tp, qt.pred = some tp)
-      (h1 : ∃ v1, ρ₁.lookup x = some v1 ∧ ¬ qtypPredHolds qt μ₁ ρ₁ v1)
-      (h2 : ∃ v2, ρ₂.lookup x = some v2 ∧ ¬ qtypPredHolds qt μ₂ ρ₂ v2) :
-      agreeVarUnder μ₁ ρ₁ μ₂ ρ₂ false (x, qt)
+-- Two initial states agree on a critical variable under a given regime.
+inductive agreeVarUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
+    : (Name × QTyp) → Prop where
+  | noPred_eq (x : Name) (qt : QTyp)
+      (hpred : qtypGuardTag qt = none)
+      (hagree : ρ₁.lookup x = ρ₂.lookup x) :
+      agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
+  | withPred_true_eq (x : Name) (qt : QTyp) (k : Tag)
+      (htag : qtypGuardTag qt = some k)
+      (hregime : R k = some true)
+      (hagree : ρ₁.lookup x = ρ₂.lookup x) :
+      agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
+  | withPred_false_both_fail (x : Name) (qt : QTyp) (k : Tag)
+      (htag : qtypGuardTag qt = some k)
+      (hregime : R k = some false)
+      (hfail1 : ∃ v1, ρ₁.lookup x = some v1 ∧ ¬qtypPredHolds qt μ₁ ρ₁ v1)
+      (hfail2 : ∃ v2, ρ₂.lookup x = some v2 ∧ ¬qtypPredHolds qt μ₂ ρ₂ v2) :
+      agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
 
+-- Two initial states agree on critical inputs under a given regime.
 def agreeOnCriticalInputsUnderRegimeSpec
   (R : Regime) (s : InputSpec)
   (μ₁ : Memory) (ρ₁ : VarEnv)
   (μ₂ : Memory) (ρ₂ : VarEnv) : Prop :=
-  List.Forall₂ (agreeLocUnder μ₁ ρ₁ μ₂ ρ₂) R.locBits s.locs.toList ∧
-  List.Forall₂ (agreeVarUnder μ₁ ρ₁ μ₂ ρ₂) R.varBits s.vars
+  List.Forall (agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂) s.locs.toList ∧
+  List.Forall (agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂) s.vars
 
 -- Typing results must satisfy the observable constraints:
 def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
@@ -222,6 +266,7 @@ def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx :
 
   ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (R : Regime)
     (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
+    wfRegime R s →
     inputsConformSpec s μ₁ ρ₁ →  inputsConformSpec s μ₂ ρ₂ →
     runtimeInstantiatesCtx ctx μ₁ ρ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ →
     consistentRegimeSpec R s μ₁ ρ₁ →  consistentRegimeSpec R s μ₂ ρ₂ →
@@ -231,7 +276,7 @@ def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx :
 
 -- Type system enforces Non-Interference
 def TypeSystemEnforcesNonInterference_spec
-  (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
+  (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
   wfInputSpec s →
   wfObsSpec obs →
   ∀ (ctx : TypeContext),
@@ -239,4 +284,4 @@ def TypeSystemEnforcesNonInterference_spec
       ((∃ (fuel : Nat) (res : TypeResult),
         typecheck ctx e fuel = .ok res ∧
         ObsConstraints obs res) →
-        NonInterferenceSpec e s obs ctx).
+        NonInterferenceSpec e s obs ctx)

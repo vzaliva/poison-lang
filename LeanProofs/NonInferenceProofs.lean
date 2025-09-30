@@ -718,7 +718,8 @@ private lemma TypeSystemEnforcesNonInterference_unaryop
     rw [hv1, hv2, ho]
 
 -- Type system enforces Non-Interference
-theorem TypeSystemEnforcesNonInterference: TypeSystemEnforcesNonInterference_spec
+theorem TypeSystemEnforcesNonInterference (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
+  TypeSystemEnforcesNonInterference_spec e s obs
 := by
   rintro _ _ ctx hctx ⟨fuel_tc, res, htc, ⟨hocrm, hocmm⟩⟩
   induction fuel_tc using Nat.strong_induction_on
