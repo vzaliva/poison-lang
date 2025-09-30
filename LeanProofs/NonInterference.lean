@@ -209,8 +209,8 @@ inductive varsRegime (R : Regime) (μ : Memory) (ρ : VarEnv) : (Name × QTyp) �
                   (b = false → ¬qtypPredHolds entry.snd μ ρ v)) :
       varsRegime R μ ρ entry
 
--- Regime consistency (via Forall over fixed-order lists).
--- The regime covers all critical inputs in the order given by the spec.
+-- Regime consistency (via Forall over lists).
+-- The regime must be defined for all critical inputs in the spec.
 def consistentRegimeSpec (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
   List.Forall (locsRegime R μ ρ) s.locs.toList ∧
   List.Forall (varsRegime R μ ρ) s.vars
