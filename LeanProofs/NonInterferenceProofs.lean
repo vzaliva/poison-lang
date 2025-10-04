@@ -59,100 +59,110 @@ private lemma ExprOrValue.eq_value_of_toExpr?_eq_none_getD
 private lemma agreeOnCriticalInputsUnderRegimeSpec.mem_eq_of_poison_false
     {R : Regime} {s : InputSpec} {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv}
     (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
-    (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt →
-      qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
+    (his : wfInputSpec s)
     {l : Address} {qt : QTyp}
     (hlookup : s.locs.lookup l = some qt)
     (hpoison : qt.poison = false) :
     μ₁.lookup l = μ₂.lookup l := by
-  have hpred := (hppt l qt hlookup).2
-  have hpred_false : qt.pred.isSome = false := by
-    simpa [hpoison] using hpred.symm
-  simp [agreeOnCriticalInputsUnderRegimeSpec] at haociurs
-  obtain ⟨hlocs, _⟩ := haociurs
-  rw [List.forall₂_iff_get] at hlocs
-  rcases hlocs with ⟨hsrle, hlocs⟩
-  have hlookup_hash : s.locs.get? l = some qt := by
-    simpa [MemoryTypeEnv.lookup] using hlookup
-  have hmem_pair : (l, qt) ∈ s.locs.toList := by
-    simpa using (Std.HashMap.mem_toList_iff_getElem?_eq_some (m := s.locs) (k := l) (v := qt)).2 hlookup_hash
-  have hmem := hmem_pair
-  rw [List.mem_iff_get] at hmem
-  rcases hmem with ⟨⟨i, hsi⟩, hmem⟩
-  have hri := hsi
-  rw [← hsrle] at hri
-  specialize hlocs i hri hsi
-  rw [hmem] at hlocs
-  cases hr : R.locBits.get ⟨i, hri⟩
-  · rw [hr] at hlocs
-    rcases hlocs with _ | ⟨_, _, ⟨tp, hpred_some⟩, _, _⟩
-    have : False := by
-      have h := hpred_false
-      simp [hpred_some, Option.isSome] at h
-    exact this.elim
-  · rw [hr] at hlocs
-    rcases hlocs with ⟨_, _, hmu⟩ | _
-    exact hmu
+    have hqtpred : qt.pred = Predicate.noPred := by
+      have ⟨hiq, hppt, hppf⟩ := his
+      have ⟨het, hgt⟩ := hppt l qt hlookup
+      rw [hpoison] at hgt
+      rcases hpred : qt.pred
+      · rw [hpred] at hgt
+        dsimp [hasGuardTag] at hgt
+        injection hgt
+      · rw [hpred] at hgt
+        dsimp [hasGuardTag] at hgt
+        injection hgt
+      · rfl
+    have halu : agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (l, qt) := by
+      rcases haociurs with ⟨halu, havu⟩
+      rw [List.forall_iff_forall_mem] at halu
+      apply halu
+      rw [Std.HashMap.mem_toList_iff_getElem?_eq_some]
+      dsimp [MemoryTypeEnv.lookup] at hlookup
+      apply hlookup
+    rcases halu with ⟨l, qt, hpred, hagree⟩
+                   | ⟨l, qt, k, htag, hregime, hagree⟩
+                   | ⟨l, qt, k, hclos, htag, hregime, hfail1, hfail2⟩
+                   | ⟨l, qt, k, hgo, hregime⟩
+    · apply hagree
+    · apply hagree
+    · dsimp [qtypGuardTag] at htag
+      rw [hqtpred] at htag
+      dsimp at htag
+      injection htag
+    · rw [hqtpred] at hgo
+      injection hgo
 
 private lemma agreeOnCriticalInputsUnderRegimeSpec.var_eq_of_poison_false
     {R : Regime} {s : InputSpec} {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv}
     (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
-    (hppf : ∀ (x : Name) (qt : QTyp), s.vars.lookup x = some qt →
-        qt.poison = qt.pred.isSome)
+    (his : wfInputSpec s)
     {x : Name} {qt : QTyp}
     (hlookup : s.vars.lookup x = some qt)
     (hpoison : qt.poison = false) :
     ρ₁.lookup x = ρ₂.lookup x := by
-  have hpred := hppf x qt hlookup
-  have hpred_false : qt.pred.isSome = false := by
-    simpa [hpoison] using hpred.symm
-  simp [agreeOnCriticalInputsUnderRegimeSpec] at haociurs
-  obtain ⟨_, hvars⟩ := haociurs
-  rw [List.forall₂_iff_get] at hvars
-  rcases hvars with ⟨hsrve, hvars⟩
-  have hlookup_list : List.lookup x s.vars = some qt := by
-    simpa [VarTypeEnv.lookup] using hlookup
-  obtain ⟨vars₁, vars₂, hsv_eq, _⟩ :=
-    (List.lookup_eq_some_iff).1 hlookup_list
-  have hmem_pair : (x, qt) ∈ s.vars := by
-    simp [hsv_eq]
-  have hmem := hmem_pair
-  rw [List.mem_iff_get] at hmem
-  rcases hmem with ⟨⟨i, hsi⟩, hmem⟩
-  have hri : i < R.varBits.length := by
-    simpa [hsrve] using hsi
-  specialize hvars i hri hsi
-  have hvars' := hvars
-  rw [hmem] at hvars'
-  rcases hr : R.varBits.get ⟨i, hri⟩
-  · rw [hr] at hvars'
-    rcases hvars' with _ | ⟨_, _, ⟨tp, hpred_some⟩, _, _⟩
-    have : False := by
-      have h := hpred_false
-      simp [Option.isSome, hpred_some] at h
-    exact this.elim
-  · rw [hr] at hvars'
-    rcases hvars' with ⟨_, _, hρ⟩ | _
-    exact hρ
+    have hqtpred : qt.pred = Predicate.noPred := by
+      have ⟨hiq, hppt, hppf⟩ := his
+      have hgt := hppf x qt hlookup
+      rw [hpoison] at hgt
+      rcases hpred : qt.pred
+      · rw [hpred] at hgt
+        dsimp [hasGuardTag] at hgt
+        injection hgt
+      · rw [hpred] at hgt
+        dsimp [hasGuardTag] at hgt
+        injection hgt
+      · rfl
+    have havu : agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt) := by
+      rcases haociurs with ⟨halu, havu⟩
+      rw [List.forall_iff_forall_mem] at havu
+      apply havu
+      simp [VarTypeEnv.lookup] at hlookup
+      rw [List.lookup_eq_findSome?] at hlookup
+      apply List.exists_of_findSome?_eq_some at hlookup
+      have ⟨⟨x', qt'⟩, hl1, hl2⟩ := hlookup
+      dsimp at hl2
+      rcases hx : (x == x')
+      · rw [hx] at hl2
+        dsimp at hl2
+        injection hl2
+      · rw [hx] at hl2
+        dsimp at hl2
+        injection hl2 with hl2
+        apply eq_of_beq at hx
+        subst x' qt'
+        apply hl1
+    rcases havu with ⟨x, qt, hpred, hagree⟩
+                   | ⟨x, qt, k, htag, hregime, hagree⟩
+                   | ⟨x, qt, k, hclos, htag, hregime, hfail1, hfail2⟩
+                   | ⟨x, qt, k, hgo, hregime⟩
+    · apply hagree
+    · apply hagree
+    · dsimp [qtypGuardTag] at htag
+      rw [hqtpred] at htag
+      dsimp at htag
+      injection htag
+    · rw [hqtpred] at hgo
+      injection hgo
 
 private lemma TypeSystemEnforcesNonInterference_unit
     {n : Nat}
     {s : InputSpec} {obs : ObservableSpec} {ctx : TypeContext} {res : TypeResult}
     {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv} {R : Regime}
     {cf₁ cf₂ : Config} {o₁ o₂ : ExprOrValue}
-    (hocmm : ∀ (l : Address) (et : QTyp), obs.Lobs.lookup l = some et →
-        res.memEnv'.lookup l = some et ∧ et.poison = false)
-    (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt →
-        qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
-    (hctxsm : ∀ {l : Address} {qt : QTyp}, s.locs.lookup l = some qt →
-        ctx.memEnv.lookup l = some qt)
-    (hctxm : ∀ {l : Address} {qt : QTyp}, ctx.memEnv.lookup l = some qt →
-        ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none)
+    (his : wfInputSpec s)
+    (hobsc : ObsConstraints obs res)
+    (hctxis : ctxMatchesInputSpec s ctx)
     (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
     (htc : typecheck ctx Expr.unit n = Except.ok res)
     (ht1 : terminatesTo Expr.unit (mkInit μ₁ ρ₁) cf₁ o₁)
     (ht2 : terminatesTo Expr.unit (mkInit μ₂ ρ₂) cf₂ o₂) :
     observablesEqual obs cf₁ cf₂ o₁ o₂ := by
+  have ⟨hocrm, hocmm⟩ := hobsc
+  have ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩ := hctxis
   have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
   have ⟨fuel2, v2, heval2, hte2⟩ := terminatesToSucc_of_terminatesTo ht2
   simp [observablesEqual]
@@ -188,7 +198,7 @@ private lemma TypeSystemEnforcesNonInterference_unit
       subst hocmm'
       have hmu :=
         agreeOnCriticalInputsUnderRegimeSpec.mem_eq_of_poison_false
-          (haociurs := haociurs) (hppt := hppt) (hlookup := hslm) (hpoison := hp)
+          (haociurs := haociurs) (his := his) (hlookup := hslm) (hpoison := hp)
       rw [← heval1m, ← heval2m]
       simp [mkInit]
       exact hmu
@@ -202,19 +212,16 @@ private lemma TypeSystemEnforcesNonInterference_num
     {s : InputSpec} {obs : ObservableSpec} {ctx : TypeContext} {res : TypeResult}
     {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv} {R : Regime}
     {cf₁ cf₂ : Config} {o₁ o₂ : ExprOrValue}
-    (hocmm : ∀ (l : Address) (et : QTyp), obs.Lobs.lookup l = some et →
-        res.memEnv'.lookup l = some et ∧ et.poison = false)
-    (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt →
-        qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
-    (hctxsm : ∀ {l : Address} {qt : QTyp}, s.locs.lookup l = some qt →
-        ctx.memEnv.lookup l = some qt)
-    (hctxm : ∀ {l : Address} {qt : QTyp}, ctx.memEnv.lookup l = some qt →
-        ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none)
+    (his : wfInputSpec s)
+    (hobsc : ObsConstraints obs res)
+    (hctxis : ctxMatchesInputSpec s ctx)
     (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
     (htc : typecheck ctx (Expr.num x) n = Except.ok res)
     (ht1 : terminatesTo (Expr.num x) (mkInit μ₁ ρ₁) cf₁ o₁)
     (ht2 : terminatesTo (Expr.num x) (mkInit μ₂ ρ₂) cf₂ o₂) :
     observablesEqual obs cf₁ cf₂ o₁ o₂ := by
+  have ⟨hocrm, hocmm⟩ := hobsc
+  have ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩ := hctxis
   have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
   have ⟨fuel2, v2, heval2, hte2⟩ := terminatesToSucc_of_terminatesTo ht2
   simp [observablesEqual]
@@ -250,7 +257,7 @@ private lemma TypeSystemEnforcesNonInterference_num
       subst hocmm'
       have hmu :=
         agreeOnCriticalInputsUnderRegimeSpec.mem_eq_of_poison_false
-          (haociurs := haociurs) (hppt := hppt) (hlookup := hslm) (hpoison := hp)
+          (haociurs := haociurs) (his := his) (hlookup := hslm) (hpoison := hp)
       rw [← heval1m, ← heval2m]
       simp [mkInit]
       exact hmu
@@ -264,19 +271,16 @@ private lemma TypeSystemEnforcesNonInterference_bool
     {s : InputSpec} {obs : ObservableSpec} {ctx : TypeContext} {res : TypeResult}
     {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv} {R : Regime}
     {cf₁ cf₂ : Config} {o₁ o₂ : ExprOrValue}
-    (hocmm : ∀ (l : Address) (et : QTyp), obs.Lobs.lookup l = some et →
-        res.memEnv'.lookup l = some et ∧ et.poison = false)
-    (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt →
-        qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
-    (hctxsm : ∀ {l : Address} {qt : QTyp}, s.locs.lookup l = some qt →
-        ctx.memEnv.lookup l = some qt)
-    (hctxm : ∀ {l : Address} {qt : QTyp}, ctx.memEnv.lookup l = some qt →
-        ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none)
+    (his : wfInputSpec s)
+    (hobsc : ObsConstraints obs res)
+    (hctxis : ctxMatchesInputSpec s ctx)
     (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
     (htc : typecheck ctx (Expr.bool x) n = Except.ok res)
     (ht1 : terminatesTo (Expr.bool x) (mkInit μ₁ ρ₁) cf₁ o₁)
     (ht2 : terminatesTo (Expr.bool x) (mkInit μ₂ ρ₂) cf₂ o₂) :
     observablesEqual obs cf₁ cf₂ o₁ o₂ := by
+  have ⟨hocrm, hocmm⟩ := hobsc
+  have ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩ := hctxis
   have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
   have ⟨fuel2, v2, heval2, hte2⟩ := terminatesToSucc_of_terminatesTo ht2
   simp [observablesEqual]
@@ -312,7 +316,7 @@ private lemma TypeSystemEnforcesNonInterference_bool
       subst hocmm'
       have hmu :=
         agreeOnCriticalInputsUnderRegimeSpec.mem_eq_of_poison_false
-          (haociurs := haociurs) (hppt := hppt) (hlookup := hslm) (hpoison := hp)
+          (haociurs := haociurs) (his := his) (hlookup := hslm) (hpoison := hp)
       rw [← heval1m, ← heval2m]
       simp [mkInit]
       exact hmu
@@ -326,19 +330,16 @@ private lemma TypeSystemEnforcesNonInterference_str
     {s : InputSpec} {obs : ObservableSpec} {ctx : TypeContext} {res : TypeResult}
     {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv} {R : Regime}
     {cf₁ cf₂ : Config} {o₁ o₂ : ExprOrValue}
-    (hocmm : ∀ (l : Address) (et : QTyp), obs.Lobs.lookup l = some et →
-        res.memEnv'.lookup l = some et ∧ et.poison = false)
-    (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt →
-        qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
-    (hctxsm : ∀ {l : Address} {qt : QTyp}, s.locs.lookup l = some qt →
-        ctx.memEnv.lookup l = some qt)
-    (hctxm : ∀ {l : Address} {qt : QTyp}, ctx.memEnv.lookup l = some qt →
-        ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none)
+    (his : wfInputSpec s)
+    (hobsc : ObsConstraints obs res)
+    (hctxis : ctxMatchesInputSpec s ctx)
     (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
     (htc : typecheck ctx (Expr.str x) n = Except.ok res)
     (ht1 : terminatesTo (Expr.str x) (mkInit μ₁ ρ₁) cf₁ o₁)
     (ht2 : terminatesTo (Expr.str x) (mkInit μ₂ ρ₂) cf₂ o₂) :
     observablesEqual obs cf₁ cf₂ o₁ o₂ := by
+  have ⟨hocrm, hocmm⟩ := hobsc
+  have ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩ := hctxis
   have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
   have ⟨fuel2, v2, heval2, hte2⟩ := terminatesToSucc_of_terminatesTo ht2
   simp [observablesEqual]
@@ -374,7 +375,7 @@ private lemma TypeSystemEnforcesNonInterference_str
       subst hocmm'
       have hmu :=
         agreeOnCriticalInputsUnderRegimeSpec.mem_eq_of_poison_false
-          (haociurs := haociurs) (hppt := hppt) (hlookup := hslm) (hpoison := hp)
+          (haociurs := haociurs) (his := his) (hlookup := hslm) (hpoison := hp)
       rw [← heval1m, ← heval2m]
       simp [mkInit]
       exact hmu
@@ -388,29 +389,16 @@ private lemma TypeSystemEnforcesNonInterference_var
     {s : InputSpec} {obs : ObservableSpec} {ctx : TypeContext} {res : TypeResult}
     {μ₁ μ₂ : Memory} {ρ₁ ρ₂ : VarEnv} {R : Regime}
     {cf₁ cf₂ : Config} {o₁ o₂ : ExprOrValue}
-    (hocrm : ∀ (et : ETyp),
-        obs.retEtyp? = some et → res.qualType.etyp = et ∧ res.qualType.poison = false)
-    (hocmm : ∀ (l : Address) (et : QTyp), obs.Lobs.lookup l = some et →
-        res.memEnv'.lookup l = some et ∧ et.poison = false)
-    (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt →
-        qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
-    (hppf : ∀ (x : Name) (qt : QTyp), s.vars.lookup x = some qt →
-        qt.poison = qt.pred.isSome)
-    (hctxp : ctx.pc = false)
-    (hctxe : ctx.tagEnv = ∅)
-    (hctxsm : ∀ {l : Address} {qt : QTyp}, s.locs.lookup l = some qt →
-        ctx.memEnv.lookup l = some qt)
-    (hctxm : ∀ {l : Address} {qt : QTyp}, ctx.memEnv.lookup l = some qt →
-        ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none)
-    (hctxsv : ∀ {x : Name} {qt : QTyp}, s.vars.lookup x = some qt →
-        ctx.varEnv.lookup x = some qt)
-    (hctxv : ∀ {x : Name} {qt : QTyp}, ctx.varEnv.lookup x = some qt →
-        ¬ s.vars.hasKey x → qt.poison = true ∧ qt.pred = none)
+    (his : wfInputSpec s)
+    (hobsc : ObsConstraints obs res)
+    (hctxis : ctxMatchesInputSpec s ctx)
     (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
     (htc : typecheck ctx (Expr.var x) n = Except.ok res)
     (ht1 : terminatesTo (Expr.var x) (mkInit μ₁ ρ₁) cf₁ o₁)
     (ht2 : terminatesTo (Expr.var x) (mkInit μ₂ ρ₂) cf₂ o₂) :
     observablesEqual obs cf₁ cf₂ o₁ o₂ := by
+  have ⟨hocrm, hocmm⟩ := hobsc
+  have ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩ := hctxis
   have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
   have ⟨fuel2, v2, heval2, hte2⟩ := terminatesToSucc_of_terminatesTo ht2
   simp [observablesEqual]
@@ -461,20 +449,20 @@ private lemma TypeSystemEnforcesNonInterference_var
       simp [typecheckVar] at htc
       rw [hqt] at htc
       dsimp at htc
-      rcases pred with _ | ⟨pred⟩ <;> dsimp at htc
+      rcases pred with _ | ⟨pred⟩ | ⟨pred⟩ <;> dsimp at htc
+      · rw [hctxte, Std.HashMap.getElem?_empty] at htc
+        dsimp at htc
+        injection htc with htc
+        subst res
+        dsimp
+      · rw [hctxte, Std.HashMap.getElem?_empty] at htc
+        dsimp at htc
+        injection htc with htc
+        subst res
+        dsimp
       · injection htc with htc
         subst res
         dsimp
-      · rcases pred with ⟨t, a, pred, varenv⟩
-        dsimp at htc
-        rcases hctxt : ctx.tagEnv[t]? with _ | ⟨⟨_ | _, tvd⟩⟩
-        all_goals {
-          rw [hctxt] at htc
-          dsimp at htc
-          injection htc with htc
-          subst res
-          dsimp
-        }
     rw [hctxres] at hocmm'
     rcases hslm : s.locs.lookup l with _ | ⟨qt⟩
     · simp [MemoryTypeEnv.hasKey] at hctxm
@@ -488,7 +476,7 @@ private lemma TypeSystemEnforcesNonInterference_var
       subst hocmm'
       have hmu :=
         agreeOnCriticalInputsUnderRegimeSpec.mem_eq_of_poison_false
-          (haociurs := haociurs) (hppt := hppt) (hlookup := hslm) (hpoison := hp)
+          (haociurs := haociurs) (his := his) (hlookup := hslm) (hpoison := hp)
       rw [← heval1m, ← heval2m]
       simp [mkInit]
       exact hmu
@@ -518,25 +506,35 @@ private lemma TypeSystemEnforcesNonInterference_var
       rcases hqtpo : qt.poison
       · have hmu :=
           agreeOnCriticalInputsUnderRegimeSpec.var_eq_of_poison_false
-            (haociurs := haociurs) (hppf := hppf) (hlookup := hsxv) (hpoison := hqtpo)
+            (haociurs := haociurs) (his := his) (hlookup := hsxv) (hpoison := hqtpo)
         simp [mkInit] at hv1
         simp [mkInit] at hv2
         rw [hv1, hv2] at hmu
         injection hmu
-      · have hqtpred := hppf x qt hsxv
+      · have ⟨hiq, hppt, hppf⟩ := his
+        have hqtpred := hppf x qt hsxv
         rw [hqtpo] at hqtpred
         simp [typecheckVar] at htc
         rw [hqt] at htc
         rcases qt with ⟨qte, qtpo, qtpred⟩
         dsimp at hqtpred
-        rcases qtpred with _ | ⟨pk, parg, pbody, pv⟩ <;> try injection hqtpred
-        dsimp at htc
-        rw [hctxe, Std.HashMap.getElem?_empty] at htc
-        dsimp at htc
-        injection htc with htc
-        subst res; dsimp at *
-        rw [hctxp, hqtpo] at hrp
-        simp [joinPoison] at hrp
+        rcases qtpred
+        · dsimp at htc
+          rw [hctxte, Std.HashMap.getElem?_empty] at htc
+          dsimp at htc
+          injection htc with htc
+          subst res; dsimp at *
+          rw [hctxp, hqtpo] at hrp
+          simp [joinPoison] at hrp
+        · dsimp at htc
+          rw [hctxte, Std.HashMap.getElem?_empty] at htc
+          dsimp at htc
+          injection htc with htc
+          subst res; dsimp at *
+          rw [hctxp, hqtpo] at hrp
+          simp [joinPoison] at hrp
+        · dsimp [hasGuardTag] at hqtpred
+          injection hqtpred
 
 private lemma TypeSystemEnforcesNonInterference_unaryop
     {op : UnaryOp} {e : Expr} {n : Nat}
@@ -549,31 +547,22 @@ private lemma TypeSystemEnforcesNonInterference_unaryop
       wfInputSpec s → wfObsSpec obs →
       ∀ (ctx : TypeContext), ctxMatchesInputSpec s ctx →
       ∀ (res : TypeResult), typecheck ctx e m = Except.ok res →
-      (∀ (et : ETyp), obs.retEtyp? = some et →
-        res.qualType.etyp = et ∧ res.qualType.poison = false) →
-      (∀ (l : Address) (et : QTyp), obs.Lobs.lookup l = some et →
-        res.memEnv'.lookup l = some et ∧ et.poison = false) →
-      wfInputSpec s → wfObsSpec obs → ctxMatchesInputSpec s ctx →
+      ObsConstraints obs res →
+      wfInputSpec s → wfObsSpec obs →
+      ctxMatchesInputSpec s ctx →
       ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (R : Regime)
         (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
+      wfRegime R s →
       inputsConformSpec s μ₁ ρ₁ → inputsConformSpec s μ₂ ρ₂ →
       runtimeInstantiatesCtx ctx μ₁ ρ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ →
       consistentRegimeSpec R s μ₁ ρ₁ → consistentRegimeSpec R s μ₂ ρ₂ →
       agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂ →
       terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ → terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
       observablesEqual obs cf₁ cf₂ o₁ o₂)
-    (hiq1 : inputKeysUnique s)
-    (hppt : ∀ (l : Address) (qt : QTyp), s.locs.lookup l = some qt → qt.etyp = ETyp.int ∧ qt.poison = qt.pred.isSome)
-    (hppf : ∀ (x : Name) (qt : QTyp), s.vars.lookup x = some qt → qt.poison = qt.pred.isSome)
+    (his : wfInputSpec s)
     (hos : wfObsSpec obs)
-    (hctxp : ctx.pc = false)
-    (hctxte : ctx.tagEnv = ∅)
-    (hctxsm : ∀ {l : Address} {qt : QTyp}, s.locs.lookup l = some qt → ctx.memEnv.lookup l = some qt)
-    (hctxsv : ∀ {x : Name} {qt : QTyp}, s.vars.lookup x = some qt → ctx.varEnv.lookup x = some qt)
-    (hctxm : ∀ {l : Address} {qt : QTyp}, ctx.memEnv.lookup l = some qt → ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = none)
-    (hctxv : ∀ {x : Name} {qt : QTyp}, ctx.varEnv.lookup x = some qt → ¬ s.vars.hasKey x → qt.poison = true ∧ qt.pred = none)
-    (hocrm : ∀ (et : ETyp), obs.retEtyp? = some et → res.qualType.etyp = et ∧ res.qualType.poison = false)
-    (hocmm : ∀ (l : Address) (et : QTyp), obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et ∧ et.poison = false)
+    (hctxis : ctxMatchesInputSpec s ctx)
+    (hobsc : ObsConstraints obs res)
     (hics1 : inputsConformSpec s μ₁ ρ₁)
     (hics2 : inputsConformSpec s μ₂ ρ₂)
     (hric1 : runtimeInstantiatesCtx ctx μ₁ ρ₁)
@@ -581,10 +570,13 @@ private lemma TypeSystemEnforcesNonInterference_unaryop
     (hcrs1 : consistentRegimeSpec R s μ₁ ρ₁)
     (hcrs2 : consistentRegimeSpec R s μ₂ ρ₂)
     (haociurs : agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂)
+    (hr : wfRegime R s)
     (htc : typecheck ctx (Expr.unaryop op e) n = Except.ok res)
     (ht1 : terminatesTo (Expr.unaryop op e) (mkInit μ₁ ρ₁) cf₁ o₁)
     (ht2 : terminatesTo (Expr.unaryop op e) (mkInit μ₂ ρ₂) cf₂ o₂) :
     observablesEqual obs cf₁ cf₂ o₁ o₂ := by
+  have ⟨hocrm, hocmm⟩ := hobsc
+  have ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩ := hctxis
   rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
   rcases n with _ | n <;> try (simp [typecheckUnaryOp] at htc; done)
   have ⟨fuel1, v1, heval1, hte1⟩ := terminatesToSucc_of_terminatesTo ht1
@@ -595,7 +587,7 @@ private lemma TypeSystemEnforcesNonInterference_unaryop
     · rw [hres'] at htc
       simp [bind, Except.bind] at htc
     · exists res'
-  have ⟨hocrm', hocmm'⟩ : ObsConstraints obs res' := by
+  have hobsc' : ObsConstraints obs res' := by
     simp [ObsConstraints]
     simp [typecheckUnaryOp] at htc
     simp [bind, Except.bind] at htc
@@ -688,16 +680,13 @@ private lemma TypeSystemEnforcesNonInterference_unaryop
   have ⟨o₂', ⟨heval2', hte2'⟩, heop2'⟩ := terminatesToUnaryOp heval2 hte2
   have ⟨hom, hor⟩ : observablesEqual obs cf₁ cf₂ o₁' o₂' := by
     have hn := Nat.lt_add_right 1 (Nat.lt_add_one n)
-    have his : wfInputSpec s := ⟨hiq1, hppt, hppf⟩
-    have hctx : ctxMatchesInputSpec s ctx :=
-      ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩
     have ht1' := terminatesTo_of_terminatesToWithFuel ⟨heval1', hte1'⟩
     have ht2' := terminatesTo_of_terminatesToWithFuel ⟨heval2', hte2'⟩
     apply ih
-      n hn e s obs his hos ctx hctx
-      res' htc' hocrm' hocmm' his hos hctx
+      n hn e s obs his hos ctx hctxis
+      res' htc' hobsc' his hos hctxis
       μ₁ μ₂ ρ₁ ρ₂ R cf₁ cf₂ o₁' o₂'
-      hics1 hics2 hric1 hric2 hcrs1 hcrs2 haociurs
+      hr hics1 hics2 hric1 hric2 hcrs1 hcrs2 haociurs
       ht1' ht2'
   simp [observablesEqual]
   constructor
@@ -719,64 +708,41 @@ private lemma TypeSystemEnforcesNonInterference_unaryop
 
 -- Type system enforces Non-Interference
 theorem TypeSystemEnforcesNonInterference (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
-  TypeSystemEnforcesNonInterference_spec e s obs
-:= by
-  rintro _ _ ctx hctx ⟨fuel_tc, res, htc, ⟨hocrm, hocmm⟩⟩
+  TypeSystemEnforcesNonInterference_spec e s obs := by
+  rintro _ _ ctx hctx ⟨fuel_tc, res, htc, hobsc⟩
   induction fuel_tc using Nat.strong_induction_on
-    generalizing e s obs ctx hctx res hocrm hocmm with
+    generalizing e s obs ctx hctx res hobsc with
   | _ n ih =>
-    rintro ⟨hiq1, hppt, hppf⟩ hos _ μ₁ μ₂ ρ₁ ρ₂ R cf₁ cf₂ o₁ o₂
-           hics1 hics2 hric1 hric2 hcrs1 hcrs2 haociurs ht1 ht2
-    rcases hctx with ⟨hctxp, hctxte, hctxsm, hctxsv, hctxm, hctxv⟩
+    rintro his hos _ μ₁ μ₂ ρ₁ ρ₂ R cf₁ cf₂ o₁ o₂
+           hr hics1 hics2 hric1 hric2 hcrs1 hcrs2 haociurs ht1 ht2
     simp [NonInterferenceSpec] at ih
     cases e with
     | unit =>
       exact
         TypeSystemEnforcesNonInterference_unit
-          (hocmm := hocmm) (hppt := hppt)
-          (hctxsm := hctxsm) (hctxm := hctxm)
-          (haociurs := haociurs) htc ht1 ht2
+          his hobsc hctx haociurs htc ht1 ht2
     | num _ =>
       exact
         TypeSystemEnforcesNonInterference_num
-          (hocmm := hocmm) (hppt := hppt)
-          (hctxsm := hctxsm) (hctxm := hctxm)
-          (haociurs := haociurs) htc ht1 ht2
+          his hobsc hctx haociurs htc ht1 ht2
     | bool _ =>
       exact
         TypeSystemEnforcesNonInterference_bool
-          (hocmm := hocmm) (hppt := hppt)
-          (hctxsm := hctxsm) (hctxm := hctxm)
-          (haociurs := haociurs) htc ht1 ht2
+          his hobsc hctx haociurs htc ht1 ht2
     | str _ =>
       exact
         TypeSystemEnforcesNonInterference_str
-          (hocmm := hocmm) (hppt := hppt)
-          (hctxsm := hctxsm) (hctxm := hctxm)
-          (haociurs := haociurs) htc ht1 ht2
+          his hobsc hctx haociurs htc ht1 ht2
     | var _ =>
       exact
         TypeSystemEnforcesNonInterference_var
-          (hocrm := hocrm) (hocmm := hocmm)
-          (hppt := hppt) (hppf := hppf)
-          (hctxp := hctxp) (hctxe := hctxte)
-          (hctxsm := hctxsm) (hctxm := hctxm)
-          (hctxsv := hctxsv) (hctxv := hctxv)
-          (haociurs := haociurs) htc ht1 ht2
+          his hobsc hctx haociurs htc ht1 ht2
     | unaryop _ _ =>
       exact
-        TypeSystemEnforcesNonInterference_unaryop
-          (ih := ih)
-          (hiq1 := hiq1) (hppt := hppt) (hppf := hppf) (hos := hos)
-          (hctxp := hctxp) (hctxte := hctxte)
-          (hctxsm := hctxsm) (hctxsv := hctxsv)
-          (hctxm := hctxm) (hctxv := hctxv)
-          (hocrm := hocrm) (hocmm := hocmm)
-          (hics1 := hics1) (hics2 := hics2)
-          (hric1 := hric1) (hric2 := hric2)
-          (hcrs1 := hcrs1) (hcrs2 := hcrs2)
-          (haociurs := haociurs)
-          htc ht1 ht2
+        TypeSystemEnforcesNonInterference_unaryop ih
+          his hos hctx hobsc
+          hics1 hics2 hric1 hric2 hcrs1 hcrs2 haociurs
+          hr htc ht1 ht2
     | op _ _ _ =>
       sorry
     | ite _ _ _ =>
