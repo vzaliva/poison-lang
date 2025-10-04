@@ -23,18 +23,21 @@ inductive PExpr : Type where
 -- Use mutual block to define interdependent types
 mutual
 
--- Tagged predicate structure
-structure TPred where
-  tag : Tag
-  arg_name: Name
-  pred_body: PExpr
-  var_env: List (Name × QTyp)
+-- Predicate type matching OTT specification exactly
+-- Corresponds to predicate, P in OTT:
+--   | guard k pred_closure pcl  -- guardClosure
+--   | guard k                   -- guardOnly
+--   | no_pred                   -- noPred
+inductive Predicate : Type where
+  | guardClosure : Tag → Name → PExpr → List (Name × QTyp) → Predicate
+  | guardOnly : Tag → Predicate
+  | noPred : Predicate
 
 -- Qualified type structure
 structure QTyp where
   etyp : ETyp
   poison : Poison
-  pred : Option TPred
+  pred : Predicate
 
 -- Separate typing closures for impure and pure functions
 inductive FnTClosure : Type where
@@ -114,20 +117,22 @@ partial def reprETyp : ETyp → Nat → Std.Format
   | ETyp.arrow st1 st2 p tcl, _ => s!"ETyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprFnTClosure tcl 0}"
   | ETyp.parrow st1 st2 p tcl, _ => s!"ETyp.parrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprPFnTClosure tcl 0}"
 
-partial def reprQTyp : QTyp → Nat → Std.Format
-  | QTyp.mk etyp poison tpred, _ =>
-    let tpredRepr := match tpred with
-      | none => "none"
-      | some tp => s!"{reprTPred tp 0}"
-    s!"QTyp.mk {reprETyp etyp 0} {repr poison} {tpredRepr}"
-
 partial def reprVarEnv (env: VarTypeEnv) (_:Nat): Std.Format :=
     Std.Format.text "[" ++
     Std.Format.joinSep (env.map (fun (x, qt) => s!"({repr x}, {reprQTyp qt 0})")) (Std.Format.text ", ") ++
     Std.Format.text "]"
 
-partial def reprTPred : TPred → Nat → Std.Format
-  | TPred.mk tag arg_name pred_body var_env, _ => s!"TPred.mk {repr tag} {repr arg_name} {reprPExpr pred_body 0} {reprVarEnv var_env 0}"
+partial def reprPredicate : Predicate → Nat → Std.Format
+  | Predicate.guardClosure tag arg_name pred_body var_env, _ =>
+    s!"Predicate.guardClosure {repr tag} {repr arg_name} {reprPExpr pred_body 0} {reprVarEnv var_env 0}"
+  | Predicate.guardOnly tag, _ =>
+    s!"Predicate.guardOnly {repr tag}"
+  | Predicate.noPred, _ =>
+    "Predicate.noPred"
+
+partial def reprQTyp : QTyp → Nat → Std.Format
+  | QTyp.mk etyp poison pred, _ =>
+    s!"QTyp.mk {reprETyp etyp 0} {repr poison} {reprPredicate pred 0}"
 
 end
 
@@ -146,8 +151,8 @@ instance : Repr ETyp where
 instance : Repr QTyp where
   reprPrec := reprQTyp
 
-instance : Repr TPred where
-  reprPrec := reprTPred
+instance : Repr Predicate where
+  reprPrec := reprPredicate
 
 
 -- Manual BEq instance for ETyp (needed for type checking)
@@ -207,26 +212,24 @@ def beqVarEnv : List (Name × QTyp) → List (Name × QTyp) → Bool
   | (x1, qt1) :: env1, (x2, qt2) :: env2 => x1 == x2 && beqQTyp qt1 qt2 && beqVarEnv env1 env2
   | _, _ => false
 
--- Manual BEq instance for TPred
-def beqTPred : TPred → TPred → Bool
-  | TPred.mk tag1 arg_name1 pred_body1 var_env1, TPred.mk tag2 arg_name2 pred_body2 var_env2 =>
-    tag1 == tag2 && arg_name1 == arg_name2 && pred_body1 == pred_body2 && beqVarEnv var_env1 var_env2
-
--- Manual BEq instance for Option TPred
-def beqOptionTPred : Option TPred → Option TPred → Bool
-  | none, none => true
-  | some tp1, some tp2 => beqTPred tp1 tp2
+-- Manual BEq instance for Predicate
+def beqPredicate : Predicate → Predicate → Bool
+  | Predicate.guardClosure tag1 arg1 body1 env1, Predicate.guardClosure tag2 arg2 body2 env2 =>
+    tag1 == tag2 && arg1 == arg2 && body1 == body2 && beqVarEnv env1 env2
+  | Predicate.guardOnly tag1, Predicate.guardOnly tag2 =>
+    tag1 == tag2
+  | Predicate.noPred, Predicate.noPred => true
   | _, _ => false
 
 -- Manual BEq instance for QTyp
 def beqQTyp : QTyp → QTyp → Bool
   | QTyp.mk etyp1 poison1 pred1, QTyp.mk etyp2 poison2 pred2 =>
-    etyp1 == etyp2 && poison1 == poison2 && beqOptionTPred pred1 pred2
+    etyp1 == etyp2 && poison1 == poison2 && beqPredicate pred1 pred2
 
 end
 
-instance : BEq TPred where
-  beq := beqTPred
+instance : BEq Predicate where
+  beq := beqPredicate
 
 instance : BEq QTyp where
   beq := beqQTyp

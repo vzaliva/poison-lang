@@ -1,6 +1,6 @@
 Evaluating file: examples/print-int-deref.poison
 
-Type checking passed: Type: QTyp.mk ETyp.unit false none
+Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred
 100
 Result: unit
 Final state:

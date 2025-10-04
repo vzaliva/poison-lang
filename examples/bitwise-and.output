@@ -1,6 +1,6 @@
 Evaluating file: examples/bitwise-and.poison
 
-Type checking passed: Type: QTyp.mk ETyp.int false none
+Type checking passed: Type: QTyp.mk ETyp.int false Predicate.noPred
 31
 Result: 36
 Final state:

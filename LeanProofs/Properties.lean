@@ -103,28 +103,42 @@ private lemma typecheck_var_preserves_typestate (ctx : TypeContext) (pe : PExpr)
     cases h1: qt with
     | mk etyp poison pred =>
       simp [h1] at H
-      cases h3: pred with
-      | none =>
+      cases h3 : pred with
+      | guardClosure tag arg_name pred_body var_env =>
+        -- Both guard variants behave identically for the environment fields
+        cases h5 : ctx.tagEnv.get? tag with
+        | none =>
+          simp_all [typecheckVar, h0, h1, h3, h5, pure, Except.pure]
+          cases result <;> cases ctx <;> cases H <;> simp_all
+        | some bd =>
+          cases bd with
+          | mk value deps =>
+            cases h6 : value with
+            | false =>
+              simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
+              cases result <;> cases ctx <;> cases H <;> simp_all
+            | true =>
+              simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
+              cases result <;> cases ctx <;> cases H <;> simp_all
+      | guardOnly tag =>
+        cases h5 : ctx.tagEnv.get? tag with
+        | none =>
+          simp_all [typecheckVar, h0, h1, h3, h5, pure, Except.pure]
+          cases result <;> cases ctx <;> cases H <;> simp_all
+        | some bd =>
+          cases bd with
+          | mk value deps =>
+            cases h6 : value with
+            | false =>
+              simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
+              cases result <;> cases ctx <;> cases H <;> simp_all
+            | true =>
+              simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
+              cases result <;> cases ctx <;> cases H <;> simp_all
+      | noPred =>
         -- No predicate case: preserves environment
-        simp_all [pure, Except.pure]
-        cases result; cases ctx; cases H; trivial
-      | some tp =>
-        simp [h3] at H
-        -- Has predicate: all cases preserve environment
-        cases h4: tp with
-        | mk tag etyp =>
-          cases h5: ctx.tagEnv[tag]? with
-          | none =>
-            -- Guard unknown: preserves environment
-            simp_all [pure, Except.pure]
-            cases result; cases ctx; cases H; trivial
-          | some bd =>
-            cases bd with
-            | mk value _deps =>
-              -- Guard known (true/false): both preserve environment
-              cases value <;>
-              simp_all <;>
-              cases result <;> cases ctx <;> cases H <;> trivial
+        simp_all [typecheckVar, h0, h1, h3, pure, Except.pure]
+        cases result <;> cases ctx <;> cases H <;> simp_all
 
 -- Private lemma for deref case
 private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (e1 : Expr)
@@ -165,41 +179,56 @@ private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExp
             cases result; cases result1; cases ctx; cases H; trivial
           | false =>
             simp [h4] at H
-            cases h5: result1.memEnv'[l]? with
+            cases h5 : result1.memEnv'.get? l with
             | none =>
               simp_all
             | some qt =>
-              cases h6: qt with
+              cases h6 : qt with
               | mk etyp' p2 tp =>
                 simp_all
-                cases h7: tp with
-                | none =>
+                cases h7 : tp with
+                | noPred =>
                   simp_all
-                  cases h9: etyp' != t with
+                  cases h9 : etyp' != t with
                   | true =>
                     simp_all
                   | false =>
                     simp_all [pure, Except.pure]
                     cases result; cases result1; cases ctx; cases H; trivial
-                | some tp =>
-                  cases h8: tp with
-                  | mk k arg_name pred_body var_env =>
+                | guardOnly k =>
+                  simp_all
+                  cases h9 : etyp' != t with
+                  | true =>
                     simp_all
-                    cases h9: etyp' != t with
-                    | true =>
-                      simp_all
-                    | false =>
-                      simp_all [pure, Except.pure]
-                      match h10 : result1.tagEnv'[k]? with
-                      | none =>
+                  | false =>
+                    simp_all [pure, Except.pure]
+                    match h10 : result1.tagEnv'.get? k with
+                    | none =>
+                      simp_all <;>
+                      cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
+                    | some bd =>
+                      cases bd with
+                      | mk value _deps =>
+                        cases value <;>
                         simp_all <;>
                         cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
-                      | some bd =>
-                        cases bd with
-                        | mk value _deps =>
-                          cases value <;>
-                          simp_all <;>
-                          cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
+                | guardClosure k arg_name pred_body var_env =>
+                  simp_all
+                  cases h9 : etyp' != t with
+                  | true =>
+                    simp_all
+                  | false =>
+                    simp_all [pure, Except.pure]
+                    match h10 : result1.tagEnv'.get? k with
+                    | none =>
+                      simp_all <;>
+                      cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
+                    | some bd =>
+                      cases bd with
+                      | mk value _deps =>
+                        cases value <;>
+                        simp_all <;>
+                        cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
         | _ => simp_all
 
 -- Private lemma for ite case

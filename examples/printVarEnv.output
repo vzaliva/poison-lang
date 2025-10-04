@@ -1,6 +1,6 @@
 Evaluating file: examples/printVarEnv.poison
 
-Type checking passed: Type: QTyp.mk ETyp.unit false none
+Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred
 "Hello"
 Result: unit
 Final state:

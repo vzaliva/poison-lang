@@ -1,6 +1,6 @@
 Evaluating file: examples/while1.poison
 
-Type checking passed: Type: QTyp.mk ETyp.unit false none
+Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred
 Result: unit
 Final state:
   Variable environment: []

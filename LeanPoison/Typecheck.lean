@@ -67,47 +67,55 @@ abbrev TypecheckM := Except String
 
 
 /-- Extract dependencies from a predicate by analyzing free variables in the predicate body -/
-def extractDepsFromPred (pred : TPred) : TypecheckM Deps :=
-  let rec extractDepsFromPExpr (pe : PExpr) (boundVars : List Name) (env : VarTypeEnv) (fuel : Nat) : TypecheckM Deps :=
-    match fuel with
-    | 0 => throw "Out of fuel while extracting dependencies"
-    | fuel + 1 =>
-      match pe with
-      | PExpr.var x =>
-        if boundVars.contains x then return []  -- Bound variable, not free
-        else
-          match env.find? (fun (name, _) => name == x) with
-          | some (_, qt) =>
-            match qt.etyp with
-            | ETyp.ref _t l => return [l]  -- Reference type, add location
-            | ETyp.parrow _argTy _retTy _poison (PFnTClosure.mk argName body varEnv') =>
-              -- Pure function, recurse into its closure
-              extractDepsFromPExpr body (argName :: boundVars) varEnv' fuel
-            | _ => return []  -- Other types don't read from heap
-          | none => throw s!"Variable {x} not found in environment while extracting dependencies"
-      | PExpr.deref pe' => extractDepsFromPExpr pe' boundVars env fuel
-      | PExpr.op pe1 _ pe2 => do
-        let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
-        let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
-        return deps1 ++ deps2
-      | PExpr.unaryop _ pe' => extractDepsFromPExpr pe' boundVars env fuel
-      | PExpr.ite pe1 pe2 pe3 => do
-        let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
-        let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
-        let deps3 ← extractDepsFromPExpr pe3 boundVars env fuel
-        return deps1 ++ deps2 ++ deps3
-      | PExpr.app pe1 pe2 => do
-        let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
-        let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
-        return deps1 ++ deps2
-      | PExpr.vlet x pe1 pe2 => do
-        let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
-        let deps2 ← extractDepsFromPExpr pe2 (x :: boundVars) env fuel
-        return deps1 ++ deps2
-      | _ => return []  -- literals, unit, etc. don't read from heap
+def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
+  match pred with
+  | Predicate.guardClosure _tag arg_name pred_body var_env =>
+    let rec extractDepsFromPExpr (pe : PExpr) (boundVars : List Name) (env : VarTypeEnv) (fuel : Nat) : TypecheckM Deps :=
+      match fuel with
+      | 0 => throw "Out of fuel while extracting dependencies"
+      | fuel + 1 =>
+        match pe with
+        | PExpr.var x =>
+          if boundVars.contains x then return []  -- Bound variable, not free
+          else
+            match env.find? (fun (name, _) => name == x) with
+            | some (_, qt) =>
+              match qt.etyp with
+              | ETyp.ref _t l => return [l]  -- Reference type, add location
+              | ETyp.parrow _argTy _retTy _poison (PFnTClosure.mk argName body varEnv') =>
+                -- Pure function, recurse into its closure
+                extractDepsFromPExpr body (argName :: boundVars) varEnv' fuel
+              | _ => return []  -- Other types don't read from heap
+            | none => throw s!"Variable {x} not found in environment while extracting dependencies"
+        | PExpr.deref pe' => extractDepsFromPExpr pe' boundVars env fuel
+        | PExpr.op pe1 _ pe2 => do
+          let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
+          let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
+          return deps1 ++ deps2
+        | PExpr.unaryop _ pe' => extractDepsFromPExpr pe' boundVars env fuel
+        | PExpr.ite pe1 pe2 pe3 => do
+          let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
+          let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
+          let deps3 ← extractDepsFromPExpr pe3 boundVars env fuel
+          return deps1 ++ deps2 ++ deps3
+        | PExpr.app pe1 pe2 => do
+          let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
+          let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
+          return deps1 ++ deps2
+        | PExpr.vlet x pe1 pe2 => do
+          let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
+          let deps2 ← extractDepsFromPExpr pe2 (x :: boundVars) env fuel
+          return deps1 ++ deps2
+        | _ => return []  -- literals, unit, etc. don't read from heap
 
-  -- Start with the bound parameter in the bound variables list
-  extractDepsFromPExpr pred.pred_body [pred.arg_name] pred.var_env defaultFuel
+    -- Start with the bound parameter in the bound variables list
+    extractDepsFromPExpr pred_body [arg_name] var_env defaultFuel
+  | Predicate.guardOnly _tag =>
+    -- Guard-only predicate with no body, no dependencies
+    return []
+  | Predicate.noPred =>
+    -- No predicate, no dependencies
+    return []
 
 -- Allocate a fresh location and return it along with updated typing context
 def freshTLoc (ctx : TypeContext): (Address × TypeContext) :=
@@ -153,9 +161,20 @@ def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
         let p := joinPoison p1 p2
         let pred :=
           match pred1, pred2 with
-          | some ⟨k1, an1, pb1, ve1⟩, some ⟨k2, _, _, _⟩ =>
-              if k1 == k2 then some ⟨k1, an1, pb1, ve1⟩ else none
-          | _, _ => none
+          -- Both branches have guard closure with same tag: keep the closure
+          | Predicate.guardClosure k1 an1 pb1 ve1, Predicate.guardClosure k2 _ _ _ =>
+              if k1 == k2 then Predicate.guardClosure k1 an1 pb1 ve1 else Predicate.noPred
+          -- Both branches have guard only with same tag: keep guard only
+          | Predicate.guardOnly k1, Predicate.guardOnly k2 =>
+              if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+          -- Mixed: guardClosure and guardOnly with same tag: keep the more general guardOnly
+          | Predicate.guardClosure k1 _ _ _, Predicate.guardOnly k2 =>
+              if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+          | Predicate.guardOnly k1, Predicate.guardClosure k2 _ _ _ =>
+              if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+          -- One or both branches have noPred: conservative choice is noPred
+          | Predicate.noPred, _ => Predicate.noPred
+          | _, Predicate.noPred => Predicate.noPred
         some ⟨t1, p, pred⟩
       else
         -- Unreachable under well-typedness: location types are immutable.
@@ -346,12 +365,13 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
   -- Helper function to check if a predicate's test expression matches the condition
   let checkPredicate (arg : PExpr) (qt : QTyp) : TypecheckM (Option (Tag × Deps)) :=
     match qt.pred with
-    | none => return none
-    | some pred =>
+    | Predicate.noPred => return none
+    | Predicate.guardOnly _tag => return none  -- Guard-only cannot be matched syntactically
+    | Predicate.guardClosure tag arg_name pred_body var_env =>
         -- Compare the predicate body with the condition using environment-aware equality
-        if PExpr.equalWithEnvs pred.pred_body pred.var_env conditionPExpr S (some (pred.arg_name, arg)) defaultFuel then do
-          let deps ← extractDepsFromPred pred
-          return some (pred.tag, deps)
+        if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) defaultFuel then do
+          let deps ← extractDepsFromPred qt.pred
+          return some (tag, deps)
         else return none
 
   -- Collect all matching tags from variable environment
@@ -399,22 +419,25 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
 -- pc ; G ; S ; L |- n : int :> clean { no_pred } -| G ; L
 -/
 def typecheckInt (ctx : TypeContext) (_n : Int) : TypecheckM TypeResult := do
-  let qt : QTyp := ⟨ETyp.int, false, none⟩  -- clean, no predicate
+  let qt : QTyp := ⟨ETyp.int, false, Predicate.noPred⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 /-- Rule: bool (Ott rule: bool)
 -- pc ; G ; S ; L |- b : bool :> clean { no_pred } -| G ; L
 -/
 def typecheckBool (ctx : TypeContext) (_b : Bool) : TypecheckM TypeResult := do
-  let qt : QTyp := ⟨ETyp.bool, false, none ⟩  -- clean, no predicate
+  let qt : QTyp := ⟨ETyp.bool, false, Predicate.noPred⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 
 /-- Rules: var_guard_true, var_guard_false, var_guard_unknown, var_no_pred (Ott rules)
 -- Variable typing with predicate handling:
 -- - var_guard_true: S(x) = T :> p { guard k pred_closure pcl }, L(k) = true
+-- - var_guard_only_true: S(x) = T :> p { guard k }, L(k) = true
 -- - var_guard_false: S(x) = T :> p { guard k pred_closure pcl }, L(k) = false
+-- - var_guard_only_false: S(x) = T :> p { guard k }, L(k) = false
 -- - var_guard_unknown: S(x) = T :> p { guard k pred_closure pcl }, k not in L
+-- - var_guard_only_unknown: S(x) = T :> p { guard k }, k not in L
 -- - var_no_pred: S(x) = T :> p { no_pred }
 --/
 def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
@@ -424,27 +447,27 @@ def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
   | some qt =>
     let ⟨etyp, poison, pred⟩ := qt
     match pred with
-    | none =>  -- no_pred case
+    | Predicate.noPred =>  -- no_pred case
       let poison := joinPoison ctx.pc poison
-      let qt' : QTyp := ⟨etyp, poison, none ⟩
+      let qt' : QTyp := ⟨etyp, poison, Predicate.noPred⟩
       return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
-    | some tp =>  -- has predicate
-      let ⟨k, arg_name, pred_body, var_env⟩ := tp
-      --dbg_trace s!"Predicate found with tag {k}"
+    | Predicate.guardOnly k | Predicate.guardClosure k _ _ _ =>
+      -- Both guard types behave the same: check tag in L and de-poison/poison/preserve accordingly
+      --dbg_trace s!"Guard predicate found with tag {k}"
       match ctx.tagEnv.get? k with
-      | some ⟨true, _deps⟩ =>  -- guard_true case
+      | some ⟨true, _deps⟩ =>  -- guard_true / guard_only_true case
         -- dbg_trace "Guard True case"
-        let qt' : QTyp := ⟨etyp, ctx.pc, none ⟩
+        let qt' : QTyp := ⟨etyp, ctx.pc, Predicate.noPred⟩
         return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
-      | some ⟨false, _deps⟩ =>  -- guard_false case
+      | some ⟨false, _deps⟩ =>  -- guard_false / guard_only_false case
         -- dbg_trace "Guard False case"
-        let qt' : QTyp := ⟨etyp, true, none ⟩  -- poisoned
+        let qt' : QTyp := ⟨etyp, true, Predicate.noPred⟩  -- poisoned
         return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
-      | none =>  -- guard_unknown case
+      | none =>  -- guard_unknown / guard_only_unknown case
         -- dbg_trace "Guard Unknown case"
         let poison := joinPoison ctx.pc poison
-        let tp' : TPred := ⟨k, arg_name, pred_body, var_env⟩
-        let qt' : QTyp := ⟨etyp, poison, some tp' ⟩
+        -- Preserve the original predicate (either guardOnly or guardClosure)
+        let qt' : QTyp := ⟨etyp, poison, pred⟩
         return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
   | none => throw s!"Variable {x} not found in environment"
 
@@ -459,7 +482,7 @@ def typecheckLocation (ctx : TypeContext) (l : Address) : TypecheckM TypeResult 
   | some qt =>
     let ⟨etyp, _p, pred ⟩ := qt
     let refTyp := ETyp.ref etyp l
-    let qt' : QTyp := ⟨refTyp, false, pred ⟩  -- clean, no predicate
+    let qt' : QTyp := ⟨refTyp, false, pred⟩  -- clean, preserve predicate
     return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
   | none => throw s!"Location {l} not found in memory environment"
 
@@ -467,14 +490,14 @@ def typecheckLocation (ctx : TypeContext) (l : Address) : TypecheckM TypeResult 
 -- pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G ; L
 -/
 def typecheckUnit (ctx : TypeContext) : TypecheckM TypeResult := do
-  let qt : QTyp := ⟨ETyp.unit, false, none  ⟩  -- clean, no predicate
+  let qt : QTyp := ⟨ETyp.unit, false, Predicate.noPred⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 /--  Rule: string (Ott rule: string)
 -- pc ; G ; S ; L |- string : string :> clean { no_pred } -| G ; L
 -/
 def typecheckString (ctx : TypeContext) (_s : String) : TypecheckM TypeResult := do
-  let qt : QTyp := ⟨ETyp.string, false, none  ⟩  -- clean, no predicate
+  let qt : QTyp := ⟨ETyp.string, false, Predicate.noPred⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 -- The following option is needed in increasing the maximum number of heartbeats
@@ -493,7 +516,7 @@ def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : 
   -- Create arrow type ST1 -> ST2
   let arrowTyp : ETyp := ETyp.arrow st1 st2 false (FnTClosure.mk x body ctx.varEnv)
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
-  let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
+  let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 /-- Rule: pfn_abs (Ott rule: pfn_abs)
@@ -509,7 +532,7 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
   -- Create arrow type ST1 -> ST2
   let arrowTyp : ETyp := ETyp.parrow st1 st2 false (PFnTClosure.mk x pbody ctx.varEnv)
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
-  let qt : QTyp := ⟨arrowTyp, ctx.pc, none⟩
+  let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
 
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
@@ -576,7 +599,7 @@ def typecheckRand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRes
               let ⟨etyp, poison, _  ⟩ := result.qualType
               if etyp != ETyp.int then throw ("Argument Expression to rand must have type int")
               else
-                let qt' : QTyp := ⟨ETyp.int , joinPoison ctx.pc poison, none ⟩
+                let qt' : QTyp := ⟨ETyp.int , joinPoison ctx.pc poison, Predicate.noPred⟩
                 return {result with qualType := qt' }
 termination_by fuel
 
@@ -603,9 +626,9 @@ def typecheckFrand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRe
         let predBody : PExpr <- Expr.toPExpr (Expr.op (Expr.op (Expr.var varName) Op.gte (Expr.num 0)) Op.and
                                  (Expr.op (Expr.var varName) Op.lte ( e)) )
 
-        let depoisoningPred : TPred := ⟨ newTag  , varName  , predBody , ctx.varEnv⟩
+        let depoisoningPred : Predicate := Predicate.guardClosure newTag varName predBody ctx.varEnv
 
-        let qt' : QTyp := ⟨ETyp.int , true, some depoisoningPred ⟩
+        let qt' : QTyp := ⟨ETyp.int , true, depoisoningPred⟩
         return {result' with qualType := qt'}
 termination_by fuel
 
@@ -624,7 +647,7 @@ def typecheckPrintString (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM 
               let ⟨etyp, poison, _  ⟩ := result.qualType
               if etyp != ETyp.string then throw ("Argument Expression to printString must have type string")
               else
-                let qt' : QTyp := ⟨ETyp.unit , joinPoison ctx.pc poison, none ⟩
+                let qt' : QTyp := ⟨ETyp.unit , joinPoison ctx.pc poison, Predicate.noPred⟩
                 return {result with qualType := qt' }
 termination_by fuel
 
@@ -643,7 +666,7 @@ def typecheckPrintInt (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM Typ
               let ⟨etyp, poison, _  ⟩ := result.qualType
               if etyp != ETyp.int then throw ("Argument Expression to printInt must have type int")
               else
-                let qt' : QTyp := ⟨ETyp.unit , joinPoison ctx.pc poison, none ⟩
+                let qt' : QTyp := ⟨ETyp.unit , joinPoison ctx.pc poison, Predicate.noPred⟩
                 return {result with qualType := qt' }
 termination_by fuel
 
@@ -672,7 +695,7 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
     match opEType? op etyp1 etyp2 with
     | some r =>
         let poison := joinPoison ctx.pc (joinPoison p1 p2)
-        let qt : QTyp := ⟨r, poison, none⟩
+        let qt : QTyp := ⟨r, poison, Predicate.noPred⟩
         return { result2 with qualType := qt }
     | none => throw s!"Operation argument types do not match.\n  Left: {etyp1}\n  Op:   {op}\n  Right: {etyp2}"
 
@@ -696,10 +719,10 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
     -- Generate fresh location (simplified)
     let (l, result') := freshTLocRes result
     let storedPoison := joinPoison ctx.pc poison
-    let storedQt : QTyp := ⟨etyp, storedPoison, pred  ⟩
+    let storedQt : QTyp := ⟨etyp, storedPoison, pred⟩
     let memEnv' := updateMemEnv result'.memEnv' l storedQt
 
-    let qt : QTyp := ⟨ETyp.ref etyp l, ctx.pc, none  ⟩
+    let qt : QTyp := ⟨ETyp.ref etyp l, ctx.pc, Predicate.noPred⟩
     return { qualType := qt, memEnv' := memEnv', tagEnv' := result'.tagEnv', nextLoc' := result'.nextLoc', nextTag' := result'.nextTag' }
 termination_by fuel
 
@@ -723,11 +746,11 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
       if etyp2 != t then throw "Type mismatch in assignment"
 
       let storedPoison := joinPoison ctx.pc (joinPoison p1 p2)
-      let storedQt : QTyp := ⟨t, storedPoison, pred2  ⟩
+      let storedQt : QTyp := ⟨t, storedPoison, pred2⟩
       let memEnv' := updateMemEnv result2.memEnv' l storedQt
 
       let resultPoison := joinPoison ctx.pc p1
-      let qt : QTyp := ⟨ETyp.unit, resultPoison, none  ⟩
+      let qt : QTyp := ⟨ETyp.unit, resultPoison, Predicate.noPred⟩
       -- Invalidate dependencies on write (Ott rule: assign)
       let tagEnv' := invalidateTagDeps result2.tagEnv' l
       return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag'  }
@@ -748,34 +771,36 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
       if poison then
         -- Reference is poisoned: always return poisoned with no predicate
         -- Ott rule: deref_poisoned
-        let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned, no_pred
+        let qt : QTyp := ⟨t, true, Predicate.noPred⟩  -- poisoned, no_pred
         return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
       else
         -- Reference is clean: proceed with normal predicate handling
         match result.memEnv'.get? l with
-        | some ⟨etyp', p2, tp ⟩ =>
-          match tp with
-          | none =>  -- Ott rule: deref_no_pred
+        | some ⟨etyp', p2, pred⟩ =>
+          match pred with
+          | Predicate.noPred =>  -- Ott rule: deref_no_pred
             if etyp' != t then throw s!"Type mismatch in dereference: {repr etyp'} != {repr t}"
             let poison := joinPoison ctx.pc p2
-            let qt : QTyp := ⟨t, poison, none  ⟩
+            let qt : QTyp := ⟨t, poison, Predicate.noPred⟩
             return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
-          | some ⟨k, arg_name, pred_body, var_env⟩ =>  -- Ott rule: deref_guard_true, deref_guard_false, deref_guard_unknown
+          | Predicate.guardOnly k | Predicate.guardClosure k _ _ _ =>
+            -- Both guard types behave the same for dereference
             if etyp' != t then throw "Type mismatch in dereference"
             match result.tagEnv'.get? k with
             | some ⟨true, _deps⟩ =>
-              -- Ott rule: deref_guard_true
+              -- Ott rule: deref_guard_true / deref_guard_only_true
               let poison := ctx.pc
-              let qt : QTyp := ⟨t, poison, none  ⟩
+              let qt : QTyp := ⟨t, poison, Predicate.noPred⟩
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
             | some ⟨false, _deps⟩ =>
-              -- Ott rule: deref_guard_false
-              let qt : QTyp := ⟨t, true, none  ⟩  -- poisoned
+              -- Ott rule: deref_guard_false / deref_guard_only_false
+              let qt : QTyp := ⟨t, true, Predicate.noPred⟩  -- poisoned
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
             | none =>
-              -- Ott rule: deref_guard_unknown
+              -- Ott rule: deref_guard_unknown / deref_guard_only_unknown
               let poison := joinPoison ctx.pc p2
-              let qt : QTyp := ⟨t, poison, some ⟨k, arg_name, pred_body, var_env⟩ ⟩
+              -- Preserve the original predicate (either guardOnly or guardClosure)
+              let qt : QTyp := ⟨t, poison, pred⟩
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
         | none => throw s!"Location {l} not found in memory environment"
     | _ => throw "Operand of dereference must be a reference"
@@ -799,7 +824,7 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
 
     let poison := joinPoison p1 p2
-    let qt : QTyp := ⟨etyp2, poison, pred2  ⟩
+    let qt : QTyp := ⟨etyp2, poison, pred2⟩
     return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
 
@@ -957,7 +982,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
 
       let poison := joinPoison ctx.pc (joinPoison p'' p''')
      -- dbg_trace s!" Result Poison val for if is {poison}"
-      let qt : QTyp := ⟨etyp2, poison, none  ⟩
+      let qt : QTyp := ⟨etyp2, poison, Predicate.noPred⟩
       let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
       let nextLoc' := max result2.nextLoc' result3.nextLoc'
       let nextTag' := max result2.nextTag' result3.nextTag'
@@ -982,7 +1007,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       if etyp2 != etyp3 then throw "Branches of if must have same type"
 
       let poison := joinPoison ctx.pc (joinPoison p' (joinPoison p'' p'''))
-      let qt : QTyp := ⟨etyp2, poison, none  ⟩
+      let qt : QTyp := ⟨etyp2, poison, Predicate.noPred⟩
       let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
       let nextLoc' := max result2.nextLoc' result3.nextLoc'
       let nextTag' := max result2.nextTag' result3.nextTag'
@@ -1017,7 +1042,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
 
       -- Simplified: just return unit with combined poison
       let poison := joinPoison ctx.pc (joinPoison p' p'')
-      let qt : QTyp := ⟨ETyp.unit, poison, none  ⟩
+      let qt : QTyp := ⟨ETyp.unit, poison, Predicate.noPred⟩
       -- Set k to false after loop (as per Ott spec)
       let tagEnv' := ctx'.tagEnv.insert k ⟨false, deps⟩
       return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
@@ -1033,7 +1058,7 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
 
       -- Simplified: just return unit with combined poison
       let poison := joinPoison ctx.pc (joinPoison p' p'')
-      let qt : QTyp := ⟨ETyp.unit, poison, none  ⟩
+      let qt : QTyp := ⟨ETyp.unit, poison, Predicate.noPred⟩
       return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
 termination_by fuel
 
@@ -1055,7 +1080,7 @@ def typecheckUnaryOp (ctx : TypeContext) (op : UnaryOp) (e : Expr) (fuel : Nat):
     match opUnaryEType? op etyp with
     | some r =>
         let poison := joinPoison ctx.pc p
-        let qt : QTyp := ⟨r, poison, none⟩
+        let qt : QTyp := ⟨r, poison, Predicate.noPred⟩
         return { result with qualType := qt }
     | none => throw s!"Operation argument types do not match.\n  Expression Type: {etyp}\n  UnaryOp: {op}"
 termination_by fuel

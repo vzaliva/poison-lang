@@ -1,6 +1,6 @@
 Evaluating file: examples/print-string-var.poison
 
-Type checking passed: Type: QTyp.mk ETyp.unit false none
+Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred
 " Poison lang "
 Result: unit
 Final state:

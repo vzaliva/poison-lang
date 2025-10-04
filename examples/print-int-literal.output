@@ -1,6 +1,6 @@
 Evaluating file: examples/print-int-literal.poison
 
-Type checking passed: Type: QTyp.mk ETyp.unit false none
+Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred
 12
 Result: unit
 Final state:

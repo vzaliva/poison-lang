@@ -125,6 +125,7 @@ T ::= int | bool | unit
 Q ::= T :> p { P }      
 
 P ::= guard k pred_closure (x, pe, r)  (* predicate as pure closure *)
+    | guard k                          (* guard tag only *)
     | no_pred                          (* trivial predicate *)
 \end{lstlisting}
 
@@ -333,21 +334,27 @@ Conservative: may mark reliable data as poisoned, never marks unreliable data as
 \subsection{Predicate-based de-poisoning}
 \label{sec:de-poisoning}
 
-The language includes a predicate system that allows selective de-poisoning based on runtime conditions. Predicates are pure functions that test values and are associated with guard tags:
+The language includes a predicate system that allows selective de-poisoning based on runtime conditions. Predicates come in three forms and are associated with guard tags:
 
 \begin{itemize}
     \item \textbf{Qualified types}: Values have types $T\,\triangleright\,p\,\{P\}$
     where \texttt{T} is the enriched type, \texttt{p} is the poison status, and
     \texttt{P} is an optional predicate.
-    \item \textbf{Guard predicates}: \texttt{guard k pred\_closure (x, pe, r)}
+    \item \textbf{Guard predicates with closure}: \texttt{guard k pred\_closure (x, pe, r)}
     creates a predicate with tag \texttt{k} and pure expression test \texttt{pe}
     (pure function from \texttt{T} to \texttt{bool}). The \texttt{r} captures
-    value of variables used in \texttt{pe} at definition time.
+    value of variables used in \texttt{pe} at definition time. These enable
+    syntactic matching for conditional de-poisoning.
+    \item \textbf{Guard-only predicates}: \texttt{guard k} associates a guard tag
+    \texttt{k} with a value without a syntactically matchable predicate closure.
+    These can be de-poisoned when the tag is known to be true in the logical
+    environment, but cannot be matched syntactically via \texttt{match\_guard}.
     \item \textbf{Conditional de-poisoning}: When an \texttt{if} condition
-    syntactically matches a guard's test, values are de-poisoned in the true
-    branch and poisoned in the false branch
+    syntactically matches a guard's test (via \texttt{match\_guard}), values are
+    de-poisoned in the true branch and poisoned in the false branch
     \item \textbf{Logical environment}: Environment $\mathcal{L}$ tracks guard
-    valuations (\texttt{k : true/false}) to enable predicate evaluation
+    valuations (\texttt{k : true/false}) to enable predicate evaluation for both
+    guard closure and guard-only predicates
 \end{itemize}
 
 \textbf{Design Note:} The predicate closure \texttt{pred\_closure (x, pe, r)}
@@ -366,6 +373,15 @@ their argument will naturally match at most once due to syntactic substitution
 differences. However, for predicates that ignore their argument, extra care must
 be taken to ensure no two distinct tags are assigned to identical predicate
 bodies, as this would cause multiple-match errors in \texttt{match\_guard}.
+
+\textbf{Guard-only limitations:} Guard-only predicates (\texttt{guard k} without
+a closure) cannot be matched via \texttt{match\_guard} because they lack the
+predicate body required for syntactic comparison. These predicates can only be
+de-poisoned when the guard tag \texttt{k} is already known to be true in the
+logical environment $\mathcal{L}$ (e.g., from a previous matched guard in an
+outer scope or from a while loop guard). This makes guard-only predicates
+suitable for propagating guard information without enabling new syntactic
+matches.
 
 \textbf{Poisoned references and de-poisoning} Any value obtained from a poisoned
 reference is poisoned and could not be de-poisoned further via predicate-based
@@ -549,15 +565,17 @@ because of invalidation. due to changed dependencies.
 This rule type actual memory location value, which is always clean.
 
 \subsubsection*{Variable access with predicate support:}
-When variables have associated predicates, the typing rule checks the logical environment $\mathcal{L}$ to determine if de-poisoning can occur:
+When variables have associated predicates, the typing rule checks the logical environment $\mathcal{L}$ to determine if de-poisoning can occur. Both guard closures and guard-only predicates behave identically when checking $\mathcal{L}$:
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma}
 \]
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ pred\_closure } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma}
 \]
+
+where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{guard k pred\_closure (y, pe, r)} or simply \texttt{guard k}. The presence or absence of the closure does not affect the typing behaviour when the guard tag is known in $\mathcal{L}$.
 
 \subsubsection*{Reference creation:}
 \[
@@ -796,7 +814,7 @@ inputs must be checked for validity before use.
 \paragraph{We distinguish three classes of inputs:}
 \begin{itemize}
   \item \textbf{Critical inputs}: exactly those listed in the specification $S$;
-  they determine the regime vector and thus govern non-interference.
+  they determine the guard regime and thus govern non-interference.
   \item \textbf{Contextual non-critical inputs}: not listed in $S$ but present
   in the initial typing context because the program refers to them. They are
   always recorded as poisoned with \texttt{no\_pred} in the context and must be
@@ -811,7 +829,7 @@ Inputs consist of initial memory and variables:
     \item Initial memory: $\mu_0 : \text{Location} \rightarrow \text{Value}$
     \item Initial variables: $\rho_0 : \text{Variable} \rightarrow \text{Value}$
 \end{itemize}
-We fix a \emph{critical-input specification} $S$ comprising \emph{ordered} lists of critical entries with their qualified types:
+We fix a \emph{critical-input specification} $S$ comprising lists of critical entries with their qualified types:
 \[
   S.\mathrm{locs} = \bigl[(\ell_1, Q_1),\ldots,(\ell_m, Q_m)\bigr],\qquad
   S.\mathrm{vars} = \bigl[(x_1, Q'_1),\ldots,(x_n, Q'_n)\bigr].
@@ -829,67 +847,72 @@ Non-observable outputs are unconstrained.
 Note: Variable bindings are local to expressions and do not persist as program outputs. Only memory locations and the return value constitute observable outputs.
 \end{definition}
 
-\begin{definition}[Regime Vector]
-Let the critical inputs be the entries of $S$ in order, written $(inp_1, \ldots, inp_{m+n})$, where each $inp_i$ is either
-one of the listed locations or one of the listed variables.
+\begin{definition}[Guard Regime]
+Let $K_S$ be the finite set of guard tags that occur in predicates attached to
+entries of $S$.
 
-For a given execution, the regime vector $R = (r_1, \ldots, r_n)$ where $r_i \in \{\text{true}, \text{false}\}$ records for each critical input whether it is \emph{valid}. We enforce an invariant on the specification $S$ for critical inputs:
+A \emph{guard regime} is a total mapping $R : K_S \to
+\{\text{true},\text{false}\}$ assigning a truth value to each tag. It prescribes
+which guards are considered true in an execution.
+
+The specification $S$ determines the constraints for critical inputs and the
+initial typing context; a guard regime $R$ supplies truth values for tags in
+$K_S$ that instantiate these constraints at comparison time.
+
+\paragraph{Regime/Specification consistency.}
+For a single run with initial memory and variable environments $(\mu,\rho)$, we say that $R$ is \emph{consistent} with $(\mu,\rho)$ when, for every critical entry in $S$:
 \begin{itemize}
-    \item If an input has no predicate, it is \emph{statically clean} in $S$.
-    \item If an input has a predicate $P_i$, it is \emph{initially poisoned} in $S$ and may be de-poisoned when $P_i$ holds at points where the program checks the corresponding guard.
-\end{itemize}
-Under this invariant, we define the regime bits as follows:
-\begin{itemize}
-    \item If $inp_i$ has no predicate: $r_i = \text{true}$ (trivially valid by construction).
-    \item If $inp_i$ has predicate $P_i$: $r_i = \text{true}$ iff the input's runtime value satisfies $P_i$; otherwise $r_i = \text{false}$.
+  \item if the entry has no predicate, it is trivially consistent (statically
+  valid by $S$);
+  \item if it has a \emph{guard-only} tag $k$, there is no consistency
+  requirement and it is trivially consistent.
+  \item if it has a predicate \emph{with closure} tagged $k$, the predicate
+  closure applied to the entry's runtime value evaluates to $\text{true}$ iff
+  $R(k)=\text{true}$ and to $\text{false}$ iff $R(k)=\text{false}$;
 \end{itemize}
 
-\textbf{Note:} We deliberately exclude non-critical inputs from the regime
-vector, even if they have predicates. This yields a stronger non-interference
-property: it forbids any non-critical-driven error-handling differences in
-observable outputs. In other words, predicate checks on non-critical inputs
-cannot influence how critical inputs are processed or how observable outputs are
-computed. For example, with critical input $h$ and non-critical input $y$ with
-predicate $y > 0$, the program \texttt{if y>0 then return h+1 else return 0}
-violates non-interference because the observable output depends on $y$'s
-predicate check.
+\textbf{Excluding non-critical guards.} Regimes range only over $K_S$. Tags originating solely from non-critical inputs are outside the regime and, by construction, cannot influence the observable behaviour required by the property.
 \end{definition}
 
 \begin{definition}[Non-Interference Property]
-A program $e$ satisfies non-interference with respect to
-the input partitions and observable outputs if, for each regime vector $R$:
+A program $e$ satisfies non-interference with respect to the critical-input specification $S$ and observable outputs if, for each guard regime $R$:
 
-Given two executions with the same observable behaviour form as defined above:
-$\langle e, \mu_1, \rho_1 \rangle \Downarrow \langle \mu'_1, v_1 \rangle$
-and $\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu'_2, v_2 \rangle$ where:
+Given two executions with the same observable-behaviour form as defined above,
+$\langle e, \mu_1, \rho_1 \rangle \Downarrow \langle \mu'_1, v_1 \rangle$ and
+$\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu'_2, v_2 \rangle$, the following hold:
 \begin{itemize}
-    \item Regime consistency: Both executions have the same regime vector $R$ (for inputs without predicates, $r_i$ is always \text{true} by the above invariant)
-    \item Valid critical inputs identical:
+    \item \textbf{Agreement on critical inputs under $R$:}
     \begin{itemize}
-        \item $\forall i$ where $r_i = \text{true}$ and input $i$ is location $l$: $\mu_1(l) = \mu_2(l)$
-        \item $\forall i$ where $r_i = \text{true}$ and input $i$ is variable $x$: $\rho_1(x) = \rho_2(x)$
+        \item For critical entries without predicates, the corresponding initial
+        values are identical across the two executions.
+        \item For entries with predicate \emph{closures} tagged $k$: when
+        $R(k)=\text{true}$ the initial values satisfy the closure and are
+        identical; when $R(k)=\text{false}$ the initial values may differ but
+        both fail the closure.
+        \item For entries with \emph{guard-only} tag $k$: when $R(k)=\text{true}$ the
+        initial values are identical; when $R(k)=\text{false}$ the initial values may
+        differ.
     \end{itemize}
-    \item Invalid critical inputs arbitrary (but must fail predicate):
-    \begin{itemize}
-        \item $\forall i$ where $r_i = \text{false}$ and input $i$ is location $l$ with predicate $P_i$: $\mu_1(l), \mu_2(l)$ can differ but both must fail $P_i$
-        \item $\forall i$ where $r_i = \text{false}$ and input $i$ is variable $x$ with predicate $P_i$: $\rho_1(x), \rho_2(x)$ can differ but both must fail $P_i$
-    \end{itemize}
-    \item Non-critical inputs arbitrary.
+    \item \textbf{Non-critical inputs:} unconstrained.
 \end{itemize}
-Then observable outputs are identical:
+Then the observable outputs coincide:
 \begin{itemize}
-    \item $\forall l \in L_{obs}.$ $\mu'_1(l) = \mu'_2(l)$
-    \item If $v_{obs} = \text{true}$ then $v_1 = v_2$
+    \item $\forall l \in L_{obs}.\; \mu'_1(l) = \mu'_2(l)$
+    \item If $v_{obs} = \text{true}$ then $v_1 = v_2$.
 \end{itemize}
 \end{definition}
 
-The key insight is the asymmetry in how critical inputs are treated based on their validity:
+The key insight initial values asymmetry governed by the regime $R$:
 \begin{itemize}
-    \item When valid ($r_i = \text{true}$): inputs are reliable and could affect
-    outputs - output depends on their actual values
-    \item When invalid ($r_i = \text{false}$): inputs are faulty, but fault
-    isolation logic should be able to handle them, still producing predictable
-    outputs, not dependent on the faulty values.
+    \item If a critical entry is annotated with tag $k$ and $R(k)=\text{true}$,
+    it is treated as valid; the compared runs must agree on its initial value
+    (for predicate closures), and the observable behaviour may depend on that
+    value.
+    \item If $R(k)=\text{false}$, the entry is treated as invalid; the compared
+    runs need not agree on its initial value (for predicate closures, both must
+    fail), yet observables must coincide.
+    \item Entries without predicates are statically valid by $S$ and must agree
+    across runs.
 \end{itemize}
 
 This is a runtime property which is impossible, in general, to guarantee statically. However,

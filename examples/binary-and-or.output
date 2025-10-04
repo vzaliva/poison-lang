@@ -1,6 +1,6 @@
 Evaluating file: examples/binary-and-or.poison
 
-Type checking passed: Type: QTyp.mk ETyp.bool false none
+Type checking passed: Type: QTyp.mk ETyp.bool false Predicate.noPred
 Result: true
 Final state:
   Variable environment: []
