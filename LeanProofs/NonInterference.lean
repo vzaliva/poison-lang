@@ -20,7 +20,7 @@ def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : ExprOrValue) : Prop :=
 
 -- What parts of the final state are observable
 structure ObservableSpec where
-  Lobs       : MemoryTypeEnv
+  locs       : MemoryTypeEnv
   retEtyp?   : Option ETyp
 deriving Repr
 
@@ -121,7 +121,7 @@ def runtimeInstantiatesCtx (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) : Pro
 -- Helper: equality of observables in the final states
 def observablesEqual (obs : ObservableSpec)
     (c₁ c₂ : Config) (o₁ o₂ : ExprOrValue) : Prop :=
-  let sameMem : Prop := ∀ {l et}, obs.Lobs.lookup l = some et → c₁.memory.lookup l = c₂.memory.lookup l
+  let sameMem : Prop := ∀ {l et}, obs.locs.lookup l = some et → c₁.memory.lookup l = c₂.memory.lookup l
   -- If the return is observable (retEtyp? = some et), we require the final
   -- values to match If the return is not observable (retEtyp? = none), we do
   -- not constrain it here.
@@ -285,7 +285,7 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
   -- (ii) the memory must contain entries for each observable location
   -- with the correct enriched type
   let memMatches : Prop :=
-    ∀ l et, obs.Lobs.lookup l = some et → res.memEnv'.lookup l = some et ∧ et.poison = false
+    ∀ l et, obs.locs.lookup l = some et → res.memEnv'.lookup l = some et ∧ et.poison = false
   retMatches ∧ memMatches
 
 -- Non-Interference property
