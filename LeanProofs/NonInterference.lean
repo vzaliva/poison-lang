@@ -6,6 +6,8 @@ import LeanPoison.Runtime
 import LeanPoison.Poison
 import LeanPoison.BigStep
 import Mathlib.Data.List.Forall2
+import Std.Data.HashMap
+open Std
 
 -- ================================================================
 -- Non-Interference (semantic formulation)
@@ -18,9 +20,24 @@ def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : ExprOrValue) : Prop :=
     LeanPoison.beval fuel c₀ e verbose = pure (Except.ok (c₁, out.toValue?.getD Value.unit)) ∧
     out.toExpr? = none
 
+abbrev MemoryETypEnv := HashMap Address ETyp
+namespace MemoryETypEnv
+
+  @[inline] def lookup (m : MemoryETypEnv) (a : Address) : Option ETyp :=
+    m.get? a
+
+  @[inline] def update (m : MemoryETypEnv) (a : Address) (qt : ETyp) : MemoryETypEnv :=
+    m.insert a qt
+
+  /-- `m` contains a binding for `a`. -/
+  def hasKey (m : MemoryETypEnv) (a : Address) : Prop :=
+    m.contains a
+
+end MemoryETypEnv
+
 -- What parts of the final state are observable
 structure ObservableSpec where
-  locs       : MemoryTypeEnv
+  locs       : MemoryETypEnv
   retEtyp?   : Option ETyp
 deriving Repr
 
@@ -285,7 +302,7 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
   -- (ii) the memory must contain entries for each observable location
   -- with the correct enriched type
   let memMatches : Prop :=
-    ∀ l et, obs.locs.lookup l = some et → res.memEnv'.lookup l = some et ∧ et.poison = false
+    ∀ l et, obs.locs.lookup l = some et → ∃ qt, (res.memEnv'.lookup l = some qt ∧ qt.etyp = et ∧ qt.poison = false)
   retMatches ∧ memMatches
 
 -- Non-Interference property
