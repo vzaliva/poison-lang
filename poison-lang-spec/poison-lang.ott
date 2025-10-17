@@ -802,12 +802,12 @@ pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G'' ; L''
 % - Guards only present in one branch are removed
 % This would be more precise but adds complexity. The current approach is simpler while
 % still enabling predicate-based de-poisoning within each branch.
-pm ; pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
 match_guard e1 G S = k with deps
-pm ; pc ; G' ; S ; L'[k |-> true using deps] |- e2 : T :> p'' { P'' } -| G'' ; L''
-pm ; pc ; G' ; S ; L'[k |-> false using deps] |- e3 : T :> p''' { P''' } -| G''' ; L'''
+pure ; pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G ; L
+pm ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T :> p'' { P'' } -| G'' ; L''
+pm ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T :> p''' { P''' } -| G''' ; L'''
 ----------------------------------  :: if_depoison
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p'' p''' { no_pred } -| JoinG G'' G''' ; L'
+pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p'' p''' { no_pred } -| JoinG G'' G''' ; L
 
 % Standard conditional typing rule (when no matching predicate found)
 % (used as a fallback when match_guard fails)
