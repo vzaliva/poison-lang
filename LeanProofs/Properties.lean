@@ -246,88 +246,28 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
   (cases h1: e1.toPExpr with| error err | ok pe1 ) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
   (cases h3: e2.toPExpr with | error err | ok pe2) <;> simp [h3] at P
   (cases h4: e3.toPExpr with | error err | ok pe3) <;> simp [h4] at P
-  cases h5: typecheckExpr ctx e1 fuel' with
-  | error err =>
-    simp_all
-  | ok result1 =>
-    simp [h5] at H
-    have hfuel : fuel' < fuel' + 1 + 1 := by linarith
-    have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 C h5
-    rcases IH1 with ⟨H1, H2, H3, H4⟩
-    simp_all
-    cases h6: result1.qualType with
-    | mk etyp' poison' pred' =>
-      simp_all
-      cases h7: etyp' != ETyp.bool with
-      | true =>
-        simp_all
-      | false =>
-        simp_all [pure, Except.pure]
-        cases h8: matchGuard e1 result1.memEnv' ctx.varEnv with
-        | ok k =>
-          simp_all
-          cases h9: typecheckExpr { pc := ctx.pc,
-                                    memEnv := result1.memEnv',
-                                    varEnv := ctx.varEnv,
-                                    tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := true, deps := k.2 },
-                                    nextLoc := result1.nextLoc',
-                                    nextTag := result1.nextTag',
-                                    pureCtx := true } e2 fuel'
-                         with
-          | error err =>
-            simp_all
-          | ok result2 =>
-            simp_all
-            cases h10: result2.qualType with
-            | mk etyp2 p'' pred =>
-              simp_all
-              cases h11: typecheckExpr
-                      { pc := ctx.pc,
-                        memEnv := result1.memEnv',
-                        varEnv := ctx.varEnv,
-                        tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := false, deps := k.2 },
-                        nextLoc := result2.nextLoc',
-                        nextTag := result2.nextTag',
-                        pureCtx := true }
-                      e3 fuel' with
-              | error err =>
-                simp_all
-              | ok result3 =>
-                simp_all
-                cases h12: result3.qualType with
-                | mk etyp3 p''' pred =>
-                  simp_all
-                  cases h13: etyp2 != etyp3 with
-                  | true =>
-                    simp_all
-                  | false =>
-                    simp_all
-                    have hfuel : fuel' < fuel' + 1 + 1 := by linarith
-                    have C' : ({ pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                       tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := true, deps := k.2 },
-                                       nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := true } : TypeContext).pureCtx = true
-                            := by simp_all
-                    have IH2 :=
-                      IH fuel' hfuel { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                       tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := true, deps := k.2 },
-                                       nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := true }
-                                       e2 pe2 result2 h3 C' h9
 
-                    have C'' : ({ pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                       tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := false, deps := k.2 },
-                                       nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true } : TypeContext).pureCtx = true
-                            := by simp_all
-                    have IH3 :=
-                      IH fuel' hfuel
-                        { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                          tagEnv := Std.HashMap.insert result1.tagEnv' k.1 { value := false, deps := k.2 },
-                          nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
-                        e3 pe3 result3 h4 C'' h11
-                    rcases IH2 with ⟨H14, H15, H16⟩
-                    rcases IH3 with ⟨H17, H18, H19⟩
-                    cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
-        | error err =>
+  cases h8: matchGuard e1 ctx.memEnv ctx.varEnv with
+  | error err =>
+    -- simple case: no matching predicate found
+    simp_all
+    cases h5: typecheckExpr ctx e1 fuel' with
+    | error err =>
+      simp_all
+    | ok result1 =>
+      simp [h5] at H
+      have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+      have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 C h5
+      rcases IH1 with ⟨H1, H2, H3, H4⟩
+      simp_all
+      cases h6: result1.qualType with
+      | mk etyp' poison' pred' =>
+        simp_all
+        cases h7: etyp' != ETyp.bool with
+        | true =>
           simp_all
+        | false =>
+          simp_all [pure, Except.pure]
           cases h9: typecheckExpr
                       { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
                         tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
@@ -372,6 +312,106 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                     have IH3 := IH fuel' hfuel
                         { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
                           tagEnv := result1.tagEnv',
+                          nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
+                        e3 pe3 result3 h4 C'' h11
+                    rcases IH2 with ⟨H14, H15, H16⟩
+                    rcases IH3 with ⟨H17, H18, H19⟩
+                    cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
+  | ok k_deps =>
+    -- predicate-based case: matching predicate found
+    simp_all
+    have ctx_simp: ctx = { pc := ctx.pc,
+                           memEnv := ctx.memEnv,
+                           varEnv := ctx.varEnv,
+                           tagEnv := ctx.tagEnv,
+                           nextLoc := ctx.nextLoc,
+                           nextTag := ctx.nextTag,
+                           pureCtx := true
+                         }
+    rw [← C]
+
+    cases h5: typecheckExpr {
+                              pc := ctx.pc,
+                              memEnv := ctx.memEnv,
+                              varEnv := ctx.varEnv,
+                              tagEnv := ctx.tagEnv,
+                              nextLoc := ctx.nextLoc,
+                              nextTag := ctx.nextTag,
+                              pureCtx := true
+                            } e1 fuel' with
+    | error err =>
+       rw [h5] at H
+       simp at H
+    | ok result1 =>
+      rw [h5] at H
+      simp at H
+      cases h6: result1.qualType with
+      | mk etyp1 p' pred =>
+        simp [h6] at H
+        cases h7: etyp1 != ETyp.bool with
+        | true =>
+          simp [h7] at H
+        | false =>
+          simp [h7] at H
+          simp [pure, Except.pure] at H
+          cases h9:  typecheckExpr
+                      { pc := ctx.pc,
+                        memEnv := ctx.memEnv,
+                        varEnv := ctx.varEnv,
+                        tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := true, deps := k_deps.2 },
+                        nextLoc := ctx.nextLoc,
+                        nextTag := ctx.nextTag,
+                        pureCtx := true }
+                      e2 fuel' with
+          | error err =>
+            simp [h9] at H
+          | ok result2 =>
+            simp [h9] at H
+            cases h10: result2.qualType with
+            | mk etyp2 p'' pred =>
+              simp [h10] at H
+              cases h11: typecheckExpr
+                      { pc := ctx.pc,
+                        memEnv := ctx.memEnv,
+                        varEnv := ctx.varEnv,
+                        tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := false, deps := k_deps.2 },
+                        nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
+                      e3 fuel' with
+              | error err =>
+                simp [h11] at H
+              | ok result3 =>
+                simp [h11] at H
+                cases h12: result3.qualType with
+                | mk etyp3 p''' pred =>
+                  simp [h12] at H
+                  cases h13: etyp2 != etyp3 with
+                  | true =>
+                    simp [h13] at H
+                  | false =>
+                    simp [h13] at H
+                    have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+                    have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+                    rw [<- ctx_simp] at h5
+                    have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 C h5
+                    rcases IH1 with ⟨H1, H2, H3, H4⟩
+                    have C' : ({ pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
+                                 tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := true, deps := k_deps.2 },
+                                 nextLoc := ctx.nextLoc, nextTag := ctx.nextTag, pureCtx := true } : TypeContext).pureCtx = true
+                            := by simp
+                    have IH2 :=
+                      IH fuel' hfuel { pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
+                                       tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := true, deps := k_deps.2 },
+                                       nextLoc := ctx.nextLoc, nextTag := ctx.nextTag, pureCtx := true }
+                                       e2 pe2 result2 h3 C' h9
+
+                    have C'' : ({ pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
+                                       tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := false, deps := k_deps.2 },
+                                       nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true } : TypeContext).pureCtx = true
+                            := by simp
+                    have IH3 :=
+                      IH fuel' hfuel
+                        { pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
+                          tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := false, deps := k_deps.2 },
                           nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
                         e3 pe3 result3 h4 C'' h11
                     rcases IH2 with ⟨H14, H15, H16⟩
