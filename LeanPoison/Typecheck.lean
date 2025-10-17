@@ -952,25 +952,24 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-    let result1 ← typecheckExpr ctx e1 fuel
-    let ⟨etyp1, p', _  ⟩ := result1.qualType
-    if etyp1 != ETyp.bool then throw "Condition of if must be bool"
-
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
-
-    -- Try predicate-based de-poisoning first
-    match matchGuard e1 result1.memEnv' ctx.varEnv with
+    -- Step 1: Try matchGuard first (before typechecking e1)
+    match matchGuard e1 ctx.memEnv ctx.varEnv with
     | .ok (k, deps) => do
       -- Predicate-based case (if_depoison)
 
-      -- Type check both branches with updated tag environment
-      let ctxTrue := { ctx' with tagEnv := ctx'.tagEnv.insert k ⟨true, deps⟩ }
-      let ctxFalse := { ctx' with tagEnv := ctx'.tagEnv.insert k ⟨false, deps⟩ }
+      -- Step 2: Typecheck e1 in pure mode
+      let pureCtx := { ctx with pureCtx := true }
+      let result1 ← typecheckExpr pureCtx e1 fuel
+      let ⟨etyp1, p', _  ⟩ := result1.qualType
+      if etyp1 != ETyp.bool then throw "Condition of if must be bool"
+
+      -- Step 3: Use original memEnv and tagEnv for both branches, with tagEnv modified by guard
+      let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+      let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
 
       let result2 ← typecheckExpr ctxTrue e2 fuel
       let ⟨etyp2, p'', _  ⟩ := result2.qualType
       --dbg_trace s!" Poison val for {e2} is {p''}"
-
 
       -- Ensure disjoint fresh supplies across branches by advancing the false-branch supply
       let ctxFalse' := { ctxFalse with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
@@ -986,12 +985,19 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
       let nextLoc' := max result2.nextLoc' result3.nextLoc'
       let nextTag' := max result2.nextTag' result3.nextTag'
-      -- Return original tag environment (k becomes unknown after conditional)
-      return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv, nextLoc' := nextLoc', nextTag' := nextTag' }
+      -- Step 4: Return original tag environment (k becomes unknown after conditional)
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx.tagEnv, nextLoc' := nextLoc', nextTag' := nextTag' }
 
     | .error _ => do
-      --dbg_trace "No tag found"
       -- Standard case (if_std) - no matching predicate found
+      -- Typecheck e1 first
+      let result1 ← typecheckExpr ctx e1 fuel
+      let ⟨etyp1, p', _  ⟩ := result1.qualType
+      if etyp1 != ETyp.bool then throw "Condition of if must be bool"
+
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+
+      --dbg_trace "No tag found"
       let branchPc := joinPoison ctx.pc p'
       --dbg_trace s!" Branch pc for Typecheck if with condition {e1} is {branchPc}"
       let ctx'' := { ctx' with pc := branchPc }

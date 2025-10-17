@@ -767,47 +767,12 @@ pm ; pc ; G' ; S[x |-> T :> p1  { P1 }] ; L' |- e2 : T2 :> p2 { P2 } -| G'' ; L'
 pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G'' ; L''
 
 
-
-% Conditional typing rules
-%
-% The conditional typing rules handle two cases:
-% 1. When match_guard(e1, G, S) = k for some k (predicate case)
-% 2. When no matching predicate is found (standard case)
-%
-% In the predicate case, we can update L with the guard's value in each branch.
-% In the standard case, we simply propagate poison through both branches.
-%
-% Note: The JoinG operation combines memory typing environments from both branches.
-% For example:
-%
-% if condition then 
-%     let r1 = ref 42 in ...     // Creates l1, G'' = G'[l1 ↦ int]
-% else 
-%     let r2 = ref 7 in ...      // Creates l2, G''' = G'[l2 ↦ int]
-%
-% Result: JoinG G'' G''' = G'[l1 ↦ int, l2 ↦ int]
-% Freshness side conditions (fresh l) allow the branch witnesses l1 and l2 to be chosen
-% distinct (alpha-renamed if necessary), so the union is well-defined and conflict-free.
-
-% Predicate-based conditional typing rule (when matching predicate found)
-% 
-% Note on L' propagation: We return L' (the environment after evaluating e1) rather than
-% attempting to join L'' and L'''. This is conservative but sound, as L'' contains k ↦ true
-% while L''' contains k ↦ false, making them contradictory. After the conditional completes,
-% we don't know which branch was taken, so we revert k to unknown status.
-%
-% Alternative design: Implement a proper join operation for logical environments where:
-% - Guards with same value in both branches are preserved
-% - Guards with contradictory values are removed (become unknown)
-% - Guards only present in one branch are removed
-% This would be more precise but adds complexity. The current approach is simpler while
-% still enabling predicate-based de-poisoning within each branch.
-pm ; pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
 match_guard e1 G S = k with deps
-pm ; pc ; G' ; S ; L'[k |-> true using deps] |- e2 : T :> p'' { P'' } -| G'' ; L''
-pm ; pc ; G' ; S ; L'[k |-> false using deps] |- e3 : T :> p''' { P''' } -| G''' ; L'''
+pure ; pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G ; L
+pm ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T :> p'' { P'' } -| G'' ; L''
+pm ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T :> p''' { P''' } -| G''' ; L'''
 ----------------------------------  :: if_depoison
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p'' p''' { no_pred } -| JoinG G'' G''' ; L'
+pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p'' p''' { no_pred } -| JoinG G'' G''' ; L
 
 % Standard conditional typing rule (when no matching predicate found)
 % (used as a fallback when match_guard fails)
