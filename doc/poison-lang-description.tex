@@ -733,32 +733,52 @@ NOTE: In de-poisoning case when predicate is matched we do not propage poison fr
 \end{itemize}
 This would provide more precision but adds complexity. The current approach is simpler while still enabling the key benefit: predicate-based de-poisoning within each branch of the conditional.
 
-\subsubsection*{While loops} 
+\subsubsection*{While loops}
 
-While loop typing rule is flow-sensitive, based on Hunt \& Sands 2006~\cite{DBLP:conf/popl/HuntS06}. The
-environments $\Gamma_i$ and poison status $p_i$ are indexed by
-iteration $i$, with the fixpoint reached at the smallest $n$ where 
-$\Gamma_{n+1} = \Gamma_n$.
+While loop typing is flow-sensitive, following Hunt \& Sands 2006~\cite{DBLP:conf/popl/HuntS06}. We index by
+iteration $i$ the program-counter poison $p_i$, the memory typing environment $\Gamma_i$, and the
+logical environment $\mathcal{L}_i$. The least fixpoint is reached at the smallest $n$ such that
+\(p_{n+1}=p_n\), \(\Gamma_{n+1}=\Gamma_n\), and \(\mathcal{L}_{n+1}=\mathcal{L}_n\).
 
-The formal specification provides \emph{two} mutually exclusive typing
-rules for loops:
+The formal specification provides \emph{two} mutually exclusive typing rules for loops:
 \begin{itemize}
   \item \textbf{\texttt{while\_depoison}}~-- applied when
         \texttt{match\_guard}$(e_1,\Gamma,\sigma)=k$ detects that the loop
-        guard $e_1$ is syntactically identical to some predicate guard tagged
-        $k$.  The rule types the loop body $e_2$ under a logical environment
-        $\mathcal{L}[k\mapsto{}\text{true}]$, thereby treating every value
-        whose qualified type is guarded by $k$ as \emph{clean} within the body.
-        Poison information is accumulated across iterations via the recurrences
-        $p_{i+1}=p_i\sqcup p_{2,i}$ and $\Gamma_{i+1}=\Gamma_i \cup
-        \Gamma_{2,i}$, with the least fixpoint $n$ yielding the final poison
-        status $p_n$ and environment $\Gamma_n$ for the whole loop.
+        guard $e_1$ syntactically matches a predicate guard tagged $k$.
+        The guard expression $e_1$ is typed as a \emph{pure} expression (no effects),
+        so it does not modify $\Gamma$ or $\mathcal{L}$. The body $e_2$ is typed under
+        the logical environment $\mathcal{L}[k\mapsto{}\text{true}]$, thereby treating
+        every value guarded by $k$ as \emph{clean} within the body. Across iterations we compute
+        the recurrences
+        \[
+          p_{i+1} = p_i \sqcup p_{2,i},\qquad
+          \Gamma_{i+1} = \text{JoinG}(\Gamma_i,\Gamma_{2,i}),\qquad
+          \mathcal{L}_{i+1} = \text{JoinL}(\mathcal{L}_i,\mathcal{L}_{2,i}),
+        \]
+        where $(\cdot)_{2,i}$ denotes the quantities produced by the $i$-th typing of the body.
+        At loop exit we just observed $e_1$ evaluate to \emph{false}, hence the output logical
+        environment sets $k\mapsto{}\text{false}$ (with the appropriate dependency set).
 
   \item \textbf{\texttt{while\_std}}~-- the conservative fallback when no
-        suitable guard is found.  In this case the analysis coincides with the
-        original Hunt--Sands recipe: the context poison and the body poison are
-        simply joined on every iteration.
+        suitable guard is found.  Here the guard $e_1$ may be impure and can modify both
+        $\Gamma$ and $\mathcal{L}$. The same fixpoint recurrences are used with the
+        \texttt{JoinG} and \texttt{JoinL} operators.
 \end{itemize}
+
+\paragraph{Join on the logical environment.} The loop back-edge uses an \emph{agreement-only} join on
+$\mathcal{L}$ to prevent iteration-local facts from leaking:
+for each tag $k$,
+\[
+  \text{JoinL}(\mathcal{L}_1,\mathcal{L}_2)(k) =
+  \begin{cases}
+    (b,\; \text{deps}_1 \cup \text{deps}_2), & \text{if } \mathcal{L}_1(k)=(b,\text{deps}_1) \text{ and } \mathcal{L}_2(k)=(b,\text{deps}_2); \\
+    \text{unknown}, & \text{otherwise (absent on one side or booleans disagree).}
+  \end{cases}
+\]
+This definition is idempotent, commutative, and associative, composes with dependency invalidation
+on writes, and ensures the sequence $\mathcal{L}_{i+1}=\text{JoinL}(\mathcal{L}_i,\mathcal{L}_{2,i})$ is
+descending in information and stabilises. Using a union that preserves single-sided or contradictory
+facts would be unsound for de-poisoning.
 
 \paragraph{Precision gained.} By exploiting syntactic matching against guard
 predicates, the \texttt{while\_depoison} rule can identify cases where a loop
@@ -771,7 +791,8 @@ the guard expression $e_1$ evaluate to \emph{false}.  Hence the matching tag
 $k$ is \textbf{known to be false at the loop exit}, and every value whose
 qualified type is guarded by $k$ ought to be marked \emph{poisoned}. The
 typing rule correctly updates the logical environment $\mathcal{L}$
-by setting $k$ to false in the output environment (i.e., $\mathcal{L}[k \mapsto \text{false}]$), 
+by setting $k$ to false in the output environment (i.e., $\mathcal{L}_n[k \mapsto \text{false}]$ with
+merged dependencies), 
 allowing post-loop code to properly classify values guarded by $k$ as poisoned. 
 This provides precise fault tracking both during and after loop execution.
 

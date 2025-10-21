@@ -182,6 +182,9 @@ L {{ tex \mathcal{L} }} :: L_ ::=     {{ com tag valuation environments }} {{ ph
   | empty                   ::   :: empty {{ coq [] }}
   | L [ k |-> b using deps ] ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] \text{ using } [[deps]] ] }}
   | invalidate_deps L l     ::   :: InvalidateDeps {{ tex invalidate\_deps([[L]], [[l]]) }} {{ com remove from L all entries whose dependency sets contain location l }}
+  | JoinL L1 L2             ::   :: JoinL {{ tex [[L1]] \sqcup [[L2]] }}
+  | indexL L idx            ::   :: indexL   {{ tex [[L]]^{[[idx]]} }}                  
+  | indexedL L idx1 idx2    ::   :: indexedL {{ tex [[L]]_{[[idx1]]}^{[[idx2]]} }}                  
 
 poison, p, pc :: 'p_' ::= {{ com poison status }} 
   | clean                    ::   :: clean
@@ -259,6 +262,7 @@ formula :: formula_ ::=
   | L ( k ) = b using deps :: :: tag_lookup {{ coq (lookup_tag [[k]] [[L]] = Some ([[b]], [[deps]])) }}   
   | p1 = p2                :: :: poison_eq   {{ coq ([[p1]] = [[p2]]) }}   
   | G1 = G2                :: :: type_env_eq {{ coq ([[G1]] = [[G2]]) }}   
+  | L1 = L2                :: :: tag_env_eq {{ coq ([[L1]] = [[L2]]) }}   
   | formula1 AND formula2  :: :: and         {{ tex [[formula1]] \quad [[formula2]] }} {{ coq ([[formula1]] /\ [[formula2]]) }}
   | fresh l                :: :: fresh_loc       {{ com l is fresh }}
   | fresh k                :: :: fresh_tag       {{ com k is fresh }}
@@ -787,30 +791,43 @@ pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 {
 
 %  Flow‑sensitive WHILE à la Hunt & Sands 2006 https://doi.org/10.1145/1111037.1111045
 
+% JoinL (logical environment join) — agreement-only meet used in the while fixpoint:
+%   For each tag k:
+%     - if both operands map k to the same boolean b with deps deps1, deps2,
+%       keep k with deps = deps1 ∪ deps2;
+%     - otherwise (k absent on some side, or booleans disagree), drop k (unknown).
+%   Rationale: prevents branch-/iteration-local facts from leaking across iterations,
+%   composes with invalidate_deps, and ensures the sequence Li+1 = JoinL(Li, L2,i)
+%   is descending and stabilises. A union that preserves single-sided or
+%   contradictory facts would be unsound for de-poisoning.
+
 % Predicate-based while typing rule (when matching predicate found)
-pm; indexP p i ; indexG G i ; S ; L |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; L
 match_guard e1 G S = k with deps
-pm; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; L[k |-> true using deps] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; L
+pure ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexL L i
+pm; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexL L i[k |-> true using deps] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i
 indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
 indexG G 0 = G AND indexG G i+1 = JoinG indexG G i indexedG G 2 i
+indexL L 0 = L AND indexL L i+1 = JoinL indexL L i indexedL L 2 i
 %  "where n is the smallest natural number satisfying the two equalities above."
 indexP p n+1 = indexP p n
 indexG G n+1 = indexG G n
+indexL L n+1 = indexL L n
 ---------------------------------------------------------------------------  :: while_depoison
-pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; L[k |-> false using deps]
+pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n[k |-> false using deps]
 
 % Standard while typing rule (when no matching predicate found) (used as a
 % fallback when match_guard fails) 
-%
-% NOTE: We now return the original L unchanged since no guard was matched
-pm ; indexP p i ; indexG G i ; S ; L |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; L
-pm ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; L |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; L
+% Unlike while_depoison, `e1` is not pure and can modify G and L
+pm ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexedL L 1 i
+pm ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexedL L 1 i |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i
 indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
 indexG G 0 = G AND indexG G i+1 = JoinG indexG G i indexedG G 2 i
+indexL L 0 = L AND indexL L i+1 = JoinL indexL L i indexedL L 2 i
 %  "where n is the smallest natural number satisfying the two equalities above."
 indexP p n+1 = indexP p n 
 indexG G n+1 = indexG G n
+indexL L n+1 = indexL L n
 ---------------------------------------------------------------------------  :: while_std
-pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; L
+pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n
 
 

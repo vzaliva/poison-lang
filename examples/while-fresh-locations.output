@@ -1,0 +1,7 @@
+Evaluating file: examples/while-fresh-locations.poison
+
+Type checking error:  Out of fuel
+Result: 42
+Final state:
+  Variable environment: []
+  Memory: [(0, 0), (1, 100), (2, 42)]
