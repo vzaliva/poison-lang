@@ -38,16 +38,6 @@ structure TagVal where
 /-- Tag valuation environment (ℒ in the Ott spec) -/
 abbrev TagEnv := HashMap Tag TagVal
 
-namespace TagEnv
-
-def equals (a b : TagEnv) : Bool :=
-  a.toList == b.toList
-
-end TagEnv
-
-instance : BEq TagEnv where
-  beq := TagEnv.equals
-
 /-- Remove from tag environment all entries whose dependency sets contain location l -/
 def invalidateTagDeps (env : TagEnv) (l : Address) : TagEnv :=
   Std.HashMap.fold (fun acc k tv =>
@@ -250,15 +240,9 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   | .vlet x e1 e2 => Expr.vlet x (e1.toExpr) (e2.toExpr)
   | .app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
-
-
 /-- Convert qualified type to surface type by stripping poison and preducate info -/
 def QTyp.toTyp (qt : QTyp) : Typ :=
   qt.etyp.toTyp
-
-
-
-
 
 /-- Check if a surface type is a subtype of a qualified type. This implements ST
       <: T by comparing surface types.
@@ -269,7 +253,6 @@ def QTyp.toTyp (qt : QTyp) : Typ :=
 -/
 def isSubtype (st : Typ) (qt : QTyp) : Bool :=
   qt.toTyp == st
-
 
 -- Typing judgement for operations
 inductive OpEType : Op → ETyp → ETyp → ETyp → Prop where
