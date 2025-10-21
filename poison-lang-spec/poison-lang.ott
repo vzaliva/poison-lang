@@ -163,7 +163,8 @@ G {{ tex \Gamma }} :: G_ ::=     {{ com memory typing environments }} {{ phantom
   | G , ta                  ::   :: extend {{ coq ([[ta]]::[[G]]) }}
   | JoinG G1 G2             ::   :: JoinG {{ tex [[G1]] \cup [[G2]] }}
   | G [ l |-> Q ]           ::   :: UpdateG {{ tex [[G]] [ l \mapsto [[Q]] ] }}
-  | IndexedG G idx          ::   :: IndexedG  {{ tex [[G]]_{[[idx]]} }}                  
+  | indexG G idx            ::   :: indexG   {{ tex [[G]]^{[[idx]]} }}                  
+  | indexedG G idx1 idx2    ::   :: indexedG {{ tex [[G]]_{[[idx1]]}^{[[idx2]]} }}                  
 
 % Variable environment for let bindings
 var_type_assumption, va :: 'VA_' ::= {{ com variable type assumption }}
@@ -186,7 +187,8 @@ poison, p, pc :: 'p_' ::= {{ com poison status }}
   | clean                    ::   :: clean
   | poisoned                 ::   :: poisoned
   | join p1 p2               ::   :: join {{ tex [[p1]] \sqcup [[p2]] }}
-  | indexedp p idx           ::   :: indexedp  {{ tex [[p]]_{[[idx]]} }}                  
+  | indexP p idx             ::   :: indexP   {{ tex [[p]]^{[[idx]]} }}                  
+  | indexedP p idx1 idx2     ::   :: indexedP {{ tex [[p]]_{[[idx1]]}^{[[idx2]]} }}                  
   
 % Variable substitution environment for operational semantics
 var_binding, vb :: 'VB_' ::= {{ com variable binding }}
@@ -249,7 +251,7 @@ formula :: formula_ ::=
   | n1 & n2 = n3           :: :: bitwise_and {{ coq ([[n1]]&[[n2]]=[[n3]]) }}
   | b1 && b2 = b3          :: :: band        {{ coq ([[b1]]&&[[b2]]=[[b3]]) }}
   | b1 || b2 = b3          :: :: bor         {{ coq ([[b1]]||[[b2]]=[[b3]]) }}
-  | not b = b'             :: :: not_bool   {{ coq ([[b']] = not [[b]]) }}
+  | not b = b1             :: :: not_bool   {{ coq ([[b1]] = not [[b]]) }}
   | m ( l ) = n            :: :: lookup      {{ coq (List.find [[l]] [[m]] = Some ([[n]])) }}   
   | G ( l ) = Q        :: :: type_lookup {{ coq (lookup_location_type [[l]] [[G]] = Some ([[Q]])) }}   
   | S ( x ) = Q        :: :: var_type_lookup {{ coq (lookup_var_type [[x]] [[S]] = Some ([[Q]])) }}   
@@ -263,7 +265,7 @@ formula :: formula_ ::=
   | fresh x S              :: :: fresh_var       {{ com x is fresh in S }}
   | n0 = random n1         :: :: random_gen     {{ com n0 is a random number in [0, n1] range }}
   | match_guard e G S = k with deps  :: :: match_guard  {{ com match\_guard(e, G, S) scans the predicates attached to every heap cell in G and variable in S; if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to the condition e, it returns that k along with the dependencies deps—otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] \text{ with } [[deps]] }}
-  | invalidate_deps L l = L' :: :: invalidate_deps {{ com invalidate\_deps(L, l) removes from L all entries that have location l in their dependency set }}  {{ tex invalidate\_deps([[L]], [[l]]) = [[L']] }}
+  | invalidate_deps L l = L1 :: :: invalidate_deps {{ com invalidate\_deps(L, l) removes from L all entries that have location l in their dependency set }}  {{ tex invalidate\_deps([[L]], [[l]]) = [[L1]] }}
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
   | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
 
@@ -276,7 +278,7 @@ Jop :: '' ::=
 % --- Big-step (natural) semantics below ---
 
 defn
-< pm , e , m , r > ==> < v , m' , r' > :: :: beval :: ''  {{ com Big-step evaluation }} by
+< pm , e , m , r > ==> < v , m1 , r1 > :: :: beval :: ''  {{ com Big-step evaluation }} by
 
 % Literals
 ----------------------   :: b_lit_num
@@ -297,135 +299,135 @@ r(x) = v
 < pm, x, m, r > ==> < v, m, r >
 
 % Binary operations (evaluate both operands to values, then compute)
-<pm, e1, m, r> ==> < n1, m', r'>
-<pm, e2, m', r'> ==> < n2, m'', r''>
+<pm, e1, m, r> ==> < n1, m1, r1>
+<pm, e2, m1, r1> ==> < n2, m2, r2>
 n1 + n2 = n
 ----------------------   :: b_op_plus
-<pm, e1 + e2, m, r> ==> < n, m'', r''>
+<pm, e1 + e2, m, r> ==> < n, m2, r2>
 
-<pm, e1, m, r> ==> < n1, m', r'>
-<pm, e2, m', r'> ==> < n2, m'', r''>
+<pm, e1, m, r> ==> < n1, m1, r1>
+<pm, e2, m1, r1> ==> < n2, m2, r2>
 n1 - n2 = n
 ----------------------   :: b_op_minus
-<pm, e1 - e2, m, r> ==> < n, m'', r''>
+<pm, e1 - e2, m, r> ==> < n, m2, r2>
 
-<pm, e1, m, r> ==> < n1, m', r'>
-<pm, e2, m', r'> ==> < n2, m'', r''>
+<pm, e1, m, r> ==> < n1, m1, r1>
+<pm, e2, m1, r1> ==> < n2, m2, r2>
 n1 * n2 = n
 ----------------------   :: b_op_mult
-<pm, e1 * e2, m, r> ==> < n, m'', r''>
+<pm, e1 * e2, m, r> ==> < n, m2, r2>
 
-<pm, e1, m, r> ==> < n1, m', r'>
-<pm, e2, m', r'> ==> < n2, m'', r''>
+<pm, e1, m, r> ==> < n1, m1, r1>
+<pm, e2, m1, r1> ==> < n2, m2, r2>
 n1 / n2 = n
 ----------------------   :: b_op_div
-<pm, e1 / e2, m, r> ==> < n, m'', r''>
+<pm, e1 / e2, m, r> ==> < n, m2, r2>
 
-<pm, e1, m, r> ==> < n1, m', r'>
-<pm, e2, m', r'> ==> < n2, m'', r''>
+<pm, e1, m, r> ==> < n1, m1, r1>
+<pm, e2, m1, r1> ==> < n2, m2, r2>
 n1 >= n2 = b
 ----------------------   :: b_op_gteq
-<pm, e1 >= e2, m, r> ==> < b, m'', r''>
+<pm, e1 >= e2, m, r> ==> < b, m2, r2>
 
-<pm, e1, m, r> ==> < n1, m', r'>
-<pm, e2, m', r'> ==> < n2, m'', r''>
+<pm, e1, m, r> ==> < n1, m1, r1>
+<pm, e2, m1, r1> ==> < n2, m2, r2>
 n1 <= n2 = b
 ----------------------   :: b_op_lteq
-<pm, e1 <= e2, m, r> ==> < b, m'', r''>
+<pm, e1 <= e2, m, r> ==> < b, m2, r2>
 
-<pm, e1, m, r> ==> < n1, m', r'>
-<pm, e2, m', r'> ==> < n2, m'', r''>
+<pm, e1, m, r> ==> < n1, m1, r1>
+<pm, e2, m1, r1> ==> < n2, m2, r2>
 n1 > n2 = b
 ----------------------   :: b_op_gt
-<pm, e1 > e2, m, r> ==> < b, m'', r''>
+<pm, e1 > e2, m, r> ==> < b, m2, r2>
 
-<pm, e1, m, r> ==> < n1, m', r'>
-<pm, e2, m', r'> ==> < n2, m'', r''>
+<pm, e1, m, r> ==> < n1, m1, r1>
+<pm, e2, m1, r1> ==> < n2, m2, r2>
 n1 < n2 = b
 ----------------------   :: b_op_lt
-<pm, e1 < e2, m, r> ==> < b, m'', r''>
+<pm, e1 < e2, m, r> ==> < b, m2, r2>
 
-<pm, e1, m, r> ==> < n1, m', r'>
-<pm, e2, m', r'> ==> < n2, m'', r''>
+<pm, e1, m, r> ==> < n1, m1, r1>
+<pm, e2, m1, r1> ==> < n2, m2, r2>
 n1 = n2 = b
 ----------------------   :: b_op_eq
-<pm, e1 = e2, m, r> ==> < b, m'', r''>
+<pm, e1 = e2, m, r> ==> < b, m2, r2>
 
-<pm, e1, m, r> ==> < n1, m', r'>
-<pm, e2, m', r'> ==> < n2, m'', r''>
+<pm, e1, m, r> ==> < n1, m1, r1>
+<pm, e2, m1, r1> ==> < n2, m2, r2>
 n1 != n2 = b
 ----------------------   :: b_op_neq
-<pm, e1 != e2, m, r> ==> < b, m'', r''>
+<pm, e1 != e2, m, r> ==> < b, m2, r2>
 
-<pm, e1, m, r> ==> < b1, m', r'>
-<pm, e2, m', r'> ==> < b2, m'', r''>
+<pm, e1, m, r> ==> < b1, m1, r1>
+<pm, e2, m1, r1> ==> < b2, m2, r2>
 b1 && b2 = b3
 ----------------------   :: b_op_and
-<pm, e1 && e2, m, r> ==> < b3, m'', r''>
+<pm, e1 && e2, m, r> ==> < b3, m2, r2>
 
-<pm, e1, m, r> ==> < n1, m', r'>
-<pm, e2, m', r'> ==> < n2, m'', r''>
+<pm, e1, m, r> ==> < n1, m1, r1>
+<pm, e2, m1, r1> ==> < n2, m2, r2>
 n1 & n2 = n3
 ----------------------   :: b_op_bitwise_and
-<pm, e1 & e2, m, r> ==> < n3, m'', r''>
+<pm, e1 & e2, m, r> ==> < n3, m2, r2>
 
-<pm, e1, m, r> ==> < b1, m', r'>
-<pm, e2, m', r'> ==> < b2, m'', r''>
+<pm, e1, m, r> ==> < b1, m1, r1>
+<pm, e2, m1, r1> ==> < b2, m2, r2>
 b1 || b2 = b3
 ----------------------   :: b_op_or
-<pm, e1 || e2, m, r> ==> < b3, m'', r''>
+<pm, e1 || e2, m, r> ==> < b3, m2, r2>
 
-<pm, e, m, r> ==> < b, m', r'>
-not b = b'
+<pm, e, m, r> ==> < b, m1, r1>
+not b = b1
 --------------------------------------------------------------- :: b_unary_op_not 
-<pm, not e, m, r> ==> < b', m', r'>
+<pm, not e, m, r> ==> < b1, m1, r1>
 
 % References
-<pm, e, m, r> ==> < n, m', r'>
+<pm, e, m, r> ==> < n, m1, r1>
 fresh l
 ------------------------------ :: b_ref
-<pm, ref e, m, r> ==> < l, m' [ l |-> n ], r'>
+<pm, ref e, m, r> ==> < l, m1 [ l |-> n ], r1>
 
 % Dereference
-<pm, e, m, r> ==> < l, m', r'>
-m'(l) = n
+<pm, e, m, r> ==> < l, m1, r1>
+m1(l) = n
 ------------------------------ :: b_deref
-<pm, !e, m, r> ==> < n, m', r'>
+<pm, !e, m, r> ==> < n, m1, r1>
 
 % Assignment
-<pm, e1, m, r> ==> < l, m', r'>
-<pm, e2, m', r'> ==> < n, m'', r''>
+<pm, e1, m, r> ==> < l, m1, r1>
+<pm, e2, m1, r1> ==> < n, m2, r2>
 -------------------------------------- :: b_assign
-< pm, e1 := e2, m, r > ==> < unit, m'' [ l |-> n ], r'' >
+< pm, e1 := e2, m, r > ==> < unit, m2 [ l |-> n ], r2 >
 
 % Sequencing
-<pm, e1, m, r> ==> < v1, m', r'>
-<pm, e2, m', r'> ==> < v2, m'', r''>
+<pm, e1, m, r> ==> < v1, m1, r1>
+<pm, e2, m1, r1> ==> < v2, m2, r2>
 -------------------------------------- :: b_seq
-< pm, e1 ; e2, m, r > ==> < v2, m'', r'' >
+< pm, e1 ; e2, m, r > ==> < v2, m2, r2 >
 
 % Conditionals
-<pm, e, m, r> ==> < true, m', r'>
-<pm, e1, m', r'> ==> < v, m'', r''>
+<pm, e, m, r> ==> < true, m1, r1>
+<pm, e1, m1, r1> ==> < v, m2, r2>
 ---------------------------------------------- :: b_if_true
-< pm, if e then e1 else e2, m, r > ==> < v, m'', r'' >
+< pm, if e then e1 else e2, m, r > ==> < v, m2, r2 >
 
-<pm, e, m, r> ==> < false, m', r'>
-<pm, e2, m', r'> ==> < v, m'', r''>
+<pm, e, m, r> ==> < false, m1, r1>
+<pm, e2, m1, r1> ==> < v, m2, r2>
 ---------------------------------------------- :: b_if_false
-< pm, if e then e1 else e2, m, r > ==> < v, m'', r'' >
+< pm, if e then e1 else e2, m, r > ==> < v, m2, r2 >
 
 % While via if-expansion (keeps close to small step rule)
-< pm, if e1 then ( e2 ; while e1 do e2 ) else unit, m, r > ==> < unit, m', r' >
+< pm, if e1 then ( e2 ; while e1 do e2 ) else unit, m, r > ==> < unit, m1, r1 >
 --------------------------------------------------------------------------- :: b_while
-< pm, while e1 do e2, m, r> ==> < unit, m', r' >
+< pm, while e1 do e2, m, r> ==> < unit, m1, r1 >
 
 % Let binding
-% Note: The final environment r' excludes the let-bound variable x (lexical scoping)
-<pm, e1, m, r> ==> < v, m', r'>
-<pm, e2, m', r'[x |-> v]> ==> < v2, m'', r''>
+% Note: The final environment r1 excludes the let-bound variable x (lexical scoping)
+<pm, e1, m, r> ==> < v, m1, r1>
+<pm, e2, m1, r1[x |-> v]> ==> < v2, m2, r2>
 -------------------------------------------------------- :: b_let
-< pm, let x = e1 in e2, m, r > ==> < v2, m'', r' >
+< pm, let x = e1 in e2, m, r > ==> < v2, m2, r1 >
 
 % Function abstraction
 --------------------------------------------------------------- :: b_fn_abs
@@ -436,45 +438,45 @@ m'(l) = n
 < pm, pfn x : ST1 => pe : ST2, m, r > ==> < pe_closure(x, pe, r), m, r >
 
 % Impure function application (call-by-value)
-< impure , e2 , m , r > ==> < v , m' , r' >
-< impure , e1 , m' , r' > ==> < closure ( x , e , r''' ) , m'' , r'' >
-< impure , e , m'' , r''' [ x |-> v ] > ==> < v0 , m''' , r'''' >
+< impure , e2 , m , r > ==> < v , m1 , r1 >
+< impure , e1 , m1 , r1 > ==> < closure ( x , e , r3 ) , m2 , r2 >
+< impure , e , m2 , r3 [ x |-> v ] > ==> < v0 , m3 , r4 >
 --------------------------------------------------------------- :: b_app_closure
-< impure , e1 e2 , m , r > ==> < v0 , m''' , r'''' >
+< impure , e1 e2 , m , r > ==> < v0 , m3 , r4 >
 
 % Pure function application (no effects)
 < pm , pe2 , m , r > ==> < v , m , r >
-< pm , pe1 , m , r > ==> < pe_closure ( x , pe , r' ) , m , r >
-< pure , pe , m , r' [ x |-> v ] > ==> < v0 , m , r >
+< pm , pe1 , m , r > ==> < pe_closure ( x , pe , r1 ) , m , r >
+< pure , pe , m , r1 [ x |-> v ] > ==> < v0 , m , r >
 --------------------------------------------------------------- :: b_app_pure_closure
 < pm , pe1 pe2 , m , r > ==> < v0 , m , r >
 
 % Random integer
-<pm, e, m, r> ==> < n, m', r'>
-n' = random n
+<pm, e, m, r> ==> < n, m1, r1>
+n1 = random n
 --------------------------------------------------------------- :: b_rand
-<pm, rand e, m, r> ==> < n', m', r'>
+<pm, rand e, m, r> ==> < n1, m1, r1>
 
 % Faulty random (same extensional behaviour; typing distinguishes it)
-<pm, e, m, r> ==> < n, m', r'>
-n' = random n
+<pm, e, m, r> ==> < n, m1, r1>
+n1 = random n
 --------------------------------------------------------------- :: b_frand
-<pm, frand e, m, r> ==> < n', m', r'>
+<pm, frand e, m, r> ==> < n1, m1, r1>
 
 % printInt
-<pm, e, m, r> ==> < n, m', r'>
+<pm, e, m, r> ==> < n, m1, r1>
 --------------------------------------------------------------- :: b_printInt
-<pm, printInt e, m, r> ==> < unit, m', r'>
+<pm, printInt e, m, r> ==> < unit, m1, r1>
 
 % printString
-<pm, e, m, r> ==> < s, m', r'>
+<pm, e, m, r> ==> < s, m1, r1>
 --------------------------------------------------------------- :: b_printString
-<pm, printString e, m, r> ==> < unit, m', r'>
+<pm, printString e, m, r> ==> < unit, m1, r1>
 
 %% --- Typing rules below ---
 
 defn
-pm ; pc ; G ; S ; L |- e : Q -| G' ; L' :: :: typing :: Ty_ by
+pm ; pc ; G ; S ; L |- e : Q -| G1 ; L1 :: :: typing :: Ty_ by
 
 ------------------  :: int
 pm ; pc ; G ; S ; L |- n : int :> clean { no_pred } -| G ; L
@@ -524,147 +526,147 @@ S(x) = T :> p { no_pred }
 ------------------  :: var_no_pred
 pm ; pc ; G ; S ; L |- x : T :> join pc p { no_pred } -| G ; L
 
-pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
-pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_plus
-pm ; pc ; G ; S ; L |- e1 + e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 + e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
-pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_gteq
-pm ; pc ; G ; S ; L |- e1 >= e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 >= e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
-pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_minus
-pm ; pc ; G ; S ; L |- e1 - e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 - e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
-pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_mult
-pm ; pc ; G ; S ; L |- e1 * e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 * e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
-pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_div
-pm ; pc ; G ; S ; L |- e1 / e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 / e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
-pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_lteq
-pm ; pc ; G ; S ; L |- e1 <= e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 <= e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
-pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_gt
-pm ; pc ; G ; S ; L |- e1 > e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 > e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
-pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_lt
-pm ; pc ; G ; S ; L |- e1 < e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 < e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
-pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_eq
-pm ; pc ; G ; S ; L |- e1 = e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 = e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
-pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_neq
-pm ; pc ; G ; S ; L |- e1 != e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 != e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : bool :> p' { P1 } -| G' ; L'  
-pm ; pc ; G' ; S ; L' |- e2 : bool :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1  
+pm ; pc ; G1 ; S ; L1 |- e2 : bool :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_and
-pm ; pc ; G ; S ; L |- e1 && e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 && e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'  
-pm ; pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_bitwise_and
-pm ; pc ; G ; S ; L |- e1 & e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 & e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : bool :> p' { P1 } -| G' ; L'  
-pm ; pc ; G' ; S ; L' |- e2 : bool :> p'' { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1  
+pm ; pc ; G1 ; S ; L1 |- e2 : bool :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_or
-pm ; pc ; G ; S ; L |- e1 || e2 : bool :> join pc join p' p'' { no_pred } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 || e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
 % Typing for unary operators
-pm ; pc ; G ; S ; L |- e : bool :> p { P } -| G' ; L'
+pm ; pc ; G ; S ; L |- e : bool :> p { P } -| G1 ; L1
 ----------------------------------------------------------------------  :: unary_op_not_typing
-pm ; pc ; G ; S ; L |- not e : bool :> join pc p { no_pred } -| G' ; L'
+pm ; pc ; G ; S ; L |- not e : bool :> join pc p { no_pred } -| G1 ; L1
 
 % New ref creation with region types
 % ref creates a reference with pc poison status and allocates fresh location l
 % The region type ref T @ l precisely tracks which location is allocated
 % Predicate P is preserved in the memory location
-pm ; pc ; G ; S ; L |- e : T :> p { P } -| G' ; L'
+pm ; pc ; G ; S ; L |- e : T :> p { P } -| G1 ; L1
   fresh l
 ----------------------- :: ref
-pm ; pc ; G ; S ; L |- ref e : ref T @ l :> pc { no_pred } -| G'[l |-> T :> join pc p { P }] ; L'
+pm ; pc ; G ; S ; L |- ref e : ref T @ l :> pc { no_pred } -| G1[l |-> T :> join pc p { P }] ; L1
 
 % Assignment through reference with region types The result of the whole
 % assignment (unit) is poisoned if the reference is poisoned. The stored value
 % is poisoned if the assignment is poisoned, or reference is poisoned, or the
 % value is poisoned. Predicate from e2 is preserved in the memory location.
 % On write to location l, invalidate all L entries whose predicates may read l.
-pm ; pc ; G ; S ; L |- e1 : ref T @ l :> p' { P' } -| G' ; L'
-pm ; pc ; G' ; S ; L' |- e2 : T :> p'' { P'' } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : ref T @ l :> p1 { P1 } -| G1 ; L1
+pm ; pc ; G1 ; S ; L1 |- e2 : T :> p2 { P2 } -| G2 ; L2
 ----------------------- :: assign
-pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p' { no_pred } -| G''[l |-> T :> join pc join p' p'' { P'' }] ; invalidate_deps L'' l
+pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[l |-> T :> join pc join p1 p2 { P2 }] ; invalidate_deps L2 l
 
 % Dereference - with poisoned reference always strips predicate and returns
 % poisoned result.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> poisoned { P } -| G' ; L'
-  G'(l) = T :> p { P' }
+pm ; pc ; G ; S ; L |- e : ref T @ l :> poisoned { P } -| G1 ; L1
+  G1(l) = T :> p { P1 }
 ----------------------- :: deref_poisoned
-pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G' ; L'
+pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G1 ; L1
 
 % Dereference - no predicate case.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
-  G'(l) = T :> p { no_pred }
+pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
+  G1(l) = T :> p { no_pred }
 ----------------------- :: deref_no_pred
-pm ; pc ; G ; S ; L |- !e : T :> join pc p { no_pred } -| G' ; L'
+pm ; pc ; G ; S ; L |- !e : T :> join pc p { no_pred } -| G1 ; L1
 
 % Dereference - with guarded predicate that evaluates to true, triggering de-poisoning.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
-  G'(l) = T :> p { guard k pred_closure pcl }
-  L'(k) = true using deps
+pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
+  G1(l) = T :> p { guard k pred_closure pcl }
+  L1(k) = true using deps
 ----------------------- :: deref_guard_true
-pm ; pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G' ; L'
+pm ; pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G1 ; L1
 
 % Dereference - with guard only that evaluates to true, triggering de-poisoning.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
-  G'(l) = T :> p { guard k }
-  L'(k) = true using deps
+pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
+  G1(l) = T :> p { guard k }
+  L1(k) = true using deps
 ----------------------- :: deref_guard_only_true
-pm ; pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G' ; L'
+pm ; pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G1 ; L1
 
 % Dereference - with guarded predicate that evaluates to false, triggering poisoning.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
-  G'(l) = T :> p { guard k pred_closure pcl }
-  L'(k) = false using deps
+pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
+  G1(l) = T :> p { guard k pred_closure pcl }
+  L1(k) = false using deps
 ----------------------- :: deref_guard_false
-pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G' ; L'
+pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G1 ; L1
 
 % Dereference - with guard only that evaluates to false, triggering poisoning.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
-  G'(l) = T :> p { guard k }
-  L'(k) = false using deps
+pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
+  G1(l) = T :> p { guard k }
+  L1(k) = false using deps
 ----------------------- :: deref_guard_only_false
-pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G' ; L'
+pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G1 ; L1
 
 % Dereference - with guarded predicate but tag not in L
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
-  G'(l) = T :> p { guard k pred_closure pcl }
+pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
+  G1(l) = T :> p { guard k pred_closure pcl }
 ----------------------- :: deref_guard_unknown
-pm ; pc ; G ; S ; L |- !e : T :> join pc p { guard k pred_closure pcl } -| G' ; L'
+pm ; pc ; G ; S ; L |- !e : T :> join pc p { guard k pred_closure pcl } -| G1 ; L1
 
 % Dereference - with guard only but tag not in L
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G' ; L'
-  G'(l) = T :> p { guard k }
+pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
+  G1(l) = T :> p { guard k }
 ----------------------- :: deref_guard_only_unknown
-pm ; pc ; G ; S ; L |- !e : T :> join pc p { guard k } -| G' ; L'
+pm ; pc ; G ; S ; L |- !e : T :> join pc p { guard k } -| G1 ; L1
 
 -------------------------------  :: unit
 pm ; pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G ; L
@@ -675,10 +677,10 @@ pm ; pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G ; L
 % type is the type of the second expression T2. This is  a conservative
 % approach. Alternatively, we could ignore e1's poison in result, as the e1's
 % value is propagated to e2.
-pm ; pc ; G ; S ; L |- e1 : T1 :> p' { P' } -| G' ; L'
-pm ; pc ; G' ; S ; L' |- e2 : T2 :> p'' { P'' } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : T1 :> p1 { P1 } -| G1 ; L1
+pm ; pc ; G1 ; S ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: seq
-pm ; pc ; G ; S ; L |- e1 ; e2  : T2 :> join p' p'' { P'' } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 ; e2  : T2 :> join p1 p2 { P2 } -| G2 ; L2
 
 % Function abstraction typing with explicit return type annotation.
 % The user provides both parameter type ST1 and return type ST2.
@@ -696,33 +698,33 @@ pm ; pc ; G ; S ; L |- pfn x : ST1 => pe : ST2 : ST1 -> ST2 # pc typing_pclosure
 
 % Function application typing - now uses captured body and context for precise typing
 % When applying a function, we extract the typing_closure containing the parameter name (x),
-% function body (e), and captured variable context (S'). We then type-check the body in
-% the captured context S' extended with the actual argument's type (including predicates)
+% function body (e), and captured variable context (S1). We then type-check the body in
+% the captured context S1 extended with the actual argument's type (including predicates)
 % and using the current logical environment L. This enables predicate-based de-poisoning.
 % Please note that impure function application is disallowed in pure context.
-impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
-impure ; pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
+impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1
+impure ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-impure ; join p join p1 pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
+impure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T2 :> p3 { P3 } -| G3 ; L3
 ST2 <: T2
 ----------------------------------------------------------------------  :: app_fn
-impure ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
+impure ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G3 ; L3
 
 % Pure function application typing - uses captured pure body and context
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms)
-pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_pclosure ( x , pe , S' ) :> p1 { P1 } -| G' ; L'
-pm ; pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_pclosure ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1
+pm ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-pure ; join p join p1 pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L''
+pure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T2 :> p3 { P3 } -| G3 ; L2
 ST2 <: T2
 ----------------------------------------------------------------------  :: app_pfn
-pm ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
+pm ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G3 ; L3
 
 % Typing for rand - takes integer argument, returns random integer
-pm ; pc ; G ; S ; L |- e : int :> p { P } -| G' ; L'
+pm ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
 ----------------------------------------------------------------------  :: rand_typing
-pm ; pc ; G ; S ; L |- rand e : int :> join pc p { no_pred } -| G' ; L'
+pm ; pc ; G ; S ; L |- rand e : int :> join pc p { no_pred } -| G1 ; L1
 
 % Typing for frand - takes integer argument n, returns faulty random integer with predicate
 % the argument is a pure expression, so typechking it does not affect the typing environment
@@ -734,14 +736,14 @@ pcl = range x pe S
 pm ; pc ; G ; S ; L |- frand pe : int :> poisoned { guard k pred_closure pcl } -| G ; L
 
 % Typing for printInt - takes integer argument, returns unit 
-pm ; pc ; G ; S ; L |- e : int :> p { P } -| G' ; L'
+pm ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
 ----------------------------------------------------------------------  :: printInt_typing
-pm ; pc ; G ; S ; L |- printInt e : unit :> join pc p { no_pred } -| G' ; L'
+pm ; pc ; G ; S ; L |- printInt e : unit :> join pc p { no_pred } -| G1 ; L1
 
 % Typing for printString - takes string argument, returns unit 
-pm ; pc ; G ; S ; L |- e : string :> p { P } -| G' ; L'
+pm ; pc ; G ; S ; L |- e : string :> p { P } -| G1 ; L1
 ----------------------------------------------------------------------  :: printString_typing
-pm ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
+pm ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G1 ; L1
 
 
 % Typing for Let Bindings
@@ -752,7 +754,7 @@ pm ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
 % poison with the variable poison. Consider the following illustrative example:
 %
 % if poisoned_sensor > 0 then      // pc = poisoned
-%    let y = 42 in 17       // e2 doesn't use y
+%    let y = 42 in 17       // e2 doesn1t use y
 % else
 %    0
 % In this scenario, the let binding is deemed poisoned because the context
@@ -760,55 +762,55 @@ pm ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
 %
 % Predicates are propagated from e1 to x, and the result gets predicate from e2
 % Note: Lexical scoping - the final variable environment S excludes the let-bound variable x
-% The logical environment L'' from evaluating e2 is preserved (knowledge about predicates persists)
-pm ; pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G' ; L'
-pm ; pc ; G' ; S[x |-> T :> p1  { P1 }] ; L' |- e2 : T2 :> p2 { P2 } -| G'' ; L''
+% The logical environment L1' from evaluating e2 is preserved (knowledge about predicates persists)
+pm ; pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G1 ; L1
+pm ; pc ; G1 ; S[x |-> T :> p1  { P1 }] ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2
 ----------------------------------------------------------------------  :: let
-pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G'' ; L''
+pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G2 ; L2
 
 
 match_guard e1 G S = k with deps
-pure ; pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G ; L
-pm ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T :> p'' { P'' } -| G'' ; L''
-pm ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T :> p''' { P''' } -| G''' ; L'''
+pure ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T :> p2 { P2 } -| G2 ; L2
+pm ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T :> p3 { P3 } -| G3 ; L3
 ----------------------------------  :: if_depoison
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p'' p''' { no_pred } -| JoinG G'' G''' ; L
+pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p2 p3 { no_pred } -| JoinG G2 G3 ; L
 
 % Standard conditional typing rule (when no matching predicate found)
 % (used as a fallback when match_guard fails)
-pm ; pc ; G ; S ; L |- e1 : bool :> p' { P' } -| G' ; L'
-pm ; join pc p' ; G' ; S ; L' |- e2 : T :> p'' { P'' } -| G'' ; L''
-pm ; join pc p' ; G' ; S ; L' |- e3 : T :> p''' { P''' } -| G''' ; L'''
+pm ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1
+pm ; join pc p1 ; G1 ; S ; L1 |- e2 : T :> p2 { P2 } -| G2 ; L2
+pm ; join pc p1 ; G1 ; S ; L1 |- e3 : T :> p3 { P3 } -| G3 ; L3
 ----------------------------------  :: if_std
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p' join p'' p''' { no_pred } -| JoinG G'' G''' ; L'
+pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; L1
 
 
 %  Flow‑sensitive WHILE à la Hunt & Sands 2006 https://doi.org/10.1145/1111037.1111045
 
 % Predicate-based while typing rule (when matching predicate found)
-pm; indexedp p i ; IndexedG G i ; S ; L |- e1 : bool :> indexedp p' i { P' }  -| IndexedG G' i ; L
+pm; indexP p i ; indexG G i ; S ; L |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; L
 match_guard e1 G S = k with deps
-pm; join indexedp p i indexedp p' i ; IndexedG G' i ; S ; L[k |-> true using deps] |- e2 : unit :> indexedp p'' i { P'' }  -| IndexedG G'' i ; L
-indexedp p 0 = pc AND indexedp p i+1 = join indexedp p i indexedp p'' i
-IndexedG G 0 = G AND IndexedG G i+1 = JoinG IndexedG G i IndexedG G'' i
+pm; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; L[k |-> true using deps] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; L
+indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
+indexG G 0 = G AND indexG G i+1 = JoinG indexG G i indexedG G 2 i
 %  "where n is the smallest natural number satisfying the two equalities above."
-indexedp p n+1 = indexedp p n
-IndexedG G n+1 = IndexedG G n
+indexP p n+1 = indexP p n
+indexG G n+1 = indexG G n
 ---------------------------------------------------------------------------  :: while_depoison
-pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexedp p n { no_pred }  -| IndexedG G n ; L[k |-> false using deps]
+pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; L[k |-> false using deps]
 
 % Standard while typing rule (when no matching predicate found) (used as a
 % fallback when match_guard fails) 
 %
 % NOTE: We now return the original L unchanged since no guard was matched
-pm ; indexedp p i ; IndexedG G i ; S ; L |- e1 : bool :> indexedp p' i { P' }  -| IndexedG G' i ; L
-pm ; join indexedp p i indexedp p' i ; IndexedG G' i ; S ; L |- e2 : unit :> indexedp p'' i { P'' }  -| IndexedG G'' i ; L
-indexedp p 0 = pc AND indexedp p i+1 = join indexedp p i indexedp p'' i
-IndexedG G 0 = G AND IndexedG G i+1 = JoinG IndexedG G i IndexedG G'' i
+pm ; indexP p i ; indexG G i ; S ; L |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; L
+pm ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; L |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; L
+indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
+indexG G 0 = G AND indexG G i+1 = JoinG indexG G i indexedG G 2 i
 %  "where n is the smallest natural number satisfying the two equalities above."
-indexedp p n+1 = indexedp p n 
-IndexedG G n+1 = IndexedG G n
+indexP p n+1 = indexP p n 
+indexG G n+1 = indexG G n
 ---------------------------------------------------------------------------  :: while_std
-pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexedp p n { no_pred }  -| IndexedG G n ; L
+pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; L
 
 

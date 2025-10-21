@@ -488,7 +488,7 @@ applied, the result inherits this poison.
 
 The semantics :
 \begin{itemize}
-  \item \textbf{Big-step} (natural) semantics that evaluate expressions directly to values and a final configuration; we write informally $\langle \pi, e, \mu, \rho \rangle \Downarrow \langle \mu', v \rangle$.
+  \item \textbf{Big-step} (natural) semantics that evaluate expressions directly to values and a final configuration; we write informally $\langle \pi, e, \mu, \rho \rangle \Downarrow \langle \mu_1, v \rangle$.
 \end{itemize}
 
 
@@ -540,18 +540,18 @@ and consumption.
 \subsection{Judgment Form}
 
 \[
-\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e : Q \dashv \Gamma_1 ; \mathcal{L}_1
 \]
 
 Reads: "In pure mode $\pi$ and poison context $\text{pc}$, with memory typing environment $\Gamma$,
 variable typing environment $\sigma$, and logical environment $\mathcal{L}$,
 expression $e$ has qualified type $Q$, producing updated memory typing
-environment $\Gamma'$ and updated logical environment $\mathcal{L}'$."
+environment $\Gamma_1$ and updated logical environment $\mathcal{L}_1$."
 
 The qualified type $Q$ encapsulates both the base type, poison status, and any
 associated predicates. The logical environment $\mathcal{L}$ tracks the current
 valuation of predicate guards, enabling predicate-based typing decisions. The
-output logical environment $\mathcal{L}'$ reflects any updates to guard
+output logical environment $\mathcal{L}_1$ reflects any updates to guard
 valuations learned during typing (e.g., after a while loop terminates) or
 because of invalidation. due to changed dependencies.
 
@@ -579,20 +579,20 @@ where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{
 
 \subsubsection*{Reference creation:}
 \[
-\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : T \rhd p \dashv \Gamma' \quad \text{fresh } l}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash \text{ref } e : \text{ref } T @ l \rhd \text{pc} \dashv \Gamma'[l \mapsto T \triangleright \text{pc} \sqcup p]}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : T \rhd p \dashv \Gamma_1 \quad \text{fresh } l}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash \text{ref } e : \text{ref } T @ l \rhd \text{pc} \dashv \Gamma_1[l \mapsto T \triangleright \text{pc} \sqcup p]}
 \]
 
 \subsubsection*{Assignment:}
 \[
-\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \pi \; ;\; \text{pc} \; ;\; \Gamma' \; ;\; \sigma \vdash e_2 : T \rhd p'' \dashv \Gamma''}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p' \dashv \Gamma''[l \mapsto T \triangleright \text{pc} \sqcup p' \sqcup p'']}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 : \text{ref } T @ l \rhd p_1 \dashv \Gamma_1 \quad \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \vdash e_2 : T \rhd p_2 \dashv \Gamma_2}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p_1 \dashv \Gamma_2[l \mapsto T \triangleright \text{pc} \sqcup p_1 \sqcup p_2]}
 \]
 
 \subsubsection*{Dereference:}
 \[
-\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : \text{ref } T @ l \rhd p' \dashv \Gamma' \quad \Gamma'(l) = T \triangleright p}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash !e : T \rhd \text{pc} \sqcup p' \sqcup p \dashv \Gamma'}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : \text{ref } T @ l \rhd p_1 \dashv \Gamma_1 \quad \Gamma_1(l) = T \triangleright p}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash !e : T \rhd \text{pc} \sqcup p_1 \sqcup p \dashv \Gamma_1}
 \]
 
 \subsubsection*{Function abstraction:}
@@ -602,7 +602,7 @@ type $ST_1$ and return type $ST_2$ are explicitly provided as surface type annot
 The function body is typechecked at definition time to verify it produces a type compatible with the declared return type $ST_2$.
 \[
 \frac{\begin{array}{c}
-\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] \; ;\; \mathcal{L} \vdash e : T_2 \triangleright p' \{ P' \} \dashv \Gamma' ; \mathcal{L}' \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] \; ;\; \mathcal{L} \vdash e : T_2 \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 ST_1 <: T_1 \\
 ST_2 <: T_2
 \end{array}}
@@ -628,24 +628,24 @@ The function application typing rule extracts the typing closure from the functi
 \[
 \frac{
 \begin{array}{c}
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : ST_1 \rightarrow ST_2 \# p \;\; \text{typing\_closure}(x, e, \sigma') \triangleright p_1 \{ P_1 \} \dashv \Gamma' ; \mathcal{L}' \\
-\text{pc} ; \Gamma' ; \sigma ; \mathcal{L}' \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma'' ; \mathcal{L}'' \\
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : ST_1 \rightarrow ST_2 \# p \;\; \text{typing\_closure}(x, e, \sigma_1) \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\text{pc} ; \Gamma_1 ; \sigma ; \mathcal{L}_1 \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
 ST_1 <: T_1 \\
-\text{join } p_1 \; pc ; \Gamma'' ; \sigma'[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L}'' \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}''' \\
+\text{join } p_1 \; pc ; \Gamma_2 ; \sigma_1[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L}_2 \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma_3 ; \mathcal{L}_3 \\
 ST_2 <: T_2
 \end{array}
 }{
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 \; e_2 : T_2 \triangleright \text{pc} \sqcup p_3 \{ P_3 \} \dashv \Gamma''' ; \mathcal{L}'''
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 \; e_2 : T_2 \triangleright \text{pc} \sqcup p_3 \{ P_3 \} \dashv \Gamma_3 ; \mathcal{L}_3
 }
 \]
 
 
 Key aspects of function application:
 \begin{itemize}
-    \item The typing closure $(x, e, \sigma')$ contains the parameter name, function body, and captured variable context
-    \item The function body $e$ is typed using the captured context $\sigma'$ extended with the actual argument's type
+    \item The typing closure $(x, e, \sigma_1)$ contains the parameter name, function body, and captured variable context
+    \item The function body $e$ is typed using the captured context $\sigma_1$ extended with the actual argument's type
     \item The argument's qualified type includes its predicates $P_2$, enabling de-poisoning in the function body
-    \item The current logical environment $\mathcal{L}''$ is used, allowing guard-based de-poisoning
+    \item The current logical environment $\mathcal{L}_2$ is used, allowing guard-based de-poisoning
     \item The result poison $p_3$ reflects any de-poisoning that occurred in the function body
     \item Function types store both surface parameter type $ST_1$ and return type $ST_2$, with body typing occurring at both definition and application time
 \end{itemize}
@@ -677,7 +677,7 @@ In this example:
     \item \texttt{sensor2} has predicate \texttt{guard "pressure" pred\_closure (z, z >= 0, \_)} - also tests for non-negative
     \item When \texttt{f} is applied to \texttt{sensor2}, the function body is typed with:
     \begin{itemize}
-        \item Captured context $\sigma'$ containing \texttt{sensor1} with its predicate
+        \item Captured context $\sigma_1$ containing \texttt{sensor1} with its predicate
         \item Parameter \texttt{x} bound to \texttt{sensor2}'s type with its predicate  
         \item Current logical environment $\mathcal{L}$ (initially may be empty)
     \end{itemize}
@@ -696,22 +696,22 @@ The type system includes two conditional typing rules that handle predicate-base
 \textbf{Standard conditional rule (when no matching predicate found):}
 \[
 \frac{\begin{array}{c}
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p' \{ P' \} \dashv \Gamma' \\
-\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L} \vdash e_2 : T \triangleright p'' \{ P'' \} \dashv \Gamma'' \\
-\text{join pc } p' ; \Gamma' ; \sigma ; \mathcal{L} \vdash e_3 : T \triangleright p''' \{ P''' \} \dashv \Gamma'''
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 \\
+\text{join pc } p_1 ; \Gamma_1 ; \sigma ; \mathcal{L} \vdash e_2 : T \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 \\
+\text{join pc } p_1 ; \Gamma_1 ; \sigma ; \mathcal{L} \vdash e_3 : T \triangleright p_3 \{ P_3 \} \dashv \Gamma_3
 \end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p' p'' p''' \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma'' \Gamma'''}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p_1 p_2 p_3 \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma_2 \Gamma_3}
 \]
 
 \textbf{Predicate-based conditional rule (when matching predicate found):}
 \[
 \frac{\begin{array}{c}
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p' \{ P' \} \dashv \Gamma' ; \mathcal{L}' \\
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 \text{match\_guard}(e_1, \Gamma, \sigma) = k \\
-pc ; \Gamma' ; \sigma ; \mathcal{L}'[k \mapsto \text{true}] \vdash e_2 : T \triangleright p'' \{ P'' \} \dashv \Gamma'' ; \mathcal{L}'' \\
-pc ; \Gamma' ; \sigma ; \mathcal{L}'[k \mapsto \text{false}] \vdash e_3 : T \triangleright p''' \{ P''' \} \dashv \Gamma''' ; \mathcal{L}'''
+pc ; \Gamma_1 ; \sigma ; \mathcal{L}_1[k \mapsto \text{true}] \vdash e_2 : T \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
+pc ; \Gamma_1 ; \sigma ; \mathcal{L}_1[k \mapsto \text{false}] \vdash e_3 : T \triangleright p_3 \{ P_3 \} \dashv \Gamma_3 ; \mathcal{L}_3
 \end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p'' p''' \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma'' \Gamma''' ; \mathcal{L}'}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p_2 p_3 \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma_2 \Gamma_3 ; \mathcal{L}_1}
 \]
 
 The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, the branches are typed with different valuations of guard $k$ in environment $\mathcal{L}$. This enables:
@@ -723,7 +723,7 @@ The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, 
 
 NOTE: In de-poisoning case when predicate is matched we do not propage poison from condition check to the branches.
 
-\paragraph{Note on $\mathcal{L}'$ propagation:} The predicate-based conditional rule returns $\mathcal{L}'$ (the environment after evaluating $e_1$) rather than attempting to join $\mathcal{L}''$ and $\mathcal{L}'''$ from the branches. This is a conservative but sound design choice, as $\mathcal{L}''$ contains $k \mapsto \text{true}$ while $\mathcal{L}'''$ contains $k \mapsto \text{false}$, making them contradictory. After the conditional completes, we don't know which branch was taken at runtime, so we revert $k$ to unknown status by returning $\mathcal{L}'$.
+\paragraph{Note on $\mathcal{L}_1$ propagation:} The predicate-based conditional rule returns $\mathcal{L}_1$ (the environment after evaluating $e_1$) rather than attempting to join $\mathcal{L}_2$ and $\mathcal{L}_3$ from the branches. This is a conservative but sound design choice, as $\mathcal{L}_2$ contains $k \mapsto \text{true}$ while $\mathcal{L}_3$ contains $k \mapsto \text{false}$, making them contradictory. After the conditional completes, we don't know which branch was taken at runtime, so we revert $k$ to unknown status by returning $\mathcal{L}_1$.
 
 \paragraph{Alternative design consideration:} A more precise approach would implement a proper join operation for logical environments where:
 \begin{itemize}
@@ -750,8 +750,8 @@ rules for loops:
         $\mathcal{L}[k\mapsto{}\text{true}]$, thereby treating every value
         whose qualified type is guarded by $k$ as \emph{clean} within the body.
         Poison information is accumulated across iterations via the recurrences
-        $p_{i+1}=p_i\sqcup p''_i$ and $\Gamma_{i+1}=\Gamma_i \cup
-        \Gamma''_i$, with the least fixpoint $n$ yielding the final poison
+        $p_{i+1}=p_i\sqcup p_{2,i}$ and $\Gamma_{i+1}=\Gamma_i \cup
+        \Gamma_{2,i}$, with the least fixpoint $n$ yielding the final poison
         status $p_n$ and environment $\Gamma_n$ for the whole loop.
 
   \item \textbf{\texttt{while\_std}}~-- the conservative fallback when no
@@ -796,8 +796,8 @@ Memory typing environment $\Gamma$ evolves through:
 
 Logical environment $\mathcal{L}$ evolves through:
 \begin{itemize}
-    \item \textbf{Sequence}: Chained through expressions - first expression produces $\mathcal{L}'$, second uses $\mathcal{L}'$ and produces $\mathcal{L}''$
-    \item \textbf{While loops}: After a predicate-matched loop terminates, the guard tag is set to false in $\mathcal{L}'$
+    \item \textbf{Sequence}: Chained through expressions - first expression produces $\mathcal{L}_1$, second uses $\mathcal{L}_1$ and produces $\mathcal{L}_2$
+    \item \textbf{While loops}: After a predicate-matched loop terminates, the guard tag is set to false in $\mathcal{L}_1$
     \item \textbf{Assignment}: Invalidates entries whose dependencies include the written location
     \item \textbf{Most other constructs}: Pass through unchanged
 \end{itemize}
@@ -878,8 +878,8 @@ For a single run with initial memory and variable environments $(\mu,\rho)$, we 
 A program $e$ satisfies non-interference with respect to the critical-input specification $S$ and observable outputs if, for each guard regime $R$:
 
 Given two executions with the same observable-behaviour form as defined above,
-$\langle e, \mu_1, \rho_1 \rangle \Downarrow \langle \mu'_1, v_1 \rangle$ and
-$\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu'_2, v_2 \rangle$, the following hold:
+$\langle e, \mu_1, \rho_1 \rangle \Downarrow \langle \mu_{1,1}, v_1 \rangle$ and
+$\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu_{2,1}, v_2 \rangle$, the following hold:
 \begin{itemize}
     \item \textbf{Agreement on critical inputs under $R$:}
     \begin{itemize}
@@ -897,7 +897,7 @@ $\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu'_2, v_2 \rangle$, the f
 \end{itemize}
 Then the observable outputs coincide:
 \begin{itemize}
-    \item $\forall l \in L_{obs}.\; \mu'_1(l) = \mu'_2(l)$
+    \item $\forall l \in L_{obs}.\; \mu_{1,1}(l) = \mu_{2,1}(l)$
     \item If $v_{obs} = \text{true}$ then $v_1 = v_2$.
 \end{itemize}
 \end{definition}
