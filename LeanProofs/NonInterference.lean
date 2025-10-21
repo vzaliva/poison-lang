@@ -305,6 +305,78 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
     ∀ l et, obs.locs.lookup l = some et → ∃ qt, (res.memEnv'.lookup l = some qt ∧ qt.etyp = et ∧ qt.poison = false)
   retMatches ∧ memMatches
 
+-- --------------------------- WIP ----------------------------------------
+
+-- Parition context into critical and non-critical
+structure PartitionSpec where
+  locs:  List Address
+  vars:  List Name
+
+def wfPartitionSpec (s : PartitionSpec) : Prop :=
+  List.Nodup s.locs ∧ List.Nodup s.vars
+
+
+def ctxMatchesPartitionSpec (s : PartitionSpec) (ctx : TypeContext) : Prop := sorry
+/- Ex
+
+; inputs a,b, outputs c
+; a0,a1-critical, b-non-critical, c-observable
+
+let d = a0 in
+; a0,a1,d-critical, b-non-critical, d,c-observable
+if a0 > 0
+then
+  if a1 > 0
+  then
+    c := d
+  else
+    c := a1
+else
+  c := b
+-/
+
+def consistentRegimeSpec_alt (R : Regime) (S : PartitionSpec) (μ : Memory) (ρ : VarEnv) : Prop := sorry
+
+def wfRegime_alt (R : Regime) (S : PartitionSpec) (ctx : TypeContext) : Prop := sorry
+
+def agreeOnCriticalInputsUnderRegimeSpec_alt (R : Regime) (S : PartitionSpec) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv): Prop := sorry
+
+def inputsConformPartitionSpec (S : PartitionSpec) (μ : Memory) (ρ : VarEnv) : Prop := sorry
+
+def NonInterferenceSpec_alt (e : Expr)
+(S₁ S₂ : PartitionSpec) (ctx₁ ctx₂: TypeContext)
+: Prop :=
+  wfPartitionSpec S₁ → wfPartitionSpec S₂ →
+  ctxMatchesPartitionSpec S₁ ctx₁ → ctxMatchesPartitionSpec S₂ ctx₂ →
+
+  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (R₁: Regime)
+    (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
+    wfRegime_alt R₁ S₁ ctx₁ →
+    inputsConformPartitionSpec S₁ μ₁ ρ₁ →  inputsConformPartitionSpec S₁ μ₂ ρ₂ →
+    runtimeInstantiatesCtx ctx₁ μ₁ ρ₁ →  runtimeInstantiatesCtx ctx₂ μ₂ ρ₂ →
+    consistentRegimeSpec_alt R₁ S₁ μ₁ ρ₁ →  consistentRegimeSpec_alt R₁ S₂ μ₂ ρ₂ →
+    agreeOnCriticalInputsUnderRegimeSpec_alt R₁ S₁ μ₁ ρ₁ μ₂ ρ₂ →
+    terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ → terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
+    exists R₂,
+    wfRegime_alt R₂ S₂ ctx₂ ∧
+    consistentRegimeSpec_alt R₂ S₂ cf₁.memory cf₁.varEnv ∧ consistentRegimeSpec_alt R₂ S₂ cf₂.memory cf₂.varEnv ∧
+    agreeOnCriticalInputsUnderRegimeSpec_alt R₂ S₂ cf₁.memory cf₁.varEnv cf₂.memory cf₂.varEnv
+
+def TypeSystemEnforcesNonInterference_spec_alt  (e : Expr) (S₁ S₂: PartitionSpec) : Prop :=
+  wfPartitionSpec S₁ → wfPartitionSpec S₂ →
+  ∀ (ctx₁ : TypeContext),
+      ctxMatchesPartitionSpec S₁ ctx₁ →
+      (∃ (fuel : Nat) (res : TypeResult),
+        typecheck ctx₁ e fuel = .ok res →
+        (∃ ctx₂,
+          ctx₂.memEnv = res.memEnv' ∧
+          ctx₂.varEnv = ctx₁.varEnv ∧
+          ctxMatchesPartitionSpec S₂ ctx₂ ∧
+          NonInterferenceSpec_alt e S₁ S₂ ctx₁ ctx₂))
+
+-- ------------------------ OLD -------------------------------
+
+
 -- Non-Interference property
 -- ==========================
 def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) : Prop :=
@@ -323,6 +395,8 @@ def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx :
     agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂ →
     terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ → terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
     observablesEqual obs cf₁ cf₂ o₁ o₂
+
+
 
 -- Type system enforces Non-Interference
 def TypeSystemEnforcesNonInterference_spec
