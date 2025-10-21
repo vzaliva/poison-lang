@@ -34,3 +34,9 @@ instance [BEq α] [Hashable α] [BEq β] : BEq (HashMap α β) where
         acc && match m₂.get? k with
           | some v' => v == v'
           | none    => false
+
+
+/-- Concatenate lists while removing duplicates -/
+def concat_noDups [BEq α] (l₁ l₂ : List α) : List α :=
+  let l := l₁ ++ l₂
+  l.eraseDups

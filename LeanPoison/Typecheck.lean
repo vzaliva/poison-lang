@@ -100,21 +100,21 @@ def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
         | PExpr.op pe1 _ pe2 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
-          return deps1 ++ deps2
+          return concat_noDups deps1 deps2
         | PExpr.unaryop _ pe' => extractDepsFromPExpr pe' boundVars env fuel
         | PExpr.ite pe1 pe2 pe3 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
           let deps3 ← extractDepsFromPExpr pe3 boundVars env fuel
-          return deps1 ++ deps2 ++ deps3
+          return concat_noDups (concat_noDups deps1 deps2) deps3
         | PExpr.app pe1 pe2 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
-          return deps1 ++ deps2
+          return concat_noDups deps1 deps2
         | PExpr.vlet x pe1 pe2 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 (x :: boundVars) env fuel
-          return deps1 ++ deps2
+          return concat_noDups deps1 deps2
         | _ => return []  -- literals, unit, etc. don't read from heap
 
     -- Start with the bound parameter in the bound variables list
@@ -199,7 +199,7 @@ def joinTagEnvs (env1 env2 : TagEnv) : TagEnv :=
     | some ⟨b1, deps1⟩, some ⟨b2, deps2⟩ =>
       if b1 == b2 then
         -- Agreement: keep the tag with union of dependencies
-        some ⟨b1, deps1 ++ deps2⟩
+        some ⟨b1, concat_noDups deps1 deps2⟩
       else
         -- Disagreement: drop the tag (unknown)
         none
