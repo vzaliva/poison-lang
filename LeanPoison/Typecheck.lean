@@ -24,14 +24,7 @@ namespace MemoryTypeEnv
   /-- `m` contains a binding for `a`. -/
   def hasKey (m : MemoryTypeEnv) (a : Address) : Prop :=
     m.contains a
-
-  def equals (a b : MemoryTypeEnv) : Bool :=
-      a.toList == b.toList
-
 end MemoryTypeEnv
-
-instance : BEq MemoryTypeEnv where
-  beq := MemoryTypeEnv.equals
 
 /-- Dependency set for tracking heap locations read by predicates -/
 abbrev Deps := List Address

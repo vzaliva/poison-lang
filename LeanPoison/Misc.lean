@@ -22,4 +22,15 @@ def combineMaps [BEq α] [Hashable α]
       | some r => acc.insert k r
       | none   => acc.erase k
 
-
+/-
+Structural equality for HashMap
+-/
+instance [BEq α] [Hashable α] [BEq β] : BEq (HashMap α β) where
+  beq m₁ m₂ :=
+    if m₁.size != m₂.size then
+      false
+    else
+      m₁.fold (init := true) fun acc k v =>
+        acc && match m₂.get? k with
+          | some v' => v == v'
+          | none    => false
