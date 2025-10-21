@@ -1,0 +1,18 @@
+-- Test that fresh locations are properly tracked through while loops
+-- This test ensures that location counters are not reset after while loops
+
+-- Create a counter that will iterate once
+let counter = ref 1 in
+
+-- While loop that creates a fresh reference in its body and then terminates
+while !counter > 0 do
+  let temp = ref 100 in    -- Creates location 1
+  counter := !counter - 1  -- Decrement to terminate loop
+  done;
+
+-- After the loop, create another reference
+-- This should get location 2, properly continuing after the loop body allocated location 1
+let after_loop = ref 42 in
+
+!after_loop
+
