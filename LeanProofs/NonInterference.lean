@@ -145,10 +145,6 @@ def observablesEqual (obs : ObservableSpec)
   let sameRet : Prop := obs.retEtyp? = none ∨ o₁ = o₂
   sameMem ∧ sameRet
 
--- Build initial configurations from initial inputs
-def mkInit (μ : Memory) (ρ : VarEnv) : Config :=
-  { memory := μ, varEnv := ρ, nextLoc := 0, pureMode := false }
-
 -- Helper: check if guard tag present
 def hasGuardTag (p : Predicate) : Bool :=
   match p with
@@ -349,14 +345,15 @@ def NonInterferenceSpec_alt (e : Expr)
   wfPartitionSpec S₁ → wfPartitionSpec S₂ →
   ctxMatchesPartitionSpec S₁ ctx₁ → ctxMatchesPartitionSpec S₂ ctx₂ →
 
-  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (R₁: Regime)
+  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (l : Address) (pm : Bool) (R₁: Regime)
     (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
     wfRegime_alt R₁ S₁ ctx₁ →
     inputsConformPartitionSpec S₁ μ₁ ρ₁ →  inputsConformPartitionSpec S₁ μ₂ ρ₂ →
     runtimeInstantiatesCtx ctx₁ μ₁ ρ₁ →  runtimeInstantiatesCtx ctx₂ μ₂ ρ₂ →
     consistentRegimeSpec_alt R₁ S₁ μ₁ ρ₁ →  consistentRegimeSpec_alt R₁ S₂ μ₂ ρ₂ →
     agreeOnCriticalInputsUnderRegimeSpec_alt R₁ S₁ μ₁ ρ₁ μ₂ ρ₂ →
-    terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ → terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
+    terminatesTo e  { memory := μ₁, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₁ o₁ →
+    terminatesTo e  { memory := μ₁, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₂ o₂ →
     exists R₂,
     wfRegime_alt R₂ S₂ ctx₂ ∧
     consistentRegimeSpec_alt R₂ S₂ cf₁.memory cf₁.varEnv ∧ consistentRegimeSpec_alt R₂ S₂ cf₂.memory cf₂.varEnv ∧
@@ -380,20 +377,15 @@ def TypeSystemEnforcesNonInterference_spec_alt  (e : Expr) (S₁ S₂: Partition
 -- Non-Interference property
 -- ==========================
 def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) : Prop :=
-  -- the following three premises are the same as in the theorem premise,
-  -- we include them here to make NonInterferenceSpec more self-contained
-  wfInputSpec s →
-  wfObsSpec obs →
-  ctxMatchesInputSpec s ctx ->
-
-  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (R : Regime)
+  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (l : Address) (pm : Bool) (R : Regime)
     (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
     wfRegime R s →
     inputsConformSpec s μ₁ ρ₁ →  inputsConformSpec s μ₂ ρ₂ →
     runtimeInstantiatesCtx ctx μ₁ ρ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ →
     consistentRegimeSpec R s μ₁ ρ₁ →  consistentRegimeSpec R s μ₂ ρ₂ →
     agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂ →
-    terminatesTo e (mkInit μ₁ ρ₁) cf₁ o₁ → terminatesTo e (mkInit μ₂ ρ₂) cf₂ o₂ →
+    terminatesTo e { memory := μ₁, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₁ o₁ →
+    terminatesTo e { memory := μ₁, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₂ o₂ →
     observablesEqual obs cf₁ cf₂ o₁ o₂
 
 
