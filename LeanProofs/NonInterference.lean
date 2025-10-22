@@ -379,10 +379,14 @@ def NonInterferenceSpec_step
       -- We universally quantify over the input regime Rᵢ
       ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (Rᵢ: Regime)
         (cf₀ cf₁ : Config) (o₀ o₁ : Value),
-        wfRegime Rᵢ sᵢ →
+        wfRegime Rᵢ sᵢ → -- input regime matches input partition specification
+        -- both inputs contains critical inputs from the input partition specification:
         inputsConformSpec sᵢ μ₀ ρ₀ →  inputsConformSpec sᵢ μ₁ ρ₁ →
+        -- both runtimes instantiate the input context:
         runtimeInstantiatesCtx ctxᵢ μ₀ ρ₀ →  runtimeInstantiatesCtx ctxᵢ μ₁ ρ₁ →
+        -- The regime must be correctly defined for all critical inputs in the spec:
         consistentRegimeSpec Rᵢ sᵢ μ₀ ρ₀ → consistentRegimeSpec Rᵢ sᵢ μ₁ ρ₁ →
+        -- memory and variable values from both runs are in agreement per the input regime:
         agreeOnCriticalInputsUnderRegimeSpec Rᵢ sᵢ μ₀ ρ₀ μ₁ ρ₁ →
         forall (l : Address) (pm : Bool),
           terminatesTo e { memory := μ₀, varEnv := ρ₀, nextLoc := l, pureMode := pm } cf₀ o₀ →
@@ -393,10 +397,13 @@ def NonInterferenceSpec_step
             sₒ = partionSpecToInputSpec Sₒ ctxₒ →
             -- Rₒ is output regime
             exists Rₒ,
-              wfRegime Rₒ sₒ ∧
+              wfRegime Rₒ sₒ ∧ -- output regime matches output partition specification
               wfRegimeForReturn Rₒ retType → -- return type tag may appear only in output
+              -- The regime must be correctly defined for all critical inputs in the spec:
               consistentRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv ∧ consistentRegimeSpec Rₒ sₒ cf₁.memory cf₁.varEnv ∧
+              -- memory and variable values from both runs are in agreement per the output regime:
               agreeOnCriticalInputsUnderRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv ∧
+              -- return values are in agreement:
               agreeValueUnder Rₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv retType o₀ o₁
 
 def ctxMatchesResult (ctx : TypeContext) (res : TypeResult) : Prop :=
