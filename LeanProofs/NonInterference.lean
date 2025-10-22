@@ -301,78 +301,86 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
     ∀ l et, obs.locs.lookup l = some et → ∃ qt, (res.memEnv'.lookup l = some qt ∧ qt.etyp = et ∧ qt.poison = false)
   retMatches ∧ memMatches
 
--- --------------------------- WIP ----------------------------------------
+-- --------------------------- Internal fomulation used in proofs ----------------------------------------
 
 -- Parition context into critical and non-critical
 structure PartitionSpec where
   locs:  List Address
   vars:  List Name
 
+-- Well-formedness: partition specification does not contain duplicates
 def wfPartitionSpec (s : PartitionSpec) : Prop :=
   List.Nodup s.locs ∧ List.Nodup s.vars
 
+-- Context matches partition specification
+-- all locations and variables in the partition specification must be present in the context
+def ctxMatchesPartitionSpec (s : PartitionSpec) (ctx : TypeContext) : Prop :=
+  (∀ l, l ∈ s.locs → ctx.memEnv.contains l) ∧
+  (∀ x, x ∈ s.vars → ctx.varEnv.hasKey x)
 
-def ctxMatchesPartitionSpec (s : PartitionSpec) (ctx : TypeContext) : Prop := sorry
-/- Ex
+-- Convert partition specification to input specification
+-- all locations and variables in the partition specification must be present in the context
+-- which is normally ensured by `ctxMatchesPartitionSpec`
+def partionSpecToInputSpec (S : PartitionSpec) (ctx : TypeContext) : InputSpec :=
+  InputSpec.mk
+    (S.locs.foldl (init := {}) fun acc l =>
+      match ctx.memEnv.lookup l with
+      | some qt => acc.insert l qt
+      | none => acc)
+    (S.vars.foldl (init := []) fun acc x =>
+      match ctx.varEnv.lookup x with
+      | some qt => (x, qt) :: acc
+      | none => acc)
 
-; inputs a,b, outputs c
-; a0,a1-critical, b-non-critical, c-observable
+-- `i` and `o` subscript indexes correspond to input and outputs
+-- `0` and `1` subscript indexes correspond to two runs of the program
+def NonInterferenceSpec_step (e : Expr) (Sᵢ Sₒ: PartitionSpec) (ctxᵢ ctxₒ: TypeContext) : Prop :=
+    -- Ensure well-formedness and consistency of arguments
+    wfPartitionSpec Sᵢ →  ctxMatchesPartitionSpec Sᵢ ctxᵢ →
+    wfPartitionSpec Sₒ →  ctxMatchesPartitionSpec Sₒ ctxₒ →
+    -- Convert partition specification to input specification, do not need Sᵢ after this
+    forall sᵢ,
+      sᵢ = partionSpecToInputSpec Sᵢ ctxᵢ →
+      -- We universally quantify over the input regime Rᵢ
+      ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (Rᵢ: Regime)
+        (cf₀ cf₁ : Config) (o₀ o₁ : ExprOrValue),
+        wfRegime Rᵢ (partionSpecToInputSpec Sᵢ ctxᵢ) →
+        inputsConformSpec sᵢ μ₀ ρ₀ →  inputsConformSpec sᵢ μ₁ ρ₁ →
+        runtimeInstantiatesCtx ctxᵢ μ₀ ρ₀ →  runtimeInstantiatesCtx ctxᵢ μ₁ ρ₁ →
+        consistentRegimeSpec Rᵢ sᵢ μ₀ ρ₀ → consistentRegimeSpec Rᵢ sᵢ μ₁ ρ₁ →
+        agreeOnCriticalInputsUnderRegimeSpec Rᵢ sᵢ μ₀ ρ₀ μ₁ ρ₁ →
+        forall (l : Address) (pm : Bool),
+          terminatesTo e { memory := μ₀, varEnv := ρ₀, nextLoc := l, pureMode := pm } cf₀ o₀ →
+          terminatesTo e { memory := μ₁, varEnv := ρ₁, nextLoc := l, pureMode := pm } cf₁ o₁ →
 
-let d = a0 in
-; a0,a1,d-critical, b-non-critical, d,c-observable
-if a0 > 0
-then
-  if a1 > 0
-  then
-    c := d
-  else
-    c := a1
-else
-  c := b
--/
+          -- Output properties below:
+          -- Convert partition specification to input specification, do not need Sₒ after this
+          forall sₒ,
+            sₒ = partionSpecToInputSpec Sₒ ctxₒ →
+            -- Rₒ is output regime
+            exists Rₒ,
+              wfRegime Rₒ sₒ ∧
+              consistentRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv ∧ consistentRegimeSpec Rₒ sₒ cf₁.memory cf₁.varEnv ∧
+              agreeOnCriticalInputsUnderRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv
 
-def consistentRegimeSpec_alt (R : Regime) (S : PartitionSpec) (μ : Memory) (ρ : VarEnv) : Prop := sorry
+def ctxMatchesResult (ctx : TypeContext) (res : TypeResult) : Prop :=
+  ctx.memEnv = res.memEnv'
 
-def wfRegime_alt (R : Regime) (S : PartitionSpec) (ctx : TypeContext) : Prop := sorry
+-- Sᵢ Sₒ - input and output partition specifications
+def TypeSystemEnforcesNonInterference_step_spec (e : Expr) (Sᵢ Sₒ: PartitionSpec) (ctxᵢ ctxₒ: TypeContext) : Prop :=
+    -- Ensure well-formedness and consistency of arguments
+    wfPartitionSpec Sᵢ →  ctxMatchesPartitionSpec Sᵢ ctxᵢ →
+    wfPartitionSpec Sₒ →  ctxMatchesPartitionSpec Sₒ ctxₒ →
 
-def agreeOnCriticalInputsUnderRegimeSpec_alt (R : Regime) (S : PartitionSpec) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv): Prop := sorry
+    (∃ (fuel : Nat) (res : TypeResult),
+      -- If typechecking succeeds,
+      typecheck ctxᵢ e fuel = .ok res →
+      -- and the result must match the output context
+      ctxMatchesResult ctxₒ res →
+      -- then the program satisfies non-interference
+      NonInterferenceSpec_step e Sᵢ Sₒ ctxᵢ ctxₒ)
 
-def inputsConformPartitionSpec (S : PartitionSpec) (μ : Memory) (ρ : VarEnv) : Prop := sorry
-
-def NonInterferenceSpec_alt (e : Expr)
-(S₁ S₂ : PartitionSpec) (ctx₁ ctx₂: TypeContext)
-: Prop :=
-  wfPartitionSpec S₁ → wfPartitionSpec S₂ →
-  ctxMatchesPartitionSpec S₁ ctx₁ → ctxMatchesPartitionSpec S₂ ctx₂ →
-
-  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (l : Address) (pm : Bool) (R₁: Regime)
-    (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
-    wfRegime_alt R₁ S₁ ctx₁ →
-    inputsConformPartitionSpec S₁ μ₁ ρ₁ →  inputsConformPartitionSpec S₁ μ₂ ρ₂ →
-    runtimeInstantiatesCtx ctx₁ μ₁ ρ₁ →  runtimeInstantiatesCtx ctx₂ μ₂ ρ₂ →
-    consistentRegimeSpec_alt R₁ S₁ μ₁ ρ₁ →  consistentRegimeSpec_alt R₁ S₂ μ₂ ρ₂ →
-    agreeOnCriticalInputsUnderRegimeSpec_alt R₁ S₁ μ₁ ρ₁ μ₂ ρ₂ →
-    terminatesTo e  { memory := μ₁, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₁ o₁ →
-    terminatesTo e  { memory := μ₁, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₂ o₂ →
-    exists R₂,
-    wfRegime_alt R₂ S₂ ctx₂ ∧
-    consistentRegimeSpec_alt R₂ S₂ cf₁.memory cf₁.varEnv ∧ consistentRegimeSpec_alt R₂ S₂ cf₂.memory cf₂.varEnv ∧
-    agreeOnCriticalInputsUnderRegimeSpec_alt R₂ S₂ cf₁.memory cf₁.varEnv cf₂.memory cf₂.varEnv
-
-def TypeSystemEnforcesNonInterference_spec_alt  (e : Expr) (S₁ S₂: PartitionSpec) : Prop :=
-  wfPartitionSpec S₁ → wfPartitionSpec S₂ →
-  ∀ (ctx₁ : TypeContext),
-      ctxMatchesPartitionSpec S₁ ctx₁ →
-      (∃ (fuel : Nat) (res : TypeResult),
-        typecheck ctx₁ e fuel = .ok res →
-        (∃ ctx₂,
-          ctx₂.memEnv = res.memEnv' ∧
-          ctx₂.varEnv = ctx₁.varEnv ∧
-          ctxMatchesPartitionSpec S₂ ctx₂ ∧
-          NonInterferenceSpec_alt e S₁ S₂ ctx₁ ctx₂))
-
--- ------------------------ OLD -------------------------------
-
+-- ------------------------ Top-level definitions -------------------------------
 
 -- Non-Interference property
 -- ==========================
@@ -387,8 +395,6 @@ def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx :
     terminatesTo e { memory := μ₁, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₁ o₁ →
     terminatesTo e { memory := μ₁, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₂ o₂ →
     observablesEqual obs cf₁ cf₂ o₁ o₂
-
-
 
 -- Type system enforces Non-Interference
 def TypeSystemEnforcesNonInterference_spec
