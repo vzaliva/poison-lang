@@ -92,6 +92,19 @@ def wfRegime (R : Regime) (s : InputSpec) : Prop :=
   (∀ k, k ∈ tags → (R k).isSome) ∧
   (∀ k, (R k).isSome → k ∈ tags)
 
+inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
+  | noPred (retType : QTyp)
+      (hpred : retType.pred = Predicate.noPred) :
+      wfRegimeForReturn R retType
+  | guardOnly (retType : QTyp) (k : Tag)
+      (hpred : retType.pred = Predicate.guardOnly k)
+      (hregime : R k = some true) :
+      wfRegimeForReturn R retType
+  | guardClosure (retType : QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : List (Name × QTyp))
+      (hpred : retType.pred = Predicate.guardClosure k arg_name pred_body var_env)
+      (hregime : R k = some true) :
+      wfRegimeForReturn R retType
+
 -- Abstract predicate: does the QTyp-attached predicate hold for the given
 -- input value under the initial environments? For locations the value will be
 -- encoded as Value.num n; for variables it is the variable's Value.
@@ -228,56 +241,57 @@ def consistentRegimeSpec (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv
   List.Forall (locsRegime R μ ρ) s.locs.toList ∧
   List.Forall (varsRegime R μ ρ) s.vars
 
--- Two initial states agree on a critical location under a given regime.
-inductive agreeLocUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
-    : (Address × QTyp) → Prop where
-  | noPred_eq (addr : Address) (qt : QTyp)
+-- Two values agree under a given regime and memory environments
+inductive agreeValueUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv) (qt: QTyp) (v₁ v₂ : Value) : Prop where
+  | noPred_eq
       (hpred : qtypGuardTag qt = none)
-      (hagree : μ₁.lookup addr = μ₂.lookup addr) :
-      agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
-  | withPred_true_eq (addr : Address) (qt : QTyp) (k : Tag)
+      (hagree : v₁ = v₂) :
+      agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt v₁ v₂
+  | withPred_true_eq (k : Tag)
       (htag : qtypGuardTag qt = some k)
       (hregime : R k = some true)
-      (hagree : μ₁.lookup addr = μ₂.lookup addr) :
-      agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
+      (hagree : v₁ = v₂) :
+      agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt v₁ v₂
   -- False-regime case for guard-closures: both runs fail the predicate
-  | withPred_false_both_fail (addr : Address) (qt : QTyp) (k : Tag)
+  | withPred_false_both_fail (k : Tag)
       (hclos : isGuardClosure qt)
       (htag : qtypGuardTag qt = some k)
       (hregime : R k = some false)
-      (hfail1 : ∃ n1, μ₁.lookup addr = some n1 ∧ ¬qtypPredHolds qt μ₁ ρ₁ (Value.num n1))
-      (hfail2 : ∃ n2, μ₂.lookup addr = some n2 ∧ ¬qtypPredHolds qt μ₂ ρ₂ (Value.num n2)) :
-      agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
+      (hfail1 : ¬qtypPredHolds qt μ₁ ρ₁ v₁)
+      (hfail2 : ¬qtypPredHolds qt μ₂ ρ₂ v₂) :
+      agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt v₁ v₂
   -- False-regime case for guard-only: unconstrained (values may differ)
-  | guardOnly_false_any (addr : Address) (qt : QTyp) (k : Tag)
+  | guardOnly_false_any (k : Tag)
       (hgo : qt.pred = Predicate.guardOnly k)
       (hregime : R k = some false) :
+      agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt v₁ v₂
+
+-- Two initial states agree on a critical location under a given regime.
+-- Refactored to use agreeValueUnder
+inductive agreeLocUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
+    : (Address × QTyp) → Prop where
+  | agree_values (addr : Address) (qt : QTyp) (n₁ n₂ : Nat)
+      (hlookup1 : μ₁.lookup addr = some n₁)
+      (hlookup2 : μ₂.lookup addr = some n₂)
+      (hagree : agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt (Value.num n₁) (Value.num n₂)) :
+      agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
+  | both_none (addr : Address) (qt : QTyp)
+      (hlookup1 : μ₁.lookup addr = none)
+      (hlookup2 : μ₂.lookup addr = none) :
       agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
 
 -- Two initial states agree on a critical variable under a given regime.
+-- Refactored to use agreeValueUnder
 inductive agreeVarUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
     : (Name × QTyp) → Prop where
-  | noPred_eq (x : Name) (qt : QTyp)
-      (hpred : qtypGuardTag qt = none)
-      (hagree : ρ₁.lookup x = ρ₂.lookup x) :
+  | agree_values (x : Name) (qt : QTyp) (v₁ v₂ : Value)
+      (hlookup1 : ρ₁.lookup x = some v₁)
+      (hlookup2 : ρ₂.lookup x = some v₂)
+      (hagree : agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt v₁ v₂) :
       agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
-  | withPred_true_eq (x : Name) (qt : QTyp) (k : Tag)
-      (htag : qtypGuardTag qt = some k)
-      (hregime : R k = some true)
-      (hagree : ρ₁.lookup x = ρ₂.lookup x) :
-      agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
-  -- False-regime case for guard-closures: both runs fail the predicate
-  | withPred_false_both_fail (x : Name) (qt : QTyp) (k : Tag)
-      (hclos : isGuardClosure qt)
-      (htag : qtypGuardTag qt = some k)
-      (hregime : R k = some false)
-      (hfail1 : ∃ v1, ρ₁.lookup x = some v1 ∧ ¬qtypPredHolds qt μ₁ ρ₁ v1)
-      (hfail2 : ∃ v2, ρ₂.lookup x = some v2 ∧ ¬qtypPredHolds qt μ₂ ρ₂ v2) :
-      agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
-  -- False-regime case for guard-only: unconstrained (values may differ)
-  | guardOnly_false_any (x : Name) (qt : QTyp) (k : Tag)
-      (hgo : qt.pred = Predicate.guardOnly k)
-      (hregime : R k = some false) :
+  | both_none (x : Name) (qt : QTyp)
+      (hlookup1 : ρ₁.lookup x = none)
+      (hlookup2 : ρ₂.lookup x = none) :
       agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
 
 -- Two initial states agree on critical inputs under a given regime.
@@ -334,7 +348,12 @@ def partionSpecToInputSpec (S : PartitionSpec) (ctx : TypeContext) : InputSpec :
 
 -- `i` and `o` subscript indexes correspond to input and outputs
 -- `0` and `1` subscript indexes correspond to two runs of the program
-def NonInterferenceSpec_step (e : Expr) (Sᵢ Sₒ: PartitionSpec) (ctxᵢ ctxₒ: TypeContext) : Prop :=
+def NonInterferenceSpec_step
+  (e : Expr)
+  (Sᵢ Sₒ: PartitionSpec)
+  (ctxᵢ ctxₒ: TypeContext)
+  (retType: QTyp)
+  : Prop :=
     -- Ensure well-formedness and consistency of arguments
     wfPartitionSpec Sᵢ →  ctxMatchesPartitionSpec Sᵢ ctxᵢ →
     wfPartitionSpec Sₒ →  ctxMatchesPartitionSpec Sₒ ctxₒ →
@@ -360,25 +379,32 @@ def NonInterferenceSpec_step (e : Expr) (Sᵢ Sₒ: PartitionSpec) (ctxᵢ ctx�
             -- Rₒ is output regime
             exists Rₒ,
               wfRegime Rₒ sₒ ∧
+              wfRegimeForReturn Rₒ retType → -- return type tag may appear only in output
               consistentRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv ∧ consistentRegimeSpec Rₒ sₒ cf₁.memory cf₁.varEnv ∧
               agreeOnCriticalInputsUnderRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv
+              --TODO: /\ agreeValueUnder Rₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv retType o₀ o₁
 
 def ctxMatchesResult (ctx : TypeContext) (res : TypeResult) : Prop :=
   ctx.memEnv = res.memEnv'
 
 -- Sᵢ Sₒ - input and output partition specifications
-def TypeSystemEnforcesNonInterference_step_spec (e : Expr) (Sᵢ Sₒ: PartitionSpec) (ctxᵢ ctxₒ: TypeContext) : Prop :=
+def TypeSystemEnforcesNonInterference_step_spec
+  (e : Expr)
+  (Sᵢ Sₒ: PartitionSpec)
+  (ctxᵢ ctxₒ: TypeContext)
+  (retType: QTyp) -- return type
+  : Prop :=
     -- Ensure well-formedness and consistency of arguments
     wfPartitionSpec Sᵢ →  ctxMatchesPartitionSpec Sᵢ ctxᵢ →
     wfPartitionSpec Sₒ →  ctxMatchesPartitionSpec Sₒ ctxₒ →
-
+    -- Fuel-based termination of typechecking
     (∃ (fuel : Nat) (res : TypeResult),
       -- If typechecking succeeds,
       typecheck ctxᵢ e fuel = .ok res →
       -- and the result must match the output context
       ctxMatchesResult ctxₒ res →
       -- then the program satisfies non-interference
-      NonInterferenceSpec_step e Sᵢ Sₒ ctxᵢ ctxₒ)
+      NonInterferenceSpec_step e Sᵢ Sₒ ctxᵢ ctxₒ retType)
 
 -- ------------------------ Top-level definitions -------------------------------
 
