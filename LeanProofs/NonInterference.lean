@@ -177,6 +177,19 @@ def wfInputSpec (s : InputSpec) : Prop :=
 -- Always correct by construction
 def wfObsSpec (_obs : ObservableSpec) : Prop := True
 
+-- Derive return-observability and a conservative QTyp for the return from ObservableSpec.
+-- If the return is observable (some et), we require equality on that enriched type and we
+-- use a no_pred return qualified type with clean poison.
+-- If it is not observable (none), the chosen QTyp is irrelevant (guarded later),
+-- we pick a dummy value.
+def isRetObservableFromObs (obs : ObservableSpec) : Bool :=
+  obs.retEtyp?.isSome
+
+def retQTypFromObs (obs : ObservableSpec) : QTyp :=
+  match obs.retEtyp? with
+  | some et => ⟨et, false, Predicate.noPred⟩
+  | none    => ⟨ETyp.unit, true, Predicate.noPred⟩
+
 -- Context compliance with the critical-only spec
 -- pc is clean, tag environment is empty; all listed critical entries must be
 -- present with exactly the specified qualified types. Any unlisted entry that
@@ -352,15 +365,15 @@ def partionSpecToInputSpec (S : PartitionSpec) (ctx : TypeContext) : InputSpec :
 -- Extract enriched types from qualified types in the context
 -- Only non-poisoned locations and return values are observable
 -- TODO: this could be a logical relation between PartitionSpec, Context and ObservableSpec
-def partitionSpecToObservableSpec (S : PartitionSpec) (retType : QTyp) (ctx : TypeContext) : ObservableSpec :=
+def partitionSpecToObservableSpec (S : PartitionSpec) (retType : QTyp) (isRetObservable : Bool) (ctx : TypeContext) : ObservableSpec :=
   ObservableSpec.mk
     -- Extract enriched types for observable locations (only non-poisoned)
     (S.locs.foldl (init := {}) fun acc l =>
       match ctx.memEnv.lookup l with
       | some qt => if qt.poison then acc else acc.insert l qt.etyp
       | none => acc)
-    -- Return enriched type (only if not poisoned)
-    (if retType.poison then none else some retType.etyp)
+    -- Return enriched type is present iff caller marks it observable and it is clean
+    (if isRetObservable && !retType.poison then some retType.etyp else none)
 
 -- `i` and `o` subscript indexes correspond to input and outputs
 -- `0` and `1` subscript indexes correspond to two runs of the program
@@ -369,6 +382,7 @@ def NonInterferenceSpec_step
   (Sᵢ Sₒ: PartitionSpec)
   (ctxᵢ ctxₒ: TypeContext)
   (retType: QTyp)
+  (isRetObservable : Bool)
   : Prop :=
     -- Ensure well-formedness and consistency of arguments
     wfPartitionSpec Sᵢ →  ctxMatchesPartitionSpec Sᵢ ctxᵢ →
@@ -393,18 +407,18 @@ def NonInterferenceSpec_step
           terminatesTo e { memory := μ₁, varEnv := ρ₁, nextLoc := l, pureMode := pm } cf₁ o₁ →
           -- Output properties below:
           -- Convert partition specification to input specification, do not need Sₒ after this
-          forall sₒ,
-            sₒ = partionSpecToInputSpec Sₒ ctxₒ →
-            -- Rₒ is output regime
-            exists Rₒ,
-              wfRegime Rₒ sₒ ∧ -- output regime matches output partition specification
-              wfRegimeForReturn Rₒ retType → -- return type tag may appear only in output
-              -- The regime must be correctly defined for all critical inputs in the spec:
-              consistentRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv ∧ consistentRegimeSpec Rₒ sₒ cf₁.memory cf₁.varEnv ∧
-              -- memory and variable values from both runs are in agreement per the output regime:
-              agreeOnCriticalInputsUnderRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv ∧
-              -- return values are in agreement:
-              agreeValueUnder Rₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv retType o₀ o₁
+    forall sₒ,
+      sₒ = partionSpecToInputSpec Sₒ ctxₒ →
+      -- Rₒ is output regime
+      exists Rₒ,
+        wfRegime Rₒ sₒ ∧ -- output regime matches output partition specification
+        -- The regime must be correctly defined for all critical outputs in the spec:
+        consistentRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv ∧ consistentRegimeSpec Rₒ sₒ cf₁.memory cf₁.varEnv ∧
+        -- memory and variable values from both runs are in agreement per the output regime:
+        agreeOnCriticalInputsUnderRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv ∧
+        -- return values agreement is required iff declared observable
+        (isRetObservable → (wfRegimeForReturn Rₒ retType ∧
+                            agreeValueUnder Rₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv retType o₀ o₁))
 
 def ctxMatchesResult (ctx : TypeContext) (res : TypeResult) : Prop :=
   ctx.memEnv = res.memEnv'
@@ -415,6 +429,7 @@ def TypeSystemEnforcesNonInterference_step_spec
   (Sᵢ Sₒ: PartitionSpec)
   (ctxᵢ ctxₒ: TypeContext)
   (retType: QTyp) -- return type
+  (isRetObservable : Bool)
   : Prop :=
     -- Ensure well-formedness and consistency of arguments
     wfPartitionSpec Sᵢ →  ctxMatchesPartitionSpec Sᵢ ctxᵢ →
@@ -426,7 +441,7 @@ def TypeSystemEnforcesNonInterference_step_spec
       -- and the result must match the output context
       ctxMatchesResult ctxₒ res →
       -- then the program satisfies non-interference
-      NonInterferenceSpec_step e Sᵢ Sₒ ctxᵢ ctxₒ retType)
+      NonInterferenceSpec_step e Sᵢ Sₒ ctxᵢ ctxₒ retType isRetObservable)
 
 -- ------------------------ Top-level definitions -------------------------------
 
@@ -498,8 +513,8 @@ lemma ctxMatchesPartition_from_inputSpec
 -- Derive partition-context matching from observable conversion.
 -- Not provable: conversion filters locations and doesn't use S.vars.
 lemma ctxMatchesPartition_from_obsSpec
-  (S : PartitionSpec) (retType : QTyp) (ctx : TypeContext) (obs : ObservableSpec)
-  (h_convert : partitionSpecToObservableSpec S retType ctx = obs) :
+  (S : PartitionSpec) (retType : QTyp) (isRetObservable : Bool) (ctx : TypeContext) (obs : ObservableSpec)
+  (h_convert : partitionSpecToObservableSpec S retType isRetObservable ctx = obs) :
   ctxMatchesPartitionSpec S ctx := by
   unfold ctxMatchesPartitionSpec
   constructor
@@ -527,22 +542,21 @@ theorem step_spec_implies_general_spec
   (hwf_s : wfInputSpec s)
   (hwf_obs : wfObsSpec obs)
   -- ========== MAIN HYPOTHESIS: Existence of suitable partition decomposition ==========
-  (h_exists_partition : ∃ (Sᵢ Sₒ : PartitionSpec) (retType : QTyp),
+  (h_exists_partition : ∃ (Sᵢ Sₒ : PartitionSpec),
     -- Partitions must be well-formed (trivially True, but kept for clarity)
-    wfPartitionSpec Sᵢ ∧
-    wfPartitionSpec Sₒ ∧
+    wfPartitionSpec Sᵢ ∧ wfPartitionSpec Sₒ ∧
     -- All hypotheses hold for all relevant contexts
     ∀ (ctxᵢ ctxₒ : TypeContext),
       -- H1: The input partition Sᵢ must represent the same critical inputs as s
       (ctxMatchesInputSpec s ctxᵢ → partionSpecToInputSpec Sᵢ ctxᵢ = s) ∧
       -- H2: The output partition Sₒ and retType must represent the same observables as obs
-      (partitionSpecToObservableSpec Sₒ retType ctxₒ = obs) ∧
+      (partitionSpecToObservableSpec Sₒ (retQTypFromObs obs) (isRetObservableFromObs obs) ctxₒ = obs) ∧
       -- H3: The step specification holds for this decomposition
-      (TypeSystemEnforcesNonInterference_step_spec e Sᵢ Sₒ ctxᵢ ctxₒ retType)) :
+      (TypeSystemEnforcesNonInterference_step_spec e Sᵢ Sₒ ctxᵢ ctxₒ (retQTypFromObs obs) (isRetObservableFromObs obs))) :
   -- ========== CONCLUSION ==========
   TypeSystemEnforcesNonInterference_spec e s obs := fun _hwf_s _hwf_obs => by
   -- Extract the partition decomposition from the existential
-  obtain ⟨Sᵢ, Sₒ, retType, hwf_Sᵢ, hwf_Sₒ, h_partition⟩ := h_exists_partition
+  obtain ⟨Sᵢ, Sₒ, hwf_Sᵢ, hwf_Sₒ, h_partition⟩ := h_exists_partition
 
   -- Unfold TypeSystemEnforcesNonInterference_spec
   intro ctx hctx_matches_s
@@ -566,7 +580,7 @@ theorem step_spec_implies_general_spec
   have hctx_Sᵢ : ctxMatchesPartitionSpec Sᵢ ctx :=
     ctxMatchesPartition_from_inputSpec Sᵢ ctx s h_input_eq hctx_matches_s
   have hctx_Sₒ : ctxMatchesPartitionSpec Sₒ ctx :=
-    ctxMatchesPartition_from_obsSpec Sₒ retType ctx obs h_obs_eq
+    ctxMatchesPartition_from_obsSpec Sₒ (retQTypFromObs obs) (isRetObservableFromObs obs) ctx obs h_obs_eq
 
   -- Remaining proof gaps:
   --
