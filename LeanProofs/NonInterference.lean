@@ -13,13 +13,11 @@ open Std
 -- Non-Interference (semantic formulation)
 -- ================================================================
 
--- Big-step termination relation to a final configuration and result
--- (coincides with the reflexive-transitive closure of small-step evaluation).
--- TODO: make it return Value
-def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : ExprOrValue) : Prop :=
+-- Big-step termination relation to a final configuration and resulting Value
+-- Note: evaluation returns ExprOrValue, but we require the Value
+def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
   ∃ (fuel : Nat) (verbose : Bool),
-    LeanPoison.beval fuel c₀ e verbose = pure (Except.ok (c₁, out.toValue?.getD Value.unit)) ∧
-    out.toExpr? = none
+    LeanPoison.beval fuel c₀ e verbose = pure (Except.ok (c₁, out))
 
 abbrev MemoryETypEnv := HashMap Address ETyp
 namespace MemoryETypEnv
@@ -123,7 +121,7 @@ inductive qtypPredHolds : QTyp → Memory → VarEnv → Value → Prop where
       (h : qt.pred = Predicate.guardClosure k arg_name pred_body var_env)
       (hterm : terminatesTo (PExpr.toExpr pred_body)
                   { memory := μ, varEnv := VarEnv.update ρ arg_name v, nextLoc := 0, pureMode := true }
-                  cfg (ExprOrValue.value (Value.bool true))) :
+                  cfg (Value.bool true)) :
       qtypPredHolds qt μ ρ v
   | guardOnly_ok {qt : QTyp} {μ ρ v k}
       (h : qt.pred = Predicate.guardOnly k) :
@@ -151,7 +149,7 @@ def runtimeInstantiatesCtx (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) : Pro
 
 -- Helper: equality of observables in the final states
 def observablesEqual (obs : ObservableSpec)
-    (c₁ c₂ : Config) (o₁ o₂ : ExprOrValue) : Prop :=
+    (c₁ c₂ : Config) (o₁ o₂ : Value) : Prop :=
   let sameMem : Prop := ∀ {l et}, obs.locs.lookup l = some et → c₁.memory.lookup l = c₂.memory.lookup l
   -- If the return is observable (retEtyp? = some et), we require the final
   -- values to match If the return is not observable (retEtyp? = none), we do
@@ -380,7 +378,7 @@ def NonInterferenceSpec_step
       sᵢ = partionSpecToInputSpec Sᵢ ctxᵢ →
       -- We universally quantify over the input regime Rᵢ
       ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (Rᵢ: Regime)
-        (cf₀ cf₁ : Config) (o₀ o₁ : ExprOrValue),
+        (cf₀ cf₁ : Config) (o₀ o₁ : Value),
         wfRegime Rᵢ sᵢ →
         inputsConformSpec sᵢ μ₀ ρ₀ →  inputsConformSpec sᵢ μ₁ ρ₁ →
         runtimeInstantiatesCtx ctxᵢ μ₀ ρ₀ →  runtimeInstantiatesCtx ctxᵢ μ₁ ρ₁ →
@@ -398,8 +396,8 @@ def NonInterferenceSpec_step
               wfRegime Rₒ sₒ ∧
               wfRegimeForReturn Rₒ retType → -- return type tag may appear only in output
               consistentRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv ∧ consistentRegimeSpec Rₒ sₒ cf₁.memory cf₁.varEnv ∧
-              agreeOnCriticalInputsUnderRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv
-              --TODO: /\ agreeValueUnder Rₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv retType o₀ o₁
+              agreeOnCriticalInputsUnderRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv ∧
+              agreeValueUnder Rₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv retType o₀ o₁
 
 def ctxMatchesResult (ctx : TypeContext) (res : TypeResult) : Prop :=
   ctx.memEnv = res.memEnv'
@@ -429,7 +427,7 @@ def TypeSystemEnforcesNonInterference_step_spec
 -- ==========================
 def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) : Prop :=
   ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (l : Address) (pm : Bool) (R : Regime)
-    (cf₁ cf₂ : Config) (o₁ o₂ : ExprOrValue),
+    (cf₁ cf₂ : Config) (o₁ o₂ : Value),
     wfRegime R s →
     inputsConformSpec s μ₁ ρ₁ →  inputsConformSpec s μ₂ ρ₂ →
     runtimeInstantiatesCtx ctx μ₁ ρ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ →
