@@ -15,6 +15,7 @@ open Std
 
 -- Big-step termination relation to a final configuration and result
 -- (coincides with the reflexive-transitive closure of small-step evaluation).
+-- TODO: make it return Value
 def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : ExprOrValue) : Prop :=
   ∃ (fuel : Nat) (verbose : Bool),
     LeanPoison.beval fuel c₀ e verbose = pure (Except.ok (c₁, out.toValue?.getD Value.unit)) ∧
@@ -257,6 +258,7 @@ inductive agreeValueUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ 
       (hclos : isGuardClosure qt)
       (htag : qtypGuardTag qt = some k)
       (hregime : R k = some false)
+      -- TODO: potential bug here: predicate must use captured variables, not ρ
       (hfail1 : ¬qtypPredHolds qt μ₁ ρ₁ v₁)
       (hfail2 : ¬qtypPredHolds qt μ₂ ρ₂ v₂) :
       agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt v₁ v₂
@@ -336,6 +338,7 @@ def ctxMatchesPartitionSpec (s : PartitionSpec) (ctx : TypeContext) : Prop :=
 -- Convert partition specification to input specification
 -- all locations and variables in the partition specification must be present in the context
 -- which is normally ensured by `ctxMatchesPartitionSpec`
+-- TODO: this could be a logical relation between PartitionSpec, Context and InputSpec
 def partionSpecToInputSpec (S : PartitionSpec) (ctx : TypeContext) : InputSpec :=
   InputSpec.mk
     (S.locs.foldl (init := {}) fun acc l =>
@@ -350,6 +353,7 @@ def partionSpecToInputSpec (S : PartitionSpec) (ctx : TypeContext) : InputSpec :
 -- Convert partition specification and return type to observable specification
 -- Extract enriched types from qualified types in the context
 -- Only non-poisoned locations and return values are observable
+-- TODO: this could be a logical relation between PartitionSpec, Context and ObservableSpec
 def partitionSpecToObservableSpec (S : PartitionSpec) (retType : QTyp) (ctx : TypeContext) : ObservableSpec :=
   ObservableSpec.mk
     -- Extract enriched types for observable locations (only non-poisoned)
@@ -377,7 +381,7 @@ def NonInterferenceSpec_step
       -- We universally quantify over the input regime Rᵢ
       ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (Rᵢ: Regime)
         (cf₀ cf₁ : Config) (o₀ o₁ : ExprOrValue),
-        wfRegime Rᵢ (partionSpecToInputSpec Sᵢ ctxᵢ) →
+        wfRegime Rᵢ sᵢ →
         inputsConformSpec sᵢ μ₀ ρ₀ →  inputsConformSpec sᵢ μ₁ ρ₁ →
         runtimeInstantiatesCtx ctxᵢ μ₀ ρ₀ →  runtimeInstantiatesCtx ctxᵢ μ₁ ρ₁ →
         consistentRegimeSpec Rᵢ sᵢ μ₀ ρ₀ → consistentRegimeSpec Rᵢ sᵢ μ₁ ρ₁ →
@@ -385,7 +389,6 @@ def NonInterferenceSpec_step
         forall (l : Address) (pm : Bool),
           terminatesTo e { memory := μ₀, varEnv := ρ₀, nextLoc := l, pureMode := pm } cf₀ o₀ →
           terminatesTo e { memory := μ₁, varEnv := ρ₁, nextLoc := l, pureMode := pm } cf₁ o₁ →
-
           -- Output properties below:
           -- Convert partition specification to input specification, do not need Sₒ after this
           forall sₒ,
