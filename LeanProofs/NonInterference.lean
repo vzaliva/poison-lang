@@ -428,7 +428,6 @@ def TypeSystemEnforcesNonInterference_step_spec
   (e : Expr)
   (Sᵢ Sₒ: PartitionSpec)
   (ctxᵢ ctxₒ: TypeContext)
-  (retType: QTyp) -- return type
   (isRetObservable : Bool)
   : Prop :=
     -- Ensure well-formedness and consistency of arguments
@@ -441,7 +440,7 @@ def TypeSystemEnforcesNonInterference_step_spec
       -- and the result must match the output context
       ctxMatchesResult ctxₒ res →
       -- then the program satisfies non-interference
-      NonInterferenceSpec_step e Sᵢ Sₒ ctxᵢ ctxₒ retType isRetObservable)
+      NonInterferenceSpec_step e Sᵢ Sₒ ctxᵢ ctxₒ res.qualType isRetObservable)
 
 -- ------------------------ Top-level definitions -------------------------------
 
@@ -552,7 +551,7 @@ theorem step_spec_implies_general_spec
       -- H2: The output partition Sₒ and retType must represent the same observables as obs
       (partitionSpecToObservableSpec Sₒ (retQTypFromObs obs) (isRetObservableFromObs obs) ctxₒ = obs) ∧
       -- H3: The step specification holds for this decomposition
-      (TypeSystemEnforcesNonInterference_step_spec e Sᵢ Sₒ ctxᵢ ctxₒ (retQTypFromObs obs) (isRetObservableFromObs obs))) :
+      (TypeSystemEnforcesNonInterference_step_spec e Sᵢ Sₒ ctxᵢ ctxₒ (isRetObservableFromObs obs))) :
   -- ========== CONCLUSION ==========
   TypeSystemEnforcesNonInterference_spec e s obs := fun _hwf_s _hwf_obs => by
   -- Extract the partition decomposition from the existential
