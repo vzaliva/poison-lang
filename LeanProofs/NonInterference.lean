@@ -346,6 +346,19 @@ def partionSpecToInputSpec (S : PartitionSpec) (ctx : TypeContext) : InputSpec :
       | some qt => (x, qt) :: acc
       | none => acc)
 
+-- Convert partition specification and return type to observable specification
+-- Extract enriched types from qualified types in the context
+-- Only non-poisoned locations and return values are observable
+def partitionSpecToObservableSpec (S : PartitionSpec) (retType : QTyp) (ctx : TypeContext) : ObservableSpec :=
+  ObservableSpec.mk
+    -- Extract enriched types for observable locations (only non-poisoned)
+    (S.locs.foldl (init := {}) fun acc l =>
+      match ctx.memEnv.lookup l with
+      | some qt => if qt.poison then acc else acc.insert l qt.etyp
+      | none => acc)
+    -- Return enriched type (only if not poisoned)
+    (if retType.poison then none else some retType.etyp)
+
 -- `i` and `o` subscript indexes correspond to input and outputs
 -- `0` and `1` subscript indexes correspond to two runs of the program
 def NonInterferenceSpec_step
@@ -433,3 +446,35 @@ def TypeSystemEnforcesNonInterference_spec
         typecheck ctx e fuel = .ok res ∧
         ObsConstraints obs res) →
         NonInterferenceSpec e s obs ctx)
+
+-- ------------------------ Proofs -------------------------------
+
+-- Bridge theorem: If there exists a suitable partition decomposition of the inputs
+-- and observables for which the step-based specification holds, then the general
+-- specification holds.
+--
+-- This theorem shows that TypeSystemEnforcesNonInterference_step_spec (which works
+-- with partition specifications Sᵢ, Sₒ) implies TypeSystemEnforcesNonInterference_spec
+-- (which works with input spec s and observable spec obs).
+--
+-- The key idea: If we can decompose the input spec s into a partition Sᵢ, and the
+-- observable spec obs into a partition Sₒ plus a return type retType, such that the
+-- step specification holds, then the general specification must hold.
+theorem step_spec_implies_general_spec
+  -- ========== INPUTS (same as TypeSystemEnforcesNonInterference_spec) ==========
+  (e : Expr)         -- The expression to check
+  (s : InputSpec)    -- Input specification (critical locations and variables)
+  (obs : ObservableSpec)  -- Observable specification (what outputs are observable)
+  -- ========== MAIN HYPOTHESIS: Existence of suitable partition decomposition ==========
+  (h_exists_partition : ∃ (Sᵢ Sₒ : PartitionSpec) (retType : QTyp),
+    -- All hypotheses hold for all relevant contexts
+    ∀ (ctxᵢ ctxₒ : TypeContext),
+      -- H1: The input partition Sᵢ must represent the same critical inputs as s
+      (ctxMatchesInputSpec s ctxᵢ → partionSpecToInputSpec Sᵢ ctxᵢ = s) ∧
+      -- H2: The output partition Sₒ and retType must represent the same observables as obs
+      (partitionSpecToObservableSpec Sₒ retType ctxₒ = obs) ∧
+      -- H3: The step specification holds for this decomposition
+      (TypeSystemEnforcesNonInterference_step_spec e Sᵢ Sₒ ctxᵢ ctxₒ retType)) :
+  -- ========== CONCLUSION ==========
+  TypeSystemEnforcesNonInterference_spec e s obs := by
+  sorry
