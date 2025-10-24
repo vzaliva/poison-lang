@@ -227,13 +227,11 @@ def retQTypFromObs (obs : ObservableSpec) : QTyp :=
   | some et => ⟨et, false, Predicate.noPred⟩
   | none    => ⟨ETyp.unit, true, Predicate.noPred⟩
 
--- Context compliance with the critical-only spec
--- pc is clean, tag environment is empty; all listed critical entries must be
--- present with exactly the specified qualified types. Any unlisted entry that
--- appears in the context (to allow the program to typecheck when referenced)
--- is permitted, but it must be poisoned and carry no predicate.
+-- Context compliance with the critical-only spec all listed critical entries
+-- must be present with exactly the specified qualified types. Any unlisted
+-- entry that appears in the context (to allow the program to typecheck when
+-- referenced) is permitted, but it must be poisoned and carry no predicate.
 def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
-  ctx.pc = false ∧ ctx.tagEnv = {} ∧
   (∀ {l qt}, s.locs.lookup l = some qt → ctx.memEnv.lookup l = some qt) ∧
   (∀ {x qt}, s.vars.lookup x = some qt → ctx.varEnv.lookup x = some qt) ∧
   (∀ {l qt}, ctx.memEnv.lookup l = some qt → ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = Predicate.noPred) ∧
@@ -503,6 +501,7 @@ def TypeSystemEnforcesNonInterference_spec
   wfObsSpec obs →
   ∀ (ctx : TypeContext),
       ctxMatchesInputSpec s ctx →
+      ctx.pc = false → -- we start from clean program counter
       ∀ (predSat : PredSat) (predicateDeps : PredicateDeps),
         SatisfiesAxioms predSat predicateDeps →
         ((∃ (fuel : Nat) (res : TypeResult),
