@@ -952,11 +952,10 @@ If typechecking $e$ under this context succeeds and the inferred
 result satisfies the observable constraints (observable locations and, if
 requested, the return are clean), then for \emph{any} abstract predicate 
 satisfaction relation $\text{PredSat} : \text{Tag} \to \text{Memory} \to 
-\text{Value} \to \text{Prop}$ and dependency relation 
-$\text{PredicateDeps} : \text{Tag} \to \text{Deps} \to \text{Prop}$ 
-satisfying the axioms (syntactic matching and memory monotonicity as 
-described below), the program $e$ satisfies the non-interference
-property with respect to $S$, $\text{obs}$, $\text{PredSat}$, and $\text{PredicateDeps}$.
+\text{Value} \to \text{Prop}$ satisfying the universal axioms 
+(syntactic matching and memory monotonicity as described below), 
+the program $e$ satisfies the non-interference property with respect to 
+$S$, $\text{obs}$, and $\text{PredSat}$.
 
 The runtime premises for each compared run are: (i) critical inputs conform to
 $S$, and (ii) the concrete initial memory and environment instantiate the whole
@@ -990,11 +989,11 @@ This relation specifies whether a predicate (identified by its tag) is satisfied
     \item \textbf{Universal quantification}: The non-interference theorem quantifies over all \texttt{PredSat} relations satisfying certain axioms, proving the property holds regardless of what predicates mean.
 \end{itemize}
 
-\subsubsection{Constraining Axioms}
+\subsubsection{Universal Axioms}
 
-The abstract \texttt{PredSat} relation is constrained by axioms that capture the type system's mechanisms without specifying predicate meanings:
+The abstract \texttt{PredSat} relation is constrained by universal axioms that capture the type system's mechanisms without specifying predicate meanings. These axioms apply to all tags, including those in the initial specification and those generated during execution (e.g., by \texttt{frand} or extern functions).
 
-\paragraph{Syntactic Matching Axiom.} If a condition syntactically matches a tagged predicate via \texttt{match\_guard} and evaluates to true, then the predicate is satisfied:
+\paragraph{Syntactic Matching Axiom.} If a condition syntactically matches a tagged predicate via \texttt{matchGuard} and evaluates to true, then the predicate is satisfied:
 \[
 \forall \text{ condition, } k, \text{deps}, \Gamma, \sigma, \mu, \rho, v.\;
 \text{matchGuard}(\text{condition}, \Gamma, \sigma) = (k, \text{deps})
@@ -1006,13 +1005,13 @@ This axiom connects the type system's syntactic predicate matching (which return
 
 \paragraph{Memory Monotonicity Axiom.} Predicates are stable under memory changes that do not affect their dependencies:
 \[
-\forall k, \mu, \mu', v, \text{deps}.\;
-\text{PredicateDeps}\; k\; \text{deps}
+\forall k, \text{pred}, \mu, \mu', v, \text{deps}.\;
+\text{extractDepsFromPred}(\text{pred}) = \text{deps}
 \land (\forall l \in \text{deps}.\; \mu(l) = \mu'(l))
 \implies (\text{PredSat}\; k\; \mu\; v \iff \text{PredSat}\; k\; \mu'\; v)
 \]
 
-This axiom ensures the abstract relation behaves consistently with the type system's dependency tracking and guard invalidation on assignment.
+This axiom ensures the abstract relation behaves consistently with the type system's dependency extraction and guard invalidation on assignment. The dependencies are computed directly by \texttt{extractDepsFromPred}, the same function used by the type checker.
 
 \subsubsection{Relationship to Regimes}
 
