@@ -72,11 +72,34 @@ def qtypGuardTag (qt : QTyp) : Option Tag :=
   | Predicate.guardOnly k => some k
   | Predicate.noPred => none
 
--- Extract all guard tags from the input specification
+-- Predicate: tag k appears in the input specification
+inductive InputSpecHasTag (s : InputSpec) : Tag → Prop where
+  | fromLoc (addr : Address) (qt : QTyp) (k : Tag)
+      (hlookup : s.locs.lookup addr = some qt)
+      (htag : qtypGuardTag qt = some k) :
+      InputSpecHasTag s k
+  | fromVar (x : Name) (qt : QTyp) (k : Tag)
+      (hlookup : s.vars.lookup x = some qt)
+      (htag : qtypGuardTag qt = some k) :
+      InputSpecHasTag s k
+
+-- Extract all guard tags from the input specification (functional version for wfRegime)
 def inputSpecTags (s : InputSpec) : List Tag :=
   let locTags := s.locs.toList.filterMap (fun (_, qt) => qtypGuardTag qt)
   let varTags := s.vars.filterMap (fun (_, qt) => qtypGuardTag qt)
   locTags ++ varTags
+
+-- Predicate mapping from input specification
+-- Links tags to their predicates as they appear in the input spec
+inductive InputSpecHasPred (s : InputSpec) : Tag → Predicate → Prop where
+  | fromLoc (addr : Address) (qt : QTyp) (k : Tag)
+      (hlookup : s.locs.lookup addr = some qt)
+      (htag : qtypGuardTag qt = some k) :
+      InputSpecHasPred s k qt.pred
+  | fromVar (x : Name) (qt : QTyp) (k : Tag)
+      (hlookup : s.vars.lookup x = some qt)
+      (htag : qtypGuardTag qt = some k) :
+      InputSpecHasPred s k qt.pred
 
 -- Predicate-shape helpers
 def isGuardClosure (qt : QTyp) : Prop :=
@@ -116,12 +139,19 @@ inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
 abbrev PredSat := Tag → Memory → Value → Prop
 
 -- Dependency tracking for predicates
--- Maps each tag to the set of memory locations it may read
--- Note: Deps is defined in Typecheck as List Address
-abbrev PredicateDeps := Tag → Deps → Prop
+-- Links a tag to its dependencies as extracted by the type system
+-- For a tag k in InputSpec with predicate pred, PredicateDeps holds for the
+-- dependencies computed by extractDepsFromPred
+inductive PredicateDeps (s : InputSpec) : Tag → Deps → Prop where
+  | mk (k : Tag) (pred : Predicate) (deps : Deps)
+      (hpred : InputSpecHasPred s k pred)
+      (hdeps : extractDepsFromPred pred = .ok deps) :
+      PredicateDeps s k deps
 
 -- Axioms that constrain the abstract PredSat relation
-structure SatisfiesAxioms (predSat : PredSat) (predicateDeps : PredicateDeps) : Prop where
+-- These are universal properties that must hold for ANY tag, including those
+-- generated during execution (e.g., by frand or extern functions)
+structure SatisfiesAxioms (predSat : PredSat) : Prop where
   -- Syntactic Matching Axiom: If a condition syntactically matches a tagged predicate
   -- via matchGuard and evaluates to true, then the predicate is satisfied for the value
   -- being tested (extracted from the runtime environment).
@@ -132,7 +162,7 @@ structure SatisfiesAxioms (predSat : PredSat) (predicateDeps : PredicateDeps) : 
   -- it means the predicate (with captured environment baked into the tag) is satisfied.
   match_sound : ∀ (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
                   (k : Tag) (deps : Deps)
-                  (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool) (cf : Config) (v : Value),
+                  (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool) (cfg : Config) (v : Value),
     -- If matchGuard identifies that condition matches predicate k
     matchGuard condition Γ σ = .ok (k, deps) →
     -- And the condition evaluates to true
@@ -142,9 +172,10 @@ structure SatisfiesAxioms (predSat : PredSat) (predicateDeps : PredicateDeps) : 
 
   -- Memory Monotonicity Axiom: Predicates are stable under memory changes
   -- that do not affect their dependencies
-  mem_monotone : ∀ (k : Tag) (μ μ' : Memory) (v : Value) (deps : Deps),
-    -- If k's dependencies are deps
-    predicateDeps k deps →
+  -- This must hold for any tag k and any dependency set deps
+  mem_monotone : ∀ (k : Tag) (pred : Predicate) (μ μ' : Memory) (v : Value) (deps : Deps),
+    -- If k's dependencies are deps (as computed by extractDepsFromPred)
+    extractDepsFromPred pred = .ok deps →
     -- And all dependent locations have the same values in both memories
     (∀ l, l ∈ deps → μ.lookup l = μ'.lookup l) →
     -- Then predicate satisfaction is the same in both memories
@@ -502,8 +533,9 @@ def TypeSystemEnforcesNonInterference_spec
   ∀ (ctx : TypeContext),
       ctxMatchesInputSpec s ctx →
       ctx.pc = false → -- we start from clean program counter
-      ∀ (predSat : PredSat) (predicateDeps : PredicateDeps),
-        SatisfiesAxioms predSat predicateDeps →
+      ctx.tagEnv = {} → -- we start with empty tag environment
+      ∀ (predSat : PredSat),
+        SatisfiesAxioms predSat →
         ((∃ (fuel : Nat) (res : TypeResult),
           typecheck ctx e fuel = .ok res ∧
           ObsConstraints obs res) →
@@ -597,7 +629,7 @@ theorem step_spec_implies_general_spec
   obtain ⟨Sᵢ, Sₒ, hwf_Sᵢ, hwf_Sₒ, h_partition⟩ := h_exists_partition
 
   -- Unfold TypeSystemEnforcesNonInterference_spec
-  intro ctx hctx_matches_s predSat predicateDeps hAxioms
+  intro ctx hctx_matches_s _hpc_clean _htagenv_empty predSat hAxioms
   intro ⟨fuel, res, htypecheck, hobs_constraints⟩
 
   -- Unfold NonInterferenceSpec
