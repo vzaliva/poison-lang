@@ -104,28 +104,65 @@ inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
       (hregime : R k = some true) :
       wfRegimeForReturn R retType
 
--- Abstract predicate: does the QTyp-attached predicate hold for the given
--- input value under the initial environments? For locations the value will be
--- encoded as Value.num n; for variables it is the variable's Value.
+-- Abstract predicate satisfaction: does a predicate with the given tag hold
+-- for a value in a given memory state?
 --
--- We implement this as an inductive predicate for easier inversion in proofs.
--- The noPred case holds trivially; the guardClosure case requires evidence that the
--- predicate body terminates to `true` when evaluated with the argument bound;
--- the guardOnly case holds trivially (no syntactic test to check).
-inductive qtypPredHolds : QTyp → Memory → VarEnv → Value → Prop where
-  | noPred_ok {qt : QTyp} {μ ρ v}
+-- This is left abstract (as a parameter) to avoid the environment capture bug.
+-- The concrete meaning of predicates is constrained by axioms that connect
+-- to the type system's mechanisms (syntactic matching, dependency tracking).
+--
+-- Note: No VarEnv parameter because captured variables are encoded in the tag's identity.
+-- Memory is needed because predicates can dereference heap locations.
+abbrev PredSat := Tag → Memory → Value → Prop
+
+-- Dependency tracking for predicates
+-- Maps each tag to the set of memory locations it may read
+-- Note: Deps is defined in Typecheck as List Address
+abbrev PredicateDeps := Tag → Deps → Prop
+
+-- Axioms that constrain the abstract PredSat relation
+structure SatisfiesAxioms (predSat : PredSat) (predicateDeps : PredicateDeps) : Prop where
+  -- Syntactic Matching Axiom: If a condition syntactically matches a tagged predicate
+  -- via matchGuard and evaluates to true, then the predicate is satisfied for the value
+  -- being tested (extracted from the runtime environment).
+  --
+  -- The matchGuard function verifies that 'condition' is syntactically identical to the
+  -- predicate body after substituting the predicate's formal parameter with the actual
+  -- value expression (variable or dereference). When the condition evaluates to true,
+  -- it means the predicate (with captured environment baked into the tag) is satisfied.
+  match_sound : ∀ (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
+                  (k : Tag) (deps : Deps)
+                  (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool) (cf : Config) (v : Value),
+    -- If matchGuard identifies that condition matches predicate k
+    matchGuard condition Γ σ = .ok (k, deps) →
+    -- And the condition evaluates to true
+    terminatesTo condition { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm } cfg (Value.bool true) →
+    -- Then the predicate k is satisfied for the specific owner value v
+    predSat k μ v
+
+  -- Memory Monotonicity Axiom: Predicates are stable under memory changes
+  -- that do not affect their dependencies
+  mem_monotone : ∀ (k : Tag) (μ μ' : Memory) (v : Value) (deps : Deps),
+    -- If k's dependencies are deps
+    predicateDeps k deps →
+    -- And all dependent locations have the same values in both memories
+    (∀ l, l ∈ deps → μ.lookup l = μ'.lookup l) →
+    -- Then predicate satisfaction is the same in both memories
+    (predSat k μ v ↔ predSat k μ' v)
+
+-- Check if a QTyp-attached predicate holds using abstract satisfaction relation
+inductive qtypPredHolds (predSat : PredSat) : QTyp → Memory → Value → Prop where
+  | noPred_ok {qt : QTyp} {μ v}
       (h : qt.pred = Predicate.noPred) :
-      qtypPredHolds qt μ ρ v
-  | guardClosure_ok {qt : QTyp} {μ ρ v k arg_name pred_body var_env}
-      (cfg : Config)
+      qtypPredHolds predSat qt μ v
+  | guardClosure_ok {qt : QTyp} {μ v k arg_name pred_body var_env}
       (h : qt.pred = Predicate.guardClosure k arg_name pred_body var_env)
-      (hterm : terminatesTo (PExpr.toExpr pred_body)
-                  { memory := μ, varEnv := VarEnv.update ρ arg_name v, nextLoc := 0, pureMode := true }
-                  cfg (Value.bool true)) :
-      qtypPredHolds qt μ ρ v
-  | guardOnly_ok {qt : QTyp} {μ ρ v k}
-      (h : qt.pred = Predicate.guardOnly k) :
-      qtypPredHolds qt μ ρ v
+      (hSat : predSat k μ v) :
+      qtypPredHolds predSat qt μ v
+  | guardOnly_ok {qt : QTyp} {μ v k}
+      (h : qt.pred = Predicate.guardOnly k)
+      (hSat : predSat k μ v) :
+      qtypPredHolds predSat qt μ v
 
 -- Relational predicate for typing values as enriched types
 inductive valueHasETyp : Value → ETyp → Prop where
@@ -210,110 +247,109 @@ def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
   (∀ {x qt v}, s.vars.lookup x = some qt → ρ.lookup x = some v → valueHasETyp v qt.etyp)
 
 -- Elementwise predicate for location regime consistency (inductive for easy inversion)
-inductive locsRegime (R : Regime) (μ : Memory) (ρ : VarEnv) : (Address × QTyp) → Prop where
+inductive locsRegime (predSat : PredSat) (R : Regime) (μ : Memory) : (Address × QTyp) → Prop where
   | noPred_ok (entry : Address × QTyp)
       (hpred : qtypGuardTag entry.snd = none) :
-      locsRegime R μ ρ entry
+      locsRegime predSat R μ entry
   -- Guard-only predicates impose no regime consistency beyond tag presence in S
   | guardOnly_ok (entry : Address × QTyp) (k : Tag)
       (hgo : entry.snd.pred = Predicate.guardOnly k) :
-      locsRegime R μ ρ entry
+      locsRegime predSat R μ entry
   -- Guard-closure predicates must align with the regime: holds iff R(k)=true
   | withPred_ok (entry : Address × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : List (Name × QTyp))
       (n : Int) (b : Bool)
       (hclos : entry.snd.pred = Predicate.guardClosure k arg_name pred_body var_env)
       (hregime : R k = some b)
       (hmem : μ.lookup entry.fst = some n)
-      (hconsist : (b = true → qtypPredHolds entry.snd μ ρ (Value.num n)) ∧
-                  (b = false → ¬qtypPredHolds entry.snd μ ρ (Value.num n))) :
-      locsRegime R μ ρ entry
+      (hconsist : (b = true → qtypPredHolds predSat entry.snd μ (Value.num n)) ∧
+                  (b = false → ¬qtypPredHolds predSat entry.snd μ (Value.num n))) :
+      locsRegime predSat R μ entry
 
 -- Elementwise predicate for variable regime consistency (inductive for easy inversion)
-inductive varsRegime (R : Regime) (μ : Memory) (ρ : VarEnv) : (Name × QTyp) → Prop where
+inductive varsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (ρ : VarEnv) : (Name × QTyp) → Prop where
   | noPred_ok (entry : Name × QTyp)
       (hpred : qtypGuardTag entry.snd = none) :
-      varsRegime R μ ρ entry
+      varsRegime predSat R μ ρ entry
   -- Guard-only predicates impose no regime consistency beyond tag presence in S
   | guardOnly_ok (entry : Name × QTyp) (k : Tag)
       (hgo : entry.snd.pred = Predicate.guardOnly k) :
-      varsRegime R μ ρ entry
+      varsRegime predSat R μ ρ entry
   -- Guard-closure predicates must align with the regime: holds iff R(k)=true
   | withPred_ok (entry : Name × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : List (Name × QTyp))
       (v : Value) (b : Bool)
       (hclos : entry.snd.pred = Predicate.guardClosure k arg_name pred_body var_env)
       (hregime : R k = some b)
       (hvar : ρ.lookup entry.fst = some v)
-      (hconsist : (b = true → qtypPredHolds entry.snd μ ρ v) ∧
-                  (b = false → ¬qtypPredHolds entry.snd μ ρ v)) :
-      varsRegime R μ ρ entry
+      (hconsist : (b = true → qtypPredHolds predSat entry.snd μ v) ∧
+                  (b = false → ¬qtypPredHolds predSat entry.snd μ v)) :
+      varsRegime predSat R μ ρ entry
 
 -- Regime consistency (via Forall over lists).
 -- The regime must be defined for all critical inputs in the spec.
-def consistentRegimeSpec (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
-  List.Forall (locsRegime R μ ρ) s.locs.toList ∧
-  List.Forall (varsRegime R μ ρ) s.vars
+def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
+  List.Forall (locsRegime predSat R μ) s.locs.toList ∧
+  List.Forall (varsRegime predSat R μ ρ) s.vars
 
 -- Two values agree under a given regime and memory environments
-inductive agreeValueUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv) (qt: QTyp) (v₁ v₂ : Value) : Prop where
+inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory) (qt: QTyp) (v₁ v₂ : Value) : Prop where
   | noPred_eq
       (hpred : qtypGuardTag qt = none)
       (hagree : v₁ = v₂) :
-      agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt v₁ v₂
+      agreeValueUnder predSat R μ₁ μ₂ qt v₁ v₂
   | withPred_true_eq (k : Tag)
       (htag : qtypGuardTag qt = some k)
       (hregime : R k = some true)
       (hagree : v₁ = v₂) :
-      agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt v₁ v₂
+      agreeValueUnder predSat R μ₁ μ₂ qt v₁ v₂
   -- False-regime case for guard-closures: both runs fail the predicate
   | withPred_false_both_fail (k : Tag)
       (hclos : isGuardClosure qt)
       (htag : qtypGuardTag qt = some k)
       (hregime : R k = some false)
-      -- TODO: potential bug here: predicate must use captured variables, not ρ
-      (hfail1 : ¬qtypPredHolds qt μ₁ ρ₁ v₁)
-      (hfail2 : ¬qtypPredHolds qt μ₂ ρ₂ v₂) :
-      agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt v₁ v₂
+      (hfail1 : ¬qtypPredHolds predSat qt μ₁ v₁)
+      (hfail2 : ¬qtypPredHolds predSat qt μ₂ v₂) :
+      agreeValueUnder predSat R μ₁ μ₂ qt v₁ v₂
   -- False-regime case for guard-only: unconstrained (values may differ)
   | guardOnly_false_any (k : Tag)
       (hgo : qt.pred = Predicate.guardOnly k)
       (hregime : R k = some false) :
-      agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt v₁ v₂
+      agreeValueUnder predSat R μ₁ μ₂ qt v₁ v₂
 
 -- Two initial states agree on a critical location under a given regime.
 -- Refactored to use agreeValueUnder
-inductive agreeLocUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
+inductive agreeLocUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
     : (Address × QTyp) → Prop where
   | agree_values (addr : Address) (qt : QTyp) (n₁ n₂ : Nat)
       (hlookup1 : μ₁.lookup addr = some n₁)
       (hlookup2 : μ₂.lookup addr = some n₂)
-      (hagree : agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt (Value.num n₁) (Value.num n₂)) :
-      agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
+      (hagree : agreeValueUnder predSat R μ₁ μ₂ qt (Value.num n₁) (Value.num n₂)) :
+      agreeLocUnder predSat R μ₁ μ₂ (addr, qt)
   | both_none (addr : Address) (qt : QTyp)
       (hlookup1 : μ₁.lookup addr = none)
       (hlookup2 : μ₂.lookup addr = none) :
-      agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂ (addr, qt)
+      agreeLocUnder predSat R μ₁ μ₂ (addr, qt)
 
 -- Two initial states agree on a critical variable under a given regime.
 -- Refactored to use agreeValueUnder
-inductive agreeVarUnder (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
+inductive agreeVarUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
     : (Name × QTyp) → Prop where
   | agree_values (x : Name) (qt : QTyp) (v₁ v₂ : Value)
       (hlookup1 : ρ₁.lookup x = some v₁)
       (hlookup2 : ρ₂.lookup x = some v₂)
-      (hagree : agreeValueUnder R μ₁ ρ₁ μ₂ ρ₂ qt v₁ v₂) :
-      agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
+      (hagree : agreeValueUnder predSat R μ₁ μ₂ qt v₁ v₂) :
+      agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
   | both_none (x : Name) (qt : QTyp)
       (hlookup1 : ρ₁.lookup x = none)
       (hlookup2 : ρ₂.lookup x = none) :
-      agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
+      agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
 
 -- Two initial states agree on critical inputs under a given regime.
 def agreeOnCriticalInputsUnderRegimeSpec
-  (R : Regime) (s : InputSpec)
+  (predSat : PredSat) (R : Regime) (s : InputSpec)
   (μ₁ : Memory) (ρ₁ : VarEnv)
   (μ₂ : Memory) (ρ₂ : VarEnv) : Prop :=
-  List.Forall (agreeLocUnder R μ₁ ρ₁ μ₂ ρ₂) s.locs.toList ∧
-  List.Forall (agreeVarUnder R μ₁ ρ₁ μ₂ ρ₂) s.vars
+  List.Forall (agreeLocUnder predSat R μ₁ μ₂) s.locs.toList ∧
+  List.Forall (agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂) s.vars
 
 -- Typing results must satisfy the observable constraints:
 def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
@@ -383,6 +419,7 @@ def NonInterferenceSpec_step
   (ctxᵢ ctxₒ: TypeContext)
   (retType: QTyp)
   (isRetObservable : Bool)
+  (predSat : PredSat)
   : Prop :=
     -- Ensure well-formedness and consistency of arguments
     wfPartitionSpec Sᵢ →  ctxMatchesPartitionSpec Sᵢ ctxᵢ →
@@ -399,9 +436,9 @@ def NonInterferenceSpec_step
         -- both runtimes instantiate the input context:
         runtimeInstantiatesCtx ctxᵢ μ₀ ρ₀ →  runtimeInstantiatesCtx ctxᵢ μ₁ ρ₁ →
         -- The regime must be correctly defined for all critical inputs in the spec:
-        consistentRegimeSpec Rᵢ sᵢ μ₀ ρ₀ → consistentRegimeSpec Rᵢ sᵢ μ₁ ρ₁ →
+        consistentRegimeSpec predSat Rᵢ sᵢ μ₀ ρ₀ → consistentRegimeSpec predSat Rᵢ sᵢ μ₁ ρ₁ →
         -- memory and variable values from both runs are in agreement per the input regime:
-        agreeOnCriticalInputsUnderRegimeSpec Rᵢ sᵢ μ₀ ρ₀ μ₁ ρ₁ →
+        agreeOnCriticalInputsUnderRegimeSpec predSat Rᵢ sᵢ μ₀ ρ₀ μ₁ ρ₁ →
         forall (l : Address) (pm : Bool),
           terminatesTo e { memory := μ₀, varEnv := ρ₀, nextLoc := l, pureMode := pm } cf₀ o₀ →
           terminatesTo e { memory := μ₁, varEnv := ρ₁, nextLoc := l, pureMode := pm } cf₁ o₁ →
@@ -413,12 +450,12 @@ def NonInterferenceSpec_step
       exists Rₒ,
         wfRegime Rₒ sₒ ∧ -- output regime matches output partition specification
         -- The regime must be correctly defined for all critical outputs in the spec:
-        consistentRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv ∧ consistentRegimeSpec Rₒ sₒ cf₁.memory cf₁.varEnv ∧
+        consistentRegimeSpec predSat Rₒ sₒ cf₀.memory cf₀.varEnv ∧ consistentRegimeSpec predSat Rₒ sₒ cf₁.memory cf₁.varEnv ∧
         -- memory and variable values from both runs are in agreement per the output regime:
-        agreeOnCriticalInputsUnderRegimeSpec Rₒ sₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv ∧
+        agreeOnCriticalInputsUnderRegimeSpec predSat Rₒ sₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv ∧
         -- return values agreement is required iff declared observable
         (isRetObservable → (wfRegimeForReturn Rₒ retType ∧
-                            agreeValueUnder Rₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv retType o₀ o₁))
+                            agreeValueUnder predSat Rₒ cf₀.memory cf₁.memory retType o₀ o₁))
 
 def ctxMatchesResult (ctx : TypeContext) (res : TypeResult) : Prop :=
   ctx.memEnv = res.memEnv'
@@ -429,6 +466,7 @@ def TypeSystemEnforcesNonInterference_step_spec
   (Sᵢ Sₒ: PartitionSpec)
   (ctxᵢ ctxₒ: TypeContext)
   (isRetObservable : Bool)
+  (predSat : PredSat)
   : Prop :=
     -- Ensure well-formedness and consistency of arguments
     wfPartitionSpec Sᵢ →  ctxMatchesPartitionSpec Sᵢ ctxᵢ →
@@ -440,22 +478,22 @@ def TypeSystemEnforcesNonInterference_step_spec
       -- and the result must match the output context
       ctxMatchesResult ctxₒ res →
       -- then the program satisfies non-interference
-      NonInterferenceSpec_step e Sᵢ Sₒ ctxᵢ ctxₒ res.qualType isRetObservable)
+      NonInterferenceSpec_step e Sᵢ Sₒ ctxᵢ ctxₒ res.qualType isRetObservable predSat)
 
 -- ------------------------ Top-level definitions -------------------------------
 
 -- Non-Interference property
 -- ==========================
-def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) : Prop :=
+def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) : Prop :=
   ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (l : Address) (pm : Bool) (R : Regime)
     (cf₁ cf₂ : Config) (o₁ o₂ : Value),
     wfRegime R s →
     inputsConformSpec s μ₁ ρ₁ →  inputsConformSpec s μ₂ ρ₂ →
     runtimeInstantiatesCtx ctx μ₁ ρ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ →
-    consistentRegimeSpec R s μ₁ ρ₁ →  consistentRegimeSpec R s μ₂ ρ₂ →
-    agreeOnCriticalInputsUnderRegimeSpec R s μ₁ ρ₁ μ₂ ρ₂ →
-    terminatesTo e { memory := μ₁, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₁ o₁ →
-    terminatesTo e { memory := μ₁, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₂ o₂ →
+    consistentRegimeSpec predSat R s μ₁ ρ₁ →  consistentRegimeSpec predSat R s μ₂ ρ₂ →
+    agreeOnCriticalInputsUnderRegimeSpec predSat R s μ₁ ρ₁ μ₂ ρ₂ →
+    terminatesTo e { memory := μ₁, varEnv := ρ₁, nextLoc := l, pureMode := pm } cf₁ o₁ →
+    terminatesTo e { memory := μ₂, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₂ o₂ →
     observablesEqual obs cf₁ cf₂ o₁ o₂
 
 -- Type system enforces Non-Interference
@@ -465,10 +503,12 @@ def TypeSystemEnforcesNonInterference_spec
   wfObsSpec obs →
   ∀ (ctx : TypeContext),
       ctxMatchesInputSpec s ctx →
-      ((∃ (fuel : Nat) (res : TypeResult),
-        typecheck ctx e fuel = .ok res ∧
-        ObsConstraints obs res) →
-        NonInterferenceSpec e s obs ctx)
+      ∀ (predSat : PredSat) (predicateDeps : PredicateDeps),
+        SatisfiesAxioms predSat predicateDeps →
+        ((∃ (fuel : Nat) (res : TypeResult),
+          typecheck ctx e fuel = .ok res ∧
+          ObsConstraints obs res) →
+          NonInterferenceSpec e s obs ctx predSat)
 
 -- ------------------------ Proofs -------------------------------
 --
@@ -550,15 +590,15 @@ theorem step_spec_implies_general_spec
       (ctxMatchesInputSpec s ctxᵢ → partionSpecToInputSpec Sᵢ ctxᵢ = s) ∧
       -- H2: The output partition Sₒ and retType must represent the same observables as obs
       (partitionSpecToObservableSpec Sₒ (retQTypFromObs obs) (isRetObservableFromObs obs) ctxₒ = obs) ∧
-      -- H3: The step specification holds for this decomposition
-      (TypeSystemEnforcesNonInterference_step_spec e Sᵢ Sₒ ctxᵢ ctxₒ (isRetObservableFromObs obs))) :
+      -- H3: The step specification holds for this decomposition (for any PredSat)
+      (∀ (predSat : PredSat), TypeSystemEnforcesNonInterference_step_spec e Sᵢ Sₒ ctxᵢ ctxₒ (isRetObservableFromObs obs) predSat)) :
   -- ========== CONCLUSION ==========
   TypeSystemEnforcesNonInterference_spec e s obs := fun _hwf_s _hwf_obs => by
   -- Extract the partition decomposition from the existential
   obtain ⟨Sᵢ, Sₒ, hwf_Sᵢ, hwf_Sₒ, h_partition⟩ := h_exists_partition
 
   -- Unfold TypeSystemEnforcesNonInterference_spec
-  intro ctx hctx_matches_s
+  intro ctx hctx_matches_s predSat predicateDeps hAxioms
   intro ⟨fuel, res, htypecheck, hobs_constraints⟩
 
   -- Unfold NonInterferenceSpec
@@ -569,7 +609,9 @@ theorem step_spec_implies_general_spec
 
   -- Instantiate partition hypothesis with ctx
   have h_ctx := h_partition ctx ctx
-  obtain ⟨h_input_equiv, h_obs_equiv, h_step_spec⟩ := h_ctx
+  have h_input_equiv := h_ctx.1
+  have h_obs_equiv := h_ctx.2.1
+  have h_step_spec := h_ctx.2.2 predSat
 
   -- Derive conversion equalities
   have h_input_eq : partionSpecToInputSpec Sᵢ ctx = s := h_input_equiv hctx_matches_s
