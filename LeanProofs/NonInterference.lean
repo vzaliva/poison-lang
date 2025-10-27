@@ -408,8 +408,8 @@ def wfPartitionSpec (_s : PartitionSpec) : Prop := True
 -- Context matches partition specification
 -- all locations and variables in the partition specification must be present in the context
 def ctxMatchesPartitionSpec (s : PartitionSpec) (ctx : TypeContext) : Prop :=
-  (∀ l, l ∈ s.locs → ctx.memEnv.contains l) ∧
-  (∀ x, x ∈ s.vars → ctx.varEnv.hasKey x)
+  s.locs.Forall (· ∈ ctx.memEnv) ∧
+  s.vars.Forall ctx.varEnv.hasKey
 
 -- Convert partition specification to input specification
 -- all locations and variables in the partition specification must be present in the context
@@ -564,37 +564,6 @@ def TypeSystemEnforcesNonInterference_spec
 --   Left with sorry.
 --
 
--- Derive partition-context matching from conversion equality.
--- Not provable: conversion filters elements not in context.
-lemma ctxMatchesPartition_from_inputSpec
-  (S : PartitionSpec) (ctx : TypeContext) (s : InputSpec)
-  (h_convert : partionSpecToInputSpec S ctx = s)
-  (h_matches : ctxMatchesInputSpec s ctx) :
-  ctxMatchesPartitionSpec S ctx := by
-  unfold ctxMatchesPartitionSpec
-  constructor
-  · -- Show: ∀ l, l ∈ S.locs → ctx.memEnv.contains l
-    intro l hl
-    sorry
-  · -- Show: ∀ x, x ∈ S.vars → ctx.varEnv.hasKey x
-    intro x hx
-    sorry
-
--- Derive partition-context matching from observable conversion.
--- Not provable: conversion filters locations and doesn't use S.vars.
-lemma ctxMatchesPartition_from_obsSpec
-  (S : PartitionSpec) (retType : QTyp) (isRetObservable : Bool) (ctx : TypeContext) (obs : ObservableSpec)
-  (h_convert : partitionSpecToObservableSpec S retType isRetObservable ctx = obs) :
-  ctxMatchesPartitionSpec S ctx := by
-  unfold ctxMatchesPartitionSpec
-  constructor
-  · -- Show: ∀ l, l ∈ S.locs → ctx.memEnv.contains l
-    intro l hl
-    sorry
-  · -- Show: ∀ x, x ∈ S.vars → ctx.varEnv.hasKey x
-    intro x hx
-    sorry
-
 -- Bridge theorem: TypeSystemEnforcesNonInterference_step_spec implies
 -- TypeSystemEnforcesNonInterference_spec.
 --
@@ -625,43 +594,4 @@ theorem step_spec_implies_general_spec
       (∀ (predSat : PredSat), TypeSystemEnforcesNonInterference_step_spec e Sᵢ Sₒ ctxᵢ ctxₒ (isRetObservableFromObs obs) predSat)) :
   -- ========== CONCLUSION ==========
   TypeSystemEnforcesNonInterference_spec e s obs := fun _hwf_s _hwf_obs => by
-  -- Extract the partition decomposition from the existential
-  obtain ⟨Sᵢ, Sₒ, hwf_Sᵢ, hwf_Sₒ, h_partition⟩ := h_exists_partition
-
-  -- Unfold TypeSystemEnforcesNonInterference_spec
-  intro ctx hctx_matches_s _hpc_clean _htagenv_empty predSat hAxioms
-  intro ⟨fuel, res, htypecheck, hobs_constraints⟩
-
-  -- Unfold NonInterferenceSpec
-  intro μ₁ μ₂ ρ₁ ρ₂ l pm R cf₁ cf₂ o₁ o₂
-  intro hwf_R hconform₁ hconform₂ hinst₁ hinst₂ hconsist₁ hconsist₂ hagree hterm₁ hterm₂
-
-  -- Goal: observablesEqual obs cf₁ cf₂ o₁ o₂
-
-  -- Instantiate partition hypothesis with ctx
-  have h_ctx := h_partition ctx ctx
-  have h_input_equiv := h_ctx.1
-  have h_obs_equiv := h_ctx.2.1
-  have h_step_spec := h_ctx.2.2 predSat
-
-  -- Derive conversion equalities
-  have h_input_eq : partionSpecToInputSpec Sᵢ ctx = s := h_input_equiv hctx_matches_s
-  have h_obs_eq := h_obs_equiv
-
-  -- Derive context matching (using lemmas with sorry)
-  have hctx_Sᵢ : ctxMatchesPartitionSpec Sᵢ ctx :=
-    ctxMatchesPartition_from_inputSpec Sᵢ ctx s h_input_eq hctx_matches_s
-  have hctx_Sₒ : ctxMatchesPartitionSpec Sₒ ctx :=
-    ctxMatchesPartition_from_obsSpec Sₒ (retQTypFromObs obs) (isRetObservableFromObs obs) ctx obs h_obs_eq
-
-  -- Remaining proof gaps:
-  --
-  -- 1. Need ctxMatchesResult ctx res to apply step spec.
-  --    This requires ctx.memEnv = res.memEnv', which is not derivable from current hypotheses.
-  --
-  -- 2. The step spec provides regime-based agreement on critical outputs.
-  --    Need to prove this implies observablesEqual obs cf₁ cf₂ o₁ o₂.
-  --    Requires connecting NonInterferenceSpec_step output (regime agreement) to
-  --    NonInterferenceSpec output (observable equality).
-
-  sorry
+    sorry
