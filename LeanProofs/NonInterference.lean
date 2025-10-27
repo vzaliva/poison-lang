@@ -85,8 +85,8 @@ inductive InputSpecHasTag (s : InputSpec) : Tag → Prop where
 
 -- Extract all guard tags from the input specification (functional version for wfRegime)
 def inputSpecTags (s : InputSpec) : List Tag :=
-  let locTags := s.locs.toList.filterMap (fun (_, qt) => qtypGuardTag qt)
-  let varTags := s.vars.filterMap (fun (_, qt) => qtypGuardTag qt)
+  let locTags := s.locs.toList.filterMap (qtypGuardTag ·.2)
+  let varTags := s.vars.filterMap (qtypGuardTag ·.2)
   locTags ++ varTags
 
 -- Predicate mapping from input specification
