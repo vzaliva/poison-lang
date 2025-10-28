@@ -72,34 +72,11 @@ def qtypGuardTag (qt : QTyp) : Option Tag :=
   | Predicate.guardOnly k => some k
   | Predicate.noPred => none
 
--- Predicate: tag k appears in the input specification
-inductive InputSpecHasTag (s : InputSpec) : Tag → Prop where
-  | fromLoc (addr : Address) (qt : QTyp) (k : Tag)
-      (hlookup : s.locs.lookup addr = some qt)
-      (htag : qtypGuardTag qt = some k) :
-      InputSpecHasTag s k
-  | fromVar (x : Name) (qt : QTyp) (k : Tag)
-      (hlookup : s.vars.lookup x = some qt)
-      (htag : qtypGuardTag qt = some k) :
-      InputSpecHasTag s k
-
 -- Extract all guard tags from the input specification (functional version for wfRegime)
 def inputSpecTags (s : InputSpec) : List Tag :=
   let locTags := s.locs.toList.filterMap (qtypGuardTag ·.2)
   let varTags := s.vars.filterMap (qtypGuardTag ·.2)
   locTags ++ varTags
-
--- Predicate mapping from input specification
--- Links tags to their predicates as they appear in the input spec
-inductive InputSpecHasPred (s : InputSpec) : Tag → Predicate → Prop where
-  | fromLoc (addr : Address) (qt : QTyp) (k : Tag)
-      (hlookup : s.locs.lookup addr = some qt)
-      (htag : qtypGuardTag qt = some k) :
-      InputSpecHasPred s k qt.pred
-  | fromVar (x : Name) (qt : QTyp) (k : Tag)
-      (hlookup : s.vars.lookup x = some qt)
-      (htag : qtypGuardTag qt = some k) :
-      InputSpecHasPred s k qt.pred
 
 -- Predicate-shape helpers
 def isGuardClosure (qt : QTyp) : Prop :=
@@ -137,16 +114,6 @@ inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
 -- Note: No VarEnv parameter because captured variables are encoded in the tag's identity.
 -- Memory is needed because predicates can dereference heap locations.
 abbrev PredSat := Tag → Memory → Value → Prop
-
--- Dependency tracking for predicates
--- Links a tag to its dependencies as extracted by the type system
--- For a tag k in InputSpec with predicate pred, PredicateDeps holds for the
--- dependencies computed by extractDepsFromPred
-inductive PredicateDeps (s : InputSpec) : Tag → Deps → Prop where
-  | mk (k : Tag) (pred : Predicate) (deps : Deps)
-      (hpred : InputSpecHasPred s k pred)
-      (hdeps : extractDepsFromPred pred = .ok deps) :
-      PredicateDeps s k deps
 
 -- Axioms that constrain the abstract PredSat relation
 -- These are universal properties that must hold for ANY tag, including those
