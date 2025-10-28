@@ -38,13 +38,16 @@ def printFinalState (config : Config) (verbose : Bool) : IO Unit := do
     IO.println s!"  Memory: {repr config.memory}"
 
 -- Helper function to handle evaluation results
-def handleEvalResult (result : Except String (Config × Value)) (verbose : Bool) : IO UInt32 := do
+def handleEvalResult (result : LeanPoison.EvalResult) (verbose : Bool) : IO UInt32 := do
   match result with
-  | .ok (config, value) =>
+  | .success config value =>
       printValue value
       printFinalState config verbose
       return (0 : UInt32)
-  | .error msg=>
+  | .outOfFuel =>
+      IO.println "Error: out of fuel (program may diverge)"
+      return (1 : UInt32)
+  | .runtimeError msg =>
       IO.println s!"Runtime error: {msg}"
       return (1 : UInt32)
 
@@ -103,15 +106,17 @@ partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
     try
       let expr ← parsePoisonFile tmpPath
       match <- LeanPoison.runBig defaultFuel expr false with
-      | (newConfig, resultExpr) =>
-        match resultExpr.toValue? with
-        | some v =>
-            IO.println s!"Result: {v}"
-            IO.println s!"Memory: {newConfig.memory}"
-        | _ =>
-            IO.println s!"Not fully evaluated: {repr resultExpr}"
+      | .success newConfig v =>
+        IO.println s!"Result: {v}"
+        IO.println s!"Memory: {newConfig.memory}"
         IO.FS.removeFile tmpPath
         replLoop newConfig tmpPath
+      | .outOfFuel =>
+        IO.FS.removeFile tmpPath
+        replLoop config tmpPath
+      | .runtimeError _ =>
+        IO.FS.removeFile tmpPath
+        replLoop config tmpPath
 
     catch e =>
       IO.eprintln s!"Error: {e}"

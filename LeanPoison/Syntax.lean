@@ -76,12 +76,6 @@ inductive Value : Type where
   | closure : Name → Expr → List (Name × Value) → Value      -- closure(x,e,r)
   | peClosure : Name → Expr → List (Name × Value) → Value    -- pe_closure(x,pe,r)
 
--- Expression or Value type matching Ott specification
--- This is used only in the operational semantics for step results
-inductive ExprOrValue : Type where
-  | expr : Expr → ExprOrValue     -- expr e
-  | value : Value → ExprOrValue   -- value v
-
 -- Variable environment: List (name × value) . We do not use a
 -- HashMap here, as we do for Memory, because of the Lean restriction of
 -- inductive type definitions (insude pe_closure)
@@ -96,16 +90,6 @@ def Expr.toValue? : Expr → Option Value
   | Expr.bool b => some (Value.bool b)
   | Expr.unit => some Value.unit
   | Expr.str s => some (Value.str s)
-  | _ => none
-
--- Extract value from ExprOrValue if possible
-def ExprOrValue.toValue? : ExprOrValue → Option Value
-  | ExprOrValue.value v => some v
-  | _ => none
-
--- Extract expression from ExprOrValue if possible
-def ExprOrValue.toExpr? : ExprOrValue → Option Expr
-  | ExprOrValue.expr e => some e
   | _ => none
 
 -- BEq instances
@@ -139,11 +123,6 @@ def beqExpr : Expr → Expr → Bool
   | Expr.app e1 e2, Expr.app e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
   | _, _ => false
 
-def beqExprOrValue : ExprOrValue → ExprOrValue → Bool
-  | ExprOrValue.expr e1, ExprOrValue.expr e2 => beqExpr e1 e2
-  | ExprOrValue.value v1, ExprOrValue.value v2 => beqValue v1 v2
-  | _, _ => false
-
 end
 
 
@@ -155,10 +134,6 @@ instance : BEq Value where
 instance : BEq Expr where
   beq := beqExpr
 
-@[instance]
-instance : BEq ExprOrValue where
-  beq := beqExprOrValue
-
 -- Repr instances
 
 def reprTyp : Typ → Nat → Std.Format
@@ -169,7 +144,7 @@ def reprTyp : Typ → Nat → Std.Format
   | Typ.arrow t1 t2, _ => s!"Typ.arrow {reprTyp t1 0} {reprTyp t2 0}"
   | Typ.string , _ => s!"Typ.string"
 
--- Manual Repr instances (mutual recursion needed due to ExprOrValue)
+-- Manual Repr instances (mutual recursion needed)
 mutual
 
 def reprValue : Value → Nat → Std.Format
@@ -204,10 +179,6 @@ def reprExpr : Expr → Nat → Std.Format
   | Expr.printString e, _ => s!"Expr.printString ({reprExpr e 0})"
   | Expr.printInt e, _  => s!"Expr.printInt ({reprExpr e 0})"
 
-def reprExprOrValue : ExprOrValue → Nat → Std.Format
-  | ExprOrValue.expr e, prec => reprExpr e prec
-  | ExprOrValue.value v, prec => reprValue v prec
-
 end
 
 @[instance]
@@ -218,20 +189,9 @@ instance : Repr Value where
 instance : Repr Expr where
   reprPrec := reprExpr
 
-@[instance]
-instance : Repr ExprOrValue where
-  reprPrec := reprExprOrValue
-
 -- Note: We cannot convert arbitrary values to expressions
 -- Only literals (num, bool, unit) can appear in both
 -- Locations and closures are runtime-only
-
--- Helper functions to convert between types for ExprOrValue
-def Value.toExprOrValue : Value → ExprOrValue
-  | v => ExprOrValue.value v
-
-def Expr.toExprOrValue : Expr → ExprOrValue
-  | e => ExprOrValue.expr e
 
 -- Helper function to convert string to type
 def strToBasicType (str : String) : Except String Typ :=

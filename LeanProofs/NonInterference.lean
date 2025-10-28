@@ -14,10 +14,10 @@ open Std
 -- ================================================================
 
 -- Big-step termination relation to a final configuration and resulting Value
--- Note: evaluation returns ExprOrValue, but we require the Value
+-- Note: evaluation returns EvalResult
 def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
   ∃ (fuel : Nat) (verbose : Bool),
-    LeanPoison.beval fuel c₀ e verbose = pure (Except.ok (c₁, out))
+    LeanPoison.beval fuel c₀ e verbose = pure (LeanPoison.EvalResult.success c₁ out)
 
 abbrev MemoryETypEnv := HashMap Address ETyp
 namespace MemoryETypEnv
