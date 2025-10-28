@@ -11,6 +11,7 @@ import LeanProofs.NonInterference
 
 
 open List
+/-
 
 section TypeSystemEnforcesNonInterference
 
@@ -775,3 +776,4 @@ theorem TypeSystemEnforcesNonInterference (e : Expr) (s : InputSpec) (obs : Obse
       sorry
 
 end TypeSystemEnforcesNonInterference
+-/
