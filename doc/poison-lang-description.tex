@@ -993,15 +993,24 @@ This relation specifies whether a predicate (identified by its tag) is satisfied
 
 The abstract \texttt{PredSat} relation is constrained by universal axioms that capture the type system's mechanisms without specifying predicate meanings. These axioms apply to all tags, including those in the initial specification and those generated during execution (e.g., by \texttt{frand} or extern functions).
 
-\paragraph{Syntactic Matching Axiom.} If a condition syntactically matches a tagged predicate via \texttt{matchGuard} and evaluates to true, then the predicate is satisfied:
+\paragraph{Syntactic Matching Axiom (value--sensitive).} If a condition syntactically matches a tagged predicate via \texttt{matchGuard} and evaluates to true under the current runtime state, then the predicate is satisfied for the \emph{specific} runtime value denoted by the matched owner (either a variable \(x\) or a dereference \(!x\)):
 \[
-\forall \text{ condition, } k, \text{deps}, \Gamma, \sigma, \mu, \rho, v.\;
-\text{matchGuard}(\text{condition}, \Gamma, \sigma) = (k, \text{deps})
-\land \text{terminatesTo}(\text{condition}, \mu, \rho, \text{true})
-\implies \text{PredSat}\; k\; \mu\; v
+\begin{aligned}
+&\forall\, \text{condition},\; k,\; \text{deps},\; \Gamma,\; \sigma,\; \mu,\; \rho,\; v.\\
+&\text{matchGuard}(\text{condition}, \Gamma, \sigma) = (k, \text{deps})\;\land\;
+\text{terminatesTo}(\text{condition}, \mu, \rho, \text{true})\\
+&\land\;\big(\exists x,\; \sigma(x)\text{ has tag }k\;\land\; \rho(x)=v\;\;\;\;\;\;\;\;\;\;\\
+&\phantom{\land\;}\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\text{(variable case)}\\
+&\phantom{\land}\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\\
+&\ \ \ \ \ \ \ \;\;\lor\;\exists x,\, \ell,\, n,\; \sigma(x) = \text{ref }T @ \ell\;\land\; \Gamma(\ell)\text{ has tag }k\;\land\; \mu(\ell)=n\;\land\; v=n\big)\\
+&\phantom{\land}\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\text{(dereference case)}\\
+&\implies \text{PredSat}\; k\; \mu\; v\,.
+\end{aligned}
 \]
 
-This axiom connects the type system's syntactic predicate matching (which returns both a tag and its dependencies) with the abstract satisfaction relation.
+This axiom connects the type system's syntactic predicate matching (which returns a tag and dependencies) with the abstract satisfaction relation, while keeping the semantics \emph{value--sensitive}: the conclusion is about the concrete runtime value observed at check time.
+
+\emph{Captured vs. check--time environments.} The predicate closure stores a captured typing environment \(r\), which \texttt{matchGuard} uses on the \emph{syntactic} side of the comparison. The proof layer never evaluates predicate bodies with captured runtime values. Instead, the captured lexical context is encoded in the tag \(k\). The runtime pair \((\mu, \rho)\) used above is the \emph{check--time} state: it evaluates the condition and determines the concrete value \(v\) (either \(\rho(x)\) or the memory value at the referenced location). This separation avoids the environment--capture problem whilst preserving value sensitivity.
 
 \paragraph{Memory Monotonicity Axiom.} Predicates are stable under memory changes that do not affect their dependencies:
 \[

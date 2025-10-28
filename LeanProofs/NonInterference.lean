@@ -160,14 +160,33 @@ structure SatisfiesAxioms (predSat : PredSat) : Prop where
   -- predicate body after substituting the predicate's formal parameter with the actual
   -- value expression (variable or dereference). When the condition evaluates to true,
   -- it means the predicate (with captured environment baked into the tag) is satisfied.
+  -- Value-sensitive formulation tied to a specific runtime value v.
+  -- When a condition matches tag k and evaluates to true at check time,
+  -- v must be exactly the runtime value denoted by one of the two
+  -- substitution modes used by matchGuard (variable or dereference);
+  -- then the predicate for k holds at memory μ for that v.
   match_sound : ∀ (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
                   (k : Tag) (deps : Deps)
-                  (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool) (cfg : Config) (v : Value),
+                  (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool) (cfg : Config)
+                  (v : Value),
     -- If matchGuard identifies that condition matches predicate k
     matchGuard condition Γ σ = .ok (k, deps) →
     -- And the condition evaluates to true
     terminatesTo condition { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm } cfg (Value.bool true) →
-    -- Then the predicate k is satisfied for the specific owner value v
+    -- And v arises from either the variable or dereference case used in matching:
+    ( (∃ (x : Name) (qt : QTyp),
+          σ.lookup x = some qt ∧
+          qtypGuardTag qt = some k ∧
+          ρ.lookup x = some v)
+      ∨
+      (∃ (x : Name) (qt memQt : QTyp) (t : ETyp) (loc : Address) (n : Int),
+          σ.lookup x = some qt ∧
+          qt.etyp = ETyp.ref t loc ∧
+          Γ.lookup loc = some memQt ∧
+          qtypGuardTag memQt = some k ∧
+          μ.lookup loc = some n ∧
+          v = Value.num n) ) →
+    -- Then the predicate k is satisfied for this specific value v
     predSat k μ v
 
   -- Memory Monotonicity Axiom: Predicates are stable under memory changes
