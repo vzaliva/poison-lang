@@ -19,6 +19,16 @@ def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
   ∃ (fuel : Nat) (verbose : Bool),
     LeanPoison.beval fuel c₀ e verbose = pure (LeanPoison.EvalResult.success c₁ out)
 
+-- Divergence relation: program runs out of fuel
+def diverges (e : Expr) (c₀ : Config) : Prop :=
+  ∀ (fuel : Nat) (verbose : Bool),
+    LeanPoison.beval fuel c₀ e verbose = pure LeanPoison.EvalResult.outOfFuel
+
+-- Stuck relation: program encounters a runtime error
+def stuck (e : Expr) (c₀ : Config) : Prop :=
+  ∃ (fuel : Nat) (verbose : Bool) (msg : String),
+    LeanPoison.beval fuel c₀ e verbose = pure (LeanPoison.EvalResult.runtimeError msg)
+
 abbrev MemoryETypEnv := HashMap Address ETyp
 namespace MemoryETypEnv
 
@@ -200,6 +210,18 @@ def runtimeInstantiatesCtx (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) : Pro
   (∀ l, ctx.memEnv.contains l → μ.contains l) ∧
   (∀ {x qt}, ctx.varEnv.lookup x = some qt →
      ∃ v, ρ.lookup x = some v ∧ valueHasETyp v qt.etyp)
+
+-- Progress property: well-typed programs either terminate or diverge (never stuck)
+-- For any well-typed expression with sufficient fuel, evaluation produces either:
+-- - .success (termination)
+-- - .outOfFuel (divergence)
+-- but never .runtimeError (stuck state)
+def Progress (e : Expr) (ctx : TypeContext) : Prop :=
+  (∃ (fuel : Nat) (res : TypeResult), typecheck ctx e fuel = .ok res) →
+  ∀ (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool),
+    runtimeInstantiatesCtx ctx μ ρ →
+    let c₀ : Config := { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm }
+    ¬stuck e c₀
 
 -- Helper: equality of observables in the final states
 def observablesEqual (obs : ObservableSpec)
