@@ -825,6 +825,121 @@ Logical environment $\mathcal{L}$ evolves through:
 
 \section{Formal Properties}
 
+\subsection{Progress}
+
+In the context of big-step semantics, the traditional progress property (that
+well-typed expressions either are values or can take a step) is reformulated as
+\emph{totality}. The key distinction is that well-typed programs can have three
+possible outcomes: termination (producing a value), divergence (infinite loops),
+or stuck states (runtime errors). Progress ensures that well-typed programs
+never reach stuck states.
+
+\begin{definition}[Progress/Totality]
+For any well-typed expression $e$ with typing judgment:
+\[
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
+\]
+and runtime state $\langle \pi, e, \mu, \rho \rangle$ where $\mu$ and $\rho$ are consistent with the typing environments $\Gamma$ and $\sigma$ respectively, then $e$ is not stuck. That is, either:
+\begin{itemize}
+    \item \textbf{Termination}: there exist values $v$, memory $\mu'$, and variable environment $\rho'$ such that $\langle \pi, e, \mu, \rho \rangle \Downarrow \langle v, \mu', \rho' \rangle$, or
+    \item \textbf{Divergence}: the evaluation runs indefinitely (e.g., \texttt{while true do unit}).
+\end{itemize}
+\end{definition}
+
+\paragraph{Fuel-based formulation in Lean.} Our Lean implementation uses a
+fuel-based approach where both the typechecker and evaluator are parameterised
+by a natural number \texttt{fuel} that decreases with each recursive call. The
+big-step evaluator \texttt{beval} returns \texttt{IO EvalResult}:
+
+\begin{lstlisting}[language=caml]
+inductive EvalResult : Type where
+  | success : Config -> Value -> EvalResult
+  | outOfFuel : EvalResult
+  | runtimeError : String -> EvalResult
+\end{lstlisting}
+
+These three constructors directly correspond to termination, divergence, and
+stuck states respectively. The progress property states that for well-typed
+programs, \texttt{beval} returns either \texttt{.success} or \texttt{.outOfFuel},
+but never \texttt{.runtimeError}.
+
+\paragraph{Formal definition in Lean.} The progress property is formally defined
+in \texttt{LeanProofs/NonInterference.lean} using three auxiliary relations:
+
+\begin{itemize}
+    \item $\mathsf{terminatesTo}(e, c_0, c_1, v)$ - expression $e$ evaluates from initial config $c_0$ to final config $c_1$ producing value $v$
+    \item $\mathsf{diverges}(e, c_0)$ - expression $e$ runs out of fuel for all fuel amounts (infinite loop)
+    \item $\mathsf{stuck}(e, c_0)$ - expression $e$ encounters a runtime error
+\end{itemize}
+
+The main progress property is then stated as:
+
+\begin{lstlisting}[language=caml,mathescape=true]
+def Progress (e : Expr) (ctx : TypeContext) : Prop :=
+  (exists (fuel : Nat) (res : TypeResult), 
+    typecheck ctx e fuel = .ok res) ->
+  forall (mu : Memory) (rho : VarEnv) (l : Address) (pm : Bool),
+    runtimeInstantiatesCtx ctx mu rho ->
+    let c$_0$ : Config := { memory := mu, varEnv := rho, 
+                         nextLoc := l, pureMode := pm } in
+    not (stuck e c$_0$)
+\end{lstlisting}
+
+This states that if an expression typechecks and the runtime properly instantiates
+the typing context (all typed locations exist in memory and all typed variables
+have values of the correct type), then the expression cannot get stuck. It may
+terminate or diverge, but it will never encounter a runtime error.
+
+\subsection{Preservation}
+
+The preservation property ensures that evaluation preserves types. If a
+well-typed expression evaluates successfully, the resulting value and final
+state conform to the types predicted by the type system.
+
+\begin{definition}[Preservation]
+For any well-typed expression $e$ with typing judgment:
+\[
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
+\]
+if evaluation from initial state $\langle \pi, e, \mu_0, \rho_0 \rangle$ (where
+$\mu_0$ and $\rho_0$ are consistent with $\Gamma$ and $\sigma$) terminates with
+value $v$ and final state $\langle \pi', e', \mu_1, \rho_1 \rangle$, then:
+\begin{itemize}
+    \item The result value $v$ has the enriched type predicted by $Q$
+    \item The final memory $\mu_1$ and variables $\rho_1$ are consistent with the output typing context (using $\Gamma'$)
+\end{itemize}
+\end{definition}
+
+In the context of our typestate system, preservation is particularly important
+because the typing environments $\Gamma$ and $\mathcal{L}$ evolve during
+typechecking. The property ensures that the predicted final state ($\Gamma'$,
+$\mathcal{L}'$) accurately reflects the actual runtime state after evaluation.
+
+\paragraph{Formal definition in Lean.} The preservation property is formally
+defined in \texttt{LeanProofs/NonInterference.lean}:
+
+\begin{lstlisting}[language=caml,mathescape=true]
+def Preservation (e : Expr) (ctx : TypeContext) : Prop :=
+  forall (fuel_tc : Nat) (res : TypeResult) 
+         (mu$_0$ mu$_1$ : Memory) (rho$_0$ rho$_1$ : VarEnv) 
+         (l$_0$ l$_1$ : Address) (pm$_0$ pm$_1$ : Bool) (v : Value),
+    typecheck ctx e fuel_tc = .ok res ->
+    runtimeInstantiatesCtx ctx mu$_0$ rho$_0$ ->
+    terminatesTo e { memory := mu$_0$, varEnv := rho$_0$, 
+                     nextLoc := l$_0$, pureMode := pm$_0$ } 
+                   { memory := mu$_1$, varEnv := rho$_1$, 
+                     nextLoc := l$_1$, pureMode := pm$_1$ } v ->
+    valueHasETyp v res.qualType.etyp /\
+    runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } mu$_1$ rho$_1$
+\end{lstlisting}
+
+This states that if typechecking succeeds and evaluation terminates, then the
+result value has the expected enriched type and the final runtime state
+(memory and variables) instantiates the output typing context. Note that
+\texttt{nextLoc} and \texttt{pureMode} may differ between input and output
+configurations, as they are implementation details not tracked by the type
+system.
+
 \subsection{Non-interference}
 
 We define the non-interference property for the Poison language, which ensures

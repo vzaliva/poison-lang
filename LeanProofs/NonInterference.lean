@@ -14,10 +14,20 @@ open Std
 -- ================================================================
 
 -- Big-step termination relation to a final configuration and resulting Value
--- Note: evaluation returns ExprOrValue, but we require the Value
+-- Note: evaluation returns EvalResult
 def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
   ∃ (fuel : Nat) (verbose : Bool),
-    LeanPoison.beval fuel c₀ e verbose = pure (Except.ok (c₁, out))
+    LeanPoison.beval fuel c₀ e verbose = pure (LeanPoison.EvalResult.success c₁ out)
+
+-- Divergence relation: program runs out of fuel
+def diverges (e : Expr) (c₀ : Config) : Prop :=
+  ∀ (fuel : Nat) (verbose : Bool),
+    LeanPoison.beval fuel c₀ e verbose = pure LeanPoison.EvalResult.outOfFuel
+
+-- Stuck relation: program encounters a runtime error
+def stuck (e : Expr) (c₀ : Config) : Prop :=
+  ∃ (fuel : Nat) (verbose : Bool) (msg : String),
+    LeanPoison.beval fuel c₀ e verbose = pure (LeanPoison.EvalResult.runtimeError msg)
 
 abbrev MemoryETypEnv := HashMap Address ETyp
 namespace MemoryETypEnv
@@ -200,6 +210,37 @@ def runtimeInstantiatesCtx (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) : Pro
   (∀ l, ctx.memEnv.contains l → μ.contains l) ∧
   (∀ {x qt}, ctx.varEnv.lookup x = some qt →
      ∃ v, ρ.lookup x = some v ∧ valueHasETyp v qt.etyp)
+
+-- Progress property: well-typed programs either terminate or diverge (never stuck)
+-- For any well-typed expression with sufficient fuel, evaluation produces either:
+-- - .success (termination)
+-- - .outOfFuel (divergence)
+-- but never .runtimeError (stuck state)
+def Progress (e : Expr) (ctx : TypeContext) : Prop :=
+  (∃ (fuel : Nat) (res : TypeResult), typecheck ctx e fuel = .ok res) →
+  ∀ (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool),
+    runtimeInstantiatesCtx ctx μ ρ →
+    let c₀ : Config := { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm }
+    ¬stuck e c₀
+
+-- Preservation property: evaluation preserves types
+-- If an expression typechecks and evaluates successfully, the result value
+-- has the expected enriched type and the final memory/variable environments
+-- are consistent with the output typing context
+def Preservation (e : Expr) (ctx : TypeContext) : Prop :=
+  ∀ (fuel_tc : Nat) (res : TypeResult) (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv)
+    (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value),
+    -- If typechecking succeeds
+    typecheck ctx e fuel_tc = .ok res →
+    -- And runtime instantiates the input context
+    runtimeInstantiatesCtx ctx μ₀ ρ₀ →
+    -- And evaluation terminates successfully
+    terminatesTo e { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+                   { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v →
+    -- Then the result value has the expected enriched type
+    valueHasETyp v res.qualType.etyp ∧
+    -- And the final runtime state instantiates the output typing context
+    runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁
 
 -- Helper: equality of observables in the final states
 def observablesEqual (obs : ObservableSpec)
