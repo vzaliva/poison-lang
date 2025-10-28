@@ -890,7 +890,55 @@ the typing context (all typed locations exist in memory and all typed variables
 have values of the correct type), then the expression cannot get stuck. It may
 terminate or diverge, but it will never encounter a runtime error.
 
+\subsection{Preservation}
 
+The preservation property ensures that evaluation preserves types. If a
+well-typed expression evaluates successfully, the resulting value and final
+state conform to the types predicted by the type system.
+
+\begin{definition}[Preservation]
+For any well-typed expression $e$ with typing judgment:
+\[
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
+\]
+if evaluation from initial state $\langle \pi, e, \mu_0, \rho_0 \rangle$ (where
+$\mu_0$ and $\rho_0$ are consistent with $\Gamma$ and $\sigma$) terminates with
+value $v$ and final state $\langle \pi', e', \mu_1, \rho_1 \rangle$, then:
+\begin{itemize}
+    \item The result value $v$ has the enriched type predicted by $Q$
+    \item The final memory $\mu_1$ and variables $\rho_1$ are consistent with the output typing context (using $\Gamma'$)
+\end{itemize}
+\end{definition}
+
+In the context of our typestate system, preservation is particularly important
+because the typing environments $\Gamma$ and $\mathcal{L}$ evolve during
+typechecking. The property ensures that the predicted final state ($\Gamma'$,
+$\mathcal{L}'$) accurately reflects the actual runtime state after evaluation.
+
+\paragraph{Formal definition in Lean.} The preservation property is formally
+defined in \texttt{LeanProofs/NonInterference.lean}:
+
+\begin{lstlisting}[language=caml,mathescape=true]
+def Preservation (e : Expr) (ctx : TypeContext) : Prop :=
+  forall (fuel_tc : Nat) (res : TypeResult) 
+         (mu$_0$ mu$_1$ : Memory) (rho$_0$ rho$_1$ : VarEnv) 
+         (l$_0$ l$_1$ : Address) (pm$_0$ pm$_1$ : Bool) (v : Value),
+    typecheck ctx e fuel_tc = .ok res ->
+    runtimeInstantiatesCtx ctx mu$_0$ rho$_0$ ->
+    terminatesTo e { memory := mu$_0$, varEnv := rho$_0$, 
+                     nextLoc := l$_0$, pureMode := pm$_0$ } 
+                   { memory := mu$_1$, varEnv := rho$_1$, 
+                     nextLoc := l$_1$, pureMode := pm$_1$ } v ->
+    valueHasETyp v res.qualType.etyp /\
+    runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } mu$_1$ rho$_1$
+\end{lstlisting}
+
+This states that if typechecking succeeds and evaluation terminates, then the
+result value has the expected enriched type and the final runtime state
+(memory and variables) instantiates the output typing context. Note that
+\texttt{nextLoc} and \texttt{pureMode} may differ between input and output
+configurations, as they are implementation details not tracked by the type
+system.
 
 \subsection{Non-interference}
 

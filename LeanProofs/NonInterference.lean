@@ -223,6 +223,25 @@ def Progress (e : Expr) (ctx : TypeContext) : Prop :=
     let c₀ : Config := { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm }
     ¬stuck e c₀
 
+-- Preservation property: evaluation preserves types
+-- If an expression typechecks and evaluates successfully, the result value
+-- has the expected enriched type and the final memory/variable environments
+-- are consistent with the output typing context
+def Preservation (e : Expr) (ctx : TypeContext) : Prop :=
+  ∀ (fuel_tc : Nat) (res : TypeResult) (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv)
+    (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value),
+    -- If typechecking succeeds
+    typecheck ctx e fuel_tc = .ok res →
+    -- And runtime instantiates the input context
+    runtimeInstantiatesCtx ctx μ₀ ρ₀ →
+    -- And evaluation terminates successfully
+    terminatesTo e { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+                   { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v →
+    -- Then the result value has the expected enriched type
+    valueHasETyp v res.qualType.etyp ∧
+    -- And the final runtime state instantiates the output typing context
+    runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁
+
 -- Helper: equality of observables in the final states
 def observablesEqual (obs : ObservableSpec)
     (c₁ c₂ : Config) (o₁ o₂ : Value) : Prop :=
