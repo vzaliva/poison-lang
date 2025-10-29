@@ -158,6 +158,126 @@ private lemma preservation_str (s : String) (ctx : TypeContext) : Preservation (
       · exact valueHasETyp.str s
       · exact h_instantiate
 
+-- Helper lemma: if a variable is in the typing context and runtime instantiates the context,
+-- then the variable lookup returns a value with the correct enriched type
+private lemma var_has_correct_type (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (x : Name) (qt : QTyp) :
+  runtimeInstantiatesCtx ctx μ ρ →
+  ctx.varEnv.lookup x = some qt →
+  ∃ v, ρ.lookup x = some v ∧ valueHasETyp v qt.etyp := by
+  intro ⟨_, h_vars⟩ h_lookup
+  obtain ⟨v, h_v, h_typ⟩ := h_vars h_lookup
+  exact ⟨v, h_v, h_typ⟩
+
+-- Helper lemma: typecheckVar preserves the enriched type
+-- The enriched type in the result is always the same as in the input qualified type,
+-- regardless of predicates, poison status, or tag environment
+private lemma typecheckVar_preserves_etyp (ctx : TypeContext) (x : Name) (qt : QTyp) (res : TypeResult) :
+  ctx.varEnv.lookup x = some qt →
+  typecheckVar ctx x = .ok res →
+  res.qualType.etyp = qt.etyp := by
+  intro h_lookup h_typecheck
+  -- First, establish that qt' = qt from the lookup
+  simp [typecheckVar] at h_typecheck
+  cases h0: ctx.varEnv.lookup x with
+  | none =>
+    -- Contradiction: h_lookup says some qt, h0 says none
+    rw [h_lookup] at h0
+    clear h_lookup -- probably no longer needed
+    cases h0
+  | some qt' =>
+    -- Now we know qt' = qt from h_lookup and h0
+    rw [h_lookup] at h0 h_typecheck
+    clear h_lookup -- probalby no longer needed
+    injection h0 with h_qt_eq
+    subst h_qt_eq
+    simp at h_typecheck
+    cases h1: qt with
+    | mk etyp poison pred =>
+      subst h1
+      -- Case analysis on qt.pred
+      simp at h_typecheck
+      cases h2: pred with
+      | noPred =>
+        subst h2
+        simp at h_typecheck
+        simp [pure, Except.pure] at h_typecheck
+        rw [← h_typecheck]
+      | guardOnly k =>
+        subst h2
+        simp at h_typecheck
+        -- typecheckVar for guardOnly checks ctx.tagEnv.get? k
+        -- In all three cases (some true, some false, none), it returns etyp unchanged
+        -- Use split to case on the match expression in h_typecheck
+        split at h_typecheck
+        · -- Case: some { value := true, deps := _deps }
+          simp [pure, Except.pure] at h_typecheck
+          rw [← h_typecheck]
+        · -- Case: some { value := false, deps := _deps }
+          simp [pure, Except.pure] at h_typecheck
+          rw [← h_typecheck]
+        · -- Case: none
+          simp [pure, Except.pure] at h_typecheck
+          rw [← h_typecheck]
+      | guardClosure k arg_name pred_body var_env =>
+        subst h2
+        simp at h_typecheck
+        -- typecheckVar for guardClosure behaves identically to guardOnly
+        -- In all three cases (some true, some false, none), it returns etyp unchanged
+        -- Use split to case on the match expression in h_typecheck
+        split at h_typecheck
+        · -- Case: some { value := true, deps := _deps }
+          simp [pure, Except.pure] at h_typecheck
+          rw [← h_typecheck]
+        · -- Case: some { value := false, deps := _deps }
+          simp [pure, Except.pure] at h_typecheck
+          rw [← h_typecheck]
+        · -- Case: none
+          simp [pure, Except.pure] at h_typecheck
+          rw [← h_typecheck]
+
+
+-- Private lemma for var case
+private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Expr.var x) ctx := by
+  unfold Preservation
+  intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+  -- Variable lookup: if x typechecks, then x is in ctx.varEnv
+  -- and runtimeInstantiatesCtx ensures x is in ρ with correct type
+  obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
+  simp [LeanPoison.beval] at h_eval
+  apply congrFun (a := ()) at h_eval
+  cases fuel_eval with
+  | zero => cases h_eval
+  | succ fuel' =>
+    -- When fuel > 0, beval looks up x in ρ
+    cases fuel_tc with
+    | zero =>
+      simp [typecheck, typecheckExpr] at h_typecheck
+    | succ fuel_tc' =>
+      simp [typecheck, typecheckExpr] at h_typecheck
+      -- Typecheck for var looks up x in ctx.varEnv
+      cases h_lookup : ctx.varEnv.lookup x with
+      | none =>
+        -- If x is not in ctx.varEnv, typechecking fails
+        simp [typecheckVar, h_lookup] at h_typecheck
+      | some qt =>
+        -- If x is in ctx.varEnv, then by runtimeInstantiatesCtx, x is in ρ with correct type
+        have ⟨v_found, h_v, h_typ⟩ := var_has_correct_type ctx μ₀ ρ₀ x qt h_instantiate h_lookup
+        -- Now beval will find v_found in ρ and return success
+        simp [h_v] at h_eval
+        injection h_eval with h_eq_config h_eq_val
+        cases h_eq_config
+        cases h_eq_val
+        -- Now we need to show that the typechecking result matches
+        -- At this point, h_typecheck : typecheckVar ctx x = .ok res
+        -- Use helper lemma to show res.qualType.etyp = qt.etyp
+        have h_etyp_eq := typecheckVar_preserves_etyp ctx x qt res h_lookup h_typecheck
+        constructor
+        · -- First branch: valueHasETyp v res.qualType.etyp
+          rw [h_etyp_eq]
+          exact h_typ
+        · -- Second branch: runtimeInstantiatesCtx
+          sorry
+
 -- Preservation theorem: well-typed programs preserve types
 -- This proof uses strong induction on fuel_eval
 theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx := by
@@ -198,7 +318,9 @@ theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx := by
       exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
     | var x =>
       -- Variable lookup: if x is typed and in ρ, lookup returns a value of correct type
-      sorry
+      have h_pres := preservation_var x ctx
+      unfold Preservation at h_pres
+      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
     | op e1 op e2 =>
       -- Binary operations: by IH, operands have correct types, so result has expected type
       sorry

@@ -123,6 +123,42 @@ private lemma progress_str (s : String) (ctx : TypeContext) : Progress (Expr.str
   | zero => cases h_contra
   | succ fuel' => cases h_contra
 
+-- Private lemma for var case
+private lemma progress_var (x : Name) (ctx : TypeContext) : Progress (Expr.var x) ctx := by
+  unfold Progress stuck
+  intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
+  push_neg
+  intro fuel_eval verbose msg
+  intro h_contra
+  -- Variable lookup: if x typechecks, then x must be in ctx.varEnv
+  -- and runtimeInstantiatesCtx ensures x is in ρ, so lookup succeeds
+  simp [LeanPoison.beval] at h_contra
+  apply congrFun (a := ()) at h_contra
+  cases fuel_eval with
+  | zero => cases h_contra
+  | succ fuel' =>
+    -- When fuel > 0, beval looks up x in ρ
+    -- From typechecking, we know x is in ctx.varEnv
+    cases fuel_tc with
+    | zero =>
+      -- Typechecking with fuel = 0 fails
+      simp [typecheck, typecheckExpr] at h_typecheck
+    | succ fuel_tc' =>
+      -- Typechecking with fuel > 0
+      simp [typecheck, typecheckExpr] at h_typecheck
+      -- The typecheck for var looks up x in ctx.varEnv
+      -- If it succeeds, x must be in ctx.varEnv
+      cases h_lookup : ctx.varEnv.lookup x with
+      | none =>
+        -- If x is not in ctx.varEnv, typechecking fails
+        simp [typecheckVar, h_lookup] at h_typecheck
+      | some qt =>
+        -- If x is in ctx.varEnv, then by runtimeInstantiatesCtx, x is in ρ
+        have ⟨v, h_v⟩ := var_has_value_if_typed ctx μ ρ x h_instantiate ⟨qt, h_lookup⟩
+        -- Now beval will find v in ρ and return success
+        simp [h_v] at h_contra
+        cases h_contra
+
 -- Progress theorem: well-typed programs don't get stuck
 -- This proof uses strong induction on fuel_eval
 theorem progress (e : Expr) (ctx : TypeContext) : Progress e ctx := by
