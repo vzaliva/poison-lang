@@ -252,6 +252,84 @@ private lemma typecheckVar_preserves_memEnv (ctx : TypeContext) (x : Name) (res 
   · -- Case: x is not in ctx.varEnv (throws error, contradiction)
     simp at h_typecheck
 
+-- Helper lemma: evalOp preserves type correctness
+-- If v1 has type etyp1 and v2 has type etyp2, and opEType? returns some result_etyp,
+-- then evalOp returns a value with type result_etyp
+private lemma evalOp_preserves_type (op : Op) (v1 v2 : Value) (etyp1 etyp2 result_etyp : ETyp) :
+  valueHasETyp v1 etyp1 →
+  valueHasETyp v2 etyp2 →
+  opEType? op etyp1 etyp2 = some result_etyp →
+  ∀ v, LeanPoison.evalOp op v1 v2 = some v → valueHasETyp v result_etyp := by
+  intro h_typ1 h_typ2 h_op_type v h_eval
+  -- Extract the actual types from valueHasETyp by cases
+  cases h_typ1 <;> cases h_typ2
+  -- Case analysis on the operation and value types
+  <;> (cases op <;> simp [LeanPoison.evalOp] at h_eval
+       <;> try (cases h_eval; simp [opEType?] at h_op_type; cases h_op_type; constructor))
+
+-- Helper lemma: extract structure from typecheckOp
+private lemma typecheckOp_structure (ctx : TypeContext) (e1 e2 : Expr) (op : Op) (fuel : Nat) (res : TypeResult) :
+  typecheckOp ctx e1 e2 fuel op = .ok res →
+  ∃ (result1 result2 : TypeResult) (result_etyp : ETyp),
+    typecheckExpr ctx e1 fuel = .ok result1 ∧
+    typecheckExpr { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                             nextLoc := result1.nextLoc', nextTag := result1.nextTag' } e2 fuel = .ok result2 ∧
+    opEType? op result1.qualType.etyp result2.qualType.etyp = some result_etyp ∧
+    res.memEnv' = result2.memEnv' ∧
+    res.tagEnv' = result2.tagEnv' ∧
+    res.nextLoc' = result2.nextLoc' ∧
+    res.nextTag' = result2.nextTag' ∧
+    res.qualType.etyp = result_etyp := by
+  intro _h_typecheck
+  -- This lemma extracts the structure from a successful typecheckOp.
+  -- The proof requires:
+  -- 1. Unfolding typecheckOp and handling the fuel case split
+  -- 2. Handling the monadic bind for typecheckExpr ctx e1 fuel
+  -- 3. Handling the destructuring: let ⟨etyp1, p1, _⟩ := result1.qualType
+  -- 4. Handling the monadic bind for typecheckExpr ctx' e2 fuel
+  -- 5. Handling the destructuring: let ⟨etyp2, p2, _⟩ := result2.qualType
+  -- 6. Handling the match on opEType? op etyp1 etyp2
+  -- 7. Extracting the field equalities from: return { result2 with qualType := qt }
+  --
+  -- The structure is sound and the proof is feasible, but requires careful
+  -- handling of multiple nested splits and destructurings in the monadic code.
+  sorry
+
+-- Helper lemma for binary operations using inductive hypothesis
+private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResult)
+          (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value),
+          typecheck ctx e fuel_tc = .ok res →
+          runtimeInstantiatesCtx ctx μ₀ ρ₀ →
+          ∀ (verbose : Bool),
+            LeanPoison.beval m { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ } e verbose =
+              pure (.success { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) →
+            valueHasETyp v res.qualType.etyp ∧
+            runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁)
+    (n : Nat) :
+    Preservation (Expr.op e1 op e2) ctx := by
+  unfold Preservation
+  intro fuel_tc res μ₀ μ₃ ρ₀ ρ₃ l₀ l₃ pm₀ pm₃ v h_typecheck h_instantiate h_terminates
+  obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
+  -- Evaluation of binary operation
+  simp [LeanPoison.beval] at h_eval
+  apply congrFun (a := ()) at h_eval
+  cases fuel_eval with
+  | zero => cases h_eval
+  | succ fuel' =>
+    -- Typecheck for op
+    cases fuel_tc with
+    | zero => simp [typecheck, typecheckExpr] at h_typecheck
+    | succ fuel_tc' =>
+      simp only [typecheck, typecheckExpr] at h_typecheck
+      -- Use helper lemma to extract typechecking structure
+      have ⟨result1, result2, result_etyp, h_tc1, h_tc2, h_op_etyp, h_mem, h_tag, h_loc, h_ntag, h_etyp⟩ :=
+        typecheckOp_structure ctx e1 e2 op fuel_tc' res h_typecheck
+      -- Now extract evaluation structure
+      -- h_eval: beval (fuel' + 1) config (op e1 e2) = success config3 v
+      -- This evaluates e1, then e2, then applies evalOp
+      sorry
+
 -- Private lemma for var case
 private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Expr.var x) ctx := by
   unfold Preservation
@@ -351,7 +429,9 @@ theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx := by
       exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
     | op e1 op e2 =>
       -- Binary operations: by IH, operands have correct types, so result has expected type
-      sorry
+      have h_pres := preservation_op e1 e2 op ctx IH n
+      unfold Preservation at h_pres
+      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
     | unaryop op e1 =>
       -- Unary operations: similar to binary operations
       sorry
