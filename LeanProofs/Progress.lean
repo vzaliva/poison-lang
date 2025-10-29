@@ -129,18 +129,16 @@ private lemma progress_str (s : String) (ctx : TypeContext) (fuel_tc : Nat) (res
 
 -- Progress theorem: well-typed programs don't get stuck
 -- This proof uses strong induction on fuel_eval
-theorem progress :
-  ∀ (fuel_eval : Nat) (e : Expr) (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResult)
-    (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool) (verbose : Bool) (msg : String),
-    typecheck ctx e fuel_tc = .ok res →
-    runtimeInstantiatesCtx ctx μ ρ →
-    LeanPoison.beval fuel_eval { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm } e verbose ≠
-      pure (LeanPoison.EvalResult.runtimeError msg) := by
-  intro fuel_eval
+theorem progress (e : Expr) (ctx : TypeContext) : Progress e ctx := by
+  unfold Progress stuck
+  intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
+  push_neg
+  intro fuel_eval verbose msg
+  -- Now prove by strong induction on fuel_eval
   -- Strong induction on fuel_eval
-  induction fuel_eval using Nat.strong_induction_on with
+  induction fuel_eval using Nat.strong_induction_on generalizing e ctx fuel_tc res μ ρ l pm verbose msg with
   | _ n IH =>
-    intro e ctx fuel_tc res μ ρ l pm verbose msg h_typecheck h_instantiate
+    -- IH is available for all m < n
     cases n with
     | zero =>
       -- When fuel = 0, beval returns outOfFuel, not runtimeError
