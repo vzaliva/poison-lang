@@ -252,6 +252,19 @@ private lemma typecheckVar_preserves_memEnv (ctx : TypeContext) (x : Name) (res 
   · -- Case: x is not in ctx.varEnv (throws error, contradiction)
     simp at h_typecheck
 
+-- Helper lemma: beval never modifies the variable environment
+-- This is a fundamental property: evaluation doesn't change variable bindings
+-- (variables can only be added/shadowed via let, but the varEnv itself is immutable)
+private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value) :
+  LeanPoison.beval fuel config₀ e verbose = pure (.success config₁ v) →
+  config₀.varEnv = config₁.varEnv := by
+  intro h_eval
+  -- This should follow by induction on the structure of e
+  -- For all expression forms, the varEnv field is never modified
+  -- (even in let bindings, we create a new config with extended varEnv for the body,
+  --  but the final result restores the original varEnv)
+  sorry
+
 -- Helper lemma: evalOp preserves type correctness
 -- If v1 has type etyp1 and v2 has type etyp2, and opEType? returns some result_etyp,
 -- then evalOp returns a value with type result_etyp
@@ -271,8 +284,7 @@ private lemma evalOp_preserves_type (op : Op) (v1 v2 : Value) (etyp1 etyp2 resul
 -- This lemma mirrors typecheckOp_structure but for evaluation.
 -- It extracts the intermediate evaluation steps from a successful beval of (op e1 e2).
 -- Note: We only care about types (valueHasETyp), not exact values, for preservation.
--- Binary operations don't modify the variable environment:
---   config₀.varEnv = config₁.varEnv = config₂.varEnv = config₃.varEnv
+-- The varEnv equalities follow from beval_preserves_varEnv.
 private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose : Bool)
     (config₀ config₃ : Config) (v : Value) (etyp1 etyp2 result_etyp : ETyp) :
   LeanPoison.beval fuel config₀ (Expr.op e1 op e2) verbose =
@@ -283,16 +295,14 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
     LeanPoison.beval (fuel - 1) config₁ e2 verbose = pure (.success config₂ v2) ∧
     valueHasETyp v1 etyp1 ∧
     valueHasETyp v2 etyp2 ∧
-    valueHasETyp v result_etyp ∧
-    config₀.varEnv = config₁.varEnv ∧
-    config₁.varEnv = config₂.varEnv ∧
-    config₂.varEnv = config₃.varEnv := by
+    valueHasETyp v result_etyp := by
   intro h_eval h_op_etyp
   -- Unfold beval for the op case
   simp [LeanPoison.beval] at h_eval
   -- The evaluation uses do notation with nested matches
   -- We need to extract the intermediate results from the monadic structure
   -- Then use evalOp_preserves_type to establish the type relationships
+  -- The varEnv preservation follows from beval_preserves_varEnv (applied separately)
   sorry
 
 -- Helper lemma: extract structure from typecheckOp
@@ -360,15 +370,38 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
       -- Apply bevalOp_structure BEFORE any simplification
       -- Note: fuel_eval = fuel'.succ in this branch
       -- We pass the enriched types from typechecking to establish type relationships
-      have ⟨config₁, config₂, v1, v2, h_eval1, h_eval2, h_v1_type, h_v2_type, h_v_type,
-            h_varenv01, h_varenv12, h_varenv23⟩ :=
+      have ⟨config₁, config₂, v1, v2, h_eval1, h_eval2, h_v1_type, h_v2_type, h_v_type⟩ :=
         bevalOp_structure e1 e2 op fuel'.succ verbose
           { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
           { memory := μ₃, varEnv := ρ₃, nextLoc := l₃, pureMode := pm₃ }
           v result1.qualType.etyp result2.qualType.etyp result_etyp
           h_eval h_op_etyp
 
+      -- Use beval_preserves_varEnv to show varEnv is unchanged at each step
+      have h_varenv01 : ρ₀ = config₁.varEnv :=
+        beval_preserves_varEnv e1 fuel' verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          config₁ v1 h_eval1
+      have h_varenv12 : config₁.varEnv = config₂.varEnv :=
+        beval_preserves_varEnv e2 fuel' verbose
+          config₁ config₂ v2 h_eval2
+      have h_varenv_unchanged : ρ₀ = ρ₃ :=
+        beval_preserves_varEnv (Expr.op e1 op e2) fuel'.succ verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₃, varEnv := ρ₃, nextLoc := l₃, pureMode := pm₃ }
+          v h_eval
+
+      -- Use the varEnv equalities to simplify
+      -- h_varenv01 : ρ₀ = config₁.varEnv, so we can eliminate ρ₀
+      -- h_varenv_unchanged : ρ₀ = ρ₃, so we can eliminate ρ₃
+      -- (h_varenv12 has field projections on both sides, so we keep it for rewriting)
+      subst h_varenv01 h_varenv_unchanged
+      -- Now ρ₀ and ρ₃ are replaced by config₁.varEnv
+      -- Goal is: valueHasETyp v res.qualType.etyp ∧ runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₃ config₁.varEnv
+
       -- Now we have both typecheck and beval deconstructed!
+      -- After subst: ρ₀ and ρ₃ are replaced by config₁.varEnv
+      --
       -- Typechecking structure:
       --   h_tc1: typecheck e1 succeeds with result1
       --   h_tc2: typecheck e2 succeeds with result2
@@ -380,13 +413,17 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
       --   h_v1_type: v1 has type result1.qualType.etyp
       --   h_v2_type: v2 has type result2.qualType.etyp
       --   h_v_type: v has type result_etyp
-      --   h_varenv01, h_varenv12, h_varenv23: varEnv is unchanged throughout
-      --     (ρ₀ = config₁.varEnv = config₂.varEnv = ρ₃)
+      -- VarEnv preservation:
+      --   h_varenv12: config₁.varEnv = config₂.varEnv
+      --   After subst: ρ₀ = config₁.varEnv and ρ₃ = config₁.varEnv
+      --
+      -- Goal is now: valueHasETyp v res.qualType.etyp ∧
+      --              runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₃ config₁.varEnv
       --
       -- Next steps (TODO):
       -- 1. Use h_v_type and h_etyp to show v has the correct type (res.qualType.etyp)
-      -- 2. Use h_varenv23 and h_instantiate to show final state consistency
-      --    (since varEnv is unchanged, runtimeInstantiatesCtx is preserved)
+      -- 2. Show runtimeInstantiatesCtx for the output state (μ₃, config₁.varEnv)
+      --    Since config₁.varEnv was the original ρ₀ (from h_instantiate), this should follow
       sorry
 
 -- Private lemma for var case
