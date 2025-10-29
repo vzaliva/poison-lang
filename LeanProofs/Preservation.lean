@@ -267,6 +267,34 @@ private lemma evalOp_preserves_type (op : Op) (v1 v2 : Value) (etyp1 etyp2 resul
   <;> (cases op <;> simp [LeanPoison.evalOp] at h_eval
        <;> try (cases h_eval; simp [opEType?] at h_op_type; cases h_op_type; constructor))
 
+-- Helper lemma: extract evaluation structure from successful beval of binary operation
+-- This lemma mirrors typecheckOp_structure but for evaluation.
+-- It extracts the intermediate evaluation steps from a successful beval of (op e1 e2).
+-- Note: We only care about types (valueHasETyp), not exact values, for preservation.
+-- Binary operations don't modify the variable environment:
+--   config₀.varEnv = config₁.varEnv = config₂.varEnv = config₃.varEnv
+private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose : Bool)
+    (config₀ config₃ : Config) (v : Value) (etyp1 etyp2 result_etyp : ETyp) :
+  LeanPoison.beval fuel config₀ (Expr.op e1 op e2) verbose =
+    pure (.success config₃ v) →
+  opEType? op etyp1 etyp2 = some result_etyp →
+  ∃ (config₁ config₂ : Config) (v1 v2 : Value),
+    LeanPoison.beval (fuel - 1) config₀ e1 verbose = pure (.success config₁ v1) ∧
+    LeanPoison.beval (fuel - 1) config₁ e2 verbose = pure (.success config₂ v2) ∧
+    valueHasETyp v1 etyp1 ∧
+    valueHasETyp v2 etyp2 ∧
+    valueHasETyp v result_etyp ∧
+    config₀.varEnv = config₁.varEnv ∧
+    config₁.varEnv = config₂.varEnv ∧
+    config₂.varEnv = config₃.varEnv := by
+  intro h_eval h_op_etyp
+  -- Unfold beval for the op case
+  simp [LeanPoison.beval] at h_eval
+  -- The evaluation uses do notation with nested matches
+  -- We need to extract the intermediate results from the monadic structure
+  -- Then use evalOp_preserves_type to establish the type relationships
+  sorry
+
 -- Helper lemma: extract structure from typecheckOp
 private lemma typecheckOp_structure (ctx : TypeContext) (e1 e2 : Expr) (op : Op) (fuel : Nat) (res : TypeResult) :
   typecheckOp ctx e1 e2 fuel op = .ok res →
@@ -312,10 +340,12 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
   intro fuel_tc res μ₀ μ₃ ρ₀ ρ₃ l₀ l₃ pm₀ pm₃ v h_typecheck h_instantiate h_terminates
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
   -- Evaluation of binary operation
-  simp [LeanPoison.beval] at h_eval
-  apply congrFun (a := ()) at h_eval
   cases fuel_eval with
-  | zero => cases h_eval
+  | zero =>
+    -- When fuel = 0, beval returns outOfFuel, not success
+    simp [LeanPoison.beval] at h_eval
+    apply congrFun (a := ()) at h_eval
+    cases h_eval
   | succ fuel' =>
     -- Typecheck for op
     cases fuel_tc with
@@ -325,9 +355,38 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
       -- Use helper lemma to extract typechecking structure
       have ⟨result1, result2, result_etyp, h_tc1, h_tc2, h_op_etyp, h_mem, h_tag, h_loc, h_ntag, h_etyp⟩ :=
         typecheckOp_structure ctx e1 e2 op fuel_tc' res h_typecheck
-      -- Now extract evaluation structure
-      -- h_eval: beval (fuel' + 1) config (op e1 e2) = success config3 v
-      -- This evaluates e1, then e2, then applies evalOp
+
+      -- Use helper lemma to extract evaluation structure
+      -- Apply bevalOp_structure BEFORE any simplification
+      -- Note: fuel_eval = fuel'.succ in this branch
+      -- We pass the enriched types from typechecking to establish type relationships
+      have ⟨config₁, config₂, v1, v2, h_eval1, h_eval2, h_v1_type, h_v2_type, h_v_type,
+            h_varenv01, h_varenv12, h_varenv23⟩ :=
+        bevalOp_structure e1 e2 op fuel'.succ verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₃, varEnv := ρ₃, nextLoc := l₃, pureMode := pm₃ }
+          v result1.qualType.etyp result2.qualType.etyp result_etyp
+          h_eval h_op_etyp
+
+      -- Now we have both typecheck and beval deconstructed!
+      -- Typechecking structure:
+      --   h_tc1: typecheck e1 succeeds with result1
+      --   h_tc2: typecheck e2 succeeds with result2
+      --   h_op_etyp: opEType? produces result_etyp
+      --   Field equalities: h_mem, h_tag, h_loc, h_ntag, h_etyp
+      -- Evaluation structure (with types):
+      --   h_eval1: e1 evaluates to v1 with config₁
+      --   h_eval2: e2 evaluates to v2 with config₂
+      --   h_v1_type: v1 has type result1.qualType.etyp
+      --   h_v2_type: v2 has type result2.qualType.etyp
+      --   h_v_type: v has type result_etyp
+      --   h_varenv01, h_varenv12, h_varenv23: varEnv is unchanged throughout
+      --     (ρ₀ = config₁.varEnv = config₂.varEnv = ρ₃)
+      --
+      -- Next steps (TODO):
+      -- 1. Use h_v_type and h_etyp to show v has the correct type (res.qualType.etyp)
+      -- 2. Use h_varenv23 and h_instantiate to show final state consistency
+      --    (since varEnv is unchanged, runtimeInstantiatesCtx is preserved)
       sorry
 
 -- Private lemma for var case
