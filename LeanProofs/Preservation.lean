@@ -259,11 +259,136 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
   LeanPoison.beval fuel config₀ e verbose = pure (.success config₁ v) →
   config₀.varEnv = config₁.varEnv := by
   intro h_eval
-  -- This should follow by induction on the structure of e
+  -- Proof by strong induction on fuel, then case analysis on e
   -- For all expression forms, the varEnv field is never modified
   -- (even in let bindings, we create a new config with extended varEnv for the body,
   --  but the final result restores the original varEnv)
-  sorry
+  revert e config₀ config₁ v h_eval verbose
+  induction fuel using Nat.strong_induction_on with
+  | _ n IH =>
+    intro e verbose config₀ config₁ v h_eval
+    cases n with
+    | zero =>
+      -- When fuel = 0, beval returns outOfFuel, not success
+      unfold LeanPoison.beval at h_eval
+      simp at h_eval
+      apply congrFun (a := ()) at h_eval
+      cases h_eval
+    | succ fuel' =>
+      cases e with
+      | num _ | bool _ | unit | str _ =>
+        -- Literals: config unchanged
+        unfold LeanPoison.beval at h_eval
+        apply congrFun (a := ()) at h_eval
+        injection h_eval with h_cfg _
+        injection h_cfg with h_cfg_eq
+        subst h_cfg_eq
+        rfl
+      | var x =>
+        -- Variable lookup: config unchanged
+        unfold LeanPoison.beval at h_eval
+        apply congrFun (a := ()) at h_eval
+        sorry
+      | op e1 op e2 =>
+        -- Binary operation: use IH for e1 and e2
+        simp [LeanPoison.beval] at h_eval
+        sorry
+      | unaryop op e1 =>
+        -- Unary operation: use IH for e1
+        sorry
+      | ite e1 e2 e3 =>
+        -- Conditional: use IH for e1, then e2 or e3
+        sorry
+      | newRef e1 =>
+        -- Reference creation: use IH for e1
+        sorry
+      | assign e1 e2 =>
+        -- Assignment: use IH for e1 and e2
+        sorry
+      | deref e1 =>
+        -- Dereference: use IH for e1
+        sorry
+      | seq e1 e2 =>
+        -- Sequence: use IH for e1 and e2
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval  -- Simplifies fuel' + 1 = 0 to false
+        apply congrFun (a := ()) at h_eval
+        -- The evaluation is: e1 >>= λ result1 => e2
+        -- Deconstruct the bind: unfold the >>= operator
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        -- Case split on the result of evaluating e1
+        split at h_eval
+        · next h_split1_result h_split1_state h_beval1 =>
+          split at h_eval
+          · next config₁ v₁ =>
+            simp [EStateM.bind] at h_eval
+            split at h_eval
+            . next h_split3_config h_split3_v1 h_beval2 =>
+              split at h_eval
+              · next h_split4_config config₂ v₂ =>
+                injection h_eval with h_eval_e1 h_eval_e2
+                injection h_eval_e1 with h_eval_e1_result h_eval_e1_config
+                subst h_eval_e1_result h_eval_e2 h_eval_e1_config
+                -- Apply IH for e1
+                have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+                -- Convert h_beval1 to the form expected by IH (without () applied)
+                have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config₁ v₁) := by
+                  funext _
+                  simp [pure]
+                  exact h_beval1
+                let IH1 := IH fuel' h_fuel e1 verbose config₀ config₁ v₁ h_beval1'
+                -- Apply IH for e2
+                -- Convert h_beval2 to the form expected by IH (without () applied)
+                have h_beval2' : LeanPoison.beval fuel' config₁ e2 verbose = pure (.success config₂ v₂) := by
+                  funext _
+                  simp [pure]
+                  exact h_beval2
+                let IH2 := IH fuel' h_fuel e2 verbose config₁ config₂ v₂ h_beval2'
+                exact Eq.trans IH1 IH2
+              . next h_split4_eq =>
+                injection h_eval with h_eval_e1 h_eval_e2
+                injection h_eval_e1
+              . next h_split4_msg h_split4_eq =>
+                injection h_eval with h_eval_e1 h_eval_e2
+                injection h_eval_e1
+            . next h_split3_eq =>
+              injection h_eval
+          · next h_split2_error h_split2_state =>
+            injection h_eval with h_eval_e1 h_eval_e2
+            injection h_eval_e1
+          . next h_split2_msg h_split2_eq =>
+            injection h_eval with h_eval_e1 h_eval_e2
+            injection h_eval_e1
+        . next h_split1_error h_split1_state h_split1_eq =>
+          injection h_eval
+      | kwhile e1 e2 =>
+        -- While loop: complex case
+        sorry
+      | vlet x e1 e2 =>
+        -- Let binding: the key case
+        -- We evaluate e1, extend varEnv for e2, then restore original varEnv
+        sorry
+      | fn x paramType body returnType =>
+        -- Function abstraction: config unchanged
+        sorry
+      | pfn x paramType body returnType =>
+        -- Pure function abstraction: config unchanged
+        sorry
+      | app e1 e2 =>
+        -- Function application: use IH for e1, e2, and body
+        sorry
+      | rand e1 =>
+        -- Random: use IH for e1
+        sorry
+      | frand e1 =>
+        -- Faulty random: use IH for e1
+        sorry
+      | printInt e1 =>
+        -- Print: use IH for e1
+        sorry
+      | printString e1 =>
+        -- Print: use IH for e1
+        sorry
 
 -- Helper lemma: evalOp preserves type correctness
 -- If v1 has type etyp1 and v2 has type etyp2, and opEType? returns some result_etyp,
