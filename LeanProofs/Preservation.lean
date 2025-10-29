@@ -236,6 +236,22 @@ private lemma typecheckVar_preserves_etyp (ctx : TypeContext) (x : Name) (qt : Q
           rw [← h_typecheck]
 
 
+-- Helper lemma: typecheckVar preserves the memory environment
+-- The memory environment in the result is always the same as in the input context
+private lemma typecheckVar_preserves_memEnv (ctx : TypeContext) (x : Name) (res : TypeResult) :
+  typecheckVar ctx x = .ok res →
+  res.memEnv' = ctx.memEnv := by
+  intro h_typecheck
+  simp [typecheckVar] at h_typecheck
+  -- All branches of typecheckVar return memEnv' := ctx.memEnv
+  -- Use split to handle all cases uniformly
+  split at h_typecheck
+  · -- Case: x is in ctx.varEnv
+    -- Further split on predicate and tag lookups
+    repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
+  · -- Case: x is not in ctx.varEnv (throws error, contradiction)
+    simp at h_typecheck
+
 -- Private lemma for var case
 private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Expr.var x) ctx := by
   unfold Preservation
@@ -275,8 +291,20 @@ private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Ex
         · -- First branch: valueHasETyp v res.qualType.etyp
           rw [h_etyp_eq]
           exact h_typ
-        · -- Second branch: runtimeInstantiatesCtx
-          sorry
+        · -- Second branch: runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁
+          -- For variables, evaluation doesn't change the config
+          -- From h_eval, we know the config is unchanged: μ₁ = μ₀, ρ₁ = ρ₀
+          -- From typecheckVar, we know res.memEnv' = ctx.memEnv
+          -- Therefore, we need to show: runtimeInstantiatesCtx ctx μ₀ ρ₀
+          -- which is exactly h_instantiate
+          -- First, show that res.memEnv' = ctx.memEnv
+          -- All branches of typecheckVar return memEnv' := ctx.memEnv
+          have h_memenv := typecheckVar_preserves_memEnv ctx x res h_typecheck
+          -- Now simplify the goal using h_memenv
+          rw [h_memenv]
+          -- The goal is now: runtimeInstantiatesCtx { ctx with memEnv := ctx.memEnv } μ₀ ρ₀
+          -- which is definitionally equal to: runtimeInstantiatesCtx ctx μ₀ ρ₀
+          exact h_instantiate
 
 -- Preservation theorem: well-typed programs preserve types
 -- This proof uses strong induction on fuel_eval
