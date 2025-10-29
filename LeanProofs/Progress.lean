@@ -61,12 +61,11 @@ lemma var_has_value_if_typed (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (x 
   exact ⟨v, h_v⟩
 
 -- Private lemma for num case
-private lemma progress_num (n : Int) (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResult)
-    (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool) (fuel_eval : Nat) (verbose : Bool) (msg : String)
-    (_h_typecheck : typecheck ctx (Expr.num n) fuel_tc = .ok res)
-    (_h_instantiate : runtimeInstantiatesCtx ctx μ ρ) :
-    LeanPoison.beval fuel_eval { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm } (Expr.num n) verbose ≠
-      pure (LeanPoison.EvalResult.runtimeError msg) := by
+private lemma progress_num (n : Int) (ctx : TypeContext) : Progress (Expr.num n) ctx := by
+  unfold Progress stuck
+  intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
+  push_neg
+  intro fuel_eval verbose msg
   -- Numeric literals always succeed when fuel > 0, or return outOfFuel when fuel = 0
   -- In either case, they never return runtimeError
   intro h_contra
@@ -86,12 +85,11 @@ private lemma progress_num (n : Int) (ctx : TypeContext) (fuel_tc : Nat) (res : 
     cases h_contra
 
 -- Private lemma for bool case
-private lemma progress_bool (b : Bool) (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResult)
-    (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool) (fuel_eval : Nat) (verbose : Bool) (msg : String)
-    (_h_typecheck : typecheck ctx (Expr.bool b) fuel_tc = .ok res)
-    (_h_instantiate : runtimeInstantiatesCtx ctx μ ρ) :
-    LeanPoison.beval fuel_eval { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm } (Expr.bool b) verbose ≠
-      pure (LeanPoison.EvalResult.runtimeError msg) := by
+private lemma progress_bool (b : Bool) (ctx : TypeContext) : Progress (Expr.bool b) ctx := by
+  unfold Progress stuck
+  intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
+  push_neg
+  intro fuel_eval verbose msg
   intro h_contra
   simp [LeanPoison.beval] at h_contra
   apply congrFun (a := ()) at h_contra
@@ -100,12 +98,11 @@ private lemma progress_bool (b : Bool) (ctx : TypeContext) (fuel_tc : Nat) (res 
   | succ fuel' => cases h_contra
 
 -- Private lemma for unit case
-private lemma progress_unit (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResult)
-    (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool) (fuel_eval : Nat) (verbose : Bool) (msg : String)
-    (_h_typecheck : typecheck ctx Expr.unit fuel_tc = .ok res)
-    (_h_instantiate : runtimeInstantiatesCtx ctx μ ρ) :
-    LeanPoison.beval fuel_eval { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm } Expr.unit verbose ≠
-      pure (LeanPoison.EvalResult.runtimeError msg) := by
+private lemma progress_unit (ctx : TypeContext) : Progress Expr.unit ctx := by
+  unfold Progress stuck
+  intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
+  push_neg
+  intro fuel_eval verbose msg
   intro h_contra
   simp [LeanPoison.beval] at h_contra
   apply congrFun (a := ()) at h_contra
@@ -114,12 +111,11 @@ private lemma progress_unit (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResul
   | succ fuel' => cases h_contra
 
 -- Private lemma for str case
-private lemma progress_str (s : String) (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResult)
-    (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool) (fuel_eval : Nat) (verbose : Bool) (msg : String)
-    (_h_typecheck : typecheck ctx (Expr.str s) fuel_tc = .ok res)
-    (_h_instantiate : runtimeInstantiatesCtx ctx μ ρ) :
-    LeanPoison.beval fuel_eval { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm } (Expr.str s) verbose ≠
-      pure (LeanPoison.EvalResult.runtimeError msg) := by
+private lemma progress_str (s : String) (ctx : TypeContext) : Progress (Expr.str s) ctx := by
+  unfold Progress stuck
+  intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
+  push_neg
+  intro fuel_eval verbose msg
   intro h_contra
   simp [LeanPoison.beval] at h_contra
   apply congrFun (a := ()) at h_contra
@@ -148,16 +144,32 @@ theorem progress (e : Expr) (ctx : TypeContext) : Progress e ctx := by
       cases e with
       | num n =>
         -- Numeric literals never get stuck
-        apply progress_num n ctx fuel_tc res μ ρ l pm (fuel + 1) verbose msg h_typecheck h_instantiate
+        have h_prog := progress_num n ctx
+        unfold Progress stuck at h_prog
+        have h_result := h_prog ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
+        push_neg at h_result
+        exact h_result (fuel + 1) verbose msg
       | bool b =>
         -- Boolean literals never get stuck
-        apply progress_bool b ctx fuel_tc res μ ρ l pm (fuel + 1) verbose msg h_typecheck h_instantiate
+        have h_prog := progress_bool b ctx
+        unfold Progress stuck at h_prog
+        have h_result := h_prog ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
+        push_neg at h_result
+        exact h_result (fuel + 1) verbose msg
       | unit =>
         -- Unit literal never gets stuck
-        apply progress_unit ctx fuel_tc res μ ρ l pm (fuel + 1) verbose msg h_typecheck h_instantiate
+        have h_prog := progress_unit ctx
+        unfold Progress stuck at h_prog
+        have h_result := h_prog ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
+        push_neg at h_result
+        exact h_result (fuel + 1) verbose msg
       | str s =>
         -- String literals never get stuck
-        apply progress_str s ctx fuel_tc res μ ρ l pm (fuel + 1) verbose msg h_typecheck h_instantiate
+        have h_prog := progress_str s ctx
+        unfold Progress stuck at h_prog
+        have h_result := h_prog ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
+        push_neg at h_result
+        exact h_result (fuel + 1) verbose msg
       | var x =>
         -- Variable lookup: if x is in the typing context and runtimeInstantiatesCtx holds,
         -- then x must be in ρ, so lookup succeeds

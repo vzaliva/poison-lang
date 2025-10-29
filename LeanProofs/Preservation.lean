@@ -47,15 +47,9 @@ import LeanProofs.NonInterference
 -- ================================================================
 
 -- Private lemma for num case
-private lemma preservation_num (n : Int) (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResult)
-    (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value)
-    (h_typecheck : typecheck ctx (Expr.num n) fuel_tc = .ok res)
-    (h_instantiate : runtimeInstantiatesCtx ctx μ₀ ρ₀)
-    (h_terminates : terminatesTo (Expr.num n)
-                      { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-                      { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) :
-    valueHasETyp v res.qualType.etyp ∧
-    runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁ := by
+private lemma preservation_num (n : Int) (ctx : TypeContext) : Preservation (Expr.num n) ctx := by
+  unfold Preservation
+  intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
   -- Numeric literals evaluate to numeric values and don't modify the environment
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
   -- Unfold beval and analyze the IO computation
@@ -90,15 +84,9 @@ private lemma preservation_num (n : Int) (ctx : TypeContext) (fuel_tc : Nat) (re
         exact h_instantiate
 
 -- Private lemma for bool case
-private lemma preservation_bool (b : Bool) (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResult)
-    (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value)
-    (h_typecheck : typecheck ctx (Expr.bool b) fuel_tc = .ok res)
-    (h_instantiate : runtimeInstantiatesCtx ctx μ₀ ρ₀)
-    (h_terminates : terminatesTo (Expr.bool b)
-                      { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-                      { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) :
-    valueHasETyp v res.qualType.etyp ∧
-    runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁ := by
+private lemma preservation_bool (b : Bool) (ctx : TypeContext) : Preservation (Expr.bool b) ctx := by
+  unfold Preservation
+  intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
   simp [LeanPoison.beval] at h_eval
   apply congrFun (a := ()) at h_eval
@@ -121,15 +109,9 @@ private lemma preservation_bool (b : Bool) (ctx : TypeContext) (fuel_tc : Nat) (
       · exact h_instantiate
 
 -- Private lemma for unit case
-private lemma preservation_unit (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResult)
-    (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value)
-    (h_typecheck : typecheck ctx Expr.unit fuel_tc = .ok res)
-    (h_instantiate : runtimeInstantiatesCtx ctx μ₀ ρ₀)
-    (h_terminates : terminatesTo Expr.unit
-                      { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-                      { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) :
-    valueHasETyp v res.qualType.etyp ∧
-    runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁ := by
+private lemma preservation_unit (ctx : TypeContext) : Preservation Expr.unit ctx := by
+  unfold Preservation
+  intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
   simp [LeanPoison.beval] at h_eval
   apply congrFun (a := ()) at h_eval
@@ -152,15 +134,9 @@ private lemma preservation_unit (ctx : TypeContext) (fuel_tc : Nat) (res : TypeR
       · exact h_instantiate
 
 -- Private lemma for str case
-private lemma preservation_str (s : String) (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResult)
-    (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value)
-    (h_typecheck : typecheck ctx (Expr.str s) fuel_tc = .ok res)
-    (h_instantiate : runtimeInstantiatesCtx ctx μ₀ ρ₀)
-    (h_terminates : terminatesTo (Expr.str s)
-                      { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-                      { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) :
-    valueHasETyp v res.qualType.etyp ∧
-    runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁ := by
+private lemma preservation_str (s : String) (ctx : TypeContext) : Preservation (Expr.str s) ctx := by
+  unfold Preservation
+  intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
   simp [LeanPoison.beval] at h_eval
   apply congrFun (a := ()) at h_eval
@@ -202,16 +178,24 @@ theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx := by
     cases e with
     | num n =>
       -- Numeric literals
-      apply preservation_num n ctx fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+      have h_pres := preservation_num n ctx
+      unfold Preservation at h_pres
+      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
     | bool b =>
       -- Boolean literals
-      apply preservation_bool b ctx fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+      have h_pres := preservation_bool b ctx
+      unfold Preservation at h_pres
+      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
     | unit =>
       -- Unit literal
-      apply preservation_unit ctx fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+      have h_pres := preservation_unit ctx
+      unfold Preservation at h_pres
+      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
     | str s =>
       -- String literals
-      apply preservation_str s ctx fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+      have h_pres := preservation_str s ctx
+      unfold Preservation at h_pres
+      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
     | var x =>
       -- Variable lookup: if x is typed and in ρ, lookup returns a value of correct type
       sorry
