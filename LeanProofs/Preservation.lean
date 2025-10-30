@@ -645,7 +645,53 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
       | vlet x e1 e2 =>
         -- Let binding: the key case
         -- We evaluate e1, extend varEnv for e2, then restore original varEnv
-        sorry
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        -- Case split on the result of evaluating e1
+        split at h_eval
+        · next h_result1 h_state1 h_beval1 =>
+          split at h_eval
+          · next config₁ v₁ =>
+            -- e1 succeeded, now evaluate e2 with extended varEnv
+            simp [EStateM.bind] at h_eval
+            split at h_eval
+            · next h_result2 h_state2 h_beval2 =>
+              split at h_eval
+              · next config₂ v₂ =>
+                -- e2 succeeded, now restore varEnv
+                injection h_eval with h_cfg _
+                injection h_cfg with h_cfg_eq
+                subst h_cfg_eq
+                -- Apply IH for e1
+                have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+                have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config₁ v₁) := by
+                  funext _
+                  simp [pure]
+                  exact h_beval1
+                let IH1 := IH fuel' h_fuel e1 verbose config₀ config₁ v₁ h_beval1'
+                -- The final config restores config₁.varEnv
+                -- finalConfig = { config₂ with varEnv := config₁.varEnv }
+                -- So finalConfig.varEnv = config₁.varEnv = config₀.varEnv (by IH1)
+                simp
+                exact IH1
+              · next =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+              · next msg =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+            · next h_error2 h_state2 =>
+              injection h_eval
+          · next =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next msg =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+        · next h_error1 h_state1 =>
+          injection h_eval
       | fn x paramType body returnType =>
         -- Function abstraction: config unchanged
         unfold LeanPoison.beval at h_eval
