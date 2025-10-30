@@ -583,9 +583,54 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
         · next h_error1 h_state1 =>
           injection h_eval
       | deref e1 =>
-        -- Dereference: use IH for e1
-        -- Requires handling nested memory lookup match - leave for later
-        sorry
+        -- Dereference: use IH for e1, memory lookup doesn't affect varEnv
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        -- Case split on the result of evaluating e1
+        split at h_eval
+        · next h_result h_state h_beval1 =>
+          split at h_eval
+          · next config' l =>
+            -- e1 evaluated to location, now lookup in memory
+            -- The memory lookup is a pure match that's difficult to split on
+            -- NOTE: Both branches (some n / none) return config' unchanged, so varEnv is preserved
+            -- Conceptually: memory lookup doesn't affect varEnv
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' (Value.loc l)) := by
+              funext _
+              simp [pure]
+              exact h_beval1
+            let IH1 := IH fuel' h_fuel e1 verbose config₀ config' (Value.loc l) h_beval1'
+            -- The memory lookup match uses bracket notation [l]?
+            -- Case-split on memory lookup result
+            cases h_mem_lookup : config'.memory[l]? with
+            | some n =>
+              -- Memory lookup succeeded: returns (.success config' (Value.num n))
+              simp [h_mem_lookup] at h_eval
+              injection h_eval with h_cfg _
+              injection h_cfg with h_cfg_eq
+              subst h_cfg_eq
+              -- config₁ = config', so config₁.varEnv = config'.varEnv = config₀.varEnv (by IH1)
+              exact IH1
+            | none =>
+              -- Memory lookup failed: returns (.runtimeError ...), contradicts success
+              simp [h_mem_lookup] at h_eval
+              injection h_eval with h_contr _
+              injection h_contr
+          · next v =>
+            -- type error: not a location
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next msg =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+        · next h_error h_state =>
+          injection h_eval
       | seq e1 e2 =>
         -- Sequence: use IH for e1 and e2
         unfold LeanPoison.beval at h_eval
