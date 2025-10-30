@@ -488,13 +488,103 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
           injection h_eval
       | newRef e1 =>
         -- Reference creation: use IH for e1
-        sorry
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        split at h_eval
+        · next h_result h_state h_beval1 =>
+          split at h_eval
+          · next config' n =>
+            -- e1 evaluated to number, now create fresh location
+            injection h_eval with h_cfg _
+            injection h_cfg with h_cfg_eq
+            subst h_cfg_eq
+            -- Apply IH for e1
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' (Value.num n)) := by
+              funext _
+              simp [pure]
+              exact h_beval1
+            let IH1 := IH fuel' h_fuel e1 verbose config₀ config' (Value.num n) h_beval1'
+            -- The freshLoc and memory update don't change varEnv
+            simp [freshLoc]
+            exact IH1
+          · next v =>
+            -- type error: not a number
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next msg =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+        · next h_error h_state =>
+          injection h_eval
       | assign e1 e2 =>
         -- Assignment: use IH for e1 and e2
-        sorry
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        -- Case split on the result of evaluating e1 (location)
+        split at h_eval
+        · next h_result1 h_state1 h_beval1 =>
+          split at h_eval
+          · next config₁ l =>
+            -- e1 evaluated to location, now evaluate e2
+            simp [EStateM.bind] at h_eval
+            split at h_eval
+            · next h_result2 h_state2 h_beval2 =>
+              split at h_eval
+              · next config₂ n =>
+                -- e2 evaluated to number, now update memory
+                injection h_eval with h_cfg _
+                injection h_cfg with h_cfg_eq
+                subst h_cfg_eq
+                -- Apply IH for e1 and e2
+                have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+                have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config₁ (Value.loc l)) := by
+                  funext _
+                  simp [pure]
+                  exact h_beval1
+                let IH1 := IH fuel' h_fuel e1 verbose config₀ config₁ (Value.loc l) h_beval1'
+                have h_beval2' : LeanPoison.beval fuel' config₁ e2 verbose = pure (.success config₂ (Value.num n)) := by
+                  funext _
+                  simp [pure]
+                  exact h_beval2
+                let IH2 := IH fuel' h_fuel e2 verbose config₁ config₂ (Value.num n) h_beval2'
+                -- Memory update doesn't change varEnv
+                simp
+                exact Eq.trans IH1 IH2
+              · next v =>
+                -- type error: e2 not a number
+                injection h_eval with h_cfg _
+                injection h_cfg
+              · next =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+              · next msg =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+            · next h_error2 h_state2 =>
+              injection h_eval
+          · next v =>
+            -- type error: e1 not a location
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next msg =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+        · next h_error1 h_state1 =>
+          injection h_eval
       | deref e1 =>
         -- Dereference: use IH for e1
-        -- Leave for later - requires handling memory lookup match
+        -- Requires handling nested memory lookup match - leave for later
         sorry
       | seq e1 e2 =>
         -- Sequence: use IH for e1 and e2
