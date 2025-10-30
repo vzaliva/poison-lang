@@ -711,7 +711,8 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
         subst h_cfg_eq
         rfl
       | app e1 e2 =>
-        -- Function application: use IH for e1, e2, and body
+        -- Function application: complex case involving bevalFunctionBody
+        -- Requires a helper lemma about bevalFunctionBody preserving varEnv
         sorry
       | rand e1 =>
         -- Random: use IH for e1
