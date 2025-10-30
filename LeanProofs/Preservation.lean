@@ -404,18 +404,176 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
         sorry
       | rand e1 =>
         -- Random: use IH for e1
-        sorry
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        split at h_eval
+        · next h_result h_state h_beval1 =>
+          split at h_eval
+          · next config' n =>
+            -- rand with number
+            split at h_eval
+            · -- n >= 0 case: has IO.rand bind followed by map
+              simp [Functor.map, EStateM.map] at h_eval
+              split at h_eval
+              · next r_result r_state =>
+                injection h_eval with h_cfg _
+                injection h_cfg with h_cfg_eq
+                subst h_cfg_eq
+                have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+                have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' (Value.num n)) := by
+                  funext _
+                  simp [pure]
+                  exact h_beval1
+                let IH1 := IH fuel' h_fuel e1 verbose config₀ config' (Value.num n) h_beval1'
+                exact IH1
+              · next r_error r_state =>
+                injection h_eval
+            · -- n < 0 case: runtime error with IO.println
+              simp [Functor.map, EStateM.map] at h_eval
+              split at h_eval
+              · next p_result p_state =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+              · next p_error p_state =>
+                injection h_eval
+          · next v =>
+            -- type error: not a number
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next msg =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+        · next h_error h_state =>
+          injection h_eval
       | frand e1 =>
         -- Faulty random: use IH for e1
-        sorry
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        split at h_eval
+        · next h_result h_state h_beval1 =>
+          split at h_eval
+          · next config' n =>
+            -- frand with number
+            split at h_eval
+            · -- n >= 0 case: has IO.rand bind followed by map
+              simp [Functor.map, EStateM.map] at h_eval
+              split at h_eval
+              · next r_result r_state =>
+                injection h_eval with h_cfg _
+                injection h_cfg with h_cfg_eq
+                subst h_cfg_eq
+                have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+                have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' (Value.num n)) := by
+                  funext _
+                  simp [pure]
+                  exact h_beval1
+                let IH1 := IH fuel' h_fuel e1 verbose config₀ config' (Value.num n) h_beval1'
+                exact IH1
+              · next r_error r_state =>
+                injection h_eval
+            · -- n < 0 case: runtime error with IO.println
+              simp [Functor.map, EStateM.map] at h_eval
+              split at h_eval
+              · next p_result p_state =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+              · next p_error p_state =>
+                injection h_eval
+          · next v =>
+            -- type error: not a number
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next msg =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+        · next h_error h_state =>
+          injection h_eval
       | printInt e1 =>
         -- Print: use IH for e1
-        -- Leave for later - requires handling IO.println bind
-        sorry
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        split at h_eval
+        · next h_result h_state h_beval1 =>
+          split at h_eval
+          · next config' n =>
+            -- printInt with number: has IO.println with <$>
+            simp [Functor.map, EStateM.map] at h_eval
+            split at h_eval
+            · next p_result p_state =>
+              injection h_eval with h_cfg _
+              injection h_cfg with h_cfg_eq
+              subst h_cfg_eq
+              have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+              have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' (Value.num n)) := by
+                funext _
+                simp [pure]
+                exact h_beval1
+              let IH1 := IH fuel' h_fuel e1 verbose config₀ config' (Value.num n) h_beval1'
+              exact IH1
+            · next p_error p_state =>
+              injection h_eval
+          · next v =>
+            -- type error: not a number
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next msg =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+        · next h_error h_state =>
+          injection h_eval
       | printString e1 =>
         -- Print: use IH for e1
-        -- Leave for later - requires handling IO.println bind
-        sorry
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        split at h_eval
+        · next h_result h_state h_beval1 =>
+          split at h_eval
+          · next config' s =>
+            -- printString with string: has IO.println with <$>
+            simp [Functor.map, EStateM.map] at h_eval
+            split at h_eval
+            · next p_result p_state =>
+              injection h_eval with h_cfg _
+              injection h_cfg with h_cfg_eq
+              subst h_cfg_eq
+              have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+              have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' (Value.str s)) := by
+                funext _
+                simp [pure]
+                exact h_beval1
+              let IH1 := IH fuel' h_fuel e1 verbose config₀ config' (Value.str s) h_beval1'
+              exact IH1
+            · next p_error p_state =>
+              injection h_eval
+          · next v =>
+            -- type error: not a string
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next msg =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+        · next h_error h_state =>
+          injection h_eval
 
 -- Helper lemma: evalOp preserves type correctness
 -- If v1 has type etyp1 and v2 has type etyp2, and opEType? returns some result_etyp,
