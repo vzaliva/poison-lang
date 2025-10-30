@@ -288,7 +288,19 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
         -- Variable lookup: config unchanged
         unfold LeanPoison.beval at h_eval
         apply congrFun (a := ()) at h_eval
-        sorry
+        simp [pure] at h_eval
+        -- Split on variable lookup result
+        cases h_lookup : config₀.varEnv.lookup x with
+        | some v' =>
+          simp [h_lookup] at h_eval
+          injection h_eval with h_cfg _
+          injection h_cfg with h_cfg_eq
+          subst h_cfg_eq
+          rfl
+        | none =>
+          simp [h_lookup] at h_eval
+          injection h_eval with h_contr _
+          injection h_contr
       | op e1 op e2 =>
         -- Binary operation: use IH for e1 and e2
         simp [LeanPoison.beval] at h_eval
