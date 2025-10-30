@@ -690,7 +690,29 @@ private lemma beval_preserves_varEnv_kwhile (e1 e2 : Expr) (fuel' : Nat) (verbos
     (IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
       LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.kwhile e1 e2) verbose = pure (.success config₁ v)) :
-  config₀.varEnv = config₁.varEnv := sorry
+  config₀.varEnv = config₁.varEnv := by
+  -- kwhile expands to: ite e1 (seq e2 (kwhile e1 e2)) unit, then evaluates with fuel - 1
+  unfold LeanPoison.beval at h_eval
+  -- After unfold: let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
+  --                beval (fuel'.succ - 1) config₀ unfolded verbose
+  simp at h_eval
+  -- After simp: the let binding is inlined and fuel'.succ - 1 simplifies to fuel'
+  -- So we have: beval fuel' config₀ (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit) verbose = pure (.success config₁ v)
+  -- Convert to applied form to work with the monadic structure
+  apply congrFun (a := ()) at h_eval
+  -- h_eval now contains: beval fuel' config₀ (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit) verbose () = pure (.success config₁ v) ()
+  have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+  -- Define the unfolded expression that kwhile expands to
+  let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
+  -- h_eval already contains the evaluation of this unfolded expression
+  -- Convert from applied form to pure form for IH
+  have h_beval_unfolded : LeanPoison.beval fuel' config₀ unfolded verbose = pure (.success config₁ v) := by
+    funext _
+    simp [pure]
+    exact h_eval
+  -- Apply IH: since fuel' < fuel'.succ, we can use IH for the unfolded expression
+  -- The unfolded expression (ite) preserves varEnv by IH (which internally uses the ite proof)
+  exact IH fuel' h_fuel unfolded verbose config₀ config₁ v h_beval_unfolded
 
 private lemma beval_preserves_varEnv_vlet (x : Name) (e1 e2 : Expr) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
