@@ -402,7 +402,90 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
           injection h_eval
       | ite e1 e2 e3 =>
         -- Conditional: use IH for e1, then e2 or e3
-        sorry
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        -- Case split on the result of evaluating e1 (condition)
+        split at h_eval
+        · next h_result1 h_state1 h_beval1 =>
+          split at h_eval
+          · next config₁ =>
+            -- e1 evaluated to true, now evaluate e2
+            simp [EStateM.bind] at h_eval
+            split at h_eval
+            · next h_result2 h_state2 h_beval2 =>
+              split at h_eval
+              · next config₂ v₂ =>
+                -- e2 succeeded
+                injection h_eval with h_cfg _
+                injection h_cfg with h_cfg_eq
+                subst h_cfg_eq
+                -- Apply IH for e1 and e2
+                have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+                have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config₁ (Value.bool true)) := by
+                  funext _
+                  simp [pure]
+                  exact h_beval1
+                let IH1 := IH fuel' h_fuel e1 verbose config₀ config₁ (Value.bool true) h_beval1'
+                have h_beval2' : LeanPoison.beval fuel' config₁ e2 verbose = pure (.success config₂ v₂) := by
+                  funext _
+                  simp [pure]
+                  exact h_beval2
+                let IH2 := IH fuel' h_fuel e2 verbose config₁ config₂ v₂ h_beval2'
+                exact Eq.trans IH1 IH2
+              · next =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+              · next msg =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+            · next h_error2 h_state2 =>
+              injection h_eval
+          · next config₁ =>
+            -- e1 evaluated to false, now evaluate e3
+            simp [EStateM.bind] at h_eval
+            split at h_eval
+            · next h_result3 h_state3 h_beval3 =>
+              split at h_eval
+              · next config₂ v₃ =>
+                -- e3 succeeded
+                injection h_eval with h_cfg _
+                injection h_cfg with h_cfg_eq
+                subst h_cfg_eq
+                -- Apply IH for e1 and e3
+                have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+                have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config₁ (Value.bool false)) := by
+                  funext _
+                  simp [pure]
+                  exact h_beval1
+                let IH1 := IH fuel' h_fuel e1 verbose config₀ config₁ (Value.bool false) h_beval1'
+                have h_beval3' : LeanPoison.beval fuel' config₁ e3 verbose = pure (.success config₂ v₃) := by
+                  funext _
+                  simp [pure]
+                  exact h_beval3
+                let IH3 := IH fuel' h_fuel e3 verbose config₁ config₂ v₃ h_beval3'
+                exact Eq.trans IH1 IH3
+              · next =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+              · next msg =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+            · next h_error3 h_state3 =>
+              injection h_eval
+          · next v =>
+            -- e1 evaluated to non-boolean value (type error)
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next msg =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+        · next h_error1 h_state1 =>
+          injection h_eval
       | newRef e1 =>
         -- Reference creation: use IH for e1
         sorry
