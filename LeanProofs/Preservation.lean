@@ -475,32 +475,89 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
       injection h_eval
 
 -- Helper lemma: extract structure from typecheckOp
+-- Note: The subexpression typechecks use (fuel - 1) because typecheckOp
+-- decrements fuel before calling typecheckExpr internally.
+-- When fuel = 0, typecheckOp returns error, so this is safe.
 private lemma typecheckOp_structure (ctx : TypeContext) (e1 e2 : Expr) (op : Op) (fuel : Nat) (res : TypeResult) :
   typecheckOp ctx e1 e2 fuel op = .ok res →
   ∃ (result1 result2 : TypeResult) (result_etyp : ETyp),
-    typecheckExpr ctx e1 fuel = .ok result1 ∧
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
     typecheckExpr { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-                             nextLoc := result1.nextLoc', nextTag := result1.nextTag' } e2 fuel = .ok result2 ∧
+                             nextLoc := result1.nextLoc', nextTag := result1.nextTag' } e2 (fuel - 1) = .ok result2 ∧
     opEType? op result1.qualType.etyp result2.qualType.etyp = some result_etyp ∧
     res.memEnv' = result2.memEnv' ∧
     res.tagEnv' = result2.tagEnv' ∧
     res.nextLoc' = result2.nextLoc' ∧
     res.nextTag' = result2.nextTag' ∧
     res.qualType.etyp = result_etyp := by
-  intro _h_typecheck
-  -- This lemma extracts the structure from a successful typecheckOp.
-  -- The proof requires:
-  -- 1. Unfolding typecheckOp and handling the fuel case split
-  -- 2. Handling the monadic bind for typecheckExpr ctx e1 fuel
-  -- 3. Handling the destructuring: let ⟨etyp1, p1, _⟩ := result1.qualType
-  -- 4. Handling the monadic bind for typecheckExpr ctx' e2 fuel
-  -- 5. Handling the destructuring: let ⟨etyp2, p2, _⟩ := result2.qualType
-  -- 6. Handling the match on opEType? op etyp1 etyp2
-  -- 7. Extracting the field equalities from: return { result2 with qualType := qt }
-  --
-  -- The structure is sound and the proof is feasible, but requires careful
-  -- handling of multiple nested splits and destructurings in the monadic code.
-  sorry
+  intro h_typecheck
+  -- Case analysis on fuel
+  cases fuel with
+  | zero =>
+    -- When fuel = 0, typecheckOp returns error "Out of fuel", not ok
+    simp [typecheckOp] at h_typecheck
+  | succ fuel' =>
+    -- When fuel > 0, unfold typecheckOp
+    unfold typecheckOp at h_typecheck
+    simp at h_typecheck
+    -- Case analysis on typecheckExpr ctx e1 fuel'
+    cases h_tc1_result : typecheckExpr ctx e1 fuel' with
+    | ok result1 =>
+      -- e1 typechecked successfully
+      -- Rewrite h_typecheck with this case
+      simp [h_tc1_result, bind, Except.bind] at h_typecheck
+      -- The match on result1.qualType should now be visible
+      -- Split on the structure of result1.qualType to reduce the match
+      match h_qt1 : result1.qualType with
+      | QTyp.mk etyp1 p1 pred1 =>
+        -- Rewrite the match expression in h_typecheck
+        rw [h_qt1] at h_typecheck
+        simp at h_typecheck
+        -- Now case analysis on typecheckExpr ctx' e2 fuel'
+        cases h_tc2_result : typecheckExpr { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                                                       nextLoc := result1.nextLoc', nextTag := result1.nextTag' } e2 fuel' with
+        | ok result2 =>
+          -- e2 typechecked successfully
+          simp [h_tc2_result] at h_typecheck
+          -- Match on result2.qualType to reduce its match
+          match h_qt2 : result2.qualType with
+          | QTyp.mk etyp2 p2 pred2 =>
+            rw [h_qt2] at h_typecheck
+            simp at h_typecheck
+            -- Case analysis on opEType? op etyp1 etyp2
+            cases h_opEType_result : opEType? op etyp1 etyp2 with
+            | some result_etyp =>
+              -- opEType? succeeded
+              simp [h_opEType_result] at h_typecheck
+              -- Now h_typecheck should be: Except.ok { result2 with qualType := ... } = Except.ok res
+              injection h_typecheck with h_res_eq
+              -- After injection, res = { result2 with qualType := ... }
+              -- Construct the existential proof
+              -- Note: fuel = fuel' + 1, so fuel - 1 = fuel' (by Nat.add_sub_cancel)
+              -- First prepare the opEType? equality with correct projections
+              have h_opEType_final : opEType? op result1.qualType.etyp result2.qualType.etyp = some result_etyp := by
+                rw [h_qt1, h_qt2]
+                exact h_opEType_result
+              -- Now provide the existential
+              simp only [Nat.add_sub_cancel]
+              subst h_res_eq
+              exact ⟨result1, result2, result_etyp,
+                      h_tc1_result,
+                      h_tc2_result,
+                      h_opEType_final,
+                      rfl, rfl, rfl, rfl, rfl⟩
+            | none =>
+              -- opEType? returned none, so typecheckOp throws error (contradiction)
+              simp [h_opEType_result] at h_typecheck
+        | error msg2 =>
+          -- e2 typechecking failed, so the bind returns error (contradiction with ok res)
+          -- After rewriting with h_tc2_result, h_typecheck simplifies to Except.error _ = Except.ok _
+          simp [h_tc2_result] at h_typecheck
+    | error msg =>
+      -- e1 typechecking failed, so the bind returns error (contradiction with ok res)
+      -- After rewriting with h_tc1_result, h_typecheck simplifies to Except.error _ = Except.ok _
+      simp [h_tc1_result, bind, Except.bind] at h_typecheck
+
 
 -- Helper lemma for binary operations using inductive hypothesis
 private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
