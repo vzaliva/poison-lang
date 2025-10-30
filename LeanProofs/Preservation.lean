@@ -362,7 +362,44 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
           injection h_eval
       | unaryop op e1 =>
         -- Unary operation: use IH for e1
-        sorry
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        -- Case split on the result of evaluating e1
+        split at h_eval
+        · next h_result h_state h_beval1 =>
+          split at h_eval
+          · next config' v' =>
+            -- e1 succeeded, now handle evalUnaryOp match
+            cases h_evalUnaryOp : LeanPoison.evalUnaryOp op v' with
+            | some v_result =>
+              -- evalUnaryOp succeeded
+              simp [h_evalUnaryOp] at h_eval
+              injection h_eval with h_cfg _
+              injection h_cfg with h_cfg_eq
+              subst h_cfg_eq
+              -- Apply IH for e1
+              have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+              have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' v') := by
+                funext _
+                simp [pure]
+                exact h_beval1
+              let IH1 := IH fuel' h_fuel e1 verbose config₀ config' v' h_beval1'
+              exact IH1
+            | none =>
+              -- evalUnaryOp failed
+              simp [h_evalUnaryOp] at h_eval
+              injection h_eval with h_cfg _
+              injection h_cfg
+          · next =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next msg =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+        · next h_error h_state =>
+          injection h_eval
       | ite e1 e2 e3 =>
         -- Conditional: use IH for e1, then e2 or e3
         sorry
