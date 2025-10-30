@@ -303,8 +303,63 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
           injection h_contr
       | op e1 op e2 =>
         -- Binary operation: use IH for e1 and e2
-        simp [LeanPoison.beval] at h_eval
-        sorry
+        unfold LeanPoison.beval at h_eval
+        simp at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [bind, Bind.bind, EStateM.bind] at h_eval
+        -- Case split on the result of evaluating e1
+        split at h_eval
+        · next h_result1 h_state1 h_beval1 =>
+          split at h_eval
+          · next config₁ v₁ =>
+            -- e1 succeeded, now evaluate e2
+            simp [EStateM.bind] at h_eval
+            split at h_eval
+            · next h_result2 h_state2 h_beval2 =>
+              split at h_eval
+              · next config₂ v₂ =>
+                -- e2 succeeded, now handle evalOp match
+                cases h_evalOp : LeanPoison.evalOp op v₁ v₂ with
+                | some v_result =>
+                  -- evalOp succeeded
+                  simp [h_evalOp] at h_eval
+                  injection h_eval with h_cfg _
+                  injection h_cfg with h_cfg_eq
+                  subst h_cfg_eq
+                  -- Apply IH for e1 and e2
+                  have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+                  have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config₁ v₁) := by
+                    funext _
+                    simp [pure]
+                    exact h_beval1
+                  let IH1 := IH fuel' h_fuel e1 verbose config₀ config₁ v₁ h_beval1'
+                  have h_beval2' : LeanPoison.beval fuel' config₁ e2 verbose = pure (.success config₂ v₂) := by
+                    funext _
+                    simp [pure]
+                    exact h_beval2
+                  let IH2 := IH fuel' h_fuel e2 verbose config₁ config₂ v₂ h_beval2'
+                  exact Eq.trans IH1 IH2
+                | none =>
+                  -- evalOp failed
+                  simp [h_evalOp] at h_eval
+                  injection h_eval with h_cfg _
+                  injection h_cfg
+              · next =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+              · next msg =>
+                injection h_eval with h_cfg _
+                injection h_cfg
+            · next h_error2 h_state2 =>
+              injection h_eval
+          · next =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+          · next msg =>
+            injection h_eval with h_cfg _
+            injection h_cfg
+        · next h_error1 h_state1 =>
+          injection h_eval
       | unaryop op e1 =>
         -- Unary operation: use IH for e1
         sorry
