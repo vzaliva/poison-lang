@@ -285,13 +285,194 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
     valueHasETyp v2 etyp2 ∧
     valueHasETyp v result_etyp := by
   intro h_eval h_op_etyp
-  -- Unfold beval for the op case
-  simp [LeanPoison.beval] at h_eval
-  -- The evaluation uses do notation with nested matches
-  -- We need to extract the intermediate results from the monadic structure
-  -- Then use evalOp_preserves_type to establish the type relationships
-  -- The varEnv preservation follows from beval_preserves_varEnv (applied separately)
-  sorry
+  -- Case analysis on fuel: if fuel = 0, beval returns outOfFuel, not success
+  cases fuel with
+  | zero =>
+    -- When fuel = 0, beval returns outOfFuel, contradicting h_eval
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    apply congrFun (a := ()) at h_eval
+    simp [pure] at h_eval
+    injection h_eval with h_contr
+    cases h_contr
+  | succ fuel' =>
+    -- fuel > 0: proceed with evaluation
+    -- Unfold beval for the op case
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    -- Convert function equality to point-wise equality
+    apply congrFun (a := ()) at h_eval
+    -- Simplify monadic bind operations
+    simp [bind, Bind.bind, EStateM.bind] at h_eval
+    -- Split on the result of evaluating e1 (outer EStateM.Result)
+    split at h_eval
+    · next h_result1 h_state1 h_beval1 =>
+      -- e1 evaluation succeeded with ok, now split on inner EvalResult
+      split at h_eval
+      · next config₁ v₁ =>
+        -- e1 evaluated successfully to config₁, v₁
+        -- Unfold the nested bind for e2
+        simp [EStateM.bind] at h_eval
+        -- Split on the result of evaluating e2 (outer EStateM.Result)
+        split at h_eval
+        · next h_result2 h_state2 h_beval2 =>
+          -- e2 evaluation succeeded with ok, now split on inner EvalResult
+          split at h_eval
+          · next config₂ v₂ =>
+            -- e2 evaluated successfully to config₂, v₂
+            -- Case analysis on evalOp result
+            cases h_evalOp : LeanPoison.evalOp op v₁ v₂ with
+            | some v_result =>
+              -- evalOp succeeded
+              simp [h_evalOp] at h_eval
+              -- Expand pure to Result.ok for injection
+              simp [pure] at h_eval
+              -- Extract that v_result = v and config₂ = config₃
+              injection h_eval with h_eq_result h_eq_state
+              injection h_eq_result with h_eq_cfg h_eq_val
+              -- Rewrite h_evalOp to use v instead of v_result
+              rw [h_eq_val] at h_evalOp
+              subst h_eq_cfg
+              -- Convert h_beval1 and h_beval2 to pure form
+              have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config₁ v₁) := by
+                funext _
+                simp [pure]
+                exact h_beval1
+              have h_beval2' : LeanPoison.beval fuel' config₁ e2 verbose = pure (.success config₂ v₂) := by
+                funext _
+                simp [pure]
+                exact h_beval2
+              -- Prove type information from evalOp success and opEType? match
+              have h_v1_type : valueHasETyp v₁ etyp1 := by
+                -- Case analysis on op to determine expected value and type constructors
+                cases op with
+                | add | sub | mul | div | gte | lte | gt | lt | eq | neq | bitand =>
+                  cases v₁ with
+                  | num =>
+                    cases v₂ with
+                    | num =>
+                      cases etyp1 with
+                      | int =>
+                        cases etyp2 with
+                        | int =>
+                          simp [LeanPoison.evalOp] at h_evalOp
+                          simp [opEType?] at h_op_etyp
+                          cases h_evalOp
+                          cases h_op_etyp
+                          constructor
+                        | bool | unit | string | ref | arrow | parrow =>
+                          simp [opEType?] at h_op_etyp
+                      | bool | unit | string | ref | arrow | parrow =>
+                        simp [opEType?] at h_op_etyp
+                    | bool | unit | str | loc | closure | peClosure =>
+                      simp [LeanPoison.evalOp] at h_evalOp
+                  | bool | unit | str | loc | closure | peClosure =>
+                    simp [LeanPoison.evalOp] at h_evalOp
+                | and | or =>
+                  cases v₁ with
+                  | bool =>
+                    cases v₂ with
+                    | bool =>
+                      cases etyp1 with
+                      | bool =>
+                        cases etyp2 with
+                        | bool =>
+                          simp [LeanPoison.evalOp] at h_evalOp
+                          simp [opEType?] at h_op_etyp
+                          cases h_evalOp
+                          cases h_op_etyp
+                          constructor
+                        | int | unit | string | ref | arrow | parrow =>
+                          simp [opEType?] at h_op_etyp
+                      | int | unit | string | ref | arrow | parrow =>
+                        simp [opEType?] at h_op_etyp
+                    | num | unit | str | loc | closure | peClosure =>
+                      simp [LeanPoison.evalOp] at h_evalOp
+                  | num | unit | str | loc | closure | peClosure =>
+                    simp [LeanPoison.evalOp] at h_evalOp
+              have h_v2_type : valueHasETyp v₂ etyp2 := by
+                cases op with
+                | add | sub | mul | div | gte | lte | gt | lt | eq | neq | bitand =>
+                  cases v₁ with
+                  | num =>
+                    cases v₂ with
+                    | num =>
+                      cases etyp1 with
+                      | int =>
+                        cases etyp2 with
+                        | int =>
+                          simp [LeanPoison.evalOp] at h_evalOp
+                          simp [opEType?] at h_op_etyp
+                          cases h_evalOp
+                          cases h_op_etyp
+                          constructor
+                        | bool | unit | string | ref | arrow | parrow =>
+                          simp [opEType?] at h_op_etyp
+                      | bool | unit | string | ref | arrow | parrow =>
+                        simp [opEType?] at h_op_etyp
+                    | bool | unit | str | loc | closure | peClosure =>
+                      simp [LeanPoison.evalOp] at h_evalOp
+                  | bool | unit | str | loc | closure | peClosure =>
+                    simp [LeanPoison.evalOp] at h_evalOp
+                | and | or =>
+                  cases v₁ with
+                  | bool =>
+                    cases v₂ with
+                    | bool =>
+                      cases etyp1 with
+                      | bool =>
+                        cases etyp2 with
+                        | bool =>
+                          simp [LeanPoison.evalOp] at h_evalOp
+                          simp [opEType?] at h_op_etyp
+                          cases h_evalOp
+                          cases h_op_etyp
+                          constructor
+                        | int | unit | string | ref | arrow | parrow =>
+                          simp [opEType?] at h_op_etyp
+                      | int | unit | string | ref | arrow | parrow =>
+                        simp [opEType?] at h_op_etyp
+                    | num | unit | str | loc | closure | peClosure =>
+                      simp [LeanPoison.evalOp] at h_evalOp
+                  | num | unit | str | loc | closure | peClosure =>
+                    simp [LeanPoison.evalOp] at h_evalOp
+              have h_v_type : valueHasETyp v result_etyp :=
+                evalOp_preserves_type op v₁ v₂ etyp1 etyp2 result_etyp h_v1_type h_v2_type h_op_etyp v h_evalOp
+              -- Note: fuel' + 1 - 1 = fuel' by arithmetic
+              simp only [Nat.add_sub_cancel]
+              exact ⟨config₁, config₂, v₁, v₂, h_beval1', h_beval2', h_v1_type, h_v2_type, h_v_type⟩
+            | none =>
+              -- evalOp returned none - contradiction with success
+              simp [h_evalOp] at h_eval
+              simp [pure] at h_eval
+              injection h_eval with h_eq_result h_eq_state
+              injection h_eq_result
+          · next =>
+            -- e2 evaluation returned outOfFuel - contradiction
+            simp [pure] at h_eval
+            injection h_eval with h_eq_result h_eq_state
+            injection h_eq_result
+          · next msg =>
+            -- e2 evaluation returned runtimeError - contradiction
+            simp [pure] at h_eval
+            injection h_eval with h_eq_result h_eq_state
+            injection h_eq_result
+        · next h_error2 h_state2 =>
+          -- e2 evaluation returned error from EStateM - contradiction
+          injection h_eval
+      · next =>
+        -- e1 evaluation returned outOfFuel - contradiction
+        simp [pure] at h_eval
+        injection h_eval with h_eq_result h_eq_state
+        injection h_eq_result
+      · next msg =>
+        -- e1 evaluation returned runtimeError - contradiction
+        simp [pure] at h_eval
+        injection h_eval with h_eq_result h_eq_state
+        injection h_eq_result
+    · next h_error1 h_state1 =>
+      -- e1 evaluation returned error from EStateM - contradiction
+      injection h_eval
 
 -- Helper lemma: extract structure from typecheckOp
 private lemma typecheckOp_structure (ctx : TypeContext) (e1 e2 : Expr) (op : Op) (fuel : Nat) (res : TypeResult) :
