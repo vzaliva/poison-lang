@@ -319,6 +319,7 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
         sorry
       | deref e1 =>
         -- Dereference: use IH for e1
+        -- Leave for later - requires handling memory lookup match
         sorry
       | seq e1 e2 =>
         -- Sequence: use IH for e1 and e2
@@ -382,10 +383,22 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
         sorry
       | fn x paramType body returnType =>
         -- Function abstraction: config unchanged
-        sorry
+        unfold LeanPoison.beval at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [pure] at h_eval
+        injection h_eval with h_cfg _
+        injection h_cfg with h_cfg_eq
+        subst h_cfg_eq
+        rfl
       | pfn x paramType body returnType =>
         -- Pure function abstraction: config unchanged
-        sorry
+        unfold LeanPoison.beval at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [pure] at h_eval
+        injection h_eval with h_cfg _
+        injection h_cfg with h_cfg_eq
+        subst h_cfg_eq
+        rfl
       | app e1 e2 =>
         -- Function application: use IH for e1, e2, and body
         sorry
@@ -397,9 +410,11 @@ private lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (c
         sorry
       | printInt e1 =>
         -- Print: use IH for e1
+        -- Leave for later - requires handling IO.println bind
         sorry
       | printString e1 =>
         -- Print: use IH for e1
+        -- Leave for later - requires handling IO.println bind
         sorry
 
 -- Helper lemma: evalOp preserves type correctness
