@@ -201,9 +201,7 @@ theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
   | arrow st1 st2 p' tcl =>
     simp [beqETyp]
     -- Need: (st1 == st1 && st2 == st2 && p' == p' && beqFnTClosure tcl tcl) = true
-    -- Typ has BEq derived, so st1 == st1 and st2 == st2 are reflexive
-    -- Since Typ has deriving BEq, we can prove reflexivity using structural equality
-    -- For derived BEq instances, a == a evaluates to true by definition
+    -- Typ has BEq instance, use Typ_beq_refl from Syntax.lean
     have h_st1 : (st1 == st1) = true := Typ_beq_refl st1
     have h_st2 : (st2 == st2) = true := Typ_beq_refl st2
     have h_p' : (p' == p') = true := by cases p' <;> simp [BEq.beq]
