@@ -47,6 +47,35 @@ import LeanProofs.Properties
 --
 -- ================================================================
 
+-- Parametric version of Preservation with explicit fuel
+-- This is used internally for helper lemmas to avoid existential extraction issues
+-- The standard Preservation uses terminatesTo (existential fuel), but for inductive
+-- proofs we need explicit fuel to match the induction variable
+def PreservationWithFuel (e : Expr) (ctx : TypeContext) (n : Nat) : Prop :=
+  ∀ (fuel_tc : Nat) (res : TypeResult) (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv)
+    (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value) (verbose : Bool),
+    -- If typechecking succeeds
+    typecheck ctx e fuel_tc = .ok res →
+    -- And runtime instantiates the input context
+    runtimeInstantiatesCtx ctx μ₀ ρ₀ →
+    -- And evaluation terminates successfully with exactly fuel n
+    LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ } e verbose =
+      pure (.success { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) →
+    -- Then the result value has the expected enriched type
+    valueHasETyp v res.qualType.etyp ∧
+    -- And the final runtime state instantiates the output typing context
+    runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁
+
+-- Lemma: PreservationWithFuel implies Preservation
+private lemma preservationWithFuel_implies_preservation (e : Expr) (ctx : TypeContext) :
+    (∀ n, PreservationWithFuel e ctx n) → Preservation e ctx := by
+  intro h_pwf
+  unfold Preservation
+  intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+  obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
+  exact h_pwf fuel_eval fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose
+          h_typecheck h_instantiate h_eval
+
 -- Private lemma for num case
 private lemma preservation_num (n : Int) (ctx : TypeContext) : Preservation (Expr.num n) ctx := by
   unfold Preservation
@@ -560,29 +589,26 @@ private lemma typecheckOp_structure (ctx : TypeContext) (e1 e2 : Expr) (op : Op)
 
 
 -- Helper lemma for binary operations using inductive hypothesis
+-- Uses PreservationWithFuel to avoid existential extraction issues
 private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
-    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext) (fuel_tc : Nat) (res : TypeResult)
-          (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value),
-          typecheck ctx e fuel_tc = .ok res →
-          runtimeInstantiatesCtx ctx μ₀ ρ₀ →
-          ∀ (verbose : Bool),
-            LeanPoison.beval m { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ } e verbose =
-              pure (.success { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) →
-            valueHasETyp v res.qualType.etyp ∧
-            runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁)
-    (n : Nat) :
-    Preservation (Expr.op e1 op e2) ctx := by
-  unfold Preservation
-  intro fuel_tc res μ₀ μ₃ ρ₀ ρ₃ l₀ l₃ pm₀ pm₃ v h_typecheck h_instantiate h_terminates
-  obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.op e1 op e2) ctx n := by
+  unfold PreservationWithFuel
+  intro fuel_tc res μ₀ μ₃ ρ₀ ρ₃ l₀ l₃ pm₀ pm₃ v verbose h_typecheck h_instantiate h_eval
+  -- Now h_eval uses exactly fuel n (no existential extraction!)
+  -- We can work directly with n throughout the proof
   -- Evaluation of binary operation
-  cases fuel_eval with
+  cases n with
   | zero =>
     -- When fuel = 0, beval returns outOfFuel, not success
     simp [LeanPoison.beval] at h_eval
     apply congrFun (a := ()) at h_eval
     cases h_eval
   | succ fuel' =>
+    -- In this branch, n = fuel'.succ (by pattern matching)
+    -- So we have fuel' < fuel'.succ = n, which is exactly what we need for IH!
     -- Typecheck for op
     cases fuel_tc with
     | zero => simp [typecheck, typecheckExpr] at h_typecheck
@@ -593,8 +619,7 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
         typecheckOp_structure ctx e1 e2 op fuel_tc' res h_typecheck
 
       -- Use helper lemma to extract evaluation structure
-      -- Apply bevalOp_structure BEFORE any simplification
-      -- Note: fuel_eval = fuel'.succ in this branch
+      -- Note: n = fuel'.succ in this branch, and h_eval uses fuel n
       -- We pass the enriched types from typechecking to establish type relationships
       have ⟨config₁, config₂, v1, v2, h_eval1, h_eval2, h_v1_type, h_v2_type, h_v_type⟩ :=
         bevalOp_structure e1 e2 op fuel'.succ verbose
@@ -645,12 +670,86 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
       --
       -- Goal is now: valueHasETyp v res.qualType.etyp ∧
       --              runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₃ config₁.varEnv
-      --
-      -- Next steps (TODO):
-      -- 1. Use h_v_type and h_etyp to show v has the correct type (res.qualType.etyp)
-      -- 2. Show runtimeInstantiatesCtx for the output state (μ₃, config₁.varEnv)
-      --    Since config₁.varEnv was the original ρ₀ (from h_instantiate), this should follow
-      sorry
+
+      constructor
+
+      -- Part 1: Prove valueHasETyp v res.qualType.etyp
+      · -- We have h_v_type: valueHasETyp v result_etyp
+        -- and h_etyp: res.qualType.etyp = result_etyp
+        rw [h_etyp]
+        exact h_v_type
+
+      -- Part 2: Prove runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₃ config₁.varEnv
+      · -- Strategy: Apply IH to e1 and e2 to get intermediate runtimeInstantiatesCtx facts,
+        -- then use the fact that binary ops don't modify memory/varEnv
+
+        -- Prove fuel constraints for IH application
+        -- In this branch, n = fuel'.succ (by pattern matching on n)
+        -- So fuel' < fuel'.succ = n holds definitionally
+        have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+
+        -- Convert h_tc1 to use typecheck wrapper (PreservationWithFuel expects typecheck, not typecheckExpr)
+        -- Since typecheck is just typecheckExpr with the same fuel, and h_tc1 uses (fuel_tc' - 1),
+        -- we just unfold typecheck and use h_tc1 directly
+        have h_tc1' : typecheck ctx e1 (fuel_tc' - 1) = .ok result1 := by
+          simp [typecheck]
+          exact h_tc1
+
+        -- Apply IH to e1 using PreservationWithFuel with fuel (fuel_tc' - 1)
+        have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
+                      μ₀ config₁.memory config₁.varEnv config₁.varEnv
+                      l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                      h_tc1' h_instantiate h_eval1
+        obtain ⟨_, h_runtime1⟩ := IH1
+
+        -- Convert h_tc2 similarly
+        have h_tc2' : typecheck { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                                           nextLoc := result1.nextLoc', nextTag := result1.nextTag' } e2 (fuel_tc' - 1) = .ok result2 := by
+          simp [typecheck]
+          exact h_tc2
+
+        -- Apply IH to e2 with the updated context from result1, using fuel (fuel_tc' - 1)
+        let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                               nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+        have IH2 := IH fuel' h_fuel e2 ctx' (fuel_tc' - 1) result2
+                      config₁.memory config₂.memory config₁.varEnv config₂.varEnv
+                      config₁.nextLoc config₂.nextLoc config₁.pureMode config₂.pureMode v2 verbose
+                      h_tc2' h_runtime1 h_eval2
+        obtain ⟨_, h_runtime2⟩ := IH2
+
+        -- Now h_runtime2 gives us that config₂ satisfies the context after e2
+        -- We need to show that μ₃ and config₁.varEnv satisfy the final context
+
+        -- The goal is about the context with res's fields
+        -- Rewrite using field equalities: res.memEnv' = result2.memEnv', etc.
+        simp only [h_mem, h_tag, h_loc, h_ntag]
+
+        -- The goal is now: runtimeInstantiatesCtx
+        --   { ctx with memEnv := result2.memEnv', ... } μ₃ config₁.varEnv
+        -- We have h_runtime2: runtimeInstantiatesCtx
+        --   { ctx' with memEnv := result2.memEnv' } config₂.memory config₂.varEnv
+
+        -- First, prove that evalOp doesn't modify memory, so μ₃ = config₂.memory
+        have h_mem_eq : μ₃ = config₂.memory := by
+          -- From the beval structure for ops: after e1 and e2 evaluate,
+          -- evalOp is called which doesn't modify memory
+          -- So the final config returned is config₂ with only the value changed
+          sorry  -- TODO: Extract from beval/evalOp structure
+
+        -- Second, use h_varenv12 to change config₂.varEnv to config₁.varEnv in h_runtime2
+        -- h_varenv12 : config₁.varEnv = config₂.varEnv
+        rw [← h_varenv12] at h_runtime2
+        -- Now h_runtime2: runtimeInstantiatesCtx {...} config₂.memory config₁.varEnv
+
+        -- Finally, use h_mem_eq to change config₂.memory to μ₃
+        -- h_mem_eq : μ₃ = config₂.memory, so ← h_mem_eq replaces config₂.memory with μ₃
+        rw [← h_mem_eq] at h_runtime2
+        -- Now h_runtime2: runtimeInstantiatesCtx {...} μ₃ config₁.varEnv
+
+        -- But we still need to show the contexts match!
+        -- h_runtime2 is about ctx' with result2.memEnv', but goal is about ctx with result2.memEnv'
+        -- We need to show these contexts are equal
+        sorry  -- TODO: Show ctx' and ctx produce the same context after updates
 
 -- Private lemma for var case
 private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Expr.var x) ctx := by
@@ -706,54 +805,59 @@ private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Ex
           -- which is definitionally equal to: runtimeInstantiatesCtx ctx μ₀ ρ₀
           exact h_instantiate
 
--- Preservation theorem: well-typed programs preserve types
--- This proof uses strong induction on fuel_eval
-theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx := by
-  unfold Preservation
-  intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
-  -- Extract fuel from terminatesTo
-  obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
-  -- Strong induction on fuel_eval
-  revert e ctx fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_eval verbose
-  induction fuel_eval using Nat.strong_induction_on with
+-- Helper: prove PreservationWithFuel for all expressions and all fuel values
+private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeContext),
+    PreservationWithFuel e ctx n := by
+  intro n
+  -- Strong induction on n
+  induction n using Nat.strong_induction_on with
   | _ n IH =>
-    intro e ctx fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate verbose h_eval
-    -- Reconstruct h_terminates from h_eval
-    have h_terminates : terminatesTo e { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-                                       { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v := by
-      exact ⟨n, verbose, h_eval⟩
+    intro e ctx
     -- The proof proceeds by case analysis on the expression
     cases e with
-    | num n =>
-      -- Numeric literals
-      have h_pres := preservation_num n ctx
+    | num n_val =>
+      -- Numeric literals - convert from Preservation to PreservationWithFuel
+      unfold PreservationWithFuel
+      intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
+      have h_pres := preservation_num n_val ctx
       unfold Preservation at h_pres
-      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+      have h_term : terminatesTo (Expr.num n_val) _ _ v := ⟨n, verbose, h_eval⟩
+      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_term
     | bool b =>
       -- Boolean literals
+      unfold PreservationWithFuel
+      intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
       have h_pres := preservation_bool b ctx
       unfold Preservation at h_pres
-      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+      have h_term : terminatesTo (Expr.bool b) _ _ v := ⟨n, verbose, h_eval⟩
+      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_term
     | unit =>
       -- Unit literal
+      unfold PreservationWithFuel
+      intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
       have h_pres := preservation_unit ctx
       unfold Preservation at h_pres
-      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+      have h_term : terminatesTo Expr.unit _ _ v := ⟨n, verbose, h_eval⟩
+      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_term
     | str s =>
       -- String literals
+      unfold PreservationWithFuel
+      intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
       have h_pres := preservation_str s ctx
       unfold Preservation at h_pres
-      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+      have h_term : terminatesTo (Expr.str s) _ _ v := ⟨n, verbose, h_eval⟩
+      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_term
     | var x =>
       -- Variable lookup: if x is typed and in ρ, lookup returns a value of correct type
+      unfold PreservationWithFuel
+      intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
       have h_pres := preservation_var x ctx
       unfold Preservation at h_pres
-      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+      have h_term : terminatesTo (Expr.var x) _ _ v := ⟨n, verbose, h_eval⟩
+      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_term
     | op e1 op e2 =>
       -- Binary operations: by IH, operands have correct types, so result has expected type
-      have h_pres := preservation_op e1 e2 op ctx IH n
-      unfold Preservation at h_pres
-      exact h_pres fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
+      exact preservation_op e1 e2 op ctx n IH
     | unaryop op e1 =>
       -- Unary operations: similar to binary operations
       sorry
@@ -799,3 +903,10 @@ theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx := by
     | printString e1 =>
       -- Print string: similar to printInt
       sorry
+
+-- Preservation theorem: well-typed programs preserve types
+-- This proof uses strong induction on fuel_eval
+theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx := by
+  apply preservationWithFuel_implies_preservation
+  intro n
+  exact preservationWithFuel_all n e ctx
