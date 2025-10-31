@@ -1045,6 +1045,200 @@ private lemma preservation_unaryop (op : UnaryOp) (e1 : Expr) (ctx : TypeContext
         · intro x qt h_lookup
           exact h_var2 h_lookup
 
+-- Helper lemma: extract evaluation structure from successful beval of sequence
+-- This lemma mirrors typecheckSeq_structure but for evaluation.
+-- For seq, e1 is evaluated and its result is discarded, then e2 is evaluated.
+private lemma bevalSeq_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₂ : Config) (v : Value) :
+  LeanPoison.beval fuel config₀ (Expr.seq e1 e2) verbose =
+    pure (.success config₂ v) →
+  ∃ (config₁ : Config) (v1 : Value),
+    LeanPoison.beval (fuel - 1) config₀ e1 verbose = pure (.success config₁ v1) ∧
+    LeanPoison.beval (fuel - 1) config₁ e2 verbose = pure (.success config₂ v) := by
+  intro h_eval
+  cases fuel with
+  | zero =>
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    apply congrFun (a := ()) at h_eval
+    simp [pure] at h_eval
+    injection h_eval with h_contr
+    cases h_contr
+  | succ fuel' =>
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    apply congrFun (a := ()) at h_eval
+    simp [bind, Bind.bind, EStateM.bind] at h_eval
+    split at h_eval
+    · next h_result1 h_state1 h_beval1 =>
+      split at h_eval
+      · next config₁ v₁ =>
+        -- e1 evaluated successfully, now e2
+        simp [EStateM.bind] at h_eval
+        split at h_eval
+        · next h_result2 h_state2 h_beval2 =>
+          split at h_eval
+          · next config₂' v₂ =>
+            -- e2 evaluated successfully
+            simp [pure] at h_eval
+            injection h_eval with h_eq_result h_eq_state
+            injection h_eq_result with h_eq_cfg h_eq_val
+            -- Convert to pure form before subst
+            have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config₁ v₁) := by
+              funext _
+              simp [pure]
+              exact h_beval1
+            have h_beval2' : LeanPoison.beval fuel' config₁ e2 verbose = pure (.success config₂' v₂) := by
+              funext _
+              simp [pure]
+              exact h_beval2
+            -- Now subst to get final config and value
+            subst h_eq_cfg h_eq_val
+            simp only [Nat.add_sub_cancel]
+            exact ⟨config₁, v₁, h_beval1', h_beval2'⟩
+          · next =>
+            simp [pure] at h_eval
+            injection h_eval with h_eq_result h_eq_state
+            injection h_eq_result
+          · next msg =>
+            simp [pure] at h_eval
+            injection h_eval with h_eq_result h_eq_state
+            injection h_eq_result
+        · next h_error2 h_state2 =>
+          injection h_eval
+      · next =>
+        simp [pure] at h_eval
+        injection h_eval with h_eq_result h_eq_state
+        injection h_eq_result
+      · next msg =>
+        simp [pure] at h_eval
+        injection h_eval with h_eq_result h_eq_state
+        injection h_eq_result
+    · next h_error1 h_state1 =>
+      injection h_eval
+
+-- Helper lemma: extract structure from typecheckSeq
+private lemma typecheckSeq_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckSeq ctx e1 e2 fuel = .ok res →
+  ∃ (result1 result2 : TypeResult) (ctx' : TypeContext),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    ctx' = { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' } ∧
+    typecheckExpr ctx' e2 (fuel - 1) = .ok result2 ∧
+    res.qualType.etyp = result2.qualType.etyp ∧
+    res.memEnv' = result2.memEnv' ∧
+    res.tagEnv' = result2.tagEnv' ∧
+    res.nextLoc' = result2.nextLoc' ∧
+    res.nextTag' = result2.nextTag' := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+    simp [typecheckSeq] at h_typecheck
+  | succ fuel' =>
+    unfold typecheckSeq at h_typecheck
+    simp at h_typecheck
+    simp [bind, Except.bind] at h_typecheck
+    cases h_tc1 : typecheckExpr ctx e1 fuel' with
+    | ok result1 =>
+      simp [h_tc1] at h_typecheck
+      cases h_qt1: result1.qualType with
+      | mk _etyp1 p1 pred1 =>
+        rw [h_qt1] at h_typecheck
+        simp at h_typecheck
+        cases h_tc2: typecheckExpr { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv, tagEnv := result1.tagEnv',
+                                     nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := ctx.pureCtx } e2 fuel'
+        with
+        | ok result2 =>
+          simp [h_tc2] at h_typecheck
+          cases h_qt2: result2.qualType with
+          | mk _etyp2 p2 pred2 =>
+            rw [h_qt2] at h_typecheck
+            simp at h_typecheck
+            simp [pure, Except.pure] at h_typecheck
+            rcases h_typecheck
+            simp_all
+        | error err =>
+          simp [h_tc2] at h_typecheck
+    | error err =>
+      simp [h_tc1] at h_typecheck
+
+
+-- Helper lemma for sequencing
+private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.seq e1 e2) ctx n := by
+  unfold PreservationWithFuel
+  intro fuel_tc res μ₀ μ₂ ρ₀ ρ₂ l₀ l₂ pm₀ pm₂ v verbose h_typecheck h_instantiate h_eval
+  cases n with
+  | zero =>
+    simp [LeanPoison.beval] at h_eval
+    apply congrFun (a := ()) at h_eval
+    cases h_eval
+  | succ fuel' =>
+    cases fuel_tc with
+    | zero => simp [typecheck, typecheckExpr] at h_typecheck
+    | succ fuel_tc' =>
+      simp only [typecheck, typecheckExpr] at h_typecheck
+      -- Extract typechecking structure using helper lemma
+      have ⟨result1, result2, ctx', h_tc1, h_ctx_eq, h_tc2, h_etyp, h_mem, h_tag, h_loc, h_ntag⟩ :=
+        typecheckSeq_structure ctx e1 e2 fuel_tc' res h_typecheck
+      -- Extract evaluation structure using helper lemma
+      obtain ⟨config₁, v1, h_eval1, h_eval2⟩ :=
+        bevalSeq_structure e1 e2 fuel'.succ verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₂, varEnv := ρ₂, nextLoc := l₂, pureMode := pm₂ }
+          v h_eval
+
+      -- Establish fuel constraint for IH
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+
+      -- Apply IH to e1
+      have h_tc1' : typecheck ctx e1 (fuel_tc' - 1) = .ok result1 := by
+        simp [typecheck]
+        exact h_tc1
+      -- Use beval_preserves_varEnv to establish varEnv equality
+      have h_varenv01 : ρ₀ = config₁.varEnv :=
+        beval_preserves_varEnv e1 fuel' verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          config₁ v1 h_eval1
+      -- Rewrite to use config₁.varEnv
+      rw [h_varenv01] at h_instantiate h_eval1
+      -- Convert h_eval1 to explicit config₁ structure
+      have h_eval1' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextLoc := l₀, pureMode := pm₀ } e1 verbose =
+          pure (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextLoc := config₁.nextLoc, pureMode := config₁.pureMode } v1) := by
+        convert h_eval1
+      have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
+                      μ₀ config₁.memory config₁.varEnv config₁.varEnv
+                      l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                      h_tc1' h_instantiate h_eval1'
+      obtain ⟨_, h_runtime1⟩ := IH1
+
+      -- Apply IH to e2
+      have h_runtime1' : runtimeInstantiatesCtx ctx' config₁.memory config₁.varEnv := by
+        subst h_ctx_eq
+        exact h_runtime1
+      have h_tc2' : typecheck ctx' e2 (fuel_tc' - 1) = .ok result2 := by
+        simp [typecheck]
+        exact h_tc2
+      have IH2 := IH fuel' h_fuel e2 ctx' (fuel_tc' - 1) result2
+                      config₁.memory μ₂ config₁.varEnv ρ₂
+                      config₁.nextLoc l₂ config₁.pureMode pm₂ v verbose
+                      h_tc2' h_runtime1' h_eval2
+      obtain ⟨h_v_type, h_runtime2⟩ := IH2
+
+      constructor
+      · -- valueHasETyp v res.qualType.etyp
+        rw [h_etyp]
+        exact h_v_type
+      · -- runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₂ ρ₂
+        simp only [h_mem]
+        -- runtimeInstantiatesCtx only depends on memEnv and varEnv
+        -- ctx'.varEnv = ctx.varEnv, so they're equivalent
+        subst h_ctx_eq
+        simp only [runtimeInstantiatesCtx] at h_runtime2 ⊢
+        exact h_runtime2
+
 -- Helper: prove PreservationWithFuel for all expressions and all fuel values
 -- Combined directly into the main theorem via strong induction
 private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeContext),
@@ -1118,7 +1312,7 @@ private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeCon
       sorry
     | seq e1 e2 =>
       -- Sequence: by IH, e2 preserves types (e1's result is discarded)
-      sorry
+      exact preservation_seq e1 e2 ctx n IH
     | kwhile e1 e2 =>
       -- While loops: requires fixpoint reasoning about typing context evolution
       sorry
