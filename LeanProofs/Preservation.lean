@@ -820,6 +820,231 @@ private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Ex
           -- which is definitionally equal to: runtimeInstantiatesCtx ctx μ₀ ρ₀
           exact h_instantiate
 
+-- Helper lemma: extract structure from typecheckUnaryOp
+private lemma typecheckUnaryOp_structure (ctx : TypeContext) (op : UnaryOp) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckUnaryOp ctx op e1 fuel = .ok res →
+  ∃ (result1 : TypeResult) (result_etyp : ETyp),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    opUnaryEType? op result1.qualType.etyp = some result_etyp ∧
+    res.memEnv' = result1.memEnv' ∧
+    res.tagEnv' = result1.tagEnv' ∧
+    res.nextLoc' = result1.nextLoc' ∧
+    res.nextTag' = result1.nextTag' ∧
+    res.qualType.etyp = result_etyp := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+    simp [typecheckUnaryOp] at h_typecheck
+  | succ fuel' =>
+    unfold typecheckUnaryOp at h_typecheck
+    simp at h_typecheck
+    cases h_tc1_result : typecheckExpr ctx e1 fuel' with
+    | ok result1 =>
+      simp [h_tc1_result, bind, Except.bind] at h_typecheck
+      match h_qt1 : result1.qualType with
+      | QTyp.mk etyp1 p1 pred1 =>
+        rw [h_qt1] at h_typecheck
+        simp at h_typecheck
+        cases h_opEType_result : opUnaryEType? op etyp1 with
+        | some result_etyp =>
+          simp [h_opEType_result] at h_typecheck
+          injection h_typecheck with h_res_eq
+          have h_opEType_final : opUnaryEType? op result1.qualType.etyp = some result_etyp := by
+            rw [h_qt1]
+            exact h_opEType_result
+          simp only [Nat.add_sub_cancel]
+          subst h_res_eq
+          exact ⟨result1, result_etyp, h_tc1_result, h_opEType_final, rfl, rfl, rfl, rfl, rfl⟩
+        | none =>
+          simp [h_opEType_result] at h_typecheck
+    | error msg =>
+      simp [h_tc1_result, bind, Except.bind] at h_typecheck
+
+-- Helper lemma: evalUnaryOp preserves type correctness
+private lemma evalUnaryOp_preserves_type (op : UnaryOp) (v1 : Value) (etyp1 result_etyp : ETyp) :
+  valueHasETyp v1 etyp1 →
+  opUnaryEType? op etyp1 = some result_etyp →
+  ∀ v, LeanPoison.evalUnaryOp op v1 = some v → valueHasETyp v result_etyp := by
+  intro h_typ1 h_op_type v h_eval
+  cases op with
+  | not =>
+    -- opUnaryEType? only returns some for bool -> bool
+    -- Case analyze etyp1 to simplify the match
+    cases etyp1 with
+    | bool =>
+      -- opUnaryEType? UnaryOp.not ETyp.bool = some ETyp.bool
+      simp [opUnaryEType?] at h_op_type
+      -- Now h_op_type : some ETyp.bool = some result_etyp
+      cases h_op_type
+      -- Now result_etyp = ETyp.bool
+      cases h_typ1 with
+      | bool =>
+        simp [LeanPoison.evalUnaryOp] at h_eval
+        cases h_eval
+        constructor
+    | int | unit | string | ref _ _ | arrow _ _ _ _ | parrow _ _ _ _ =>
+      -- opUnaryEType? returns none for these, contradiction
+      simp [opUnaryEType?] at h_op_type
+
+-- Helper lemma: extract evaluation structure from successful beval of unary operation
+private lemma bevalUnaryOp_structure (op : UnaryOp) (e1 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₂ : Config) (v : Value) (etyp1 result_etyp : ETyp) :
+  LeanPoison.beval fuel config₀ (Expr.unaryop op e1) verbose =
+    pure (.success config₂ v) →
+  opUnaryEType? op etyp1 = some result_etyp →
+  ∃ (config₁ : Config) (v1 : Value),
+    LeanPoison.beval (fuel - 1) config₀ e1 verbose = pure (.success config₁ v1) ∧
+    valueHasETyp v1 etyp1 ∧
+    valueHasETyp v result_etyp ∧
+    config₁.memory = config₂.memory ∧
+    config₁.varEnv = config₂.varEnv := by
+  intro h_eval h_op_etyp
+  cases fuel with
+  | zero =>
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    apply congrFun (a := ()) at h_eval
+    simp [pure] at h_eval
+    injection h_eval with h_contr
+    cases h_contr
+  | succ fuel' =>
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    apply congrFun (a := ()) at h_eval
+    simp [bind, Bind.bind, EStateM.bind] at h_eval
+    split at h_eval
+    · next h_result1 h_state1 h_beval1 =>
+      split at h_eval
+      · next config₁ v₁ =>
+        cases h_evalOp : LeanPoison.evalUnaryOp op v₁ with
+        | some v_result =>
+          simp [h_evalOp] at h_eval
+          simp [pure] at h_eval
+          injection h_eval with h_eq_result h_eq_state
+          injection h_eq_result with h_eq_cfg h_eq_val
+          have h_mem_eq : config₁.memory = config₂.memory := by
+            rw [h_eq_cfg]
+          have h_varenv_eq : config₁.varEnv = config₂.varEnv := by
+            rw [h_eq_cfg]
+          rw [h_eq_val] at h_evalOp
+          subst h_eq_cfg
+          have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config₁ v₁) := by
+            funext _
+            simp [pure]
+            exact h_beval1
+          -- Prove type information
+          -- Since evalUnaryOp succeeded, we know v₁ must be bool (only case for not)
+          -- Since opUnaryEType? returned some, we know etyp1 must be bool
+          have h_v1_type : valueHasETyp v₁ etyp1 := by
+            cases op with
+            | not =>
+              -- opUnaryEType? only returns some for bool -> bool
+              -- Case analyze on etyp1 to determine it must be bool
+              cases etyp1 with
+              | bool =>
+                -- Since evalUnaryOp returned some for not, v₁ must be Value.bool
+                cases v₁ with
+                | bool =>
+                  constructor
+                | num | unit | str | loc _ | closure _ _ _ | peClosure _ _ _ =>
+                  simp [LeanPoison.evalUnaryOp] at h_evalOp
+              | int | unit | string | ref _ _ | arrow _ _ _ _ | parrow _ _ _ _ =>
+                -- opUnaryEType? returns none for these, contradiction
+                simp [opUnaryEType?] at h_op_etyp
+          -- Now use the helper lemma to get v has the result type
+          have h_v_type : valueHasETyp v result_etyp :=
+            evalUnaryOp_preserves_type op v₁ etyp1 result_etyp h_v1_type h_op_etyp v h_evalOp
+          simp only [Nat.add_sub_cancel]
+          exact ⟨config₁, v₁, h_beval1', h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩
+        | none =>
+          simp [h_evalOp] at h_eval
+          simp [pure] at h_eval
+          injection h_eval with h_eq_result h_eq_state
+          injection h_eq_result
+      · next =>
+        simp [pure] at h_eval
+        injection h_eval with h_eq_result h_eq_state
+        injection h_eq_result
+      · next msg =>
+        simp [pure] at h_eval
+        injection h_eval with h_eq_result h_eq_state
+        injection h_eq_result
+    · next h_error1 h_state1 =>
+      injection h_eval
+
+
+-- Helper lemma for unary operations using inductive hypothesis
+private lemma preservation_unaryop (op : UnaryOp) (e1 : Expr) (ctx : TypeContext)
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.unaryop op e1) ctx n := by
+  unfold PreservationWithFuel
+  intro fuel_tc res μ₀ μ₂ ρ₀ ρ₂ l₀ l₂ pm₀ pm₂ v verbose h_typecheck h_instantiate h_eval
+  cases n with
+  | zero =>
+    simp [LeanPoison.beval] at h_eval
+    apply congrFun (a := ()) at h_eval
+    cases h_eval
+  | succ fuel' =>
+    cases fuel_tc with
+    | zero => simp [typecheck, typecheckExpr] at h_typecheck
+    | succ fuel_tc' =>
+      simp only [typecheck, typecheckExpr] at h_typecheck
+      -- Extract typechecking structure
+      have ⟨result1, result_etyp, h_tc1, h_op_etyp, h_mem, h_tag, h_loc, h_ntag, h_etyp⟩ :=
+        typecheckUnaryOp_structure ctx op e1 fuel_tc' res h_typecheck
+
+      -- Extract evaluation structure
+      obtain ⟨config₁, v1, h_eval1, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
+        bevalUnaryOp_structure op e1 fuel'.succ verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₂, varEnv := ρ₂, nextLoc := l₂, pureMode := pm₂ }
+          v result1.qualType.etyp result_etyp
+          h_eval h_op_etyp
+
+      -- VarEnv preservation
+      have h_varenv01 : ρ₀ = config₁.varEnv :=
+        beval_preserves_varEnv e1 fuel' verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          config₁ v1 h_eval1
+      have h_varenv_unchanged : ρ₀ = ρ₂ :=
+        beval_preserves_varEnv (Expr.unaryop op e1) fuel'.succ verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₂, varEnv := ρ₂, nextLoc := l₂, pureMode := pm₂ }
+          v h_eval
+
+      subst h_varenv01 h_varenv_unchanged
+      rw [← h_varenv_eq]
+
+      constructor
+      · -- valueHasETyp v res.qualType.etyp
+        rw [h_etyp]
+        exact h_v_type
+      · -- runtimeInstantiatesCtx
+        have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+        have h_tc1' : typecheck ctx e1 (fuel_tc' - 1) = .ok result1 := by
+          simp [typecheck]
+          exact h_tc1
+        have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
+                      μ₀ config₁.memory config₁.varEnv config₁.varEnv
+                      l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                      h_tc1' h_instantiate h_eval1
+        obtain ⟨_, h_runtime1⟩ := IH1
+        simp only [h_mem]
+        -- Use memory equality
+        have h_mem_equality : config₁.memory = μ₂ := by
+          exact h_mem_eq
+        unfold runtimeInstantiatesCtx at h_runtime1 ⊢
+        obtain ⟨h_mem2, h_var2⟩ := h_runtime1
+        constructor
+        · intro l h_memenv_contains
+          have h_config1_contains := h_mem2 l h_memenv_contains
+          rw [← h_mem_equality]
+          exact h_config1_contains
+        · intro x qt h_lookup
+          exact h_var2 h_lookup
+
 -- Helper: prove PreservationWithFuel for all expressions and all fuel values
 -- Combined directly into the main theorem via strong induction
 private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeContext),
@@ -876,7 +1101,7 @@ private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeCon
       exact preservation_op e1 e2 op ctx n IH
     | unaryop op e1 =>
       -- Unary operations: similar to binary operations
-      sorry
+      exact preservation_unaryop op e1 ctx n IH
     | ite e1 e2 e3 =>
       -- Conditionals: by IH, e1 evaluates to bool, then either e2 or e3 preserves types
       sorry
@@ -888,6 +1113,8 @@ private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeCon
       sorry
     | deref e1 =>
       -- Dereference: by IH, e1 evaluates to location, memory lookup returns correct type
+      -- This case is complex and requires reasoning about memory typing relationships
+      -- TODO: Complete proof - needs to show memory lookup preserves types via runtime instantiation
       sorry
     | seq e1 e2 =>
       -- Sequence: by IH, e2 preserves types (e1's result is discarded)
