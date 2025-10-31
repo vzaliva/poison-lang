@@ -51,7 +51,7 @@ import LeanProofs.Properties
 -- This is used internally for helper lemmas to avoid existential extraction issues
 -- The standard Preservation uses terminatesTo (existential fuel), but for inductive
 -- proofs we need explicit fuel to match the induction variable
-def PreservationWithFuel (e : Expr) (ctx : TypeContext) (n : Nat) : Prop :=
+private def PreservationWithFuel (e : Expr) (ctx : TypeContext) (n : Nat) : Prop :=
   ∀ (fuel_tc : Nat) (res : TypeResult) (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv)
     (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value) (verbose : Bool),
     -- If typechecking succeeds
@@ -282,6 +282,17 @@ private lemma typecheckVar_preserves_memEnv (ctx : TypeContext) (x : Name) (res 
   · -- Case: x is not in ctx.varEnv (throws error, contradiction)
     simp at h_typecheck
 
+-- Memory Monotonicity Lemma: evaluation can only add memory locations, never remove them
+-- This is a key property that follows from the fact that memory locations are never deallocated
+private lemma beval_memory_monotonic (e : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value) :
+  LeanPoison.beval fuel config₀ e verbose = pure (.success config₁ v) →
+  ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
+  intro h_eval l h_contains
+  -- This requires induction on the evaluation structure
+  -- For now, we leave this as an axiom to be proven separately
+  sorry
+
 -- Helper lemma: evalOp preserves type correctness
 -- If v1 has type etyp1 and v2 has type etyp2, and opEType? returns some result_etyp,
 -- then evalOp returns a value with type result_etyp
@@ -312,7 +323,8 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
     LeanPoison.beval (fuel - 1) config₁ e2 verbose = pure (.success config₂ v2) ∧
     valueHasETyp v1 etyp1 ∧
     valueHasETyp v2 etyp2 ∧
-    valueHasETyp v result_etyp := by
+    valueHasETyp v result_etyp ∧
+    config₂.memory = config₃.memory := by
   intro h_eval h_op_etyp
   -- Case analysis on fuel: if fuel = 0, beval returns outOfFuel, not success
   cases fuel with
@@ -359,6 +371,9 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
               -- Extract that v_result = v and config₂ = config₃
               injection h_eval with h_eq_result h_eq_state
               injection h_eq_result with h_eq_cfg h_eq_val
+              -- Extract memory equality before subst (for return value)
+              have h_mem_eq : config₂.memory = config₃.memory := by
+                rw [h_eq_cfg]
               -- Rewrite h_evalOp to use v instead of v_result
               rw [h_eq_val] at h_evalOp
               subst h_eq_cfg
@@ -469,7 +484,7 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
                 evalOp_preserves_type op v₁ v₂ etyp1 etyp2 result_etyp h_v1_type h_v2_type h_op_etyp v h_evalOp
               -- Note: fuel' + 1 - 1 = fuel' by arithmetic
               simp only [Nat.add_sub_cancel]
-              exact ⟨config₁, config₂, v₁, v₂, h_beval1', h_beval2', h_v1_type, h_v2_type, h_v_type⟩
+              exact ⟨config₁, config₂, v₁, v₂, h_beval1', h_beval2', h_v1_type, h_v2_type, h_v_type, h_mem_eq⟩
             | none =>
               -- evalOp returned none - contradiction with success
               simp [h_evalOp] at h_eval
@@ -621,7 +636,8 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
       -- Use helper lemma to extract evaluation structure
       -- Note: n = fuel'.succ in this branch, and h_eval uses fuel n
       -- We pass the enriched types from typechecking to establish type relationships
-      have ⟨config₁, config₂, v1, v2, h_eval1, h_eval2, h_v1_type, h_v2_type, h_v_type⟩ :=
+      -- Now bevalOp_structure also returns the memory equality: config₂.memory = μ₃
+      obtain ⟨config₁, config₂, v1, v2, h_eval1, h_eval2, h_v1_type, h_v2_type, h_v_type, h_mem_eq⟩ :=
         bevalOp_structure e1 e2 op fuel'.succ verbose
           { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
           { memory := μ₃, varEnv := ρ₃, nextLoc := l₃, pureMode := pm₃ }
@@ -722,34 +738,43 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
 
         -- The goal is about the context with res's fields
         -- Rewrite using field equalities: res.memEnv' = result2.memEnv', etc.
-        simp only [h_mem, h_tag, h_loc, h_ntag]
+        simp only [h_mem]
 
         -- The goal is now: runtimeInstantiatesCtx
         --   { ctx with memEnv := result2.memEnv', ... } μ₃ config₁.varEnv
         -- We have h_runtime2: runtimeInstantiatesCtx
         --   { ctx' with memEnv := result2.memEnv' } config₂.memory config₂.varEnv
 
-        -- First, prove that evalOp doesn't modify memory, so μ₃ = config₂.memory
-        have h_mem_eq : μ₃ = config₂.memory := by
-          -- From the beval structure for ops: after e1 and e2 evaluate,
-          -- evalOp is called which doesn't modify memory
-          -- So the final config returned is config₂ with only the value changed
-          sorry  -- TODO: Extract from beval/evalOp structure
+        -- Use memory monotonicity to show μ₃ contains all locations that config₂ contains
+        -- Since binary operations don't allocate memory, and evalOp just computes a value,
+        -- the final memory has the same locations as config₂.memory
 
-        -- Second, use h_varenv12 to change config₂.varEnv to config₁.varEnv in h_runtime2
+        -- First, use h_varenv12 to change config₂.varEnv to config₁.varEnv in h_runtime2
         -- h_varenv12 : config₁.varEnv = config₂.varEnv
         rw [← h_varenv12] at h_runtime2
         -- Now h_runtime2: runtimeInstantiatesCtx {...} config₂.memory config₁.varEnv
 
-        -- Finally, use h_mem_eq to change config₂.memory to μ₃
-        -- h_mem_eq : μ₃ = config₂.memory, so ← h_mem_eq replaces config₂.memory with μ₃
-        rw [← h_mem_eq] at h_runtime2
-        -- Now h_runtime2: runtimeInstantiatesCtx {...} μ₃ config₁.varEnv
+        -- Unfold runtimeInstantiatesCtx to work with its components
+        unfold runtimeInstantiatesCtx at h_runtime2 ⊢
+        obtain ⟨h_mem2, h_var2⟩ := h_runtime2
+        constructor
 
-        -- But we still need to show the contexts match!
-        -- h_runtime2 is about ctx' with result2.memEnv', but goal is about ctx with result2.memEnv'
-        -- We need to show these contexts are equal
-        sorry  -- TODO: Show ctx' and ctx produce the same context after updates
+        · -- Memory containment part: show μ₃ contains all required locations
+          intro l h_memenv_contains
+          have h_config2_contains := h_mem2 l h_memenv_contains
+
+          -- Use h_mem_eq from bevalOp_structure: config₂.memory = config₃.memory
+          -- Simplify to get config₂.memory = μ₃
+          have h_mem_equality : config₂.memory = μ₃ := by
+            simp at h_mem_eq
+            exact h_mem_eq
+
+          rw [← h_mem_equality]
+          exact h_config2_contains
+
+        · -- VarEnv part: show config₁.varEnv satisfies type requirements
+          intro x qt h_lookup
+          exact h_var2 h_lookup
 
 -- Private lemma for var case
 private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Expr.var x) ctx := by
@@ -806,6 +831,7 @@ private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Ex
           exact h_instantiate
 
 -- Helper: prove PreservationWithFuel for all expressions and all fuel values
+-- Combined directly into the main theorem via strong induction
 private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeContext),
     PreservationWithFuel e ctx n := by
   intro n
@@ -905,8 +931,6 @@ private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeCon
       sorry
 
 -- Preservation theorem: well-typed programs preserve types
--- This proof uses strong induction on fuel_eval
-theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx := by
-  apply preservationWithFuel_implies_preservation
-  intro n
-  exact preservationWithFuel_all n e ctx
+-- This proof uses strong induction on fuel via preservationWithFuel_all
+theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx :=
+  preservationWithFuel_implies_preservation e ctx (preservationWithFuel_all · e ctx)
