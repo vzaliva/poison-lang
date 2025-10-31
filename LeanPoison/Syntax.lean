@@ -14,7 +14,48 @@ inductive Typ : Type where
   | ref : Typ → Typ
   | arrow : Typ → Typ → Typ
   | string : Typ
-  deriving Repr, BEq
+  deriving Repr, DecidableEq
+
+-- Manual BEq instance for Typ (for better control over proofs)
+def Typ.beq : Typ → Typ → Bool
+  | int, int => true
+  | bool, bool => true
+  | unit, unit => true
+  | string, string => true
+  | ref t1, ref t2 => beq t1 t2
+  | arrow t1 t2, arrow t1' t2' => beq t1 t1' && beq t2 t2'
+  | _, _ => false
+
+instance : BEq Typ where
+  beq := Typ.beq
+
+-- Typ BEq is reflexive (using manual BEq instance)
+theorem Typ_beq_refl (t : Typ) : BEq.beq t t = true := by
+  -- We prove reflexivity by structural induction on t
+  induction t with
+  | int | bool | unit | string =>
+    -- Base cases: same constructor compares to true
+    -- Unfold BEq.beq to Typ.beq, which reduces to true by definition
+    rfl
+  | ref t' IH =>
+    -- For ref: BEq.beq (Typ.ref t') (Typ.ref t') = Typ.beq (ref t') (ref t')
+    --                                              = Typ.beq t' t'
+    --                                              = true (by IH)
+    simp only [BEq.beq, Typ.beq]
+    exact IH
+  | arrow t1 t2 IH1 IH2 =>
+    -- For arrow: BEq.beq (Typ.arrow t1 t2) (Typ.arrow t1 t2)
+    --          = Typ.beq (arrow t1 t2) (arrow t1 t2)
+    --          = Typ.beq t1 t1 && Typ.beq t2 t2
+    --          = true && true (by IH1 and IH2)
+    --          = true
+    simp only [BEq.beq, Typ.beq]
+    -- Goal: (Typ.beq t1 t1 && Typ.beq t2 t2) = true
+    -- IH1: BEq.beq t1 t1 = true, IH2: BEq.beq t2 t2 = true
+    -- Unfold BEq.beq in IH1 and IH2 to get them in terms of Typ.beq
+    simp only [BEq.beq] at IH1 IH2
+    rw [IH1, IH2]
+    rfl
 
 -- Operations (corresponds to binary operations, op in Ott)
 inductive Op : Type where

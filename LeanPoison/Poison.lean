@@ -185,6 +185,53 @@ instance : BEq FnTClosure where
 instance : BEq PFnTClosure where
   beq := beqPFnTClosure
 
+-- Reflexivity lemmas for BEq instances on mutually recursive types
+mutual
+-- Prove reflexivity of beqETyp using mutual induction
+theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
+  cases t with
+  | int | bool | unit | string => simp [beqETyp]
+  | ref t' l =>
+    simp [beqETyp]
+    -- For ref type: (beqETyp t' t' && l == l) = true
+    -- Show both parts are true
+    have h_t' : beqETyp t' t' = true := beqETyp_refl t'
+    have h_l : (l == l) = true := by simp [BEq.beq]
+    simp [h_t']
+  | arrow st1 st2 p' tcl =>
+    simp [beqETyp]
+    -- Need: (st1 == st1 && st2 == st2 && p' == p' && beqFnTClosure tcl tcl) = true
+    -- Typ has BEq derived, so st1 == st1 and st2 == st2 are reflexive
+    -- Since Typ has deriving BEq, we can prove reflexivity using structural equality
+    -- For derived BEq instances, a == a evaluates to true by definition
+    have h_st1 : (st1 == st1) = true := Typ_beq_refl st1
+    have h_st2 : (st2 == st2) = true := Typ_beq_refl st2
+    have h_p' : (p' == p') = true := by cases p' <;> simp [BEq.beq]
+    have h_tcl : beqFnTClosure tcl tcl = true := beqFnTClosure_refl tcl
+    simp [h_st1, h_st2, h_tcl]
+  | parrow st1 st2 p' tcl =>
+    simp [beqETyp]
+    have h_st1 : (st1 == st1) = true := Typ_beq_refl st1
+    have h_st2 : (st2 == st2) = true := Typ_beq_refl st2
+    have h_p' : (p' == p') = true := by cases p' <;> simp [BEq.beq]
+    have h_tcl : beqPFnTClosure tcl tcl = true := beqPFnTClosure_refl tcl
+    simp [h_st1, h_st2, h_tcl]
+
+-- Prove reflexivity of beqFnTClosure
+theorem beqFnTClosure_refl (tcl : FnTClosure) : beqFnTClosure tcl tcl = true := by
+  cases tcl with
+  | mk x _ _ =>
+    simp [beqFnTClosure, BEq.beq]
+    -- x == x reduces to true by BEq reflexivity for Name (String)
+
+-- Prove reflexivity of beqPFnTClosure
+theorem beqPFnTClosure_refl (tcl : PFnTClosure) : beqPFnTClosure tcl tcl = true := by
+  cases tcl with
+  | mk x _ _ =>
+    simp [beqPFnTClosure, BEq.beq]
+    -- x == x reduces to true by BEq reflexivity for Name (String)
+end
+
 
 -- Manual BEq instance for PExpr
 def beqPExpr : PExpr → PExpr → Bool
