@@ -812,9 +812,9 @@ theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
   | ref t' l =>
       simp [beqETyp, beqETyp_refl t']
   | arrow t1 t2 p tcl =>
-      simp [beqETyp, Typ_beq_refl t1, Typ_beq_refl t2, beqFnTClosure_refl tcl]
+      simp [beqETyp, beqFnTClosure_refl tcl]
   | parrow t1 t2 p tcl =>
-      simp [beqETyp, Typ_beq_refl t1, Typ_beq_refl t2, beqPFnTClosure_refl tcl]
+      simp [beqETyp, beqPFnTClosure_refl tcl]
 
 -- Prove reflexivity of beqVarEnv
 theorem beqVarEnv_refl : ∀ (env : List (Name × QTyp)), beqVarEnv env env = true
@@ -826,7 +826,7 @@ theorem beqVarEnv_refl : ∀ (env : List (Name × QTyp)), beqVarEnv env env = tr
 theorem beqPredicate_refl (p : Predicate) : beqPredicate p p = true := by
   cases p with
   | guardClosure tag arg body env =>
-      simp [beqPredicate, beqPExpr_refl body, beqVarEnv_refl env]
+      simp [beqPredicate, beqVarEnv_refl env]
   | guardOnly tag =>
       simp [beqPredicate]
   | noPred =>
@@ -842,13 +842,13 @@ theorem beqQTyp_refl (qt : QTyp) : beqQTyp qt qt = true := by
 theorem beqFnTClosure_refl (tcl : FnTClosure) : beqFnTClosure tcl tcl = true := by
   cases tcl with
   | mk x e env =>
-      simp [beqFnTClosure, beqExpr_refl e, beqVarEnv_refl env]
+      simp [beqFnTClosure, beqVarEnv_refl env]
 
 -- Prove reflexivity of beqPFnTClosure
 theorem beqPFnTClosure_refl (tcl : PFnTClosure) : beqPFnTClosure tcl tcl = true := by
   cases tcl with
   | mk x e env =>
-      simp [beqPFnTClosure, beqPExpr_refl e, beqVarEnv_refl env]
+      simp [beqPFnTClosure, beqVarEnv_refl env]
 
 end
 
