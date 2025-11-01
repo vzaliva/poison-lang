@@ -292,10 +292,10 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                 cases h12: result3.qualType with
                 | mk etyp3 p''' pred =>
                   simp_all
-                  cases h13: etyp2 != etyp3 with
-                  | true =>
-                    simp_all
+                  cases h13: beqETypSignature etyp2 etyp3 with
                   | false =>
+                    simp_all
+                  | true =>
                     simp_all [pure, Except.pure]
                     have C' : ({ pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
                                  tagEnv := result1.tagEnv',
@@ -385,10 +385,10 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                 cases h12: result3.qualType with
                 | mk etyp3 p''' pred =>
                   simp [h12] at H
-                  cases h13: etyp2 != etyp3 with
-                  | true =>
-                    simp [h13] at H
+                  cases h13: beqETypSignature etyp2 etyp3 with
                   | false =>
+                    simp [h13] at H
+                  | true =>
                     simp [h13] at H
                     have hfuel : fuel' < fuel' + 1 + 1 := by linarith
                     have hfuel : fuel' < fuel' + 1 + 1 := by linarith
