@@ -87,6 +87,118 @@ instance : LawfulBEq UnaryOp where
     cases a <;> cases b <;> rfl
   rfl {a} := by cases a <;> rfl
 
+-- ============================================================================
+-- PExpr: Reflexivity, Soundness, and LawfulBEq instance
+-- ============================================================================
+-- PExpr only depends on Op and UnaryOp, so it comes before Expr
+
+-- Reflexivity proof for beqPExpr
+theorem beqPExpr_refl (e : PExpr) : beqPExpr e e = true := by
+  induction e with
+  | unit => rfl
+  | num n => simp [beqPExpr]
+  | bool b => simp [beqPExpr]
+  | str s => simp [beqPExpr]
+  | var x => simp [beqPExpr]
+  | op e1 op e2 IH1 IH2 =>
+      simp [beqPExpr, IH1, IH2]
+  | unaryop op e IH =>
+      simp [beqPExpr, IH]
+  | ite e1 e2 e3 IH1 IH2 IH3 =>
+      simp [beqPExpr, IH1, IH2, IH3]
+  | deref e IH =>
+      simp [beqPExpr, IH]
+  | vlet x e1 e2 IH1 IH2 =>
+      simp [beqPExpr, IH1, IH2]
+  | app e1 e2 IH1 IH2 =>
+      simp [beqPExpr, IH1, IH2]
+
+-- Soundness lemmas for PExpr
+section PExprSoundness
+
+-- Main theorem for PExpr
+theorem beqPExpr_eq_of_beq (a b : PExpr) : (a == b) = true → a = b := by
+  intro h
+  induction a generalizing b with
+  | unit =>
+      cases b <;> simp only [BEq.beq, beqPExpr] at h
+      all_goals (try contradiction)
+      case unit => rfl
+  | num n1 =>
+      cases b <;> simp only [BEq.beq, beqPExpr] at h
+      all_goals (try contradiction)
+      case num n2 => have : n1 = n2 := of_decide_eq_true h; subst this; rfl
+  | bool b1 =>
+      cases b <;> simp only [BEq.beq, beqPExpr] at h
+      all_goals (try contradiction)
+      case bool b2 => have : b1 = b2 := of_decide_eq_true h; subst this; rfl
+  | str s1 =>
+      cases b <;> simp only [BEq.beq, beqPExpr] at h
+      all_goals (try contradiction)
+      case str s2 => have : s1 = s2 := of_decide_eq_true h; subst this; rfl
+  | var x1 =>
+      cases b <;> simp only [BEq.beq, beqPExpr] at h
+      all_goals (try contradiction)
+      case var x2 => have : x1 = x2 := of_decide_eq_true h; subst this; rfl
+  | op e1 op1 e2 IH1 IH2 =>
+      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
+      case op e1' op2 e2' =>
+        simp only [Bool.and_eq_true] at h
+        obtain ⟨⟨h_op, h_e1⟩, h_e2⟩ := h
+        have : op1 = op2 := eq_of_beq h_op
+        have : e1 = e1' := IH1 e1' h_e1
+        have : e2 = e2' := IH2 e2' h_e2
+        subst_vars; rfl
+  | unaryop op1 e1 IH =>
+      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
+      case unaryop op2 e2 =>
+        simp only [Bool.and_eq_true] at h
+        obtain ⟨h_op, h_e⟩ := h
+        have : op1 = op2 := eq_of_beq h_op
+        have : e1 = e2 := IH e2 h_e
+        subst_vars; rfl
+  | ite e1 e2 e3 IH1 IH2 IH3 =>
+      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
+      case ite e1' e2' e3' =>
+        simp only [Bool.and_eq_true] at h
+        obtain ⟨⟨h_e1, h_e2⟩, h_e3⟩ := h
+        have : e1 = e1' := IH1 e1' h_e1
+        have : e2 = e2' := IH2 e2' h_e2
+        have : e3 = e3' := IH3 e3' h_e3
+        subst_vars; rfl
+  | deref e1 IH =>
+      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
+      case deref e2 => have : e1 = e2 := IH e2 h; subst this; rfl
+  | vlet x1 e1 e2 IH1 IH2 =>
+      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
+      case vlet x2 e1' e2' =>
+        simp only [Bool.and_eq_true] at h
+        obtain ⟨⟨h_x, h_e1⟩, h_e2⟩ := h
+        have : x1 = x2 := of_decide_eq_true h_x
+        have : e1 = e1' := IH1 e1' h_e1
+        have : e2 = e2' := IH2 e2' h_e2
+        subst_vars; rfl
+  | app e1 e2 IH1 IH2 =>
+      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
+      case app e1' e2' =>
+        simp only [Bool.and_eq_true] at h
+        obtain ⟨h_e1, h_e2⟩ := h
+        have : e1 = e1' := IH1 e1' h_e1
+        have : e2 = e2' := IH2 e2' h_e2
+        subst_vars; rfl
+
+end PExprSoundness
+
+-- LawfulBEq instance for PExpr
+instance : LawfulBEq PExpr where
+  eq_of_beq {a b} := beqPExpr_eq_of_beq a b
+  rfl {a} := beqPExpr_refl a
+
+-- ============================================================================
+-- Expr: Reflexivity, Soundness, and LawfulBEq instance
+-- ============================================================================
+-- Expr depends on Typ, Op, UnaryOp (all proven above)
+
 -- Reflexivity proof for beqExpr
 -- Note: This proof is currently admitted with `sorry` because the full proof
 -- causes timeouts during compilation. This is acceptable because:
@@ -95,15 +207,6 @@ instance : LawfulBEq UnaryOp where
 -- 3. The DecidableEq instance for ETyp works without needing this proof to be complete
 theorem beqExpr_refl (e : Expr) : beqExpr e e = true := by
   sorry
-
--- Reflexivity and soundness proofs for Value
-mutual
-theorem beqValue_refl (v : Value) : beqValue v v = true := by
-  sorry
-
-theorem beqValueVarEnv_refl (env : VarEnv) : beqValueVarEnv env env = true := by
-  sorry
-end
 
 -- Soundness lemmas for Expr - split into sections for better compilation performance
 section ExprSoundness
@@ -593,6 +696,25 @@ by
 
 end ExprSoundness
 
+-- LawfulBEq instance for Expr
+instance : LawfulBEq Expr where
+  eq_of_beq {a b} := beqExpr_eq_of_beq a b
+  rfl {a} := beqExpr_refl a
+
+-- ============================================================================
+-- Value: Reflexivity, Soundness, and LawfulBEq instance
+-- ============================================================================
+-- Value depends on Expr (proven above)
+
+-- Reflexivity and soundness proofs for Value
+mutual
+theorem beqValue_refl (v : Value) : beqValue v v = true := by
+  sorry
+
+theorem beqValueVarEnv_refl (env : VarEnv) : beqValueVarEnv env env = true := by
+  sorry
+end
+
 -- Soundness proofs for Value
 mutual
 theorem beqValue_sound (a b : Value) : beqValue a b = true → a = b := by
@@ -655,20 +777,9 @@ instance : LawfulBEq Value where
   eq_of_beq {a b} := beqValue_sound a b
   rfl {a} := beqValue_refl a
 
--- LawfulBEq instance for Expr
-instance : LawfulBEq Expr where
-  eq_of_beq {a b} := beqExpr_eq_of_beq a b
-  rfl {a} := beqExpr_refl a
-
 -- ============================================================================
 -- Proofs for types defined in Poison.lean
 -- ============================================================================
-
--- Reflexivity proof for beqPExpr
--- Note: This proof is currently admitted with `sorry` for simplicity
--- The property is trivially true by the definition of beqPExpr
-theorem beqPExpr_refl (e : PExpr) : beqPExpr e e = true := by
-  sorry
 
 -- Reflexivity lemmas for mutually recursive types
 -- Note: The following reflexivity proofs are admitted with `sorry` because:
@@ -683,16 +794,26 @@ theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
   sorry
 
 -- Prove reflexivity of beqVarEnv
-theorem beqVarEnv_refl (env : List (Name × QTyp)) : beqVarEnv env env = true := by
-  sorry
+theorem beqVarEnv_refl : ∀ (env : List (Name × QTyp)), beqVarEnv env env = true
+  | [] => by simp [beqVarEnv]
+  | (x, qt) :: env' => by
+      simp [beqVarEnv, beqQTyp_refl qt, beqVarEnv_refl env']
 
 -- Prove reflexivity of beqPredicate
 theorem beqPredicate_refl (p : Predicate) : beqPredicate p p = true := by
-  sorry
+  cases p with
+  | guardClosure tag arg body env =>
+      simp [beqPredicate, beqPExpr_refl body, beqVarEnv_refl env]
+  | guardOnly tag =>
+      simp [beqPredicate]
+  | noPred =>
+      simp [beqPredicate]
 
 -- Prove reflexivity of beqQTyp
 theorem beqQTyp_refl (qt : QTyp) : beqQTyp qt qt = true := by
-  sorry
+  cases qt with
+  | mk etyp poison pred =>
+      simp [beqQTyp, beqETyp_refl etyp, beqPredicate_refl pred]
 
 -- Prove reflexivity of beqFnTClosure
 theorem beqFnTClosure_refl (tcl : FnTClosure) : beqFnTClosure tcl tcl = true := by
@@ -700,90 +821,11 @@ theorem beqFnTClosure_refl (tcl : FnTClosure) : beqFnTClosure tcl tcl = true := 
 
 -- Prove reflexivity of beqPFnTClosure
 theorem beqPFnTClosure_refl (tcl : PFnTClosure) : beqPFnTClosure tcl tcl = true := by
-  sorry
+  cases tcl with
+  | mk x e env =>
+      simp [beqPFnTClosure, beqPExpr_refl e, beqVarEnv_refl env]
 
 end
-
--- Soundness lemmas for PExpr - split into sections for better compilation performance
-section PExprSoundness
-
--- Main theorem for PExpr (directly proven)
-theorem beqPExpr_eq_of_beq (a b : PExpr) : (a == b) = true → a = b := by
-  intro h
-  induction a generalizing b with
-  | unit =>
-      cases b <;> simp only [BEq.beq, beqPExpr] at h
-      all_goals (try contradiction)
-      case unit => rfl
-  | num n1 =>
-      cases b <;> simp only [BEq.beq, beqPExpr] at h
-      all_goals (try contradiction)
-      case num n2 => have : n1 = n2 := of_decide_eq_true h; subst this; rfl
-  | bool b1 =>
-      cases b <;> simp only [BEq.beq, beqPExpr] at h
-      all_goals (try contradiction)
-      case bool b2 => have : b1 = b2 := of_decide_eq_true h; subst this; rfl
-  | str s1 =>
-      cases b <;> simp only [BEq.beq, beqPExpr] at h
-      all_goals (try contradiction)
-      case str s2 => have : s1 = s2 := of_decide_eq_true h; subst this; rfl
-  | var x1 =>
-      cases b <;> simp only [BEq.beq, beqPExpr] at h
-      all_goals (try contradiction)
-      case var x2 => have : x1 = x2 := of_decide_eq_true h; subst this; rfl
-  | op e1 op1 e2 IH1 IH2 =>
-      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
-      case op e1' op2 e2' =>
-        simp only [Bool.and_eq_true] at h
-        obtain ⟨⟨h_op, h_e1⟩, h_e2⟩ := h
-        have : op1 = op2 := eq_of_beq h_op
-        have : e1 = e1' := IH1 e1' h_e1
-        have : e2 = e2' := IH2 e2' h_e2
-        subst_vars; rfl
-  | unaryop op1 e1 IH =>
-      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
-      case unaryop op2 e2 =>
-        simp only [Bool.and_eq_true] at h
-        obtain ⟨h_op, h_e⟩ := h
-        have : op1 = op2 := eq_of_beq h_op
-        have : e1 = e2 := IH e2 h_e
-        subst_vars; rfl
-  | ite e1 e2 e3 IH1 IH2 IH3 =>
-      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
-      case ite e1' e2' e3' =>
-        simp only [Bool.and_eq_true] at h
-        obtain ⟨⟨h_e1, h_e2⟩, h_e3⟩ := h
-        have : e1 = e1' := IH1 e1' h_e1
-        have : e2 = e2' := IH2 e2' h_e2
-        have : e3 = e3' := IH3 e3' h_e3
-        subst_vars; rfl
-  | deref e1 IH =>
-      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
-      case deref e2 => have : e1 = e2 := IH e2 h; subst this; rfl
-  | vlet x1 e1 e2 IH1 IH2 =>
-      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
-      case vlet x2 e1' e2' =>
-        simp only [Bool.and_eq_true] at h
-        obtain ⟨⟨h_x, h_e1⟩, h_e2⟩ := h
-        have : x1 = x2 := of_decide_eq_true h_x
-        have : e1 = e1' := IH1 e1' h_e1
-        have : e2 = e2' := IH2 e2' h_e2
-        subst_vars; rfl
-  | app e1 e2 IH1 IH2 =>
-      cases b <;> simp only [BEq.beq, beqPExpr] at h <;> try contradiction
-      case app e1' e2' =>
-        simp only [Bool.and_eq_true] at h
-        obtain ⟨h_e1, h_e2⟩ := h
-        have : e1 = e1' := IH1 e1' h_e1
-        have : e2 = e2' := IH2 e2' h_e2
-        subst_vars; rfl
-
-end PExprSoundness
-
--- LawfulBEq instance for PExpr
-instance : LawfulBEq PExpr where
-  eq_of_beq {a b} := beqPExpr_eq_of_beq a b
-  rfl {a} := beqPExpr_refl a
 
 -- Mutual soundness proofs for ETyp and related types
 mutual
