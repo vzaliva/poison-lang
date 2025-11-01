@@ -11,6 +11,7 @@ import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.NonInterference
 import LeanProofs.Properties
+import LeanProofs.Equality
 
 -- ================================================================
 -- Preservation Property
@@ -1142,18 +1143,22 @@ private lemma typecheckRand_structure (ctx : TypeContext) (e1 : Expr) (fuel : Na
       match h_qt : result1.qualType with
       | QTyp.mk etyp poison pred =>
         rw [h_qt] at h_typecheck
-        simp_all
-        -- Now split on the if-statement
-        split at h_typecheck
-        · next h_etyp_neq_false =>
-          simp [throw] at h_typecheck
-        · next h_etyp_eq_int =>
-          simp [pure, Except.pure] at h_typecheck
-          cases res
-          simp_all
+        -- Now we need to check if etyp = ETyp.int or not
+        by_cases h_cond : etyp = ETyp.int
+        case pos =>
+          -- etyp = ETyp.int, so the if-statement takes the else branch
+          simp [h_cond, pure, Except.pure] at h_typecheck
+          -- h_typecheck: the constructed result equals res
+          -- Build the existential witness
+          use result1
           constructor
-          . sorry
-          . sorry
+          · exact h_tc1
+          constructor
+          · rw [h_qt]; simp; exact h_cond
+          · rw [← h_typecheck]; simp
+        case neg =>
+          -- etyp != ETyp.int, so the if-statement takes the then branch (throws error)
+          simp [h_cond, throw] at h_typecheck
     | error msg =>
       simp [h_tc1] at h_typecheck
 
