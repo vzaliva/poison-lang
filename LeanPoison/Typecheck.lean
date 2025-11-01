@@ -681,7 +681,7 @@ def typecheckRand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRes
     | 0        => throw "Out of fuel"
     | fuel + 1 =>
             do
-              let result ← typecheckExpr ctx e (fuel - 1)
+              let result ← typecheckExpr ctx e fuel
               let ⟨etyp, poison, _  ⟩ := result.qualType
               if etyp != ETyp.int then throw ("Argument Expression to rand must have type int")
               else
@@ -703,7 +703,7 @@ def typecheckFrand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRe
   | 0        => throw "Out of fuel"
   | fuel + 1 =>
     do
-      let result ← typecheckExpr ctx e (fuel - 1)
+      let result ← typecheckExpr ctx e fuel
       let ⟨etyp, _, _  ⟩ := result.qualType
       if etyp != ETyp.int then throw ("Argument Expression to frand must have type int")
       else
