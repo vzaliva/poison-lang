@@ -200,11 +200,13 @@ instance : LawfulBEq PExpr where
 -- Expr depends on Typ, Op, UnaryOp (all proven above)
 
 -- Reflexivity proof for beqExpr
--- Note: This proof is currently admitted with `sorry` because the full proof
--- causes timeouts during compilation. This is acceptable because:
--- 1. The property is trivially true by the definition of beqExpr
--- 2. It's only used in FnTClosure reflexivity, which is part of the BEq instances
--- 3. The DecidableEq instance for ETyp works without needing this proof to be complete
+-- TODO: This proof causes deterministic timeouts even when split into helper lemmas.
+-- The `beqExpr` definition with 23 constructors is too complex for `simp` to handle efficiently.
+-- Possible solutions:
+--   1. Use a custom tactic that avoids full unfolding
+--   2. Axiomatize this specific reflexivity proof
+--   3. Simplify the beqExpr definition itself
+-- For now, we admit it as the property is trivially true by definition.
 theorem beqExpr_refl (e : Expr) : beqExpr e e = true := by
   sorry
 
@@ -706,13 +708,24 @@ instance : LawfulBEq Expr where
 -- ============================================================================
 -- Value depends on Expr (proven above)
 
--- Reflexivity and soundness proofs for Value
+-- Reflexivity proofs for Value
 mutual
 theorem beqValue_refl (v : Value) : beqValue v v = true := by
-  sorry
+  cases v with
+  | num n => simp [beqValue]
+  | bool b => simp [beqValue]
+  | unit => simp [beqValue]
+  | loc l => simp [beqValue]
+  | str s => simp [beqValue]
+  | closure x e env =>
+      simp [beqValue, beqExpr_refl e, beqValueVarEnv_refl env]
+  | peClosure x e env =>
+      simp [beqValue, beqExpr_refl e, beqValueVarEnv_refl env]
 
-theorem beqValueVarEnv_refl (env : VarEnv) : beqValueVarEnv env env = true := by
-  sorry
+theorem beqValueVarEnv_refl : ∀ (env : VarEnv), beqValueVarEnv env env = true
+  | [] => by simp [beqValueVarEnv]
+  | (x, v) :: env' => by
+      simp [beqValueVarEnv, beqValue_refl v, beqValueVarEnv_refl env']
 end
 
 -- Soundness proofs for Value
@@ -791,7 +804,17 @@ instance : LawfulBEq Value where
 mutual
 -- Prove reflexivity of beqETyp using mutual induction
 theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
-  sorry
+  cases t with
+  | int => simp [beqETyp]
+  | bool => simp [beqETyp]
+  | unit => simp [beqETyp]
+  | string => simp [beqETyp]
+  | ref t' l =>
+      simp [beqETyp, beqETyp_refl t']
+  | arrow t1 t2 p tcl =>
+      simp [beqETyp, Typ_beq_refl t1, Typ_beq_refl t2, beqFnTClosure_refl tcl]
+  | parrow t1 t2 p tcl =>
+      simp [beqETyp, Typ_beq_refl t1, Typ_beq_refl t2, beqPFnTClosure_refl tcl]
 
 -- Prove reflexivity of beqVarEnv
 theorem beqVarEnv_refl : ∀ (env : List (Name × QTyp)), beqVarEnv env env = true
@@ -817,7 +840,9 @@ theorem beqQTyp_refl (qt : QTyp) : beqQTyp qt qt = true := by
 
 -- Prove reflexivity of beqFnTClosure
 theorem beqFnTClosure_refl (tcl : FnTClosure) : beqFnTClosure tcl tcl = true := by
-  sorry
+  cases tcl with
+  | mk x e env =>
+      simp [beqFnTClosure, beqExpr_refl e, beqVarEnv_refl env]
 
 -- Prove reflexivity of beqPFnTClosure
 theorem beqPFnTClosure_refl (tcl : PFnTClosure) : beqPFnTClosure tcl tcl = true := by
