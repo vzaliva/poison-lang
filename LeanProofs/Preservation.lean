@@ -1966,7 +1966,32 @@ private lemma preservation_fn (x : Name) (paramType : Typ) (body : Expr) (return
     (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
     :
     PreservationWithFuel (Expr.fn x paramType body returnType) ctx n := by
-  sorry
+  unfold PreservationWithFuel
+  intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
+  -- Function abstraction is simple: typechecking creates arrow type, evaluation creates closure
+  cases n with
+  | zero =>
+    -- With fuel 0, beval returns outOfFuel
+    simp [LeanPoison.beval] at h_eval
+    apply congrFun (a := ()) at h_eval
+    cases h_eval
+  | succ fuel' =>
+    cases fuel_tc with
+    | zero => simp [typecheck, typecheckExpr] at h_typecheck
+    | succ fuel_tc' =>
+      simp only [typecheck, typecheckExpr, typecheckFn, pure, Except.pure] at h_typecheck
+      -- Evaluation creates closure without changing state
+      simp [LeanPoison.beval] at h_eval
+      apply congrFun (a := ()) at h_eval
+      simp [pure] at h_eval
+      -- Extract equalities
+      cases h_typecheck
+      cases h_eval
+      constructor
+      · -- valueHasETyp: closure has arrow type
+        constructor
+      · -- runtimeInstantiatesCtx: contexts unchanged
+        exact h_instantiate
 
 -- Helper lemma for pure function abstraction
 private lemma preservation_pfn (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ) (ctx : TypeContext)
@@ -1974,7 +1999,41 @@ private lemma preservation_pfn (x : Name) (paramType : Typ) (body : Expr) (retur
     (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
     :
     PreservationWithFuel (Expr.pfn x paramType body returnType) ctx n := by
-  sorry
+  unfold PreservationWithFuel
+  intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
+  -- Pure function abstraction is similar to fn, but converts body to PExpr
+  cases n with
+  | zero =>
+    simp [LeanPoison.beval] at h_eval
+    apply congrFun (a := ()) at h_eval
+    cases h_eval
+  | succ fuel' =>
+    cases fuel_tc with
+    | zero => simp [typecheck, typecheckExpr] at h_typecheck
+    | succ fuel_tc' =>
+      simp only [typecheck, typecheckExpr] at h_typecheck
+      -- Typecheck uses toPExpr, then returns parrow type
+      unfold typecheckPfn at h_typecheck
+      simp [bind, Except.bind] at h_typecheck
+      -- Split on toPExpr result
+      split at h_typecheck
+      · next h_toPExpr_err =>
+        -- toPExpr failed, contradiction
+        contradiction
+      · next pbody h_toPExpr_ok =>
+        simp [pure, Except.pure] at h_typecheck
+        -- Evaluation creates peClosure without changing state
+        simp [LeanPoison.beval] at h_eval
+        apply congrFun (a := ()) at h_eval
+        simp [pure] at h_eval
+        -- Extract equalities
+        cases h_typecheck
+        cases h_eval
+        constructor
+        · -- valueHasETyp: peClosure has parrow type
+          constructor
+        · -- runtimeInstantiatesCtx: contexts unchanged
+          exact h_instantiate
 
 -- Helper lemma for function application
 private lemma preservation_app (e1 e2 : Expr) (ctx : TypeContext)
