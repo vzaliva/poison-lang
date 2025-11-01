@@ -1332,13 +1332,253 @@ private lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
       -- EStateM.error - contradiction with success
       cases h_eval
 
+-- Helper lemma: extract structure from typecheckPrintInt
+private lemma typecheckPrintInt_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckPrintInt ctx e1 fuel = .ok res →
+  ∃ (result1 : TypeResult),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    result1.qualType.etyp = ETyp.int ∧
+    res.memEnv' = result1.memEnv' ∧
+    res.tagEnv' = result1.tagEnv' ∧
+    res.nextLoc' = result1.nextLoc' ∧
+    res.nextTag' = result1.nextTag' ∧
+    res.qualType.etyp = ETyp.unit := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+    unfold typecheckPrintInt at h_typecheck
+    simp at h_typecheck
+  | succ fuel' =>
+    unfold typecheckPrintInt at h_typecheck
+    simp [bind, Except.bind] at h_typecheck
+    cases h_tc1 : typecheckExpr ctx e1 fuel' with
+    | ok result1 =>
+      simp [h_tc1] at h_typecheck
+      match h_qt : result1.qualType with
+      | QTyp.mk etyp poison pred =>
+        rw [h_qt] at h_typecheck
+        by_cases h_cond : etyp = ETyp.int
+        case pos =>
+          simp [h_cond, pure, Except.pure] at h_typecheck
+          use result1
+          constructor
+          · exact h_tc1
+          constructor
+          · rw [h_qt]; simp; exact h_cond
+          · rw [← h_typecheck]; simp
+        case neg =>
+          simp [h_cond, throw] at h_typecheck
+    | error msg =>
+      simp [h_tc1] at h_typecheck
+
+-- Helper lemma: extract structure from typecheckPrintString
+private lemma typecheckPrintString_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckPrintString ctx e1 fuel = .ok res →
+  ∃ (result1 : TypeResult),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    result1.qualType.etyp = ETyp.string ∧
+    res.memEnv' = result1.memEnv' ∧
+    res.tagEnv' = result1.tagEnv' ∧
+    res.nextLoc' = result1.nextLoc' ∧
+    res.nextTag' = result1.nextTag' ∧
+    res.qualType.etyp = ETyp.unit := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+    unfold typecheckPrintString at h_typecheck
+    simp at h_typecheck
+  | succ fuel' =>
+    unfold typecheckPrintString at h_typecheck
+    simp [bind, Except.bind] at h_typecheck
+    cases h_tc1 : typecheckExpr ctx e1 fuel' with
+    | ok result1 =>
+      simp [h_tc1] at h_typecheck
+      match h_qt : result1.qualType with
+      | QTyp.mk etyp poison pred =>
+        rw [h_qt] at h_typecheck
+        by_cases h_cond : etyp = ETyp.string
+        case pos =>
+          simp [h_cond, pure, Except.pure] at h_typecheck
+          use result1
+          constructor
+          · exact h_tc1
+          constructor
+          · rw [h_qt]; simp; exact h_cond
+          · rw [← h_typecheck]; simp
+        case neg =>
+          simp [h_cond, throw] at h_typecheck
+    | error msg =>
+      simp [h_tc1] at h_typecheck
+
+-- Helper lemma: extract evaluation structure from successful beval of printInt
+private lemma bevalPrintInt_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value) :
+  LeanPoison.beval fuel config₀ (Expr.printInt e1) verbose =
+    pure (.success config₁ v) →
+  ∃ (config' : Config) (v1 : Value),
+    LeanPoison.beval (fuel - 1) config₀ e1 verbose = pure (.success config' v1) ∧
+    valueHasETyp v1 ETyp.int ∧
+    valueHasETyp v ETyp.unit ∧
+    config'.memory = config₁.memory ∧
+    config'.varEnv = config₁.varEnv := by
+  intro h_eval
+  cases fuel with
+  | zero =>
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    apply congrFun (a := ()) at h_eval
+    simp [pure] at h_eval
+    injection h_eval with h_contr
+    cases h_contr
+  | succ fuel' =>
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    apply congrFun (a := ()) at h_eval
+    simp [bind, Bind.bind, EStateM.bind, pure] at h_eval
+    split at h_eval
+    · next h_result1 h_state1 h_beval1 =>
+      split at h_eval
+      · next config' v₁ =>
+        -- After the println, we return success
+        simp [Functor.map, EStateM.map] at h_eval
+        split at h_eval
+        · next p_result p_state =>
+          simp [EStateM.pure] at h_eval
+          rcases h_eval with ⟨⟨h_eq_cfg, h_eq_val⟩, h_eq_res⟩
+          subst h_eq_cfg h_eq_val
+          have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' (Value.num v₁)) := by
+            funext _
+            simp [pure]
+            exact h_beval1
+          simp only [Nat.add_sub_cancel]
+          exact ⟨config', Value.num v₁, h_beval1', valueHasETyp.num _, valueHasETyp.unit, rfl, rfl⟩
+        · next p_error p_state =>
+          simp [EStateM.pure] at h_eval
+      all_goals {
+        simp [EStateM.pure] at h_eval
+      }
+    · next h_error1 h_state1 =>
+      cases h_eval
+
+-- Helper lemma: extract evaluation structure from successful beval of printString
+private lemma bevalPrintString_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value) :
+  LeanPoison.beval fuel config₀ (Expr.printString e1) verbose =
+    pure (.success config₁ v) →
+  ∃ (config' : Config) (v1 : Value),
+    LeanPoison.beval (fuel - 1) config₀ e1 verbose = pure (.success config' v1) ∧
+    valueHasETyp v1 ETyp.string ∧
+    valueHasETyp v ETyp.unit ∧
+    config'.memory = config₁.memory ∧
+    config'.varEnv = config₁.varEnv := by
+  intro h_eval
+  cases fuel with
+  | zero =>
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    apply congrFun (a := ()) at h_eval
+    simp [pure] at h_eval
+    injection h_eval with h_contr
+    cases h_contr
+  | succ fuel' =>
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    apply congrFun (a := ()) at h_eval
+    simp [bind, Bind.bind, EStateM.bind, pure] at h_eval
+    split at h_eval
+    · next h_result1 h_state1 h_beval1 =>
+      split at h_eval
+      · next config' v₁ =>
+        -- After the println, we return success
+        simp [Functor.map, EStateM.map] at h_eval
+        split at h_eval
+        · next p_result p_state =>
+          simp [EStateM.pure] at h_eval
+          rcases h_eval with ⟨⟨h_eq_cfg, h_eq_val⟩, h_eq_res⟩
+          subst h_eq_cfg h_eq_val
+          have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' (Value.str v₁)) := by
+            funext _
+            simp [pure]
+            exact h_beval1
+          simp only [Nat.add_sub_cancel]
+          exact ⟨config', Value.str v₁, h_beval1', valueHasETyp.str _, valueHasETyp.unit, rfl, rfl⟩
+        · next p_error p_state =>
+          simp [EStateM.pure] at h_eval
+      all_goals {
+        simp [EStateM.pure] at h_eval
+      }
+    · next h_error1 h_state1 =>
+      cases h_eval
+
 -- Helper lemma for printInt
 private lemma preservation_printInt (e1 : Expr) (ctx : TypeContext)
     (n : Nat)
     (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
     :
     PreservationWithFuel (Expr.printInt e1) ctx n := by
-  sorry
+  unfold PreservationWithFuel
+  intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
+  cases n with
+  | zero =>
+    simp [LeanPoison.beval] at h_eval
+    apply congrFun (a := ()) at h_eval
+    cases h_eval
+  | succ fuel' =>
+    cases fuel_tc with
+    | zero => simp [typecheck, typecheckExpr] at h_typecheck
+    | succ fuel_tc' =>
+      simp only [typecheck, typecheckExpr] at h_typecheck
+      -- Extract typechecking structure
+      have ⟨result1, h_tc1, h_etyp1, h_mem, h_tag, h_loc, h_ntag, h_etyp⟩ :=
+        typecheckPrintInt_structure ctx e1 fuel_tc' res h_typecheck
+
+      -- Extract evaluation structure
+      obtain ⟨config₁, v1, h_eval1, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
+        bevalPrintInt_structure e1 fuel'.succ verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          v h_eval
+
+      -- VarEnv preservation
+      have h_varenv01 : ρ₀ = config₁.varEnv :=
+        beval_preserves_varEnv e1 fuel' verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          config₁ v1 h_eval1
+      have h_varenv_unchanged : ρ₀ = ρ₁ :=
+        beval_preserves_varEnv (Expr.printInt e1) fuel'.succ verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          v h_eval
+
+      subst h_varenv01 h_varenv_unchanged
+      rw [← h_varenv_eq]
+
+      constructor
+      · -- valueHasETyp v res.qualType.etyp
+        rw [h_etyp]
+        exact h_v_type
+      · -- runtimeInstantiatesCtx
+        have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+        have h_tc1' : typecheck ctx e1 (fuel_tc' - 1) = .ok result1 := by
+          simp [typecheck]
+          exact h_tc1
+        have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
+                        μ₀ config₁.memory config₁.varEnv config₁.varEnv
+                        l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                        h_tc1' h_instantiate h_eval1
+        obtain ⟨_, h_runtime1⟩ := IH1
+        simp only [h_mem]
+        -- Use memory equality
+        have h_mem_equality : config₁.memory = μ₁ := h_mem_eq
+        unfold runtimeInstantiatesCtx at h_runtime1 ⊢
+        obtain ⟨h_mem2, h_var2⟩ := h_runtime1
+        constructor
+        · intro l h_memenv_contains
+          have h_config1_contains := h_mem2 l h_memenv_contains
+          rw [← h_mem_equality]
+          exact h_config1_contains
+        · intro x qt h_lookup
+          exact h_var2 h_lookup
 
 -- Helper lemma for printString (similar to printInt)
 private lemma preservation_printString (e1 : Expr) (ctx : TypeContext)
@@ -1346,7 +1586,69 @@ private lemma preservation_printString (e1 : Expr) (ctx : TypeContext)
     (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
     :
     PreservationWithFuel (Expr.printString e1) ctx n := by
-  sorry
+  unfold PreservationWithFuel
+  intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
+  cases n with
+  | zero =>
+    simp [LeanPoison.beval] at h_eval
+    apply congrFun (a := ()) at h_eval
+    cases h_eval
+  | succ fuel' =>
+    cases fuel_tc with
+    | zero => simp [typecheck, typecheckExpr] at h_typecheck
+    | succ fuel_tc' =>
+      simp only [typecheck, typecheckExpr] at h_typecheck
+      -- Extract typechecking structure
+      have ⟨result1, h_tc1, h_etyp1, h_mem, h_tag, h_loc, h_ntag, h_etyp⟩ :=
+        typecheckPrintString_structure ctx e1 fuel_tc' res h_typecheck
+
+      -- Extract evaluation structure
+      obtain ⟨config₁, v1, h_eval1, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
+        bevalPrintString_structure e1 fuel'.succ verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          v h_eval
+
+      -- VarEnv preservation
+      have h_varenv01 : ρ₀ = config₁.varEnv :=
+        beval_preserves_varEnv e1 fuel' verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          config₁ v1 h_eval1
+      have h_varenv_unchanged : ρ₀ = ρ₁ :=
+        beval_preserves_varEnv (Expr.printString e1) fuel'.succ verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          v h_eval
+
+      subst h_varenv01 h_varenv_unchanged
+      rw [← h_varenv_eq]
+
+      constructor
+      · -- valueHasETyp v res.qualType.etyp
+        rw [h_etyp]
+        exact h_v_type
+      · -- runtimeInstantiatesCtx
+        have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+        have h_tc1' : typecheck ctx e1 (fuel_tc' - 1) = .ok result1 := by
+          simp [typecheck]
+          exact h_tc1
+        have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
+                        μ₀ config₁.memory config₁.varEnv config₁.varEnv
+                        l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                        h_tc1' h_instantiate h_eval1
+        obtain ⟨_, h_runtime1⟩ := IH1
+        simp only [h_mem]
+        -- Use memory equality
+        have h_mem_equality : config₁.memory = μ₁ := h_mem_eq
+        unfold runtimeInstantiatesCtx at h_runtime1 ⊢
+        obtain ⟨h_mem2, h_var2⟩ := h_runtime1
+        constructor
+        · intro l h_memenv_contains
+          have h_config1_contains := h_mem2 l h_memenv_contains
+          rw [← h_mem_equality]
+          exact h_config1_contains
+        · intro x qt h_lookup
+          exact h_var2 h_lookup
 
 -- Helper lemma for rand
 private lemma preservation_rand (e1 : Expr) (ctx : TypeContext)
