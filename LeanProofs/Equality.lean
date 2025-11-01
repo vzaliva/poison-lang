@@ -233,15 +233,88 @@ instance : LawfulBEq PExpr where
 -- Expr depends on Typ, Op, UnaryOp (all proven above)
 
 -- Reflexivity proof for beqExpr
--- TODO: This proof causes deterministic timeouts even when split into helper lemmas.
--- The `beqExpr` definition with 23 constructors is too complex for `simp` to handle efficiently.
--- Possible solutions:
---   1. Use a custom tactic that avoids full unfolding
---   2. Axiomatize this specific reflexivity proof
---   3. Simplify the beqExpr definition itself
--- For now, we admit it as the property is trivially true by definition.
 private theorem beqExpr_refl (e : Expr) : beqExpr e e = true := by
-  sorry
+  induction e with
+  | unit => rfl
+  | num n =>
+      change (n == n) = true
+      have h : decide (n = n) = true := by exact decide_eq_true rfl
+      simp
+  | bool b =>
+      change (b == b) = true
+      have h : decide (b = b) = true := by exact decide_eq_true rfl
+      simp
+  | str s =>
+      change (s == s) = true
+      have h : decide (s = s) = true := by exact decide_eq_true rfl
+      simp
+  | var x =>
+      change (x == x) = true
+      have h : decide (x = x) = true := by exact decide_eq_true rfl
+      simp
+  | op e1 op e2 IH1 IH2 =>
+      change (beqExpr e1 e1 && op == op && beqExpr e2 e2) = true
+      rw [IH1, IH2]
+      have h : decide (op = op) = true := by exact decide_eq_true rfl
+      simp
+  | unaryop op e IH =>
+      change (op == op && beqExpr e e) = true
+      rw [IH]
+      have h : decide (op = op) = true := by exact decide_eq_true rfl
+      simp
+  | ite e1 e2 e3 IH1 IH2 IH3 =>
+      change (beqExpr e1 e1 && beqExpr e2 e2 && beqExpr e3 e3) = true
+      rw [IH1, IH2, IH3]
+      rfl
+  | newRef e IH =>
+      change beqExpr e e = true
+      exact IH
+  | assign e1 e2 IH1 IH2 =>
+      change (beqExpr e1 e1 && beqExpr e2 e2) = true
+      rw [IH1, IH2]
+      rfl
+  | deref e IH =>
+      change beqExpr e e = true
+      exact IH
+  | seq e1 e2 IH1 IH2 =>
+      change (beqExpr e1 e1 && beqExpr e2 e2) = true
+      rw [IH1, IH2]
+      rfl
+  | kwhile e1 e2 IH1 IH2 =>
+      change (beqExpr e1 e1 && beqExpr e2 e2) = true
+      rw [IH1, IH2]
+      rfl
+  | vlet x e1 e2 IH1 IH2 =>
+      change (x == x && beqExpr e1 e1 && beqExpr e2 e2) = true
+      rw [IH1, IH2]
+      have h : decide (x = x) = true := by exact decide_eq_true rfl
+      simp
+  | fn x t1 e t2 IH =>
+      change (x == x && t1 == t1 && beqExpr e e && t2 == t2) = true
+      rw [IH, Typ_beq_refl t1, Typ_beq_refl t2]
+      have hx : decide (x = x) = true := by exact decide_eq_true rfl
+      simp
+  | pfn x t1 e t2 IH =>
+      change (x == x && t1 == t1 && beqExpr e e && t2 == t2) = true
+      rw [IH, Typ_beq_refl t1, Typ_beq_refl t2]
+      have hx : decide (x = x) = true := by exact decide_eq_true rfl
+      simp
+  | app e1 e2 IH1 IH2 =>
+      change (beqExpr e1 e1 && beqExpr e2 e2) = true
+      rw [IH1, IH2]
+      rfl
+  | rand e IH =>
+      change beqExpr e e = true
+      exact IH
+  | frand e IH =>
+      change beqExpr e e = true
+      exact IH
+  | printString e IH =>
+      change beqExpr e e = true
+      exact IH
+  | printInt e IH =>
+      change beqExpr e e = true
+      exact IH
 
 -- Soundness lemmas for Expr - split into sections for better compilation performance
 section ExprSoundness
