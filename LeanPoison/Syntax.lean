@@ -29,34 +29,6 @@ def Typ.beq : Typ → Typ → Bool
 instance : BEq Typ where
   beq := Typ.beq
 
--- Typ BEq is reflexive (using manual BEq instance)
-theorem Typ_beq_refl (t : Typ) : BEq.beq t t = true := by
-  -- We prove reflexivity by structural induction on t
-  induction t with
-  | int | bool | unit | string =>
-    -- Base cases: same constructor compares to true
-    -- Unfold BEq.beq to Typ.beq, which reduces to true by definition
-    rfl
-  | ref t' IH =>
-    -- For ref: BEq.beq (Typ.ref t') (Typ.ref t') = Typ.beq (ref t') (ref t')
-    --                                              = Typ.beq t' t'
-    --                                              = true (by IH)
-    simp only [BEq.beq, Typ.beq]
-    exact IH
-  | arrow t1 t2 IH1 IH2 =>
-    -- For arrow: BEq.beq (Typ.arrow t1 t2) (Typ.arrow t1 t2)
-    --          = Typ.beq (arrow t1 t2) (arrow t1 t2)
-    --          = Typ.beq t1 t1 && Typ.beq t2 t2
-    --          = true && true (by IH1 and IH2)
-    --          = true
-    simp only [BEq.beq, Typ.beq]
-    -- Goal: (Typ.beq t1 t1 && Typ.beq t2 t2) = true
-    -- IH1: BEq.beq t1 t1 = true, IH2: BEq.beq t2 t2 = true
-    -- Unfold BEq.beq in IH1 and IH2 to get them in terms of Typ.beq
-    simp only [BEq.beq] at IH1 IH2
-    rw [IH1, IH2]
-    rfl
-
 -- Operations (corresponds to binary operations, op in Ott)
 inductive Op : Type where
   | add : Op      -- +
@@ -72,12 +44,11 @@ inductive Op : Type where
   | bitand : Op
   | or  : Op
   | neq : Op
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 inductive UnaryOp : Type where
   | not : UnaryOp   -- unary boolean negation
-  deriving Repr, BEq
-
+  deriving Repr, BEq, DecidableEq
 
 -- Expressions (corresponds to e in Ott)
 inductive Expr : Type where
@@ -135,14 +106,7 @@ def Expr.toValue? : Expr → Option Value
 
 -- BEq instances
 
-def beqValue : Value → Value → Bool
-  | Value.num n1, Value.num n2 => n1 == n2
-  | Value.bool b1, Value.bool b2 => b1 == b2
-  | Value.unit, Value.unit => true
-  | Value.loc l1, Value.loc l2 => l1 == l2
-  | Value.str s1 , Value.str s2 => s1 == s2
-  | _, _ => false  -- Closures are compared by reference, not structurally
-
+-- First define beqExpr (used by Value closures)
 mutual
 
 def beqExpr : Expr → Expr → Bool
@@ -152,6 +116,7 @@ def beqExpr : Expr → Expr → Bool
   | Expr.str s1 , Expr.str s2 => s1 == s2
   | Expr.var x1, Expr.var x2 => x1 == x2
   | Expr.op e1 op1 e2, Expr.op e1' op2 e2' => beqExpr e1 e1' && op1 == op2 && beqExpr e2 e2'
+  | Expr.unaryop op1 e1, Expr.unaryop op2 e2 => op1 == op2 && beqExpr e1 e2
   | Expr.ite e1 e2 e3, Expr.ite e1' e2' e3' => beqExpr e1 e1' && beqExpr e2 e2' && beqExpr e3 e3'
   | Expr.newRef e1, Expr.newRef e2 => beqExpr e1 e2
   | Expr.assign e1 e2, Expr.assign e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
@@ -162,6 +127,32 @@ def beqExpr : Expr → Expr → Bool
   | Expr.fn x1 t1 e1 t1', Expr.fn x2 t2 e2 t2' => x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2'
   | Expr.pfn x1 t1 e1 t1', Expr.pfn x2 t2 e2 t2' => x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2'
   | Expr.app e1 e2, Expr.app e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
+  | Expr.rand e1, Expr.rand e2 => beqExpr e1 e2
+  | Expr.frand e1, Expr.frand e2 => beqExpr e1 e2
+  | Expr.printString e1, Expr.printString e2 => beqExpr e1 e2
+  | Expr.printInt e1, Expr.printInt e2 => beqExpr e1 e2
+  | _, _ => false
+
+end
+
+-- Now define beqValue and beqValueVarEnv (which use beqExpr)
+mutual
+def beqValue : Value → Value → Bool
+  | Value.num n1, Value.num n2 => n1 == n2
+  | Value.bool b1, Value.bool b2 => b1 == b2
+  | Value.unit, Value.unit => true
+  | Value.loc l1, Value.loc l2 => l1 == l2
+  | Value.str s1, Value.str s2 => s1 == s2
+  | Value.closure x1 e1 env1, Value.closure x2 e2 env2 =>
+      x1 == x2 && beqExpr e1 e2 && beqValueVarEnv env1 env2
+  | Value.peClosure x1 e1 env1, Value.peClosure x2 e2 env2 =>
+      x1 == x2 && beqExpr e1 e2 && beqValueVarEnv env1 env2
+  | _, _ => false
+
+def beqValueVarEnv : VarEnv → VarEnv → Bool
+  | [], [] => true
+  | (x1, v1) :: env1, (x2, v2) :: env2 =>
+      x1 == x2 && beqValue v1 v2 && beqValueVarEnv env1 env2
   | _, _ => false
 
 end

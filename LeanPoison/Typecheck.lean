@@ -1060,7 +1060,10 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let ⟨etyp3, p''', _  ⟩ := result3.qualType
       --dbg_trace s!" Poison val for {e3} is {p'''}"
 
-      if etyp2 != etyp3 then throw "Branches of if must have same type"
+      -- Use signature-based equality for type checking (not structural equality of closures)
+      -- Structural equality compares closures including their bodies, which is too strict for type checking
+      -- We only need to check that function signatures match (parameter type, return type, poison flag)
+      if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
 
       let poison := joinPoison ctx.pc (joinPoison p'' p''')
      -- dbg_trace s!" Result Poison val for if is {poison}"
@@ -1093,7 +1096,10 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let result3 ← typecheckExpr ctxForE3 e3 fuel
       let ⟨etyp3, p''', _  ⟩ := result3.qualType
 
-      if etyp2 != etyp3 then throw "Branches of if must have same type"
+      -- Use signature-based equality for type checking (not structural equality of closures)
+      -- Structural equality compares closures including their bodies, which is too strict for type checking
+      -- We only need to check that function signatures match (parameter type, return type, poison flag)
+      if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
 
       let poison := joinPoison ctx.pc (joinPoison p' (joinPoison p'' p'''))
       let qt : QTyp := ⟨etyp2, poison, Predicate.noPred⟩

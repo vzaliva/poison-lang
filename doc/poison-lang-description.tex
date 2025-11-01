@@ -697,10 +697,11 @@ The type system includes two conditional typing rules that handle predicate-base
 \[
 \frac{\begin{array}{c}
 \text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 \\
-\text{join pc } p_1 ; \Gamma_1 ; \sigma ; \mathcal{L} \vdash e_2 : T \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 \\
-\text{join pc } p_1 ; \Gamma_1 ; \sigma ; \mathcal{L} \vdash e_3 : T \triangleright p_3 \{ P_3 \} \dashv \Gamma_3
+\text{join pc } p_1 ; \Gamma_1 ; \sigma ; \mathcal{L} \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 \\
+\text{join pc } p_1 ; \Gamma_1 ; \sigma ; \mathcal{L} \vdash e_3 : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma_3 \\
+T_1 \approx T_2
 \end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p_1 p_2 p_3 \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma_2 \Gamma_3}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T_1 \triangleright \text{join pc } p_1 p_2 p_3 \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma_2 \Gamma_3}
 \]
 
 \textbf{Predicate-based conditional rule (when matching predicate found):}
@@ -708,11 +709,14 @@ The type system includes two conditional typing rules that handle predicate-base
 \frac{\begin{array}{c}
 \text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 \text{match\_guard}(e_1, \Gamma, \sigma) = k \\
-pc ; \Gamma_1 ; \sigma ; \mathcal{L}_1[k \mapsto \text{true}] \vdash e_2 : T \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
-pc ; \Gamma_1 ; \sigma ; \mathcal{L}_1[k \mapsto \text{false}] \vdash e_3 : T \triangleright p_3 \{ P_3 \} \dashv \Gamma_3 ; \mathcal{L}_3
+pc ; \Gamma_1 ; \sigma ; \mathcal{L}_1[k \mapsto \text{true}] \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
+pc ; \Gamma_1 ; \sigma ; \mathcal{L}_1[k \mapsto \text{false}] \vdash e_3 : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma_3 ; \mathcal{L}_3 \\
+T_1 \approx T_2
 \end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T \triangleright \text{join pc } p_2 p_3 \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma_2 \Gamma_3 ; \mathcal{L}_1}
+{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T_1 \triangleright \text{join pc } p_2 p_3 \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma_2 \Gamma_3 ; \mathcal{L}_1}
 \]
+
+The typing rules use signature-based type comparison (denoted $T_1 \approx T_2$) for function types. This means two function types are considered equal if they have the same parameter type, return type, and poison flag, regardless of their closure contents (bodies and captured environments). This is appropriate for type checking conditional expressions where we need to ensure both branches return compatible function types, even if the function bodies differ. The signature comparison operator $\approx$ compares types \emph{up to signatures}, meaning it compares function types based on their signatures only, not their full structural equality.
 
 The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, the branches are typed with different valuations of guard $k$ in environment $\mathcal{L}$. This enables:
 \begin{itemize}
