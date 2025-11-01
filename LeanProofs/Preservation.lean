@@ -1912,6 +1912,78 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
         simp only [runtimeInstantiatesCtx] at h_runtime2 ⊢
         exact h_runtime2
 
+-- Helper lemma for conditionals
+private lemma preservation_ite (e1 e2 e3 : Expr) (ctx : TypeContext)
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.ite e1 e2 e3) ctx n := by
+  sorry
+
+-- Helper lemma for reference creation
+private lemma preservation_newRef (e1 : Expr) (ctx : TypeContext)
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.newRef e1) ctx n := by
+  sorry
+
+-- Helper lemma for assignment
+private lemma preservation_assign (e1 e2 : Expr) (ctx : TypeContext)
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.assign e1 e2) ctx n := by
+  sorry
+
+-- Helper lemma for dereference
+private lemma preservation_deref (e1 : Expr) (ctx : TypeContext)
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.deref e1) ctx n := by
+  sorry
+
+-- Helper lemma for while loops
+private lemma preservation_kwhile (e1 e2 : Expr) (ctx : TypeContext)
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.kwhile e1 e2) ctx n := by
+  sorry
+
+-- Helper lemma for let binding
+private lemma preservation_vlet (x : Name) (e1 e2 : Expr) (ctx : TypeContext)
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.vlet x e1 e2) ctx n := by
+  sorry
+
+-- Helper lemma for function abstraction
+private lemma preservation_fn (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ) (ctx : TypeContext)
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.fn x paramType body returnType) ctx n := by
+  sorry
+
+-- Helper lemma for pure function abstraction
+private lemma preservation_pfn (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ) (ctx : TypeContext)
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.pfn x paramType body returnType) ctx n := by
+  sorry
+
+-- Helper lemma for function application
+private lemma preservation_app (e1 e2 : Expr) (ctx : TypeContext)
+    (n : Nat)
+    (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
+    :
+    PreservationWithFuel (Expr.app e1 e2) ctx n := by
+  sorry
+
 -- Helper: prove PreservationWithFuel for all expressions and all fuel values
 -- Combined directly into the main theorem via strong induction
 private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeContext),
@@ -1971,36 +2043,36 @@ private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeCon
       exact preservation_unaryop op e1 ctx n IH
     | ite e1 e2 e3 =>
       -- Conditionals: by IH, e1 evaluates to bool, then either e2 or e3 preserves types
-      sorry
+      exact preservation_ite e1 e2 e3 ctx n IH
     | newRef e1 =>
       -- Reference creation: by IH, e1 has correct type, fresh location added to contexts
-      sorry
+      exact preservation_newRef e1 ctx n IH
     | assign e1 e2 =>
       -- Assignment: by IH, e1 evaluates to location, e2 to value of correct type
-      sorry
+      exact preservation_assign e1 e2 ctx n IH
     | deref e1 =>
       -- Dereference: by IH, e1 evaluates to location, memory lookup returns correct type
       -- This case is complex and requires reasoning about memory typing relationships
       -- TODO: Complete proof - needs to show memory lookup preserves types via runtime instantiation
-      sorry
+      exact preservation_deref e1 ctx n IH
     | seq e1 e2 =>
       -- Sequence: by IH, e2 preserves types (e1's result is discarded)
       exact preservation_seq e1 e2 ctx n IH
     | kwhile e1 e2 =>
       -- While loops: requires fixpoint reasoning about typing context evolution
-      sorry
+      exact preservation_kwhile e1 e2 ctx n IH
     | vlet x e1 e2 =>
       -- Let binding: by IH, e1 has correct type, e2 preserves types with extended context
-      sorry
+      exact preservation_vlet x e1 e2 ctx n IH
     | fn x paramType body returnType =>
       -- Function abstraction: creates closure value with correct arrow type
-      sorry
+      exact preservation_fn x paramType body returnType ctx n IH
     | pfn x paramType body returnType =>
       -- Pure function abstraction: creates pure closure with correct arrow type
-      sorry
+      exact preservation_pfn x paramType body returnType ctx n IH
     | app e1 e2 =>
       -- Function application: by IH, e1 evaluates to closure, body preserves types
-      sorry
+      exact preservation_app e1 e2 ctx n IH
     | rand e1 =>
       -- Random generation: by IH, e1 evaluates to number, result is int
       exact preservation_rand e1 ctx n IH
