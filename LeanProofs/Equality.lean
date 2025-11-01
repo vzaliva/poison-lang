@@ -1,5 +1,38 @@
 -- Equality proofs for Poison language types
 -- All BEq, LawfulBEq, and DecidableEq instances and their supporting proofs
+--
+-- ============================================================================
+-- API Overview
+-- ============================================================================
+--
+-- **Public API (accessible from other files):**
+--   All typeclass instances are public and provide the complete interface:
+--   - `LawfulBEq` instances for: Typ, Op, UnaryOp, PExpr, Expr, Value, ETyp,
+--     FnTClosure, PFnTClosure, Predicate, QTyp
+--   - `DecidableEq` instances for: ETyp, FnTClosure, PFnTClosure, Predicate, QTyp
+--
+--   Users access equality properties through the instances:
+--   - Soundness: `LawfulBEq.eq_of_beq` proves `(a == b) = true → a = b`
+--   - Reflexivity: `LawfulBEq.rfl` proves `(a == a) = true`
+--
+-- **Private Implementation (internal to this file):**
+--   All supporting proofs are private implementation details:
+--   - Reflexivity theorems: `*_refl` (prove `beq x x = true`)
+--   - Soundness theorems: `*_sound` (prove `(x == y) = true → x = y`)
+--   - Helper lemmas: constructor-specific soundness helpers for Expr
+--
+-- ============================================================================
+-- Proof Structure
+-- ============================================================================
+--
+-- For each type, we prove:
+--   1. Reflexivity: `beq x x = true` (private theorem `*_refl`)
+--   2. Soundness: `(x == y) = true → x = y` (private theorem `*_sound`)
+--   3. Lawfulness: Combine into `LawfulBEq` instance (public)
+--
+-- The `LawfulBEq` typeclass requires both properties, ensuring that boolean
+-- equality is sound (only equal values compare to true) and reflexive (every
+-- value compares equal to itself).
 
 import LeanPoison.Syntax
 import LeanPoison.Poison
@@ -12,7 +45,7 @@ set_option maxHeartbeats 1000000
 -- ============================================================================
 
 -- Typ reflexivity proof
-theorem Typ_beq_refl (t : Typ) : BEq.beq t t = true := by
+private theorem Typ_beq_refl (t : Typ) : BEq.beq t t = true := by
   -- We prove reflexivity by structural induction on t
   induction t with
   | int | bool | unit | string =>
@@ -40,7 +73,7 @@ theorem Typ_beq_refl (t : Typ) : BEq.beq t t = true := by
     rfl
 
 -- Typ soundness proof
-theorem Typ_beq_sound (a b : Typ) : (a == b) = true → a = b := by
+private theorem Typ_beq_sound (a b : Typ) : (a == b) = true → a = b := by
   intro h
   induction a generalizing b with
   | int =>
@@ -93,7 +126,7 @@ instance : LawfulBEq UnaryOp where
 -- PExpr only depends on Op and UnaryOp, so it comes before Expr
 
 -- Reflexivity proof for beqPExpr
-theorem beqPExpr_refl (e : PExpr) : beqPExpr e e = true := by
+private theorem beqPExpr_refl (e : PExpr) : beqPExpr e e = true := by
   induction e with
   | unit => rfl
   | num n => simp [beqPExpr]
@@ -117,7 +150,7 @@ theorem beqPExpr_refl (e : PExpr) : beqPExpr e e = true := by
 section PExprSoundness
 
 -- Main theorem for PExpr
-theorem beqPExpr_eq_of_beq (a b : PExpr) : (a == b) = true → a = b := by
+private theorem beqPExpr_sound (a b : PExpr) : (a == b) = true → a = b := by
   intro h
   induction a generalizing b with
   | unit =>
@@ -191,7 +224,7 @@ end PExprSoundness
 
 -- LawfulBEq instance for PExpr
 instance : LawfulBEq PExpr where
-  eq_of_beq {a b} := beqPExpr_eq_of_beq a b
+  eq_of_beq {a b} := beqPExpr_sound a b
   rfl {a} := beqPExpr_refl a
 
 -- ============================================================================
@@ -207,17 +240,17 @@ instance : LawfulBEq PExpr where
 --   2. Axiomatize this specific reflexivity proof
 --   3. Simplify the beqExpr definition itself
 -- For now, we admit it as the property is trivially true by definition.
-theorem beqExpr_refl (e : Expr) : beqExpr e e = true := by
+private theorem beqExpr_refl (e : Expr) : beqExpr e e = true := by
   sorry
 
 -- Soundness lemmas for Expr - split into sections for better compilation performance
 section ExprSoundness
 
 /-
-## Proof Strategy for `beqExpr_eq_of_beq`
+## Proof Strategy for `beqExpr_sound`
 
 ### The Problem
-Direct structural induction on `beqExpr_eq_of_beq` with inline case analysis using `simp`
+Direct structural induction on `beqExpr_sound` with inline case analysis using `simp`
 causes deterministic timeouts in Lean's elaborator. The `Expr` type has 23 constructors,
 many with multiple subexpressions, leading to complex proof states that exceed the default
 heartbeat limit (200000 heartbeats).
@@ -670,7 +703,7 @@ private theorem beqExpr_pfn_eq_of_beq (x1 : Name) (t1 : Typ) (e1 : Expr) (t1' : 
   | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
 
 -- Main theorem: directly proven without helpers to avoid termination issues
-theorem beqExpr_eq_of_beq (a b : Expr) : (a == b) = true → a = b :=
+private theorem beqExpr_sound (a b : Expr) : (a == b) = true → a = b :=
 by
   intro h
   induction a generalizing b with
@@ -700,7 +733,7 @@ end ExprSoundness
 
 -- LawfulBEq instance for Expr
 instance : LawfulBEq Expr where
-  eq_of_beq {a b} := beqExpr_eq_of_beq a b
+  eq_of_beq {a b} := beqExpr_sound a b
   rfl {a} := beqExpr_refl a
 
 -- ============================================================================
@@ -710,7 +743,7 @@ instance : LawfulBEq Expr where
 
 -- Reflexivity proofs for Value
 mutual
-theorem beqValue_refl (v : Value) : beqValue v v = true := by
+private theorem beqValue_refl (v : Value) : beqValue v v = true := by
   cases v with
   | num n => simp [beqValue]
   | bool b => simp [beqValue]
@@ -722,7 +755,7 @@ theorem beqValue_refl (v : Value) : beqValue v v = true := by
   | peClosure x e env =>
       simp [beqValue, beqExpr_refl e, beqValueVarEnv_refl env]
 
-theorem beqValueVarEnv_refl : ∀ (env : VarEnv), beqValueVarEnv env env = true
+private theorem beqValueVarEnv_refl : ∀ (env : VarEnv), beqValueVarEnv env env = true
   | [] => by simp [beqValueVarEnv]
   | (x, v) :: env' => by
       simp [beqValueVarEnv, beqValue_refl v, beqValueVarEnv_refl env']
@@ -730,7 +763,7 @@ end
 
 -- Soundness proofs for Value
 mutual
-theorem beqValue_sound (a b : Value) : beqValue a b = true → a = b := by
+private theorem beqValue_sound (a b : Value) : beqValue a b = true → a = b := by
   intro h
   cases a <;> cases b <;> try (simp only [beqValue] at h; contradiction)
   case num n1 n2 =>
@@ -758,7 +791,7 @@ theorem beqValue_sound (a b : Value) : beqValue a b = true → a = b := by
     simp only [beqValue, Bool.and_eq_true] at h
     obtain ⟨⟨h_x, h_e⟩, h_env⟩ := h
     have : x1 = x2 := of_decide_eq_true h_x
-    have : e1 = e2 := beqExpr_eq_of_beq e1 e2 h_e
+    have : e1 = e2 := beqExpr_sound e1 e2 h_e
     have : env1 = env2 := beqValueVarEnv_sound env1 env2 h_env
     subst_vars
     rfl
@@ -766,12 +799,12 @@ theorem beqValue_sound (a b : Value) : beqValue a b = true → a = b := by
     simp only [beqValue, Bool.and_eq_true] at h
     obtain ⟨⟨h_x, h_e⟩, h_env⟩ := h
     have : x1 = x2 := of_decide_eq_true h_x
-    have : e1 = e2 := beqExpr_eq_of_beq e1 e2 h_e
+    have : e1 = e2 := beqExpr_sound e1 e2 h_e
     have : env1 = env2 := beqValueVarEnv_sound env1 env2 h_env
     subst_vars
     rfl
 
-theorem beqValueVarEnv_sound : ∀ (a b : VarEnv), beqValueVarEnv a b = true → a = b
+private theorem beqValueVarEnv_sound : ∀ (a b : VarEnv), beqValueVarEnv a b = true → a = b
   | [], [] => fun _ => rfl
   | [], _ :: _ => fun h => by simp only [beqValueVarEnv] at h; contradiction
   | _ :: _, [] => fun h => by simp only [beqValueVarEnv] at h; contradiction
@@ -803,7 +836,7 @@ instance : LawfulBEq Value where
 
 mutual
 -- Prove reflexivity of beqETyp using mutual induction
-theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
+private theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
   cases t with
   | int => simp [beqETyp]
   | bool => simp [beqETyp]
@@ -817,13 +850,13 @@ theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
       simp [beqETyp, beqPFnTClosure_refl tcl]
 
 -- Prove reflexivity of beqVarEnv
-theorem beqVarEnv_refl : ∀ (env : List (Name × QTyp)), beqVarEnv env env = true
+private theorem beqVarEnv_refl : ∀ (env : List (Name × QTyp)), beqVarEnv env env = true
   | [] => by simp [beqVarEnv]
   | (x, qt) :: env' => by
       simp [beqVarEnv, beqQTyp_refl qt, beqVarEnv_refl env']
 
 -- Prove reflexivity of beqPredicate
-theorem beqPredicate_refl (p : Predicate) : beqPredicate p p = true := by
+private theorem beqPredicate_refl (p : Predicate) : beqPredicate p p = true := by
   cases p with
   | guardClosure tag arg body env =>
       simp [beqPredicate, beqVarEnv_refl env]
@@ -833,19 +866,19 @@ theorem beqPredicate_refl (p : Predicate) : beqPredicate p p = true := by
       simp [beqPredicate]
 
 -- Prove reflexivity of beqQTyp
-theorem beqQTyp_refl (qt : QTyp) : beqQTyp qt qt = true := by
+private theorem beqQTyp_refl (qt : QTyp) : beqQTyp qt qt = true := by
   cases qt with
   | mk etyp poison pred =>
       simp [beqQTyp, beqETyp_refl etyp, beqPredicate_refl pred]
 
 -- Prove reflexivity of beqFnTClosure
-theorem beqFnTClosure_refl (tcl : FnTClosure) : beqFnTClosure tcl tcl = true := by
+private theorem beqFnTClosure_refl (tcl : FnTClosure) : beqFnTClosure tcl tcl = true := by
   cases tcl with
   | mk x e env =>
       simp [beqFnTClosure, beqVarEnv_refl env]
 
 -- Prove reflexivity of beqPFnTClosure
-theorem beqPFnTClosure_refl (tcl : PFnTClosure) : beqPFnTClosure tcl tcl = true := by
+private theorem beqPFnTClosure_refl (tcl : PFnTClosure) : beqPFnTClosure tcl tcl = true := by
   cases tcl with
   | mk x e env =>
       simp [beqPFnTClosure, beqVarEnv_refl env]
@@ -854,14 +887,14 @@ end
 
 -- Mutual soundness proofs for ETyp and related types
 mutual
-theorem beqETyp_eq_of_beq (a b : ETyp) : (a == b) = true → a = b := by
+private theorem beqETyp_sound (a b : ETyp) : (a == b) = true → a = b := by
   intro h
   cases a <;> cases b <;> try (simp only [BEq.beq, beqETyp] at h; contradiction)
   case int.int | bool.bool | unit.unit | string.string => rfl
   case ref t1 l1 t2 l2 =>
     simp only [BEq.beq, beqETyp, Bool.and_eq_true] at h
     obtain ⟨h_t, h_l⟩ := h
-    have : t1 = t2 := beqETyp_eq_of_beq t1 t2 h_t
+    have : t1 = t2 := beqETyp_sound t1 t2 h_t
     have : l1 = l2 := of_decide_eq_true h_l
     subst_vars
     rfl
@@ -872,7 +905,7 @@ theorem beqETyp_eq_of_beq (a b : ETyp) : (a == b) = true → a = b := by
     have : st1 = st1' := Typ_beq_sound st1 st1' h_st1
     have : st2 = st2' := Typ_beq_sound st2 st2' h_st2
     have : p1 = p2 := of_decide_eq_true h_p
-    have : tcl1 = tcl2 := beqFnTClosure_eq_of_beq tcl1 tcl2 h_tcl
+    have : tcl1 = tcl2 := beqFnTClosure_sound tcl1 tcl2 h_tcl
     subst_vars
     rfl
   case parrow st1 st2 p1 tcl1 st1' st2' p2 tcl2 =>
@@ -882,11 +915,11 @@ theorem beqETyp_eq_of_beq (a b : ETyp) : (a == b) = true → a = b := by
     have : st1 = st1' := Typ_beq_sound st1 st1' h_st1
     have : st2 = st2' := Typ_beq_sound st2 st2' h_st2
     have : p1 = p2 := of_decide_eq_true h_p
-    have : tcl1 = tcl2 := beqPFnTClosure_eq_of_beq tcl1 tcl2 h_tcl
+    have : tcl1 = tcl2 := beqPFnTClosure_sound tcl1 tcl2 h_tcl
     subst_vars
     rfl
 
-theorem beqVarEnv_eq_of_beq : ∀ (a b : List (Name × QTyp)), beqVarEnv a b = true → a = b
+private theorem beqVarEnv_sound : ∀ (a b : List (Name × QTyp)), beqVarEnv a b = true → a = b
   | [], [] => fun _ => rfl
   | [], _ :: _ => fun h => by simp only [beqVarEnv] at h; contradiction
   | _ :: _, [] => fun h => by simp only [beqVarEnv] at h; contradiction
@@ -894,12 +927,12 @@ theorem beqVarEnv_eq_of_beq : ∀ (a b : List (Name × QTyp)), beqVarEnv a b = t
       simp only [beqVarEnv, Bool.and_eq_true] at h
       obtain ⟨⟨h_x, h_qt⟩, h_env⟩ := h
       have : x1 = x2 := of_decide_eq_true h_x
-      have : qt1 = qt2 := beqQTyp_eq_of_beq qt1 qt2 h_qt
-      have : a' = b' := beqVarEnv_eq_of_beq a' b' h_env
+      have : qt1 = qt2 := beqQTyp_sound qt1 qt2 h_qt
+      have : a' = b' := beqVarEnv_sound a' b' h_env
       subst_vars
       rfl
 
-theorem beqPredicate_eq_of_beq (a b : Predicate) : (a == b) = true → a = b := by
+private theorem beqPredicate_sound (a b : Predicate) : (a == b) = true → a = b := by
   intro h
   cases a <;> cases b
   case guardClosure.guardClosure tag1 arg1 body1 env1 tag2 arg2 body2 env2 =>
@@ -907,8 +940,8 @@ theorem beqPredicate_eq_of_beq (a b : Predicate) : (a == b) = true → a = b := 
     obtain ⟨⟨⟨h_tag, h_arg⟩, h_body⟩, h_env⟩ := h
     have : tag1 = tag2 := of_decide_eq_true h_tag
     have : arg1 = arg2 := of_decide_eq_true h_arg
-    have : body1 = body2 := beqPExpr_eq_of_beq body1 body2 h_body
-    have : env1 = env2 := beqVarEnv_eq_of_beq env1 env2 h_env
+    have : body1 = body2 := beqPExpr_sound body1 body2 h_body
+    have : env1 = env2 := beqVarEnv_sound env1 env2 h_env
     subst_vars
     rfl
   case guardOnly.guardOnly tag1 tag2 =>
@@ -923,7 +956,7 @@ theorem beqPredicate_eq_of_beq (a b : Predicate) : (a == b) = true → a = b := 
     contradiction
   )
 
-theorem beqQTyp_eq_of_beq (a b : QTyp) : (a == b) = true → a = b := by
+private theorem beqQTyp_sound (a b : QTyp) : (a == b) = true → a = b := by
   intro h
   cases a with
   | mk etyp1 poison1 pred1 =>
@@ -931,13 +964,13 @@ theorem beqQTyp_eq_of_beq (a b : QTyp) : (a == b) = true → a = b := by
     | mk etyp2 poison2 pred2 =>
       simp only [BEq.beq, beqQTyp, Bool.and_eq_true] at h
       obtain ⟨⟨h_etyp, h_poison⟩, h_pred⟩ := h
-      have : etyp1 = etyp2 := beqETyp_eq_of_beq etyp1 etyp2 h_etyp
+      have : etyp1 = etyp2 := beqETyp_sound etyp1 etyp2 h_etyp
       have : poison1 = poison2 := of_decide_eq_true h_poison
-      have : pred1 = pred2 := beqPredicate_eq_of_beq pred1 pred2 h_pred
+      have : pred1 = pred2 := beqPredicate_sound pred1 pred2 h_pred
       subst_vars
       rfl
 
-theorem beqFnTClosure_eq_of_beq (a b : FnTClosure) : (a == b) = true → a = b := by
+private theorem beqFnTClosure_sound (a b : FnTClosure) : (a == b) = true → a = b := by
   intro h
   cases a with
   | mk x1 e1 env1 =>
@@ -954,12 +987,12 @@ theorem beqFnTClosure_eq_of_beq (a b : FnTClosure) : (a == b) = true → a = b :
       have h_e : beqExpr e1 e2 = true := h_x_e.2
       have h_env : beqVarEnv env1 env2 = true := h_and.2
       have : x1 = x2 := of_decide_eq_true h_x
-      have : e1 = e2 := beqExpr_eq_of_beq e1 e2 h_e
-      have : env1 = env2 := beqVarEnv_eq_of_beq env1 env2 h_env
+      have : e1 = e2 := beqExpr_sound e1 e2 h_e
+      have : env1 = env2 := beqVarEnv_sound env1 env2 h_env
       subst_vars
       rfl
 
-theorem beqPFnTClosure_eq_of_beq (a b : PFnTClosure) : (a == b) = true → a = b := by
+private theorem beqPFnTClosure_sound (a b : PFnTClosure) : (a == b) = true → a = b := by
   intro h
   cases a with
   | mk x1 e1 env1 =>
@@ -976,8 +1009,8 @@ theorem beqPFnTClosure_eq_of_beq (a b : PFnTClosure) : (a == b) = true → a = b
       have h_e : beqPExpr e1 e2 = true := h_x_e.2
       have h_env : beqVarEnv env1 env2 = true := h_and.2
       have : x1 = x2 := of_decide_eq_true h_x
-      have : e1 = e2 := beqPExpr_eq_of_beq e1 e2 h_e
-      have : env1 = env2 := beqVarEnv_eq_of_beq env1 env2 h_env
+      have : e1 = e2 := beqPExpr_sound e1 e2 h_e
+      have : env1 = env2 := beqVarEnv_sound env1 env2 h_env
       subst_vars
       rfl
 
@@ -985,37 +1018,37 @@ end
 
 -- Now we can define LawfulBEq instances, which combine soundness and reflexivity
 instance : LawfulBEq ETyp where
-  eq_of_beq {a b} := beqETyp_eq_of_beq a b
+  eq_of_beq {a b} := beqETyp_sound a b
   rfl {a} := beqETyp_refl a
 
 instance : LawfulBEq FnTClosure where
-  eq_of_beq {a b} := beqFnTClosure_eq_of_beq a b
+  eq_of_beq {a b} := beqFnTClosure_sound a b
   rfl {a} := beqFnTClosure_refl a
 
 instance : LawfulBEq PFnTClosure where
-  eq_of_beq {a b} := beqPFnTClosure_eq_of_beq a b
+  eq_of_beq {a b} := beqPFnTClosure_sound a b
   rfl {a} := beqPFnTClosure_refl a
 
 instance : LawfulBEq Predicate where
-  eq_of_beq {a b} := beqPredicate_eq_of_beq a b
+  eq_of_beq {a b} := beqPredicate_sound a b
   rfl {a} := beqPredicate_refl a
 
 instance : LawfulBEq QTyp where
-  eq_of_beq {a b} := beqQTyp_eq_of_beq a b
+  eq_of_beq {a b} := beqQTyp_sound a b
   rfl {a} := beqQTyp_refl a
 
 -- DecidableEq is now automatically derivable from LawfulBEq using decidable_of_iff
 instance : DecidableEq ETyp := fun a b =>
-  decidable_of_iff (a == b) ⟨beqETyp_eq_of_beq a b, fun h => h ▸ beqETyp_refl a⟩
+  decidable_of_iff (a == b) ⟨beqETyp_sound a b, fun h => h ▸ beqETyp_refl a⟩
 
 instance : DecidableEq FnTClosure := fun a b =>
-  decidable_of_iff (a == b) ⟨beqFnTClosure_eq_of_beq a b, fun h => h ▸ beqFnTClosure_refl a⟩
+  decidable_of_iff (a == b) ⟨beqFnTClosure_sound a b, fun h => h ▸ beqFnTClosure_refl a⟩
 
 instance : DecidableEq PFnTClosure := fun a b =>
-  decidable_of_iff (a == b) ⟨beqPFnTClosure_eq_of_beq a b, fun h => h ▸ beqPFnTClosure_refl a⟩
+  decidable_of_iff (a == b) ⟨beqPFnTClosure_sound a b, fun h => h ▸ beqPFnTClosure_refl a⟩
 
 instance : DecidableEq Predicate := fun a b =>
-  decidable_of_iff (a == b) ⟨beqPredicate_eq_of_beq a b, fun h => h ▸ beqPredicate_refl a⟩
+  decidable_of_iff (a == b) ⟨beqPredicate_sound a b, fun h => h ▸ beqPredicate_refl a⟩
 
 instance : DecidableEq QTyp := fun a b =>
-  decidable_of_iff (a == b) ⟨beqQTyp_eq_of_beq a b, fun h => h ▸ beqQTyp_refl a⟩
+  decidable_of_iff (a == b) ⟨beqQTyp_sound a b, fun h => h ▸ beqQTyp_refl a⟩
