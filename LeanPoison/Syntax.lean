@@ -57,6 +57,43 @@ theorem Typ_beq_refl (t : Typ) : BEq.beq t t = true := by
     rw [IH1, IH2]
     rfl
 
+-- Soundness: if beq returns true, then values are equal
+theorem Typ_beq_sound (a b : Typ) : (a == b) = true → a = b := by
+  intro h
+  induction a generalizing b with
+  | int =>
+    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
+    case int => rfl
+  | bool =>
+    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
+    case bool => rfl
+  | unit =>
+    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
+    case unit => rfl
+  | string =>
+    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
+    case string => rfl
+  | ref t' IH =>
+    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
+    case ref t'' =>
+      have : t' = t'' := IH t'' h
+      subst this
+      rfl
+  | arrow t1 t2 IH1 IH2 =>
+    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
+    case arrow t1' t2' =>
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨h1, h2⟩ := h
+      have : t1 = t1' := IH1 t1' h1
+      have : t2 = t2' := IH2 t2' h2
+      subst_vars
+      rfl
+
+-- LawfulBEq instance for Typ
+instance : LawfulBEq Typ where
+  eq_of_beq {a b} := Typ_beq_sound a b
+  rfl {a} := Typ_beq_refl a
+
 -- Operations (corresponds to binary operations, op in Ott)
 inductive Op : Type where
   | add : Op      -- +
@@ -135,14 +172,7 @@ def Expr.toValue? : Expr → Option Value
 
 -- BEq instances
 
-def beqValue : Value → Value → Bool
-  | Value.num n1, Value.num n2 => n1 == n2
-  | Value.bool b1, Value.bool b2 => b1 == b2
-  | Value.unit, Value.unit => true
-  | Value.loc l1, Value.loc l2 => l1 == l2
-  | Value.str s1 , Value.str s2 => s1 == s2
-  | _, _ => false  -- Closures are compared by reference, not structurally
-
+-- First define beqExpr (used by Value closures)
 mutual
 
 def beqExpr : Expr → Expr → Bool
@@ -171,6 +201,28 @@ def beqExpr : Expr → Expr → Bool
 
 end
 
+-- Now define beqValue and beqValueVarEnv (which use beqExpr)
+mutual
+def beqValue : Value → Value → Bool
+  | Value.num n1, Value.num n2 => n1 == n2
+  | Value.bool b1, Value.bool b2 => b1 == b2
+  | Value.unit, Value.unit => true
+  | Value.loc l1, Value.loc l2 => l1 == l2
+  | Value.str s1, Value.str s2 => s1 == s2
+  | Value.closure x1 e1 env1, Value.closure x2 e2 env2 =>
+      x1 == x2 && beqExpr e1 e2 && beqValueVarEnv env1 env2
+  | Value.peClosure x1 e1 env1, Value.peClosure x2 e2 env2 =>
+      x1 == x2 && beqExpr e1 e2 && beqValueVarEnv env1 env2
+  | _, _ => false
+
+def beqValueVarEnv : VarEnv → VarEnv → Bool
+  | [], [] => true
+  | (x1, v1) :: env1, (x2, v2) :: env2 =>
+      x1 == x2 && beqValue v1 v2 && beqValueVarEnv env1 env2
+  | _, _ => false
+
+end
+
 
 @[instance]
 instance : BEq Value where
@@ -188,6 +240,81 @@ instance : BEq Expr where
 -- 3. The DecidableEq instance for ETyp works without needing this proof to be complete
 theorem beqExpr_refl (e : Expr) : beqExpr e e = true := by
   sorry
+
+-- We need beqExpr_sound for the Value soundness proof (used in closures)
+-- Declare it first (defined below)
+axiom beqExpr_sound : ∀ (a b : Expr), beqExpr a b = true → a = b
+
+-- Reflexivity and soundness proofs for Value
+mutual
+theorem beqValue_refl (v : Value) : beqValue v v = true := by
+  sorry
+
+theorem beqValueVarEnv_refl (env : VarEnv) : beqValueVarEnv env env = true := by
+  sorry
+end
+
+-- Soundness proofs for Value
+mutual
+theorem beqValue_sound (a b : Value) : beqValue a b = true → a = b := by
+  intro h
+  cases a <;> cases b <;> try (simp only [beqValue] at h; contradiction)
+  case num n1 n2 =>
+    simp only [beqValue] at h
+    have : n1 = n2 := of_decide_eq_true h
+    subst this
+    rfl
+  case bool b1 b2 =>
+    simp only [beqValue] at h
+    have : b1 = b2 := of_decide_eq_true h
+    subst this
+    rfl
+  case unit => rfl
+  case loc l1 l2 =>
+    simp only [beqValue] at h
+    have : l1 = l2 := of_decide_eq_true h
+    subst this
+    rfl
+  case str s1 s2 =>
+    simp only [beqValue] at h
+    have : s1 = s2 := of_decide_eq_true h
+    subst this
+    rfl
+  case closure x1 e1 env1 x2 e2 env2 =>
+    simp only [beqValue, Bool.and_eq_true] at h
+    obtain ⟨⟨h_x, h_e⟩, h_env⟩ := h
+    have : x1 = x2 := of_decide_eq_true h_x
+    have : e1 = e2 := beqExpr_sound e1 e2 h_e
+    have : env1 = env2 := beqValueVarEnv_sound env1 env2 h_env
+    subst_vars
+    rfl
+  case peClosure x1 e1 env1 x2 e2 env2 =>
+    simp only [beqValue, Bool.and_eq_true] at h
+    obtain ⟨⟨h_x, h_e⟩, h_env⟩ := h
+    have : x1 = x2 := of_decide_eq_true h_x
+    have : e1 = e2 := beqExpr_sound e1 e2 h_e
+    have : env1 = env2 := beqValueVarEnv_sound env1 env2 h_env
+    subst_vars
+    rfl
+
+theorem beqValueVarEnv_sound : ∀ (a b : VarEnv), beqValueVarEnv a b = true → a = b
+  | [], [] => fun _ => rfl
+  | [], _ :: _ => fun h => by simp only [beqValueVarEnv] at h; contradiction
+  | _ :: _, [] => fun h => by simp only [beqValueVarEnv] at h; contradiction
+  | (x1, v1) :: env1, (x2, v2) :: env2 => fun h => by
+      simp only [beqValueVarEnv, Bool.and_eq_true] at h
+      obtain ⟨⟨h_x, h_v⟩, h_env⟩ := h
+      have : x1 = x2 := of_decide_eq_true h_x
+      have : v1 = v2 := beqValue_sound v1 v2 h_v
+      have : env1 = env2 := beqValueVarEnv_sound env1 env2 h_env
+      subst_vars
+      rfl
+end
+
+-- LawfulBEq instance for Value
+instance : LawfulBEq Value where
+  eq_of_beq {a b} := beqValue_sound a b
+  rfl {a} := beqValue_refl a
 
 -- Repr instances
 
