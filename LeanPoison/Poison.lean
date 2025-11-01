@@ -229,6 +229,21 @@ instance : BEq Predicate where
 instance : BEq QTyp where
   beq := beqQTyp
 
+-- Signature-based equality for function types (for type checking)
+-- Compares only parameter type, return type, and poison flag, ignoring closure contents
+-- Corresponds to the ≈ operator in the Ott specification (sig_comp)
+def beqETypSignature : ETyp → ETyp → Bool
+  | ETyp.int, ETyp.int => true
+  | ETyp.bool, ETyp.bool => true
+  | ETyp.unit, ETyp.unit => true
+  | ETyp.string, ETyp.string => true
+  | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETypSignature t1 t2 && l1 == l2
+  | ETyp.arrow st1 st2 p1 _, ETyp.arrow st1' st2' p2 _ =>
+    st1 == st1' && st2 == st2' && p1 == p2
+  | ETyp.parrow st1 st2 p1 _, ETyp.parrow st1' st2' p2 _ =>
+    st1 == st1' && st2 == st2' && p1 == p2
+  | _, _ => false
+
 @[instance]
 instance : ToString ETyp where
   toString e := Std.Format.pretty (repr e)

@@ -1125,3 +1125,28 @@ instance : DecidableEq Predicate := fun a b =>
 
 instance : DecidableEq QTyp := fun a b =>
   decidable_of_iff (a == b) ⟨beqQTyp_sound a b, fun h => h ▸ beqQTyp_refl a⟩
+
+-- ============================================================================
+-- Signature-based equality for ETyp (beqETypSignature)
+-- ============================================================================
+-- Signature-based equality compares function signatures
+-- (parameter type, return type, poison flag) but ignores closure contents.
+-- This is used for type checking, where we need to compare function types
+-- based on their signatures rather than their full structural equality.
+--
+-- Note: beqETypSignature is not sound for function types (two functions with
+-- the same signature but different closures would be considered equal by
+-- beqETypSignature but are not propositionally equal). Therefore, it cannot
+-- have a full LawfulBEq instance. We only prove reflexivity here.
+
+-- Reflexivity proof for beqETypSignature
+theorem beqETypSignature_refl (t : ETyp) : beqETypSignature t t = true := by
+  cases t with
+  | int | bool | unit | string => simp [beqETypSignature]
+  | ref t' l =>
+      simp [beqETypSignature]
+      exact beqETypSignature_refl t'
+  | arrow st1 st2 p _ =>
+      simp [beqETypSignature]
+  | parrow st1 st2 p _ =>
+      simp [beqETypSignature]
