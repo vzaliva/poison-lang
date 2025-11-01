@@ -29,71 +29,6 @@ def Typ.beq : Typ → Typ → Bool
 instance : BEq Typ where
   beq := Typ.beq
 
--- Typ BEq is reflexive (using manual BEq instance)
-theorem Typ_beq_refl (t : Typ) : BEq.beq t t = true := by
-  -- We prove reflexivity by structural induction on t
-  induction t with
-  | int | bool | unit | string =>
-    -- Base cases: same constructor compares to true
-    -- Unfold BEq.beq to Typ.beq, which reduces to true by definition
-    rfl
-  | ref t' IH =>
-    -- For ref: BEq.beq (Typ.ref t') (Typ.ref t') = Typ.beq (ref t') (ref t')
-    --                                              = Typ.beq t' t'
-    --                                              = true (by IH)
-    simp only [BEq.beq, Typ.beq]
-    exact IH
-  | arrow t1 t2 IH1 IH2 =>
-    -- For arrow: BEq.beq (Typ.arrow t1 t2) (Typ.arrow t1 t2)
-    --          = Typ.beq (arrow t1 t2) (arrow t1 t2)
-    --          = Typ.beq t1 t1 && Typ.beq t2 t2
-    --          = true && true (by IH1 and IH2)
-    --          = true
-    simp only [BEq.beq, Typ.beq]
-    -- Goal: (Typ.beq t1 t1 && Typ.beq t2 t2) = true
-    -- IH1: BEq.beq t1 t1 = true, IH2: BEq.beq t2 t2 = true
-    -- Unfold BEq.beq in IH1 and IH2 to get them in terms of Typ.beq
-    simp only [BEq.beq] at IH1 IH2
-    rw [IH1, IH2]
-    rfl
-
--- Soundness: if beq returns true, then values are equal
-theorem Typ_beq_sound (a b : Typ) : (a == b) = true → a = b := by
-  intro h
-  induction a generalizing b with
-  | int =>
-    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
-    case int => rfl
-  | bool =>
-    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
-    case bool => rfl
-  | unit =>
-    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
-    case unit => rfl
-  | string =>
-    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
-    case string => rfl
-  | ref t' IH =>
-    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
-    case ref t'' =>
-      have : t' = t'' := IH t'' h
-      subst this
-      rfl
-  | arrow t1 t2 IH1 IH2 =>
-    cases b <;> simp only [BEq.beq, Typ.beq] at h <;> try contradiction
-    case arrow t1' t2' =>
-      simp only [Bool.and_eq_true] at h
-      obtain ⟨h1, h2⟩ := h
-      have : t1 = t1' := IH1 t1' h1
-      have : t2 = t2' := IH2 t2' h2
-      subst_vars
-      rfl
-
--- LawfulBEq instance for Typ
-instance : LawfulBEq Typ where
-  eq_of_beq {a b} := Typ_beq_sound a b
-  rfl {a} := Typ_beq_refl a
-
 -- Operations (corresponds to binary operations, op in Ott)
 inductive Op : Type where
   | add : Op      -- +
@@ -109,12 +44,11 @@ inductive Op : Type where
   | bitand : Op
   | or  : Op
   | neq : Op
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 inductive UnaryOp : Type where
   | not : UnaryOp   -- unary boolean negation
-  deriving Repr, BEq
-
+  deriving Repr, BEq, DecidableEq
 
 -- Expressions (corresponds to e in Ott)
 inductive Expr : Type where
@@ -231,90 +165,6 @@ instance : BEq Value where
 @[instance]
 instance : BEq Expr where
   beq := beqExpr
-
--- Reflexivity proof for beqExpr
--- Note: This proof is currently admitted with `sorry` because the full proof
--- causes timeouts during compilation. This is acceptable because:
--- 1. The property is trivially true by the definition of beqExpr
--- 2. It's only used in FnTClosure reflexivity, which is part of the BEq instances
--- 3. The DecidableEq instance for ETyp works without needing this proof to be complete
-theorem beqExpr_refl (e : Expr) : beqExpr e e = true := by
-  sorry
-
--- We need beqExpr_sound for the Value soundness proof (used in closures)
--- Declare it first (defined below)
-axiom beqExpr_sound : ∀ (a b : Expr), beqExpr a b = true → a = b
-
--- Reflexivity and soundness proofs for Value
-mutual
-theorem beqValue_refl (v : Value) : beqValue v v = true := by
-  sorry
-
-theorem beqValueVarEnv_refl (env : VarEnv) : beqValueVarEnv env env = true := by
-  sorry
-end
-
--- Soundness proofs for Value
-mutual
-theorem beqValue_sound (a b : Value) : beqValue a b = true → a = b := by
-  intro h
-  cases a <;> cases b <;> try (simp only [beqValue] at h; contradiction)
-  case num n1 n2 =>
-    simp only [beqValue] at h
-    have : n1 = n2 := of_decide_eq_true h
-    subst this
-    rfl
-  case bool b1 b2 =>
-    simp only [beqValue] at h
-    have : b1 = b2 := of_decide_eq_true h
-    subst this
-    rfl
-  case unit => rfl
-  case loc l1 l2 =>
-    simp only [beqValue] at h
-    have : l1 = l2 := of_decide_eq_true h
-    subst this
-    rfl
-  case str s1 s2 =>
-    simp only [beqValue] at h
-    have : s1 = s2 := of_decide_eq_true h
-    subst this
-    rfl
-  case closure x1 e1 env1 x2 e2 env2 =>
-    simp only [beqValue, Bool.and_eq_true] at h
-    obtain ⟨⟨h_x, h_e⟩, h_env⟩ := h
-    have : x1 = x2 := of_decide_eq_true h_x
-    have : e1 = e2 := beqExpr_sound e1 e2 h_e
-    have : env1 = env2 := beqValueVarEnv_sound env1 env2 h_env
-    subst_vars
-    rfl
-  case peClosure x1 e1 env1 x2 e2 env2 =>
-    simp only [beqValue, Bool.and_eq_true] at h
-    obtain ⟨⟨h_x, h_e⟩, h_env⟩ := h
-    have : x1 = x2 := of_decide_eq_true h_x
-    have : e1 = e2 := beqExpr_sound e1 e2 h_e
-    have : env1 = env2 := beqValueVarEnv_sound env1 env2 h_env
-    subst_vars
-    rfl
-
-theorem beqValueVarEnv_sound : ∀ (a b : VarEnv), beqValueVarEnv a b = true → a = b
-  | [], [] => fun _ => rfl
-  | [], _ :: _ => fun h => by simp only [beqValueVarEnv] at h; contradiction
-  | _ :: _, [] => fun h => by simp only [beqValueVarEnv] at h; contradiction
-  | (x1, v1) :: env1, (x2, v2) :: env2 => fun h => by
-      simp only [beqValueVarEnv, Bool.and_eq_true] at h
-      obtain ⟨⟨h_x, h_v⟩, h_env⟩ := h
-      have : x1 = x2 := of_decide_eq_true h_x
-      have : v1 = v2 := beqValue_sound v1 v2 h_v
-      have : env1 = env2 := beqValueVarEnv_sound env1 env2 h_env
-      subst_vars
-      rfl
-end
-
--- LawfulBEq instance for Value
-instance : LawfulBEq Value where
-  eq_of_beq {a b} := beqValue_sound a b
-  rfl {a} := beqValue_refl a
 
 -- Repr instances
 
