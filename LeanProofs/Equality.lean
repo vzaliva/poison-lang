@@ -173,12 +173,43 @@ theorem beqExpr_var_eq_of_beq (x1 : Name) (b : Expr) : (Expr.var x1 == b) = true
   | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
 
 -- Helper lemma for op case (recursive, needs IHs)
--- For now, using sorry to skip the complex boolean extraction - will address separately
 theorem beqExpr_op_eq_of_beq (e1 : Expr) (op1 : Op) (e2 : Expr) (b : Expr)
     (IH1 : ∀ b', (e1 == b') = true → e1 = b')
     (IH2 : ∀ b', (e2 == b') = true → e2 = b') :
     (Expr.op e1 op1 e2 == b) = true → Expr.op e1 op1 e2 = b := by
-  sorry
+  intro h
+  match b with
+  | Expr.op e1' op2 e2' =>
+      -- After match, h should reduce to: (beqExpr e1 e1' && op1 == op2 && beqExpr e2 e2') = true
+      -- Use show to make the type explicit and force reduction
+      have h' : (beqExpr e1 e1' && op1 == op2 && beqExpr e2 e2') = true := by
+        show (beqExpr e1 e1' && op1 == op2 && beqExpr e2 e2') = true
+        exact h
+
+      -- && is left-associative, so h' is parsed as: ((beqExpr e1 e1' && op1 == op2) && beqExpr e2 e2')
+      -- Apply Bool.and_eq_true to split the conjunction
+      have ⟨h_left, h_e2⟩ : (beqExpr e1 e1' && op1 == op2) = true ∧ beqExpr e2 e2' = true := by
+        rw [Bool.and_eq_true] at h'
+        exact h'
+
+      -- Split the left part again
+      have ⟨h_e1, h_op⟩ : beqExpr e1 e1' = true ∧ (op1 == op2) = true := by
+        rw [Bool.and_eq_true] at h_left
+        exact h_left
+
+      -- Now apply the induction hypotheses
+      have eq1 : e1 = e1' := IH1 e1' h_e1
+      have eq2 : op1 = op2 := eq_of_beq h_op
+      have eq3 : e2 = e2' := IH2 e2' h_e2
+
+      -- Substitute and finish
+      subst_vars
+      rfl
+  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _
+  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
+  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
+  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
+  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
 
 -- Main theorem: directly proven without helpers to avoid termination issues
 theorem beqExpr_eq_of_beq (a b : Expr) : (a == b) = true → a = b :=
