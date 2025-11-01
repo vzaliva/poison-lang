@@ -109,7 +109,7 @@ end
 section ExprSoundness
 
 -- Helper lemma for unit case
-theorem beqExpr_unit_eq_of_beq (b : Expr) : (Expr.unit == b) = true → Expr.unit = b := by
+private theorem beqExpr_unit_eq_of_beq (b : Expr) : (Expr.unit == b) = true → Expr.unit = b := by
   intro h
   -- Only Expr.unit matches, all other cases give false = true which is absurd
   match b with
@@ -121,7 +121,7 @@ theorem beqExpr_unit_eq_of_beq (b : Expr) : (Expr.unit == b) = true → Expr.uni
   | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
 
 -- Helper lemma for num case
-theorem beqExpr_num_eq_of_beq (n1 : Int) (b : Expr) : (Expr.num n1 == b) = true → Expr.num n1 = b := by
+private theorem beqExpr_num_eq_of_beq (n1 : Int) (b : Expr) : (Expr.num n1 == b) = true → Expr.num n1 = b := by
   intro h
   match b with
   | Expr.num n2 =>
@@ -134,7 +134,7 @@ theorem beqExpr_num_eq_of_beq (n1 : Int) (b : Expr) : (Expr.num n1 == b) = true 
   | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
 
 -- Helper lemma for bool case
-theorem beqExpr_bool_eq_of_beq (b1 : Bool) (b : Expr) : (Expr.bool b1 == b) = true → Expr.bool b1 = b := by
+private theorem beqExpr_bool_eq_of_beq (b1 : Bool) (b : Expr) : (Expr.bool b1 == b) = true → Expr.bool b1 = b := by
   intro h
   match b with
   | Expr.bool b2 =>
@@ -147,7 +147,7 @@ theorem beqExpr_bool_eq_of_beq (b1 : Bool) (b : Expr) : (Expr.bool b1 == b) = tr
   | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
 
 -- Helper lemma for str case
-theorem beqExpr_str_eq_of_beq (s1 : String) (b : Expr) : (Expr.str s1 == b) = true → Expr.str s1 = b := by
+private theorem beqExpr_str_eq_of_beq (s1 : String) (b : Expr) : (Expr.str s1 == b) = true → Expr.str s1 = b := by
   intro h
   match b with
   | Expr.str s2 =>
@@ -160,7 +160,7 @@ theorem beqExpr_str_eq_of_beq (s1 : String) (b : Expr) : (Expr.str s1 == b) = tr
   | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
 
 -- Helper lemma for var case
-theorem beqExpr_var_eq_of_beq (x1 : Name) (b : Expr) : (Expr.var x1 == b) = true → Expr.var x1 = b := by
+private theorem beqExpr_var_eq_of_beq (x1 : Name) (b : Expr) : (Expr.var x1 == b) = true → Expr.var x1 = b := by
   intro h
   match b with
   | Expr.var x2 =>
@@ -173,7 +173,7 @@ theorem beqExpr_var_eq_of_beq (x1 : Name) (b : Expr) : (Expr.var x1 == b) = true
   | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
 
 -- Helper lemma for op case (recursive, needs IHs)
-theorem beqExpr_op_eq_of_beq (e1 : Expr) (op1 : Op) (e2 : Expr) (b : Expr)
+private theorem beqExpr_op_eq_of_beq (e1 : Expr) (op1 : Op) (e2 : Expr) (b : Expr)
     (IH1 : ∀ b', (e1 == b') = true → e1 = b')
     (IH2 : ∀ b', (e2 == b') = true → e2 = b') :
     (Expr.op e1 op1 e2 == b) = true → Expr.op e1 op1 e2 = b := by
@@ -211,6 +211,64 @@ theorem beqExpr_op_eq_of_beq (e1 : Expr) (op1 : Op) (e2 : Expr) (b : Expr)
   | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
   | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
 
+-- Helper lemma for ite case (if-then-else)
+private theorem beqExpr_ite_eq_of_beq (e1 e2 e3 : Expr) (b : Expr)
+    (IH1 : ∀ b', (e1 == b') = true → e1 = b')
+    (IH2 : ∀ b', (e2 == b') = true → e2 = b')
+    (IH3 : ∀ b', (e3 == b') = true → e3 = b') :
+    (Expr.ite e1 e2 e3 == b) = true → Expr.ite e1 e2 e3 = b := by
+  intro h
+  match b with
+  | Expr.ite e1' e2' e3' =>
+      have h' : (beqExpr e1 e1' && beqExpr e2 e2' && beqExpr e3 e3') = true := by
+        show (beqExpr e1 e1' && beqExpr e2 e2' && beqExpr e3 e3') = true
+        exact h
+
+      -- Left-associative: ((e1 && e2) && e3)
+      have ⟨h_left, h_e3⟩ : (beqExpr e1 e1' && beqExpr e2 e2') = true ∧ beqExpr e3 e3' = true := by
+        rw [Bool.and_eq_true] at h'
+        exact h'
+
+      have ⟨h_e1, h_e2⟩ : beqExpr e1 e1' = true ∧ beqExpr e2 e2' = true := by
+        rw [Bool.and_eq_true] at h_left
+        exact h_left
+
+      have eq1 : e1 = e1' := IH1 e1' h_e1
+      have eq2 : e2 = e2' := IH2 e2' h_e2
+      have eq3 : e3 = e3' := IH3 e3' h_e3
+      subst_vars
+      rfl
+  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _
+  | Expr.op _ _ _ | Expr.unaryop _ _ | Expr.newRef _ | Expr.assign _ _
+  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
+  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
+  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
+
+-- Helper lemma for unaryop case
+private theorem beqExpr_unaryop_eq_of_beq (op1 : UnaryOp) (e1 : Expr) (b : Expr)
+    (IH : ∀ b', (e1 == b') = true → e1 = b') :
+    (Expr.unaryop op1 e1 == b) = true → Expr.unaryop op1 e1 = b := by
+  intro h
+  match b with
+  | Expr.unaryop op2 e2 =>
+      have h' : (op1 == op2 && beqExpr e1 e2) = true := by
+        show (op1 == op2 && beqExpr e1 e2) = true
+        exact h
+
+      have ⟨h_op, h_e⟩ : (op1 == op2) = true ∧ beqExpr e1 e2 = true := by
+        rw [Bool.and_eq_true] at h'
+        exact h'
+
+      have eq_op : op1 = op2 := eq_of_beq h_op
+      have eq_e : e1 = e2 := IH e2 h_e
+      subst_vars
+      rfl
+  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _
+  | Expr.op _ _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
+  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
+  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
+  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
+
 -- Main theorem: directly proven without helpers to avoid termination issues
 theorem beqExpr_eq_of_beq (a b : Expr) : (a == b) = true → a = b :=
 by
@@ -222,23 +280,8 @@ by
   | str s1 => exact beqExpr_str_eq_of_beq s1 b h
   | var x1 => exact beqExpr_var_eq_of_beq x1 b h
   | op e1 op1 e2 IH1 IH2 => exact beqExpr_op_eq_of_beq e1 op1 e2 b IH1 IH2 h
-  | unaryop op1 e1 IH =>
-      cases b <;> simp [beqExpr] at h <;> try contradiction
-      case unaryop op2 e2 =>
-        simp [Bool.and_eq_true] at h
-        obtain ⟨h_op, h_e⟩ := h
-        have : op1 = op2 := eq_of_beq h_op
-        have : e1 = e2 := IH e2 h_e
-        subst_vars; rfl
-  | ite e1 e2 e3 IH1 IH2 IH3 =>
-      cases b <;> simp [beqExpr] at h <;> try contradiction
-      case ite e1' e2' e3' =>
-        simp [Bool.and_eq_true] at h
-        obtain ⟨⟨h_e1, h_e2⟩, h_e3⟩ := h
-        have : e1 = e1' := IH1 e1' h_e1
-        have : e2 = e2' := IH2 e2' h_e2
-        have : e3 = e3' := IH3 e3' h_e3
-        subst_vars; rfl
+  | unaryop op1 e1 IH => exact beqExpr_unaryop_eq_of_beq op1 e1 b IH h
+  | ite e1 e2 e3 IH1 IH2 IH3 => exact beqExpr_ite_eq_of_beq e1 e2 e3 b IH1 IH2 IH3 h
   | newRef e1 IH =>
       cases b <;> simp [beqExpr] at h <;> try contradiction
       case newRef e2 => have : e1 = e2 := IH e2 h; subst this; rfl
