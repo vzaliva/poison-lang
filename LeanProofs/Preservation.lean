@@ -2099,7 +2099,158 @@ private lemma preservation_vlet (x : Name) (e1 e2 : Expr) (ctx : TypeContext)
     (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
     :
     PreservationWithFuel (Expr.vlet x e1 e2) ctx n := by
-  sorry
+  unfold PreservationWithFuel
+  intro fuel_tc res μ₀ μ_final ρ₀ ρ_final l₀ l_final pm₀ pm_final v verbose h_typecheck h_instantiate h_eval
+  cases n with
+  | zero =>
+    simp [LeanPoison.beval] at h_eval
+    apply congrFun (a := ()) at h_eval
+    cases h_eval
+  | succ fuel' =>
+    cases fuel_tc with
+    | zero => simp [typecheck, typecheckExpr] at h_typecheck
+    | succ fuel_tc' =>
+      simp only [typecheck, typecheckExpr] at h_typecheck
+      -- Extract typechecking structure using helper lemma
+      have ⟨result1, result2, ctx', h_tc1, h_ctx_eq, h_tc2, h_etyp, h_mem, h_tag, h_loc, h_ntag⟩ :=
+        typecheckVlet_structure ctx x e1 e2 fuel_tc' res h_typecheck
+      -- Extract evaluation structure using helper lemma
+      obtain ⟨config₁, config₂, config₃, v1, h_eval1, h_config2_eq, h_eval2, h_config_final_eq⟩ :=
+        bevalVlet_structure x e1 e2 fuel'.succ verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ_final, varEnv := ρ_final, nextLoc := l_final, pureMode := pm_final }
+          v h_eval
+
+      -- Establish fuel constraint for IH
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+
+      -- Apply IH to e1
+      have h_tc1' : typecheck ctx e1 (fuel_tc' - 1) = .ok result1 := by
+        simp [typecheck]
+        exact h_tc1
+      -- Use beval_preserves_varEnv to establish varEnv equality
+      have h_varenv01 : ρ₀ = config₁.varEnv :=
+        beval_preserves_varEnv e1 fuel' verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          config₁ v1 h_eval1
+      -- Rewrite to use config₁.varEnv
+      rw [h_varenv01] at h_instantiate h_eval1
+      -- Convert h_eval1 to explicit config₁ structure
+      have h_eval1' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextLoc := l₀, pureMode := pm₀ } e1 verbose =
+          pure (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextLoc := config₁.nextLoc, pureMode := config₁.pureMode } v1) := by
+        convert h_eval1
+      have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
+                      μ₀ config₁.memory config₁.varEnv config₁.varEnv
+                      l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                      h_tc1' h_instantiate h_eval1'
+      obtain ⟨h_v1_type, h_runtime1⟩ := IH1
+
+      -- Apply IH to e2 with extended context
+      -- ctx' extends ctx.varEnv with x : result1.qualType
+      -- config₂ extends config₁.varEnv with x : v1
+      -- Note: config₂.memory = config₁.memory (only varEnv differs)
+      have h_config2_mem : config₂.memory = config₁.memory := by
+        subst h_config2_eq
+        simp
+      have h_runtime1' : runtimeInstantiatesCtx ctx' config₂.memory config₂.varEnv := by
+        subst h_ctx_eq h_config2_eq
+        unfold runtimeInstantiatesCtx
+        constructor
+        · -- Memory part: same as h_runtime1
+          intro l h_memenv_contains
+          obtain ⟨h_mem, _⟩ := h_runtime1
+          exact h_mem l h_memenv_contains
+        · -- VarEnv part: need to show config₂.varEnv instantiates extended varEnv
+          intro y qt h_lookup
+          -- config₂.varEnv = config₁.varEnv.update x v1
+          -- If y = x, then lookup returns v1 which has type result1.qualType.etyp
+          -- If y ≠ x, then lookup returns config₁.varEnv.lookup y (from original context)
+          by_cases h_eq : y = x
+          · -- Case: y = x
+            rw [h_eq] at h_lookup ⊢
+            -- Now h_lookup: (ctx.varEnv.update x result1.qualType).lookup x = some qt
+            -- update prepends, so lookup x returns result1.qualType
+            have h_lookup_x : (ctx.varEnv.update x result1.qualType).lookup x = some result1.qualType := by
+              simp [VarTypeEnv.update, VarTypeEnv.lookup]
+            have h_lookup_eq : some result1.qualType = some qt := by
+              rw [← h_lookup_x, h_lookup]
+            injection h_lookup_eq with h_qt_eq
+            subst h_qt_eq
+            -- Need to show valueHasETyp v1 result1.qualType.etyp (from h_v1_type)
+            -- Also need: (config₁.varEnv.update x v1).lookup x = some v1
+            simp [VarEnv.update, VarEnv.lookup]
+            exact h_v1_type
+          · -- Case: y ≠ x
+            -- Key property: if y ≠ x, then (env.update x v).lookup y = env.lookup y
+            -- Use helper lemmas
+            have h_update_lookup_varType : (ctx.varEnv.update x result1.qualType).lookup y = ctx.varEnv.lookup y :=
+              VarTypeEnv_lookup_update_ne ctx.varEnv x y result1.qualType h_eq
+            have h_lookup_orig : ctx.varEnv.lookup y = some qt := by
+              rw [← h_update_lookup_varType, h_lookup]
+            -- Similarly for VarEnv
+            have h_update_lookup_var : (config₁.varEnv.update x v1).lookup y = config₁.varEnv.lookup y :=
+              VarEnv_lookup_update_ne config₁.varEnv x y v1 h_eq
+            -- From h_runtime1: config₁.varEnv instantiates ctx.varEnv
+            obtain ⟨_, h_var⟩ := h_runtime1
+            have h_config_val := h_var h_lookup_orig
+            -- Goal: ∃ v, (config₁.varEnv.update x v1).lookup y = some v ∧ valueHasETyp v qt.etyp
+            -- h_config_val: ∃ v, config₁.varEnv.lookup y = some v ∧ valueHasETyp v qt.etyp
+            -- Rewrite lookup to show they're equal
+            rw [h_update_lookup_var]
+            exact h_config_val
+      have h_tc2' : typecheck ctx' e2 (fuel_tc' - 1) = .ok result2 := by
+        simp [typecheck]
+        exact h_tc2
+      -- h_eval2 already has the right structure: beval fuel' config₂ e2 verbose = pure (.success config₃ v)
+      -- We can pass it directly to IH, using config₂ and config₃ components
+      have IH2 := IH fuel' h_fuel e2 ctx' (fuel_tc' - 1) result2
+                      config₂.memory config₃.memory config₂.varEnv config₃.varEnv
+                      config₂.nextLoc config₃.nextLoc config₂.pureMode config₃.pureMode v verbose
+                      h_tc2' h_runtime1' h_eval2
+      obtain ⟨h_v_type, h_runtime2⟩ := IH2
+
+      constructor
+      · -- valueHasETyp v res.qualType.etyp
+        rw [h_etyp]
+        exact h_v_type
+      · -- runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ_final ρ_final
+        -- Final config: { config₃ with varEnv := config₁.varEnv }
+        -- From h_config_final_eq: { memory := μ_final, varEnv := ρ_final, ... } = { config₃ with varEnv := config₁.varEnv }
+        -- Extract equalities
+        have h_mem_final : μ_final = config₃.memory := by
+          have h_mem_eq := congrArg Config.memory h_config_final_eq
+          simp at h_mem_eq
+          exact h_mem_eq
+        have h_varenv_final : ρ_final = config₁.varEnv := by
+          have h_varenv_eq := congrArg Config.varEnv h_config_final_eq
+          simp at h_varenv_eq
+          exact h_varenv_eq
+        -- Rewrite goal with these equalities
+        rw [h_mem_final, h_varenv_final, h_mem]
+        -- Now goal: runtimeInstantiatesCtx { ctx with memEnv := result2.memEnv' } config₃.memory config₁.varEnv
+        -- h_runtime2: runtimeInstantiatesCtx { ctx' with memEnv := result2.memEnv' } config₃.memory config₃.varEnv
+        -- Key: ctx'.varEnv extends ctx.varEnv with x, but final varEnv is config₁.varEnv = config₁.varEnv (restored)
+        -- We need to show config₁.varEnv instantiates ctx.varEnv, which is from h_runtime1
+        subst h_ctx_eq
+        -- After subst: goal is about ctx.varEnv, and h_runtime2 is about ctx'.varEnv = ctx.varEnv.update x result1.qualType
+        -- But final varEnv is config₁.varEnv, which should instantiate ctx.varEnv (not ctx'.varEnv)
+        -- This is provided by h_runtime1: config₁.varEnv instantiates ctx.varEnv
+        unfold runtimeInstantiatesCtx at h_runtime1 ⊢
+        obtain ⟨h_mem1, h_var1⟩ := h_runtime1
+        constructor
+        · -- Memory part: use result2.memEnv' from h_runtime2
+          intro l h_memenv_contains
+          -- Need to show config₃.memory.contains l
+          -- From h_runtime2, we know { ctx' with memEnv := result2.memEnv' } is satisfied by config₃.memory
+          -- And memory monotonicity tells us config₃.memory contains all locations from config₁.memory
+          -- Since result2.memEnv' = result1.memEnv' (no new allocations in e2), locations come from result1.memEnv'
+          -- Use h_runtime2's memory part
+          unfold runtimeInstantiatesCtx at h_runtime2
+          obtain ⟨h_mem2, _⟩ := h_runtime2
+          exact h_mem2 l h_memenv_contains
+        · -- VarEnv part: config₁.varEnv instantiates ctx.varEnv (from h_runtime1)
+          intro y qt h_lookup
+          exact h_var1 h_lookup
 
 -- Helper lemma for function abstraction
 private lemma preservation_fn (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ) (ctx : TypeContext)
