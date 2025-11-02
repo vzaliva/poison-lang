@@ -155,38 +155,7 @@ instance : Repr Predicate where
   reprPrec := reprPredicate
 
 
--- Manual BEq instance for ETyp (needed for type checking)
-mutual
-def beqETyp : ETyp → ETyp → Bool
-  | ETyp.int, ETyp.int => true
-  | ETyp.bool, ETyp.bool => true
-  | ETyp.unit, ETyp.unit => true
-  | ETyp.string , ETyp.string => true
-  | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETyp t1 t2 && l1 == l2
-  | ETyp.arrow st1 st2 p1 tcl1, ETyp.arrow st1' st2' p2 tcl2 =>
-    st1 == st1' && st2 == st2' && p1 == p2 && beqFnTClosure tcl1 tcl2
-  | ETyp.parrow st1 st2 p1 tcl1, ETyp.parrow st1' st2' p2 tcl2 =>
-    st1 == st1' && st2 == st2' && p1 == p2 && beqPFnTClosure tcl1 tcl2
-  | _, _ => false
-
-def beqFnTClosure : FnTClosure → FnTClosure → Bool
-  | FnTClosure.mk x1 _ _, FnTClosure.mk x2 _ _ => x1 == x2
-
-def beqPFnTClosure : PFnTClosure → PFnTClosure → Bool
-  | PFnTClosure.mk x1 _ _, PFnTClosure.mk x2 _ _ => x1 == x2
-end
-
-instance : BEq ETyp where
-  beq := beqETyp
-
-instance : BEq FnTClosure where
-  beq := beqFnTClosure
-
-instance : BEq PFnTClosure where
-  beq := beqPFnTClosure
-
-
--- Manual BEq instance for PExpr
+-- Manual BEq instance for PExpr (must be defined first as it's used in the mutual block)
 def beqPExpr : PExpr → PExpr → Bool
   | .unit, .unit => true
   | .num n1, .num n2 => n1 == n2
@@ -204,15 +173,33 @@ def beqPExpr : PExpr → PExpr → Bool
 instance : BEq PExpr where
   beq := beqPExpr
 
-
+-- Manual BEq instances for ETyp and related types (updated to do full structural comparison)
 mutual
+def beqETyp : ETyp → ETyp → Bool
+  | ETyp.int, ETyp.int => true
+  | ETyp.bool, ETyp.bool => true
+  | ETyp.unit, ETyp.unit => true
+  | ETyp.string , ETyp.string => true
+  | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETyp t1 t2 && l1 == l2
+  | ETyp.arrow st1 st2 p1 tcl1, ETyp.arrow st1' st2' p2 tcl2 =>
+    st1 == st1' && st2 == st2' && p1 == p2 && beqFnTClosure tcl1 tcl2
+  | ETyp.parrow st1 st2 p1 tcl1, ETyp.parrow st1' st2' p2 tcl2 =>
+    st1 == st1' && st2 == st2' && p1 == p2 && beqPFnTClosure tcl1 tcl2
+  | _, _ => false
+
+def beqFnTClosure : FnTClosure → FnTClosure → Bool
+  | FnTClosure.mk x1 e1 env1, FnTClosure.mk x2 e2 env2 =>
+    x1 == x2 && e1 == e2 && beqVarEnv env1 env2
+
+def beqPFnTClosure : PFnTClosure → PFnTClosure → Bool
+  | PFnTClosure.mk x1 e1 env1, PFnTClosure.mk x2 e2 env2 =>
+    x1 == x2 && e1 == e2 && beqVarEnv env1 env2
 
 def beqVarEnv : List (Name × QTyp) → List (Name × QTyp) → Bool
   | [], [] => true
   | (x1, qt1) :: env1, (x2, qt2) :: env2 => x1 == x2 && beqQTyp qt1 qt2 && beqVarEnv env1 env2
   | _, _ => false
 
--- Manual BEq instance for Predicate
 def beqPredicate : Predicate → Predicate → Bool
   | Predicate.guardClosure tag1 arg1 body1 env1, Predicate.guardClosure tag2 arg2 body2 env2 =>
     tag1 == tag2 && arg1 == arg2 && body1 == body2 && beqVarEnv env1 env2
@@ -221,18 +208,41 @@ def beqPredicate : Predicate → Predicate → Bool
   | Predicate.noPred, Predicate.noPred => true
   | _, _ => false
 
--- Manual BEq instance for QTyp
 def beqQTyp : QTyp → QTyp → Bool
   | QTyp.mk etyp1 poison1 pred1, QTyp.mk etyp2 poison2 pred2 =>
-    etyp1 == etyp2 && poison1 == poison2 && beqPredicate pred1 pred2
+    beqETyp etyp1 etyp2 && poison1 == poison2 && beqPredicate pred1 pred2
 
 end
+
+instance : BEq ETyp where
+  beq := beqETyp
+
+instance : BEq FnTClosure where
+  beq := beqFnTClosure
+
+instance : BEq PFnTClosure where
+  beq := beqPFnTClosure
 
 instance : BEq Predicate where
   beq := beqPredicate
 
 instance : BEq QTyp where
   beq := beqQTyp
+
+-- Signature-based equality for function types (for type checking)
+-- Compares only parameter type, return type, and poison flag, ignoring closure contents
+-- Corresponds to the ≈ operator in the Ott specification (sig_comp)
+def beqETypSignature : ETyp → ETyp → Bool
+  | ETyp.int, ETyp.int => true
+  | ETyp.bool, ETyp.bool => true
+  | ETyp.unit, ETyp.unit => true
+  | ETyp.string, ETyp.string => true
+  | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETypSignature t1 t2 && l1 == l2
+  | ETyp.arrow st1 st2 p1 _, ETyp.arrow st1' st2' p2 _ =>
+    st1 == st1' && st2 == st2' && p1 == p2
+  | ETyp.parrow st1 st2 p1 _, ETyp.parrow st1' st2' p2 _ =>
+    st1 == st1' && st2 == st2' && p1 == p2
+  | _, _ => false
 
 @[instance]
 instance : ToString ETyp where
