@@ -1954,6 +1954,145 @@ private lemma preservation_kwhile (e1 e2 : Expr) (ctx : TypeContext)
     PreservationWithFuel (Expr.kwhile e1 e2) ctx n := by
   sorry
 
+-- Helper lemma: extract structure from typecheckVlet
+private lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckVlet ctx x e1 e2 fuel = .ok res →
+  ∃ (result1 result2 : TypeResult) (ctx' : TypeContext),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    ctx' = { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' } ∧
+    typecheckExpr ctx' e2 (fuel - 1) = .ok result2 ∧
+    res.qualType.etyp = result2.qualType.etyp ∧
+    res.memEnv' = result2.memEnv' ∧
+    res.tagEnv' = result2.tagEnv' ∧
+    res.nextLoc' = result2.nextLoc' ∧
+    res.nextTag' = result2.nextTag' := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+    simp [typecheckVlet] at h_typecheck
+  | succ fuel' =>
+    unfold typecheckVlet at h_typecheck
+    simp at h_typecheck
+    simp [bind, Except.bind] at h_typecheck
+    cases h_tc1 : typecheckExpr ctx e1 fuel' with
+    | ok result1 =>
+      simp [h_tc1] at h_typecheck
+      -- Match the structure of the do notation: let varEnv' := ... then let ctx' := ...
+      -- We inline the context construction in the cases statement
+      cases h_tc2 : typecheckExpr { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' } e2 fuel' with
+      | ok result2 =>
+        simp [h_tc2] at h_typecheck
+        -- Extract result2.qualType structure
+        cases h_qt2 : result2.qualType with
+        | mk etyp2 p2 pred2 =>
+          rw [h_qt2] at h_typecheck
+          simp at h_typecheck
+          simp [pure, Except.pure] at h_typecheck
+          -- h_typecheck is already an equality: res = { qualType := ..., ... }
+          -- We can use it directly with subst
+          simp only [Nat.add_sub_cancel]
+          -- Define ctx' for the use statement
+          let ctx' := { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+          subst h_typecheck
+          use result1, result2, ctx'
+          constructor
+          · exact h_tc1
+          constructor
+          · rfl
+          constructor
+          · exact h_tc2
+          constructor
+          · -- res.qualType.etyp = result2.qualType.etyp
+            -- After subst, res.qualType.etyp = etyp2, and from h_qt2: result2.qualType.etyp = etyp2
+            rw [h_qt2]
+          constructor
+          · rfl  -- res.memEnv' = result2.memEnv'
+          constructor
+          · rfl  -- res.tagEnv' = result2.tagEnv'
+          constructor
+          · rfl  -- res.nextLoc' = result2.nextLoc'
+          · rfl  -- res.nextTag' = result2.nextTag'
+      | error err =>
+        simp [h_tc2] at h_typecheck
+    | error err =>
+      simp [h_tc1] at h_typecheck
+
+-- Helper lemma: extract evaluation structure from successful beval of vlet
+private lemma bevalVlet_structure (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config_final : Config) (v : Value) :
+  LeanPoison.beval fuel config₀ (Expr.vlet x e1 e2) verbose =
+    pure (.success config_final v) →
+  ∃ (config₁ config₂ config₃ : Config) (v1 : Value),
+    LeanPoison.beval (fuel - 1) config₀ e1 verbose = pure (.success config₁ v1) ∧
+    config₂ = { config₁ with varEnv := config₁.varEnv.update x v1 } ∧
+    LeanPoison.beval (fuel - 1) config₂ e2 verbose = pure (.success config₃ v) ∧
+    config_final = { config₃ with varEnv := config₁.varEnv } := by
+  intro h_eval
+  cases fuel with
+  | zero =>
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    apply congrFun (a := ()) at h_eval
+    simp [pure] at h_eval
+    injection h_eval with h_contr
+    cases h_contr
+  | succ fuel' =>
+    unfold LeanPoison.beval at h_eval
+    simp at h_eval
+    apply congrFun (a := ()) at h_eval
+    simp [bind, Bind.bind, EStateM.bind] at h_eval
+    split at h_eval
+    · next h_result1 h_state1 h_beval1 =>
+      split at h_eval
+      · next config₁' v₁ =>
+        -- e1 evaluated successfully to config₁', v₁
+        -- Now create config₂ with extended varEnv
+        let config₂' := { config₁' with varEnv := config₁'.varEnv.update x v₁ }
+        -- Evaluate e2 in config₂'
+        simp [EStateM.bind] at h_eval
+        split at h_eval
+        · next h_result2 h_state2 h_beval2 =>
+          split at h_eval
+          · next config₃' v₂ =>
+            -- e2 evaluated successfully to config₃', v₂
+            -- Final config is { config₃' with varEnv := config₁'.varEnv }
+            simp [pure] at h_eval
+            injection h_eval with h_eq_result h_eq_state
+            injection h_eq_result with h_eq_cfg h_eq_val
+            -- Convert to pure form before subst
+            have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config₁' v₁) := by
+              funext _
+              simp [pure]
+              exact h_beval1
+            have h_beval2' : LeanPoison.beval fuel' config₂' e2 verbose = pure (.success config₃' v₂) := by
+              funext _
+              simp [pure]
+              exact h_beval2
+            -- Now subst to get final config and value
+            subst h_eq_cfg h_eq_val
+            simp only [Nat.add_sub_cancel]
+            exact ⟨config₁', config₂', config₃', v₁, h_beval1', rfl, h_beval2', rfl⟩
+          · next =>
+            simp [pure] at h_eval
+            injection h_eval with h_eq_result h_eq_state
+            injection h_eq_result
+          · next msg =>
+            simp [pure] at h_eval
+            injection h_eval with h_eq_result h_eq_state
+            injection h_eq_result
+        · next h_error2 h_state2 =>
+          injection h_eval
+      · next =>
+        simp [pure] at h_eval
+        injection h_eval with h_eq_result h_eq_state
+        injection h_eq_result
+      · next msg =>
+        simp [pure] at h_eval
+        injection h_eval with h_eq_result h_eq_state
+        injection h_eq_result
+    · next h_error1 h_state1 =>
+      injection h_eval
+
 -- Helper lemma for let binding
 private lemma preservation_vlet (x : Name) (e1 e2 : Expr) (ctx : TypeContext)
     (n : Nat)
