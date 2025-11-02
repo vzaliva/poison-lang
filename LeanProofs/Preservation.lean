@@ -1913,6 +1913,7 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
         exact h_runtime2
 
 -- Helper lemma for conditionals
+-- Note: it migth not be provable yet becaue of isse #63
 private lemma preservation_ite (e1 e2 e3 : Expr) (ctx : TypeContext)
     (n : Nat)
     (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
@@ -1945,6 +1946,7 @@ private lemma preservation_deref (e1 : Expr) (ctx : TypeContext)
   sorry
 
 -- Helper lemma for while loops
+-- Note: it migth not be provable yet becaue of isse #64
 private lemma preservation_kwhile (e1 e2 : Expr) (ctx : TypeContext)
     (n : Nat)
     (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
