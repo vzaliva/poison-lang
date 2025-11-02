@@ -1561,6 +1561,39 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (config₀
 end VarEnvPreservation
 
 -- ================================================================
+-- Helper Lemmas for Lookup/Update Operations
+-- ================================================================
+
+-- General lemma: If y ≠ x, then List.lookup y ((x, v) :: l) = List.lookup y l
+-- This holds for any association list because update prepends, and lookup skips non-matching keys
+lemma List_lookup_cons_ne {α β : Type} [BEq α] [LawfulBEq α] (l : List (α × β)) (x y : α) (v : β) (h_ne : y ≠ x) :
+  List.lookup y ((x, v) :: l) = List.lookup y l := by
+  simp [List.lookup]
+  -- Use by_cases on the boolean equality check
+  by_cases h_beq : (y == x) = true
+  · -- Case: (y == x) = true, which contradicts h_ne : y ≠ x
+    have h_eq : y = x := LawfulBEq.eq_of_beq h_beq
+    contradiction
+  · -- Case: (y == x) ≠ true, so (y == x) = false
+    have h_false : (y == x) = false := by
+      cases h : y == x
+      · rfl
+      · contradiction
+    simp [h_false]
+
+-- If y ≠ x, then updating env with x doesn't affect lookup y
+lemma VarTypeEnv_lookup_update_ne (env : VarTypeEnv) (x y : Name) (qt : QTyp) (h_ne : y ≠ x) :
+  (env.update x qt).lookup y = env.lookup y := by
+  simp [VarTypeEnv.update, VarTypeEnv.lookup]
+  exact List_lookup_cons_ne env x y qt h_ne
+
+-- If y ≠ x, then updating env with x doesn't affect lookup y
+lemma VarEnv_lookup_update_ne (env : VarEnv) (x y : Name) (v : Value) (h_ne : y ≠ x) :
+  (env.update x v).lookup y = env.lookup y := by
+  simp [VarEnv.update, VarEnv.lookup]
+  exact List_lookup_cons_ne env x y v h_ne
+
+-- ================================================================
 -- Evaluation Preserves Memory Monotonicity
 -- ================================================================
 --
