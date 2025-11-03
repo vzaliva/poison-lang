@@ -24,6 +24,10 @@ namespace MemoryTypeEnv
   /-- `m` contains a binding for `a`. -/
   def hasKey (m : MemoryTypeEnv) (a : Address) : Prop :=
     m.contains a
+
+  /-- Extensional equality of memory typing environments. All keys and values must be equal. -/
+  def equiv (m₁ m₂ : MemoryTypeEnv) : Prop := HashMap.Equiv m₁ m₂
+
 end MemoryTypeEnv
 
 /-- Dependency set for tracking heap locations read by predicates -/

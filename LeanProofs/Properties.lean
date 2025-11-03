@@ -8,9 +8,10 @@ import LeanPoison.Poison
 import Mathlib.Data.Nat.Basic  -- for Nat.strong_induction_on
 import Mathlib.Tactic
 import Mathlib.Tactic.Linarith
+import Std.Data.HashMap
 
 -- TODO: Ideally we would not need this but for brevity sometimes we close some
--- proofs with <;> followed by simp [...] and for some branches some args are
+-- proofs with <;> followed by simp [...] and for some branches some args arew
 -- not used. We should fix this to avoid disabling the linter warning.
 set_option linter.unusedSimpArgs false
 
@@ -30,9 +31,17 @@ theorem OpEType.complete {o t₁ t₂ r}
   opEType? o t₁ t₂ = some r ↔ OpEType o t₁ t₂ r :=
   ⟨OpEType.complete, OpEType.sound⟩
 
-@[simp]
-theorem joinMemEnv_idempotent : ∀ (m1 : MemoryTypeEnv), joinMemEnvs m1 m1 = m1 := by
-  intros m1
+theorem MemoryTypeEnv_eq_equiv {m₁ m₂ : MemoryTypeEnv} (h : m₁ = m₂) : m₁.equiv m₂ :=
+  by
+  rw [h]
+  simp [MemoryTypeEnv.equiv]
+
+@[simp] theorem joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
+  cases p <;> rfl
+
+theorem joinMemEnv_idempotent : ∀ (m m1 m2 : MemoryTypeEnv),
+  m.equiv m1 → m.equiv m2 → m.equiv (joinMemEnvs m1 m2) := by
+  intros m m1 m2 h1 h2
   simp [joinMemEnvs]
   sorry
 
@@ -61,39 +70,39 @@ section TypecheckPExprPreservesTypestate
 -- Private lemma for unit case
 private lemma typecheck_unit_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat)
   (_C : ctx.pureCtx = true) (_P : Expr.unit.toPExpr = Except.ok pe) (H : typecheckExpr ctx Expr.unit (fuel + 1) = Except.ok result) :
-  ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+  ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp_all [typecheckExpr]
   cases H
-  trivial
+  simp [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
 
 -- Private lemma for str case
 private lemma typecheck_str_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (s : String)
   (_C : ctx.pureCtx = true) (_P : (Expr.str s).toPExpr = Except.ok pe) (H : typecheckExpr ctx (Expr.str s) (fuel + 1) = Except.ok result) :
-  ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+  ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp_all [typecheckExpr]
   cases H
-  trivial
+  simp [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
 
 -- Private lemma for num case
 private lemma typecheck_num_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (n : Int)
   (_C : ctx.pureCtx = true) (_P : (Expr.num n).toPExpr = Except.ok pe) (H : typecheckExpr ctx (Expr.num n) (fuel + 1) = Except.ok result) :
-  ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+  ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp_all [typecheckExpr]
   cases H
-  trivial
+  simp [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
 
 -- Private lemma for bool case
 private lemma typecheck_bool_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (b : Bool)
   (_C : ctx.pureCtx = true) (_P : (Expr.bool b).toPExpr = Except.ok pe) (H : typecheckExpr ctx (Expr.bool b) (fuel + 1) = Except.ok result) :
-  ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+  ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp_all [typecheckExpr]
   cases H
-  trivial
+  simp [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
 
 -- Private lemma for var case
 private lemma typecheck_var_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (name : Name)
   (C : ctx.pureCtx = true) (_P : (Expr.var name).toPExpr = Except.ok pe) (H : typecheckExpr ctx (Expr.var name) (fuel + 1) = Except.ok result) :
-  ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+  ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp_all [typecheckExpr]
   -- All var cases preserve environment fields - handle uniformly
   simp [typecheckVar] at H
@@ -110,36 +119,36 @@ private lemma typecheck_var_preserves_typestate (ctx : TypeContext) (pe : PExpr)
         cases h5 : ctx.tagEnv.get? tag with
         | none =>
           simp_all [typecheckVar, h0, h1, h3, h5, pure, Except.pure]
-          cases result <;> cases ctx <;> cases H <;> simp_all
+          cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
         | some bd =>
           cases bd with
           | mk value deps =>
             cases h6 : value with
             | false =>
               simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
-              cases result <;> cases ctx <;> cases H <;> simp_all
+              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
             | true =>
               simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
-              cases result <;> cases ctx <;> cases H <;> simp_all
+              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
       | guardOnly tag =>
         cases h5 : ctx.tagEnv.get? tag with
         | none =>
           simp_all [typecheckVar, h0, h1, h3, h5, pure, Except.pure]
-          cases result <;> cases ctx <;> cases H <;> simp_all
+          cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
         | some bd =>
           cases bd with
           | mk value deps =>
             cases h6 : value with
             | false =>
               simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
-              cases result <;> cases ctx <;> cases H <;> simp_all
+              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
             | true =>
               simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
-              cases result <;> cases ctx <;> cases H <;> simp_all
+              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
       | noPred =>
         -- No predicate case: preserves environment
         simp_all [typecheckVar, h0, h1, h3, pure, Except.pure]
-        cases result <;> cases ctx <;> cases H <;> simp_all
+        cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
 
 -- Private lemma for deref case
 private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (e1 : Expr)
@@ -148,8 +157,8 @@ private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExp
     e.toPExpr = Except.ok pe →
     ctx.pureCtx = true →
     typecheckExpr ctx e m = Except.ok result →
-    ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
-  ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+    ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
+  ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp [typecheckExpr] at H
   (cases fuel with | zero | succ fuel') <;>
     simp [typecheckDeref, bind, Except.bind] at H
@@ -177,7 +186,7 @@ private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExp
           cases h4: poison with
           | true =>
             simp_all [pure, Except.pure]
-            cases result; cases result1; cases ctx; cases H; trivial
+            cases result; cases result1; cases ctx; cases H; simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
           | false =>
             simp [h4] at H
             cases h5 : result1.memEnv'.get? l with
@@ -195,7 +204,7 @@ private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExp
                     simp_all
                   | false =>
                     simp_all [pure, Except.pure]
-                    cases result; cases result1; cases ctx; cases H; trivial
+                    cases result; cases result1; cases ctx; cases H; simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
                 | guardOnly k =>
                   simp_all
                   cases h9 : etyp' != t with
@@ -206,13 +215,13 @@ private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExp
                     match h10 : result1.tagEnv'.get? k with
                     | none =>
                       simp_all <;>
-                      cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
+                      cases result <;> cases result1 <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
                     | some bd =>
                       cases bd with
                       | mk value _deps =>
                         cases value <;>
                         simp_all <;>
-                        cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
+                        cases result <;> cases result1 <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
                 | guardClosure k arg_name pred_body var_env =>
                   simp_all
                   cases h9 : etyp' != t with
@@ -223,13 +232,13 @@ private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExp
                     match h10 : result1.tagEnv'.get? k with
                     | none =>
                       simp_all <;>
-                      cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
+                      cases result <;> cases result1 <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
                     | some bd =>
                       cases bd with
                       | mk value _deps =>
                         cases value <;>
                         simp_all <;>
-                        cases result <;> cases result1 <;> cases ctx <;> cases H <;> trivial
+                        cases result <;> cases result1 <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
         | _ => simp_all
 
 -- Private lemma for ite case
@@ -239,8 +248,8 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
     e.toPExpr = Except.ok pe →
     ctx.pureCtx = true →
     typecheckExpr ctx e m = Except.ok result →
-    ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
-  ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+    ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
+  ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp [typecheckExpr] at H
   (cases fuel with | zero |succ fuel') <;> simp_all [typecheckIf, bind, Except.bind]
   simp [Expr.toPExpr, Functor.map, Except.map] at P
@@ -317,6 +326,13 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                         e3 pe3 result3 h4 C'' h11
                     rcases IH2 with ⟨H14, H15, H16⟩
                     rcases IH3 with ⟨H17, H18, H19⟩
+                    -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv' ∧ result1.memEnv'.equiv result3.memEnv'
+                    -- Goal: memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv')
+                    -- Use joinMemEnv_idempotent with m=result1.memEnv', m1=result2.memEnv', m2=result3.memEnv'
+                    have H_join : result1.memEnv'.equiv (joinMemEnvs result2.memEnv' result3.memEnv') :=
+                      joinMemEnv_idempotent result1.memEnv' result2.memEnv' result3.memEnv' H14 H17
+                    have H_trans : ctx.memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv') :=
+                      Std.HashMap.Equiv.trans H1 H_join
                     cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
   | ok k_deps =>
     -- predicate-based case: matching predicate found
@@ -417,6 +433,13 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                         e3 pe3 result3 h4 C'' h11
                     rcases IH2 with ⟨H14, H15, H16⟩
                     rcases IH3 with ⟨H17, H18, H19⟩
+                    -- Prove: memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv')
+                    -- We have: memEnv.equiv memEnv (reflexivity from H1)
+                    -- And: memEnv.equiv result2.memEnv' (from H14)
+                    -- And: memEnv.equiv result3.memEnv' (from H17)
+                    -- Use joinMemEnv_idempotent with m=memEnv, m1=result2.memEnv', m2=result3.memEnv'
+                    have H_join : ctx.memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv') :=
+                      joinMemEnv_idempotent ctx.memEnv result2.memEnv' result3.memEnv' H14 H17
                     cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
 
 -- Private lemma for op case
@@ -426,8 +449,8 @@ private lemma typecheck_op_preserves_typestate (ctx : TypeContext) (pe : PExpr) 
     e.toPExpr = Except.ok pe →
     ctx.pureCtx = true →
     typecheckExpr ctx e m = Except.ok result →
-    ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
-  ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+    ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
+  ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp [typecheckExpr] at H
   (cases fuel with | zero |succ fuel') <;> simp_all [typecheckOp, bind, Except.bind]
   simp [Expr.toPExpr, Functor.map, Except.map] at P
@@ -483,6 +506,8 @@ private lemma typecheck_op_preserves_typestate (ctx : TypeContext) (pe : PExpr) 
             rcases IH2 with ⟨H8, H9, H10⟩
             simp_all
             cases result; cases result1; cases result2; cases ctx; cases H; simp_all
+            -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv'
+            apply Std.HashMap.Equiv.trans H1 H8
           | none =>
             simp_all
 
@@ -493,8 +518,8 @@ private lemma typecheck_unaryop_preserves_typestate (ctx : TypeContext) (pe : PE
     e.toPExpr = Except.ok pe →
     ctx.pureCtx = true →
     typecheckExpr ctx e m = Except.ok result →
-    ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
-  ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+    ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
+  ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp [typecheckExpr] at H
   (cases fuel with | zero |succ fuel') <;> simp_all [typecheckUnaryOp, bind, Except.bind]
   simp [Expr.toPExpr, Functor.map, Except.map] at P
@@ -525,8 +550,8 @@ private lemma typecheck_vlet_preserves_typestate (ctx : TypeContext) (pe : PExpr
     e.toPExpr = Except.ok pe →
     ctx.pureCtx = true →
     typecheckExpr ctx e m = Except.ok result →
-    ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
-  ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+    ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
+  ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp [typecheckExpr] at H
   (cases fuel with | zero |succ fuel') <;> simp_all [typecheckVlet, bind, Except.bind]
   simp [Expr.toPExpr, Functor.map, Except.map] at P
@@ -575,8 +600,11 @@ private lemma typecheck_vlet_preserves_typestate (ctx : TypeContext) (pe : PExpr
               nextTag := result1.nextTag',
               pureCtx := true }
             e2 pe2 result2 h2 C' h4
+          rcases IH2 with ⟨H8, H9, H10⟩
           simp_all
           cases result; cases result1; cases result2; cases ctx; cases H; simp_all
+          -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv'
+          apply Std.HashMap.Equiv.trans H1 H8
 
 -- Private lemma for app case
 private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (e1 e2 : Expr)
@@ -585,8 +613,8 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
     e.toPExpr = Except.ok pe →
     ctx.pureCtx = true →
     typecheckExpr ctx e m = Except.ok result →
-    ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
-  ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+    ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
+  ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp [typecheckExpr] at H
   (cases fuel with | zero |succ fuel') <;> simp_all [typecheckApp, bind, Except.bind]
   simp [Expr.toPExpr, Functor.map, Except.map] at P
@@ -689,6 +717,10 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                         body.toExpr body result3 hb C'' h8
                       rcases IH3 with ⟨H11, H12, H13, H14⟩
                       cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
+                      -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv' ∧ result2.memEnv'.equiv result3.memEnv'
+                      apply Std.HashMap.Equiv.trans H1
+                      apply Std.HashMap.Equiv.trans H7
+                      exact H11
       | _ => simp_all
 
 theorem typecheck_PExpr_preserves_typestate :
@@ -696,7 +728,7 @@ theorem typecheck_PExpr_preserves_typestate :
     e.toPExpr = .ok pe →
     ctx.pureCtx = true →
     typecheckExpr ctx e fuel = .ok result →
-    ctx.memEnv = result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag'
+    ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag'
  := by
   intro fuel
    -- strong induction on `fuel`
