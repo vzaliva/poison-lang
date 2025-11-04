@@ -438,15 +438,15 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
   | ok k_deps =>
     -- predicate-based case: matching predicate found
     simp_all
-    have ctx_simp: ctx = { pc := ctx.pc,
-                           memEnv := ctx.memEnv,
-                           varEnv := ctx.varEnv,
-                           tagEnv := ctx.tagEnv,
-                           nextLoc := ctx.nextLoc,
-                           nextTag := ctx.nextTag,
-                           pureCtx := true
-                         }
-    rw [← C]
+    have ctx_eta :
+      { pc := ctx.pc,
+        memEnv := ctx.memEnv,
+        varEnv := ctx.varEnv,
+        tagEnv := ctx.tagEnv,
+        nextLoc := ctx.nextLoc,
+        nextTag := ctx.nextTag,
+        pureCtx := true } = ctx := by
+      rw [← C]
 
     cases h5: typecheckExpr {
                               pc := ctx.pc,
@@ -506,7 +506,6 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                     simp [h13] at H
                     have hfuel : fuel' < fuel' + 1 + 1 := by linarith
                     have hfuel : fuel' < fuel' + 1 + 1 := by linarith
-                    rw [<- ctx_simp] at h5
                     have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 C h5
                     rcases IH1 with ⟨H1, H2, H3, H4⟩
                     have C' : ({ pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
