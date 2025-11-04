@@ -11,6 +11,10 @@ import Mathlib.Tactic
 import Mathlib.Tactic.Linarith
 import Std.Data.HashMap
 
+-- set_option diagnostics true
+
+set_option maxHeartbeats 2000000
+
 -- TODO: Ideally we would not need this but for brevity sometimes we close some
 -- proofs with <;> followed by simp [...] and for some branches some args arew
 -- not used. We should fix this to avoid disabling the linter warning.
@@ -28,7 +32,7 @@ theorem OpEType.complete {o t₁ t₂ r}
   cases o <;> cases t₁ <;> cases t₂
    <;> simp [opEType?] at h <;> rw [<-h] <;> constructor
 
-@[simp] theorem opEType?_iff (o t₁ t₂ r) :
+theorem opEType?_iff (o t₁ t₂ r) :
   opEType? o t₁ t₂ = some r ↔ OpEType o t₁ t₂ r :=
   ⟨OpEType.complete, OpEType.sound⟩
 
@@ -37,7 +41,7 @@ theorem MemoryTypeEnv_eq_equiv {m₁ m₂ : MemoryTypeEnv} (h : m₁ = m₂) : m
   rw [h]
   simp [MemoryTypeEnv.equiv]
 
-@[simp] theorem joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
+theorem joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
   cases p <;> rfl
 
 -- Idempotency of predicate joining
@@ -144,7 +148,7 @@ theorem joinMemEnv_idempotent : ∀ (m m1 m2 : MemoryTypeEnv),
     simp [beq_iff_eq] at this
     exact this
 
-@[simp] theorem toExpr_toPExpr (pe : PExpr) :
+theorem toExpr_toPExpr (pe : PExpr) :
   pe.toExpr.toPExpr = Except.ok pe := by
   induction pe with
   | unit | num _ | bool _ | str _ | var _ =>
@@ -161,8 +165,6 @@ theorem joinMemEnv_idempotent : ∀ (m m1 m2 : MemoryTypeEnv),
     simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2, IH3]
   | deref e IH =>
     simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH]
-
-set_option maxHeartbeats 1000000
 
 section TypecheckPExprPreservesTypestate
 
