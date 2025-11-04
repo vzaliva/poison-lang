@@ -91,14 +91,88 @@ private lemma joinMemEnvs_func_idempotent :
   | mk t p pred =>
     cases pred <;> simp [beq_iff_eq, joinPoison_idempotent]
 
--- Helper lemmas about combineMaps behavior
--- These lemmas require detailed reasoning about HashMap.fold operations
--- We admit them as axioms for now, as proving them requires extensive
--- lemmas about fold that are beyond the current scope
-private axiom combineMaps_get?_none [BEq α] [Hashable α] [LawfulBEq α]
+-- Helper lemma: If k is not in the list being folded and not in init, and g doesn't add k,
+-- then k won't be in the result
+private lemma List_foldl_preserves_absent [BEq α] [Hashable α] [LawfulBEq α]
+  (l : List (α × β)) (init : Std.HashMap α γ) (k : α)
+  (g : Std.HashMap α γ → α → β → Std.HashMap α γ)
+  (h_init : init.get? k = none)
+  (h_l : ∀ kv ∈ l, kv.1 ≠ k)
+  (h_g : ∀ acc k' v, k' ≠ k → (g acc k' v).get? k = acc.get? k) :
+  (l.foldl (fun acc kv => g acc kv.1 kv.2) init).get? k = none := by
+  induction l generalizing init with
+  | nil => exact h_init
+  | cons kv tail ih =>
+    simp only [List.foldl]
+    have h_kv_mem : kv ∈ kv :: tail := by simp
+    have h_k' : kv.1 ≠ k := h_l kv h_kv_mem
+    have h_g_eq : (g init kv.1 kv.2).get? k = init.get? k := h_g init kv.1 kv.2 h_k'
+    have h_new_init : (g init kv.1 kv.2).get? k = none := Eq.trans h_g_eq h_init
+    apply ih (g init kv.1 kv.2) h_new_init
+    · intro kv' hkv'
+      exact h_l kv' (List.mem_cons_of_mem kv hkv')
+
+-- Helper: HashMap.fold is equivalent to folding over toList
+private lemma HashMap_fold_eq_toList_foldl [BEq α] [Hashable α]
+  (m : Std.HashMap α β) (init : Std.HashMap α γ) (g : Std.HashMap α γ → α → β → Std.HashMap α γ) :
+  m.fold (init := init) g = (m.toList.foldl (fun acc kv => g acc kv.1 kv.2) init) := by
+  -- Use Std lemma `fold_eq_foldl_toList`.
+  classical
+  simpa using (Std.HashMap.fold_eq_foldl_toList (m := m) (f := g) (init := init))
+
+-- Lemma: If k is not in the map being folded and not in init, and g doesn't add k,
+-- then k won't be in the result
+lemma HashMap_fold_preserves_absent [BEq α] [Hashable α] [LawfulBEq α]
+  (m : Std.HashMap α β) (init : Std.HashMap α γ) (k : α)
+  (g : Std.HashMap α γ → α → β → Std.HashMap α γ)
+  (h_init : init.get? k = none)
+  (h_m : m.get? k = none)
+  (h_g : ∀ acc k' v, k' ≠ k → (g acc k' v).get? k = acc.get? k) :
+  (m.fold (init := init) g).get? k = none := by
+  rw [HashMap_fold_eq_toList_foldl]
+  apply List_foldl_preserves_absent
+  · exact h_init
+  · intro kv h_mem
+    have h_kv : m.get? kv.1 = some kv.2 := by
+      rw [Std.HashMap.mem_toList_iff_getElem?_eq_some] at h_mem
+      simpa [Std.HashMap.get?_eq_getElem?] using h_mem
+    intro h_eq
+    rw [h_eq] at h_kv
+    rw [h_m] at h_kv
+    contradiction
+  · exact h_g
+
+theorem combineMaps_get?_none [BEq α] [Hashable α] [LawfulBEq α]
   (m1 m2 : Std.HashMap α β) (f : α → Option β → Option β → Option β) (k : α)
   (h1 : m1.get? k = none) (h2 : m2.get? k = none) :
-  (combineMaps m1 m2 f).get? k = none
+  (combineMaps m1 m2 f).get? k = none := by
+  unfold combineMaps
+  -- Apply HashMap_fold_preserves_absent for the second fold
+  apply HashMap_fold_preserves_absent m2 _ k
+  · -- Show k is not in afterLeft (first fold result)
+    apply HashMap_fold_preserves_absent m1 _ k
+    · rw [Std.HashMap.get?_eq_getElem?]
+      simp
+    · exact h1
+    · intro acc k' v h_neq
+      split
+      · rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.get?_eq_getElem?]
+        rw [Std.HashMap.getElem?_insert]
+        simp [h_neq]
+      · rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.get?_eq_getElem?]
+        rw [Std.HashMap.getElem?_erase]
+        simp [h_neq]
+  · exact h2
+  · intro acc k' v h_neq
+    split
+    · rfl
+    · split
+      · rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.get?_eq_getElem?]
+        rw [Std.HashMap.getElem?_insert]
+        simp [h_neq]
+      · rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.get?_eq_getElem?]
+        rw [Std.HashMap.getElem?_erase]
+        simp [h_neq]
 
 private axiom combineMaps_get?_some [BEq α] [Hashable α] [LawfulBEq α]
   (m1 m2 : Std.HashMap α β) (f : α → Option β → Option β → Option β) (k : α) (v : β)
