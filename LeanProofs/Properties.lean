@@ -744,7 +744,7 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
         | error err =>
           simp_all
         | ok result2 =>
-          simp [h6] at H
+          simp (config := { failIfUnchanged := false }) [h6] at H
           have C' : ({ pc := ctx.pc,
                        memEnv := result1.memEnv',
                        varEnv := ctx.varEnv,
@@ -804,7 +804,8 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                                     nextTag := result2.nextTag',
                                     pureCtx := true } : TypeContext).pureCtx = true
                           := by simp_all
-                      have hb : body.toExpr.toPExpr = Except.ok body := by simp
+                      have hb : body.toExpr.toPExpr = Except.ok body := by
+                        simpa using toExpr_toPExpr body
                       have IH3 := IH fuel' hfuel
                         { pc := joinPoison p (joinPoison ctx.pc p1),
                           memEnv := result2.memEnv',
