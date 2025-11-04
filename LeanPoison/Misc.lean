@@ -1,5 +1,10 @@
+import Init.Data.List
 import Std.Data.HashMap
+import Mathlib.Data.List.Lattice
+
+
 open Std
+
 
 /--
   Generic map-combine for HashMap. Produces a new map by applying `f` to each key
@@ -7,20 +12,20 @@ open Std
   values from the left and right maps and returns the resulting optional value.
   If `f` returns `none`, the key is omitted from the result.
 -/
-def combineMaps [BEq α] [Hashable α]
-  (m1 : HashMap α β) (m2 : HashMap α β)
-  (f : α → Option β → Option β → Option β) : HashMap α β :=
-  let afterLeft := m1.fold (init := ({} : HashMap α β)) fun acc k v =>
-    match f k (some v) (m2.get? k) with
-    | some r => acc.insert k r
-    | none   => acc.erase k
-  -- Process keys that appear only in the right map
-  m2.fold (init := afterLeft) fun acc k v =>
-    if m1.contains k then acc
-    else
-      match f k none (some v) with
-      | some r => acc.insert k r
-      | none   => acc.erase k
+def combineMaps [BEq α] [Hashable α] [DecidableEq α]
+  (m₁ m₂ : HashMap α β)
+  (f : α → Option β → Option β → Option β)
+  : HashMap α β :=
+  let ks := (m₁.keys ++ m₂.keys).dedup
+  let rec go : List α → HashMap α β → HashMap α β
+  | [],     acc => acc
+  | k::ks,  acc =>
+      let acc' :=
+        match f k (m₁.get? k) (m₂.get? k) with
+        | some v => acc.insert k v
+        | none   => acc.erase k
+      go ks acc'
+  go ks ({} : HashMap α β)
 
 /-
 Structural equality for HashMap

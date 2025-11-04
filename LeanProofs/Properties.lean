@@ -9,7 +9,16 @@ import LeanProofs.Equality
 import Mathlib.Data.Nat.Basic  -- for Nat.strong_induction_on
 import Mathlib.Tactic
 import Mathlib.Tactic.Linarith
+
+import Init.Data.List
+import Init.Data.List.Lemmas
 import Std.Data.HashMap
+import Std.Data.HashMap.Lemmas
+import Mathlib.Data.List.Lattice
+import Batteries.Data.List.Lemmas
+
+open Std
+
 
 -- set_option diagnostics true
 
@@ -41,23 +50,10 @@ theorem MemoryTypeEnv_eq_equiv {m₁ m₂ : MemoryTypeEnv} (h : m₁ = m₂) : m
   rw [h]
   simp [MemoryTypeEnv.equiv]
 
-theorem joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
-  cases p <;> rfl
+section joinMemEnv_idempotent_Proofs
 
--- Idempotency of predicate joining
-private lemma joinPredicate_idempotent (pred : Predicate) :
-  (match pred, pred with
-   | Predicate.guardClosure k1 an1 pb1 ve1, Predicate.guardClosure k2 _ _ _ =>
-       if k1 == k2 then Predicate.guardClosure k1 an1 pb1 ve1 else Predicate.noPred
-   | Predicate.guardOnly k1, Predicate.guardOnly k2 =>
-       if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
-   | Predicate.guardClosure k1 _ _ _, Predicate.guardOnly k2 =>
-       if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
-   | Predicate.guardOnly k1, Predicate.guardClosure k2 _ _ _ =>
-       if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
-   | Predicate.noPred, _ => Predicate.noPred
-   | _, Predicate.noPred => Predicate.noPred) = pred := by
-  cases pred <;> simp [beq_iff_eq]
+private lemma joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
+  cases p <;> rfl
 
 -- Idempotency of the joining function used in joinMemEnvs
 private lemma joinMemEnvs_func_idempotent :
@@ -91,124 +87,196 @@ private lemma joinMemEnvs_func_idempotent :
   | mk t p pred =>
     cases pred <;> simp [beq_iff_eq, joinPoison_idempotent]
 
--- Helper lemma: If k is not in the list being folded and not in init, and g doesn't add k,
--- then k won't be in the result
-private lemma List_foldl_preserves_absent [BEq α] [Hashable α] [LawfulBEq α]
-  (l : List (α × β)) (init : Std.HashMap α γ) (k : α)
-  (g : Std.HashMap α γ → α → β → Std.HashMap α γ)
-  (h_init : init.get? k = none)
-  (h_l : ∀ kv ∈ l, kv.1 ≠ k)
-  (h_g : ∀ acc k' v, k' ≠ k → (g acc k' v).get? k = acc.get? k) :
-  (l.foldl (fun acc kv => g acc kv.1 kv.2) init).get? k = none := by
-  induction l generalizing init with
-  | nil => exact h_init
-  | cons kv tail ih =>
-    simp only [List.foldl]
-    have h_kv_mem : kv ∈ kv :: tail := by simp
-    have h_k' : kv.1 ≠ k := h_l kv h_kv_mem
-    have h_g_eq : (g init kv.1 kv.2).get? k = init.get? k := h_g init kv.1 kv.2 h_k'
-    have h_new_init : (g init kv.1 kv.2).get? k = none := Eq.trans h_g_eq h_init
-    apply ih (g init kv.1 kv.2) h_new_init
-    · intro kv' hkv'
-      exact h_l kv' (List.mem_cons_of_mem kv hkv')
+-- The joining function returns none when both inputs are none
+private lemma joinMemEnvs_func_none :
+  ∀ (k : Address),
+    (fun (_ : Address) (oq1 oq2 : Option QTyp) =>
+      match oq1, oq2 with
+      | some qt1, none => some qt1
+      | none, some qt2 => some qt2
+      | some qt1, some qt2 =>
+        let ⟨t1, p1, pred1⟩ := qt1
+        let ⟨t2, p2, pred2⟩ := qt2
+        if t1 == t2 then
+          let p := joinPoison p1 p2
+          let pred :=
+            match pred1, pred2 with
+            | Predicate.guardClosure k1 an1 pb1 ve1, Predicate.guardClosure k2 _ _ _ =>
+                if k1 == k2 then Predicate.guardClosure k1 an1 pb1 ve1 else Predicate.noPred
+            | Predicate.guardOnly k1, Predicate.guardOnly k2 =>
+                if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+            | Predicate.guardClosure k1 _ _ _, Predicate.guardOnly k2 =>
+                if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+            | Predicate.guardOnly k1, Predicate.guardClosure k2 _ _ _ =>
+                if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+            | Predicate.noPred, _ => Predicate.noPred
+            | _, Predicate.noPred => Predicate.noPred
+          some ⟨t1, p, pred⟩
+        else none
+      | none, none => none) k none none = none := by
+  intro _k
+  rfl
 
--- Helper: HashMap.fold is equivalent to folding over toList
-private lemma HashMap_fold_eq_toList_foldl [BEq α] [Hashable α]
-  (m : Std.HashMap α β) (init : Std.HashMap α γ) (g : Std.HashMap α γ → α → β → Std.HashMap α γ) :
-  m.fold (init := init) g = (m.toList.foldl (fun acc kv => g acc kv.1 kv.2) init) := by
-  -- Use Std lemma `fold_eq_foldl_toList`.
-  classical
-  simpa using (Std.HashMap.fold_eq_foldl_toList (m := m) (f := g) (init := init))
-
--- Lemma: If k is not in the map being folded and not in init, and g doesn't add k,
--- then k won't be in the result
-lemma HashMap_fold_preserves_absent [BEq α] [Hashable α] [LawfulBEq α]
-  (m : Std.HashMap α β) (init : Std.HashMap α γ) (k : α)
-  (g : Std.HashMap α γ → α → β → Std.HashMap α γ)
-  (h_init : init.get? k = none)
-  (h_m : m.get? k = none)
-  (h_g : ∀ acc k' v, k' ≠ k → (g acc k' v).get? k = acc.get? k) :
-  (m.fold (init := init) g).get? k = none := by
-  rw [HashMap_fold_eq_toList_foldl]
-  apply List_foldl_preserves_absent
-  · exact h_init
-  · intro kv h_mem
-    have h_kv : m.get? kv.1 = some kv.2 := by
-      rw [Std.HashMap.mem_toList_iff_getElem?_eq_some] at h_mem
-      simpa [Std.HashMap.get?_eq_getElem?] using h_mem
-    intro h_eq
-    rw [h_eq] at h_kv
-    rw [h_m] at h_kv
-    contradiction
-  · exact h_g
-
-theorem combineMaps_get?_none [BEq α] [Hashable α] [LawfulBEq α]
-  (m1 m2 : Std.HashMap α β) (f : α → Option β → Option β → Option β) (k : α)
-  (h1 : m1.get? k = none) (h2 : m2.get? k = none) :
-  (combineMaps m1 m2 f).get? k = none := by
-  unfold combineMaps
-  -- Apply HashMap_fold_preserves_absent for the second fold
-  apply HashMap_fold_preserves_absent m2 _ k
-  · -- Show k is not in afterLeft (first fold result)
-    apply HashMap_fold_preserves_absent m1 _ k
-    · rw [Std.HashMap.get?_eq_getElem?]
-      simp
-    · exact h1
-    · intro acc k' v h_neq
-      split
-      · rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.get?_eq_getElem?]
-        rw [Std.HashMap.getElem?_insert]
-        simp [h_neq]
-      · rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.get?_eq_getElem?]
-        rw [Std.HashMap.getElem?_erase]
-        simp [h_neq]
-  · exact h2
-  · intro acc k' v h_neq
-    split
-    · rfl
-    · split
-      · rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.get?_eq_getElem?]
-        rw [Std.HashMap.getElem?_insert]
-        simp [h_neq]
-      · rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.get?_eq_getElem?]
-        rw [Std.HashMap.getElem?_erase]
-        simp [h_neq]
-
-private axiom combineMaps_get?_some [BEq α] [Hashable α] [LawfulBEq α]
-  (m1 m2 : Std.HashMap α β) (f : α → Option β → Option β → Option β) (k : α) (v : β)
-  (h1 : m1.get? k = some v) (h2 : m2.get? k = some v) :
-  (combineMaps m1 m2 f).get? k = f k (some v) (some v)
-
--- Helper lemma: combineMaps preserves equivalence when inputs are equivalent
-private lemma combineMaps_equiv_helper [BEq α] [Hashable α] [LawfulBEq α]
-  (m m1 m2 : Std.HashMap α β)
+-- Helper lemma: go preserves lookups for keys not in the list
+private lemma go_get_not_mem [BEq α] [Hashable α] [LawfulBEq α] [DecidableEq α]
+  (m1 m2 : HashMap α β)
   (f : α → Option β → Option β → Option β)
-  (h1 : Std.HashMap.Equiv m m1)
-  (h2 : Std.HashMap.Equiv m m2)
-  (f_idem : ∀ k v, f k (some v) (some v) = some v) :
-  Std.HashMap.Equiv m (combineMaps m1 m2 f) := by
+  (ks : List α) (acc : HashMap α β) (k : α)
+  (h_not_in : k ∉ ks) :
+  (combineMaps.go m1 m2 f ks acc).get? k = acc.get? k := by
+  induction ks generalizing acc with
+  | nil => rfl
+  | cons x xs ih =>
+      have hk_ne : k ≠ x := by
+        intro heq
+        subst heq
+        simp at h_not_in
+      have h_not_in' : k ∉ xs := by
+        simp at h_not_in
+        exact h_not_in.2
+      unfold combineMaps.go
+      cases hfx : f x (m1.get? x) (m2.get? x) with
+      | none =>
+          specialize ih (acc.erase x) h_not_in'
+          have h_erase : (acc.erase x).get? k = acc.get? k := by
+            simp [HashMap.get?_eq_getElem?, HashMap.getElem?_erase, beq_iff_eq, hk_ne.symm]
+          rw [ih, h_erase]
+      | some v =>
+          specialize ih (acc.insert x v) h_not_in'
+          have h_insert : (acc.insert x v).get? k = acc.get? k := by
+            simp [HashMap.get?_eq_getElem?, HashMap.getElem?_insert, beq_iff_eq, hk_ne.symm]
+          rw [ih, h_insert]
+
+-- Helper lemma: go computes the right value for keys in the list
+private lemma go_get_mem [BEq α] [Hashable α] [LawfulBEq α] [DecidableEq α]
+  (m1 m2 : HashMap α β)
+  (f : α → Option β → Option β → Option β)
+  (ks : List α) (acc : HashMap α β) (k : α)
+  (h_in : k ∈ ks)
+  (h_nodup : ks.Nodup) :
+  (combineMaps.go m1 m2 f ks acc).get? k =
+    match f k (m1.get? k) (m2.get? k) with
+    | some v => some v
+    | none => none := by
+  induction ks generalizing acc with
+  | nil => contradiction
+  | cons x xs ih =>
+      simp at h_in
+      rw [List.nodup_cons] at h_nodup
+      cases h_in with
+      | inl heq =>
+          -- k = x
+          unfold combineMaps.go
+          have h_not_in : x ∉ xs := h_nodup.1
+          cases hfx : f x (m1.get? x) (m2.get? x) with
+          | none =>
+              -- After processing x, we continue with xs where x ∉ xs
+              simp only []
+              rw [heq]  -- Change goal from k to x
+              have h_go := go_get_not_mem m1 m2 f xs (acc.erase x) x h_not_in
+              rw [h_go]
+              have h_erase : (acc.erase x).get? x = none := by
+                simp [HashMap.get?_eq_getElem?]
+              rw [h_erase, hfx]
+          | some v =>
+              simp only []
+              rw [heq]  -- Change goal from k to x
+              have h_go := go_get_not_mem m1 m2 f xs (acc.insert x v) x h_not_in
+              rw [h_go]
+              have h_insert : (acc.insert x v).get? x = some v := by
+                simp [HashMap.get?_eq_getElem?]
+              rw [h_insert, hfx]
+      | inr hmem =>
+          -- k ∈ xs, k ≠ x
+          have hk_ne : k ≠ x := by
+            intro heq
+            subst heq
+            exact h_nodup.1 hmem
+          unfold combineMaps.go
+          cases hfx : f x (m1.get? x) (m2.get? x) with
+          | none =>
+              simp only []
+              specialize ih (acc.erase x) hmem h_nodup.2
+              rw [ih]
+          | some v =>
+              simp only []
+              specialize ih (acc.insert x v) hmem h_nodup.2
+              rw [ih]
+
+private lemma combineMaps_equiv_helper [BEq α] [Hashable α] [LawfulBEq α] [DecidableEq α]
+  (m m1 m2 : HashMap α β)
+  (f : α → Option β → Option β → Option β)
+  (h1 : HashMap.Equiv m m1)
+  (h2 : HashMap.Equiv m m2)
+  (f_idem : ∀ k v, f k (some v) (some v) = some v)
+  (f_none : ∀ k, f k none none = none) :
+  HashMap.Equiv m (combineMaps m1 m2 f) := by
   classical
-  refine Std.HashMap.Equiv.of_forall_getElem?_eq ?_
+  have h_equiv : HashMap.Equiv m1 m2 := HashMap.Equiv.trans h1.symm h2
+  refine HashMap.Equiv.of_forall_getElem?_eq ?_
   intro k
-  have h_eq1 := Std.HashMap.Equiv.getElem?_eq (m₁ := m) (m₂ := m1) (k := k) h1
-  have h_eq2 := Std.HashMap.Equiv.getElem?_eq (m₁ := m) (m₂ := m2) (k := k) h2
-  have h_eq1_get? : m.get? k = m1.get? k := by
-    simpa [Std.HashMap.get?_eq_getElem?] using h_eq1
-  have h_eq2_get? : m.get? k = m2.get? k := by
-    simpa [Std.HashMap.get?_eq_getElem?] using h_eq2
-  have h_goalGet? : m.get? k = (combineMaps m1 m2 f).get? k := by
-    cases h_mem : m.get? k with
+  have hk : m1.get? k = m2.get? k := HashMap.Equiv.getElem?_eq h_equiv
+  have hm1 : m.get? k = m1.get? k := HashMap.Equiv.getElem?_eq h1
+  -- Convert getElem? to get? for easier reasoning
+  have hm1_get : m.get? k = m1.get? k := by
+    simpa [HashMap.get?_eq_getElem?] using hm1
+  -- Unfold combineMaps and expose the go function
+  show m[k]? = (combineMaps m1 m2 f)[k]?
+  unfold combineMaps
+  -- Split on whether k is in the deduplicated key list
+  by_cases h_in : k ∈ (m1.keys ++ m2.keys).dedup
+  · -- k is in the list
+    have h_nodup : ((m1.keys ++ m2.keys).dedup).Nodup := List.nodup_dedup _
+    have h_go := go_get_mem m1 m2 f ((m1.keys ++ m2.keys).dedup) ({} : HashMap α β) k h_in h_nodup
+    have h_rhs : (combineMaps.go m1 m2 f ((m1.keys ++ m2.keys).dedup) ({}:HashMap α β)).get? k =
+      (combineMaps.go m1 m2 f ((m1.keys ++ m2.keys).dedup) ({}:HashMap α β))[k]? := rfl
+    rw [← h_rhs]
+    -- Case split on the value at k
+    cases h_mem : m1.get? k with
     | none =>
-      have h_m1 : m1.get? k = none := (h_eq1_get?.symm).trans h_mem
-      have h_m2 : m2.get? k = none := (h_eq2_get?.symm).trans h_mem
-      have h_comb := combineMaps_get?_none m1 m2 f k h_m1 h_m2
-      exact h_comb.symm
+        have hm2 : m2.get? k = none := by rw [← hk, h_mem]
+        have hm : m.get? k = none := by rw [hm1_get, h_mem]
+        have hf : f k none none = none := f_none k
+        rw [h_go, h_mem, hm2, hf]
+        simpa [HashMap.get?_eq_getElem?] using hm.symm
     | some v =>
-      have h_m1 : m1.get? k = some v := (h_eq1_get?.symm).trans h_mem
-      have h_m2 : m2.get? k = some v := (h_eq2_get?.symm).trans h_mem
-      have h_comb := combineMaps_get?_some m1 m2 f k v h_m1 h_m2
-      exact by simpa [f_idem k v] using h_comb.symm
-  simpa [Std.HashMap.get?_eq_getElem?] using h_goalGet?
+        have hm2 : m2.get? k = some v := by rw [← hk, h_mem]
+        have hm : m.get? k = some v := by rw [hm1_get, h_mem]
+        have hf : f k (some v) (some v) = some v := f_idem k v
+        rw [h_go, h_mem, hm2, hf]
+        simpa [HashMap.get?_eq_getElem?] using hm
+  · -- k is not in the list
+    have h_go := go_get_not_mem m1 m2 f ((m1.keys ++ m2.keys).dedup) ({} : HashMap α β) k h_in
+    have h_rhs : (combineMaps.go m1 m2 f ((m1.keys ++ m2.keys).dedup) ({}:HashMap α β)).get? k =
+      (combineMaps.go m1 m2 f ((m1.keys ++ m2.keys).dedup) ({}:HashMap α β))[k]? := rfl
+    rw [← h_rhs, h_go]
+    -- Show empty map returns none
+    have h_empty : ({} : HashMap α β).get? k = none := by
+      simp [HashMap.get?_eq_getElem?]
+    rw [h_empty]
+    -- Need to show m.get? k = none
+    have h_not_in_keys : k ∉ (m1.keys ++ m2.keys) := by
+      intro h_contra
+      have h_mem := List.mem_dedup.mpr h_contra
+      exact h_in h_mem
+    rw [List.mem_append] at h_not_in_keys
+    push_neg at h_not_in_keys
+    have h_not_m1 : k ∉ m1.keys := h_not_in_keys.1
+    have h_not_m2 : k ∉ m2.keys := h_not_in_keys.2
+    have hm1_none : m1.get? k = none := by
+      cases h : m1.get? k with
+      | none => rfl
+      | some v =>
+          -- If m1.get? k = some v, then k must be in m1.keys
+          have h_isSome : m1[k]?.isSome := by
+            rw [HashMap.get?_eq_getElem?] at h
+            simp [h]
+          have h_in_m1 : k ∈ m1 := HashMap.isSome_getElem?_iff_mem.mp h_isSome
+          have h_in_keys : k ∈ m1.keys := HashMap.mem_keys.mpr h_in_m1
+          exact absurd h_in_keys h_not_m1
+    have hm_none : m.get? k = none := by rw [hm1_get, hm1_none]
+    simpa [HashMap.get?_eq_getElem?] using hm_none.symm
+
 
 theorem joinMemEnv_idempotent : ∀ (m m1 m2 : MemoryTypeEnv),
   m.equiv m1 → m.equiv m2 → m.equiv (joinMemEnvs m1 m2) := by
@@ -221,6 +289,10 @@ theorem joinMemEnv_idempotent : ∀ (m m1 m2 : MemoryTypeEnv),
     have := joinMemEnvs_func_idempotent k v
     simp [beq_iff_eq] at this
     exact this
+  · intro k
+    exact joinMemEnvs_func_none k
+
+end joinMemEnv_idempotent_Proofs
 
 theorem toExpr_toPExpr (pe : PExpr) :
   pe.toExpr.toPExpr = Except.ok pe := by
