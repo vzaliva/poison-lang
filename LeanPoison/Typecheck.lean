@@ -1,5 +1,4 @@
 import LeanPoison.Syntax
-import LeanPoison.Poison
 import LeanPoison.Misc
 
 import Std.Data.HashMap

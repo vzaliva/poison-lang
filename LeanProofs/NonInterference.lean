@@ -3,7 +3,6 @@
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
-import LeanPoison.Poison
 import LeanPoison.BigStep
 import LeanProofs.TypeSafety
 import LeanProofs.GuardlessIfClean
