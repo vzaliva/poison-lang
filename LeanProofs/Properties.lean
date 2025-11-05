@@ -4,7 +4,6 @@ import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
-import LeanPoison.Poison
 import LeanProofs.Equality
 import Mathlib.Data.Nat.Basic  -- for Nat.strong_induction_on
 import Mathlib.Tactic

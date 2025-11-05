@@ -35,7 +35,6 @@
 -- value compares equal to itself).
 
 import LeanPoison.Syntax
-import LeanPoison.Poison
 
 -- Increase heartbeat limit for large soundness proofs
 set_option maxHeartbeats 1000000

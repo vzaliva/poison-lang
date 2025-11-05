@@ -3,7 +3,6 @@
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
-import LeanPoison.Poison
 import LeanPoison.BigStep
 import Mathlib.Data.List.Forall2
 import Std.Data.HashMap
