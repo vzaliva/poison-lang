@@ -68,6 +68,26 @@ Notes:
 - Functions are single-argument and curried. Multi-argument interfaces are expressed by returning an extern function from an extern function.
 - At present the runtime memory stores integers only, so all memory effects use `T = int`. We retain explicit type annotations in the effects to remain future-proof if memory becomes heterogeneously typed.
 
+### Clarifying note: externs are expressions, not type declarations
+
+Extern forms are term-level expressions. The parenthesised `(T :> p { P })` after `->` specifies the observable qualified result of executing the extern closure; it is not a type definition. Likewise, the `effects:` block is a term-level specification of how Γ is updated at application time.
+
+When using nesting to model multiple arguments, the inner `extern fn … -> ( … )` is a value (a closure specification) produced by applying the outer extern. Its surface shape may look type-like because there is no body, but it denotes a value-level closure together with its observable-result and effects specification.
+
+Example (value-level nesting; not a type):
+
+```poison
+extern pfn i : (int) -> (
+  extern fn r : (ref int) -> (
+    int :> poisoned { guard g, v => (v >= 0 && v <= i) }
+  )
+  effects: {
+    !r   :> (int :> poisoned { guard g, u => (u >= 0 && u <= i) }),
+    !cap :> (int :> poisoned { guard g, u => (u >= 0 && u <= i) })
+  }
+)
+```
+
 ## Guard placeholders – scoping and instantiation
 
 - Placeholders are names local to one extern binding. The same placeholder name may appear in the observable return and in multiple effects to express correlation.
@@ -190,6 +210,8 @@ Grammar additions:
 - `extern fn a : (ST₁) -> (RET)` where `RET` is either `(T₂ :> …)` or another `extern fn|pfn …`
 - `extern pfn a : (ST₁) -> (RET)` with no `effects:` block
 - `effects: { !name :> (T :> …), ... }` for impure externs
+
+Note: In all extern forms, `(T :> p { P })` denotes an observable-result specification for an expression, not a new type declaration.
 
 ### Poison layer and closures
 
