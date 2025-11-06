@@ -49,9 +49,19 @@ let y = extern val : (T :> poisoned { guard gY })
 let f =
   extern fn a : (ST₁) -> (T₂ :> poisoned|clean { guard gR, v => P₁(v, a, ...) })
     effects: {
-      !a  :> (T₃  :> poisoned|clean { guard gA,  u => P₃(u, a, ...) }),
-      !r1 :> (T₄  :> poisoned|clean { guard g1,  w => P₄(w, a, r1, ...) }),
-      !r2 :> (T₅  :> poisoned|clean { guard g2,  z => P₅(z, a, r2, ...) })
+      !a  :> (int :> poisoned|clean { guard gA,  u => P₃(u, a, ...) }),
+      !r1 :> (int :> poisoned|clean { guard g1,  w => P₄(w, a, r1, ...) }),
+      !r2 :> (int :> poisoned|clean { guard g2,  z => P₅(z, a, r2, ...) })
+    }
+```
+
+### Extern impure function returning a reference with effect on returned location
+
+```poison
+let allocAndInit =
+  extern fn n : (int) -> (ref int :> clean { no_pred })
+    effects: {
+      return :> (int :> poisoned { guard g, v => (v >= 0 && v <= n) })
     }
 ```
 
@@ -64,9 +74,10 @@ let g =
 
 Notes:
 - `!name` may refer to any in-scope variable of reference type: the argument `a` or captured references such as `r1`, `r2`.
+- `return` (without `!` prefix) is a special effect target that refers to the memory location of the returned reference. It is only valid when the return type is `ref T`, and the effect spec describes the contents at that location.
 - Placeholders like `gR`, `g1` are symbolic. Reusing a placeholder name correlates the same guard across the observable return and any listed effects.
 - Functions are single-argument and curried. Multi-argument interfaces are expressed by returning an extern function from an extern function.
-- At present the runtime memory stores integers only, so all memory effects use `T = int`. We retain explicit type annotations in the effects to remain future-proof if memory becomes heterogeneously typed.
+- At present the runtime memory stores integers only, so all memory effects must have type `int`. The return type may be `ref int` but effects on `return` specify the contents type (`int`), not the reference type itself.
 
 ### Clarifying note: externs are expressions, not type declarations
 
