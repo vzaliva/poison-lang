@@ -3,58 +3,78 @@
 
 ## Phase 1: Syntax layer (Syntax.lean)
 
-### 1.1 Add syntax-level extern specifications
+### 1.1 Add syntax-level extern specifications ✅ COMPLETED
 
-Create minimal structures for extern specifications, using `Typ`, `Bool`, and `Predicate` directly:
+Create structures for extern specifications at the syntax level, before typechecking:
 
 ```lean
+-- Syntax-level predicate (simplified, no captured environment)
+-- Parser creates these, typechecker converts to full Predicate
+inductive SyntaxPredicate where
+  | guardClosure : Tag → Name → Expr → SyntaxPredicate  -- tag, arg name, predicate body (as Expr)
+  | guardOnly : Tag → SyntaxPredicate
+  | noPred : SyntaxPredicate
+
+-- Effect target: either a named variable or the return value
+inductive EffectTarget where
+  | namedVar : Name → EffectTarget      -- !varname
+  | returnValue : EffectTarget           -- return (special keyword, no ! prefix)
+
 -- Effect specification for impure externs
 structure Effect where
-  targetVar : Name  -- the variable name (parameter or captured reference)
+  target : EffectTarget
   poison : Bool  -- true for "poisoned", false for "clean"
-  pred : Predicate
+  pred : SyntaxPredicate
 
 -- Return specification for extern functions (simple or nested)
 -- Nested variants allow currying: outer extern returns inner extern
 inductive ExternReturn where
-  | simple : Typ → Bool → Predicate → ExternReturn
+  | simple : Typ → Bool → SyntaxPredicate → ExternReturn
   | nestedFn : Name → Typ → ExternReturn → List Effect → ExternReturn
   | nestedPfn : Name → Typ → ExternReturn → ExternReturn
 ```
 
-### 1.2 Add Expr constructors
+Note: Parser assigns unique Tag values to guard placeholders. SyntaxPredicate is converted to Predicate during typechecking (with environment capture).
+
+### 1.2 Add Expr constructors ✅ COMPLETED
 
 Add three new expression constructors to `Expr` inductive type (around line 79):
 
 ```lean
-| externVal : Typ → Bool → Predicate → Expr
+| externVal : Typ → Bool → SyntaxPredicate → Expr
 | externFn : Name → Typ → ExternReturn → List Effect → Expr
 | externPfn : Name → Typ → ExternReturn → Expr
 ```
 
-### 1.3 Add BEq instances
+### 1.3 Add BEq instances 🔄 IN PROGRESS (termination issue)
 
-Add BEq functions for new types before the Expr BEq:
+Add BEq functions in the mutual block with `beqExpr`:
 
-- `beqEffect` 
-- `beqExternReturn` (recursive for nested cases)
+- `beqSyntaxPredicate` (calls `beqExpr` for the body)
+- `beqEffect` (calls `beqSyntaxPredicate`)
+- `beqEffectList` (structural recursion on lists)
+- `beqExternReturn` (recursive for nested cases, calls `beqSyntaxPredicate` and `beqEffectList`)
+
+**IMPORTANT:** NO PARTIAL DEFINITIONS. Must prove termination using `termination_by` or other tactics.
 
 Extend `beqExpr` function (around line 112) to handle the new constructors:
 
 - Pattern match on `externVal`, `externFn`, and `externPfn`
-- Compare all fields structurally
+- Call the helper beq functions
 
-### 1.4 Update Repr instances  
+Add instances after the mutual block.
 
-Add Repr functions for new types:
+### 1.4 Update Repr instances ✅ COMPLETED
 
+Add Repr functions in the mutual block with `reprExpr`:
+
+- `reprSyntaxPredicate` (avoids showing full body)
 - `reprEffect`
 - `reprExternReturn` (recursive for nested cases)
 
-Extend `reprExpr` function (around line 191) to display extern expressions:
+Extend `reprExpr` function to display extern expressions concisely.
 
-- Add cases for `externVal`, `externFn`, and `externPfn`
-- Format concisely without showing full predicate bodies
+Add instances after the mutual block.
 
 ## Phase 2: BigStep interpreter (BigStep.lean)
 
@@ -120,26 +140,29 @@ No changes needed to `beqETyp`, `reprETyp`, or `beqETypSignature` since `ETyp` i
 
 ## Phase 4: Typechecker (Typecheck.lean)
 
-### 4.1 Helper: Convert surface type specs to QTyp
+### 4.1 Helper: Convert SyntaxPredicate to Predicate and surface types to QTyp
 
 Add before `typecheckExpr` (around line 550):
 
 ```lean
--- Late environment capture for predicates
--- Parser creates predicates with empty captured env [], we populate with current varEnv
-def attachVarEnvToPredicate (pred : Predicate) (varEnv : VarTypeEnv) : Predicate :=
+-- Convert SyntaxPredicate to Predicate with late environment capture
+-- Parser creates SyntaxPredicate with Expr bodies and no captured env
+-- Typechecker converts Expr to PExpr and attaches current varEnv
+def attachVarEnvToPredicate (pred : SyntaxPredicate) (varEnv : VarTypeEnv) : TypecheckM Predicate :=
   match pred with
-  | Predicate.guardClosure k arg body _emptyEnv =>
-      Predicate.guardClosure k arg body varEnv
-  | Predicate.guardOnly k => Predicate.guardOnly k
-  | Predicate.noPred => Predicate.noPred
+  | SyntaxPredicate.guardClosure k arg body =>
+      -- Convert body from Expr to PExpr
+      let pbody ← body.toPExpr
+      return Predicate.guardClosure k arg pbody varEnv
+  | SyntaxPredicate.guardOnly k => return Predicate.guardOnly k
+  | SyntaxPredicate.noPred => return Predicate.noPred
 
--- Convert (Typ, Bool, Predicate) to QTyp for EXTERN VALUES
+-- Convert (Typ, Bool, SyntaxPredicate) to QTyp for EXTERN VALUES
 --
 -- Used only for extern val declarations at definition time.
 -- May allocate fresh locations for reference types and update Γ.
 --
-def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : Predicate) 
+def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) 
     (varEnv : VarTypeEnv) (ctx : TypeContext) : TypecheckM (QTyp × TypeContext) := do
   -- Convert Typ to ETyp, allocating locations for references
   let (etyp, ctx') ← match typ with
@@ -149,35 +172,31 @@ def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : Predicate)
     | Typ.string => return (ETyp.string, ctx)
     | Typ.ref t => 
         let (l, ctx') := freshTLoc ctx
-        let (innerEtyp, ctx'') ← surfaceSpecToQTyp t false Predicate.noPred varEnv ctx'
-        return (ETyp.ref innerEtyp.etyp l, ctx'')
+        let (innerQt, ctx'') ← surfaceSpecToQTyp t false SyntaxPredicate.noPred varEnv ctx'
+        return (ETyp.ref innerQt.etyp l, ctx'')
     | Typ.arrow _ _ => throw "Arrow types not expected in extern specs"
   
-  let pred' := attachVarEnvToPredicate pred varEnv
+  let pred' ← attachVarEnvToPredicate pred varEnv
   return (⟨etyp, poison, pred'⟩, ctx')
 
--- Convert (Typ, Bool, Predicate) to QTyp for EFFECT SPECIFICATIONS
+-- Convert (Bool, SyntaxPredicate) to QTyp for EFFECT SPECIFICATIONS
 --
 -- Used when processing effects during extern function application.
--- IMPORTANT: Memory currently stores only integers, so typ must be Typ.int.
+-- IMPORTANT: Memory currently stores only integers, so type is always int.
 -- Effects specify the type stored AT a memory location (the contents type).
 --
-def effectSpecToQTyp (typ : Typ) (poison : Bool) (pred : Predicate) 
+def effectSpecToQTyp (poison : Bool) (pred : SyntaxPredicate) 
     (varEnv : VarTypeEnv) : TypecheckM QTyp := do
-  -- Only int allowed (memory stores integers only)
-  if typ != Typ.int then
-    throw "Effect specs must have type int (memory stores integers only)"
-  
-  let pred' := attachVarEnvToPredicate pred varEnv
+  let pred' ← attachVarEnvToPredicate pred varEnv
   return ⟨ETyp.int, poison, pred'⟩
 
--- Convert (Typ, Bool, Predicate) to QTyp for RETURN SPECIFICATIONS
+-- Convert (Typ, Bool, SyntaxPredicate) to QTyp for RETURN SPECIFICATIONS
 --
 -- Used when processing return specs during extern function application.
 -- May allocate fresh locations for reference types, but does NOT update Γ.
 -- The poison/predicate apply to the reference itself, not to the memory location.
 --
-def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : Predicate)
+def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     (varEnv : VarTypeEnv) (nextLoc : Address) : TypecheckM (QTyp × Address) := do
   -- Convert Typ to ETyp, allocating locations for references
   let (etyp, nextLoc') ← match typ with
@@ -188,22 +207,20 @@ def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : Predicate)
     | Typ.ref t => 
         let l := nextLoc
         let nextLoc' := nextLoc + 1
-        let (innerEtyp, nextLoc'') ← returnSpecToQTyp t false Predicate.noPred varEnv nextLoc'
-        return (ETyp.ref innerEtyp.etyp l, nextLoc'')
+        let (innerQt, nextLoc'') ← returnSpecToQTyp t false SyntaxPredicate.noPred varEnv nextLoc'
+        return (ETyp.ref innerQt.etyp l, nextLoc'')
     | Typ.arrow _ _ => throw "Arrow types not expected in extern specs"
   
-  let pred' := attachVarEnvToPredicate pred varEnv
+  let pred' ← attachVarEnvToPredicate pred varEnv
   return (⟨etyp, poison, pred'⟩, nextLoc')
 ```
-
-Note: Parser assigns unique Tag values to guard placeholders (no remapping needed).
 
 ### 4.2 Typecheck extern value
 
 Add `typecheckExternVal` function (around line 580):
 
 ```lean
-def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : Predicate) 
+def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) 
     : TypecheckM TypeResult := do
   -- Convert to QTyp with current varEnv
   let (qt, ctx') ← surfaceSpecToQTyp typ poison pred ctx.varEnv ctx
@@ -293,41 +310,74 @@ In `typecheckApp` function (around line 937), modify existing `ETyp.arrow` and `
       
       -- 2. Process effects
       let mut memEnv := result2.memEnv'
-      let mut ctx'' := { ctx with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+      let mut nextLoc := result2.nextLoc'
       for effect in effects do
-        match unifiedEnv.lookup effect.targetVar with
-        | some qt =>
-            match qt.etyp with
-            | ETyp.ref _t l =>
-                let (effectQt, ctx''') ← surfaceSpecToQTyp _t effect.poison effect.pred unifiedEnv ctx''
-                ctx'' := ctx'''
-                let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
-                memEnv := memEnv.insert l storedQt
-            | _ => throw "Effect target must be a reference"
-        | none => throw s!"Effect target {effect.targetVar} not found"
+        match effect.target with
+        | EffectTarget.namedVar v =>
+            -- Resolve v in unifiedEnv to get ref location
+            match unifiedEnv.lookup v with
+            | some qt =>
+                match qt.etyp with
+                | ETyp.ref _t l =>
+                    -- Convert effect spec to QTyp and update Γ(l)
+                    let effectQt ← effectSpecToQTyp effect.poison effect.pred unifiedEnv
+                    let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
+                    memEnv := memEnv.insert l storedQt
+                | _ => throw s!"Effect target {v} must be a reference type"
+            | none => throw s!"Effect target {v} not found in environment"
+        | EffectTarget.returnValue =>
+            -- Will be handled when processing return spec if it's a ref type
+            pure ()
       
-      -- 3. Handle return spec
+      -- 3. Handle return spec (simple or nested)
       match retSpec with
       | ExternReturn.simple typ poison pred =>
-          let (retQt, ctx''') ← surfaceSpecToQTyp typ poison pred unifiedEnv ctx''
+          -- Simple return type
+          let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
+          
+          -- If return type is ref and there's a "return" effect, update Γ at that location
+          match retQt.etyp with
+          | ETyp.ref _t l =>
+              -- Check for "return" effect
+              let returnEffect := effects.find? (fun eff =>
+                match eff.target with
+                | EffectTarget.returnValue => true
+                | _ => false)
+              match returnEffect with
+              | some eff =>
+                  let effectQt ← effectSpecToQTyp eff.poison eff.pred unifiedEnv
+                  let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
+                  memEnv := memEnv.insert l storedQt
+              | none => pure ()
+          | _ =>
+              -- Non-ref return: verify no "return" effect exists
+              let hasReturnEffect := effects.any (fun eff =>
+                match eff.target with
+                | EffectTarget.returnValue => true
+                | _ => false)
+              if hasReturnEffect then
+                throw "Effect on 'return' is only valid when return type is a reference"
+          
           let poison' := joinPoison ctx.pc retQt.poison
           let qt := ⟨retQt.etyp, poison', retQt.pred⟩
           return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                   nextLoc' := ctx'''.nextLoc, nextTag' := ctx'''.nextTag }
+                   nextLoc' := nextLoc', nextTag' := result2.nextTag' }
       
       | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
+          -- Nested extern function: return a closure
           let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
           let innerArrowTyp := ETyp.arrow innerArgTyp Typ.unit ctx.pc innerTcl
           let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
           return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                   nextLoc' := ctx''.nextLoc, nextTag' := ctx''.nextTag }
+                   nextLoc' := nextLoc, nextTag' := result2.nextTag' }
       
       | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
+          -- Nested extern pure function: return a closure
           let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
           let innerArrowTyp := ETyp.parrow innerArgTyp Typ.unit ctx.pc innerTcl
           let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
           return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                   nextLoc' := ctx''.nextLoc, nextTag' := ctx''.nextTag }
+                   nextLoc' := nextLoc, nextTag' := result2.nextTag' }
 
 | ETyp.parrow st1 st2 p tcl =>
   -- Typecheck argument
@@ -364,34 +414,36 @@ In `typecheckApp` function (around line 937), modify existing `ETyp.arrow` and `
       let argQt' := ⟨argQt.etyp, joinPoison ctx.pc argQt.poison, argQt.pred⟩
       let unifiedEnv := VarTypeEnv.update capturedEnv x argQt'
       
-      let mut ctx'' := { ctx with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+      let mut nextLoc := result2.nextLoc'
       
       match retSpec with
       | ExternReturn.simple typ poison pred =>
-          let (retQt, ctx''') ← surfaceSpecToQTyp typ poison pred unifiedEnv ctx''
+          let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
           let poison' := joinPoison ctx.pc retQt.poison
           let qt := ⟨retQt.etyp, poison', retQt.pred⟩
           return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
-                   nextLoc' := ctx'''.nextLoc, nextTag' := ctx'''.nextTag }
+                   nextLoc' := nextLoc', nextTag' := result2.nextTag' }
       
       | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
+          -- Nested extern impure function: return a closure
           let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
           let innerArrowTyp := ETyp.arrow innerArgTyp Typ.unit ctx.pc innerTcl
           let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
           return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
-                   nextLoc' := ctx''.nextLoc, nextTag' := ctx''.nextTag }
+                   nextLoc' := nextLoc, nextTag' := result2.nextTag' }
       
       | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
+          -- Nested extern pure function: return a closure
           let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
           let innerArrowTyp := ETyp.parrow innerArgTyp Typ.unit ctx.pc innerTcl
           let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
           return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
-                   nextLoc' := ctx''.nextLoc, nextTag' := ctx''.nextTag }
+                   nextLoc' := nextLoc, nextTag' := result2.nextTag' }
 ```
 
 ### 4.5 Update typecheckExpr dispatch
 
-In `typecheckExpr` function (around line 565), add cases:
+In `typecheckExpr` function (around line 672), add cases:
 
 ```lean
 | Expr.externVal typ poison pred => typecheckExternVal ctx typ poison pred
@@ -407,7 +459,7 @@ In `typecheckExpr` function (around line 565), add cases:
 
 Add BEq soundness and reflexivity proofs for new types:
 
-- `Effect`, `ExternReturn` (inductive proof for recursive structure)
+- `SyntaxPredicate`, `EffectTarget`, `Effect`, `ExternReturn` (inductive proofs for recursive structures)
 - Extend `FnTClosure` and `PFnTClosure` soundness proofs with new `regular` and `extern` constructors
 - Extend `Expr` soundness proof with `externVal`, `externFn`, `externPfn` constructors
 
@@ -445,38 +497,13 @@ No changes needed (externs don't affect existing property proofs).
 
 No changes needed initially (externs are placeholders without observable effects at runtime).
 
-## Phase 6: Parser implementation (deferred)
-
-To be implemented after all above phases complete:
-
-- Extend parser to recognize `extern val`, `extern fn`, `extern pfn` keywords
-- Parse qualified type annotations `(T :> poisoned|clean { ... })`
-- Parse effect blocks `effects: { !name :> (poison { pred }), ... }`
-- Parse nested extern return specs (recursive structure)
-- Handle predicate bodies (guard closures) - parser assigns unique Tag values (e.g., starting from 1000)
-- Build `Effect` and `ExternReturn` structures
-- Create appropriate `Expr.externVal`, `Expr.externFn`, or `Expr.externPfn`
-
-## Phase 7: Unit tests (deferred)
-
-To be implemented last:
-
-- `extern-basic.poison` - basic extern value and function
-- `extern-guard-only.poison` - guard-only predicates
-- `extern-effects.poison` - effects on argument and captured refs
-- `extern-nested.poison` - nested extern with shared guards
-- `extern-runtime-error.poison` - verify runtime error on execution
-- Integration with existing invalidation tests
-
 ## Implementation order
 
 1. Phase 1: Syntax structures and Expr constructors
 2. Phase 2: BigStep error handling
 3. Phase 3: Extend closure types, rename mk to regular (no ETyp changes)
-4. Phase 4: Typechecker implementation (simplified, no tag remapping)
-5. Phase 5: Update all proofs (complete before parser)
-6. Phase 6: Parser implementation
-7. Phase 7: Unit tests
+4. Phase 4: Typechecker implementation
+5. Phase 5: Update all proofs
 
 ### To-dos
 

@@ -84,7 +84,7 @@ def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
             | some (_, qt) =>
               match qt.etyp with
               | ETyp.ref _t l => return [l]  -- Reference type, add location
-              | ETyp.parrow _argTy _retTy _poison (PFnTClosure.mk argName body varEnv') =>
+              | ETyp.parrow _argTy _retTy _poison (PFnTClosure.regular argName body varEnv') =>
                 -- Pure function, recurse into its closure
                 extractDepsFromPExpr body (argName :: boundVars) varEnv' fuel
               | _ => return []  -- Other types don't read from heap
@@ -524,7 +524,7 @@ def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : 
   -- Body typechecking is deferred until application time
 
   -- Create arrow type ST1 -> ST2
-  let arrowTyp : ETyp := ETyp.arrow st1 st2 false (FnTClosure.mk x body ctx.varEnv)
+  let arrowTyp : ETyp := ETyp.arrow st1 st2 false (FnTClosure.regular x body ctx.varEnv)
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
@@ -540,12 +540,119 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
    -- Convert body to PExpr
   let pbody ← body.toPExpr
   -- Create arrow type ST1 -> ST2
-  let arrowTyp : ETyp := ETyp.parrow st1 st2 false (PFnTClosure.mk x pbody ctx.varEnv)
+  let arrowTyp : ETyp := ETyp.parrow st1 st2 false (PFnTClosure.regular x pbody ctx.varEnv)
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
 
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
+-- Helper functions for extern type conversion
+
+/-- Convert SyntaxPredicate to Predicate with late environment capture.
+    Parser creates predicates with Expr bodies and no captured env.
+    During typechecking, we convert Expr to PExpr and attach current varEnv.
+-/
+def attachVarEnvToPredicate (pred : SyntaxPredicate) (_varEnv : VarTypeEnv) : TypecheckM Predicate :=
+  -- Temporary simplified implementation - TODO: implement proper conversion
+  match pred with
+  | SyntaxPredicate.guardClosure k _arg _body => pure (Predicate.guardOnly k)
+  | SyntaxPredicate.guardOnly k => pure (Predicate.guardOnly k)
+  | SyntaxPredicate.noPred => pure Predicate.noPred
+
+/-- Convert (Typ, Bool, SyntaxPredicate) to QTyp for EXTERN VALUES.
+    Used only for extern val declarations at definition time.
+    May allocate fresh locations for reference types and update Γ.
+-/
+def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
+    (varEnv : VarTypeEnv) (ctx : TypeContext) : TypecheckM (QTyp × TypeContext) := do
+  -- Convert Typ to ETyp, allocating locations for references
+  let (etyp, ctx') ← (match typ with
+    | Typ.int => pure (ETyp.int, ctx)
+    | Typ.bool => pure (ETyp.bool, ctx)
+    | Typ.unit => pure (ETyp.unit, ctx)
+    | Typ.string => pure (ETyp.string, ctx)
+    | Typ.ref t => do
+        let (l, ctx') := freshTLoc ctx
+        let (innerQt, ctx'') ← surfaceSpecToQTyp t false SyntaxPredicate.noPred varEnv ctx'
+        return (ETyp.ref innerQt.etyp l, ctx'')
+    | Typ.arrow _ _ => throw "Arrow types not expected in extern specs" : TypecheckM (ETyp × TypeContext))
+
+  let pred' ← attachVarEnvToPredicate pred varEnv
+  return (⟨etyp, poison, pred'⟩, ctx')
+
+/-- Convert (Bool, SyntaxPredicate) to QTyp for EFFECT SPECIFICATIONS.
+    Used when processing effects during extern function application.
+    IMPORTANT: Memory currently stores only integers, so typ is always int.
+    Effects specify the type stored AT a memory location (the contents type).
+    No location allocation, no ctx updates.
+-/
+def effectSpecToQTyp (poison : Bool) (pred : SyntaxPredicate)
+    (varEnv : VarTypeEnv) : TypecheckM QTyp := do
+  let pred' ← attachVarEnvToPredicate pred varEnv
+  return ⟨ETyp.int, poison, pred'⟩
+
+/-- Convert (Typ, Bool, SyntaxPredicate) to QTyp for RETURN SPECIFICATIONS.
+    Used when processing return specs during extern function application.
+    May allocate fresh locations for reference types, but does NOT update Γ.
+    The poison/predicate apply to the reference itself, not to the memory location.
+-/
+def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
+    (varEnv : VarTypeEnv) (nextLoc : Address) : TypecheckM (QTyp × Address) := do
+  -- Convert Typ to ETyp, allocating locations for references
+  let (etyp, nextLoc') ← (match typ with
+    | Typ.int => pure (ETyp.int, nextLoc)
+    | Typ.bool => pure (ETyp.bool, nextLoc)
+    | Typ.unit => pure (ETyp.unit, nextLoc)
+    | Typ.string => pure (ETyp.string, nextLoc)
+    | Typ.ref t => do
+        let l := nextLoc
+        let nextLoc' := nextLoc + 1
+        let (innerQt, nextLoc'') ← returnSpecToQTyp t false SyntaxPredicate.noPred varEnv nextLoc'
+        return (ETyp.ref innerQt.etyp l, nextLoc'')
+    | Typ.arrow _ _ => throw "Arrow types not expected in extern specs" : TypecheckM (ETyp × Address))
+
+  let pred' ← attachVarEnvToPredicate pred varEnv
+  return (⟨etyp, poison, pred'⟩, nextLoc')
+
+-- Type checking functions for extern expressions
+
+/-- Typecheck extern value: let x = extern val : (T :> p { P }) -/
+def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
+    : TypecheckM TypeResult := do
+  -- Convert to QTyp with current varEnv
+  let (qt, ctx') ← surfaceSpecToQTyp typ poison pred ctx.varEnv ctx
+
+  -- Return the qualified type
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
+           nextLoc' := ctx'.nextLoc, nextTag' := ctx.nextTag }
+
+/-- Typecheck extern impure function -/
+def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
+    (retSpec : ExternReturn) (effects : List Effect) : TypecheckM TypeResult := do
+  -- Create extern closure with captured varEnv
+  let tcl := FnTClosure.extern arg retSpec effects ctx.varEnv
+
+  -- Create arrow type with ambient pc using existing ETyp.arrow
+  let arrowTyp := ETyp.arrow argTyp Typ.unit ctx.pc tcl  -- placeholder for st2
+
+  -- Return qualified type with poison = pc
+  let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
+           nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
+
+/-- Typecheck extern pure function -/
+def typecheckExternPfn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
+    (retSpec : ExternReturn) : TypecheckM TypeResult := do
+  -- Create extern closure with captured varEnv
+  let tcl := PFnTClosure.extern arg retSpec ctx.varEnv
+
+  -- Create arrow type with ambient pc
+  let arrowTyp := ETyp.parrow argTyp Typ.unit ctx.pc tcl
+
+  -- Return qualified type with poison = pc
+  let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
+           nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
 
 
 def generateFreshVar (ctx : TypeContext) (pref : Name) (suffix : Nat) (fuel : Nat) : Name :=
@@ -589,6 +696,9 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.printString e => typecheckPrintString ctx e fuel
     | Expr.printInt e => typecheckPrintInt ctx e fuel
     | Expr.unaryop op e => typecheckUnaryOp ctx op e fuel
+    | Expr.externVal typ poison pred => typecheckExternVal ctx typ poison pred
+    | Expr.externFn arg argTyp retSpec effects => typecheckExternFn ctx arg argTyp retSpec effects
+    | Expr.externPfn arg argTyp retSpec => typecheckExternPfn ctx arg argTyp retSpec
 termination_by fuel
 
 /-- Helper function to run proper fixpoint computation for while loops.
@@ -956,7 +1066,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
       match tcl with
-      | FnTClosure.mk x body env =>
+      | FnTClosure.regular x body env =>
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt
@@ -973,6 +1083,82 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         let poison := joinPoison ctx.pc p3
         let qt : QTyp := ⟨etyp3, poison, pred3⟩
         return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc', nextTag' := result3.nextTag' }
+      | FnTClosure.extern x retSpec effects capturedEnv =>
+        -- Extern function application logic
+        -- 1. Build unified environment: extend capturedEnv with argument
+        let argQt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
+        let unifiedEnv := VarTypeEnv.update capturedEnv x argQt
+
+        -- 2. Process effects: update Γ for each effect target
+        let mut memEnv := result2.memEnv'
+        let mut nextLoc := result2.nextLoc'
+        for effect in effects do
+          match effect.target with
+          | EffectTarget.namedVar v =>
+              -- Resolve v in unifiedEnv to get ref location
+              match unifiedEnv.lookup v with
+              | some qt =>
+                  match qt.etyp with
+                  | ETyp.ref _t l =>
+                      -- Convert effect spec to QTyp and update Γ(l)
+                      let effectQt ← effectSpecToQTyp effect.poison effect.pred unifiedEnv
+                      let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
+                      memEnv := memEnv.insert l storedQt
+                  | _ => throw s!"Effect target {v} must be a reference type"
+              | none => throw s!"Effect target {v} not found in environment"
+          | EffectTarget.returnValue =>
+              -- Will be handled when processing return spec if it's a ref type
+              pure ()
+
+        -- 3. Handle return spec (simple or nested)
+        match retSpec with
+        | ExternReturn.simple typ poison pred =>
+            -- Simple return type
+            let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
+
+            -- If return type is ref and there's a "return" effect, update Γ at that location
+            match retQt.etyp with
+            | ETyp.ref _t l =>
+                -- Check for "return" effect
+                let returnEffect := effects.find? (fun eff =>
+                  match eff.target with
+                  | EffectTarget.returnValue => true
+                  | _ => false)
+                match returnEffect with
+                | some eff =>
+                    let effectQt ← effectSpecToQTyp eff.poison eff.pred unifiedEnv
+                    let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
+                    memEnv := memEnv.insert l storedQt
+                | none => pure ()
+            | _ =>
+                -- Non-ref return: verify no "return" effect exists
+                let hasReturnEffect := effects.any (fun eff =>
+                  match eff.target with
+                  | EffectTarget.returnValue => true
+                  | _ => false)
+                if hasReturnEffect then
+                  throw "Effect on 'return' is only valid when return type is a reference"
+
+            let poison' := joinPoison ctx.pc retQt.poison
+            let qt := ⟨retQt.etyp, poison', retQt.pred⟩
+            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc', nextTag' := result2.nextTag' }
+
+        | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
+            -- Nested extern function: return a closure
+            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
+            let innerArrowTyp := ETyp.arrow innerArgTyp Typ.unit ctx.pc innerTcl
+            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
+
+        | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
+            -- Nested extern pure function: return a closure
+            let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
+            let innerArrowTyp := ETyp.parrow innerArgTyp Typ.unit ctx.pc innerTcl
+            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
     | ETyp.parrow st1 st2 p tcl =>
       -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
@@ -984,7 +1170,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
       match tcl with
-      | PFnTClosure.mk x body env =>
+      | PFnTClosure.regular x body env =>
         -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
         let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
         let env' := VarTypeEnv.update env x argQt
@@ -1001,6 +1187,39 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         let poison := joinPoison ctx.pc p3
         let qt : QTyp := ⟨etyp3, poison, pred3⟩
         return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc', nextTag' := result3.nextTag' }
+      | PFnTClosure.extern x retSpec capturedEnv =>
+        -- Extern pure function application (no effects)
+        let argQt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
+        let unifiedEnv := VarTypeEnv.update capturedEnv x argQt
+
+        let mut nextLoc := result2.nextLoc'
+
+        -- Handle return spec (simple or nested)
+        match retSpec with
+        | ExternReturn.simple typ poison pred =>
+            -- Simple return type
+            let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
+
+            let poison' := joinPoison ctx.pc retQt.poison
+            let qt := ⟨retQt.etyp, poison', retQt.pred⟩
+            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc', nextTag' := result2.nextTag' }
+
+        | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
+            -- Nested extern impure function: return a closure
+            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
+            let innerArrowTyp := ETyp.arrow innerArgTyp Typ.unit ctx.pc innerTcl
+            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
+
+        | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
+            -- Nested extern pure function: return a closure
+            let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
+            let innerArrowTyp := ETyp.parrow innerArgTyp Typ.unit ctx.pc innerTcl
+            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
 
     | _ => throw "Left operand of application must be a function"
 termination_by fuel
