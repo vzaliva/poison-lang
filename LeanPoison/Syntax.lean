@@ -179,9 +179,7 @@ def beqExpr : Expr → Expr → Bool
   | Expr.externPfn x1 t1 ret1, Expr.externPfn x2 t2 ret2 =>
       x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2
   | _, _ => false
-termination_by e1 _ => sizeOf e1
-decreasing_by
-  all_goals (simp_wf; try omega)
+termination_by structural e1 _ => e1
 
 def beqSyntaxPredicate : SyntaxPredicate → SyntaxPredicate → Bool
   | SyntaxPredicate.guardClosure k1 arg1 body1, SyntaxPredicate.guardClosure k2 arg2 body2 =>
@@ -189,24 +187,18 @@ def beqSyntaxPredicate : SyntaxPredicate → SyntaxPredicate → Bool
   | SyntaxPredicate.guardOnly k1, SyntaxPredicate.guardOnly k2 => k1 == k2
   | SyntaxPredicate.noPred, SyntaxPredicate.noPred => true
   | _, _ => false
-termination_by p1 _ => sizeOf p1
-decreasing_by
-  all_goals (simp_wf; try omega)
+termination_by structural p1 _ => p1
 
 def beqEffect : Effect → Effect → Bool
   | ⟨t1, p1, pred1⟩, ⟨t2, p2, pred2⟩ =>
       t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
-termination_by ef1 _ => sizeOf ef1
-decreasing_by
-  all_goals (simp_wf; try omega)
+termination_by structural ef1 _ => ef1
 
 def beqEffectList : List Effect → List Effect → Bool
   | [], [] => true
   | e1 :: es1, e2 :: es2 => beqEffect e1 e2 && beqEffectList es1 es2
   | _, _ => false
-termination_by efs1 _=> sizeOf efs1
-decreasing_by
-  all_goals (simp_wf; try omega)
+termination_by structural efs1 _=> efs1
 
 def beqExternReturn : ExternReturn → ExternReturn → Bool
   | ExternReturn.simple t1 p1 pred1, ExternReturn.simple t2 p2 pred2 =>
@@ -216,9 +208,7 @@ def beqExternReturn : ExternReturn → ExternReturn → Bool
   | ExternReturn.nestedPfn x1 t1 ret1, ExternReturn.nestedPfn x2 t2 ret2 =>
       x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2
   | _, _ => false
-termination_by r1 _=> sizeOf r1
-decreasing_by
-  all_goals (simp_wf; try omega)
+termination_by structural r1 _ => r1
 
 end
 
