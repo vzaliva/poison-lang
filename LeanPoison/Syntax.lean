@@ -1,6 +1,7 @@
 -- Core definitions for Poison language (aligned with poison-lang.ott)
 
 import Std.Data.HashMap
+import Mathlib.Tactic
 open Std
 
 abbrev Address := Nat
@@ -50,6 +51,38 @@ inductive UnaryOp : Type where
   | not : UnaryOp   -- unary boolean negation
   deriving Repr, BEq, DecidableEq
 
+-- Predicate tags (moved here for use in SyntaxPredicate)
+abbrev Tag := Nat
+
+-- Effect target: either a named variable or the return value
+inductive EffectTarget where
+  | namedVar : Name → EffectTarget      -- !varname
+  | returnValue : EffectTarget           -- return (special keyword)
+  deriving Repr, BEq
+
+
+
+mutual
+
+-- Syntax-level predicate (simplified, no captured environment)
+-- Parser creates these, typechecker converts to full Predicate
+inductive SyntaxPredicate : Type where
+  | guardClosure: Tag → Name → Expr → SyntaxPredicate  -- tag, arg name, predicate body (as Expr)
+  | guardOnly : Tag → SyntaxPredicate
+  | noPred : SyntaxPredicate
+
+-- Effect specification for impure externs (uses SyntaxPredicate)
+structure Effect where
+  target : EffectTarget
+  poison : Bool  -- true for "poisoned", false for "clean"
+  pred : SyntaxPredicate
+
+-- Return specification for extern functions (simple or nested)
+inductive ExternReturn where
+  | simple : Typ → Bool → SyntaxPredicate → ExternReturn
+  | nestedFn : Name → Typ → ExternReturn → List Effect → ExternReturn
+  | nestedPfn : Name → Typ → ExternReturn → ExternReturn
+
 -- Expressions (corresponds to e in Ott)
 inductive Expr : Type where
   /- literals -/
@@ -76,6 +109,12 @@ inductive Expr : Type where
   | frand : Expr -> Expr
   | printString  : Expr -> Expr
   | printInt  : Expr -> Expr
+  /- extern placeholders -/
+  | externVal : Typ → Bool → SyntaxPredicate → Expr
+  | externFn : Name → Typ → ExternReturn → List Effect → Expr
+  | externPfn : Name → Typ → ExternReturn → Expr
+
+end
 
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
@@ -107,6 +146,8 @@ def Expr.toValue? : Expr → Option Value
 -- BEq instances
 
 -- First define beqExpr (used by Value closures)
+-- For extern constructors, we avoid circular dependencies by directly comparing
+-- Tag/Name/Bool fields instead of calling helper beq functions
 mutual
 
 def beqExpr : Expr → Expr → Bool
@@ -131,9 +172,56 @@ def beqExpr : Expr → Expr → Bool
   | Expr.frand e1, Expr.frand e2 => beqExpr e1 e2
   | Expr.printString e1, Expr.printString e2 => beqExpr e1 e2
   | Expr.printInt e1, Expr.printInt e2 => beqExpr e1 e2
+  | Expr.externVal t1 p1 pred1, Expr.externVal t2 p2 pred2 =>
+      t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
+  | Expr.externFn x1 t1 ret1 eff1, Expr.externFn x2 t2 ret2 eff2 =>
+      x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
+  | Expr.externPfn x1 t1 ret1, Expr.externPfn x2 t2 ret2 =>
+      x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2
   | _, _ => false
+termination_by e1 _ => sizeOf e1
+decreasing_by
+  all_goals (simp_wf; try omega)
+
+def beqSyntaxPredicate : SyntaxPredicate → SyntaxPredicate → Bool
+  | SyntaxPredicate.guardClosure k1 arg1 body1, SyntaxPredicate.guardClosure k2 arg2 body2 =>
+      k1 == k2 && arg1 == arg2 && beqExpr body1 body2
+  | SyntaxPredicate.guardOnly k1, SyntaxPredicate.guardOnly k2 => k1 == k2
+  | SyntaxPredicate.noPred, SyntaxPredicate.noPred => true
+  | _, _ => false
+termination_by p1 _ => sizeOf p1
+decreasing_by
+  all_goals (simp_wf; try omega)
+
+def beqEffect : Effect → Effect → Bool
+  | ⟨t1, p1, pred1⟩, ⟨t2, p2, pred2⟩ =>
+      t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
+termination_by ef1 _ => sizeOf ef1
+decreasing_by
+  all_goals (simp_wf; try omega)
+
+def beqEffectList : List Effect → List Effect → Bool
+  | [], [] => true
+  | e1 :: es1, e2 :: es2 => beqEffect e1 e2 && beqEffectList es1 es2
+  | _, _ => false
+termination_by efs1 _=> sizeOf efs1
+decreasing_by
+  all_goals (simp_wf; try omega)
+
+def beqExternReturn : ExternReturn → ExternReturn → Bool
+  | ExternReturn.simple t1 p1 pred1, ExternReturn.simple t2 p2 pred2 =>
+      t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
+  | ExternReturn.nestedFn x1 t1 ret1 eff1, ExternReturn.nestedFn x2 t2 ret2 eff2 =>
+      x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
+  | ExternReturn.nestedPfn x1 t1 ret1, ExternReturn.nestedPfn x2 t2 ret2 =>
+      x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2
+  | _, _ => false
+termination_by r1 _=> sizeOf r1
+decreasing_by
+  all_goals (simp_wf; try omega)
 
 end
+
 
 -- Now define beqValue and beqValueVarEnv (which use beqExpr)
 mutual
@@ -165,6 +253,18 @@ instance : BEq Value where
 @[instance]
 instance : BEq Expr where
   beq := beqExpr
+
+@[instance]
+instance : BEq SyntaxPredicate where
+  beq := beqSyntaxPredicate
+
+@[instance]
+instance : BEq Effect where
+  beq := beqEffect
+
+@[instance]
+instance : BEq ExternReturn where
+  beq := beqExternReturn
 
 -- Repr instances
 
@@ -210,8 +310,32 @@ def reprExpr : Expr → Nat → Std.Format
   | Expr.frand e, _ => s!"Expr.frand ({reprExpr e 0})"
   | Expr.printString e, _ => s!"Expr.printString ({reprExpr e 0})"
   | Expr.printInt e, _  => s!"Expr.printInt ({reprExpr e 0})"
+  | Expr.externVal t p _pred, _ => s!"Expr.externVal {repr t} {repr p} <pred>"
+  | Expr.externFn x t _ret _eff, _ => s!"Expr.externFn {repr x} : {repr t} <retspec> <effects>"
+  | Expr.externPfn x t _ret, _ => s!"Expr.externPfn {repr x} : {repr t} <retspec>"
 
 end
+
+-- Repr functions for extern types (defined separately after reprExpr)
+def reprSyntaxPredicate : SyntaxPredicate → Nat → Std.Format
+  | SyntaxPredicate.guardClosure tag arg _body, _ =>
+      s!"SyntaxPredicate.guardClosure {repr tag} {repr arg} <body>"
+  | SyntaxPredicate.guardOnly tag, _ =>
+      s!"SyntaxPredicate.guardOnly {repr tag}"
+  | SyntaxPredicate.noPred, _ =>
+      "SyntaxPredicate.noPred"
+
+def reprEffect : Effect → Nat → Std.Format
+  | ⟨target, poison, pred⟩, _ =>
+      s!"Effect {repr target} {repr poison} {reprSyntaxPredicate pred 0}"
+
+def reprExternReturn : ExternReturn → Nat → Std.Format
+  | ExternReturn.simple typ poison pred, _ =>
+      s!"ExternReturn.simple {repr typ} {repr poison} {reprSyntaxPredicate pred 0}"
+  | ExternReturn.nestedFn x typ ret _eff, _ =>
+      s!"ExternReturn.nestedFn {repr x} {repr typ} {reprExternReturn ret 0} <effects>"
+  | ExternReturn.nestedPfn x typ ret, _ =>
+      s!"ExternReturn.nestedPfn {repr x} {repr typ} {reprExternReturn ret 0}"
 
 @[instance]
 instance : Repr Value where
@@ -220,6 +344,18 @@ instance : Repr Value where
 @[instance]
 instance : Repr Expr where
   reprPrec := reprExpr
+
+@[instance]
+instance : Repr SyntaxPredicate where
+  reprPrec := reprSyntaxPredicate
+
+@[instance]
+instance : Repr Effect where
+  reprPrec := reprEffect
+
+@[instance]
+instance : Repr ExternReturn where
+  reprPrec := reprExternReturn
 
 -- Note: We cannot convert arbitrary values to expressions
 -- Only literals (num, bool, unit) can appear in both
@@ -268,9 +404,6 @@ def ValueToTypeString (val : Value) : String :=
     | Value.peClosure _ _ _ => "pure function"
     | Value.str _  => "string"
 
--- Predicate tags
-abbrev Tag := Nat
-
 -- Poison flag
 abbrev Poison := Bool
 
@@ -309,10 +442,12 @@ structure QTyp where
 
 -- Separate typing closures for impure and pure functions
 inductive FnTClosure : Type where
-  | mk : Name → Expr → List (Name × QTyp) → FnTClosure
+  | regular : Name → Expr → List (Name × QTyp) → FnTClosure
+  | extern : Name → ExternReturn → List Effect → List (Name × QTyp) → FnTClosure
 
 inductive PFnTClosure : Type where
-  | mk : Name → PExpr → List (Name × QTyp) → PFnTClosure
+  | regular : Name → PExpr → List (Name × QTyp) → PFnTClosure
+  | extern : Name → ExternReturn → List (Name × QTyp) → PFnTClosure
 
 -- Enriched type (full type)
 inductive ETyp : Type where
@@ -325,7 +460,6 @@ inductive ETyp : Type where
   | parrow : Typ → Typ → Poison → PFnTClosure → ETyp
 
 end
-
 
 -- Variable typing environment (σ in the Ott spec) Because we use it in a
 -- mutually inductive type above which requires types you're defining must be
@@ -371,10 +505,12 @@ partial def reprPExpr : PExpr → Nat → Std.Format
   | PExpr.app e1 e2, _ => s!"PExpr.app ({reprPExpr e1 0}) ({reprPExpr e2 0})"
 
 partial def reprFnTClosure : FnTClosure → Nat → Std.Format
-  | FnTClosure.mk x _ _ , _ => s!"FnTClosure {repr x} <expr>"
+  | FnTClosure.regular x _ _ , _ => s!"FnTClosure.regular {repr x} <expr>"
+  | FnTClosure.extern x _ _ _, _ => s!"FnTClosure.extern {repr x} <retspec> <effects>"
 
 partial def reprPFnTClosure : PFnTClosure → Nat → Std.Format
-  | PFnTClosure.mk x _ _ , _ => s!"PFnTClosure {repr x} <pexpr>"
+  | PFnTClosure.regular x _ _ , _ => s!"PFnTClosure.regular {repr x} <pexpr>"
+  | PFnTClosure.extern x _ _, _ => s!"PFnTClosure.extern {repr x} <retspec>"
 
 partial def reprETyp : ETyp → Nat → Std.Format
   | ETyp.int, _ => "ETyp.int"
@@ -456,12 +592,18 @@ def beqETyp : ETyp → ETyp → Bool
   | _, _ => false
 
 def beqFnTClosure : FnTClosure → FnTClosure → Bool
-  | FnTClosure.mk x1 e1 env1, FnTClosure.mk x2 e2 env2 =>
+  | FnTClosure.regular x1 e1 env1, FnTClosure.regular x2 e2 env2 =>
     x1 == x2 && e1 == e2 && beqVarEnv env1 env2
+  | FnTClosure.extern x1 ret1 eff1 env1, FnTClosure.extern x2 ret2 eff2 env2 =>
+    x1 == x2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2 && beqVarEnv env1 env2
+  | _, _ => false
 
 def beqPFnTClosure : PFnTClosure → PFnTClosure → Bool
-  | PFnTClosure.mk x1 e1 env1, PFnTClosure.mk x2 e2 env2 =>
+  | PFnTClosure.regular x1 e1 env1, PFnTClosure.regular x2 e2 env2 =>
     x1 == x2 && e1 == e2 && beqVarEnv env1 env2
+  | PFnTClosure.extern x1 ret1 env1, PFnTClosure.extern x2 ret2 env2 =>
+    x1 == x2 && beqExternReturn ret1 ret2 && beqVarEnv env1 env2
+  | _, _ => false
 
 def beqVarEnv : List (Name × QTyp) → List (Name × QTyp) → Bool
   | [], [] => true
