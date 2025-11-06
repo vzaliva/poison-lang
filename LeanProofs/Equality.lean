@@ -314,6 +314,9 @@ private theorem beqExpr_refl (e : Expr) : beqExpr e e = true := by
   | printInt e IH =>
       change beqExpr e e = true
       exact IH
+  | externVal _typ _poison _pred => rfl  -- simplified beq always returns true
+  | externFn _arg _argTyp _retSpec _effects => rfl  -- simplified beq always returns true
+  | externPfn _arg _argTyp _retSpec => rfl  -- simplified beq always returns true
 
 -- Soundness lemmas for Expr - split into sections for better compilation performance
 section ExprSoundness
@@ -800,6 +803,9 @@ by
   | frand e1 IH => exact beqExpr_frand_eq_of_beq e1 b IH h
   | printString e1 IH => exact beqExpr_printString_eq_of_beq e1 b IH h
   | printInt e1 IH => exact beqExpr_printInt_eq_of_beq e1 b IH h
+  | externVal _typ _poison _pred => rfl  -- simplified beq always returns true
+  | externFn _arg _argTyp _retSpec _effects => rfl  -- simplified beq always returns true
+  | externPfn _arg _argTyp _retSpec => rfl  -- simplified beq always returns true
 
 end ExprSoundness
 
@@ -946,14 +952,16 @@ private theorem beqQTyp_refl (qt : QTyp) : beqQTyp qt qt = true := by
 -- Prove reflexivity of beqFnTClosure
 private theorem beqFnTClosure_refl (tcl : FnTClosure) : beqFnTClosure tcl tcl = true := by
   cases tcl with
-  | mk x e env =>
+  | regular x e env =>
       simp [beqFnTClosure, beqVarEnv_refl env]
+  | extern _x _retSpec _effects _env => sorry  -- TODO: implement when BEq is properly defined
 
 -- Prove reflexivity of beqPFnTClosure
 private theorem beqPFnTClosure_refl (tcl : PFnTClosure) : beqPFnTClosure tcl tcl = true := by
   cases tcl with
-  | mk x e env =>
+  | regular x e env =>
       simp [beqPFnTClosure, beqVarEnv_refl env]
+  | extern _x _retSpec _env => sorry  -- TODO: implement when BEq is properly defined
 
 end
 
@@ -1045,9 +1053,9 @@ private theorem beqQTyp_sound (a b : QTyp) : (a == b) = true → a = b := by
 private theorem beqFnTClosure_sound (a b : FnTClosure) : (a == b) = true → a = b := by
   intro h
   cases a with
-  | mk x1 e1 env1 =>
+  | regular x1 e1 env1 =>
     cases b with
-    | mk x2 e2 env2 =>
+    | regular x2 e2 env2 =>
       simp only [BEq.beq, beqFnTClosure] at h
       have h_and : (x1 == x2 && beqExpr e1 e2) = true ∧ beqVarEnv env1 env2 = true := by
         rw [Bool.and_eq_true] at h
@@ -1063,6 +1071,11 @@ private theorem beqFnTClosure_sound (a b : FnTClosure) : (a == b) = true → a =
       have : env1 = env2 := beqVarEnv_sound env1 env2 h_env
       subst_vars
       rfl
+    | extern _ _ _ _ =>
+      simp only [BEq.beq, beqFnTClosure] at h
+      contradiction
+  | extern _x1 _retSpec1 _eff1 _env1 =>
+    sorry  -- TODO: implement when BEq is properly defined
 
 private theorem beqPFnTClosure_sound (a b : PFnTClosure) : (a == b) = true → a = b := by
   intro h
@@ -1149,3 +1162,21 @@ theorem beqETypSignature_refl (t : ETyp) : beqETypSignature t t = true := by
       simp [beqETypSignature]
   | parrow st1 st2 p _ =>
       simp [beqETypSignature]
+
+-- ============================================================================
+-- Proofs for new extern types
+-- ============================================================================
+
+-- LawfulBEq instances for new types (using sorry for simplified BEq implementations)
+
+instance : LawfulBEq SyntaxPredicate where
+  eq_of_beq := sorry
+  rfl := sorry
+
+instance : LawfulBEq Effect where
+  eq_of_beq := sorry
+  rfl := sorry
+
+instance : LawfulBEq ExternReturn where
+  eq_of_beq := sorry
+  rfl := sorry

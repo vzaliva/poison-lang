@@ -211,6 +211,14 @@ mutual
         | .outOfFuel => return .outOfFuel
         | .runtimeError msg => return .runtimeError msg
 
+      -- Extern placeholders (cannot be executed)
+      | Expr.externVal _ _ _ =>
+        return .runtimeError "Cannot execute extern value – no implementation provided"
+      | Expr.externFn _ _ _ _ =>
+        return .runtimeError "Cannot execute extern function – no implementation provided"
+      | Expr.externPfn _ _ _ =>
+        return .runtimeError "Cannot execute extern pure function – no implementation provided"
+
       -- Built-ins
       | Expr.rand e => do
         match <- beval (fuel - 1) config e verbose with
