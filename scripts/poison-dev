@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IMG="localhost/poison-lang:dev"
+PROJ_DEFAULT="$HOME/src/poison-lang"
+
+# Resolve project root (Git top-level if inside repo)
+if git -C "$PWD" rev-parse --show-toplevel >/dev/null 2>&1; then
+  PROJ_ROOT="$(git -C "$PWD" rev-parse --show-toplevel)"
+else
+  PROJ_ROOT="$PROJ_DEFAULT"
+fi
+
+# Command: symlink name (elan/lean/lake) or "poison-dev <cmd>"
+ME="$(basename "$0")"
+if [[ "$ME" == "poison-dev" ]]; then
+  [[ $# -ge 1 ]] || { echo "Usage: poison-dev <command> [args…]"; exit 2; }
+  CMD="$1"; shift
+else
+  CMD="$ME"
+fi
+
+exec podman run --rm -it \
+  --userns=keep-id \
+  -u 0:0 \
+  --security-opt label=disable \
+  -e HOST_UID="$(id -u)" \
+  -e HOST_GID="$(id -g)" \
+  -e HOST_USER="$(id -un 2>/dev/null || echo user)" \
+  -e HOST_GROUP="$(id -gn 2>/dev/null || echo user)" \
+  -e HOME="/home/user" \
+  -e LANG="C.UTF-8" -e LC_ALL="C.UTF-8" \
+  -e ELAN_HOME="/home/user/.elan" \
+  -e XDG_CACHE_HOME="/home/user/.cache" \
+  -v "poison_elan_home:/home/user/.elan" \
+  -v "poison_cache_elan:/home/user/.cache/elan" \
+  -v "poison_cache_lake:/home/user/.cache/lake" \
+  -v "${PROJ_ROOT}:/work" \
+  -w /work \
+  "$IMG" \
+  "$CMD" "$@"
+
+
