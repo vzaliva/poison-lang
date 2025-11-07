@@ -87,7 +87,7 @@ open Lean Xml
 
 -- Recursively convert parsed XML to Expr
 
-partial def xmlToExpr (x : Element) : Except String Expr :=
+partial def xmlToExpr (x : Element) : Except String _root_.Expr :=
     match x with
   | Element.Element "expr" _ contents =>
      let elements := contents.filterMap fun
@@ -452,7 +452,7 @@ partial def xmlToExpr (x : Element) : Except String Expr :=
 
 --------------------------------------------------------------------------------
 -- Final wrapper
-def parsePoisonFile (file : String) : IO Expr := do
+def parsePoisonFile (file : String) : IO _root_.Expr := do
   let xmlStr ← runTreeSitterXml file
   match parse xmlStr with
   | .ok xml =>

@@ -2436,6 +2436,15 @@ private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeCon
     | printString e1 =>
       -- Print string: similar to printInt
       exact preservation_printString e1 ctx n IH
+    | externVal _typ _poison _pred =>
+      -- Extern values cannot be executed (always return runtimeError)
+      sorry
+    | externFn _arg _argTyp _retSpec _effects =>
+      -- Extern functions cannot be executed (always return runtimeError)
+      sorry
+    | externPfn _arg _argTyp _retSpec =>
+      -- Extern pure functions cannot be executed (always return runtimeError)
+      sorry
 
 -- Preservation theorem: well-typed programs preserve types
 -- This proof uses strong induction on fuel via preservationWithFuel_all

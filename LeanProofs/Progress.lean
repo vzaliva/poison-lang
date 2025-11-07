@@ -267,3 +267,12 @@ theorem progress (e : Expr) (ctx : TypeContext) : Progress e ctx := by
       | printString e1 =>
         -- Print string: similar to printInt
         sorry
+      | externVal _typ _poison _pred =>
+        -- Extern values cannot be executed (always return runtimeError)
+        sorry
+      | externFn _arg _argTyp _retSpec _effects =>
+        -- Extern functions cannot be executed (always return runtimeError)
+        sorry
+      | externPfn _arg _argTyp _retSpec =>
+        -- Extern pure functions cannot be executed (always return runtimeError)
+        sorry
