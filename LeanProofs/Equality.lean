@@ -227,6 +227,66 @@ instance : LawfulBEq PExpr where
   rfl {a} := beqPExpr_refl a
 
 -- ============================================================================
+-- EffectTarget: Reflexivity, Soundness, and LawfulBEq instance
+-- ============================================================================
+
+private theorem EffectTarget_beq_refl (t : EffectTarget) : (t == t) = true := by
+  cases t with
+  | namedVar x =>
+      simp only [BEq.beq]
+      have : decide (x = x) = true := decide_eq_true rfl
+      exact this
+  | returnValue => rfl
+
+private theorem EffectTarget_beq_sound (a b : EffectTarget) : (a == b) = true → a = b := by
+  intro h
+  cases a <;> cases b <;> simp only [BEq.beq] at h <;> try contradiction
+  case namedVar.namedVar x1 x2 =>
+    have : x1 = x2 := of_decide_eq_true h
+    subst this
+    rfl
+  case returnValue.returnValue => rfl
+
+instance : LawfulBEq EffectTarget where
+  eq_of_beq {a b} := EffectTarget_beq_sound a b
+  rfl {a} := EffectTarget_beq_refl a
+
+-- ============================================================================
+-- SyntaxPredicate, Effect, ExternReturn: Mutual recursion with Expr
+-- ============================================================================
+-- These types are mutually recursive with Expr, so their proofs need to be
+-- handled carefully. We provide axiomatic soundness proofs and reflexivity
+-- proofs after beqExpr_refl is defined.
+
+-- Forward-declare soundness and reflexivity theorems with sorry
+-- These have circular dependencies with beqExpr (SyntaxPredicate contains Expr)
+-- For a complete implementation, these would need to be in a mutual block with beqExpr proofs
+-- For now, we use sorry to establish the LawfulBEq instances
+private theorem beqSyntaxPredicate_refl (p : SyntaxPredicate) : beqSyntaxPredicate p p = true := sorry
+private theorem beqSyntaxPredicate_sound (a b : SyntaxPredicate) : (a == b) = true → a = b := sorry
+
+private theorem beqEffect_refl (e : Effect) : beqEffect e e = true := sorry
+private theorem beqEffect_sound (a b : Effect) : (a == b) = true → a = b := sorry
+
+private theorem beqEffectList_refl (es : List Effect) : beqEffectList es es = true := sorry
+private theorem beqEffectList_sound : ∀ (a b : List Effect), beqEffectList a b = true → a = b := sorry
+
+private theorem beqExternReturn_refl (r : ExternReturn) : beqExternReturn r r = true := sorry
+private theorem beqExternReturn_sound (a b : ExternReturn) : (a == b) = true → a = b := sorry
+
+instance : LawfulBEq SyntaxPredicate where
+  eq_of_beq {a b} := beqSyntaxPredicate_sound a b
+  rfl {a} := beqSyntaxPredicate_refl a
+
+instance : LawfulBEq Effect where
+  eq_of_beq {a b} := beqEffect_sound a b
+  rfl {a} := beqEffect_refl a
+
+instance : LawfulBEq ExternReturn where
+  eq_of_beq {a b} := beqExternReturn_sound a b
+  rfl {a} := beqExternReturn_refl a
+
+-- ============================================================================
 -- Expr: Reflexivity, Soundness, and LawfulBEq instance
 -- ============================================================================
 -- Expr depends on Typ, Op, UnaryOp (all proven above)
@@ -314,9 +374,12 @@ private theorem beqExpr_refl (e : Expr) : beqExpr e e = true := by
   | printInt e IH =>
       change beqExpr e e = true
       exact IH
-  | externVal _typ _poison _pred => rfl  -- simplified beq always returns true
-  | externFn _arg _argTyp _retSpec _effects => rfl  -- simplified beq always returns true
-  | externPfn _arg _argTyp _retSpec => rfl  -- simplified beq always returns true
+  | externVal typ poison pred =>
+      simp [beqExpr, Typ_beq_refl typ, beqSyntaxPredicate_refl pred]
+  | externFn arg argTyp retSpec effects =>
+      simp [beqExpr, Typ_beq_refl argTyp, beqExternReturn_refl retSpec, beqEffectList_refl effects]
+  | externPfn arg argTyp retSpec =>
+      simp [beqExpr, Typ_beq_refl argTyp, beqExternReturn_refl retSpec]
 
 -- Soundness lemmas for Expr - split into sections for better compilation performance
 section ExprSoundness
@@ -803,9 +866,34 @@ by
   | frand e1 IH => exact beqExpr_frand_eq_of_beq e1 b IH h
   | printString e1 IH => exact beqExpr_printString_eq_of_beq e1 b IH h
   | printInt e1 IH => exact beqExpr_printInt_eq_of_beq e1 b IH h
-  | externVal _typ _poison _pred => rfl  -- simplified beq always returns true
-  | externFn _arg _argTyp _retSpec _effects => rfl  -- simplified beq always returns true
-  | externPfn _arg _argTyp _retSpec => rfl  -- simplified beq always returns true
+  | externVal typ1 poison1 pred1 =>
+      cases b <;> simp only [BEq.beq, beqExpr] at h <;> try contradiction
+      case externVal typ2 poison2 pred2 =>
+        simp only [Bool.and_eq_true] at h
+        obtain ⟨⟨h_typ, h_poison⟩, h_pred⟩ := h
+        have : typ1 = typ2 := Typ_beq_sound typ1 typ2 h_typ
+        have : poison1 = poison2 := of_decide_eq_true h_poison
+        have : pred1 = pred2 := beqSyntaxPredicate_sound pred1 pred2 h_pred
+        subst_vars; rfl
+  | externFn arg1 argTyp1 retSpec1 effects1 =>
+      cases b <;> simp only [BEq.beq, beqExpr] at h <;> try contradiction
+      case externFn arg2 argTyp2 retSpec2 effects2 =>
+        simp only [Bool.and_eq_true] at h
+        obtain ⟨⟨⟨h_arg, h_typ⟩, h_ret⟩, h_eff⟩ := h
+        have : arg1 = arg2 := of_decide_eq_true h_arg
+        have : argTyp1 = argTyp2 := Typ_beq_sound argTyp1 argTyp2 h_typ
+        have : retSpec1 = retSpec2 := beqExternReturn_sound retSpec1 retSpec2 h_ret
+        have : effects1 = effects2 := beqEffectList_sound effects1 effects2 h_eff
+        subst_vars; rfl
+  | externPfn arg1 argTyp1 retSpec1 =>
+      cases b <;> simp only [BEq.beq, beqExpr] at h <;> try contradiction
+      case externPfn arg2 argTyp2 retSpec2 =>
+        simp only [Bool.and_eq_true] at h
+        obtain ⟨⟨h_arg, h_typ⟩, h_ret⟩ := h
+        have : arg1 = arg2 := of_decide_eq_true h_arg
+        have : argTyp1 = argTyp2 := Typ_beq_sound argTyp1 argTyp2 h_typ
+        have : retSpec1 = retSpec2 := beqExternReturn_sound retSpec1 retSpec2 h_ret
+        subst_vars; rfl
 
 end ExprSoundness
 
@@ -954,14 +1042,16 @@ private theorem beqFnTClosure_refl (tcl : FnTClosure) : beqFnTClosure tcl tcl = 
   cases tcl with
   | regular x e env =>
       simp [beqFnTClosure, beqVarEnv_refl env]
-  | extern _x _retSpec _effects _env => sorry  -- TODO: implement when BEq is properly defined
+  | extern x retSpec effects env =>
+      simp [beqFnTClosure, beqExternReturn_refl retSpec, beqEffectList_refl effects, beqVarEnv_refl env]
 
 -- Prove reflexivity of beqPFnTClosure
 private theorem beqPFnTClosure_refl (tcl : PFnTClosure) : beqPFnTClosure tcl tcl = true := by
   cases tcl with
   | regular x e env =>
       simp [beqPFnTClosure, beqVarEnv_refl env]
-  | extern _x _retSpec _env => sorry  -- TODO: implement when BEq is properly defined
+  | extern x retSpec env =>
+      simp [beqPFnTClosure, beqExternReturn_refl retSpec, beqVarEnv_refl env]
 
 end
 
@@ -1074,15 +1164,28 @@ private theorem beqFnTClosure_sound (a b : FnTClosure) : (a == b) = true → a =
     | extern _ _ _ _ =>
       simp only [BEq.beq, beqFnTClosure] at h
       contradiction
-  | extern _x1 _retSpec1 _eff1 _env1 =>
-    sorry  -- TODO: implement when BEq is properly defined
+  | extern x1 retSpec1 eff1 env1 =>
+    cases b with
+    | regular _ _ _ =>
+      simp only [BEq.beq, beqFnTClosure] at h
+      contradiction
+    | extern x2 retSpec2 eff2 env2 =>
+      simp only [BEq.beq, beqFnTClosure] at h
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨⟨⟨h_x, h_ret⟩, h_eff⟩, h_env⟩ := h
+      have : x1 = x2 := of_decide_eq_true h_x
+      have : retSpec1 = retSpec2 := beqExternReturn_sound retSpec1 retSpec2 h_ret
+      have : eff1 = eff2 := beqEffectList_sound eff1 eff2 h_eff
+      have : env1 = env2 := beqVarEnv_sound env1 env2 h_env
+      subst_vars
+      rfl
 
 private theorem beqPFnTClosure_sound (a b : PFnTClosure) : (a == b) = true → a = b := by
   intro h
   cases a with
-  | mk x1 e1 env1 =>
+  | regular x1 e1 env1 =>
     cases b with
-    | mk x2 e2 env2 =>
+    | regular x2 e2 env2 =>
       simp only [BEq.beq, beqPFnTClosure] at h
       have h_and : (x1 == x2 && beqPExpr e1 e2) = true ∧ beqVarEnv env1 env2 = true := by
         rw [Bool.and_eq_true] at h
@@ -1095,6 +1198,23 @@ private theorem beqPFnTClosure_sound (a b : PFnTClosure) : (a == b) = true → a
       have h_env : beqVarEnv env1 env2 = true := h_and.2
       have : x1 = x2 := of_decide_eq_true h_x
       have : e1 = e2 := beqPExpr_sound e1 e2 h_e
+      have : env1 = env2 := beqVarEnv_sound env1 env2 h_env
+      subst_vars
+      rfl
+    | extern _ _ _ =>
+      simp only [BEq.beq, beqPFnTClosure] at h
+      contradiction
+  | extern x1 retSpec1 env1 =>
+    cases b with
+    | regular _ _ _ =>
+      simp only [BEq.beq, beqPFnTClosure] at h
+      contradiction
+    | extern x2 retSpec2 env2 =>
+      simp only [BEq.beq, beqPFnTClosure] at h
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨⟨h_x, h_ret⟩, h_env⟩ := h
+      have : x1 = x2 := of_decide_eq_true h_x
+      have : retSpec1 = retSpec2 := beqExternReturn_sound retSpec1 retSpec2 h_ret
       have : env1 = env2 := beqVarEnv_sound env1 env2 h_env
       subst_vars
       rfl
@@ -1167,16 +1287,6 @@ theorem beqETypSignature_refl (t : ETyp) : beqETypSignature t t = true := by
 -- Proofs for new extern types
 -- ============================================================================
 
--- LawfulBEq instances for new types (using sorry for simplified BEq implementations)
-
-instance : LawfulBEq SyntaxPredicate where
-  eq_of_beq := sorry
-  rfl := sorry
-
-instance : LawfulBEq Effect where
-  eq_of_beq := sorry
-  rfl := sorry
-
-instance : LawfulBEq ExternReturn where
-  eq_of_beq := sorry
-  rfl := sorry
+-- Note: LawfulBEq instances for SyntaxPredicate, Effect, and ExternReturn
+-- are defined earlier in this file (around line 277-287) using sorry-based
+-- proofs due to circular dependencies with beqExpr.
