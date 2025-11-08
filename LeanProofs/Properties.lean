@@ -966,9 +966,48 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                       apply Std.HashMap.Equiv.trans H1
                       apply Std.HashMap.Equiv.trans H7
                       exact H11
-              | extern _ _ _ =>
-                -- extern case: not possible under pureCtx, but needed for exhaustiveness
-                sorry
+              | extern x retSpec capturedEnv =>
+                -- extern case: extern pure function application
+                -- The typechecker preserves memEnv and tagEnv from result2
+                -- For nextLoc: in simple case it may be increased by returnSpecToQTyp, in nested cases it's preserved
+                -- We need to match on retSpec to handle each case
+                cases retSpec with
+                | simple typ poison pred =>
+                  -- Simple case: nextLoc' may be increased by returnSpecToQTyp
+                  -- From typechecker: result.memEnv' = result2.memEnv', result.tagEnv' = result2.tagEnv'
+                  -- result.nextTag' = result2.nextTag', but result.nextLoc' may be > result2.nextLoc'
+                  -- We have: ctx.memEnv.equiv result1.memEnv' (H1) and result1.memEnv'.equiv result2.memEnv' (H7)
+                  -- So: ctx.memEnv.equiv result2.memEnv' = result.memEnv'
+                  -- H contains a match on retSpec with returnSpecToQTyp, which is too complex for dependent elimination
+                  -- The issue is that returnSpecToQTyp may allocate new locations for reference types,
+                  -- increasing nextLoc', but the theorem requires exact equality.
+                  -- This case represents extern functions with simple return specs that may contain ref types.
+                  -- While this case might not be reachable in a pure PExpr context (since extern functions
+                  -- can't be converted to PExpr), we need to handle it for exhaustiveness.
+                  -- The proof would require showing that nextLoc' is preserved or handling the allocation case.
+                  sorry  -- Complex case: H contains match on returnSpecToQTyp which may increase nextLoc' for ref types
+                | nestedFn _ _ _ _ =>
+                  -- Nested impure function: nextLoc' = result2.nextLoc'
+                  -- From typechecker code, all fields equal result2's fields
+                  -- H contains a match on retSpec, simplify it for the nestedFn case
+                  -- We know: result.memEnv' = result2.memEnv', result.tagEnv' = result2.tagEnv', etc.
+                  have H_memEnv : ctx.memEnv.equiv result2.memEnv' := Std.HashMap.Equiv.trans H1 H7
+                  simp_all
+                  -- After simp_all, H should show result equals the nestedFn return
+                  -- which has all fields equal to result2's fields
+                  cases H; simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+                  -- simp_all solves all goals automatically
+                | nestedPfn _ _ _ =>
+                  -- Nested pure function: nextLoc' = result2.nextLoc'
+                  -- From typechecker code, all fields equal result2's fields
+                  -- H contains a match on retSpec, simplify it for the nestedPfn case
+                  -- We know: result.memEnv' = result2.memEnv', result.tagEnv' = result2.tagEnv', etc.
+                  have H_memEnv : ctx.memEnv.equiv result2.memEnv' := Std.HashMap.Equiv.trans H1 H7
+                  simp_all
+                  -- After simp_all, H should show result equals the nestedPfn return
+                  -- which has all fields equal to result2's fields
+                  cases H; simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+                  -- simp_all solves all goals automatically
       | _ => simp_all
 
 theorem typecheck_PExpr_preserves_typestate :
@@ -1784,21 +1823,39 @@ private lemma beval_preserves_varEnv_externVal (t : Typ) (p : Bool) (pred : Synt
       LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.externVal t p pred) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
-  sorry
+  -- externVal always returns runtimeError, so success is impossible
+  unfold LeanPoison.beval at h_eval
+  apply congrFun (a := ()) at h_eval
+  simp at h_eval
+  -- After simp, we should see the runtimeError case
+  injection h_eval with h_contr
+  cases h_contr
 
 private lemma beval_preserves_varEnv_externFn (x : Name) (t : Typ) (ret : ExternReturn) (eff : List Effect) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
     (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
       LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.externFn x t ret eff) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
-  sorry
+  -- externFn always returns runtimeError, so success is impossible
+  unfold LeanPoison.beval at h_eval
+  apply congrFun (a := ()) at h_eval
+  simp at h_eval
+  -- After simp, we should see the runtimeError case
+  injection h_eval with h_contr
+  cases h_contr
 
 private lemma beval_preserves_varEnv_externPfn (x : Name) (t : Typ) (ret : ExternReturn) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
     (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
       LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.externPfn x t ret) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
-  sorry
+  -- externPfn always returns runtimeError, so success is impossible
+  unfold LeanPoison.beval at h_eval
+  apply congrFun (a := ()) at h_eval
+  simp at h_eval
+  -- After simp, we should see the runtimeError case
+  injection h_eval with h_contr
+  cases h_contr
 
 -- Lemma: beval never modifies the variable environment
 -- This is a fundamental property: evaluation doesn't change variable bindings
@@ -3116,7 +3173,21 @@ private lemma beval_memory_monotonic_externVal (t : Typ) (p : Bool) (pred : Synt
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
   LeanPoison.beval fuel config₀ (Expr.externVal t p pred) verbose = pure (.success config₁ v) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
-  sorry
+  intro h_eval l h_contains
+  -- externVal always returns runtimeError, so success is impossible
+  unfold LeanPoison.beval at h_eval
+  apply congrFun (a := ()) at h_eval
+  -- Handle fuel check first
+  cases fuel with
+  | zero =>
+    simp at h_eval
+    injection h_eval with h_contr
+    cases h_contr
+  | succ fuel' =>
+    simp at h_eval
+    -- After simp with fuel > 0, we get runtimeError
+    injection h_eval with h_contr
+    cases h_contr
 
 -- Helper lemma for externFn case
 private lemma beval_memory_monotonic_externFn (x : Name) (t : Typ) (ret : ExternReturn) (eff : List Effect) (fuel : Nat) (verbose : Bool)
@@ -3126,7 +3197,21 @@ private lemma beval_memory_monotonic_externFn (x : Name) (t : Typ) (ret : Extern
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
   LeanPoison.beval fuel config₀ (Expr.externFn x t ret eff) verbose = pure (.success config₁ v) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
-  sorry
+  intro h_eval l h_contains
+  -- externFn always returns runtimeError, so success is impossible
+  unfold LeanPoison.beval at h_eval
+  apply congrFun (a := ()) at h_eval
+  -- Handle fuel check first
+  cases fuel with
+  | zero =>
+    simp at h_eval
+    injection h_eval with h_contr
+    cases h_contr
+  | succ fuel' =>
+    simp at h_eval
+    -- After simp with fuel > 0, we get runtimeError
+    injection h_eval with h_contr
+    cases h_contr
 
 -- Helper lemma for externPfn case
 private lemma beval_memory_monotonic_externPfn (x : Name) (t : Typ) (ret : ExternReturn) (fuel : Nat) (verbose : Bool)
@@ -3136,7 +3221,21 @@ private lemma beval_memory_monotonic_externPfn (x : Name) (t : Typ) (ret : Exter
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
   LeanPoison.beval fuel config₀ (Expr.externPfn x t ret) verbose = pure (.success config₁ v) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
-  sorry
+  intro h_eval l h_contains
+  -- externPfn always returns runtimeError, so success is impossible
+  unfold LeanPoison.beval at h_eval
+  apply congrFun (a := ()) at h_eval
+  -- Handle fuel check first
+  cases fuel with
+  | zero =>
+    simp at h_eval
+    injection h_eval with h_contr
+    cases h_contr
+  | succ fuel' =>
+    simp at h_eval
+    -- After simp with fuel > 0, we get runtimeError
+    injection h_eval with h_contr
+    cases h_contr
 
 -- Helper lemma for kwhile case: while loops chain memory monotonicity through iterations
 private lemma beval_memory_monotonic_kwhile (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
