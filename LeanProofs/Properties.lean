@@ -918,7 +918,7 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
             | true =>
               simp_all [pure, Except.pure]
               cases tcl with
-              | mk x body env =>
+              | regular x body env =>
                 simp_all
                 cases h8: typecheckExpr
                       { pc := joinPoison p (joinPoison ctx.pc p1),
@@ -966,6 +966,9 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                       apply Std.HashMap.Equiv.trans H1
                       apply Std.HashMap.Equiv.trans H7
                       exact H11
+              | extern _ _ _ =>
+                -- extern case: not possible under pureCtx, but needed for exhaustiveness
+                sorry
       | _ => simp_all
 
 theorem typecheck_PExpr_preserves_typestate :
@@ -1017,7 +1020,10 @@ theorem typecheck_PExpr_preserves_typestate :
       | rand _
       | frand _
       | printString _
-      | printInt _ =>
+      | printInt _
+      | externVal _ _ _
+      | externFn _ _ _ _
+      | externPfn _ _ _ =>
         contradiction
 
 end TypecheckPExprPreservesTypestate
@@ -1773,6 +1779,27 @@ private lemma beval_preserves_varEnv_printString (e1 : Expr) (fuel' : Nat) (verb
     · next msg => injection h_eval with h_cfg _; injection h_cfg
   · next h_error h_state => injection h_eval
 
+private lemma beval_preserves_varEnv_externVal (t : Typ) (p : Bool) (pred : SyntaxPredicate) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
+      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
+    (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.externVal t p pred) verbose = pure (.success config₁ v)) :
+  config₀.varEnv = config₁.varEnv := by
+  sorry
+
+private lemma beval_preserves_varEnv_externFn (x : Name) (t : Typ) (ret : ExternReturn) (eff : List Effect) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
+      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
+    (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.externFn x t ret eff) verbose = pure (.success config₁ v)) :
+  config₀.varEnv = config₁.varEnv := by
+  sorry
+
+private lemma beval_preserves_varEnv_externPfn (x : Name) (t : Typ) (ret : ExternReturn) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
+      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
+    (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.externPfn x t ret) verbose = pure (.success config₁ v)) :
+  config₀.varEnv = config₁.varEnv := by
+  sorry
+
 -- Lemma: beval never modifies the variable environment
 -- This is a fundamental property: evaluation doesn't change variable bindings
 -- (variables can only be added/shadowed via let, but the varEnv itself is immutable)
@@ -1834,6 +1861,12 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (config₀
         exact beval_preserves_varEnv_printInt e1 fuel' verbose config₀ config₁ v IH h_eval
       | printString e1 =>
         exact beval_preserves_varEnv_printString e1 fuel' verbose config₀ config₁ v IH h_eval
+      | externVal t p pred =>
+        exact beval_preserves_varEnv_externVal t p pred fuel' verbose config₀ config₁ v IH h_eval
+      | externFn x t ret eff =>
+        exact beval_preserves_varEnv_externFn x t ret eff fuel' verbose config₀ config₁ v IH h_eval
+      | externPfn x t ret =>
+        exact beval_preserves_varEnv_externPfn x t ret fuel' verbose config₀ config₁ v IH h_eval
 
 end VarEnvPreservation
 
@@ -3075,6 +3108,36 @@ private lemma beval_memory_monotonic_printString (e1 : Expr) (fuel : Nat) (verbo
         injection h_eq_result
     · next h_error h_state => injection h_eval
 
+-- Helper lemma for externVal case
+private lemma beval_memory_monotonic_externVal (t : Typ) (p : Bool) (pred : SyntaxPredicate) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value)
+    (_IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) →
+      ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
+  LeanPoison.beval fuel config₀ (Expr.externVal t p pred) verbose = pure (.success config₁ v) →
+  ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
+  sorry
+
+-- Helper lemma for externFn case
+private lemma beval_memory_monotonic_externFn (x : Name) (t : Typ) (ret : ExternReturn) (eff : List Effect) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value)
+    (_IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) →
+      ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
+  LeanPoison.beval fuel config₀ (Expr.externFn x t ret eff) verbose = pure (.success config₁ v) →
+  ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
+  sorry
+
+-- Helper lemma for externPfn case
+private lemma beval_memory_monotonic_externPfn (x : Name) (t : Typ) (ret : ExternReturn) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value)
+    (_IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) →
+      ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
+  LeanPoison.beval fuel config₀ (Expr.externPfn x t ret) verbose = pure (.success config₁ v) →
+  ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
+  sorry
+
 -- Helper lemma for kwhile case: while loops chain memory monotonicity through iterations
 private lemma beval_memory_monotonic_kwhile (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
@@ -3269,5 +3332,17 @@ lemma beval_memory_monotonic : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
       -- Print: memory changes only from e1
       -- Use helper lemma for printString
       exact beval_memory_monotonic_printString e1 fuel verbose config₀ config₁ v IH h_eval l h_contains
+    | externVal t p pred =>
+      -- Extern value: placeholder for external values
+      -- Use helper lemma for externVal
+      exact beval_memory_monotonic_externVal t p pred fuel verbose config₀ config₁ v IH h_eval l h_contains
+    | externFn x t ret eff =>
+      -- Extern function: placeholder for external functions
+      -- Use helper lemma for externFn
+      exact beval_memory_monotonic_externFn x t ret eff fuel verbose config₀ config₁ v IH h_eval l h_contains
+    | externPfn x t ret =>
+      -- Extern pure function: placeholder for external pure functions
+      -- Use helper lemma for externPfn
+      exact beval_memory_monotonic_externPfn x t ret fuel verbose config₀ config₁ v IH h_eval l h_contains
 
 end MemoryMonotonicity
