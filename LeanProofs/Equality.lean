@@ -116,8 +116,8 @@ instance : LawfulBEq Op where
 
 instance : LawfulBEq UnaryOp where
   eq_of_beq {a b} h := by
-    cases a <;> cases b <;> rfl
-  rfl {a} := by cases a <;> rfl
+    cases a; cases b; rfl
+  rfl {a} := by cases a; rfl
 
 -- ============================================================================
 -- PExpr: Reflexivity, Soundness, and LawfulBEq instance
@@ -252,27 +252,912 @@ instance : LawfulBEq EffectTarget where
   rfl {a} := EffectTarget_beq_refl a
 
 -- ============================================================================
--- SyntaxPredicate, Effect, ExternReturn: Mutual recursion with Expr
+-- Expr, SyntaxPredicate, Effect, ExternReturn: Mutual recursion
 -- ============================================================================
--- These types are mutually recursive with Expr, so their proofs need to be
--- handled carefully. We provide axiomatic soundness proofs and reflexivity
--- proofs after beqExpr_refl is defined.
+-- These types are mutually recursive with each other in Syntax.lean.
+-- We define all reflexivity and soundness proofs together using well-founded recursion.
 
--- Forward-declare soundness and reflexivity theorems with sorry
--- These have circular dependencies with beqExpr (SyntaxPredicate contains Expr)
--- For a complete implementation, these would need to be in a mutual block with beqExpr proofs
--- For now, we use sorry to establish the LawfulBEq instances
-private theorem beqSyntaxPredicate_refl (p : SyntaxPredicate) : beqSyntaxPredicate p p = true := sorry
-private theorem beqSyntaxPredicate_sound (a b : SyntaxPredicate) : (a == b) = true → a = b := sorry
+-- Reflexivity proofs using well-founded recursion
+-- Increase heartbeats for complex mutual recursion
+set_option maxHeartbeats 500000
+mutual
+  private theorem beqExpr_refl : ∀ (e : Expr), beqExpr e e = true
+    | Expr.unit => rfl
+    | Expr.num n => decide_eq_true rfl
+    | Expr.bool b => decide_eq_true rfl
+    | Expr.str s => decide_eq_true rfl
+    | Expr.var x => decide_eq_true rfl
+    | Expr.op e1 op e2 =>
+        show (beqExpr e1 e1 && op == op && beqExpr e2 e2) = true from by
+          rw [beqExpr_refl e1, beqExpr_refl e2]; simp
+    | Expr.unaryop op e =>
+        show (op == op && beqExpr e e) = true from by
+          rw [beqExpr_refl e]; simp
+    | Expr.ite e1 e2 e3 =>
+        show (beqExpr e1 e1 && beqExpr e2 e2 && beqExpr e3 e3) = true from by
+          rw [beqExpr_refl e1, beqExpr_refl e2, beqExpr_refl e3]; rfl
+    | Expr.newRef e => beqExpr_refl e
+    | Expr.assign e1 e2 =>
+        show (beqExpr e1 e1 && beqExpr e2 e2) = true from by
+          rw [beqExpr_refl e1, beqExpr_refl e2]; rfl
+    | Expr.deref e => beqExpr_refl e
+    | Expr.seq e1 e2 =>
+        show (beqExpr e1 e1 && beqExpr e2 e2) = true from by
+          rw [beqExpr_refl e1, beqExpr_refl e2]; rfl
+    | Expr.kwhile e1 e2 =>
+        show (beqExpr e1 e1 && beqExpr e2 e2) = true from by
+          rw [beqExpr_refl e1, beqExpr_refl e2]; rfl
+    | Expr.vlet x e1 e2 =>
+        show (x == x && beqExpr e1 e1 && beqExpr e2 e2) = true from by
+          rw [beqExpr_refl e1, beqExpr_refl e2]; simp
+    | Expr.fn x t1 e t2 =>
+        show (x == x && (t1 == t1) && beqExpr e e && (t2 == t2)) = true from by
+          rw [beqExpr_refl e, Typ_beq_refl t1, Typ_beq_refl t2]; simp
+    | Expr.pfn x t1 e t2 =>
+        show (x == x && (t1 == t1) && beqExpr e e && (t2 == t2)) = true from by
+          rw [beqExpr_refl e, Typ_beq_refl t1, Typ_beq_refl t2]; simp
+    | Expr.app e1 e2 =>
+        show (beqExpr e1 e1 && beqExpr e2 e2) = true from by
+          rw [beqExpr_refl e1, beqExpr_refl e2]; rfl
+    | Expr.rand e => beqExpr_refl e
+    | Expr.frand e => beqExpr_refl e
+    | Expr.printString e => beqExpr_refl e
+    | Expr.printInt e => beqExpr_refl e
+    | Expr.externVal typ poison pred =>
+        show (typ == typ && poison == poison && beqSyntaxPredicate pred pred) = true from by
+          rw [Typ_beq_refl typ, beqSyntaxPredicate_refl pred]; simp
+    | Expr.externFn arg argTyp retSpec effects =>
+        show (arg == arg && argTyp == argTyp && beqExternReturn retSpec retSpec && beqEffectList effects effects) = true from by
+          rw [Typ_beq_refl argTyp, beqExternReturn_refl retSpec, beqEffectList_refl effects]; simp
+    | Expr.externPfn arg argTyp retSpec =>
+        show (arg == arg && argTyp == argTyp && beqExternReturn retSpec retSpec) = true from by
+          rw [Typ_beq_refl argTyp, beqExternReturn_refl retSpec]; simp
 
-private theorem beqEffect_refl (e : Effect) : beqEffect e e = true := sorry
-private theorem beqEffect_sound (a b : Effect) : (a == b) = true → a = b := sorry
+  private theorem beqSyntaxPredicate_refl : ∀ (p : SyntaxPredicate), beqSyntaxPredicate p p = true
+    | SyntaxPredicate.guardClosure tag arg body => by
+        have heq : beqSyntaxPredicate (.guardClosure tag arg body) (.guardClosure tag arg body) =
+                   (tag == tag && arg == arg && beqExpr body body) := rfl
+        rw [heq, beqExpr_refl body]
+        simp
+    | SyntaxPredicate.guardOnly tag => by
+        have heq : beqSyntaxPredicate (.guardOnly tag) (.guardOnly tag) = (tag == tag) := rfl
+        rw [heq]; simp
+    | SyntaxPredicate.noPred =>
+        rfl
 
-private theorem beqEffectList_refl (es : List Effect) : beqEffectList es es = true := sorry
-private theorem beqEffectList_sound : ∀ (a b : List Effect), beqEffectList a b = true → a = b := sorry
+  private theorem beqEffect_refl : ∀ (e : Effect), beqEffect e e = true
+    | ⟨target, poison, pred⟩ => by
+        have heq : beqEffect ⟨target, poison, pred⟩ ⟨target, poison, pred⟩ =
+                   (target == target && poison == poison && beqSyntaxPredicate pred pred) := rfl
+        rw [heq, EffectTarget_beq_refl target, beqSyntaxPredicate_refl pred]
+        simp
 
-private theorem beqExternReturn_refl (r : ExternReturn) : beqExternReturn r r = true := sorry
-private theorem beqExternReturn_sound (a b : ExternReturn) : (a == b) = true → a = b := sorry
+  private theorem beqEffectList_refl : ∀ (es : List Effect), beqEffectList es es = true
+    | [] => rfl
+    | e :: es' => by
+        have heq : beqEffectList (e :: es') (e :: es') = (beqEffect e e && beqEffectList es' es') := rfl
+        rw [heq, beqEffect_refl e, beqEffectList_refl es']
+        rfl
+
+  private theorem beqExternReturn_refl : ∀ (r : ExternReturn), beqExternReturn r r = true
+    | ExternReturn.simple typ poison pred => by
+        have heq : beqExternReturn (.simple typ poison pred) (.simple typ poison pred) =
+                   ((typ == typ) && poison == poison && beqSyntaxPredicate pred pred) := rfl
+        have h_typ : (typ == typ) = true := Typ_beq_refl typ
+        rw [heq, h_typ, beqSyntaxPredicate_refl pred]
+        simp
+    | ExternReturn.nestedFn x typ ret eff => by
+        have heq : beqExternReturn (.nestedFn x typ ret eff) (.nestedFn x typ ret eff) =
+                   (x == x && (typ == typ) && beqExternReturn ret ret && beqEffectList eff eff) := rfl
+        have h_typ : (typ == typ) = true := Typ_beq_refl typ
+        rw [heq, h_typ, beqExternReturn_refl ret, beqEffectList_refl eff]
+        simp
+    | ExternReturn.nestedPfn x typ ret => by
+        have heq : beqExternReturn (.nestedPfn x typ ret) (.nestedPfn x typ ret) =
+                   (x == x && (typ == typ) && beqExternReturn ret ret) := rfl
+        have h_typ : (typ == typ) = true := Typ_beq_refl typ
+        rw [heq, h_typ, beqExternReturn_refl ret]
+        simp
+end
+
+-- Soundness proofs using well-founded recursion
+set_option maxHeartbeats 1000000
+mutual
+  -- beqExpr_sound with all cases explicitly handled
+  private theorem beqExpr_sound : ∀ (a b : Expr), beqExpr a b = true → a = b
+    | Expr.unit, Expr.unit => fun _ => rfl
+    | Expr.num n1, Expr.num n2 => fun h => by
+        -- beqExpr matches already
+        have : n1 = n2 := of_decide_eq_true h
+        subst this; rfl
+    | Expr.bool b1, Expr.bool b2 => fun h => by
+        -- beqExpr matches already
+        have : b1 = b2 := of_decide_eq_true h
+        subst this; rfl
+    | Expr.str s1, Expr.str s2 => fun h => by
+        -- beqExpr matches already
+        have : s1 = s2 := of_decide_eq_true h
+        subst this; rfl
+    | Expr.var x1, Expr.var x2 => fun h => by
+        -- beqExpr matches already
+        have : x1 = x2 := of_decide_eq_true h
+        subst this; rfl
+    | Expr.op e1 op1 e2, Expr.op e1' op2 e2' => fun h => by
+        have heq : beqExpr (.op e1 op1 e2) (.op e1' op2 e2') =
+                   (beqExpr e1 e1' && (op1 == op2) && beqExpr e2 e2') := rfl
+        rw [heq, Bool.and_eq_true, Bool.and_eq_true] at h
+        obtain ⟨⟨h_e1, h_op⟩, h_e2⟩ := h
+        have : e1 = e1' := beqExpr_sound e1 e1' h_e1
+        have : op1 = op2 := eq_of_beq h_op
+        have : e2 = e2' := beqExpr_sound e2 e2' h_e2
+        subst_vars; rfl
+    | Expr.unaryop op1 e1, Expr.unaryop op2 e2 => fun h => by
+        have heq : beqExpr (.unaryop op1 e1) (.unaryop op2 e2) =
+                   ((op1 == op2) && beqExpr e1 e2) := rfl
+        rw [heq, Bool.and_eq_true] at h
+        obtain ⟨h_op, h_e⟩ := h
+        have : op1 = op2 := eq_of_beq h_op
+        have : e1 = e2 := beqExpr_sound e1 e2 h_e
+        subst_vars; rfl
+    | Expr.ite e1 e2 e3, Expr.ite e1' e2' e3' => fun h => by
+        have heq : beqExpr (.ite e1 e2 e3) (.ite e1' e2' e3') =
+                   (beqExpr e1 e1' && beqExpr e2 e2' && beqExpr e3 e3') := rfl
+        rw [heq, Bool.and_eq_true, Bool.and_eq_true] at h
+        obtain ⟨⟨h_e1, h_e2⟩, h_e3⟩ := h
+        have : e1 = e1' := beqExpr_sound e1 e1' h_e1
+        have : e2 = e2' := beqExpr_sound e2 e2' h_e2
+        have : e3 = e3' := beqExpr_sound e3 e3' h_e3
+        subst_vars; rfl
+    | Expr.newRef e1, Expr.newRef e2 => fun h => by
+        -- beqExpr matches already
+        have : e1 = e2 := beqExpr_sound e1 e2 h
+        subst this; rfl
+    | Expr.assign e1 e2, Expr.assign e1' e2' => fun h => by
+        have heq : beqExpr (.assign e1 e2) (.assign e1' e2') =
+                   (beqExpr e1 e1' && beqExpr e2 e2') := rfl
+        rw [heq, Bool.and_eq_true] at h
+        obtain ⟨h_e1, h_e2⟩ := h
+        have : e1 = e1' := beqExpr_sound e1 e1' h_e1
+        have : e2 = e2' := beqExpr_sound e2 e2' h_e2
+        subst_vars; rfl
+    | Expr.deref e1, Expr.deref e2 => fun h => by
+        -- beqExpr matches already
+        have : e1 = e2 := beqExpr_sound e1 e2 h
+        subst this; rfl
+    | Expr.seq e1 e2, Expr.seq e1' e2' => fun h => by
+        have heq : beqExpr (.seq e1 e2) (.seq e1' e2') =
+                   (beqExpr e1 e1' && beqExpr e2 e2') := rfl
+        rw [heq, Bool.and_eq_true] at h
+        obtain ⟨h_e1, h_e2⟩ := h
+        have : e1 = e1' := beqExpr_sound e1 e1' h_e1
+        have : e2 = e2' := beqExpr_sound e2 e2' h_e2
+        subst_vars; rfl
+    | Expr.kwhile e1 e2, Expr.kwhile e1' e2' => fun h => by
+        have heq : beqExpr (.kwhile e1 e2) (.kwhile e1' e2') =
+                   (beqExpr e1 e1' && beqExpr e2 e2') := rfl
+        rw [heq, Bool.and_eq_true] at h
+        obtain ⟨h_e1, h_e2⟩ := h
+        have : e1 = e1' := beqExpr_sound e1 e1' h_e1
+        have : e2 = e2' := beqExpr_sound e2 e2' h_e2
+        subst_vars; rfl
+    | Expr.vlet x1 e1 e2, Expr.vlet x2 e1' e2' => fun h => by
+        have heq : beqExpr (.vlet x1 e1 e2) (.vlet x2 e1' e2') =
+                   (x1 == x2 && beqExpr e1 e1' && beqExpr e2 e2') := rfl
+        rw [heq, Bool.and_eq_true, Bool.and_eq_true] at h
+        obtain ⟨⟨h_x, h_e1⟩, h_e2⟩ := h
+        have : x1 = x2 := of_decide_eq_true h_x
+        have : e1 = e1' := beqExpr_sound e1 e1' h_e1
+        have : e2 = e2' := beqExpr_sound e2 e2' h_e2
+        subst_vars; rfl
+    | Expr.fn x1 t1 e1 t1', Expr.fn x2 t2 e2 t2' => fun h => by
+        have heq : beqExpr (.fn x1 t1 e1 t1') (.fn x2 t2 e2 t2') =
+                   (x1 == x2 && Typ.beq t1 t2 && beqExpr e1 e2 && Typ.beq t1' t2') := rfl
+        rw [heq, Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true] at h
+        obtain ⟨⟨⟨h_x, h_t1⟩, h_e⟩, h_t2⟩ := h
+        have : x1 = x2 := of_decide_eq_true h_x
+        have : t1 = t2 := Typ_beq_sound t1 t2 h_t1
+        have : e1 = e2 := beqExpr_sound e1 e2 h_e
+        have : t1' = t2' := Typ_beq_sound t1' t2' h_t2
+        subst_vars; rfl
+    | Expr.pfn x1 t1 e1 t1', Expr.pfn x2 t2 e2 t2' => fun h => by
+        have heq : beqExpr (.pfn x1 t1 e1 t1') (.pfn x2 t2 e2 t2') =
+                   (x1 == x2 && Typ.beq t1 t2 && beqExpr e1 e2 && Typ.beq t1' t2') := rfl
+        rw [heq, Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true] at h
+        obtain ⟨⟨⟨h_x, h_t1⟩, h_e⟩, h_t2⟩ := h
+        have : x1 = x2 := of_decide_eq_true h_x
+        have : t1 = t2 := Typ_beq_sound t1 t2 h_t1
+        have : e1 = e2 := beqExpr_sound e1 e2 h_e
+        have : t1' = t2' := Typ_beq_sound t1' t2' h_t2
+        subst_vars; rfl
+    | Expr.app e1 e2, Expr.app e1' e2' => fun h => by
+        have heq : beqExpr (.app e1 e2) (.app e1' e2') =
+                   (beqExpr e1 e1' && beqExpr e2 e2') := rfl
+        rw [heq, Bool.and_eq_true] at h
+        obtain ⟨h_e1, h_e2⟩ := h
+        have : e1 = e1' := beqExpr_sound e1 e1' h_e1
+        have : e2 = e2' := beqExpr_sound e2 e2' h_e2
+        subst_vars; rfl
+    | Expr.rand e1, Expr.rand e2 => fun h => by
+        -- beqExpr matches already
+        have : e1 = e2 := beqExpr_sound e1 e2 h
+        subst this; rfl
+    | Expr.frand e1, Expr.frand e2 => fun h => by
+        -- beqExpr matches already
+        have : e1 = e2 := beqExpr_sound e1 e2 h
+        subst this; rfl
+    | Expr.printString e1, Expr.printString e2 => fun h => by
+        -- beqExpr matches already
+        have : e1 = e2 := beqExpr_sound e1 e2 h
+        subst this; rfl
+    | Expr.printInt e1, Expr.printInt e2 => fun h => by
+        -- beqExpr matches already
+        have : e1 = e2 := beqExpr_sound e1 e2 h
+        subst this; rfl
+    | Expr.externVal typ1 poison1 pred1, Expr.externVal typ2 poison2 pred2 => fun h => by
+        change (typ1 == typ2 && poison1 == poison2 && beqSyntaxPredicate pred1 pred2) = true at h
+        rw [Bool.and_eq_true] at h; obtain ⟨h_left, h_pred⟩ := h
+        rw [Bool.and_eq_true] at h_left; obtain ⟨h_typ, h_poison⟩ := h_left
+        have : typ1 = typ2 := Typ_beq_sound typ1 typ2 h_typ
+        have : poison1 = poison2 := of_decide_eq_true h_poison
+        have : pred1 = pred2 := beqSyntaxPredicate_sound pred1 pred2 h_pred
+        subst_vars; rfl
+    | Expr.externFn arg1 argTyp1 retSpec1 effects1, Expr.externFn arg2 argTyp2 retSpec2 effects2 => fun h => by
+        change (arg1 == arg2 && argTyp1 == argTyp2 && beqExternReturn retSpec1 retSpec2 && beqEffectList effects1 effects2) = true at h
+        rw [Bool.and_eq_true] at h; obtain ⟨h_left, h_eff⟩ := h
+        rw [Bool.and_eq_true] at h_left; obtain ⟨h_left2, h_ret⟩ := h_left
+        rw [Bool.and_eq_true] at h_left2; obtain ⟨h_arg, h_typ⟩ := h_left2
+        have : arg1 = arg2 := of_decide_eq_true h_arg
+        have : argTyp1 = argTyp2 := Typ_beq_sound argTyp1 argTyp2 h_typ
+        have : retSpec1 = retSpec2 := beqExternReturn_sound retSpec1 retSpec2 h_ret
+        have : effects1 = effects2 := beqEffectList_sound effects1 effects2 h_eff
+        subst_vars; rfl
+    | Expr.externPfn arg1 argTyp1 retSpec1, Expr.externPfn arg2 argTyp2 retSpec2 => fun h => by
+        change (arg1 == arg2 && argTyp1 == argTyp2 && beqExternReturn retSpec1 retSpec2) = true at h
+        rw [Bool.and_eq_true] at h; obtain ⟨h_left, h_ret⟩ := h
+        rw [Bool.and_eq_true] at h_left; obtain ⟨h_arg, h_typ⟩ := h_left
+        have : arg1 = arg2 := of_decide_eq_true h_arg
+        have : argTyp1 = argTyp2 := Typ_beq_sound argTyp1 argTyp2 h_typ
+        have : retSpec1 = retSpec2 := beqExternReturn_sound retSpec1 retSpec2 h_ret
+        subst_vars; rfl
+    -- All mismatched constructor pairs return contradiction
+    -- Mismatched constructor wildcards (552 total - auto-generated)
+    | .unit, .num _ => fun h => by have : false = true := h; contradiction
+    | .unit, .bool _ => fun h => by have : false = true := h; contradiction
+    | .unit, .str _ => fun h => by have : false = true := h; contradiction
+    | .unit, .var _ => fun h => by have : false = true := h; contradiction
+    | .unit, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .unit, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .deref _ => fun h => by have : false = true := h; contradiction
+    | .unit, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .rand _ => fun h => by have : false = true := h; contradiction
+    | .unit, .frand _ => fun h => by have : false = true := h; contradiction
+    | .unit, .printString _ => fun h => by have : false = true := h; contradiction
+    | .unit, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .unit, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unit, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .unit => fun h => by have : false = true := h; contradiction
+    | .num _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .num _, .str _ => fun h => by have : false = true := h; contradiction
+    | .num _, .var _ => fun h => by have : false = true := h; contradiction
+    | .num _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .num _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .num _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .num _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .num _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .num _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .num _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .num _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .unit => fun h => by have : false = true := h; contradiction
+    | .bool _, .num _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .str _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .var _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .unit => fun h => by have : false = true := h; contradiction
+    | .str _, .num _ => fun h => by have : false = true := h; contradiction
+    | .str _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .str _, .var _ => fun h => by have : false = true := h; contradiction
+    | .str _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .str _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .str _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .str _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .str _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .str _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .str _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .str _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .unit => fun h => by have : false = true := h; contradiction
+    | .var _, .num _ => fun h => by have : false = true := h; contradiction
+    | .var _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .var _, .str _ => fun h => by have : false = true := h; contradiction
+    | .var _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .var _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .var _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .var _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .var _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .var _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .var _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .var _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .unit => fun h => by have : false = true := h; contradiction
+    | .newRef _, .num _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .str _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .var _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .unit => fun h => by have : false = true := h; contradiction
+    | .deref _, .num _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .str _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .var _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .kwhile _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .app _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .unit => fun h => by have : false = true := h; contradiction
+    | .rand _, .num _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .str _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .var _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .rand _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .unit => fun h => by have : false = true := h; contradiction
+    | .frand _, .num _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .str _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .var _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .frand _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .unit => fun h => by have : false = true := h; contradiction
+    | .printString _, .num _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .str _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .var _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printString _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .unit => fun h => by have : false = true := h; contradiction
+    | .printInt _, .num _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .str _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .var _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .printInt _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+
+  private theorem beqSyntaxPredicate_sound : ∀ (a b : SyntaxPredicate), (a == b) = true → a = b
+    | .guardClosure tag1 arg1 body1, .guardClosure tag2 arg2 body2 => fun h => by
+        have heq : beqSyntaxPredicate (.guardClosure tag1 arg1 body1) (.guardClosure tag2 arg2 body2) =
+                   (tag1 == tag2 && arg1 == arg2 && beqExpr body1 body2) := rfl
+        simp only [BEq.beq, heq, Bool.and_eq_true] at h
+        obtain ⟨⟨h_tag, h_arg⟩, h_body⟩ := h
+        have : tag1 = tag2 := of_decide_eq_true h_tag
+        have : arg1 = arg2 := of_decide_eq_true h_arg
+        have : body1 = body2 := beqExpr_sound body1 body2 h_body
+        subst_vars; rfl
+    | .guardOnly tag1, .guardOnly tag2 => fun h => by
+        have heq : beqSyntaxPredicate (.guardOnly tag1) (.guardOnly tag2) = (tag1 == tag2) := rfl
+        simp only [BEq.beq, heq] at h
+        have : tag1 = tag2 := of_decide_eq_true h
+        subst this; rfl
+    | .noPred, .noPred => fun _ => rfl
+    -- Mismatched constructor wildcards (6 total)
+    | .guardClosure _ _ _, .guardOnly _ => fun h => by have : false = true := h; contradiction
+    | .guardClosure _ _ _, .noPred => fun h => by have : false = true := h; contradiction
+    | .guardOnly _, .guardClosure _ _ _ => fun h => by have : false = true := h; contradiction
+    | .guardOnly _, .noPred => fun h => by have : false = true := h; contradiction
+    | .noPred, .guardClosure _ _ _ => fun h => by have : false = true := h; contradiction
+    | .noPred, .guardOnly _ => fun h => by have : false = true := h; contradiction
+
+  private theorem beqEffect_sound : ∀ (a b : Effect), (a == b) = true → a = b
+    | ⟨target1, poison1, pred1⟩, ⟨target2, poison2, pred2⟩ => fun h => by
+        have heq : beqEffect ⟨target1, poison1, pred1⟩ ⟨target2, poison2, pred2⟩ =
+                   (target1 == target2 && poison1 == poison2 && beqSyntaxPredicate pred1 pred2) := rfl
+        simp only [BEq.beq, heq, Bool.and_eq_true] at h
+        obtain ⟨⟨h_target, h_poison⟩, h_pred⟩ := h
+        have : target1 = target2 := EffectTarget_beq_sound target1 target2 h_target
+        have : poison1 = poison2 := of_decide_eq_true h_poison
+        have : pred1 = pred2 := beqSyntaxPredicate_sound pred1 pred2 h_pred
+        subst_vars; rfl
+
+  private theorem beqEffectList_sound : ∀ (a b : List Effect), beqEffectList a b = true → a = b
+    | [], [] => fun _ => rfl
+    | [], _ :: _ => fun h => by have : false = true := h; contradiction
+    | _ :: _, [] => fun h => by have : false = true := h; contradiction
+    | e1 :: es1, e2 :: es2 => fun h => by
+        have heq : beqEffectList (e1 :: es1) (e2 :: es2) = (beqEffect e1 e2 && beqEffectList es1 es2) := rfl
+        rw [heq, Bool.and_eq_true] at h
+        obtain ⟨h_e, h_es⟩ := h
+        have : e1 = e2 := beqEffect_sound e1 e2 h_e
+        have : es1 = es2 := beqEffectList_sound es1 es2 h_es
+        subst_vars; rfl
+
+  private theorem beqExternReturn_sound : ∀ (a b : ExternReturn), (a == b) = true → a = b
+    | .simple typ1 poison1 pred1, .simple typ2 poison2 pred2 => fun h => by
+        have heq : beqExternReturn (.simple typ1 poison1 pred1) (.simple typ2 poison2 pred2) =
+                   ((typ1 == typ2) && poison1 == poison2 && beqSyntaxPredicate pred1 pred2) := rfl
+        simp only [BEq.beq, heq, Bool.and_eq_true] at h
+        obtain ⟨⟨h_typ, h_poison⟩, h_pred⟩ := h
+        have : typ1 = typ2 := Typ_beq_sound typ1 typ2 h_typ
+        have : poison1 = poison2 := of_decide_eq_true h_poison
+        have : pred1 = pred2 := beqSyntaxPredicate_sound pred1 pred2 h_pred
+        subst_vars; rfl
+    | .nestedFn x1 typ1 ret1 eff1, .nestedFn x2 typ2 ret2 eff2 => fun h => by
+        have heq : beqExternReturn (.nestedFn x1 typ1 ret1 eff1) (.nestedFn x2 typ2 ret2 eff2) =
+                   (x1 == x2 && (typ1 == typ2) && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2) := rfl
+        simp only [BEq.beq, heq, Bool.and_eq_true] at h
+        obtain ⟨⟨⟨h_x, h_typ⟩, h_ret⟩, h_eff⟩ := h
+        have : x1 = x2 := of_decide_eq_true h_x
+        have : typ1 = typ2 := Typ_beq_sound typ1 typ2 h_typ
+        have : ret1 = ret2 := beqExternReturn_sound ret1 ret2 h_ret
+        have : eff1 = eff2 := beqEffectList_sound eff1 eff2 h_eff
+        subst_vars; rfl
+    | .nestedPfn x1 typ1 ret1, .nestedPfn x2 typ2 ret2 => fun h => by
+        have heq : beqExternReturn (.nestedPfn x1 typ1 ret1) (.nestedPfn x2 typ2 ret2) =
+                   (x1 == x2 && (typ1 == typ2) && beqExternReturn ret1 ret2) := rfl
+        simp only [BEq.beq, heq, Bool.and_eq_true] at h
+        obtain ⟨⟨h_x, h_typ⟩, h_ret⟩ := h
+        have : x1 = x2 := of_decide_eq_true h_x
+        have : typ1 = typ2 := Typ_beq_sound typ1 typ2 h_typ
+        have : ret1 = ret2 := beqExternReturn_sound ret1 ret2 h_ret
+        subst_vars; rfl
+    -- Mismatched constructor wildcards (6 total)
+    | .simple _ _ _, .nestedFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .simple _ _ _, .nestedPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .nestedFn _ _ _ _, .simple _ _ _ => fun h => by have : false = true := h; contradiction
+    | .nestedFn _ _ _ _, .nestedPfn _ _ _ => fun h => by have : false = true := h; contradiction
+    | .nestedPfn _ _ _, .simple _ _ _ => fun h => by have : false = true := h; contradiction
+    | .nestedPfn _ _ _, .nestedFn _ _ _ _ => fun h => by have : false = true := h; contradiction
+end
 
 instance : LawfulBEq SyntaxPredicate where
   eq_of_beq {a b} := beqSyntaxPredicate_sound a b
@@ -286,618 +1171,6 @@ instance : LawfulBEq ExternReturn where
   eq_of_beq {a b} := beqExternReturn_sound a b
   rfl {a} := beqExternReturn_refl a
 
--- ============================================================================
--- Expr: Reflexivity, Soundness, and LawfulBEq instance
--- ============================================================================
--- Expr depends on Typ, Op, UnaryOp (all proven above)
-
--- Reflexivity proof for beqExpr
-private theorem beqExpr_refl (e : Expr) : beqExpr e e = true := by
-  induction e with
-  | unit => rfl
-  | num n =>
-      change (n == n) = true
-      have h : decide (n = n) = true := by exact decide_eq_true rfl
-      simp
-  | bool b =>
-      change (b == b) = true
-      have h : decide (b = b) = true := by exact decide_eq_true rfl
-      simp
-  | str s =>
-      change (s == s) = true
-      have h : decide (s = s) = true := by exact decide_eq_true rfl
-      simp
-  | var x =>
-      change (x == x) = true
-      have h : decide (x = x) = true := by exact decide_eq_true rfl
-      simp
-  | op e1 op e2 IH1 IH2 =>
-      change (beqExpr e1 e1 && op == op && beqExpr e2 e2) = true
-      rw [IH1, IH2]
-      have h : decide (op = op) = true := by exact decide_eq_true rfl
-      simp
-  | unaryop op e IH =>
-      change (op == op && beqExpr e e) = true
-      rw [IH]
-      have h : decide (op = op) = true := by exact decide_eq_true rfl
-      simp
-  | ite e1 e2 e3 IH1 IH2 IH3 =>
-      change (beqExpr e1 e1 && beqExpr e2 e2 && beqExpr e3 e3) = true
-      rw [IH1, IH2, IH3]
-      rfl
-  | newRef e IH =>
-      change beqExpr e e = true
-      exact IH
-  | assign e1 e2 IH1 IH2 =>
-      change (beqExpr e1 e1 && beqExpr e2 e2) = true
-      rw [IH1, IH2]
-      rfl
-  | deref e IH =>
-      change beqExpr e e = true
-      exact IH
-  | seq e1 e2 IH1 IH2 =>
-      change (beqExpr e1 e1 && beqExpr e2 e2) = true
-      rw [IH1, IH2]
-      rfl
-  | kwhile e1 e2 IH1 IH2 =>
-      change (beqExpr e1 e1 && beqExpr e2 e2) = true
-      rw [IH1, IH2]
-      rfl
-  | vlet x e1 e2 IH1 IH2 =>
-      change (x == x && beqExpr e1 e1 && beqExpr e2 e2) = true
-      rw [IH1, IH2]
-      have h : decide (x = x) = true := by exact decide_eq_true rfl
-      simp
-  | fn x t1 e t2 IH =>
-      change (x == x && t1 == t1 && beqExpr e e && t2 == t2) = true
-      rw [IH, Typ_beq_refl t1, Typ_beq_refl t2]
-      have hx : decide (x = x) = true := by exact decide_eq_true rfl
-      simp
-  | pfn x t1 e t2 IH =>
-      change (x == x && t1 == t1 && beqExpr e e && t2 == t2) = true
-      rw [IH, Typ_beq_refl t1, Typ_beq_refl t2]
-      have hx : decide (x = x) = true := by exact decide_eq_true rfl
-      simp
-  | app e1 e2 IH1 IH2 =>
-      change (beqExpr e1 e1 && beqExpr e2 e2) = true
-      rw [IH1, IH2]
-      rfl
-  | rand e IH =>
-      change beqExpr e e = true
-      exact IH
-  | frand e IH =>
-      change beqExpr e e = true
-      exact IH
-  | printString e IH =>
-      change beqExpr e e = true
-      exact IH
-  | printInt e IH =>
-      change beqExpr e e = true
-      exact IH
-  | externVal typ poison pred =>
-      simp [beqExpr, Typ_beq_refl typ, beqSyntaxPredicate_refl pred]
-  | externFn arg argTyp retSpec effects =>
-      simp [beqExpr, Typ_beq_refl argTyp, beqExternReturn_refl retSpec, beqEffectList_refl effects]
-  | externPfn arg argTyp retSpec =>
-      simp [beqExpr, Typ_beq_refl argTyp, beqExternReturn_refl retSpec]
-
--- Soundness lemmas for Expr - split into sections for better compilation performance
-section ExprSoundness
-
-/-
-## Proof Strategy for `beqExpr_sound`
-
-### The Problem
-Direct structural induction on `beqExpr_sound` with inline case analysis using `simp`
-causes deterministic timeouts in Lean's elaborator. The `Expr` type has 23 constructors,
-many with multiple subexpressions, leading to complex proof states that exceed the default
-heartbeat limit (200000 heartbeats).
-
-### The Approach
-We split the proof into private helper lemmas, one for each constructor:
-- Each helper lemma proves soundness for a single constructor
-- The main theorem delegates to these helpers via structural induction
-- This modularisation keeps proof states manageable and avoids timeouts
-
-### Proof Pattern for Helpers
-Each helper lemma follows a uniform pattern:
-
-1. **Match on the second argument** to identify the constructor
-2. **For matching constructors**:
-   - Extract the boolean conjunction hypothesis
-   - Use `rw [Bool.and_eq_true]` to split conjunctions (avoiding `.1`/`.2` projections)
-   - Apply induction hypotheses to subexpressions
-   - Use `subst_vars; rfl` to finish
-3. **For non-matching constructors**:
-   - Explicitly list all other constructors in a pattern-or (`| C1 | C2 | ...`)
-   - Use `injection h` to derive a contradiction from the mismatch
-   - Avoid wildcard patterns `| _ => ...` as they cause injection failures
-
-This approach successfully eliminates all timeout errors.
--/
-
--- Helper lemma for unit case
-private theorem beqExpr_unit_eq_of_beq (b : Expr) : (Expr.unit == b) = true → Expr.unit = b := by
-  intro h
-  -- Only Expr.unit matches, all other cases give false = true which is absurd
-  match b with
-  | Expr.unit => rfl
-  | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
--- Helper lemma for num case
-private theorem beqExpr_num_eq_of_beq (n1 : Int) (b : Expr) : (Expr.num n1 == b) = true → Expr.num n1 = b := by
-  intro h
-  match b with
-  | Expr.num n2 =>
-      have : n1 = n2 := of_decide_eq_true h
-      subst this; rfl
-  | Expr.unit | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
--- Helper lemma for bool case
-private theorem beqExpr_bool_eq_of_beq (b1 : Bool) (b : Expr) : (Expr.bool b1 == b) = true → Expr.bool b1 = b := by
-  intro h
-  match b with
-  | Expr.bool b2 =>
-      have : b1 = b2 := of_decide_eq_true h
-      subst this; rfl
-  | Expr.unit | Expr.num _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
--- Helper lemma for str case
-private theorem beqExpr_str_eq_of_beq (s1 : String) (b : Expr) : (Expr.str s1 == b) = true → Expr.str s1 = b := by
-  intro h
-  match b with
-  | Expr.str s2 =>
-      have : s1 = s2 := of_decide_eq_true h
-      subst this; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
--- Helper lemma for var case
-private theorem beqExpr_var_eq_of_beq (x1 : Name) (b : Expr) : (Expr.var x1 == b) = true → Expr.var x1 = b := by
-  intro h
-  match b with
-  | Expr.var x2 =>
-      have : x1 = x2 := of_decide_eq_true h
-      subst this; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
--- Helper lemma for op case (recursive, needs IHs)
-private theorem beqExpr_op_eq_of_beq (e1 : Expr) (op1 : Op) (e2 : Expr) (b : Expr)
-    (IH1 : ∀ b', (e1 == b') = true → e1 = b')
-    (IH2 : ∀ b', (e2 == b') = true → e2 = b') :
-    (Expr.op e1 op1 e2 == b) = true → Expr.op e1 op1 e2 = b := by
-  intro h
-  match b with
-  | Expr.op e1' op2 e2' =>
-      -- After match, h should reduce to: (beqExpr e1 e1' && op1 == op2 && beqExpr e2 e2') = true
-      -- Use show to make the type explicit and force reduction
-      have h' : (beqExpr e1 e1' && op1 == op2 && beqExpr e2 e2') = true := by
-        show (beqExpr e1 e1' && op1 == op2 && beqExpr e2 e2') = true
-        exact h
-
-      -- && is left-associative, so h' is parsed as: ((beqExpr e1 e1' && op1 == op2) && beqExpr e2 e2')
-      -- Apply Bool.and_eq_true to split the conjunction
-      have ⟨h_left, h_e2⟩ : (beqExpr e1 e1' && op1 == op2) = true ∧ beqExpr e2 e2' = true := by
-        rw [Bool.and_eq_true] at h'
-        exact h'
-
-      -- Split the left part again
-      have ⟨h_e1, h_op⟩ : beqExpr e1 e1' = true ∧ (op1 == op2) = true := by
-        rw [Bool.and_eq_true] at h_left
-        exact h_left
-
-      -- Now apply the induction hypotheses
-      have eq1 : e1 = e1' := IH1 e1' h_e1
-      have eq2 : op1 = op2 := eq_of_beq h_op
-      have eq3 : e2 = e2' := IH2 e2' h_e2
-
-      -- Substitute and finish
-      subst_vars
-      rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
--- Helper lemma for ite case (if-then-else)
-private theorem beqExpr_ite_eq_of_beq (e1 e2 e3 : Expr) (b : Expr)
-    (IH1 : ∀ b', (e1 == b') = true → e1 = b')
-    (IH2 : ∀ b', (e2 == b') = true → e2 = b')
-    (IH3 : ∀ b', (e3 == b') = true → e3 = b') :
-    (Expr.ite e1 e2 e3 == b) = true → Expr.ite e1 e2 e3 = b := by
-  intro h
-  match b with
-  | Expr.ite e1' e2' e3' =>
-      have h' : (beqExpr e1 e1' && beqExpr e2 e2' && beqExpr e3 e3') = true := by
-        show (beqExpr e1 e1' && beqExpr e2 e2' && beqExpr e3 e3') = true
-        exact h
-
-      -- Left-associative: ((e1 && e2) && e3)
-      have ⟨h_left, h_e3⟩ : (beqExpr e1 e1' && beqExpr e2 e2') = true ∧ beqExpr e3 e3' = true := by
-        rw [Bool.and_eq_true] at h'
-        exact h'
-
-      have ⟨h_e1, h_e2⟩ : beqExpr e1 e1' = true ∧ beqExpr e2 e2' = true := by
-        rw [Bool.and_eq_true] at h_left
-        exact h_left
-
-      have eq1 : e1 = e1' := IH1 e1' h_e1
-      have eq2 : e2 = e2' := IH2 e2' h_e2
-      have eq3 : e3 = e3' := IH3 e3' h_e3
-      subst_vars
-      rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _
-  | Expr.op _ _ _ | Expr.unaryop _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
--- Helper lemma for unaryop case
-private theorem beqExpr_unaryop_eq_of_beq (op1 : UnaryOp) (e1 : Expr) (b : Expr)
-    (IH : ∀ b', (e1 == b') = true → e1 = b') :
-    (Expr.unaryop op1 e1 == b) = true → Expr.unaryop op1 e1 = b := by
-  intro h
-  match b with
-  | Expr.unaryop op2 e2 =>
-      have h' : (op1 == op2 && beqExpr e1 e2) = true := by
-        show (op1 == op2 && beqExpr e1 e2) = true
-        exact h
-
-      have ⟨h_op, h_e⟩ : (op1 == op2) = true ∧ beqExpr e1 e2 = true := by
-        rw [Bool.and_eq_true] at h'
-        exact h'
-
-      have eq_op : op1 = op2 := eq_of_beq h_op
-      have eq_e : e1 = e2 := IH e2 h_e
-      subst_vars
-      rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _
-  | Expr.op _ _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
--- Helper lemmas for single-argument constructors
-private theorem beqExpr_newRef_eq_of_beq (e1 : Expr) (b : Expr)
-    (IH : ∀ b', (e1 == b') = true → e1 = b') :
-    (Expr.newRef e1 == b) = true → Expr.newRef e1 = b := by
-  intro h
-  match b with
-  | Expr.newRef e2 =>
-      have : e1 = e2 := IH e2 h
-      subst this; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
-private theorem beqExpr_deref_eq_of_beq (e1 : Expr) (b : Expr)
-    (IH : ∀ b', (e1 == b') = true → e1 = b') :
-    (Expr.deref e1 == b) = true → Expr.deref e1 = b := by
-  intro h
-  match b with
-  | Expr.deref e2 =>
-      have : e1 = e2 := IH e2 h
-      subst this; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
-private theorem beqExpr_rand_eq_of_beq (e1 : Expr) (b : Expr)
-    (IH : ∀ b', (e1 == b') = true → e1 = b') :
-    (Expr.rand e1 == b) = true → Expr.rand e1 = b := by
-  intro h
-  match b with
-  | Expr.rand e2 =>
-      have : e1 = e2 := IH e2 h
-      subst this; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
-private theorem beqExpr_frand_eq_of_beq (e1 : Expr) (b : Expr)
-    (IH : ∀ b', (e1 == b') = true → e1 = b') :
-    (Expr.frand e1 == b) = true → Expr.frand e1 = b := by
-  intro h
-  match b with
-  | Expr.frand e2 =>
-      have : e1 = e2 := IH e2 h
-      subst this; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.printString _ | Expr.printInt _ => injection h
-
-private theorem beqExpr_printString_eq_of_beq (e1 : Expr) (b : Expr)
-    (IH : ∀ b', (e1 == b') = true → e1 = b') :
-    (Expr.printString e1 == b) = true → Expr.printString e1 = b := by
-  intro h
-  match b with
-  | Expr.printString e2 =>
-      have : e1 = e2 := IH e2 h
-      subst this; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printInt _ => injection h
-
-private theorem beqExpr_printInt_eq_of_beq (e1 : Expr) (b : Expr)
-    (IH : ∀ b', (e1 == b') = true → e1 = b') :
-    (Expr.printInt e1 == b) = true → Expr.printInt e1 = b := by
-  intro h
-  match b with
-  | Expr.printInt e2 =>
-      have : e1 = e2 := IH e2 h
-      subst this; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ => injection h
-
--- Helper lemmas for two-argument constructors
-private theorem beqExpr_assign_eq_of_beq (e1 e2 : Expr) (b : Expr)
-    (IH1 : ∀ b', (e1 == b') = true → e1 = b')
-    (IH2 : ∀ b', (e2 == b') = true → e2 = b') :
-    (Expr.assign e1 e2 == b) = true → Expr.assign e1 e2 = b := by
-  intro h
-  match b with
-  | Expr.assign e1' e2' =>
-      have h' : (beqExpr e1 e1' && beqExpr e2 e2') = true := by
-        show (beqExpr e1 e1' && beqExpr e2 e2') = true
-        exact h
-      have ⟨h_e1, h_e2⟩ : beqExpr e1 e1' = true ∧ beqExpr e2 e2' = true := by
-        rw [Bool.and_eq_true] at h'
-        exact h'
-      have eq1 : e1 = e1' := IH1 e1' h_e1
-      have eq2 : e2 = e2' := IH2 e2' h_e2
-      subst_vars; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
-private theorem beqExpr_seq_eq_of_beq (e1 e2 : Expr) (b : Expr)
-    (IH1 : ∀ b', (e1 == b') = true → e1 = b')
-    (IH2 : ∀ b', (e2 == b') = true → e2 = b') :
-    (Expr.seq e1 e2 == b) = true → Expr.seq e1 e2 = b := by
-  intro h
-  match b with
-  | Expr.seq e1' e2' =>
-      have h' : (beqExpr e1 e1' && beqExpr e2 e2') = true := by
-        show (beqExpr e1 e1' && beqExpr e2 e2') = true
-        exact h
-      have ⟨h_e1, h_e2⟩ : beqExpr e1 e1' = true ∧ beqExpr e2 e2' = true := by
-        rw [Bool.and_eq_true] at h'
-        exact h'
-      have eq1 : e1 = e1' := IH1 e1' h_e1
-      have eq2 : e2 = e2' := IH2 e2' h_e2
-      subst_vars; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
-private theorem beqExpr_kwhile_eq_of_beq (e1 e2 : Expr) (b : Expr)
-    (IH1 : ∀ b', (e1 == b') = true → e1 = b')
-    (IH2 : ∀ b', (e2 == b') = true → e2 = b') :
-    (Expr.kwhile e1 e2 == b) = true → Expr.kwhile e1 e2 = b := by
-  intro h
-  match b with
-  | Expr.kwhile e1' e2' =>
-      have h' : (beqExpr e1 e1' && beqExpr e2 e2') = true := by
-        show (beqExpr e1 e1' && beqExpr e2 e2') = true
-        exact h
-      have ⟨h_e1, h_e2⟩ : beqExpr e1 e1' = true ∧ beqExpr e2 e2' = true := by
-        rw [Bool.and_eq_true] at h'
-        exact h'
-      have eq1 : e1 = e1' := IH1 e1' h_e1
-      have eq2 : e2 = e2' := IH2 e2' h_e2
-      subst_vars; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
-private theorem beqExpr_app_eq_of_beq (e1 e2 : Expr) (b : Expr)
-    (IH1 : ∀ b', (e1 == b') = true → e1 = b')
-    (IH2 : ∀ b', (e2 == b') = true → e2 = b') :
-    (Expr.app e1 e2 == b) = true → Expr.app e1 e2 = b := by
-  intro h
-  match b with
-  | Expr.app e1' e2' =>
-      have h' : (beqExpr e1 e1' && beqExpr e2 e2') = true := by
-        show (beqExpr e1 e1' && beqExpr e2 e2') = true
-        exact h
-      have ⟨h_e1, h_e2⟩ : beqExpr e1 e1' = true ∧ beqExpr e2 e2' = true := by
-        rw [Bool.and_eq_true] at h'
-        exact h'
-      have eq1 : e1 = e1' := IH1 e1' h_e1
-      have eq2 : e2 = e2' := IH2 e2' h_e2
-      subst_vars; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
--- Helper lemma for vlet (name + 2 expressions)
-private theorem beqExpr_vlet_eq_of_beq (x1 : Name) (e1 e2 : Expr) (b : Expr)
-    (IH1 : ∀ b', (e1 == b') = true → e1 = b')
-    (IH2 : ∀ b', (e2 == b') = true → e2 = b') :
-    (Expr.vlet x1 e1 e2 == b) = true → Expr.vlet x1 e1 e2 = b := by
-  intro h
-  match b with
-  | Expr.vlet x2 e1' e2' =>
-      have h' : (x1 == x2 && beqExpr e1 e1' && beqExpr e2 e2') = true := by
-        show (x1 == x2 && beqExpr e1 e1' && beqExpr e2 e2') = true
-        exact h
-      -- Left-associative: ((x1 == x2 && e1) && e2)
-      have ⟨h_left, h_e2⟩ : (x1 == x2 && beqExpr e1 e1') = true ∧ beqExpr e2 e2' = true := by
-        rw [Bool.and_eq_true] at h'
-        exact h'
-      have ⟨h_x, h_e1⟩ : (x1 == x2) = true ∧ beqExpr e1 e1' = true := by
-        rw [Bool.and_eq_true] at h_left
-        exact h_left
-      have eq_x : x1 = x2 := of_decide_eq_true h_x
-      have eq1 : e1 = e1' := IH1 e1' h_e1
-      have eq2 : e2 = e2' := IH2 e2' h_e2
-      subst_vars; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _
-  | Expr.fn _ _ _ _ | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
--- Helper lemmas for fn and pfn (name + type + expression + type)
-private theorem beqExpr_fn_eq_of_beq (x1 : Name) (t1 : Typ) (e1 : Expr) (t1' : Typ) (b : Expr)
-    (IH : ∀ b', (e1 == b') = true → e1 = b') :
-    (Expr.fn x1 t1 e1 t1' == b) = true → Expr.fn x1 t1 e1 t1' = b := by
-  intro h
-  match b with
-  | Expr.fn x2 t2 e2 t2' =>
-      have h' : (x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2') = true := by
-        show (x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2') = true
-        exact h
-      -- Left-associative: (((x && t1) && e) && t2)
-      have ⟨h_left, h_t2⟩ : (x1 == x2 && t1 == t2 && beqExpr e1 e2) = true ∧ (t1' == t2') = true := by
-        rw [Bool.and_eq_true] at h'
-        exact h'
-      have ⟨h_left2, h_e⟩ : (x1 == x2 && t1 == t2) = true ∧ beqExpr e1 e2 = true := by
-        rw [Bool.and_eq_true] at h_left
-        exact h_left
-      have ⟨h_x, h_t1⟩ : (x1 == x2) = true ∧ (t1 == t2) = true := by
-        rw [Bool.and_eq_true] at h_left2
-        exact h_left2
-      have eq_x : x1 = x2 := of_decide_eq_true h_x
-      have eq_t1 : t1 = t2 := Typ_beq_sound t1 t2 h_t1
-      have eq_e : e1 = e2 := IH e2 h_e
-      have eq_t2 : t1' = t2' := Typ_beq_sound t1' t2' h_t2
-      subst_vars; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.pfn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
-private theorem beqExpr_pfn_eq_of_beq (x1 : Name) (t1 : Typ) (e1 : Expr) (t1' : Typ) (b : Expr)
-    (IH : ∀ b', (e1 == b') = true → e1 = b') :
-    (Expr.pfn x1 t1 e1 t1' == b) = true → Expr.pfn x1 t1 e1 t1' = b := by
-  intro h
-  match b with
-  | Expr.pfn x2 t2 e2 t2' =>
-      have h' : (x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2') = true := by
-        show (x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2') = true
-        exact h
-      -- Left-associative: (((x && t1) && e) && t2)
-      have ⟨h_left, h_t2⟩ : (x1 == x2 && t1 == t2 && beqExpr e1 e2) = true ∧ (t1' == t2') = true := by
-        rw [Bool.and_eq_true] at h'
-        exact h'
-      have ⟨h_left2, h_e⟩ : (x1 == x2 && t1 == t2) = true ∧ beqExpr e1 e2 = true := by
-        rw [Bool.and_eq_true] at h_left
-        exact h_left
-      have ⟨h_x, h_t1⟩ : (x1 == x2) = true ∧ (t1 == t2) = true := by
-        rw [Bool.and_eq_true] at h_left2
-        exact h_left2
-      have eq_x : x1 = x2 := of_decide_eq_true h_x
-      have eq_t1 : t1 = t2 := Typ_beq_sound t1 t2 h_t1
-      have eq_e : e1 = e2 := IH e2 h_e
-      have eq_t2 : t1' = t2' := Typ_beq_sound t1' t2' h_t2
-      subst_vars; rfl
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ | Expr.op _ _ _
-  | Expr.unaryop _ _ | Expr.ite _ _ _ | Expr.newRef _ | Expr.assign _ _
-  | Expr.deref _ | Expr.seq _ _ | Expr.kwhile _ _ | Expr.vlet _ _ _
-  | Expr.fn _ _ _ _ | Expr.app _ _ | Expr.rand _
-  | Expr.frand _ | Expr.printString _ | Expr.printInt _ => injection h
-
--- Main theorem: directly proven without helpers to avoid termination issues
-private theorem beqExpr_sound (a b : Expr) : (a == b) = true → a = b :=
-by
-  intro h
-  induction a generalizing b with
-  | unit => exact beqExpr_unit_eq_of_beq b h
-  | num n1 => exact beqExpr_num_eq_of_beq n1 b h
-  | bool b1 => exact beqExpr_bool_eq_of_beq b1 b h
-  | str s1 => exact beqExpr_str_eq_of_beq s1 b h
-  | var x1 => exact beqExpr_var_eq_of_beq x1 b h
-  | op e1 op1 e2 IH1 IH2 => exact beqExpr_op_eq_of_beq e1 op1 e2 b IH1 IH2 h
-  | unaryop op1 e1 IH => exact beqExpr_unaryop_eq_of_beq op1 e1 b IH h
-  | ite e1 e2 e3 IH1 IH2 IH3 => exact beqExpr_ite_eq_of_beq e1 e2 e3 b IH1 IH2 IH3 h
-  | newRef e1 IH => exact beqExpr_newRef_eq_of_beq e1 b IH h
-  | assign e1 e2 IH1 IH2 => exact beqExpr_assign_eq_of_beq e1 e2 b IH1 IH2 h
-  | deref e1 IH => exact beqExpr_deref_eq_of_beq e1 b IH h
-  | seq e1 e2 IH1 IH2 => exact beqExpr_seq_eq_of_beq e1 e2 b IH1 IH2 h
-  | kwhile e1 e2 IH1 IH2 => exact beqExpr_kwhile_eq_of_beq e1 e2 b IH1 IH2 h
-  | vlet x1 e1 e2 IH1 IH2 => exact beqExpr_vlet_eq_of_beq x1 e1 e2 b IH1 IH2 h
-  | fn x1 t1 e1 t1' IH => exact beqExpr_fn_eq_of_beq x1 t1 e1 t1' b IH h
-  | pfn x1 t1 e1 t1' IH => exact beqExpr_pfn_eq_of_beq x1 t1 e1 t1' b IH h
-  | app e1 e2 IH1 IH2 => exact beqExpr_app_eq_of_beq e1 e2 b IH1 IH2 h
-  | rand e1 IH => exact beqExpr_rand_eq_of_beq e1 b IH h
-  | frand e1 IH => exact beqExpr_frand_eq_of_beq e1 b IH h
-  | printString e1 IH => exact beqExpr_printString_eq_of_beq e1 b IH h
-  | printInt e1 IH => exact beqExpr_printInt_eq_of_beq e1 b IH h
-  | externVal typ1 poison1 pred1 =>
-      cases b <;> simp only [BEq.beq, beqExpr] at h <;> try contradiction
-      case externVal typ2 poison2 pred2 =>
-        simp only [Bool.and_eq_true] at h
-        obtain ⟨⟨h_typ, h_poison⟩, h_pred⟩ := h
-        have : typ1 = typ2 := Typ_beq_sound typ1 typ2 h_typ
-        have : poison1 = poison2 := of_decide_eq_true h_poison
-        have : pred1 = pred2 := beqSyntaxPredicate_sound pred1 pred2 h_pred
-        subst_vars; rfl
-  | externFn arg1 argTyp1 retSpec1 effects1 =>
-      cases b <;> simp only [BEq.beq, beqExpr] at h <;> try contradiction
-      case externFn arg2 argTyp2 retSpec2 effects2 =>
-        simp only [Bool.and_eq_true] at h
-        obtain ⟨⟨⟨h_arg, h_typ⟩, h_ret⟩, h_eff⟩ := h
-        have : arg1 = arg2 := of_decide_eq_true h_arg
-        have : argTyp1 = argTyp2 := Typ_beq_sound argTyp1 argTyp2 h_typ
-        have : retSpec1 = retSpec2 := beqExternReturn_sound retSpec1 retSpec2 h_ret
-        have : effects1 = effects2 := beqEffectList_sound effects1 effects2 h_eff
-        subst_vars; rfl
-  | externPfn arg1 argTyp1 retSpec1 =>
-      cases b <;> simp only [BEq.beq, beqExpr] at h <;> try contradiction
-      case externPfn arg2 argTyp2 retSpec2 =>
-        simp only [Bool.and_eq_true] at h
-        obtain ⟨⟨h_arg, h_typ⟩, h_ret⟩ := h
-        have : arg1 = arg2 := of_decide_eq_true h_arg
-        have : argTyp1 = argTyp2 := Typ_beq_sound argTyp1 argTyp2 h_typ
-        have : retSpec1 = retSpec2 := beqExternReturn_sound retSpec1 retSpec2 h_ret
-        subst_vars; rfl
-
-end ExprSoundness
-
--- LawfulBEq instance for Expr
 instance : LawfulBEq Expr where
   eq_of_beq {a b} := beqExpr_sound a b
   rfl {a} := beqExpr_refl a
@@ -994,11 +1267,7 @@ instance : LawfulBEq Value where
 -- ============================================================================
 
 -- Reflexivity lemmas for mutually recursive types
--- Note: The following reflexivity proofs are admitted with `sorry` because:
--- 1. They depend on beqExpr_refl which is already admitted
--- 2. The properties are trivially true by definition of the beq functions
--- 3. This is acceptable for the DecidableEq instance to work
--- 4. These proofs can be completed later if full soundness proofs are required
+-- These proofs depend on the beqExpr_refl and related proofs defined earlier.
 
 mutual
 -- Prove reflexivity of beqETyp using mutual induction
@@ -1288,5 +1557,5 @@ theorem beqETypSignature_refl (t : ETyp) : beqETypSignature t t = true := by
 -- ============================================================================
 
 -- Note: LawfulBEq instances for SyntaxPredicate, Effect, and ExternReturn
--- are defined earlier in this file (around line 277-287) using sorry-based
--- proofs due to circular dependencies with beqExpr.
+-- are defined earlier in this file (around line 263-361) as part of the
+-- mutual recursion block with Expr proofs.
