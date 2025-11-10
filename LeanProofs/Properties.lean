@@ -985,6 +985,7 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                   -- While this case might not be reachable in a pure PExpr context (since extern functions
                   -- can't be converted to PExpr), we need to handle it for exhaustiveness.
                   -- The proof would require showing that nextLoc' is preserved or handling the allocation case.
+                  -- See issue #72: Extern Functions Returning Reference Types - Location Tracking Problem
                   sorry  -- Complex case: H contains match on returnSpecToQTyp which may increase nextLoc' for ref types
                 | nestedFn _ _ _ _ =>
                   -- Nested impure function: nextLoc' = result2.nextLoc'

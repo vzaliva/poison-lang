@@ -595,6 +595,9 @@ def effectSpecToQTyp (poison : Bool) (pred : SyntaxPredicate)
     Used when processing return specs during extern function application.
     May allocate fresh locations for reference types, but does NOT update Γ.
     The poison/predicate apply to the reference itself, not to the memory location.
+
+    NOTE: There is a known issue with determining the correct location for returned references.
+    See issue #72: Extern Functions Returning Reference Types - Location Tracking Problem
 -/
 def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     (varEnv : VarTypeEnv) (nextLoc : Address) : TypecheckM (QTyp × Address) := do
