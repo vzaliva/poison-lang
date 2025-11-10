@@ -854,25 +854,25 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
     let ⟨etyp, poison, _pred ⟩ := result.qualType
     match etyp with
     | ETyp.ref t l =>
-      -- Check if reference itself is poisoned
-      if poison then
-        -- Reference is poisoned: always return poisoned with no predicate
-        -- Ott rule: deref_poisoned
-        let qt : QTyp := ⟨t, true, Predicate.noPred⟩  -- poisoned, no_pred
-        return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
-      else
-        -- Reference is clean: proceed with normal predicate handling
-        match result.memEnv'.get? l with
-        | some ⟨etyp', p2, pred⟩ =>
+      match result.memEnv'.get? l with
+      | some ⟨etyp', p2, pred⟩ =>
+        -- Check type equality first, before any poison or predicate handling
+        if etyp' != t then throw s!"Type mismatch in dereference: {repr etyp'} != {repr t}"
+        -- Check if reference itself is poisoned
+        if poison then
+          -- Reference is poisoned: always return poisoned with no predicate
+          -- Ott rule: deref_poisoned
+          let qt : QTyp := ⟨t, true, Predicate.noPred⟩  -- poisoned, no_pred
+          return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
+        else
+          -- Reference is clean: proceed with normal predicate handling
           match pred with
           | Predicate.noPred =>  -- Ott rule: deref_no_pred
-            if etyp' != t then throw s!"Type mismatch in dereference: {repr etyp'} != {repr t}"
             let poison := joinPoison ctx.pc p2
             let qt : QTyp := ⟨t, poison, Predicate.noPred⟩
             return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
           | Predicate.guardOnly k | Predicate.guardClosure k _ _ _ =>
             -- Both guard types behave the same for dereference
-            if etyp' != t then throw "Type mismatch in dereference"
             match result.tagEnv'.get? k with
             | some ⟨true, _deps⟩ =>
               -- Ott rule: deref_guard_true / deref_guard_only_true
@@ -889,7 +889,7 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
               -- Preserve the original predicate (either guardOnly or guardClosure)
               let qt : QTyp := ⟨t, poison, pred⟩
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
-        | none => throw s!"Location {l} not found in memory environment"
+      | none => throw s!"Location {l} not found in memory environment"
     | _ => throw "Operand of dereference must be a reference"
 termination_by fuel
 

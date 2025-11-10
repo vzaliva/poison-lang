@@ -430,61 +430,51 @@ private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExp
         cases h3: etyp with
         | ref t l =>
           simp_all
-          cases h4: poison with
-          | true =>
-            simp_all [pure, Except.pure]
-            cases result; cases result1; cases ctx; cases H; simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
-          | false =>
-            simp [h4] at H
-            cases h5 : result1.memEnv'.get? l with
-            | none =>
+          cases h5 : result1.memEnv'.get? l with
+          | none =>
+            simp_all
+          | some qt =>
+            cases h6 : qt with
+            | mk etyp' p2 tp =>
               simp_all
-            | some qt =>
-              cases h6 : qt with
-              | mk etyp' p2 tp =>
+              cases h7 : etyp' != t with
+              | true =>
                 simp_all
-                cases h7 : tp with
-                | noPred =>
-                  simp_all
-                  cases h9 : etyp' != t with
-                  | true =>
-                    simp_all
-                  | false =>
+              | false =>
+                simp_all
+                cases h4: poison with
+                | true =>
+                  simp_all [pure, Except.pure]
+                  cases result; cases result1; cases ctx; cases H; simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+                | false =>
+                  simp [h4] at H
+                  cases h8 : tp with
+                  | noPred =>
                     simp_all [pure, Except.pure]
                     cases result; cases result1; cases ctx; cases H; simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
-                | guardOnly k =>
-                  simp_all
-                  cases h9 : etyp' != t with
-                  | true =>
+                  | guardOnly k =>
                     simp_all
-                  | false =>
-                    simp_all [pure, Except.pure]
-                    match h10 : result1.tagEnv'.get? k with
+                    match h9 : result1.tagEnv'.get? k with
                     | none =>
-                      simp_all <;>
+                      simp_all [pure, Except.pure] <;>
                       cases result <;> cases result1 <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
                     | some bd =>
                       cases bd with
                       | mk value _deps =>
                         cases value <;>
-                        simp_all <;>
+                        simp_all [pure, Except.pure] <;>
                         cases result <;> cases result1 <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
-                | guardClosure k arg_name pred_body var_env =>
-                  simp_all
-                  cases h9 : etyp' != t with
-                  | true =>
+                  | guardClosure k arg_name pred_body var_env =>
                     simp_all
-                  | false =>
-                    simp_all [pure, Except.pure]
-                    match h10 : result1.tagEnv'.get? k with
+                    match h9 : result1.tagEnv'.get? k with
                     | none =>
-                      simp_all <;>
+                      simp_all [pure, Except.pure] <;>
                       cases result <;> cases result1 <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
                     | some bd =>
                       cases bd with
                       | mk value _deps =>
                         cases value <;>
-                        simp_all <;>
+                        simp_all [pure, Except.pure] <;>
                         cases result <;> cases result1 <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
         | _ => simp_all
 
