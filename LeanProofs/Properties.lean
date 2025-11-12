@@ -313,6 +313,57 @@ theorem toExpr_toPExpr (pe : PExpr) :
 
 section TypecheckPExprPreservesTypestate
 
+-- For base (non-ref/arrow) types, a successful returnSpecToQTyp does not change nextLoc.
+private lemma returnSpecToQTyp_ok_preserves_nextLoc
+  (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
+  (env : VarTypeEnv) (nl nl2 : Address) (qt : QTyp) :
+  returnSpecToQTyp typ poison pred env nl = Except.ok (qt, nl2) →
+  nl2 = nl := by
+  intro h
+  cases typ with
+  | int =>
+      cases hPred : attachVarEnvToPredicate pred env with
+      | ok pred' =>
+          have hpair :
+            (({ etyp := ETyp.int, poison := poison, pred := pred' } : QTyp), nl) = (qt, nl2) := by
+            simpa [returnSpecToQTyp, hPred] using h
+          exact (congrArg Prod.snd hpair).symm
+      | error _ =>
+          simp [returnSpecToQTyp, hPred] at h
+  | bool =>
+      cases hPred : attachVarEnvToPredicate pred env with
+      | ok pred' =>
+          have hpair :
+            (({ etyp := ETyp.bool, poison := poison, pred := pred' } : QTyp), nl) = (qt, nl2) := by
+            simpa [returnSpecToQTyp, hPred] using h
+          exact (congrArg Prod.snd hpair).symm
+      | error _ =>
+          simp [returnSpecToQTyp, hPred] at h
+  | unit =>
+      cases hPred : attachVarEnvToPredicate pred env with
+      | ok pred' =>
+          have hpair :
+            (({ etyp := ETyp.unit, poison := poison, pred := pred' } : QTyp), nl) = (qt, nl2) := by
+            simpa [returnSpecToQTyp, hPred] using h
+          exact (congrArg Prod.snd hpair).symm
+      | error _ =>
+          simp [returnSpecToQTyp, hPred] at h
+  | string =>
+      cases hPred : attachVarEnvToPredicate pred env with
+      | ok pred' =>
+          have hpair :
+            (({ etyp := ETyp.string, poison := poison, pred := pred' } : QTyp), nl) = (qt, nl2) := by
+            simpa [returnSpecToQTyp, hPred] using h
+          exact (congrArg Prod.snd hpair).symm
+      | error _ =>
+          simp [returnSpecToQTyp, hPred] at h
+  | ref _ =>
+      -- ref returns error; ok branch impossible
+      cases h
+  | arrow _ _ =>
+      -- arrow returns error; ok branch impossible
+      cases h
+
 -- Private lemma for unit case
 private lemma typecheck_unit_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat)
   (_C : ctx.pureCtx = true) (_P : Expr.unit.toPExpr = Except.ok pe) (H : typecheckExpr ctx Expr.unit (fuel + 1) = Except.ok result) :
@@ -976,69 +1027,28 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                   -- Simple case: after fix for issue #72, returnSpecToQTyp rejects reference types
                   -- Strategy: case on typ to handle each concrete case where returnSpecToQTyp succeeds
                   have H_memEnv : ctx.memEnv.equiv result2.memEnv' := Std.HashMap.Equiv.trans H1 H7
-                  cases typ with
-                  | int | bool | unit | string =>
-                    -- SORRY EXPLANATION: This sorry is SOUND and necessary only due to Lean's technical limitations.
-                    --
-                    -- THE PROPERTY IS CORRECT: By transitivity of hypotheses H1-H4 and H7, combined with
-                    -- the fact that returnSpecToQTyp preserves nextLoc for base types, all four goals hold:
-                    --   • ctx.memEnv ≈ result.memEnv'  (by H1, H7, and result.memEnv' = result2.memEnv')
-                    --   • ctx.tagEnv = result.tagEnv'  (by H2 and result.tagEnv' = result2.tagEnv')
-                    --   • ctx.nextLoc = result.nextLoc' (by H3 and result.nextLoc' = result2.nextLoc')
-                    --   • ctx.nextTag = result.nextTag' (by H4 and result.nextTag' = result2.nextTag')
-                    --
-                    -- WHY LEAN CAN'T PROVE IT: After simplifying returnSpecToQTyp in hypothesis H,
-                    -- there remains a nested match on attachVarEnvToPredicate:
-                    --   H : (match (λa => (qt a, nextLoc)) <$> attachVarEnvToPredicate ... with
-                    --        | error => error | ok v => ok { ... }) = ok result
-                    -- Lean's pattern elaborator cannot perform dependent elimination (`cases H`) on
-                    -- nested matches where the inner match is in function position.
-                    --
-                    -- PROOF BY IMPLEMENTATION INSPECTION:
-                    -- File: LeanPoison/Typecheck.lean
-                    --
-                    -- returnSpecToQTyp (lines 602-614) for typ ∈ {int, bool, unit, string}:
-                    --   | Typ.int    => pure (ETyp.int, nextLoc)
-                    --   | Typ.bool   => pure (ETyp.bool, nextLoc)
-                    --   | Typ.unit   => pure (ETyp.unit, nextLoc)
-                    --   | Typ.string => pure (ETyp.string, nextLoc)
-                    -- Key observation: nextLoc is returned UNCHANGED (second component of tuple).
-                    --
-                    -- typecheckApp for PFnTClosure.extern with ExternReturn.simple (lines 1201-1208):
-                    --   let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
-                    --   return { qualType := { etyp := retQt.etyp, poison := joinPoison ctx.pc retQt.poison, pred := retQt.pred },
-                    --            memEnv' := result2.memEnv',
-                    --            tagEnv' := result2.tagEnv',
-                    --            nextLoc' := nextLoc',    -- ← This equals result2.nextLoc' for base types!
-                    --            nextTag' := result2.nextTag' }
-                    --
-                    -- Therefore: result.nextLoc' = nextLoc' = result2.nextLoc' (by returnSpecToQTyp behavior)
-                    --           result.memEnv' = result2.memEnv'  (by code, line 1207)
-                    --           result.tagEnv' = result2.tagEnv'  (by code, line 1207)
-                    --           result.nextTag' = result2.nextTag' (by code, line 1207)
-                    --
-                    -- Combined with H1-H4, H7, this proves all four goals.
-                    --
-                    -- ALTERNATIVES CONSIDERED:
-                    -- 1. Axiom: Considered adding axiom for returnSpecToQTyp behavior, but felt too heavy-handed
-                    -- 2. Refactoring returnSpecToQTyp: Would break existing code and isn't worth it for proof engineering
-                    -- 3. Manual term construction: Tried but Lean still can't unify due to nested match
-                    --
-                    -- CONCLUSION: This sorry represents a verified-correct property that Lean simply cannot
-                    -- mechanically prove due to elaborator limitations. The implementation guarantees correctness.
-                    sorry
-                  | ref t =>
-                    -- Impossible: returnSpecToQTyp throws error for ref types
-                    -- By definition, returnSpecToQTyp (Typ.ref t) = error "..."
-                    simp only [returnSpecToQTyp] at H
-                    -- Now H says: (match error with ...) = ok result, contradiction
-                    cases H
-                  | arrow t1 t2 =>
-                    -- Impossible: returnSpecToQTyp throws error for arrow types
-                    -- By definition, returnSpecToQTyp (Typ.arrow t1 t2) = error "..."
-                    simp only [returnSpecToQTyp] at H
-                    -- Now H says: (match error with ...) = ok result, contradiction
-                    cases H
+                  -- Avoid destructing attachVarEnvToPredicate by splitting directly on returnSpecToQTyp
+                  cases hRet' :
+                    returnSpecToQTyp typ poison pred
+                      (VarTypeEnv.update capturedEnv x { etyp := etyp2, poison := joinPoison ctx.pc p2, pred := pred2 })
+                      result2.nextLoc' with
+                  | error err =>
+                      -- Contradiction with success on H
+                      simp [hRet'] at H
+                  | ok pair =>
+                      cases pair with
+                      | mk retQt nextLocRet =>
+                        -- For any ok, nextLoc is preserved for base types; use helper lemma
+                        have hnext : nextLocRet = result2.nextLoc' :=
+                          returnSpecToQTyp_ok_preserves_nextLoc
+                            typ poison pred
+                            (VarTypeEnv.update capturedEnv x { etyp := etyp2, poison := joinPoison ctx.pc p2, pred := pred2 })
+                            result2.nextLoc' nextLocRet retQt (by simpa using hRet')
+                        -- Simplify H with concrete return
+                        simp [hRet'] at H
+                        -- Final field equalities follow from code shape and previously shown equivalences
+                        cases result <;> cases result1 <;> cases result2 <;> cases ctx <;> cases H
+                        <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
                 | nestedFn _ _ _ _ =>
                   -- Nested impure function: nextLoc' = result2.nextLoc'
                   -- From typechecker code, all fields equal result2's fields
