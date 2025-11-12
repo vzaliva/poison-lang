@@ -237,6 +237,28 @@ time). See the formal specification for complete details. Similarly,
 qualified types are essential to the formal system, though not part of the
 language syntax.
 
+\subsection{Extern Functions}
+
+The language supports \emph{extern functions} as placeholders for external
+implementations that cannot be expressed within the language itself (e.g., I/O
+operations, system calls, or native library calls). Extern functions are declared
+with type specifications that describe their parameter types, return type, and
+effects on the program state.
+
+\subsubsection{Reference Return Restriction}
+
+\textbf{Important}: Extern functions are \textbf{not allowed to return reference types}.
+This restriction (documented in issue \#72) is necessary because the type checker
+cannot determine which memory location an externally-returned reference would point
+to, making it impossible to maintain sound region tracking in the type system.
+
+Attempting to declare an extern function with a reference return type will result
+in a type-checking error: \texttt{"Extern functions cannot return reference types"}.
+
+\textbf{What is allowed}: Extern functions \emph{can} take references as parameters
+and update them via assignment effects. They can also return any non-reference
+types (integers, booleans, units, strings, and function types).
+
 \subsection{Pure Expressions}
 
 The language includes a syntactic subset called \emph{pure expressions} (\texttt{pe}) that exclude side-effecting operations. Pure expressions cannot:
