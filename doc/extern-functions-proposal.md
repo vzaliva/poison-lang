@@ -26,6 +26,7 @@ and are not written on ordinary function types.
 - **Big-step interpreter**: evaluating an extern expression raises a runtime error. Consequently, `let x = extern … in …` fails at runtime if control reaches that binding.
 - **Effects**: impure extern functions can update any in-scope memory locations – the parameter or captured references – via an `effects:` block.
 - **Guards**: symbolic guard placeholders allow correlating observables and effects. Placeholders are instantiated to fresh tags per call with well-defined scope.
+- **No reference returns**: extern functions cannot return reference types. This restriction simplifies location tracking and proof obligations. Extern functions may return base types (int, bool, unit, string) and function types, but not `ref T`.
 
 ## Syntax
 
@@ -55,15 +56,17 @@ let f =
     }
 ```
 
-### Extern impure function returning a reference with effect on returned location
+### ~~Extern impure function returning a reference with effect on returned location~~ (DEPRECATED)
 
-```poison
+**Note**: This pattern is no longer supported. Extern functions cannot return reference types due to location tracking complexity. See issue #72 for details.
+
+~~```poison
 let allocAndInit =
   extern fn n : (int) -> (ref int :> clean { no_pred })
     effects: {
       return :> (int :> poisoned { guard g, v => (v >= 0 && v <= n) })
     }
-```
+```~~
 
 ### Extern pure function (no effects)
 
@@ -74,10 +77,10 @@ let g =
 
 Notes:
 - `!name` may refer to any in-scope variable of reference type: the argument `a` or captured references such as `r1`, `r2`.
-- `return` (without `!` prefix) is a special effect target that refers to the memory location of the returned reference. It is only valid when the return type is `ref T`, and the effect spec describes the contents at that location.
+- ~~`return` (without `!` prefix) is a special effect target that refers to the memory location of the returned reference. It is only valid when the return type is `ref T`, and the effect spec describes the contents at that location.~~ **DEPRECATED**: Extern functions cannot return references.
 - Placeholders like `gR`, `g1` are symbolic. Reusing a placeholder name correlates the same guard across the observable return and any listed effects.
 - Functions are single-argument and curried. Multi-argument interfaces are expressed by returning an extern function from an extern function.
-- At present the runtime memory stores integers only, so all memory effects must have type `int`. The return type may be `ref int` but effects on `return` specify the contents type (`int`), not the reference type itself.
+- At present the runtime memory stores integers only, so all memory effects must have type `int`. **Extern functions cannot return `ref T` types.**
 
 ### Clarifying note: externs are expressions, not type declarations
 
@@ -361,10 +364,39 @@ let f = extern pfn x : (int) -> (int :> clean { no_pred }) in
 let _ = f 42   -- typechecks; evaluating reaches extern and aborts
 ```
 
+## Restrictions
+
+### No reference returns
+
+Extern functions **cannot return reference types** (`ref T`). This restriction is necessary because:
+
+1. **Location tracking problem**: When an extern function returns a reference, the typechecker must determine which memory location that reference points to. For regular functions, locations are allocated during typechecking when `ref e` is evaluated, but extern functions have no body to analyze.
+
+2. **Proof complexity**: The `returnSpecToQTyp` function would need to allocate fresh locations during application, but these locations would not be properly initialized in Γ, leading to unsound typing and difficult proof obligations.
+
+3. **Workaround**: If an extern function needs to return a reference, the caller can allocate the reference and pass it as a parameter, with the extern function updating it via effects:
+
+```poison
+-- Instead of: extern fn n : (int) -> (ref int :> ...)
+-- Use:
+let r : ref int = ref 0 in
+let init = extern fn n : (int) -> (unit :> ...)
+    effects: { !r :> (int :> ...) } in
+let _ = init 42 in
+r  -- Use the reference
+```
+
+This restriction applies to both `extern fn` and `extern pfn`. It does **not** restrict:
+- Extern functions accepting references as parameters
+- Extern functions returning base types (int, bool, unit, string)
+- Extern functions returning function types (including nested extern functions)
+
+See issue #72 for technical details.
+
 ## Backwards compatibility
 
 This feature is additive and does not change existing semantics:
-- No changes to existing `fn`/`pfn` behaviour  
+- No changes to existing `fn`/`pfn` behaviour
 - No changes to the core Ott rules – the extension is algorithmic in the implementation
 - Parser additions do not conflict with existing syntax
 

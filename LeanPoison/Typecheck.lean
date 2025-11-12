@@ -593,25 +593,21 @@ def effectSpecToQTyp (poison : Bool) (pred : SyntaxPredicate)
 
 /-- Convert (Typ, Bool, SyntaxPredicate) to QTyp for RETURN SPECIFICATIONS.
     Used when processing return specs during extern function application.
-    May allocate fresh locations for reference types, but does NOT update Γ.
-    The poison/predicate apply to the reference itself, not to the memory location.
+    MUST NOT allocate locations for reference types - extern functions cannot return references.
 
-    NOTE: There is a known issue with determining the correct location for returned references.
+    RESTRICTION: Extern functions are forbidden from returning reference types.
+    This function will reject any attempt to create a return spec with type `ref T`.
     See issue #72: Extern Functions Returning Reference Types - Location Tracking Problem
 -/
 def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     (varEnv : VarTypeEnv) (nextLoc : Address) : TypecheckM (QTyp × Address) := do
-  -- Convert Typ to ETyp, allocating locations for references
+  -- Convert Typ to ETyp, rejecting reference types
   let (etyp, nextLoc') ← (match typ with
     | Typ.int => pure (ETyp.int, nextLoc)
     | Typ.bool => pure (ETyp.bool, nextLoc)
     | Typ.unit => pure (ETyp.unit, nextLoc)
     | Typ.string => pure (ETyp.string, nextLoc)
-    | Typ.ref t => do
-        let l := nextLoc
-        let nextLoc' := nextLoc + 1
-        let (innerQt, nextLoc'') ← returnSpecToQTyp t false SyntaxPredicate.noPred varEnv nextLoc'
-        return (ETyp.ref innerQt.etyp l, nextLoc'')
+    | Typ.ref _ => throw "Extern functions cannot return reference types (see issue #72)"
     | Typ.arrow _ _ => throw "Arrow types not expected in extern specs" : TypecheckM (ETyp × Address))
 
   let pred' ← attachVarEnvToPredicate pred varEnv
