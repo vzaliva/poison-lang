@@ -5,8 +5,10 @@ import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.Poison
 import LeanPoison.BigStep
+import LeanProofs.GuardlessIfClean
 import Mathlib.Data.List.Forall2
 import Std.Data.HashMap
+import Std.Data.HashMap.Lemmas
 open Std
 
 -- ================================================================
@@ -64,8 +66,8 @@ deriving Repr
 open List
 
 /-- Keys are unique in both `s.locs` (addresses) and `s.vars` (names). -/
-def inputKeysUnique (s : InputSpec) : Prop :=
-  Nodup (s.vars.map Prod.fst)
+def inputKeysUnique (vars : VarTypeEnv) : Prop :=
+  Nodup (vars.map Prod.fst)
   -- for `s.locs` we don't need to check uniqueness because it is implemented as a HashMap
 
 -- Regime: partial mapping from guard tags to their truth values.
@@ -74,13 +76,6 @@ def inputKeysUnique (s : InputSpec) : Prop :=
 -- We model this as Tag → Option Bool where the regime is defined exactly for
 -- tags appearing in S (enforced by wfRegime predicate).
 abbrev Regime := Tag → Option Bool
-
--- Extract the guard tag from a QTyp's predicate (if it has one)
-def qtypGuardTag (qt : QTyp) : Option Tag :=
-  match qt.pred with
-  | Predicate.guardClosure k _ _ _ => some k
-  | Predicate.guardOnly k => some k
-  | Predicate.noPred => none
 
 -- Extract all guard tags from the input specification (functional version for wfRegime)
 def inputSpecTags (s : InputSpec) : List Tag :=
@@ -257,15 +252,75 @@ def hasGuardTag (p : Predicate) : Bool :=
   | Predicate.noPred => false
   | _ => true
 
+mutual
+  inductive deepVarEnvProperty : (VarTypeEnv → Prop) → VarTypeEnv → Prop
+  | intro (P : VarTypeEnv → Prop) (env : VarTypeEnv) :
+    P env →
+    (forall x qt, env.lookup x = some qt → deepQTypProperty P qt) →
+    deepVarEnvProperty P env
+
+  inductive deepQTypProperty : (VarTypeEnv → Prop) → QTyp → Prop
+  | arrow (P : VarTypeEnv → Prop) (qt : QTyp) (env : VarTypeEnv) :
+    qt.etyp = ETyp.arrow _ _ _ (FnTClosure.mk _ _ env) →
+    P env →
+    deepQTypProperty P qt
+  | parrow (P : VarTypeEnv → Prop) (qt : QTyp) (env : VarTypeEnv) :
+    qt.etyp = ETyp.parrow _ _ _ (PFnTClosure.mk _ _ env) →
+    P env →
+    deepQTypProperty P qt
+  | other (P : VarTypeEnv → Prop) (qt : QTyp) :
+    nonClosureQTyp qt →
+    deepQTypProperty P qt
+end
+
+lemma deep_implies_shallow {P : VarTypeEnv → Prop} {env : VarTypeEnv} :
+  deepVarEnvProperty P env → P env := by
+  rintro ⟨_, _, h1, h2⟩
+  apply h1
+
+mutual
+  inductive deepVarEnvProperty₂ : (VarTypeEnv → VarTypeEnv → Prop) → VarTypeEnv → VarTypeEnv → Prop
+  | intro (P : VarTypeEnv → VarTypeEnv → Prop) (env₁ env₂ : VarTypeEnv) :
+    P env₁ env₂ →
+    (forall x qt₁ qt₂,
+      env₁.lookup x = some qt₁ →
+      env₂.lookup x = some qt₂ →
+      deepQTypProperty₂ P qt₁ qt₂) →
+    deepVarEnvProperty₂ P env₁ env₂
+
+  inductive deepQTypProperty₂ : (VarTypeEnv → VarTypeEnv → Prop) → QTyp → QTyp → Prop
+  | arrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) (env₁ env₂ : VarTypeEnv) :
+    qt₁.etyp = ETyp.arrow _ _ _ (FnTClosure.mk _ _ env₁) →
+    qt₂.etyp = ETyp.arrow _ _ _ (FnTClosure.mk _ _ env₂) →
+    P env₁ env₂ →
+    deepQTypProperty₂ P qt₁ qt₂
+  | parrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) (env₁ env₂ : VarTypeEnv) :
+    qt₁.etyp = ETyp.parrow _ _ _ (PFnTClosure.mk _ _ env₁) →
+    qt₁.etyp = ETyp.parrow _ _ _ (PFnTClosure.mk _ _ env₂) →
+    P env₁ env₂ →
+    deepQTypProperty₂ P qt₁ qt₂
+  | other (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
+    (nonClosureQTyp qt₁ ∨ nonClosureQTyp qt₂) →
+    deepQTypProperty₂ P qt₁ qt₂
+end
+
 -- Well-formedness: memory stores integers at critical locations; additionally,
 -- align predicate and poison for critical inputs: no predicate ⇒ clean;
 -- predicate present ⇒ initially poisoned.
-def wfInputSpec (s : InputSpec) : Prop :=
-  inputKeysUnique s ∧
-  (∀ l qt, s.locs.lookup l = some qt →
-     qt.etyp = ETyp.int ∧ qt.poison = hasGuardTag qt.pred) ∧
-  (∀ x qt, s.vars.lookup x = some qt →
+def wfInputSpecMem (locs : MemoryTypeEnv) : Prop :=
+  ∀ l qt, locs.lookup l = some qt →
+    qt.etyp = ETyp.int ∧ qt.poison = hasGuardTag qt.pred
+
+def wfInputSpecVars (vars : VarTypeEnv) : Prop :=
+  inputKeysUnique vars ∧
+  (∀ x qt, vars.lookup x = some qt →
      qt.poison = hasGuardTag qt.pred)
+
+def wfInputSpecVarsDeep (vars : VarTypeEnv) : Prop :=
+  deepVarEnvProperty wfInputSpecVars vars
+
+def wfInputSpec (s : InputSpec) : Prop :=
+  wfInputSpecMem s.locs ∧ wfInputSpecVarsDeep s.vars
 
 -- Well-formedness: observable spec
 -- Always correct by construction
@@ -288,11 +343,28 @@ def retQTypFromObs (obs : ObservableSpec) : QTyp :=
 -- must be present with exactly the specified qualified types. Any unlisted
 -- entry that appears in the context (to allow the program to typecheck when
 -- referenced) is permitted, but it must be poisoned and carry no predicate.
+
 def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
   (∀ {l qt}, s.locs.lookup l = some qt → ctx.memEnv.lookup l = some qt) ∧
   (∀ {x qt}, s.vars.lookup x = some qt → ctx.varEnv.lookup x = some qt) ∧
   (∀ {l qt}, ctx.memEnv.lookup l = some qt → ¬ s.locs.hasKey l → qt.poison = true ∧ qt.pred = Predicate.noPred) ∧
   (∀ {x qt}, ctx.varEnv.lookup x = some qt → ¬ s.vars.hasKey x → qt.poison = true ∧ qt.pred = Predicate.noPred)
+
+-- Deep version?
+-- def ctxMatchesInputSpecMem (s ctx : MemoryTypeEnv) : Prop :=
+--   (∀ {l qt}, s.lookup l = some qt → ctx.lookup l = some qt) ∧
+--   (∀ {l qt}, ctx.lookup l = some qt → ¬ s.hasKey l → qt.poison = true ∧ qt.pred = Predicate.noPred)
+
+-- def ctxMatchesInputSpecVars (s ctx : VarTypeEnv) : Prop :=
+--   (∀ {l qt}, s.lookup l = some qt → ctx.lookup l = some qt) ∧
+--   (∀ {l qt}, ctx.lookup l = some qt → ¬ s.hasKey l → qt.poison = true ∧ qt.pred = Predicate.noPred)
+
+-- def ctxMatchesInputSpecVarsDeep (s ctx : VarTypeEnv) : Prop :=
+--   deepVarEnvProperty₂ ctxMatchesInputSpecVars s ctx
+
+-- def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
+--   ctxMatchesInputSpecMem s.locs ctx.memEnv ∧
+--   ctxMatchesInputSpecVarsDeep s.vars ctx.varEnv
 
 -- Runtime conforms to the spec for critical inputs only. Unlisted inputs are
 -- unconstrained here (we quantify over them), but concrete runs must still
@@ -419,122 +491,6 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
     ∀ l et, obs.locs.lookup l = some et → ∃ qt, (res.memEnv'.lookup l = some qt ∧ qt.etyp = et ∧ qt.poison = false)
   retMatches ∧ memMatches
 
--- --------------------------- Internal fomulation used in proofs ----------------------------------------
-
--- Parition context into critical and non-critical
-structure PartitionSpec where
-  locs:  List Address
-  vars:  List Name
-
--- Well-formedness: partition specification
--- Trivially true - duplicates in partitions are handled by conversion
--- (HashMap.insert for locs, and wfInputSpec ensures result is well-formed for vars)
-def wfPartitionSpec (_s : PartitionSpec) : Prop := True
-
--- Context matches partition specification
--- all locations and variables in the partition specification must be present in the context
-def ctxMatchesPartitionSpec (s : PartitionSpec) (ctx : TypeContext) : Prop :=
-  s.locs.Forall (· ∈ ctx.memEnv) ∧
-  s.vars.Forall ctx.varEnv.hasKey
-
--- Convert partition specification to input specification
--- all locations and variables in the partition specification must be present in the context
--- which is normally ensured by `ctxMatchesPartitionSpec`
--- TODO: this could be a logical relation between PartitionSpec, Context and InputSpec
-def partionSpecToInputSpec (S : PartitionSpec) (ctx : TypeContext) : InputSpec :=
-  InputSpec.mk
-    (S.locs.foldl (init := {}) fun acc l =>
-      match ctx.memEnv.lookup l with
-      | some qt => acc.insert l qt
-      | none => acc)
-    (S.vars.foldl (init := []) fun acc x =>
-      match ctx.varEnv.lookup x with
-      | some qt => (x, qt) :: acc
-      | none => acc)
-
--- Convert partition specification and return type to observable specification
--- Extract enriched types from qualified types in the context
--- Only non-poisoned locations and return values are observable
--- TODO: this could be a logical relation between PartitionSpec, Context and ObservableSpec
-def partitionSpecToObservableSpec (S : PartitionSpec) (retType : QTyp) (isRetObservable : Bool) (ctx : TypeContext) : ObservableSpec :=
-  ObservableSpec.mk
-    -- Extract enriched types for observable locations (only non-poisoned)
-    (S.locs.foldl (init := {}) fun acc l =>
-      match ctx.memEnv.lookup l with
-      | some qt => if qt.poison then acc else acc.insert l qt.etyp
-      | none => acc)
-    -- Return enriched type is present iff caller marks it observable and it is clean
-    (if isRetObservable && !retType.poison then some retType.etyp else none)
-
--- `i` and `o` subscript indexes correspond to input and outputs
--- `0` and `1` subscript indexes correspond to two runs of the program
-def NonInterferenceSpec_step
-  (e : Expr)
-  (Sᵢ Sₒ: PartitionSpec)
-  (ctxᵢ ctxₒ: TypeContext)
-  (retType: QTyp)
-  (isRetObservable : Bool)
-  (predSat : PredSat)
-  : Prop :=
-    -- Ensure well-formedness and consistency of arguments
-    wfPartitionSpec Sᵢ →  ctxMatchesPartitionSpec Sᵢ ctxᵢ →
-    wfPartitionSpec Sₒ →  ctxMatchesPartitionSpec Sₒ ctxₒ →
-    -- Convert partition specification to input specification, do not need Sᵢ after this
-    forall sᵢ,
-      sᵢ = partionSpecToInputSpec Sᵢ ctxᵢ →
-      -- We universally quantify over the input regime Rᵢ
-      ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (Rᵢ: Regime)
-        (cf₀ cf₁ : Config) (o₀ o₁ : Value),
-        wfRegime Rᵢ sᵢ → -- input regime matches input partition specification
-        -- both inputs contains critical inputs from the input partition specification:
-        inputsConformSpec sᵢ μ₀ ρ₀ →  inputsConformSpec sᵢ μ₁ ρ₁ →
-        -- both runtimes instantiate the input context:
-        runtimeInstantiatesCtx ctxᵢ μ₀ ρ₀ →  runtimeInstantiatesCtx ctxᵢ μ₁ ρ₁ →
-        -- The regime must be correctly defined for all critical inputs in the spec:
-        consistentRegimeSpec predSat Rᵢ sᵢ μ₀ ρ₀ → consistentRegimeSpec predSat Rᵢ sᵢ μ₁ ρ₁ →
-        -- memory and variable values from both runs are in agreement per the input regime:
-        agreeOnCriticalInputsUnderRegimeSpec predSat Rᵢ sᵢ μ₀ ρ₀ μ₁ ρ₁ →
-        forall (l : Address) (pm : Bool),
-          terminatesTo e { memory := μ₀, varEnv := ρ₀, nextLoc := l, pureMode := pm } cf₀ o₀ →
-          terminatesTo e { memory := μ₁, varEnv := ρ₁, nextLoc := l, pureMode := pm } cf₁ o₁ →
-          -- Output properties below:
-          -- Convert partition specification to input specification, do not need Sₒ after this
-    forall sₒ,
-      sₒ = partionSpecToInputSpec Sₒ ctxₒ →
-      -- Rₒ is output regime
-      exists Rₒ,
-        wfRegime Rₒ sₒ ∧ -- output regime matches output partition specification
-        -- The regime must be correctly defined for all critical outputs in the spec:
-        consistentRegimeSpec predSat Rₒ sₒ cf₀.memory cf₀.varEnv ∧ consistentRegimeSpec predSat Rₒ sₒ cf₁.memory cf₁.varEnv ∧
-        -- memory and variable values from both runs are in agreement per the output regime:
-        agreeOnCriticalInputsUnderRegimeSpec predSat Rₒ sₒ cf₀.memory cf₀.varEnv cf₁.memory cf₁.varEnv ∧
-        -- return values agreement is required iff declared observable
-        (isRetObservable → (wfRegimeForReturn Rₒ retType ∧
-                            agreeValueUnder predSat Rₒ cf₀.memory cf₁.memory retType o₀ o₁))
-
-def ctxMatchesResult (ctx : TypeContext) (res : TypeResult) : Prop :=
-  ctx.memEnv = res.memEnv'
-
--- Sᵢ Sₒ - input and output partition specifications
-def TypeSystemEnforcesNonInterference_step_spec
-  (e : Expr)
-  (Sᵢ Sₒ: PartitionSpec)
-  (ctxᵢ ctxₒ: TypeContext)
-  (isRetObservable : Bool)
-  (predSat : PredSat)
-  : Prop :=
-    -- Ensure well-formedness and consistency of arguments
-    wfPartitionSpec Sᵢ →  ctxMatchesPartitionSpec Sᵢ ctxᵢ →
-    wfPartitionSpec Sₒ →  ctxMatchesPartitionSpec Sₒ ctxₒ →
-    -- Fuel-based termination of typechecking
-    (∃ (fuel : Nat) (res : TypeResult),
-      -- If typechecking succeeds,
-      typecheck ctxᵢ e fuel = .ok res →
-      -- and the result must match the output context
-      ctxMatchesResult ctxₒ res →
-      -- then the program satisfies non-interference
-      NonInterferenceSpec_step e Sᵢ Sₒ ctxᵢ ctxₒ res.qualType isRetObservable predSat)
-
 -- ------------------------ Top-level definitions -------------------------------
 
 -- Non-Interference property
@@ -566,37 +522,3 @@ def TypeSystemEnforcesNonInterference_spec
           typecheck ctx e fuel = .ok res ∧
           ObsConstraints obs res) →
           NonInterferenceSpec e s obs ctx predSat)
-
--- ------------------------ Proofs -------------------------------
---
--- Bridge theorem: TypeSystemEnforcesNonInterference_step_spec implies
--- TypeSystemEnforcesNonInterference_spec.
---
--- If there exists a partition decomposition (Sᵢ, Sₒ, retType) such that:
--- - Sᵢ converts to the input spec s
--- - Sₒ and retType convert to the observable spec obs
--- - The step specification holds for this decomposition
--- Then the general specification holds.
-theorem step_spec_implies_general_spec
-  -- ========== INPUTS (same as TypeSystemEnforcesNonInterference_spec) ==========
-  (e : Expr)         -- The expression to check
-  (s : InputSpec)    -- Input specification (critical locations and variables)
-  (obs : ObservableSpec)  -- Observable specification (what outputs are observable)
-  -- ========== WELL-FORMEDNESS PRECONDITIONS ==========
-  (hwf_s : wfInputSpec s)
-  (hwf_obs : wfObsSpec obs)
-  -- ========== MAIN HYPOTHESIS: Existence of suitable partition decomposition ==========
-  (h_exists_partition : ∃ (Sᵢ Sₒ : PartitionSpec),
-    -- Partitions must be well-formed (trivially True, but kept for clarity)
-    wfPartitionSpec Sᵢ ∧ wfPartitionSpec Sₒ ∧
-    -- All hypotheses hold for all relevant contexts
-    ∀ (ctxᵢ ctxₒ : TypeContext),
-      -- H1: The input partition Sᵢ must represent the same critical inputs as s
-      (ctxMatchesInputSpec s ctxᵢ → partionSpecToInputSpec Sᵢ ctxᵢ = s) ∧
-      -- H2: The output partition Sₒ and retType must represent the same observables as obs
-      (partitionSpecToObservableSpec Sₒ (retQTypFromObs obs) (isRetObservableFromObs obs) ctxₒ = obs) ∧
-      -- H3: The step specification holds for this decomposition (for any PredSat)
-      (∀ (predSat : PredSat), TypeSystemEnforcesNonInterference_step_spec e Sᵢ Sₒ ctxᵢ ctxₒ (isRetObservableFromObs obs) predSat)) :
-  -- ========== CONCLUSION ==========
-  TypeSystemEnforcesNonInterference_spec e s obs := fun _hwf_s _hwf_obs => by
-    sorry

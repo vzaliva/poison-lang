@@ -23,7 +23,7 @@ def nonClosureQTyp (qt : QTyp) : Prop :=
   | ETyp.parrow _ _ _ _ => False
   | _ => True
 
-mutual
+mutual /- TODO: can be rewritten using `deepVarEnvProperty` -/
 
 inductive guardlessIfCleanQTypDeep : QTyp → Prop
 | intro (qt : QTyp) :
