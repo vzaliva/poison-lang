@@ -220,8 +220,7 @@ def Progress (e : Expr) (ctx : TypeContext) : Prop :=
   (∃ (fuel : Nat) (res : TypeResult), typecheck ctx e fuel = .ok res) →
   ∀ (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool),
     runtimeInstantiatesCtx ctx μ ρ →
-    let c₀ : Config := { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm }
-    ¬stuck e c₀
+    ¬stuck e { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm }
 
 -- Preservation property: evaluation preserves types
 -- If an expression typechecks and evaluates successfully, the result value
