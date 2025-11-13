@@ -97,8 +97,6 @@ private lemma bevalFunctionBody_preserves_varEnv
 -- Helper lemmas for beval_preserves_varEnv, one per expression constructor
 
 private lemma beval_preserves_varEnv_num (n : Int) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
-      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.num n) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
   have h_eval_fn := h_eval
@@ -110,8 +108,6 @@ private lemma beval_preserves_varEnv_num (n : Int) (fuel' : Nat) (verbose : Bool
   rfl
 
 private lemma beval_preserves_varEnv_bool (b : Bool) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
-      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.bool b) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
   have h_eval_fn := h_eval
@@ -123,8 +119,6 @@ private lemma beval_preserves_varEnv_bool (b : Bool) (fuel' : Nat) (verbose : Bo
   rfl
 
 private lemma beval_preserves_varEnv_unit (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
-      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ Expr.unit verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
   have h_eval_fn := h_eval
@@ -136,8 +130,6 @@ private lemma beval_preserves_varEnv_unit (fuel' : Nat) (verbose : Bool) (config
   rfl
 
 private lemma beval_preserves_varEnv_str (s : String) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
-      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.str s) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
   have h_eval_fn := h_eval
@@ -149,8 +141,6 @@ private lemma beval_preserves_varEnv_str (s : String) (fuel' : Nat) (verbose : B
   rfl
 
 private lemma beval_preserves_varEnv_var (x : Name) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
-      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.var x) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
   have h_eval_fn := h_eval
@@ -647,8 +637,6 @@ private lemma beval_preserves_varEnv_vlet (x : Name) (e1 e2 : Expr) (fuel' : Nat
 
 private lemma beval_preserves_varEnv_fn (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ) (fuel' : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
-    (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
-      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.fn x paramType body returnType) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
   have h_eval_fn := h_eval
@@ -662,8 +650,6 @@ private lemma beval_preserves_varEnv_fn (x : Name) (paramType : Typ) (body : Exp
 
 private lemma beval_preserves_varEnv_pfn (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ) (fuel' : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
-    (_IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
-      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.pfn x paramType body returnType) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
   have h_eval_fn := h_eval
@@ -922,11 +908,11 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (config₀
       cases h_eval_world
     | succ fuel' =>
       cases e with
-      | num n => exact beval_preserves_varEnv_num n fuel' verbose config₀ config₁ v IH h_eval
-      | bool b => exact beval_preserves_varEnv_bool b fuel' verbose config₀ config₁ v IH h_eval
-      | unit => exact beval_preserves_varEnv_unit fuel' verbose config₀ config₁ v IH h_eval
-      | str s => exact beval_preserves_varEnv_str s fuel' verbose config₀ config₁ v IH h_eval
-      | var x => exact beval_preserves_varEnv_var x fuel' verbose config₀ config₁ v IH h_eval
+      | num n => exact beval_preserves_varEnv_num n fuel' verbose config₀ config₁ v h_eval
+      | bool b => exact beval_preserves_varEnv_bool b fuel' verbose config₀ config₁ v h_eval
+      | unit => exact beval_preserves_varEnv_unit fuel' verbose config₀ config₁ v h_eval
+      | str s => exact beval_preserves_varEnv_str s fuel' verbose config₀ config₁ v h_eval
+      | var x => exact beval_preserves_varEnv_var x fuel' verbose config₀ config₁ v h_eval
       | op e1 op e2 =>
         exact beval_preserves_varEnv_op e1 e2 op fuel' verbose config₀ config₁ v IH h_eval
       | unaryop op e1 =>
@@ -946,9 +932,9 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (config₀
       | vlet x e1 e2 =>
         exact beval_preserves_varEnv_vlet x e1 e2 fuel' verbose config₀ config₁ v IH h_eval
       | fn x paramType body returnType =>
-        exact beval_preserves_varEnv_fn x paramType body returnType fuel' verbose config₀ config₁ v IH h_eval
+        exact beval_preserves_varEnv_fn x paramType body returnType fuel' verbose config₀ config₁ v h_eval
       | pfn x paramType body returnType =>
-        exact beval_preserves_varEnv_pfn x paramType body returnType fuel' verbose config₀ config₁ v IH h_eval
+        exact beval_preserves_varEnv_pfn x paramType body returnType fuel' verbose config₀ config₁ v h_eval
       | app e1 e2 =>
         exact beval_preserves_varEnv_app e1 e2 fuel' verbose config₀ config₁ v IH h_eval
       | rand e1 =>
