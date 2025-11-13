@@ -1043,7 +1043,7 @@ private lemma bevalFunctionBody_preserves_varEnv
       unfold LeanPoison.bevalFunctionBody at h_eval
       simp [pure] at h_eval
       -- Apply congrFun to convert function equality to point-wise equality
-      apply LeanProofs.evalAtDefault_eq at h_eval
+      
       -- Now we have: EvalResult.outOfFuel = EvalResult.success finalConfig v
       -- Injection will give us the contradictory components
       injection h_eval with h_contr
@@ -1054,7 +1054,7 @@ private lemma bevalFunctionBody_preserves_varEnv
       unfold LeanPoison.bevalFunctionBody at h_eval
       simp at h_eval
       -- Convert IO to EStateM form
-      apply LeanProofs.evalAtDefault_eq at h_eval
+      
       simp [bind, Bind.bind, EStateM.bind] at h_eval
       -- Split on body evaluation result
       split at h_eval
@@ -1093,8 +1093,9 @@ private lemma beval_preserves_varEnv_num (n : Int) (fuel' : Nat) (verbose : Bool
       LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.num n) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
-  unfold LeanPoison.beval at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  have h_eval_fn := h_eval
+  unfold LeanPoison.beval at h_eval_fn
+  have h_eval := LeanProofs.evalAtDefault_eq h_eval_fn
   injection h_eval with h_cfg _
   injection h_cfg with h_cfg_eq
   subst h_cfg_eq
@@ -1105,8 +1106,9 @@ private lemma beval_preserves_varEnv_bool (b : Bool) (fuel' : Nat) (verbose : Bo
       LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.bool b) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
-  unfold LeanPoison.beval at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  have h_eval_fn := h_eval
+  unfold LeanPoison.beval at h_eval_fn
+  have h_eval := LeanProofs.evalAtDefault_eq h_eval_fn
   injection h_eval with h_cfg _
   injection h_cfg with h_cfg_eq
   subst h_cfg_eq
@@ -1117,8 +1119,9 @@ private lemma beval_preserves_varEnv_unit (fuel' : Nat) (verbose : Bool) (config
       LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ Expr.unit verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
-  unfold LeanPoison.beval at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  have h_eval_fn := h_eval
+  unfold LeanPoison.beval at h_eval_fn
+  have h_eval := LeanProofs.evalAtDefault_eq h_eval_fn
   injection h_eval with h_cfg _
   injection h_cfg with h_cfg_eq
   subst h_cfg_eq
@@ -1129,8 +1132,9 @@ private lemma beval_preserves_varEnv_str (s : String) (fuel' : Nat) (verbose : B
       LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.str s) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
-  unfold LeanPoison.beval at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  have h_eval_fn := h_eval
+  unfold LeanPoison.beval at h_eval_fn
+  have h_eval := LeanProofs.evalAtDefault_eq h_eval_fn
   injection h_eval with h_cfg _
   injection h_cfg with h_cfg_eq
   subst h_cfg_eq
@@ -1141,8 +1145,9 @@ private lemma beval_preserves_varEnv_var (x : Name) (fuel' : Nat) (verbose : Boo
       LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.var x) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
-  unfold LeanPoison.beval at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  have h_eval_fn := h_eval
+  unfold LeanPoison.beval at h_eval_fn
+  have h_eval := LeanProofs.evalAtDefault_eq h_eval_fn
   simp [pure] at h_eval
   cases h_lookup : config₀.varEnv.lookup x with
   | some v' =>
@@ -1160,9 +1165,10 @@ private lemma beval_preserves_varEnv_op (e1 e2 : Expr) (op : Op) (fuel' : Nat) (
       LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.op e1 op e2) verbose = pure (.success config₃ v)) :
   config₀.varEnv = config₃.varEnv := by
-  unfold LeanPoison.beval at h_eval
-  simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  have h_eval_fn := h_eval
+  unfold LeanPoison.beval at h_eval_fn
+  simp at h_eval_fn
+  have h_eval := LeanProofs.evalAtDefault_eq h_eval_fn
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result1 h_state1 h_beval1 =>
@@ -1210,7 +1216,7 @@ private lemma beval_preserves_varEnv_unaryop (op : UnaryOp) (e1 : Expr) (fuel' :
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result h_state h_beval1 =>
@@ -1243,7 +1249,7 @@ private lemma beval_preserves_varEnv_ite (e1 e2 e3 : Expr) (fuel' : Nat) (verbos
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result1 h_state1 h_beval1 =>
@@ -1308,7 +1314,7 @@ private lemma beval_preserves_varEnv_newRef (e1 : Expr) (fuel' : Nat) (verbose :
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result h_state h_beval1 =>
@@ -1337,7 +1343,7 @@ private lemma beval_preserves_varEnv_assign (e1 e2 : Expr) (fuel' : Nat) (verbos
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result1 h_state1 h_beval1 =>
@@ -1380,7 +1386,7 @@ private lemma beval_preserves_varEnv_deref (e1 : Expr) (fuel' : Nat) (verbose : 
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result h_state h_beval1 =>
@@ -1415,7 +1421,7 @@ private lemma beval_preserves_varEnv_seq (e1 e2 : Expr) (fuel' : Nat) (verbose :
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_split1_result h_split1_state h_beval1 =>
@@ -1469,7 +1475,7 @@ private lemma beval_preserves_varEnv_kwhile (e1 e2 : Expr) (fuel' : Nat) (verbos
   -- After simp: the let binding is inlined and fuel'.succ - 1 simplifies to fuel'
   -- So we have: beval fuel' config₀ (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit) verbose = pure (.success config₁ v)
   -- Convert to applied form to work with the monadic structure
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   -- h_eval now contains: beval fuel' config₀ (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit) verbose () = pure (.success config₁ v) ()
   have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
   -- Define the unfolded expression that kwhile expands to
@@ -1491,7 +1497,7 @@ private lemma beval_preserves_varEnv_vlet (x : Name) (e1 e2 : Expr) (fuel' : Nat
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result1 h_state1 h_beval1 =>
@@ -1527,7 +1533,7 @@ private lemma beval_preserves_varEnv_fn (x : Name) (paramType : Typ) (body : Exp
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.fn x paramType body returnType) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [pure] at h_eval
   injection h_eval with h_cfg _
   injection h_cfg with h_cfg_eq
@@ -1541,7 +1547,7 @@ private lemma beval_preserves_varEnv_pfn (x : Name) (paramType : Typ) (body : Ex
     (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.pfn x paramType body returnType) verbose = pure (.success config₁ v)) :
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [pure] at h_eval
   injection h_eval with h_cfg _
   injection h_cfg with h_cfg_eq
@@ -1555,7 +1561,7 @@ private lemma beval_preserves_varEnv_app (e1 e2 : Expr) (fuel' : Nat) (verbose :
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result1 h_state1 h_beval2 =>
@@ -1634,7 +1640,7 @@ private lemma beval_preserves_varEnv_rand (e1 : Expr) (fuel' : Nat) (verbose : B
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result h_state h_beval1 =>
@@ -1672,7 +1678,7 @@ private lemma beval_preserves_varEnv_frand (e1 : Expr) (fuel' : Nat) (verbose : 
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result h_state h_beval1 =>
@@ -1710,7 +1716,7 @@ private lemma beval_preserves_varEnv_printInt (e1 : Expr) (fuel' : Nat) (verbose
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result h_state h_beval1 =>
@@ -1741,7 +1747,7 @@ private lemma beval_preserves_varEnv_printString (e1 : Expr) (fuel' : Nat) (verb
   config₀.varEnv = config₁.varEnv := by
   unfold LeanPoison.beval at h_eval
   simp at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   simp [bind, Bind.bind, EStateM.bind] at h_eval
   split at h_eval
   · next h_result h_state h_beval1 =>
@@ -1785,7 +1791,7 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (config₀
       -- When fuel = 0, beval returns outOfFuel, not success
       unfold LeanPoison.beval at h_eval
       simp at h_eval
-      apply LeanProofs.evalAtDefault_eq at h_eval
+      
       cases h_eval
     | succ fuel' =>
       cases e with
@@ -1886,14 +1892,14 @@ private lemma beval_memory_monotonic_op (e1 e2 : Expr) (op : Op) (fuel : Nat) (v
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp at h_eval
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Case analysis on e1 evaluation
@@ -1956,14 +1962,14 @@ private lemma beval_memory_monotonic_seq (e1 e2 : Expr) (fuel : Nat) (verbose : 
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp at h_eval
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Case analysis on e1 evaluation
@@ -2015,7 +2021,7 @@ private lemma beval_memory_monotonic_unaryop (op : UnaryOp) (e1 : Expr) (fuel : 
   -- Unfold beval (use unfold, not simp, due to mutual recursion)
   unfold LeanPoison.beval at h_eval
   -- Apply unit argument to convert to applied form
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   -- Handle fuel check: if fuel = 0, beval returns outOfFuel (contradiction)
   cases fuel with
   | zero =>
@@ -2090,7 +2096,7 @@ private lemma beval_memory_monotonic_ite (e1 e2 e3 : Expr) (fuel : Nat) (verbose
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
@@ -2098,7 +2104,7 @@ private lemma beval_memory_monotonic_ite (e1 e2 e3 : Expr) (fuel : Nat) (verbose
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Case analysis on e1 evaluation (outer EStateM.Result)
     split at h_eval
@@ -2196,7 +2202,7 @@ private lemma beval_memory_monotonic_deref (e1 : Expr) (fuel : Nat) (verbose : B
   -- Unfold beval (use unfold, not simp, due to mutual recursion)
   unfold LeanPoison.beval at h_eval
   -- Apply unit argument to convert to applied form
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   -- Handle fuel check: if fuel = 0, beval returns outOfFuel (contradiction)
   cases fuel with
   | zero =>
@@ -2310,7 +2316,7 @@ private lemma beval_memory_monotonic_newRef (e1 : Expr) (fuel : Nat) (verbose : 
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
@@ -2318,7 +2324,7 @@ private lemma beval_memory_monotonic_newRef (e1 : Expr) (fuel : Nat) (verbose : 
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Case analysis on e1 evaluation
     split at h_eval
@@ -2389,7 +2395,7 @@ private lemma beval_memory_monotonic_assign (e1 e2 : Expr) (fuel : Nat) (verbose
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
@@ -2397,7 +2403,7 @@ private lemma beval_memory_monotonic_assign (e1 e2 : Expr) (fuel : Nat) (verbose
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Case analysis on e1 evaluation
     split at h_eval
@@ -2493,7 +2499,7 @@ private lemma beval_memory_monotonic_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat)
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
@@ -2501,7 +2507,7 @@ private lemma beval_memory_monotonic_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat)
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Case analysis on e1 evaluation
     split at h_eval
@@ -2582,14 +2588,14 @@ private lemma bevalFunctionBody_memory_monotonic
   | zero =>
     -- When fuel = 0, bevalFunctionBody returns outOfFuel (contradiction)
     unfold LeanPoison.bevalFunctionBody at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.bevalFunctionBody at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Split on body evaluation
     split at h_eval
@@ -2658,7 +2664,7 @@ private lemma beval_memory_monotonic_app (e1 e2 : Expr) (fuel : Nat) (verbose : 
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
@@ -2666,7 +2672,7 @@ private lemma beval_memory_monotonic_app (e1 e2 : Expr) (fuel : Nat) (verbose : 
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Case analysis on e2 evaluation (app evaluates e2 first)
     split at h_eval
@@ -2791,7 +2797,7 @@ private lemma beval_memory_monotonic_rand (e1 : Expr) (fuel : Nat) (verbose : Bo
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
@@ -2799,7 +2805,7 @@ private lemma beval_memory_monotonic_rand (e1 : Expr) (fuel : Nat) (verbose : Bo
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Case analysis on e1 evaluation
     split at h_eval
@@ -2869,7 +2875,7 @@ private lemma beval_memory_monotonic_frand (e1 : Expr) (fuel : Nat) (verbose : B
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
@@ -2877,7 +2883,7 @@ private lemma beval_memory_monotonic_frand (e1 : Expr) (fuel : Nat) (verbose : B
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Case analysis on e1 evaluation
     split at h_eval
@@ -2947,7 +2953,7 @@ private lemma beval_memory_monotonic_printInt (e1 : Expr) (fuel : Nat) (verbose 
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
@@ -2955,7 +2961,7 @@ private lemma beval_memory_monotonic_printInt (e1 : Expr) (fuel : Nat) (verbose 
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Case analysis on e1 evaluation
     split at h_eval
@@ -3014,7 +3020,7 @@ private lemma beval_memory_monotonic_printString (e1 : Expr) (fuel : Nat) (verbo
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     unfold LeanPoison.beval at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
@@ -3022,7 +3028,7 @@ private lemma beval_memory_monotonic_printString (e1 : Expr) (fuel : Nat) (verbo
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Case analysis on e1 evaluation
     split at h_eval
@@ -3087,14 +3093,14 @@ private lemma beval_memory_monotonic_kwhile (e1 e2 : Expr) (fuel : Nat) (verbose
   | zero =>
     -- When fuel = 0, beval returns outOfFuel (contradiction)
     simp [pure] at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     -- fuel = fuel' + 1, so fuel - 1 = fuel'
     -- So we have: beval fuel' config₀ (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit) verbose = pure (.success config₁ v)
     -- Convert to applied form to work with the monadic structure
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     -- h_eval now contains: beval fuel' config₀ (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit) verbose () = pure (.success config₁ v) ()
     have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
     -- Define the unfolded expression that kwhile expands to
@@ -3127,7 +3133,7 @@ lemma beval_memory_monotonic : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
       -- Unfold beval (use unfold, not simp, due to mutual recursion)
       unfold LeanPoison.beval at h_eval
       -- Apply unit argument to convert to applied form
-      apply LeanProofs.evalAtDefault_eq at h_eval
+      
       -- Handle fuel check: if fuel = 0, beval returns outOfFuel (contradiction)
       cases fuel with
       | zero =>
@@ -3150,7 +3156,7 @@ lemma beval_memory_monotonic : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
       -- Unfold beval (use unfold, not simp, due to mutual recursion)
       unfold LeanPoison.beval at h_eval
       -- Apply unit argument to convert to applied form
-      apply LeanProofs.evalAtDefault_eq at h_eval
+      
       -- Handle fuel check: if fuel = 0, beval returns outOfFuel (contradiction)
       cases fuel with
       | zero =>
@@ -3223,7 +3229,7 @@ lemma beval_memory_monotonic : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
       -- Unfold beval (use unfold, not simp, due to mutual recursion)
       unfold LeanPoison.beval at h_eval
       -- Apply unit argument to convert to applied form
-      apply LeanProofs.evalAtDefault_eq at h_eval
+      
       -- Handle fuel check: if fuel = 0, beval returns outOfFuel (contradiction)
       cases fuel with
       | zero =>

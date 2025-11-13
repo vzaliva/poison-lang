@@ -86,7 +86,7 @@ private lemma preservation_num (n : Int) (ctx : TypeContext) : Preservation (Exp
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
   -- Unfold beval and analyze the IO computation
   simp [LeanPoison.beval] at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   -- Case split on fuel
   cases fuel_eval with
   | zero =>
@@ -121,7 +121,7 @@ private lemma preservation_bool (b : Bool) (ctx : TypeContext) : Preservation (E
   intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
   simp [LeanPoison.beval] at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   cases fuel_eval with
   | zero => cases h_eval
   | succ fuel' =>
@@ -146,7 +146,7 @@ private lemma preservation_unit (ctx : TypeContext) : Preservation Expr.unit ctx
   intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
   simp [LeanPoison.beval] at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   cases fuel_eval with
   | zero => cases h_eval
   | succ fuel' =>
@@ -171,7 +171,7 @@ private lemma preservation_str (s : String) (ctx : TypeContext) : Preservation (
   intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
   simp [LeanPoison.beval] at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   cases fuel_eval with
   | zero => cases h_eval
   | succ fuel' =>
@@ -324,7 +324,7 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
     -- When fuel = 0, beval returns outOfFuel, contradicting h_eval
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
@@ -334,7 +334,7 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
     unfold LeanPoison.beval at h_eval
     simp at h_eval
     -- Convert function equality to point-wise equality
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     -- Simplify monadic bind operations
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Split on the result of evaluating e1 (outer EStateM.Result)
@@ -611,7 +611,7 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
   | zero =>
     -- When fuel = 0, beval returns outOfFuel, not success
     simp [LeanPoison.beval] at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     cases h_eval
   | succ fuel' =>
     -- In this branch, n = fuel'.succ (by pattern matching)
@@ -776,7 +776,7 @@ private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Ex
   -- and runtimeInstantiatesCtx ensures x is in ρ with correct type
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
   simp [LeanPoison.beval] at h_eval
-  apply LeanProofs.evalAtDefault_eq at h_eval
+  
   cases fuel_eval with
   | zero => cases h_eval
   | succ fuel' =>
@@ -905,14 +905,14 @@ private lemma bevalUnaryOp_structure (op : UnaryOp) (e1 : Expr) (fuel : Nat) (ve
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -986,7 +986,7 @@ private lemma preservation_unaryop (op : UnaryOp) (e1 : Expr) (ctx : TypeContext
   cases n with
   | zero =>
     simp [LeanPoison.beval] at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     cases h_eval
   | succ fuel' =>
     cases fuel_tc with
@@ -1062,14 +1062,14 @@ private lemma bevalSeq_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -1231,14 +1231,14 @@ private lemma bevalRand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind, pure] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -1290,14 +1290,14 @@ private lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind, pure] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -1427,14 +1427,14 @@ private lemma bevalPrintInt_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind, pure] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -1477,14 +1477,14 @@ private lemma bevalPrintString_structure (e1 : Expr) (fuel : Nat) (verbose : Boo
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind, pure] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -1522,7 +1522,7 @@ private lemma preservation_printInt (e1 : Expr) (ctx : TypeContext)
   cases n with
   | zero =>
     simp [LeanPoison.beval] at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     cases h_eval
   | succ fuel' =>
     cases fuel_tc with
@@ -1592,7 +1592,7 @@ private lemma preservation_printString (e1 : Expr) (ctx : TypeContext)
   cases n with
   | zero =>
     simp [LeanPoison.beval] at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     cases h_eval
   | succ fuel' =>
     cases fuel_tc with
@@ -1662,7 +1662,7 @@ private lemma preservation_rand (e1 : Expr) (ctx : TypeContext)
   cases n with
   | zero =>
     simp [LeanPoison.beval] at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     cases h_eval
   | succ fuel' =>
     cases fuel_tc with
@@ -1732,7 +1732,7 @@ private lemma preservation_frand (e1 : Expr) (ctx : TypeContext)
   cases n with
   | zero =>
     simp [LeanPoison.beval] at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     cases h_eval
   | succ fuel' =>
     cases fuel_tc with
@@ -1847,7 +1847,7 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
   cases n with
   | zero =>
     simp [LeanPoison.beval] at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     cases h_eval
   | succ fuel' =>
     cases fuel_tc with
@@ -2033,14 +2033,14 @@ private lemma bevalVlet_structure (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbos
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -2105,7 +2105,7 @@ private lemma preservation_vlet (x : Name) (e1 e2 : Expr) (ctx : TypeContext)
   cases n with
   | zero =>
     simp [LeanPoison.beval] at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     cases h_eval
   | succ fuel' =>
     cases fuel_tc with
@@ -2266,7 +2266,7 @@ private lemma preservation_fn (x : Name) (paramType : Typ) (body : Expr) (return
   | zero =>
     -- With fuel 0, beval returns outOfFuel
     simp [LeanPoison.beval] at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     cases h_eval
   | succ fuel' =>
     cases fuel_tc with
@@ -2275,7 +2275,7 @@ private lemma preservation_fn (x : Name) (paramType : Typ) (body : Expr) (return
       simp only [typecheck, typecheckExpr, typecheckFn, pure, Except.pure] at h_typecheck
       -- Evaluation creates closure without changing state
       simp [LeanPoison.beval] at h_eval
-      apply LeanProofs.evalAtDefault_eq at h_eval
+      
       simp [pure] at h_eval
       -- Extract equalities
       cases h_typecheck
@@ -2298,7 +2298,7 @@ private lemma preservation_pfn (x : Name) (paramType : Typ) (body : Expr) (retur
   cases n with
   | zero =>
     simp [LeanPoison.beval] at h_eval
-    apply LeanProofs.evalAtDefault_eq at h_eval
+    
     cases h_eval
   | succ fuel' =>
     cases fuel_tc with
@@ -2317,7 +2317,7 @@ private lemma preservation_pfn (x : Name) (paramType : Typ) (body : Expr) (retur
         simp [pure, Except.pure] at h_typecheck
         -- Evaluation creates peClosure without changing state
         simp [LeanPoison.beval] at h_eval
-        apply LeanProofs.evalAtDefault_eq at h_eval
+        
         simp [pure] at h_eval
         -- Extract equalities
         cases h_typecheck

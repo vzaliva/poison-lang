@@ -65,79 +65,76 @@ lemma var_has_value_if_typed (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (x 
 private lemma progress_num (n : Int) (ctx : TypeContext) : Progress (Expr.num n) ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
-  push_neg
-  intro fuel_eval verbose msg
-  -- Numeric literals always succeed when fuel > 0, or return outOfFuel when fuel = 0
-  -- In either case, they never return runtimeError
-  intro h_contra
-  -- Unfold beval and analyze the IO computation
-  simp [LeanPoison.beval] at h_contra
-  -- Apply congrFun to eliminate the IO wrapper
-  apply LeanProofs.evalAtDefault_eq at h_contra
-  -- Case split on fuel
+  rintro ⟨fuel_eval, verbose, msg, h_contra⟩
   cases fuel_eval with
   | zero =>
-    -- When fuel = 0, beval returns outOfFuel, not runtimeError
-    -- h_contra shows: outOfFuel = runtimeError msg, which is impossible
-    cases h_contra
+    have h := LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld h_contra
+    simp [LeanPoison.beval] at h
+    cases h
   | succ fuel' =>
-    -- When fuel > 0, beval returns success for numeric literals
-    -- h_contra shows: success config (num n) = runtimeError msg, which is impossible
-    cases h_contra
+    have h := LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld h_contra
+    simp [LeanPoison.beval] at h
+    cases h
 
 -- Private lemma for bool case
 private lemma progress_bool (b : Bool) (ctx : TypeContext) : Progress (Expr.bool b) ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
-  push_neg
-  intro fuel_eval verbose msg
-  intro h_contra
-  simp [LeanPoison.beval] at h_contra
-  apply LeanProofs.evalAtDefault_eq at h_contra
+  rintro ⟨fuel_eval, verbose, msg, h_contra⟩
   cases fuel_eval with
-  | zero => cases h_contra
-  | succ fuel' => cases h_contra
+  | zero =>
+    have h := LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld h_contra
+    simp [LeanPoison.beval] at h
+    cases h
+  | succ fuel' =>
+    have h := LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld h_contra
+    simp [LeanPoison.beval] at h
+    cases h
 
 -- Private lemma for unit case
 private lemma progress_unit (ctx : TypeContext) : Progress Expr.unit ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
-  push_neg
-  intro fuel_eval verbose msg
-  intro h_contra
-  simp [LeanPoison.beval] at h_contra
-  apply LeanProofs.evalAtDefault_eq at h_contra
+  rintro ⟨fuel_eval, verbose, msg, h_contra⟩
   cases fuel_eval with
-  | zero => cases h_contra
-  | succ fuel' => cases h_contra
+  | zero =>
+    have h := LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld h_contra
+    simp [LeanPoison.beval] at h
+    cases h
+  | succ fuel' =>
+    have h := LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld h_contra
+    simp [LeanPoison.beval] at h
+    cases h
 
 -- Private lemma for str case
 private lemma progress_str (s : String) (ctx : TypeContext) : Progress (Expr.str s) ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
-  push_neg
-  intro fuel_eval verbose msg
-  intro h_contra
-  simp [LeanPoison.beval] at h_contra
-  apply LeanProofs.evalAtDefault_eq at h_contra
+  rintro ⟨fuel_eval, verbose, msg, h_contra⟩
   cases fuel_eval with
-  | zero => cases h_contra
-  | succ fuel' => cases h_contra
+  | zero =>
+    have h := LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld h_contra
+    simp [LeanPoison.beval] at h
+    cases h
+  | succ fuel' =>
+    have h := LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld h_contra
+    simp [LeanPoison.beval] at h
+    cases h
 
 -- Private lemma for var case
 private lemma progress_var (x : Name) (ctx : TypeContext) : Progress (Expr.var x) ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
-  push_neg
-  intro fuel_eval verbose msg
-  intro h_contra
+  rintro ⟨fuel_eval, verbose, msg, h_contra⟩
   -- Variable lookup: if x typechecks, then x must be in ctx.varEnv
   -- and runtimeInstantiatesCtx ensures x is in ρ, so lookup succeeds
-  simp [LeanPoison.beval] at h_contra
-  apply LeanProofs.evalAtDefault_eq at h_contra
   cases fuel_eval with
-  | zero => cases h_contra
+  | zero =>
+    have h := LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld h_contra
+    simp [LeanPoison.beval] at h
+    cases h
   | succ fuel' =>
+    have h := LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld h_contra
     -- When fuel > 0, beval looks up x in ρ
     -- From typechecking, we know x is in ctx.varEnv
     cases fuel_tc with
@@ -157,8 +154,8 @@ private lemma progress_var (x : Name) (ctx : TypeContext) : Progress (Expr.var x
         -- If x is in ctx.varEnv, then by runtimeInstantiatesCtx, x is in ρ
         have ⟨v, h_v⟩ := var_has_value_if_typed ctx μ ρ x h_instantiate ⟨qt, h_lookup⟩
         -- Now beval will find v in ρ and return success
-        simp [h_v] at h_contra
-        cases h_contra
+        simp [LeanPoison.beval, h_v] at h
+        cases h
 
 -- Progress theorem: well-typed programs don't get stuck
 -- This proof uses strong induction on fuel_eval
