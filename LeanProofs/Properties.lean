@@ -1160,6 +1160,121 @@ private lemma beval_preserves_varEnv_var (x : Name) (fuel' : Nat) (verbose : Boo
     simp [h_lookup] at h_eval_world
     injection h_eval_world with h_contr _
     injection h_contr
+
+private lemma beval_preserves_varEnv_unaryop (op : UnaryOp) (e1 : Expr) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
+      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
+    (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.unaryop op e1) verbose = pure (.success config₁ v)) :
+  config₀.varEnv = config₁.varEnv := by
+  -- Keep the function equality for IH, destruct using per-world equality
+  have h_eval_fn := h_eval
+  unfold LeanPoison.beval at h_eval_fn
+  -- Specialise to the default world only for destructing the bind-chain
+  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval_fn
+  simp at h_eval_world
+  simp [bind, Bind.bind, EStateM.bind] at h_eval_world
+  -- Case analysis on evaluation of e1
+  split at h_eval_world
+  · next h_result h_state h_beval1 =>
+    -- e1 evaluated to success; inspect inner result
+    split at h_eval_world
+    · next config' v' =>
+      -- Now run the unary operator
+      cases h_evalUnaryOp : LeanPoison.evalUnaryOp op v' with
+      | some v_result =>
+        simp [h_evalUnaryOp] at h_eval_world
+        injection h_eval_world with h_cfg h_state_eq
+        injection h_cfg with h_cfg_eq h_val_eq
+        subst h_cfg_eq
+        -- Use IH on e1 (construct function equality pointwise over worlds)
+        have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+        have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' v') := by
+          funext w
+          -- derive a per-world view of the whole unaryop evaluation and peel the bind-chain
+          have h_eval_world_w := LeanProofs.evalAtWorld_eq w h_eval_fn
+          simp at h_eval_world_w
+          simp [bind, Bind.bind, EStateM.bind] at h_eval_world_w
+          -- evaluation of e1 at world w must be success (otherwise contradiction with success of unaryop)
+          split at h_eval_world_w
+          · next _h_result_w h_state_w h_beval1_w =>
+            -- inner split produces the success case for e1 at world w
+            split at h_eval_world_w
+            · next config_w v_w =>
+              -- evaluate unary op at world w; must succeed to match outer success
+              cases h_evalUnaryOp_w : LeanPoison.evalUnaryOp op v_w with
+              | some v_result_w =>
+                simp [h_evalUnaryOp_w] at h_eval_world_w
+                -- from outer success, configs must agree; unify config_w with config'
+                injection h_eval_world_w with h_cfg_w h_state_eq_w
+                injection h_cfg_w with h_cfg_eq_w h_val_eq_w
+                subst h_cfg_eq_w
+                -- show the sub-expression value is world-independent using evalUnaryOp determinism
+                have h1 : LeanPoison.evalUnaryOp op v' = some v := by
+                  simpa [h_val_eq] using h_evalUnaryOp
+                have h2 : LeanPoison.evalUnaryOp op v_w = some v := by
+                  simpa [h_val_eq_w] using h_evalUnaryOp_w
+                -- Since evalUnaryOp only succeeds for UnaryOp.not with Value.bool,
+                -- both v' and v_w must be bool values
+                have hv : v_w = v' := by
+                  cases op with
+                  | not =>
+                    -- evalUnaryOp UnaryOp.not only succeeds for Value.bool
+                    -- So both v' and v_w must be Value.bool
+                    cases v' with
+                    | bool b' =>
+                      cases v_w with
+                      | bool b_w =>
+                        -- Both are bools, show they're equal
+                        have hv1 : v = Value.bool (!b') := (Option.some.inj h1).symm
+                        have hv2 : v = Value.bool (!b_w) := (Option.some.inj h2).symm
+                        have : Value.bool (!b') = Value.bool (!b_w) := by
+                          rw [← hv1, hv2]
+                        injection this with h_not_eq
+                        -- h_not_eq: !b' = !b_w
+                        -- Since ! is injective, b' = b_w
+                        cases b' <;> cases b_w <;> cases h_not_eq <;> rfl
+                      | num | unit | str | loc _ | closure _ _ _ | peClosure _ _ _ =>
+                        -- v_w is not bool, but evalUnaryOp succeeded - contradiction
+                        simp [LeanPoison.evalUnaryOp] at h2
+                    | num | unit | str | loc _ | closure _ _ _ | peClosure _ _ _ =>
+                      -- v' is not bool, but evalUnaryOp succeeded - contradiction
+                      simp [LeanPoison.evalUnaryOp] at h1
+                -- conclude pointwise equality for e1 at world w
+                -- Rewrite h_beval1_w: replace v_w with v' and h_state_w with w
+                rw [hv, h_state_eq_w] at h_beval1_w
+                simp [pure]
+                exact h_beval1_w
+              | none =>
+                -- impossible: outer evaluation succeeded
+                simp [h_evalUnaryOp_w] at h_eval_world_w
+                injection h_eval_world_w with h_cfg_w _
+                injection h_cfg_w
+            · next =>
+              -- impossible: outer evaluation succeeded
+              simp [pure] at h_eval_world_w
+              injection h_eval_world_w with h_cfg_w _
+              injection h_cfg_w
+            · next msg =>
+              -- impossible: outer evaluation succeeded
+              simp [pure] at h_eval_world_w
+              injection h_eval_world_w with h_cfg_w _
+              injection h_cfg_w
+          · next h_error_w _ =>
+            -- impossible: outer evaluation succeeded
+            injection h_eval_world_w
+        exact IH fuel' h_fuel e1 verbose config₀ config' v' h_beval1'
+      | none =>
+        simp [h_evalUnaryOp] at h_eval_world
+        injection h_eval_world with h_cfg _
+        injection h_cfg
+    · next =>
+      injection h_eval_world with h_cfg _; injection h_cfg
+    · next msg =>
+      injection h_eval_world with h_cfg _; injection h_cfg
+  · next h_error h_state =>
+    injection h_eval_world
+
+
 -- TODO: This lemma needs state equality proofs to extract function equalities from h_beval1 and h_beval2
 -- The issue is showing h_state1 = defaultWorld and h_state2 = h_state1 from the bind chain
 private lemma beval_preserves_varEnv_op (e1 e2 : Expr) (op : Op) (fuel' : Nat) (verbose : Bool) (config₀ config₃ : Config) (v : Value)
@@ -1238,48 +1353,6 @@ private lemma beval_preserves_varEnv_op (e1 e2 : Expr) (op : Op) (fuel' : Nat) (
     · next => injection h_eval_world with h_cfg _; injection h_cfg
     · next msg => injection h_eval_world with h_cfg _; injection h_cfg
   · next h_error1 h_state1 => cases h_eval_world
-
-private lemma beval_preserves_varEnv_unaryop (op : UnaryOp) (e1 : Expr) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
-      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
-    (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.unaryop op e1) verbose = pure (.success config₁ v)) :
-  config₀.varEnv = config₁.varEnv := by
-  have h_eval_fn := h_eval
-  unfold LeanPoison.beval at h_eval_fn
-  simp at h_eval_fn
-  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval_fn
-  simp [bind, Bind.bind, EStateM.bind] at h_eval_world
-  split at h_eval_world
-  · next h_result h_state h_beval1 =>
-    split at h_eval_world
-    · next config' v' =>
-      cases h_evalUnaryOp : LeanPoison.evalUnaryOp op v' with
-      | some v_result =>
-        simp [h_evalUnaryOp] at h_eval_world
-        injection h_eval_world with h_cfg h_state_eq
-        injection h_cfg with h_cfg_eq
-        injection h_state_eq with h_state_eq_inner
-        subst h_cfg_eq
-        have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-        -- h_state_eq_inner shows h_state = defaultWorld
-        have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' v') := by
-          funext w
-          simp [pure]
-          -- h_beval1 shows equality at defaultWorld with state h_state
-          -- From h_state_eq_inner, h_state = defaultWorld
-          rw [h_state_eq_inner] at h_beval1
-          -- Now h_beval1: beval ... defaultWorld = EStateM.Result.ok ... defaultWorld
-          -- We need: beval ... w = EStateM.Result.ok ... w
-          -- Since beval is deterministic, if it equals pure at defaultWorld, it equals pure at all worlds
-          sorry -- TODO: need to show beval is deterministic across worlds
-        exact IH fuel' h_fuel e1 verbose config₀ config' v' h_beval1'
-      | none =>
-        simp [h_evalUnaryOp] at h_eval_world
-        injection h_eval_world with h_cfg _
-        injection h_cfg
-    · next => injection h_eval_world with h_cfg _; injection h_cfg
-    · next msg => injection h_eval_world with h_cfg _; injection h_cfg
-  · next h_error h_state => injection h_eval_world
 
 private lemma beval_preserves_varEnv_ite (e1 e2 e3 : Expr) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
