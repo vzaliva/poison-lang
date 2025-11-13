@@ -8,6 +8,7 @@ import LeanPoison.BigStep
 import Mathlib.Data.List.Forall2
 
 import LeanProofs.NonInterference
+import LeanProofs.IOHelpers
 
 
 open List
@@ -27,7 +28,7 @@ private lemma terminatesToSucc_of_terminatesTo :
   rcases n with _ | ⟨n'⟩
   · unfold LeanPoison.beval at h1
     dsimp at h1
-    apply congrFun (a := ()) at h1
+    apply LeanProofs.evalAtDefault_eq at h1
     injection h1 with h1 _
     injection h1
   · exists n', v
@@ -173,13 +174,13 @@ private lemma TypeSystemEnforcesNonInterference_unit
   subst res
   have heval1_rw := heval1
   simp [LeanPoison.beval] at heval1_rw
-  apply congrFun (a := ()) at heval1_rw
+  apply LeanProofs.evalAtDefault_eq at heval1_rw
   injection heval1_rw with heval1_rw _
   injection heval1_rw with heval1_rw
   injection heval1_rw with heval1m heval1v
   have heval2_rw := heval2
   simp [LeanPoison.beval] at heval2_rw
-  apply congrFun (a := ()) at heval2_rw
+  apply LeanProofs.evalAtDefault_eq at heval2_rw
   injection heval2_rw with heval2_rw _
   injection heval2_rw with heval2_rw
   injection heval2_rw with heval2m heval2v
@@ -232,13 +233,13 @@ private lemma TypeSystemEnforcesNonInterference_num
   subst res
   have heval1_rw := heval1
   simp [LeanPoison.beval] at heval1_rw
-  apply congrFun (a := ()) at heval1_rw
+  apply LeanProofs.evalAtDefault_eq at heval1_rw
   injection heval1_rw with heval1_rw _
   injection heval1_rw with heval1_rw
   injection heval1_rw with heval1m heval1v
   have heval2_rw := heval2
   simp [LeanPoison.beval] at heval2_rw
-  apply congrFun (a := ()) at heval2_rw
+  apply LeanProofs.evalAtDefault_eq at heval2_rw
   injection heval2_rw with heval2_rw _
   injection heval2_rw with heval2_rw
   injection heval2_rw with heval2m heval2v
@@ -291,13 +292,13 @@ private lemma TypeSystemEnforcesNonInterference_bool
   subst res
   have heval1_rw := heval1
   simp [LeanPoison.beval] at heval1_rw
-  apply congrFun (a := ()) at heval1_rw
+  apply LeanProofs.evalAtDefault_eq at heval1_rw
   injection heval1_rw with heval1_rw _
   injection heval1_rw with heval1_rw
   injection heval1_rw with heval1m heval1v
   have heval2_rw := heval2
   simp [LeanPoison.beval] at heval2_rw
-  apply congrFun (a := ()) at heval2_rw
+  apply LeanProofs.evalAtDefault_eq at heval2_rw
   injection heval2_rw with heval2_rw _
   injection heval2_rw with heval2_rw
   injection heval2_rw with heval2m heval2v
@@ -350,13 +351,13 @@ private lemma TypeSystemEnforcesNonInterference_str
   subst res
   have heval1_rw := heval1
   simp [LeanPoison.beval] at heval1_rw
-  apply congrFun (a := ()) at heval1_rw
+  apply LeanProofs.evalAtDefault_eq at heval1_rw
   injection heval1_rw with heval1_rw _
   injection heval1_rw with heval1_rw
   injection heval1_rw with heval1m heval1v
   have heval2_rw := heval2
   simp [LeanPoison.beval] at heval2_rw
-  apply congrFun (a := ()) at heval2_rw
+  apply LeanProofs.evalAtDefault_eq at heval2_rw
   injection heval2_rw with heval2_rw _
   injection heval2_rw with heval2_rw
   injection heval2_rw with heval2m heval2v
@@ -406,7 +407,7 @@ private lemma TypeSystemEnforcesNonInterference_var
   rcases n with _ | n <;> simp [typecheck, typecheckExpr] at htc
   have heval1_rw := heval1
   simp [LeanPoison.beval] at heval1_rw
-  apply congrFun (a := ()) at heval1_rw
+  apply LeanProofs.evalAtDefault_eq at heval1_rw
   have ⟨v1, hv1⟩ : ∃ v, (mkInit μ₁ ρ₁).varEnv.lookup x = some v := by
     rcases hvel : (mkInit μ₁ ρ₁).varEnv.lookup x with _ | ⟨v⟩
     · rw [hvel] at heval1_rw
@@ -421,7 +422,7 @@ private lemma TypeSystemEnforcesNonInterference_var
   injection heval1_rw with heval1m heval1v
   have heval2_rw := heval2
   simp [LeanPoison.beval] at heval2_rw
-  apply congrFun (a := ()) at heval2_rw
+  apply LeanProofs.evalAtDefault_eq at heval2_rw
   have ⟨v2, hv2⟩ : ∃ v, (mkInit μ₂ ρ₂).varEnv.lookup x = some v := by
     rcases hvel : (mkInit μ₂ ρ₂).varEnv.lookup x with _ | ⟨v⟩
     · rw [hvel] at heval2_rw
@@ -640,7 +641,7 @@ private lemma TypeSystemEnforcesNonInterference_unaryop
     simp [pure, bind] at heval
     unfold EStateM.pure at heval
     unfold EStateM.bind at heval
-    apply congrFun (a := ()) at heval
+    apply LeanProofs.evalAtDefault_eq at heval
     rcases heval' : LeanPoison.beval fuel (mkInit μ ρ) e verbose () with ⟨⟨e'⟩ | ⟨cf', r⟩⟩
     · rw [heval'] at heval
       dsimp at heval
