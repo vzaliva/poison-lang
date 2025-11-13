@@ -9,6 +9,7 @@ import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.NonInterference
+import LeanProofs.IOHelpers
 
 -- ================================================================
 -- Progress Property
@@ -72,7 +73,7 @@ private lemma progress_num (n : Int) (ctx : TypeContext) : Progress (Expr.num n)
   -- Unfold beval and analyze the IO computation
   simp [LeanPoison.beval] at h_contra
   -- Apply congrFun to eliminate the IO wrapper
-  apply congrFun (a := ()) at h_contra
+  apply LeanProofs.evalAtDefault_eq at h_contra
   -- Case split on fuel
   cases fuel_eval with
   | zero =>
@@ -92,7 +93,7 @@ private lemma progress_bool (b : Bool) (ctx : TypeContext) : Progress (Expr.bool
   intro fuel_eval verbose msg
   intro h_contra
   simp [LeanPoison.beval] at h_contra
-  apply congrFun (a := ()) at h_contra
+  apply LeanProofs.evalAtDefault_eq at h_contra
   cases fuel_eval with
   | zero => cases h_contra
   | succ fuel' => cases h_contra
@@ -105,7 +106,7 @@ private lemma progress_unit (ctx : TypeContext) : Progress Expr.unit ctx := by
   intro fuel_eval verbose msg
   intro h_contra
   simp [LeanPoison.beval] at h_contra
-  apply congrFun (a := ()) at h_contra
+  apply LeanProofs.evalAtDefault_eq at h_contra
   cases fuel_eval with
   | zero => cases h_contra
   | succ fuel' => cases h_contra
@@ -118,7 +119,7 @@ private lemma progress_str (s : String) (ctx : TypeContext) : Progress (Expr.str
   intro fuel_eval verbose msg
   intro h_contra
   simp [LeanPoison.beval] at h_contra
-  apply congrFun (a := ()) at h_contra
+  apply LeanProofs.evalAtDefault_eq at h_contra
   cases fuel_eval with
   | zero => cases h_contra
   | succ fuel' => cases h_contra
@@ -133,7 +134,7 @@ private lemma progress_var (x : Name) (ctx : TypeContext) : Progress (Expr.var x
   -- Variable lookup: if x typechecks, then x must be in ctx.varEnv
   -- and runtimeInstantiatesCtx ensures x is in ρ, so lookup succeeds
   simp [LeanPoison.beval] at h_contra
-  apply congrFun (a := ()) at h_contra
+  apply LeanProofs.evalAtDefault_eq at h_contra
   cases fuel_eval with
   | zero => cases h_contra
   | succ fuel' =>
