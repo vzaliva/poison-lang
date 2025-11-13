@@ -82,24 +82,16 @@ private lemma preservationWithFuel_implies_preservation (e : Expr) (ctx : TypeCo
 private lemma preservation_num (n : Int) (ctx : TypeContext) : Preservation (Expr.num n) ctx := by
   unfold Preservation
   intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
-  -- Numeric literals evaluate to numeric values and don't modify the environment
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
-  -- Unfold beval and analyze the IO computation
-  simp [LeanPoison.beval] at h_eval
-  
-  -- Case split on fuel
+  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+  simp [LeanPoison.beval] at h_eval_world
   cases fuel_eval with
   | zero =>
-    -- When fuel = 0, beval returns outOfFuel, not success
-    -- This contradicts h_terminates which requires success
-    cases h_eval
+    cases h_eval_world
   | succ fuel' =>
-    -- When fuel > 0, beval returns success config (Value.num n)
-    injection h_eval with h_eq_config h_eq_val
-    -- Extract that configs are equal and value is num n
+    injection h_eval_world with h_eq_config h_eq_val
     cases h_eq_config
     cases h_eq_val
-    -- Analyze typechecking to extract res.qualType.etyp = ETyp.int
     cases fuel_tc with
     | zero =>
       simp [typecheck, typecheckExpr] at h_typecheck
@@ -120,12 +112,12 @@ private lemma preservation_bool (b : Bool) (ctx : TypeContext) : Preservation (E
   unfold Preservation
   intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
-  simp [LeanPoison.beval] at h_eval
-  
+  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+  simp [LeanPoison.beval] at h_eval_world
   cases fuel_eval with
-  | zero => cases h_eval
+  | zero => cases h_eval_world
   | succ fuel' =>
-    injection h_eval with h_eq_config h_eq_val
+    injection h_eval_world with h_eq_config h_eq_val
     cases h_eq_config
     cases h_eq_val
     cases fuel_tc with
@@ -145,12 +137,12 @@ private lemma preservation_unit (ctx : TypeContext) : Preservation Expr.unit ctx
   unfold Preservation
   intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
-  simp [LeanPoison.beval] at h_eval
-  
+  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+  simp [LeanPoison.beval] at h_eval_world
   cases fuel_eval with
-  | zero => cases h_eval
+  | zero => cases h_eval_world
   | succ fuel' =>
-    injection h_eval with h_eq_config h_eq_val
+    injection h_eval_world with h_eq_config h_eq_val
     cases h_eq_config
     cases h_eq_val
     cases fuel_tc with
@@ -170,12 +162,12 @@ private lemma preservation_str (s : String) (ctx : TypeContext) : Preservation (
   unfold Preservation
   intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v h_typecheck h_instantiate h_terminates
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
-  simp [LeanPoison.beval] at h_eval
-  
+  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+  simp [LeanPoison.beval] at h_eval_world
   cases fuel_eval with
-  | zero => cases h_eval
+  | zero => cases h_eval_world
   | succ fuel' =>
-    injection h_eval with h_eq_config h_eq_val
+    injection h_eval_world with h_eq_config h_eq_val
     cases h_eq_config
     cases h_eq_val
     cases fuel_tc with
@@ -609,10 +601,9 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
   -- Evaluation of binary operation
   cases n with
   | zero =>
-    -- When fuel = 0, beval returns outOfFuel, not success
-    simp [LeanPoison.beval] at h_eval
-    
-    cases h_eval
+    have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+    simp [LeanPoison.beval] at h_eval_world
+    cases h_eval_world
   | succ fuel' =>
     -- In this branch, n = fuel'.succ (by pattern matching)
     -- So we have fuel' < fuel'.succ = n, which is exactly what we need for IH!
@@ -775,10 +766,10 @@ private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Ex
   -- Variable lookup: if x typechecks, then x is in ctx.varEnv
   -- and runtimeInstantiatesCtx ensures x is in ρ with correct type
   obtain ⟨fuel_eval, verbose, h_eval⟩ := h_terminates
-  simp [LeanPoison.beval] at h_eval
-  
+  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+  simp [LeanPoison.beval] at h_eval_world
   cases fuel_eval with
-  | zero => cases h_eval
+  | zero => cases h_eval_world
   | succ fuel' =>
     -- When fuel > 0, beval looks up x in ρ
     cases fuel_tc with
@@ -795,8 +786,8 @@ private lemma preservation_var (x : Name) (ctx : TypeContext) : Preservation (Ex
         -- If x is in ctx.varEnv, then by runtimeInstantiatesCtx, x is in ρ with correct type
         have ⟨v_found, h_v, h_typ⟩ := var_has_correct_type ctx μ₀ ρ₀ x qt h_instantiate h_lookup
         -- Now beval will find v_found in ρ and return success
-        simp [h_v] at h_eval
-        injection h_eval with h_eq_config h_eq_val
+        simp [h_v] at h_eval_world
+        injection h_eval_world with h_eq_config h_eq_val
         cases h_eq_config
         cases h_eq_val
         -- Now we need to show that the typechecking result matches
@@ -985,9 +976,9 @@ private lemma preservation_unaryop (op : UnaryOp) (e1 : Expr) (ctx : TypeContext
   intro fuel_tc res μ₀ μ₂ ρ₀ ρ₂ l₀ l₂ pm₀ pm₂ v verbose h_typecheck h_instantiate h_eval
   cases n with
   | zero =>
-    simp [LeanPoison.beval] at h_eval
-    
-    cases h_eval
+    have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+    simp [LeanPoison.beval] at h_eval_world
+    cases h_eval_world
   | succ fuel' =>
     cases fuel_tc with
     | zero => simp [typecheck, typecheckExpr] at h_typecheck
@@ -1521,9 +1512,9 @@ private lemma preservation_printInt (e1 : Expr) (ctx : TypeContext)
   intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
   cases n with
   | zero =>
-    simp [LeanPoison.beval] at h_eval
-    
-    cases h_eval
+    have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+    simp [LeanPoison.beval] at h_eval_world
+    cases h_eval_world
   | succ fuel' =>
     cases fuel_tc with
     | zero => simp [typecheck, typecheckExpr] at h_typecheck
@@ -1591,9 +1582,9 @@ private lemma preservation_printString (e1 : Expr) (ctx : TypeContext)
   intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
   cases n with
   | zero =>
-    simp [LeanPoison.beval] at h_eval
-    
-    cases h_eval
+    have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+    simp [LeanPoison.beval] at h_eval_world
+    cases h_eval_world
   | succ fuel' =>
     cases fuel_tc with
     | zero => simp [typecheck, typecheckExpr] at h_typecheck
@@ -1661,9 +1652,9 @@ private lemma preservation_rand (e1 : Expr) (ctx : TypeContext)
   intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
   cases n with
   | zero =>
-    simp [LeanPoison.beval] at h_eval
-    
-    cases h_eval
+    have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+    simp [LeanPoison.beval] at h_eval_world
+    cases h_eval_world
   | succ fuel' =>
     cases fuel_tc with
     | zero => simp [typecheck, typecheckExpr] at h_typecheck
@@ -1731,9 +1722,9 @@ private lemma preservation_frand (e1 : Expr) (ctx : TypeContext)
   intro fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose h_typecheck h_instantiate h_eval
   cases n with
   | zero =>
-    simp [LeanPoison.beval] at h_eval
-    
-    cases h_eval
+    have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+    simp [LeanPoison.beval] at h_eval_world
+    cases h_eval_world
   | succ fuel' =>
     cases fuel_tc with
     | zero => simp [typecheck, typecheckExpr] at h_typecheck
@@ -1846,9 +1837,9 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
   intro fuel_tc res μ₀ μ₂ ρ₀ ρ₂ l₀ l₂ pm₀ pm₂ v verbose h_typecheck h_instantiate h_eval
   cases n with
   | zero =>
-    simp [LeanPoison.beval] at h_eval
-    
-    cases h_eval
+    have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+    simp [LeanPoison.beval] at h_eval_world
+    cases h_eval_world
   | succ fuel' =>
     cases fuel_tc with
     | zero => simp [typecheck, typecheckExpr] at h_typecheck
@@ -2104,9 +2095,9 @@ private lemma preservation_vlet (x : Name) (e1 e2 : Expr) (ctx : TypeContext)
   intro fuel_tc res μ₀ μ_final ρ₀ ρ_final l₀ l_final pm₀ pm_final v verbose h_typecheck h_instantiate h_eval
   cases n with
   | zero =>
-    simp [LeanPoison.beval] at h_eval
-    
-    cases h_eval
+    have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+    simp [LeanPoison.beval] at h_eval_world
+    cases h_eval_world
   | succ fuel' =>
     cases fuel_tc with
     | zero => simp [typecheck, typecheckExpr] at h_typecheck
@@ -2264,22 +2255,20 @@ private lemma preservation_fn (x : Name) (paramType : Typ) (body : Expr) (return
   -- Function abstraction is simple: typechecking creates arrow type, evaluation creates closure
   cases n with
   | zero =>
-    -- With fuel 0, beval returns outOfFuel
-    simp [LeanPoison.beval] at h_eval
-    
-    cases h_eval
+    have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+    simp [LeanPoison.beval] at h_eval_world
+    cases h_eval_world
   | succ fuel' =>
     cases fuel_tc with
     | zero => simp [typecheck, typecheckExpr] at h_typecheck
     | succ fuel_tc' =>
       simp only [typecheck, typecheckExpr, typecheckFn, pure, Except.pure] at h_typecheck
-      -- Evaluation creates closure without changing state
-      simp [LeanPoison.beval] at h_eval
-      
-      simp [pure] at h_eval
+      have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+      simp [LeanPoison.beval] at h_eval_world
+      simp [pure] at h_eval_world
       -- Extract equalities
       cases h_typecheck
-      cases h_eval
+      cases h_eval_world
       constructor
       · -- valueHasETyp: closure has arrow type
         constructor
@@ -2297,9 +2286,9 @@ private lemma preservation_pfn (x : Name) (paramType : Typ) (body : Expr) (retur
   -- Pure function abstraction is similar to fn, but converts body to PExpr
   cases n with
   | zero =>
-    simp [LeanPoison.beval] at h_eval
-    
-    cases h_eval
+    have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+    simp [LeanPoison.beval] at h_eval_world
+    cases h_eval_world
   | succ fuel' =>
     cases fuel_tc with
     | zero => simp [typecheck, typecheckExpr] at h_typecheck
@@ -2315,13 +2304,12 @@ private lemma preservation_pfn (x : Name) (paramType : Typ) (body : Expr) (retur
         contradiction
       · next pbody h_toPExpr_ok =>
         simp [pure, Except.pure] at h_typecheck
-        -- Evaluation creates peClosure without changing state
-        simp [LeanPoison.beval] at h_eval
-        
-        simp [pure] at h_eval
+        have h_eval_world := LeanProofs.evalAtDefault_eq h_eval
+        simp [LeanPoison.beval] at h_eval_world
+        simp [pure] at h_eval_world
         -- Extract equalities
         cases h_typecheck
-        cases h_eval
+        cases h_eval_world
         constructor
         · -- valueHasETyp: peClosure has parrow type
           constructor
