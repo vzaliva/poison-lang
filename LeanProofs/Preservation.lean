@@ -11,6 +11,8 @@ import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.NonInterference
 import LeanProofs.Properties
+import LeanProofs.VarEnvPreservation
+import LeanProofs.LookupUpdate
 import LeanProofs.Equality
 import LeanProofs.IOHelpers
 
@@ -316,7 +318,7 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
     -- When fuel = 0, beval returns outOfFuel, contradicting h_eval
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
@@ -326,7 +328,7 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
     unfold LeanPoison.beval at h_eval
     simp at h_eval
     -- Convert function equality to point-wise equality
-    
+
     -- Simplify monadic bind operations
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     -- Split on the result of evaluating e1 (outer EStateM.Result)
@@ -896,14 +898,14 @@ private lemma bevalUnaryOp_structure (op : UnaryOp) (e1 : Expr) (fuel : Nat) (ve
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -1053,14 +1055,14 @@ private lemma bevalSeq_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -1222,14 +1224,14 @@ private lemma bevalRand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [bind, Bind.bind, EStateM.bind, pure] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -1281,14 +1283,14 @@ private lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [bind, Bind.bind, EStateM.bind, pure] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -1418,14 +1420,14 @@ private lemma bevalPrintInt_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [bind, Bind.bind, EStateM.bind, pure] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -1468,14 +1470,14 @@ private lemma bevalPrintString_structure (e1 : Expr) (fuel : Nat) (verbose : Boo
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [bind, Bind.bind, EStateM.bind, pure] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
@@ -2024,14 +2026,14 @@ private lemma bevalVlet_structure (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbos
   | zero =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [pure] at h_eval
     injection h_eval with h_contr
     cases h_contr
   | succ fuel' =>
     unfold LeanPoison.beval at h_eval
     simp at h_eval
-    
+
     simp [bind, Bind.bind, EStateM.bind] at h_eval
     split at h_eval
     · next h_result1 h_state1 h_beval1 =>
