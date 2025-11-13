@@ -97,180 +97,150 @@ private lemma bevalFunctionBody_preserves_varEnv
 -- Helper lemmas for beval_preserves_varEnv, one per expression constructor
 
 private lemma beval_preserves_varEnv_num (n : Int) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.num n) verbose = pure (.success config₁ v)) :
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel'.succ config₀ (Expr.num n) verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) :
   config₀.varEnv = config₁.varEnv := by
-  have h_eval_fn := h_eval
-  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval_fn
-  unfold LeanPoison.beval at h_eval_world
-  injection h_eval_world with h_cfg _
-  injection h_cfg with h_cfg_eq
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  unfold LeanPoison.beval at h_eq
+  -- When fuel > 0, beval for Expr.num n returns .success config (Value.num n)
+  simp at h_eq
+  -- After simp, we have: Result.ok (.success config₀ (Value.num n)) w₀ = Result.ok (.success config₁ v) w₁
+  injection h_eq with h_result h_world
+  -- h_result : .success config₀ (Value.num n) = .success config₁ v
+  injection h_result with h_cfg_eq h_val_eq
+  -- h_cfg_eq : config₀ = config₁
+  -- h_val_eq : Value.num n = v
   subst h_cfg_eq
   rfl
 
 private lemma beval_preserves_varEnv_bool (b : Bool) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.bool b) verbose = pure (.success config₁ v)) :
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel'.succ config₀ (Expr.bool b) verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) :
   config₀.varEnv = config₁.varEnv := by
-  have h_eval_fn := h_eval
-  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval_fn
-  unfold LeanPoison.beval at h_eval_world
-  injection h_eval_world with h_cfg _
-  injection h_cfg with h_cfg_eq
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  unfold LeanPoison.beval at h_eq
+  -- When fuel > 0, beval for Expr.bool b returns .success config (Value.bool b)
+  simp at h_eq
+  -- After simp, we have: Result.ok (.success config₀ (Value.bool b)) w₀ = Result.ok (.success config₁ v) w₁
+  injection h_eq with h_result h_world
+  -- h_result : .success config₀ (Value.bool b) = .success config₁ v
+  injection h_result with h_cfg_eq h_val_eq
+  -- h_cfg_eq : config₀ = config₁
+  -- h_val_eq : Value.bool b = v
   subst h_cfg_eq
   rfl
 
 private lemma beval_preserves_varEnv_unit (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (h_eval : LeanPoison.beval fuel'.succ config₀ Expr.unit verbose = pure (.success config₁ v)) :
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel'.succ config₀ Expr.unit verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) :
   config₀.varEnv = config₁.varEnv := by
-  have h_eval_fn := h_eval
-  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval_fn
-  unfold LeanPoison.beval at h_eval_world
-  injection h_eval_world with h_cfg _
-  injection h_cfg with h_cfg_eq
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  unfold LeanPoison.beval at h_eq
+  -- When fuel > 0, beval for Expr.unit returns .success config Value.unit
+  simp at h_eq
+  -- After simp, we have: Result.ok (.success config₀ Value.unit) w₀ = Result.ok (.success config₁ v) w₁
+  injection h_eq with h_result h_world
+  -- h_result : .success config₀ Value.unit = .success config₁ v
+  injection h_result with h_cfg_eq h_val_eq
+  -- h_cfg_eq : config₀ = config₁
+  -- h_val_eq : Value.unit = v
   subst h_cfg_eq
   rfl
 
 private lemma beval_preserves_varEnv_str (s : String) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.str s) verbose = pure (.success config₁ v)) :
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel'.succ config₀ (Expr.str s) verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) :
   config₀.varEnv = config₁.varEnv := by
-  have h_eval_fn := h_eval
-  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval_fn
-  unfold LeanPoison.beval at h_eval_world
-  injection h_eval_world with h_cfg _
-  injection h_cfg with h_cfg_eq
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  unfold LeanPoison.beval at h_eq
+  -- When fuel > 0, beval for Expr.str s returns .success config (Value.str s)
+  simp at h_eq
+  -- After simp, we have: Result.ok (.success config₀ (Value.str s)) w₀ = Result.ok (.success config₁ v) w₁
+  injection h_eq with h_result h_world
+  -- h_result : .success config₀ (Value.str s) = .success config₁ v
+  injection h_result with h_cfg_eq h_val_eq
+  -- h_cfg_eq : config₀ = config₁
+  -- h_val_eq : Value.str s = v
   subst h_cfg_eq
   rfl
 
 private lemma beval_preserves_varEnv_var (x : Name) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.var x) verbose = pure (.success config₁ v)) :
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel'.succ config₀ (Expr.var x) verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) :
   config₀.varEnv = config₁.varEnv := by
-  have h_eval_fn := h_eval
-  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval_fn
-  unfold LeanPoison.beval at h_eval_world
-  simp [pure] at h_eval_world
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  unfold LeanPoison.beval at h_eq
+  -- When fuel > 0, beval for Expr.var x looks up x in varEnv
+  simp at h_eq
+  -- Case analysis on variable lookup result
   cases h_lookup : config₀.varEnv.lookup x with
   | some v' =>
-    simp [h_lookup] at h_eval_world
-    injection h_eval_world with h_cfg _
-    injection h_cfg with h_cfg_eq
+    -- Variable found: beval returns .success config v'
+    simp [h_lookup] at h_eq
+    -- After simp, we have: Result.ok (.success config₀ v') w₀ = Result.ok (.success config₁ v) w₁
+    injection h_eq with h_result h_world
+    -- h_result : .success config₀ v' = .success config₁ v
+    injection h_result with h_cfg_eq h_val_eq
+    -- h_cfg_eq : config₀ = config₁
+    -- h_val_eq : v' = v
     subst h_cfg_eq
     rfl
   | none =>
-    simp [h_lookup] at h_eval_world
-    injection h_eval_world with h_contr _
-    injection h_contr
+    -- Variable not found: beval returns runtimeError (contradiction with success)
+    simp [h_lookup] at h_eq
+    -- After simp, we have: Result.ok (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+    injection h_eq with h_result h_world
+    -- h_result : .runtimeError ... = .success config₁ v
+    -- This is impossible since runtimeError and success are distinct constructors
+    injection h_result
 
 private lemma beval_preserves_varEnv_unaryop (op : UnaryOp) (e1 : Expr) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel'.succ, ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
-      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) → config₀.varEnv = config₁.varEnv)
-    (h_eval : LeanPoison.beval fuel'.succ config₀ (Expr.unaryop op e1) verbose = pure (.success config₁ v)) :
+      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) → config₀.varEnv = config₁.varEnv)
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel'.succ config₀ (Expr.unaryop op e1) verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) :
   config₀.varEnv = config₁.varEnv := by
-  -- Keep the function equality for IH, destruct using per-world equality
-  have h_eval_fn := h_eval
-  unfold LeanPoison.beval at h_eval_fn
-  -- Specialise to the default world only for destructing the bind-chain
-  have h_eval_world := LeanProofs.evalAtDefault_eq h_eval_fn
-  simp at h_eval_world
-  simp [bind, Bind.bind, EStateM.bind] at h_eval_world
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  unfold LeanPoison.beval at h_eq
+  -- When fuel > 0, beval for Expr.unaryop evaluates e1 first, then applies evalUnaryOp
+  simp at h_eq
+  simp [bind, Bind.bind, EStateM.bind] at h_eq
   -- Case analysis on evaluation of e1
-  split at h_eval_world
-  · next h_result h_state h_beval1 =>
-    -- e1 evaluated to success; inspect inner result
-    split at h_eval_world
+  split at h_eq
+  · next h_result1 h_state1 h_beval1 =>
+    -- e1 evaluated successfully; inspect inner result
+    split at h_eq
     · next config' v' =>
-      -- Now run the unary operator
+      -- e1 succeeded with config' and v'
+      -- Now apply evalUnaryOp
       cases h_evalUnaryOp : LeanPoison.evalUnaryOp op v' with
       | some v_result =>
-        simp [h_evalUnaryOp] at h_eval_world
-        injection h_eval_world with h_cfg h_state_eq
-        injection h_cfg with h_cfg_eq h_val_eq
-        subst h_cfg_eq
-        -- Use IH on e1 (construct function equality pointwise over worlds)
+        -- evalUnaryOp succeeded
+        simp [h_evalUnaryOp] at h_eq
+        injection h_eq with h_result h_world
+        injection h_result with h_cfg_eq h_val_eq
+        -- h_cfg_eq : config' = config₁
+        -- h_val_eq : v_result = v
+        -- Use IH on e1: we have h_beval1 showing e1 evaluated successfully
         have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-        have h_beval1' : LeanPoison.beval fuel' config₀ e1 verbose = pure (.success config' v') := by
-          funext w
-          -- derive a per-world view of the whole unaryop evaluation and peel the bind-chain
-          have h_eval_world_w := LeanProofs.evalAtWorld_eq w h_eval_fn
-          simp at h_eval_world_w
-          simp [bind, Bind.bind, EStateM.bind] at h_eval_world_w
-          -- evaluation of e1 at world w must be success (otherwise contradiction with success of unaryop)
-          split at h_eval_world_w
-          · next _h_result_w h_state_w h_beval1_w =>
-            -- inner split produces the success case for e1 at world w
-            split at h_eval_world_w
-            · next config_w v_w =>
-              -- evaluate unary op at world w; must succeed to match outer success
-              cases h_evalUnaryOp_w : LeanPoison.evalUnaryOp op v_w with
-              | some v_result_w =>
-                simp [h_evalUnaryOp_w] at h_eval_world_w
-                -- from outer success, configs must agree; unify config_w with config'
-                injection h_eval_world_w with h_cfg_w h_state_eq_w
-                injection h_cfg_w with h_cfg_eq_w h_val_eq_w
-                subst h_cfg_eq_w
-                -- show the sub-expression value is world-independent using evalUnaryOp determinism
-                have h1 : LeanPoison.evalUnaryOp op v' = some v := by
-                  simpa [h_val_eq] using h_evalUnaryOp
-                have h2 : LeanPoison.evalUnaryOp op v_w = some v := by
-                  simpa [h_val_eq_w] using h_evalUnaryOp_w
-                -- Since evalUnaryOp only succeeds for UnaryOp.not with Value.bool,
-                -- both v' and v_w must be bool values
-                have hv : v_w = v' := by
-                  cases op with
-                  | not =>
-                    -- evalUnaryOp UnaryOp.not only succeeds for Value.bool
-                    -- So both v' and v_w must be Value.bool
-                    cases v' with
-                    | bool b' =>
-                      cases v_w with
-                      | bool b_w =>
-                        -- Both are bools, show they're equal
-                        have hv1 : v = Value.bool (!b') := (Option.some.inj h1).symm
-                        have hv2 : v = Value.bool (!b_w) := (Option.some.inj h2).symm
-                        have : Value.bool (!b') = Value.bool (!b_w) := by
-                          rw [← hv1, hv2]
-                        injection this with h_not_eq
-                        -- h_not_eq: !b' = !b_w
-                        -- Since ! is injective, b' = b_w
-                        cases b' <;> cases b_w <;> cases h_not_eq <;> rfl
-                      | num | unit | str | loc _ | closure _ _ _ | peClosure _ _ _ =>
-                        -- v_w is not bool, but evalUnaryOp succeeded - contradiction
-                        simp [LeanPoison.evalUnaryOp] at h2
-                    | num | unit | str | loc _ | closure _ _ _ | peClosure _ _ _ =>
-                      -- v' is not bool, but evalUnaryOp succeeded - contradiction
-                      simp [LeanPoison.evalUnaryOp] at h1
-                -- conclude pointwise equality for e1 at world w
-                -- Rewrite h_beval1_w: replace v_w with v' and h_state_w with w
-                rw [hv, h_state_eq_w] at h_beval1_w
-                simp [pure]
-                exact h_beval1_w
-              | none =>
-                -- impossible: outer evaluation succeeded
-                simp [h_evalUnaryOp_w] at h_eval_world_w
-                injection h_eval_world_w with h_cfg_w _
-                injection h_cfg_w
-            · next =>
-              -- impossible: outer evaluation succeeded
-              simp [pure] at h_eval_world_w
-              injection h_eval_world_w with h_cfg_w _
-              injection h_cfg_w
-            · next msg =>
-              -- impossible: outer evaluation succeeded
-              simp [pure] at h_eval_world_w
-              injection h_eval_world_w with h_cfg_w _
-              injection h_cfg_w
-          · next h_error_w _ =>
-            -- impossible: outer evaluation succeeded
-            injection h_eval_world_w
-        exact IH fuel' h_fuel e1 verbose config₀ config' v' h_beval1'
+        have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EStateM.Result.ok (.success config' v') w₁' :=
+          ⟨w₀, h_state1, h_beval1⟩
+        have h_varEnv_eq : config₀.varEnv = config'.varEnv := IH fuel' h_fuel e1 verbose config₀ config' v' h_beval1_ex
+        -- Now use h_cfg_eq to show config'.varEnv = config₁.varEnv
+        rw [h_cfg_eq] at h_varEnv_eq
+        exact h_varEnv_eq
       | none =>
-        simp [h_evalUnaryOp] at h_eval_world
-        injection h_eval_world with h_cfg _
-        injection h_cfg
+        -- evalUnaryOp failed (contradiction with success)
+        simp [h_evalUnaryOp] at h_eq
+        injection h_eq with h_result h_world
+        injection h_result
     · next =>
-      injection h_eval_world with h_cfg _; injection h_cfg
+      -- e1 evaluated to outOfFuel (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
     · next msg =>
-      injection h_eval_world with h_cfg _; injection h_cfg
+      -- e1 evaluated to runtimeError (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
   · next h_error h_state =>
-    injection h_eval_world
+    -- e1 evaluation failed (contradiction with success)
+    injection h_eq
 
 
 -- TODO: This lemma needs state equality proofs to extract function equalities from h_beval1 and h_beval2
@@ -887,7 +857,7 @@ private lemma beval_preserves_varEnv_printString (e1 : Expr) (fuel' : Nat) (verb
 -- This is a fundamental property: evaluation doesn't change variable bindings
 -- (variables can only be added/shadowed via let, but the varEnv itself is immutable)
 lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value) :
-  LeanPoison.beval fuel config₀ e verbose = pure (.success config₁ v) →
+  (exists w₀ w₁, LeanPoison.beval fuel config₀ e verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) →
   config₀.varEnv = config₁.varEnv := by
   intro h_eval
   -- Proof by strong induction on fuel, then case analysis on e
@@ -900,12 +870,16 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (config₀
     intro e verbose config₀ config₁ v h_eval
     cases n with
     | zero =>
-      -- When fuel = 0, beval returns outOfFuel, not success
-      have h_eval_fn := h_eval
-      unfold LeanPoison.beval at h_eval_fn
-      simp at h_eval_fn
-      have h_eval_world := LeanProofs.evalAtDefault_eq h_eval_fn
-      cases h_eval_world
+      -- When fuel = 0, beval returns outOfFuel at any world; success is impossible.
+      rcases h_eval with ⟨w₀, w₁, h_eq⟩
+      unfold LeanPoison.beval at h_eq
+      simp [EStateM.pure] at h_eq
+      -- After unfold and simp, we have: Result.ok .outOfFuel w₀ = Result.ok (.success config₁ v) w₁
+      -- Use injection to extract the equality of the inner EvalResult values
+      injection h_eq with h_res
+      -- h_res : .outOfFuel = .success config₁ v
+      -- outOfFuel and success are distinct constructors, so this is impossible
+      cases h_res
     | succ fuel' =>
       cases e with
       | num n => exact beval_preserves_varEnv_num n fuel' verbose config₀ config₁ v h_eval
@@ -913,10 +887,10 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (config₀
       | unit => exact beval_preserves_varEnv_unit fuel' verbose config₀ config₁ v h_eval
       | str s => exact beval_preserves_varEnv_str s fuel' verbose config₀ config₁ v h_eval
       | var x => exact beval_preserves_varEnv_var x fuel' verbose config₀ config₁ v h_eval
-      | op e1 op e2 =>
-        exact beval_preserves_varEnv_op e1 e2 op fuel' verbose config₀ config₁ v IH h_eval
       | unaryop op e1 =>
         exact beval_preserves_varEnv_unaryop op e1 fuel' verbose config₀ config₁ v IH h_eval
+      | op e1 op e2 =>
+        exact beval_preserves_varEnv_op e1 e2 op fuel' verbose config₀ config₁ v IH h_eval
       | ite e1 e2 e3 =>
         exact beval_preserves_varEnv_ite e1 e2 e3 fuel' verbose config₀ config₁ v IH h_eval
       | newRef e1 =>

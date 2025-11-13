@@ -36,17 +36,65 @@ IH :
 
 It demands the **function** equality `LeanPoison.beval … = …`, not one specialized to a particular world, which is why the `defaultWorld` specialization breaks the call sites.
 
-## New pattern
-To restore the old flexibility:
+## New pattern: Indexed equality in induction hypotheses
 
-1. **Keep the function equality.** Whenever we have `h : LeanPoison.beval … = EStateM.pure …`, retain that untouched so it can feed induction hypotheses.
-2. **Introduce a per-world view only when needed.** Use a helper like
+The key insight is to use **existential equalities** in induction hypotheses rather than function equalities. This pattern is essential when proving properties about chains of IO operations (e.g., `e1 op e2`).
+
+### The indexed equality form
+
+Instead of requiring function equalities in IHs:
+```lean
+IH : ∀ m < fuel'.succ, ∀ …,
+  LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) →
+  config₀.varEnv = config₁.varEnv
+```
+
+We now use existential equalities that explicitly track worlds:
+```lean
+IH : ∀ m < fuel'.succ, ∀ …,
+  (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) →
+  config₀.varEnv = config₁.varEnv
+```
+
+### Why this matters for chained operations
+
+When proving properties about `e1 op e2`, we need to:
+1. Evaluate `e1` at world `w₀`, producing result at world `h_state1`
+2. Evaluate `e2` at world `h_state1`, producing result at world `h_state2`
+3. Combine the results
+
+The existential form allows us to extract these intermediate worlds from the bind chain and construct the existential needed for the IH:
+
+```lean
+-- From the bind chain, we have:
+h_beval1 : LeanPoison.beval fuel' config₀ e1 verbose w₀ = 
+           EStateM.Result.ok (.success config' v') h_state1
+
+-- We construct the existential for the IH:
+have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = 
+                              EStateM.Result.ok (.success config' v') w₁' :=
+  ⟨w₀, h_state1, h_beval1⟩
+
+-- Now we can apply the IH:
+exact IH fuel' h_fuel e1 verbose config₀ config' v' h_beval1_ex
+```
+
+### Proof pattern
+
+1. **Extract worlds from the hypothesis.** Use `rcases` to extract `w₀` and `w₁` from the existential:
    ```lean
-   @[simp] theorem evalAtWorld_eq (w : IO.RealWorld)
-       {m n : IO α} : m = n → m w = n w := …
+   rcases h_eval with ⟨w₀, w₁, h_eq⟩
    ```
-   to derive `h_world : LeanPoison.beval … w = …`.
-3. **Do constructor reasoning on `h_world`.** Run `simp`, `split`, and injections on the per-world equality to inspect `EStateM.Result`.
-4. **Convert back to `pure` as needed.** Use `simpa [EStateM.pure]` to rewrite between `EStateM.Result.ok … w` and `EStateM.pure … w`.
 
-By keeping both views (`h` for the IH, `h_world` for destructing), we avoid the `x✝` vs `defaultWorld` mismatch and can mechanically replace the old `congrFun (a := ())` tricks throughout the proof scripts.
+2. **Unfold and simplify to expose bind chains.** For chained operations, use `simp [bind, Bind.bind, EStateM.bind]` to expose the intermediate evaluations.
+
+3. **Split on intermediate results.** Use `split` to case-analyse on each step of the bind chain, extracting intermediate worlds and results.
+
+4. **Construct existentials for IHs.** When applying the IH to a sub-expression, construct the existential using the worlds extracted from the bind chain:
+   ```lean
+   have h_sub_ex : ∃ w₀' w₁', … := ⟨w₀, h_state1, h_beval1⟩
+   ```
+
+5. **Use injection for constructor reasoning.** After simplifying, use `injection` to extract equalities between constructors (configs, values, worlds).
+
+By using indexed equalities, we can track the world flow through IO operation chains while maintaining compatibility with induction hypotheses.
