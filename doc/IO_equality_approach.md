@@ -79,6 +79,10 @@ have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose 
 exact IH fuel' h_fuel e1 verbose config₀ config' v' h_beval1_ex
 ```
 
+### Relation to the old model
+
+The old pattern is the special case of the new one where the world type is `Unit` and we never distinguish different worlds; the new pattern makes the world explicit and works for `IO.RealWorld` just as well.
+
 ### Proof pattern
 
 1. **Extract worlds from the hypothesis.** Use `rcases` to extract `w₀` and `w₁` from the existential:
