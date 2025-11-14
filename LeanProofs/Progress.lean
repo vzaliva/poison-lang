@@ -159,6 +159,7 @@ private lemma progress_var (x : Name) (ctx : TypeContext) : Progress (Expr.var x
 
 -- Progress theorem: well-typed programs don't get stuck
 -- This proof uses strong induction on fuel_eval
+-- TODO: for induction we need to switch to world-indexed format with fuel, as we did in Preservation.lean
 theorem progress (e : Expr) (ctx : TypeContext) : Progress e ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
