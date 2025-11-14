@@ -1983,13 +1983,356 @@ private lemma preservation_ite (e1 e2 e3 : Expr) (ctx : TypeContext)
     PreservationWithFuel (Expr.ite e1 e2 e3) ctx n := by
   sorry
 
+-- Helper lemma: extract structure from typecheckNewRef
+private lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckNewRef ctx e1 fuel = .ok res →
+  ∃ (result1 : TypeResult) (l : Address) (etyp : ETyp),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    (l, { result1 with nextLoc' := result1.nextLoc' + 1 }) = freshTLocRes result1 ∧
+    res.qualType.etyp = ETyp.ref etyp l ∧
+    res.memEnv' = updateMemEnv result1.memEnv' l ⟨etyp, joinPoison ctx.pc result1.qualType.poison, result1.qualType.pred⟩ ∧
+    res.tagEnv' = result1.tagEnv' ∧
+    res.nextLoc' = result1.nextLoc' + 1 ∧
+    res.nextTag' = result1.nextTag' := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+    unfold typecheckNewRef at h_typecheck
+    simp at h_typecheck
+  | succ fuel' =>
+    unfold typecheckNewRef at h_typecheck
+    simp at h_typecheck
+    simp [bind, Except.bind] at h_typecheck
+    cases h_tc1 : typecheckExpr ctx e1 fuel' with
+    | ok result1 =>
+      simp [h_tc1] at h_typecheck
+      cases h_qt1 : result1.qualType with
+      | mk etyp poison pred =>
+        rw [h_qt1] at h_typecheck
+        simp at h_typecheck
+        -- Extract freshTLocRes result
+        have h_fresh : (result1.nextLoc', { result1 with nextLoc' := result1.nextLoc' + 1 }) = freshTLocRes result1 := rfl
+        -- Simplify the do notation
+        -- The result is: Except.ok { qualType := qt, memEnv' := memEnv', ... }
+        -- We need to extract that res equals this result
+        simp [pure, Except.pure] at h_typecheck
+        -- h_typecheck is now a record equality: {...} = res
+        -- We need to simplify freshTLocRes first
+        -- Extract projections from h_fresh to rewrite freshTLocRes in h_typecheck
+        have h_fresh1 : (freshTLocRes result1).1 = result1.nextLoc' := by
+          simp [← h_fresh]
+        have h_fresh2 : (freshTLocRes result1).2 = { result1 with nextLoc' := result1.nextLoc' + 1 } := by
+          simp [← h_fresh]
+        rw [h_fresh1, h_fresh2] at h_typecheck
+        simp at h_typecheck
+        -- Now h_typecheck is a record equality: {...} = res
+        -- Extract field equalities by using cases on the record equality
+        cases h_typecheck
+        -- Now res equals the constructed record, so all fields match
+        -- Construct the existential
+        simp only [Nat.add_sub_cancel]
+        use result1, result1.nextLoc', etyp
+        constructor
+        · exact h_tc1
+        constructor
+        · -- (result1.nextLoc', { result1 with nextLoc' := result1.nextLoc' + 1 }) = freshTLocRes result1
+          exact h_fresh
+        constructor
+        · rfl
+        constructor
+        · -- res.memEnv' = updateMemEnv result1.memEnv' result1.nextLoc' ...
+          -- After cases h_typecheck, res is replaced, so we need to use h_qt1 to show poison/pred match
+          -- The goal is: updateMemEnv ... { etyp := etyp, poison := joinPoison ctx.pc poison, pred := pred } =
+          --            updateMemEnv ... { etyp := etyp, poison := joinPoison ctx.pc result1.qualType.poison, pred := result1.qualType.pred }
+          -- We need to show poison = result1.qualType.poison and pred = result1.qualType.pred
+          -- This follows from h_qt1
+          congr 1
+          congr 1
+          -- Extract poison and pred from h_qt1
+          -- h_qt1 shows result1.qualType = { etyp := etyp, poison := poison, pred := pred }
+          -- So result1.qualType.poison = poison and result1.qualType.pred = pred
+          -- Use congr to show the equalities
+          congr 1
+          -- Now we need to show poison = result1.qualType.poison
+          -- This follows from h_qt1 by extracting the poison field
+          -- h_qt1 shows result1.qualType = { etyp := etyp, poison := poison, pred := pred }
+          -- So result1.qualType.poison = poison
+          simp [h_qt1]
+          -- And pred = result1.qualType.pred
+          simp [h_qt1]
+        constructor
+        · rfl
+        constructor
+        · rfl
+        · rfl
+    | error err =>
+      simp [h_tc1] at h_typecheck
+
+-- Helper lemma: extract structure from beval for newRef expressions
+private lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₂ : Config) (v : Value) :
+  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.newRef e1) verbose w₀ =
+      EStateM.Result.ok (.success config₂ v) w₁) →
+  ∃ (config₁ : Config) (n : Int) (l : Address),
+    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' =
+        EStateM.Result.ok (.success config₁ (Value.num n)) w₁') ∧
+    (l, { config₁ with nextLoc := config₁.nextLoc + 1 }) = freshLoc config₁ ∧
+    config₂ = { { config₁ with nextLoc := config₁.nextLoc + 1 } with memory := ({ config₁ with nextLoc := config₁.nextLoc + 1 } : Config).memory.update config₁.nextLoc n } ∧
+    v = Value.loc config₁.nextLoc := by
+  intro h_eval
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  cases fuel with
+  | zero =>
+    unfold LeanPoison.beval at h_eq
+    simp at h_eq
+    injection h_eq with h_contr
+    cases h_contr
+  | succ fuel' =>
+    unfold LeanPoison.beval at h_eq
+    simp at h_eq
+    simp [bind, Bind.bind, EStateM.bind] at h_eq
+    split at h_eq
+    · next h_result1 h_state1 h_beval1 =>
+      -- h_result1 is an EvalResult from evaluating e1
+      -- Split on h_result1 to handle the match in h_eq
+      cases h_result1 with
+      | success config' v' =>
+        -- h_result1 = .success config' v'
+        -- Now split on v' to see if it's Value.num n
+        cases v' with
+        | num n =>
+          -- v' = Value.num n
+          -- The match in h_eq takes the Value.num branch
+          simp at h_eq
+          injection h_eq with h_eq_result h_eq_state
+          injection h_eq_result with h_eq_cfg h_eq_val
+          -- Extract that config₂ = {config'' with memory := config''.memory.update l n}
+          -- where (l, config'') = freshLoc config'
+          have h_fresh : (config'.nextLoc, { config' with nextLoc := config'.nextLoc + 1 }) = freshLoc config' := rfl
+          -- Extract memory update from h_eq_cfg
+          -- h_eq_cfg shows config₂ = the updated config
+          -- Extract value equality from h_eq_val
+          -- h_eq_val shows Value.loc (freshLoc config').1 = v
+          -- So v = Value.loc (freshLoc config').1 = Value.loc config'.nextLoc
+          -- Extract value equality from h_eq_val
+          -- h_eq_val shows Value.loc (freshLoc config').1 = v
+          -- Extract first component from h_fresh by matching on the pair
+          injection h_fresh with h_fresh1 h_fresh2
+          have h_val_eq : v = Value.loc config'.nextLoc := by
+            rw [← h_eq_val, h_fresh1]
+            rfl
+          -- For config_eq, h_eq_cfg shows the updated config = config₂
+          have h_config_eq : config₂ = { { config' with nextLoc := config'.nextLoc + 1 } with memory := ({ config' with nextLoc := config'.nextLoc + 1 } : Config).memory.update config'.nextLoc n } := by
+            rw [← h_eq_cfg, h_fresh2]
+            rfl
+          subst h_eq_val
+          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' =
+              EStateM.Result.ok (.success config' (Value.num n)) w₁' :=
+            ⟨w₀, h_state1, h_beval1⟩
+          simp only [Nat.add_sub_cancel]
+          exact ⟨config', n, config'.nextLoc, h_beval1_ex, rfl, h_config_eq, h_val_eq⟩
+        | bool _ | unit | str _ | loc _ | closure _ _ _ | peClosure _ _ _ =>
+          -- v' is not a number, so the match returns runtimeError (contradiction)
+          -- The match simplifies to pure (.runtimeError ...)
+          simp at h_eq
+          simp [pure, EStateM.pure] at h_eq
+          -- h_eq is now: EStateM.Result.ok (.runtimeError ...) h_state1 = EStateM.Result.ok (.success config₂ v) w₁
+          -- This is a contradiction - we can't have .runtimeError = .success
+          -- After simplification, the contradiction is already shown by simp
+          -- The proof is complete
+      | outOfFuel =>
+        -- h_result1 = .outOfFuel, so the match simplifies to pure .outOfFuel
+        -- But h_eq shows success, which is a contradiction
+        simp at h_eq
+        simp [pure, EStateM.pure] at h_eq
+        -- h_eq is now: EStateM.Result.ok .outOfFuel h_state1 = EStateM.Result.ok (.success config₂ v) w₁
+        -- This is a contradiction
+        -- After simplification, the contradiction is already shown by simp
+        -- The proof is complete
+      | runtimeError msg =>
+        -- h_result1 = .runtimeError msg, so the match simplifies to pure (.runtimeError msg)
+        -- But h_eq shows success, which is a contradiction
+        simp at h_eq
+        simp [pure, EStateM.pure] at h_eq
+        -- h_eq is now: EStateM.Result.ok (.runtimeError msg) h_state1 = EStateM.Result.ok (.success config₂ v) w₁
+        -- This is a contradiction
+        -- After simplification, the contradiction is already shown by simp
+        -- The proof is complete
+    · next h_error1 h_state1 =>
+      injection h_eq
+
 -- Helper lemma for reference creation
 private lemma preservation_newRef (e1 : Expr) (ctx : TypeContext)
     (n : Nat)
     (IH : ∀ m < n, ∀ (e : Expr) (ctx : TypeContext), PreservationWithFuel e ctx m)
     :
     PreservationWithFuel (Expr.newRef e1) ctx n := by
-  sorry
+  unfold PreservationWithFuel
+  intro fuel_tc res μ₀ μ₂ ρ₀ ρ₂ l₀ l₂ pm₀ pm₂ v verbose h_typecheck h_instantiate h_eval
+  cases n with
+  | zero =>
+    rcases h_eval with ⟨w₀, w₁, h_eq⟩
+    unfold LeanPoison.beval at h_eq
+    simp at h_eq
+    injection h_eq with h_contr
+    cases h_contr
+  | succ fuel' =>
+    cases fuel_tc with
+    | zero => simp [typecheck, typecheckExpr] at h_typecheck
+    | succ fuel_tc' =>
+      simp only [typecheck, typecheckExpr] at h_typecheck
+      -- Extract typechecking structure
+      have ⟨result1, l, etyp, h_tc1, h_fresh, h_etyp, h_mem, h_tag, h_loc, h_ntag⟩ :=
+        typecheckNewRef_structure ctx e1 fuel_tc' res h_typecheck
+
+      -- Extract evaluation structure
+      obtain ⟨config₁, n_val, l_eval, h_eval1_ex, h_fresh_eval, h_config_eq, h_val_eq⟩ :=
+        bevalNewRef_structure e1 fuel'.succ verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₂, varEnv := ρ₂, nextLoc := l₂, pureMode := pm₂ }
+          v h_eval
+
+      -- Establish fuel constraint for IH
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+
+      -- Apply IH to e1
+      have h_tc1' : typecheck ctx e1 (fuel_tc' - 1) = .ok result1 := by
+        simp [typecheck]
+        exact h_tc1
+      -- Use beval_preserves_varEnv to establish varEnv equality
+      have h_varenv01 : ρ₀ = config₁.varEnv :=
+        beval_preserves_varEnv e1 fuel' verbose
+          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          config₁ (Value.num n_val) h_eval1_ex
+      -- Convert h_eval1_ex to use config₁.varEnv
+      rcases h_eval1_ex with ⟨w₀', w₁', h_eval1_eq⟩
+      rw [h_varenv01] at h_instantiate
+      have h_eval1_eq' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextLoc := l₀, pureMode := pm₀ } e1 verbose w₀' =
+          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextLoc := config₁.nextLoc, pureMode := config₁.pureMode } (Value.num n_val)) w₁' := by
+        rw [h_varenv01] at h_eval1_eq
+        exact h_eval1_eq
+      have h_eval1' : ∃ w₀'' w₁''', LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextLoc := l₀, pureMode := pm₀ } e1 verbose w₀'' =
+          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextLoc := config₁.nextLoc, pureMode := config₁.pureMode } (Value.num n_val)) w₁''' :=
+        ⟨w₀', w₁', h_eval1_eq'⟩
+      have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
+                      μ₀ config₁.memory config₁.varEnv config₁.varEnv
+                      l₀ config₁.nextLoc pm₀ config₁.pureMode (Value.num n_val) verbose
+                      h_tc1' h_instantiate h_eval1'
+      obtain ⟨h_v_type, h_runtime1⟩ := IH1
+
+      -- Now we need to show:
+      -- 1. valueHasETyp v res.qualType.etyp
+      -- 2. runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₂ ρ₂
+
+      constructor
+      · -- valueHasETyp v res.qualType.etyp
+        -- h_val_eq: v = Value.loc config₁.nextLoc
+        -- h_etyp: res.qualType.etyp = ETyp.ref etyp l
+        -- From h_fresh: l = result1.nextLoc' (the fresh location from typechecking)
+        -- From h_fresh_eval: l_eval = config₁.nextLoc (the fresh location from evaluation)
+        -- We need to show valueHasETyp (Value.loc config₁.nextLoc) (ETyp.ref etyp l)
+        -- The valueHasETyp.loc constructor ignores the concrete address in the type,
+        -- so we can use it directly
+        rw [h_val_eq, h_etyp]
+        -- Extract l from h_fresh: l = result1.nextLoc'
+        injection h_fresh with h_fresh_loc h_fresh_res
+        -- Extract l_eval from h_fresh_eval: l_eval = config₁.nextLoc
+        injection h_fresh_eval with h_fresh_eval_loc h_fresh_eval_config
+        -- We need to show result1.nextLoc' = config₁.nextLoc
+        -- Both start from the same initial state (l₀ = ctx.nextLoc) and both increment by 1
+        -- This should follow from the fact that e1 evaluation preserves nextLoc relationship
+        -- Actually, we can use the fact that both typechecking and evaluation start from
+        -- the same initial nextLoc and both increment by 1, so they should match
+        -- But we need to prove this from the structure
+        -- For now, let's assume they match and use valueHasETyp.loc
+        -- Actually, looking at valueHasETyp.loc, it says "ignore concrete address in type",
+        -- so we don't need to show l = config₁.nextLoc
+        exact valueHasETyp.loc config₁.nextLoc etyp l
+      · -- runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₂ ρ₂
+        -- res.memEnv' = updateMemEnv result1.memEnv' l storedQt
+        -- where storedQt = ⟨etyp, joinPoison ctx.pc result1.qualType.poison, result1.qualType.pred⟩
+        -- μ₂ = {config'' with memory := config''.memory.update l_eval n_val}
+        -- where (l_eval, config'') = freshLoc config₁
+        -- We need to show that μ₂ contains l with the correct type
+        -- Extract l from h_fresh: l = result1.nextLoc'
+        injection h_fresh with h_fresh_loc h_fresh_res
+        -- Extract l_eval from h_fresh_eval: l_eval = config₁.nextLoc
+        injection h_fresh_eval with h_fresh_eval_loc h_fresh_eval_config
+        -- We need to show result1.nextLoc' = config₁.nextLoc
+        -- Both start from the same initial state (l₀ = ctx.nextLoc) and both increment by 1
+        -- This should follow from the fact that e1 evaluation preserves nextLoc relationship
+        -- Actually, we need a lemma that says if runtimeInstantiatesCtx holds,
+        -- then the nextLoc counters match
+        -- For now, let's assume they match: result1.nextLoc' = config₁.nextLoc
+        -- This means l = l_eval
+        have h_loc_match : l = l_eval := by
+          -- We need to show result1.nextLoc' = config₁.nextLoc
+          -- This follows from the fact that both start from l₀ and both increment by 1
+          -- But we need to prove this from the structure
+          -- Actually, we can use the fact that both typechecking and evaluation
+          -- start from the same initial state and both increment by 1
+          -- So result1.nextLoc' = config₁.nextLoc
+          -- This is a key property that needs to be proven separately
+          sorry  -- TODO: Prove that result1.nextLoc' = config₁.nextLoc
+        -- Now we can show runtimeInstantiatesCtx
+        -- We need to show:
+        -- 1. All locations in res.memEnv' are in μ₂
+        -- 2. All variables in the updated context are in ρ₂ with correct types
+        -- From h_runtime1, we know config₁.memory satisfies result1.memEnv'
+        -- We need to extend this to show μ₂ satisfies res.memEnv'
+        -- res.memEnv' = updateMemEnv result1.memEnv' l storedQt
+        -- Extract μ₂ from h_config_eq
+        injection h_config_eq with h_mem_eq h_varenv_eq h_nextloc_eq h_puremode_eq
+        -- h_mem_eq: μ₂ = config₁.memory.update config₁.nextLoc n_val
+        -- From h_fresh_eval_loc: l_eval = config₁.nextLoc
+        -- From h_loc_match: l = l_eval
+        -- So l = config₁.nextLoc
+        -- Rewrite config₁.nextLoc to l
+        have h_loc_eq_nextloc : l = config₁.nextLoc := by
+          rw [h_loc_match, h_fresh_eval_loc]
+        rw [← h_loc_eq_nextloc] at h_mem_eq
+        -- h_mem_eq: μ₂ = config₁.memory.update l n_val
+        -- Now we need to show runtimeInstantiatesCtx
+        -- Split into two parts: memory and variables
+        constructor
+        · -- Part 1: All locations in res.memEnv' are in μ₂
+          -- res.memEnv' = updateMemEnv result1.memEnv' l storedQt
+          -- We need to show: ∀ l', res.memEnv'.contains l' → μ₂.contains l'
+          intro l' h_contains
+          -- Case 1: l' = l (the new location)
+          -- Case 2: l' ≠ l (existing location from result1.memEnv')
+          -- For case 1: l' = l (the new location)
+          -- From h_mem_eq, μ₂ = config₁.memory.update l n_val
+          -- Memory.update adds the location, so μ₂.contains l
+          -- For case 2: l' ≠ l (existing location from result1.memEnv')
+          -- From h_runtime1, config₁.memory.contains l'
+          -- And Memory.update preserves existing locations, so μ₂.contains l'
+          -- We need to handle both cases
+          -- res.memEnv' = updateMemEnv result1.memEnv' l storedQt
+          -- So res.memEnv'.contains l' means either l' = l or result1.memEnv'.contains l'
+          -- Case 1: l' = l
+          -- From h_mem_eq, μ₂ = config₁.memory.update l n_val
+          -- Memory.update always adds the location, so μ₂.contains l
+          -- Case 2: l' ≠ l and result1.memEnv'.contains l'
+          -- From h_runtime1, config₁.memory.contains l'
+          -- And Memory.update preserves existing locations when l' ≠ l
+          -- This requires a lemma about Memory.update preserving contains for different locations
+          -- For now, let's use sorry
+          sorry  -- TODO: Prove memory contains after update (need lemma: Memory.update preserves contains for different locations)
+        · -- Part 2: All variables in the updated context are in ρ₂ with correct types
+          -- The context doesn't change varEnv, so ctx.varEnv = { ctx with memEnv := res.memEnv' }.varEnv
+          -- From h_config_eq, ρ₂ = config₁.varEnv
+          -- From h_runtime1, config₁.varEnv satisfies ctx.varEnv
+          -- So we can use h_runtime1 for variables
+          intro x qt h_lookup
+          -- From h_runtime1, we have the variable property
+          obtain ⟨_, h_var⟩ := h_runtime1
+          -- h_var: ∀ {x qt}, ctx.varEnv.lookup x = some qt → ∃ v, config₁.varEnv.lookup x = some v ∧ valueHasETyp v qt.etyp
+          -- We need to show: ∃ v, ρ₂.lookup x = some v ∧ valueHasETyp v qt.etyp
+          -- From h_varenv_eq, ρ₂ = config₁.varEnv
+          rw [h_varenv_eq]
+          -- Now we can use h_var
+          exact h_var h_lookup
 
 -- Helper lemma for assignment
 private lemma preservation_assign (e1 e2 : Expr) (ctx : TypeContext)
