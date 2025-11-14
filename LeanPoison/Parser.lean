@@ -1,6 +1,7 @@
 import LeanPoison.Syntax
 import Lean.Data.Xml.Basic
 import Lean.Data.Xml.Parser
+import LeanPoison.Typecheck
 open Lean Xml
 open System
 
@@ -66,6 +67,8 @@ def parseTypeExpr (typeExpElements : Array Content ) : Except String Typ := do
    | .ok typeExpression => .ok typeExpression
    | .error e => .error e
 
+
+
 ------------------ XML TO Expr Functions---------------------------------------
 
 -- Run the tree-sitter parser with `-x`
@@ -85,212 +88,205 @@ def runTreeSitterXml (file : String) : IO String := do
   return output.stdout
 open Lean Xml
 
+
+
+
+mutual
 -- Recursively convert parsed XML to Expr
 
-partial def xmlToExpr (x : Element) : Except String _root_.Expr :=
-    match x with
-  | Element.Element "expr" _ contents =>
-     let elements := contents.filterMap fun
-      | Content.Element el =>
-        match el with
-        | Element.Element "comment" _ _ => none  -- discard comment elements
-        | _ => some el
-      | _ => none
-      match elements.toList with
-      | [e] => xmlToExpr e
-      | _ => .error s!"Invalid expr contents: {contents}"
+  partial def xmlToExpr (x : Element) : Except String Expr :=
+      match x with
+    | Element.Element "expr" _ contents =>
+      let elements := contents.filterMap fun
+        | Content.Element el =>
+          match el with
+          | Element.Element "comment" _ _ => none  -- discard comment elements
+          | _ => some el
+        | _ => none
+        match elements.toList with
+        | [e] => xmlToExpr e
+        | _ => .error s!"Invalid expr contents: {contents}"
 
-  | Element.Element "identifier" _ #[Content.Character name] =>
-      .ok (Expr.var name)
+    | Element.Element "identifier" _ #[Content.Character name] =>
+        .ok (Expr.var name)
 
-  | Element.Element "atom" _ contents =>
-  let elems := contents.filterMap fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
-    | Content.Element el => some el
-
-    | _ => none
-
-  match elems.toList with
-    | [Element.Element "number" _ #[Content.Character nStr]] =>
-        match nStr.trim.toInt? with
-        | some n => .ok (Expr.num n)
-        | none => .error s!"Invalid number: {nStr}"
-
-    | [Element.Element "string" _ #[Content.Character str]] =>
-       .ok (Expr.str str )
-
-
-    | _ =>
-      -- fallback: check for literal booleans or unit
-      match contents.find? (fun
-        | Content.Character _ => true
-        | _ => false
-      ) with
-      | some (Content.Character s) =>
-          match s.trim with
-          | "true" => .ok (Expr.bool true)
-          | "false" => .ok (Expr.bool false)
-          | "unit" => .ok Expr.unit
-          | unknown => .error s!"Unknown atom literal: {unknown}"
-      | _ => .error s!"Empty atom"
-
-  | Element.Element "binary_expr" _ contents => do
-    let exprs := contents.filterMap fun
-
-      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
-      | Content.Element el => some el
-      | _ => none
-    let validOps := ["+", "-", "*", "/", ">", ">=", "<", "<=", "==","&","!="]
-    let ops := contents.filterMap fun
-      | Content.Character s =>
-          let trimmed := s.trim
-          if trimmed ∈ validOps then some trimmed else none
-      | _ => none
-
-
-    match (exprs.toList, ops.toList) with
-      | ([lhs,
-         rhs],
-        [opStr]) =>
-          let lhsExpr ← xmlToExpr lhs
-          let rhsExpr ← xmlToExpr rhs
-          match opStr with
-          | "+"  => return Expr.op lhsExpr Op.add rhsExpr
-          | "-"  => return Expr.op lhsExpr Op.sub rhsExpr
-          | "*"  => return Expr.op lhsExpr Op.mul rhsExpr
-          | "/"  => return Expr.op lhsExpr Op.div rhsExpr
-          | ">"  => return Expr.op lhsExpr Op.gt rhsExpr
-          | ">=" => return Expr.op lhsExpr Op.gte rhsExpr
-          | "<"  => return Expr.op lhsExpr Op.lt rhsExpr
-          | "<=" => return Expr.op lhsExpr Op.lte rhsExpr
-          | "==" => return Expr.op lhsExpr Op.eq rhsExpr
-          | "&"  => return Expr.op lhsExpr Op.bitand rhsExpr
-          | "!=" => return Expr.op lhsExpr Op.neq rhsExpr
-          | _ => .error s!"Unknown operator: {opStr}"
-      | _ => .error s!"Invalid binary_expr structure: {contents}"
-
-   | Element.Element "boolean_expr" _ contents => do
-    let exprs := contents.filterMap fun
-
-      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
-      | Content.Element el => some el
-      | _ => none
-    let validOps := ["||","&&"]
-    let ops := contents.filterMap fun
-      | Content.Character s =>
-          let trimmed := s.trim
-          if trimmed ∈ validOps then some trimmed else none
-      | _ => none
-
-
-    match (exprs.toList, ops.toList) with
-      | ([lhs,
-         rhs],
-        [opStr]) =>
-          let lhsExpr ← xmlToExpr lhs
-          let rhsExpr ← xmlToExpr rhs
-          match opStr with
-          | "||"  => return Expr.op lhsExpr Op.or rhsExpr
-          | "&&" => return Expr.op lhsExpr Op.and rhsExpr
-          | _ => .error s!"Unknown operator: {opStr}"
-      | _ => .error s!"Invalid boolean_expr structure: {contents}"
-
-  | Element.Element "unary_expr" _ contents => do
+    | Element.Element "atom" _ contents =>
     let elems := contents.filterMap fun
       | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
-      | _ => none
-    let validOps := ["not"]
-    let ops := contents.filterMap fun
-      | Content.Character s =>
-          let trimmed := s.trim
-          if trimmed ∈ validOps then some trimmed else none
-      | _ => none
-    match (elems.toList,ops.toList) with
-    | ([expr],[opStr]) =>
-        let expr_arg ← xmlToExpr expr
-        match opStr with
-        | "not" => return Expr.unaryop UnaryOp.not expr_arg
-        | _ => .error s!"Unknown unary operator: {opStr}"
-    | _ => .error s!"Invalid Unary expression structure: {contents}"
 
-  | Element.Element "app_expr" _ contents =>
-    do
-     let exps := contents.filterMap (fun
+      | _ => none
+
+    match elems.toList with
+      | [Element.Element "number" _ #[Content.Character nStr]] =>
+          match nStr.trim.toInt? with
+          | some n => .ok (Expr.num n)
+          | none => .error s!"Invalid number: {nStr}"
+
+      | [Element.Element "string" _ #[Content.Character str]] =>
+        .ok (Expr.str str )
+
+
+      | _ =>
+        -- fallback: check for literal booleans or unit
+        match contents.find? (fun
+          | Content.Character _ => true
+          | _ => false
+        ) with
+        | some (Content.Character s) =>
+            match s.trim with
+            | "true" => .ok (Expr.bool true)
+            | "false" => .ok (Expr.bool false)
+            | "unit" => .ok Expr.unit
+            | unknown => .error s!"Unknown atom literal: {unknown}"
+        | _ => .error s!"Empty atom"
+
+    | Element.Element "binary_expr" _ contents => do
+      let exprs := contents.filterMap fun
+
         | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
         | Content.Element el => some el
         | _ => none
-      )
-      match exps.toList with
-      | [e1,e2] => return Expr.app (<- xmlToExpr e1) (<- xmlToExpr e2)
-      | _ => .error s!"Invalid Apply expr contents: {contents}"
+      let validOps := ["+", "-", "*", "/", ">", ">=", "<", "<=", "==","&","!="]
+      let ops := contents.filterMap fun
+        | Content.Character s =>
+            let trimmed := s.trim
+            if trimmed ∈ validOps then some trimmed else none
+        | _ => none
+
+
+      match (exprs.toList, ops.toList) with
+        | ([lhs,
+          rhs],
+          [opStr]) =>
+            let lhsExpr ← xmlToExpr lhs
+            let rhsExpr ← xmlToExpr rhs
+            match opStr with
+            | "+"  => return Expr.op lhsExpr Op.add rhsExpr
+            | "-"  => return Expr.op lhsExpr Op.sub rhsExpr
+            | "*"  => return Expr.op lhsExpr Op.mul rhsExpr
+            | "/"  => return Expr.op lhsExpr Op.div rhsExpr
+            | ">"  => return Expr.op lhsExpr Op.gt rhsExpr
+            | ">=" => return Expr.op lhsExpr Op.gte rhsExpr
+            | "<"  => return Expr.op lhsExpr Op.lt rhsExpr
+            | "<=" => return Expr.op lhsExpr Op.lte rhsExpr
+            | "==" => return Expr.op lhsExpr Op.eq rhsExpr
+            | "&"  => return Expr.op lhsExpr Op.bitand rhsExpr
+            | "!=" => return Expr.op lhsExpr Op.neq rhsExpr
+            | _ => .error s!"Unknown operator: {opStr}"
+        | _ => .error s!"Invalid binary_expr structure: {contents}"
+
+    | Element.Element "boolean_expr" _ contents => do
+      let exprs := contents.filterMap fun
+
+        | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
+        | Content.Element el => some el
+        | _ => none
+      let validOps := ["||","&&"]
+      let ops := contents.filterMap fun
+        | Content.Character s =>
+            let trimmed := s.trim
+            if trimmed ∈ validOps then some trimmed else none
+        | _ => none
+
+
+      match (exprs.toList, ops.toList) with
+        | ([lhs,
+          rhs],
+          [opStr]) =>
+            let lhsExpr ← xmlToExpr lhs
+            let rhsExpr ← xmlToExpr rhs
+            match opStr with
+            | "||"  => return Expr.op lhsExpr Op.or rhsExpr
+            | "&&" => return Expr.op lhsExpr Op.and rhsExpr
+            | _ => .error s!"Unknown operator: {opStr}"
+        | _ => .error s!"Invalid boolean_expr structure: {contents}"
+
+    | Element.Element "unary_expr" _ contents => do
+      let elems := contents.filterMap fun
+        | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
+        | Content.Element el => some el
+        | _ => none
+      let validOps := ["not"]
+      let ops := contents.filterMap fun
+        | Content.Character s =>
+            let trimmed := s.trim
+            if trimmed ∈ validOps then some trimmed else none
+        | _ => none
+      match (elems.toList,ops.toList) with
+      | ([expr],[opStr]) =>
+          let expr_arg ← xmlToExpr expr
+          match opStr with
+          | "not" => return Expr.unaryop UnaryOp.not expr_arg
+          | _ => .error s!"Unknown unary operator: {opStr}"
+      | _ => .error s!"Invalid Unary expression structure: {contents}"
+
+    | Element.Element "app_expr" _ contents =>
+      do
+      let exps := contents.filterMap (fun
+          | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
+          | Content.Element el => some el
+          | _ => none
+        )
+        match exps.toList with
+        | [e1,e2] => return Expr.app (<- xmlToExpr e1) (<- xmlToExpr e2)
+        | _ => .error s!"Invalid Apply expr contents: {contents}"
 
 
 
-  | Element.Element "seq_expr" _ contents => do
+    | Element.Element "seq_expr" _ contents => do
+      let elems := contents.filterMap fun
+        | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
+        | Content.Element el => some el
+        | _ => none
+
+      match elems.toList with
+      | [leftEl, rightEl] =>
+          return Expr.seq (← xmlToExpr leftEl) (← xmlToExpr rightEl)
+      | _ =>
+          .error s!"Invalid seq_expr structure: {contents}"
+
+
+    | Element.Element "if_expr" _ contents => do
     let elems := contents.filterMap fun
       | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
       | Content.Element el => some el
       | _ => none
+      match elems.toList with
+      | [if_cond_expr,
+        then_expr,
+        else_expr] =>
+          return Expr.ite (← xmlToExpr if_cond_expr) (← xmlToExpr then_expr) (← xmlToExpr else_expr)
+      | _ => .error s!"Invalid if_expr structure: {contents}"
 
-    match elems.toList with
-    | [leftEl, rightEl] =>
-        return Expr.seq (← xmlToExpr leftEl) (← xmlToExpr rightEl)
-    | _ =>
-        .error s!"Invalid seq_expr structure: {contents}"
+    | Element.Element "let_expr" _ contents => do
+      let elems := contents.filterMap fun
+        | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
+        | Content.Element el => some el
+        | _ => none
 
+      match elems.toList with
+      | [ Element.Element "identifier" _ #[Content.Character name],
+          v,
+          b ] =>
+            return Expr.vlet name (← xmlToExpr v) (← xmlToExpr b)
+      | _ => .error s!"Invalid let_expr structure: {contents}"
 
-  | Element.Element "if_expr" _ contents => do
-  let elems := contents.filterMap fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
-    | Content.Element el => some el
-    | _ => none
-    match elems.toList with
-    | [if_cond_expr,
-      then_expr,
-      else_expr] =>
-        return Expr.ite (← xmlToExpr if_cond_expr) (← xmlToExpr then_expr) (← xmlToExpr else_expr)
-    | _ => .error s!"Invalid if_expr structure: {contents}"
+    | Element.Element "assign_expr" _ contents => do
+      let elems := contents.filterMap fun
+        | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
+        | Content.Element el => some el
+        | _ => none
 
-  | Element.Element "let_expr" _ contents => do
-    let elems := contents.filterMap fun
-      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
-      | Content.Element el => some el
-      | _ => none
+      match elems.toList with
+      | [e1,e2] =>
+          let lhs <- xmlToExpr e1
+          let rhs ← xmlToExpr e2
+          return Expr.assign lhs rhs
+      | _ =>
+          .error s!"Invalid assign_expr structure: {contents}"
 
-    match elems.toList with
-    | [ Element.Element "identifier" _ #[Content.Character name],
-        v,
-        b ] =>
-          return Expr.vlet name (← xmlToExpr v) (← xmlToExpr b)
-    | _ => .error s!"Invalid let_expr structure: {contents}"
-
-  | Element.Element "assign_expr" _ contents => do
-    let elems := contents.filterMap fun
-      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
-      | Content.Element el => some el
-      | _ => none
-
-    match elems.toList with
-    | [e1,e2] =>
-        let lhs <- xmlToExpr e1
-        let rhs ← xmlToExpr e2
-        return Expr.assign lhs rhs
-    | _ =>
-        .error s!"Invalid assign_expr structure: {contents}"
-
-  | Element.Element "ref_expr" _ contents =>
-        let elems := contents.filterMap fun
-      | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
-      | Content.Element el => some el
-      | _ => none
-
-    match elems.toList with
-    | [element] =>
-          return Expr.newRef (<- xmlToExpr element)
-    | _ => .error s!"Invalid ref_expr structure: {contents}"
-
-  | Element.Element "deref_expr" _ contents =>
+    | Element.Element "ref_expr" _ contents =>
           let elems := contents.filterMap fun
         | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
         | Content.Element el => some el
@@ -298,161 +294,404 @@ partial def xmlToExpr (x : Element) : Except String _root_.Expr :=
 
       match elems.toList with
       | [element] =>
-            return Expr.deref (<- xmlToExpr element)
-      | _ => .error s!"Invalid deref_expr structure: {contents}"
+            return Expr.newRef (<- xmlToExpr element)
+      | _ => .error s!"Invalid ref_expr structure: {contents}"
 
-  | Element.Element "while_expr" _ contents => do
-       let elems := contents.filterMap fun
-        | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
-        | Content.Element el => some el
-        | _ => none
-
-        match elems.toList with
-        | [condition,body] =>
-              return Expr.kwhile (<- xmlToExpr condition) (<- xmlToExpr body)
-        | _ => .error s!"Invalid while_expr structure: {contents}"
-
-  | Element.Element "fn_expr" _ contents => do
-  let elems := contents.filterMap fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-    | Content.Element el => some el
-    | _ => none
-
-
-    match elems.toList with
-    | [Element.Element "identifier" _ #[(Content.Character paramName)],
-      Element.Element "type_expr" _ argTypeContent,
-      Element.Element "expr" attr bodyContent,
-      Element.Element "type_expr" _ retTypeContent] => do
-
-    let argTypeFiltered := argTypeContent.filterMap (fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-
-    | Content.Element e => some (Content.Element e)
-    | _ => none)
-
-
-    let returnTypeFiltered := retTypeContent.filterMap (fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-
-    | Content.Element e => some (Content.Element e)
-    | _ => none)
-
-      let argType ← parseTypeExpr  argTypeFiltered
-      let body ← xmlToExpr (Element.Element "expr" attr bodyContent)
-      let returnType ← parseTypeExpr returnTypeFiltered
-
-      return (Expr.fn paramName argType body returnType)
-
-
-    | _ => .error s!"Invalid fn_expr structure: {contents}"
-
-  | Element.Element "pfn_expr" _ contents => do
-   let elems := contents.filterMap fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-    | Content.Element el => some el
-    | _ => none
-
-
-    match elems.toList with
-    | [Element.Element "identifier" _ #[(Content.Character paramName)],
-      Element.Element "type_expr" _ argTypeContent,
-      Element.Element "expr" attr bodyContent,
-      Element.Element "type_expr" _ retTypeContent] => do
-
-    let argTypeFiltered := argTypeContent.filterMap (fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-
-    | Content.Element e => some (Content.Element e)
-    | _ => none)
-
-    let returnTypeFiltered := retTypeContent.filterMap (fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-
-    | Content.Element e => some (Content.Element e)
-    | _ => none)
-
-      let argType ← parseTypeExpr  argTypeFiltered
-      let body ← xmlToExpr (Element.Element "expr" attr bodyContent)
-      let returnType ← parseTypeExpr returnTypeFiltered
-
-      return (Expr.pfn paramName argType body returnType)
-
-
-    | _ => .error s!"Invalid pfn_expr structure: {contents}"
-
-  | Element.Element "rand_expr" _ contents => do
-   let elems := contents.filterMap fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-    | Content.Element el => some el
-    | _ => none
-
-
-    match elems.toList with
-    | [e1] => return Expr.rand (<- xmlToExpr e1)
-    | _ => .error "Invalid argument to rand"
-
-  | Element.Element "frand_expr" _ contents => do
-   let elems := contents.filterMap fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-    | Content.Element el => some el
-    | _ => none
-
-
-    match elems.toList with
-    | [e1] => return Expr.frand (<- xmlToExpr e1)
-    | _ => .error "Invalid argument to frand"
-
-  | Element.Element "printStr_expr" _ contents => do
-   let elems := contents.filterMap fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-    | Content.Element el => some el
-    | _ => none
-
-
-    match elems.toList with
-    | [e1] => return Expr.printString (<- xmlToExpr e1)
-    | _ => .error "Invalid argument to frand"
-
-  | Element.Element "printInt_expr" _ contents => do
-   let elems := contents.filterMap fun
-    | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-    | Content.Element el => some el
-    | _ => none
-
-
-    match elems.toList with
-    | [e1] => return Expr.printInt (<- xmlToExpr e1)
-    | _ => .error "Invalid argument to frand"
-
-  | Element.Element "group_expr" _ contents => do
-    let elements := contents.filterMap (fun
+    | Element.Element "deref_expr" _ contents =>
+            let elems := contents.filterMap fun
           | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
           | Content.Element el => some el
           | _ => none
-        )
-        match elements.toList with
-        | [e] => xmlToExpr e
-        | _ => .error s!"Invalid parantheses expr contents: {contents}"
 
-  | Element.Element "source_file" _ children => do
-      let elements := children.filterMap fun
-      | Content.Element el =>
-        match el with
-        | Element.Element "comment" _ _ => none  -- discard comment elements
-        | _ => some el
+        match elems.toList with
+        | [element] =>
+              return Expr.deref (<- xmlToExpr element)
+        | _ => .error s!"Invalid deref_expr structure: {contents}"
+
+    | Element.Element "while_expr" _ contents => do
+        let elems := contents.filterMap fun
+          | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
+          | Content.Element el => some el
+          | _ => none
+
+          match elems.toList with
+          | [condition,body] =>
+                return Expr.kwhile (<- xmlToExpr condition) (<- xmlToExpr body)
+          | _ => .error s!"Invalid while_expr structure: {contents}"
+
+    | Element.Element "fn_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+      | Content.Element el => some el
       | _ => none
 
-        match elements with
-        | #[exprEl] => xmlToExpr exprEl
-        | #[]       => .error "Empty source file"
-        | _         => .error "Expected exactly one top-level <expr> in <source_file>"
 
-  | _ => .error s!"Unrecognized XML element: {x}"
+      match elems.toList with
+      | [Element.Element "identifier" _ #[(Content.Character paramName)],
+        Element.Element "type_expr" _ argTypeContent,
+        Element.Element "expr" attr bodyContent,
+        Element.Element "type_expr" _ retTypeContent] => do
 
+      let argTypeFiltered := argTypeContent.filterMap (fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+
+      | Content.Element e => some (Content.Element e)
+      | _ => none)
+
+
+      let returnTypeFiltered := retTypeContent.filterMap (fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+
+      | Content.Element e => some (Content.Element e)
+      | _ => none)
+
+        let argType ← parseTypeExpr  argTypeFiltered
+        let body ← xmlToExpr (Element.Element "expr" attr bodyContent)
+        let returnType ← parseTypeExpr returnTypeFiltered
+
+        return (Expr.fn paramName argType body returnType)
+
+
+      | _ => .error s!"Invalid fn_expr structure: {contents}"
+
+    | Element.Element "pfn_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+      | Content.Element el => some el
+      | _ => none
+
+
+      match elems.toList with
+      | [Element.Element "identifier" _ #[(Content.Character paramName)],
+        Element.Element "type_expr" _ argTypeContent,
+        Element.Element "expr" attr bodyContent,
+        Element.Element "type_expr" _ retTypeContent] => do
+
+      let argTypeFiltered := argTypeContent.filterMap (fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+
+      | Content.Element e => some (Content.Element e)
+      | _ => none)
+
+      let returnTypeFiltered := retTypeContent.filterMap (fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+
+      | Content.Element e => some (Content.Element e)
+      | _ => none)
+
+        let argType ← parseTypeExpr  argTypeFiltered
+        let body ← xmlToExpr (Element.Element "expr" attr bodyContent)
+        let returnType ← parseTypeExpr returnTypeFiltered
+
+        return (Expr.pfn paramName argType body returnType)
+
+
+      | _ => .error s!"Invalid pfn_expr structure: {contents}"
+
+    | Element.Element "rand_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+      | Content.Element el => some el
+      | _ => none
+
+
+      match elems.toList with
+      | [e1] => return Expr.rand (<- xmlToExpr e1)
+      | _ => .error "Invalid argument to rand"
+
+    | Element.Element "frand_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+      | Content.Element el => some el
+      | _ => none
+
+
+      match elems.toList with
+      | [e1] => return Expr.frand (<- xmlToExpr e1)
+      | _ => .error "Invalid argument to frand"
+
+    | Element.Element "printStr_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+      | Content.Element el => some el
+      | _ => none
+
+
+      match elems.toList with
+      | [e1] => return Expr.printString (<- xmlToExpr e1)
+      | _ => .error "Invalid argument to frand"
+
+    | Element.Element "printInt_expr" _ contents => do
+    let elems := contents.filterMap fun
+      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+      | Content.Element el => some el
+      | _ => none
+
+
+      match elems.toList with
+      | [e1] => return Expr.printInt (<- xmlToExpr e1)
+      | _ => .error "Invalid argument to frand"
+
+    | Element.Element "group_expr" _ contents => do
+      let elements := contents.filterMap (fun
+            | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
+            | Content.Element el => some el
+            | _ => none
+          )
+          match elements.toList with
+          | [e] => xmlToExpr e
+          | _ => .error s!"Invalid parantheses expr contents: {contents}"
+
+    | Element.Element "extern_expr" _ contents => do
+        let elems := contents.filterMap fun
+        | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+        | Content.Element el => some el
+        | _ => none
+
+          match elems.toList with
+          | [Element.Element "extern_val" _ externValContent] =>
+            let contsFiltered := externValContent.filterMap (fun
+              | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+              | Content.Element e => some e
+              | _ => none)
+            match contsFiltered.toList with
+            | [e] =>  return Expr.externVal (<- xmlToQTyp e)
+            | _ => .error "Invalid extern_val content"
+
+
+          | [Element.Element "extern_fn" _ externFnContent] =>
+              let contsFiltered := externFnContent.filterMap (fun
+              | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+              | Content.Element e => some e
+              | _ => none)
+              match contsFiltered.toList with
+                | [e_name ,e_argTyp,e_retType] =>
+                    let name <-
+                      match e_name with
+                        | Element.Element "identifier" _ #[Content.Character n] => .ok n.trim
+                        | _ => .error "Invalid extern_fn name"
+
+                    let argTyp :=
+                      match e_argTyp with
+                      | Element.Element "paren_type" _ contents => parseTypeExpr contents
+                      | _ => .error "Invalid extern_fn arg type"
+
+                    let retType <- xmlToRetType e_retType
+
+                    return Expr.externFn name (← argTyp) retType []
+
+
+                | [e_name ,e_argTyp,e_retType,e_effects] =>
+                  let name <-
+                    match e_name with
+                    | Element.Element "identifier" _ #[Content.Character n] => .ok n.trim
+                    | _ =>  .error "Invalid extern_fn name"
+                  let argTyp :=
+                    match e_argTyp with
+                    | Element.Element "paren_type" _ contents => parseTypeExpr contents
+                    | _ => .error "Invalid extern_fn arg type"
+                  let retType <- xmlToRetType e_retType
+                  let effectBlock :=
+                    match e_effects with
+                    | Element.Element "effects_block" attr effectsContent =>
+                      (xmlToEffects ( Element.Element "effects_block" attr effectsContent))
+                    | _ => .error ("Invalid effects : "++ toString e_effects)
+
+                  return Expr.externFn name (← argTyp) retType (<- effectBlock)
+
+                | _ => .error "Invalid extern_fn content"
+
+          | [Element.Element "extern_pfn" _ externPFnContent] =>
+              let contsFiltered := externPFnContent.filterMap (fun
+              | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+              | Content.Element e => some e
+              | _ => none)
+
+              match contsFiltered.toList with
+                | [e_name ,e_argTyp,e_retType] =>
+                  let name <-
+                    match e_name with
+                    | Element.Element "identifier" _ #[Content.Character n] => .ok n.trim
+                    | _ => .error "Invalid extern_pfn name"
+
+                  let argTyp :=
+                    match e_argTyp with
+                      | Element.Element "paren_type" _ contents => parseTypeExpr contents
+                      | _ => .error "Invalid extern_pfn arg type"
+
+                  return Expr.externPFn name (← argTyp) (<- xmlToRetType e_retType)
+                | _ => .error "Invalid extern_pfn content"
+
+
+
+          | _ => .error "Invalid extern expression"
+
+
+    | Element.Element "source_file" _ children => do
+        let elements := children.filterMap fun
+        | Content.Element el =>
+          match el with
+          | Element.Element "comment" _ _ => none  -- discard comment elements
+          | _ => some el
+        | _ => none
+
+          match elements with
+          | #[exprEl] => xmlToExpr exprEl
+          | #[]       => .error "Empty source file"
+          | _         => .error "Expected exactly one top-level <expr> in <source_file>"
+
+    | _ => .error s!"Unrecognized XML element: {x}"
+
+  ------------------XML To QTyp Functions---------------------------------------
+
+  partial def parsePExpr (pexprContents : Array Content) : Except String (String × PExpr) := do
+    let contents := pexprContents.filterMap fun
+      | Content.Element (Element.Element "identifier" attr conts) => some (Element.Element "identifier" attr conts)
+      | Content.Element (Element.Element "expr" attr conts) => some (Element.Element "expr" attr conts)
+      | _ => none
+    match contents.toList with
+    | [(Element.Element "identifier" _ #[Content.Character name]),(Element.Element "expr" attr cont)] =>
+        let varName := name.trim
+        let expr <- Expr.toPExpr (<- xmlToExpr (Element.Element "expr" attr cont))
+        return (varName, expr)
+
+    | _ => .error s!"Invalid pexpr shape: {contents.toList}"
+
+
+  partial def parsePredicate (predContents : Array Content) : Except String Predicate := do
+    let contents := predContents.filterMap fun
+
+      | Content.Element (Element.Element "number" attr cont) =>
+        some (Element.Element "number" attr cont)
+      | Content.Element (Element.Element "pexpr" attr cont) =>
+        some (Element.Element "pexpr" attr cont)
+      | _ => none
+
+  /- inductive Predicate : Type where
+    | guardClosure : Tag → Name → PExpr → List (Name × QTyp) → Predicate
+    | guardOnly : Tag → Predicate
+    | noPred : Predicate -/
+
+    match contents.toList with
+      | [Element.Element "number" _ #[Content.Character tag], Element.Element "pexpr" _ pexprContents] =>
+          let guardNumOpt := tag.trim.toNat?
+          match guardNumOpt with
+          | some n =>
+              -- Here we would parse the pexprContents into a Pexpr, but for now we use a placeholder
+              let (name,pexpr) <- parsePExpr (pexprContents)
+              return Predicate.guardClosure n name pexpr []
+          | none => .error s!"Invalid guard : {tag}"
+      | [Element.Element "number" _ #[Content.Character tag]] =>
+          let guardNumOpt := tag.trim.toNat?
+          match guardNumOpt with
+          | some n =>
+              return Predicate.guardOnly n
+          | none => .error s!"Invalid guard number: {tag}"
+      | [] =>
+          return Predicate.noPred
+      | _ => .error s!"Invalid predicate_clause shape: {predContents}"
+
+  partial def xmlToQTyp (x : Element) : Except String QTyp :=
+    match x with
+    | Element.Element "qtyp" _ contents => do
+        let elems := contents.filterMap fun
+          | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+          | Content.Element el => some el
+          | _ => none
+  --   $.type_expr , ":>", field("poison", choice("poisoned","clean")) ,
+    --    $.predicate_clause , ")"
+        match elems.toList with
+        | [(Element.Element "type_expr" _ typeExprConts),(Element.Element "poison" _ #[Content.Character poison]),
+          (Element.Element "predicate_clause" _ predContents)] =>
+
+            let typ <- parseTypeExpr typeExprConts
+            let typeExpr := Typ.toETyp typ
+            let poisonStatus := if poison.trim == "poisoned" then true else false
+            let pred <- parsePredicate predContents
+            return QTyp.mk typeExpr poisonStatus pred
+        | _ => .error s!"Invalid qtyp shape: {contents}"
+    | _ => .error s!"Invalid qtyp element: {x}"
+
+  partial def xmlToRetType (x : Element) : Except String RetType :=
+    match x with
+    | Element.Element "qtyp" _ _ => do
+        let qtyp <- xmlToQTyp x
+        return RetType.qtyp qtyp
+
+    | Element.Element "extern_fn" _ contents => do
+        let elems := contents.filterMap fun
+          | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+          | Content.Element el => some el
+          | _ => none
+
+        match elems.toList with
+        | [Element.Element "identifier" _ #[Content.Character name],
+          Element.Element "paren_type" _ argTypeContents,
+          e_retType] =>
+            let argType <- parseTypeExpr argTypeContents
+            let retType <- xmlToRetType e_retType
+            return RetType.externFnSig name.trim argType retType []
+
+        | [Element.Element "identifier" _ #[Content.Character name],
+          Element.Element "paren_type" _ argTypeContents,
+          e_retType,e_effects] =>
+            let argType <- parseTypeExpr argTypeContents
+            let retType <- xmlToRetType e_retType
+            let effects <- xmlToEffects e_effects
+            return RetType.externFnSig name.trim argType retType effects
+
+        | _ => .error s!"Invalid extern_fn shape in RetType: {elems.toList}"
+
+    | Element.Element "extern_pfn" _ contents => do
+        let elems := contents.filterMap fun
+          | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+          | Content.Element el => some el
+          | _ => none
+        match elems.toList with
+        | [Element.Element "identifier" _ #[Content.Character name],
+          Element.Element "paren_type" _ argTypeContents,
+          e_retType] =>
+            let argType <- parseTypeExpr argTypeContents
+            let retType <- xmlToRetType e_retType
+            return RetType.externPFnSig name.trim argType retType
+        | _ => .error s!"Invalid extern_pfn shape in RetType: {contents}"
+
+    | _ => .error s!"Invalid RetType element: {x}"
+
+  partial def xmlToEffects (x : Element) : Except String (List (String × QTyp)) := do
+    match x with
+    | Element.Element "effects_block" _ effectblock =>
+      let elems := effectblock.filterMap fun
+        | Content.Element (Element.Element "comment" _ _) => none
+        | Content.Element (Element.Element "effect" attr cont) => some (Element.Element "effect" attr cont)
+        | _ => none
+      -- filter only non-comment elements
+
+
+
+      let mut acc : List (String × QTyp) := []
+      for el in elems do
+        match el with
+        | Element.Element "effect" _ effectContents =>
+          let effectElems := effectContents.filterMap fun
+            | Content.Element (Element.Element "comment" _ _) => none
+            | Content.Element e => some e
+            | _ => none
+          match effectElems.toList with
+          | [Element.Element "identifier" _ #[Content.Character name],
+            Element.Element "qtyp" attr qtypContents] =>
+            match xmlToQTyp (Element.Element "qtyp" attr qtypContents) with
+            | .ok qtyp => acc := acc.append [(name.trim, qtyp)]
+            | .error e => throw e
+          | _ => throw "Invalid effect"
+        | _ => throw "Invalid effect"
+      return acc
+    | _ => throw s!"Invalid effects_block element: {x}"
+
+end
 --------------------------------------------------------------------------------
 -- Final wrapper
-def parsePoisonFile (file : String) : IO _root_.Expr := do
+def parsePoisonFile (file : String) : IO Expr := do
   let xmlStr ← runTreeSitterXml file
   match parse xmlStr with
   | .ok xml =>
@@ -463,3 +702,12 @@ def parsePoisonFile (file : String) : IO _root_.Expr := do
       throw <| IO.userError s!"Failed to parse XML: {err}"
 
 --------------------------------------------------------------------------------
+
+--#eval parsePoisonFile "examples/extern_val1.poison"
+--#eval parsePoisonFile "examples/extern_val2.poison"
+--#eval parsePoisonFile "examples/extern_val3.poison"
+--#eval parsePoisonFile "examples/extern_fn1.poison"
+--#eval parsePoisonFile "examples/extern_fn2.poison"
+--#eval parsePoisonFile "examples/extern_pfn.poison"
+--#eval parsePoisonFile "examples/extern_nested.poison"
+--#eval parsePoisonFile "examples/extern_fn3.poison"
