@@ -3,7 +3,7 @@
 ## How it used to work (≤ Lean 4.23)
 When we needed to inspect an equality between `IO` computations,
 ```lean
-h : LeanPoison.beval … = pure …
+h : beval … = pure …
 ```
 we would simply run
 ```lean
@@ -11,18 +11,18 @@ apply congrFun (a := ()) at h
 ```
 to evaluate both sides at the dummy world `() : Unit`. The resulting equality
 ```lean
-h : LeanPoison.beval … () = …
+h : beval … () = …
 ```
 still counted as a *function* equality (Lean silently elaborated `IO α` to `Unit → EStateM.Result …`), so we could `simp [EStateM.pure]` and feed `h` straight into induction hypotheses that demanded the original function type.
 
 ## Why this breaks in Lean 4.24
 Lean 4.24’s IO elaboration now exposes the actual `IO.RealWorld`. After we `simp`, every equality already looks like
 ```lean
-LeanPoison.beval … LeanProofs.defaultWorld =
+beval … LeanProofs.defaultWorld =
   EStateM.Result.ok … LeanProofs.defaultWorld
 ```
 so we lose the function view. The IHs still expect
-`LeanPoison.beval … = EStateM.pure …`, hence the type mismatches.
+`beval … = EStateM.pure …`, hence the type mismatches.
 
 Concretely, the induction hypothesis for `beval_preserves_varEnv_op` is
 
@@ -30,11 +30,11 @@ Concretely, the induction hypothesis for `beval_preserves_varEnv_op` is
 IH :
   ∀ m < fuel'.succ,
     ∀ (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
-      LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) →
+      beval m config₀ e verbose = pure (.success config₁ v) →
       config₀.varEnv = config₁.varEnv
 ```
 
-It demands the **function** equality `LeanPoison.beval … = …`, not one specialized to a particular world, which is why the `defaultWorld` specialization breaks the call sites.
+It demands the **function** equality `beval … = …`, not one specialized to a particular world, which is why the `defaultWorld` specialization breaks the call sites.
 
 ## New pattern: Indexed equality in induction hypotheses
 
@@ -42,38 +42,44 @@ The key insight is to use **existential equalities** in induction hypotheses rat
 
 ### The indexed equality form
 
-Instead of requiring function equalities in IHs:
+Instead of requiring function equalities in top-level lemmas and IHs:
 ```lean
 IH : ∀ m < fuel'.succ, ∀ …,
-  LeanPoison.beval m config₀ e verbose = pure (.success config₁ v) →
+  beval m config₀ e verbose = pure (.success config₁ v) →
   config₀.varEnv = config₁.varEnv
 ```
 
 We now use existential equalities that explicitly track worlds:
 ```lean
 IH : ∀ m < fuel'.succ, ∀ …,
-  (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, beval m config₀ e verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) →
   config₀.varEnv = config₁.varEnv
 ```
+
+We fix `e`, `fuel`, `verbose`, `config₀`. For any particular `config₁` and `v`, the lemma says:
+
+If there exists some starting world `w₀` and final world `w₁` such that running
+`beval` from `config₀` on `e` succeeds with result `(.success config₁ v)`, then
+`config₀.varEnv = config₁.varEnv`.
 
 ### Why this matters for chained operations
 
 When proving properties about `e1 op e2`, we need to:
-1. Evaluate `e1` at world `w₀`, producing result at world `h_state1`
-2. Evaluate `e2` at world `h_state1`, producing result at world `h_state2`
+1. Evaluate `e1` at world `w₀`, producing result at world `w₁`
+2. Evaluate `e2` at world `w₁`, producing result at world `w₂`
 3. Combine the results
 
 The existential form allows us to extract these intermediate worlds from the bind chain and construct the existential needed for the IH:
 
 ```lean
 -- From the bind chain, we have:
-h_beval1 : LeanPoison.beval fuel' config₀ e1 verbose w₀ = 
-           EStateM.Result.ok (.success config' v') h_state1
+h_beval1 : beval fuel' config₀ e1 verbose w₀ = 
+           EStateM.Result.ok (.success config' v') w₁
 
 -- We construct the existential for the IH:
-have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = 
+have h_beval1_ex : ∃ w₀' w₁', beval fuel' config₀ e1 verbose w₀' = 
                               EStateM.Result.ok (.success config' v') w₁' :=
-  ⟨w₀, h_state1, h_beval1⟩
+  ⟨w₀, w₁, h_beval1⟩
 
 -- Now we can apply the IH:
 exact IH fuel' h_fuel e1 verbose config₀ config' v' h_beval1_ex
@@ -96,7 +102,7 @@ The old pattern is the special case of the new one where the world type is `Unit
 
 4. **Construct existentials for IHs.** When applying the IH to a sub-expression, construct the existential using the worlds extracted from the bind chain:
    ```lean
-   have h_sub_ex : ∃ w₀' w₁', … := ⟨w₀, h_state1, h_beval1⟩
+   have h_sub_ex : ∃ w₀' w₁', … := ⟨w₀, w₁, h_beval1⟩
    ```
 
 5. **Use injection for constructor reasoning.** After simplifying, use `injection` to extract equalities between constructors (configs, values, worlds).
