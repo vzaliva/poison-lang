@@ -1,0 +1,1 @@
+let f = extern pfn x : (int) -> ( (int :> clean {} )) in f 10

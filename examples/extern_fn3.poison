@@ -1,0 +1,13 @@
+-- nested extern with effects 
+let h =
+  extern fn i : (int) -> (
+     extern fn s : (int) -> ( (int :> poisoned { 1, v => (v >= 0 && v <= 255) }) ) ,
+    effects: { !s :> (int :> poisoned { 2, u => (u >= 0 && u <= 255) }) , 
+               !y :> (int :> clean {}) ,
+               }
+    ),
+    effects: {
+      !r   :> (int :> poisoned { 4, u => (u >= 0 && u <= i) }),
+      !cap :> (int :> poisoned { 5, u => (u >= 0 && u <= i) })
+    }
+   in h 
