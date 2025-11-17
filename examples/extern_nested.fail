@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_nested.poison
+
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardOnly 3
+Runtime error: Cannot execute extern function – no implementation provided
