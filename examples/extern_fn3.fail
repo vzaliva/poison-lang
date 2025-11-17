@@ -1,4 +1,4 @@
 Evaluating file: examples/extern_fn3.poison
 
-Type checking passed: Type: QTyp.mk ETyp.arrow Typ.int Typ.unit false FnTClosure.extern "i" <retspec> <effects> false Predicate.noPred
+Type checking passed: Type: QTyp.mk ETyp.arrow Typ.int Typ.unit false FnTClosure.extern "s" <retspec> <effects> false Predicate.noPred
 Runtime error: Cannot execute extern function – no implementation provided
