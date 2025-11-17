@@ -1,4 +1,4 @@
 Evaluating file: examples/extern_fn1.poison
 
-Type checking error:  Effect target s must be a reference type
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardOnly 1
 Runtime error: Cannot execute extern function – no implementation provided
