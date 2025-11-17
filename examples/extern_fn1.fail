@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_fn1.poison
+
+Type checking error:  Effect target s must be a reference type
+Runtime error: Cannot execute extern function – no implementation provided

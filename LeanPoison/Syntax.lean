@@ -2,7 +2,7 @@
 
 import Std.Data.HashMap
 import Mathlib.Tactic
-open Std
+
 
 abbrev Address := Nat
 abbrev Name := String
@@ -126,6 +126,7 @@ inductive Value : Type where
   | loc : Address → Value           -- l (locations are values in the operational semantics)
   | closure : Name → Expr → List (Name × Value) → Value      -- closure(x,e,r)
   | peClosure : Name → Expr → List (Name × Value) → Value    -- pe_closure(x,pe,r)
+
 
 -- Variable environment: List (name × value) . We do not use a
 -- HashMap here, as we do for Memory, because of the Lean restriction of

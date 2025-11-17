@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_val1.poison
+
+Type checking passed: Type: QTyp.mk ETyp.bool true Predicate.guardOnly 3
+Runtime error: Cannot execute extern value – no implementation provided

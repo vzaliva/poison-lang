@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_pfn.poison
+
+Type checking passed: Type: QTyp.mk ETyp.int false Predicate.noPred
+Runtime error: Cannot execute extern pure function – no implementation provided
