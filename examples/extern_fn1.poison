@@ -1,5 +1,7 @@
+let s = ref 100 in 
+let y = ref (frand 100) in 
 let readSensor =
-  extern fn s : (int) -> ( (int :> poisoned { 1, v => (v >= 0 && v <= 255) }) ) ,
+  extern fn x : (int) -> ( (int :> poisoned { 1, v => (v >= 0 && v <= 255) }) ) ,
     effects: { !s :> (int :> poisoned { 2, u => (u >= 0 && u <= 255) }) , 
                !y :> (int :> clean {}) ,
                }
