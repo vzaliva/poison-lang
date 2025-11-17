@@ -1,8 +1,8 @@
 import LeanPoison.Syntax
 import Lean.Data.Xml.Basic
 import Lean.Data.Xml.Parser
-import LeanPoison.Typecheck
-open Lean Xml
+open Lean.Xml
+
 open System
 
 
@@ -86,10 +86,6 @@ def runTreeSitterXml (file : String) : IO String := do
   if output.exitCode ≠ 0 then
     throw <| IO.userError s!"Parsing failed: {output.stderr}"
   return output.stdout
-open Lean Xml
-
-
-
 
 mutual
 -- Recursively convert parsed XML to Expr
@@ -455,10 +451,24 @@ mutual
               | Content.Element e => some e
               | _ => none)
             match contsFiltered.toList with
-            | [e] =>  return Expr.externVal (<- xmlToQTyp e)
+            | [e] => let (typ, poisonStatus, pred) ← xmlToQTyp e
+                     return Expr.externVal typ poisonStatus pred
             | _ => .error "Invalid extern_val content"
 
+/- | externFn : Name → Typ → ExternReturn → List Effect → Expr
+   | externPfn : Name → Typ → ExternReturn → Expr
+   -- Effect specification for impure externs (uses SyntaxPredicate)
+    structure Effect where
+      target : EffectTarget
+      poison : Bool  -- true for "poisoned", false for "clean"
+      pred : SyntaxPredicate
 
+    -- Return specification for extern functions (simple or nested)
+    inductive ExternReturn where
+      | simple : Typ → Bool → SyntaxPredicate → ExternReturn
+      | nestedFn : Name → Typ → ExternReturn → List Effect → ExternReturn
+      | nestedPfn : Name → Typ → ExternReturn → ExternReturn
+ -/
           | [Element.Element "extern_fn" _ externFnContent] =>
               let contsFiltered := externFnContent.filterMap (fun
               | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
@@ -519,7 +529,7 @@ mutual
                       | Element.Element "paren_type" _ contents => parseTypeExpr contents
                       | _ => .error "Invalid extern_pfn arg type"
 
-                  return Expr.externPFn name (← argTyp) (<- xmlToRetType e_retType)
+                  return Expr.externPfn name (← argTyp) (<- xmlToRetType e_retType)
                 | _ => .error "Invalid extern_pfn content"
 
 
@@ -544,7 +554,7 @@ mutual
 
   ------------------XML To QTyp Functions---------------------------------------
 
-  partial def parsePExpr (pexprContents : Array Content) : Except String (String × PExpr) := do
+  partial def parsePExpr (pexprContents : Array Content) : Except String (String × Expr) := do
     let contents := pexprContents.filterMap fun
       | Content.Element (Element.Element "identifier" attr conts) => some (Element.Element "identifier" attr conts)
       | Content.Element (Element.Element "expr" attr conts) => some (Element.Element "expr" attr conts)
@@ -552,13 +562,13 @@ mutual
     match contents.toList with
     | [(Element.Element "identifier" _ #[Content.Character name]),(Element.Element "expr" attr cont)] =>
         let varName := name.trim
-        let expr <- Expr.toPExpr (<- xmlToExpr (Element.Element "expr" attr cont))
+        let expr <- xmlToExpr (Element.Element "expr" attr cont)
         return (varName, expr)
 
     | _ => .error s!"Invalid pexpr shape: {contents.toList}"
 
 
-  partial def parsePredicate (predContents : Array Content) : Except String Predicate := do
+  partial def parsePredicate (predContents : Array Content) : Except String SyntaxPredicate := do
     let contents := predContents.filterMap fun
 
       | Content.Element (Element.Element "number" attr cont) =>
@@ -567,10 +577,12 @@ mutual
         some (Element.Element "pexpr" attr cont)
       | _ => none
 
-  /- inductive Predicate : Type where
-    | guardClosure : Tag → Name → PExpr → List (Name × QTyp) → Predicate
-    | guardOnly : Tag → Predicate
-    | noPred : Predicate -/
+ /-
+ inductive SyntaxPredicate : Type where
+  | guardClosure: Tag → Name → Expr → SyntaxPredicate  -- tag, arg name, predicate body (as Expr)
+  | guardOnly : Tag → SyntaxPredicate
+  | noPred : SyntaxPredicate
+ -/
 
     match contents.toList with
       | [Element.Element "number" _ #[Content.Character tag], Element.Element "pexpr" _ pexprContents] =>
@@ -579,19 +591,19 @@ mutual
           | some n =>
               -- Here we would parse the pexprContents into a Pexpr, but for now we use a placeholder
               let (name,pexpr) <- parsePExpr (pexprContents)
-              return Predicate.guardClosure n name pexpr []
+              return SyntaxPredicate.guardClosure n name pexpr
           | none => .error s!"Invalid guard : {tag}"
       | [Element.Element "number" _ #[Content.Character tag]] =>
           let guardNumOpt := tag.trim.toNat?
           match guardNumOpt with
           | some n =>
-              return Predicate.guardOnly n
+              return SyntaxPredicate.guardOnly n
           | none => .error s!"Invalid guard number: {tag}"
       | [] =>
-          return Predicate.noPred
+          return SyntaxPredicate.noPred
       | _ => .error s!"Invalid predicate_clause shape: {predContents}"
 
-  partial def xmlToQTyp (x : Element) : Except String QTyp :=
+  partial def xmlToQTyp (x : Element) : Except String (Typ × Bool × SyntaxPredicate) :=
     match x with
     | Element.Element "qtyp" _ contents => do
         let elems := contents.filterMap fun
@@ -605,18 +617,17 @@ mutual
           (Element.Element "predicate_clause" _ predContents)] =>
 
             let typ <- parseTypeExpr typeExprConts
-            let typeExpr := Typ.toETyp typ
             let poisonStatus := if poison.trim == "poisoned" then true else false
             let pred <- parsePredicate predContents
-            return QTyp.mk typeExpr poisonStatus pred
+            return (typ, poisonStatus, pred)
         | _ => .error s!"Invalid qtyp shape: {contents}"
     | _ => .error s!"Invalid qtyp element: {x}"
 
-  partial def xmlToRetType (x : Element) : Except String RetType :=
+  partial def xmlToRetType (x : Element) : Except String ExternReturn :=
     match x with
     | Element.Element "qtyp" _ _ => do
-        let qtyp <- xmlToQTyp x
-        return RetType.qtyp qtyp
+        let (typ, poison, pred) <- xmlToQTyp x
+        return ExternReturn.simple typ poison pred
 
     | Element.Element "extern_fn" _ contents => do
         let elems := contents.filterMap fun
@@ -630,7 +641,7 @@ mutual
           e_retType] =>
             let argType <- parseTypeExpr argTypeContents
             let retType <- xmlToRetType e_retType
-            return RetType.externFnSig name.trim argType retType []
+            return ExternReturn.nestedFn name.trim argType retType []
 
         | [Element.Element "identifier" _ #[Content.Character name],
           Element.Element "paren_type" _ argTypeContents,
@@ -638,7 +649,7 @@ mutual
             let argType <- parseTypeExpr argTypeContents
             let retType <- xmlToRetType e_retType
             let effects <- xmlToEffects e_effects
-            return RetType.externFnSig name.trim argType retType effects
+            return ExternReturn.nestedFn name.trim argType retType effects
 
         | _ => .error s!"Invalid extern_fn shape in RetType: {elems.toList}"
 
@@ -653,12 +664,22 @@ mutual
           e_retType] =>
             let argType <- parseTypeExpr argTypeContents
             let retType <- xmlToRetType e_retType
-            return RetType.externPFnSig name.trim argType retType
+            return ExternReturn.nestedPfn name.trim argType retType
         | _ => .error s!"Invalid extern_pfn shape in RetType: {contents}"
 
     | _ => .error s!"Invalid RetType element: {x}"
 
-  partial def xmlToEffects (x : Element) : Except String (List (String × QTyp)) := do
+/-inductive EffectTarget where
+  | namedVar : Name → EffectTarget      -- !varname
+  | returnValue : EffectTarget           -- return (special keyword)
+  deriving Repr, BEq
+
+  structure Effect where
+  target : EffectTarget
+  poison : Bool  -- true for "poisoned", false for "clean"
+  pred : SyntaxPredicate
+ -/
+  partial def xmlToEffects (x : Element) : Except String (List Effect) := do
     match x with
     | Element.Element "effects_block" _ effectblock =>
       let elems := effectblock.filterMap fun
@@ -669,20 +690,30 @@ mutual
 
 
 
-      let mut acc : List (String × QTyp) := []
+      let mut acc : List Effect := []
       for el in elems do
+
         match el with
         | Element.Element "effect" _ effectContents =>
           let effectElems := effectContents.filterMap fun
             | Content.Element (Element.Element "comment" _ _) => none
             | Content.Element e => some e
             | _ => none
+
           match effectElems.toList with
+
           | [Element.Element "identifier" _ #[Content.Character name],
             Element.Element "qtyp" attr qtypContents] =>
+
             match xmlToQTyp (Element.Element "qtyp" attr qtypContents) with
-            | .ok qtyp => acc := acc.append [(name.trim, qtyp)]
+            | .ok (_,poison,pred) => acc := acc.append [Effect.mk (EffectTarget.namedVar name.trim) poison pred]
             | .error e => throw e
+
+          | [Element.Element "return_kw" _ _,
+            Element.Element "qtyp" attr qtypContents] =>
+            let (_,poison,pred) <- xmlToQTyp (Element.Element "qtyp" attr qtypContents)
+            acc := acc.append [Effect.mk EffectTarget.returnValue poison pred]
+
           | _ => throw "Invalid effect"
         | _ => throw "Invalid effect"
       return acc
@@ -702,12 +733,3 @@ def parsePoisonFile (file : String) : IO Expr := do
       throw <| IO.userError s!"Failed to parse XML: {err}"
 
 --------------------------------------------------------------------------------
-
---#eval parsePoisonFile "examples/extern_val1.poison"
---#eval parsePoisonFile "examples/extern_val2.poison"
---#eval parsePoisonFile "examples/extern_val3.poison"
---#eval parsePoisonFile "examples/extern_fn1.poison"
---#eval parsePoisonFile "examples/extern_fn2.poison"
---#eval parsePoisonFile "examples/extern_pfn.poison"
---#eval parsePoisonFile "examples/extern_nested.poison"
---#eval parsePoisonFile "examples/extern_fn3.poison"
