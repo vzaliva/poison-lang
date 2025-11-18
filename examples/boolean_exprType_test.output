@@ -1,8 +1,9 @@
-Evaluating file: examples/boolean_exprType_test.poison
+Evaluating file: examples/boolean_exprType_test.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred
+Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [] , tagEnv : Std.HashMap.ofList [] , nextLoc : 0 
+
 "New parsing works"
 Result: unit
 Final state:
-  Variable environment: []
+Variable environment: []
   Memory: []

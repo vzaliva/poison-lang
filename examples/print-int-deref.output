@@ -1,8 +1,9 @@
-Evaluating file: examples/print-int-deref.poison
+Evaluating file: examples/print-int-deref.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred
+Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [(0, QTyp.mk ETyp.int false Predicate.noPred)] , tagEnv : Std.HashMap.ofList [] , nextLoc : 1 
+
 100
 Result: unit
 Final state:
-  Variable environment: []
+Variable environment: []
   Memory: [(0, 100)]

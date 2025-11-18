@@ -1412,7 +1412,6 @@ def typecheckExprVerbose (e : Expr) : TypecheckM TypeResult := do
 /-- Type check a program (expression) and return a human-readable result -/
 def typecheckProgram (e : Expr) (verbose : Bool) : String :=
   if verbose then
-    dbg_trace s!"TypecheckProgram {repr e}" ;
     match typecheckExprVerbose e with
     | .ok result => s!"Type: {repr result.qualType} , MemoryTypeEnv : {repr result.memEnv'} , tagEnv : {repr result.tagEnv'} , nextLoc : {repr result.nextLoc'} "
     | .error msg => s!"Type error: {msg}"

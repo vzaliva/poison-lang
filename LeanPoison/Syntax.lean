@@ -2,7 +2,7 @@
 
 import Std.Data.HashMap
 import Mathlib.Tactic
-
+open Std
 
 abbrev Address := Nat
 abbrev Name := String
