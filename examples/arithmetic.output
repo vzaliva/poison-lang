@@ -1,7 +1,8 @@
-Evaluating file: examples/arithmetic.poison
+Evaluating file: examples/arithmetic.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.bool false Predicate.noPred
+Type checking passed: Type: QTyp.mk ETyp.bool false Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [] , tagEnv : Std.HashMap.ofList [] , nextLoc : 0 
+
 Result: true
 Final state:
-  Variable environment: []
+Variable environment: []
   Memory: []

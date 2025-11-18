@@ -1,7 +1,8 @@
-Evaluating file: examples/sensor-reading.poison
+Evaluating file: examples/sensor-reading.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int true Predicate.noPred
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [] , tagEnv : Std.HashMap.ofList [] , nextLoc : 0 
+
 Result: 10
 Final state:
-  Variable environment: []
+Variable environment: []
   Memory: []

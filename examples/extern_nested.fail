@@ -1,4 +1,5 @@
-Evaluating file: examples/extern_nested.poison
+Evaluating file: examples/extern_nested.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardOnly 3
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardOnly 3 , MemoryTypeEnv : Std.HashMap.ofList [(0, QTyp.mk ETyp.int true Predicate.guardOnly 5), (1, QTyp.mk ETyp.int true Predicate.guardOnly 4)] , tagEnv : Std.HashMap.ofList [] , nextLoc : 2 
+
 Runtime error: Cannot execute extern function – no implementation provided
