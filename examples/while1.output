@@ -1,7 +1,8 @@
-Evaluating file: examples/while1.poison
+Evaluating file: examples/while1.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred
+Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [(0, QTyp.mk ETyp.int false Predicate.noPred), (1, QTyp.mk ETyp.int false Predicate.noPred)] , tagEnv : Std.HashMap.ofList [] , nextLoc : 2 
+
 Result: unit
 Final state:
-  Variable environment: []
+Variable environment: []
   Memory: [(0, 5), (1, 0)]

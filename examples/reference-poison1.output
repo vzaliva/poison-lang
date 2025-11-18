@@ -1,7 +1,9 @@
-Evaluating file: examples/reference-poison1.poison
+Evaluating file: examples/reference-poison1.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardClosure 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [("x", QTyp.mk ETyp.unit false Predicate.noPred)]
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardClosure 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [("x", QTyp.mk ETyp.unit false Predicate.noPred)] , MemoryTypeEnv : Std.HashMap.ofList [(0,
+  QTyp.mk ETyp.int true Predicate.guardClosure 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [("x", QTyp.mk ETyp.unit false Predicate.noPred)])] , tagEnv : Std.HashMap.ofList [] , nextLoc : 1 
+
 Result: 0
 Final state:
-  Variable environment: []
+Variable environment: []
   Memory: [(0, 0)]

@@ -1,4 +1,5 @@
-Evaluating file: examples/extern_fn2.poison
+Evaluating file: examples/extern_fn2.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardOnly 3
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardOnly 3 , MemoryTypeEnv : Std.HashMap.ofList [] , tagEnv : Std.HashMap.ofList [] , nextLoc : 0 
+
 Runtime error: Cannot execute extern function – no implementation provided

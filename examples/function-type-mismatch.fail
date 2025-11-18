@@ -1,4 +1,5 @@
-Evaluating file: examples/function-type-mismatch.poison
+Evaluating file: examples/function-type-mismatch.poison (verbose mode)
 
 Type checking error:  Type mismatch in function application: parameter type Typ.int is not compatible with argument type Typ.bool
+
 Runtime error: Runtime type error: cannot apply operation Op.add to boolean and number

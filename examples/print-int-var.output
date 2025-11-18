@@ -1,8 +1,9 @@
-Evaluating file: examples/print-int-var.poison
+Evaluating file: examples/print-int-var.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred
+Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [] , tagEnv : Std.HashMap.ofList [] , nextLoc : 0 
+
 -5
 Result: unit
 Final state:
-  Variable environment: []
+Variable environment: []
   Memory: []

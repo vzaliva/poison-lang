@@ -26,7 +26,7 @@ for poison_file in "$EXAMPLES_DIR"/*.poison; do
   fi
 
   # Run interpreter and capture exit code (stdout+stderr -> result_file)
-  lake exe poison-interpreter "$poison_file" > "$result_file" 2>&1
+  lake exe poison-interpreter --verbose "$poison_file" > "$result_file" 2>&1
   exit_code=$?
 
   # Check whether output matches expected

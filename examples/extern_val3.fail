@@ -1,4 +1,5 @@
-Evaluating file: examples/extern_val3.poison
+Evaluating file: examples/extern_val3.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int false Predicate.noPred
+Type checking passed: Type: QTyp.mk ETyp.int false Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [] , tagEnv : Std.HashMap.ofList [] , nextLoc : 0 
+
 Runtime error: Cannot execute extern value – no implementation provided

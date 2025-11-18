@@ -1,7 +1,8 @@
-Evaluating file: examples/reference-poison2.poison
+Evaluating file: examples/reference-poison2.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.unit true Predicate.noPred
+Type checking passed: Type: QTyp.mk ETyp.unit true Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [(0, QTyp.mk ETyp.int false Predicate.noPred)] , tagEnv : Std.HashMap.ofList [] , nextLoc : 1 
+
 Result: unit
 Final state:
-  Variable environment: []
+Variable environment: []
   Memory: [(0, 42)]
