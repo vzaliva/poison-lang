@@ -124,7 +124,7 @@ partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
 -------------------------------------------------------------------------------
 def main (args : List String) : IO UInt32 := do
   match args with
-
+  
   | ["--verbose", filename] =>
     -- Verbose mode
     try
