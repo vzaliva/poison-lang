@@ -552,10 +552,10 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
     Parser creates predicates with Expr bodies and no captured env.
     During typechecking, we convert Expr to PExpr and attach current varEnv.
 -/
-def attachVarEnvToPredicate (pred : SyntaxPredicate) (_varEnv : VarTypeEnv) : TypecheckM Predicate :=
+def attachVarEnvToPredicate (pred : SyntaxPredicate) (varEnv : VarTypeEnv) : TypecheckM Predicate := do
   -- Temporary simplified implementation - TODO: implement proper conversion
   match pred with
-  | SyntaxPredicate.guardClosure k _arg _body => pure (Predicate.guardOnly k)
+  | SyntaxPredicate.guardClosure k arg body => pure (Predicate.guardClosure k arg (← body.toPExpr ) varEnv)
   | SyntaxPredicate.guardOnly k => pure (Predicate.guardOnly k)
   | SyntaxPredicate.noPred => pure Predicate.noPred
 
@@ -625,14 +625,21 @@ def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : S
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
            nextLoc' := ctx'.nextLoc, nextTag' := ctx.nextTag }
 
+def parseReturnType (retType : ExternReturn):Typ :=
+ match retType with
+ | ExternReturn.simple typ _ _ => typ
+ | ExternReturn.nestedFn _ typ extReturn _ => Typ.arrow typ (parseReturnType extReturn)
+ | ExternReturn.nestedPfn _ typ extReturn => Typ.arrow typ (parseReturnType extReturn)
+
 /-- Typecheck extern impure function -/
 def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (effects : List Effect) : TypecheckM TypeResult := do
   -- Create extern closure with captured varEnv
   let tcl := FnTClosure.extern arg retSpec effects ctx.varEnv
 
-  -- Create arrow type with ambient pc using existing ETyp.arrow
-  let arrowTyp := ETyp.arrow argTyp Typ.unit ctx.pc tcl  -- placeholder for st2
+
+  let retTyp := parseReturnType retSpec
+  let arrowTyp := ETyp.arrow argTyp retTyp ctx.pc tcl  -- placeholder for st2
 
   -- Return qualified type with poison = pc
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
@@ -645,8 +652,9 @@ def typecheckExternPfn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
   -- Create extern closure with captured varEnv
   let tcl := PFnTClosure.extern arg retSpec ctx.varEnv
 
+  let retTyp := parseReturnType retSpec
   -- Create arrow type with ambient pc
-  let arrowTyp := ETyp.parrow argTyp Typ.unit ctx.pc tcl
+  let arrowTyp := ETyp.parrow argTyp retTyp ctx.pc tcl
 
   -- Return qualified type with poison = pc
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
@@ -1146,7 +1154,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
             -- Nested extern function: return a closure
             let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
-            let innerArrowTyp := ETyp.arrow innerArgTyp Typ.unit ctx.pc innerTcl
+            let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc innerTcl
             let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
             return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag' }
@@ -1154,7 +1162,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
             -- Nested extern pure function: return a closure
             let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
-            let innerArrowTyp := ETyp.parrow innerArgTyp Typ.unit ctx.pc innerTcl
+            let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc innerTcl
             let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
             return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag' }
@@ -1207,7 +1215,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
             -- Nested extern impure function: return a closure
             let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
-            let innerArrowTyp := ETyp.arrow innerArgTyp Typ.unit ctx.pc innerTcl
+            let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc innerTcl
             let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
             return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag' }
@@ -1215,7 +1223,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
             -- Nested extern pure function: return a closure
             let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
-            let innerArrowTyp := ETyp.parrow innerArgTyp Typ.unit ctx.pc innerTcl
+            let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc innerTcl
             let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
             return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag' }

@@ -1,5 +1,7 @@
 Evaluating file: examples/extern_fn1.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardOnly 1 , MemoryTypeEnv : Std.HashMap.ofList [(0, QTyp.mk ETyp.int true Predicate.guardOnly 2), (1, QTyp.mk ETyp.int false Predicate.noPred)] , tagEnv : Std.HashMap.ofList [] , nextLoc : 2 
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardClosure 100 "v" PExpr.op (PExpr.op (PExpr.var "v") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "v") Op.lte (PExpr.num 255)) [("x", QTyp.mk ETyp.int false Predicate.noPred), ("y", QTyp.mk ETyp.ref ETyp.int 1 false Predicate.noPred), ("s", QTyp.mk ETyp.ref ETyp.int 0 false Predicate.noPred)] , MemoryTypeEnv : Std.HashMap.ofList [(0,
+  QTyp.mk ETyp.int true Predicate.guardClosure 200 "u" PExpr.op (PExpr.op (PExpr.var "u") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "u") Op.lte (PExpr.num 255)) [("x", QTyp.mk ETyp.int false Predicate.noPred), ("y", QTyp.mk ETyp.ref ETyp.int 1 false Predicate.noPred), ("s", QTyp.mk ETyp.ref ETyp.int 0 false Predicate.noPred)]),
+ (1, QTyp.mk ETyp.int false Predicate.noPred)] , tagEnv : Std.HashMap.ofList [] , nextLoc : 2 
 
 Runtime error: Cannot execute extern function – no implementation provided

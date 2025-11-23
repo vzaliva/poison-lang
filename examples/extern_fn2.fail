@@ -1,5 +1,5 @@
 Evaluating file: examples/extern_fn2.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardOnly 3 , MemoryTypeEnv : Std.HashMap.ofList [] , tagEnv : Std.HashMap.ofList [] , nextLoc : 0 
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardClosure 3 "y" PExpr.op (PExpr.op (PExpr.var "y") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "y") Op.lte (PExpr.var "n")) [("n", QTyp.mk ETyp.int false Predicate.noPred)] , MemoryTypeEnv : Std.HashMap.ofList [] , tagEnv : Std.HashMap.ofList [] , nextLoc : 0 
 
 Runtime error: Cannot execute extern function – no implementation provided
