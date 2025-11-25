@@ -4,7 +4,6 @@ import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
-import LeanPoison.Poison
 import LeanProofs.Equality
 import LeanProofs.IOHelpers
 import Mathlib.Data.Nat.Basic  -- for Nat.strong_induction_on
@@ -840,6 +839,9 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (config₀
       cases h_res
     | succ fuel' =>
       cases e with
+      | externVal _ _ _ => sorry
+      | externFn _ _ _ _ => sorry
+      | externPfn _ _ _ => sorry
       | num n => exact beval_preserves_varEnv_num n fuel' verbose config₀ config₁ v h_eval
       | bool b => exact beval_preserves_varEnv_bool b fuel' verbose config₀ config₁ v h_eval
       | unit => exact beval_preserves_varEnv_unit fuel' verbose config₀ config₁ v h_eval
