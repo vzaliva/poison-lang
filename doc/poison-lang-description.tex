@@ -104,13 +104,16 @@ e ::= n | b | x | l                    (* values and variables *)
     | let x = e1 in e2                  (* local bindings *)
     | fn x : ST1 => e : ST2 | e1 e2       (* functions with explicit return types *)
     | pfn x : ST1 => pe : ST2 | pe        (* pure functions with explicit return types *)
+    | extern val : (Q)                   (* extern value placeholder *)
+    | extern fn x : (ST1) -> (Q) effects: { ... }  (* extern impure function *)
+    | extern pfn x : (ST1) -> (Q)        (* extern pure function *)
 
 pe ::= n | b | x | l                   (* pure expressions *)
      | pe1 op pe2 | if pe1 then pe2 else pe3
      | unary_op pe
      | !pe | unit
      | let x = pe1 in pe2 | pe1 pe2
-     (* Note: no ref, :=, while, fn, pfn, or ; allowed *)
+     (* Note: no ref, :=, while, fn, pfn, extern, or ; allowed *)
 
 (* surface types for annotations *)     
 ST ::= int | bool | unit | ref ST | ST1 -> ST2  
@@ -217,6 +220,7 @@ the scenes.
     \item \textbf{References}: \texttt{ref e} creates, \texttt{e1 := e2} assigns, \texttt{!e} dereferences (memory stores only integers)
     \item \textbf{Functions}: \texttt{fn x : ST1 => e : ST2} creates functions with explicit parameter and return type annotations, \texttt{e1 e2} applies, with closures
     \item \textbf{Pure functions}: \texttt{pfn x : ST1 => pe : ST2} creates pure functions with explicit parameter and return type annotations that cannot have side effects (note: no nested pure functions allowed)
+    \item \textbf{Extern declarations}: \texttt{extern val}, \texttt{extern fn}, and \texttt{extern pfn} provide placeholders for external implementations with full type specifications including poison status and guard predicates
     \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings
     \item \textbf{Memory access only through references}: You need a valid
     reference to access memory location. There is no pointer arithmetic (but
@@ -239,25 +243,193 @@ language syntax.
 
 \subsection{Extern Functions}
 
-The language supports \emph{extern functions} as placeholders for external
+The language supports \emph{extern functions} and \emph{extern values} as placeholders for external
 implementations that cannot be expressed within the language itself (e.g., I/O
-operations, system calls, or native library calls). Extern functions are declared
-with type specifications that describe their parameter types, return type, and
-effects on the program state.
+operations, system calls, or native library calls). Extern declarations provide
+full typing information---including poison status and guard predicates---for
+type-checking incomplete programs. They have no runtime semantics: evaluating
+any extern expression causes a runtime error.
+
+\subsubsection{Syntax}
+
+Extern declarations are introduced with \texttt{let} bindings using one of three forms:
+
+\begin{itemize}
+    \item \textbf{Extern values}: \texttt{let x = extern val : (Q)} where \texttt{Q} is a qualified type
+    \item \textbf{Extern impure functions}: \texttt{let f = extern fn x : (ST$_1$) -> (Q$_2$) effects: \{ ... \}}
+    \item \textbf{Extern pure functions}: \texttt{let g = extern pfn x : (ST$_1$) -> (Q$_2$)}
+\end{itemize}
+
+The qualified type annotation \texttt{(Q)} specifies the observable result type
+with poison status and optional predicates. For functions, this describes the
+return value's qualified type. The \texttt{effects:} block (for impure extern
+functions) specifies how memory locations are updated at application time.
+
+\subsubsection{Guard Placeholders}
+
+Extern declarations use \emph{guard placeholders} (symbolic names like \texttt{g},
+\texttt{gX}) to express correlated predicates across the observable return and
+effects. Placeholders are instantiated to fresh guard tags at typing time:
+
+\begin{itemize}
+    \item For extern values, placeholders are instantiated when the \texttt{let}
+    binding is type-checked
+    \item For extern functions, placeholders are instantiated on first application
+    of the outermost function, with the mapping reused for all nested externs
+    produced by that application
+\end{itemize}
+
+Each placeholder name is local to one extern binding. Reusing the same placeholder
+name in the observable return and multiple effects expresses that they share the
+same guard tag and predicate. All occurrences with the same placeholder must use
+identical predicate bodies (up to renaming of formal arguments) if a body is
+provided; otherwise the specification is ill-formed.
+
+Placeholders may denote either:
+\begin{itemize}
+    \item \textbf{Guard closures}: \texttt{guard g, x => P(x, ...)} with a predicate body
+    \item \textbf{Guard-only}: \texttt{guard g} without a predicate body (cannot be
+    matched syntactically via \texttt{match\_guard}, but can be de-poisoned when
+    the guard tag is known to be true in $\mathcal{L}$)
+\end{itemize}
+
+\subsubsection{Extern Value Syntax}
+
+An extern value declaration specifies a qualified type:
+
+\begin{lstlisting}[language=poison]
+(* With guard closure *)
+let x = extern val : (T :> poisoned { guard gX, a => P(a, ...) })
+
+(* With guard-only *)
+let y = extern val : (T :> poisoned { guard gY })
+
+(* With no predicate *)
+let z = extern val : (T :> clean { no_pred })
+\end{lstlisting}
+
+\subsubsection{Extern Function Syntax}
+
+An extern impure function specifies parameter and return types, plus an optional
+\texttt{effects:} block describing memory updates:
+
+\begin{lstlisting}[language=poison,mathescape=true]
+let f =
+  extern fn a : (ST$_1$) -> (T$_2$ :> poisoned { guard gR, v => P$_1$(v, a, ...) })
+    effects: {
+      !a  :> (int :> poisoned { guard gA,  u => P$_3$(u, a, ...) }),
+      !r1 :> (int :> poisoned { guard g1,  w => P$_4$(w, a, r1, ...) }),
+      !r2 :> (int :> poisoned { guard g2,  z => P$_5$(z, a, r2, ...) })
+    }
+\end{lstlisting}
+
+In the \texttt{effects:} block, \texttt{!name} refers to any in-scope variable of
+reference type (the parameter \texttt{a} or captured references such as
+\texttt{r1}, \texttt{r2}). Each effect entry specifies how the memory location
+pointed to by that reference is updated, including its new qualified type.
+
+An extern pure function omits the \texttt{effects:} block:
+
+\begin{lstlisting}[language=poison,mathescape=true]
+let g =
+  extern pfn a : (ST$_1$) -> (T$_2$ :> poisoned { guard gR, v => P(v, a, ...) })
+\end{lstlisting}
+
+Functions are single-argument and curried. Multi-argument interfaces are expressed
+by returning an extern function from an extern function (nesting).
 
 \subsubsection{Reference Return Restriction}
+\label{subsec:extern-reference-restriction}
 
 \textbf{Important}: Extern functions are \textbf{not allowed to return reference types}.
-This restriction (documented in issue \#72) is necessary because the type checker
-cannot determine which memory location an externally-returned reference would point
-to, making it impossible to maintain sound region tracking in the type system.
+This restriction is necessary because the type checker cannot determine which
+memory location an externally-returned reference would point to, making it
+impossible to maintain sound region tracking in the type system.
 
 Attempting to declare an extern function with a reference return type will result
-in a type-checking error: \texttt{"Extern functions cannot return reference types"}.
+in a type-checking error.
 
 \textbf{What is allowed}: Extern functions \emph{can} take references as parameters
 and update them via assignment effects. They can also return any non-reference
-types (integers, booleans, units, strings, and function types).
+types (integers, booleans, units, strings, and function types). If an extern
+function needs to return a reference, the caller can allocate the reference and
+pass it as a parameter, with the extern function updating it via effects using
+\texttt{!name} syntax.
+
+\subsubsection{Typing Behaviour}
+
+Extern declarations are type-checked as follows:
+
+\begin{itemize}
+    \item \textbf{Extern value}: The declared qualified type is synthesised and
+    bound in the variable typing environment $\sigma$. Guard placeholders are
+    instantiated to fresh tags at binding time.
+    
+    \item \textbf{Extern function}: An arrow type \texttt{ST$_1$ -> ST$_2$} is
+    synthesised, carrying an extern closure with the captured variable typing
+    environment at the definition site. The closure's poison at definition is the
+    ambient \texttt{pc}, as with ordinary \texttt{fn}/\texttt{pfn}.
+    
+    \item \textbf{Application of extern function}:
+    \begin{enumerate}
+        \item The argument \texttt{e$_2$} is type-checked and \texttt{ST$_1$ <: T$_{arg}$} is required
+        \item The unified environment $\sigma'$ is formed by extending the captured
+        environment with the parameter bound to \texttt{e$_2$}'s qualified type,
+        joining poison with the current \texttt{pc}
+        \item Guard placeholders are instantiated: fresh tags are allocated for
+        each distinct placeholder name occurring in the extern specification on
+        first application, and the mapping is reused for this call chain (including
+        nested externs returned by the function)
+        \item For every effect \texttt{!v :> QT$_{eff}$}, \texttt{v} is resolved
+        in $\sigma'$ to \texttt{ref T$_v$ @ l} and $\Gamma(l)$ is updated to
+        \texttt{QT$_{eff}$}, joining poison with the current \texttt{pc} and
+        substituting placeholders with allocated tags
+        \item The declared observable return \texttt{QTyp} is returned, with
+        poison joined with the current \texttt{pc} and with the same placeholder
+        substitutions
+        \item In pure context, application of impure externs is rejected
+    \end{enumerate}
+    
+    \item \textbf{Application of extern pure function}: As above but without
+    effects and in pure context.
+\end{itemize}
+
+\subsubsection{Examples}
+
+\begin{lstlisting}[language=poison]
+(* Extern observable value *)
+let system_ok = extern val : (bool :> clean { no_pred })
+
+(* Extern impure function affecting argument and captured reference *)
+let global_counter : ref int = ref 0 in
+let incrementAndRead =
+  extern fn _ : (unit) -> (int :> clean { no_pred })
+    effects: { !global_counter :> (int :> clean { no_pred }) } in
+...
+
+(* Correlated guard between observable return and argument's location *)
+let readSensor =
+  extern fn s : (ref int) -> (int :> poisoned { guard g, v => (v >= 0 && v <= 255) })
+    effects: { !s :> (int :> poisoned { guard g, u => (u >= 0 && u <= 255) }) }
+
+(* Multi-argument via nesting with shared guard placeholders *)
+let cap : ref int = ref 0 in
+let h =
+  extern fn i : (int) -> (
+    extern fn r : (ref int) -> (
+      int :> poisoned { guard g, v => (v >= 0 && v <= i) }
+    )
+    effects: {
+      !r   :> (int :> poisoned { guard g, u => (u >= 0 && u <= i) }),
+      !cap :> (int :> poisoned { guard g, u => (u >= 0 && u <= i) })
+    }
+  )
+\end{lstlisting}
+
+In the nested example, on first application \texttt{h 10}, a fresh tag is chosen
+for \texttt{g} and attached to both effects carried by the produced inner closure
+(on \texttt{!r} and \texttt{!cap}). On subsequent application \texttt{(h 10) r},
+the same tag is reused for the inner observable and its effects.
 
 \subsection{Pure Expressions}
 
