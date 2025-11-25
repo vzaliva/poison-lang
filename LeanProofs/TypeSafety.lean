@@ -7,7 +7,6 @@ import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
-import LeanPoison.Poison
 
 -- ================================================================
 -- Evaluation Relations
@@ -70,4 +69,3 @@ lemma var_has_correct_type (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (x : 
   intro ⟨_, h_vars⟩ h_lookup
   obtain ⟨v, h_v, h_typ⟩ := h_vars h_lookup
   exact ⟨v, h_v, h_typ⟩
-

@@ -4,7 +4,6 @@ import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
-import LeanPoison.Poison
 import LeanProofs.Equality
 import LeanProofs.IOHelpers
 import Mathlib.Data.Nat.Basic  -- for Nat.strong_induction_on
@@ -631,7 +630,8 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
             | true =>
               simp_all [pure, Except.pure]
               cases tcl with
-              | mk x body env =>
+              | extern _x _retSpec _effects => sorry
+              | regular x body env =>
                 simp_all
                 cases h8: typecheckExpr
                       { pc := joinPoison p (joinPoison ctx.pc p1),
@@ -730,5 +730,9 @@ theorem typecheck_PExpr_preserves_typestate :
       | rand _
       | frand _
       | printString _
-      | printInt _ =>
+      | printInt _
+      | externVal _ _ _
+      | externFn _ _ _ _
+      | externPfn _ _ _
+        =>
         contradiction

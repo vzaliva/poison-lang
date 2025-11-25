@@ -195,11 +195,11 @@ mutual
 
   inductive deepQTypProperty : (VarTypeEnv → Prop) → QTyp → Prop
   | arrow (P : VarTypeEnv → Prop) (qt : QTyp) (env : VarTypeEnv) :
-    qt.etyp = ETyp.arrow _ _ _ (FnTClosure.mk _ _ env) →
+    qt.etyp = ETyp.arrow _ _ _ (FnTClosure.regular _ _ env) →
     P env →
     deepQTypProperty P qt
   | parrow (P : VarTypeEnv → Prop) (qt : QTyp) (env : VarTypeEnv) :
-    qt.etyp = ETyp.parrow _ _ _ (PFnTClosure.mk _ _ env) →
+    qt.etyp = ETyp.parrow _ _ _ (PFnTClosure.regular _ _ env) →
     P env →
     deepQTypProperty P qt
   | other (P : VarTypeEnv → Prop) (qt : QTyp) :
@@ -224,13 +224,13 @@ mutual
 
   inductive deepQTypProperty₂ : (VarTypeEnv → VarTypeEnv → Prop) → QTyp → QTyp → Prop
   | arrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) (env₁ env₂ : VarTypeEnv) :
-    qt₁.etyp = ETyp.arrow _ _ _ (FnTClosure.mk _ _ env₁) →
-    qt₂.etyp = ETyp.arrow _ _ _ (FnTClosure.mk _ _ env₂) →
+    qt₁.etyp = ETyp.arrow _ _ _ (FnTClosure.regular _ _ env₁) →
+    qt₂.etyp = ETyp.arrow _ _ _ (FnTClosure.regular _ _ env₂) →
     P env₁ env₂ →
     deepQTypProperty₂ P qt₁ qt₂
   | parrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) (env₁ env₂ : VarTypeEnv) :
-    qt₁.etyp = ETyp.parrow _ _ _ (PFnTClosure.mk _ _ env₁) →
-    qt₁.etyp = ETyp.parrow _ _ _ (PFnTClosure.mk _ _ env₂) →
+    qt₁.etyp = ETyp.parrow _ _ _ (PFnTClosure.regular _ _ env₁) →
+    qt₁.etyp = ETyp.parrow _ _ _ (PFnTClosure.regular _ _ env₂) →
     P env₁ env₂ →
     deepQTypProperty₂ P qt₁ qt₂
   | other (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :

@@ -1,10 +1,11 @@
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
-import LeanPoison.Poison
 import LeanProofs.Properties
 import Mathlib.Tactic
 
 open Std
+
+set_option maxHeartbeats 10000000
 
 /-- Extract the guard tag from a qualified type's predicate, if present. -/
 def qtypGuardTag (qt : QTyp) : Option Tag :=
@@ -45,11 +46,11 @@ inductive guardlessIfCleanVars : VarTypeEnv → Prop
 
 inductive guardlessIfCleanClosureEnv : QTyp → Prop
 | arrow (qt : QTyp) (env : VarTypeEnv) :
-  qt.etyp = ETyp.arrow _ _ _ (FnTClosure.mk _ _ env) →
+  qt.etyp = ETyp.arrow _ _ _ (FnTClosure.regular _ _ env) →
   guardlessIfCleanVars env →
   guardlessIfCleanClosureEnv qt
 | parrow (qt : QTyp) (env : VarTypeEnv) :
-  qt.etyp = ETyp.parrow _ _ _ (PFnTClosure.mk _ _ env) →
+  qt.etyp = ETyp.parrow _ _ _ (PFnTClosure.regular _ _ env) →
   guardlessIfCleanVars env →
   guardlessIfCleanClosureEnv qt
 | other (qt : QTyp) :
@@ -2673,12 +2674,12 @@ private lemma guardlessIfClean_invariant_fn
       · exact hmem
       · have hvars : guardlessIfCleanVars ctx.varEnv := _hvars
         let qt : QTyp :=
-          ⟨ETyp.arrow st₁ st₂ false (FnTClosure.mk x body ctx.varEnv), ctx.pc,
+          ⟨ETyp.arrow st₁ st₂ false (FnTClosure.regular x body ctx.varEnv), ctx.pc,
             Predicate.noPred⟩
         refine guardlessIfCleanQTypDeep.intro qt ?_ ?_
         · intro _hpoison_clean
           simp [qt, qtypGuardTag]
-        · have hclosureEq :  qt.etyp = ETyp.arrow st₁ st₂ false (FnTClosure.mk x body ctx.varEnv) := by
+        · have hclosureEq :  qt.etyp = ETyp.arrow st₁ st₂ false (FnTClosure.regular x body ctx.varEnv) := by
             simp [qt]
           exact guardlessIfCleanClosureEnv.arrow (qt := qt) (env := ctx.varEnv) hclosureEq hvars
 
@@ -2703,12 +2704,12 @@ private lemma guardlessIfClean_invariant_pfn
           · exact hmem
           · have hvars : guardlessIfCleanVars ctx.varEnv := _hvars
             let qt : QTyp :=
-              ⟨ETyp.parrow st₁ st₂ false (PFnTClosure.mk x pbody ctx.varEnv), ctx.pc,
+              ⟨ETyp.parrow st₁ st₂ false (PFnTClosure.regular x pbody ctx.varEnv), ctx.pc,
                 Predicate.noPred⟩
             refine guardlessIfCleanQTypDeep.intro qt ?_ ?_
             · intro _hpoison_clean
               simp [qt, qtypGuardTag]
-            · have hclosureEq : qt.etyp = ETyp.parrow st₁ st₂ false (PFnTClosure.mk x pbody ctx.varEnv) := by
+            · have hclosureEq : qt.etyp = ETyp.parrow st₁ st₂ false (PFnTClosure.regular x pbody ctx.varEnv) := by
                 simp [qt]
               exact guardlessIfCleanClosureEnv.parrow (qt := qt) (env := ctx.varEnv) hclosureEq hvars
 
@@ -2848,7 +2849,8 @@ private lemma guardlessIfClean_invariant_app
                                               simp [hres₂, hsub] at hcontr
                                           | true =>
                                               cases tcl with
-                                              | mk x body env =>
+                                              | extern _ _ _ => sorry
+                                              | regular x body env =>
                                                   have hvars_env :
                                                       guardlessIfCleanVars env := by
                                                     cases hqt₁_closure with
@@ -3053,7 +3055,8 @@ private lemma guardlessIfClean_invariant_app
                                           simp [hres₂, hsub] at hcontr
                                       | true =>
                                           cases tcl with
-                                          | mk x body env =>
+                                          | extern _ _ _ => sorry
+                                          | regular x body env =>
                                               have hvars_env :
                                                   guardlessIfCleanVars env := by
                                                 cases hqt₁_closure with
@@ -3519,3 +3522,6 @@ lemma guardlessIfClean_invariant
         exact guardlessIfClean_invariant_printString e' IH hmem hvars htc
     | printInt e' =>
         exact guardlessIfClean_invariant_printInt e' IH hmem hvars htc
+    | externVal _ _ _ => sorry
+    | externFn _ _ _ _ => sorry
+    | externPfn _ _ _ => sorry

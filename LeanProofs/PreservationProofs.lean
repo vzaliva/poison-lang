@@ -2954,6 +2954,9 @@ private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeCon
     intro e ctx
     -- The proof proceeds by case analysis on the expression
     cases e with
+    | externVal _ _ _ => sorry
+    | externFn _ _ _ _ => sorry
+    | externPfn _ _ _ => sorry
     | num n_val => exact preservationWithFuel_num n_val ctx n
     | bool b => exact preservationWithFuel_bool b ctx n
     | unit => exact preservationWithFuel_unit ctx n

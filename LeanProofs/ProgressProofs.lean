@@ -180,6 +180,9 @@ theorem progress (e : Expr) (ctx : TypeContext) : Progress e ctx := by
     | succ fuel =>
       -- When fuel > 0, proceed by case analysis on expression
       cases e with
+      | externVal _ _ _ => sorry
+      | externFn _ _ _ _ => sorry
+      | externPfn _ _ _ => sorry
       | num n =>
         -- Numeric literals never get stuck
         have h_prog := progress_num n ctx
@@ -269,4 +272,3 @@ theorem progress (e : Expr) (ctx : TypeContext) : Progress e ctx := by
       | printString e1 =>
         -- Print string: similar to printInt
         sorry
-

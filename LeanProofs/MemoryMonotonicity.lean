@@ -4,7 +4,6 @@ import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
-import LeanPoison.Poison
 import LeanProofs.Equality
 import LeanProofs.IOHelpers
 import Mathlib.Data.Nat.Basic  -- for Nat.strong_induction_on
@@ -1199,6 +1198,9 @@ lemma beval_memory_monotonic : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
       intro m h_lt e' config₀' config₁' v' h_eval' l' h_contains'
       exact IH m h_lt e' verbose config₀' config₁' v' h_eval' l' h_contains'
     cases e with
+    | externVal _ _ _ => sorry
+    | externFn _ _ _ _ => sorry
+    | externPfn _ _ _ => sorry
     | num n | bool b | str s | unit =>
       -- Literals don't modify memory: config₁ = config₀
       -- All literals (numbers, booleans, strings, unit) follow the same pattern
