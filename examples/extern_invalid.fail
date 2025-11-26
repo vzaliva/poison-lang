@@ -1,0 +1,1 @@
+Error reading file examples/extern_invalid.poison: XML to Expr error: Clean types cannot have predicates

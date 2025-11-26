@@ -619,6 +619,8 @@ mutual
             let typ <- parseTypeExpr typeExprConts
             let poisonStatus := if poison.trim == "poisoned" then true else false
             let pred <- parsePredicate predContents
+            if poisonStatus = false && pred != SyntaxPredicate.noPred then
+              .error "Clean types cannot have predicates"
             return (typ, poisonStatus, pred)
         | _ => .error s!"Invalid qtyp shape: {contents}"
     | _ => .error s!"Invalid qtyp element: {x}"
@@ -627,7 +629,10 @@ mutual
     match x with
     | Element.Element "qtyp" _ _ => do
         let (typ, poison, pred) <- xmlToQTyp x
-        return ExternReturn.simple typ poison pred
+        match typ with
+        | Typ.ref _ => .error "Return type of extern fn cannot be a ref type"
+        | _ =>  return ExternReturn.simple typ poison pred
+
 
     | Element.Element "extern_fn" _ contents => do
         let elems := contents.filterMap fun
@@ -708,11 +713,6 @@ mutual
             match xmlToQTyp (Element.Element "qtyp" attr qtypContents) with
             | .ok (_,poison,pred) => acc := acc.append [Effect.mk (EffectTarget.namedVar name.trim) poison pred]
             | .error e => throw e
-
-          | [Element.Element "return_kw" _ _,
-            Element.Element "qtyp" attr qtypContents] =>
-            let (_,poison,pred) <- xmlToQTyp (Element.Element "qtyp" attr qtypContents)
-            acc := acc.append [Effect.mk EffectTarget.returnValue poison pred]
 
           | _ => throw "Invalid effect"
         | _ => throw "Invalid effect"
