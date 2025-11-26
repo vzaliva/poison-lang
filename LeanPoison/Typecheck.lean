@@ -617,7 +617,14 @@ def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
 
 /-- Typecheck extern value: let x = extern val : (T :> p { P }) -/
 def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
-    : TypecheckM TypeResult := do
+    : TypecheckM TypeResult :=
+    match (poison,pred) with
+    | (false, SyntaxPredicate.guardOnly _) =>
+        throw "Extern values cannot have guard-only predicates without closures"
+    | (false, SyntaxPredicate.guardClosure _ _ _) =>
+        throw "Clean types cannot have predicates"
+    | _ => do
+
   -- Convert to QTyp with current varEnv
   let (qt, ctx') ← surfaceSpecToQTyp typ poison pred ctx.varEnv ctx
 
