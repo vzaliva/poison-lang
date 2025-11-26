@@ -6,7 +6,7 @@ let h =
   extern fn i : (int) -> (
      extern fn s : (int) -> ( (int :> poisoned { 1, v => (v >= 0 && v <= 255) }) ) ,
     effects: { !s :> (int :> poisoned { 2, u => (u >= 0 && u <= 255) }) , 
-               return :> (int :> clean {}) ,
+               !a :> (int :> clean {}) ,
                }
     ),
     effects: {

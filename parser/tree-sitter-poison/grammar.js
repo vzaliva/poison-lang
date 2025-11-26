@@ -276,11 +276,10 @@ module.exports = grammar({
       "}"
     ),
 
-    return_kw: $ => "return",
 
     effect: $ => seq(
-      choice(seq("!",
-        field("name", $.identifier)), field("target", $.return_kw)),
+      "!",
+      field("name", $.identifier),
       ":>",
       field("type", $.qtyp)
     ),
