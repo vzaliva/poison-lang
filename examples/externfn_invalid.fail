@@ -1,0 +1,1 @@
+Error reading file examples/externfn_invalid.poison: XML to Expr error: Return type of extern fn cannot be a ref type
