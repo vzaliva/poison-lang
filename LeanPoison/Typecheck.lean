@@ -620,7 +620,7 @@ def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : S
     : TypecheckM TypeResult :=
     match (poison,pred) with
     | (false, SyntaxPredicate.guardOnly _) =>
-        throw "Extern values cannot have guard-only predicates without closures"
+        throw "Clean types cannot have predicates"
     | (false, SyntaxPredicate.guardClosure _ _ _) =>
         throw "Clean types cannot have predicates"
     | _ => do
