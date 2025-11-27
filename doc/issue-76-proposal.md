@@ -86,6 +86,11 @@ We say that a run **realises** a typing context (with logical memory typing `Γ`
 2. Dereferences and updates through values of type `ref T @ S` only ever use concrete addresses `ℓ = ρ(α)` for some `α ∈ S`.
 3. Logical locations may exist in `Γ` without a corresponding `ρ(α)` (paths not taken); they are simply unused ghosts in that run and do not affect observable behaviour.
 
+The realisation map `ρ` satisfies two key properties:
+
+* **Injectivity:** Distinct logical locations map to distinct concrete addresses (`α ≠ β ⇒ ρ(α) ≠ ρ(β)` when both are defined).
+* **Monotonicity:** Once `ρ(α) = ℓ` is established, it remains fixed throughout evaluation.
+
 ## 3. Impact on typing rules (high-level)
 
 ### 3.1 Allocation
@@ -125,36 +130,58 @@ TODO: review this section
 
 ### 3.3 Loops
 
-Loops are treated similarly to conditionals via a standard fixpoint construction over:
+Loops are treated via a fixpoint construction over the logical memory typing `Γ`, poison statuses, and the tag environment `L`.
 
-* The logical memory typing `Γ`.
-* The per-expression types containing location sets.
+#### Loop-internal allocations are scoped
 
-At each iteration in the analysis, we:
+A key observation is that allocations inside a loop body **cannot escape** the loop:
 
-* Extend `Γ` with any new logical locations created by the body.
-* Join poison statuses and location sets.
+1. **Return type is `unit`:** The loop cannot return a reference.
+2. **Memory holds only integers:** References cannot be stored in heap cells.
+3. **Lexical scoping:** Variables bound inside the loop body go out of scope at the end of each iteration.
 
-The fixpoint `Γ*` is then used as the loop's post-environment. At runtime, only zero or finitely many of the corresponding logical locations may be realised, depending on the number of actual iterations; the unrealised ones remain ghosts.
+Therefore, logical locations created by `ref` expressions inside the loop body are relevant only for typing that iteration's body. They become **ghost locations** that need not persist across fixpoint iterations or appear in the loop's output environment.
 
-**Termination of fixpoint iteration:** The fixpoint is guaranteed to terminate because:
-TODO: review this section
-1. Each iteration can add only finitely many fresh logical locations (bounded by allocation sites in the loop body).
-2. Location sets and poison statuses form finite lattices with finite ascending chains.
-3. The iteration reaches a fixpoint when no new logical locations are introduced and all poison statuses stabilise.
+#### Modified fixpoint computation
 
-In practice, simple loops reach fixpoint in one or two iterations; loops with
-complex allocation patterns may require more iterations but remain bounded by
-the syntactic structure of the program.
+The standard fixpoint iteration `Γᵢ₊₁ = JoinG Γᵢ Γ²ᵢ` (where `Γ²ᵢ` is the environment after typing the body) is modified to:
+
+```
+Γᵢ₊₁ = JoinG Γᵢ (restrict Γ²ᵢ to dom(Γᵢ))
+```
+
+That is, before joining, we **restrict** the body's output environment to locations that existed *before* entering the body. Fresh allocations from the body are discarded—they served their purpose during body typing but cannot affect code outside the loop.
+
+#### Termination argument
+
+The fixpoint is guaranteed to terminate because the state space is finite and the iteration eventually stabilises:
+
+1. **Finite location set:** The fixpoint iterates only over locations in the initial `Γ` (those existing before the loop). This set is finite and fixed.
+
+2. **Tag environment shrinks monotonically:** The tag environment `L` can only lose entries over fixpoint iterations:
+   - `JoinL` keeps only tags where both operands agree on the boolean value
+   - `invalidate_deps` removes tags whose dependencies include a written location
+   
+   Although tags may be temporarily added when guards match (for typing the loop body), these additions don't survive `JoinL` unless the tag was already present in the input `L`. Since `L` is finite, it stabilises after finitely many iterations.
+
+3. **Once `L` stabilises, the rest is monotonic:** After `L` reaches its fixpoint, de-poisoning behaviour becomes deterministic (the same guards are known true/false). From that point:
+   - Poison status can only increase via `joinPoison` (or stay the same)
+   - Predicates can only be lost via predicate joins (or stay the same)
+
+4. **Finite state space:** Each location has finitely many possible qualified types (two poison values, finitely many predicate forms). Combined with the fixed location set, the total state space is finite.
+
+In practice, simple loops reach a fixpoint in one or two iterations.
 
 ### 3.4 Dereference and assignment
 
+Note: Reference types always carry `no_pred` (predicates apply only to stored values, not references). Memory only stores integers, so base types trivially match across location sets.
+
 Dereference:
 
-* **Typing level**: Given `ref T @ S`, the typing rule looks up all `Γ(α)` for `α ∈ S`, ensuring types match and computing the result's poison status and predicate.
-* **Conservative poison**: The result is poisoned if **any** `α ∈ S` has poisoned status in `Γ`, preserving the "taint everything that might be tainted" philosophy.
-* **Predicate handling**: Result predicate depends on agreement across location set (see Section 3.5 for detailed semantics).
-* **Runtime level**: The big-step rule `b_deref` reads from a single concrete heap cell; the type system's conservative approximation ensures soundness.
+* **Typing level**: Given `ref T @ S`, look up `Γ(α)` for all `α ∈ S` to get the stored values' qualified types.
+* **Conservative poison**: Result is poisoned if **any** `α ∈ S` has poisoned status in `Γ`.
+* **Predicate handling**: The stored values may have different predicates; how to combine them is addressed in Section 3.5.
+* **Runtime level**: The big-step rule `b_deref` reads from a single concrete cell; the type system's conservative approximation ensures soundness.
 
 Assignment:
 
