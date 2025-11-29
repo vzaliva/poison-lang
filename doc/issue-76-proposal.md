@@ -4,7 +4,7 @@
 
 The current type system uses **concrete locations** in types (e.g. `ref T @ l`) and a **flow-insensitive join** over branches and loops. This leads to two related problems:
 
-1. **Static vs runtime mismatch:** the typing context may mention locations that are not actually allocated in a given execution path, which breaks the current "heap instantiates context" invariant and complicates the non-interference proof.
+1. **Static vs runtime mismatch:** the typing context may mention locations that are not actually allocated in a given execution path, which breaks the current heap instantiates context invariant and complicates the non-interference proof.
 
 2. **Join ambiguity for existing references:** even when no new allocation happens, joins such as
 
@@ -16,7 +16,7 @@ The current type system uses **concrete locations** in types (e.g. `ref T @ l`) 
 
 require a single type for the `if` expression, but branches refer to different locations (`a` vs `b`), making the result type ambiguous if we insist on a single `@ l`.
 
-At the same time, simply “forgetting” location information at joins (e.g. dropping `@ l`) would sacrifice too much precision for tracking aliasing and poison propagation.
+At the same time, simply "forgetting" location information at joins (e.g. dropping `@ l`) would sacrifice too much precision for tracking aliasing and poison propagation.
 
 This proposal sketches a higher-level design that:
 
@@ -49,15 +49,12 @@ Instead of writing `ref T @ 0`, `ref T @ 1`, etc. with concrete addresses in typ
 * Types for references become `ref T @ {l}` (singleton set), where `l` is **not** a runtime address but a logical name.
 * The typing judgment uses:
 
-  * `Γ : l ⇀ Q` - logical memory typing environment, mapping logical locations to qualified types.
-  * `σ : Var ⇀ Q` - variable typing environment.
+  * `Γ : l ⇀ Q` - logical memory typing environment, mapping logical locations to qualified types (the key changed from `a` to `l` per this proposal).
+  * `σ : Var ⇀ Q` - variable typing environment (unchanged).
 
-At runtime, we still allocate **concrete addresses** `a ∈ Address`. We relate logical locations to concrete addresses via a **realisation map**:
+At runtime, we still allocate **concrete addresses** `a ∈ Address`. We relate logical locations to concrete addresses via a **realisation map** `ρ : l ⇀ a`, a proof-level construct that connects the typing derivation to a particular execution (see Section 4 for details).
 
-* For each run we maintain a partial map `ρ : l ⇀ a`.
-* When a `new` executes along some path and the type system predicted a fresh logical `l`, we extend `ρ(l)` with the fresh concrete address `a`.
-
-This decouples typing from the exact heap layout: types talk about logical locations; each run separately realises some of them as concrete addresses, possibly different across runs. Logical locations that arise only on paths not taken in a particular execution simply remain unrealised in that run.
+This decouples typing from the exact heap layout: types talk about logical locations; each run separately realises some of them as concrete addresses. Logical locations that arise only on paths not taken in a particular execution remain unrealised (ghost locations).
 
 ### 2.2 Sets of possible logical locations
 
@@ -74,7 +71,7 @@ we generalise reference types to carry **sets** of logical locations:
 * Base case: `x : ref int @ {l₁}`, `y : ref int @ {l₂}`.
 * Join case: `if c then x else y : ref int @ {l₁, l₂}`.
 
-Intuitively, `ref T @ S` means "a pointer to *one of* the locations in `S`, each of which is a cell of type `T`". We do not try to pick a single distinguished location at the join; we explicitly record that both `l₁` and `l₂` are possible targets.
+Intuitively, `ref T @ S` means a pointer to *one of* the locations in `S`, each of which is a cell of type `T`. We do not try to pick a single distinguished location at the join; we explicitly record that both `l₁` and `l₂` are possible targets.
 
 This preserves:
 
@@ -85,11 +82,11 @@ Conceptually, this is a standard abstract-interpretation move: sets of abstract 
 
 ### 2.3 Heap and world invariants
 
-For each run we have:
+This section describes the **proof-level** relationship between typechecking and runtime. For reasoning about preservation and non-interference, we relate:
 
-* A concrete heap `μ : a ⇀ Value`.
-* A realisation map `ρ : l ⇀ a`.
-* A logical memory typing environment `Γ : l ⇀ Q`.
+* `Γ : l ⇀ Q` - from the typing derivation (logical locations to qualified types)
+* `μ : a ⇀ Value` - from runtime (concrete addresses to values)
+* `ρ : l ⇀ a` - the realisation map connecting them
 
 We say that a run **realises** a typing context (with logical memory typing `Γ` and variable typing `σ`) if:
 
@@ -136,8 +133,6 @@ This preserves the ability to track poison on both `l₁` and `l₂` across the 
 
 **Arrow types and references:** Arrow types `ST1 -> ST2` use surface types without location annotations. Function bodies are re-typechecked at application time (per existing Ott rules `app_fn` and `app_pfn`), so each call allocates fresh logical locations for any `ref` expressions in the body. Joins of function results follow the same location-set rules as conditionals.
 
-Note: Function calls inside loops produce fresh locations per call, but these are scoped to the loop body (see Section 3.3) and do not escape.
-
 ### 3.3 Loops
 
 Loops are treated via a fixpoint construction over the logical memory typing `Γ`, poison statuses, and the tag environment `L`.
@@ -160,11 +155,11 @@ The standard fixpoint iteration `Γᵢ₊₁ = JoinG Γᵢ Γ²ᵢ` (where `Γ²
 Γᵢ₊₁ = JoinG Γᵢ (restrict Γ²ᵢ to dom(Γᵢ))
 ```
 
-That is, before joining, we **restrict** the body's output environment to locations that existed *before* entering the body. Fresh allocations from the body are discarded—they served their purpose during body typing but cannot affect code outside the loop.
+That is, before joining, we **restrict** the body's output environment to locations that existed *before* entering the body. Fresh allocations from the body are discarded-they served their purpose during body typing but cannot affect code outside the loop.
 
 #### Termination argument
 
-The fixpoint is guaranteed to terminate because the state space is finite and the iteration eventually stabilises:
+The fixpoint is guaranteed to terminate:
 
 1. **Finite location set:** The fixpoint iterates only over locations in the initial `Γ` (those existing before the loop). This set is finite and fixed.
 
@@ -174,11 +169,7 @@ The fixpoint is guaranteed to terminate because the state space is finite and th
    
    Although tags may be temporarily added when guards match (for typing the loop body), these additions don't survive `JoinL` unless the tag was already present in the input `L`. Since `L` is finite, it stabilises after finitely many iterations.
 
-3. **Once `L` stabilises, the rest is monotonic:** After `L` reaches its fixpoint, de-poisoning behaviour becomes deterministic (the same guards are known true/false). From that point:
-   - Poison status can only increase via `joinPoison` (or stay the same)
-   - Predicates can only be lost via predicate joins (or stay the same)
-
-4. **Finite state space:** Each location has finitely many possible qualified types (two poison values, finitely many predicate forms). Combined with the fixed location set, the total state space is finite.
+3. **Finite state space, deterministic iteration:** Once `L` stabilises, the iteration becomes deterministic (the same guards are known true/false). The remaining state space (poison statuses and predicates for each location) is finite. A deterministic iteration over a finite state space must stabilise.
 
 In practice, simple loops reach a fixpoint in one or two iterations.
 
@@ -230,7 +221,9 @@ Rationale: depoisoning is safe only if all potential locations permit depoisonin
 
 #### Assignment Predicate Update
 
-When assigning through `ref T @ S`, all locations in `S` receive the assigned value's qualified type (including predicate). This is conservative but sound.
+When assigning through `ref T @ S`:
+- All locations in `S` receive the assigned value's qualified type (including predicate). This is conservative but sound.
+- The tag environment `L` is updated via `invalidate_deps`: any tag whose predicate depends on a location in `S` is removed from `L`. This ensures that stale guard knowledge (based on old values) is discarded when memory changes.
 
 #### Alias-Aware Depoisoning
 
@@ -246,7 +239,7 @@ The non-interference property compares two runs. With logical locations, each ru
 
 **Key modification:** Where the existing formulation compares heap cells directly (`μ₁[a]` vs `μ₂[a]` for concrete address `a`), the adapted formulation compares via realisation maps: `μ₁[ρ₁(l)]` vs `μ₂[ρ₂(l)]` for logical location `l`.
 
-**Key insight:** The two runs may have different realisation maps. One run might realise `l` at address `0x100` whilst the other realises it at `0x200`, or one run might realise `l` whilst the other does not (branch-dependent allocation). Non-interference does not require identical realisation—only that observable outputs agree.
+**Key insight:** The two runs may have different realisation maps. One run might realise `l` at address `0x100` whilst the other realises it at `0x200`, or one run might realise `l` whilst the other does not (branch-dependent allocation). Non-interference does not require identical realisation-only that observable outputs agree.
 
 ### 4.2 Location sets and indistinguishability
 
