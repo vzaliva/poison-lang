@@ -739,6 +739,9 @@ impure ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G3 ; L3
 % When both the head and tail applications return arrow types:
 % 1. Apply the head closure (x, e, S1) to get arrow result T' with poison p' and environments (G', L')
 % 2. Recursively apply the tail closures tcls' to get arrow result T'' with poison p'' and environments (G'', L'')
+%    NOTE: e0 is a fresh metavariable representing "a function with type having only the tail closures tcls'".
+%    This premise expresses structural recursion over the closure set: the rule applies to e0 e2,
+%    which will bottom out at app_fn_singleton when tcls' is a singleton.
 % 3. Both results must be impure arrow types with the same surface types
 % 4. Merge the closure sets from both results via union
 % 5. Join all outputs: poisons, memory environments, tag environments
@@ -761,6 +764,9 @@ impure ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tclosures tcls5 :> join pc jo
 % When the closure list is (x, e, S1), tcls':
 % 1. Apply the head closure (x, e, S1) to get result T' with poison p' and environments (G', L')
 % 2. Recursively apply the tail closures tcls' to get result T'' with poison p'' and environments (G'', L'')
+%    NOTE: e0 is a fresh metavariable representing "a function with type having only the tail closures tcls'".
+%    This premise expresses structural recursion over the closure set: the rule applies to e0 e2,
+%    which will bottom out at app_fn_singleton when tcls' is a singleton.
 % 3. Results must be signature-compatible: T' ≈ T''
 % 4. Join all outputs: poisons, memory environments, tag environments
 % 5. Predicates are joined conservatively: preserved if they agree, otherwise no_pred
@@ -793,6 +799,9 @@ pm ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G3 ; L3
 % When both the head and tail applications return pure arrow types:
 % 1. Apply the head closure (x, pe, S1) to get pure arrow result T' with poison p' and environments (G', L')
 % 2. Recursively apply the tail closures ptcls' to get pure arrow result T'' with poison p'' and environments (G'', L'')
+%    NOTE: e0 is a fresh metavariable representing "a pure function with type having only the tail closures ptcls'".
+%    This premise expresses structural recursion over the closure set: the rule applies to e0 e2,
+%    which will bottom out at app_pfn_singleton when ptcls' is a singleton.
 % 3. Both results must be pure arrow types with the same surface types
 % 4. Merge the closure sets from both results via union
 % 5. Join all outputs: poisons, memory environments, tag environments
@@ -816,6 +825,9 @@ pm ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tpclosures ptcls5 :> join pc join
 % When the closure list is (x, pe, S1), ptcls':
 % 1. Apply the head closure (x, pe, S1) to get result T' with poison p' and environments (G', L')
 % 2. Recursively apply the tail closures ptcls' to get result T'' with poison p'' and environments (G'', L'')
+%    NOTE: e0 is a fresh metavariable representing "a pure function with type having only the tail closures ptcls'".
+%    This premise expresses structural recursion over the closure set: the rule applies to e0 e2,
+%    which will bottom out at app_pfn_singleton when ptcls' is a singleton.
 % 3. Results must be signature-compatible: T' ≈ T''
 % 4. Join all outputs: poisons, memory environments, tag environments
 % 5. Predicates are joined conservatively: preserved if they agree, otherwise no_pred
