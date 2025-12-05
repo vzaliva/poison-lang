@@ -1324,8 +1324,13 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
             maxNextTag := max maxNextTag result.nextTag'
 
           -- Final result with joined poison from all alternatives and caller pc
+          -- If result is a function type, clear predicate to no_pred (predicates are only meaningful for basic types)
+          let finalPred := match joinedEtyp with
+            | ETyp.arrow _ _ _ _ => Predicate.noPred
+            | ETyp.parrow _ _ _ _ => Predicate.noPred
+            | _ => joinedPred
           let finalPoison := joinPoison ctx.pc joinedPoison
-          let qt : QTyp := ⟨joinedEtyp, finalPoison, joinedPred⟩
+          let qt : QTyp := ⟨joinedEtyp, finalPoison, finalPred⟩
           return { qualType := qt, memEnv' := joinedMemEnv, tagEnv' := joinedTagEnv,
                    nextLoc' := maxNextLoc, nextTag' := maxNextTag }
     | ETyp.parrow st1 st2 p tcls =>
@@ -1380,8 +1385,13 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
             maxNextTag := max maxNextTag result.nextTag'
 
           -- Final result with joined poison from all alternatives and caller pc
+          -- If result is a function type, clear predicate to no_pred (predicates are only meaningful for basic types)
+          let finalPred := match joinedEtyp with
+            | ETyp.arrow _ _ _ _ => Predicate.noPred
+            | ETyp.parrow _ _ _ _ => Predicate.noPred
+            | _ => joinedPred
           let finalPoison := joinPoison ctx.pc joinedPoison
-          let qt : QTyp := ⟨joinedEtyp, finalPoison, joinedPred⟩
+          let qt : QTyp := ⟨joinedEtyp, finalPoison, finalPred⟩
           return { qualType := qt, memEnv' := joinedMemEnv, tagEnv' := joinedTagEnv,
                    nextLoc' := maxNextLoc, nextTag' := maxNextTag }
 
