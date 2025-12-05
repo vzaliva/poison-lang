@@ -2,4 +2,3 @@ Evaluating file: examples/scope-bug-test.poison (verbose mode)
 
 Type checking error:  Variable ret not found in environment
 
-Runtime error: var ret not found

@@ -2,4 +2,3 @@ Evaluating file: examples/pure-ho-breaks-typecheck.poison (verbose mode)
 
 Type checking error:  Pure context disallows application of impure function
 
-Runtime error: Pure function cannot apply impure closure
