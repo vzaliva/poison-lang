@@ -1,0 +1,57 @@
+-- Test 2: Nested conditionals building complex closure sets
+-- Functions returning functions with multiple levels of closure merging
+-- Same variable names capture different poison states across branches
+
+-- Nested ifs creating functions that return functions
+let outer_fn =
+  if true then
+    -- Outer branch 1: a is clean
+    let a = 50 in
+    if true then
+      -- Inner branch 1.1: b is clean (chosen path at runtime for determinism)
+      let b = 10 in
+      fn x : int =>
+        fn y : int => (x + a) + (y + b) : int
+        : (int -> int)
+    else
+      -- Inner branch 1.2: b is poisoned (unexecuted but kept for merge)
+      let b = frand 0 in
+      fn x : int =>
+        fn y : int => (x + a) + (y + b) : int
+        : (int -> int)
+  else
+    -- Outer branch 2: a is poisoned
+    let a = frand 1 in
+    if true then
+      -- Inner branch 2.1: b is clean
+      let b = 20 in
+      fn x : int =>
+        fn y : int => (x + a) + (y + b) : int
+        : (int -> int)
+    else
+      -- Inner branch 2.2: b is poisoned
+      let b = frand 2 in
+      fn x : int =>
+        fn y : int => (x + a) + (y + b) : int
+        : (int -> int)
+  in
+
+-- All branches return (int -> (int -> int)), surface types match
+-- But 4 different closures based on poison states of captured a and b:
+--   1. a=clean(50), b=clean(10)    -> clean result when applied
+--   2. a=clean(50), b=poisoned     -> poisoned result
+--   3. a=poisoned,  b=clean(20)    -> poisoned result
+--   4. a=poisoned,  b=poisoned     -> poisoned result
+
+let inner_fn = outer_fn 5 in
+
+-- Second application: typechecker still joins the 4 alternative closures
+--   (1) a clean, b clean (executed path): (5 + 50) + (3 + 10) = 68
+--   (2) a clean, b poisoned: poisoned
+--   (3) a poisoned, b clean: poisoned
+--   (4) a poisoned, b poisoned: poisoned
+-- Conservative join at the type level: result is marked poisoned even though
+-- the deterministic runtime path (1) produces 68.
+let result = inner_fn 3 in
+
+result

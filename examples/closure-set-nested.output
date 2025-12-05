@@ -1,0 +1,8 @@
+Evaluating file: examples/closure-set-nested.poison (verbose mode)
+
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [] , tagEnv : Std.HashMap.ofList [] , nextLoc : 0 
+
+Result: 68
+Final state:
+Variable environment: []
+  Memory: []

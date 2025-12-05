@@ -1,0 +1,32 @@
+-- Test 1: Basic closure set merge - same variable, different poison states
+-- Key: x is NOT POISONED in branch 1, POISONED in branch 2
+-- Functions defined in each branch capture x at definition time with different types
+-- Conditional returns compatible surface types but different closures
+
+-- Conditional that creates two functions with different captured typing contexts
+let chosen_fn =
+  if true then
+    -- Branch 1: x is clean (just a regular int)
+    let x = 100 in
+    -- Define function capturing clean x
+    fn y : int => x + y : int
+  else
+    -- Branch 2: x is poisoned (from frand)
+    let x = frand 0 in
+    -- Define function capturing poisoned x (SAME VARIABLE NAME, DIFFERENT POISON STATE)
+    fn y : int => x + y : int
+  in
+
+-- Both branches return (int -> int), so surface types match (T1 ≈ T2)
+-- But closures differ:
+--   - Branch 1 closure captures x as clean int
+--   - Branch 2 closure captures x as poisoned int
+-- Application must type-check body with BOTH captured environments
+
+-- Apply merged closure to argument 10
+-- Alternative 1: clean_x + 10 = 100 + 10 = 110 (NOT poisoned)
+-- Alternative 2: poisoned_x + 10 = poisoned (IS poisoned)
+-- Conservative join: result IS poisoned
+let result = chosen_fn 10 in
+
+result
