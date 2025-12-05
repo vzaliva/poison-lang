@@ -107,7 +107,17 @@ the application rule:
 
 The existing single-closure case is recovered as the special case where `C` is a singleton.
 
-### 5.2 Strictness
+### 5.2 Predicate merging policy
+
+When combining predicates (at control flow joins, dereference through location sets, or guard matching), use the following merge rule:
+
+1. **Exact match:** If `P₁ = P₂` (same tag and closure), preserve the predicate.
+2. **Tag match:** If both have the same tag `k` but different closures, use `guard k` (losing the closure).
+3. **Otherwise:** Use `no_pred`.
+
+This agreement-only policy ensures that predicates are only preserved when they are identical, or when they share the same guard tag (in which case the more general `guardOnly` form is used). This prevents information loss from asymmetric predicate handling and ensures conservative de-poisoning behaviour.
+
+### 5.3 Strictness
 
 If any alternative closure is ill-typed at application (e.g., argument type mismatch), the entire application is rejected. This strict policy is easy to reason about and ensures no silent dropping of alternatives.
 

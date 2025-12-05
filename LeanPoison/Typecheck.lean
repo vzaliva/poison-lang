@@ -84,9 +84,13 @@ def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
             | some (_, qt) =>
               match qt.etyp with
               | ETyp.ref _t l => return [l]  -- Reference type, add location
-              | ETyp.parrow _argTy _retTy _poison (PFnTClosure.regular argName body varEnv') =>
-                -- Pure function, recurse into its closure
-                extractDepsFromPExpr body (argName :: boundVars) varEnv' fuel
+              | ETyp.parrow _argTy _retTy _poison tcls =>
+                -- Pure function, recurse into all closures' bodies
+                match tcls with
+                | [PFnTClosure.regular argName body varEnv'] =>
+                    -- Single closure, recurse into its body
+                    extractDepsFromPExpr body (argName :: boundVars) varEnv' fuel
+                | _ => return []  -- Multiple or extern closures: conservative fallback
               | _ => return []  -- Other types don't read from heap
             | none => throw s!"Variable {x} not found in environment while extracting dependencies"
         | PExpr.deref pe' => extractDepsFromPExpr pe' boundVars env fuel
@@ -146,9 +150,43 @@ def joinPoison (p1 p2 : Poison) : Poison :=
 def joinPoisons (ps : List Poison) : Poison :=
   ps.foldl joinPoison false
 
+/-- Join two predicates using agreement-only policy.
+    Merge rule:
+    1. Exact match: If P₁ = P₂ (same tag and closure), preserve the predicate.
+    2. Tag match: If both have the same tag k but different closures, use guard k (losing the closure).
+    3. Otherwise: Use no_pred.
+
+    This policy ensures predicates are only preserved when identical or when they share
+    the same guard tag (using the more general guardOnly form).
+-/
+def joinPredicates (pred1 pred2 : Predicate) : Predicate :=
+  -- Agreement-only policy for predicates:
+  -- 1. Exact match: If P₁ = P₂ (same tag and closure), preserve the predicate.
+  -- 2. Tag match: If both have the same tag k but different closures, use guard k (losing the closure).
+  -- 3. Otherwise: Use no_pred.
+  if beqPredicate pred1 pred2 then
+    -- Exact match: preserve the predicate
+    pred1
+  else
+    match pred1, pred2 with
+    -- Both branches have guard closure with same tag but different closures: downgrade to guardOnly
+    | Predicate.guardClosure k1 _ _ _, Predicate.guardClosure k2 _ _ _ =>
+        if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+    -- Both branches have guard only with same tag: keep guard only
+    | Predicate.guardOnly k1, Predicate.guardOnly k2 =>
+        if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+    -- Mixed: guardClosure and guardOnly with same tag: keep the more general guardOnly
+    | Predicate.guardClosure k1 _ _ _, Predicate.guardOnly k2 =>
+        if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+    | Predicate.guardOnly k1, Predicate.guardClosure k2 _ _ _ =>
+        if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+    -- One or both branches have noPred: conservative choice is noPred
+    | Predicate.noPred, _ => Predicate.noPred
+    | _, Predicate.noPred => Predicate.noPred
+
 /-- Update memory environment at a location -/
 def updateMemEnv (env : MemoryTypeEnv) (l : Address) (qt : QTyp) : MemoryTypeEnv :=
-  env.insert l qt
+env.insert l qt
 
 /-- Join two memory environments (branch join). See JoinG in the Ott spec. -/
 def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
@@ -161,22 +199,7 @@ def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
       let ⟨t2, p2, pred2⟩ := qt2
       if t1 == t2 then
         let p := joinPoison p1 p2
-        let pred :=
-          match pred1, pred2 with
-          -- Both branches have guard closure with same tag: keep the closure
-          | Predicate.guardClosure k1 an1 pb1 ve1, Predicate.guardClosure k2 _ _ _ =>
-              if k1 == k2 then Predicate.guardClosure k1 an1 pb1 ve1 else Predicate.noPred
-          -- Both branches have guard only with same tag: keep guard only
-          | Predicate.guardOnly k1, Predicate.guardOnly k2 =>
-              if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
-          -- Mixed: guardClosure and guardOnly with same tag: keep the more general guardOnly
-          | Predicate.guardClosure k1 _ _ _, Predicate.guardOnly k2 =>
-              if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
-          | Predicate.guardOnly k1, Predicate.guardClosure k2 _ _ _ =>
-              if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
-          -- One or both branches have noPred: conservative choice is noPred
-          | Predicate.noPred, _ => Predicate.noPred
-          | _, Predicate.noPred => Predicate.noPred
+        let pred := joinPredicates pred1 pred2
         some ⟨t1, p, pred⟩
       else
         -- Unreachable under well-typedness: location types are immutable.
@@ -184,6 +207,34 @@ def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
         -- TODO: consider running this in Exception monad to report an error.
         none
     | none, none => none)
+
+/-- Join two ETyps at conditional joins, merging closures for arrow types (Issue #63).
+    This implements the closure merging logic from the if-typing rules in the Ott spec.
+    For arrow types: merge closure sets and join arrow-internal poisons.
+    For other types: types must be equal (checked earlier via beqETypSignature).
+    Note: p1 and p2 are the outer qualified-type poisons (joined separately by callers).
+-/
+def joinETyps (t1 t2 : ETyp) (_p1 _p2 : Poison) : ETyp :=
+  match t1, t2 with
+  | ETyp.arrow st1 st2 p1' tcls1, ETyp.arrow st1' st2' p2' tcls2 =>
+      -- Signature compatibility already checked; merge closures and join arrow-internal poisons
+      if st1 == st1' && st2 == st2' then
+        let mergedClosures := mergeFnTClosures tcls1 tcls2
+        -- Join arrow-internal poisons: p = join p' p'' (Ott spec lines 908, 956)
+        ETyp.arrow st1 st2 (joinPoison p1' p2') mergedClosures
+      else
+        t1  -- Fallback (should not happen if beqETypSignature passed)
+  | ETyp.parrow st1 st2 p1' tcls1, ETyp.parrow st1' st2' p2' tcls2 =>
+      -- Signature compatibility already checked; merge closures and join arrow-internal poisons
+      if st1 == st1' && st2 == st2' then
+        let mergedClosures := mergePFnTClosures tcls1 tcls2
+        -- Join arrow-internal poisons: p = join p' p'' (Ott spec lines 926, 975)
+        ETyp.parrow st1 st2 (joinPoison p1' p2') mergedClosures
+      else
+        t1  -- Fallback (should not happen if beqETypSignature passed)
+  | _, _ =>
+      -- For non-arrow types, types must be equal (checked via beqETypSignature)
+      t1
 
 /-- Join two logical environments (agreement-only meet used in while fixpoint) -/
 def joinTagEnvs (env1 env2 : TagEnv) : TagEnv :=
@@ -523,8 +574,8 @@ def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : 
   -- Simply record the body and return type without typechecking the body
   -- Body typechecking is deferred until application time
 
-  -- Create arrow type ST1 -> ST2
-  let arrowTyp : ETyp := ETyp.arrow st1 st2 false (FnTClosure.regular x body ctx.varEnv)
+  -- Create arrow type ST1 -> ST2 with singleton closure list
+  let arrowTyp : ETyp := ETyp.arrow st1 st2 false [FnTClosure.regular x body ctx.varEnv]
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
@@ -539,8 +590,8 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
 
    -- Convert body to PExpr
   let pbody ← body.toPExpr
-  -- Create arrow type ST1 -> ST2
-  let arrowTyp : ETyp := ETyp.parrow st1 st2 false (PFnTClosure.regular x pbody ctx.varEnv)
+  -- Create arrow type ST1 -> ST2 with singleton closure list
+  let arrowTyp : ETyp := ETyp.parrow st1 st2 false [PFnTClosure.regular x pbody ctx.varEnv]
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
 
@@ -640,12 +691,12 @@ def parseReturnType (retType : ExternReturn):Typ :=
 /-- Typecheck extern impure function -/
 def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (effects : List Effect) : TypecheckM TypeResult := do
-  -- Create extern closure with captured varEnv
+  -- Create extern closure with captured varEnv (singleton list)
   let tcl := FnTClosure.extern arg retSpec effects ctx.varEnv
 
 
   let retTyp := parseReturnType retSpec
-  let arrowTyp := ETyp.arrow argTyp retTyp ctx.pc tcl  -- placeholder for st2
+  let arrowTyp := ETyp.arrow argTyp retTyp ctx.pc [tcl]
 
   -- Return qualified type with poison = pc
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
@@ -655,12 +706,12 @@ def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
 /-- Typecheck extern pure function -/
 def typecheckExternPfn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) : TypecheckM TypeResult := do
-  -- Create extern closure with captured varEnv
+  -- Create extern closure with captured varEnv (singleton list)
   let tcl := PFnTClosure.extern arg retSpec ctx.varEnv
 
   let retTyp := parseReturnType retSpec
   -- Create arrow type with ambient pc
-  let arrowTyp := ETyp.parrow argTyp retTyp ctx.pc tcl
+  let arrowTyp := ETyp.parrow argTyp retTyp ctx.pc [tcl]
 
   -- Return qualified type with poison = pc
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
@@ -1038,6 +1089,158 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
 termination_by fuel
 
 
+/-- Helper: Apply a single FnTClosure and return the result type and updated environments.
+    This encapsulates the body typing logic for a single closure alternative.
+-/
+def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) : TypecheckM TypeResult :=
+  match fuel with
+  | 0 => throw "Out of fuel in applyFnTClosure"
+  | fuel + 1 => do
+    match tcl with
+    | FnTClosure.regular x body env =>
+        -- Type the body with the closure's captured environment
+        -- pc = join p join p1 pc (Ott spec line 733: app_fn_singleton)
+        let argQt : QTyp := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        let env' := VarTypeEnv.update env x argQt
+        let ctx'' := { ctx with pc := joinPoison p (joinPoison p1 ctx.pc),
+                                memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv',
+                                nextTag := result2.nextTag', nextLoc := result2.nextLoc' }
+        let result3 ← typecheckExpr ctx'' body fuel
+        let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
+
+        -- Check subtyping
+        if not (isSubtype st2 result3.qualType) then
+          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
+
+        return result3
+
+    | FnTClosure.extern x retSpec effects capturedEnv =>
+        -- Extern function application (simplified - returns immediately)
+        let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        let unifiedEnv := VarTypeEnv.update capturedEnv x argQt
+
+        -- Process effects
+        let mut memEnv := result2.memEnv'
+        let mut nextLoc := result2.nextLoc'
+        for effect in effects do
+          match effect.target with
+          | EffectTarget.namedVar v =>
+              match unifiedEnv.lookup v with
+              | some qt =>
+                  match qt.etyp with
+                  | ETyp.ref _t l =>
+                      let effectQt ← effectSpecToQTyp effect.poison effect.pred unifiedEnv
+                      let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
+                      memEnv := memEnv.insert l storedQt
+                  | _ => throw s!"Effect target {v} must be a reference type"
+              | none => throw s!"Effect target {v} not found in environment"
+          | EffectTarget.returnValue => pure ()
+
+        -- Handle return spec
+        match retSpec with
+        | ExternReturn.simple typ poison pred =>
+            let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
+
+            match retQt.etyp with
+            | ETyp.ref _t l =>
+                let returnEffect := effects.find? (fun eff =>
+                  match eff.target with
+                  | EffectTarget.returnValue => true
+                  | _ => false)
+                match returnEffect with
+                | some eff =>
+                    let effectQt ← effectSpecToQTyp eff.poison eff.pred unifiedEnv
+                    let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
+                    memEnv := memEnv.insert l storedQt
+                | none => pure ()
+            | _ =>
+                let hasReturnEffect := effects.any (fun eff =>
+                  match eff.target with
+                  | EffectTarget.returnValue => true
+                  | _ => false)
+                if hasReturnEffect then
+                  throw "Effect on 'return' is only valid when return type is a reference"
+
+            let poison' := joinPoison ctx.pc retQt.poison
+            let qt := ⟨retQt.etyp, poison', retQt.pred⟩
+            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc', nextTag' := result2.nextTag' }
+
+        | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
+            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
+            let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
+            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
+
+        | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
+            let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
+            let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
+            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
+termination_by fuel
+
+/-- Helper: Apply a single PFnTClosure and return the result type and updated environments.
+    This encapsulates the body typing logic for a single pure closure alternative.
+-/
+def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) : TypecheckM TypeResult :=
+  match fuel with
+  | 0 => throw "Out of fuel in applyPFnTClosure"
+  | fuel + 1 => do
+    match tcl with
+    | PFnTClosure.regular x body env =>
+        -- Type the body with the closure's captured environment in pure context
+        let argQt : QTyp := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        let env' := VarTypeEnv.update env x argQt
+        let ctx'' := { ctx with pc := joinPoison p (joinPoison ctx.pc p1),
+                                memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv',
+                                pureCtx := true, nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+        let result3 ← typecheckExpr ctx'' (PExpr.toExpr body) fuel
+        let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
+
+        -- Check subtyping
+        if not (isSubtype st2 result3.qualType) then
+          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
+
+        return result3
+
+    | PFnTClosure.extern x retSpec capturedEnv =>
+        -- Extern pure function application (no effects)
+        let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        let unifiedEnv := VarTypeEnv.update capturedEnv x argQt
+
+        let mut nextLoc := result2.nextLoc'
+
+        -- Handle return spec (simple or nested)
+        match retSpec with
+        | ExternReturn.simple typ poison pred =>
+            let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
+
+            let poison' := joinPoison ctx.pc retQt.poison
+            let qt := ⟨retQt.etyp, poison', retQt.pred⟩
+            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc', nextTag' := result2.nextTag' }
+
+        | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
+            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
+            let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
+            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
+
+        | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
+            let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
+            let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
+            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
+termination_by fuel
+
 /-- Rule: app_fn (Ott rules: app_fn, app_pfn)
   pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
   pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
@@ -1065,10 +1268,15 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p1, _pred1⟩ := result1.qualType
     match etyp1 with
-    | ETyp.arrow st1 st2 p tcl =>
+    | ETyp.arrow st1 st2 p tcls =>
       -- In pure context, disallow applying impure arrow
       if ctx.pureCtx then
         throw "Pure context disallows application of impure function"
+
+      -- Check for empty closure list (should never happen in well-formed programs)
+      if tcls.isEmpty then
+        throw "Function type has empty closure set"
+
       -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
@@ -1078,101 +1286,53 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if not (isSubtype st1 result2.qualType) then
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
-      match tcl with
-      | FnTClosure.regular x body env =>
-        -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
-        let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
-        let env' := VarTypeEnv.update env x argQt
-        let ctx'' := { ctx with pc := joinPoison p (joinPoison ctx.pc p1), memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv' ,nextTag := result2.nextTag', nextLoc := result2.nextLoc' }
+      -- Apply each closure in the list (Section 5 of the proposal)
+      let mut results : List TypeResult := []
+      for tcl in tcls do
+        let res ← applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel
+        results := results ++ [res]
 
-        let result3 ← typecheckExpr ctx'' body fuel
-        let ⟨etyp3, p3, pred3⟩ := result3.qualType
+      -- Check that all results have signature-compatible types (Section 5.3)
+      match results with
+      | [] => throw "Internal error: no results from closure application"
+      | firstResult :: restResults =>
+          let ⟨firstEtyp, _firstP, _firstPred⟩ := firstResult.qualType
+          for result in restResults do
+            let ⟨resEtyp, _resP, _resPred⟩ := result.qualType
+            if not (beqETypSignature firstEtyp resEtyp) then
+              throw s!"Closure alternatives produced incompatible result types: {repr firstEtyp} vs {repr resEtyp}"
 
-        -- Premise 5: ST2 <: T2 (check subtyping)
-        if not (isSubtype st2 result3.qualType) then
-          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
+          -- Join all results (Section 5.4)
+          let mut joinedMemEnv := firstResult.memEnv'
+          let mut joinedTagEnv := firstResult.tagEnv'
+          let mut joinedEtyp := firstEtyp
+          let mut joinedPoison := firstResult.qualType.poison
+          let mut joinedPred := firstResult.qualType.pred
+          let mut maxNextLoc := firstResult.nextLoc'
+          let mut maxNextTag := firstResult.nextTag'
 
-        -- Conclusion: pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
-        let poison := joinPoison ctx.pc p3
-        let qt : QTyp := ⟨etyp3, poison, pred3⟩
-        return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc', nextTag' := result3.nextTag' }
-      | FnTClosure.extern x retSpec effects capturedEnv =>
-        -- Extern function application logic
-        -- 1. Build unified environment: extend capturedEnv with argument
-        let argQt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
-        let unifiedEnv := VarTypeEnv.update capturedEnv x argQt
+          for result in restResults do
+            let ⟨resEtyp, resPoison, resPred⟩ := result.qualType
+            joinedMemEnv := joinMemEnvs joinedMemEnv result.memEnv'
+            joinedTagEnv := joinTagEnvs joinedTagEnv result.tagEnv'
+            -- Join the result types, merging closures if they are arrow types
+            joinedEtyp := joinETyps joinedEtyp resEtyp joinedPoison resPoison
+            joinedPoison := joinPoison joinedPoison resPoison
+            -- For predicates: use agreement-only policy (Section 5.4)
+            joinedPred := joinPredicates joinedPred resPred
+            maxNextLoc := max maxNextLoc result.nextLoc'
+            maxNextTag := max maxNextTag result.nextTag'
 
-        -- 2. Process effects: update Γ for each effect target
-        let mut memEnv := result2.memEnv'
-        let mut nextLoc := result2.nextLoc'
-        for effect in effects do
-          match effect.target with
-          | EffectTarget.namedVar v =>
-              -- Resolve v in unifiedEnv to get ref location
-              match unifiedEnv.lookup v with
-              | some qt =>
-                  match qt.etyp with
-                  | ETyp.ref _t l =>
-                      -- Convert effect spec to QTyp and update Γ(l)
-                      let effectQt ← effectSpecToQTyp effect.poison effect.pred unifiedEnv
-                      let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
-                      memEnv := memEnv.insert l storedQt
-                  | _ => throw s!"Effect target {v} must be a reference type"
-              | none => throw s!"Effect target {v} not found in environment"
-          | EffectTarget.returnValue =>
-              -- Will be handled when processing return spec if it's a ref type
-              pure ()
+          -- Final result with joined poison from all alternatives and caller pc
+          let finalPoison := joinPoison ctx.pc joinedPoison
+          let qt : QTyp := ⟨joinedEtyp, finalPoison, joinedPred⟩
+          return { qualType := qt, memEnv' := joinedMemEnv, tagEnv' := joinedTagEnv,
+                   nextLoc' := maxNextLoc, nextTag' := maxNextTag }
+    | ETyp.parrow st1 st2 p tcls =>
+      -- Check for empty closure list (should never happen in well-formed programs)
+      if tcls.isEmpty then
+        throw "Function type has empty closure set"
 
-        -- 3. Handle return spec (simple or nested)
-        match retSpec with
-        | ExternReturn.simple typ poison pred =>
-            -- Simple return type
-            let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
-
-            -- If return type is ref and there's a "return" effect, update Γ at that location
-            match retQt.etyp with
-            | ETyp.ref _t l =>
-                -- Check for "return" effect
-                let returnEffect := effects.find? (fun eff =>
-                  match eff.target with
-                  | EffectTarget.returnValue => true
-                  | _ => false)
-                match returnEffect with
-                | some eff =>
-                    let effectQt ← effectSpecToQTyp eff.poison eff.pred unifiedEnv
-                    let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
-                    memEnv := memEnv.insert l storedQt
-                | none => pure ()
-            | _ =>
-                -- Non-ref return: verify no "return" effect exists
-                let hasReturnEffect := effects.any (fun eff =>
-                  match eff.target with
-                  | EffectTarget.returnValue => true
-                  | _ => false)
-                if hasReturnEffect then
-                  throw "Effect on 'return' is only valid when return type is a reference"
-
-            let poison' := joinPoison ctx.pc retQt.poison
-            let qt := ⟨retQt.etyp, poison', retQt.pred⟩
-            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc', nextTag' := result2.nextTag' }
-
-        | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
-            -- Nested extern function: return a closure
-            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
-            let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc innerTcl
-            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
-            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
-
-        | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
-            -- Nested extern pure function: return a closure
-            let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
-            let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc innerTcl
-            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
-            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
-    | ETyp.parrow st1 st2 p tcl =>
       -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
@@ -1182,57 +1342,48 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if not (isSubtype st1 result2.qualType) then
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
-      match tcl with
-      | PFnTClosure.regular x body env =>
-        -- Premise 4: pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
-        let argQt : QTyp := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
-        let env' := VarTypeEnv.update env x argQt
-        -- Set pure context for the body re-typechecking
-        let ctx'' := { ctx with memEnv := result2.memEnv',pc := joinPoison p (joinPoison ctx.pc p1), varEnv := env', tagEnv := result2.tagEnv', pureCtx := true, nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
-        let result3 ← typecheckExpr ctx'' (PExpr.toExpr body) fuel
-        let ⟨etyp3, p3, pred3⟩ := result3.qualType
+      -- Apply each closure in the list (Section 5 of the proposal)
+      let mut results : List TypeResult := []
+      for tcl in tcls do
+        let res ← applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel
+        results := results ++ [res]
 
-        -- Premise 5: ST2 <: T2 (check subtyping)
-        if not (isSubtype st2 result3.qualType) then
-          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
+      -- Check that all results have signature-compatible types (Section 5.3)
+      match results with
+      | [] => throw "Internal error: no results from closure application"
+      | firstResult :: restResults =>
+          let ⟨firstEtyp, _firstP, _firstPred⟩ := firstResult.qualType
+          for result in restResults do
+            let ⟨resEtyp, _resP, _resPred⟩ := result.qualType
+            if not (beqETypSignature firstEtyp resEtyp) then
+              throw s!"Closure alternatives produced incompatible result types: {repr firstEtyp} vs {repr resEtyp}"
 
-        -- Conclusion: pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
-        let poison := joinPoison ctx.pc p3
-        let qt : QTyp := ⟨etyp3, poison, pred3⟩
-        return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv', nextLoc' := result3.nextLoc', nextTag' := result3.nextTag' }
-      | PFnTClosure.extern x retSpec capturedEnv =>
-        -- Extern pure function application (no effects)
-        let argQt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
-        let unifiedEnv := VarTypeEnv.update capturedEnv x argQt
+          -- Join all results (Section 5.4)
+          let mut joinedMemEnv := firstResult.memEnv'
+          let mut joinedTagEnv := firstResult.tagEnv'
+          let mut joinedEtyp := firstEtyp
+          let mut joinedPoison := firstResult.qualType.poison
+          let mut joinedPred := firstResult.qualType.pred
+          let mut maxNextLoc := firstResult.nextLoc'
+          let mut maxNextTag := firstResult.nextTag'
 
-        let mut nextLoc := result2.nextLoc'
+          for result in restResults do
+            let ⟨resEtyp, resPoison, resPred⟩ := result.qualType
+            joinedMemEnv := joinMemEnvs joinedMemEnv result.memEnv'
+            joinedTagEnv := joinTagEnvs joinedTagEnv result.tagEnv'
+            -- Join the result types, merging closures if they are arrow types
+            joinedEtyp := joinETyps joinedEtyp resEtyp joinedPoison resPoison
+            joinedPoison := joinPoison joinedPoison resPoison
+            -- For predicates: use agreement-only policy (Section 5.4)
+            joinedPred := joinPredicates joinedPred resPred
+            maxNextLoc := max maxNextLoc result.nextLoc'
+            maxNextTag := max maxNextTag result.nextTag'
 
-        -- Handle return spec (simple or nested)
-        match retSpec with
-        | ExternReturn.simple typ poison pred =>
-            -- Simple return type
-            let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
-
-            let poison' := joinPoison ctx.pc retQt.poison
-            let qt := ⟨retQt.etyp, poison', retQt.pred⟩
-            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc', nextTag' := result2.nextTag' }
-
-        | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
-            -- Nested extern impure function: return a closure
-            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
-            let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc innerTcl
-            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
-            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
-
-        | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
-            -- Nested extern pure function: return a closure
-            let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
-            let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc innerTcl
-            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
-            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc, nextTag' := result2.nextTag' }
+          -- Final result with joined poison from all alternatives and caller pc
+          let finalPoison := joinPoison ctx.pc joinedPoison
+          let qt : QTyp := ⟨joinedEtyp, finalPoison, joinedPred⟩
+          return { qualType := qt, memEnv' := joinedMemEnv, tagEnv' := joinedTagEnv,
+                   nextLoc' := maxNextLoc, nextTag' := maxNextTag }
 
     | _ => throw "Left operand of application must be a function"
 termination_by fuel
@@ -1297,12 +1448,14 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
 
       -- Use signature-based equality for type checking (not structural equality of closures)
       -- Structural equality compares closures including their bodies, which is too strict for type checking
-      -- We only need to check that function signatures match (parameter type, return type, poison flag)
+      -- We only need to check that function signatures match (parameter type, return type)
       if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
 
+      -- Join the branch types, merging closures for arrow types (Issue #63)
+      let joinedEtyp := joinETyps etyp2 etyp3 p'' p'''
       let poison := joinPoison ctx.pc (joinPoison p'' p''')
      -- dbg_trace s!" Result Poison val for if is {poison}"
-      let qt : QTyp := ⟨etyp2, poison, Predicate.noPred⟩
+      let qt : QTyp := ⟨joinedEtyp, poison, Predicate.noPred⟩
       let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
       let nextLoc' := max result2.nextLoc' result3.nextLoc'
       let nextTag' := max result2.nextTag' result3.nextTag'
@@ -1333,11 +1486,13 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
 
       -- Use signature-based equality for type checking (not structural equality of closures)
       -- Structural equality compares closures including their bodies, which is too strict for type checking
-      -- We only need to check that function signatures match (parameter type, return type, poison flag)
+      -- We only need to check that function signatures match (parameter type, return type)
       if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
 
+      -- Join the branch types, merging closures for arrow types (Issue #63)
+      let joinedEtyp := joinETyps etyp2 etyp3 p'' p'''
       let poison := joinPoison ctx.pc (joinPoison p' (joinPoison p'' p'''))
-      let qt : QTyp := ⟨etyp2, poison, Predicate.noPred⟩
+      let qt : QTyp := ⟨joinedEtyp, poison, Predicate.noPred⟩
       let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
       let nextLoc' := max result2.nextLoc' result3.nextLoc'
       let nextTag' := max result2.nextTag' result3.nextTag'
