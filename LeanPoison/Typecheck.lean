@@ -575,7 +575,7 @@ def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : 
   -- Body typechecking is deferred until application time
 
   -- Create arrow type ST1 -> ST2 with singleton closure list
-  let arrowTyp : ETyp := ETyp.arrow st1 st2 false [FnTClosure.regular x body ctx.varEnv]
+  let arrowTyp : ETyp := ETyp.arrow st1 st2 ctx.pc [FnTClosure.regular x body ctx.varEnv]
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
@@ -591,7 +591,7 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
    -- Convert body to PExpr
   let pbody ← body.toPExpr
   -- Create arrow type ST1 -> ST2 with singleton closure list
-  let arrowTyp : ETyp := ETyp.parrow st1 st2 false [PFnTClosure.regular x pbody ctx.varEnv]
+  let arrowTyp : ETyp := ETyp.parrow st1 st2 ctx.pc [PFnTClosure.regular x pbody ctx.varEnv]
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
 
