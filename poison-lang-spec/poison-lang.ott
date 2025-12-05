@@ -293,6 +293,7 @@ formula :: formula_ ::=
   | T = ST1 -> ST2 # p tpclosures ptcls :: :: type_eq_parrow {{ com T is a pure arrow type with the given components }} {{ tex [[T]] = [[ST1]] \Rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tpclosures}\, [[ptcls]] }}
   | tcls = tcls1 U tcls2  :: :: tcls_union  {{ com union formula for binding the result of closure set union }} {{ tex [[tcls]] = [[tcls1]] \cup [[tcls2]] }}
   | ptcls = ptcls1 U ptcls2 :: :: ptcls_union {{ com union formula for binding the result of closure set union }} {{ tex [[ptcls]] = [[ptcls1]] \cup [[ptcls2]] }}
+  | JoinP P1 P2 = P3       :: :: join_pred {{ com agreement-only join of predicates: preserves predicate if P1 = P2 (exact match), uses guard k if both have same tag k but different closures, otherwise no_pred }} {{ tex [[P1]] \sqcup [[P2]] = [[P3]] }}
 
 
 defns
@@ -797,7 +798,7 @@ impure ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tclosures tcls5 :> join pc jo
 %    which will bottom out at app_fn_singleton when tcls' is a singleton.
 % 3. Results must be signature-compatible: T' ≈ T''
 % 4. Join all outputs: poisons, memory environments, tag environments
-% 5. Predicates are joined conservatively: preserved if they agree, otherwise no_pred
+% 5. Predicates are joined conservatively using agreement-only policy: preserved if they agree (exact match or same tag), otherwise no_pred
 % Please note that impure function application is disallowed in pure context.
 impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1
 impure ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
@@ -807,8 +808,9 @@ impure ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G
 impure ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
 ST2 <: T'
 T' ≈ T''
+JoinP P' P'' = P3
 ----------------------------------------------------------------------  :: app_fn_cons
-impure ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p' p'' { no_pred } -| JoinG G' G'' ; JoinL L' L''
+impure ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p' p'' { P3 } -| JoinG G' G'' ; JoinL L' L''
 
 % Pure function application typing - singleton closure case - result is arrow type
 % When the closure list contains a single closure (x, pe, S1) and the result is an arrow type:
@@ -888,7 +890,7 @@ pm ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tpclosures ptcls5 :> join pc join
 %    which will bottom out at app_pfn_singleton when ptcls' is a singleton.
 % 3. Results must be signature-compatible: T' ≈ T''
 % 4. Join all outputs: poisons, memory environments, tag environments
-% 5. Predicates are joined conservatively: preserved if they agree, otherwise no_pred
+% 5. Predicates are joined conservatively using agreement-only policy: preserved if they agree (exact match or same tag), otherwise no_pred
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
 pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1
@@ -899,8 +901,9 @@ pm ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 
 pm ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
 ST2 <: T'
 T' ≈ T''
+JoinP P' P'' = P3
 ----------------------------------------------------------------------  :: app_pfn_cons
-pm ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p' p'' { no_pred } -| JoinG G' G'' ; JoinL L' L''
+pm ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p' p'' { P3 } -| JoinG G' G'' ; JoinL L' L''
 
 % Typing for rand - takes integer argument, returns random integer
 pm ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
