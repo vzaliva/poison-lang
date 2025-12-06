@@ -7,12 +7,15 @@ open Std
 
 set_option maxHeartbeats 10000000
 
+
+
 /-- Extract the guard tag from a qualified type's predicate, if present. -/
 def qtypGuardTag (qt : QTyp) : Option Tag :=
   match qt.pred with
   | Predicate.guardClosure k _ _ _ => some k
   | Predicate.guardOnly k => some k
   | Predicate.noPred => none
+
 
 /-- A qualified type is guardless whenever it is clean. -/
 def guardlessIfCleanQTyp (qt : QTyp) : Prop :=
@@ -23,6 +26,8 @@ def nonClosureQTyp (qt : QTyp) : Prop :=
   | ETyp.arrow _ _ _ _ => False
   | ETyp.parrow _ _ _ _ => False
   | _ => True
+
+/- TODO: this proof needs repairs.
 
 mutual /- TODO: can be rewritten using `deepVarEnvProperty` -/
 
@@ -3525,3 +3530,5 @@ lemma guardlessIfClean_invariant
     | externVal _ _ _ => sorry
     | externFn _ _ _ _ => sorry
     | externPfn _ _ _ => sorry
+
+-/

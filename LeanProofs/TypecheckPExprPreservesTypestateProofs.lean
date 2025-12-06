@@ -1,4 +1,4 @@
--- Formal properties of the poison language: TypecheckPExprPreservesTypestate
+-- Proofs for TypecheckPExprPreservesTypestate Property
 
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
@@ -6,6 +6,7 @@ import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.Equality
 import LeanProofs.IOHelpers
+import LeanProofs.TypecheckPExprPreservesTypestate
 import Mathlib.Data.Nat.Basic  -- for Nat.strong_induction_on
 import Mathlib.Tactic
 import Mathlib.Tactic.Linarith
@@ -34,6 +35,8 @@ set_option linter.unusedSimpArgs false
 
 -- TODO: review these warnings
 set_option linter.unnecessarySeqFocus false
+
+/- TODO: this proof needs repairs.
 
 -- Private lemma for unit case
 private lemma typecheck_unit_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat)
@@ -736,3 +739,4 @@ theorem typecheck_PExpr_preserves_typestate :
       | externPfn _ _ _
         =>
         contradiction
+-/

@@ -1,0 +1,24 @@
+-- Test 3: Type error - signature incompatibility at if-join
+-- Branches return functions with incompatible signatures
+-- Should fail: T1 ≈ T2 not satisfied (different codomain types)
+
+-- Branches define functions in different contexts but with incompatible return types
+let chosen_fn =
+  if true then
+    -- Branch 1: define function returning int
+    let threshold = 100 in
+    fn x : int => x + threshold : int
+  else
+    -- Branch 2: define function returning bool (INCOMPATIBLE!)
+    let threshold = 50 in
+    fn x : int => x >= threshold : bool
+  in
+
+-- This MUST fail type checking:
+-- Branch 1 returns (int -> int)
+-- Branch 2 returns (int -> bool)
+-- Signature compatibility T1 ≈ T2 requires same ST1 and ST2
+-- Here ST2 differs: int ≠ bool, so signature check fails
+-- Closure merging cannot proceed - type error!
+
+chosen_fn 25

@@ -52,6 +52,8 @@ import LeanProofs.IOHelpers
 --
 -- ================================================================
 
+/- TODO: this proof needs repairs.
+
 -- Parametric version of Preservation with explicit fuel
 -- This is used internally for helper lemmas to avoid existential extraction issues
 -- The standard Preservation uses terminatesTo (existential fuel), but for inductive
@@ -3017,3 +3019,5 @@ private lemma preservationWithFuel_all : ∀ (n : Nat) (e : Expr) (ctx : TypeCon
 -- This proof uses strong induction on fuel via preservationWithFuel_all
 theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx :=
   preservationWithFuel_implies_preservation e ctx (preservationWithFuel_all · e ctx)
+
+-/

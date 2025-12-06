@@ -10,7 +10,39 @@ PASS_COUNT=0
 FAIL_COUNT=0
 FAILED_TESTS=()
 
-for poison_file in "$EXAMPLES_DIR"/*.poison; do
+# If argument provided, run only that test
+if [[ $# -gt 0 ]]; then
+  test_arg="$1"
+  
+  # Handle different input formats: base name, filename, or full path
+  if [[ "$test_arg" == *.poison ]]; then
+    # Remove .poison extension if present
+    base_name="${test_arg%.poison}"
+  else
+    base_name="$test_arg"
+  fi
+  
+  # Try to find the poison file
+  if [[ -f "$EXAMPLES_DIR/$base_name.poison" ]]; then
+    poison_file="$EXAMPLES_DIR/$base_name.poison"
+  elif [[ -f "$base_name.poison" ]]; then
+    poison_file="$base_name.poison"
+  elif [[ -f "$test_arg" ]]; then
+    poison_file="$test_arg"
+  else
+    echo "Error: Test file '$test_arg' not found"
+    echo "Looking for: $EXAMPLES_DIR/$base_name.poison"
+    exit 1
+  fi
+  
+  # Convert to array for single iteration
+  poison_files=("$poison_file")
+else
+  # No argument: run all tests as before
+  poison_files=("$EXAMPLES_DIR"/*.poison)
+fi
+
+for poison_file in "${poison_files[@]}"; do
   base_name=$(basename "$poison_file" .poison)
   result_file="$TEMP_DIR/$base_name.result"
 

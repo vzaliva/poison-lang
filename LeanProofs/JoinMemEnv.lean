@@ -30,6 +30,20 @@ set_option linter.unnecessarySeqFocus false
 private lemma joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
   cases p <;> rfl
 
+-- Idempotency of joinPredicates: joining a predicate with itself returns itself
+private lemma joinPredicates_idempotent (pred : Predicate) : joinPredicates pred pred = pred := by
+  simp [joinPredicates]
+  -- beqPredicate pred pred = true by reflexivity
+  -- Note: (pred == pred) = BEq.beq pred pred, and BEq.beq for Predicate is beqPredicate
+  have h_refl : beqPredicate pred pred = true := by
+    -- Use LawfulBEq instance: (pred == pred) = true
+    have : LawfulBEq Predicate := inferInstance
+    have h_eq : (pred == pred) = true := this.rfl
+    -- Convert BEq.beq to beqPredicate using simp
+    simp [BEq.beq] at h_eq
+    exact h_eq
+  simp [h_refl]
+
 -- Idempotency of the joining function used in joinMemEnvs
 private lemma joinMemEnvs_func_idempotent :
   ∀ (k : Address) (qt : QTyp),
@@ -42,25 +56,16 @@ private lemma joinMemEnvs_func_idempotent :
         let ⟨t2, p2, pred2⟩ := qt2
         if t1 == t2 then
           let p := joinPoison p1 p2
-          let pred :=
-            match pred1, pred2 with
-            | Predicate.guardClosure k1 an1 pb1 ve1, Predicate.guardClosure k2 _ _ _ =>
-                if k1 == k2 then Predicate.guardClosure k1 an1 pb1 ve1 else Predicate.noPred
-            | Predicate.guardOnly k1, Predicate.guardOnly k2 =>
-                if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
-            | Predicate.guardClosure k1 _ _ _, Predicate.guardOnly k2 =>
-                if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
-            | Predicate.guardOnly k1, Predicate.guardClosure k2 _ _ _ =>
-                if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
-            | Predicate.noPred, _ => Predicate.noPred
-            | _, Predicate.noPred => Predicate.noPred
+          let pred := joinPredicates pred1 pred2
           some ⟨t1, p, pred⟩
         else none
       | none, none => none) k (some qt) (some qt) = some qt := by
   intros k qt
   cases qt with
   | mk t p pred =>
-    cases pred <;> simp [beq_iff_eq, joinPoison_idempotent]
+    -- Need to show joinPredicates pred pred = pred (idempotency)
+    have h_pred_idem : joinPredicates pred pred = pred := joinPredicates_idempotent pred
+    simp [beq_iff_eq, joinPoison_idempotent, h_pred_idem]
 
 -- The joining function returns none when both inputs are none
 private lemma joinMemEnvs_func_none :

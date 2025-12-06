@@ -441,14 +441,16 @@ inductive PFnTClosure : Type where
   | extern : Name → ExternReturn → List (Name × QTyp) → PFnTClosure
 
 -- Enriched type (full type)
+-- Arrow types now carry non-empty lists of closures (merged typing closures)
+-- to support flow-insensitive joins at conditionals (Issue #63)
 inductive ETyp : Type where
   | int : ETyp
   | bool : ETyp
   | unit : ETyp
   | string : ETyp
   | ref : ETyp → Address → ETyp
-  | arrow : Typ → Typ → Poison → FnTClosure → ETyp
-  | parrow : Typ → Typ → Poison → PFnTClosure → ETyp
+  | arrow : Typ → Typ → Poison → List FnTClosure → ETyp
+  | parrow : Typ → Typ → Poison → List PFnTClosure → ETyp
 
 end
 
@@ -509,8 +511,12 @@ partial def reprETyp : ETyp → Nat → Std.Format
   | ETyp.unit, _ => "ETyp.unit"
   | ETyp.string , _ => "ETyp.string"
   | ETyp.ref t l, _ => s!"ETyp.ref {reprETyp t 0} {repr l}"
-  | ETyp.arrow st1 st2 p tcl, _ => s!"ETyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprFnTClosure tcl 0}"
-  | ETyp.parrow st1 st2 p tcl, _ => s!"ETyp.parrow {reprTyp st1 0} {reprTyp st2 0} {repr p} {reprPFnTClosure tcl 0}"
+  | ETyp.arrow st1 st2 p tcls, _ =>
+      let closureReprs := tcls.map (fun tcl => reprFnTClosure tcl 0)
+      s!"ETyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} [{Std.Format.joinSep closureReprs (Std.Format.text ", ")}]"
+  | ETyp.parrow st1 st2 p tcls, _ =>
+      let closureReprs := tcls.map (fun tcl => reprPFnTClosure tcl 0)
+      s!"ETyp.parrow {reprTyp st1 0} {reprTyp st2 0} {repr p} [{Std.Format.joinSep closureReprs (Std.Format.text ", ")}]"
 
 partial def reprVarEnv (env: VarTypeEnv) (_:Nat): Std.Format :=
     Std.Format.text "[" ++
@@ -569,17 +575,44 @@ instance : BEq PExpr where
   beq := beqPExpr
 
 -- Manual BEq instances for ETyp and related types (updated to do full structural comparison)
+--
+-- IMPORTANT NOTE on closure list equality (Issue #63):
+-- Closure lists semantically represent SETS (order-independent, no duplicates).
+-- However, implementing true set equality in this mutual recursion would require
+-- partial functions, which is not acceptable for core type system operations.
+--
+-- Our solution:
+-- 1. Closure lists use ORDERED comparison in BEq (for termination)
+-- 2. Merge functions (mergeFnTClosures/mergePFnTClosures) maintain CONSISTENT ordering
+--    by deduplicating and preserving first-occurrence order
+-- 3. The type checker uses beqETypSignature which IGNORES closures entirely
+--
+-- This means [a,b] ≠ [b,a] in BEq, but this is acceptable because:
+-- - Type checking (the critical path) ignores closure order via beqETypSignature
+-- - Merge operations produce consistent ordering
+-- - The semantic meaning (sets) is preserved through deduplication
+--
 mutual
+def beqFnTClosureList : List FnTClosure → List FnTClosure → Bool
+  | [], [] => true
+  | tcl1 :: tcls1, tcl2 :: tcls2 => beqFnTClosure tcl1 tcl2 && beqFnTClosureList tcls1 tcls2
+  | _, _ => false
+
+def beqPFnTClosureList : List PFnTClosure → List PFnTClosure → Bool
+  | [], [] => true
+  | tcl1 :: tcls1, tcl2 :: tcls2 => beqPFnTClosure tcl1 tcl2 && beqPFnTClosureList tcls1 tcls2
+  | _, _ => false
+
 def beqETyp : ETyp → ETyp → Bool
   | ETyp.int, ETyp.int => true
   | ETyp.bool, ETyp.bool => true
   | ETyp.unit, ETyp.unit => true
   | ETyp.string , ETyp.string => true
   | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETyp t1 t2 && l1 == l2
-  | ETyp.arrow st1 st2 p1 tcl1, ETyp.arrow st1' st2' p2 tcl2 =>
-    st1 == st1' && st2 == st2' && p1 == p2 && beqFnTClosure tcl1 tcl2
-  | ETyp.parrow st1 st2 p1 tcl1, ETyp.parrow st1' st2' p2 tcl2 =>
-    st1 == st1' && st2 == st2' && p1 == p2 && beqPFnTClosure tcl1 tcl2
+  | ETyp.arrow st1 st2 p1 tcls1, ETyp.arrow st1' st2' p2 tcls2 =>
+    st1 == st1' && st2 == st2' && p1 == p2 && beqFnTClosureList tcls1 tcls2
+  | ETyp.parrow st1 st2 p1 tcls1, ETyp.parrow st1' st2' p2 tcls2 =>
+    st1 == st1' && st2 == st2' && p1 == p2 && beqPFnTClosureList tcls1 tcls2
   | _, _ => false
 
 def beqFnTClosure : FnTClosure → FnTClosure → Bool
@@ -631,18 +664,20 @@ instance : BEq QTyp where
   beq := beqQTyp
 
 -- Signature-based equality for function types (for type checking)
--- Compares only parameter type, return type, and poison flag, ignoring closure contents
--- Corresponds to the ≈ operator in the Ott specification (sig_comp)
+-- Signature compatibility check for ETyp (Issue #63).
+-- Corresponds to the ≈ operator in the Ott specification (sig_comp).
+-- This checks if two enriched types are signature-compatible:
+-- same shape, ignoring closure sets and arrow-internal poison.
 def beqETypSignature : ETyp → ETyp → Bool
   | ETyp.int, ETyp.int => true
   | ETyp.bool, ETyp.bool => true
   | ETyp.unit, ETyp.unit => true
   | ETyp.string, ETyp.string => true
   | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETypSignature t1 t2 && l1 == l2
-  | ETyp.arrow st1 st2 p1 _, ETyp.arrow st1' st2' p2 _ =>
-    st1 == st1' && st2 == st2' && p1 == p2
-  | ETyp.parrow st1 st2 p1 _, ETyp.parrow st1' st2' p2 _ =>
-    st1 == st1' && st2 == st2' && p1 == p2
+  | ETyp.arrow st1 st2 _ _, ETyp.arrow st1' st2' _ _ =>
+    st1 == st1' && st2 == st2'
+  | ETyp.parrow st1 st2 _ _, ETyp.parrow st1' st2' _ _ =>
+    st1 == st1' && st2 == st2'
   | _, _ => false
 
 @[instance]
@@ -653,3 +688,33 @@ instance : ToString ETyp where
 @[instance]
 instance : ToString QTyp where
   toString e := Std.Format.pretty (repr e)
+
+-- Helper functions for merged typing closures (Issue #63)
+-- Closure lists semantically represent SETS: order-independent, no duplicates
+--
+-- Implementation approach:
+-- 1. Merge functions (mergeFnTClosures, mergePFnTClosures) deduplicate and maintain
+--    consistent first-occurrence ordering
+-- 2. BEq uses ordered comparison (not true set equality) to avoid partial functions
+-- 3. Type checking uses beqETypSignature which ignores closures entirely
+--
+-- Trade-off: [a,b] ≠ [b,a] in BEq, but this doesn't affect correctness because:
+-- - The critical type checking operations use beqETypSignature (ignores closures)
+-- - Merge operations produce consistent ordering
+-- - Deduplication ensures no duplicates
+
+/-- Merge two lists of FnTClosure as sets, removing duplicates.
+    The result is the union of tcls1 and tcls2, with duplicates removed.
+    Order follows the input lists but is semantically irrelevant (sets). -/
+def mergeFnTClosures (tcls1 tcls2 : List FnTClosure) : List FnTClosure :=
+  -- Start with tcls1 (deduplicated), then add elements from tcls2 that aren't already present
+  let withTcls1 := tcls1.foldl (fun acc tcl => if acc.contains tcl then acc else acc ++ [tcl]) []
+  tcls2.foldl (fun acc tcl => if acc.contains tcl then acc else acc ++ [tcl]) withTcls1
+
+/-- Merge two lists of PFnTClosure as sets, removing duplicates.
+    The result is the union of tcls1 and tcls2, with duplicates removed.
+    Order follows the input lists but is semantically irrelevant (sets). -/
+def mergePFnTClosures (tcls1 tcls2 : List PFnTClosure) : List PFnTClosure :=
+  -- Start with tcls1 (deduplicated), then add elements from tcls2 that aren't already present
+  let withTcls1 := tcls1.foldl (fun acc tcl => if acc.contains tcl then acc else acc ++ [tcl]) []
+  tcls2.foldl (fun acc tcl => if acc.contains tcl then acc else acc ++ [tcl]) withTcls1
