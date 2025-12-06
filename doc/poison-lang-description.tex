@@ -121,8 +121,8 @@ ST ::= int | bool | unit | ref ST | ST1 -> ST2
 (* enriched types *)
 T ::= int | bool | unit 
     | ref T @ l         (* region types with location indices *)
-    | ST1 -> ST2 # p typing_closure tcl (* impure function types with surface parameter and return types and typing closure *)
-    | ST1 -> ST2 # p typing_pclosure ptcl (* pure function types with pure typing closure *)
+    | ST1 -> ST2 # p tclosures tcls   (* impure function types with merged typing closures *)
+    | ST1 -> ST2 # p tpclosures ptcls (* pure function types with merged pure typing closures *)
 
 (* qualified types with poison status and predicate *)    
 Q ::= T :> p { P }      
@@ -157,12 +157,12 @@ in their code but never see the more complex internal representations.
 \begin{itemize}
     \item \textbf{Ott notation:} \texttt{typ, T}
     \item \textbf{Lean implementation:} \texttt{ETyp} (Enriched Type)
-    \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | ref T @ l | ST1 -> ST2 \# p typing\_closure tcl}
+    \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | ref T @ l | ST1 -> ST2 \# p tclosures tcls | ST1 -> ST2 \# p tpclosures ptcls}
     \item \textbf{Usage:} Used internally by the type checker for sound reasoning about references and functions
     \item \textbf{Key additions:}
     \begin{itemize}
         \item \textbf{Region annotations} (\texttt{@l}): Track which specific memory location each reference points to
-        \item \textbf{Typing closures} (\texttt{typing\_closure tcl}): Capture function bodies and variable contexts for re-typechecking at application time
+        \item \textbf{Typing closure sets} (\texttt{tclosures tcls} / \texttt{tpclosures ptcls}): Non-empty sets of closures that capture function bodies and variable contexts for re-typechecking at application time
         \item \textbf{Function poison} (\texttt{\#p}): Track the poison status of the function itself (from the program counter at definition time)
     \end{itemize}
 \end{itemize}
@@ -172,8 +172,12 @@ checking. \emph{Once assigned, an enriched type is \emph{immutable} during
 analysis—only the environments grow around it.} The region annotation
 \texttt{ref T @ l} solves the soundness problem in dereference by statically
 tracking which location each reference targets. Function types \texttt{ST1 ->
-ST2 \# p typing\_closure tcl} store both the user-provided surface types and the
-implementation details needed for higher-order predicate-based de-poisoning.
+ST2 \# p tclosures tcls} store both the user-provided surface types and a
+non-empty merged set of typing closures. Single function definitions introduce
+singleton closure sets; control-flow joins (for example in \texttt{if}) and
+function application build larger sets by taking unions. The type system always
+re-typechecks all available closures at application time and conservatively
+joins their results.
 
 \subsubsection{Qualified Types (\texttt{Q})}
 \textbf{Purpose:} Complete type information including poison status and predicates for fault tracking.
@@ -205,8 +209,8 @@ The three type levels are related through systematic transformations:
 \begin{itemize}
     \item \textbf{Surface $\to$ Runtime:} Subtyping relation \texttt{ST <: T} (surface type erasure) adds region and closure information
     \item \textbf{Runtime $\to$ Qualified:} Wrapping with poison status and predicates: \texttt{T $\triangleright$ p \{P\}}
-    \item \textbf{Function definitions:} Surface types in user syntax become enriched types in type checker, then qualified types in poison-propagating environments
-    \item \textbf{Function applications:} Function types store surface types for interface, use typing closures for implementation
+    \item \textbf{Function definitions:} Surface types in user syntax become enriched types in type checker (with singleton closure sets), then qualified types in poison-propagating environments
+    \item \textbf{Function applications:} Function types store surface types for interface and merged typing-closure sets for implementation; all alternatives are re-typechecked and their results joined
 \end{itemize}
 
 \textbf{Design Rationale:} This three-level hierarchy cleanly separates the user
@@ -790,22 +794,21 @@ where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{
 \]
 
 \subsubsection*{Function abstraction:}
-Function types include a \emph{typing closure} that captures the function
-body and variable typing context at definition time. Both the parameter
-type $ST_1$ and return type $ST_2$ are explicitly provided as surface type annotations.
-The function body is typechecked at definition time to verify it produces a type compatible with the declared return type $ST_2$.
+Function types include a non-empty set of \emph{typing closures} that captures
+the function body and variable typing context at definition time. Both the
+parameter type $ST_1$ and return type $ST_2$ are explicitly provided as surface
+type annotations. The type checker records the body together with the current
+typing environment as a singleton closure set; body typechecking is deferred to
+application time.
 \[
-\frac{\begin{array}{c}
-\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma[x \mapsto T_1 \triangleright \text{pc} \{ \text{no\_pred} \}] \; ;\; \mathcal{L} \vdash e : T_2 \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
-ST_1 <: T_1 \\
-ST_2 <: T_2
-\end{array}}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash \text{fn } x : ST_1 \Rightarrow e : ST_1 \rightarrow ST_2 \# \text{pc} \; \text{typing\_closure}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash
+  \text{fn } x : ST_1 \Rightarrow e : ST_2
+  : ST_1 \rightarrow ST_2 \# \text{pc} \; \mathsf{tclosures}(x, e, \sigma) \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}
 \]
 
 \noindent For pure functions, the enriched type uses a separate pure arrow and
-closure: $ST_1 \rightarrow ST_2 \# p\; \text{typing\_pclosure}(x,pe,\sigma)$,
-and application uses the pure closure in place of the impure one.
+closure set: $ST_1 \rightarrow ST_2 \# p\; \mathsf{tpclosures}(x,pe,\sigma)$,
+and application uses the pure closures in place of the impure ones.
 
 \paragraph{Pure-mode typing.} We thread a pure-mode parameter \(\pi\) through
 all typing judgements. Impure function application (\textsc{app\_fn}) is only
@@ -817,12 +820,18 @@ orthogonal to the poison \(pc\): standard poison joins and propagation are
 unchanged. We enter programs with \(\pi = \textit{impure}\).
 
 \subsubsection*{Function application:}
-The function application typing rule extracts the typing closure from the function type and types the body at application time. This enables predicate-based de-poisoning by using the actual argument's predicates and the current logical environment $\mathcal{L}$. The subtyping checks $ST_1 \!<:\! T_1$ and $ST_2 \!<:\! T_2$ ensure the surface parameter and return types are compatible with the actual argument and body types respectively.
+The function application typing rule extracts typing closures from the function
+type and types the body at application time. Re-typing the body with the
+parameter bound to the actual argument's qualified type (including its
+predicate) and under the current logical environment $\mathcal{L}$ enables
+predicate-based de-poisoning inside function bodies. The subtyping checks
+$ST_1 \!<:\! T_1$ and $ST_2 \!<:\! T_2$ ensure the surface parameter and return
+types are compatible with the actual argument and body types respectively.
 
 \[
 \frac{
 \begin{array}{c}
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : ST_1 \rightarrow ST_2 \# p \;\; \text{typing\_closure}(x, e, \sigma_1) \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : ST_1 \rightarrow ST_2 \# p \;\; \mathsf{tclosures}(x, e, \sigma_1) \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 \text{pc} ; \Gamma_1 ; \sigma ; \mathcal{L}_1 \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
 ST_1 <: T_1 \\
 \text{join } p_1 \; pc ; \Gamma_2 ; \sigma_1[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L}_2 \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma_3 ; \mathcal{L}_3 \\
@@ -836,13 +845,22 @@ ST_2 <: T_2
 
 Key aspects of function application:
 \begin{itemize}
-    \item The typing closure $(x, e, \sigma_1)$ contains the parameter name, function body, and captured variable context
+    \item Each typing closure $(x, e, \sigma_1)$ contains the parameter name, function body, and captured variable context
     \item The function body $e$ is typed using the captured context $\sigma_1$ extended with the actual argument's type
     \item The argument's qualified type includes its predicates $P_2$, enabling de-poisoning in the function body
     \item The current logical environment $\mathcal{L}_2$ is used, allowing guard-based de-poisoning
     \item The result poison $p_3$ reflects any de-poisoning that occurred in the function body
-    \item Function types store both surface parameter type $ST_1$ and return type $ST_2$, with body typing occurring at both definition and application time
+    \item Function types store both surface parameter type $ST_1$ and return type $ST_2$, with body typing occurring at application time
 \end{itemize}
+
+For general merged closure sets, the type system applies the same scheme to
+every closure alternative in the set, requires all result types to be
+signature-compatible (using the relation $T_1 \approx T_2$ described below),
+then joins the resulting memory and tag environments and poisons. If the result
+is itself a function, the closures returned by each alternative are merged into a new
+closure set and the predicate is reset to \texttt{no\_pred}. The examples
+\texttt{closure-set-basic.poison} and \texttt{closure-set-nested.poison} in
+\texttt{examples/} exercise these behaviours.
 
 
 Example of predicate-based de-poisoning in functions:
@@ -910,7 +928,15 @@ T_1 \approx T_2
 {\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T_1 \triangleright \text{join pc } p_2 p_3 \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma_2 \Gamma_3 ; \mathcal{L}_1}
 \]
 
-The typing rules use signature-based type comparison (denoted $T_1 \approx T_2$) for function types. This means two function types are considered equal if they have the same parameter type, return type, and poison flag, regardless of their closure contents (bodies and captured environments). This is appropriate for type checking conditional expressions where we need to ensure both branches return compatible function types, even if the function bodies differ. The signature comparison operator $\approx$ compares types \emph{up to signatures}, meaning it compares function types based on their signatures only, not their full structural equality.
+The typing rules use a \emph{signature-compatibility} relation (denoted
+$T_1 \approx T_2$) when checking branch results. For base types, this is just
+equality. For reference types, both the inner type and location must match. For
+function types, only the surface interface matters: $(ST_1 \rightarrow ST_2)$
+and the purity (impure arrow versus pure arrow) must agree; the internal poison
+flag and merged closure sets may differ and will be joined at the merge point.
+Impure and pure arrows are never signature-compatible with each other. This
+allows conditionals to join functions that have the same interface but arise
+from different control-flow paths and captured environments.
 
 The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, the branches are typed with different valuations of guard $k$ in environment $\mathcal{L}$. This enables:
 \begin{itemize}
@@ -977,6 +1003,15 @@ This definition is idempotent, commutative, and associative, composes with depen
 on writes, and ensures the sequence $\mathcal{L}_{i+1}=\text{JoinL}(\mathcal{L}_i,\mathcal{L}_{2,i})$ is
 descending in information and stabilises. Using a union that preserves single-sided or contradictory
 facts would be unsound for de-poisoning.
+
+\paragraph{Join on predicates.} When qualified types are joined (for example in
+branch joins on $\Gamma$ or when combining closure alternatives), their
+predicates are combined by an agreement-only operator \texttt{JoinP}. If the
+predicates are syntactically equal, they are preserved. If they mention the
+same guard tag but differ in closure, they are downgraded to a guard-only
+predicate \texttt{guard k}. In all other cases the join yields
+\texttt{no\_pred}. This keeps only information that is stable across both
+paths while remaining conservative.
 
 \paragraph{Precision gained.} By exploiting syntactic matching against guard
 predicates, the \texttt{while\_depoison} rule can identify cases where a loop
