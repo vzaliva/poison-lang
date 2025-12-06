@@ -1270,6 +1270,18 @@ instance : LawfulBEq Value where
 -- These proofs depend on the beqExpr_refl and related proofs defined earlier.
 
 mutual
+-- Prove reflexivity of beqFnTClosureList
+private theorem beqFnTClosureList_refl : ∀ (tcls : List FnTClosure), beqFnTClosureList tcls tcls = true
+  | [] => by simp [beqFnTClosureList]
+  | tcl :: tcls' => by
+      simp [beqFnTClosureList, beqFnTClosure_refl tcl, beqFnTClosureList_refl tcls']
+
+-- Prove reflexivity of beqPFnTClosureList
+private theorem beqPFnTClosureList_refl : ∀ (tcls : List PFnTClosure), beqPFnTClosureList tcls tcls = true
+  | [] => by simp [beqPFnTClosureList]
+  | tcl :: tcls' => by
+      simp [beqPFnTClosureList, beqPFnTClosure_refl tcl, beqPFnTClosureList_refl tcls']
+
 -- Prove reflexivity of beqETyp using mutual induction
 private theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
   cases t with
@@ -1280,9 +1292,9 @@ private theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
   | ref t' l =>
       simp [beqETyp, beqETyp_refl t']
   | arrow t1 t2 p tcl =>
-      simp [beqETyp, beqFnTClosure_refl tcl]
+      simp [beqETyp, beqFnTClosureList_refl tcl]
   | parrow t1 t2 p tcl =>
-      simp [beqETyp, beqPFnTClosure_refl tcl]
+      simp [beqETyp, beqPFnTClosureList_refl tcl]
 
 -- Prove reflexivity of beqVarEnv
 private theorem beqVarEnv_refl : ∀ (env : List (Name × QTyp)), beqVarEnv env env = true
@@ -1326,6 +1338,32 @@ end
 
 -- Mutual soundness proofs for ETyp and related types
 mutual
+-- Prove soundness of beqFnTClosureList
+private theorem beqFnTClosureList_sound : ∀ (a b : List FnTClosure), beqFnTClosureList a b = true → a = b
+  | [], [] => fun _ => rfl
+  | [], _ :: _ => fun h => by simp only [beqFnTClosureList] at h; contradiction
+  | _ :: _, [] => fun h => by simp only [beqFnTClosureList] at h; contradiction
+  | tcl1 :: a', tcl2 :: b' => fun h => by
+      simp only [beqFnTClosureList, Bool.and_eq_true] at h
+      obtain ⟨h_tcl, h_tcls⟩ := h
+      have : tcl1 = tcl2 := beqFnTClosure_sound tcl1 tcl2 h_tcl
+      have : a' = b' := beqFnTClosureList_sound a' b' h_tcls
+      subst_vars
+      rfl
+
+-- Prove soundness of beqPFnTClosureList
+private theorem beqPFnTClosureList_sound : ∀ (a b : List PFnTClosure), beqPFnTClosureList a b = true → a = b
+  | [], [] => fun _ => rfl
+  | [], _ :: _ => fun h => by simp only [beqPFnTClosureList] at h; contradiction
+  | _ :: _, [] => fun h => by simp only [beqPFnTClosureList] at h; contradiction
+  | tcl1 :: a', tcl2 :: b' => fun h => by
+      simp only [beqPFnTClosureList, Bool.and_eq_true] at h
+      obtain ⟨h_tcl, h_tcls⟩ := h
+      have : tcl1 = tcl2 := beqPFnTClosure_sound tcl1 tcl2 h_tcl
+      have : a' = b' := beqPFnTClosureList_sound a' b' h_tcls
+      subst_vars
+      rfl
+
 private theorem beqETyp_sound (a b : ETyp) : (a == b) = true → a = b := by
   intro h
   cases a <;> cases b <;> try (simp only [BEq.beq, beqETyp] at h; contradiction)
@@ -1344,7 +1382,7 @@ private theorem beqETyp_sound (a b : ETyp) : (a == b) = true → a = b := by
     have : st1 = st1' := Typ_beq_sound st1 st1' h_st1
     have : st2 = st2' := Typ_beq_sound st2 st2' h_st2
     have : p1 = p2 := of_decide_eq_true h_p
-    have : tcl1 = tcl2 := beqFnTClosure_sound tcl1 tcl2 h_tcl
+    have : tcl1 = tcl2 := beqFnTClosureList_sound tcl1 tcl2 h_tcl
     subst_vars
     rfl
   case parrow st1 st2 p1 tcl1 st1' st2' p2 tcl2 =>
@@ -1354,7 +1392,7 @@ private theorem beqETyp_sound (a b : ETyp) : (a == b) = true → a = b := by
     have : st1 = st1' := Typ_beq_sound st1 st1' h_st1
     have : st2 = st2' := Typ_beq_sound st2 st2' h_st2
     have : p1 = p2 := of_decide_eq_true h_p
-    have : tcl1 = tcl2 := beqPFnTClosure_sound tcl1 tcl2 h_tcl
+    have : tcl1 = tcl2 := beqPFnTClosureList_sound tcl1 tcl2 h_tcl
     subst_vars
     rfl
 
