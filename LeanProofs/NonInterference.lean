@@ -194,13 +194,17 @@ mutual
     deepVarEnvProperty P env
 
   inductive deepQTypProperty : (VarTypeEnv → Prop) → QTyp → Prop
-  | arrow (P : VarTypeEnv → Prop) (qt : QTyp) (env : VarTypeEnv) :
-    qt.etyp = ETyp.arrow _ _ _ (FnTClosure.regular _ _ env) →
-    P env →
+  | arrow (P : VarTypeEnv → Prop) (qt : QTyp) :
+    (∃ st1 st2 p tcls, qt.etyp = ETyp.arrow st1 st2 p tcls ∧
+     (∀ tcl ∈ tcls, match tcl with
+     | FnTClosure.regular _ _ env => P env
+     | FnTClosure.extern _ _ _ env => P env)) →
     deepQTypProperty P qt
-  | parrow (P : VarTypeEnv → Prop) (qt : QTyp) (env : VarTypeEnv) :
-    qt.etyp = ETyp.parrow _ _ _ (PFnTClosure.regular _ _ env) →
-    P env →
+  | parrow (P : VarTypeEnv → Prop) (qt : QTyp) :
+    (∃ st1 st2 p tcls, qt.etyp = ETyp.parrow st1 st2 p tcls ∧
+     (∀ tcl ∈ tcls, match tcl with
+     | PFnTClosure.regular _ _ env => P env
+     | PFnTClosure.extern _ _ env => P env)) →
     deepQTypProperty P qt
   | other (P : VarTypeEnv → Prop) (qt : QTyp) :
     nonClosureQTyp qt →
@@ -209,8 +213,9 @@ end
 
 lemma deep_implies_shallow {P : VarTypeEnv → Prop} {env : VarTypeEnv} :
   deepVarEnvProperty P env → P env := by
-  rintro ⟨_, _, h1, h2⟩
-  apply h1
+  intro h
+  cases h
+  assumption
 
 mutual
   inductive deepVarEnvProperty₂ : (VarTypeEnv → VarTypeEnv → Prop) → VarTypeEnv → VarTypeEnv → Prop
@@ -223,15 +228,33 @@ mutual
     deepVarEnvProperty₂ P env₁ env₂
 
   inductive deepQTypProperty₂ : (VarTypeEnv → VarTypeEnv → Prop) → QTyp → QTyp → Prop
-  | arrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) (env₁ env₂ : VarTypeEnv) :
-    qt₁.etyp = ETyp.arrow _ _ _ (FnTClosure.regular _ _ env₁) →
-    qt₂.etyp = ETyp.arrow _ _ _ (FnTClosure.regular _ _ env₂) →
-    P env₁ env₂ →
+  | arrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
+    (∃ st1 st2 p tcls₁, qt₁.etyp = ETyp.arrow st1 st2 p tcls₁ ∧
+     (∀ tcl₁ ∈ tcls₁, match tcl₁ with
+     | FnTClosure.regular _ _ env₁ =>
+       (∃ st1' st2' p' tcls₂, qt₂.etyp = ETyp.arrow st1' st2' p' tcls₂ ∧
+        (∀ tcl₂ ∈ tcls₂, match tcl₂ with
+        | FnTClosure.regular _ _ env₂ => P env₁ env₂
+        | FnTClosure.extern _ _ _ env₂ => P env₁ env₂))
+     | FnTClosure.extern _ _ _ env₁ =>
+       (∃ st1' st2' p' tcls₂, qt₂.etyp = ETyp.arrow st1' st2' p' tcls₂ ∧
+        (∀ tcl₂ ∈ tcls₂, match tcl₂ with
+        | FnTClosure.regular _ _ env₂ => P env₁ env₂
+        | FnTClosure.extern _ _ _ env₂ => P env₁ env₂)))) →
     deepQTypProperty₂ P qt₁ qt₂
-  | parrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) (env₁ env₂ : VarTypeEnv) :
-    qt₁.etyp = ETyp.parrow _ _ _ (PFnTClosure.regular _ _ env₁) →
-    qt₁.etyp = ETyp.parrow _ _ _ (PFnTClosure.regular _ _ env₂) →
-    P env₁ env₂ →
+  | parrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
+    (∃ st1 st2 p tcls₁, qt₁.etyp = ETyp.parrow st1 st2 p tcls₁ ∧
+     (∀ tcl₁ ∈ tcls₁, match tcl₁ with
+     | PFnTClosure.regular _ _ env₁ =>
+       (∃ st1' st2' p' tcls₂, qt₂.etyp = ETyp.parrow st1' st2' p' tcls₂ ∧
+        (∀ tcl₂ ∈ tcls₂, match tcl₂ with
+        | PFnTClosure.regular _ _ env₂ => P env₁ env₂
+        | PFnTClosure.extern _ _ env₂ => P env₁ env₂))
+     | PFnTClosure.extern _ _ env₁ =>
+       (∃ st1' st2' p' tcls₂, qt₂.etyp = ETyp.parrow st1' st2' p' tcls₂ ∧
+        (∀ tcl₂ ∈ tcls₂, match tcl₂ with
+        | PFnTClosure.regular _ _ env₂ => P env₁ env₂
+        | PFnTClosure.extern _ _ env₂ => P env₁ env₂)))) →
     deepQTypProperty₂ P qt₁ qt₂
   | other (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
     (nonClosureQTyp qt₁ ∨ nonClosureQTyp qt₂) →
