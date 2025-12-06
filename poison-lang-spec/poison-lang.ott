@@ -293,7 +293,7 @@ formula :: formula_ ::=
   | T = ST1 -> ST2 # p tpclosures ptcls :: :: type_eq_parrow {{ com T is a pure arrow type with the given components }} {{ tex [[T]] = [[ST1]] \Rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tpclosures}\, [[ptcls]] }}
   | tcls = tcls1 U tcls2  :: :: tcls_union  {{ com union formula for binding the result of closure set union }} {{ tex [[tcls]] = [[tcls1]] \cup [[tcls2]] }}
   | ptcls = ptcls1 U ptcls2 :: :: ptcls_union {{ com union formula for binding the result of closure set union }} {{ tex [[ptcls]] = [[ptcls1]] \cup [[ptcls2]] }}
-  | JoinP P1 P2 = P3       :: :: join_pred {{ com agreement-only join of predicates: preserves predicate if P1 = P2 (exact match), uses guard k if both have same tag k but different closures, otherwise no_pred }} {{ tex [[P1]] \sqcup [[P2]] = [[P3]] }}
+  | JoinP P1 P2 = P3       :: :: join_pred {{ com tag-aware, conservative pred join }} {{ tex [[P1]] \sqcup [[P2]] = [[P3]] }}
 
 
 defns
