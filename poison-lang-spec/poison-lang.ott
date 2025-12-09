@@ -6,8 +6,11 @@ metavar n, i ::=
   {{ phantom }}
 
 
+metavar address, a ::=
+  {{ com Concrete heap addresses }}
+
 metavar location, l ::= 
-  {{ com Memory locations }}
+  {{ com Logical memory locations }}
 
 metavar var, x ::=
   {{ com Variables }}
@@ -19,12 +22,12 @@ metavar tag, k ::=
   {{ phantom }}
   {{ coq string }}
 
-metavar deps ::=
-  {{ com Dependency sets for tracking heap locations read by predicates }}
-  {{ phantom }}
-  {{ coq list location }}
-
 grammar 
+
+locset, LS :: 'LS_' ::= {{ com sets of logical locations }}
+  | { }                      ::   :: empty
+  | { l }                    ::   :: singleton
+  | LS1 U LS2                ::   :: union {{ com union with deduplication }} {{ tex [[LS1]] \cup [[LS2]] }}
 
 % Index expressions for use in formulas (primarily for while-loop iteration)
 % These indices are used to express fixpoint semantics: sequences G_0, G_1, ..., G_n
@@ -116,7 +119,7 @@ v :: 'V_' ::=              {{ com values }}
   | b                       ::   :: bool
   | s                       ::   :: str
   | unit                    ::   :: unit    
-  | l                       ::   :: location
+  | a                       ::   :: address
   | closure ( x , e , r )   ::   :: closure   {{ com closure value }}
   | pe_closure ( x , pe , r )  ::   :: pe_closure   {{ com pure closure value }}
 
@@ -124,16 +127,16 @@ expr_or_value, ev :: 'EV_' ::=  {{ com expression or value }}
   | expr e                  ::   :: expr  {{ com expression }}
   | value v                 ::   :: value {{ com value }}
 
-memory , m {{ tex \mu }} :: 'Memory_' ::=  {{ com memory }} {{ phantom }} {{ coq list (location * integer) }}
+memory , m {{ tex \mu }} :: 'Memory_' ::=  {{ com memory }} {{ phantom }} {{ coq list (address * integer) }}
    | empty                  ::   :: empty {{ coq [] }}
-   | m [ l |-> n ]          ::   :: extend  {{ coq (([[l]],[[n]])::[[m]]) }}
+   | m [ a |-> n ]          ::   :: extend  {{ coq (([[a]],[[n]])::[[m]]) }}
 
 typ, T :: 'T_' ::=         {{ com enriched types }}
   | int                     ::   :: int
   | bool                    ::   :: bool
   | unit                    ::   :: unit
   | string                  ::   :: string
-  | ref T @ l               ::   :: ref {{ tex \mathsf{ref}\,[[T]]\,@\,[[l]] }}
+  | ref T @ LS               ::   :: ref {{ tex \mathsf{ref}\,[[T]]\,@\,[[LS]] }}
   | ST1 -> ST2 # p tclosures tcls ::   :: arrow {{ tex [[ST1]] \rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tclosures}\, [[tcls]] }}
   | ST1 -> ST2 # p tpclosures ptcls ::   :: parrow {{ tex [[ST1]] \Rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tpclosures}\, [[ptcls]] }}
 
@@ -176,7 +179,10 @@ G {{ tex \Gamma }} :: G_ ::=     {{ com memory typing environments }} {{ phantom
   | empty                   ::   :: empty {{ coq [] }}
   | G , ta                  ::   :: extend {{ coq ([[ta]]::[[G]]) }}
   | JoinG G1 G2             ::   :: JoinG {{ com flow-insensitive join of memory type environments: unions the environments, taking the join of poisons for any location present in both }} {{ tex [[G1]] \cup [[G2]] }}
+  | JoinRestrict G1 G2      ::   :: JoinRestrict {{ com JoinG where the second operand is first restricted to dom(G1) }} {{ tex [[G1]] \cup \mathrm{restrict}([[G2]], \mathrm{dom}([[G1]])) }}
   | G [ l |-> Q ]           ::   :: UpdateG {{ tex [[G]] [ l \mapsto [[Q]] ] }}
+  | G [ LS |-> Q ]           ::   :: UpdateGSet {{ com update all logical locations in LS with Q }} {{ tex [[G]] [ [[LS]] \mapsto [[Q]] ] }}
+  | RestrictG G1 G2         ::   :: RestrictGEnv {{ com restrict G2 to domain of G1 }} {{ tex \mathrm{restrict}([[G2]], \mathrm{dom}([[G1]])) }}
   | indexG G idx            ::   :: indexG   {{ com indexed environment sequence for while-loop fixpoint }} {{ tex [[G]]^{[[idx]]} }}
   | indexedG G idx1 idx2    ::   :: indexedG {{ com doubly-indexed environment for while-loop }} {{ tex [[G]]_{[[idx1]]}^{[[idx2]]} }}                  
 
@@ -190,12 +196,12 @@ S {{ tex \sigma }} :: S_ ::=     {{ com variable typing environments }} {{ phant
 
 % Tag valuation environment
 tag_valuation, tv :: 'TV_' ::= {{ com tag valuation }}
-  | k : b using deps     ::   :: tag_deps {{ com tag with boolean value and dependency set }}
+  | k : b using LS     ::   :: tag_deps {{ com tag with boolean value and dependency locset }}
 
 L {{ tex \mathcal{L} }} :: L_ ::=     {{ com tag valuation environments }} {{ phantom }} {{ coq list tag_valuation }}
   | empty                   ::   :: empty {{ coq [] }}
-  | L [ k |-> b using deps ] ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] \text{ using } [[deps]] ] }}
-  | invalidate_deps L l     ::   :: InvalidateDeps {{ tex invalidate\_deps([[L]], [[l]]) }} {{ com remove from L all entries whose dependency sets contain location l }}
+  | L [ k |-> b using LS ] ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] \text{ using } [[LS]] ] }}
+  | invalidate_deps L LS     ::   :: InvalidateDeps {{ tex invalidate\_deps([[L]], [[LS]]) }} {{ com remove from L all entries whose dependency sets contain any logical location in LS }}
   | JoinL L1 L2             ::   :: JoinL {{ com agreement-only join of tag environments: keeps only those tags that have identical valuations and dependency sets in both L1 and L2 }} {{ tex [[L1]] \sqcup [[L2]] }}
   | indexL L idx            ::   :: indexL   {{ com indexed tag environment sequence for while-loop fixpoint }} {{ tex [[L]]^{[[idx]]} }}
   | indexedL L idx1 idx2    ::   :: indexedL {{ com doubly-indexed tag environment for while-loop }} {{ tex [[L]]_{[[idx1]]}^{[[idx2]]} }}                  
@@ -269,31 +275,37 @@ formula :: formula_ ::=
   | b1 && b2 = b3          :: :: band        {{ coq ([[b1]]&&[[b2]]=[[b3]]) }}
   | b1 || b2 = b3          :: :: bor         {{ coq ([[b1]]||[[b2]]=[[b3]]) }}
   | not b = b1             :: :: not_bool   {{ coq ([[b1]] = not [[b]]) }}
-  | m ( l ) = n            :: :: lookup      {{ coq (List.find [[l]] [[m]] = Some ([[n]])) }}   
+  | m ( a ) = n            :: :: lookup      {{ coq (List.find [[a]] [[m]] = Some ([[n]])) }}   
   | G ( l ) = Q        :: :: type_lookup {{ coq (lookup_location_type [[l]] [[G]] = Some ([[Q]])) }}   
   | S ( x ) = Q        :: :: var_type_lookup {{ coq (lookup_var_type [[x]] [[S]] = Some ([[Q]])) }}   
   | r ( x ) = v           :: :: var_lookup {{ coq (lookup_var [[x]] [[r]] = Some ([[v]])) }}   
-  | L ( k ) = b using deps :: :: tag_lookup {{ coq (lookup_tag [[k]] [[L]] = Some ([[b]], [[deps]])) }}   
+  | L ( k ) = b using LS :: :: tag_lookup {{ coq (lookup_tag [[k]] [[L]] = Some ([[b]], [[LS]])) }}   
   | p1 = p2                :: :: poison_eq   {{ coq ([[p1]] = [[p2]]) }}   
   | G1 = G2                :: :: type_env_eq {{ coq ([[G1]] = [[G2]]) }}   
   | L1 = L2                :: :: tag_env_eq {{ coq ([[L1]] = [[L2]]) }}   
   | formula1 AND formula2  :: :: and         {{ tex [[formula1]] \quad [[formula2]] }} {{ coq ([[formula1]] /\ [[formula2]]) }}
+  | fresh a                :: :: fresh_addr       {{ com a is fresh concrete address }}
   | fresh l                :: :: fresh_loc       {{ com l is fresh }}
   | fresh k                :: :: fresh_tag       {{ com k is fresh }}
   | fresh x S              :: :: fresh_var       {{ com x is fresh in S }}
   | n0 = random n1         :: :: random_gen     {{ com n0 is a random number in [0, n1] range }}
-  | match_guard e G S = k with deps  :: :: match_guard  {{ com match\_guard(e, G, S) scans the predicates attached to every heap cell in G and variable in S; if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to the condition e, it returns that k along with the dependencies deps—otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] \text{ with } [[deps]] }}
-  | invalidate_deps L l = L1 :: :: invalidate_deps {{ com invalidate\_deps(L, l) removes from L all entries that have location l in their dependency set }}  {{ tex invalidate\_deps([[L]], [[l]]) = [[L1]] }}
+  | match_guard e G S = k with LS  :: :: match_guard  {{ com match\_guard(e, G, S) merges predicates for the relevant logical location sets (per MergePreds), scans heap cells and variables, and if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to condition e, it returns that k with dependency locset LS; otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] \text{ with } [[LS]] }}
+  | invalidate_deps L LS = L1 :: :: invalidate_deps {{ com invalidate\_deps(L, LS) removes from L all entries that mention any logical location in LS in their dependency set }}  {{ tex invalidate\_deps([[L]], [[LS]]) = [[L1]] }}
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
-  | T1 ≈ T2                :: :: sig_comp     {{ com T1 and T2 are signature-compatible: same shape ignoring poisons and closures. For base types: exact match. For references: same inner type and location. For arrows: same surface types (ST1, ST2) and same purity, but poisons and closure sets may differ }} {{ tex [[T1]] \approx [[T2]] }}
+  | T1 ≈ T2                :: :: sig_comp     {{ com T1 and T2 are signature-compatible: same shape ignoring poisons and closures. For base types: exact match. For references: same inner type (location sets may differ). For arrows: same surface types (ST1, ST2) and same purity, but poisons and closure sets may differ }} {{ tex [[T1]] \approx [[T2]] }}
   | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
   | tcl in tcls            :: :: tcl_member  {{ com typing closure tcl is a member of the merged closure set tcls }} {{ tex [[tcl]] \in [[tcls]] }}
   | ptcl in ptcls          :: :: ptcl_member {{ com typing closure ptcl is a member of the merged closure set ptcls }} {{ tex [[ptcl]] \in [[ptcls]] }}
+  | l in LS                 :: :: loc_member {{ com logical location membership }} {{ tex [[l]] \in [[LS]] }}
+  | LS = LS1 U LS2          :: :: ls_union {{ com locset union binding }} {{ tex [[LS]] = [[LS1]] \cup [[LS2]] }}
   | T = ST1 -> ST2 # p tclosures tcls   :: :: type_eq_arrow  {{ com T is an impure arrow type with the given components }} {{ tex [[T]] = [[ST1]] \rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tclosures}\, [[tcls]] }}
   | T = ST1 -> ST2 # p tpclosures ptcls :: :: type_eq_parrow {{ com T is a pure arrow type with the given components }} {{ tex [[T]] = [[ST1]] \Rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tpclosures}\, [[ptcls]] }}
   | tcls = tcls1 U tcls2  :: :: tcls_union  {{ com union formula for binding the result of closure set union }} {{ tex [[tcls]] = [[tcls1]] \cup [[tcls2]] }}
   | ptcls = ptcls1 U ptcls2 :: :: ptcls_union {{ com union formula for binding the result of closure set union }} {{ tex [[ptcls]] = [[ptcls1]] \cup [[ptcls2]] }}
   | JoinP P1 P2 = P3       :: :: join_pred {{ com tag-aware, conservative pred join }} {{ tex [[P1]] \sqcup [[P2]] = [[P3]] }}
+  | MergePreds G LS = P     :: :: merge_preds {{ com merges predicates for all logical locations in LS using agreement-only rule (exact match; same tag -> guard k; otherwise no\_pred) }} {{ tex \mathsf{mergePreds}([[G]], [[LS]]) = [[P]] }}
+  | JoinPoisons G LS = p    :: :: join_poisons {{ com join of poison flags for all logical locations in LS }} {{ tex \mathsf{joinPoisons}([[G]], [[LS]]) = [[p]] }}
+  | RestrictG G1 G2 = G3   :: :: restrictG {{ com restrict G2 to logical locations in dom(G1) }} {{ tex \mathsf{restrict}([[G2]], \mathrm{dom}([[G1]])) = [[G3]] }}
 
 
 defns
@@ -410,21 +422,21 @@ not b = b1
 
 % References
 <pm, e, m, r> ==> < n, m1, r1>
-fresh l
+fresh a
 ------------------------------ :: b_ref
-<pm, ref e, m, r> ==> < l, m1 [ l |-> n ], r1>
+<pm, ref e, m, r> ==> < a, m1 [ a |-> n ], r1>
 
 % Dereference
-<pm, e, m, r> ==> < l, m1, r1>
-m1(l) = n
+<pm, e, m, r> ==> < a, m1, r1>
+m1(a) = n
 ------------------------------ :: b_deref
 <pm, !e, m, r> ==> < n, m1, r1>
 
 % Assignment
-<pm, e1, m, r> ==> < l, m1, r1>
+<pm, e1, m, r> ==> < a, m1, r1>
 <pm, e2, m1, r1> ==> < n, m2, r2>
 -------------------------------------- :: b_assign
-< pm, e1 := e2, m, r > ==> < unit, m2 [ l |-> n ], r2 >
+< pm, e1 := e2, m, r > ==> < unit, m2 [ a |-> n ], r2 >
 
 % Sequencing
 <pm, e1, m, r> ==> < v1, m1, r1>
@@ -515,25 +527,25 @@ pm ; pc ; G ; S ; L |- s : string :> clean { no_pred } -| G ; L
 
 % Variable typing - with guarded predicate that evaluates to true triggering de-poisoning.
 S(x) = T :> p { guard k pred_closure pcl }
-L(k) = true using deps
+L(k) = true using LS
 ------------------  :: var_guard_true
 pm ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L
 
 % Variable typing - with guard only that evaluates to true triggering de-poisoning.
 S(x) = T :> p { guard k }
-L(k) = true using deps
+L(k) = true using LS
 ------------------  :: var_guard_only_true
 pm ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L
 
 % Variable typing - with guarded predicate that evaluates to false, triggering poisoning.
 S(x) = T :> p { guard k pred_closure pcl }
-L(k) = false using deps
+L(k) = false using LS
 ------------------  :: var_guard_false
 pm ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L
 
 % Variable typing - with guard only that evaluates to false, triggering poisoning.
 S(x) = T :> p { guard k }
-L(k) = false using deps
+L(k) = false using LS
 ------------------  :: var_guard_only_false
 pm ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L
 
@@ -623,74 +635,76 @@ pm ; pc ; G ; S ; L |- e : bool :> p { P } -| G1 ; L1
 pm ; pc ; G ; S ; L |- not e : bool :> join pc p { no_pred } -| G1 ; L1
 
 % New ref creation with region types
-% ref creates a reference with pc poison status and allocates fresh location l
-% The region type ref T @ l precisely tracks which location is allocated
+% ref creates a reference with pc poison status and allocates fresh logical location l
+% The region type ref T @ { l } precisely tracks which logical location is allocated
 % Predicate P is preserved in the memory location
 pm ; pc ; G ; S ; L |- e : T :> p { P } -| G1 ; L1
   fresh l
 ----------------------- :: ref
-pm ; pc ; G ; S ; L |- ref e : ref T @ l :> pc { no_pred } -| G1[l |-> T :> join pc p { P }] ; L1
+pm ; pc ; G ; S ; L |- ref e : ref T @ { l } :> pc { no_pred } -| G1[l |-> T :> join pc p { P }] ; L1
 
 % Assignment through reference with region types The result of the whole
 % assignment (unit) is poisoned if the reference is poisoned. The stored value
 % is poisoned if the assignment is poisoned, or reference is poisoned, or the
 % value is poisoned. Predicate from e2 is preserved in the memory location.
-% On write to location l, invalidate all L entries whose predicates may read l.
-pm ; pc ; G ; S ; L |- e1 : ref T @ l :> p1 { P1 } -| G1 ; L1
+% On write to any logical location in the set, invalidate all L entries whose predicates may read those locations.
+pm ; pc ; G ; S ; L |- e1 : ref T @ LS0 :> p1 { P1 } -| G1 ; L1
 pm ; pc ; G1 ; S ; L1 |- e2 : T :> p2 { P2 } -| G2 ; L2
 ----------------------- :: assign
-pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[l |-> T :> join pc join p1 p2 { P2 }] ; invalidate_deps L2 l
+pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[LS0 |-> T :> join pc join p1 p2 { P2 }] ; invalidate_deps L2 LS0
 
-% Dereference - with poisoned reference always strips predicate and returns
-% poisoned result.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> poisoned { P } -| G1 ; L1
-  G1(l) = T :> p { P1 }
+% Dereference with logical location sets.
+% A poisoned reference yields a poisoned result (predicate erased).
+pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> poisoned { P } -| G1 ; L1
 ----------------------- :: deref_poisoned
 pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G1 ; L1
 
-% Dereference - no predicate case.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
-  G1(l) = T :> p { no_pred }
+% No-predicate case: merge predicates across LS0 yields no_pred; poison joins all cells.
+pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+  MergePreds G1 LS0 = no_pred
+  JoinPoisons G1 LS0 = p
 ----------------------- :: deref_no_pred
 pm ; pc ; G ; S ; L |- !e : T :> join pc p { no_pred } -| G1 ; L1
 
-% Dereference - with guarded predicate that evaluates to true, triggering de-poisoning.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
-  G1(l) = T :> p { guard k pred_closure pcl }
-  L1(k) = true using deps
+% Guarded predicate evaluates to true after merging across LS0 (de-poison).
+pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+  MergePreds G1 LS0 = guard k pred_closure pcl
+  L1(k) = true using LS
 ----------------------- :: deref_guard_true
 pm ; pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G1 ; L1
 
-% Dereference - with guard only that evaluates to true, triggering de-poisoning.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
-  G1(l) = T :> p { guard k }
-  L1(k) = true using deps
+% Guard-only predicate evaluates to true after merging.
+pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+  MergePreds G1 LS0 = guard k
+  L1(k) = true using LS
 ----------------------- :: deref_guard_only_true
 pm ; pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G1 ; L1
 
-% Dereference - with guarded predicate that evaluates to false, triggering poisoning.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
-  G1(l) = T :> p { guard k pred_closure pcl }
-  L1(k) = false using deps
+% Guarded predicate evaluates to false after merging (forces poisoning).
+pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+  MergePreds G1 LS0 = guard k pred_closure pcl
+  L1(k) = false using LS
 ----------------------- :: deref_guard_false
 pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G1 ; L1
 
-% Dereference - with guard only that evaluates to false, triggering poisoning.
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
-  G1(l) = T :> p { guard k }
-  L1(k) = false using deps
+% Guard-only predicate evaluates to false after merging.
+pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+  MergePreds G1 LS0 = guard k
+  L1(k) = false using LS
 ----------------------- :: deref_guard_only_false
 pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G1 ; L1
 
-% Dereference - with guarded predicate but tag not in L
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
-  G1(l) = T :> p { guard k pred_closure pcl }
+% Guarded predicate present but tag not known in L: poison joins all cells; predicate retained.
+pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+  MergePreds G1 LS0 = guard k pred_closure pcl
+  JoinPoisons G1 LS0 = p
 ----------------------- :: deref_guard_unknown
 pm ; pc ; G ; S ; L |- !e : T :> join pc p { guard k pred_closure pcl } -| G1 ; L1
 
-% Dereference - with guard only but tag not in L
-pm ; pc ; G ; S ; L |- e : ref T @ l :> clean { P } -| G1 ; L1
-  G1(l) = T :> p { guard k }
+% Guard-only predicate present but tag not known in L.
+pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+  MergePreds G1 LS0 = guard k
+  JoinPoisons G1 LS0 = p
 ----------------------- :: deref_guard_only_unknown
 pm ; pc ; G ; S ; L |- !e : T :> join pc p { guard k } -| G1 ; L1
 
@@ -960,10 +974,10 @@ pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G2 ; L2
 %   - Outer qualified-type poisons p2 ⊔ p3 are joined
 %   - Closure sets tcls2 and tcls3 are merged via union (deduplicating closures)
 %   - Result: (ST1 -> ST2 # (p' ⊔ p'') tclosures (tcls2 ∪ tcls3)) :> (pc ⊔ p2 ⊔ p3)
-match_guard e1 G S = k with deps
+match_guard e1 G S = k with LS
 pure ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
-pm ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
-pm ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
+pm ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
 T2 = ST1 -> ST2 # p' tclosures tcls2
 T3 = ST1 -> ST2 # p'' tclosures tcls3
 p = join p' p''
@@ -978,10 +992,10 @@ pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> 
 %   - Outer qualified-type poisons p2 ⊔ p3 are joined
 %   - Closure sets ptcls2 and ptcls3 are merged via union (deduplicating closures)
 %   - Result: (ST1 -> ST2 # (p' ⊔ p'') tpclosures (ptcls2 ∪ ptcls3)) :> (pc ⊔ p2 ⊔ p3)
-match_guard e1 G S = k with deps
+match_guard e1 G S = k with LS
 pure ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
-pm ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
-pm ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
+pm ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
 T2 = ST1 -> ST2 # p' tpclosures ptcls2
 T3 = ST1 -> ST2 # p'' tpclosures ptcls3
 p = join p' p''
@@ -989,16 +1003,24 @@ ptcls = ptcls2 U ptcls3
 ----------------------------------  :: if_depoison_pfn
 pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p2 p3 { no_pred } -| JoinG G2 G3 ; L
 
-% Conditional typing with predicate-based de-poisoning - general case (non-function types)
-% For non-function types, use signature compatibility (T1 ≈ T2) to ensure branches have the same shape.
-% This rule serves as a fallback when the branches do not produce function types.
-match_guard e1 G S = k with deps
+% Conditional typing with predicate-based de-poisoning - reference result
+% Explicitly unions location sets when both branches produce refs of the same inner type.
+match_guard e1 G S = k with LS
 pure ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
-pm ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T1 :> p2 { P2 } -| G2 ; L2
-pm ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T2 :> p3 { P3 } -| G3 ; L3
-T1 ≈ T2
+pm ; pc ; G ; S ; L[k |-> true using LS] |- e2 : ref T @ LS1 :> p2 { P2 } -| G2 ; L2
+pm ; pc ; G ; S ; L[k |-> false using LS] |- e3 : ref T @ LS2 :> p3 { P3 } -| G3 ; L3
+LS = LS1 U LS2
+----------------------------------  :: if_depoison_ref
+pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS :> join pc join p2 p3 { no_pred } -| JoinG G2 G3 ; L
+
+% Conditional typing with predicate-based de-poisoning - general non-reference case
+% For non-reference types, both branches yield the same surface type T.
+match_guard e1 G S = k with LS
+pure ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2
+pm ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3
 ----------------------------------  :: if_depoison
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T1 :> join pc join p2 p3 { no_pred } -| JoinG G2 G3 ; L
+pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p2 p3 { no_pred } -| JoinG G2 G3 ; L
 
 % Standard conditional typing rule - impure function result
 % (used when no matching predicate found)
@@ -1038,23 +1060,28 @@ ptcls = ptcls2 U ptcls3
 ----------------------------------  :: if_std_pfn
 pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; L1
 
-% Standard conditional typing rule - general case (non-function types)
-% (used as a fallback when no matching predicate found)
-% For non-function types, use signature compatibility (T1 ≈ T2) to ensure branches have the same shape.
+% Standard conditional typing rule - reference result (no predicate match)
 pm ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1
-pm ; join pc p1 ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
-pm ; join pc p1 ; G1 ; S ; L1 |- e3 : T2 :> p3 { P3 } -| G3 ; L3
-T1 ≈ T2
+pm ; join pc p1 ; G1 ; S ; L1 |- e2 : ref T @ LS1 :> p2 { P2 } -| G2 ; L2
+pm ; join pc p1 ; G1 ; S ; L1 |- e3 : ref T @ LS2 :> p3 { P3 } -| G3 ; L3
+LS = LS1 U LS2
+----------------------------------  :: if_std_ref
+pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; L1
+
+% Standard conditional typing rule - general non-reference case (no predicate match)
+pm ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1
+pm ; join pc p1 ; G1 ; S ; L1 |- e2 : T :> p2 { P2 } -| G2 ; L2
+pm ; join pc p1 ; G1 ; S ; L1 |- e3 : T :> p3 { P3 } -| G3 ; L3
 ----------------------------------  :: if_std
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T1 :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; L1
+pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; L1
 
 
 %  Flow‑sensitive WHILE à la Hunt & Sands 2006 https://doi.org/10.1145/1111037.1111045
 
 % JoinL (logical environment join) — agreement-only meet used in the while fixpoint:
 %   For each tag k:
-%     - if both operands map k to the same boolean b with deps deps1, deps2,
-%       keep k with deps = deps1 ∪ deps2;
+%     - if both operands map k to the same boolean b with dependency locsets LS1, LS2,
+%       keep k with deps = LS1 ∪ LS2;
 %     - otherwise (k absent on some side, or booleans disagree), drop k (unknown).
 %   Rationale: prevents branch-/iteration-local facts from leaking across iterations,
 %   composes with invalidate_deps, and ensures the sequence Li+1 = JoinL(Li, L2,i)
@@ -1062,18 +1089,18 @@ pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T1 :> join pc join p1 join p2 p3 
 %   contradictory facts would be unsound for de-poisoning.
 
 % Predicate-based while typing rule (when matching predicate found)
-match_guard e1 G S = k with deps
+match_guard e1 G S = k with LS
 pure ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexL L i
-pm; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexL L i[k |-> true using deps] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i
+pm; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexL L i[k |-> true using LS] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i
 indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
-indexG G 0 = G AND indexG G i+1 = JoinG indexG G i indexedG G 2 i
+indexG G 0 = G AND indexG G i+1 = JoinRestrict indexG G i indexedG G 2 i
 indexL L 0 = L AND indexL L i+1 = JoinL indexL L i indexedL L 2 i
 %  "where n is the smallest natural number satisfying the two equalities above."
 indexP p n+1 = indexP p n
 indexG G n+1 = indexG G n
 indexL L n+1 = indexL L n
 ---------------------------------------------------------------------------  :: while_depoison
-pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n[k |-> false using deps]
+pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n[k |-> false using LS]
 
 % Standard while typing rule (when no matching predicate found) (used as a
 % fallback when match_guard fails) 
@@ -1081,7 +1108,7 @@ pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| inde
 pm ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexedL L 1 i
 pm ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexedL L 1 i |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i
 indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
-indexG G 0 = G AND indexG G i+1 = JoinG indexG G i indexedG G 2 i
+indexG G 0 = G AND indexG G i+1 = JoinRestrict indexG G i indexedG G 2 i
 indexL L 0 = L AND indexL L i+1 = JoinL indexL L i indexedL L 2 i
 %  "where n is the smallest natural number satisfying the two equalities above."
 indexP p n+1 = indexP p n 
