@@ -165,7 +165,7 @@ ptcls :: 'PTCLS_' ::= {{ com merged typing closures for pure functions }}
 predicate, P :: 'P_' ::= {{ com predicate (pure function from T to bool) }}
   | guard k pred_closure pcl ::   :: pred_closure {{ com predicate as pure closure }} {{tex \mathsf{guard}\,[[k]]\,\mathsf{pred\_closure}\,[[pcl]] }}
   | guard k                   ::   :: guard_only {{ com guard tag only }} {{tex \mathsf{guard}\,[[k]] }}
-  | no_pred                   ::   :: no_pred {{ com trivial predicate (always true) }} {{tex {} }}
+  | no_pred                   ::   :: no_pred {{ com no predicate }} {{tex \bot }}
   | indexedP P idx1 idx2    :: M :: indexedP {{ com doubly-indexed predicate for while-loop }} {{ tex [[P]]_{[[idx1]]}^{[[idx2]]} }}
 
 qualified_type, Q :: 'Q_' ::= {{ com qualified type (type with poison and optional predicate) }}
@@ -178,11 +178,10 @@ mem_type_assumption, ta :: 'TA_' ::= {{ com memory type assumption }}
 G {{ tex \Gamma }} :: G_ ::=     {{ com memory typing environments }} {{ phantom }} {{ coq list mem_type_assumption }}
   | empty                   ::   :: empty {{ coq [] }}
   | G , ta                  ::   :: extend {{ coq ([[ta]]::[[G]]) }}
-  | JoinG G1 G2             ::   :: JoinG {{ com flow-insensitive join of memory type environments: unions the environments, taking the join of poisons for any location present in both }} {{ tex [[G1]] \cup [[G2]] }}
-  | JoinRestrict G1 G2      ::   :: JoinRestrict {{ com JoinG where the second operand is first restricted to dom(G1) }} {{ tex [[G1]] \cup \mathrm{restrict}([[G2]], \mathrm{dom}([[G1]])) }}
+  | JoinG G1 G2             ::   :: JoinG {{ com flow-insensitive join of memory type environments: unions the environments, taking the join of poisons for any location present in both }} {{ tex [[G1]] \sqcup [[G2]] }}
+  | JoinRestrict G1 G2      ::   :: JoinRestrict {{ com JoinG where the second operand is first restricted to dom(G1) }} {{ tex [[G1]] \sqcup \bigl([[G2]] \mathbin{\restriction} \mathrm{dom}([[G1]])\bigr) }}
   | G [ l |-> Q ]           ::   :: UpdateG {{ tex [[G]] [ l \mapsto [[Q]] ] }}
   | G [ LS |-> Q ]           ::   :: UpdateGSet {{ com update all logical locations in LS with Q }} {{ tex [[G]] [ [[LS]] \mapsto [[Q]] ] }}
-  | RestrictG G1 G2         ::   :: RestrictGEnv {{ com restrict G2 to domain of G1 }} {{ tex \mathrm{restrict}([[G2]], \mathrm{dom}([[G1]])) }}
   | indexG G idx            ::   :: indexG   {{ com indexed environment sequence for while-loop fixpoint }} {{ tex [[G]]^{[[idx]]} }}
   | indexedG G idx1 idx2    ::   :: indexedG {{ com doubly-indexed environment for while-loop }} {{ tex [[G]]_{[[idx1]]}^{[[idx2]]} }}                  
 
@@ -201,7 +200,6 @@ tag_valuation, tv :: 'TV_' ::= {{ com tag valuation }}
 L {{ tex \mathcal{L} }} :: L_ ::=     {{ com tag valuation environments }} {{ phantom }} {{ coq list tag_valuation }}
   | empty                   ::   :: empty {{ coq [] }}
   | L [ k |-> b using LS ] ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] \text{ using } [[LS]] ] }}
-  | invalidate_deps L LS     ::   :: InvalidateDeps {{ tex invalidate\_deps([[L]], [[LS]]) }} {{ com remove from L all entries whose dependency sets contain any logical location in LS }}
   | JoinL L1 L2             ::   :: JoinL {{ com agreement-only join of tag environments: keeps only those tags that have identical valuations and dependency sets in both L1 and L2 }} {{ tex [[L1]] \sqcup [[L2]] }}
   | indexL L idx            ::   :: indexL   {{ com indexed tag environment sequence for while-loop fixpoint }} {{ tex [[L]]^{[[idx]]} }}
   | indexedL L idx1 idx2    ::   :: indexedL {{ com doubly-indexed tag environment for while-loop }} {{ tex [[L]]_{[[idx1]]}^{[[idx2]]} }}                  
@@ -290,7 +288,7 @@ formula :: formula_ ::=
   | fresh x S              :: :: fresh_var       {{ com x is fresh in S }}
   | n0 = random n1         :: :: random_gen     {{ com n0 is a random number in [0, n1] range }}
   | match_guard e G S = k with LS  :: :: match_guard  {{ com match\_guard(e, G, S) merges predicates for the relevant logical location sets (per MergePreds), scans heap cells and variables, and if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to condition e, it returns that k with dependency locset LS; otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] \text{ with } [[LS]] }}
-  | invalidate_deps L LS = L1 :: :: invalidate_deps {{ com invalidate\_deps(L, LS) removes from L all entries that mention any logical location in LS in their dependency set }}  {{ tex invalidate\_deps([[L]], [[LS]]) = [[L1]] }}
+  | invalidate_deps L LS = L1 :: :: invalidate_deps {{ com invalidate\_deps(L, LS) removes from L all entries whose deps intersect LS; view L as a partial map and restrict its domain accordingly }}  {{ tex [[L1]] = [[L]] \mathbin{\restriction} \bigl(\mathrm{dom}([[L]]) \setminus [[LS]]\bigr) }}
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
   | T1 ≈ T2                :: :: sig_comp     {{ com T1 and T2 are signature-compatible: same shape ignoring poisons and closures. For base types: exact match. For references: same inner type (location sets may differ). For arrows: same surface types (ST1, ST2) and same purity, but poisons and closure sets may differ }} {{ tex [[T1]] \approx [[T2]] }}
   | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
@@ -303,9 +301,8 @@ formula :: formula_ ::=
   | tcls = tcls1 U tcls2  :: :: tcls_union  {{ com union formula for binding the result of closure set union }} {{ tex [[tcls]] = [[tcls1]] \cup [[tcls2]] }}
   | ptcls = ptcls1 U ptcls2 :: :: ptcls_union {{ com union formula for binding the result of closure set union }} {{ tex [[ptcls]] = [[ptcls1]] \cup [[ptcls2]] }}
   | JoinP P1 P2 = P3       :: :: join_pred {{ com tag-aware, conservative pred join }} {{ tex [[P1]] \sqcup [[P2]] = [[P3]] }}
-  | MergePreds G LS = P     :: :: merge_preds {{ com merges predicates for all logical locations in LS using agreement-only rule (exact match; same tag -> guard k; otherwise no\_pred) }} {{ tex \mathsf{mergePreds}([[G]], [[LS]]) = [[P]] }}
-  | JoinPoisons G LS = p    :: :: join_poisons {{ com join of poison flags for all logical locations in LS }} {{ tex \mathsf{joinPoisons}([[G]], [[LS]]) = [[p]] }}
-  | RestrictG G1 G2 = G3   :: :: restrictG {{ com restrict G2 to logical locations in dom(G1) }} {{ tex \mathsf{restrict}([[G2]], \mathrm{dom}([[G1]])) = [[G3]] }}
+  | MergePreds G LS = P     :: :: merge_preds {{ com merges predicates for all logical locations in LS using conservative pred join. Uses the predicate projection of qualified types. }} {{ tex \bigsqcup_{\,l \in [[LS]]} \mathrm{pred}([[G]](l)) = [[P]] }}
+  | JoinPoisons G LS = p    :: :: join_poisons {{ com join of poison flags for all logical locations in LS (projection of qualified types). }} {{ tex [[p]] = \bigsqcup_{\,l \in [[LS]]} \mathrm{poison}([[G]](l)) }}
 
 
 defns
@@ -650,8 +647,9 @@ pm ; pc ; G ; S ; L |- ref e : ref T @ { l } :> pc { no_pred } -| G1[l |-> T :> 
 % On write to any logical location in the set, invalidate all L entries whose predicates may read those locations.
 pm ; pc ; G ; S ; L |- e1 : ref T @ LS0 :> p1 { P1 } -| G1 ; L1
 pm ; pc ; G1 ; S ; L1 |- e2 : T :> p2 { P2 } -| G2 ; L2
+invalidate_deps L2 LS0 = L3
 ----------------------- :: assign
-pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[LS0 |-> T :> join pc join p1 p2 { P2 }] ; invalidate_deps L2 LS0
+pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[LS0 |-> T :> join pc join p1 p2 { P2 }] ; L3
 
 % Dereference with logical location sets.
 % A poisoned reference yields a poisoned result (predicate erased).
