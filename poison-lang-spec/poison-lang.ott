@@ -200,7 +200,7 @@ tag_valuation, tv :: 'TV_' ::= {{ com tag valuation }}
 L {{ tex \mathcal{L} }} :: L_ ::=     {{ com tag valuation environments }} {{ phantom }} {{ coq list tag_valuation }}
   | empty                   ::   :: empty {{ coq [] }}
   | L [ k |-> b using LS ] ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] \text{ using } [[LS]] ] }}
-  | JoinL L1 L2             ::   :: JoinL {{ com agreement-only join of tag environments: keeps only those tags that have identical valuations and dependency sets in both L1 and L2 }} {{ tex [[L1]] \sqcup [[L2]] }}
+  | JoinL L1 L2             ::   :: JoinL {{ com agreement-only join of tag environments: for each tag k, if both L1 and L2 map k to the same boolean b with dependency locsets LS1, LS2, keep k with deps = LS1 U LS2; otherwise (k absent on some side, or booleans disagree), drop k }} {{ tex [[L1]] \sqcup [[L2]] }}
   | indexL L idx            ::   :: indexL   {{ com indexed tag environment sequence for while-loop fixpoint }} {{ tex [[L]]^{[[idx]]} }}
   | indexedL L idx1 idx2    ::   :: indexedL {{ com doubly-indexed tag environment for while-loop }} {{ tex [[L]]_{[[idx1]]}^{[[idx2]]} }}                  
 
@@ -1114,5 +1114,4 @@ indexG G n+1 = indexG G n
 indexL L n+1 = indexL L n
 ---------------------------------------------------------------------------  :: while_std
 pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n
-
 
