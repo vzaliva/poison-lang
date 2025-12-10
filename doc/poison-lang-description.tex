@@ -856,11 +856,15 @@ Key aspects of function application:
 For general merged closure sets, the type system applies the same scheme to
 every closure alternative in the set, requires all result types to be
 signature-compatible (using the relation $T_1 \approx T_2$ described below),
-then joins the resulting memory and tag environments and poisons. If the result
-is itself a function, the closures returned by each alternative are merged into a new
-closure set and the predicate is reset to \texttt{no\_pred}. The examples
-\texttt{closure-set-basic.poison} and \texttt{closure-set-nested.poison} in
-\texttt{examples/} exercise these behaviours.
+then joins the resulting memory and tag environments and poisons. When all
+alternatives return references of the same inner type $T$ with locsets $S_i$,
+the merged result type is $\mathsf{ref}\,T\,@\,(\bigcup_i S_i)$. When
+alternatives return arrows with the same surface interface $(ST_1, ST_2)$ and
+the same purity (impure vs pure), their closure sets are merged by set union
+and their arrow-internal poison flags are joined; the outer predicate is reset
+to \texttt{no\_pred}. The examples \texttt{closure-set-basic.poison} and
+\texttt{closure-set-nested.poison} in \texttt{examples/} exercise these
+behaviours.
 
 
 Example of predicate-based de-poisoning in functions:
@@ -929,14 +933,15 @@ T_1 \approx T_2
 \]
 
 The typing rules use a \emph{signature-compatibility} relation (denoted
-$T_1 \approx T_2$) when checking branch results. For base types, this is just
-equality. For reference types, both the inner type and location must match. For
+$T_1 \approx T_2$) when checking branch results. For base types, this is exact
+equality. For reference types, the inner type must coincide; location sets may
+differ (they are merged by the join rules rather than by $\approx$). For
 function types, only the surface interface matters: $(ST_1 \rightarrow ST_2)$
-and the purity (impure arrow versus pure arrow) must agree; the internal poison
-flag and merged closure sets may differ and will be joined at the merge point.
-Impure and pure arrows are never signature-compatible with each other. This
-allows conditionals to join functions that have the same interface but arise
-from different control-flow paths and captured environments.
+and the purity (impure arrow versus pure arrow) must agree; closure sets and
+arrow-internal poison may differ and are joined separately. Impure and pure
+arrows are never signature-compatible with each other. This allows conditionals
+to join functions that have the same interface but arise from different
+control-flow paths and captured environments.
 
 The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, the branches are typed with different valuations of guard $k$ in environment $\mathcal{L}$. This enables:
 \begin{itemize}

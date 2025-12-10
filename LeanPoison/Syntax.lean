@@ -5,6 +5,8 @@ import Mathlib.Tactic
 open Std
 
 abbrev Address := Nat
+abbrev Loc := Nat
+abbrev LocSet := List Loc
 abbrev Name := String
 
 -- Surface types (corresponds to typ, ST in Ott)
@@ -448,7 +450,7 @@ inductive ETyp : Type where
   | bool : ETyp
   | unit : ETyp
   | string : ETyp
-  | ref : ETyp → Address → ETyp
+  | ref : ETyp → LocSet → ETyp
   | arrow : Typ → Typ → Poison → List FnTClosure → ETyp
   | parrow : Typ → Typ → Poison → List PFnTClosure → ETyp
 
@@ -510,7 +512,7 @@ partial def reprETyp : ETyp → Nat → Std.Format
   | ETyp.bool, _ => "ETyp.bool"
   | ETyp.unit, _ => "ETyp.unit"
   | ETyp.string , _ => "ETyp.string"
-  | ETyp.ref t l, _ => s!"ETyp.ref {reprETyp t 0} {repr l}"
+  | ETyp.ref t ls, _ => s!"ETyp.ref {reprETyp t 0} {repr ls}"
   | ETyp.arrow st1 st2 p tcls, _ =>
       let closureReprs := tcls.map (fun tcl => reprFnTClosure tcl 0)
       s!"ETyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} [{Std.Format.joinSep closureReprs (Std.Format.text ", ")}]"
@@ -593,6 +595,14 @@ instance : BEq PExpr where
 -- - The semantic meaning (sets) is preserved through deduplication
 --
 mutual
+
+-- Treat locsets as sets: deduplicate and sort before equality
+def normalizeLocSet (ls : LocSet) : LocSet :=
+  (ls.eraseDups.mergeSort (· < ·))
+
+def beqLocSet (ls1 ls2 : LocSet) : Bool :=
+  normalizeLocSet ls1 == normalizeLocSet ls2
+
 def beqFnTClosureList : List FnTClosure → List FnTClosure → Bool
   | [], [] => true
   | tcl1 :: tcls1, tcl2 :: tcls2 => beqFnTClosure tcl1 tcl2 && beqFnTClosureList tcls1 tcls2
@@ -608,7 +618,7 @@ def beqETyp : ETyp → ETyp → Bool
   | ETyp.bool, ETyp.bool => true
   | ETyp.unit, ETyp.unit => true
   | ETyp.string , ETyp.string => true
-  | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETyp t1 t2 && l1 == l2
+  | ETyp.ref t1 ls1, ETyp.ref t2 ls2 => beqETyp t1 t2 && beqLocSet ls1 ls2
   | ETyp.arrow st1 st2 p1 tcls1, ETyp.arrow st1' st2' p2 tcls2 =>
     st1 == st1' && st2 == st2' && p1 == p2 && beqFnTClosureList tcls1 tcls2
   | ETyp.parrow st1 st2 p1 tcls1, ETyp.parrow st1' st2' p2 tcls2 =>
@@ -673,7 +683,7 @@ def beqETypSignature : ETyp → ETyp → Bool
   | ETyp.bool, ETyp.bool => true
   | ETyp.unit, ETyp.unit => true
   | ETyp.string, ETyp.string => true
-  | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETypSignature t1 t2 && l1 == l2
+  | ETyp.ref t1 _, ETyp.ref t2 _ => beqETypSignature t1 t2
   | ETyp.arrow st1 st2 _ _, ETyp.arrow st1' st2' _ _ =>
     st1 == st1' && st2 == st2'
   | ETyp.parrow st1 st2 _ _, ETyp.parrow st1' st2' _ _ =>

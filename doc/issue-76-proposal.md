@@ -215,7 +215,7 @@ When dereferencing `ref T @ S` where `S = {l₁, ..., lₙ}`:
 When `matchGuard` encounters a dereference `!x` where `x : ref T @ S`:
 1. Merge predicates from all `Γ(l)` for `l ∈ S` using the merge rule above.
 2. If the merged result is `no_pred`, no match is possible.
-3. If the merged result has a tag `k` (either `guard k pred_closure ...` or `guard k`), attempt to match against that.
+3. If the merged result is `guard k pred_closure ...`, attempt to match against that. (A merged result of `guard k` is not suitable for syntactic matching and is therefore ignored by `matchGuard`.)
 
 Rationale: depoisoning is safe only if all potential locations permit depoisoning with the same tag.
 
@@ -273,5 +273,4 @@ The proof must show that unrealised locations do not break indistinguishability.
 Ghost locations (where `ρ(l)` is undefined) are excluded from this requirement.
 
 **Monotonicity:** Realisation maps grow monotonically: once `ρ(l) = a` is established, it remains fixed throughout evaluation, ensuring stable correspondence between logical and concrete locations.
-
 
