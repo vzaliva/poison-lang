@@ -1,0 +1,68 @@
+-- Location-set + arrow-type join test:
+-- functions returning references whose locsets are merged at application time
+--
+-- This test exercises the interaction between:
+--   * arrow-type joins at conditionals (closure-set merging for functions), and
+--   * reference-location-set joins when those functions are applied.
+--
+-- High-level shape:
+--   1. Allocate two clean references:
+--        safe   : ref int @ {l_safe}
+--        target : ref int @ {l_target}
+--   2. Build a function `chooseRef` via an `if`:
+--        - Branch 1: closure returns `safe` without modifying memory.
+--        - Branch 2: closure writes `frand 0` into `target` and returns it.
+--      The branches have the same surface type `unit -> ref int`, so the
+--      conditional joins them into a single arrow type whose closure set
+--      contains *both* alternatives.
+--   3. Apply `chooseRef` to `unit`. The typechecker applies *each* closure:
+--        - In the first closure, the result type is `ref int @ {l_safe}` and
+--          both heap cells remain clean.
+--        - In the second closure, the assignment through `target` marks the
+--          cell at l_target as poisoned, and the result type is
+--          `ref int @ {l_target}`.
+--      Joining these results merges the locsets to {l_safe, l_target} and
+--      joins the heap typings so that l_target is marked poisoned in Γ.
+--   4. Finally we dereference the merged reference. Because one location in
+--      its locset is poisoned, the result type must be `int` with
+--      `poison = true`.
+
+let safe = ref 0 in            -- safe   : ref int @ {l_safe}, cell at l_safe is clean
+let target = ref 0 in          -- target : ref int @ {l_target}, cell at l_target is clean
+
+-- Conditional producing a *function* whose body returns a reference.
+-- The arrow types from both branches are merged (closure sets joined),
+-- while the reference locsets are handled later when the function is applied.
+let chooseRef =
+  if true then
+    -- Branch 1: closure that just returns the always-clean `safe` reference.
+    -- Result of this branch when applied:
+    --   ref int @ {l_safe}, with both heap cells still clean.
+    fn u : unit =>
+      safe
+      : (ref int)
+  else
+    -- Branch 2: closure that *poisons* `target` through its locset and
+    -- then returns that reference.
+    -- Result of this branch when applied:
+    --   ref int @ {l_target}, and the cell at l_target is poisoned in Γ.
+    fn u : unit =>
+      (target := frand 0;      -- assignment writes poisoned data into l_target
+       target)                 -- return the poisoned reference
+      : (ref int)
+in
+
+-- Apply the merged arrow. The application typing logic:
+--   * applies both closures;
+--   * joins their result types using `joinETyps`, which merges the locsets
+--     of the returned references; and
+--   * joins the heap typings using `joinMemEnvs`, which records l_target as
+--     poisoned because one alternative writes a poisoned value there.
+let chosenRef = chooseRef unit in
+
+-- Dereference the merged-location reference.
+-- Because l_target is poisoned in Γ (even though at runtime this particular
+-- deterministic path may or may not have written to it), dereference joins
+-- poisons across the locset and produces a poisoned `int`.
+!chosenRef
+

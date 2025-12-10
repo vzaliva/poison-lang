@@ -1,0 +1,51 @@
+-- Location-set merge test 2: nested conditionals that remain clean
+--
+-- This mirrors `locset-merge-nested-poison.poison` but deliberately avoids
+-- any poisoned sources (no `frand` and no poisoned assignments).
+--
+-- The goal is to exercise the *same* locset-join mechanics while showing that
+-- if every reachable location in the merged locset stores clean data, then
+-- dereferencing the merged reference remains clean.
+--
+-- High-level shape:
+--   1. Allocate three clean references r1, r2, r3.
+--   2. First `if` selects between r1 and r2, joining locsets to {l1, l2}.
+--   3. Second `if` selects between that merged reference and r3, joining to
+--      {l1, l2, l3}.
+--   4. We immediately dereference the merged reference without ever writing
+--      poisoned data into any of l1, l2, or l3.
+--
+-- Expected typing behaviour:
+--   - All three heap cells remain clean in Γ.
+--   - The dereference joins poison flags across {l1, l2, l3}, but since they
+--     are all clean, the result type is `int` with `poison = false`.
+
+let r1 = ref 1 in              -- r1 : ref int @ {l1}, cell at l1 holds clean 1
+let r2 = ref 2 in              -- r2 : ref int @ {l2}, cell at l2 holds clean 2
+let r3 = ref 3 in              -- r3 : ref int @ {l3}, cell at l3 holds clean 3
+
+-- First join over references, as in the poisoned test:
+--   if true then r1 else r2
+-- yields firstChoice : ref int @ {l1, l2}.
+let firstChoice =
+  if true then
+    r1
+  else
+    r2
+in
+
+-- Second nested join:
+--   if false then firstChoice else r3
+-- yields secondChoice : ref int @ {l1, l2, l3}.
+let secondChoice =
+  if false then
+    firstChoice
+  else
+    r3
+in
+
+-- No poisoned writes into any of l1, l2, l3 occur anywhere in this test.
+-- The dereference must therefore be typed as clean, even though the locset
+-- has been merged twice.
+!secondChoice
+
