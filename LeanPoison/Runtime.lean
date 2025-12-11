@@ -59,7 +59,9 @@ instance : Repr Config where
   reprPrec c _ := s!"(Config {repr c.memory} <varEnv> {repr c.varEnv} pure={c.pureMode})"
 
 instance : Repr Memory where
-  reprPrec m _ := repr (m.toList : List (Address × Int))
+  reprPrec m _ :=
+    let sorted := (m.toList : List (Address × Int)).mergeSort (fun a b => a.fst < b.fst)
+    repr sorted
 
 -- Repr instance for varEnv
 instance : Repr VarEnv where
@@ -67,7 +69,9 @@ instance : Repr VarEnv where
 
 -- ToString instance for Memory
 instance : ToString Memory where
-  toString m := s!"{m.toList}"
+  toString m :=
+    let sorted := (m.toList : List (Address × Int)).mergeSort (fun a b => a.fst < b.fst)
+    s!"{sorted}"
 
 -- ToString instance for config
 instance : ToString Config where

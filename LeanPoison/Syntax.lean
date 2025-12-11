@@ -1,12 +1,50 @@
 -- Core definitions for Poison language (aligned with poison-lang.ott)
 
 import Std.Data.HashMap
+import Std.Data.HashSet
 import Mathlib.Tactic
 open Std
 
 abbrev Address := Nat
 abbrev Loc := Nat
-abbrev LocSet := List Loc
+abbrev LocSet := HashSet Loc
+
+namespace LocSet
+
+@[inline] def empty : LocSet := HashSet.emptyWithCapacity 0
+
+@[inline] def singleton (l : Loc) : LocSet :=
+  empty.insert l
+
+@[inline] def union (s₁ s₂ : LocSet) : LocSet :=
+  HashSet.union s₁ s₂
+
+@[inline] def fromList (ls : List Loc) : LocSet :=
+  HashSet.ofList ls
+
+@[inline] def fold (s : LocSet) (init : β) (f : β → Loc → β) : β :=
+  HashSet.fold (f := f) (init := init) s
+
+@[inline] def foldM [Monad m] (s : LocSet) (init : β) (f : β → Loc → m β) : m β :=
+  HashSet.foldM (f := f) (init := init) s
+
+@[inline] def any (s : LocSet) (p : Loc → Bool) : Bool :=
+  HashSet.any s p
+
+@[inline] def anyM [Monad m] (s : LocSet) (p : Loc → m Bool) : m Bool :=
+  foldM s false (fun acc l => do
+    if acc then
+      pure true
+    else
+      p l)
+
+end LocSet
+
+instance : Repr LocSet where
+  reprPrec s prec :=
+    let elems := LocSet.fold s [] (fun acc l => l :: acc)
+    let sorted := elems.mergeSort (· < ·)
+    reprPrec sorted prec
 abbrev Name := String
 
 -- Surface types (corresponds to typ, ST in Ott)
@@ -596,12 +634,8 @@ instance : BEq PExpr where
 --
 mutual
 
--- Treat locsets as sets: deduplicate and sort before equality
-def normalizeLocSet (ls : LocSet) : LocSet :=
-  (ls.eraseDups.mergeSort (· < ·))
-
 def beqLocSet (ls1 ls2 : LocSet) : Bool :=
-  normalizeLocSet ls1 == normalizeLocSet ls2
+  ls1 == ls2
 
 def beqFnTClosureList : List FnTClosure → List FnTClosure → Bool
   | [], [] => true

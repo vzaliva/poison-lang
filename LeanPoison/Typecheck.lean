@@ -78,7 +78,7 @@ def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
       | fuel + 1 =>
         match pe with
         | PExpr.var x =>
-          if boundVars.contains x then return []  -- Bound variable, not free
+          if boundVars.contains x then return LocSet.empty  -- Bound variable, not free
           else
             match env.find? (fun (name, _) => name == x) with
             | some (_, qt) =>
@@ -90,38 +90,38 @@ def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
                 | [PFnTClosure.regular argName body varEnv'] =>
                     -- Single closure, recurse into its body
                     extractDepsFromPExpr body (argName :: boundVars) varEnv' fuel
-                | _ => return []  -- Multiple or extern closures: conservative fallback
-              | _ => return []  -- Other types don't read from heap
+                | _ => return LocSet.empty  -- Multiple or extern closures: conservative fallback
+              | _ => return LocSet.empty  -- Other types don't read from heap
             | none => throw s!"Variable {x} not found in environment while extracting dependencies"
         | PExpr.deref pe' => extractDepsFromPExpr pe' boundVars env fuel
         | PExpr.op pe1 _ pe2 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
-          return concat_noDups deps1 deps2
+          return LocSet.union deps1 deps2
         | PExpr.unaryop _ pe' => extractDepsFromPExpr pe' boundVars env fuel
         | PExpr.ite pe1 pe2 pe3 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
           let deps3 ← extractDepsFromPExpr pe3 boundVars env fuel
-          return concat_noDups (concat_noDups deps1 deps2) deps3
+          return LocSet.union (LocSet.union deps1 deps2) deps3
         | PExpr.app pe1 pe2 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
-          return concat_noDups deps1 deps2
+          return LocSet.union deps1 deps2
         | PExpr.vlet x pe1 pe2 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 (x :: boundVars) env fuel
-          return concat_noDups deps1 deps2
-        | _ => return []  -- literals, unit, etc. don't read from heap
+          return LocSet.union deps1 deps2
+        | _ => return LocSet.empty  -- literals, unit, etc. don't read from heap
 
     -- Start with the bound parameter in the bound variables list
     extractDepsFromPExpr pred_body [arg_name] var_env defaultFuel
   | Predicate.guardOnly _tag =>
     -- Guard-only predicate with no body, no dependencies
-    return []
+    return LocSet.empty
   | Predicate.noPred =>
     -- No predicate, no dependencies
-    return []
+    return LocSet.empty
 
 -- Allocate a fresh location and return it along with updated typing context
 def freshTLoc (ctx : TypeContext): (Loc × TypeContext) :=
@@ -222,7 +222,7 @@ def joinETyps (t1 t2 : ETyp) (_p1 _p2 : Poison) : ETyp :=
   match t1, t2 with
   | ETyp.ref inner1 ls1, ETyp.ref inner2 ls2 =>
       if beqETypSignature inner1 inner2 then
-        ETyp.ref inner1 (concat_noDups ls1 ls2)
+        ETyp.ref inner1 (LocSet.union ls1 ls2)
       else
         t1
   | ETyp.arrow st1 st2 p1' tcls1, ETyp.arrow st1' st2' p2' tcls2 =>
@@ -252,7 +252,7 @@ def joinTagEnvs (env1 env2 : TagEnv) : TagEnv :=
     | some ⟨b1, deps1⟩, some ⟨b2, deps2⟩ =>
       if b1 == b2 then
         -- Agreement: keep the tag with union of dependencies
-        some ⟨b1, concat_noDups deps1 deps2⟩
+        some ⟨b1, LocSet.union deps1 deps2⟩
       else
         -- Disagreement: drop the tag (unknown)
         none
@@ -459,28 +459,27 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
         if qt.poison then
           pure acc
         else
-          let ls := ls.eraseDups -- not necessary, but harmless
           if ls.isEmpty then throw "Reference locset is empty in matchGuard" else
           let arg := PExpr.deref (PExpr.var name)
           -- Merge predicates across locset, error if a referenced location is missing
-          -- Must start with first element's predicate, not noPred (joinPredicates noPred P = noPred)
-          let merged ← match ls with
-            | [] => throw "Reference locset is empty in matchGuard"
-            | firstL :: restLs => do
-                let firstQt ← match G.get? firstL with
-                  | some qt => pure qt
-                  | none => throw s!"Location {firstL} not found in memory environment during matchGuard"
-                restLs.foldlM (init := firstQt.pred) (fun p l => do
-                  match G.get? l with
-                  | some memQt => pure (joinPredicates p memQt.pred)
-                  | none => throw s!"Location {l} not found in memory environment during matchGuard")
+          let merged? ←
+            LocSet.foldM ls (init := (none : Option Predicate)) (fun accPred? l => do
+              match G.get? l with
+              | some memQt =>
+                  let nextPred :=
+                    match accPred? with
+                    | none => memQt.pred
+                    | some p => joinPredicates p memQt.pred
+                  pure (some nextPred)
+              | none => throw s!"Location {l} not found in memory environment during matchGuard")
           -- Collect deps across locset
-          let depsMerged ← ls.foldlM (init := ([] : LocSet)) (fun dacc l => do
+          let depsMerged ← LocSet.foldM ls (init := LocSet.empty) (fun dacc l => do
             match G.get? l with
             | some memQt =>
                 let deps ← extractDepsFromPred memQt.pred
-                pure (concat_noDups dacc (concat_noDups [l] deps))
+                pure (LocSet.union dacc (LocSet.union (LocSet.singleton l) deps))
             | none => throw s!"Location {l} not found in memory environment during matchGuard")
+          let merged := merged?.getD Predicate.noPred
           match merged with
           | Predicate.guardClosure tag arg_name pred_body var_env =>
               if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) defaultFuel then
@@ -494,7 +493,7 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
   match allMatches with
   | [(tag, deps)] => return (tag, deps)
   | [] => throw "No matching guard found for condition"
-  | _ => throw s!"Multiple matching guards found for condition: {allMatches}"
+  | _ => throw s!"Multiple matching guards found for condition: {repr allMatches}"
 
 
 
@@ -566,7 +565,7 @@ def typecheckLocation (ctx : TypeContext) (l : Loc) : TypecheckM TypeResult := d
   match ctx.memEnv.get? l with
   | some qt =>
     let ⟨etyp, _p, pred ⟩ := qt
-    let refTyp := ETyp.ref etyp [l]
+    let refTyp := ETyp.ref etyp (LocSet.singleton l)
     let qt' : QTyp := ⟨refTyp, false, pred⟩  -- clean, preserve predicate
     return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
   | none => throw s!"Location {l} not found in memory environment"
@@ -649,7 +648,7 @@ def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     | Typ.ref t => do
         let (l, ctx') := freshTLoc ctx
         let (innerQt, ctx'') ← surfaceSpecToQTyp t false SyntaxPredicate.noPred varEnv ctx'
-        return (ETyp.ref innerQt.etyp [l], ctx'')
+        return (ETyp.ref innerQt.etyp (LocSet.singleton l), ctx'')
     | Typ.arrow _ _ => throw "Arrow types not expected in extern specs" : TypecheckM (ETyp × TypeContext))
 
   let pred' ← attachVarEnvToPredicate pred varEnv
@@ -1007,7 +1006,7 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
     let storedQt : QTyp := ⟨etyp, storedPoison, pred⟩
     let memEnv' := updateMemEnv result'.memEnv' l storedQt
 
-    let qt : QTyp := ⟨ETyp.ref etyp [l], ctx.pc, Predicate.noPred⟩
+    let qt : QTyp := ⟨ETyp.ref etyp (LocSet.singleton l), ctx.pc, Predicate.noPred⟩
     return { qualType := qt, memEnv' := memEnv', tagEnv' := result'.tagEnv', nextLoc' := result'.nextLoc', nextTag' := result'.nextTag' }
 termination_by fuel
 
@@ -1025,7 +1024,6 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
     match etyp1 with
     | ETyp.ref t ls =>
-      let ls := ls.eraseDups
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
@@ -1033,7 +1031,7 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
 
       let storedPoison := joinPoison ctx.pc (joinPoison p1 p2)
       let storedQt : QTyp := ⟨t, storedPoison, pred2⟩
-      let memEnv' := ls.foldl (fun env l => updateMemEnv env l storedQt) result2.memEnv'
+      let memEnv' := LocSet.fold ls result2.memEnv' (fun env l => updateMemEnv env l storedQt)
 
       let resultPoison := joinPoison ctx.pc p1
       let qt : QTyp := ⟨ETyp.unit, resultPoison, Predicate.noPred⟩
@@ -1053,27 +1051,25 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
     let ⟨etyp, poisonRef, _predRef ⟩ := result.qualType
     match etyp with
     | ETyp.ref t ls =>
-      let ls := ls.eraseDups
       if ls.isEmpty then
         throw "Reference locset is empty"
       -- Fetch all referenced memory cells and ensure their types are compatible
-      let memEntries ←
-        ls.mapM (fun l =>
+      let (joinedCellPoison, mergedPred?) ←
+        LocSet.foldM ls (init := (false, (none : Option Predicate))) (fun (accPoison, accPred?) l => do
           match result.memEnv'.get? l with
           | some qt =>
               if beqETypSignature qt.etyp t then
-                pure qt
+                let nextPoison := joinPoison accPoison qt.poison
+                let nextPred? :=
+                  match accPred? with
+                  | none => some qt.pred
+                  | some p => some (joinPredicates p qt.pred)
+                pure (nextPoison, nextPred?)
               else
                 throw s!"Type mismatch in dereference at {l}: {repr qt.etyp} ≠ {repr t}"
           | none => throw s!"Location {l} not found in memory environment")
 
-      -- Join poisons and predicates across the locset
-      let joinedCellPoison := memEntries.foldl (fun acc qt => joinPoison acc qt.poison) false
-      -- Start with first element's predicate to avoid losing predicates
-      -- (joinPredicates noPred P = noPred, so starting with noPred would lose all predicates)
-      let mergedPred := match memEntries with
-        | [] => Predicate.noPred
-        | first :: rest => rest.foldl (fun acc qt => joinPredicates acc qt.pred) first.pred
+      let mergedPred := mergedPred?.getD Predicate.noPred
 
       if poisonRef then
         -- Reference itself poisoned: ignore predicates, return poisoned
@@ -1167,7 +1163,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
                   | ETyp.ref _t ls =>
                       let effectQt ← effectSpecToQTyp effect.poison effect.pred unifiedEnv
                       let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
-                      memEnv := ls.foldl (fun acc l => acc.insert l storedQt) memEnv
+                      memEnv := LocSet.fold ls memEnv (fun acc l => acc.insert l storedQt)
                   | _ => throw s!"Effect target {v} must be a reference type"
               | none => throw s!"Effect target {v} not found in environment"
           | EffectTarget.returnValue => pure ()
@@ -1187,7 +1183,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
                 | some eff =>
                     let effectQt ← effectSpecToQTyp eff.poison eff.pred unifiedEnv
                     let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
-                    memEnv := ls.foldl (fun acc l => acc.insert l storedQt) memEnv
+                    memEnv := LocSet.fold ls memEnv (fun acc l => acc.insert l storedQt)
                 | none => pure ()
             | _ =>
                 let hasReturnEffect := effects.any (fun eff =>
