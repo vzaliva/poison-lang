@@ -3,6 +3,8 @@
 import Std.Data.HashMap
 import Std.Data.HashSet
 import Mathlib.Tactic
+import Batteries.Lean.HashSet
+
 open Std
 
 abbrev Address := Nat
@@ -634,9 +636,6 @@ instance : BEq PExpr where
 --
 mutual
 
-def beqLocSet (ls1 ls2 : LocSet) : Bool :=
-  ls1 == ls2
-
 def beqFnTClosureList : List FnTClosure → List FnTClosure → Bool
   | [], [] => true
   | tcl1 :: tcls1, tcl2 :: tcls2 => beqFnTClosure tcl1 tcl2 && beqFnTClosureList tcls1 tcls2
@@ -652,7 +651,7 @@ def beqETyp : ETyp → ETyp → Bool
   | ETyp.bool, ETyp.bool => true
   | ETyp.unit, ETyp.unit => true
   | ETyp.string , ETyp.string => true
-  | ETyp.ref t1 ls1, ETyp.ref t2 ls2 => beqETyp t1 t2 && beqLocSet ls1 ls2
+  | ETyp.ref t1 ls1, ETyp.ref t2 ls2 => beqETyp t1 t2 && ls1 == ls2
   | ETyp.arrow st1 st2 p1 tcls1, ETyp.arrow st1' st2' p2 tcls2 =>
     st1 == st1' && st2 == st2' && p1 == p2 && beqFnTClosureList tcls1 tcls2
   | ETyp.parrow st1 st2 p1 tcls1, ETyp.parrow st1' st2' p2 tcls2 =>

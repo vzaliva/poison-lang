@@ -34,6 +34,9 @@
 -- equality is sound (only equal values compare to true) and reflexive (every
 -- value compares equal to itself).
 
+import Mathlib
+import Batteries.Lean.HashSet
+import Std.Data.HashSet.Lemmas
 import LeanPoison.Syntax
 
 -- Increase heartbeat limit for large soundness proofs
@@ -42,6 +45,34 @@ set_option maxHeartbeats 1000000
 -- ============================================================================
 -- Proofs for types defined in Syntax.lean
 -- ============================================================================
+
+
+-- Known as Std.HashSet.all_toList in newer versions of stdlib starting from v4.26.0-rc1
+-- For now we will use an axiom as a placeholder until we can update to the newer version
+axiom all_toList [BEq α] [Hashable α] [LawfulHashable α] [EquivBEq α] {p : α → Bool} :
+    List.all (Std.HashSet.toList m) p = Std.HashSet.all m p
+
+theorem LocSet.beq_refl (ls : LocSet) : BEq.beq ls ls = true := by
+  simp only [BEq.beq]
+  rw [Bool.and_eq_true_iff]
+  constructor <;> (
+    rw [<- all_toList]
+    simp only [<- Std.HashSet.contains_toList]
+    simp
+  )
+
+theorem LocSet.rfl (ls : LocSet) : ls = ls := by
+  rfl
+
+theorem LocSet.sound (a b : LocSet) : BEq.beq a b = true → a = b := by
+  sorry
+
+instance : LawfulBEq LocSet where
+  eq_of_beq {a b} := LocSet.sound a b
+  rfl {a} := LocSet.beq_refl a
+
+instance : DecidableEq LocSet := fun a b =>
+  decidable_of_iff (a == b) ⟨LocSet.sound a b, fun h => h ▸ LocSet.beq_refl a⟩
 
 -- Typ reflexivity proof
 private theorem Typ_beq_refl (t : Typ) : BEq.beq t t = true := by
