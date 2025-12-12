@@ -65,6 +65,11 @@ theorem LocSet.rfl (ls : LocSet) : ls = ls := by
   rfl
 
 theorem LocSet.sound (a b : LocSet) : BEq.beq a b = true → a = b := by
+  simp only [BEq.beq]
+  rw [Bool.and_eq_true_iff]
+  intro ⟨h1, h2⟩
+  rw [<- all_toList] at h1 h2
+  simp only [<- Std.HashSet.contains_toList] at h1 h2
   sorry
 
 instance : LawfulBEq LocSet where
