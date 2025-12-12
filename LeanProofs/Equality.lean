@@ -35,9 +35,10 @@
 -- value compares equal to itself).
 
 import Mathlib
-import Batteries.Lean.HashSet
-import Std.Data.HashSet.Lemmas
+import Std.Data.ExtTreeSet.Lemmas
 import LeanPoison.Syntax
+
+open Std
 
 -- Increase heartbeat limit for large soundness proofs
 set_option maxHeartbeats 1000000
@@ -47,30 +48,22 @@ set_option maxHeartbeats 1000000
 -- ============================================================================
 
 
--- Known as Std.HashSet.all_toList in newer versions of stdlib starting from v4.26.0-rc1
--- For now we will use an axiom as a placeholder until we can update to the newer version
-axiom all_toList [BEq α] [Hashable α] [LawfulHashable α] [EquivBEq α] {p : α → Bool} :
-    List.all (Std.HashSet.toList m) p = Std.HashSet.all m p
-
 theorem LocSet.beq_refl (ls : LocSet) : BEq.beq ls ls = true := by
-  simp only [BEq.beq]
-  rw [Bool.and_eq_true_iff]
-  constructor <;> (
-    rw [<- all_toList]
-    simp only [<- Std.HashSet.contains_toList]
-    simp
-  )
+  -- Reduce to list reflexivity on the underlying toList representation
+  have h : (ExtTreeSet.toList ls == ExtTreeSet.toList ls) = true :=
+    ReflBEq.rfl (a := ExtTreeSet.toList ls)
+  simpa [BEq.beq] using h
 
 theorem LocSet.rfl (ls : LocSet) : ls = ls := by
   rfl
 
 theorem LocSet.sound (a b : LocSet) : BEq.beq a b = true → a = b := by
-  simp only [BEq.beq]
-  rw [Bool.and_eq_true_iff]
-  intro ⟨h1, h2⟩
-  rw [<- all_toList] at h1 h2
-  simp only [<- Std.HashSet.contains_toList] at h1 h2
-  sorry
+  intro h
+  have hList : ExtTreeSet.toList a = ExtTreeSet.toList b := by
+    have h' : (ExtTreeSet.toList a == ExtTreeSet.toList b) = true := by
+      simpa [BEq.beq] using h
+    exact LawfulBEq.eq_of_beq (a := ExtTreeSet.toList a) (b := ExtTreeSet.toList b) h'
+  exact (ExtTreeSet.toList_inj (t₁ := a) (t₂ := b)).1 hList
 
 instance : LawfulBEq LocSet where
   eq_of_beq {a b} := LocSet.sound a b
@@ -1408,7 +1401,7 @@ private theorem beqETyp_sound (a b : ETyp) : (a == b) = true → a = b := by
     simp only [BEq.beq, beqETyp, Bool.and_eq_true] at h
     obtain ⟨h_t, h_l⟩ := h
     have : t1 = t2 := beqETyp_sound t1 t2 h_t
-    have : l1 = l2 := of_decide_eq_true h_l
+    have : l1 = l2 := LocSet.sound l1 l2 h_l
     subst_vars
     rfl
   case arrow st1 st2 p1 tcl1 st1' st2' p2 tcl2 =>

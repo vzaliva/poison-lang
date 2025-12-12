@@ -1,39 +1,38 @@
 -- Core definitions for Poison language (aligned with poison-lang.ott)
 
 import Std.Data.HashMap
-import Std.Data.HashSet
+import Std.Data.ExtTreeSet
 import Mathlib.Tactic
-import Batteries.Lean.HashSet
 
 open Std
 
 abbrev Address := Nat
 abbrev Loc := Nat
-abbrev LocSet := HashSet Loc
+abbrev LocSet := ExtTreeSet Loc
 
 namespace LocSet
 
-@[inline] def empty : LocSet := HashSet.emptyWithCapacity 0
+@[inline] def empty : LocSet := ExtTreeSet.empty
 
 @[inline] def singleton (l : Loc) : LocSet :=
-  empty.insert l
+  (∅ : LocSet).insert l
 
 @[inline] def union (s₁ s₂ : LocSet) : LocSet :=
-  HashSet.union s₁ s₂
+  ExtTreeSet.merge s₁ s₂
 
 @[inline] def fromList (ls : List Loc) : LocSet :=
-  HashSet.ofList ls
+  ExtTreeSet.ofList ls
 
 @[inline] def fold (s : LocSet) (init : β) (f : β → Loc → β) : β :=
-  HashSet.fold (f := f) (init := init) s
+  ExtTreeSet.foldl (f := fun acc l => f acc l) (init := init) s
 
-@[inline] def foldM [Monad m] (s : LocSet) (init : β) (f : β → Loc → m β) : m β :=
-  HashSet.foldM (f := f) (init := init) s
+@[inline] def foldM [Monad m] [LawfulMonad m] (s : LocSet) (init : β) (f : β → Loc → m β) : m β :=
+  ExtTreeSet.foldlM (f := fun acc l => f acc l) (init := init) s
 
 @[inline] def any (s : LocSet) (p : Loc → Bool) : Bool :=
-  HashSet.any s p
+  ExtTreeSet.any s p
 
-@[inline] def anyM [Monad m] (s : LocSet) (p : Loc → m Bool) : m Bool :=
+@[inline] def anyM [Monad m] [LawfulMonad m] (s : LocSet) (p : Loc → m Bool) : m Bool :=
   foldM s false (fun acc l => do
     if acc then
       pure true
@@ -42,11 +41,12 @@ namespace LocSet
 
 end LocSet
 
+instance : BEq LocSet where
+  beq s t := (ExtTreeSet.toList s) == (ExtTreeSet.toList t)
+
 instance : Repr LocSet where
   reprPrec s prec :=
-    let elems := LocSet.fold s [] (fun acc l => l :: acc)
-    let sorted := elems.mergeSort (· < ·)
-    reprPrec sorted prec
+    reprPrec (ExtTreeSet.toList s) prec
 abbrev Name := String
 
 -- Surface types (corresponds to typ, ST in Ott)
