@@ -1027,7 +1027,7 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
-      if not (beqETypSignature t etyp2) then throw "Type mismatch in assignment"
+      if not (t == etyp2) then throw "Type mismatch in assignment"
 
       let storedPoison := joinPoison ctx.pc (joinPoison p1 p2)
       let storedQt : QTyp := ⟨t, storedPoison, pred2⟩
@@ -1058,7 +1058,7 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
         LocSet.foldM ls (init := (false, (none : Option Predicate))) (fun (accPoison, accPred?) l => do
           match result.memEnv'.get? l with
           | some qt =>
-              if beqETypSignature qt.etyp t then
+              if qt.etyp == t then
                 let nextPoison := joinPoison accPoison qt.poison
                 let nextPred? :=
                   match accPred? with
