@@ -435,12 +435,25 @@ def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : 
 -- Two initial states agree on a critical location under a given regime.
 -- Refactored to use agreeValueUnder
 --
--- Note on the two “option layers” (Issue #76):
+-- Note on the two "option layers" (Issue #76):
 -- (1) `θ.lookup l` says whether logical `l` is realised in this run.
 -- (2) `μ.lookup a` says whether concrete address `a` exists in the heap.
--- We model “unallocated/ghost in this run” via (1) being `none` (constructor `both_unrealized`),
--- not via (2) being `none`. The ill-formed case “`θ(l)=some a` but `μ.lookup a = none`” is
+-- We model "unallocated/ghost in this run" via (1) being `none` (constructor `both_unrealized`),
+-- not via (2) being `none`. The ill-formed case "`θ(l)=some a` but `μ.lookup a = none`" is
 -- ruled out by well-formedness premises such as `runtimeInstantiatesCtx` / `inputsConformSpec`.
+--
+-- Note on `both_unrealized` (Issue #76): This constructor handles the case where a logical
+-- location exists in Γ (the typing context) but is not realised in either run's realisation
+-- map. For *critical input* locations, this case is ruled out by `inputsConformSpec` which
+-- requires all locations in the input spec to be realised. Thus, for `agreeOnCriticalInputsUnderRegimeSpec`,
+-- only `agree_values` applies in practice. The `both_unrealized` constructor is retained for:
+-- (a) Completeness and potential future extensions where ghost locations may be relevant.
+-- (b) Non-critical locations that may appear in Γ but are not in the input spec.
+--
+-- Note: Asymmetric realisation (one run realises, the other doesn't) is not handled here.
+-- For critical inputs, `inputsConformSpec` ensures both runs realise all specified locations.
+-- For non-critical locations, asymmetric realisation would indicate different control flow
+-- paths, which is outside the scope of critical input agreement.
 inductive agreeLocUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
     (θ₁ θ₂ : RealizationMap)
     : (Loc × QTyp) → Prop where
