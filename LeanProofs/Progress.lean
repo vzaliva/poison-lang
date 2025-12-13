@@ -21,5 +21,6 @@ import LeanProofs.TypeSafety
 def Progress (e : Expr) (ctx : TypeContext) : Prop :=
   (∃ (fuel : Nat) (res : TypeResult), typecheck ctx e fuel = .ok res) →
   ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (l : Address) (pm : Bool),
+    wfRealizationMap θ →
     runtimeInstantiatesCtx ctx μ ρ θ →
     ¬stuck e { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm }

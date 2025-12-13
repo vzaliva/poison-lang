@@ -53,7 +53,23 @@ namespace RealizationMap
   def extendsMap (θ₀ θ₁ : RealizationMap) : Prop :=
     ∀ l a, θ₀.lookup l = some a → θ₁.lookup l = some a
 
+  /-- `θ` is injective: distinct logical locations map to distinct addresses. -/
+  def isInjective (θ : RealizationMap) : Prop :=
+    ∀ l₁ l₂ a, θ.lookup l₁ = some a → θ.lookup l₂ = some a → l₁ = l₂
+
 end RealizationMap
+
+/-- A realisation map is well-formed if it is injective.
+    This predicate can be extended with additional conditions as needed (Issue #76). -/
+def wfRealizationMap (θ : RealizationMap) : Prop :=
+  θ.isInjective
+
+/-- θ₁ is a well-formed extension of θ₀: it agrees on existing locations
+    and preserves injectivity (if θ₀ is injective, so is θ₁).
+    This captures that extending a realisation map during evaluation
+    preserves well-formedness (Issue #76). -/
+def wfExtendsMap (θ₀ θ₁ : RealizationMap) : Prop :=
+  θ₀.extendsMap θ₁ ∧ (wfRealizationMap θ₀ → wfRealizationMap θ₁)
 
 -- Proof-level typing relation for runtime values.
 --
@@ -92,9 +108,10 @@ def runtimeInstantiatesCtx (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ :
 -- Helper lemma: if a variable is in the typing context and runtime instantiates the context,
 -- then the variable lookup returns a value with the correct enriched type
 lemma var_has_correct_type (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (x : Name) (qt : QTyp) :
+  wfRealizationMap θ →
   runtimeInstantiatesCtx ctx μ ρ θ →
   ctx.varEnv.lookup x = some qt →
   ∃ v, ρ.lookup x = some v ∧ valueHasETyp θ v qt.etyp := by
-  intro ⟨_, h_vars⟩ h_lookup
+  intro _h_wf ⟨_, h_vars⟩ h_lookup
   obtain ⟨v, h_v, h_typ⟩ := h_vars h_lookup
   exact ⟨v, h_v, h_typ⟩
