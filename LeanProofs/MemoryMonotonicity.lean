@@ -1,7 +1,6 @@
 -- Formal properties of the poison language: MemoryMonotonicity
 
 import LeanPoison.Syntax
-import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.Equality

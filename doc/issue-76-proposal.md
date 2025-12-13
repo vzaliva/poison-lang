@@ -39,7 +39,7 @@ This proposal distinguishes two kinds of heap identifiers:
 
 **OTT migration note:** The current OTT uses `l` for concrete addresses. Implementation requires renaming the existing `location, l` metavar to `address, a`, then introducing a new `location, l` metavar for logical locations.
 
-We use `S` for sets of logical locations (e.g., `{l₁, l₂}`), `ρ` for the realisation map (`l ⇀ a`), and `Γ` for the logical memory typing environment (`l ⇀ Q`).
+We use `S` for sets of logical locations (e.g., `{l₁, l₂}`), `θ` for the realisation map (`l ⇀ a`), and `Γ` for the logical memory typing environment (`l ⇀ Q`).
 
 ### 2.1 Logical memory locations
 
@@ -52,7 +52,7 @@ Instead of writing `ref T @ 0`, `ref T @ 1`, etc. with concrete addresses in typ
   * `Γ : l ⇀ Q` - logical memory typing environment, mapping logical locations to qualified types (the key changed from `a` to `l` per this proposal).
   * `σ : Var ⇀ Q` - variable typing environment (unchanged).
 
-At runtime, we still allocate **concrete addresses** `a ∈ Address`. We relate logical locations to concrete addresses via a **realisation map** `ρ : l ⇀ a`, a proof-level construct that connects the typing derivation to a particular execution (see Section 4 for details).
+At runtime, we still allocate **concrete addresses** `a ∈ Address`. We relate logical locations to concrete addresses via a **realisation map** `θ : l ⇀ a`, a proof-level construct that connects the typing derivation to a particular execution (see Section 4 for details).
 
 This decouples typing from the exact heap layout: types talk about logical locations; each run separately realises some of them as concrete addresses. Logical locations that arise only on paths not taken in a particular execution remain unrealised (ghost locations).
 
@@ -86,18 +86,18 @@ This section describes the **proof-level** relationship between typechecking and
 
 * `Γ : l ⇀ Q` - from the typing derivation (logical locations to qualified types)
 * `μ : a ⇀ Value` - from runtime (concrete addresses to values)
-* `ρ : l ⇀ a` - the realisation map connecting them
+* `θ : l ⇀ a` - the realisation map connecting them
 
 We say that a run **realises** a typing context (with logical memory typing `Γ` and variable typing `σ`) if:
 
-1. For every logical `l` with `ρ(l) = a` defined, the heap has a cell `μ(a)` whose qualified type matches `Γ(l)`.
-2. Dereferences and updates through values of type `ref T @ S` only ever use concrete addresses `a = ρ(l)` for some `l ∈ S`.
-3. Logical locations may exist in `Γ` without a corresponding `ρ(l)` (paths not taken); they are simply unused ghosts in that run and do not affect observable behaviour.
+1. For every logical `l` with `θ(l) = a` defined, the heap has a cell `μ(a)` whose qualified type matches `Γ(l)`.
+2. Dereferences and updates through values of type `ref T @ S` only ever use concrete addresses `a = θ(l)` for some `l ∈ S`.
+3. Logical locations may exist in `Γ` without a corresponding `θ(l)` (paths not taken); they are simply unused ghosts in that run and do not affect observable behaviour.
 
-The realisation map `ρ` satisfies two key properties:
+The realisation map `θ` satisfies two key properties:
 
-* **Injectivity:** Distinct logical locations map to distinct concrete addresses (`l₁ ≠ l₂ ⇒ ρ(l₁) ≠ ρ(l₂)` when both are defined).
-* **Monotonicity:** Once `ρ(l) = a` is established, it remains fixed throughout evaluation.
+* **Injectivity:** Distinct logical locations map to distinct concrete addresses (`l₁ ≠ l₂ ⇒ θ(l₁) ≠ θ(l₂)` when both are defined).
+* **Monotonicity:** Once `θ(l) = a` is established, it remains fixed throughout evaluation.
 
 ## 3. Impact on typing rules (high-level)
 
@@ -105,9 +105,9 @@ The realisation map `ρ` satisfies two key properties:
 
 The `ref` typing rule allocates a fresh logical location `l`, producing type `ref T @ {l}` and extending `Γ[l ↦ Q]`. 
 
-At runtime, the big-step rule `b_ref` chooses a fresh concrete address `a`, and the realisation map is extended `ρ(l) := a`.
+At runtime, the big-step rule `b_ref` chooses a fresh concrete address `a`, and the realisation map is extended `θ(l) := a`.
 
-**Freshness tracking:** The typechecker's `nextLoc` counter generates fresh logical location identifiers. The big-step evaluator's `nextLoc` counter generates fresh concrete addresses. These are independent: the typechecker produces logical names, the runtime produces physical addresses, and `ρ` connects them.
+**Freshness tracking:** The typechecker's `nextLoc` counter generates fresh logical location identifiers. The big-step evaluator's `nextLoc` counter generates fresh concrete addresses. These are independent: the typechecker produces logical names, the runtime produces physical addresses, and `θ` connects them.
 
 ### 3.2 Conditionals and joins
 
@@ -235,16 +235,16 @@ The existing non-interference property (parameterised by guard regimes, critical
 
 ### 4.1 Adding realisation maps
 
-The non-interference property compares two runs. With logical locations, each run maintains its own **realisation map** `ρ₁, ρ₂ : l ⇀ a` linking logical locations to concrete heap addresses.
+The non-interference property compares two runs. With logical locations, each run maintains its own **realisation map** `θ₁, θ₂ : l ⇀ a` linking logical locations to concrete heap addresses.
 
-**Key modification:** Where the existing formulation compares heap cells directly (`μ₁[a]` vs `μ₂[a]` for concrete address `a`), the adapted formulation compares via realisation maps: `μ₁[ρ₁(l)]` vs `μ₂[ρ₂(l)]` for logical location `l`.
+**Key modification:** Where the existing formulation compares heap cells directly (`μ₁[a]` vs `μ₂[a]` for concrete address `a`), the adapted formulation compares via realisation maps: `μ₁[θ₁(l)]` vs `μ₂[θ₂(l)]` for logical location `l`.
 
 **Key insight:** The two runs may have different realisation maps. One run might realise `l` at address `0x100` whilst the other realises it at `0x200`, or one run might realise `l` whilst the other does not (branch-dependent allocation). Non-interference does not require identical realisation-only that observable outputs agree.
 
 ### 4.2 Location sets and indistinguishability
 
 For reference values of type `ref T @ S`:
-- In each run, the value is a concrete address `aᵢ` such that `aᵢ = ρᵢ(l)` for some `l ∈ S`.
+- In each run, the value is a concrete address `aᵢ` such that `aᵢ = θᵢ(l)` for some `l ∈ S`.
 - The *choice* of `l` may differ between runs, as long as both choices are permitted by `S`.
 - Observable locations store indistinguishable values (respecting the guard regime).
 
@@ -260,7 +260,7 @@ If `c` evaluates differently in the two runs, one might return a pointer to `l�
 ### 4.3 Ghost locations
 
 Logical locations that are never realised in a run (allocation on an untaken branch) are **ghost locations**:
-- They appear in `Γ` but have no `ρ(l)` entry.
+- They appear in `Γ` but have no `θ(l)` entry.
 - No heap cell corresponds to them; no pointer can reference them.
 - They do not affect observable behaviour.
 
@@ -268,9 +268,8 @@ The proof must show that unrealised locations do not break indistinguishability.
 
 **Runtime instantiation predicate:** The existing `runtimeInstantiatesCtx` predicate must be adapted. Instead of requiring all locations in `Γ` to exist in the heap, it should require only *realised* locations:
 
-> For every logical `l ∈ dom(Γ)` with `ρ(l)` defined, the heap `μ` contains `ρ(l)` with a value matching `Γ(l)`.
+> For every logical `l ∈ dom(Γ)` with `θ(l)` defined, the heap `μ` contains `θ(l)` with a value matching `Γ(l)`.
 
-Ghost locations (where `ρ(l)` is undefined) are excluded from this requirement.
+Ghost locations (where `θ(l)` is undefined) are excluded from this requirement.
 
-**Monotonicity:** Realisation maps grow monotonically: once `ρ(l) = a` is established, it remains fixed throughout evaluation, ensuring stable correspondence between logical and concrete locations.
-
+**Monotonicity:** Realisation maps grow monotonically: once `θ(l) = a` is established, it remains fixed throughout evaluation, ensuring stable correspondence between logical and concrete locations.

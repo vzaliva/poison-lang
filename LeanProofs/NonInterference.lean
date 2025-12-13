@@ -15,18 +15,18 @@ open Std
 -- Non-Interference (semantic formulation)
 -- ================================================================
 
-abbrev MemoryETypEnv := HashMap Address ETyp
+abbrev MemoryETypEnv := HashMap Loc ETyp
 namespace MemoryETypEnv
 
-  @[inline] def lookup (m : MemoryETypEnv) (a : Address) : Option ETyp :=
-    m.get? a
+  @[inline] def lookup (m : MemoryETypEnv) (l : Loc) : Option ETyp :=
+    m.get? l
 
-  @[inline] def update (m : MemoryETypEnv) (a : Address) (qt : ETyp) : MemoryETypEnv :=
-    m.insert a qt
+  @[inline] def update (m : MemoryETypEnv) (l : Loc) (qt : ETyp) : MemoryETypEnv :=
+    m.insert l qt
 
-  /-- `m` contains a binding for `a`. -/
-  def hasKey (m : MemoryETypEnv) (a : Address) : Prop :=
-    m.contains a
+  /-- `m` contains a binding for `l`. -/
+  def hasKey (m : MemoryETypEnv) (l : Loc) : Prop :=
+    m.contains l
 
 end MemoryETypEnv
 
@@ -96,18 +96,19 @@ inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
 -- Abstract predicate satisfaction: does a predicate with the given tag hold
 -- for a value in a given memory state?
 --
--- This is left abstract (as a parameter) to avoid the environment capture bug.
--- The concrete meaning of predicates is constrained by axioms that connect
--- to the type system's mechanisms (syntactic matching, dependency tracking).
+-- This is left abstract (as a parameter) to avoid committing the NI proofs to a
+-- concrete semantics for predicate closures / captured environments.
+-- Instead, we assume a small set of laws (`PredSatLaws`) that connect this
+-- abstract satisfaction relation to the type system's mechanisms (syntactic
+-- matching, dependency tracking).
 --
 -- Note: No VarEnv parameter because captured variables are encoded in the tag's identity.
 -- Memory is needed because predicates can dereference heap locations.
 abbrev PredSat := Tag → Memory → Value → Prop
 
--- Axioms that constrain the abstract PredSat relation
--- These are universal properties that must hold for ANY tag, including those
--- generated during execution (e.g., by frand or extern functions)
-structure SatisfiesAxioms (predSat : PredSat) : Prop where
+-- Laws that constrain the abstract `PredSat` relation.
+-- These are required to hold for any tag, including tags generated at runtime.
+structure PredSatLaws (predSat : PredSat) : Prop where
   -- Syntactic Matching Axiom: If a condition syntactically matches a tagged predicate
   -- via matchGuard and evaluates to true, then the predicate is satisfied for the value
   -- being tested (extracted from the runtime environment).
@@ -123,7 +124,7 @@ structure SatisfiesAxioms (predSat : PredSat) : Prop where
   -- then the predicate for k holds at memory μ for that v.
   match_sound : ∀ (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
                   (k : Tag) (deps : Deps)
-                  (μ : Memory) (ρ : VarEnv) (l : Address) (pm : Bool) (cfg : Config)
+                  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (l : Address) (pm : Bool) (cfg : Config)
                   (v : Value),
     -- If matchGuard identifies that condition matches predicate k
     matchGuard condition Γ σ = .ok (k, deps) →
@@ -135,24 +136,33 @@ structure SatisfiesAxioms (predSat : PredSat) : Prop where
           qtypGuardTag qt = some k ∧
           ρ.lookup x = some v)
       ∨
-      (∃ (x : Name) (qt memQt : QTyp) (t : ETyp) (loc : Address) (n : Int),
+      (∃ (x : Name) (qt memQt : QTyp) (t : ETyp) (ls : LocSet) (l0 : Loc) (a : Address) (n : Int),
           σ.lookup x = some qt ∧
-          qt.etyp = ETyp.ref t loc ∧
-          Γ.lookup loc = some memQt ∧
+          qt.etyp = ETyp.ref t ls ∧
+          l0 ∈ ls ∧
+          Γ.lookup l0 = some memQt ∧
           qtypGuardTag memQt = some k ∧
-          μ.lookup loc = some n ∧
+          θ.lookup l0 = some a ∧
+          μ.lookup a = some n ∧
           v = Value.num n) ) →
     -- Then the predicate k is satisfied for this specific value v
     predSat k μ v
 
-  -- Memory Monotonicity Axiom: Predicates are stable under memory changes
-  -- that do not affect their dependencies
-  -- This must hold for any tag k and any dependency set deps
-  mem_monotone : ∀ (k : Tag) (pred : Predicate) (μ μ' : Memory) (v : Value) (deps : Deps),
+  -- Memory Monotonicity Law: predicate satisfaction is stable under memory
+  -- changes that do not affect the locations it depends on.
+  --
+  -- Here `deps` is a set of *logical* locations (computed by `extractDepsFromPred`).
+  -- To relate `deps` to the concrete heap, we interpret it via a single
+  -- realisation map `θ` (logical loc ↦ concrete address).
+  --
+  -- We quantify over one `θ` because this is a single-run stability property:
+  -- the predicate tag (and any captured environment baked into it) is fixed.
+  -- In contrast, non-interference compares two runs and therefore uses `θ₁/θ₂`.
+  mem_monotone : ∀ (k : Tag) (pred : Predicate) (μ μ' : Memory) (v : Value) (deps : Deps) (θ : RealizationMap),
     -- If k's dependencies are deps (as computed by extractDepsFromPred)
     extractDepsFromPred pred = .ok deps →
     -- And all dependent locations have the same values in both memories
-    (∀ l, l ∈ deps → μ.lookup l = μ'.lookup l) →
+    (∀ l, l ∈ deps → ∀ a, θ.lookup l = some a → μ.lookup a = μ'.lookup a) →
     -- Then predicate satisfaction is the same in both memories
     (predSat k μ v ↔ predSat k μ' v)
 
@@ -172,12 +182,24 @@ inductive qtypPredHolds (predSat : PredSat) : QTyp → Memory → Value → Prop
 
 -- Helper: equality of observables in the final states
 def observablesEqual (obs : ObservableSpec)
+    (θ₁ θ₂ : RealizationMap)
     (c₁ c₂ : Config) (o₁ o₂ : Value) : Prop :=
-  let sameMem : Prop := ∀ {l et}, obs.locs.lookup l = some et → c₁.memory.lookup l = c₂.memory.lookup l
-  -- If the return is observable (retEtyp? = some et), we require the final
-  -- values to match If the return is not observable (retEtyp? = none), we do
-  -- not constrain it here.
-  let sameRet : Prop := obs.retEtyp? = none ∨ o₁ = o₂
+  let sameMem : Prop :=
+    ∀ {l et}, obs.locs.lookup l = some et →
+      ∃ a₁ a₂,
+        θ₁.lookup l = some a₁ ∧
+        θ₂.lookup l = some a₂ ∧
+        c₁.memory.lookup a₁ = c₂.memory.lookup a₂
+  -- If the return is observable (retEtyp? = some et), we constrain it.
+  -- For references, observability is via the logical-location set, not the
+  -- concrete address, so the two concrete addresses may differ across runs.
+  let sameRet : Prop :=
+    match obs.retEtyp? with
+    | none => True
+    | some (ETyp.ref _ ls) =>
+        (∃ l₁ a₁, l₁ ∈ ls ∧ θ₁.lookup l₁ = some a₁ ∧ o₁ = Value.loc a₁) ∧
+        (∃ l₂ a₂, l₂ ∈ ls ∧ θ₂.lookup l₂ = some a₂ ∧ o₂ = Value.loc a₂)
+    | some _ => o₁ = o₂
   sameMem ∧ sameRet
 
 -- Helper: check if guard tag present
@@ -323,31 +345,29 @@ def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
 --   ctxMatchesInputSpecMem s.locs ctx.memEnv ∧
 --   ctxMatchesInputSpecVarsDeep s.vars ctx.varEnv
 
--- Runtime conforms to the spec for critical inputs only. Unlisted inputs are
--- unconstrained here (we quantify over them), but concrete runs must still
--- instantiate the initial typing context (see the theorem premise below).
-def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
-  (∀ {l}, s.locs.contains l → μ.contains l) ∧
-  (∀ {x qt v}, s.vars.lookup x = some qt → ρ.lookup x = some v → valueHasETyp v qt.etyp)
+def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
+  (∀ {l}, s.locs.contains l → ∃ a, θ.lookup l = some a ∧ μ.contains a) ∧
+  (∀ {x qt v}, s.vars.lookup x = some qt → ρ.lookup x = some v → valueHasETyp θ v qt.etyp)
 
 -- Elementwise predicate for location regime consistency (inductive for easy inversion)
-inductive locsRegime (predSat : PredSat) (R : Regime) (μ : Memory) : (Address × QTyp) → Prop where
-  | noPred_ok (entry : Address × QTyp)
+inductive locsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap) : (Loc × QTyp) → Prop where
+  | noPred_ok (entry : Loc × QTyp)
       (hpred : qtypGuardTag entry.snd = none) :
-      locsRegime predSat R μ entry
+      locsRegime predSat R μ θ entry
   -- Guard-only predicates impose no regime consistency beyond tag presence in S
-  | guardOnly_ok (entry : Address × QTyp) (k : Tag)
+  | guardOnly_ok (entry : Loc × QTyp) (k : Tag)
       (hgo : entry.snd.pred = Predicate.guardOnly k) :
-      locsRegime predSat R μ entry
+      locsRegime predSat R μ θ entry
   -- Guard-closure predicates must align with the regime: holds iff R(k)=true
-  | withPred_ok (entry : Address × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : List (Name × QTyp))
-      (n : Int) (b : Bool)
+  | withPred_ok (entry : Loc × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : List (Name × QTyp))
+      (a : Address) (n : Int) (b : Bool)
       (hclos : entry.snd.pred = Predicate.guardClosure k arg_name pred_body var_env)
       (hregime : R k = some b)
-      (hmem : μ.lookup entry.fst = some n)
+      (hreal : θ.lookup entry.fst = some a)
+      (hmem : μ.lookup a = some n)
       (hconsist : (b = true → qtypPredHolds predSat entry.snd μ (Value.num n)) ∧
                   (b = false → ¬qtypPredHolds predSat entry.snd μ (Value.num n))) :
-      locsRegime predSat R μ entry
+      locsRegime predSat R μ θ entry
 
 -- Elementwise predicate for variable regime consistency (inductive for easy inversion)
 inductive varsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (ρ : VarEnv) : (Name × QTyp) → Prop where
@@ -370,21 +390,34 @@ inductive varsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (ρ : VarEnv
 
 -- Regime consistency (via Forall over lists).
 -- The regime must be defined for all critical inputs in the spec.
-def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) : Prop :=
-  List.Forall (locsRegime predSat R μ) s.locs.toList ∧
+def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
+  List.Forall (locsRegime predSat R μ θ) s.locs.toList ∧
   List.Forall (varsRegime predSat R μ ρ) s.vars
 
 -- Two values agree under a given regime and memory environments
-inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory) (qt: QTyp) (v₁ v₂ : Value) : Prop where
+  inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
+      (θ₁ θ₂ : RealizationMap)
+      (qt: QTyp) (v₁ v₂ : Value) : Prop where
   | noPred_eq
       (hpred : qtypGuardTag qt = none)
+      (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
       (hagree : v₁ = v₂) :
-      agreeValueUnder predSat R μ₁ μ₂ qt v₁ v₂
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  | noPred_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
+      (hetyp : qt.etyp = ETyp.ref t ls)
+      (hpred : qtypGuardTag qt = none)
+      (hlookup1 : θ₁.lookup l₁ = some a₁)
+      (hin1 : l₁ ∈ ls)
+      (hv1 : v₁ = Value.loc a₁)
+      (hlookup2 : θ₂.lookup l₂ = some a₂)
+      (hin2 : l₂ ∈ ls)
+      (hv2 : v₂ = Value.loc a₂) :
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
   | withPred_true_eq (k : Tag)
       (htag : qtypGuardTag qt = some k)
       (hregime : R k = some true)
       (hagree : v₁ = v₂) :
-      agreeValueUnder predSat R μ₁ μ₂ qt v₁ v₂
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
   -- False-regime case for guard-closures: both runs fail the predicate
   | withPred_false_both_fail (k : Tag)
       (hclos : isGuardClosure qt)
@@ -392,48 +425,59 @@ inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ�
       (hregime : R k = some false)
       (hfail1 : ¬qtypPredHolds predSat qt μ₁ v₁)
       (hfail2 : ¬qtypPredHolds predSat qt μ₂ v₂) :
-      agreeValueUnder predSat R μ₁ μ₂ qt v₁ v₂
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
   -- False-regime case for guard-only: unconstrained (values may differ)
   | guardOnly_false_any (k : Tag)
       (hgo : qt.pred = Predicate.guardOnly k)
       (hregime : R k = some false) :
-      agreeValueUnder predSat R μ₁ μ₂ qt v₁ v₂
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
 
 -- Two initial states agree on a critical location under a given regime.
 -- Refactored to use agreeValueUnder
+--
+-- Note on the two “option layers” (Issue #76):
+-- (1) `θ.lookup l` says whether logical `l` is realised in this run.
+-- (2) `μ.lookup a` says whether concrete address `a` exists in the heap.
+-- We model “unallocated/ghost in this run” via (1) being `none` (constructor `both_unrealized`),
+-- not via (2) being `none`. The ill-formed case “`θ(l)=some a` but `μ.lookup a = none`” is
+-- ruled out by well-formedness premises such as `runtimeInstantiatesCtx` / `inputsConformSpec`.
 inductive agreeLocUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
-    : (Address × QTyp) → Prop where
-  | agree_values (addr : Address) (qt : QTyp) (n₁ n₂ : Nat)
-      (hlookup1 : μ₁.lookup addr = some n₁)
-      (hlookup2 : μ₂.lookup addr = some n₂)
-      (hagree : agreeValueUnder predSat R μ₁ μ₂ qt (Value.num n₁) (Value.num n₂)) :
-      agreeLocUnder predSat R μ₁ μ₂ (addr, qt)
-  | both_none (addr : Address) (qt : QTyp)
-      (hlookup1 : μ₁.lookup addr = none)
-      (hlookup2 : μ₂.lookup addr = none) :
-      agreeLocUnder predSat R μ₁ μ₂ (addr, qt)
+    (θ₁ θ₂ : RealizationMap)
+    : (Loc × QTyp) → Prop where
+  | agree_values (l : Loc) (qt : QTyp) (a₁ a₂ : Address) (n₁ n₂ : Nat)
+      (hreal1 : θ₁.lookup l = some a₁)
+      (hreal2 : θ₂.lookup l = some a₂)
+      (hlookup1 : μ₁.lookup a₁ = some n₁)
+      (hlookup2 : μ₂.lookup a₂ = some n₂)
+      (hagree : agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt (Value.num n₁) (Value.num n₂)) :
+      agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂ (l, qt)
+  | both_unrealized (l : Loc) (qt : QTyp)
+      (hreal1 : θ₁.lookup l = none)
+      (hreal2 : θ₂.lookup l = none) :
+      agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂ (l, qt)
 
 -- Two initial states agree on a critical variable under a given regime.
 -- Refactored to use agreeValueUnder
 inductive agreeVarUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
+    (θ₁ θ₂ : RealizationMap)
     : (Name × QTyp) → Prop where
   | agree_values (x : Name) (qt : QTyp) (v₁ v₂ : Value)
       (hlookup1 : ρ₁.lookup x = some v₁)
       (hlookup2 : ρ₂.lookup x = some v₂)
-      (hagree : agreeValueUnder predSat R μ₁ μ₂ qt v₁ v₂) :
-      agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
+      (hagree : agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂) :
+      agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt)
   | both_none (x : Name) (qt : QTyp)
       (hlookup1 : ρ₁.lookup x = none)
       (hlookup2 : ρ₂.lookup x = none) :
-      agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ (x, qt)
+      agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt)
 
 -- Two initial states agree on critical inputs under a given regime.
 def agreeOnCriticalInputsUnderRegimeSpec
   (predSat : PredSat) (R : Regime) (s : InputSpec)
-  (μ₁ : Memory) (ρ₁ : VarEnv)
-  (μ₂ : Memory) (ρ₂ : VarEnv) : Prop :=
-  List.Forall (agreeLocUnder predSat R μ₁ μ₂) s.locs.toList ∧
-  List.Forall (agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂) s.vars
+  (μ₁ : Memory) (ρ₁ : VarEnv) (θ₁ : RealizationMap)
+  (μ₂ : Memory) (ρ₂ : VarEnv) (θ₂ : RealizationMap) : Prop :=
+  List.Forall (agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂) s.locs.toList ∧
+  List.Forall (agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂) s.vars
 
 -- Typing results must satisfy the observable constraints:
 def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
@@ -453,16 +497,16 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
 -- Non-Interference property
 -- ==========================
 def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) : Prop :=
-  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (l : Address) (pm : Bool) (R : Regime)
+  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (l : Address) (pm : Bool) (R : Regime)
     (cf₁ cf₂ : Config) (o₁ o₂ : Value),
     wfRegime R s →
-    inputsConformSpec s μ₁ ρ₁ →  inputsConformSpec s μ₂ ρ₂ →
-    runtimeInstantiatesCtx ctx μ₁ ρ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ →
-    consistentRegimeSpec predSat R s μ₁ ρ₁ →  consistentRegimeSpec predSat R s μ₂ ρ₂ →
-    agreeOnCriticalInputsUnderRegimeSpec predSat R s μ₁ ρ₁ μ₂ ρ₂ →
+    inputsConformSpec s μ₁ ρ₁ θ₁ →  inputsConformSpec s μ₂ ρ₂ θ₂ →
+    runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
+    consistentRegimeSpec predSat R s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat R s μ₂ ρ₂ θ₂ →
+    agreeOnCriticalInputsUnderRegimeSpec predSat R s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
     terminatesTo e { memory := μ₁, varEnv := ρ₁, nextLoc := l, pureMode := pm } cf₁ o₁ →
     terminatesTo e { memory := μ₂, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₂ o₂ →
-    observablesEqual obs cf₁ cf₂ o₁ o₂
+    observablesEqual obs θ₁ θ₂ cf₁ cf₂ o₁ o₂
 
 -- Type system enforces Non-Interference
 def TypeSystemEnforcesNonInterference_spec
@@ -474,7 +518,7 @@ def TypeSystemEnforcesNonInterference_spec
       ctx.pc = false → -- we start from clean program counter
       ctx.tagEnv = {} → -- we start with empty tag environment
       ∀ (predSat : PredSat),
-        SatisfiesAxioms predSat →
+        PredSatLaws predSat →
         ((∃ (fuel : Nat) (res : TypeResult),
           typecheck ctx e fuel = .ok res ∧
           ObsConstraints obs res) →
