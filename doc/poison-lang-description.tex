@@ -94,7 +94,7 @@ aliasing and higher-order code.
 A simple imperative language with references and functions:
 
 \begin{lstlisting}[language=poison]
-e ::= n | b | x | l                    (* values and variables *)
+e ::= n | b | x | a                    (* values/variables; a is a runtime-only heap address *)
     | e1 op e2                          (* arithmetic/comparison *)
     | unary_op e                        (* unary operations *)
     | if e1 then e2 else e3             (* conditionals *)
@@ -108,7 +108,7 @@ e ::= n | b | x | l                    (* values and variables *)
     | extern fn x : (ST1) -> (Q) effects: { ... }  (* extern impure function *)
     | extern pfn x : (ST1) -> (Q)        (* extern pure function *)
 
-pe ::= n | b | x | l                   (* pure expressions *)
+pe ::= n | b | x | a                   (* pure expressions *)
      | pe1 op pe2 | if pe1 then pe2 else pe3
      | unary_op pe
      | !pe | unit
@@ -118,9 +118,12 @@ pe ::= n | b | x | l                   (* pure expressions *)
 (* surface types for annotations *)     
 ST ::= int | bool | unit | ref ST | ST1 -> ST2  
 
+(* logical location sets (used only in types) *)
+LS ::= { } | { l } | LS1 U LS2
+
 (* enriched types *)
 T ::= int | bool | unit 
-    | ref T @ l         (* region types with location indices *)
+    | ref T @ LS        (* reference type with a set of logical locations *)
     | ST1 -> ST2 # p tclosures tcls   (* impure function types with merged typing closures *)
     | ST1 -> ST2 # p tpclosures ptcls (* pure function types with merged pure typing closures *)
 
@@ -157,11 +160,11 @@ in their code but never see the more complex internal representations.
 \begin{itemize}
     \item \textbf{Ott notation:} \texttt{typ, T}
     \item \textbf{Lean implementation:} \texttt{ETyp} (Enriched Type)
-    \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | ref T @ l | ST1 -> ST2 \# p tclosures tcls | ST1 -> ST2 \# p tpclosures ptcls}
+    \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | ref T @ LS | ST1 -> ST2 \# p tclosures tcls | ST1 -> ST2 \# p tpclosures ptcls}
     \item \textbf{Usage:} Used internally by the type checker for sound reasoning about references and functions
     \item \textbf{Key additions:}
     \begin{itemize}
-        \item \textbf{Region annotations} (\texttt{@l}): Track which specific memory location each reference points to
+        \item \textbf{Location sets} (\texttt{@LS}): Track a set of possible \emph{logical} locations each reference may point to
         \item \textbf{Typing closure sets} (\texttt{tclosures tcls} / \texttt{tpclosures ptcls}): Non-empty sets of closures that capture function bodies and variable contexts for re-typechecking at application time
         \item \textbf{Function poison} (\texttt{\#p}): Track the poison status of the function itself (from the program counter at definition time)
     \end{itemize}
@@ -170,12 +173,15 @@ in their code but never see the more complex internal representations.
 Enriched types extend surface types with the machinery needed for sound type
 checking. \emph{Once assigned, an enriched type is \emph{immutable} during
 analysis—only the environments grow around it.} The region annotation
-\texttt{ref T @ l} solves the soundness problem in dereference by statically
-tracking which location each reference targets. Function types \texttt{ST1 ->
-ST2 \# p tclosures tcls} store both the user-provided surface types and a
-non-empty merged set of typing closures. Single function definitions introduce
-singleton closure sets; control-flow joins (for example in \texttt{if}) and
-function application build larger sets by taking unions. The type system always
+\texttt{ref T @ LS} records a \emph{set of logical locations} that the reference
+may target; joins union these sets, preserving aliasing information in a
+flow-insensitive analysis. Logical locations are typechecker-generated names
+that are related to concrete runtime addresses by a per-run realisation map
+(Section~\ref{sec:formal-properties}). Function types \texttt{ST1 -> ST2 \# p
+tclosures tcls} store both the user-provided surface types and a non-empty
+merged set of typing closures. Single function definitions introduce singleton
+closure sets; control-flow joins (for example in \texttt{if}) and function
+application build larger sets by taking unions. The type system always
 re-typechecks all available closures at application time and conservatively
 joins their results.
 
@@ -235,15 +241,18 @@ the scenes.
     \item \textbf{Sequencing}: \texttt{e1 ; e2} evaluates \texttt{e1} first (which can have any type), discards its value, then evaluates \texttt{e2}
 \end{itemize}
 
-Enriched type annotations like region annotations (\texttt{@l}) for references and typing closures
-(\texttt{typing\_closure tcl}) for functions are essential to the formal system,
-though not part of the user-visible language syntax. The \texttt{l} denotes a memory
-location, and \texttt{tcl} represents the typing closure containing the function
-parameter name, body, and captured variable typing context. The poison
+Enriched type annotations like location sets (\texttt{@LS}) for references and
+typing closures (\texttt{typing\_closure tcl}) for functions are essential to the
+formal system, though not part of the user-visible language syntax. The
+\texttt{LS} denotes a set of \emph{logical} locations (typechecker-generated),
+while the runtime representation of a reference is a concrete heap address.
+The proof layer relates logical locations to concrete addresses via a
+realisation map. The \texttt{tcl} represents the typing closure containing the
+function parameter name, body, and captured variable typing context. The poison
 \texttt{p} represents the function's own poison status (from pc at definition
-time). See the formal specification for complete details. Similarly,
-qualified types are essential to the formal system, though not part of the
-language syntax.
+time). See the formal specification for complete details. Similarly, qualified
+types are essential to the formal system, though not part of the language
+syntax.
 
 \subsection{Extern Functions}
 
@@ -385,9 +394,11 @@ Extern declarations are type-checked as follows:
         first application, and the mapping is reused for this call chain (including
         nested externs returned by the function)
         \item For every effect \texttt{!v :> QT$_{eff}$}, \texttt{v} is resolved
-        in $\sigma'$ to \texttt{ref T$_v$ @ l} and $\Gamma(l)$ is updated to
-        \texttt{QT$_{eff}$}, joining poison with the current \texttt{pc} and
-        substituting placeholders with allocated tags
+        in $\sigma'$ to \texttt{ref T$_v$ @ LS$_v$}. The memory typing environment
+        is updated at \emph{every} $l \in LS_v$ to \texttt{QT$_{eff}$} (joining
+        poison with the current \texttt{pc} and substituting placeholders with
+        allocated tags), and $\mathcal{L}$ is invalidated for tags whose
+        dependencies intersect $LS_v$.
         \item The declared observable return \texttt{QTyp} is returned, with
         poison joined with the current \texttt{pc} and with the same placeholder
         substitutions
@@ -668,8 +679,8 @@ applied, the result inherits this poison.
     \item \textbf{Conditionals}: Both branches get $\text{pc} \sqcup \text{poison}(\text{condition})$, but predicate-based rules can enable de-poisoning
     \item \textbf{Predicate conditionals}: When $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, branches are typed with $\mathcal{L}[k \mapsto \text{true}]$ and $\mathcal{L}[k \mapsto \text{false}]$
     \item \textbf{Variable access}: De-poisoning when guard evaluates to true, definite poisoning when false, standard propagation when guard unknown
-    \item \textbf{Assignment}: Operation reliability = $\text{pc} \sqcup \text{poison}(\text{ref})$, Data = $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{value})$, invalidates $\mathcal{L}$ entries dependent on written location
-    \item \textbf{Dereference}: $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{data\_at\_location})$, with predicate-based de-poisoning support
+    \item \textbf{Assignment}: Operation reliability = $\text{pc} \sqcup \text{poison}(\text{ref})$, Data = $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{value})$, invalidates $\mathcal{L}$ entries whose dependency locsets intersect the written reference's locset
+    \item \textbf{Dereference}: $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{data\_at\_LS})$ where $\text{data\_at\_LS}$ conservatively joins over all logical locations in the reference's locset; predicates are merged similarly
     \item \textbf{Let bindings}: Variable gets $\text{pc} \sqcup \text{poison}(\text{bound\_value})$ and preserves predicates
     \item \textbf{Functions}: Abstraction gets $\text{pc}$ and captures body and
     context, typechecks body to derive return type, application re-typechecks body
@@ -680,7 +691,7 @@ applied, the result inherits this poison.
 
 \begin{itemize}
     \item $\pi$: Pure-mode flag (\textit{pure} or \textit{impure})
-    \item $\mu$: Memory mapping locations to integers (only integers can be stored in memory)
+    \item $\mu$: Memory mapping concrete addresses to integers (only integers can be stored in memory)
     \item $\rho$: Variable environment mapping variables to values
 \end{itemize}
 
@@ -704,7 +715,7 @@ part of the source language and do not have typing rules.
 \subsection{Environments}
 
 \begin{itemize}
-    \item $\Gamma$: Memory typing environment $l : Q$ (memory location qualified types)
+    \item $\Gamma$: Memory typing environment $l : Q$ (logical location qualified types)
     \item $\sigma$: Variable typing environment $x : Q$ (variable qualified types)
     \item $\mathcal{L}$: Logical environment $k : bool \times \text{deps}$ (predicate guard evaluations with dependency tracking)
     \item $\text{pc}$: Program counter poison (current context reliability)
@@ -722,11 +733,11 @@ predicate dependencies are modified:
 
 \begin{itemize}
     \item \textbf{Dependency extraction}: When a guard $k$ is introduced via \texttt{match\_guard}, 
-    the system computes a conservative set of heap locations that the predicate may read from
+    the system computes a conservative set of logical locations that the predicate may read from
     \item \textbf{Dependency storage}: Guard valuations are stored as $k : bool \times \text{deps}$ 
-    where \texttt{deps} is a set ofthe heap locations the predicate depends on
-    \item \textbf{Invalidation on write}: When writing to location $l$, all entries in $\mathcal{L}$ 
-    whose dependency sets contain $l$ are removed from $\mathcal{L}$
+    where \texttt{deps} is a set of logical locations the predicate depends on
+    \item \textbf{Invalidation on write}: When writing through a reference with locset $LS$, all entries in $\mathcal{L}$ 
+    whose dependency sets intersect $LS$ are removed from $\mathcal{L}$
     \item \textbf{Conservative analysis}: Dependency extraction uses syntactic analysis of 
     predicate expressions to identify heap reads through variables and dereferences
 \end{itemize}
@@ -755,12 +766,15 @@ because of invalidation. due to changed dependencies.
 
 \subsection{Key Typing Rules}
 
-\subsubsection*{References with region types:}
+\subsubsection*{References with location sets:}
 \[
-\frac{\Gamma(l) = Q}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash l : \text{ref } T @ l \triangleright \text{clean} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\Gamma(l) = Q}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash l : \text{ref } T @ \{l\} \triangleright \text{clean} \{ \text{no\_pred} \} \dashv \Gamma}
 \]
 
-This rule type actual memory location value, which is always clean.
+This internal rule assigns a singleton logical-location set to a reference value
+whose target logical location is known. At runtime the reference is represented
+by a concrete address; the proof layer relates it to the logical $l$ via the
+realisation map.
 
 \subsubsection*{Variable access with predicate support:}
 When variables have associated predicates, the typing rule checks the logical environment $\mathcal{L}$ to determine if de-poisoning can occur. Both guard closures and guard-only predicates behave identically when checking $\mathcal{L}$:
@@ -778,20 +792,24 @@ where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{
 \subsubsection*{Reference creation:}
 \[
 \frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : T \rhd p \dashv \Gamma_1 \quad \text{fresh } l}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash \text{ref } e : \text{ref } T @ l \rhd \text{pc} \dashv \Gamma_1[l \mapsto T \triangleright \text{pc} \sqcup p]}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash \text{ref } e : \text{ref } T @ \{l\} \rhd \text{pc} \dashv \Gamma_1[l \mapsto T \triangleright \text{pc} \sqcup p]}
 \]
 
 \subsubsection*{Assignment:}
 \[
-\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 : \text{ref } T @ l \rhd p_1 \dashv \Gamma_1 \quad \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \vdash e_2 : T \rhd p_2 \dashv \Gamma_2}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p_1 \dashv \Gamma_2[l \mapsto T \triangleright \text{pc} \sqcup p_1 \sqcup p_2]}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 : \text{ref } T @ LS \rhd p_1 \dashv \Gamma_1 \quad \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \vdash e_2 : T \rhd p_2 \dashv \Gamma_2}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p_1 \dashv \Gamma_2[LS \mapsto T \triangleright \text{pc} \sqcup p_1 \sqcup p_2]}
 \]
+where $\Gamma[LS \mapsto Q]$ updates $\Gamma$ at every $l \in LS$.
 
 \subsubsection*{Dereference:}
 \[
-\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : \text{ref } T @ l \rhd p_1 \dashv \Gamma_1 \quad \Gamma_1(l) = T \triangleright p}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash !e : T \rhd \text{pc} \sqcup p_1 \sqcup p \dashv \Gamma_1}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : \text{ref } T @ LS \rhd p_1 \dashv \Gamma_1 \quad \forall l \in LS.\; \Gamma_1(l) = T \triangleright p_l}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash !e : T \rhd \text{pc} \sqcup p_1 \sqcup \bigsqcup_{l \in LS} p_l \dashv \Gamma_1}
 \]
+The predicate attached to the dereference result is obtained by merging all
+predicates attached to the referenced cells (agreement-only: exact match keeps
+the closure, same tag downgrades to \texttt{guard k}, otherwise \texttt{no\_pred}).
 
 \subsubsection*{Function abstraction:}
 Function types include a non-empty set of \emph{typing closures} that captures
@@ -977,11 +995,11 @@ The formal specification provides \emph{two} mutually exclusive typing rules for
         The guard expression $e_1$ is typed as a \emph{pure} expression (no effects),
         so it does not modify $\Gamma$ or $\mathcal{L}$. The body $e_2$ is typed under
         the logical environment $\mathcal{L}[k\mapsto{}\text{true}]$, thereby treating
-        every value guarded by $k$ as \emph{clean} within the body. Across iterations we compute
+        every value guarded by $k$ as \emph{clean} within the body. Allocations introduced while typing the body do not escape the loop (the loop returns \texttt{unit} and the heap stores no references), so before joining we discard loop-local locations and keep only the pre-loop domain. Across iterations we compute
         the recurrences
         \[
           p_{i+1} = p_i \sqcup p_{2,i},\qquad
-          \Gamma_{i+1} = \text{JoinG}(\Gamma_i,\Gamma_{2,i}),\qquad
+          \Gamma_{i+1} = \text{JoinG}(\Gamma_i,\text{restrict}(\Gamma_{2,i},\mathrm{dom}(\Gamma_i))),\qquad
           \mathcal{L}_{i+1} = \text{JoinL}(\mathcal{L}_i,\mathcal{L}_{2,i}),
         \]
         where $(\cdot)_{2,i}$ denotes the quantities produced by the $i$-th typing of the body.
@@ -991,7 +1009,7 @@ The formal specification provides \emph{two} mutually exclusive typing rules for
   \item \textbf{\texttt{while\_std}}~-- the conservative fallback when no
         suitable guard is found.  Here the guard $e_1$ may be impure and can modify both
         $\Gamma$ and $\mathcal{L}$. The same fixpoint recurrences are used with the
-        \texttt{JoinG} and \texttt{JoinL} operators.
+        \texttt{JoinG} and \texttt{JoinL} operators (with the same restriction of the body's $\Gamma$ to the pre-loop domain before joining).
 \end{itemize}
 
 \paragraph{Join on the logical environment.} The loop back-edge uses an \emph{agreement-only} join on
@@ -1034,13 +1052,14 @@ merged dependencies),
 allowing post-loop code to properly classify values guarded by $k$ as poisoned. 
 This provides precise fault tracking both during and after loop execution.
 
-\subsection{Region Types for Soundness}
+\subsection{Location-Set Types for Soundness}
 
-Region types $\text{ref } T @ l$ solve the soundness problem in dereference:
+Reference types $\text{ref } T @ LS$ solve the soundness problem in dereference
+while supporting flow-insensitive joins:
 \begin{itemize}
-    \item \textbf{Problem}: Without regions, $!e$ rule couldn't determine which location to check in $\Gamma$ for poison status
-    \item \textbf{Solution}: Type $\text{ref } T @ l$ explicitly encodes the target location $l$
-    \item \textbf{Benefit}: Statically tracks which specific location each reference points to
+    \item \textbf{Problem}: Without location information, $!e$ cannot determine which heap cell types (and poison/predicates) to consult in $\Gamma$
+    \item \textbf{Solution}: $\text{ref } T @ LS$ explicitly records a set of possible \emph{logical} target locations; joins union these sets, dereference joins over all $l \in LS$, and assignment updates all $l \in LS$
+    \item \textbf{Benefit}: Preserves aliasing information without requiring concrete runtime addresses to appear in types; locations that arise only on untaken paths may remain unrealised (ghost) at runtime
 \end{itemize}
 
 \subsection{Environment Evolution}
@@ -1062,6 +1081,7 @@ Logical environment $\mathcal{L}$ evolves through:
 \end{itemize}
 
 \section{Formal Properties}
+\label{sec:formal-properties}
 
 \subsection{Progress}
 
@@ -1102,7 +1122,7 @@ programs, \texttt{beval} returns either \texttt{.success} or \texttt{.outOfFuel}
 but never \texttt{.runtimeError}.
 
 \paragraph{Formal definition in Lean.} The progress property is formally defined
-in \texttt{LeanProofs/NonInterference.lean} using three auxiliary relations:
+in \texttt{LeanProofs/Progress.lean} using three auxiliary relations:
 
 \begin{itemize}
     \item $\mathsf{terminatesTo}(e, c_0, c_1, v)$ - expression $e$ evaluates from initial config $c_0$ to final config $c_1$ producing value $v$
@@ -1114,19 +1134,21 @@ The main progress property is then stated as:
 
 \begin{lstlisting}[language=caml,mathescape=true]
 def Progress (e : Expr) (ctx : TypeContext) : Prop :=
-  (exists (fuel : Nat) (res : TypeResult), 
-    typecheck ctx e fuel = .ok res) ->
-  forall (mu : Memory) (rho : VarEnv) (l : Address) (pm : Bool),
-    runtimeInstantiatesCtx ctx mu rho ->
-    let c$_0$ : Config := { memory := mu, varEnv := rho, 
-                         nextLoc := l, pureMode := pm } in
-    not (stuck e c$_0$)
+  ($\exists$ (fuel : Nat) (res : TypeResult),
+    typecheck ctx e fuel = .ok res) $\rightarrow$
+  $\forall$ ($\mu$ : Memory) ($\rho$ : VarEnv) ($\theta$ : RealizationMap) (a : Address) (pm : Bool),
+    wfRealizationMap $\theta$ $\rightarrow$
+    runtimeInstantiatesCtx ctx $\mu$ $\rho$ $\theta$ $\rightarrow$
+    $\neg$ (stuck e { memory := $\mu$, varEnv := $\rho$, nextAddr := a, pureMode := pm })
 \end{lstlisting}
 
 This states that if an expression typechecks and the runtime properly instantiates
-the typing context (all typed locations exist in memory and all typed variables
-have values of the correct type), then the expression cannot get stuck. It may
-terminate or diverge, but it will never encounter a runtime error.
+the typing context, then the expression cannot get stuck. Instantiation now
+includes a realisation map $\theta$ from logical locations (used in $\Gamma$) to
+concrete heap addresses (used in $\mu$): only realised logical locations are
+required to exist in memory; unrealised (ghost) locations may remain in
+$\Gamma$. It may terminate or diverge, but it will never encounter a runtime
+error.
 
 \subsection{Preservation}
 
@@ -1154,27 +1176,27 @@ typechecking. The property ensures that the predicted final state ($\Gamma'$,
 $\mathcal{L}'$) accurately reflects the actual runtime state after evaluation.
 
 \paragraph{Formal definition in Lean.} The preservation property is formally
-defined in \texttt{LeanProofs/NonInterference.lean}:
+defined in \texttt{LeanProofs/Preservation.lean}:
 
 \begin{lstlisting}[language=caml,mathescape=true]
 def Preservation (e : Expr) (ctx : TypeContext) : Prop :=
-  forall (fuel_tc : Nat) (res : TypeResult) 
-         (mu$_0$ mu$_1$ : Memory) (rho$_0$ rho$_1$ : VarEnv) 
-         (l$_0$ l$_1$ : Address) (pm$_0$ pm$_1$ : Bool) (v : Value),
-    typecheck ctx e fuel_tc = .ok res ->
-    runtimeInstantiatesCtx ctx mu$_0$ rho$_0$ ->
-    terminatesTo e { memory := mu$_0$, varEnv := rho$_0$, 
-                     nextLoc := l$_0$, pureMode := pm$_0$ } 
-                   { memory := mu$_1$, varEnv := rho$_1$, 
-                     nextLoc := l$_1$, pureMode := pm$_1$ } v ->
-    valueHasETyp v res.qualType.etyp /\
-    runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } mu$_1$ rho$_1$
+  $\forall$ (fuel_tc : Nat) (res : TypeResult) ($\mu_0$ $\mu_1$ : Memory) ($\rho_0$ $\rho_1$ : VarEnv) ($\theta_0$ : RealizationMap)
+    ($a_0$ $a_1$ : Address) (pm0 pm1 : Bool) (v : Value),
+    typecheck ctx e fuel_tc = .ok res $\rightarrow$
+    wfRealizationMap $\theta_0$ $\rightarrow$
+    runtimeInstantiatesCtx ctx $\mu_0$ $\rho_0$ $\theta_0$ $\rightarrow$
+    terminatesTo e { memory := $\mu_0$, varEnv := $\rho_0$, nextAddr := $a_0$, pureMode := pm0 }
+                   { memory := $\mu_1$, varEnv := $\rho_1$, nextAddr := $a_1$, pureMode := pm1 } v $\rightarrow$
+    $\exists$ ($\theta_1$ : RealizationMap),
+      wfExtendsMap $\theta_0$ $\theta_1$ $\land$
+      valueHasETyp $\theta_1$ v res.qualType.etyp $\land$
+      runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } $\mu_1$ $\rho_1$ $\theta_1$
 \end{lstlisting}
 
 This states that if typechecking succeeds and evaluation terminates, then the
 result value has the expected enriched type and the final runtime state
 (memory and variables) instantiates the output typing context. Note that
-\texttt{nextLoc} and \texttt{pureMode} may differ between input and output
+\texttt{nextAddr} and \texttt{pureMode} may differ between input and output
 configurations, as they are implementation details not tracked by the type
 system.
 
@@ -1198,24 +1220,25 @@ inputs must be checked for validity before use.
 \end{itemize}
 
 \begin{definition}[Input/Output Classification]
-Inputs consist of initial memory and variables:
+Inputs consist of initial memory, variables, and a realisation map:
 \begin{itemize}
-    \item Initial memory: $\mu_0 : \text{Location} \rightarrow \text{Value}$
+    \item Initial memory: $\mu_0 : \text{Address} \rightarrow \text{Value}$
     \item Initial variables: $\rho_0 : \text{Variable} \rightarrow \text{Value}$
+    \item Realisation map: $\theta_0 : \text{Location} \rightharpoonup \text{Address}$ (logical $\to$ concrete, per run)
 \end{itemize}
-We fix a \emph{critical-input specification} $S$ comprising lists of critical entries with their qualified types:
+We fix a \emph{critical-input specification} $S$ comprising lists of critical \emph{logical} locations and variables with their qualified types:
 \[
-  S.\mathrm{locs} = \bigl[(\ell_1, Q_1),\ldots,(\ell_m, Q_m)\bigr],\qquad
+  S.\mathrm{locs} = \bigl[(l_1, Q_1),\ldots,(l_m, Q_m)\bigr],\qquad
   S.\mathrm{vars} = \bigl[(x_1, Q'_1),\ldots,(x_n, Q'_n)\bigr].
 \]
 Entries not listed in $S$ are considered non-critical and are \emph{unconstrained by the specification}.
 
 Outputs consist of:
 \begin{itemize}
-    \item Final memory locations: $\mu_f : \text{Location} \rightarrow \text{Value}$
+    \item Final memory: $\mu_f : \text{Address} \rightarrow \text{Value}$
     \item Program return value: $v$
 \end{itemize}
-With observable outputs designated as $(L_{obs}, v_{obs})$ where $v_{obs} \in \{\text{true}, \text{false}\}$ indicates whether the return value is observable.
+With observable outputs designated as $(L_{obs}, v_{obs})$ where $L_{obs}$ is a set of logical locations and $v_{obs} \in \{\text{true}, \text{false}\}$ indicates whether the return value is observable. Observing a logical location $l \in L_{obs}$ means observing the concrete cell at address $\theta(l)$ in that run.
 Non-observable outputs are unconstrained.
 
 Note: Variable bindings are local to expressions and do not persist as program outputs. Only memory locations and the return value constitute observable outputs.
@@ -1234,7 +1257,7 @@ initial typing context; a guard regime $R$ supplies truth values for tags in
 $K_S$ that instantiate these constraints at comparison time.
 
 \paragraph{Regime/Specification consistency.}
-For a single run with initial memory and variable environments $(\mu,\rho)$, we say that $R$ is \emph{consistent} with $(\mu,\rho)$ when, for every critical entry in $S$:
+For a single run with initial memory and variable environments $(\mu,\rho)$ and realisation map $\theta$, we say that $R$ is \emph{consistent} with $(\mu,\rho,\theta)$ when, for every critical entry in $S$:
 \begin{itemize}
   \item if the entry has no predicate, it is trivially consistent (statically
   valid by $S$);
@@ -1253,7 +1276,7 @@ A program $e$ satisfies non-interference with respect to the critical-input spec
 
 Given two executions with the same observable-behaviour form as defined above,
 $\langle e, \mu_1, \rho_1 \rangle \Downarrow \langle \mu_{1,1}, v_1 \rangle$ and
-$\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu_{2,1}, v_2 \rangle$, the following hold:
+$\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu_{2,1}, v_2 \rangle$, together with (proof-level) realisation maps $\theta_1,\theta_2$ linking logical locations to concrete addresses in each run, the following hold:
 \begin{itemize}
     \item \textbf{Agreement on critical inputs under $R$:}
     \begin{itemize}
@@ -1271,7 +1294,7 @@ $\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu_{2,1}, v_2 \rangle$, th
 \end{itemize}
 Then the observable outputs coincide:
 \begin{itemize}
-    \item $\forall l \in L_{obs}.\; \mu_{1,1}(l) = \mu_{2,1}(l)$
+    \item $\forall l \in L_{obs}.\; \mu_{1,1}(\theta_1(l)) = \mu_{2,1}(\theta_2(l))$
     \item If $v_{obs} = \text{true}$ then $v_1 = v_2$.
 \end{itemize}
 \end{definition}
@@ -1311,8 +1334,9 @@ the program $e$ satisfies the non-interference property with respect to
 $S$, $\text{obs}$, and $\text{PredSat}$.
 
 The runtime premises for each compared run are: (i) critical inputs conform to
-$S$, and (ii) the concrete initial memory and environment instantiate the whole
-context $(pc,\Gamma,\sigma,\mathcal{L})$.
+$S$ via their run-specific realisation map $\theta$, and (ii) the concrete
+initial memory and environment instantiate the whole context
+$(pc,\Gamma,\sigma,\mathcal{L})$ under $\theta$.
 \end{theorem}
 
 The predicate system enables graceful degradation: programs can produce correct
@@ -1349,13 +1373,13 @@ The abstract \texttt{PredSat} relation is constrained by universal axioms that c
 \paragraph{Syntactic Matching Axiom (value--sensitive).} If a condition syntactically matches a tagged predicate via \texttt{matchGuard} and evaluates to true under the current runtime state, then the predicate is satisfied for the \emph{specific} runtime value denoted by the matched owner (either a variable \(x\) or a dereference \(!x\)):
 \[
 \begin{aligned}
-&\forall\, \text{condition},\; k,\; \text{deps},\; \Gamma,\; \sigma,\; \mu,\; \rho,\; v.\\
+&\forall\, \text{condition},\; k,\; \text{deps},\; \Gamma,\; \sigma,\; \mu,\; \rho,\; \theta,\; v.\\
 &\text{matchGuard}(\text{condition}, \Gamma, \sigma) = (k, \text{deps})\;\land\;
 \text{terminatesTo}(\text{condition}, \mu, \rho, \text{true})\\
 &\land\;\big(\exists x,\; \sigma(x)\text{ has tag }k\;\land\; \rho(x)=v\;\;\;\;\;\;\;\;\;\;\\
 &\phantom{\land\;}\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\text{(variable case)}\\
 &\phantom{\land}\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\\
-&\ \ \ \ \ \ \ \;\;\lor\;\exists x,\, \ell,\, n,\; \sigma(x) = \text{ref }T @ \ell\;\land\; \Gamma(\ell)\text{ has tag }k\;\land\; \mu(\ell)=n\;\land\; v=n\big)\\
+&\ \ \ \ \ \ \ \;\;\lor\;\exists x,\, LS,\, l,\, a,\, n,\; \sigma(x) = \text{ref }T @ LS\;\land\; l \in LS\;\land\; \theta(l)=a\;\land\; \Gamma(l)\text{ has tag }k\;\land\; \mu(a)=n\;\land\; v=n\big)\\
 &\phantom{\land}\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\text{(dereference case)}\\
 &\implies \text{PredSat}\; k\; \mu\; v\,.
 \end{aligned}
@@ -1363,13 +1387,13 @@ The abstract \texttt{PredSat} relation is constrained by universal axioms that c
 
 This axiom connects the type system's syntactic predicate matching (which returns a tag and dependencies) with the abstract satisfaction relation, while keeping the semantics \emph{value--sensitive}: the conclusion is about the concrete runtime value observed at check time.
 
-\emph{Captured vs. check--time environments.} The predicate closure stores a captured typing environment \(r\), which \texttt{matchGuard} uses on the \emph{syntactic} side of the comparison. The proof layer never evaluates predicate bodies with captured runtime values. Instead, the captured lexical context is encoded in the tag \(k\). The runtime pair \((\mu, \rho)\) used above is the \emph{check--time} state: it evaluates the condition and determines the concrete value \(v\) (either \(\rho(x)\) or the memory value at the referenced location). This separation avoids the environment--capture problem whilst preserving value sensitivity.
+\emph{Captured vs. check--time environments.} The predicate closure stores a captured typing environment \(r\), which \texttt{matchGuard} uses on the \emph{syntactic} side of the comparison. The proof layer never evaluates predicate bodies with captured runtime values. Instead, the captured lexical context is encoded in the tag \(k\). The runtime triple \((\mu, \rho, \theta)\) used above is the \emph{check--time} state: it evaluates the condition and determines the concrete value \(v\) (either \(\rho(x)\) or the memory value at the concrete address \(\theta(l)\) for the realised logical location \(l\) selected by the reference). This separation avoids the environment--capture problem whilst preserving value sensitivity.
 
 \paragraph{Memory Monotonicity Axiom.} Predicates are stable under memory changes that do not affect their dependencies:
 \[
-\forall k, \text{pred}, \mu, \mu', v, \text{deps}.\;
+\forall k, \text{pred}, \mu, \mu', v, \text{deps}, \theta.\;
 \text{extractDepsFromPred}(\text{pred}) = \text{deps}
-\land (\forall l \in \text{deps}.\; \mu(l) = \mu'(l))
+\land (\forall l \in \text{deps}.\; \forall a.\; \theta(l)=a \rightarrow \mu(a) = \mu'(a))
 \implies (\text{PredSat}\; k\; \mu\; v \iff \text{PredSat}\; k\; \mu'\; v)
 \]
 
