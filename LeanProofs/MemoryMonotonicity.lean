@@ -456,14 +456,14 @@ private lemma beval_memory_monotonic_newRef (e1 : Expr) (fuel : Nat) (verbose : 
         -- Extract that config₁ = {config'' with memory := config''.memory.update l' n}
         -- where freshLoc config' = (l', config'')
         -- freshLoc is defined in Runtime.lean, accessible directly
-        -- config'' = {config' with nextLoc := config'.nextLoc + 1}, so config''.memory = config'.memory
-        have h_config''_mem : ({ config' with nextLoc := config'.nextLoc + 1 } : Config).memory = config'.memory := rfl
+        -- config'' = {config' with nextLoc := config'.nextAddr + 1}, so config''.memory = config'.memory
+        have h_config''_mem : ({ config' with nextAddr := config'.nextAddr + 1 } : Config).memory = config'.memory := rfl
         -- Extract memory equality from config₁
-        have h_mem_eq : config₁.memory = config'.memory.update config'.nextLoc n := by
+        have h_mem_eq : config₁.memory = config'.memory.update config'.nextAddr n := by
           -- From h_eq_config: config₁ = {memory := config''.memory.update l' n, ...}
-          -- where l' = config'.nextLoc and config''.memory = config'.memory
-          have h_lhs_mem : ({ memory := config'.memory.update config'.nextLoc n, varEnv := config'.varEnv, nextLoc := config'.nextLoc + 1, pureMode := config'.pureMode } : Config).memory = config'.memory.update config'.nextLoc n := rfl
-          have h_congr : ({ memory := config'.memory.update config'.nextLoc n, varEnv := config'.varEnv, nextLoc := config'.nextLoc + 1, pureMode := config'.pureMode } : Config).memory = config₁.memory :=
+          -- where l' = config'.nextAddr and config''.memory = config'.memory
+          have h_lhs_mem : ({ memory := config'.memory.update config'.nextAddr n, varEnv := config'.varEnv, nextAddr := config'.nextAddr + 1, pureMode := config'.pureMode } : Config).memory = config'.memory.update config'.nextAddr n := rfl
+          have h_congr : ({ memory := config'.memory.update config'.nextAddr n, varEnv := config'.varEnv, nextAddr := config'.nextAddr + 1, pureMode := config'.pureMode } : Config).memory = config₁.memory :=
             congrArg Config.memory h_eq_config
           rw [← h_congr, h_lhs_mem]
         -- Construct existential for IH
@@ -472,11 +472,11 @@ private lemma beval_memory_monotonic_newRef (e1 : Expr) (fuel : Nat) (verbose : 
           ⟨w₀, h_state, h_beval1⟩
         -- Chain through IH: config₀ → config' (via e1)
         have IH1 := IH fuel' h_fuel e1 config₀ config' (Value.num n) h_beval1_ex l h_contains
-        -- Now we need: config'.memory.contains l → config'.memory.update config'.nextLoc n contains l
+        -- Now we need: config'.memory.contains l → config'.memory.update config'.nextAddr n contains l
         -- HashMap.update (which is insert) preserves contains for all keys
         rw [h_mem_eq]
         -- Use the helper lemma: HashMap.insert preserves contains
-        exact HashMap_insert_preserves_contains config'.memory config'.nextLoc l n IH1
+        exact HashMap_insert_preserves_contains config'.memory config'.nextAddr l n IH1
       · next v =>
         -- e1 evaluated to non-number value (contradiction)
         simp [pure] at h_eq
@@ -538,8 +538,8 @@ private lemma beval_memory_monotonic_assign (e1 e2 : Expr) (fuel : Nat) (verbose
             -- Memory.update is just insert, which preserves contains
             have h_mem_eq : config₁.memory = config₂.memory.update loc_val n := by
               -- From h_eq_config: {memory := config₂.memory.update loc_val n, ...} = config₁
-              have h_lhs_mem : ({ memory := config₂.memory.update loc_val n, varEnv := config₂.varEnv, nextLoc := config₂.nextLoc, pureMode := config₂.pureMode } : Config).memory = config₂.memory.update loc_val n := rfl
-              have h_congr : ({ memory := config₂.memory.update loc_val n, varEnv := config₂.varEnv, nextLoc := config₂.nextLoc, pureMode := config₂.pureMode } : Config).memory = config₁.memory :=
+              have h_lhs_mem : ({ memory := config₂.memory.update loc_val n, varEnv := config₂.varEnv, nextAddr := config₂.nextAddr, pureMode := config₂.pureMode } : Config).memory = config₂.memory.update loc_val n := rfl
+              have h_congr : ({ memory := config₂.memory.update loc_val n, varEnv := config₂.varEnv, nextAddr := config₂.nextAddr, pureMode := config₂.pureMode } : Config).memory = config₁.memory :=
                 congrArg Config.memory h_eq_config
               rw [← h_congr, h_lhs_mem]
             -- Construct existentials for IH
@@ -637,10 +637,10 @@ private lemma beval_memory_monotonic_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat)
             -- From h_eq_config: {memory := config₂.memory, varEnv := config₁'.varEnv, ...} = config₁
             -- Taking memory of both sides using congrArg: lhs.memory = config₁.memory
             -- But lhs.memory = config₂.memory, so config₁.memory = config₂.memory
-            have h_lhs_mem : ({ memory := config₂.memory, varEnv := config₁'.varEnv, nextLoc := config₂.nextLoc, pureMode := config₂.pureMode } : Config).memory = config₂.memory := rfl
+            have h_lhs_mem : ({ memory := config₂.memory, varEnv := config₁'.varEnv, nextAddr := config₂.nextAddr, pureMode := config₂.pureMode } : Config).memory = config₂.memory := rfl
             have h_mem_eq : config₁.memory = config₂.memory := by
               -- Apply congrArg to h_eq_config to get: lhs.memory = config₁.memory
-              have h_congr : ({ memory := config₂.memory, varEnv := config₁'.varEnv, nextLoc := config₂.nextLoc, pureMode := config₂.pureMode } : Config).memory = config₁.memory :=
+              have h_congr : ({ memory := config₂.memory, varEnv := config₁'.varEnv, nextAddr := config₂.nextAddr, pureMode := config₂.pureMode } : Config).memory = config₁.memory :=
                 congrArg Config.memory h_eq_config
               -- Now combine with h_lhs_mem: config₂.memory = lhs.memory = config₁.memory
               rw [← h_congr, h_lhs_mem]
@@ -714,8 +714,8 @@ private lemma bevalFunctionBody_memory_monotonic
           injection h_result with h_cfg_eq h_val_eq
           -- Extract memory equality: finalConfig.memory = currentConfig.memory
           have h_mem_eq : finalConfig.memory = currentConfig.memory := by
-            have h_lhs_mem : ({ memory := currentConfig.memory, varEnv := currentConfig.varEnv, nextLoc := currentConfig.nextLoc, pureMode := false } : Config).memory = currentConfig.memory := rfl
-            have h_congr : ({ memory := currentConfig.memory, varEnv := currentConfig.varEnv, nextLoc := currentConfig.nextLoc, pureMode := false } : Config).memory = finalConfig.memory :=
+            have h_lhs_mem : ({ memory := currentConfig.memory, varEnv := currentConfig.varEnv, nextAddr := currentConfig.nextAddr, pureMode := false } : Config).memory = currentConfig.memory := rfl
+            have h_congr : ({ memory := currentConfig.memory, varEnv := currentConfig.varEnv, nextAddr := currentConfig.nextAddr, pureMode := false } : Config).memory = finalConfig.memory :=
               congrArg Config.memory h_cfg_eq
             rw [← h_congr, h_lhs_mem]
           rw [h_mem_eq]
@@ -725,8 +725,8 @@ private lemma bevalFunctionBody_memory_monotonic
           injection h_result with h_cfg_eq h_val_eq
           -- Extract memory: finalConfig.memory = evalConfig.memory
           have h_mem_eq : finalConfig.memory = evalConfig.memory := by
-            have h_lhs_mem : ({ memory := evalConfig.memory, varEnv := currentConfig.varEnv, nextLoc := evalConfig.nextLoc, pureMode := false } : Config).memory = evalConfig.memory := rfl
-            have h_congr : ({ memory := evalConfig.memory, varEnv := currentConfig.varEnv, nextLoc := evalConfig.nextLoc, pureMode := false } : Config).memory = finalConfig.memory :=
+            have h_lhs_mem : ({ memory := evalConfig.memory, varEnv := currentConfig.varEnv, nextAddr := evalConfig.nextAddr, pureMode := false } : Config).memory = evalConfig.memory := rfl
+            have h_congr : ({ memory := evalConfig.memory, varEnv := currentConfig.varEnv, nextAddr := evalConfig.nextAddr, pureMode := false } : Config).memory = finalConfig.memory :=
               congrArg Config.memory h_cfg_eq
             rw [← h_congr, h_lhs_mem]
           -- bodyConfig = {currentConfig with varEnv := env.update x v₂, pureMode := isPure}

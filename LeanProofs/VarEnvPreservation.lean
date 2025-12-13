@@ -80,7 +80,7 @@ private lemma bevalFunctionBody_preserves_varEnv
             injection h_eq with h_result h_world
             injection h_result with h_cfg_eq h_val_eq
             subst h_cfg_eq
-            -- finalConfig = { currentConfig with memory := evalConfig.memory, nextLoc := evalConfig.nextLoc, pureMode := false }
+            -- finalConfig = { currentConfig with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr, pureMode := false }
             -- So finalConfig.varEnv = currentConfig.varEnv (record update doesn't touch varEnv)
             simp
         · next =>
@@ -409,7 +409,7 @@ private lemma beval_preserves_varEnv_newRef (e1 : Expr) (fuel' : Nat) (verbose :
       have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EStateM.Result.ok (.success config' (Value.num n)) w₁' :=
         ⟨w₀, h_state, h_beval1⟩
       have h_varEnv_eq : config₀.varEnv = config'.varEnv := IH fuel' h_fuel e1 verbose config₀ config' (Value.num n) h_beval1_ex
-      simp [freshLoc]
+      simp [freshAddr]
       exact h_varEnv_eq
     · next v => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
     · next => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result

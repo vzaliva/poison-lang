@@ -47,12 +47,12 @@ end VarEnv
 structure Config where
   memory : Memory
   varEnv : VarEnv  -- List (Name × Value)
-  nextLoc : Address  -- for fresh location generation
+  nextAddr : Address  -- for fresh address generation
   pureMode : Bool   -- whether evaluation is inside a pure function body
 
--- Allocate a fresh location and return it along with updated config
-def freshLoc (config : Config) : Address × Config :=
-  (config.nextLoc, { config with nextLoc := config.nextLoc + 1 })
+-- Allocate a fresh address and return it along with updated config
+def freshAddr (config : Config) : Address × Config :=
+  (config.nextAddr, { config with nextAddr := config.nextAddr + 1 })
 
 -- Manual Repr instance for Config
 instance : Repr Config where
@@ -75,4 +75,4 @@ instance : ToString Memory where
 
 -- ToString instance for config
 instance : ToString Config where
-  toString config := toString config.memory ++ toString config.varEnv ++ toString config.nextLoc ++ s!" pure={config.pureMode}"
+  toString config := toString config.memory ++ toString config.varEnv ++ toString config.nextAddr ++ s!" pure={config.pureMode}"

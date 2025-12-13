@@ -66,8 +66,8 @@ private def PreservationWithFuel (e : Expr) (ctx : TypeContext) (n : Nat) : Prop
     -- And runtime instantiates the input context
     runtimeInstantiatesCtx ctx μ₀ ρ₀ →
     -- And evaluation terminates successfully with exactly fuel n
-    (∃ w₀ w₁, LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ } e verbose w₀ =
-      EStateM.Result.ok (.success { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) w₁) →
+    (∃ w₀ w₁, LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ } e verbose w₀ =
+      EStateM.Result.ok (.success { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v) w₁) →
     -- Then the result value has the expected enriched type
     valueHasETyp v res.qualType.etyp ∧
     -- And the final runtime state instantiates the output typing context
@@ -88,8 +88,8 @@ private lemma preservationWithFuel_implies_preservation (e : Expr) (ctx : TypeCo
   -- pure expands to fun w => Result.ok ... w, so at defaultWorld it's Result.ok ... defaultWorld
   simp [pure, EStateM.pure] at h_eval_at_default
   -- Construct the existential
-  have h_eval_world : ∃ w₀ w₁, LeanPoison.beval fuel_eval { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ } e verbose w₀ =
-      EStateM.Result.ok (.success { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) w₁ :=
+  have h_eval_world : ∃ w₀ w₁, LeanPoison.beval fuel_eval { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ } e verbose w₀ =
+      EStateM.Result.ok (.success { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v) w₁ :=
     ⟨LeanProofs.defaultWorld, LeanProofs.defaultWorld, h_eval_at_default⟩
   exact h_pwf fuel_eval fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose
           h_typecheck h_instantiate h_eval_world
@@ -620,23 +620,23 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
       -- Now bevalOp_structure also returns the memory equality: config₂.memory = μ₃
       obtain ⟨config₁, config₂, v1, v2, h_eval1_ex, h_eval2_ex, h_v1_type, h_v2_type, h_v_type, h_mem_eq⟩ :=
         bevalOp_structure e1 e2 op fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₃, varEnv := ρ₃, nextLoc := l₃, pureMode := pm₃ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₃, varEnv := ρ₃, nextAddr := l₃, pureMode := pm₃ }
           v result1.qualType.etyp result2.qualType.etyp result_etyp
           h_eval h_op_etyp
 
       -- Use beval_preserves_varEnv to show varEnv is unchanged at each step
       have h_varenv01 : ρ₀ = config₁.varEnv :=
         beval_preserves_varEnv e1 fuel' verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           config₁ v1 h_eval1_ex
       have h_varenv12 : config₁.varEnv = config₂.varEnv :=
         beval_preserves_varEnv e2 fuel' verbose
           config₁ config₂ v2 h_eval2_ex
       have h_varenv_unchanged : ρ₀ = ρ₃ :=
         beval_preserves_varEnv (Expr.op e1 op e2) fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₃, varEnv := ρ₃, nextLoc := l₃, pureMode := pm₃ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₃, varEnv := ρ₃, nextAddr := l₃, pureMode := pm₃ }
           v h_eval
 
       -- Use the varEnv equalities to simplify
@@ -695,7 +695,7 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
         -- Apply IH to e1 using PreservationWithFuel with fuel (fuel_tc' - 1)
         have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                       μ₀ config₁.memory config₁.varEnv config₁.varEnv
-                      l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                      l₀ config₁.nextAddr pm₀ config₁.pureMode v1 verbose
                       h_tc1' h_instantiate h_eval1_ex
         obtain ⟨_, h_runtime1⟩ := IH1
 
@@ -710,7 +710,7 @@ private lemma preservation_op (e1 e2 : Expr) (op : Op) (ctx : TypeContext)
                                nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
         have IH2 := IH fuel' h_fuel e2 ctx' (fuel_tc' - 1) result2
                       config₁.memory config₂.memory config₁.varEnv config₂.varEnv
-                      config₁.nextLoc config₂.nextLoc config₁.pureMode config₂.pureMode v2 verbose
+                      config₁.nextAddr config₂.nextAddr config₁.pureMode config₂.pureMode v2 verbose
                       h_tc2' h_runtime1 h_eval2_ex
         obtain ⟨_, h_runtime2⟩ := IH2
 
@@ -987,20 +987,20 @@ private lemma preservation_unaryop (op : UnaryOp) (e1 : Expr) (ctx : TypeContext
       -- Extract evaluation structure
       obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
         bevalUnaryOp_structure op e1 fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₂, varEnv := ρ₂, nextLoc := l₂, pureMode := pm₂ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₂, varEnv := ρ₂, nextAddr := l₂, pureMode := pm₂ }
           v result1.qualType.etyp result_etyp
           h_eval h_op_etyp
 
       -- VarEnv preservation
       have h_varenv01 : ρ₀ = config₁.varEnv :=
         beval_preserves_varEnv e1 fuel' verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           config₁ v1 h_eval1_ex
       have h_varenv_unchanged : ρ₀ = ρ₂ :=
         beval_preserves_varEnv (Expr.unaryop op e1) fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₂, varEnv := ρ₂, nextLoc := l₂, pureMode := pm₂ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₂, varEnv := ρ₂, nextAddr := l₂, pureMode := pm₂ }
           v h_eval
 
       subst h_varenv01 h_varenv_unchanged
@@ -1017,7 +1017,7 @@ private lemma preservation_unaryop (op : UnaryOp) (e1 : Expr) (ctx : TypeContext
           exact h_tc1
         have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                       μ₀ config₁.memory config₁.varEnv config₁.varEnv
-                      l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                      l₀ config₁.nextAddr pm₀ config₁.pureMode v1 verbose
                       h_tc1' h_instantiate h_eval1_ex
         obtain ⟨_, h_runtime1⟩ := IH1
         simp only [h_mem]
@@ -1563,19 +1563,19 @@ private lemma preservation_printInt (e1 : Expr) (ctx : TypeContext)
       -- Extract evaluation structure
       obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
         bevalPrintInt_structure e1 fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
           v h_eval
 
       -- VarEnv preservation
       have h_varenv01 : ρ₀ = config₁.varEnv :=
         beval_preserves_varEnv e1 fuel' verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           config₁ v1 h_eval1_ex
       have h_varenv_unchanged : ρ₀ = ρ₁ :=
         beval_preserves_varEnv (Expr.printInt e1) fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
           v h_eval
 
       subst h_varenv01 h_varenv_unchanged
@@ -1592,7 +1592,7 @@ private lemma preservation_printInt (e1 : Expr) (ctx : TypeContext)
           exact h_tc1
         have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                         μ₀ config₁.memory config₁.varEnv config₁.varEnv
-                        l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                        l₀ config₁.nextAddr pm₀ config₁.pureMode v1 verbose
                         h_tc1' h_instantiate h_eval1_ex
         obtain ⟨_, h_runtime1⟩ := IH1
         simp only [h_mem]
@@ -1636,19 +1636,19 @@ private lemma preservation_printString (e1 : Expr) (ctx : TypeContext)
       -- Extract evaluation structure
       obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
         bevalPrintString_structure e1 fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
           v h_eval
 
       -- VarEnv preservation
       have h_varenv01 : ρ₀ = config₁.varEnv :=
         beval_preserves_varEnv e1 fuel' verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           config₁ v1 h_eval1_ex
       have h_varenv_unchanged : ρ₀ = ρ₁ :=
         beval_preserves_varEnv (Expr.printString e1) fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
           v h_eval
 
       subst h_varenv01 h_varenv_unchanged
@@ -1665,7 +1665,7 @@ private lemma preservation_printString (e1 : Expr) (ctx : TypeContext)
           exact h_tc1
         have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                         μ₀ config₁.memory config₁.varEnv config₁.varEnv
-                        l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                        l₀ config₁.nextAddr pm₀ config₁.pureMode v1 verbose
                         h_tc1' h_instantiate h_eval1_ex
         obtain ⟨_, h_runtime1⟩ := IH1
         simp only [h_mem]
@@ -1709,19 +1709,19 @@ private lemma preservation_rand (e1 : Expr) (ctx : TypeContext)
       -- Extract evaluation structure
       obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
         bevalRand_structure e1 fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
           v h_eval
 
       -- VarEnv preservation
       have h_varenv01 : ρ₀ = config₁.varEnv :=
         beval_preserves_varEnv e1 fuel' verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           config₁ v1 h_eval1_ex
       have h_varenv_unchanged : ρ₀ = ρ₁ :=
         beval_preserves_varEnv (Expr.rand e1) fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
           v h_eval
 
       subst h_varenv01 h_varenv_unchanged
@@ -1738,7 +1738,7 @@ private lemma preservation_rand (e1 : Expr) (ctx : TypeContext)
           exact h_tc1
         have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                         μ₀ config₁.memory config₁.varEnv config₁.varEnv
-                        l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                        l₀ config₁.nextAddr pm₀ config₁.pureMode v1 verbose
                         h_tc1' h_instantiate h_eval1_ex
         obtain ⟨_, h_runtime1⟩ := IH1
         simp only [h_mem]
@@ -1782,19 +1782,19 @@ private lemma preservation_frand (e1 : Expr) (ctx : TypeContext)
       -- Extract evaluation structure
       obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
         bevalFrand_structure e1 fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
           v h_eval
 
       -- VarEnv preservation
       have h_varenv01 : ρ₀ = config₁.varEnv :=
         beval_preserves_varEnv e1 fuel' verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           config₁ v1 h_eval1_ex
       have h_varenv_unchanged : ρ₀ = ρ₁ :=
         beval_preserves_varEnv (Expr.frand e1) fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
           v h_eval
 
       subst h_varenv01 h_varenv_unchanged
@@ -1811,7 +1811,7 @@ private lemma preservation_frand (e1 : Expr) (ctx : TypeContext)
           exact h_tc1
         have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                         μ₀ config₁.memory config₁.varEnv config₁.varEnv
-                        l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                        l₀ config₁.nextAddr pm₀ config₁.pureMode v1 verbose
                         h_tc1' h_instantiate h_eval1_ex
         obtain ⟨_, h_runtime1⟩ := IH1
         simp only [h_mem]
@@ -1899,8 +1899,8 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
       -- Extract evaluation structure using helper lemma
       obtain ⟨config₁, v1, h_eval1_ex, h_eval2_ex⟩ :=
         bevalSeq_structure e1 e2 fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₂, varEnv := ρ₂, nextLoc := l₂, pureMode := pm₂ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₂, varEnv := ρ₂, nextAddr := l₂, pureMode := pm₂ }
           v h_eval
 
       -- Establish fuel constraint for IH
@@ -1913,7 +1913,7 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
       -- Use beval_preserves_varEnv to establish varEnv equality
       have h_varenv01 : ρ₀ = config₁.varEnv :=
         beval_preserves_varEnv e1 fuel' verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           config₁ v1 h_eval1_ex
       -- Convert h_eval1_ex to use config₁.varEnv
       rcases h_eval1_ex with ⟨w₀', w₁', h_eval1_eq⟩
@@ -1922,18 +1922,18 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
       -- Rewrite fuel and varEnv in h_eval1_eq
       -- h_eval1_eq has fuel fuel' and varEnv ρ₀
       -- We need to rewrite ρ₀ to config₁.varEnv using h_varenv01
-      have h_eval1_eq' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextLoc := l₀, pureMode := pm₀ } e1 verbose w₀' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextLoc := config₁.nextLoc, pureMode := config₁.pureMode } v1) w₁' := by
+      have h_eval1_eq' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀' =
+          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁' := by
         -- h_eval1_eq has ρ₀, rewrite to config₁.varEnv
         rw [h_varenv01] at h_eval1_eq
         exact h_eval1_eq
       -- Construct h_eval1' with updated varEnv
-      have h_eval1' : ∃ w₀'' w₁'', LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextLoc := l₀, pureMode := pm₀ } e1 verbose w₀'' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextLoc := config₁.nextLoc, pureMode := config₁.pureMode } v1) w₁'' :=
+      have h_eval1' : ∃ w₀'' w₁'', LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀'' =
+          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁'' :=
         ⟨w₀', w₁', h_eval1_eq'⟩
       have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                       μ₀ config₁.memory config₁.varEnv config₁.varEnv
-                      l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                      l₀ config₁.nextAddr pm₀ config₁.pureMode v1 verbose
                       h_tc1' h_instantiate h_eval1'
       obtain ⟨_, h_runtime1⟩ := IH1
 
@@ -1946,12 +1946,12 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
         exact h_tc2
       -- Convert h_eval2_ex to use explicit config structure
       rcases h_eval2_ex with ⟨w₀'', w₁'', h_eval2_eq⟩
-      have h_eval2' : ∃ w₀''' w₁''', LeanPoison.beval fuel' { memory := config₁.memory, varEnv := config₁.varEnv, nextLoc := config₁.nextLoc, pureMode := config₁.pureMode } e2 verbose w₀''' =
-          EStateM.Result.ok (.success { memory := μ₂, varEnv := ρ₂, nextLoc := l₂, pureMode := pm₂ } v) w₁''' :=
+      have h_eval2' : ∃ w₀''' w₁''', LeanPoison.beval fuel' { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } e2 verbose w₀''' =
+          EStateM.Result.ok (.success { memory := μ₂, varEnv := ρ₂, nextAddr := l₂, pureMode := pm₂ } v) w₁''' :=
         ⟨w₀'', w₁'', h_eval2_eq⟩
       have IH2 := IH fuel' h_fuel e2 ctx' (fuel_tc' - 1) result2
                       config₁.memory μ₂ config₁.varEnv ρ₂
-                      config₁.nextLoc l₂ config₁.pureMode pm₂ v verbose
+                      config₁.nextAddr l₂ config₁.pureMode pm₂ v verbose
                       h_tc2' h_runtime1' h_eval2'
       obtain ⟨h_v_type, h_runtime2⟩ := IH2
 
@@ -1979,7 +1979,7 @@ private lemma preservation_ite (e1 e2 e3 : Expr) (ctx : TypeContext)
 -- Helper lemma: extract structure from typecheckNewRef
 private lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckNewRef ctx e1 fuel = .ok res →
-  ∃ (result1 : TypeResult) (l : Address) (etyp : ETyp),
+  ∃ (result1 : TypeResult) (l : Loc) (etyp : ETyp),
     typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
     (l, { result1 with nextLoc' := result1.nextLoc' + 1 }) = freshTLocRes result1 ∧
     res.qualType.etyp = ETyp.ref etyp l ∧
@@ -2066,12 +2066,12 @@ private lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₂ : Config) (v : Value) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.newRef e1) verbose w₀ =
       EStateM.Result.ok (.success config₂ v) w₁) →
-  ∃ (config₁ : Config) (n : Int) (l : Address),
+  ∃ (config₁ : Config) (n : Int) (a : Address),
     (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' =
         EStateM.Result.ok (.success config₁ (Value.num n)) w₁') ∧
-    (l, { config₁ with nextLoc := config₁.nextLoc + 1 }) = freshLoc config₁ ∧
-    config₂ = { { config₁ with nextLoc := config₁.nextLoc + 1 } with memory := ({ config₁ with nextLoc := config₁.nextLoc + 1 } : Config).memory.update config₁.nextLoc n } ∧
-    v = Value.loc config₁.nextLoc := by
+    (a, { config₁ with nextAddr := config₁.nextAddr + 1 }) = freshAddr config₁ ∧
+    config₂ = { { config₁ with nextAddr := config₁.nextAddr + 1 } with memory := ({ config₁ with nextAddr := config₁.nextAddr + 1 } : Config).memory.update config₁.nextAddr n } ∧
+    v = Value.loc config₁.nextAddr := by
   intro h_eval
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
   cases fuel with
@@ -2100,22 +2100,22 @@ private lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
           injection h_eq with h_eq_result h_eq_state
           injection h_eq_result with h_eq_cfg h_eq_val
           -- Extract that config₂ = {config'' with memory := config''.memory.update l n}
-          -- where (l, config'') = freshLoc config'
-          have h_fresh : (config'.nextLoc, { config' with nextLoc := config'.nextLoc + 1 }) = freshLoc config' := rfl
+          -- where (l, config'') = freshAddr config'
+          have h_fresh : (config'.nextAddr, { config' with nextAddr := config'.nextAddr + 1 }) = freshAddr config' := rfl
           -- Extract memory update from h_eq_cfg
           -- h_eq_cfg shows config₂ = the updated config
           -- Extract value equality from h_eq_val
-          -- h_eq_val shows Value.loc (freshLoc config').1 = v
-          -- So v = Value.loc (freshLoc config').1 = Value.loc config'.nextLoc
+          -- h_eq_val shows Value.loc (freshAddr config').1 = v
+          -- So v = Value.loc (freshAddr config').1 = Value.loc config'.nextAddr
           -- Extract value equality from h_eq_val
-          -- h_eq_val shows Value.loc (freshLoc config').1 = v
+          -- h_eq_val shows Value.loc (freshAddr config').1 = v
           -- Extract first component from h_fresh by matching on the pair
           injection h_fresh with h_fresh1 h_fresh2
-          have h_val_eq : v = Value.loc config'.nextLoc := by
+          have h_val_eq : v = Value.loc config'.nextAddr := by
             rw [← h_eq_val, h_fresh1]
             rfl
           -- For config_eq, h_eq_cfg shows the updated config = config₂
-          have h_config_eq : config₂ = { { config' with nextLoc := config'.nextLoc + 1 } with memory := ({ config' with nextLoc := config'.nextLoc + 1 } : Config).memory.update config'.nextLoc n } := by
+          have h_config_eq : config₂ = { { config' with nextAddr := config'.nextAddr + 1 } with memory := ({ config' with nextAddr := config'.nextAddr + 1 } : Config).memory.update config'.nextAddr n } := by
             rw [← h_eq_cfg, h_fresh2]
             rfl
           subst h_eq_val
@@ -2123,7 +2123,7 @@ private lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
               EStateM.Result.ok (.success config' (Value.num n)) w₁' :=
             ⟨w₀, h_state1, h_beval1⟩
           simp only [Nat.add_sub_cancel]
-          exact ⟨config', n, config'.nextLoc, h_beval1_ex, rfl, h_config_eq, h_val_eq⟩
+          exact ⟨config', n, config'.nextAddr, h_beval1_ex, rfl, h_config_eq, h_val_eq⟩
         | bool _ | unit | str _ | loc _ | closure _ _ _ | peClosure _ _ _ =>
           -- v' is not a number, so the match returns runtimeError (contradiction)
           -- The match simplifies to pure (.runtimeError ...)
@@ -2181,8 +2181,8 @@ private lemma preservation_newRef (e1 : Expr) (ctx : TypeContext)
       -- Extract evaluation structure
       obtain ⟨config₁, n_val, l_eval, h_eval1_ex, h_fresh_eval, h_config_eq, h_val_eq⟩ :=
         bevalNewRef_structure e1 fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ₂, varEnv := ρ₂, nextLoc := l₂, pureMode := pm₂ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ₂, varEnv := ρ₂, nextAddr := l₂, pureMode := pm₂ }
           v h_eval
 
       -- Establish fuel constraint for IH
@@ -2195,21 +2195,21 @@ private lemma preservation_newRef (e1 : Expr) (ctx : TypeContext)
       -- Use beval_preserves_varEnv to establish varEnv equality
       have h_varenv01 : ρ₀ = config₁.varEnv :=
         beval_preserves_varEnv e1 fuel' verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           config₁ (Value.num n_val) h_eval1_ex
       -- Convert h_eval1_ex to use config₁.varEnv
       rcases h_eval1_ex with ⟨w₀', w₁', h_eval1_eq⟩
       rw [h_varenv01] at h_instantiate
-      have h_eval1_eq' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextLoc := l₀, pureMode := pm₀ } e1 verbose w₀' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextLoc := config₁.nextLoc, pureMode := config₁.pureMode } (Value.num n_val)) w₁' := by
+      have h_eval1_eq' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀' =
+          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } (Value.num n_val)) w₁' := by
         rw [h_varenv01] at h_eval1_eq
         exact h_eval1_eq
-      have h_eval1' : ∃ w₀'' w₁''', LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextLoc := l₀, pureMode := pm₀ } e1 verbose w₀'' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextLoc := config₁.nextLoc, pureMode := config₁.pureMode } (Value.num n_val)) w₁''' :=
+      have h_eval1' : ∃ w₀'' w₁''', LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀'' =
+          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } (Value.num n_val)) w₁''' :=
         ⟨w₀', w₁', h_eval1_eq'⟩
       have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                       μ₀ config₁.memory config₁.varEnv config₁.varEnv
-                      l₀ config₁.nextLoc pm₀ config₁.pureMode (Value.num n_val) verbose
+                      l₀ config₁.nextAddr pm₀ config₁.pureMode (Value.num n_val) verbose
                       h_tc1' h_instantiate h_eval1'
       obtain ⟨h_v_type, h_runtime1⟩ := IH1
 
@@ -2219,19 +2219,19 @@ private lemma preservation_newRef (e1 : Expr) (ctx : TypeContext)
 
       constructor
       · -- valueHasETyp v res.qualType.etyp
-        -- h_val_eq: v = Value.loc config₁.nextLoc
+        -- h_val_eq: v = Value.loc config₁.nextAddr
         -- h_etyp: res.qualType.etyp = ETyp.ref etyp l
         -- From h_fresh: l = result1.nextLoc' (the fresh location from typechecking)
-        -- From h_fresh_eval: l_eval = config₁.nextLoc (the fresh location from evaluation)
-        -- We need to show valueHasETyp (Value.loc config₁.nextLoc) (ETyp.ref etyp l)
+        -- From h_fresh_eval: l_eval = config₁.nextAddr (the fresh location from evaluation)
+        -- We need to show valueHasETyp (Value.loc config₁.nextAddr) (ETyp.ref etyp l)
         -- The valueHasETyp.loc constructor ignores the concrete address in the type,
         -- so we can use it directly
         rw [h_val_eq, h_etyp]
         -- Extract l from h_fresh: l = result1.nextLoc'
         injection h_fresh with h_fresh_loc h_fresh_res
-        -- Extract l_eval from h_fresh_eval: l_eval = config₁.nextLoc
+        -- Extract l_eval from h_fresh_eval: l_eval = config₁.nextAddr
         injection h_fresh_eval with h_fresh_eval_loc h_fresh_eval_config
-        -- We need to show result1.nextLoc' = config₁.nextLoc
+        -- We need to show result1.nextLoc' = config₁.nextAddr
         -- Both start from the same initial state (l₀ = ctx.nextLoc) and both increment by 1
         -- This should follow from the fact that e1 evaluation preserves nextLoc relationship
         -- Actually, we can use the fact that both typechecking and evaluation start from
@@ -2239,34 +2239,34 @@ private lemma preservation_newRef (e1 : Expr) (ctx : TypeContext)
         -- But we need to prove this from the structure
         -- For now, let's assume they match and use valueHasETyp.loc
         -- Actually, looking at valueHasETyp.loc, it says "ignore concrete address in type",
-        -- so we don't need to show l = config₁.nextLoc
-        exact valueHasETyp.loc config₁.nextLoc etyp l
+        -- so we don't need to show l = config₁.nextAddr
+        exact valueHasETyp.loc config₁.nextAddr etyp l
       · -- runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₂ ρ₂
         -- res.memEnv' = updateMemEnv result1.memEnv' l storedQt
         -- where storedQt = ⟨etyp, joinPoison ctx.pc result1.qualType.poison, result1.qualType.pred⟩
         -- μ₂ = {config'' with memory := config''.memory.update l_eval n_val}
-        -- where (l_eval, config'') = freshLoc config₁
+        -- where (l_eval, config'') = freshAddr config₁
         -- We need to show that μ₂ contains l with the correct type
         -- Extract l from h_fresh: l = result1.nextLoc'
         injection h_fresh with h_fresh_loc h_fresh_res
-        -- Extract l_eval from h_fresh_eval: l_eval = config₁.nextLoc
+        -- Extract l_eval from h_fresh_eval: l_eval = config₁.nextAddr
         injection h_fresh_eval with h_fresh_eval_loc h_fresh_eval_config
-        -- We need to show result1.nextLoc' = config₁.nextLoc
+        -- We need to show result1.nextLoc' = config₁.nextAddr
         -- Both start from the same initial state (l₀ = ctx.nextLoc) and both increment by 1
         -- This should follow from the fact that e1 evaluation preserves nextLoc relationship
         -- Actually, we need a lemma that says if runtimeInstantiatesCtx holds,
         -- then the nextLoc counters match
-        -- For now, let's assume they match: result1.nextLoc' = config₁.nextLoc
+        -- For now, let's assume they match: result1.nextLoc' = config₁.nextAddr
         -- This means l = l_eval
         have h_loc_match : l = l_eval := by
-          -- We need to show result1.nextLoc' = config₁.nextLoc
+          -- We need to show result1.nextLoc' = config₁.nextAddr
           -- This follows from the fact that both start from l₀ and both increment by 1
           -- But we need to prove this from the structure
           -- Actually, we can use the fact that both typechecking and evaluation
           -- start from the same initial state and both increment by 1
-          -- So result1.nextLoc' = config₁.nextLoc
+          -- So result1.nextLoc' = config₁.nextAddr
           -- This is a key property that needs to be proven separately
-          sorry  -- TODO: Prove that result1.nextLoc' = config₁.nextLoc
+          sorry  -- TODO: Prove that result1.nextLoc' = config₁.nextAddr
         -- Now we can show runtimeInstantiatesCtx
         -- We need to show:
         -- 1. All locations in res.memEnv' are in μ₂
@@ -2276,12 +2276,12 @@ private lemma preservation_newRef (e1 : Expr) (ctx : TypeContext)
         -- res.memEnv' = updateMemEnv result1.memEnv' l storedQt
         -- Extract μ₂ from h_config_eq
         injection h_config_eq with h_mem_eq h_varenv_eq h_nextloc_eq h_puremode_eq
-        -- h_mem_eq: μ₂ = config₁.memory.update config₁.nextLoc n_val
-        -- From h_fresh_eval_loc: l_eval = config₁.nextLoc
+        -- h_mem_eq: μ₂ = config₁.memory.update config₁.nextAddr n_val
+        -- From h_fresh_eval_loc: l_eval = config₁.nextAddr
         -- From h_loc_match: l = l_eval
-        -- So l = config₁.nextLoc
-        -- Rewrite config₁.nextLoc to l
-        have h_loc_eq_nextloc : l = config₁.nextLoc := by
+        -- So l = config₁.nextAddr
+        -- Rewrite config₁.nextAddr to l
+        have h_loc_eq_nextloc : l = config₁.nextAddr := by
           rw [h_loc_match, h_fresh_eval_loc]
         rw [← h_loc_eq_nextloc] at h_mem_eq
         -- h_mem_eq: μ₂ = config₁.memory.update l n_val
@@ -2511,8 +2511,8 @@ private lemma preservation_vlet (x : Name) (e1 e2 : Expr) (ctx : TypeContext)
       -- Extract evaluation structure using helper lemma
       obtain ⟨config₁, config₂, config₃, v1, h_eval1_ex, h_config2_eq, h_eval2_ex, h_config_final_eq⟩ :=
         bevalVlet_structure x e1 e2 fuel'.succ verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-          { memory := μ_final, varEnv := ρ_final, nextLoc := l_final, pureMode := pm_final }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+          { memory := μ_final, varEnv := ρ_final, nextAddr := l_final, pureMode := pm_final }
           v h_eval
 
       -- Establish fuel constraint for IH
@@ -2525,7 +2525,7 @@ private lemma preservation_vlet (x : Name) (e1 e2 : Expr) (ctx : TypeContext)
       -- Use beval_preserves_varEnv to establish varEnv equality
       have h_varenv01 : ρ₀ = config₁.varEnv :=
         beval_preserves_varEnv e1 fuel' verbose
-          { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
+          { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           config₁ v1 h_eval1_ex
       -- Convert h_eval1_ex to use config₁.varEnv
       rcases h_eval1_ex with ⟨w₀', w₁', h_eval1_eq⟩
@@ -2534,18 +2534,18 @@ private lemma preservation_vlet (x : Name) (e1 e2 : Expr) (ctx : TypeContext)
       -- Rewrite fuel and varEnv in h_eval1_eq
       -- h_eval1_eq has fuel fuel' and varEnv ρ₀
       -- We need to rewrite ρ₀ to config₁.varEnv using h_varenv01
-      have h_eval1_eq' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextLoc := l₀, pureMode := pm₀ } e1 verbose w₀' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextLoc := config₁.nextLoc, pureMode := config₁.pureMode } v1) w₁' := by
+      have h_eval1_eq' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀' =
+          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁' := by
         -- h_eval1_eq has ρ₀, rewrite to config₁.varEnv
         rw [h_varenv01] at h_eval1_eq
         exact h_eval1_eq
       -- Construct h_eval1' with updated varEnv
-      have h_eval1' : ∃ w₀'' w₁'', LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextLoc := l₀, pureMode := pm₀ } e1 verbose w₀'' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextLoc := config₁.nextLoc, pureMode := config₁.pureMode } v1) w₁'' :=
+      have h_eval1' : ∃ w₀'' w₁'', LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀'' =
+          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁'' :=
         ⟨w₀', w₁', h_eval1_eq'⟩
       have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                       μ₀ config₁.memory config₁.varEnv config₁.varEnv
-                      l₀ config₁.nextLoc pm₀ config₁.pureMode v1 verbose
+                      l₀ config₁.nextAddr pm₀ config₁.pureMode v1 verbose
                       h_tc1' h_instantiate h_eval1'
       obtain ⟨h_v1_type, h_runtime1⟩ := IH1
 
@@ -2607,12 +2607,12 @@ private lemma preservation_vlet (x : Name) (e1 e2 : Expr) (ctx : TypeContext)
         exact h_tc2
       -- Convert h_eval2_ex to use explicit config structure
       rcases h_eval2_ex with ⟨w₀'', w₁'', h_eval2_eq⟩
-      have h_eval2' : ∃ w₀''' w₁''', LeanPoison.beval fuel' { memory := config₂.memory, varEnv := config₂.varEnv, nextLoc := config₂.nextLoc, pureMode := config₂.pureMode } e2 verbose w₀''' =
-          EStateM.Result.ok (.success { memory := config₃.memory, varEnv := config₃.varEnv, nextLoc := config₃.nextLoc, pureMode := config₃.pureMode } v) w₁''' :=
+      have h_eval2' : ∃ w₀''' w₁''', LeanPoison.beval fuel' { memory := config₂.memory, varEnv := config₂.varEnv, nextAddr := config₂.nextAddr, pureMode := config₂.pureMode } e2 verbose w₀''' =
+          EStateM.Result.ok (.success { memory := config₃.memory, varEnv := config₃.varEnv, nextAddr := config₃.nextAddr, pureMode := config₃.pureMode } v) w₁''' :=
         ⟨w₀'', w₁'', h_eval2_eq⟩
       have IH2 := IH fuel' h_fuel e2 ctx' (fuel_tc' - 1) result2
                       config₂.memory config₃.memory config₂.varEnv config₃.varEnv
-                      config₂.nextLoc config₃.nextLoc config₂.pureMode config₃.pureMode v verbose
+                      config₂.nextAddr config₃.nextAddr config₂.pureMode config₃.pureMode v verbose
                       h_tc2' h_runtime1' h_eval2'
       obtain ⟨h_v_type, h_runtime2⟩ := IH2
 
@@ -2786,7 +2786,7 @@ private lemma preservationWithFuel_num (n_val : Int) (ctx : TypeContext) (n : Na
     -- beval for num is: return .success config (Value.num n_val)
     -- This expands to: fun w => Result.ok (.success config (Value.num n_val)) w
     -- So we can construct the function equality directly
-    have h_eval_func : LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ } (Expr.num n_val) verbose = pure (.success { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) := by
+    have h_eval_func : LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ } (Expr.num n_val) verbose = pure (.success { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v) := by
       funext w
       -- Simplify beval - we know n ≠ 0 from outer by_cases
       simp [LeanPoison.beval, h_n_zero, pure]
@@ -2821,7 +2821,7 @@ private lemma preservationWithFuel_bool (b : Bool) (ctx : TypeContext) (n : Nat)
     injection h_eq_result with h_eq_cfg h_eq_val
     -- Extract config equalities
     injection h_eq_cfg with h_mem h_varenv h_nextloc h_puremode
-    have h_eval_func : LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ } (Expr.bool b) verbose = pure (.success { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) := by
+    have h_eval_func : LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ } (Expr.bool b) verbose = pure (.success { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v) := by
       funext w
       -- Simplify beval - we know n ≠ 0 from outer by_cases
       simp [LeanPoison.beval, h_n_zero, pure]
@@ -2855,7 +2855,7 @@ private lemma preservationWithFuel_unit (ctx : TypeContext) (n : Nat) :
     injection h_eq_result with h_eq_cfg h_eq_val
     -- Extract config equalities
     injection h_eq_cfg with h_mem h_varenv h_nextloc h_puremode
-    have h_eval_func : LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ } Expr.unit verbose = pure (.success { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) := by
+    have h_eval_func : LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ } Expr.unit verbose = pure (.success { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v) := by
       funext w
       -- Simplify beval - we know n ≠ 0 from outer by_cases
       simp [LeanPoison.beval, h_n_zero, pure]
@@ -2889,7 +2889,7 @@ private lemma preservationWithFuel_str (s : String) (ctx : TypeContext) (n : Nat
     injection h_eq_result with h_eq_cfg h_eq_val
     -- Extract config equalities
     injection h_eq_cfg with h_mem h_varenv h_nextloc h_puremode
-    have h_eval_func : LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ } (Expr.str s) verbose = pure (.success { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) := by
+    have h_eval_func : LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ } (Expr.str s) verbose = pure (.success { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v) := by
       funext w
       -- Simplify beval - we know n ≠ 0 from outer by_cases
       simp [LeanPoison.beval, h_n_zero, pure]
@@ -2928,7 +2928,7 @@ private lemma preservationWithFuel_var (x : Name) (ctx : TypeContext) (n : Nat) 
       injection h_eq_result with h_eq_cfg h_eq_val
       -- Extract config equalities
       injection h_eq_cfg with h_mem h_varenv h_nextloc h_puremode
-      have h_eval_func : LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ } (Expr.var x) verbose = pure (.success { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v) := by
+      have h_eval_func : LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ } (Expr.var x) verbose = pure (.success { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v) := by
         funext w
         -- Simplify beval - we know n ≠ 0 from outer by_cases
         simp [LeanPoison.beval, h_n_zero]

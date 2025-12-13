@@ -28,8 +28,8 @@ def Preservation (e : Expr) (ctx : TypeContext) : Prop :=
     -- And runtime instantiates the input context
     runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ →
     -- And evaluation terminates successfully
-    terminatesTo e { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-                   { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v →
+    terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+                   { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v →
     -- Then there exists an output realisation map such that:
     -- (i) it is a well-formed extension of the initial map (monotone, preserves injectivity),
     -- (ii) the result value has the expected enriched type, and

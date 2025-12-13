@@ -20,7 +20,7 @@ import LeanProofs.TypeSafety
 -- but never .runtimeError (stuck state)
 def Progress (e : Expr) (ctx : TypeContext) : Prop :=
   (∃ (fuel : Nat) (res : TypeResult), typecheck ctx e fuel = .ok res) →
-  ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (l : Address) (pm : Bool),
+  ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (a : Address) (pm : Bool),
     wfRealizationMap θ →
     runtimeInstantiatesCtx ctx μ ρ θ →
-    ¬stuck e { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm }
+    ¬stuck e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }

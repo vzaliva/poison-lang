@@ -103,7 +103,7 @@ mutual
       | Expr.newRef e => do
         match <- beval (fuel - 1) config e verbose with
         | .success config' (Value.num n) =>
-          let (l, config'') := freshLoc config'
+          let (l, config'') := freshAddr config'
           let config''' := { config'' with memory := config''.memory.update l n }
           return .success config''' (Value.loc l)
         | .success _ _ => return .runtimeError "Runtime type error: ref expects a number"
@@ -282,7 +282,7 @@ mutual
         if isPure then
           return .success ({ currentConfig with pureMode := false }) v
         else
-          let finalConfig := { currentConfig with memory := evalConfig.memory, nextLoc := evalConfig.nextLoc, pureMode := false }
+          let finalConfig := { currentConfig with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr, pureMode := false }
           return .success finalConfig v
       | .outOfFuel => return .outOfFuel
       | .runtimeError msg => return .runtimeError msg

@@ -124,12 +124,12 @@ structure PredSatLaws (predSat : PredSat) : Prop where
   -- then the predicate for k holds at memory μ for that v.
   match_sound : ∀ (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
                   (k : Tag) (deps : Deps)
-                  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (l : Address) (pm : Bool) (cfg : Config)
+                  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (addr : Address) (pm : Bool) (cfg : Config)
                   (v : Value),
     -- If matchGuard identifies that condition matches predicate k
     matchGuard condition Γ σ = .ok (k, deps) →
     -- And the condition evaluates to true
-    terminatesTo condition { memory := μ, varEnv := ρ, nextLoc := l, pureMode := pm } cfg (Value.bool true) →
+    terminatesTo condition { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm } cfg (Value.bool true) →
     -- And v arises from either the variable or dereference case used in matching:
     ( (∃ (x : Name) (qt : QTyp),
           σ.lookup x = some qt ∧
@@ -497,7 +497,7 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
 -- Non-Interference property
 -- ==========================
 def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) : Prop :=
-  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (l : Address) (pm : Bool) (R : Regime)
+  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a : Address) (pm : Bool) (R : Regime)
     (cf₁ cf₂ : Config) (o₁ o₂ : Value),
     wfRegime R s →
     wfRealizationMap θ₁ →  wfRealizationMap θ₂ →
@@ -505,8 +505,8 @@ def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx :
     runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
     consistentRegimeSpec predSat R s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat R s μ₂ ρ₂ θ₂ →
     agreeOnCriticalInputsUnderRegimeSpec predSat R s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
-    terminatesTo e { memory := μ₁, varEnv := ρ₁, nextLoc := l, pureMode := pm } cf₁ o₁ →
-    terminatesTo e { memory := μ₂, varEnv := ρ₂, nextLoc := l, pureMode := pm } cf₂ o₂ →
+    terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a, pureMode := pm } cf₁ o₁ →
+    terminatesTo e { memory := μ₂, varEnv := ρ₂, nextAddr := a, pureMode := pm } cf₂ o₂ →
     observablesEqual obs θ₁ θ₂ cf₁ cf₂ o₁ o₂
 
 -- Type system enforces Non-Interference
