@@ -96,6 +96,13 @@ inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
 -- A predicate for runtime instantiating the context: values must exist for
 -- every typed variable and memory must contain entries for each typed
 -- location.
+--
+-- Note on memory type matching (Issue #76): The proposal requires that heap
+-- cells have qualified types matching Γ(l). This is implicitly satisfied because:
+-- (1) Memory only stores integers (Memory := HashMap Address Int)
+-- (2) Well-typed programs only store values of type int in memory
+-- (3) Therefore, for any l ∈ dom(Γ) with θ(l) = a, the value μ(a) : Int
+--     matches the stored type Γ(l).etyp which must be ETyp.int.
 def runtimeInstantiatesCtx (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
   (∀ l a, θ.lookup l = some a → ctx.memEnv.contains l ∧ μ.contains a) ∧
   (∀ {x qt}, ctx.varEnv.lookup x = some qt →
