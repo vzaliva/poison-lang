@@ -1178,6 +1178,78 @@ private lemma beval_memory_monotonic_kwhile (e1 e2 : Expr) (fuel : Nat) (verbose
     -- The unfolded expression (ite) preserves memory monotonicity by IH (which internally uses the ite proof)
     exact IH fuel' h_fuel unfolded config₀ config₁ v h_beval_unfolded_ex l h_contains
 
+private lemma beval_memory_monotonic_externVal (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.externVal typ poison pred) verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁)
+    (l : Loc) (_h_contains : config₀.memory.contains l) :
+  config₁.memory.contains l := by
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  cases fuel with
+  | zero =>
+    -- When fuel = 0, beval returns outOfFuel (contradiction)
+    unfold LeanPoison.beval at h_eq
+    simp [EStateM.pure] at h_eq
+    injection h_eq with h_res
+    cases h_res
+  | succ fuel' =>
+    -- When fuel > 0, beval for Expr.externVal always returns .runtimeError
+    unfold LeanPoison.beval at h_eq
+    simp at h_eq
+    -- After simp, we have: pure (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+    simp [pure] at h_eq
+    -- After simplifying pure, we have: Result.ok (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+    injection h_eq with h_result h_world
+    -- h_result : .runtimeError ... = .success config₁ v
+    -- This is impossible since runtimeError and success are distinct constructors
+    injection h_result
+
+private lemma beval_memory_monotonic_externFn (arg : Name) (argTyp : Typ) (retSpec : ExternReturn) (effects : List Effect) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.externFn arg argTyp retSpec effects) verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁)
+    (l : Loc) (_h_contains : config₀.memory.contains l) :
+  config₁.memory.contains l := by
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  cases fuel with
+  | zero =>
+    -- When fuel = 0, beval returns outOfFuel (contradiction)
+    unfold LeanPoison.beval at h_eq
+    simp [EStateM.pure] at h_eq
+    injection h_eq with h_res
+    cases h_res
+  | succ fuel' =>
+    -- When fuel > 0, beval for Expr.externFn always returns .runtimeError
+    unfold LeanPoison.beval at h_eq
+    simp at h_eq
+    -- After simp, we have: pure (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+    simp [pure] at h_eq
+    -- After simplifying pure, we have: Result.ok (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+    injection h_eq with h_result h_world
+    -- h_result : .runtimeError ... = .success config₁ v
+    -- This is impossible since runtimeError and success are distinct constructors
+    injection h_result
+
+private lemma beval_memory_monotonic_externPfn (arg : Name) (argTyp : Typ) (retSpec : ExternReturn) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.externPfn arg argTyp retSpec) verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁)
+    (l : Loc) (_h_contains : config₀.memory.contains l) :
+  config₁.memory.contains l := by
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  cases fuel with
+  | zero =>
+    -- When fuel = 0, beval returns outOfFuel (contradiction)
+    unfold LeanPoison.beval at h_eq
+    simp [EStateM.pure] at h_eq
+    injection h_eq with h_res
+    cases h_res
+  | succ fuel' =>
+    -- When fuel > 0, beval for Expr.externPfn always returns .runtimeError
+    unfold LeanPoison.beval at h_eq
+    simp at h_eq
+    -- After simp, we have: pure (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+    simp [pure] at h_eq
+    -- After simplifying pure, we have: Result.ok (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+    injection h_eq with h_result h_world
+    -- h_result : .runtimeError ... = .success config₁ v
+    -- This is impossible since runtimeError and success are distinct constructors
+    injection h_result
+
 -- Memory Monotonicity Lemma: evaluation can only add memory locations, never remove them
 -- This is a key property that follows from the fact that memory locations are never deallocated
 lemma beval_memory_monotonic : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
@@ -1197,9 +1269,9 @@ lemma beval_memory_monotonic : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
       intro m h_lt e' config₀' config₁' v' h_eval' l' h_contains'
       exact IH m h_lt e' verbose config₀' config₁' v' h_eval' l' h_contains'
     cases e with
-    | externVal _ _ _ => sorry
-    | externFn _ _ _ _ => sorry
-    | externPfn _ _ _ => sorry
+    | externVal typ poison pred => exact beval_memory_monotonic_externVal typ poison pred fuel verbose config₀ config₁ v h_eval l h_contains
+    | externFn arg argTyp retSpec effects => exact beval_memory_monotonic_externFn arg argTyp retSpec effects fuel verbose config₀ config₁ v h_eval l h_contains
+    | externPfn arg argTyp retSpec => exact beval_memory_monotonic_externPfn arg argTyp retSpec fuel verbose config₀ config₁ v h_eval l h_contains
     | num n | bool b | str s | unit =>
       -- Literals don't modify memory: config₁ = config₀
       -- All literals (numbers, booleans, strings, unit) follow the same pattern

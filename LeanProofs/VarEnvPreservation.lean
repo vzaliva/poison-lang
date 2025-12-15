@@ -810,6 +810,51 @@ private lemma beval_preserves_varEnv_printString (e1 : Expr) (fuel' : Nat) (verb
     · next msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
   · next h_error h_state => injection h_eq
 
+private lemma beval_preserves_varEnv_externVal (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel'.succ config₀ (Expr.externVal typ poison pred) verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) :
+  config₀.varEnv = config₁.varEnv := by
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  unfold LeanPoison.beval at h_eq
+  -- When fuel > 0, beval for Expr.externVal always returns .runtimeError
+  simp at h_eq
+  -- After simp, we have: pure (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+  simp [pure] at h_eq
+  -- After simplifying pure, we have: Result.ok (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+  injection h_eq with h_result h_world
+  -- h_result : .runtimeError ... = .success config₁ v
+  -- This is impossible since runtimeError and success are distinct constructors
+  injection h_result
+
+private lemma beval_preserves_varEnv_externFn (arg : Name) (argTyp : Typ) (retSpec : ExternReturn) (effects : List Effect) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel'.succ config₀ (Expr.externFn arg argTyp retSpec effects) verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) :
+  config₀.varEnv = config₁.varEnv := by
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  unfold LeanPoison.beval at h_eq
+  -- When fuel > 0, beval for Expr.externFn always returns .runtimeError
+  simp at h_eq
+  -- After simp, we have: pure (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+  simp [pure] at h_eq
+  -- After simplifying pure, we have: Result.ok (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+  injection h_eq with h_result h_world
+  -- h_result : .runtimeError ... = .success config₁ v
+  -- This is impossible since runtimeError and success are distinct constructors
+  injection h_result
+
+private lemma beval_preserves_varEnv_externPfn (arg : Name) (argTyp : Typ) (retSpec : ExternReturn) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel'.succ config₀ (Expr.externPfn arg argTyp retSpec) verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁) :
+  config₀.varEnv = config₁.varEnv := by
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  unfold LeanPoison.beval at h_eq
+  -- When fuel > 0, beval for Expr.externPfn always returns .runtimeError
+  simp at h_eq
+  -- After simp, we have: pure (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+  simp [pure] at h_eq
+  -- After simplifying pure, we have: Result.ok (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
+  injection h_eq with h_result h_world
+  -- h_result : .runtimeError ... = .success config₁ v
+  -- This is impossible since runtimeError and success are distinct constructors
+  injection h_result
+
 -- Lemma: beval never modifies the variable environment
 -- This is a fundamental property: evaluation doesn't change variable bindings
 -- (variables can only be added/shadowed via let, but the varEnv itself is immutable)
@@ -839,9 +884,9 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool) (config₀
       cases h_res
     | succ fuel' =>
       cases e with
-      | externVal _ _ _ => sorry
-      | externFn _ _ _ _ => sorry
-      | externPfn _ _ _ => sorry
+      | externVal typ poison pred => exact beval_preserves_varEnv_externVal typ poison pred fuel' verbose config₀ config₁ v h_eval
+      | externFn arg argTyp retSpec effects => exact beval_preserves_varEnv_externFn arg argTyp retSpec effects fuel' verbose config₀ config₁ v h_eval
+      | externPfn arg argTyp retSpec => exact beval_preserves_varEnv_externPfn arg argTyp retSpec fuel' verbose config₀ config₁ v h_eval
       | num n => exact beval_preserves_varEnv_num n fuel' verbose config₀ config₁ v h_eval
       | bool b => exact beval_preserves_varEnv_bool b fuel' verbose config₀ config₁ v h_eval
       | unit => exact beval_preserves_varEnv_unit fuel' verbose config₀ config₁ v h_eval
