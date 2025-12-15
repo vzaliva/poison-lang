@@ -1,8 +1,7 @@
 -- Test that fresh locations are properly tracked through while loops
 -- This test ensures that location counters are not reset after while loops
 
--- Create a counter that will iterate once
-let counter = ref 1 in
+let counter = ref 3 in
 
 -- While loop that creates a fresh reference in its body and then terminates
 while !counter > 0 do

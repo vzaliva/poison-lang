@@ -9,42 +9,42 @@ open Std
 /-- Default fuel for type checking -/
 private def defaultFuel : Nat := 1000
 
-/-- Memory typing environment (Γ in the Ott spec) -/
-abbrev MemoryTypeEnv := HashMap Address QTyp
+/-- Memory typing environment (Γ in the Ott spec), keyed by logical locations. -/
+abbrev MemoryTypeEnv := HashMap Loc QTyp
 
 namespace MemoryTypeEnv
 
-  @[inline] def lookup (m : MemoryTypeEnv) (a : Address) : Option QTyp :=
-    m.get? a
+  @[inline] def lookup (m : MemoryTypeEnv) (l : Loc) : Option QTyp :=
+    m.get? l
 
-  @[inline] def update (m : MemoryTypeEnv) (a : Address) (qt : QTyp) : MemoryTypeEnv :=
-    m.insert a qt
+  @[inline] def update (m : MemoryTypeEnv) (l : Loc) (qt : QTyp) : MemoryTypeEnv :=
+    m.insert l qt
 
   /-- `m` contains a binding for `a`. -/
-  def hasKey (m : MemoryTypeEnv) (a : Address) : Prop :=
-    m.contains a
+  def hasKey (m : MemoryTypeEnv) (l : Loc) : Prop :=
+    m.contains l
 
   /-- Extensional equality of memory typing environments. All keys and values must be equal. -/
   def equiv (m₁ m₂ : MemoryTypeEnv) : Prop := HashMap.Equiv m₁ m₂
 
 end MemoryTypeEnv
 
-/-- Dependency set for tracking heap locations read by predicates -/
-abbrev Deps := List Address
+/-- Dependency set for tracking logical locations read by predicates -/
+abbrev Deps := LocSet
 
 /-- Tag valuation with dependency information -/
 structure TagVal where
   value : Bool
-  deps : Deps
+  deps : LocSet
   deriving Repr, BEq
 
 /-- Tag valuation environment (ℒ in the Ott spec) -/
 abbrev TagEnv := HashMap Tag TagVal
 
-/-- Remove from tag environment all entries whose dependency sets contain location l -/
-def invalidateTagDeps (env : TagEnv) (l : Address) : TagEnv :=
-  Std.HashMap.fold (fun acc k tv =>
-    if tv.deps.contains l then acc else acc.insert k tv) (∅ : TagEnv) env
+/-- Remove from tag environment all entries whose dependency sets intersect the given locset. -/
+def invalidateTagDeps (env : TagEnv) (ls : LocSet) : TagEnv :=
+  env.filter (fun _ tv =>
+    not <| tv.deps.any ls.contains)
 
 /-- Type checking context containing all environments -/
 structure TypeContext where
@@ -52,7 +52,7 @@ structure TypeContext where
   memEnv : MemoryTypeEnv -- Γ
   varEnv : VarTypeEnv    -- σ
   tagEnv : TagEnv        -- ℒ
-  nextLoc : Address  -- for fresh location generation
+  nextLoc : Loc  -- for fresh logical location generation
   nextTag : Tag  -- for fresh location generation
   pureCtx : Bool -- whether we are inside a pure function body typing
 
@@ -61,7 +61,7 @@ structure TypeResult where
   qualType : QTyp -- Qualified type of the expression
   memEnv' : MemoryTypeEnv -- Updated memory typing environment
   tagEnv' : TagEnv  -- Updated logical environment
-  nextLoc' : Address -- Updated next location
+  nextLoc' : Loc -- Updated next logical location
   nextTag' : Tag -- Updated next location
 
 /-- Type checking monad for error handling -/
@@ -78,57 +78,57 @@ def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
       | fuel + 1 =>
         match pe with
         | PExpr.var x =>
-          if boundVars.contains x then return []  -- Bound variable, not free
+          if boundVars.contains x then return LocSet.empty  -- Bound variable, not free
           else
             match env.find? (fun (name, _) => name == x) with
             | some (_, qt) =>
               match qt.etyp with
-              | ETyp.ref _t l => return [l]  -- Reference type, add location
+              | ETyp.ref _t ls => return ls  -- Reference type, add referenced locset
               | ETyp.parrow _argTy _retTy _poison tcls =>
                 -- Pure function, recurse into all closures' bodies
                 match tcls with
                 | [PFnTClosure.regular argName body varEnv'] =>
                     -- Single closure, recurse into its body
                     extractDepsFromPExpr body (argName :: boundVars) varEnv' fuel
-                | _ => return []  -- Multiple or extern closures: conservative fallback
-              | _ => return []  -- Other types don't read from heap
+                | _ => return LocSet.empty  -- Multiple or extern closures: conservative fallback
+              | _ => return LocSet.empty  -- Other types don't read from heap
             | none => throw s!"Variable {x} not found in environment while extracting dependencies"
         | PExpr.deref pe' => extractDepsFromPExpr pe' boundVars env fuel
         | PExpr.op pe1 _ pe2 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
-          return concat_noDups deps1 deps2
+          return LocSet.union deps1 deps2
         | PExpr.unaryop _ pe' => extractDepsFromPExpr pe' boundVars env fuel
         | PExpr.ite pe1 pe2 pe3 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
           let deps3 ← extractDepsFromPExpr pe3 boundVars env fuel
-          return concat_noDups (concat_noDups deps1 deps2) deps3
+          return LocSet.union (LocSet.union deps1 deps2) deps3
         | PExpr.app pe1 pe2 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 boundVars env fuel
-          return concat_noDups deps1 deps2
+          return LocSet.union deps1 deps2
         | PExpr.vlet x pe1 pe2 => do
           let deps1 ← extractDepsFromPExpr pe1 boundVars env fuel
           let deps2 ← extractDepsFromPExpr pe2 (x :: boundVars) env fuel
-          return concat_noDups deps1 deps2
-        | _ => return []  -- literals, unit, etc. don't read from heap
+          return LocSet.union deps1 deps2
+        | _ => return LocSet.empty  -- literals, unit, etc. don't read from heap
 
     -- Start with the bound parameter in the bound variables list
     extractDepsFromPExpr pred_body [arg_name] var_env defaultFuel
   | Predicate.guardOnly _tag =>
     -- Guard-only predicate with no body, no dependencies
-    return []
+    return LocSet.empty
   | Predicate.noPred =>
     -- No predicate, no dependencies
-    return []
+    return LocSet.empty
 
 -- Allocate a fresh location and return it along with updated typing context
-def freshTLoc (ctx : TypeContext): (Address × TypeContext) :=
+def freshTLoc (ctx : TypeContext): (Loc × TypeContext) :=
   (ctx.nextLoc, { ctx with nextLoc := ctx.nextLoc + 1 })
 
 -- Allocate a fresh location and return it along with updated typing context
-def freshTLocRes (result : TypeResult): (Address × TypeResult) :=
+def freshTLocRes (result : TypeResult): (Loc × TypeResult) :=
   (result.nextLoc', { result with nextLoc' := result.nextLoc' + 1 })
 
 -- Function to get a fresh Tag Value From the environment
@@ -185,7 +185,7 @@ def joinPredicates (pred1 pred2 : Predicate) : Predicate :=
     | _, Predicate.noPred => Predicate.noPred
 
 /-- Update memory environment at a location -/
-def updateMemEnv (env : MemoryTypeEnv) (l : Address) (qt : QTyp) : MemoryTypeEnv :=
+def updateMemEnv (env : MemoryTypeEnv) (l : Loc) (qt : QTyp) : MemoryTypeEnv :=
 env.insert l qt
 
 /-- Join two memory environments (branch join). See JoinG in the Ott spec. -/
@@ -208,6 +208,10 @@ def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
         none
     | none, none => none)
 
+/-- Restrict `envToRestrict` to the domain of `base`. -/
+def restrictMemEnv (envToRestrict base : MemoryTypeEnv) : MemoryTypeEnv :=
+  envToRestrict.filter (fun k _ => base.contains k)
+
 /-- Join two ETyps at conditional joins, merging closures for arrow types (Issue #63).
     This implements the closure merging logic from the if-typing rules in the Ott spec.
     For arrow types: merge closure sets and join arrow-internal poisons.
@@ -216,6 +220,11 @@ def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
 -/
 def joinETyps (t1 t2 : ETyp) (_p1 _p2 : Poison) : ETyp :=
   match t1, t2 with
+  | ETyp.ref inner1 ls1, ETyp.ref inner2 ls2 =>
+      if beqETypSignature inner1 inner2 then
+        ETyp.ref inner1 (LocSet.union ls1 ls2)
+      else
+        t1
   | ETyp.arrow st1 st2 p1' tcls1, ETyp.arrow st1' st2' p2' tcls2 =>
       -- Signature compatibility already checked; merge closures and join arrow-internal poisons
       if st1 == st1' && st2 == st2' then
@@ -243,7 +252,7 @@ def joinTagEnvs (env1 env2 : TagEnv) : TagEnv :=
     | some ⟨b1, deps1⟩, some ⟨b2, deps2⟩ =>
       if b1 == b2 then
         -- Agreement: keep the tag with union of dependencies
-        some ⟨b1, concat_noDups deps1 deps2⟩
+        some ⟨b1, LocSet.union deps1 deps2⟩
       else
         -- Disagreement: drop the tag (unknown)
         none
@@ -443,34 +452,48 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
     | .ok none => acc
     | .error _ => acc
 
-  -- For references, we need to check the memory environment
-  let refMatches := S.foldl (init := []) fun acc ⟨name, qt⟩ =>
-    -- Check if the variable has a reference type
-      match qt.etyp with
-  | ETyp.ref _t l =>
-      if qt.poison then
-        -- Poisoned reference: it could never be de-poisoned, so we don't need to check the predicate
-        acc
-      else
-        -- Look up the type of the memory location in G
-        match G.get? l with
-        | some memQt =>
-          -- Use the dereferenced value as the substitution value
+  -- For references, merge predicates across the locset before matching
+  let refMatches ← S.foldlM (init := ([] : List (Tag × Deps))) fun acc ⟨name, qt⟩ => do
+    match qt.etyp with
+    | ETyp.ref _t ls =>
+        if qt.poison then
+          pure acc
+        else
+          if ls.isEmpty then throw "Reference locset is empty in matchGuard" else
           let arg := PExpr.deref (PExpr.var name)
-          -- Use checkPredicate to check if the memory location's predicate matches
-          match checkPredicate arg memQt with
-          | .ok (some (tag, deps)) => (tag, l :: deps) :: acc  -- Add the memory location l that arg refers to
-          | .ok none => acc
-          | .error _ => acc
-        | none => acc
-    | _ => acc
+          -- Merge predicates across locset, error if a referenced location is missing
+          let merged? ←
+            LocSet.foldM ls (init := (none : Option Predicate)) (fun accPred? l => do
+              match G.get? l with
+              | some memQt =>
+                  let nextPred :=
+                    match accPred? with
+                    | none => memQt.pred
+                    | some p => joinPredicates p memQt.pred
+                  pure (some nextPred)
+              | none => throw s!"Location {l} not found in memory environment during matchGuard")
+          -- Collect deps across locset
+          let depsMerged ← LocSet.foldM ls (init := LocSet.empty) (fun dacc l => do
+            match G.get? l with
+            | some memQt =>
+                let deps ← extractDepsFromPred memQt.pred
+                pure (LocSet.union dacc (LocSet.union (LocSet.singleton l) deps))
+            | none => throw s!"Location {l} not found in memory environment during matchGuard")
+          let merged := merged?.getD Predicate.noPred
+          match merged with
+          | Predicate.guardClosure tag arg_name pred_body var_env =>
+              if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) defaultFuel then
+                pure ((tag, depsMerged) :: acc) else pure acc
+          | Predicate.guardOnly _tag => pure acc
+          | Predicate.noPred => pure acc
+    | _ => pure acc
 
   let allMatches := varMatches ++ refMatches
   -- Return the tag and dependencies if exactly one match is found, otherwise throw an error
   match allMatches with
   | [(tag, deps)] => return (tag, deps)
   | [] => throw "No matching guard found for condition"
-  | _ => throw s!"Multiple matching guards found for condition: {allMatches}"
+  | _ => throw s!"Multiple matching guards found for condition: {repr allMatches}"
 
 
 
@@ -536,13 +559,13 @@ def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
 /-- Rule: location (Ott rule: location)
 -- G(l) = T :> p { P }
 -- ------------------
--- pc ; G ; S ; L |- l : ref T @ l :> clean { no_pred } -| G ; L
+-- pc ; G ; S ; L |- l : ref T @ {l} :> clean { no_pred } -| G ; L
 -/
-def typecheckLocation (ctx : TypeContext) (l : Address) : TypecheckM TypeResult := do
+def typecheckLocation (ctx : TypeContext) (l : Loc) : TypecheckM TypeResult := do
   match ctx.memEnv.get? l with
   | some qt =>
     let ⟨etyp, _p, pred ⟩ := qt
-    let refTyp := ETyp.ref etyp l
+    let refTyp := ETyp.ref etyp (LocSet.singleton l)
     let qt' : QTyp := ⟨refTyp, false, pred⟩  -- clean, preserve predicate
     return { qualType := qt', memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
   | none => throw s!"Location {l} not found in memory environment"
@@ -625,7 +648,7 @@ def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     | Typ.ref t => do
         let (l, ctx') := freshTLoc ctx
         let (innerQt, ctx'') ← surfaceSpecToQTyp t false SyntaxPredicate.noPred varEnv ctx'
-        return (ETyp.ref innerQt.etyp l, ctx'')
+        return (ETyp.ref innerQt.etyp (LocSet.singleton l), ctx'')
     | Typ.arrow _ _ => throw "Arrow types not expected in extern specs" : TypecheckM (ETyp × TypeContext))
 
   let pred' ← attachVarEnvToPredicate pred varEnv
@@ -651,7 +674,7 @@ def effectSpecToQTyp (poison : Bool) (pred : SyntaxPredicate)
     See issue #72: Extern Functions Returning Reference Types - Location Tracking Problem
 -/
 def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
-    (varEnv : VarTypeEnv) (nextLoc : Address) : TypecheckM (QTyp × Address) := do
+    (varEnv : VarTypeEnv) (nextLoc : Loc) : TypecheckM (QTyp × Loc) := do
   -- Convert Typ to ETyp, rejecting reference types
   let (etyp, nextLoc') ← (match typ with
     | Typ.int => pure (ETyp.int, nextLoc)
@@ -659,7 +682,7 @@ def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     | Typ.unit => pure (ETyp.unit, nextLoc)
     | Typ.string => pure (ETyp.string, nextLoc)
     | Typ.ref _ => throw "Extern functions cannot return reference types (see issue #72)"
-    | Typ.arrow _ _ => throw "Arrow types not expected in extern specs" : TypecheckM (ETyp × Address))
+    | Typ.arrow _ _ => throw "Arrow types not expected in extern specs" : TypecheckM (ETyp × Loc))
 
   let pred' ← attachVarEnvToPredicate pred varEnv
   return (⟨etyp, poison, pred'⟩, nextLoc')
@@ -769,7 +792,7 @@ termination_by fuel
     Re-types the guard each iteration, threads pc := pc ⊔ poison(guard),
     and joins Γ/ℒ from the body as in the Ott recurrences.
     Also tracks fresh location and tag counters through the fixpoint. -/
-def runWhileFixpoint (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (pureGuard : Bool) (guardOpt : Option (Tag × Deps)) : TypecheckM (Poison × MemoryTypeEnv × TagEnv × Address × Tag) :=
+def runWhileFixpoint (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (pureGuard : Bool) (guardOpt : Option (Tag × Deps)) : TypecheckM (Poison × MemoryTypeEnv × TagEnv × Loc × Tag) :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
@@ -801,7 +824,8 @@ def runWhileFixpoint (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (pureGuard 
 
     -- (4) Recurrences: pc_{i+1} = pc_i ⊔ p_{2,i}; Γ/ℒ joins with the body results
     let newPc := joinPoison ctx.pc p2
-    let newMemEnv := joinMemEnvs ctx.memEnv bodyRes.memEnv'
+    let restrictedBodyEnv := restrictMemEnv bodyRes.memEnv' ctx.memEnv
+    let newMemEnv := joinMemEnvs ctx.memEnv restrictedBodyEnv
     let newTagEnv := joinTagEnvs ctx.tagEnv bodyRes.tagEnv'
 
     -- (5) Fixpoint check
@@ -982,7 +1006,7 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
     let storedQt : QTyp := ⟨etyp, storedPoison, pred⟩
     let memEnv' := updateMemEnv result'.memEnv' l storedQt
 
-    let qt : QTyp := ⟨ETyp.ref etyp l, ctx.pc, Predicate.noPred⟩
+    let qt : QTyp := ⟨ETyp.ref etyp (LocSet.singleton l), ctx.pc, Predicate.noPred⟩
     return { qualType := qt, memEnv' := memEnv', tagEnv' := result'.tagEnv', nextLoc' := result'.nextLoc', nextTag' := result'.nextTag' }
 termination_by fuel
 
@@ -999,20 +1023,20 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
     let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
     match etyp1 with
-    | ETyp.ref t l =>
+    | ETyp.ref t ls =>
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
-      if etyp2 != t then throw "Type mismatch in assignment"
+      if not (t == etyp2) then throw "Type mismatch in assignment"
 
       let storedPoison := joinPoison ctx.pc (joinPoison p1 p2)
       let storedQt : QTyp := ⟨t, storedPoison, pred2⟩
-      let memEnv' := updateMemEnv result2.memEnv' l storedQt
+      let memEnv' := LocSet.fold ls result2.memEnv' (fun env l => updateMemEnv env l storedQt)
 
       let resultPoison := joinPoison ctx.pc p1
       let qt : QTyp := ⟨ETyp.unit, resultPoison, Predicate.noPred⟩
       -- Invalidate dependencies on write (Ott rule: assign)
-      let tagEnv' := invalidateTagDeps result2.tagEnv' l
+      let tagEnv' := invalidateTagDeps result2.tagEnv' ls
       return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag'  }
     | _ => throw "Left operand of assignment must be a reference"
 termination_by fuel
@@ -1024,45 +1048,51 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
     let result ← typecheckExpr ctx e fuel
-    let ⟨etyp, poison, _pred ⟩ := result.qualType
+    let ⟨etyp, poisonRef, _predRef ⟩ := result.qualType
     match etyp with
-    | ETyp.ref t l =>
-      match result.memEnv'.get? l with
-      | some ⟨etyp', p2, pred⟩ =>
-        -- Check type equality first, before any poison or predicate handling
-        if etyp' != t then throw s!"Type mismatch in dereference: {repr etyp'} != {repr t}"
-        -- Check if reference itself is poisoned
-        if poison then
-          -- Reference is poisoned: always return poisoned with no predicate
-          -- Ott rule: deref_poisoned
-          let qt : QTyp := ⟨t, true, Predicate.noPred⟩  -- poisoned, no_pred
-          return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
-        else
-          -- Reference is clean: proceed with normal predicate handling
-          match pred with
-          | Predicate.noPred =>  -- Ott rule: deref_no_pred
-            let poison := joinPoison ctx.pc p2
+    | ETyp.ref t ls =>
+      if ls.isEmpty then
+        throw "Reference locset is empty"
+      -- Fetch all referenced memory cells and ensure their types are compatible
+      let (joinedCellPoison, mergedPred?) ←
+        LocSet.foldM ls (init := (false, (none : Option Predicate))) (fun (accPoison, accPred?) l => do
+          match result.memEnv'.get? l with
+          | some qt =>
+              if qt.etyp == t then
+                let nextPoison := joinPoison accPoison qt.poison
+                let nextPred? :=
+                  match accPred? with
+                  | none => some qt.pred
+                  | some p => some (joinPredicates p qt.pred)
+                pure (nextPoison, nextPred?)
+              else
+                throw s!"Type mismatch in dereference at {l}: {repr qt.etyp} ≠ {repr t}"
+          | none => throw s!"Location {l} not found in memory environment")
+
+      let mergedPred := mergedPred?.getD Predicate.noPred
+
+      if poisonRef then
+        -- Reference itself poisoned: ignore predicates, return poisoned
+        let qt : QTyp := ⟨t, true, Predicate.noPred⟩
+        return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
+      else
+        match mergedPred with
+        | Predicate.noPred =>
+            let poison := joinPoison ctx.pc joinedCellPoison
             let qt : QTyp := ⟨t, poison, Predicate.noPred⟩
             return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
-          | Predicate.guardOnly k | Predicate.guardClosure k _ _ _ =>
-            -- Both guard types behave the same for dereference
+        | Predicate.guardOnly k | Predicate.guardClosure k _ _ _ =>
             match result.tagEnv'.get? k with
             | some ⟨true, _deps⟩ =>
-              -- Ott rule: deref_guard_true / deref_guard_only_true
-              let poison := ctx.pc
-              let qt : QTyp := ⟨t, poison, Predicate.noPred⟩
+              let qt : QTyp := ⟨t, ctx.pc, Predicate.noPred⟩
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
             | some ⟨false, _deps⟩ =>
-              -- Ott rule: deref_guard_false / deref_guard_only_false
-              let qt : QTyp := ⟨t, true, Predicate.noPred⟩  -- poisoned
+              let qt : QTyp := ⟨t, true, Predicate.noPred⟩
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
             | none =>
-              -- Ott rule: deref_guard_unknown / deref_guard_only_unknown
-              let poison := joinPoison ctx.pc p2
-              -- Preserve the original predicate (either guardOnly or guardClosure)
-              let qt : QTyp := ⟨t, poison, pred⟩
+              let poison := joinPoison ctx.pc joinedCellPoison
+              let qt : QTyp := ⟨t, poison, mergedPred⟩
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
-      | none => throw s!"Location {l} not found in memory environment"
     | _ => throw "Operand of dereference must be a reference"
 termination_by fuel
 
@@ -1130,10 +1160,10 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
               match unifiedEnv.lookup v with
               | some qt =>
                   match qt.etyp with
-                  | ETyp.ref _t l =>
+                  | ETyp.ref _t ls =>
                       let effectQt ← effectSpecToQTyp effect.poison effect.pred unifiedEnv
                       let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
-                      memEnv := memEnv.insert l storedQt
+                      memEnv := LocSet.fold ls memEnv (fun acc l => acc.insert l storedQt)
                   | _ => throw s!"Effect target {v} must be a reference type"
               | none => throw s!"Effect target {v} not found in environment"
           | EffectTarget.returnValue => pure ()
@@ -1144,7 +1174,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
 
             match retQt.etyp with
-            | ETyp.ref _t l =>
+            | ETyp.ref _t ls =>
                 let returnEffect := effects.find? (fun eff =>
                   match eff.target with
                   | EffectTarget.returnValue => true
@@ -1153,7 +1183,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
                 | some eff =>
                     let effectQt ← effectSpecToQTyp eff.poison eff.pred unifiedEnv
                     let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
-                    memEnv := memEnv.insert l storedQt
+                    memEnv := LocSet.fold ls memEnv (fun acc l => acc.insert l storedQt)
                 | none => pure ()
             | _ =>
                 let hasReturnEffect := effects.any (fun eff =>

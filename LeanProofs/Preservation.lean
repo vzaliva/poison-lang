@@ -19,16 +19,22 @@ import LeanProofs.TypeSafety
 -- has the expected enriched type and the final memory/variable environments
 -- are consistent with the output typing context
 def Preservation (e : Expr) (ctx : TypeContext) : Prop :=
-  ∀ (fuel_tc : Nat) (res : TypeResult) (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv)
+  ∀ (fuel_tc : Nat) (res : TypeResult) (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ : RealizationMap)
     (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value),
     -- If typechecking succeeds
     typecheck ctx e fuel_tc = .ok res →
+    -- And the realisation map is well-formed
+    wfRealizationMap θ₀ →
     -- And runtime instantiates the input context
-    runtimeInstantiatesCtx ctx μ₀ ρ₀ →
+    runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ →
     -- And evaluation terminates successfully
-    terminatesTo e { memory := μ₀, varEnv := ρ₀, nextLoc := l₀, pureMode := pm₀ }
-                   { memory := μ₁, varEnv := ρ₁, nextLoc := l₁, pureMode := pm₁ } v →
-    -- Then the result value has the expected enriched type
-    valueHasETyp v res.qualType.etyp ∧
-    -- And the final runtime state instantiates the output typing context
-    runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁
+    terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+                   { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v →
+    -- Then there exists an output realisation map such that:
+    -- (i) it is a well-formed extension of the initial map (monotone, preserves injectivity),
+    -- (ii) the result value has the expected enriched type, and
+    -- (iii) the final runtime state instantiates the output typing context.
+    ∃ (θ₁ : RealizationMap),
+      wfExtendsMap θ₀ θ₁ ∧
+      valueHasETyp θ₁ v res.qualType.etyp ∧
+      runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁ θ₁

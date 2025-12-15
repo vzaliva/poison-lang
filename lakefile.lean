@@ -2,7 +2,7 @@ import Lake
 open Lake DSL
 
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "v4.24.0"
+  "https://github.com/leanprover-community/mathlib4" @ "v4.25.2"
 
 package «lean-poison» where
   -- Default targets are set via `@[default_target]` on declarations below

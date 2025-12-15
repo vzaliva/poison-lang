@@ -1,10 +1,52 @@
 -- Core definitions for Poison language (aligned with poison-lang.ott)
 
 import Std.Data.HashMap
+import Std.Data.ExtTreeSet
 import Mathlib.Tactic
+
 open Std
 
 abbrev Address := Nat
+abbrev Loc := Nat
+abbrev LocSet := ExtTreeSet Loc
+
+namespace LocSet
+
+@[inline] def empty : LocSet := ExtTreeSet.empty
+
+@[inline] def singleton (l : Loc) : LocSet :=
+  (∅ : LocSet).insert l
+
+@[inline] def union (s₁ s₂ : LocSet) : LocSet :=
+  ExtTreeSet.merge s₁ s₂
+
+@[inline] def fromList (ls : List Loc) : LocSet :=
+  ExtTreeSet.ofList ls
+
+@[inline] def fold (s : LocSet) (init : β) (f : β → Loc → β) : β :=
+  ExtTreeSet.foldl (f := fun acc l => f acc l) (init := init) s
+
+@[inline] def foldM [Monad m] [LawfulMonad m] (s : LocSet) (init : β) (f : β → Loc → m β) : m β :=
+  ExtTreeSet.foldlM (f := fun acc l => f acc l) (init := init) s
+
+@[inline] def any (s : LocSet) (p : Loc → Bool) : Bool :=
+  ExtTreeSet.any s p
+
+@[inline] def anyM [Monad m] [LawfulMonad m] (s : LocSet) (p : Loc → m Bool) : m Bool :=
+  foldM s false (fun acc l => do
+    if acc then
+      pure true
+    else
+      p l)
+
+end LocSet
+
+instance : BEq LocSet where
+  beq s t := (ExtTreeSet.toList s) == (ExtTreeSet.toList t)
+
+instance : Repr LocSet where
+  reprPrec s prec :=
+    reprPrec (ExtTreeSet.toList s) prec
 abbrev Name := String
 
 -- Surface types (corresponds to typ, ST in Ott)
@@ -448,7 +490,7 @@ inductive ETyp : Type where
   | bool : ETyp
   | unit : ETyp
   | string : ETyp
-  | ref : ETyp → Address → ETyp
+  | ref : ETyp → LocSet → ETyp
   | arrow : Typ → Typ → Poison → List FnTClosure → ETyp
   | parrow : Typ → Typ → Poison → List PFnTClosure → ETyp
 
@@ -510,7 +552,7 @@ partial def reprETyp : ETyp → Nat → Std.Format
   | ETyp.bool, _ => "ETyp.bool"
   | ETyp.unit, _ => "ETyp.unit"
   | ETyp.string , _ => "ETyp.string"
-  | ETyp.ref t l, _ => s!"ETyp.ref {reprETyp t 0} {repr l}"
+  | ETyp.ref t ls, _ => s!"ETyp.ref {reprETyp t 0} {repr ls}"
   | ETyp.arrow st1 st2 p tcls, _ =>
       let closureReprs := tcls.map (fun tcl => reprFnTClosure tcl 0)
       s!"ETyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} [{Std.Format.joinSep closureReprs (Std.Format.text ", ")}]"
@@ -593,6 +635,7 @@ instance : BEq PExpr where
 -- - The semantic meaning (sets) is preserved through deduplication
 --
 mutual
+
 def beqFnTClosureList : List FnTClosure → List FnTClosure → Bool
   | [], [] => true
   | tcl1 :: tcls1, tcl2 :: tcls2 => beqFnTClosure tcl1 tcl2 && beqFnTClosureList tcls1 tcls2
@@ -608,7 +651,7 @@ def beqETyp : ETyp → ETyp → Bool
   | ETyp.bool, ETyp.bool => true
   | ETyp.unit, ETyp.unit => true
   | ETyp.string , ETyp.string => true
-  | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETyp t1 t2 && l1 == l2
+  | ETyp.ref t1 ls1, ETyp.ref t2 ls2 => beqETyp t1 t2 && ls1 == ls2
   | ETyp.arrow st1 st2 p1 tcls1, ETyp.arrow st1' st2' p2 tcls2 =>
     st1 == st1' && st2 == st2' && p1 == p2 && beqFnTClosureList tcls1 tcls2
   | ETyp.parrow st1 st2 p1 tcls1, ETyp.parrow st1' st2' p2 tcls2 =>
@@ -673,7 +716,7 @@ def beqETypSignature : ETyp → ETyp → Bool
   | ETyp.bool, ETyp.bool => true
   | ETyp.unit, ETyp.unit => true
   | ETyp.string, ETyp.string => true
-  | ETyp.ref t1 l1, ETyp.ref t2 l2 => beqETypSignature t1 t2 && l1 == l2
+  | ETyp.ref t1 _, ETyp.ref t2 _ => beqETypSignature t1 t2
   | ETyp.arrow st1 st2 _ _, ETyp.arrow st1' st2' _ _ =>
     st1 == st1' && st2 == st2'
   | ETyp.parrow st1 st2 _ _, ETyp.parrow st1' st2' _ _ =>

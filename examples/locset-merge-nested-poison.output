@@ -1,0 +1,13 @@
+Evaluating file: examples/locset-merge-nested-poison.poison (verbose mode)
+
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardClosure 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [("secondChoice", QTyp.mk ETyp.ref ETyp.int [0, 1, 2] false Predicate.noPred), ("firstChoice", QTyp.mk ETyp.ref ETyp.int [0, 1] false Predicate.noPred), ("r3", QTyp.mk ETyp.ref ETyp.int [2] false Predicate.noPred), ("r2", QTyp.mk ETyp.ref ETyp.int [1] false Predicate.noPred), ("r1", QTyp.mk ETyp.ref ETyp.int [0] false Predicate.noPred)] , MemoryTypeEnv : Std.HashMap.ofList [(0,
+  QTyp.mk ETyp.int true Predicate.guardClosure 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [("secondChoice", QTyp.mk ETyp.ref ETyp.int [0, 1, 2] false Predicate.noPred), ("firstChoice", QTyp.mk ETyp.ref ETyp.int [0, 1] false Predicate.noPred), ("r3", QTyp.mk ETyp.ref ETyp.int [2] false Predicate.noPred), ("r2", QTyp.mk ETyp.ref ETyp.int [1] false Predicate.noPred), ("r1", QTyp.mk ETyp.ref ETyp.int [0] false Predicate.noPred)]),
+ (1,
+  QTyp.mk ETyp.int true Predicate.guardClosure 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [("secondChoice", QTyp.mk ETyp.ref ETyp.int [0, 1, 2] false Predicate.noPred), ("firstChoice", QTyp.mk ETyp.ref ETyp.int [0, 1] false Predicate.noPred), ("r3", QTyp.mk ETyp.ref ETyp.int [2] false Predicate.noPred), ("r2", QTyp.mk ETyp.ref ETyp.int [1] false Predicate.noPred), ("r1", QTyp.mk ETyp.ref ETyp.int [0] false Predicate.noPred)]),
+ (2,
+  QTyp.mk ETyp.int true Predicate.guardClosure 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [("secondChoice", QTyp.mk ETyp.ref ETyp.int [0, 1, 2] false Predicate.noPred), ("firstChoice", QTyp.mk ETyp.ref ETyp.int [0, 1] false Predicate.noPred), ("r3", QTyp.mk ETyp.ref ETyp.int [2] false Predicate.noPred), ("r2", QTyp.mk ETyp.ref ETyp.int [1] false Predicate.noPred), ("r1", QTyp.mk ETyp.ref ETyp.int [0] false Predicate.noPred)])] , tagEnv : Std.HashMap.ofList [] , nextLoc : 3 
+
+Result: 0
+Final state:
+Variable environment: []
+  Memory: [(0, 0), (1, 0), (2, 0)]

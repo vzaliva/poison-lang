@@ -34,7 +34,11 @@
 -- equality is sound (only equal values compare to true) and reflexive (every
 -- value compares equal to itself).
 
+import Mathlib
+import Std.Data.ExtTreeSet.Lemmas
 import LeanPoison.Syntax
+
+open Std
 
 -- Increase heartbeat limit for large soundness proofs
 set_option maxHeartbeats 1000000
@@ -42,6 +46,31 @@ set_option maxHeartbeats 1000000
 -- ============================================================================
 -- Proofs for types defined in Syntax.lean
 -- ============================================================================
+
+
+theorem LocSet.beq_refl (ls : LocSet) : BEq.beq ls ls = true := by
+  -- Reduce to list reflexivity on the underlying toList representation
+  have h : (ExtTreeSet.toList ls == ExtTreeSet.toList ls) = true :=
+    ReflBEq.rfl (a := ExtTreeSet.toList ls)
+  simpa [BEq.beq] using h
+
+theorem LocSet.rfl (ls : LocSet) : ls = ls := by
+  rfl
+
+theorem LocSet.sound (a b : LocSet) : BEq.beq a b = true → a = b := by
+  intro h
+  have hList : ExtTreeSet.toList a = ExtTreeSet.toList b := by
+    have h' : (ExtTreeSet.toList a == ExtTreeSet.toList b) = true := by
+      simpa [BEq.beq] using h
+    exact LawfulBEq.eq_of_beq (a := ExtTreeSet.toList a) (b := ExtTreeSet.toList b) h'
+  exact (ExtTreeSet.toList_inj (t₁ := a) (t₂ := b)).1 hList
+
+instance : LawfulBEq LocSet where
+  eq_of_beq {a b} := LocSet.sound a b
+  rfl {a} := LocSet.beq_refl a
+
+instance : DecidableEq LocSet := fun a b =>
+  decidable_of_iff (a == b) ⟨LocSet.sound a b, fun h => h ▸ LocSet.beq_refl a⟩
 
 -- Typ reflexivity proof
 private theorem Typ_beq_refl (t : Typ) : BEq.beq t t = true := by
@@ -1372,7 +1401,7 @@ private theorem beqETyp_sound (a b : ETyp) : (a == b) = true → a = b := by
     simp only [BEq.beq, beqETyp, Bool.and_eq_true] at h
     obtain ⟨h_t, h_l⟩ := h
     have : t1 = t2 := beqETyp_sound t1 t2 h_t
-    have : l1 = l2 := of_decide_eq_true h_l
+    have : l1 = l2 := LocSet.sound l1 l2 h_l
     subst_vars
     rfl
   case arrow st1 st2 p1 tcl1 st1' st2' p2 tcl2 =>

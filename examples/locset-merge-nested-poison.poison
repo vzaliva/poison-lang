@@ -1,0 +1,63 @@
+-- Location-set merge test 1: nested conditionals leading to poisoned result
+--
+-- This program exercises logical location sets (locsets) and their merging
+-- across *two* levels of conditionals.
+--
+-- High-level shape:
+--   1. Allocate three clean references r1, r2, r3 (each at a fresh logical location).
+--   2. First `if` chooses between r1 and r2, producing a reference whose locset
+--      is the union {l_r1, l_r2}.
+--   3. Second (nested) `if` chooses between that merged reference and r3,
+--      producing a reference whose locset is {l_r1, l_r2, l_r3}.
+--   4. We then *write through* that merged reference using a poisoned value
+--      from `frand`, which (conservatively) marks *all* locations in its locset
+--      as poisoned in Γ.
+--   5. Finally we dereference the merged reference. Even though the concrete
+--      runtime path only writes to one concrete cell, the type system must
+--      conservatively treat the result as poisoned because *some* l in the
+--      locset may hold poisoned data.
+--
+-- Expected typing behaviour:
+--   - r1, r2, r3 : ref int @ singleton locsets {l1}, {l2}, {l3}
+--   - firstChoice : ref int @ {l1, l2}
+--   - secondChoice : ref int @ {l1, l2, l3}
+--   - After `secondChoice := frand 0`, every l in {l1, l2, l3} is poisoned in Γ
+--   - `!secondChoice` must therefore be typed as `int` with `poison = true`.
+
+let r1 = ref 0 in              -- r1 : ref int @ {l1}, cell at l1 is clean
+let r2 = ref 0 in              -- r2 : ref int @ {l2}, cell at l2 is clean
+let r3 = ref 0 in              -- r3 : ref int @ {l3}, cell at l3 is clean
+
+-- First join over references:
+--   if true then r1 else r2
+-- merges {l1} and {l2} into {l1, l2}.
+let firstChoice =
+  if true then
+    r1
+  else
+    r2
+in
+
+-- Second (nested) join:
+--   if false then firstChoice else r3
+-- merges {l1, l2} with {l3} into {l1, l2, l3}.
+let secondChoice =
+  if false then
+    firstChoice
+  else
+    r3
+in
+
+-- Write through the merged locset reference using `frand 0`.
+-- Typing rule for assignment updates *all* locations in the locset of
+-- `secondChoice`, so l1, l2, and l3 all become poisoned in Γ.
+-- The random value is deterministic for argument 0, but the important
+-- property is that its qualified type is poisoned with a guard predicate.
+(secondChoice := frand 0;
+
+ -- Dereference the merged reference.
+ -- Dereference joins poisons from *all* referenced logical locations, so this
+ -- must be typed as poisoned even though at runtime only one concrete cell is
+ -- actually written.
+ !secondChoice)
+

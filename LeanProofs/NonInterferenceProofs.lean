@@ -31,9 +31,9 @@ def NonInterferenceSpec_step
       runtimeInstantiatesCtx ctxᵢ μ₀ ρ₀ → runtimeInstantiatesCtx ctxᵢ μ₁ ρ₁ →
       consistentRegimeSpec predSat Rᵢ sᵢ μ₀ ρ₀ → consistentRegimeSpec predSat Rᵢ sᵢ μ₁ ρ₁ →
       agreeOnCriticalInputsUnderRegimeSpec predSat Rᵢ sᵢ μ₀ ρ₀ μ₁ ρ₁ →
-      ∀ (l : Address) (pm : Bool),
-        terminatesTo e { memory := μ₀, varEnv := ρ₀, nextLoc := l, pureMode := pm } cf₀ o₀ →
-        terminatesTo e { memory := μ₁, varEnv := ρ₁, nextLoc := l, pureMode := pm } cf₁ o₁ →
+      ∀ (a : Address) (pm : Bool),
+        terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a, pureMode := pm } cf₀ o₀ →
+        terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a, pureMode := pm } cf₁ o₁ →
         ∃ (Rₒ : Regime),
           wfRegime Rₒ sₒ ∧
           consistentRegimeSpec predSat Rₒ sₒ cf₀.memory cf₀.varEnv ∧
