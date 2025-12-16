@@ -7,6 +7,9 @@ import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
+import Std.Data.ExtTreeSet.Lemmas
+
+open Std
 
 -- ================================================================
 -- Evaluation Relations
@@ -122,3 +125,55 @@ lemma var_has_correct_type (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ :
   intro _h_wf ⟨_, h_vars⟩ h_lookup
   obtain ⟨v, h_v, h_typ⟩ := h_vars h_lookup
   exact ⟨v, h_v, h_typ⟩
+
+-- ================================================================
+-- LocSet foldM Helper Lemmas
+-- ================================================================
+
+-- Helper lemma: LocSet.foldM preserves a property P on the accumulator
+-- when the fold function preserves P and only reads from environments
+-- This is useful for proving that foldM doesn't modify environments
+--
+-- The lemma states: if foldM succeeds and the function preserves P,
+-- then the result satisfies P
+-- Helper lemma: List.foldlM over Except preserves property P
+theorem List.foldlM_Except_preserves_property
+    (xs : List α) (init : β) (f : β → α → Except ε β)
+    (P : β → Prop)
+    (h_init : P init)
+    (h_preserve : ∀ (acc : β) (x : α), P acc → (∀ (acc' : β), f acc x = Except.ok acc' → P acc')) :
+    ∀ (result : β), List.foldlM f init xs = Except.ok result → P result := by
+  induction xs generalizing init with
+  | nil =>
+    intro result h_fold
+    simp [List.foldlM_nil, pure, Except.pure] at h_fold
+    subst h_fold
+    exact h_init
+  | cons x xs ih =>
+    intro result h_fold
+    simp [List.foldlM_cons, bind, Except.bind] at h_fold
+    -- h_fold involves (f init x).bind (fun acc => ...)
+    cases h_step : f init x with
+    | error e =>
+      -- If f init x = error, then bind also errors, contradicting h_fold
+      simp [h_step] at h_fold
+    | ok acc' =>
+      -- f init x = ok acc', so foldlM continues with acc'
+      simp [h_step] at h_fold
+      have h_acc'_P : P acc' := h_preserve init x h_init acc' h_step
+      exact ih acc' h_acc'_P result h_fold
+
+theorem LocSet.foldM_Except_preserves_property
+    (s : LocSet) (init : β) (f : β → Loc → Except ε β)
+    (P : β → Prop)
+    (h_init : P init)
+    (h_preserve : ∀ (acc : β) (l : Loc), P acc → (∀ (acc' : β), f acc l = Except.ok acc' → P acc')) :
+    ∀ (result : β), LocSet.foldM s init f = Except.ok result → P result := by
+  intro result h_fold
+  -- Convert LocSet.foldM to ExtTreeSet.foldlM
+  have h_eq : LocSet.foldM s init f = ExtTreeSet.foldlM (f := fun acc l => f acc l) (init := init) s := rfl
+  rw [h_eq] at h_fold
+  -- Use foldlM_eq_foldlM_toList to convert to list fold
+  rw [ExtTreeSet.foldlM_eq_foldlM_toList] at h_fold
+  -- Apply the list lemma
+  exact List.foldlM_Except_preserves_property s.toList init f P h_init h_preserve result h_fold
