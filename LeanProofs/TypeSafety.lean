@@ -177,3 +177,45 @@ theorem LocSet.foldM_Except_preserves_property
   rw [ExtTreeSet.foldlM_eq_foldlM_toList] at h_fold
   -- Apply the list lemma
   exact List.foldlM_Except_preserves_property s.toList init f P h_init h_preserve result h_fold
+
+-- Helper lemma: List.mapM preserves a property on all elements
+theorem List.mapM_Except_preserves_property
+    (xs : List α) (f : α → Except ε β)
+    (P : β → Prop)
+    (h_preserve : ∀ (x : α) (y : β), f x = Except.ok y → P y) :
+    ∀ (results : List β), List.mapM f xs = Except.ok results → ∀ y ∈ results, P y := by
+  induction xs with
+  | nil =>
+    intro results h_map
+    simp [List.mapM_nil, pure, Except.pure] at h_map
+    cases h_map
+    intro y h_mem
+    cases h_mem
+  | cons x xs ih =>
+    intro results h_map
+    simp [List.mapM_cons, bind, Except.bind] at h_map
+    cases h_fx : f x with
+    | error e =>
+      simp [h_fx] at h_map
+    | ok y_val =>
+      simp [h_fx] at h_map
+      cases h_map_results : List.mapM f xs with
+      | error e =>
+        simp [h_map_results] at h_map
+      | ok rest_results =>
+        simp [h_map_results] at h_map
+        -- h_map : Except.ok (y_val :: rest_results) = Except.ok results
+        injection h_map with h_list_eq
+        -- h_list_eq : y_val :: rest_results = results
+        subst h_list_eq
+        intro z h_mem
+        simp [List.mem_cons] at h_mem
+        cases h_mem with
+        | inl h_eq =>
+          -- h_eq : z = y_val
+          subst h_eq
+          -- Now z = y_val, so h_fx : f x = Except.ok y_val becomes f x = Except.ok z
+          have h_fx_z : f x = Except.ok z := h_fx
+          exact h_preserve x z h_fx_z
+        | inr h_mem_rest =>
+          exact ih rest_results h_map_results z h_mem_rest

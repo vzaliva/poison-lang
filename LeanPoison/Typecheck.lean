@@ -753,6 +753,47 @@ def generateFreshVar (ctx : TypeContext) (pref : Name) (suffix : Nat) (fuel : Na
        candidate
 termination_by fuel
 
+/-- Helper: Join a list of TypeResults into a single TypeResult -/
+def joinTypeResults (ctx : TypeContext) (firstResult : TypeResult) (restResults : List TypeResult) : TypecheckM TypeResult := do
+  let ⟨firstEtyp, _firstP, _firstPred⟩ := firstResult.qualType
+
+  -- Check that all results have signature-compatible types (Section 5.3) using foldlM
+  let _ ← List.foldlM (fun () result => do
+    let ⟨resEtyp, _resP, _resPred⟩ := result.qualType
+    if not (beqETypSignature firstEtyp resEtyp) then
+      throw s!"Closure alternatives produced incompatible result types: {repr firstEtyp} vs {repr resEtyp}"
+    else
+      pure ()) () restResults
+
+  -- Join all results (Section 5.4) using foldlM
+    let joinAccumulator := (firstEtyp, firstResult.memEnv', firstResult.qualType.poison,
+                            firstResult.qualType.pred, firstResult.tagEnv', firstResult.nextLoc',
+                            firstResult.nextTag')
+
+    let joined ← List.foldlM (fun acc result => do
+      let ⟨resEtyp, resPoison, resPred⟩ := result.qualType
+      let (joinedEtyp, joinedMemEnv, joinedPoison, joinedPred, joinedTagEnv, maxNextLoc, maxNextTag) := acc
+      pure (joinETyps joinedEtyp resEtyp joinedPoison resPoison,
+            joinMemEnvs joinedMemEnv result.memEnv',
+            joinPoison joinedPoison resPoison,
+            joinPredicates joinedPred resPred,
+            joinTagEnvs joinedTagEnv result.tagEnv',
+            max maxNextLoc result.nextLoc',
+            max maxNextTag result.nextTag')) joinAccumulator restResults
+
+    let (joinedEtyp, joinedMemEnv, joinedPoison, joinedPred, joinedTagEnv, maxNextLoc, maxNextTag) := joined
+
+    -- Final result with joined poison from all alternatives and caller pc
+    -- If result is a function type, clear predicate to no_pred (predicates are only meaningful for basic types)
+    let finalPred := match joinedEtyp with
+      | ETyp.arrow _ _ _ _ => Predicate.noPred
+      | ETyp.parrow _ _ _ _ => Predicate.noPred
+      | _ => joinedPred
+    let finalPoison := joinPoison ctx.pc joinedPoison
+    let qt : QTyp := ⟨joinedEtyp, finalPoison, finalPred⟩
+    return { qualType := qt, memEnv' := joinedMemEnv, tagEnv' := joinedTagEnv,
+             nextLoc' := maxNextLoc, nextTag' := maxNextTag }
+
 mutual
 
 -- Helper function to type check an expression with context
@@ -1316,53 +1357,13 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if not (isSubtype st1 result2.qualType) then
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
-      -- Apply each closure in the list (Section 5 of the proposal)
-      let mut results : List TypeResult := []
-      for tcl in tcls do
-        let res ← applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel
-        results := results ++ [res]
+      -- Apply each closure in the list (Section 5 of the proposal) using List.mapM
+      let results ← List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel) tcls
 
-      -- Check that all results have signature-compatible types (Section 5.3)
+      -- Check that we have at least one result and join them
       match results with
       | [] => throw "Internal error: no results from closure application"
-      | firstResult :: restResults =>
-          let ⟨firstEtyp, _firstP, _firstPred⟩ := firstResult.qualType
-          for result in restResults do
-            let ⟨resEtyp, _resP, _resPred⟩ := result.qualType
-            if not (beqETypSignature firstEtyp resEtyp) then
-              throw s!"Closure alternatives produced incompatible result types: {repr firstEtyp} vs {repr resEtyp}"
-
-          -- Join all results (Section 5.4)
-          let mut joinedMemEnv := firstResult.memEnv'
-          let mut joinedTagEnv := firstResult.tagEnv'
-          let mut joinedEtyp := firstEtyp
-          let mut joinedPoison := firstResult.qualType.poison
-          let mut joinedPred := firstResult.qualType.pred
-          let mut maxNextLoc := firstResult.nextLoc'
-          let mut maxNextTag := firstResult.nextTag'
-
-          for result in restResults do
-            let ⟨resEtyp, resPoison, resPred⟩ := result.qualType
-            joinedMemEnv := joinMemEnvs joinedMemEnv result.memEnv'
-            joinedTagEnv := joinTagEnvs joinedTagEnv result.tagEnv'
-            -- Join the result types, merging closures if they are arrow types
-            joinedEtyp := joinETyps joinedEtyp resEtyp joinedPoison resPoison
-            joinedPoison := joinPoison joinedPoison resPoison
-            -- For predicates: use agreement-only policy (Section 5.4)
-            joinedPred := joinPredicates joinedPred resPred
-            maxNextLoc := max maxNextLoc result.nextLoc'
-            maxNextTag := max maxNextTag result.nextTag'
-
-          -- Final result with joined poison from all alternatives and caller pc
-          -- If result is a function type, clear predicate to no_pred (predicates are only meaningful for basic types)
-          let finalPred := match joinedEtyp with
-            | ETyp.arrow _ _ _ _ => Predicate.noPred
-            | ETyp.parrow _ _ _ _ => Predicate.noPred
-            | _ => joinedPred
-          let finalPoison := joinPoison ctx.pc joinedPoison
-          let qt : QTyp := ⟨joinedEtyp, finalPoison, finalPred⟩
-          return { qualType := qt, memEnv' := joinedMemEnv, tagEnv' := joinedTagEnv,
-                   nextLoc' := maxNextLoc, nextTag' := maxNextTag }
+      | firstResult :: restResults => joinTypeResults ctx firstResult restResults
     | ETyp.parrow st1 st2 p tcls =>
       -- Check for empty closure list (should never happen in well-formed programs)
       if tcls.isEmpty then
@@ -1377,53 +1378,13 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if not (isSubtype st1 result2.qualType) then
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
-      -- Apply each closure in the list (Section 5 of the proposal)
-      let mut results : List TypeResult := []
-      for tcl in tcls do
-        let res ← applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel
-        results := results ++ [res]
+      -- Apply each closure in the list (Section 5 of the proposal) using List.mapM
+      let results ← List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel) tcls
 
-      -- Check that all results have signature-compatible types (Section 5.3)
+      -- Check that we have at least one result and join them
       match results with
       | [] => throw "Internal error: no results from closure application"
-      | firstResult :: restResults =>
-          let ⟨firstEtyp, _firstP, _firstPred⟩ := firstResult.qualType
-          for result in restResults do
-            let ⟨resEtyp, _resP, _resPred⟩ := result.qualType
-            if not (beqETypSignature firstEtyp resEtyp) then
-              throw s!"Closure alternatives produced incompatible result types: {repr firstEtyp} vs {repr resEtyp}"
-
-          -- Join all results (Section 5.4)
-          let mut joinedMemEnv := firstResult.memEnv'
-          let mut joinedTagEnv := firstResult.tagEnv'
-          let mut joinedEtyp := firstEtyp
-          let mut joinedPoison := firstResult.qualType.poison
-          let mut joinedPred := firstResult.qualType.pred
-          let mut maxNextLoc := firstResult.nextLoc'
-          let mut maxNextTag := firstResult.nextTag'
-
-          for result in restResults do
-            let ⟨resEtyp, resPoison, resPred⟩ := result.qualType
-            joinedMemEnv := joinMemEnvs joinedMemEnv result.memEnv'
-            joinedTagEnv := joinTagEnvs joinedTagEnv result.tagEnv'
-            -- Join the result types, merging closures if they are arrow types
-            joinedEtyp := joinETyps joinedEtyp resEtyp joinedPoison resPoison
-            joinedPoison := joinPoison joinedPoison resPoison
-            -- For predicates: use agreement-only policy (Section 5.4)
-            joinedPred := joinPredicates joinedPred resPred
-            maxNextLoc := max maxNextLoc result.nextLoc'
-            maxNextTag := max maxNextTag result.nextTag'
-
-          -- Final result with joined poison from all alternatives and caller pc
-          -- If result is a function type, clear predicate to no_pred (predicates are only meaningful for basic types)
-          let finalPred := match joinedEtyp with
-            | ETyp.arrow _ _ _ _ => Predicate.noPred
-            | ETyp.parrow _ _ _ _ => Predicate.noPred
-            | _ => joinedPred
-          let finalPoison := joinPoison ctx.pc joinedPoison
-          let qt : QTyp := ⟨joinedEtyp, finalPoison, finalPred⟩
-          return { qualType := qt, memEnv' := joinedMemEnv, tagEnv' := joinedTagEnv,
-                   nextLoc' := maxNextLoc, nextTag' := maxNextTag }
+      | firstResult :: restResults => joinTypeResults ctx firstResult restResults
 
     | _ => throw "Left operand of application must be a function"
 termination_by fuel

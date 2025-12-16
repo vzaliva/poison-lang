@@ -584,26 +584,60 @@ private lemma typecheck_vlet_preserves_typestate (ctx : TypeContext) (pe : PExpr
           -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv'
           apply Std.HashMap.Equiv.trans H1 H8
 
+-- Helper lemma: joinTypeResults preserves memEnv equivalence
+-- If m.equiv firstResult.memEnv' and ∀ r ∈ restResults, m.equiv r.memEnv',
+-- then for the joined result, m.equiv result.memEnv'
+--
+-- Proof by induction on restResults:
+-- - Base case (restResults = []): finalResult.memEnv' = firstResult.memEnv'
+-- - Inductive case: joinMemEnvs preserves equivalence via joinMemEnv_idempotent
+private lemma joinTypeResults_preserves_equiv (_tctx : TypeContext) (m : MemoryTypeEnv)
+    (firstResult : TypeResult) (restResults : List TypeResult) (finalResult : TypeResult)
+    (h_first : m.equiv firstResult.memEnv')
+    (h_rest : ∀ r ∈ restResults, m.equiv r.memEnv')
+    (h_join : joinTypeResults _tctx firstResult restResults = Except.ok finalResult) :
+    m.equiv finalResult.memEnv' := by
+  induction restResults generalizing firstResult finalResult with
+  | nil =>
+    -- Base case: no more results to join
+    simp only [joinTypeResults, bind, Except.bind, List.foldlM_nil, pure, Except.pure] at h_join
+    -- h_join has a match on firstResult.qualType, split on it
+    split at h_join
+    simp only [Except.ok.injEq] at h_join
+    cases h_join
+    exact h_first
+  | cons r rs ih =>
+    -- Inductive case: r :: rs
+    -- The proof is complex due to nested do-notation in joinTypeResults.
+    -- Key insight: the final memEnv' is the result of folding joinMemEnvs
+    -- over all results, starting with firstResult.memEnv'.
+    -- By joinMemEnv_idempotent, this preserves equivalence with m.
+    --
+    -- Detailed proof would require:
+    -- 1. Extracting that firstResult.memEnv' is processed with r first
+    -- 2. Then using ih for the rest of rs
+    -- 3. Showing each joinMemEnvs step preserves equivalence
+    --
+    -- Due to the complexity of matching Lean's unfolded terms, we leave sorry.
+    sorry
+
 -- Private lemma for app case
 --
--- The typecheckApp function for parrow (pure function) case uses:
--- 1. Nested do-notation with for loops over closure lists
--- 2. forIn to iterate over closures and collect results
--- 3. joinMemEnvs to combine memory environments from all closure applications
+-- The typecheckApp function for parrow (pure function) case now uses:
+-- 1. List.mapM to collect closure application results
+-- 2. List.foldlM to check type compatibility
+-- 3. List.foldlM to join memory environments
 --
 -- Proof sketch (why this property holds):
 -- - Step 1: Typecheck e1 → result1. By IH, ctx.memEnv.equiv result1.memEnv'
 -- - Step 2: Typecheck e2 → result2. By IH, result1.memEnv'.equiv result2.memEnv'
--- - Step 3: For each closure in tcls, applyPFnTClosure is called:
+-- - Step 3: List.mapM applies each closure:
 --     - Regular closure: typecheckExpr on body with pureCtx=true, memEnv=result2.memEnv'
 --       By IH, result preserves memEnv equivalence with result2.memEnv'
 --     - Extern closure: returns result2.memEnv' directly
--- - Step 4: Results are joined via joinMemEnvs which preserves equivalence
+-- - Step 4: Results are joined via List.foldlM with joinMemEnvs which preserves equivalence
 --   (by joinMemEnv_idempotent: if m.equiv m1 and m.equiv m2, then m.equiv (joinMemEnvs m1 m2))
 -- - Therefore: ctx.memEnv.equiv result.memEnv' by transitivity
---
--- The full proof requires reasoning about ForIn.forIn which is complex.
--- We leave this as sorry pending development of helper lemmas for forIn reasoning.
 private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (e1 e2 : Expr)
   (_C : ctx.pureCtx = true) (_P : (e1.app e2).toPExpr = Except.ok pe) (_H : typecheckExpr ctx (e1.app e2) (fuel + 1) = Except.ok result)
   (_IH : ∀ m < fuel + 1, ∀ (ctx : TypeContext) (e : Expr) (pe : PExpr) (result : TypeResult),
@@ -612,8 +646,11 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
     typecheckExpr ctx e m = Except.ok result →
     ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
   ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
-  -- The proof requires reasoning about forIn loops in do-notation.
-  -- See proof sketch in the comment above for why this property holds.
+  -- The proof requires multiple helper lemmas about:
+  -- 1. applyPFnTClosure preserving equivalence (by IH on body typechecking)
+  -- 2. List.mapM preserving the property for all results
+  -- 3. joinTypeResults preserving equivalence through foldlM
+  -- Due to the complexity of tracking membership through the proof, we use sorry.
   sorry
 
 theorem typecheck_PExpr_preserves_typestate : TypecheckPExprPreservesTypestate := by
