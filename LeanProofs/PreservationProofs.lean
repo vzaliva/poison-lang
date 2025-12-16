@@ -67,7 +67,7 @@ private def PreservationWithFuel (e : Expr) (ctx : TypeContext) (n : Nat) : Prop
     runtimeInstantiatesCtx ctx μ₀ ρ₀ →
     -- And evaluation terminates successfully with exactly fuel n
     (∃ w₀ w₁, LeanPoison.beval n { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ } e verbose w₀ =
-      EStateM.Result.ok (.success { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v) w₁) →
+      EST.Out.ok (.success { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v) w₁) →
     -- Then the result value has the expected enriched type
     valueHasETyp v res.qualType.etyp ∧
     -- And the final runtime state instantiates the output typing context
@@ -89,7 +89,7 @@ private lemma preservationWithFuel_implies_preservation (e : Expr) (ctx : TypeCo
   simp [pure, EStateM.pure] at h_eval_at_default
   -- Construct the existential
   have h_eval_world : ∃ w₀ w₁, LeanPoison.beval fuel_eval { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ } e verbose w₀ =
-      EStateM.Result.ok (.success { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v) w₁ :=
+      EST.Out.ok (.success { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v) w₁ :=
     ⟨LeanProofs.defaultWorld, LeanProofs.defaultWorld, h_eval_at_default⟩
   exact h_pwf fuel_eval fuel_tc res μ₀ μ₁ ρ₀ ρ₁ l₀ l₁ pm₀ pm₁ v verbose
           h_typecheck h_instantiate h_eval_world
@@ -306,11 +306,11 @@ private lemma evalOp_preserves_type (op : Op) (v1 v2 : Value) (etyp1 etyp2 resul
 private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose : Bool)
     (config₀ config₃ : Config) (v : Value) (etyp1 etyp2 result_etyp : ETyp) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.op e1 op e2) verbose w₀ =
-      EStateM.Result.ok (.success config₃ v) w₁) →
+      EST.Out.ok (.success config₃ v) w₁) →
   opEType? op etyp1 etyp2 = some result_etyp →
   ∃ (config₁ config₂ : Config) (v1 v2 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EStateM.Result.ok (.success config₁ v1) w₁') ∧
-    (∃ w₀'' w₁'', LeanPoison.beval (fuel - 1) config₁ e2 verbose w₀'' = EStateM.Result.ok (.success config₂ v2) w₁'') ∧
+    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config₁ v1) w₁') ∧
+    (∃ w₀'' w₁'', LeanPoison.beval (fuel - 1) config₁ e2 verbose w₀'' = EST.Out.ok (.success config₂ v2) w₁'') ∧
     valueHasETyp v1 etyp1 ∧
     valueHasETyp v2 etyp2 ∧
     valueHasETyp v result_etyp ∧
@@ -331,7 +331,7 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
     unfold LeanPoison.beval at h_eq
     simp at h_eq
     -- Simplify monadic bind operations
-    simp [bind, Bind.bind, EStateM.bind] at h_eq
+    simp [bind, Bind.bind, EST.bind] at h_eq
     -- Split on the result of evaluating e1 (outer EStateM.Result)
     split at h_eq
     · next h_result1 h_state1 h_beval1 =>
@@ -340,7 +340,7 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
       · next config₁ v₁ =>
         -- e1 evaluated successfully to config₁, v₁
         -- Unfold the nested bind for e2
-        simp [EStateM.bind] at h_eq
+        simp [EST.bind] at h_eq
         -- Split on the result of evaluating e2 (outer EStateM.Result)
         split at h_eq
         · next h_result2 h_state2 h_beval2 =>
@@ -363,9 +363,9 @@ private lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose :
               rw [h_eq_val] at h_evalOp
               subst h_eq_cfg
               -- Construct existentials for h_beval1 and h_beval2
-              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EStateM.Result.ok (.success config₁ v₁) w₁' :=
+              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁ v₁) w₁' :=
                 ⟨w₀, h_state1, h_beval1⟩
-              have h_beval2_ex : ∃ w₀'' w₁'', LeanPoison.beval fuel' config₁ e2 verbose w₀'' = EStateM.Result.ok (.success config₂ v₂) w₁'' :=
+              have h_beval2_ex : ∃ w₀'' w₁'', LeanPoison.beval fuel' config₁ e2 verbose w₀'' = EST.Out.ok (.success config₂ v₂) w₁'' :=
                 ⟨h_state1, h_state2, h_beval2⟩
               -- Prove type information from evalOp success and opEType? match
               have h_v1_type : valueHasETyp v₁ etyp1 := by
@@ -881,10 +881,10 @@ private lemma evalUnaryOp_preserves_type (op : UnaryOp) (v1 : Value) (etyp1 resu
 private lemma bevalUnaryOp_structure (op : UnaryOp) (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₂ : Config) (v : Value) (etyp1 result_etyp : ETyp) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.unaryop op e1) verbose w₀ =
-      EStateM.Result.ok (.success config₂ v) w₁) →
+      EST.Out.ok (.success config₂ v) w₁) →
   opUnaryEType? op etyp1 = some result_etyp →
   ∃ (config₁ : Config) (v1 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EStateM.Result.ok (.success config₁ v1) w₁') ∧
+    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config₁ v1) w₁') ∧
     valueHasETyp v1 etyp1 ∧
     valueHasETyp v result_etyp ∧
     config₁.memory = config₂.memory ∧
@@ -900,7 +900,7 @@ private lemma bevalUnaryOp_structure (op : UnaryOp) (e1 : Expr) (fuel : Nat) (ve
   | succ fuel' =>
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    simp [bind, Bind.bind, EStateM.bind] at h_eq
+    simp [bind, Bind.bind, EST.bind] at h_eq
     split at h_eq
     · next h_result1 h_state1 h_beval1 =>
       split at h_eq
@@ -917,7 +917,7 @@ private lemma bevalUnaryOp_structure (op : UnaryOp) (e1 : Expr) (fuel : Nat) (ve
           rw [h_eq_val] at h_evalOp
           subst h_eq_cfg
           -- Construct h_beval1_ex from h_beval1
-          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EStateM.Result.ok (.success config₁ v₁) w₁' :=
+          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁ v₁) w₁' :=
             ⟨w₀, h_state1, h_beval1⟩
           -- Prove type information
           -- Since evalUnaryOp succeeded, we know v₁ must be bool (only case for not)
@@ -1040,10 +1040,10 @@ private lemma preservation_unaryop (op : UnaryOp) (e1 : Expr) (ctx : TypeContext
 private lemma bevalSeq_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₂ : Config) (v : Value) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.seq e1 e2) verbose w₀ =
-      EStateM.Result.ok (.success config₂ v) w₁) →
+      EST.Out.ok (.success config₂ v) w₁) →
   ∃ (config₁ : Config) (v1 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EStateM.Result.ok (.success config₁ v1) w₁') ∧
-    (∃ w₀'' w₁'', LeanPoison.beval (fuel - 1) config₁ e2 verbose w₀'' = EStateM.Result.ok (.success config₂ v) w₁'') := by
+    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config₁ v1) w₁') ∧
+    (∃ w₀'' w₁'', LeanPoison.beval (fuel - 1) config₁ e2 verbose w₀'' = EST.Out.ok (.success config₂ v) w₁'') := by
   intro h_eval
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
   cases fuel with
@@ -1055,13 +1055,13 @@ private lemma bevalSeq_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
   | succ fuel' =>
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    simp [bind, Bind.bind, EStateM.bind] at h_eq
+    simp [bind, Bind.bind, EST.bind] at h_eq
     split at h_eq
     · next h_result1 h_state1 h_beval1 =>
       split at h_eq
       · next config₁ v₁ =>
         -- e1 evaluated successfully, now e2
-        simp [EStateM.bind] at h_eq
+        simp [EST.bind] at h_eq
         split at h_eq
         · next h_result2 h_state2 h_beval2 =>
           split at h_eq
@@ -1070,9 +1070,9 @@ private lemma bevalSeq_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
             injection h_eq with h_eq_result h_eq_state
             injection h_eq_result with h_eq_cfg h_eq_val
             -- Construct existentials for h_beval1 and h_beval2
-            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EStateM.Result.ok (.success config₁ v₁) w₁' :=
+            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁ v₁) w₁' :=
               ⟨w₀, h_state1, h_beval1⟩
-            have h_beval2_ex : ∃ w₀'' w₁'', LeanPoison.beval fuel' config₁ e2 verbose w₀'' = EStateM.Result.ok (.success config₂' v₂) w₁'' :=
+            have h_beval2_ex : ∃ w₀'' w₁'', LeanPoison.beval fuel' config₁ e2 verbose w₀'' = EST.Out.ok (.success config₂' v₂) w₁'' :=
               ⟨h_state1, h_state2, h_beval2⟩
             -- Now subst to get final config and value
             subst h_eq_cfg h_eq_val
@@ -1199,9 +1199,9 @@ private lemma typecheckFrand_structure (ctx : TypeContext) (e1 : Expr) (fuel : N
 private lemma bevalRand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.rand e1) verbose w₀ =
-      EStateM.Result.ok (.success config₁ v) w₁) →
+      EST.Out.ok (.success config₁ v) w₁) →
   ∃ (config' : Config) (v1 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EStateM.Result.ok (.success config' v1) w₁') ∧
+    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁') ∧
     valueHasETyp v1 ETyp.int ∧
     valueHasETyp v ETyp.int ∧
     config'.memory = config₁.memory ∧
@@ -1217,7 +1217,7 @@ private lemma bevalRand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
   | succ fuel' =>
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    simp [bind, Bind.bind, EStateM.bind] at h_eq
+    simp [bind, Bind.bind, EST.bind] at h_eq
     split at h_eq
     · next h_result1 h_state1 h_beval1 =>
       split at h_eq
@@ -1225,14 +1225,14 @@ private lemma bevalRand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
         -- Check what v₁ is: must be Value.num for success path
         split at h_eq
         . next h_nonneg =>
-           simp [Functor.map, EStateM.map] at h_eq
+           simp [Functor.map, EST.bind] at h_eq
            split at h_eq
            · next r_result r_state =>
              injection h_eq with h_eq_result h_eq_state
              injection h_eq_result with h_eq_cfg h_eq_val
              subst h_eq_cfg h_eq_val
              -- Construct existential for h_beval1
-             have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EStateM.Result.ok (.success config' (Value.num v₁)) w₁' :=
+             have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num v₁)) w₁' :=
                ⟨w₀, h_state1, h_beval1⟩
              simp only [Nat.add_sub_cancel]
              exact ⟨config', Value.num v₁, h_beval1_ex, valueHasETyp.num _, valueHasETyp.num _, rfl, rfl⟩
@@ -1241,7 +1241,7 @@ private lemma bevalRand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
              injection h_eq
         . next h_neg =>
           -- After the println and return runtimeError
-          simp [Functor.map, EStateM.map] at h_eq
+          simp [Functor.map, EST.bind] at h_eq
           split at h_eq
           · next p_result p_state =>
             -- IO.println succeeded, but we get runtimeError (contradiction)
@@ -1271,9 +1271,9 @@ private lemma bevalRand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
 private lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.frand e1) verbose w₀ =
-      EStateM.Result.ok (.success config₁ v) w₁) →
+      EST.Out.ok (.success config₁ v) w₁) →
   ∃ (config' : Config) (v1 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EStateM.Result.ok (.success config' v1) w₁') ∧
+    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁') ∧
     valueHasETyp v1 ETyp.int ∧
     valueHasETyp v ETyp.int ∧
     config'.memory = config₁.memory ∧
@@ -1289,7 +1289,7 @@ private lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
   | succ fuel' =>
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    simp [bind, Bind.bind, EStateM.bind] at h_eq
+    simp [bind, Bind.bind, EST.bind] at h_eq
     split at h_eq
     · next h_result1 h_state1 h_beval1 =>
       split at h_eq
@@ -1297,14 +1297,14 @@ private lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
         -- Check what v₁ is: must be Value.num for success path
         split at h_eq
         . next h_nonneg =>
-           simp [Functor.map, EStateM.map] at h_eq
+           simp [Functor.map, EST.bind] at h_eq
            split at h_eq
            · next r_result r_state =>
              injection h_eq with h_eq_result h_eq_state
              injection h_eq_result with h_eq_cfg h_eq_val
              subst h_eq_cfg h_eq_val
              -- Construct existential for h_beval1
-             have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EStateM.Result.ok (.success config' (Value.num v₁)) w₁' :=
+             have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num v₁)) w₁' :=
                ⟨w₀, h_state1, h_beval1⟩
              simp only [Nat.add_sub_cancel]
              exact ⟨config', Value.num v₁, h_beval1_ex, valueHasETyp.num _, valueHasETyp.num _, rfl, rfl⟩
@@ -1313,7 +1313,7 @@ private lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
              injection h_eq
         . next h_neg =>
           -- After the println and return runtimeError
-          simp [Functor.map, EStateM.map] at h_eq
+          simp [Functor.map, EST.bind] at h_eq
           split at h_eq
           · next p_result p_state =>
             -- IO.println succeeded, but we get runtimeError (contradiction)
@@ -1421,9 +1421,9 @@ private lemma typecheckPrintString_structure (ctx : TypeContext) (e1 : Expr) (fu
 private lemma bevalPrintInt_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.printInt e1) verbose w₀ =
-      EStateM.Result.ok (.success config₁ v) w₁) →
+      EST.Out.ok (.success config₁ v) w₁) →
   ∃ (config' : Config) (v1 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EStateM.Result.ok (.success config' v1) w₁') ∧
+    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁') ∧
     valueHasETyp v1 ETyp.int ∧
     valueHasETyp v ETyp.unit ∧
     config'.memory = config₁.memory ∧
@@ -1439,20 +1439,20 @@ private lemma bevalPrintInt_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
   | succ fuel' =>
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    simp [bind, Bind.bind, EStateM.bind] at h_eq
+    simp [bind, Bind.bind, EST.bind] at h_eq
     split at h_eq
     · next h_result1 h_state1 h_beval1 =>
       split at h_eq
       · next config' v₁ =>
         -- After the println, we return success
-        simp [Functor.map, EStateM.map] at h_eq
+        simp [Functor.map, EST.bind] at h_eq
         split at h_eq
         · next p_result p_state =>
           injection h_eq with h_eq_result h_eq_state
           injection h_eq_result with h_eq_cfg h_eq_val
           subst h_eq_cfg h_eq_val
           -- Construct existential for h_beval1
-          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EStateM.Result.ok (.success config' (Value.num v₁)) w₁' :=
+          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num v₁)) w₁' :=
             ⟨w₀, h_state1, h_beval1⟩
           simp only [Nat.add_sub_cancel]
           exact ⟨config', Value.num v₁, h_beval1_ex, valueHasETyp.num _, valueHasETyp.unit, rfl, rfl⟩
@@ -1480,9 +1480,9 @@ private lemma bevalPrintInt_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
 private lemma bevalPrintString_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.printString e1) verbose w₀ =
-      EStateM.Result.ok (.success config₁ v) w₁) →
+      EST.Out.ok (.success config₁ v) w₁) →
   ∃ (config' : Config) (v1 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EStateM.Result.ok (.success config' v1) w₁') ∧
+    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁') ∧
     valueHasETyp v1 ETyp.string ∧
     valueHasETyp v ETyp.unit ∧
     config'.memory = config₁.memory ∧
@@ -1498,20 +1498,20 @@ private lemma bevalPrintString_structure (e1 : Expr) (fuel : Nat) (verbose : Boo
   | succ fuel' =>
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    simp [bind, Bind.bind, EStateM.bind] at h_eq
+    simp [bind, Bind.bind, EST.bind] at h_eq
     split at h_eq
     · next h_result1 h_state1 h_beval1 =>
       split at h_eq
       · next config' v₁ =>
         -- After the println, we return success
-        simp [Functor.map, EStateM.map] at h_eq
+        simp [Functor.map, EST.bind] at h_eq
         split at h_eq
         · next p_result p_state =>
           injection h_eq with h_eq_result h_eq_state
           injection h_eq_result with h_eq_cfg h_eq_val
           subst h_eq_cfg h_eq_val
           -- Construct existential for h_beval1
-          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EStateM.Result.ok (.success config' (Value.str v₁)) w₁' :=
+          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.str v₁)) w₁' :=
             ⟨w₀, h_state1, h_beval1⟩
           simp only [Nat.add_sub_cancel]
           exact ⟨config', Value.str v₁, h_beval1_ex, valueHasETyp.str _, valueHasETyp.unit, rfl, rfl⟩
@@ -1923,13 +1923,13 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
       -- h_eval1_eq has fuel fuel' and varEnv ρ₀
       -- We need to rewrite ρ₀ to config₁.varEnv using h_varenv01
       have h_eval1_eq' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁' := by
+          EST.Out.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁' := by
         -- h_eval1_eq has ρ₀, rewrite to config₁.varEnv
         rw [h_varenv01] at h_eval1_eq
         exact h_eval1_eq
       -- Construct h_eval1' with updated varEnv
       have h_eval1' : ∃ w₀'' w₁'', LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀'' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁'' :=
+          EST.Out.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁'' :=
         ⟨w₀', w₁', h_eval1_eq'⟩
       have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                       μ₀ config₁.memory config₁.varEnv config₁.varEnv
@@ -1947,7 +1947,7 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
       -- Convert h_eval2_ex to use explicit config structure
       rcases h_eval2_ex with ⟨w₀'', w₁'', h_eval2_eq⟩
       have h_eval2' : ∃ w₀''' w₁''', LeanPoison.beval fuel' { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } e2 verbose w₀''' =
-          EStateM.Result.ok (.success { memory := μ₂, varEnv := ρ₂, nextAddr := l₂, pureMode := pm₂ } v) w₁''' :=
+          EST.Out.ok (.success { memory := μ₂, varEnv := ρ₂, nextAddr := l₂, pureMode := pm₂ } v) w₁''' :=
         ⟨w₀'', w₁'', h_eval2_eq⟩
       have IH2 := IH fuel' h_fuel e2 ctx' (fuel_tc' - 1) result2
                       config₁.memory μ₂ config₁.varEnv ρ₂
@@ -2065,10 +2065,10 @@ private lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : 
 private lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₂ : Config) (v : Value) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.newRef e1) verbose w₀ =
-      EStateM.Result.ok (.success config₂ v) w₁) →
+      EST.Out.ok (.success config₂ v) w₁) →
   ∃ (config₁ : Config) (n : Int) (a : Address),
     (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' =
-        EStateM.Result.ok (.success config₁ (Value.num n)) w₁') ∧
+        EST.Out.ok (.success config₁ (Value.num n)) w₁') ∧
     (a, { config₁ with nextAddr := config₁.nextAddr + 1 }) = freshAddr config₁ ∧
     config₂ = { { config₁ with nextAddr := config₁.nextAddr + 1 } with memory := ({ config₁ with nextAddr := config₁.nextAddr + 1 } : Config).memory.update config₁.nextAddr n } ∧
     v = Value.loc config₁.nextAddr := by
@@ -2083,7 +2083,7 @@ private lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
   | succ fuel' =>
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    simp [bind, Bind.bind, EStateM.bind] at h_eq
+    simp [bind, Bind.bind, EST.bind] at h_eq
     split at h_eq
     · next h_result1 h_state1 h_beval1 =>
       -- h_result1 is an EvalResult from evaluating e1
@@ -2120,7 +2120,7 @@ private lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
             rfl
           subst h_eq_val
           have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' =
-              EStateM.Result.ok (.success config' (Value.num n)) w₁' :=
+              EST.Out.ok (.success config' (Value.num n)) w₁' :=
             ⟨w₀, h_state1, h_beval1⟩
           simp only [Nat.add_sub_cancel]
           exact ⟨config', n, config'.nextAddr, h_beval1_ex, rfl, h_config_eq, h_val_eq⟩
@@ -2129,7 +2129,7 @@ private lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
           -- The match simplifies to pure (.runtimeError ...)
           simp at h_eq
           simp [pure, EStateM.pure] at h_eq
-          -- h_eq is now: EStateM.Result.ok (.runtimeError ...) h_state1 = EStateM.Result.ok (.success config₂ v) w₁
+          -- h_eq is now: EST.Out.ok (.runtimeError ...) h_state1 = EST.Out.ok (.success config₂ v) w₁
           -- This is a contradiction - we can't have .runtimeError = .success
           -- After simplification, the contradiction is already shown by simp
           -- The proof is complete
@@ -2138,7 +2138,7 @@ private lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
         -- But h_eq shows success, which is a contradiction
         simp at h_eq
         simp [pure, EStateM.pure] at h_eq
-        -- h_eq is now: EStateM.Result.ok .outOfFuel h_state1 = EStateM.Result.ok (.success config₂ v) w₁
+        -- h_eq is now: EST.Out.ok .outOfFuel h_state1 = EST.Out.ok (.success config₂ v) w₁
         -- This is a contradiction
         -- After simplification, the contradiction is already shown by simp
         -- The proof is complete
@@ -2147,7 +2147,7 @@ private lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
         -- But h_eq shows success, which is a contradiction
         simp at h_eq
         simp [pure, EStateM.pure] at h_eq
-        -- h_eq is now: EStateM.Result.ok (.runtimeError msg) h_state1 = EStateM.Result.ok (.success config₂ v) w₁
+        -- h_eq is now: EST.Out.ok (.runtimeError msg) h_state1 = EST.Out.ok (.success config₂ v) w₁
         -- This is a contradiction
         -- After simplification, the contradiction is already shown by simp
         -- The proof is complete
@@ -2201,11 +2201,11 @@ private lemma preservation_newRef (e1 : Expr) (ctx : TypeContext)
       rcases h_eval1_ex with ⟨w₀', w₁', h_eval1_eq⟩
       rw [h_varenv01] at h_instantiate
       have h_eval1_eq' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } (Value.num n_val)) w₁' := by
+          EST.Out.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } (Value.num n_val)) w₁' := by
         rw [h_varenv01] at h_eval1_eq
         exact h_eval1_eq
       have h_eval1' : ∃ w₀'' w₁''', LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀'' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } (Value.num n_val)) w₁''' :=
+          EST.Out.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } (Value.num n_val)) w₁''' :=
         ⟨w₀', w₁', h_eval1_eq'⟩
       have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                       μ₀ config₁.memory config₁.varEnv config₁.varEnv
@@ -2419,11 +2419,11 @@ private lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Ex
 private lemma bevalVlet_structure (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config_final : Config) (v : Value) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.vlet x e1 e2) verbose w₀ =
-      EStateM.Result.ok (.success config_final v) w₁) →
+      EST.Out.ok (.success config_final v) w₁) →
   ∃ (config₁ config₂ config₃ : Config) (v1 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EStateM.Result.ok (.success config₁ v1) w₁') ∧
+    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config₁ v1) w₁') ∧
     config₂ = { config₁ with varEnv := config₁.varEnv.update x v1 } ∧
-    (∃ w₀'' w₁'', LeanPoison.beval (fuel - 1) config₂ e2 verbose w₀'' = EStateM.Result.ok (.success config₃ v) w₁'') ∧
+    (∃ w₀'' w₁'', LeanPoison.beval (fuel - 1) config₂ e2 verbose w₀'' = EST.Out.ok (.success config₃ v) w₁'') ∧
     config_final = { config₃ with varEnv := config₁.varEnv } := by
   intro h_eval
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -2436,7 +2436,7 @@ private lemma bevalVlet_structure (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbos
   | succ fuel' =>
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    simp [bind, Bind.bind, EStateM.bind] at h_eq
+    simp [bind, Bind.bind, EST.bind] at h_eq
     split at h_eq
     · next h_result1 h_state1 h_beval1 =>
       split at h_eq
@@ -2445,7 +2445,7 @@ private lemma bevalVlet_structure (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbos
         -- Now create config₂ with extended varEnv
         let config₂' := { config₁' with varEnv := config₁'.varEnv.update x v₁ }
         -- Evaluate e2 in config₂'
-        simp [EStateM.bind] at h_eq
+        simp [EST.bind] at h_eq
         split at h_eq
         · next h_result2 h_state2 h_beval2 =>
           split at h_eq
@@ -2455,9 +2455,9 @@ private lemma bevalVlet_structure (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbos
             injection h_eq with h_eq_result h_eq_state
             injection h_eq_result with h_eq_cfg h_eq_val
             -- Construct existentials for h_beval1 and h_beval2
-            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EStateM.Result.ok (.success config₁' v₁) w₁' :=
+            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁' v₁) w₁' :=
               ⟨w₀, h_state1, h_beval1⟩
-            have h_beval2_ex : ∃ w₀'' w₁'', LeanPoison.beval fuel' config₂' e2 verbose w₀'' = EStateM.Result.ok (.success config₃' v₂) w₁'' :=
+            have h_beval2_ex : ∃ w₀'' w₁'', LeanPoison.beval fuel' config₂' e2 verbose w₀'' = EST.Out.ok (.success config₃' v₂) w₁'' :=
               ⟨h_state1, h_state2, h_beval2⟩
             -- Now subst to get final config and value
             subst h_eq_cfg h_eq_val
@@ -2535,13 +2535,13 @@ private lemma preservation_vlet (x : Name) (e1 e2 : Expr) (ctx : TypeContext)
       -- h_eval1_eq has fuel fuel' and varEnv ρ₀
       -- We need to rewrite ρ₀ to config₁.varEnv using h_varenv01
       have h_eval1_eq' : LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁' := by
+          EST.Out.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁' := by
         -- h_eval1_eq has ρ₀, rewrite to config₁.varEnv
         rw [h_varenv01] at h_eval1_eq
         exact h_eval1_eq
       -- Construct h_eval1' with updated varEnv
       have h_eval1' : ∃ w₀'' w₁'', LeanPoison.beval fuel' { memory := μ₀, varEnv := config₁.varEnv, nextAddr := l₀, pureMode := pm₀ } e1 verbose w₀'' =
-          EStateM.Result.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁'' :=
+          EST.Out.ok (.success { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } v1) w₁'' :=
         ⟨w₀', w₁', h_eval1_eq'⟩
       have IH1 := IH fuel' h_fuel e1 ctx (fuel_tc' - 1) result1
                       μ₀ config₁.memory config₁.varEnv config₁.varEnv
@@ -2608,7 +2608,7 @@ private lemma preservation_vlet (x : Name) (e1 e2 : Expr) (ctx : TypeContext)
       -- Convert h_eval2_ex to use explicit config structure
       rcases h_eval2_ex with ⟨w₀'', w₁'', h_eval2_eq⟩
       have h_eval2' : ∃ w₀''' w₁''', LeanPoison.beval fuel' { memory := config₂.memory, varEnv := config₂.varEnv, nextAddr := config₂.nextAddr, pureMode := config₂.pureMode } e2 verbose w₀''' =
-          EStateM.Result.ok (.success { memory := config₃.memory, varEnv := config₃.varEnv, nextAddr := config₃.nextAddr, pureMode := config₃.pureMode } v) w₁''' :=
+          EST.Out.ok (.success { memory := config₃.memory, varEnv := config₃.varEnv, nextAddr := config₃.nextAddr, pureMode := config₃.pureMode } v) w₁''' :=
         ⟨w₀'', w₁'', h_eval2_eq⟩
       have IH2 := IH fuel' h_fuel e2 ctx' (fuel_tc' - 1) result2
                       config₂.memory config₃.memory config₂.varEnv config₃.varEnv

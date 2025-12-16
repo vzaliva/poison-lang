@@ -42,3 +42,5 @@ package.json
 
 # test results
 examples/*.result
+
+testResults/*
