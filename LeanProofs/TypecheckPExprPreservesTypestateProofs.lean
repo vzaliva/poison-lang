@@ -584,74 +584,254 @@ private lemma typecheck_vlet_preserves_typestate (ctx : TypeContext) (pe : PExpr
           -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv'
           apply Std.HashMap.Equiv.trans H1 H8
 
--- Helper lemma: joinTypeResults preserves memEnv equivalence
+-- ================================================================
+-- Helper lemmas for app case
+-- ================================================================
+
+-- Property that a TypeResult preserves typestate relative to a base memory environment
+private def preservesTypestate (m : MemoryTypeEnv) (tagEnv : TagEnv) (nextLoc : Loc) (nextTag : Tag)
+    (result : TypeResult) : Prop :=
+  m.equiv result.memEnv' ∧ tagEnv = result.tagEnv' ∧ nextLoc = result.nextLoc' ∧ nextTag = result.nextTag'
+
+-- Helper: applyPFnTClosure preserves typestate for regular closures
+-- Regular closures call typecheckExpr with pureCtx=true, so by IH, typestate is preserved
+private lemma applyPFnTClosure_regular_preserves_typestate
+    (x : Name) (body : PExpr) (env : VarTypeEnv)
+    (st1 st2 : Typ) (p p1 : Poison) (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) (closureResult : TypeResult)
+    (h_apply : applyPFnTClosure (PFnTClosure.regular x body env) st1 st2 p p1 argEtyp argPoison argPred ctx result2 (fuel + 1) = Except.ok closureResult)
+    (IH : ∀ m < fuel + 1, ∀ (ctx : TypeContext) (e : Expr) (pe : PExpr) (result : TypeResult),
+      e.toPExpr = Except.ok pe → ctx.pureCtx = true → typecheckExpr ctx e m = Except.ok result →
+      ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
+    preservesTypestate result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag' closureResult := by
+  -- applyPFnTClosure.regular calls typecheckExpr ctx'' (PExpr.toExpr body) fuel
+  -- where ctx'' has memEnv = result2.memEnv', tagEnv = result2.tagEnv', pureCtx = true
+  -- By IH (with m = fuel < fuel + 1), the result preserves typestate relative to ctx''
+  sorry
+
+-- Helper: applyPFnTClosure preserves typestate for extern closures
+-- Extern closures directly return result2's memEnv', tagEnv', etc.
+private lemma applyPFnTClosure_extern_preserves_typestate
+    (x : Name) (retSpec : ExternReturn) (capturedEnv : VarTypeEnv)
+    (_st1 _st2 : Typ) (_p _p1 : Poison) (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) (closureResult : TypeResult)
+    (h_apply : applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) _st1 _st2 _p _p1 argEtyp argPoison argPred ctx result2 (fuel + 1) = Except.ok closureResult) :
+    preservesTypestate result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag' closureResult := by
+  -- For extern closures, all branches return:
+  -- memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextTag' := result2.nextTag'
+  -- For nextLoc': it's either preserved or comes from returnSpecToQTyp which preserves it for basic types
+  unfold preservesTypestate
+  -- Case split on retSpec
+  cases retSpec with
+  | simple typ poison pred =>
+    simp only [applyPFnTClosure, bind, Except.bind] at h_apply
+    cases h_ret : returnSpecToQTyp typ poison pred (VarTypeEnv.update capturedEnv x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) result2.nextLoc' with
+    | error err => simp [h_ret] at h_apply
+    | ok retPair =>
+      simp [h_ret] at h_apply
+      simp only [pure, Except.pure, Except.ok.injEq] at h_apply
+      cases h_apply
+      refine ⟨Std.HashMap.Equiv.refl _, rfl, ?_, rfl⟩
+      -- For nextLoc': returnSpecToQTyp for basic types preserves it
+      -- Need a lemma showing returnSpecToQTyp preserves nextLoc for basic types
+      sorry
+  | nestedFn _ _ _ _ =>
+    simp only [applyPFnTClosure, pure, Except.pure, Except.ok.injEq] at h_apply
+    cases h_apply
+    exact ⟨Std.HashMap.Equiv.refl _, rfl, rfl, rfl⟩
+  | nestedPfn _ _ _ =>
+    simp only [applyPFnTClosure, pure, Except.pure, Except.ok.injEq] at h_apply
+    cases h_apply
+    exact ⟨Std.HashMap.Equiv.refl _, rfl, rfl, rfl⟩
+
+-- Helper: applyPFnTClosure preserves typestate (combines regular and extern cases)
+private lemma applyPFnTClosure_preserves_typestate
+    (tcl : PFnTClosure) (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) (closureResult : TypeResult)
+    (h_apply : applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 (fuel + 1) = Except.ok closureResult)
+    (IH : ∀ m < fuel + 1, ∀ (ctx : TypeContext) (e : Expr) (pe : PExpr) (result : TypeResult),
+      e.toPExpr = Except.ok pe → ctx.pureCtx = true → typecheckExpr ctx e m = Except.ok result →
+      ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
+    preservesTypestate result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag' closureResult := by
+  cases tcl with
+  | regular x body env =>
+    exact applyPFnTClosure_regular_preserves_typestate x body env st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel closureResult h_apply IH
+  | extern x retSpec capturedEnv =>
+    exact applyPFnTClosure_extern_preserves_typestate x retSpec capturedEnv st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel closureResult h_apply
+
+-- Helper: List.mapM of applyPFnTClosure preserves typestate for all results
+private lemma mapM_applyPFnTClosure_preserves_typestate
+    (tcls : List PFnTClosure) (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) (results : List TypeResult)
+    (h_map : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel) tcls = Except.ok results)
+    (IH : ∀ m < fuel, ∀ (ctx : TypeContext) (e : Expr) (pe : PExpr) (result : TypeResult),
+      e.toPExpr = Except.ok pe → ctx.pureCtx = true → typecheckExpr ctx e m = Except.ok result →
+      ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
+    ∀ r ∈ results, preservesTypestate result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag' r := by
+  -- Use List.mapM_Except_preserves_property
+  -- Each tcl in tcls produces a result that preserves typestate by applyPFnTClosure_preserves_typestate
+  sorry
+
+-- Helper: joinTypeResults preserves memEnv equivalence
 -- If m.equiv firstResult.memEnv' and ∀ r ∈ restResults, m.equiv r.memEnv',
--- then for the joined result, m.equiv result.memEnv'
---
--- Proof by induction on restResults:
--- - Base case (restResults = []): finalResult.memEnv' = firstResult.memEnv'
--- - Inductive case: joinMemEnvs preserves equivalence via joinMemEnv_idempotent
-private lemma joinTypeResults_preserves_equiv (_tctx : TypeContext) (m : MemoryTypeEnv)
+-- then m.equiv finalResult.memEnv'
+private lemma joinTypeResults_preserves_equiv (tctx : TypeContext) (m : MemoryTypeEnv)
     (firstResult : TypeResult) (restResults : List TypeResult) (finalResult : TypeResult)
     (h_first : m.equiv firstResult.memEnv')
     (h_rest : ∀ r ∈ restResults, m.equiv r.memEnv')
-    (h_join : joinTypeResults _tctx firstResult restResults = Except.ok finalResult) :
+    (h_join : joinTypeResults tctx firstResult restResults = Except.ok finalResult) :
     m.equiv finalResult.memEnv' := by
-  induction restResults generalizing firstResult finalResult with
-  | nil =>
-    -- Base case: no more results to join
-    simp only [joinTypeResults, bind, Except.bind, List.foldlM_nil, pure, Except.pure] at h_join
-    -- h_join has a match on firstResult.qualType, split on it
-    split at h_join
-    simp only [Except.ok.injEq] at h_join
-    cases h_join
-    exact h_first
-  | cons r rs ih =>
-    -- Inductive case: r :: rs
-    -- The proof is complex due to nested do-notation in joinTypeResults.
-    -- Key insight: the final memEnv' is the result of folding joinMemEnvs
-    -- over all results, starting with firstResult.memEnv'.
-    -- By joinMemEnv_idempotent, this preserves equivalence with m.
-    --
-    -- Detailed proof would require:
-    -- 1. Extracting that firstResult.memEnv' is processed with r first
-    -- 2. Then using ih for the rest of rs
-    -- 3. Showing each joinMemEnvs step preserves equivalence
-    --
-    -- Due to the complexity of matching Lean's unfolded terms, we leave sorry.
-    sorry
+  -- joinTypeResults folds over restResults using joinMemEnvs
+  -- Starting from firstResult.memEnv' (equiv to m) and joining with each r.memEnv' (all equiv to m)
+  -- By joinMemEnv_idempotent, the result is equiv to m
+  sorry
 
+-- Helper: joinTypeResults preserves all 4 typestate components
+-- This is a stronger version that we use in the main proof
+private lemma joinTypeResults_preserves_typestate (tctx : TypeContext)
+    (firstResult : TypeResult) (restResults : List TypeResult) (finalResult : TypeResult)
+    (h_first : preservesTypestate firstResult.memEnv' firstResult.tagEnv' firstResult.nextLoc' firstResult.nextTag' firstResult)
+    (h_rest : ∀ r ∈ restResults, preservesTypestate firstResult.memEnv' firstResult.tagEnv' firstResult.nextLoc' firstResult.nextTag' r)
+    (h_join : joinTypeResults tctx firstResult restResults = Except.ok finalResult) :
+    preservesTypestate firstResult.memEnv' firstResult.tagEnv' firstResult.nextLoc' firstResult.nextTag' finalResult := by
+  -- The proof requires showing that joinTypeResults preserves equivalence for memEnv
+  -- and that tagEnv/nextLoc/nextTag are handled by the join (taking max/join)
+  sorry
+
+-- ================================================================
 -- Private lemma for app case
---
--- The typecheckApp function for parrow (pure function) case now uses:
--- 1. List.mapM to collect closure application results
--- 2. List.foldlM to check type compatibility
--- 3. List.foldlM to join memory environments
---
--- Proof sketch (why this property holds):
--- - Step 1: Typecheck e1 → result1. By IH, ctx.memEnv.equiv result1.memEnv'
--- - Step 2: Typecheck e2 → result2. By IH, result1.memEnv'.equiv result2.memEnv'
--- - Step 3: List.mapM applies each closure:
---     - Regular closure: typecheckExpr on body with pureCtx=true, memEnv=result2.memEnv'
---       By IH, result preserves memEnv equivalence with result2.memEnv'
---     - Extern closure: returns result2.memEnv' directly
--- - Step 4: Results are joined via List.foldlM with joinMemEnvs which preserves equivalence
---   (by joinMemEnv_idempotent: if m.equiv m1 and m.equiv m2, then m.equiv (joinMemEnvs m1 m2))
--- - Therefore: ctx.memEnv.equiv result.memEnv' by transitivity
+-- ================================================================
+
 private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (e1 e2 : Expr)
-  (_C : ctx.pureCtx = true) (_P : (e1.app e2).toPExpr = Except.ok pe) (_H : typecheckExpr ctx (e1.app e2) (fuel + 1) = Except.ok result)
-  (_IH : ∀ m < fuel + 1, ∀ (ctx : TypeContext) (e : Expr) (pe : PExpr) (result : TypeResult),
+  (C : ctx.pureCtx = true) (P : (e1.app e2).toPExpr = Except.ok pe) (H : typecheckExpr ctx (e1.app e2) (fuel + 1) = Except.ok result)
+  (IH : ∀ m < fuel + 1, ∀ (ctx : TypeContext) (e : Expr) (pe : PExpr) (result : TypeResult),
     e.toPExpr = Except.ok pe →
     ctx.pureCtx = true →
     typecheckExpr ctx e m = Except.ok result →
     ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
   ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
-  -- The proof requires multiple helper lemmas about:
-  -- 1. applyPFnTClosure preserving equivalence (by IH on body typechecking)
-  -- 2. List.mapM preserving the property for all results
-  -- 3. joinTypeResults preserving equivalence through foldlM
-  -- Due to the complexity of tracking membership through the proof, we use sorry.
-  sorry
+  -- Unfold to typecheckApp
+  simp only [typecheckExpr] at H
+  cases fuel with
+  | zero => simp [typecheckApp] at H
+  | succ fuel' =>
+    simp only [typecheckApp, bind, Except.bind] at H
+    -- Extract pe1, pe2 from P
+    simp only [Expr.toPExpr, Functor.map, Except.map] at P
+    cases h_pe1 : e1.toPExpr with
+    | error _ => simp [h_pe1, Seq.seq, Except.bind] at P
+    | ok pe1 =>
+      simp [h_pe1, Seq.seq, Except.bind] at P
+      cases h_pe2 : e2.toPExpr with
+      | error _ => simp [h_pe2, Except.map] at P
+      | ok pe2 =>
+        simp [h_pe2] at P
+        -- Step 1: typecheck e1
+        cases h_tc1 : typecheckExpr ctx e1 fuel' with
+        | error _ => simp [h_tc1] at H
+        | ok result1 =>
+          simp [h_tc1] at H
+          have hfuel : fuel' < fuel' + 1 + 1 := by omega
+          have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h_pe1 C h_tc1
+          obtain ⟨H1_memEnv, H1_tagEnv, H1_nextLoc, H1_nextTag⟩ := IH1
+          -- Case split on result1.qualType.etyp
+          match h_qt1 : result1.qualType with
+          | ⟨etyp1, p1, _pred1⟩ =>
+            simp only [h_qt1] at H
+            match etyp1 with
+            | .arrow _ _ _ _ =>
+              -- Arrow in pure context throws error
+              simp [C] at H
+            | .parrow st1 st2 p tcls =>
+              simp only at H
+              cases h_empty : tcls.isEmpty with
+              | true =>
+                have h_nil : tcls = [] := by rwa [List.isEmpty_iff] at h_empty
+                simp [h_nil] at H
+              | false =>
+                have h_nonempty : tcls ≠ [] := by
+                  intro h_nil
+                  simp [h_nil] at h_empty
+                simp only [h_nonempty, ↓reduceIte, pure, Except.pure] at H
+                -- Step 2: typecheck e2 with updated context
+                cases h_tc2 : typecheckExpr { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                               tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                               nextTag := result1.nextTag', pureCtx := ctx.pureCtx } e2 fuel' with
+                | error _ => simp [h_tc2] at H
+                | ok result2 =>
+                  simp [h_tc2] at H
+                  let ctx' : TypeContext := { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                               tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                               nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
+                  have C' : ctx'.pureCtx = true := C
+                  have IH2 := IH fuel' hfuel ctx' e2 pe2 result2 h_pe2 C' h_tc2
+                  obtain ⟨H2_memEnv, H2_tagEnv, H2_nextLoc, H2_nextTag⟩ := IH2
+                  -- Transitivity for all 4 components
+                  have H_memEnv_trans : ctx.memEnv.equiv result2.memEnv' := Std.HashMap.Equiv.trans H1_memEnv H2_memEnv
+                  have H_tagEnv_trans : ctx.tagEnv = result2.tagEnv' := by rw [H1_tagEnv]; exact H2_tagEnv
+                  have H_nextLoc_trans : ctx.nextLoc = result2.nextLoc' := by rw [H1_nextLoc]; exact H2_nextLoc
+                  have H_nextTag_trans : ctx.nextTag = result2.nextTag' := by rw [H1_nextTag]; exact H2_nextTag
+                  -- Subtype check: if isSubtype st1 result2.qualType = false then error else ...
+                  cases h_sub : isSubtype st1 result2.qualType with
+                  | true =>
+                    simp only [h_sub, ↓reduceIte] at H
+                    -- Destruct result2.qualType for the inner match
+                    cases h_qt2 : result2.qualType with
+                    | mk etyp2 p2 pred2 =>
+                      simp only [h_qt2] at H
+                      -- Step 3: mapM applyPFnTClosure
+                      cases h_map : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls with
+                      | error _ => simp [h_map] at H
+                      | ok closureResults =>
+                        simp only [h_map] at H
+                        match h_res : closureResults with
+                        | [] =>
+                          -- Empty list: H becomes throw ... = Except.ok, contradiction
+                          simp only [h_res, Bool.true_eq_false, ↓reduceIte] at H
+                          -- H : throw ... = Except.ok result is a contradiction (Except.error ≠ Except.ok)
+                          cases H
+                        | firstResult :: restResults =>
+                          simp only [h_res] at H
+                          -- Use mapM helper: all results preserve typestate relative to result2
+                          have IH_lower : ∀ m < fuel', ∀ (ctx' : TypeContext) (e : Expr) (pe' : PExpr) (res : TypeResult),
+                              e.toPExpr = Except.ok pe' → ctx'.pureCtx = true → typecheckExpr ctx' e m = Except.ok res →
+                              ctx'.memEnv.equiv res.memEnv' ∧ ctx'.tagEnv = res.tagEnv' ∧ ctx'.nextLoc = res.nextLoc' ∧ ctx'.nextTag = res.nextTag' := by
+                            intro m hm ctx'' e' pe' res h_pe' h_ctx h_tc
+                            exact IH m (by omega) ctx'' e' pe' res h_pe' h_ctx h_tc
+                          -- h_map was specialized by the match, so closureResults = firstResult :: restResults
+                          have h_map' : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls = Except.ok (firstResult :: restResults) := h_map
+                          have h_all := mapM_applyPFnTClosure_preserves_typestate tcls st1 st2 p p1 etyp2 p2 pred2
+                              ctx result2 fuel' (firstResult :: restResults) h_map' IH_lower
+                          -- All closure results preserve typestate relative to result2
+                          have h_first_mem : firstResult ∈ (firstResult :: restResults) := by simp
+                          have h_first := h_all firstResult h_first_mem
+                          have h_rest : ∀ r ∈ restResults, preservesTypestate result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag' r := by
+                            intro r h_mem
+                            have : r ∈ (firstResult :: restResults) := by simp [h_mem]
+                            exact h_all r this
+                          -- Extract memEnv equivalences
+                          have h_first_equiv : result2.memEnv'.equiv firstResult.memEnv' := h_first.1
+                          have h_rest_equiv : ∀ r ∈ restResults, result2.memEnv'.equiv r.memEnv' := fun r h => (h_rest r h).1
+                          -- Use joinTypeResults_preserves_equiv
+                          have h_final : result2.memEnv'.equiv result.memEnv' :=
+                            joinTypeResults_preserves_equiv ctx result2.memEnv' firstResult restResults result h_first_equiv h_rest_equiv H
+                          -- Final transitivity
+                          refine ⟨Std.HashMap.Equiv.trans H_memEnv_trans h_final, ?_, ?_, ?_⟩
+                          -- For tagEnv, nextLoc, nextTag: they are joined in joinTypeResults
+                          -- The property depends on how joinTypeResults handles these
+                          -- Since all closure results have same tagEnv/nextLoc/nextTag as result2 (by h_first/h_rest),
+                          -- and joinTypeResults takes max/join, the result should equal result2's values
+                          all_goals sorry
+                  | false =>
+                    -- isSubtype fails: H becomes Except.error = Except.ok, contradiction
+                    simp only [h_sub, ↓reduceIte] at H
+                    cases h_qt2 : result2.qualType with
+                    | mk _ _ _ =>
+                      simp only [h_qt2] at H
+                      exact absurd H (by simp)
+            | .int | .bool | .unit | .string | .ref _ _ => simp at H
 
 theorem typecheck_PExpr_preserves_typestate : TypecheckPExprPreservesTypestate := by
   unfold TypecheckPExprPreservesTypestate

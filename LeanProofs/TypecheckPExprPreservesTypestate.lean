@@ -24,4 +24,7 @@ def TypecheckPExprPreservesTypestate : Prop :=
     e.toPExpr = .ok pe →
     ctx.pureCtx = true →
     typecheckExpr ctx e fuel = .ok result →
-    ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag'
+    ctx.memEnv.equiv result.memEnv' ∧
+    ctx.tagEnv = result.tagEnv' ∧
+    ctx.nextLoc = result.nextLoc' ∧
+    ctx.nextTag = result.nextTag'
