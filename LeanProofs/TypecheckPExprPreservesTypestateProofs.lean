@@ -660,6 +660,32 @@ private lemma applyPFnTClosure_preserves_typestate
   | extern x retSpec capturedEnv =>
     exact applyPFnTClosure_extern_preserves_typestate x retSpec capturedEnv st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel closureResult h_apply
 
+-- Helper: applyPFnTClosure preserves typestate at an arbitrary fuel (including 0)
+private lemma applyPFnTClosure_preserves_typestate_at_fuel
+    (tcl : PFnTClosure) (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) (closureResult : TypeResult)
+    (h_apply : applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = Except.ok closureResult)
+    (IH : ∀ m < fuel, ∀ (ctx : TypeContext) (e : Expr) (pe : PExpr) (result : TypeResult),
+      e.toPExpr = Except.ok pe → ctx.pureCtx = true → typecheckExpr ctx e m = Except.ok result →
+      ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
+    preservesTypestate result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag' closureResult := by
+  cases fuel with
+  | zero =>
+    -- applyPFnTClosure ... 0 always errors
+    simp [applyPFnTClosure] at h_apply
+  | succ fuel' =>
+    -- Use the (+1)-fuel lemma
+    have IH' :
+        ∀ m < fuel' + 1, ∀ (ctx : TypeContext) (e : Expr) (pe : PExpr) (result : TypeResult),
+          e.toPExpr = Except.ok pe → ctx.pureCtx = true → typecheckExpr ctx e m = Except.ok result →
+          ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
+      intro m hm ctx' e pe result h_pe h_pure h_tc
+      exact IH m (by omega) ctx' e pe result h_pe h_pure h_tc
+    exact
+      applyPFnTClosure_preserves_typestate tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel'
+        closureResult (by simpa using h_apply) IH'
+
 -- Helper: List.mapM of applyPFnTClosure preserves typestate for all results
 private lemma mapM_applyPFnTClosure_preserves_typestate
     (tcls : List PFnTClosure) (st1 st2 : Typ) (p p1 : Poison)
@@ -670,9 +696,14 @@ private lemma mapM_applyPFnTClosure_preserves_typestate
       e.toPExpr = Except.ok pe → ctx.pureCtx = true → typecheckExpr ctx e m = Except.ok result →
       ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag') :
     ∀ r ∈ results, preservesTypestate result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag' r := by
-  -- Use List.mapM_Except_preserves_property
-  -- Each tcl in tcls produces a result that preserves typestate by applyPFnTClosure_preserves_typestate
-  sorry
+  -- Use List.mapM_Except_preserves_property from TypeSafety
+  refine List.mapM_Except_preserves_property tcls
+    (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
+    (fun r => preservesTypestate result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag' r)
+    (fun tcl r h_ok =>
+      applyPFnTClosure_preserves_typestate_at_fuel
+        tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel r h_ok IH)
+    results h_map
 
 -- Helper: joinTagEnvs is idempotent (joining a tagEnv with itself gives itself)
 -- This is needed for joinTypeResults_preserves_typestate
