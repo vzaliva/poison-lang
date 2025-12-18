@@ -136,12 +136,13 @@ lemma var_has_correct_type (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ :
 --
 -- The lemma states: if foldM succeeds and the function preserves P,
 -- then the result satisfies P
--- Helper lemma: List.foldlM over Except preserves property P
-theorem List.foldlM_Except_preserves_property
+-- Helper lemma: List.foldlM over Except preserves P when all list elements satisfy a side condition Q
+theorem List.foldlM_Except_preserves_property_of_forall_mem
     (xs : List α) (init : β) (f : β → α → Except ε β)
-    (P : β → Prop)
+    (P : β → Prop) (Q : α → Prop)
     (h_init : P init)
-    (h_preserve : ∀ (acc : β) (x : α), P acc → (∀ (acc' : β), f acc x = Except.ok acc' → P acc')) :
+    (h_all : ∀ x ∈ xs, Q x)
+    (h_step : ∀ (acc : β) (x : α), P acc → Q x → (∀ (acc' : β), f acc x = Except.ok acc' → P acc')) :
     ∀ (result : β), List.foldlM f init xs = Except.ok result → P result := by
   induction xs generalizing init with
   | nil =>
@@ -152,16 +153,28 @@ theorem List.foldlM_Except_preserves_property
   | cons x xs ih =>
     intro result h_fold
     simp [List.foldlM_cons, bind, Except.bind] at h_fold
-    -- h_fold involves (f init x).bind (fun acc => ...)
-    cases h_step : f init x with
+    cases h_fx : f init x with
     | error e =>
-      -- If f init x = error, then bind also errors, contradicting h_fold
-      simp [h_step] at h_fold
+      simp [h_fx] at h_fold
     | ok acc' =>
-      -- f init x = ok acc', so foldlM continues with acc'
-      simp [h_step] at h_fold
-      have h_acc'_P : P acc' := h_preserve init x h_init acc' h_step
-      exact ih acc' h_acc'_P result h_fold
+      simp [h_fx] at h_fold
+      have hQx : Q x := h_all x (by simp)
+      have hPacc' : P acc' := h_step init x h_init hQx acc' h_fx
+      have h_all_tail : ∀ y ∈ xs, Q y := by
+        intro y hy
+        exact h_all y (by simp [hy])
+      exact ih acc' hPacc' h_all_tail result h_fold
+
+-- Helper lemma: List.foldlM over Except preserves property P
+theorem List.foldlM_Except_preserves_property
+    (xs : List α) (init : β) (f : β → α → Except ε β)
+    (P : β → Prop)
+    (h_init : P init)
+    (h_preserve : ∀ (acc : β) (x : α), P acc → (∀ (acc' : β), f acc x = Except.ok acc' → P acc')) :
+    ∀ (result : β), List.foldlM f init xs = Except.ok result → P result := by
+  intro result h_fold
+  refine List.foldlM_Except_preserves_property_of_forall_mem xs init f P (fun _ => True)
+    h_init (fun x _ => trivial) (fun acc x hP _ => h_preserve acc x hP) result h_fold
 
 theorem LocSet.foldM_Except_preserves_property
     (s : LocSet) (init : β) (f : β → Loc → Except ε β)

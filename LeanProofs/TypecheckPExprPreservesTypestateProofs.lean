@@ -674,31 +674,204 @@ private lemma mapM_applyPFnTClosure_preserves_typestate
   -- Each tcl in tcls produces a result that preserves typestate by applyPFnTClosure_preserves_typestate
   sorry
 
--- Helper: joinTypeResults preserves memEnv equivalence
--- If m.equiv firstResult.memEnv' and ∀ r ∈ restResults, m.equiv r.memEnv',
--- then m.equiv finalResult.memEnv'
-private lemma joinTypeResults_preserves_equiv (tctx : TypeContext) (m : MemoryTypeEnv)
-    (firstResult : TypeResult) (restResults : List TypeResult) (finalResult : TypeResult)
-    (h_first : m.equiv firstResult.memEnv')
-    (h_rest : ∀ r ∈ restResults, m.equiv r.memEnv')
-    (h_join : joinTypeResults tctx firstResult restResults = Except.ok finalResult) :
-    m.equiv finalResult.memEnv' := by
-  -- joinTypeResults folds over restResults using joinMemEnvs
-  -- Starting from firstResult.memEnv' (equiv to m) and joining with each r.memEnv' (all equiv to m)
-  -- By joinMemEnv_idempotent, the result is equiv to m
+-- Helper: joinTagEnvs is idempotent (joining a tagEnv with itself gives itself)
+-- This is needed for joinTypeResults_preserves_typestate
+private lemma joinTagEnvs_self (_t : TagEnv) : joinTagEnvs _t _t = _t := by
   sorry
 
+-- Helper: max is idempotent (using Nat.max_self from mathlib)
+
+-- Helper: invert `Except.bind` in the success case
+private lemma Except.bind_eq_ok {ε α β : Type} (x : Except ε α) (f : α → Except ε β) (b : β)
+    (h : Except.bind x f = Except.ok b) :
+    ∃ a, x = Except.ok a ∧ f a = Except.ok b := by
+  cases x with
+  | error e =>
+    simp [Except.bind] at h
+  | ok a =>
+    refine ⟨a, rfl, ?_⟩
+    simpa [Except.bind] using h
+
 -- Helper: joinTypeResults preserves all 4 typestate components
--- This is a stronger version that we use in the main proof
-private lemma joinTypeResults_preserves_typestate (tctx : TypeContext)
+-- Given that all inputs have equivalent memEnv and equal tagEnv/nextLoc/nextTag,
+-- the output also has equivalent memEnv and equal tagEnv/nextLoc/nextTag.
+--
+-- Proof sketch:
+-- joinTypeResults folds over restResults using:
+-- - joinMemEnvs for memEnv' (preserves equivalence via joinMemEnv_idempotent)
+-- - joinTagEnvs for tagEnv' (when all inputs equal, result equals via joinTagEnvs_self)
+-- - max for nextLoc' and nextTag' (max n n = n via Nat.max_self)
+--
+-- Using List.foldlM_Except_preserves_property with a combined property P capturing all 4 invariants:
+-- P(acc) = m.equiv acc.memEnv ∧ t = acc.tagEnv ∧ nl = acc.nextLoc ∧ nt = acc.nextTag
+--
+-- Base case: P(initAcc) holds by h_first_* hypotheses
+-- Inductive case: foldFn preserves P using joinMemEnv_idempotent, joinTagEnvs_self, Nat.max_self
+private lemma joinTypeResults_preserves_typestate
+    (_tctx : TypeContext) (m : MemoryTypeEnv) (t : TagEnv) (nl : Loc) (nt : Tag)
     (firstResult : TypeResult) (restResults : List TypeResult) (finalResult : TypeResult)
-    (h_first : preservesTypestate firstResult.memEnv' firstResult.tagEnv' firstResult.nextLoc' firstResult.nextTag' firstResult)
-    (h_rest : ∀ r ∈ restResults, preservesTypestate firstResult.memEnv' firstResult.tagEnv' firstResult.nextLoc' firstResult.nextTag' r)
-    (h_join : joinTypeResults tctx firstResult restResults = Except.ok finalResult) :
-    preservesTypestate firstResult.memEnv' firstResult.tagEnv' firstResult.nextLoc' firstResult.nextTag' finalResult := by
-  -- The proof requires showing that joinTypeResults preserves equivalence for memEnv
-  -- and that tagEnv/nextLoc/nextTag are handled by the join (taking max/join)
-  sorry
+    (_h_all : ∀ r ∈ (firstResult :: restResults), preservesTypestate m t nl nt r)
+    (_h_join : joinTypeResults _tctx firstResult restResults = Except.ok finalResult) :
+    preservesTypestate m t nl nt finalResult := by
+  classical
+  have h_first : preservesTypestate m t nl nt firstResult := _h_all firstResult (by simp)
+  have h_rest : ∀ r ∈ restResults, preservesTypestate m t nl nt r := by
+    intro r hr
+    exact _h_all r (by simp [hr])
+
+  -- Invert `joinTypeResults` to expose the join fold.
+  cases h_qt : firstResult.qualType with
+  | mk firstEtyp firstP firstPred =>
+    -- Match the accumulator and fold function used in `joinTypeResults`.
+    let initAcc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag :=
+      (firstEtyp, firstResult.memEnv', firstP, firstPred, firstResult.tagEnv', firstResult.nextLoc', firstResult.nextTag')
+    let joinFn :
+        (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) →
+          TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) :=
+      fun acc result => do
+        let ⟨resEtyp, resPoison, resPred⟩ := result.qualType
+        let (joinedEtyp, joinedMemEnv, joinedPoison, joinedPred, joinedTagEnv, maxNextLoc, maxNextTag) := acc
+        pure
+          (joinETyps joinedEtyp resEtyp joinedPoison resPoison,
+            joinMemEnvs joinedMemEnv result.memEnv',
+            joinPoison joinedPoison resPoison,
+            joinPredicates joinedPred resPred,
+            joinTagEnvs joinedTagEnv result.tagEnv',
+            max maxNextLoc result.nextLoc',
+            max maxNextTag result.nextTag')
+    let P : (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) → Prop
+      | (_et, mem, _p, _pred, tagEnv, nextLoc, nextTag) =>
+          m.equiv mem ∧ t = tagEnv ∧ nl = nextLoc ∧ nt = nextTag
+    let Q : TypeResult → Prop := fun r => preservesTypestate m t nl nt r
+
+    have h_init : P initAcc := by
+      simpa [P, Q, initAcc, preservesTypestate] using h_first
+
+    have h_all_rest : ∀ r ∈ restResults, Q r := by
+      intro r hr
+      exact h_rest r hr
+
+    have h_step :
+        ∀ (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) (x : TypeResult),
+          P acc →
+          Q x →
+          (∀ acc', joinFn acc x = Except.ok acc' → P acc') := by
+      intro acc x hPacc hQx acc' h_fx
+      rcases acc with ⟨joinedEtyp, joinedMemEnv, joinedPoison, joinedPred, joinedTagEnv, maxNextLoc, maxNextTag⟩
+      have hP' : m.equiv joinedMemEnv ∧ t = joinedTagEnv ∧ nl = maxNextLoc ∧ nt = maxNextTag := by
+        simpa [P] using hPacc
+      have hQ' : m.equiv x.memEnv' ∧ t = x.tagEnv' ∧ nl = x.nextLoc' ∧ nt = x.nextTag' := by
+        simpa [Q, preservesTypestate] using hQx
+
+      cases h_qt_x : x.qualType with
+      | mk resEtyp resPoison resPred =>
+        have h_fx' :
+            (joinETyps joinedEtyp resEtyp joinedPoison resPoison,
+              joinMemEnvs joinedMemEnv x.memEnv',
+              joinPoison joinedPoison resPoison,
+              joinPredicates joinedPred resPred,
+              joinTagEnvs joinedTagEnv x.tagEnv',
+              max maxNextLoc x.nextLoc',
+              max maxNextTag x.nextTag') =
+              acc' := by
+          simpa [joinFn, h_qt_x, pure, Except.pure] using h_fx
+
+        -- Rewrite the goal to the tuple computed by `joinFn` and discharge the invariant.
+        rw [← h_fx']
+        simp [P]
+        refine ⟨?_, ?_, ?_, ?_⟩
+        · exact joinMemEnv_idempotent m joinedMemEnv x.memEnv' hP'.1 hQ'.1
+        · rw [← hP'.2.1, ← hQ'.2.1]
+          rw [joinTagEnvs_self t]
+        · rw [← hP'.2.2.1, ← hQ'.2.2.1]
+          simp
+        · rw [← hP'.2.2.2, ← hQ'.2.2.2]
+          simp
+
+    -- Now unfold `joinTypeResults` in `Except.bind` form and invert the successful run.
+    have h_join' := _h_join
+    simp [joinTypeResults, h_qt, bind, pure, Except.pure] at h_join'
+
+    -- Step 1: signature check fold must succeed
+    rcases Except.bind_eq_ok
+        (x :=
+          List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature firstEtyp resEtyp = false then
+                  throw
+                    (toString "Closure alternatives produced incompatible result types: " ++ toString (repr firstEtyp) ++
+                        toString " vs " ++
+                      toString (repr resEtyp))
+                else Except.ok ()) () restResults)
+        (f := fun _ =>
+          Except.bind (List.foldlM joinFn initAcc restResults) (fun joined =>
+            Except.ok
+              { qualType :=
+                  { etyp := joined.1, poison := joinPoison _tctx.pc joined.2.2.1,
+                    pred :=
+                      match joined.1 with
+                      | ETyp.arrow _ _ _ _ => Predicate.noPred
+                      | ETyp.parrow _ _ _ _ => Predicate.noPred
+                      | _ => joined.2.2.2.1 },
+                memEnv' := joined.2.1, tagEnv' := joined.2.2.2.2.1, nextLoc' := joined.2.2.2.2.2.1,
+                nextTag' := joined.2.2.2.2.2.2 }))
+        (b := finalResult) h_join' with ⟨_u, _h_sig_ok, h_after_sig⟩
+
+    -- Step 2: join fold must succeed, yielding the final record
+    rcases Except.bind_eq_ok (x := List.foldlM joinFn initAcc restResults)
+        (f := fun joined =>
+          Except.ok
+            { qualType :=
+                { etyp := joined.1, poison := joinPoison _tctx.pc joined.2.2.1,
+                  pred :=
+                    match joined.1 with
+                    | ETyp.arrow _ _ _ _ => Predicate.noPred
+                    | ETyp.parrow _ _ _ _ => Predicate.noPred
+                    | _ => joined.2.2.2.1 },
+              memEnv' := joined.2.1, tagEnv' := joined.2.2.2.2.1, nextLoc' := joined.2.2.2.2.2.1,
+              nextTag' := joined.2.2.2.2.2.2 })
+        (b := finalResult) h_after_sig with ⟨joined, h_fold, h_ok⟩
+
+    rcases joined with ⟨joinedEtyp, joinedMemEnv, joinedPoison, joinedPred, joinedTagEnv, maxNextLoc, maxNextTag⟩
+
+    have h_ret := by
+      injection h_ok
+
+    have hP_joined :
+        m.equiv joinedMemEnv ∧ t = joinedTagEnv ∧ nl = maxNextLoc ∧ nt = maxNextTag := by
+      have hP_acc :
+          P (joinedEtyp, joinedMemEnv, joinedPoison, joinedPred, joinedTagEnv, maxNextLoc, maxNextTag) :=
+        List.foldlM_Except_preserves_property_of_forall_mem
+          restResults initAcc joinFn P Q h_init h_all_rest h_step
+          (joinedEtyp, joinedMemEnv, joinedPoison, joinedPred, joinedTagEnv, maxNextLoc, maxNextTag) (by
+            simpa [joinFn] using h_fold)
+      simpa [P] using hP_acc
+
+    have h_memEq : finalResult.memEnv' = joinedMemEnv := by
+      have : joinedMemEnv = finalResult.memEnv' := by
+        simpa using congrArg TypeResult.memEnv' h_ret
+      exact this.symm
+    have h_tagEq : finalResult.tagEnv' = joinedTagEnv := by
+      have : joinedTagEnv = finalResult.tagEnv' := by
+        simpa using congrArg TypeResult.tagEnv' h_ret
+      exact this.symm
+    have h_locEq : finalResult.nextLoc' = maxNextLoc := by
+      have : maxNextLoc = finalResult.nextLoc' := by
+        simpa using congrArg TypeResult.nextLoc' h_ret
+      exact this.symm
+    have h_tagEq' : finalResult.nextTag' = maxNextTag := by
+      have : maxNextTag = finalResult.nextTag' := by
+        simpa using congrArg TypeResult.nextTag' h_ret
+      exact this.symm
+
+    -- Conclude typestate preservation for the returned `TypeResult`.
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · simpa [h_memEq] using hP_joined.1
+    · simpa [h_tagEq] using hP_joined.2.1
+    · simpa [h_locEq] using hP_joined.2.2.1
+    · simpa [h_tagEq'] using hP_joined.2.2.2
 
 -- ================================================================
 -- Private lemma for app case
@@ -811,19 +984,29 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                             intro r h_mem
                             have : r ∈ (firstResult :: restResults) := by simp [h_mem]
                             exact h_all r this
-                          -- Extract memEnv equivalences
-                          have h_first_equiv : result2.memEnv'.equiv firstResult.memEnv' := h_first.1
-                          have h_rest_equiv : ∀ r ∈ restResults, result2.memEnv'.equiv r.memEnv' := fun r h => (h_rest r h).1
-                          -- Use joinTypeResults_preserves_equiv
-                          have h_final : result2.memEnv'.equiv result.memEnv' :=
-                            joinTypeResults_preserves_equiv ctx result2.memEnv' firstResult restResults result h_first_equiv h_rest_equiv H
+                          -- Extract individual components from preservesTypestate
+                          have h_first_memEnv : result2.memEnv'.equiv firstResult.memEnv' := h_first.1
+                          have h_first_tagEnv : result2.tagEnv' = firstResult.tagEnv' := h_first.2.1
+                          have h_first_nextLoc : result2.nextLoc' = firstResult.nextLoc' := h_first.2.2.1
+                          have h_first_nextTag : result2.nextTag' = firstResult.nextTag' := h_first.2.2.2
+                          have h_rest_memEnv : ∀ r ∈ restResults, result2.memEnv'.equiv r.memEnv' := fun r h => (h_rest r h).1
+                          have h_rest_tagEnv : ∀ r ∈ restResults, result2.tagEnv' = r.tagEnv' := fun r h => (h_rest r h).2.1
+                          have h_rest_nextLoc : ∀ r ∈ restResults, result2.nextLoc' = r.nextLoc' := fun r h => (h_rest r h).2.2.1
+                          have h_rest_nextTag : ∀ r ∈ restResults, result2.nextTag' = r.nextTag' := fun r h => (h_rest r h).2.2.2
+                          -- Use joinTypeResults_preserves_typestate (strengthened version)
+                          have h_join_result := joinTypeResults_preserves_typestate ctx
+                              result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag'
+                              firstResult restResults result
+                              (by
+                                intro r h_mem
+                                exact h_all r h_mem)
+                              H
+                          obtain ⟨h_final_memEnv, h_final_tagEnv, h_final_nextLoc, h_final_nextTag⟩ := h_join_result
                           -- Final transitivity
-                          refine ⟨Std.HashMap.Equiv.trans H_memEnv_trans h_final, ?_, ?_, ?_⟩
-                          -- For tagEnv, nextLoc, nextTag: they are joined in joinTypeResults
-                          -- The property depends on how joinTypeResults handles these
-                          -- Since all closure results have same tagEnv/nextLoc/nextTag as result2 (by h_first/h_rest),
-                          -- and joinTypeResults takes max/join, the result should equal result2's values
-                          all_goals sorry
+                          refine ⟨Std.HashMap.Equiv.trans H_memEnv_trans h_final_memEnv, ?_, ?_, ?_⟩
+                          · rw [H_tagEnv_trans]; exact h_final_tagEnv
+                          · rw [H_nextLoc_trans]; exact h_final_nextLoc
+                          · rw [H_nextTag_trans]; exact h_final_nextTag
                   | false =>
                     -- isSubtype fails: H becomes Except.error = Except.ok, contradiction
                     simp only [h_sub, ↓reduceIte] at H
