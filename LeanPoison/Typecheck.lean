@@ -2,6 +2,7 @@ import LeanPoison.Syntax
 import LeanPoison.Misc
 
 import Std.Data.HashMap
+import Std.Data.ExtTreeMap
 open Std
 
 -- Type checking environment definitions
@@ -39,7 +40,17 @@ structure TagVal where
   deriving Repr, BEq
 
 /-- Tag valuation environment (ℒ in the Ott spec) -/
-abbrev TagEnv := HashMap Tag TagVal
+abbrev TagEnv := ExtTreeMap Tag TagVal
+
+namespace TagEnv
+
+instance : BEq TagEnv where
+  beq m₁ m₂ := (ExtTreeMap.toList m₁) == (ExtTreeMap.toList m₂)
+
+instance : Repr TagEnv where
+  reprPrec m _ := s!"Std.HashMap.ofList {repr (ExtTreeMap.toList m)}"
+
+end TagEnv
 
 /-- Remove from tag environment all entries whose dependency sets intersect the given locset. -/
 def invalidateTagDeps (env : TagEnv) (ls : LocSet) : TagEnv :=
@@ -247,7 +258,7 @@ def joinETyps (t1 t2 : ETyp) (_p1 _p2 : Poison) : ETyp :=
 
 /-- Join two logical environments (agreement-only meet used in while fixpoint) -/
 def joinTagEnvs (env1 env2 : TagEnv) : TagEnv :=
-  combineMaps env1 env2 (fun _ otv1 otv2 =>
+  combineExtTreeMaps env1 env2 (fun _ otv1 otv2 =>
     match otv1, otv2 with
     | some ⟨b1, deps1⟩, some ⟨b2, deps2⟩ =>
       if b1 == b2 then

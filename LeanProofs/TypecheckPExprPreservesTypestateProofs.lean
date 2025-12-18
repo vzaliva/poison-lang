@@ -352,7 +352,7 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                       { pc := ctx.pc,
                         memEnv := ctx.memEnv,
                         varEnv := ctx.varEnv,
-                        tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := true, deps := k_deps.2 },
+                        tagEnv := ctx.tagEnv.insert k_deps.1 { value := true, deps := k_deps.2 },
                         nextLoc := ctx.nextLoc,
                         nextTag := ctx.nextTag,
                         pureCtx := true }
@@ -368,7 +368,7 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                       { pc := ctx.pc,
                         memEnv := ctx.memEnv,
                         varEnv := ctx.varEnv,
-                        tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := false, deps := k_deps.2 },
+                        tagEnv := ctx.tagEnv.insert k_deps.1 { value := false, deps := k_deps.2 },
                         nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
                       e3 fuel' with
               | error err =>
@@ -388,23 +388,23 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                     have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 C h5
                     rcases IH1 with ⟨H1, H2, H3, H4⟩
                     have C' : ({ pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
-                                 tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := true, deps := k_deps.2 },
+                                 tagEnv := ctx.tagEnv.insert k_deps.1 { value := true, deps := k_deps.2 },
                                  nextLoc := ctx.nextLoc, nextTag := ctx.nextTag, pureCtx := true } : TypeContext).pureCtx = true
                             := by simp
                     have IH2 :=
                       IH fuel' hfuel { pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
-                                       tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := true, deps := k_deps.2 },
+                                       tagEnv := ctx.tagEnv.insert k_deps.1 { value := true, deps := k_deps.2 },
                                        nextLoc := ctx.nextLoc, nextTag := ctx.nextTag, pureCtx := true }
                                        e2 pe2 result2 h3 C' h9
 
                     have C'' : ({ pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
-                                       tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := false, deps := k_deps.2 },
+                                       tagEnv := ctx.tagEnv.insert k_deps.1 { value := false, deps := k_deps.2 },
                                        nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true } : TypeContext).pureCtx = true
                             := by simp
                     have IH3 :=
                       IH fuel' hfuel
                         { pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
-                          tagEnv := Std.HashMap.insert ctx.tagEnv k_deps.1 { value := false, deps := k_deps.2 },
+                          tagEnv := ctx.tagEnv.insert k_deps.1 { value := false, deps := k_deps.2 },
                           nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
                         e3 pe3 result3 h4 C'' h11
                     rcases IH2 with ⟨H14, H15, H16⟩
