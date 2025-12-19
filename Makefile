@@ -26,14 +26,21 @@ poison-lang-spec:
 	$(MAKE) -C poison-lang-spec
 
 # Download precompiled lean caches for mathlib/upstreams (idempotent)
-cache:
-	lake exe cache get
+# Uses sentinel file to avoid re-downloading if cache already exists
+.lake/.cache-downloaded:
+	@mkdir -p .lake
+	@echo "Downloading Lean cache..."
+	@lake exe cache get && touch .lake/.cache-downloaded
+
+cache: .lake/.cache-downloaded
 
 # Force a fresh cache (good after toolchain/mathlib bumps)
 cache-refresh:
 	lake clean
 	rm -rf .lake
+	mkdir -p .lake
 	lake exe cache get!
+	touch .lake/.cache-downloaded
 
 lean-build: cache config.json
 	lake build
