@@ -464,7 +464,7 @@ private lemma beval_memory_monotonic_newRef (e1 : Expr) (fuel : Nat) (verbose : 
         -- Chain through IH: config₀ → config' (via e1)
         have IH1 := IH fuel' h_fuel e1 config₀ config' (Value.num n) h_beval1_ex l h_contains
         -- Now we need: config'.memory.contains l → config'.memory.update config'.nextAddr n contains l
-        -- HashMap.update (which is insert) preserves contains for all keys
+        -- ExtTreeMap.update (which is insert) preserves contains for all keys
         rw [h_mem_eq]
         -- Use the helper lemma: ExtTreeMap.insert preserves contains
         exact ExtTreeMap_insert_preserves_contains config'.memory config'.nextAddr l n IH1
@@ -543,7 +543,7 @@ private lemma beval_memory_monotonic_assign (e1 e2 : Expr) (fuel : Nat) (verbose
             have IH1 := IH fuel' h_fuel e1 config₀ config₁' (Value.loc loc_val) h_beval1_ex l h_contains
             have IH2 := IH fuel' h_fuel e2 config₁' config₂ (Value.num n) h_beval2_ex l IH1
             -- Now we need: config₂.memory.contains l → config₂.memory.update loc_val n contains l
-            -- HashMap.update is just insert, and insert preserves contains for all keys
+            -- ExtTreeMap.update is just insert, and insert preserves contains for all keys
             rw [h_mem_eq]
             -- Memory.update = ExtTreeMap.insert, which preserves contains
             -- If l = loc_val, insert adds/updates it (definitely contains)

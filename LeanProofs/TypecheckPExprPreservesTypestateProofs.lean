@@ -116,7 +116,7 @@ private lemma typecheck_var_preserves_typestate (ctx : TypeContext) (pe : PExpr)
       | noPred =>
         -- No predicate case: preserves environment
         simp_all [typecheckVar, h0, h1, h3, pure, Except.pure]
-        cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+        cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv]
 
 -- Private lemma for deref case
 private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (e1 : Expr)

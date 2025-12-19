@@ -57,7 +57,7 @@ open List
 /-- Keys are unique in both `s.locs` (addresses) and `s.vars` (names). -/
 def inputKeysUnique (vars : VarTypeEnv) : Prop :=
   Nodup (vars.map Prod.fst)
-  -- for `s.locs` we don't need to check uniqueness because it is implemented as a HashMap
+  -- for `s.locs` we don't need to check uniqueness because it is implemented as a ExtTreeMap
 
 -- Regime: partial mapping from guard tags to their truth values.
 -- A regime R : K_S → {true, false} assigns a truth value to each guard tag
