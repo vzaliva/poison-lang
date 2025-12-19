@@ -1,6 +1,6 @@
 Evaluating file: examples/boolean_exprType_test.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [] , tagEnv : Std.HashMap.ofList [] , nextLoc : 0 
+Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred , MemoryTypeEnv : ofList [] , tagEnv : ofList [] , nextLoc : 0 
 
 "New parsing works"
 Result: unit

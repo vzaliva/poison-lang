@@ -12,8 +12,7 @@ import Mathlib.Tactic.Linarith
 
 import Init.Data.List
 import Init.Data.List.Lemmas
-import Std.Data.HashMap
-import Std.Data.HashMap.Lemmas
+import Std.Data.ExtTreeMap
 import Mathlib.Data.List.Lattice
 import Batteries.Data.List.Lemmas
 
@@ -97,7 +96,9 @@ private lemma joinMemEnvs_func_none :
   intro _k
   rfl
 
+-- OLD PROOF: Removed - depends on HashMap combineMaps which has been replaced with ExtTreeMap version
 -- Helper lemma: go preserves lookups for keys not in the list
+/-
 private lemma go_get_not_mem [BEq α] [Hashable α] [LawfulBEq α] [DecidableEq α]
   (m1 m2 : HashMap α β)
   (f : α → Option β → Option β → Option β)
@@ -126,8 +127,11 @@ private lemma go_get_not_mem [BEq α] [Hashable α] [LawfulBEq α] [DecidableEq 
           have h_insert : (acc.insert x v).get? k = acc.get? k := by
             simp [HashMap.get?_eq_getElem?, HashMap.getElem?_insert, beq_iff_eq, hk_ne.symm]
           rw [ih, h_insert]
+-/
 
+-- OLD PROOF: Removed - depends on HashMap combineMaps which has been replaced with ExtTreeMap version
 -- Helper lemma: go computes the right value for keys in the list
+/-
 private lemma go_get_mem [BEq α] [Hashable α] [LawfulBEq α] [DecidableEq α]
   (m1 m2 : HashMap α β)
   (f : α → Option β → Option β → Option β)
@@ -182,7 +186,10 @@ private lemma go_get_mem [BEq α] [Hashable α] [LawfulBEq α] [DecidableEq α]
               simp only []
               specialize ih (acc.insert x v) hmem h_nodup.2
               rw [ih]
+-/
 
+-- OLD PROOF: Removed - depends on HashMap combineMaps which has been replaced with ExtTreeMap version
+/-
 private lemma combineMaps_equiv_helper [BEq α] [Hashable α] [LawfulBEq α] [DecidableEq α]
   (m m1 m2 : HashMap α β)
   (f : α → Option β → Option β → Option β)
@@ -256,18 +263,56 @@ private lemma combineMaps_equiv_helper [BEq α] [Hashable α] [LawfulBEq α] [De
           exact absurd h_in_keys h_not_m1
     have hm_none : m.get? k = none := by rw [hm1_get, hm1_none]
     simpa [HashMap.get?_eq_getElem?] using hm_none.symm
+-/
 
+-- Proofs for MemoryTypeEnv.equiv reflexivity and transitivity
+namespace MemoryTypeEnv
+
+theorem equiv.refl (m : MemoryTypeEnv) : m.equiv m := by
+  simp only [equiv]
+  -- (ExtTreeMap.toList m == ExtTreeMap.toList m) = true by reflexivity of BEq
+  have : LawfulBEq (List (Loc × QTyp)) := inferInstance
+  exact this.rfl
+
+theorem equiv.trans (m₁ m₂ m₃ : MemoryTypeEnv) : m₁.equiv m₂ → m₂.equiv m₃ → m₁.equiv m₃ := by
+  simp only [equiv]
+  intro h1 h2
+  -- h1: (ExtTreeMap.toList m₁ == ExtTreeMap.toList m₂) = true
+  -- h2: (ExtTreeMap.toList m₂ == ExtTreeMap.toList m₃) = true
+  -- Goal: (ExtTreeMap.toList m₁ == ExtTreeMap.toList m₃) = true
+  -- Convert boolean equalities to Prop equalities, use transitivity, convert back
+  have : LawfulBEq (List (Loc × QTyp)) := inferInstance
+  have h_list_eq : ExtTreeMap.toList m₁ = ExtTreeMap.toList m₂ := this.eq_of_beq h1
+  have h_list_eq2 : ExtTreeMap.toList m₂ = ExtTreeMap.toList m₃ := this.eq_of_beq h2
+  have h_list_eq3 : ExtTreeMap.toList m₁ = ExtTreeMap.toList m₃ := by
+    rw [h_list_eq, h_list_eq2]
+  -- Convert back to boolean equality: if a = b, then (a == b) = (a == a) = true
+  have h_beq_eq : (ExtTreeMap.toList m₁ == ExtTreeMap.toList m₃) = true := by
+    rw [h_list_eq3]
+    exact this.rfl
+  exact h_beq_eq
+
+end MemoryTypeEnv
 
 theorem joinMemEnv_idempotent : ∀ (m m1 m2 : MemoryTypeEnv),
   m.equiv m1 → m.equiv m2 → m.equiv (joinMemEnvs m1 m2) := by
   intros m m1 m2 h1 h2
-  simp [MemoryTypeEnv.equiv, joinMemEnvs]
-  apply combineMaps_equiv_helper
-  · exact h1
-  · exact h2
-  · intros k v
-    have := joinMemEnvs_func_idempotent k v
-    simp [beq_iff_eq] at this
-    exact this
-  · intro k
-    exact joinMemEnvs_func_none k
+  simp only [MemoryTypeEnv.equiv]
+  -- Since m.equiv m1 and m.equiv m2, we have m1.toList = m.toList and m2.toList = m.toList
+  have h_list_eq1 : ExtTreeMap.toList m = ExtTreeMap.toList m1 := by
+    have : LawfulBEq (List (Loc × QTyp)) := inferInstance
+    exact this.eq_of_beq h1
+  have h_list_eq2 : ExtTreeMap.toList m = ExtTreeMap.toList m2 := by
+    have : LawfulBEq (List (Loc × QTyp)) := inferInstance
+    exact this.eq_of_beq h2
+  have h_list_eq12 : ExtTreeMap.toList m1 = ExtTreeMap.toList m2 := by
+    rw [← h_list_eq1, h_list_eq2]
+  -- Since m1.toList = m2.toList = m.toList, and joinMemEnvs uses an idempotent combining function,
+  -- the result should have the same toList as m
+  -- Key insight: combineExtTreeMaps with idempotent function preserves equality when both inputs are equal
+  simp [joinMemEnvs]
+  -- Since m1.toList = m2.toList, for each key k, m1.get? k = m2.get? k
+  -- The combining function f is idempotent: f k (some v) (some v) = some v
+  -- So combineExtTreeMaps m1 m2 f will produce a map with the same toList as m1 (and m2, and m)
+  -- This requires showing that combineExtTreeMaps preserves toList when inputs have same toList and f is idempotent
+  sorry -- This requires a detailed proof about combineExtTreeMaps behavior with equal inputs

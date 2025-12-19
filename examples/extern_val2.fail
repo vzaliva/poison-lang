@@ -1,5 +1,5 @@
 Evaluating file: examples/extern_val2.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.bool true Predicate.guardOnly 3 , MemoryTypeEnv : Std.HashMap.ofList [] , tagEnv : Std.HashMap.ofList [] , nextLoc : 0 
+Type checking passed: Type: QTyp.mk ETyp.bool true Predicate.guardOnly 3 , MemoryTypeEnv : ofList [] , tagEnv : ofList [] , nextLoc : 0 
 
 Runtime error: Cannot execute extern value – no implementation provided

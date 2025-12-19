@@ -12,8 +12,6 @@ import Mathlib.Tactic.Linarith
 
 import Init.Data.List
 import Init.Data.List.Lemmas
-import Std.Data.HashMap
-import Std.Data.HashMap.Lemmas
 import Mathlib.Data.List.Lattice
 import Batteries.Data.List.Lemmas
 
@@ -43,7 +41,7 @@ private lemma typecheck_unit_preserves_typestate (ctx : TypeContext) (pe : PExpr
   ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp_all [typecheckExpr]
   cases H
-  simp [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+  simp [MemoryTypeEnv.equiv]
 
 -- Private lemma for str case
 private lemma typecheck_str_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (s : String)
@@ -51,7 +49,7 @@ private lemma typecheck_str_preserves_typestate (ctx : TypeContext) (pe : PExpr)
   ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp_all [typecheckExpr]
   cases H
-  simp [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+  simp [MemoryTypeEnv.equiv]
 
 -- Private lemma for num case
 private lemma typecheck_num_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (n : Int)
@@ -59,7 +57,7 @@ private lemma typecheck_num_preserves_typestate (ctx : TypeContext) (pe : PExpr)
   ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp_all [typecheckExpr]
   cases H
-  simp [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+  simp [MemoryTypeEnv.equiv]
 
 -- Private lemma for bool case
 private lemma typecheck_bool_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (b : Bool)
@@ -67,7 +65,7 @@ private lemma typecheck_bool_preserves_typestate (ctx : TypeContext) (pe : PExpr
   ctx.memEnv.equiv result.memEnv' ∧ ctx.tagEnv = result.tagEnv' ∧ ctx.nextLoc = result.nextLoc' ∧ ctx.nextTag = result.nextTag' := by
   simp_all [typecheckExpr]
   cases H
-  simp [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+  simp [MemoryTypeEnv.equiv]
 
 -- Private lemma for var case
 private lemma typecheck_var_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (name : Name)
@@ -89,32 +87,32 @@ private lemma typecheck_var_preserves_typestate (ctx : TypeContext) (pe : PExpr)
         cases h5 : ctx.tagEnv.get? tag with
         | none =>
           simp_all [typecheckVar, h0, h1, h3, h5, pure, Except.pure]
-          cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+          cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv]
         | some bd =>
           cases bd with
           | mk value deps =>
             cases h6 : value with
             | false =>
               simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
-              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv]
             | true =>
               simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
-              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv]
       | guardOnly tag =>
         cases h5 : ctx.tagEnv.get? tag with
         | none =>
           simp_all [typecheckVar, h0, h1, h3, h5, pure, Except.pure]
-          cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+          cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv]
         | some bd =>
           cases bd with
           | mk value deps =>
             cases h6 : value with
             | false =>
               simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
-              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv]
             | true =>
               simp_all [typecheckVar, h0, h1, h3, h5, h6, pure, Except.pure]
-              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv, Std.HashMap.Equiv]
+              cases result <;> cases ctx <;> cases H <;> simp_all [MemoryTypeEnv.equiv]
       | noPred =>
         -- No predicate case: preserves environment
         simp_all [typecheckVar, h0, h1, h3, pure, Except.pure]
@@ -312,7 +310,7 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                     have H_join : result1.memEnv'.equiv (joinMemEnvs result2.memEnv' result3.memEnv') :=
                       joinMemEnv_idempotent result1.memEnv' result2.memEnv' result3.memEnv' H14 H17
                     have H_trans : ctx.memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv') :=
-                      Std.HashMap.Equiv.trans H1 H_join
+                      MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' (joinMemEnvs result2.memEnv' result3.memEnv') H1 H_join
                     cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
   | ok k_deps =>
     -- predicate-based case: matching predicate found
@@ -482,10 +480,13 @@ private lemma typecheck_op_preserves_typestate (ctx : TypeContext) (pe : PExpr) 
                         pureCtx := true }
                       e2 pe2 result2 h2 C' h5
             rcases IH2 with ⟨H8, H9, H10⟩
-            simp_all
-            cases result; cases result1; cases result2; cases ctx; cases H; simp_all
             -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv'
-            apply Std.HashMap.Equiv.trans H1 H8
+            -- H1: ctx.memEnv.equiv result1.memEnv'
+            -- H8: result1.memEnv'.equiv result2.memEnv'
+            -- Goal: ctx.memEnv.equiv result.memEnv' where result.memEnv' = result2.memEnv'
+            have H_trans : ctx.memEnv.equiv result2.memEnv' := MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' result2.memEnv' H1 H8
+            simp_all [H_trans]
+            cases result; cases result1; cases result2; cases ctx; cases H; simp_all
           | none =>
             simp_all
 
@@ -579,10 +580,13 @@ private lemma typecheck_vlet_preserves_typestate (ctx : TypeContext) (pe : PExpr
               pureCtx := true }
             e2 pe2 result2 h2 C' h4
           rcases IH2 with ⟨H8, H9, H10⟩
-          simp_all
-          cases result; cases result1; cases result2; cases ctx; cases H; simp_all
           -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv'
-          apply Std.HashMap.Equiv.trans H1 H8
+          -- H1: ctx.memEnv.equiv result1.memEnv'
+          -- H8: result1.memEnv'.equiv result2.memEnv'
+          -- Goal: ctx.memEnv.equiv result.memEnv' where result.memEnv' = result2.memEnv'
+          have H_trans : ctx.memEnv.equiv result2.memEnv' := MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' result2.memEnv' H1 H8
+          simp_all [H_trans]
+          cases result; cases result1; cases result2; cases ctx; cases H; simp_all
 
 -- ================================================================
 -- Helper lemmas for app case
@@ -631,18 +635,18 @@ private lemma applyPFnTClosure_extern_preserves_typestate
       simp [h_ret] at h_apply
       simp only [pure, Except.pure, Except.ok.injEq] at h_apply
       cases h_apply
-      refine ⟨Std.HashMap.Equiv.refl _, rfl, ?_, rfl⟩
+      refine ⟨MemoryTypeEnv.equiv.refl _, rfl, ?_, rfl⟩
       -- For nextLoc': returnSpecToQTyp for basic types preserves it
       -- Need a lemma showing returnSpecToQTyp preserves nextLoc for basic types
       sorry
   | nestedFn _ _ _ _ =>
     simp only [applyPFnTClosure, pure, Except.pure, Except.ok.injEq] at h_apply
     cases h_apply
-    exact ⟨Std.HashMap.Equiv.refl _, rfl, rfl, rfl⟩
+    exact ⟨MemoryTypeEnv.equiv.refl _, rfl, rfl, rfl⟩
   | nestedPfn _ _ _ =>
     simp only [applyPFnTClosure, pure, Except.pure, Except.ok.injEq] at h_apply
     cases h_apply
-    exact ⟨Std.HashMap.Equiv.refl _, rfl, rfl, rfl⟩
+    exact ⟨MemoryTypeEnv.equiv.refl _, rfl, rfl, rfl⟩
 
 -- Helper: applyPFnTClosure preserves typestate (combines regular and extern cases)
 private lemma applyPFnTClosure_preserves_typestate
@@ -973,7 +977,7 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                   have IH2 := IH fuel' hfuel ctx' e2 pe2 result2 h_pe2 C' h_tc2
                   obtain ⟨H2_memEnv, H2_tagEnv, H2_nextLoc, H2_nextTag⟩ := IH2
                   -- Transitivity for all 4 components
-                  have H_memEnv_trans : ctx.memEnv.equiv result2.memEnv' := Std.HashMap.Equiv.trans H1_memEnv H2_memEnv
+                  have H_memEnv_trans : ctx.memEnv.equiv result2.memEnv' := MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' result2.memEnv' H1_memEnv H2_memEnv
                   have H_tagEnv_trans : ctx.tagEnv = result2.tagEnv' := by rw [H1_tagEnv]; exact H2_tagEnv
                   have H_nextLoc_trans : ctx.nextLoc = result2.nextLoc' := by rw [H1_nextLoc]; exact H2_nextLoc
                   have H_nextTag_trans : ctx.nextTag = result2.nextTag' := by rw [H1_nextTag]; exact H2_nextTag
@@ -1034,7 +1038,12 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
                               H
                           obtain ⟨h_final_memEnv, h_final_tagEnv, h_final_nextLoc, h_final_nextTag⟩ := h_join_result
                           -- Final transitivity
-                          refine ⟨Std.HashMap.Equiv.trans H_memEnv_trans h_final_memEnv, ?_, ?_, ?_⟩
+                          -- H_memEnv_trans: ctx.memEnv.equiv result2.memEnv'
+                          -- h_final_memEnv: result2.memEnv'.equiv result.memEnv'
+                          -- Goal: ctx.memEnv.equiv result.memEnv'
+                          have H_final_memEnv_trans : ctx.memEnv.equiv result.memEnv' :=
+                            MemoryTypeEnv.equiv.trans ctx.memEnv result2.memEnv' result.memEnv' H_memEnv_trans h_final_memEnv
+                          refine ⟨H_final_memEnv_trans, ?_, ?_, ?_⟩
                           · rw [H_tagEnv_trans]; exact h_final_tagEnv
                           · rw [H_nextLoc_trans]; exact h_final_nextLoc
                           · rw [H_nextTag_trans]; exact h_final_nextTag

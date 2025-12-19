@@ -8,6 +8,7 @@ import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import Std.Data.ExtTreeSet.Lemmas
+import Std.Data.ExtTreeMap
 
 open Std
 
@@ -38,7 +39,7 @@ def stuck (e : Expr) (c₀ : Config) : Prop :=
 -- Proof-level realisation map from logical locations to concrete runtime addresses.
 -- This is a proof artefact used to relate the logical locations in types to a
 -- particular execution's heap layout (Issue #76).
-abbrev RealizationMap := Std.HashMap Loc Address
+abbrev RealizationMap := ExtTreeMap Loc Address
 
 namespace RealizationMap
 
@@ -59,6 +60,12 @@ namespace RealizationMap
   /-- `θ` is injective: distinct logical locations map to distinct addresses. -/
   def isInjective (θ : RealizationMap) : Prop :=
     ∀ l₁ l₂ a, θ.lookup l₁ = some a → θ.lookup l₂ = some a → l₁ = l₂
+
+  instance : BEq RealizationMap where
+    beq m₁ m₂ := (ExtTreeMap.toList m₁) == (ExtTreeMap.toList m₂)
+
+  instance : Repr RealizationMap where
+    reprPrec m _ := s!"ofList {repr (ExtTreeMap.toList m)}"
 
 end RealizationMap
 

@@ -7,15 +7,14 @@ import LeanPoison.BigStep
 import LeanProofs.TypeSafety
 import LeanProofs.GuardlessIfClean
 import Mathlib.Data.List.Forall2
-import Std.Data.HashMap
-import Std.Data.HashMap.Lemmas
+import Std.Data.ExtTreeMap
 open Std
 
 -- ================================================================
 -- Non-Interference (semantic formulation)
 -- ================================================================
 
-abbrev MemoryETypEnv := HashMap Loc ETyp
+abbrev MemoryETypEnv := ExtTreeMap Loc ETyp
 namespace MemoryETypEnv
 
   @[inline] def lookup (m : MemoryETypEnv) (l : Loc) : Option ETyp :=
@@ -27,6 +26,12 @@ namespace MemoryETypEnv
   /-- `m` contains a binding for `l`. -/
   def hasKey (m : MemoryETypEnv) (l : Loc) : Prop :=
     m.contains l
+
+  instance : BEq MemoryETypEnv where
+    beq m₁ m₂ := (ExtTreeMap.toList m₁) == (ExtTreeMap.toList m₂)
+
+  instance : Repr MemoryETypEnv where
+    reprPrec m _ := s!"ofList {repr (ExtTreeMap.toList m)}"
 
 end MemoryETypEnv
 

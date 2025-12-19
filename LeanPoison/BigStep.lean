@@ -3,7 +3,6 @@
 
 import LeanPoison.Syntax
 import LeanPoison.Runtime
-import Std.Data.HashMap
 import Mathlib.Data.Int.Bitwise
 open Std
 

@@ -1,7 +1,7 @@
 Evaluating file: examples/multiple-poison-sources.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int true Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [(0,
-  QTyp.mk ETyp.int true Predicate.guardClosure 2 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [("x_unit", QTyp.mk ETyp.unit false Predicate.noPred), ("get_sensor", QTyp.mk ETyp.arrow Typ.unit Typ.int false [FnTClosure.regular "x" <expr>] false Predicate.noPred)])] , tagEnv : Std.HashMap.ofList [] , nextLoc : 1 
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.noPred , MemoryTypeEnv : ofList [(0,
+  QTyp.mk ETyp.int true Predicate.guardClosure 2 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [("x_unit", QTyp.mk ETyp.unit false Predicate.noPred), ("get_sensor", QTyp.mk ETyp.arrow Typ.unit Typ.int false [FnTClosure.regular "x" <expr>] false Predicate.noPred)])] , tagEnv : ofList [] , nextLoc : 1 
 
 Result: 10
 Final state:

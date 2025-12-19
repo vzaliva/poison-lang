@@ -1,8 +1,8 @@
 Evaluating file: examples/locset-merge-nested-clean.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int false Predicate.noPred , MemoryTypeEnv : Std.HashMap.ofList [(0, QTyp.mk ETyp.int false Predicate.noPred),
+Type checking passed: Type: QTyp.mk ETyp.int false Predicate.noPred , MemoryTypeEnv : ofList [(0, QTyp.mk ETyp.int false Predicate.noPred),
  (1, QTyp.mk ETyp.int false Predicate.noPred),
- (2, QTyp.mk ETyp.int false Predicate.noPred)] , tagEnv : Std.HashMap.ofList [] , nextLoc : 3 
+ (2, QTyp.mk ETyp.int false Predicate.noPred)] , tagEnv : ofList [] , nextLoc : 3 
 
 Result: 3
 Final state:

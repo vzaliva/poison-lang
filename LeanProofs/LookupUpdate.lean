@@ -12,8 +12,6 @@ import Mathlib.Tactic.Linarith
 
 import Init.Data.List
 import Init.Data.List.Lemmas
-import Std.Data.HashMap
-import Std.Data.HashMap.Lemmas
 import Mathlib.Data.List.Lattice
 import Batteries.Data.List.Lemmas
 

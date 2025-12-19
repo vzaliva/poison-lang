@@ -1,9 +1,9 @@
-import Std.Data.HashMap
+import Std.Data.ExtTreeMap
 import LeanPoison.Syntax
 open Std
 
 -- Memory: location → value (Storing integers)
-abbrev Memory := HashMap Address Int
+abbrev Memory := ExtTreeMap Address Int
 
 namespace Memory
 
@@ -17,10 +17,18 @@ namespace Memory
   def hasKey (m : Memory) (a : Address) : Prop :=
     m.contains a
 
+  instance : BEq Memory where
+    beq m₁ m₂ := (ExtTreeMap.toList m₁) == (ExtTreeMap.toList m₂)
+
+  instance : Repr Memory where
+    reprPrec m _ :=
+      let sorted := (ExtTreeMap.toList m : List (Address × Int)).mergeSort (fun a b => a.fst < b.fst)
+      repr sorted
+
 end Memory
 
 -- Empty environments
-def emptyMemory : Memory := HashMap.emptyWithCapacity 0
+def emptyMemory : Memory := ({} : ExtTreeMap Address Int)
 
 def emptyVarEnv : VarEnv := []
 

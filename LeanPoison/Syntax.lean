@@ -1,6 +1,5 @@
 -- Core definitions for Poison language (aligned with poison-lang.ott)
 
-import Std.Data.HashMap
 import Std.Data.ExtTreeSet
 import Mathlib.Tactic
 
@@ -170,9 +169,9 @@ inductive Value : Type where
   | peClosure : Name → Expr → List (Name × Value) → Value    -- pe_closure(x,pe,r)
 
 
--- Variable environment: List (name × value) . We do not use a
--- HashMap here, as we do for Memory, because of the Lean restriction of
--- inductive type definitions (insude pe_closure)
+-- Variable environment: List (name × value). We do not use ExtTreeMap
+-- here, as we do for Memory, because of the Lean restriction of
+-- inductive type definitions (inside pe_closure)
 abbrev VarEnv := List (Name × Value)
 
 -- Note: No helper functions needed for literals since they are now direct constructors
@@ -499,7 +498,7 @@ end
 -- Variable typing environment (σ in the Ott spec) Because we use it in a
 -- mutually inductive type above which requires types you're defining must be
 -- strictly positive and may only appear in constructors you're declaring in
--- that same mutual block we could not use Std.HashMap. Instead we use an assoc
+-- that same mutual block we could not use ExtTreeMap. Instead we use an assoc
 -- list of key-value pairs.
 abbrev VarTypeEnv := List (Name × QTyp)
 

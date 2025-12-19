@@ -11,8 +11,8 @@ import Mathlib.Tactic.Linarith
 
 import Init.Data.List
 import Init.Data.List.Lemmas
-import Std.Data.HashMap
-import Std.Data.HashMap.Lemmas
+import Std.Data.ExtTreeMap
+import Std.Data.ExtTreeMap.Lemmas
 import Mathlib.Data.List.Lattice
 import Batteries.Data.List.Lemmas
 
@@ -390,34 +390,25 @@ private lemma beval_memory_monotonic_deref (e1 : Expr) (fuel : Nat) (verbose : B
       -- e1 evaluation returned error from EStateM (contradiction)
       injection h_eq
 
--- Helper lemma: HashMap.insert preserves contains for all keys
--- HashMap.insert either adds a new key or updates an existing one, but never removes other keys
+-- Helper lemma: ExtTreeMap.insert preserves contains for all keys
+-- ExtTreeMap.insert either adds a new key or updates an existing one, but never removes other keys
 -- This is used by both assign and newRef proofs
-private lemma HashMap_insert_preserves_contains {α : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α] {β : Type}
-    (m : Std.HashMap α β) (k k' : α) (v : β) :
+private lemma ExtTreeMap_insert_preserves_contains {α : Type} [Ord α] [BEq α] [TransCmp (compare : α → α → Ordering)] {β : Type}
+    (m : ExtTreeMap α β) (k k' : α) (v : β) :
   m.contains k' → (m.insert k v).contains k' := by
   intro h_contains
-  -- HashMap.insert preserves all existing keys - it only adds or updates, never removes
-  -- Case analysis: if k' = k, use Std.HashMap.contains_insert
-  -- If k' ≠ k, insert doesn't affect other keys (get? is preserved for distinct keys)
+  -- ExtTreeMap.insert preserves all existing keys - it only adds or updates, never removes
+  -- If k' = k, then insert adds/updates it (definitely contains)
+  -- If k' ≠ k, then insert doesn't affect k' (preserves contains)
   by_cases h_eq : k = k'
-  · -- k = k': insert definitely makes this key present
+  · -- k = k': insert adds/updates k', so it's definitely contained
     subst h_eq
-    -- Use the mathlib lemma: (m.insert k v).contains k = true
-    simp [Std.HashMap.contains_insert]
-  · -- k ≠ k': insert preserves other keys
-    -- Use the fact that for distinct keys, getElem? is preserved
-    -- Convert both sides to mem/getElem? form
-    rw [Std.HashMap.contains_iff_mem, Std.HashMap.mem_iff_isSome_getElem?]
-    rw [Std.HashMap.contains_iff_mem, Std.HashMap.mem_iff_isSome_getElem?] at h_contains
-    -- Now use getElem?_insert: (m.insert k v)[k']? = if (k == k') then some v else m[k']?
-    rw [Std.HashMap.getElem?_insert]
-    -- Case analysis on (k == k')
-    by_cases h_beq : (k == k')
-    · -- If (k == k') = true, then we get some v, and isSome (some v) = true
-      simp [h_beq]
-    · -- If (k == k') = false, then we get m[k']?, and isSome m[k']? = true by h_contains
-      simp [h_beq, h_contains]
+    simp [ExtTreeMap.contains_insert]
+  · -- k ≠ k': insert doesn't remove k', so it's still contained
+    -- Use contains_insert: (t.insert k v).contains a = (cmp k a == .eq || t.contains a)
+    -- Since m.contains k' = true (from h_contains), the right side is true regardless of cmp k k'
+    rw [ExtTreeMap.contains_insert]
+    simp [h_contains]
 
 -- Helper lemma for newRef case: newRef allocates memory (adds one location, but preserves existing)
 private lemma beval_memory_monotonic_newRef (e1 : Expr) (fuel : Nat) (verbose : Bool)
@@ -475,8 +466,8 @@ private lemma beval_memory_monotonic_newRef (e1 : Expr) (fuel : Nat) (verbose : 
         -- Now we need: config'.memory.contains l → config'.memory.update config'.nextAddr n contains l
         -- HashMap.update (which is insert) preserves contains for all keys
         rw [h_mem_eq]
-        -- Use the helper lemma: HashMap.insert preserves contains
-        exact HashMap_insert_preserves_contains config'.memory config'.nextAddr l n IH1
+        -- Use the helper lemma: ExtTreeMap.insert preserves contains
+        exact ExtTreeMap_insert_preserves_contains config'.memory config'.nextAddr l n IH1
       · next v =>
         -- e1 evaluated to non-number value (contradiction)
         simp [pure] at h_eq
@@ -554,10 +545,10 @@ private lemma beval_memory_monotonic_assign (e1 e2 : Expr) (fuel : Nat) (verbose
             -- Now we need: config₂.memory.contains l → config₂.memory.update loc_val n contains l
             -- HashMap.update is just insert, and insert preserves contains for all keys
             rw [h_mem_eq]
-            -- Memory.update = HashMap.insert, which preserves contains
+            -- Memory.update = ExtTreeMap.insert, which preserves contains
             -- If l = loc_val, insert adds/updates it (definitely contains)
             -- If l ≠ loc_val, insert doesn't remove it (preserves contains)
-            exact HashMap_insert_preserves_contains config₂.memory loc_val l n IH2
+            exact ExtTreeMap_insert_preserves_contains config₂.memory loc_val l n IH2
           · next v =>
             -- e2 evaluated to non-number value (contradiction)
             simp [pure] at h_eq

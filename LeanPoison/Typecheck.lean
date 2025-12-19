@@ -1,7 +1,6 @@
 import LeanPoison.Syntax
 import LeanPoison.Misc
 
-import Std.Data.HashMap
 import Std.Data.ExtTreeMap
 open Std
 
@@ -11,7 +10,7 @@ open Std
 private def defaultFuel : Nat := 1000
 
 /-- Memory typing environment (Γ in the Ott spec), keyed by logical locations. -/
-abbrev MemoryTypeEnv := HashMap Loc QTyp
+abbrev MemoryTypeEnv := ExtTreeMap Loc QTyp
 
 namespace MemoryTypeEnv
 
@@ -26,7 +25,14 @@ namespace MemoryTypeEnv
     m.contains l
 
   /-- Extensional equality of memory typing environments. All keys and values must be equal. -/
-  def equiv (m₁ m₂ : MemoryTypeEnv) : Prop := HashMap.Equiv m₁ m₂
+  def equiv (m₁ m₂ : MemoryTypeEnv) : Prop :=
+    (ExtTreeMap.toList m₁) == (ExtTreeMap.toList m₂)
+
+  instance : BEq MemoryTypeEnv where
+    beq m₁ m₂ := (ExtTreeMap.toList m₁) == (ExtTreeMap.toList m₂)
+
+  instance : Repr MemoryTypeEnv where
+    reprPrec m _ := s!"ofList {repr (ExtTreeMap.toList m)}"
 
 end MemoryTypeEnv
 
@@ -48,7 +54,7 @@ instance : BEq TagEnv where
   beq m₁ m₂ := (ExtTreeMap.toList m₁) == (ExtTreeMap.toList m₂)
 
 instance : Repr TagEnv where
-  reprPrec m _ := s!"Std.HashMap.ofList {repr (ExtTreeMap.toList m)}"
+  reprPrec m _ := s!"ofList {repr (ExtTreeMap.toList m)}"
 
 end TagEnv
 
@@ -201,7 +207,7 @@ env.insert l qt
 
 /-- Join two memory environments (branch join). See JoinG in the Ott spec. -/
 def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
-  combineMaps env1 env2 (fun _ oq1 oq2 =>
+  combineExtTreeMaps env1 env2 (fun _ oq1 oq2 =>
     match oq1, oq2 with
     | some qt1, none => some qt1
     | none, some qt2 => some qt2
