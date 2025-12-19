@@ -44,7 +44,7 @@ private lemma joinPredicates_idempotent (pred : Predicate) : joinPredicates pred
   simp [h_refl]
 
 -- Idempotency of the joining function used in joinMemEnvs
-private lemma joinMemEnvs_func_idempotent :
+private lemma joinMemEnvs_func_some_idempotent :
   ∀ (k : Address) (qt : QTyp),
     (fun _ oq1 oq2 =>
       match oq1, oq2 with
@@ -67,7 +67,7 @@ private lemma joinMemEnvs_func_idempotent :
     simp [beq_iff_eq, joinPoison_idempotent, h_pred_idem]
 
 -- The joining function returns none when both inputs are none
-private lemma joinMemEnvs_func_none :
+private lemma joinMemEnvs_func_none_idempotent :
   ∀ (k : Address),
     (fun (_ : Address) (oq1 oq2 : Option QTyp) =>
       match oq1, oq2 with
@@ -96,174 +96,179 @@ private lemma joinMemEnvs_func_none :
   intro _k
   rfl
 
--- OLD PROOF: Removed - depends on HashMap combineMaps which has been replaced with ExtTreeMap version
--- Helper lemma: go preserves lookups for keys not in the list
-/-
-private lemma go_get_not_mem [BEq α] [Hashable α] [LawfulBEq α] [DecidableEq α]
-  (m1 m2 : HashMap α β)
-  (f : α → Option β → Option β → Option β)
-  (ks : List α) (acc : HashMap α β) (k : α)
-  (h_not_in : k ∉ ks) :
-  (combineMaps.go m1 m2 f ks acc).get? k = acc.get? k := by
+private lemma joinMemEnvs_func_self :
+  ∀ (k : Address) (oq : Option QTyp),
+    (fun _ oq1 oq2 =>
+      match oq1, oq2 with
+      | some qt1, none => some qt1
+      | none, some qt2 => some qt2
+      | some qt1, some qt2 =>
+        let ⟨t1, p1, pred1⟩ := qt1
+        let ⟨t2, p2, pred2⟩ := qt2
+        if t1 == t2 then
+          let p := joinPoison p1 p2
+          let pred := joinPredicates pred1 pred2
+          some ⟨t1, p, pred⟩
+        else none
+      | none, none => none) k oq oq = oq := by
+  intro k oq
+  cases oq with
+  | none =>
+      exact joinMemEnvs_func_none_idempotent k
+  | some qt =>
+      exact joinMemEnvs_func_some_idempotent k qt
+
+
+private theorem removeAll_self [BEq α] [LawfulBEq α] (l : List α) : l.removeAll l = [] := by
+  simp [List.removeAll, List.filter_eq_nil_iff]
+
+private theorem eraseDups_eq_self_of_nodup [BEq α] [LawfulBEq α] {l : List α} (h : l.Nodup) :
+  l.eraseDups = l := by
+  induction l with
+  | nil => simp
+  | cons a as ih =>
+      have h' : as.Nodup := (List.nodup_cons.mp h).2
+      have ha_not : a ∉ as := (List.nodup_cons.mp h).1
+      have hfilter : as.filter (fun b => !b == a) = as := by
+        apply (List.filter_eq_self).2
+        intro b hb
+        have hbne : b ≠ a := by
+          intro hba
+          apply ha_not
+          simpa [hba] using hb
+        simp [hbne]
+      simp [List.eraseDups_cons, hfilter, ih h']
+
+private lemma go_get_not_mem
+  (m1 m2 : MemoryTypeEnv)
+  (f : Loc → Option QTyp → Option QTyp → Option QTyp)
+  (ks : List Loc) (acc : MemoryTypeEnv) (k : Loc)
+  (h_not : k ∉ ks) :
+  (combineExtTreeMaps.go m1 m2 f ks acc)[k]? = acc[k]? := by
+  classical
   induction ks generalizing acc with
-  | nil => rfl
+  | nil =>
+      simp [combineExtTreeMaps.go]
   | cons x xs ih =>
       have hk_ne : k ≠ x := by
-        intro heq
-        subst heq
-        simp at h_not_in
-      have h_not_in' : k ∉ xs := by
-        simp at h_not_in
-        exact h_not_in.2
-      unfold combineMaps.go
+        intro h
+        apply h_not
+        simp [h]
+      have h_not_xs : k ∉ xs := by
+        intro hmem
+        apply h_not
+        simp [hmem]
       cases hfx : f x (m1.get? x) (m2.get? x) with
       | none =>
-          specialize ih (acc.erase x) h_not_in'
-          have h_erase : (acc.erase x).get? k = acc.get? k := by
-            simp [HashMap.get?_eq_getElem?, HashMap.getElem?_erase, beq_iff_eq, hk_ne.symm]
-          rw [ih, h_erase]
+          have hfx' : f x m1[x]? m2[x]? = none := by
+            simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+          have ih' := ih (acc.erase x) h_not_xs
+          have hcmp : compare x k ≠ Ordering.eq := by
+            intro hcmp
+            have : x = k := (Nat.compare_eq_eq).1 hcmp
+            exact hk_ne this.symm
+          have hstep :
+              (combineExtTreeMaps.go m1 m2 f (x :: xs) acc)[k]? =
+                (combineExtTreeMaps.go m1 m2 f xs (acc.erase x))[k]? := by
+            simp [combineExtTreeMaps.go, hfx']
+          rw [hstep, ih']
+          simp [ExtTreeMap.getElem?_erase, hcmp]
       | some v =>
-          specialize ih (acc.insert x v) h_not_in'
-          have h_insert : (acc.insert x v).get? k = acc.get? k := by
-            simp [HashMap.get?_eq_getElem?, HashMap.getElem?_insert, beq_iff_eq, hk_ne.symm]
-          rw [ih, h_insert]
--/
+          have hfx' : f x m1[x]? m2[x]? = some v := by
+            simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+          have ih' := ih (acc.insert x v) h_not_xs
+          have hcmp : compare x k ≠ Ordering.eq := by
+            intro hcmp
+            have : x = k := (Nat.compare_eq_eq).1 hcmp
+            exact hk_ne this.symm
+          have hstep :
+              (combineExtTreeMaps.go m1 m2 f (x :: xs) acc)[k]? =
+                (combineExtTreeMaps.go m1 m2 f xs (acc.insert x v))[k]? := by
+            simp [combineExtTreeMaps.go, hfx']
+          rw [hstep, ih']
+          simp [ExtTreeMap.getElem?_insert, hcmp]
 
--- OLD PROOF: Removed - depends on HashMap combineMaps which has been replaced with ExtTreeMap version
--- Helper lemma: go computes the right value for keys in the list
-/-
-private lemma go_get_mem [BEq α] [Hashable α] [LawfulBEq α] [DecidableEq α]
-  (m1 m2 : HashMap α β)
-  (f : α → Option β → Option β → Option β)
-  (ks : List α) (acc : HashMap α β) (k : α)
-  (h_in : k ∈ ks)
-  (h_nodup : ks.Nodup) :
-  (combineMaps.go m1 m2 f ks acc).get? k =
+private lemma go_get_mem
+  (m1 m2 : MemoryTypeEnv)
+  (f : Loc → Option QTyp → Option QTyp → Option QTyp)
+  (ks : List Loc) (acc : MemoryTypeEnv) (k : Loc)
+  (h_in : k ∈ ks) :
+  (combineExtTreeMaps.go m1 m2 f ks acc)[k]? =
     match f k (m1.get? k) (m2.get? k) with
     | some v => some v
     | none => none := by
-  induction ks generalizing acc with
-  | nil => contradiction
-  | cons x xs ih =>
-      simp at h_in
-      rw [List.nodup_cons] at h_nodup
-      cases h_in with
-      | inl heq =>
-          -- k = x
-          unfold combineMaps.go
-          have h_not_in : x ∉ xs := h_nodup.1
-          cases hfx : f x (m1.get? x) (m2.get? x) with
-          | none =>
-              -- After processing x, we continue with xs where x ∉ xs
-              simp only []
-              rw [heq]  -- Change goal from k to x
-              have h_go := go_get_not_mem m1 m2 f xs (acc.erase x) x h_not_in
-              rw [h_go]
-              have h_erase : (acc.erase x).get? x = none := by
-                simp [HashMap.get?_eq_getElem?]
-              rw [h_erase, hfx]
-          | some v =>
-              simp only []
-              rw [heq]  -- Change goal from k to x
-              have h_go := go_get_not_mem m1 m2 f xs (acc.insert x v) x h_not_in
-              rw [h_go]
-              have h_insert : (acc.insert x v).get? x = some v := by
-                simp [HashMap.get?_eq_getElem?]
-              rw [h_insert, hfx]
-      | inr hmem =>
-          -- k ∈ xs, k ≠ x
-          have hk_ne : k ≠ x := by
-            intro heq
-            subst heq
-            exact h_nodup.1 hmem
-          unfold combineMaps.go
-          cases hfx : f x (m1.get? x) (m2.get? x) with
-          | none =>
-              simp only []
-              specialize ih (acc.erase x) hmem h_nodup.2
-              rw [ih]
-          | some v =>
-              simp only []
-              specialize ih (acc.insert x v) hmem h_nodup.2
-              rw [ih]
--/
-
--- OLD PROOF: Removed - depends on HashMap combineMaps which has been replaced with ExtTreeMap version
-/-
-private lemma combineMaps_equiv_helper [BEq α] [Hashable α] [LawfulBEq α] [DecidableEq α]
-  (m m1 m2 : HashMap α β)
-  (f : α → Option β → Option β → Option β)
-  (h1 : HashMap.Equiv m m1)
-  (h2 : HashMap.Equiv m m2)
-  (f_idem : ∀ k v, f k (some v) (some v) = some v)
-  (f_none : ∀ k, f k none none = none) :
-  HashMap.Equiv m (combineMaps m1 m2 f) := by
   classical
-  have h_equiv : HashMap.Equiv m1 m2 := HashMap.Equiv.trans h1.symm h2
-  refine HashMap.Equiv.of_forall_getElem?_eq ?_
-  intro k
-  have hk : m1.get? k = m2.get? k := HashMap.Equiv.getElem?_eq h_equiv
-  have hm1 : m.get? k = m1.get? k := HashMap.Equiv.getElem?_eq h1
-  -- Convert getElem? to get? for easier reasoning
-  have hm1_get : m.get? k = m1.get? k := by
-    simpa [HashMap.get?_eq_getElem?] using hm1
-  -- Unfold combineMaps and expose the go function
-  show m[k]? = (combineMaps m1 m2 f)[k]?
-  unfold combineMaps
-  -- Split on whether k is in the deduplicated key list
-  by_cases h_in : k ∈ (m1.keys ++ m2.keys).dedup
-  · -- k is in the list
-    have h_nodup : ((m1.keys ++ m2.keys).dedup).Nodup := List.nodup_dedup _
-    have h_go := go_get_mem m1 m2 f ((m1.keys ++ m2.keys).dedup) ({} : HashMap α β) k h_in h_nodup
-    have h_rhs : (combineMaps.go m1 m2 f ((m1.keys ++ m2.keys).dedup) ({}:HashMap α β)).get? k =
-      (combineMaps.go m1 m2 f ((m1.keys ++ m2.keys).dedup) ({}:HashMap α β))[k]? := rfl
-    rw [← h_rhs]
-    -- Case split on the value at k
-    cases h_mem : m1.get? k with
-    | none =>
-        have hm2 : m2.get? k = none := by rw [← hk, h_mem]
-        have hm : m.get? k = none := by rw [hm1_get, h_mem]
-        have hf : f k none none = none := f_none k
-        rw [h_go, h_mem, hm2, hf]
-        simpa [HashMap.get?_eq_getElem?] using hm.symm
-    | some v =>
-        have hm2 : m2.get? k = some v := by rw [← hk, h_mem]
-        have hm : m.get? k = some v := by rw [hm1_get, h_mem]
-        have hf : f k (some v) (some v) = some v := f_idem k v
-        rw [h_go, h_mem, hm2, hf]
-        simpa [HashMap.get?_eq_getElem?] using hm
-  · -- k is not in the list
-    have h_go := go_get_not_mem m1 m2 f ((m1.keys ++ m2.keys).dedup) ({} : HashMap α β) k h_in
-    have h_rhs : (combineMaps.go m1 m2 f ((m1.keys ++ m2.keys).dedup) ({}:HashMap α β)).get? k =
-      (combineMaps.go m1 m2 f ((m1.keys ++ m2.keys).dedup) ({}:HashMap α β))[k]? := rfl
-    rw [← h_rhs, h_go]
-    -- Show empty map returns none
-    have h_empty : ({} : HashMap α β).get? k = none := by
-      simp [HashMap.get?_eq_getElem?]
-    rw [h_empty]
-    -- Need to show m.get? k = none
-    have h_not_in_keys : k ∉ (m1.keys ++ m2.keys) := by
-      intro h_contra
-      have h_mem := List.mem_dedup.mpr h_contra
-      exact h_in h_mem
-    rw [List.mem_append] at h_not_in_keys
-    push_neg at h_not_in_keys
-    have h_not_m1 : k ∉ m1.keys := h_not_in_keys.1
-    have h_not_m2 : k ∉ m2.keys := h_not_in_keys.2
-    have hm1_none : m1.get? k = none := by
-      cases h : m1.get? k with
-      | none => rfl
-      | some v =>
-          -- If m1.get? k = some v, then k must be in m1.keys
-          have h_isSome : m1[k]?.isSome := by
-            rw [HashMap.get?_eq_getElem?] at h
-            simp [h]
-          have h_in_m1 : k ∈ m1 := HashMap.isSome_getElem?_iff_mem.mp h_isSome
-          have h_in_keys : k ∈ m1.keys := HashMap.mem_keys.mpr h_in_m1
-          exact absurd h_in_keys h_not_m1
-    have hm_none : m.get? k = none := by rw [hm1_get, hm1_none]
-    simpa [HashMap.get?_eq_getElem?] using hm_none.symm
--/
+  induction ks generalizing acc with
+  | nil =>
+      cases h_in
+  | cons x xs ih =>
+      cases h_in with
+      | head =>
+          cases hfx : f k (m1.get? k) (m2.get? k) with
+          | none =>
+              have hfx' : f k m1[k]? m2[k]? = none := by
+                simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+              by_cases hmem : k ∈ xs
+              · have ih' := ih (acc.erase k) hmem
+                have hstep :
+                    (combineExtTreeMaps.go m1 m2 f (k :: xs) acc)[k]? =
+                      (combineExtTreeMaps.go m1 m2 f xs (acc.erase k))[k]? := by
+                  simp [combineExtTreeMaps.go, hfx']
+                rw [hstep]
+                have ih'' := ih'
+                rw [hfx] at ih''
+                exact ih''
+              · have ih' := go_get_not_mem m1 m2 f xs (acc.erase k) k hmem
+                have hstep :
+                    (combineExtTreeMaps.go m1 m2 f (k :: xs) acc)[k]? =
+                      (combineExtTreeMaps.go m1 m2 f xs (acc.erase k))[k]? := by
+                  simp [combineExtTreeMaps.go, hfx']
+                rw [hstep, ih']
+                simp [hfx, ExtTreeMap.getElem?_erase_self]
+          | some v =>
+              have hfx' : f k m1[k]? m2[k]? = some v := by
+                simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+              by_cases hmem : k ∈ xs
+              · have ih' := ih (acc.insert k v) hmem
+                have hstep :
+                    (combineExtTreeMaps.go m1 m2 f (k :: xs) acc)[k]? =
+                      (combineExtTreeMaps.go m1 m2 f xs (acc.insert k v))[k]? := by
+                  simp [combineExtTreeMaps.go, hfx']
+                rw [hstep]
+                have ih'' := ih'
+                rw [hfx] at ih''
+                exact ih''
+              · have ih' := go_get_not_mem m1 m2 f xs (acc.insert k v) k hmem
+                have hstep :
+                    (combineExtTreeMaps.go m1 m2 f (k :: xs) acc)[k]? =
+                      (combineExtTreeMaps.go m1 m2 f xs (acc.insert k v))[k]? := by
+                  simp [combineExtTreeMaps.go, hfx']
+                rw [hstep, ih']
+                simp [hfx, ExtTreeMap.getElem?_insert_self]
+      | tail =>
+          rename_i hmem
+          cases hfx : f x (m1.get? x) (m2.get? x) with
+          | none =>
+              have hfx' : f x m1[x]? m2[x]? = none := by
+                simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+              have ih' := ih (acc.erase x) hmem
+              have hstep :
+                  (combineExtTreeMaps.go m1 m2 f (x :: xs) acc)[k]? =
+                    (combineExtTreeMaps.go m1 m2 f xs (acc.erase x))[k]? := by
+                simp [combineExtTreeMaps.go, hfx']
+              rw [hstep]
+              exact ih'
+          | some v =>
+              have hfx' : f x m1[x]? m2[x]? = some v := by
+                simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+              have ih' := ih (acc.insert x v) hmem
+              have hstep :
+                  (combineExtTreeMaps.go m1 m2 f (x :: xs) acc)[k]? =
+                    (combineExtTreeMaps.go m1 m2 f xs (acc.insert x v))[k]? := by
+                simp [combineExtTreeMaps.go, hfx']
+              rw [hstep]
+              exact ih'
+
 
 -- Proofs for MemoryTypeEnv.equiv reflexivity and transitivity
 namespace MemoryTypeEnv
@@ -307,12 +312,62 @@ theorem joinMemEnv_idempotent : ∀ (m m1 m2 : MemoryTypeEnv),
     exact this.eq_of_beq h2
   have h_list_eq12 : ExtTreeMap.toList m1 = ExtTreeMap.toList m2 := by
     rw [← h_list_eq1, h_list_eq2]
-  -- Since m1.toList = m2.toList = m.toList, and joinMemEnvs uses an idempotent combining function,
-  -- the result should have the same toList as m
-  -- Key insight: combineExtTreeMaps with idempotent function preserves equality when both inputs are equal
-  simp [joinMemEnvs]
-  -- Since m1.toList = m2.toList, for each key k, m1.get? k = m2.get? k
-  -- The combining function f is idempotent: f k (some v) (some v) = some v
-  -- So combineExtTreeMaps m1 m2 f will produce a map with the same toList as m1 (and m2, and m)
-  -- This requires showing that combineExtTreeMaps preserves toList when inputs have same toList and f is idempotent
-  sorry -- This requires a detailed proof about combineExtTreeMaps behavior with equal inputs
+  -- Reduce to showing the join of two equal maps is equal to the map.
+  have hm1m2 : m1 = m2 := (ExtTreeMap.toList_inj).1 h_list_eq12
+  let f : Loc → Option QTyp → Option QTyp → Option QTyp := fun _ oq1 oq2 =>
+    match oq1, oq2 with
+    | some qt1, none => some qt1
+    | none, some qt2 => some qt2
+    | some qt1, some qt2 =>
+      let ⟨t1, p1, pred1⟩ := qt1
+      let ⟨t2, p2, pred2⟩ := qt2
+      if t1 == t2 then
+        let p := joinPoison p1 p2
+        let pred := joinPredicates pred1 pred2
+        some ⟨t1, p, pred⟩
+      else none
+    | none, none => none
+  -- Rewrite the goal to compare against m1.
+  rw [h_list_eq1]
+  -- Show `combineExtTreeMaps` returns `m1` when both inputs are `m1`.
+  have hcombine : combineExtTreeMaps m1 m1 f = m1 := by
+    -- Replace the key list with `m1.keys` (since keys are nodup).
+    have hkeys_nodup : m1.keys.Nodup := ExtTreeMap.nodup_keys (t := m1)
+    have hkeys_erase : m1.keys.eraseDups = m1.keys :=
+      eraseDups_eq_self_of_nodup (h := hkeys_nodup)
+    have hks : (m1.keys ++ m1.keys).eraseDups = m1.keys := by
+      simp [List.eraseDups_append, removeAll_self, hkeys_erase]
+    apply ExtTreeMap.ext_getElem?
+    intro k
+    -- Unfold combineExtTreeMaps and normalize the key list.
+    dsimp [combineExtTreeMaps]
+    rw [hks]
+    by_cases hmem : k ∈ m1.keys
+    · -- Key is in the map domain.
+      have hgo := go_get_mem m1 m1 f m1.keys ({} : MemoryTypeEnv) k hmem
+      -- Simplify using idempotency of the join function on identical inputs.
+      have hfun : f k (m1[k]?) (m1[k]?) = m1[k]? := by
+        simpa [f] using (joinMemEnvs_func_self k (m1[k]?))
+      have hgo' := hgo
+      simp [hfun] at hgo'
+      have hmatch : (match m1[k]? with | some v => some v | none => none) = m1[k]? := by
+        cases h : m1[k]? <;> rfl
+      rw [hmatch] at hgo'
+      exact hgo'
+    · -- Key is not in the map domain.
+      have hgo := go_get_not_mem m1 m1 f m1.keys ({} : MemoryTypeEnv) k hmem
+      -- From `k ∉ m1.keys`, show `m1[k]? = none`.
+      have hnot_mem : k ∉ m1 := by
+        intro hk
+        have hk' : k ∈ m1.keys := (ExtTreeMap.mem_keys).2 hk
+        exact hmem hk'
+      have hm1_none : m1[k]? = none := ExtTreeMap.getElem?_eq_none hnot_mem
+      simpa [hm1_none] using hgo
+  -- Conclude equality on toList.
+  have h_toList : ExtTreeMap.toList m1 = ExtTreeMap.toList (joinMemEnvs m1 m2) := by
+    rw [← hm1m2]
+    change ExtTreeMap.toList m1 = ExtTreeMap.toList (combineExtTreeMaps m1 m1 f)
+    simp [hcombine]
+  have : LawfulBEq (List (Loc × QTyp)) := inferInstance
+  rw [h_toList]
+  exact this.rfl
