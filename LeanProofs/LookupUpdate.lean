@@ -9,6 +9,7 @@ import LeanProofs.IOHelpers
 import Mathlib.Data.Nat.Basic  -- for Nat.strong_induction_on
 import Mathlib.Tactic
 import Mathlib.Tactic.Linarith
+import Std.Data.ExtTreeMap.Lemmas
 
 import Init.Data.List
 import Init.Data.List.Lemmas
@@ -38,11 +39,29 @@ lemma List_lookup_cons_ne {α β : Type} [BEq α] [LawfulBEq α] (l : List (α �
       · contradiction
     simp [h_false]
 
+-- CapturedVarEnv ↔ list convenience lemmas
+@[simp] lemma CapturedVarEnv.lookup_eq (env : CapturedVarEnv) (x : Name) :
+  CapturedVarEnv.lookup env x = List.lookup x env := rfl
+
+@[simp] lemma CapturedVarEnv.update_eq (env : CapturedVarEnv) (x : Name) (qt : QTyp) :
+  CapturedVarEnv.update env x qt = (x, qt) :: env := rfl
+
+@[simp] lemma CapturedVarEnv.hasKey_iff (env : CapturedVarEnv) (x : Name) :
+  CapturedVarEnv.hasKey env x ↔ List.lookup x env ≠ none := by
+  rfl
+
+-- If y ≠ x, then updating env with x doesn't affect lookup y
+lemma VarTypeEnv_lookup_update_eq (env : VarTypeEnv) (x : Name) (qt : QTyp) :
+  (env.update x qt).lookup x = some qt := by
+  simp [VarTypeEnv.update, VarTypeEnv.lookup]
+
 -- If y ≠ x, then updating env with x doesn't affect lookup y
 lemma VarTypeEnv_lookup_update_ne (env : VarTypeEnv) (x y : Name) (qt : QTyp) (h_ne : y ≠ x) :
   (env.update x qt).lookup y = env.lookup y := by
-  simp [VarTypeEnv.update, VarTypeEnv.lookup]
-  exact List_lookup_cons_ne env x y qt h_ne
+  by_cases h_eq : varTypeEnvCmp x y = .eq
+  · have h_xy : x = y := LawfulEqCmp.eq_of_compare h_eq
+    exact (h_ne h_xy.symm).elim
+  · simp [VarTypeEnv.update, VarTypeEnv.lookup, ExtTreeMap.getElem?_insert, h_eq]
 
 -- If y ≠ x, then updating env with x doesn't affect lookup y
 lemma VarEnv_lookup_update_ne (env : VarEnv) (x y : Name) (v : Value) (h_ne : y ≠ x) :

@@ -56,8 +56,8 @@ open List
 
 /-- Keys are unique in both `s.locs` (addresses) and `s.vars` (names). -/
 def inputKeysUnique (vars : VarTypeEnv) : Prop :=
-  Nodup (vars.map Prod.fst)
-  -- for `s.locs` we don't need to check uniqueness because it is implemented as a ExtTreeMap
+  vars.keys.Nodup
+  -- `vars` is an ExtTreeMap, so keys are already unique
 
 -- Regime: partial mapping from guard tags to their truth values.
 -- A regime R : K_S → {true, false} assigns a truth value to each guard tag
@@ -69,12 +69,13 @@ abbrev Regime := Tag → Option Bool
 -- Extract all guard tags from the input specification (functional version for wfRegime)
 def inputSpecTags (s : InputSpec) : List Tag :=
   let locTags := s.locs.toList.filterMap (qtypGuardTag ·.2)
-  let varTags := s.vars.filterMap (qtypGuardTag ·.2)
+  let varTags := s.vars.toList.filterMap (qtypGuardTag ·.2)
   locTags ++ varTags
 
 -- Predicate-shape helpers
 def isGuardClosure (qt : QTyp) : Prop :=
-  ∃ k arg_name pred_body var_env, qt.pred = Predicate.guardClosure k arg_name pred_body var_env
+  ∃ (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+    qt.pred = Predicate.guardClosure k arg_name pred_body var_env
 
 def isGuardOnly (qt : QTyp) : Prop :=
   ∃ k, qt.pred = Predicate.guardOnly k
@@ -93,7 +94,7 @@ inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
       (hpred : retType.pred = Predicate.guardOnly k)
       (hregime : R k = some true) :
       wfRegimeForReturn R retType
-  | guardClosure (retType : QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : List (Name × QTyp))
+  | guardClosure (retType : QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
       (hpred : retType.pred = Predicate.guardClosure k arg_name pred_body var_env)
       (hregime : R k = some true) :
       wfRegimeForReturn R retType
@@ -224,14 +225,14 @@ mutual
   | arrow (P : VarTypeEnv → Prop) (qt : QTyp) :
     (∃ st1 st2 p tcls, qt.etyp = ETyp.arrow st1 st2 p tcls ∧
      (∀ tcl ∈ tcls, match tcl with
-     | FnTClosure.regular _ _ env => P env
-     | FnTClosure.extern _ _ _ env => P env)) →
+     | FnTClosure.regular _ _ env => P (VarTypeEnv.ofCaptured env)
+     | FnTClosure.extern _ _ _ env => P (VarTypeEnv.ofCaptured env))) →
     deepQTypProperty P qt
   | parrow (P : VarTypeEnv → Prop) (qt : QTyp) :
     (∃ st1 st2 p tcls, qt.etyp = ETyp.parrow st1 st2 p tcls ∧
      (∀ tcl ∈ tcls, match tcl with
-     | PFnTClosure.regular _ _ env => P env
-     | PFnTClosure.extern _ _ env => P env)) →
+     | PFnTClosure.regular _ _ env => P (VarTypeEnv.ofCaptured env)
+     | PFnTClosure.extern _ _ env => P (VarTypeEnv.ofCaptured env))) →
     deepQTypProperty P qt
   | other (P : VarTypeEnv → Prop) (qt : QTyp) :
     nonClosureQTyp qt →
@@ -256,32 +257,46 @@ mutual
 
   inductive deepQTypProperty₂ : (VarTypeEnv → VarTypeEnv → Prop) → QTyp → QTyp → Prop
   | arrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
-    (∃ st1 st2 p tcls₁, qt₁.etyp = ETyp.arrow st1 st2 p tcls₁ ∧
-     (∀ tcl₁ ∈ tcls₁, match tcl₁ with
-     | FnTClosure.regular _ _ env₁ =>
-       (∃ st1' st2' p' tcls₂, qt₂.etyp = ETyp.arrow st1' st2' p' tcls₂ ∧
-        (∀ tcl₂ ∈ tcls₂, match tcl₂ with
-        | FnTClosure.regular _ _ env₂ => P env₁ env₂
-        | FnTClosure.extern _ _ _ env₂ => P env₁ env₂))
-     | FnTClosure.extern _ _ _ env₁ =>
-       (∃ st1' st2' p' tcls₂, qt₂.etyp = ETyp.arrow st1' st2' p' tcls₂ ∧
-        (∀ tcl₂ ∈ tcls₂, match tcl₂ with
-        | FnTClosure.regular _ _ env₂ => P env₁ env₂
-        | FnTClosure.extern _ _ _ env₂ => P env₁ env₂)))) →
+    (∃ st1 st2 p tcls₁,
+      qt₁.etyp = ETyp.arrow st1 st2 p tcls₁ ∧
+      (∀ tcl₁ ∈ tcls₁, match tcl₁ with
+      | FnTClosure.regular _ _ env₁ =>
+          ∃ st1' st2' p' tcls₂,
+            qt₂.etyp = ETyp.arrow st1' st2' p' tcls₂ ∧
+            (∀ tcl₂ ∈ tcls₂, match tcl₂ with
+            | FnTClosure.regular _ _ env₂ =>
+                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
+            | FnTClosure.extern _ _ _ env₂ =>
+                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂))
+      | FnTClosure.extern _ _ _ env₁ =>
+          ∃ st1' st2' p' tcls₂,
+            qt₂.etyp = ETyp.arrow st1' st2' p' tcls₂ ∧
+            (∀ tcl₂ ∈ tcls₂, match tcl₂ with
+            | FnTClosure.regular _ _ env₂ =>
+                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
+            | FnTClosure.extern _ _ _ env₂ =>
+                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)))) →
     deepQTypProperty₂ P qt₁ qt₂
   | parrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
-    (∃ st1 st2 p tcls₁, qt₁.etyp = ETyp.parrow st1 st2 p tcls₁ ∧
-     (∀ tcl₁ ∈ tcls₁, match tcl₁ with
-     | PFnTClosure.regular _ _ env₁ =>
-       (∃ st1' st2' p' tcls₂, qt₂.etyp = ETyp.parrow st1' st2' p' tcls₂ ∧
-        (∀ tcl₂ ∈ tcls₂, match tcl₂ with
-        | PFnTClosure.regular _ _ env₂ => P env₁ env₂
-        | PFnTClosure.extern _ _ env₂ => P env₁ env₂))
-     | PFnTClosure.extern _ _ env₁ =>
-       (∃ st1' st2' p' tcls₂, qt₂.etyp = ETyp.parrow st1' st2' p' tcls₂ ∧
-        (∀ tcl₂ ∈ tcls₂, match tcl₂ with
-        | PFnTClosure.regular _ _ env₂ => P env₁ env₂
-        | PFnTClosure.extern _ _ env₂ => P env₁ env₂)))) →
+    (∃ st1 st2 p tcls₁,
+      qt₁.etyp = ETyp.parrow st1 st2 p tcls₁ ∧
+      (∀ tcl₁ ∈ tcls₁, match tcl₁ with
+      | PFnTClosure.regular _ _ env₁ =>
+          ∃ st1' st2' p' tcls₂,
+            qt₂.etyp = ETyp.parrow st1' st2' p' tcls₂ ∧
+            (∀ tcl₂ ∈ tcls₂, match tcl₂ with
+            | PFnTClosure.regular _ _ env₂ =>
+                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
+            | PFnTClosure.extern _ _ env₂ =>
+                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂))
+      | PFnTClosure.extern _ _ env₁ =>
+          ∃ st1' st2' p' tcls₂,
+            qt₂.etyp = ETyp.parrow st1' st2' p' tcls₂ ∧
+            (∀ tcl₂ ∈ tcls₂, match tcl₂ with
+            | PFnTClosure.regular _ _ env₂ =>
+                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
+            | PFnTClosure.extern _ _ env₂ =>
+                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)))) →
     deepQTypProperty₂ P qt₁ qt₂
   | other (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
     (nonClosureQTyp qt₁ ∨ nonClosureQTyp qt₂) →
@@ -364,7 +379,7 @@ inductive locsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (θ : Realiz
       (hgo : entry.snd.pred = Predicate.guardOnly k) :
       locsRegime predSat R μ θ entry
   -- Guard-closure predicates must align with the regime: holds iff R(k)=true
-  | withPred_ok (entry : Loc × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : List (Name × QTyp))
+  | withPred_ok (entry : Loc × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
       (a : Address) (n : Int) (b : Bool)
       (hclos : entry.snd.pred = Predicate.guardClosure k arg_name pred_body var_env)
       (hregime : R k = some b)
@@ -384,7 +399,7 @@ inductive varsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (ρ : VarEnv
       (hgo : entry.snd.pred = Predicate.guardOnly k) :
       varsRegime predSat R μ ρ entry
   -- Guard-closure predicates must align with the regime: holds iff R(k)=true
-  | withPred_ok (entry : Name × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : List (Name × QTyp))
+  | withPred_ok (entry : Name × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
       (v : Value) (b : Bool)
       (hclos : entry.snd.pred = Predicate.guardClosure k arg_name pred_body var_env)
       (hregime : R k = some b)
@@ -397,7 +412,7 @@ inductive varsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (ρ : VarEnv
 -- The regime must be defined for all critical inputs in the spec.
 def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
   List.Forall (locsRegime predSat R μ θ) s.locs.toList ∧
-  List.Forall (varsRegime predSat R μ ρ) s.vars
+  List.Forall (varsRegime predSat R μ ρ) s.vars.toList
 
 -- Two values agree under a given regime and memory environments
   inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
@@ -495,7 +510,7 @@ def agreeOnCriticalInputsUnderRegimeSpec
   (μ₁ : Memory) (ρ₁ : VarEnv) (θ₁ : RealizationMap)
   (μ₂ : Memory) (ρ₂ : VarEnv) (θ₂ : RealizationMap) : Prop :=
   List.Forall (agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂) s.locs.toList ∧
-  List.Forall (agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂) s.vars
+  List.Forall (agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂) s.vars.toList
 
 -- Typing results must satisfy the observable constraints:
 def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=

@@ -186,11 +186,11 @@ theorem TypeSystemEnforcesNonInterference_impl :
   rintro hr hics₁ hics₂ hric₁ hric₂ hcrs₁ hcrs₂ haociurs ht₁ ht₂
   unfold TypeSystemEnforcesNonInterference_step_spec at hstep
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
-  let sₒ : InputSpec := { locs := res.memEnv', vars := [] }
+  let sₒ : InputSpec := { locs := res.memEnv', vars := ({} : VarTypeEnv) }
   let ctxₒ : TypeContext :=
     { ctx with
       memEnv := res.memEnv',
-      varEnv := [],
+      varEnv := ({} : VarTypeEnv),
       tagEnv := res.tagEnv',
       nextLoc := res.nextLoc',
       nextTag := res.nextTag' }

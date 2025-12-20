@@ -600,7 +600,7 @@ private def preservesTypestate (m : MemoryTypeEnv) (tagEnv : TagEnv) (nextLoc : 
 -- Helper: applyPFnTClosure preserves typestate for regular closures
 -- Regular closures call typecheckExpr with pureCtx=true, so by IH, typestate is preserved
 private lemma applyPFnTClosure_regular_preserves_typestate
-    (x : Name) (body : PExpr) (env : VarTypeEnv)
+    (x : Name) (body : PExpr) (env : CapturedVarEnv)
     (st1 st2 : Typ) (p p1 : Poison) (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
     (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) (closureResult : TypeResult)
     (h_apply : applyPFnTClosure (PFnTClosure.regular x body env) st1 st2 p p1 argEtyp argPoison argPred ctx result2 (fuel + 1) = Except.ok closureResult)
@@ -616,7 +616,7 @@ private lemma applyPFnTClosure_regular_preserves_typestate
 -- Helper: applyPFnTClosure preserves typestate for extern closures
 -- Extern closures directly return result2's memEnv', tagEnv', etc.
 private lemma applyPFnTClosure_extern_preserves_typestate
-    (x : Name) (retSpec : ExternReturn) (capturedEnv : VarTypeEnv)
+    (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
     (_st1 _st2 : Typ) (_p _p1 : Poison) (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
     (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) (closureResult : TypeResult)
     (h_apply : applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) _st1 _st2 _p _p1 argEtyp argPoison argPred ctx result2 (fuel + 1) = Except.ok closureResult) :
@@ -629,7 +629,9 @@ private lemma applyPFnTClosure_extern_preserves_typestate
   cases retSpec with
   | simple typ poison pred =>
     simp only [applyPFnTClosure, bind, Except.bind] at h_apply
-    cases h_ret : returnSpecToQTyp typ poison pred (VarTypeEnv.update capturedEnv x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) result2.nextLoc' with
+    cases h_ret : returnSpecToQTyp typ poison pred
+        (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+        result2.nextLoc' with
     | error err => simp [h_ret] at h_apply
     | ok retPair =>
       simp [h_ret] at h_apply

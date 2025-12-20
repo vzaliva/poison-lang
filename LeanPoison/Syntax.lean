@@ -495,31 +495,24 @@ inductive ETyp : Type where
 
 end
 
--- Variable typing environment (σ in the Ott spec) Because we use it in a
--- mutually inductive type above which requires types you're defining must be
--- strictly positive and may only appear in constructors you're declaring in
--- that same mutual block we could not use ExtTreeMap. Instead we use an assoc
--- list of key-value pairs.
-abbrev VarTypeEnv := List (Name × QTyp)
+-- Captured variable environments are association lists.
+abbrev CapturedVarEnv := List (Name × QTyp)
 
-namespace VarTypeEnv
+namespace CapturedVarEnv
 
--- helper function to lookup a variable in the variable typing environment
-@[inline] def lookup (env : VarTypeEnv) (x : Name) : Option QTyp :=
+-- helper function to lookup a variable in a captured environment
+@[inline] def lookup (env : CapturedVarEnv) (x : Name) : Option QTyp :=
   List.lookup x env
 
--- helper function to update a variable in the variable typing environment the
--- implementation is not very efficient as mappings with existing keys are just
--- added to the front of the list. However this is sound, as lookupVarEnv always
--- returns the first mapping with a given key.
-@[inline] def update (env : VarTypeEnv) (x : Name) (qt : QTyp) : VarTypeEnv :=
+-- helper function to update a captured environment; newest mapping wins
+@[inline] def update (env : CapturedVarEnv) (x : Name) (qt : QTyp) : CapturedVarEnv :=
   (x, qt) :: env
 
 /-- `env` contains a binding for `x`. -/
-def hasKey (env : VarTypeEnv) (x : Name) : Prop :=
+def hasKey (env : CapturedVarEnv) (x : Name) : Prop :=
   env.lookup x ≠ none
 
-end VarTypeEnv
+end CapturedVarEnv
 
 -- Manual Repr instances for mutual types
 
@@ -559,7 +552,7 @@ partial def reprETyp : ETyp → Nat → Std.Format
       let closureReprs := tcls.map (fun tcl => reprPFnTClosure tcl 0)
       s!"ETyp.parrow {reprTyp st1 0} {reprTyp st2 0} {repr p} [{Std.Format.joinSep closureReprs (Std.Format.text ", ")}]"
 
-partial def reprVarEnv (env: VarTypeEnv) (_:Nat): Std.Format :=
+partial def reprVarEnv (env: CapturedVarEnv) (_:Nat): Std.Format :=
     Std.Format.text "[" ++
     Std.Format.joinSep (env.map (fun (x, qt) => s!"({repr x}, {reprQTyp qt 0})")) (Std.Format.text ", ") ++
     Std.Format.text "]"
@@ -671,9 +664,10 @@ def beqPFnTClosure : PFnTClosure → PFnTClosure → Bool
     x1 == x2 && beqExternReturn ret1 ret2 && beqVarEnv env1 env2
   | _, _ => false
 
-def beqVarEnv : List (Name × QTyp) → List (Name × QTyp) → Bool
+def beqVarEnv : CapturedVarEnv → CapturedVarEnv → Bool
   | [], [] => true
-  | (x1, qt1) :: env1, (x2, qt2) :: env2 => x1 == x2 && beqQTyp qt1 qt2 && beqVarEnv env1 env2
+  | (x1, qt1) :: env1, (x2, qt2) :: env2 =>
+      x1 == x2 && beqQTyp qt1 qt2 && beqVarEnv env1 env2
   | _, _ => false
 
 def beqPredicate : Predicate → Predicate → Bool

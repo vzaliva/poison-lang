@@ -1,7 +1,9 @@
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanProofs.Properties
+import LeanProofs.LookupUpdate
 import Mathlib.Tactic
+import Std.Data.ExtTreeMap.Lemmas
 
 open Std
 
@@ -49,14 +51,20 @@ inductive guardlessIfCleanVars : VarTypeEnv → Prop
   (∀ {x qt}, vars.lookup x = some qt → guardlessIfCleanQTypDeep qt) →
   guardlessIfCleanVars vars
 
+/-- Clean qualified types in a captured variable environment must carry no guard tags. -/
+inductive guardlessIfCleanCaptured : CapturedVarEnv → Prop
+| intro (vars : CapturedVarEnv) :
+  (∀ {x qt}, (x, qt) ∈ vars → guardlessIfCleanQTypDeep qt) →
+  guardlessIfCleanCaptured vars
+
 inductive guardlessIfCleanClosureEnv : QTyp → Prop
-| arrow (qt : QTyp) (env : VarTypeEnv) :
-  qt.etyp = ETyp.arrow _ _ _ (FnTClosure.regular _ _ env) →
-  guardlessIfCleanVars env →
+| arrow (qt : QTyp) (env : CapturedVarEnv) :
+  qt.etyp = ETyp.arrow _ _ _ [FnTClosure.regular _ _ env] →
+  guardlessIfCleanCaptured env →
   guardlessIfCleanClosureEnv qt
-| parrow (qt : QTyp) (env : VarTypeEnv) :
-  qt.etyp = ETyp.parrow _ _ _ (PFnTClosure.regular _ _ env) →
-  guardlessIfCleanVars env →
+| parrow (qt : QTyp) (env : CapturedVarEnv) :
+  qt.etyp = ETyp.parrow _ _ _ [PFnTClosure.regular _ _ env] →
+  guardlessIfCleanCaptured env →
   guardlessIfCleanClosureEnv qt
 | other (qt : QTyp) :
   nonClosureQTyp qt →
@@ -93,6 +101,73 @@ private lemma guardlessIfCleanVars.lookup
   cases hvars with
   | intro _ hlookup' => exact hlookup' hlookup
 
+private lemma guardlessIfCleanCaptured.mem
+    {vars : CapturedVarEnv}
+    (hvars : guardlessIfCleanCaptured vars)
+    {x : Name} {qt : QTyp}
+    (hmem : (x, qt) ∈ vars) :
+    guardlessIfCleanQTypDeep qt := by
+  cases hvars with
+  | intro _ hmem' => exact hmem' hmem
+
+private lemma VarTypeEnv.lookup_ofCaptured_mem
+    {vars : CapturedVarEnv} {x : Name} {qt : QTyp}
+    (hlookup : VarTypeEnv.lookup (VarTypeEnv.ofCaptured vars) x = some qt) :
+    (x, qt) ∈ vars := by
+  classical
+  induction vars with
+  | nil =>
+      simp [VarTypeEnv.ofCaptured, VarTypeEnv.lookup] at hlookup
+      cases hlookup
+  | cons head tail ih =>
+      cases head with
+      | mk k v =>
+          have hlookup' :
+              VarTypeEnv.lookup (VarTypeEnv.update (VarTypeEnv.ofCaptured tail) k v) x = some qt := by
+            simpa [VarTypeEnv.ofCaptured] using hlookup
+          by_cases h_eq : x = k
+          · subst h_eq
+            have h : some v = some qt := by
+              simpa [VarTypeEnv_lookup_update_eq] using hlookup'
+            have hqt : qt = v := by
+              exact (Option.some.inj h).symm
+            subst hqt
+            simp
+          · have hlookup_tail :
+              VarTypeEnv.lookup (VarTypeEnv.ofCaptured tail) x = some qt := by
+              have hupdate :=
+                VarTypeEnv_lookup_update_ne (VarTypeEnv.ofCaptured tail) k x v h_eq
+              simpa [hupdate] using hlookup'
+            have hmem_tail : (x, qt) ∈ tail := ih hlookup_tail
+            simp [h_eq, hmem_tail]
+
+private lemma guardlessIfCleanCaptured.toVars
+    {vars : CapturedVarEnv} :
+    guardlessIfCleanCaptured vars →
+    guardlessIfCleanVars (VarTypeEnv.ofCaptured vars) := by
+  intro hvars
+  cases hvars with
+  | intro vars hmem =>
+      refine guardlessIfCleanVars.intro _ ?_
+      intro x qt hlookup
+      exact hmem (VarTypeEnv.lookup_ofCaptured_mem hlookup)
+
+private lemma guardlessIfCleanCaptured.of_vars
+    {vars : VarTypeEnv} :
+    guardlessIfCleanVars vars →
+    guardlessIfCleanCaptured (VarTypeEnv.toCaptured vars) := by
+  intro hvars
+  cases hvars with
+  | intro vars hlookup =>
+      refine guardlessIfCleanCaptured.intro _ ?_
+      intro x qt hmem
+      have hmem' : (x, qt) ∈ vars.toList := by
+        simpa [VarTypeEnv.toCaptured] using hmem
+      have hlookup' : vars[x]? = some qt := by
+        exact (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some (t := vars) (k := x) (v := qt)).1 hmem'
+      have hlookup'' : vars.lookup x = some qt := by
+        simpa [VarTypeEnv.lookup] using hlookup'
+      exact hlookup hlookup''
 private lemma guardlessIfCleanQTypDeep.guardless
     {qt : QTyp} :
     guardlessIfCleanQTypDeep qt → guardlessIfCleanQTyp qt := by
@@ -388,26 +463,26 @@ private lemma guardlessIfCleanVars_update
     guardlessIfCleanVars vars →
     guardlessIfCleanQTypDeep qt →
     guardlessIfCleanVars (VarTypeEnv.update vars x qt) := by
-  classical
   intro hvars hqt
   cases hvars with
   | intro vars hlookup_old =>
       refine guardlessIfCleanVars.intro _ ?_
       intro y qt' hlookup
-      have hlookup_if :
-          (match y == x with
-            | true => some qt
-            | false => vars.lookup y) = some qt' := by
-        simpa [VarTypeEnv.lookup, VarTypeEnv.update, List.lookup] using hlookup
-      by_cases hbeq : y == x
-      · have hqt_eq : qt = qt' := by
-          have : some qt = some qt' := by
-            simpa [hbeq] using hlookup_if
-          simpa using Option.some.inj this
+      by_cases h_eq : y = x
+      · subst h_eq
+        have hlookup_eq :
+            VarTypeEnv.lookup (VarTypeEnv.update vars x qt) x = some qt := by
+          simpa using VarTypeEnv_lookup_update_eq vars x qt
+        have hqt_eq : qt' = qt := by
+          have h : some qt = some qt' := by
+            simpa [hlookup_eq] using hlookup
+          exact (Option.some.inj h).symm
         subst hqt_eq
-        simpa using hqt
+        exact hqt
       · have hlookup_old' : vars.lookup y = some qt' := by
-          simpa [hbeq] using hlookup_if
+          have hne : y ≠ x := h_eq
+          have hlookup_ne := VarTypeEnv_lookup_update_ne vars x y qt hne
+          simpa [hlookup_ne] using hlookup
         exact hlookup_old hlookup_old'
 
 private lemma guardlessIfClean_runWhileFixpoint
@@ -2678,15 +2753,19 @@ private lemma guardlessIfClean_invariant_fn
       constructor
       · exact hmem
       · have hvars : guardlessIfCleanVars ctx.varEnv := _hvars
+        let captured := VarTypeEnv.toCaptured ctx.varEnv
         let qt : QTyp :=
-          ⟨ETyp.arrow st₁ st₂ false (FnTClosure.regular x body ctx.varEnv), ctx.pc,
+          ⟨ETyp.arrow st₁ st₂ false [FnTClosure.regular x body captured], ctx.pc,
             Predicate.noPred⟩
         refine guardlessIfCleanQTypDeep.intro qt ?_ ?_
         · intro _hpoison_clean
           simp [qt, qtypGuardTag]
-        · have hclosureEq :  qt.etyp = ETyp.arrow st₁ st₂ false (FnTClosure.regular x body ctx.varEnv) := by
+        · have hclosureEq :
+              qt.etyp = ETyp.arrow st₁ st₂ false [FnTClosure.regular x body captured] := by
             simp [qt]
-          exact guardlessIfCleanClosureEnv.arrow (qt := qt) (env := ctx.varEnv) hclosureEq hvars
+          have hvars_captured : guardlessIfCleanCaptured captured :=
+            guardlessIfCleanCaptured.of_vars hvars
+          exact guardlessIfCleanClosureEnv.arrow (qt := qt) (env := captured) hclosureEq hvars_captured
 
 private lemma guardlessIfClean_invariant_pfn
     (x : Name) (st₁ st₂ : Typ) (body : Expr)
@@ -2708,15 +2787,19 @@ private lemma guardlessIfClean_invariant_pfn
           constructor
           · exact hmem
           · have hvars : guardlessIfCleanVars ctx.varEnv := _hvars
+            let captured := VarTypeEnv.toCaptured ctx.varEnv
             let qt : QTyp :=
-              ⟨ETyp.parrow st₁ st₂ false (PFnTClosure.regular x pbody ctx.varEnv), ctx.pc,
+              ⟨ETyp.parrow st₁ st₂ false [PFnTClosure.regular x pbody captured], ctx.pc,
                 Predicate.noPred⟩
             refine guardlessIfCleanQTypDeep.intro qt ?_ ?_
             · intro _hpoison_clean
               simp [qt, qtypGuardTag]
-            · have hclosureEq : qt.etyp = ETyp.parrow st₁ st₂ false (PFnTClosure.regular x pbody ctx.varEnv) := by
+            · have hclosureEq :
+                  qt.etyp = ETyp.parrow st₁ st₂ false [PFnTClosure.regular x pbody captured] := by
                 simp [qt]
-              exact guardlessIfCleanClosureEnv.parrow (qt := qt) (env := ctx.varEnv) hclosureEq hvars
+              have hvars_captured : guardlessIfCleanCaptured captured :=
+                guardlessIfCleanCaptured.of_vars hvars
+              exact guardlessIfCleanClosureEnv.parrow (qt := qt) (env := captured) hclosureEq hvars_captured
 
 private lemma guardlessIfClean_invariant_app
     (e₁ e₂ : Expr)
@@ -2857,11 +2940,11 @@ private lemma guardlessIfClean_invariant_app
                                               | extern _ _ _ => sorry
                                               | regular x body env =>
                                                   have hvars_env :
-                                                      guardlessIfCleanVars env := by
+                                                      guardlessIfCleanVars (VarTypeEnv.ofCaptured env) := by
                                                     cases hqt₁_closure with
                                                     | arrow qt env' heq hvars_env' =>
                                                         cases heq
-                                                        simpa using hvars_env'
+                                                        simpa using guardlessIfCleanCaptured.toVars hvars_env'
                                                     | parrow qt env' heq _ =>
                                                         cases heq
                                                     | other _ hnc =>
@@ -2890,7 +2973,8 @@ private lemma guardlessIfClean_invariant_app
                                                           (qt₂ := argQt)
                                                           rfl
                                                           hqt₂_closure
-                                                  let env' := VarTypeEnv.update env x argQt
+                                                  let envMap := VarTypeEnv.ofCaptured env
+                                                  let env' := VarTypeEnv.update envMap x argQt
                                                   have hvars_env' :
                                                       guardlessIfCleanVars env' :=
                                                     guardlessIfCleanVars_update hvars_env harg_guardless
@@ -3063,13 +3147,13 @@ private lemma guardlessIfClean_invariant_app
                                           | extern _ _ _ => sorry
                                           | regular x body env =>
                                               have hvars_env :
-                                                  guardlessIfCleanVars env := by
+                                                  guardlessIfCleanVars (VarTypeEnv.ofCaptured env) := by
                                                 cases hqt₁_closure with
                                                 | arrow _ _ heq _ =>
                                                     cases heq
                                                 | parrow qt env' heq hvars_env' =>
                                                     cases heq
-                                                    simpa using hvars_env'
+                                                    simpa using guardlessIfCleanCaptured.toVars hvars_env'
                                                 | other _ hnc =>
                                                     cases hnc
                                               let argQt : QTyp :=
@@ -3096,7 +3180,8 @@ private lemma guardlessIfClean_invariant_app
                                                       (qt₂ := argQt)
                                                       rfl
                                                       hqt₂_closure
-                                              let env' := VarTypeEnv.update env x argQt
+                                              let envMap := VarTypeEnv.ofCaptured env
+                                              let env' := VarTypeEnv.update envMap x argQt
                                               have hvars_env' :
                                                   guardlessIfCleanVars env' :=
                                                 guardlessIfCleanVars_update hvars_env harg_guardless

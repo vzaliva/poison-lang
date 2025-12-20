@@ -6,11 +6,55 @@ open Std
 
 -- Type checking environment definitions
 
+/-- Comparison for variable names (Name is String in this project). -/
+abbrev varTypeEnvCmp : Name → Name → Ordering := compare
+
+instance : ReflCmp varTypeEnvCmp := by
+  infer_instance
+
+instance : LawfulEqCmp varTypeEnvCmp := by
+  infer_instance
+
+instance : OrientedCmp varTypeEnvCmp := by
+  infer_instance
+
+instance : TransCmp varTypeEnvCmp := by
+  infer_instance
+
 /-- Default fuel for type checking -/
 private def defaultFuel : Nat := 1000
 
 /-- Memory typing environment (Γ in the Ott spec), keyed by logical locations. -/
 abbrev MemoryTypeEnv := ExtTreeMap Loc QTyp
+
+/-- Variable typing environment (σ in the Ott spec), keyed by names. -/
+abbrev VarTypeEnv := ExtTreeMap Name QTyp varTypeEnvCmp
+
+namespace VarTypeEnv
+
+  @[inline] def lookup (env : VarTypeEnv) (x : Name) : Option QTyp :=
+    env.get? x
+
+  @[inline] def update (env : VarTypeEnv) (x : Name) (qt : QTyp) : VarTypeEnv :=
+    env.insert x qt
+
+  /-- `env` contains a binding for `x`. -/
+  def hasKey (env : VarTypeEnv) (x : Name) : Prop :=
+    env.contains x
+
+  @[inline] def toCaptured (env : VarTypeEnv) : CapturedVarEnv :=
+    ExtTreeMap.toList env
+
+  @[inline] def ofCaptured (env : CapturedVarEnv) : VarTypeEnv :=
+    env.foldr (fun (entry : Name × QTyp) acc => acc.insert entry.1 entry.2) ({} : VarTypeEnv)
+
+  @[inline] def foldl (init : δ) (f : δ → Name → QTyp → δ) (env : VarTypeEnv) : δ :=
+    ExtTreeMap.foldl (f := f) (init := init) env
+
+  @[inline] def foldlM [Monad m] [LawfulMonad m] (init : δ) (f : δ → Name → QTyp → m δ) (env : VarTypeEnv) : m δ :=
+    ExtTreeMap.foldlM (f := f) (init := init) env
+
+end VarTypeEnv
 
 namespace MemoryTypeEnv
 
@@ -89,6 +133,7 @@ abbrev TypecheckM := Except String
 def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
   match pred with
   | Predicate.guardClosure _tag arg_name pred_body var_env =>
+    let varEnvMap := VarTypeEnv.ofCaptured var_env
     let rec extractDepsFromPExpr (pe : PExpr) (boundVars : List Name) (env : VarTypeEnv) (fuel : Nat) : TypecheckM Deps :=
       match fuel with
       | 0 => throw "Out of fuel while extracting dependencies"
@@ -97,8 +142,8 @@ def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
         | PExpr.var x =>
           if boundVars.contains x then return LocSet.empty  -- Bound variable, not free
           else
-            match env.find? (fun (name, _) => name == x) with
-            | some (_, qt) =>
+            match env.get? x with
+            | some qt =>
               match qt.etyp with
               | ETyp.ref _t ls => return ls  -- Reference type, add referenced locset
               | ETyp.parrow _argTy _retTy _poison tcls =>
@@ -106,7 +151,7 @@ def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
                 match tcls with
                 | [PFnTClosure.regular argName body varEnv'] =>
                     -- Single closure, recurse into its body
-                    extractDepsFromPExpr body (argName :: boundVars) varEnv' fuel
+                    extractDepsFromPExpr body (argName :: boundVars) (VarTypeEnv.ofCaptured varEnv') fuel
                 | _ => return LocSet.empty  -- Multiple or extern closures: conservative fallback
               | _ => return LocSet.empty  -- Other types don't read from heap
             | none => throw s!"Variable {x} not found in environment while extracting dependencies"
@@ -132,7 +177,7 @@ def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
         | _ => return LocSet.empty  -- literals, unit, etc. don't read from heap
 
     -- Start with the bound parameter in the bound variables list
-    extractDepsFromPExpr pred_body [arg_name] var_env defaultFuel
+    extractDepsFromPExpr pred_body [arg_name] varEnvMap defaultFuel
   | Predicate.guardOnly _tag =>
     -- Guard-only predicate with no body, no dependencies
     return LocSet.empty
@@ -388,7 +433,8 @@ def opUnaryEType? : UnaryOp → ETyp → Option ETyp
  The `substitution` parameter is an optional (variable, value) pair for
  substitution.
 --/
-def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : VarTypeEnv) (substitution : Option (Name × PExpr)) (fuel : Nat) : Bool :=
+def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : CapturedVarEnv) (pe2 : PExpr) (env2 : CapturedVarEnv)
+    (substitution : Option (Name × PExpr)) (fuel : Nat) : Bool :=
   match fuel with
   | 0 => false
   | fuel + 1 =>
@@ -448,6 +494,7 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : VarTypeEnv) (pe2 : PExpr) (env2 : 
 def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag × Deps) := do
   -- Try to convert the condition e to a PExpr
   let conditionPExpr ← e.toPExpr
+  let sCaptured := VarTypeEnv.toCaptured S
 
   -- Helper function to check if a predicate's test expression matches the condition
   let checkPredicate (arg : PExpr) (qt : QTyp) : TypecheckM (Option (Tag × Deps)) :=
@@ -456,21 +503,21 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
     | Predicate.guardOnly _tag => return none  -- Guard-only cannot be matched syntactically
     | Predicate.guardClosure tag arg_name pred_body var_env =>
         -- Compare the predicate body with the condition using environment-aware equality
-        if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) defaultFuel then do
+        if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) defaultFuel then do
           let deps ← extractDepsFromPred qt.pred
           return some (tag, deps)
         else return none
 
   -- Collect all matching tags from variable environment
-    let varMatches := S.foldl (init := []) fun acc ⟨name, qt⟩ =>
+  let varMatches := VarTypeEnv.foldl [] (fun acc name qt =>
     let arg := PExpr.var name
     match checkPredicate arg qt with
     | .ok (some (tag, deps)) => (tag, deps) :: acc
     | .ok none => acc
-    | .error _ => acc
+    | .error _ => acc) S
 
   -- For references, merge predicates across the locset before matching
-  let refMatches ← S.foldlM (init := ([] : List (Tag × Deps))) fun acc ⟨name, qt⟩ => do
+  let refMatches ← VarTypeEnv.foldlM (init := ([] : List (Tag × Deps))) (fun acc name qt => do
     match qt.etyp with
     | ETyp.ref _t ls =>
         if qt.poison then
@@ -499,11 +546,12 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
           let merged := merged?.getD Predicate.noPred
           match merged with
           | Predicate.guardClosure tag arg_name pred_body var_env =>
-              if PExpr.equalWithEnvs pred_body var_env conditionPExpr S (some (arg_name, arg)) defaultFuel then
+              if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) defaultFuel then
                 pure ((tag, depsMerged) :: acc) else pure acc
           | Predicate.guardOnly _tag => pure acc
           | Predicate.noPred => pure acc
     | _ => pure acc
+    ) S
 
   let allMatches := varMatches ++ refMatches
   -- Return the tag and dependencies if exactly one match is found, otherwise throw an error
@@ -544,7 +592,7 @@ def typecheckBool (ctx : TypeContext) (_b : Bool) : TypecheckM TypeResult := do
 def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
   --dbg_trace ("Typechecking var " ++ x)
   --dbg_trace s!"ctx.pc is {ctx.pc}"
-   match ctx.varEnv.lookup x with
+  match ctx.varEnv.lookup x with
   | some qt =>
     let ⟨etyp, poison, pred⟩ := qt
     match pred with
@@ -615,7 +663,7 @@ def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : 
   -- Body typechecking is deferred until application time
 
   -- Create arrow type ST1 -> ST2 with singleton closure list
-  let arrowTyp : ETyp := ETyp.arrow st1 st2 ctx.pc [FnTClosure.regular x body ctx.varEnv]
+  let arrowTyp : ETyp := ETyp.arrow st1 st2 ctx.pc [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)]
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
    return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag }
@@ -631,7 +679,7 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
    -- Convert body to PExpr
   let pbody ← body.toPExpr
   -- Create arrow type ST1 -> ST2 with singleton closure list
-  let arrowTyp : ETyp := ETyp.parrow st1 st2 ctx.pc [PFnTClosure.regular x pbody ctx.varEnv]
+  let arrowTyp : ETyp := ETyp.parrow st1 st2 ctx.pc [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctx.varEnv)]
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
 
@@ -646,7 +694,8 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
 def attachVarEnvToPredicate (pred : SyntaxPredicate) (varEnv : VarTypeEnv) : TypecheckM Predicate := do
   -- Temporary simplified implementation - TODO: implement proper conversion
   match pred with
-  | SyntaxPredicate.guardClosure k arg body => pure (Predicate.guardClosure k arg (← body.toPExpr ) varEnv)
+  | SyntaxPredicate.guardClosure k arg body =>
+      pure (Predicate.guardClosure k arg (← body.toPExpr ) (VarTypeEnv.toCaptured varEnv))
   | SyntaxPredicate.guardOnly k => pure (Predicate.guardOnly k)
   | SyntaxPredicate.noPred => pure Predicate.noPred
 
@@ -732,7 +781,7 @@ def parseReturnType (retType : ExternReturn):Typ :=
 def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (effects : List Effect) : TypecheckM TypeResult := do
   -- Create extern closure with captured varEnv (singleton list)
-  let tcl := FnTClosure.extern arg retSpec effects ctx.varEnv
+  let tcl := FnTClosure.extern arg retSpec effects (VarTypeEnv.toCaptured ctx.varEnv)
 
 
   let retTyp := parseReturnType retSpec
@@ -747,7 +796,7 @@ def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
 def typecheckExternPfn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) : TypecheckM TypeResult := do
   -- Create extern closure with captured varEnv (singleton list)
-  let tcl := PFnTClosure.extern arg retSpec ctx.varEnv
+  let tcl := PFnTClosure.extern arg retSpec (VarTypeEnv.toCaptured ctx.varEnv)
 
   let retTyp := parseReturnType retSpec
   -- Create arrow type with ambient pc
@@ -764,10 +813,10 @@ def generateFreshVar (ctx : TypeContext) (pref : Name) (suffix : Nat) (fuel : Na
   | 0 => s!"{pref}{suffix}"
   | fuel + 1 =>
       let candidate := if suffix = 0 then pref else s!"{pref}{suffix}"
-      if candidate ∈ ctx.varEnv.map (·.fst) then
-       generateFreshVar ctx pref (suffix + 1) fuel
+      if ctx.varEnv.contains candidate then
+        generateFreshVar ctx pref (suffix + 1) fuel
       else
-       candidate
+        candidate
 termination_by fuel
 
 /-- Helper: Join a list of TypeResults into a single TypeResult -/
@@ -971,7 +1020,8 @@ def typecheckFrand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeRe
         let predBody : PExpr <- Expr.toPExpr (Expr.op (Expr.op (Expr.var varName) Op.gte (Expr.num 0)) Op.and
                                  (Expr.op (Expr.var varName) Op.lte ( e)) )
 
-        let depoisoningPred : Predicate := Predicate.guardClosure newTag varName predBody ctx.varEnv
+        let depoisoningPred : Predicate :=
+          Predicate.guardClosure newTag varName predBody (VarTypeEnv.toCaptured ctx.varEnv)
 
         let qt' : QTyp := ⟨ETyp.int , true, depoisoningPred⟩
         return {result' with qualType := qt'}
@@ -1191,7 +1241,8 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         -- Type the body with the closure's captured environment
         -- pc = join p join p1 pc (Ott spec line 733: app_fn_singleton)
         let argQt : QTyp := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-        let env' := VarTypeEnv.update env x argQt
+        let envMap := VarTypeEnv.ofCaptured env
+        let env' := VarTypeEnv.update envMap x argQt
         let ctx'' := { ctx with pc := joinPoison p (joinPoison p1 ctx.pc),
                                 memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv',
                                 nextTag := result2.nextTag', nextLoc := result2.nextLoc' }
@@ -1207,7 +1258,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
     | FnTClosure.extern x retSpec effects capturedEnv =>
         -- Extern function application (simplified - returns immediately)
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-        let unifiedEnv := VarTypeEnv.update capturedEnv x argQt
+        let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
 
         -- Process effects
         let mut memEnv := result2.memEnv'
@@ -1257,14 +1308,14 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
                      nextLoc' := nextLoc', nextTag' := result2.nextTag' }
 
         | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
-            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
+            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
             return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag' }
 
         | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
-            let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
+            let innerTcl := PFnTClosure.extern innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
             return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
@@ -1284,7 +1335,8 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
     | PFnTClosure.regular x body env =>
         -- Type the body with the closure's captured environment in pure context
         let argQt : QTyp := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-        let env' := VarTypeEnv.update env x argQt
+        let envMap := VarTypeEnv.ofCaptured env
+        let env' := VarTypeEnv.update envMap x argQt
         let ctx'' := { ctx with pc := joinPoison p (joinPoison ctx.pc p1),
                                 memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv',
                                 pureCtx := true, nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
@@ -1300,7 +1352,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
     | PFnTClosure.extern x retSpec capturedEnv =>
         -- Extern pure function application (no effects)
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-        let unifiedEnv := VarTypeEnv.update capturedEnv x argQt
+        let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
 
         let mut nextLoc := result2.nextLoc'
 
@@ -1315,14 +1367,14 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
                      nextLoc' := nextLoc', nextTag' := result2.nextTag' }
 
         | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
-            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects unifiedEnv
+            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
             return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag' }
 
         | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
-            let innerTcl := PFnTClosure.extern innerArg innerRet unifiedEnv
+            let innerTcl := PFnTClosure.extern innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
             return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
@@ -1574,7 +1626,7 @@ def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
   let initialCtx : TypeContext := {
     pc := false  -- clean
     memEnv := {}
-    varEnv := []
+    varEnv := ({} : VarTypeEnv)
     tagEnv := {}
     nextLoc := 0
     nextTag := 1
@@ -1587,7 +1639,7 @@ def typecheckExprVerbose (e : Expr) : TypecheckM TypeResult := do
   let initialCtx : TypeContext := {
     pc := false  -- clean
     memEnv := {}
-    varEnv := []
+    varEnv := ({} : VarTypeEnv)
     tagEnv := {}
     nextLoc := 0
     nextTag := 1
