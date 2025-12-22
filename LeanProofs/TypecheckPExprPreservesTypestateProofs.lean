@@ -628,7 +628,44 @@ private lemma applyPFnTClosure_regular_preserves_typestate
   -- applyPFnTClosure.regular calls typecheckExpr ctx'' (PExpr.toExpr body) fuel
   -- where ctx'' has memEnv = result2.memEnv', tagEnv = result2.tagEnv', pureCtx = true
   -- By IH (with m = fuel < fuel + 1), the result preserves typestate relative to ctx''
-  sorry
+  classical
+  let argQt : QTyp := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+  let envMap := VarTypeEnv.ofCaptured env
+  let env' := VarTypeEnv.update envMap x argQt
+  let ctx'' : TypeContext :=
+    { ctx with pc := joinPoison p (joinPoison ctx.pc p1),
+               memEnv := result2.memEnv',
+               varEnv := env',
+               tagEnv := result2.tagEnv',
+               pureCtx := true,
+               nextLoc := result2.nextLoc',
+               nextTag := result2.nextTag' }
+  have h_apply' := h_apply
+  simp [applyPFnTClosure, argQt, envMap, env', ctx''] at h_apply'
+  cases h_tc : typecheckExpr ctx'' (PExpr.toExpr body) fuel with
+  | error err =>
+      rw [h_tc] at h_apply'
+      simp [bind, Except.bind] at h_apply'
+  | ok result3 =>
+      have h_apply'' := h_apply'
+      rw [h_tc] at h_apply''
+      simp [bind, Except.bind] at h_apply''
+      cases hq : result3.qualType with
+      | mk etyp3 poison3 pred3 =>
+          simp [hq] at h_apply''
+          cases hsub : isSubtype st2 (QTyp.mk etyp3 poison3 pred3) with
+          | true =>
+              simp [hsub, pure, Except.pure] at h_apply''
+              have h_eq : closureResult = result3 := by
+                simpa [Except.ok.injEq] using h_apply''.symm
+              have h_pres :
+                  preservesTypestate ctx''.memEnv ctx''.tagEnv ctx''.nextLoc ctx''.nextTag result3 :=
+                IH fuel (by linarith) ctx'' (PExpr.toExpr body) body result3
+                  (by simpa using (toExpr_toPExpr body)) (by simp [ctx'']) h_tc
+              simpa [ctx'', h_eq] using h_pres
+          | false =>
+              simp [hsub, pure, Except.pure] at h_apply''
+              cases h_apply''
 
 -- Helper: applyPFnTClosure preserves typestate for extern closures
 -- Extern closures directly return result2's memEnv', tagEnv', etc.
@@ -645,19 +682,68 @@ private lemma applyPFnTClosure_extern_preserves_typestate
   -- Case split on retSpec
   cases retSpec with
   | simple typ poison pred =>
-    simp only [applyPFnTClosure, bind, Except.bind] at h_apply
-    cases h_ret : returnSpecToQTyp typ poison pred
-        (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
-        result2.nextLoc' with
-    | error err => simp [h_ret] at h_apply
-    | ok retPair =>
-      simp [h_ret] at h_apply
-      simp only [pure, Except.pure, Except.ok.injEq] at h_apply
-      cases h_apply
-      refine ⟨MemoryTypeEnv.equiv.refl _, rfl, ?_, rfl⟩
-      -- For nextLoc': returnSpecToQTyp for basic types preserves it
-      -- Need a lemma showing returnSpecToQTyp preserves nextLoc for basic types
-      sorry
+      simp only [applyPFnTClosure, bind, Except.bind] at h_apply
+      cases h_ret : returnSpecToQTyp typ poison pred
+          (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+          result2.nextLoc' with
+      | error err =>
+          simp [h_ret] at h_apply
+      | ok retPair =>
+          cases retPair with
+          | mk retQt nextLoc' =>
+              simp [h_ret] at h_apply
+              simp only [pure, Except.pure, Except.ok.injEq] at h_apply
+              cases h_apply
+              refine ⟨MemoryTypeEnv.equiv.refl _, rfl, ?_, rfl⟩
+              have h_nextLoc : nextLoc' = result2.nextLoc' := by
+                cases typ with
+                | int =>
+                    cases h_pred : attachVarEnvToPredicate pred
+                        (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
+                          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) with
+                    | error err =>
+                        simp [returnSpecToQTyp, h_pred] at h_ret
+                    | ok pred' =>
+                        simp [returnSpecToQTyp, h_pred] at h_ret
+                        cases h_ret with
+                        | _ _ hright => exact hright.symm
+                | bool =>
+                    cases h_pred : attachVarEnvToPredicate pred
+                        (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
+                          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) with
+                    | error err =>
+                        simp [returnSpecToQTyp, h_pred] at h_ret
+                    | ok pred' =>
+                        simp [returnSpecToQTyp, h_pred] at h_ret
+                        cases h_ret with
+                        | _ _ hright => exact hright.symm
+                | unit =>
+                    cases h_pred : attachVarEnvToPredicate pred
+                        (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
+                          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) with
+                    | error err =>
+                        simp [returnSpecToQTyp, h_pred] at h_ret
+                    | ok pred' =>
+                        simp [returnSpecToQTyp, h_pred] at h_ret
+                        cases h_ret with
+                        | _ _ hright => exact hright.symm
+                | string =>
+                    cases h_pred : attachVarEnvToPredicate pred
+                        (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
+                          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) with
+                    | error err =>
+                        simp [returnSpecToQTyp, h_pred] at h_ret
+                    | ok pred' =>
+                        simp [returnSpecToQTyp, h_pred] at h_ret
+                        cases h_ret with
+                        | _ _ hright => exact hright.symm
+                | ref _ =>
+                    simp [returnSpecToQTyp] at h_ret
+                    cases h_ret
+                | arrow _ _ =>
+                    simp [returnSpecToQTyp] at h_ret
+                    cases h_ret
+              exact h_nextLoc.symm
   | nestedFn _ _ _ _ =>
     simp only [applyPFnTClosure, pure, Except.pure, Except.ok.injEq] at h_apply
     cases h_apply
