@@ -13,6 +13,233 @@ import Std.Data.ExtTreeMap
 open Std
 
 -- ================================================================
+-- combineExtTreeMaps helpers
+-- ================================================================
+
+theorem list_removeAll_self [BEq α] [LawfulBEq α] (l : List α) : l.removeAll l = [] := by
+  simp [List.removeAll, List.filter_eq_nil_iff]
+
+theorem list_eraseDups_eq_self_of_nodup [BEq α] [LawfulBEq α] {l : List α} (h : l.Nodup) :
+  l.eraseDups = l := by
+  induction l with
+  | nil => simp
+  | cons a as ih =>
+      have h' : as.Nodup := (List.nodup_cons.mp h).2
+      have ha_not : a ∉ as := (List.nodup_cons.mp h).1
+      have hfilter : as.filter (fun b => !b == a) = as := by
+        apply (List.filter_eq_self).2
+        intro b hb
+        have hbne : b ≠ a := by
+          intro hba
+          apply ha_not
+          simpa [hba] using hb
+        simp [hbne]
+      simp [List.eraseDups_cons, hfilter, ih h']
+
+theorem combineExtTreeMaps_go_get_not_mem
+  (m1 m2 : ExtTreeMap Nat β)
+  (f : Nat → Option β → Option β → Option β)
+  (ks : List Nat) (acc : ExtTreeMap Nat β) (k : Nat)
+  (h_not : k ∉ ks) :
+  (combineExtTreeMaps.go m1 m2 f ks acc)[k]? = acc[k]? := by
+  classical
+  induction ks generalizing acc with
+  | nil =>
+      simp [combineExtTreeMaps.go]
+  | cons x xs ih =>
+      have hk_ne : k ≠ x := by
+        intro h
+        apply h_not
+        simp [h]
+      have h_not_xs : k ∉ xs := by
+        intro hmem
+        apply h_not
+        simp [hmem]
+      cases hfx : f x (m1.get? x) (m2.get? x) with
+      | none =>
+          have hfx' : f x m1[x]? m2[x]? = none := by
+            simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+          have ih' := ih (acc.erase x) h_not_xs
+          have hcmp : compare x k ≠ Ordering.eq := by
+            intro hcmp
+            have : x = k := (Nat.compare_eq_eq).1 hcmp
+            exact hk_ne this.symm
+          have hstep :
+              (combineExtTreeMaps.go m1 m2 f (x :: xs) acc)[k]? =
+                (combineExtTreeMaps.go m1 m2 f xs (acc.erase x))[k]? := by
+            simp [combineExtTreeMaps.go, hfx']
+          rw [hstep, ih']
+          simp [ExtTreeMap.getElem?_erase, hcmp]
+      | some v =>
+          have hfx' : f x m1[x]? m2[x]? = some v := by
+            simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+          have ih' := ih (acc.insert x v) h_not_xs
+          have hcmp : compare x k ≠ Ordering.eq := by
+            intro hcmp
+            have : x = k := (Nat.compare_eq_eq).1 hcmp
+            exact hk_ne this.symm
+          have hstep :
+              (combineExtTreeMaps.go m1 m2 f (x :: xs) acc)[k]? =
+                (combineExtTreeMaps.go m1 m2 f xs (acc.insert x v))[k]? := by
+            simp [combineExtTreeMaps.go, hfx']
+          rw [hstep, ih']
+          simp [ExtTreeMap.getElem?_insert, hcmp]
+
+theorem combineExtTreeMaps_go_get_mem
+  (m1 m2 : ExtTreeMap Nat β)
+  (f : Nat → Option β → Option β → Option β)
+  (ks : List Nat) (acc : ExtTreeMap Nat β) (k : Nat)
+  (h_in : k ∈ ks) :
+  (combineExtTreeMaps.go m1 m2 f ks acc)[k]? =
+    match f k (m1.get? k) (m2.get? k) with
+    | some v => some v
+    | none => none := by
+  classical
+  induction ks generalizing acc with
+  | nil =>
+      cases h_in
+  | cons x xs ih =>
+      cases h_in with
+      | head =>
+          cases hfx : f k (m1.get? k) (m2.get? k) with
+          | none =>
+              have hfx' : f k m1[k]? m2[k]? = none := by
+                simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+              by_cases hmem : k ∈ xs
+              · have ih' := ih (acc.erase k) hmem
+                have hstep :
+                    (combineExtTreeMaps.go m1 m2 f (k :: xs) acc)[k]? =
+                      (combineExtTreeMaps.go m1 m2 f xs (acc.erase k))[k]? := by
+                  simp [combineExtTreeMaps.go, hfx']
+                rw [hstep]
+                have ih'' := ih'
+                rw [hfx] at ih''
+                exact ih''
+              · have ih' := combineExtTreeMaps_go_get_not_mem m1 m2 f xs (acc.erase k) k hmem
+                have hstep :
+                    (combineExtTreeMaps.go m1 m2 f (k :: xs) acc)[k]? =
+                      (combineExtTreeMaps.go m1 m2 f xs (acc.erase k))[k]? := by
+                  simp [combineExtTreeMaps.go, hfx']
+                rw [hstep, ih']
+                simp
+          | some v =>
+              have hfx' : f k m1[k]? m2[k]? = some v := by
+                simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+              by_cases hmem : k ∈ xs
+              · have ih' := ih (acc.insert k v) hmem
+                have hstep :
+                    (combineExtTreeMaps.go m1 m2 f (k :: xs) acc)[k]? =
+                      (combineExtTreeMaps.go m1 m2 f xs (acc.insert k v))[k]? := by
+                  simp [combineExtTreeMaps.go, hfx']
+                rw [hstep]
+                have ih'' := ih'
+                rw [hfx] at ih''
+                exact ih''
+              · have ih' := combineExtTreeMaps_go_get_not_mem m1 m2 f xs (acc.insert k v) k hmem
+                have hstep :
+                    (combineExtTreeMaps.go m1 m2 f (k :: xs) acc)[k]? =
+                      (combineExtTreeMaps.go m1 m2 f xs (acc.insert k v))[k]? := by
+                  simp [combineExtTreeMaps.go, hfx']
+                rw [hstep, ih']
+                simp
+      | tail =>
+          rename_i hmem
+          cases hfx : f x (m1.get? x) (m2.get? x) with
+          | none =>
+              have hfx' : f x m1[x]? m2[x]? = none := by
+                simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+              have ih' := ih (acc.erase x) hmem
+              have hstep :
+                  (combineExtTreeMaps.go m1 m2 f (x :: xs) acc)[k]? =
+                    (combineExtTreeMaps.go m1 m2 f xs (acc.erase x))[k]? := by
+                simp [combineExtTreeMaps.go, hfx']
+              rw [hstep]
+              exact ih'
+          | some v =>
+              have hfx' : f x m1[x]? m2[x]? = some v := by
+                simpa [ExtTreeMap.get?_eq_getElem?] using hfx
+              have ih' := ih (acc.insert x v) hmem
+              have hstep :
+                  (combineExtTreeMaps.go m1 m2 f (x :: xs) acc)[k]? =
+                    (combineExtTreeMaps.go m1 m2 f xs (acc.insert x v))[k]? := by
+                simp [combineExtTreeMaps.go, hfx']
+              rw [hstep]
+              exact ih'
+
+theorem locSet_union_idempotent (s : LocSet) : LocSet.union s s = s := by
+  classical
+  ext k
+  simp [LocSet.union, Std.ExtTreeSet.mem_union_iff]
+
+theorem joinTagEnvs_func_idempotent :
+  ∀ (k : Tag) (otv : Option TagVal),
+    (fun _ otv1 otv2 =>
+      match otv1, otv2 with
+      | some ⟨b1, deps1⟩, some ⟨b2, deps2⟩ =>
+        if b1 == b2 then
+          some ⟨b1, LocSet.union deps1 deps2⟩
+        else
+          none
+      | some _, none => none
+      | none, some _ => none
+      | none, none => none) k otv otv = otv := by
+  intro k otv
+  cases otv with
+  | none => rfl
+  | some tv =>
+      cases tv with
+      | mk b deps =>
+          cases b <;> simp [locSet_union_idempotent]
+
+theorem joinTagEnvs_idempotent (t : TagEnv) : joinTagEnvs t t = t := by
+  classical
+  let f : Tag → Option TagVal → Option TagVal → Option TagVal := fun _ otv1 otv2 =>
+    match otv1, otv2 with
+    | some ⟨b1, deps1⟩, some ⟨b2, deps2⟩ =>
+      if b1 == b2 then
+        some ⟨b1, LocSet.union deps1 deps2⟩
+      else
+        none
+    | some _, none => none
+    | none, some _ => none
+    | none, none => none
+  have hcombine : combineExtTreeMaps t t f = t := by
+    have hkeys_nodup : t.keys.Nodup := ExtTreeMap.nodup_keys (t := t)
+    have hkeys_erase : t.keys.eraseDups = t.keys :=
+      list_eraseDups_eq_self_of_nodup (h := hkeys_nodup)
+    have hks : (t.keys ++ t.keys).eraseDups = t.keys := by
+      simp [List.eraseDups_append, list_removeAll_self, hkeys_erase]
+    apply ExtTreeMap.ext_getElem?
+    intro k
+    dsimp [combineExtTreeMaps]
+    rw [hks]
+    by_cases hmem : k ∈ t.keys
+    · have hgo := combineExtTreeMaps_go_get_mem t t f t.keys ({} : TagEnv) k hmem
+      have hfun : f k (t[k]?) (t[k]?) = t[k]? := by
+        simpa [f] using (joinTagEnvs_func_idempotent k (t[k]?))
+      have hgo' := hgo
+      simp [hfun] at hgo'
+      cases h : t[k]? <;> simpa [h] using hgo'
+    · have hgo := combineExtTreeMaps_go_get_not_mem t t f t.keys ({} : TagEnv) k hmem
+      have hnot_mem : k ∉ t := by
+        intro hk
+        have hk' : k ∈ t.keys := (ExtTreeMap.mem_keys).2 hk
+        exact hmem hk'
+      have hm_none : t[k]? = none := ExtTreeMap.getElem?_eq_none hnot_mem
+      simpa [hm_none] using hgo
+  simpa [joinTagEnvs, f] using hcombine
+
+theorem Except.bind_eq_ok {ε α β : Type} (x : Except ε α) (f : α → Except ε β) (b : β)
+    (h : Except.bind x f = Except.ok b) :
+    ∃ a, x = Except.ok a ∧ f a = Except.ok b := by
+  cases x with
+  | error e =>
+    simp [Except.bind] at h
+  | ok a =>
+    refine ⟨a, rfl, ?_⟩
+    simpa [Except.bind] using h
+
+-- ================================================================
 -- Evaluation Relations
 -- ================================================================
 

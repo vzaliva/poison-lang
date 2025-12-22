@@ -17,7 +17,7 @@ namespace LocSet
   (∅ : LocSet).insert l
 
 @[inline] def union (s₁ s₂ : LocSet) : LocSet :=
-  ExtTreeSet.merge s₁ s₂
+  ExtTreeSet.union s₁ s₂
 
 @[inline] def fromList (ls : List Loc) : LocSet :=
   ExtTreeSet.ofList ls
