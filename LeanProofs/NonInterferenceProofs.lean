@@ -9,7 +9,90 @@ import Mathlib.Data.List.Forall2
 import LeanProofs.NonInterference
 import LeanProofs.IOHelpers
 
-/- TODO: this proof needs repairs.
+open List
+
+section NonInterferenceSpec_step_spec
+
+-- `i` and `o` subscript indexes correspond to input and outputs
+-- `0` and `1` subscript indexes correspond to two runs of the program
+def NonInterferenceSpec_step
+  (e : Expr)
+  (sᵢ sₒ : InputSpec)
+  (ctxᵢ _ctxₒ : TypeContext)
+  (retType : QTyp)
+  (isRetObservable : Bool)
+  (predSat : PredSat) : Prop :=
+    ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap) (Rᵢ : Regime)
+      (cf₀ cf₁ : Config) (o₀ o₁ : Value),
+      wfRegime Rᵢ sᵢ →
+      wfRealizationMap θ₀ → wfRealizationMap θ₁ →
+      inputsConformSpec sᵢ μ₀ ρ₀ θ₀ → inputsConformSpec sᵢ μ₁ ρ₁ θ₁ →
+      runtimeInstantiatesCtx ctxᵢ μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctxᵢ μ₁ ρ₁ θ₁ →
+      consistentRegimeSpec predSat Rᵢ sᵢ μ₀ ρ₀ θ₀ → consistentRegimeSpec predSat Rᵢ sᵢ μ₁ ρ₁ θ₁ →
+      agreeOnCriticalInputsUnderRegimeSpec predSat Rᵢ sᵢ μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
+      ∀ (a₀ a₁ : Address) (pm : Bool),
+        terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ →
+        terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
+        ∃ (Rₒ : Regime),
+          wfRegime Rₒ sₒ ∧
+          consistentRegimeSpec predSat Rₒ sₒ cf₀.memory cf₀.varEnv θ₀ ∧
+          consistentRegimeSpec predSat Rₒ sₒ cf₁.memory cf₁.varEnv θ₁ ∧
+          agreeOnCriticalInputsUnderRegimeSpec predSat Rₒ sₒ cf₀.memory cf₀.varEnv θ₀ cf₁.memory cf₁.varEnv θ₁ ∧
+          (isRetObservable →
+            (wfRegimeForReturn Rₒ retType ∧
+             agreeValueUnder predSat Rₒ cf₀.memory cf₁.memory θ₀ θ₁ retType o₀ o₁))
+
+def ctxMatchesResult (ctx : TypeContext) (res : TypeResult) : Prop :=
+  ctx.memEnv = res.memEnv'
+
+-- sᵢ sₒ - input and output specifications
+def TypeSystemEnforcesNonInterference_step_spec
+  (e : Expr)
+  (sᵢ sₒ : InputSpec)
+  (ctxᵢ ctxₒ : TypeContext)
+  (isRetObservable : Bool)
+  (predSat : PredSat) : Prop :=
+  ctxMatchesInputSpec sᵢ ctxᵢ →
+  ctxMatchesInputSpec sₒ ctxₒ →
+  ∀ (fuel : Nat) (res : TypeResult),
+    typecheck ctxᵢ e fuel = .ok res →
+    ctxMatchesResult ctxₒ res →
+    NonInterferenceSpec_step e sᵢ sₒ ctxᵢ ctxₒ res.qualType isRetObservable predSat
+
+end NonInterferenceSpec_step_spec
+
+section TypeSystemEnforcesNonInterference_proof
+
+-- The original proof (pre-RealizationMap refactor) is preserved below.
+-- These placeholders re-enable the public theorems while GuardlessIfClean and
+-- NonInterference proofs are being repaired.
+theorem TypeSystemEnforcesNonInterference_step
+  (e : Expr)
+  (sᵢ sₒ : InputSpec)
+  (ctxᵢ ctxₒ : TypeContext)
+  (isRetObservable : Bool)
+  (predSat : PredSat) :
+  TypeSystemEnforcesNonInterference_step_spec
+    e sᵢ sₒ ctxᵢ ctxₒ isRetObservable predSat := by
+  sorry
+
+theorem TypeSystemEnforcesNonInterference_impl :
+  (∀ e sᵢ sₒ ctxᵢ ctxₒ isRetObservable predSat,
+    TypeSystemEnforcesNonInterference_step_spec
+      e sᵢ sₒ ctxᵢ ctxₒ isRetObservable predSat) →
+  (∀ e s obs, TypeSystemEnforcesNonInterference_spec e s obs) := by
+  intro _hstep e s obs
+  sorry
+
+theorem TypeSystemEnforcesNonInterference (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
+  TypeSystemEnforcesNonInterference_spec e s obs := by
+  apply TypeSystemEnforcesNonInterference_impl
+  exact TypeSystemEnforcesNonInterference_step
+
+end TypeSystemEnforcesNonInterference_proof
+
+/- Old proof (kept for reference).
+   TODO: repair against RealizationMap updates.
 
 open List
 
