@@ -68,6 +68,12 @@ namespace MemoryTypeEnv
   def hasKey (m : MemoryTypeEnv) (l : Loc) : Prop :=
     m.contains l
 
+  /-- Sub-environment: every binding in `m₁` appears in `m₂`. -/
+  def subset (m₁ m₂ : MemoryTypeEnv) : Prop :=
+    ∀ {l qt}, m₁.lookup l = some qt → m₂.lookup l = some qt
+
+  scoped infix:50 " ⊆ " => MemoryTypeEnv.subset
+
   /-- Extensional equality of memory typing environments. All keys and values must be equal. -/
   def equiv (m₁ m₂ : MemoryTypeEnv) : Prop :=
     (ExtTreeMap.toList m₁) == (ExtTreeMap.toList m₂)

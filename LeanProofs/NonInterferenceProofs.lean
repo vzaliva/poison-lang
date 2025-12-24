@@ -10,6 +10,7 @@ import LeanProofs.NonInterference
 import LeanProofs.IOHelpers
 
 open List
+open scoped MemoryTypeEnv
 
 section NonInterferenceSpec_step_spec
 
@@ -18,7 +19,7 @@ section NonInterferenceSpec_step_spec
 def NonInterferenceSpec_step
   (e : Expr)
   (sᵢ sₒ : InputSpec)
-  (ctxᵢ _ctxₒ : TypeContext)
+  (ctxᵢ : TypeContext)
   (retType : QTyp)
   (isRetObservable : Bool)
   (predSat : PredSat) : Prop :=
@@ -33,31 +34,31 @@ def NonInterferenceSpec_step
       ∀ (a₀ a₁ : Address) (pm : Bool),
         terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ →
         terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
-        ∃ (Rₒ : Regime),
+        ∃ (θ₀' θ₁' : RealizationMap) (Rₒ : Regime),
+          wfRealizationMap θ₀' ∧ wfRealizationMap θ₁' ∧
+          wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
           wfRegime Rₒ sₒ ∧
-          consistentRegimeSpec predSat Rₒ sₒ cf₀.memory cf₀.varEnv θ₀ ∧
-          consistentRegimeSpec predSat Rₒ sₒ cf₁.memory cf₁.varEnv θ₁ ∧
-          agreeOnCriticalInputsUnderRegimeSpec predSat Rₒ sₒ cf₀.memory cf₀.varEnv θ₀ cf₁.memory cf₁.varEnv θ₁ ∧
+          consistentRegimeSpec predSat Rₒ sₒ cf₀.memory cf₀.varEnv θ₀' ∧
+          consistentRegimeSpec predSat Rₒ sₒ cf₁.memory cf₁.varEnv θ₁' ∧
+          agreeOnCriticalInputsUnderRegimeSpec predSat Rₒ sₒ
+            cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
           (isRetObservable →
             (wfRegimeForReturn Rₒ retType ∧
-             agreeValueUnder predSat Rₒ cf₀.memory cf₁.memory θ₀ θ₁ retType o₀ o₁))
-
-def ctxMatchesResult (ctx : TypeContext) (res : TypeResult) : Prop :=
-  ctx.memEnv = res.memEnv'
+             agreeValueUnder predSat Rₒ cf₀.memory cf₁.memory θ₀' θ₁' retType o₀ o₁))
 
 -- sᵢ sₒ - input and output specifications
+-- sₒ is constrained to match the typing result (locs = res.memEnv')
 def TypeSystemEnforcesNonInterference_step_spec
   (e : Expr)
   (sᵢ sₒ : InputSpec)
-  (ctxᵢ ctxₒ : TypeContext)
+  (ctxᵢ : TypeContext)
   (isRetObservable : Bool)
   (predSat : PredSat) : Prop :=
   ctxMatchesInputSpec sᵢ ctxᵢ →
-  ctxMatchesInputSpec sₒ ctxₒ →
   ∀ (fuel : Nat) (res : TypeResult),
     typecheck ctxᵢ e fuel = .ok res →
-    ctxMatchesResult ctxₒ res →
-    NonInterferenceSpec_step e sᵢ sₒ ctxᵢ ctxₒ res.qualType isRetObservable predSat
+    sₒ.locs ⊆ res.memEnv' →
+    NonInterferenceSpec_step e sᵢ sₒ ctxᵢ res.qualType isRetObservable predSat
 
 end NonInterferenceSpec_step_spec
 
@@ -69,17 +70,17 @@ section TypeSystemEnforcesNonInterference_proof
 theorem TypeSystemEnforcesNonInterference_step
   (e : Expr)
   (sᵢ sₒ : InputSpec)
-  (ctxᵢ ctxₒ : TypeContext)
+  (ctxᵢ : TypeContext)
   (isRetObservable : Bool)
   (predSat : PredSat) :
   TypeSystemEnforcesNonInterference_step_spec
-    e sᵢ sₒ ctxᵢ ctxₒ isRetObservable predSat := by
+    e sᵢ sₒ ctxᵢ isRetObservable predSat := by
   sorry
 
 theorem TypeSystemEnforcesNonInterference_impl :
-  (∀ e sᵢ sₒ ctxᵢ ctxₒ isRetObservable predSat,
+  (∀ e sᵢ sₒ ctxᵢ isRetObservable predSat,
     TypeSystemEnforcesNonInterference_step_spec
-      e sᵢ sₒ ctxᵢ ctxₒ isRetObservable predSat) →
+      e sᵢ sₒ ctxᵢ isRetObservable predSat) →
   (∀ e s obs, TypeSystemEnforcesNonInterference_spec e s obs) := by
   intro _hstep e s obs
   sorry
