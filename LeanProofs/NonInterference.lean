@@ -366,7 +366,7 @@ def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
 --   ctxMatchesInputSpecVarsDeep s.vars ctx.varEnv
 
 def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
-  (∀ {l}, s.locs.contains l → ∃ a, θ.lookup l = some a ∧ μ.contains a) ∧
+  (∀ {l a}, s.locs.contains l → θ.lookup l = some a → μ.contains a) ∧
   (∀ {x qt v}, s.vars.lookup x = some qt → ρ.lookup x = some v → valueHasETyp θ v qt.etyp)
 
 -- Elementwise predicate for location regime consistency (inductive for easy inversion)

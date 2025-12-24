@@ -1299,6 +1299,24 @@ Then the observable outputs coincide:
 \end{itemize}
 \end{definition}
 
+\subsubsection*{Ghost Locations and Realisation}
+
+A subtlety arises with "ghost" locations: logical locations that exist in the
+typing environment $\Gamma$ but are not allocated in a particular program
+execution (e.g., allocations in an untaken branch). The type system's
+flow-insensitive nature accumulates these locations in the output $\Gamma$.
+Because they are typed as clean, they may appear in the critical input
+specification for subsequent steps.
+
+Our definition of input conformance (\texttt{inputsConformSpec}) handles this by
+requiring that a logical location must exist in memory \emph{only if} it is
+realised in the current run's realisation map $\theta$. Unrealised ghost
+locations satisfy the spec trivially. This is sound because the proof's value
+typing relation (\texttt{valueHasETyp}) guarantees that any reference value
+\texttt{loc a} held by the program must map to a realised logical location
+($\theta(l) = a$). Thus, the program can never attempt to access a ghost
+location, making their absence from memory harmless.
+
 The key insight initial values asymmetry governed by the regime $R$:
 \begin{itemize}
     \item If a critical entry is annotated with tag $k$ and $R(k)=\text{true}$,
