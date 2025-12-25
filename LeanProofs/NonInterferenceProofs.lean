@@ -7,6 +7,7 @@ import LeanPoison.BigStep
 import Mathlib.Data.List.Forall2
 
 import LeanProofs.NonInterference
+import LeanProofs.GuardlessIfCleanProofs
 import LeanProofs.IOHelpers
 
 open List
@@ -135,15 +136,15 @@ private lemma guardlessClosure_of_nonSpecVar {s : InputSpec} {ctx : TypeContext}
   ctx.varEnv.lookup x = some qt →
   ¬ s.vars.hasKey x →
   guardlessIfCleanClosureEnv qt := by
-  -- TODO: port from old proof using ctxMatchesInputSpec non-spec invariants.
-  sorry
+  intro hctx hlookup hnot
+  exact guardlessIfCleanClosureEnv_of_ctxNonSpecVar hctx hlookup hnot
 
 private lemma guardlessClosure_of_specVar {s : InputSpec} {x qt} :
   wfInputSpecVarsDeep s.vars →
   s.vars.lookup x = some qt →
   guardlessIfCleanClosureEnv qt := by
-  -- TODO: port from old proof using deepVarEnvProperty on input specs.
-  sorry
+  intro hspec hlookup
+  exact guardlessIfCleanClosureEnv_of_specVar hspec hlookup
 
 private lemma wfInputSpec_and_ctxMatchecInputSpec_imply_guardlessIfCleanVars {s ctx} :
   wfInputSpec s →
