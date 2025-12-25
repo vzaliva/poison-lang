@@ -7,7 +7,6 @@ import LeanPoison.BigStep
 import Mathlib.Data.List.Forall2
 
 import LeanProofs.NonInterference
-import LeanProofs.GuardlessIfCleanProofs
 import LeanProofs.IOHelpers
 
 open List
@@ -80,135 +79,6 @@ section TypeSystemEnforcesNonInterference_impl_sketch
 private def outputSpec (res : TypeResult) : InputSpec :=
   { locs := res.memEnv', vars := ({} : VarTypeEnv) }
 
-private lemma wfInputSpec_and_ctxMatchecInputSpec_imply_guardlessIfCleanMem {s ctx} :
-  wfInputSpec s →
-  ctxMatchesInputSpec s ctx →
-  guardlessIfCleanMem ctx.memEnv := by
-  intro his hctx
-  classical
-  obtain ⟨hctx_locs, _hctx_vars, hctx_nonSpec_locs, _hctx_nonSpec_vars⟩ := hctx
-  have hspec_locs := his.1
-  refine guardlessIfCleanMem.intro _ ?_
-  intro l qt hlookup
-  refine guardlessIfCleanQTypDeep.intro _ ?_ ?_
-  · intro hpoison
-    have hhasKey : s.locs.hasKey l := by
-      by_contra hnot
-      have hcontr := hctx_nonSpec_locs hlookup hnot
-      have : qt.poison = true := hcontr.1
-      simp [hpoison] at this
-    have hcontains : s.locs.contains l = true := by
-      simpa [MemoryTypeEnv.hasKey] using hhasKey
-    have hmem : l ∈ s.locs := (Std.ExtTreeMap.contains_iff_mem).1 hcontains
-    have hlookup_isSome : (s.locs[l]?).isSome = true :=
-      (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
-    obtain ⟨qtSpec, hlookup_spec⟩ := Option.isSome_iff_exists.mp hlookup_isSome
-    have hlookup_spec_lookup : s.locs.lookup l = some qtSpec := by
-      simpa [MemoryTypeEnv.lookup] using hlookup_spec
-    have hctx_lookup :=
-      hctx_locs (by simpa [MemoryTypeEnv.lookup] using hlookup_spec_lookup)
-    have hqtEq : qt = qtSpec := by
-      rw [hctx_lookup] at hlookup
-      cases hlookup
-      rfl
-    obtain ⟨_hetyp, hpoison_spec⟩ :=
-      hspec_locs l qtSpec (by simpa [MemoryTypeEnv.lookup] using hlookup_spec_lookup)
-    have hhasGuard : hasGuardTag qt.pred = false := by
-      have hpoison_eq : qt.poison = hasGuardTag qt.pred := by
-        simpa [hqtEq] using hpoison_spec
-      simpa [hpoison] using hpoison_eq.symm
-    cases hpred : qt.pred <;> try (simp [hpred] at hhasGuard; cases hhasGuard)
-    simp [qtypGuardTag, hpred]
-  · cases hspecOption : s.locs.lookup l with
-    | none =>
-        -- as in old proof; needs stronger assumptions on ctx.memEnv contents
-        sorry
-    | some qtSpec =>
-        have hctx_lookup := hctx_locs (by simpa using hspecOption)
-        rw [hlookup] at hctx_lookup
-        cases hctx_lookup
-        apply guardlessIfCleanClosureEnv.other
-        have hetyp := (hspec_locs l qt hspecOption).1
-        simp [nonClosureQTyp, hetyp]
-
-private lemma guardlessClosure_of_nonSpecVar {s : InputSpec} {ctx : TypeContext} {x qt} :
-  ctxMatchesInputSpec s ctx →
-  ctx.varEnv.lookup x = some qt →
-  ¬ s.vars.hasKey x →
-  guardlessIfCleanClosureEnv qt := by
-  intro hctx hlookup hnot
-  exact guardlessIfCleanClosureEnv_of_ctxNonSpecVar hctx hlookup hnot
-
-private lemma guardlessClosure_of_specVar {s : InputSpec} {x qt} :
-  wfInputSpecVarsDeep s.vars →
-  s.vars.lookup x = some qt →
-  guardlessIfCleanClosureEnv qt := by
-  intro hspec hlookup
-  exact guardlessIfCleanClosureEnv_of_specVar hspec hlookup
-
-private lemma wfInputSpec_and_ctxMatchecInputSpec_imply_guardlessIfCleanVars {s ctx} :
-  wfInputSpec s →
-  ctxMatchesInputSpec s ctx →
-  guardlessIfCleanVars ctx.varEnv := by
-  intro his hctx
-  classical
-  have hctx_all := hctx
-  obtain ⟨_, hctx_vars, _, hctx_nonSpec_vars⟩ := hctx
-  obtain ⟨_, hspec_vars⟩ := deep_implies_shallow his.2
-  refine guardlessIfCleanVars.intro _ ?_
-  intro x qt hlookup
-  refine guardlessIfCleanQTypDeep.intro _ ?_ ?_
-  · intro hpoison
-    cases hspecOption : s.vars.lookup x with
-    | none =>
-        have hnot : ¬ s.vars.hasKey x := by
-          intro hhasKey
-          have hcontains : s.vars.contains x = true := by
-            simpa [VarTypeEnv.hasKey] using hhasKey
-          have hmem : x ∈ s.vars := (Std.ExtTreeMap.contains_iff_mem).1 hcontains
-          have hsome : (s.vars[x]?).isSome = true :=
-            (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
-          have hnone : s.vars[x]? = none := by
-            simpa [VarTypeEnv.lookup] using hspecOption
-          simp [hnone] at hsome
-        have hcontr := hctx_nonSpec_vars hlookup hnot
-        have : qt.poison = true := hcontr.1
-        simp [hpoison] at this
-    | some qtSpec =>
-        have hctx_lookup := hctx_vars (by simpa using hspecOption)
-        have hsomeEq : some qt = some qtSpec :=
-          Eq.trans (Eq.symm hlookup) hctx_lookup
-        have hqtEq : qt = qtSpec := Option.some.inj hsomeEq
-        have hpoison_spec :
-            qt.poison = hasGuardTag qt.pred := by
-          have := hspec_vars x qtSpec hspecOption
-          simpa [hqtEq] using this
-        have hhasGuard : hasGuardTag qt.pred = false := by
-          have := hpoison_spec.symm
-          simpa [hpoison] using this
-        cases hpred : qt.pred <;> try (simp [hpred] at hhasGuard; cases hhasGuard)
-        simp [qtypGuardTag, hpred]
-  · cases hspecOption : s.vars.lookup x with
-    | none =>
-        have hnot : ¬ s.vars.hasKey x := by
-          intro hhasKey
-          have hcontains : s.vars.contains x = true := by
-            simpa [VarTypeEnv.hasKey] using hhasKey
-          have hmem : x ∈ s.vars := (Std.ExtTreeMap.contains_iff_mem).1 hcontains
-          have hsome : (s.vars[x]?).isSome = true :=
-            (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
-          have hnone : s.vars[x]? = none := by
-            simpa [VarTypeEnv.lookup] using hspecOption
-          simp [hnone] at hsome
-        exact guardlessClosure_of_nonSpecVar hctx_all hlookup hnot
-    | some qtSpec =>
-        have hctx_lookup := hctx_vars (by simpa using hspecOption)
-        have hsomeEq : some qt = some qtSpec :=
-          Eq.trans (Eq.symm hlookup) hctx_lookup
-        have hqtEq : qt = qtSpec := Option.some.inj hsomeEq
-        subst hqtEq
-        exact guardlessClosure_of_specVar his.2 hspecOption
-
 private lemma ret_eq_of_agreeValueUnder_nonref
   {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
   {qt : QTyp} {o₀ o₁ : Value} :
@@ -218,12 +88,16 @@ private lemma ret_eq_of_agreeValueUnder_nonref
   o₀ = o₁ := by
   intro hnotref hret_wf hret_agree
   cases hret_agree with
-  | noPred_eq _ _ hval => exact hval
-  | noPred_ref hetyp _ _ _ _ _ _ =>
+  | clean_eq_nonref _ _ hval => exact hval
+  | poisoned_noPred_eq_nonref _ _ _ hval => exact hval
+  | clean_ref _ hetyp _ _ _ _ _ _ =>
+      exfalso
+      exact hnotref ⟨_, _, hetyp⟩
+  | poisoned_noPred_ref _ _ hetyp _ _ _ _ _ _ =>
       exfalso
       exact hnotref ⟨_, _, hetyp⟩
   | withPred_true_eq _ _ _ hval => exact hval
-  | withPred_false_both_fail k _ htag hregime _ _ =>
+  | withPred_false_poisoned_fail k _ htag hregime _ _ _ =>
       cases hret_wf with
       | noPred hpred =>
           have htag' : qtypGuardTag qt = none := by
@@ -282,7 +156,7 @@ private lemma ret_eq_of_agreeValueUnder_nonref
               _ = some false := by
                 exact hregime
           cases this
-  | guardOnly_false_any k hgo hregime =>
+  | guardOnly_false_poisoned_any k hgo hregime _ =>
       cases hret_wf with
       | noPred hpred =>
           have : Predicate.noPred = Predicate.guardOnly k := by
@@ -333,38 +207,6 @@ private lemma outputSpec_locs_subset (res : TypeResult) :
   intro l qt hlookup
   simpa [outputSpec] using hlookup
 
-private lemma mem_guardless_from_typecheck
-  {s : InputSpec} {ctx : TypeContext} {e : Expr} {fuel : Nat} {res : TypeResult} :
-  wfInputSpec s →
-  ctxMatchesInputSpec s ctx →
-  typecheck ctx e fuel = .ok res →
-  ∀ {l qt}, res.memEnv'.lookup l = some qt → guardlessIfCleanQTyp qt := by
-  intro his hctx htc l qt hlookup
-  have hguardlessCtxMem : guardlessIfCleanMem ctx.memEnv :=
-    wfInputSpec_and_ctxMatchecInputSpec_imply_guardlessIfCleanMem his hctx
-  have hguardlessCtxVars : guardlessIfCleanVars ctx.varEnv :=
-    wfInputSpec_and_ctxMatchecInputSpec_imply_guardlessIfCleanVars his hctx
-  have hguardlessClean :=
-    (guardlessIfClean_invariant ctx e fuel res hguardlessCtxMem hguardlessCtxVars htc).1
-  cases hguardlessClean with
-  | intro _ hmem =>
-      have hqtDeep := hmem hlookup
-      exact guardlessIfCleanQTypDeep.guardless hqtDeep
-
-private lemma output_mem_guardless
-  {s : InputSpec} {ctx : TypeContext} {e : Expr} {fuel : Nat} {res : TypeResult}
-  {l : Loc} {qt : QTyp} :
-  wfInputSpec s →
-  ctxMatchesInputSpec s ctx →
-  typecheck ctx e fuel = .ok res →
-  res.memEnv'.lookup l = some qt →
-  qt.poison = false →
-  qtypGuardTag qt = none := by
-  intro his hctx htc hlookup hpoison
-  have hguardless := mem_guardless_from_typecheck (s := s) (ctx := ctx) (e := e)
-    (fuel := fuel) (res := res) his hctx htc hlookup
-  exact hguardless hpoison
-
 theorem TypeSystemEnforcesNonInterference_impl :
   (∀ e sᵢ sₒ ctxᵢ isRetObservable predSat,
     TypeSystemEnforcesNonInterference_step_spec
@@ -393,9 +235,6 @@ theorem TypeSystemEnforcesNonInterference_impl :
     obtain ⟨qt, hlookup_mem, _het_eq, hpoison⟩ := hobs_mem l et hobs_lookup
     have hlookup_sₒ : sₒ.locs.lookup l = some qt := by
       simpa [sₒ, outputSpec] using hlookup_mem
-    have _hguardless : qtypGuardTag qt = none :=
-      output_mem_guardless (s := s) (ctx := ctx) (e := e) (fuel := fuel) (res := res)
-        his hctx htc hlookup_mem hpoison
     have hlocEntry : agreeLocUnder predSat Rₒ cf₀.memory cf₁.memory θ₀' θ₁' (l, qt) := by
       have hLocsAgree' := hRₒ_locAgree
       rw [List.forall_iff_forall_mem] at hLocsAgree'
@@ -409,38 +248,41 @@ theorem TypeSystemEnforcesNonInterference_impl :
         -- Ported from old proof: reduce to equality of stored ints under guardless agreement.
         have hvalEq : n₀ = n₁ := by
           cases hagree with
-          | noPred_eq _ _ hval =>
+          | clean_eq_nonref _ _ hval =>
               cases hval
               rfl
-          | noPred_ref _ _ _ _ hv1 _ _ _ =>
+          | poisoned_noPred_eq_nonref _ _ _ hval =>
+              cases hval
+              rfl
+          | clean_ref _ _ _ _ hv1 _ _ _ =>
+              cases hv1
+          | poisoned_noPred_ref _ _ _ _ _ hv1 _ _ _ =>
               cases hv1
           | withPred_true_eq _ _ _ hval =>
               cases hval
               rfl
-          | withPred_false_both_fail k _ htag _ _ _ =>
-              have : False := by
-                have htag' : some k = none := by
+          | withPred_false_poisoned_fail _ _ _ _ hpoison' _ _ =>
+              have hcontra : False := by
+                have hpoison'' : false = true := by
                   calc
-                    some k = qtypGuardTag qt := by
+                    false = qt.poison := by
                       symm
-                      exact htag
-                    _ = none := by
-                      exact _hguardless
-                cases htag'
-              cases this
-          | guardOnly_false_any k hgo _ =>
-              have htag : qtypGuardTag qt = some k := by
-                simp [qtypGuardTag, hgo]
-              have : False := by
-                have htag' : some k = none := by
+                      exact hpoison
+                    _ = true := by
+                      exact hpoison'
+                cases hpoison''
+              exact (False.elim hcontra)
+          | guardOnly_false_poisoned_any _ _ _ hpoison' =>
+              have hcontra : False := by
+                have hpoison'' : false = true := by
                   calc
-                    some k = qtypGuardTag qt := by
+                    false = qt.poison := by
                       symm
-                      exact htag
-                    _ = none := by
-                      exact _hguardless
-                cases htag'
-              cases this
+                      exact hpoison
+                    _ = true := by
+                      exact hpoison'
+                cases hpoison''
+              exact (False.elim hcontra)
         have hmemEq : cf₀.memory.lookup a₀' = cf₁.memory.lookup a₁' := by
           simp [hlookup₀, hlookup₁, hvalEq]
         refine ⟨a₀', ?_⟩

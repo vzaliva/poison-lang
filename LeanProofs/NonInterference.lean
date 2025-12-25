@@ -5,7 +5,6 @@ import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.TypeSafety
-import LeanProofs.GuardlessIfClean
 import Mathlib.Data.List.Forall2
 import Std.Data.ExtTreeMap
 open Std
@@ -34,6 +33,19 @@ namespace MemoryETypEnv
     reprPrec m _ := s!"ofList {repr (ExtTreeMap.toList m)}"
 
 end MemoryETypEnv
+
+-- Extract the guard tag from a qualified type's predicate, if present.
+def qtypGuardTag (qt : QTyp) : Option Tag :=
+  match qt.pred with
+  | Predicate.guardClosure k _ _ _ => some k
+  | Predicate.guardOnly k => some k
+  | Predicate.noPred => none
+
+def nonClosureQTyp (qt : QTyp) : Prop :=
+  match qt.etyp with
+  | ETyp.arrow _ _ _ _ => False
+  | ETyp.parrow _ _ _ _ => False
+  | _ => True
 
 -- What parts of the final state are observable
 structure ObservableSpec where
@@ -415,17 +427,34 @@ def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : 
   List.Forall (varsRegime predSat R μ ρ) s.vars.toList
 
 -- Two values agree under a given regime and memory environments
-  inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
-      (θ₁ θ₂ : RealizationMap)
-      (qt: QTyp) (v₁ v₂ : Value) : Prop where
-  | noPred_eq
-      (hpred : qtypGuardTag qt = none)
+inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
+    (θ₁ θ₂ : RealizationMap)
+    (qt: QTyp) (v₁ v₂ : Value) : Prop where
+  | clean_eq_nonref
+      (hpoison : qt.poison = false)
       (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
       (hagree : v₁ = v₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | noPred_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
+  | poisoned_noPred_eq_nonref
+      (hpoison : qt.poison = true)
+      (hpred : qt.pred = Predicate.noPred)
+      (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
+      (hagree : v₁ = v₂) :
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  | clean_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
+      (hpoison : qt.poison = false)
       (hetyp : qt.etyp = ETyp.ref t ls)
-      (hpred : qtypGuardTag qt = none)
+      (hlookup1 : θ₁.lookup l₁ = some a₁)
+      (hin1 : l₁ ∈ ls)
+      (hv1 : v₁ = Value.loc a₁)
+      (hlookup2 : θ₂.lookup l₂ = some a₂)
+      (hin2 : l₂ ∈ ls)
+      (hv2 : v₂ = Value.loc a₂) :
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  | poisoned_noPred_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
+      (hpoison : qt.poison = true)
+      (hpred : qt.pred = Predicate.noPred)
+      (hetyp : qt.etyp = ETyp.ref t ls)
       (hlookup1 : θ₁.lookup l₁ = some a₁)
       (hin1 : l₁ ∈ ls)
       (hv1 : v₁ = Value.loc a₁)
@@ -439,17 +468,19 @@ def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : 
       (hagree : v₁ = v₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
   -- False-regime case for guard-closures: both runs fail the predicate
-  | withPred_false_both_fail (k : Tag)
+  | withPred_false_poisoned_fail (k : Tag)
       (hclos : isGuardClosure qt)
       (htag : qtypGuardTag qt = some k)
       (hregime : R k = some false)
+      (hpoison : qt.poison = true)
       (hfail1 : ¬qtypPredHolds predSat qt μ₁ v₁)
       (hfail2 : ¬qtypPredHolds predSat qt μ₂ v₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
   -- False-regime case for guard-only: unconstrained (values may differ)
-  | guardOnly_false_any (k : Tag)
+  | guardOnly_false_poisoned_any (k : Tag)
       (hgo : qt.pred = Predicate.guardOnly k)
-      (hregime : R k = some false) :
+      (hregime : R k = some false)
+      (hpoison : qt.poison = true) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
 
 -- Two initial states agree on a critical location under a given regime.

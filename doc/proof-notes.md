@@ -9,39 +9,20 @@ is divided in two parts:
 typechecker satisfies "step" specification it must also satisfy "main"
 specification. The "step" specification is designed to be easily
 provable by induction and to support multi-step reasoning (when the
-output if the typechecker becomes an input of another call of the
+output of the typechecker becomes an input of another call of the
 typechecker). This theorem is not proved yet.
 
-### The "bridge" lemna
+### The "bridge" lemma
 
 `TypeSystemEnforcesNonInterference_impl`: the proof that "step"
 specification implies "main" specification. This lemma depends on the
-property that typechecker satisfies "guardless if clean" invariant.
-The invariant says that if the typechcekcer's input satisfies
-"guardless if clean" property, so does the output.
-
-During the proof of "guardless if clean" invariant it was observed
-that it needs to be formulated in a "deep" way in order to be provable
-by induction. The property is called "deep" when it is applied not
-only to the QType or the list of QTypes, but also to the QTypes in
-captured environment if QType is a closure. `deepVarEnvProperty`
-provides a general construction to make a property "deep".
-
-The "guardless if clean" invariant is proved and the lemma is almost
-proved - right now the proof relies on two lemmas with incomplete
-proofs.
-
-`wfInputSpec_and_ctxMatchecInputSpec_imply_guardlessIfCleanMem` and
-`wfInputSpec_and_ctxMatchecInputSpec_imply_guardlessIfCleanVars`: this
-lemmas establish the fact that if the assumptions of the "main"
-specification hold, then typechecker inputs satisfy the "guardless if
-clean" property. These lemmas are needed to apply the "guardless if
-clean" invariant.
-
-I have a conjecture that in order to complete the proof of these
-lemmas some properties involved in the "main" and "step"
-specifications (i.e. `wfInputSpec`, `ctxMatchesInputSpec`) must also
-be made "deep".
+current agreement relation for values. The proof no longer relies on
+the "guardless if clean" invariant. Instead, the non-interference
+definition was strengthened so that clean values must agree by equality
+(and clean references must agree via locset-based realization), and
+poisoned values with no predicate can also agree by equality. This
+removes the need to prove "clean implies no predicate" to discharge
+agreement cases.
 
 ## Proof files status
 
@@ -60,25 +41,20 @@ files, with the proofs commented out and marked as needing repair:
    - Status: All proof code commented out with `/- TODO: this proof needs repairs. -/`
    - Notes: Proof structure is present but needs completion
 
-3. **`NonInterferenceProofs.lean`**
+### Files with proofs in progress
+
+1. **`NonInterferenceProofs.lean`**
    - Statement: `NonInterference.lean`
-   - Status: All proof code commented out with `/- TODO: this proof needs repairs. -/`
-   - Notes: Proof structure is present but needs completion
+   - Status: Proofs are active but contain `sorry` placeholders
+   - Notes: The bridge proof now uses the strengthened agreement relation
 
-4. **`TypecheckPExprPreservesTypestateProofs.lean`**
-   - Statement: `TypecheckPExprPreservesTypestate.lean`
-   - Status: All proof code commented out with `/- TODO: this proof needs repairs. -/`
-   - Notes: Proof structure is present but needs completion
+### Removed files
 
-5. **`GuardlessIfClean.lean`**
-   - Status: Entire file marked with `/- TODO: this proof needs repairs. -/` at the top
-   - Notes: This file contains both definitions and proofs. The proofs need to be updated
-     to handle merged typing closures (lists of closures instead of single closures).
-     Recent changes to support merged closures have been made but proofs need repair.
+- `GuardlessIfClean.lean` - Removed (guardless reasoning is no longer used in the NI bridge proof)
 
-### Files with active proofs
+### Files with completed proofs
 
-The following files contain active proofs that compile:
+The following files contain completed proofs that compile:
 
 - `Equality.lean` - Proofs for BEq, LawfulBEq, and DecidableEq instances
 - `JoinMemEnv.lean` - Proofs for memory environment joining operations
@@ -89,6 +65,7 @@ The following files contain active proofs that compile:
 - `ToExpr.lean` - Proofs related to expression conversion
 - `VarEnvPreservation.lean` - Proofs for variable environment preservation
 - `IOHelpers.lean` - Helper functions for IO-related proofs
+- `TypecheckPExprPreservesTypestateProofs.lean` - Proofs are complete; some linter options are disabled in-file
 
 ### Recent changes affecting proofs
 
@@ -98,5 +75,6 @@ carrying a single closure to carrying a list of closures (`List FnTClosure` and
 
 - `Equality.lean` - Updated to handle list equality for closures
 - `JoinMemEnv.lean` - Updated to use `joinPredicates` function
-- `GuardlessIfClean.lean` - Updated inductive definitions to handle lists (needs repair)
 - `NonInterference.lean` - Updated `deepQTypProperty` to check all closures in lists
+- `NonInterference.lean` - `agreeValueUnder` strengthened to enforce agreement
+  for clean values and for poisoned values without predicates
