@@ -130,12 +130,28 @@ private lemma wfInputSpec_and_ctxMatchecInputSpec_imply_guardlessIfCleanMem {s c
         have hetyp := (hspec_locs l qt hspecOption).1
         simp [nonClosureQTyp, hetyp]
 
+private lemma guardlessClosure_of_nonSpecVar {s : InputSpec} {ctx : TypeContext} {x qt} :
+  ctxMatchesInputSpec s ctx →
+  ctx.varEnv.lookup x = some qt →
+  ¬ s.vars.hasKey x →
+  guardlessIfCleanClosureEnv qt := by
+  -- TODO: port from old proof using ctxMatchesInputSpec non-spec invariants.
+  sorry
+
+private lemma guardlessClosure_of_specVar {s : InputSpec} {x qt} :
+  wfInputSpecVarsDeep s.vars →
+  s.vars.lookup x = some qt →
+  guardlessIfCleanClosureEnv qt := by
+  -- TODO: port from old proof using deepVarEnvProperty on input specs.
+  sorry
+
 private lemma wfInputSpec_and_ctxMatchecInputSpec_imply_guardlessIfCleanVars {s ctx} :
   wfInputSpec s →
   ctxMatchesInputSpec s ctx →
   guardlessIfCleanVars ctx.varEnv := by
   intro his hctx
   classical
+  have hctx_all := hctx
   obtain ⟨_, hctx_vars, _, hctx_nonSpec_vars⟩ := hctx
   obtain ⟨_, hspec_vars⟩ := deep_implies_shallow his.2
   refine guardlessIfCleanVars.intro _ ?_
@@ -173,21 +189,24 @@ private lemma wfInputSpec_and_ctxMatchecInputSpec_imply_guardlessIfCleanVars {s 
         simp [qtypGuardTag, hpred]
   · cases hspecOption : s.vars.lookup x with
     | none =>
-        rcases hetyp : qt.etyp
-        · apply guardlessIfCleanClosureEnv.other
-          simp [nonClosureQTyp, hetyp]
-        · apply guardlessIfCleanClosureEnv.other
-          simp [nonClosureQTyp, hetyp]
-        · apply guardlessIfCleanClosureEnv.other
-          simp [nonClosureQTyp, hetyp]
-        · apply guardlessIfCleanClosureEnv.other
-          simp [nonClosureQTyp, hetyp]
-        · apply guardlessIfCleanClosureEnv.other
-          simp [nonClosureQTyp, hetyp]
-        · sorry
-        · sorry
+        have hnot : ¬ s.vars.hasKey x := by
+          intro hhasKey
+          have hcontains : s.vars.contains x = true := by
+            simpa [VarTypeEnv.hasKey] using hhasKey
+          have hmem : x ∈ s.vars := (Std.ExtTreeMap.contains_iff_mem).1 hcontains
+          have hsome : (s.vars[x]?).isSome = true :=
+            (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
+          have hnone : s.vars[x]? = none := by
+            simpa [VarTypeEnv.lookup] using hspecOption
+          simp [hnone] at hsome
+        exact guardlessClosure_of_nonSpecVar hctx_all hlookup hnot
     | some qtSpec =>
-        sorry
+        have hctx_lookup := hctx_vars (by simpa using hspecOption)
+        have hsomeEq : some qt = some qtSpec :=
+          Eq.trans (Eq.symm hlookup) hctx_lookup
+        have hqtEq : qt = qtSpec := Option.some.inj hsomeEq
+        subst hqtEq
+        exact guardlessClosure_of_specVar his.2 hspecOption
 
 private lemma ret_eq_of_agreeValueUnder_nonref
   {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
