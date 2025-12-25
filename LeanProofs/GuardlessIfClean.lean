@@ -3617,3 +3617,56 @@ lemma guardlessIfClean_invariant
     | externPfn _ _ _ => sorry
 
 -/
+
+-- Minimal reintroduction of guardless invariants for downstream proofs.
+-- These are admitted here and can be revisited once the original proof is repaired.
+mutual
+  inductive guardlessIfCleanQTypDeep : QTyp → Prop
+  | intro (qt : QTyp) :
+      guardlessIfCleanQTyp qt →
+      guardlessIfCleanClosureEnv qt →
+      guardlessIfCleanQTypDeep qt
+
+  inductive guardlessIfCleanMem : MemoryTypeEnv → Prop
+  | intro (locs : MemoryTypeEnv) :
+      (∀ {l qt}, locs.lookup l = some qt → guardlessIfCleanQTypDeep qt) →
+      guardlessIfCleanMem locs
+
+  inductive guardlessIfCleanVars : VarTypeEnv → Prop
+  | intro (vars : VarTypeEnv) :
+      (∀ {x qt}, vars.lookup x = some qt → guardlessIfCleanQTypDeep qt) →
+      guardlessIfCleanVars vars
+
+  inductive guardlessIfCleanCaptured : CapturedVarEnv → Prop
+  | intro (vars : CapturedVarEnv) :
+      (∀ {x qt}, (x, qt) ∈ vars → guardlessIfCleanQTypDeep qt) →
+      guardlessIfCleanCaptured vars
+
+  inductive guardlessIfCleanClosureEnv : QTyp → Prop
+  | arrow (qt : QTyp) (env : CapturedVarEnv) :
+      qt.etyp = ETyp.arrow _ _ _ [FnTClosure.regular _ _ env] →
+      guardlessIfCleanCaptured env →
+      guardlessIfCleanClosureEnv qt
+  | parrow (qt : QTyp) (env : CapturedVarEnv) :
+      qt.etyp = ETyp.parrow _ _ _ [PFnTClosure.regular _ _ env] →
+      guardlessIfCleanCaptured env →
+      guardlessIfCleanClosureEnv qt
+  | other (qt : QTyp) :
+      nonClosureQTyp qt →
+      guardlessIfCleanClosureEnv qt
+end
+
+lemma guardlessIfCleanQTypDeep.guardless {qt : QTyp} :
+    guardlessIfCleanQTypDeep qt → guardlessIfCleanQTyp qt := by
+  intro h
+  cases h with
+  | intro _ hguardless _ => exact hguardless
+
+lemma guardlessIfClean_invariant
+    (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
+    guardlessIfCleanMem ctx.memEnv →
+    guardlessIfCleanVars ctx.varEnv →
+    typecheck ctx e fuel = .ok res →
+    guardlessIfCleanMem res.memEnv' ∧ guardlessIfCleanQTypDeep res.qualType := by
+  -- TODO: re-enable and repair the full proof from the archived development.
+  sorry
