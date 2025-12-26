@@ -7,7 +7,6 @@ import LeanPoison.BigStep
 import Mathlib.Data.List.Forall2
 
 import LeanProofs.NonInterference
-import LeanProofs.IOHelpers
 
 open List
 open scoped MemoryTypeEnv
@@ -245,7 +244,7 @@ theorem TypeSystemEnforcesNonInterference_impl :
       exact hLocsAgree' (l, qt) hmem
     cases hlocEntry with
     | agree_values _l' _qt' a₀' a₁' n₀ n₁ _hreal₀ _hreal₁ hlookup₀ hlookup₁ hagree =>
-        -- Ported from old proof: reduce to equality of stored ints under guardless agreement.
+        -- Reduce to equality of stored ints via agreement on the stored values.
         have hvalEq : n₀ = n₁ := by
           cases hagree with
           | clean_eq_nonref _ _ hval =>
