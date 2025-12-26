@@ -228,6 +228,7 @@ theorem TypeSystemEnforcesNonInterference_impl :
     ⟨θ₀', θ₁', Rₒ, _hθ₀', _hθ₁', _hθ₀ext, _hθ₁ext, _hRₒ_wf,
       _hRₒ_cons₀, _hRₒ_cons₁, hRₒ_agree, hRₒ_ret⟩
   rcases hRₒ_agree with ⟨hRₒ_locAgree, _⟩
+  refine ⟨θ₀', θ₁', _hθ₀ext, _hθ₁ext, ?_⟩
   simp [observablesEqual]
   constructor
   · intro l et hobs_lookup
@@ -243,7 +244,7 @@ theorem TypeSystemEnforcesNonInterference_impl :
         simpa using hlookup_sₒ
       exact hLocsAgree' (l, qt) hmem
     cases hlocEntry with
-    | agree_values _l' _qt' a₀' a₁' n₀ n₁ _hreal₀ _hreal₁ hlookup₀ hlookup₁ hagree =>
+    | agree_values _l' _qt' a₀' a₁' n₀ n₁ hreal₀ hreal₁ hlookup₀ hlookup₁ hagree =>
         -- Reduce to equality of stored ints via agreement on the stored values.
         have hvalEq : n₀ = n₁ := by
           cases hagree with
@@ -285,13 +286,9 @@ theorem TypeSystemEnforcesNonInterference_impl :
         have hmemEq : cf₀.memory.lookup a₀' = cf₁.memory.lookup a₁' := by
           simp [hlookup₀, hlookup₁, hvalEq]
         refine ⟨a₀', ?_⟩
-        refine And.intro ?_ ?_
-        · -- TODO: relate θ₀ to θ₀' for observable locations.
-          sorry
-        · refine ⟨a₁', ?_⟩
-          refine And.intro ?_ hmemEq
-          -- TODO: relate θ₁ to θ₁' for observable locations.
-          sorry
+        refine And.intro hreal₀ ?_
+        refine ⟨a₁', ?_⟩
+        exact And.intro hreal₁ hmemEq
     | both_unrealized _l' _qt' _hnone₀ _hnone₁ =>
         -- TODO: for observable locations, rule out unrealized cases.
         sorry

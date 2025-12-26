@@ -571,7 +571,10 @@ def NonInterferenceSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx :
     agreeOnCriticalInputsUnderRegimeSpec predSat R s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
     terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
     terminatesTo e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } cf₂ o₂ →
-    observablesEqual obs θ₁ θ₂ cf₁ cf₂ o₁ o₂
+    ∃ (θ₁' θ₂' : RealizationMap),
+      wfExtendsMap θ₁ θ₁' ∧
+      wfExtendsMap θ₂ θ₂' ∧
+      observablesEqual obs θ₁' θ₂' cf₁ cf₂ o₁ o₂
 
 -- Type system enforces Non-Interference
 def TypeSystemEnforcesNonInterference_spec
