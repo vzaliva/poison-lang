@@ -430,21 +430,26 @@ def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : 
   List.Forall (locsRegime predSat R μ θ) s.locs.toList ∧
   List.Forall (varsRegime predSat R μ ρ) s.vars.toList
 
--- Two values agree under a given regime and memory environments
+-- Two values agree under a given regime and memory environments.
+-- NOTE: For clean values we ignore predicates entirely and demand concrete agreement.
+-- This is a deliberate strengthening so the proof does not rely on “clean ⇒ no predicate”.
 inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
     (θ₁ θ₂ : RealizationMap)
     (qt: QTyp) (v₁ v₂ : Value) : Prop where
+  -- Clean, non-ref values must agree by equality (predicate ignored).
   | clean_eq_nonref
       (hpoison : qt.poison = false)
       (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
       (hagree : v₁ = v₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  -- Poisoned, predicate-free non-ref values still agree by equality.
   | poisoned_noPred_eq_nonref
       (hpoison : qt.poison = true)
       (hpred : qt.pred = Predicate.noPred)
       (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
       (hagree : v₁ = v₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  -- Clean refs agree via locset-realization, not concrete address equality (predicate ignored).
   | clean_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
       (hpoison : qt.poison = false)
       (hetyp : qt.etyp = ETyp.ref t ls)
@@ -455,6 +460,7 @@ inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ�
       (hin2 : l₂ ∈ ls)
       (hv2 : v₂ = Value.loc a₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  -- Poisoned, predicate-free refs also agree via locset-realization.
   | poisoned_noPred_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
       (hpoison : qt.poison = true)
       (hpred : qt.pred = Predicate.noPred)
@@ -466,12 +472,26 @@ inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ�
       (hin2 : l₂ ∈ ls)
       (hv2 : v₂ = Value.loc a₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  -- Guard-true, non-ref values agree by equality.
   | withPred_true_eq (k : Tag)
       (htag : qtypGuardTag qt = some k)
       (hregime : R k = some true)
+      (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
       (hagree : v₁ = v₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  -- False-regime case for guard-closures: both runs fail the predicate
+  -- Guard-true refs agree via locset-realization.
+  | withPred_true_ref (k : Tag) {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
+      (htag : qtypGuardTag qt = some k)
+      (hregime : R k = some true)
+      (hetyp : qt.etyp = ETyp.ref t ls)
+      (hlookup1 : θ₁.lookup l₁ = some a₁)
+      (hin1 : l₁ ∈ ls)
+      (hv1 : v₁ = Value.loc a₁)
+      (hlookup2 : θ₂.lookup l₂ = some a₂)
+      (hin2 : l₂ ∈ ls)
+      (hv2 : v₂ = Value.loc a₂) :
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  -- False-regime case for guard-closures: both runs fail the predicate.
   | withPred_false_poisoned_fail (k : Tag)
       (hclos : isGuardClosure qt)
       (htag : qtypGuardTag qt = some k)
@@ -480,7 +500,7 @@ inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ�
       (hfail1 : ¬qtypPredHolds predSat qt μ₁ v₁)
       (hfail2 : ¬qtypPredHolds predSat qt μ₂ v₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  -- False-regime case for guard-only: unconstrained (values may differ)
+  -- False-regime case for guard-only: unconstrained (values may differ).
   | guardOnly_false_poisoned_any (k : Tag)
       (hgo : qt.pred = Predicate.guardOnly k)
       (hregime : R k = some false)

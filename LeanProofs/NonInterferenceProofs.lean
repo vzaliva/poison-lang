@@ -11,8 +11,6 @@ import LeanProofs.NonInterference
 open List
 open scoped MemoryTypeEnv
 
-section NonInterferenceSpec_step_spec
-
 -- `i` and `o` subscript indexes correspond to input and outputs
 -- `0` and `1` subscript indexes correspond to two runs of the program
 def NonInterferenceSpec_step
@@ -60,21 +58,7 @@ def TypeSystemEnforcesNonInterference_step_spec
     sₒ.locs ⊆ res.memEnv' →
     NonInterferenceSpec_step e sᵢ sₒ ctxᵢ res.qualType isRetObservable predSat
 
-end NonInterferenceSpec_step_spec
-
-section TypeSystemEnforcesNonInterference_proof
-
-theorem TypeSystemEnforcesNonInterference_step
-  (e : Expr)
-  (sᵢ sₒ : InputSpec)
-  (ctxᵢ : TypeContext)
-  (isRetObservable : Bool)
-  (predSat : PredSat) :
-  TypeSystemEnforcesNonInterference_step_spec
-    e sᵢ sₒ ctxᵢ isRetObservable predSat := by
-  sorry
-
-section TypeSystemEnforcesNonInterference_impl_sketch
+section TypeSystemEnforcesNonInterference_impl_proof
 
 private def outputSpec (res : TypeResult) : InputSpec :=
   { locs := res.memEnv', vars := ({} : VarTypeEnv) }
@@ -96,7 +80,10 @@ private lemma ret_eq_of_agreeValueUnder_nonref
   | poisoned_noPred_ref _ _ hetyp _ _ _ _ _ _ =>
       exfalso
       exact hnotref ⟨_, _, hetyp⟩
-  | withPred_true_eq _ _ _ hval => exact hval
+  | withPred_true_eq _ _ _ _ hval => exact hval
+  | withPred_true_ref _ _ _ hetyp _ _ _ _ _ _ =>
+      exfalso
+      exact hnotref ⟨_, _, hetyp⟩
   | withPred_false_poisoned_fail k _ htag hregime _ _ _ =>
       cases hret_wf with
       | noPred hpred =>
@@ -259,9 +246,11 @@ theorem TypeSystemEnforcesNonInterference_impl :
               cases hv1
           | poisoned_noPred_ref _ _ _ _ _ hv1 _ _ _ =>
               cases hv1
-          | withPred_true_eq _ _ _ hval =>
+          | withPred_true_eq _ _ _ _ hval =>
               cases hval
               rfl
+          | withPred_true_ref _ _ _ _ _ _ hv1 _ _ _ =>
+              cases hv1
           | withPred_false_poisoned_fail _ _ _ _ hpoison' _ _ =>
               have hcontra : False := by
                 have hpoison'' : false = true := by
@@ -319,8 +308,94 @@ theorem TypeSystemEnforcesNonInterference_impl :
         rcases hret_step with ⟨hret_wf, hret_agree⟩
         cases et with
         | ref t ls =>
-            -- TODO: adapt to ref observability via θ₀'/θ₁' and wfExtendsMap.
-            sorry
+            rcases hobs_ret _ hretOpt with ⟨hret_et, hret_poison⟩
+            cases hret_agree with
+            | clean_ref hpoison hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                rename_i t' ls' l₁ l₂ a₁ a₂
+                have href : ETyp.ref t' ls' = ETyp.ref t ls := by
+                  calc
+                    ETyp.ref t' ls' = res.qualType.etyp := by
+                      symm
+                      exact hetyp
+                    _ = ETyp.ref t ls := by
+                      exact hret_et
+                cases href
+                refine And.intro ?_ ?_
+                · refine ⟨l₁, ?_⟩
+                  refine And.intro hin1 ?_
+                  refine ⟨a₁, ?_⟩
+                  exact And.intro hlookup1 hv1
+                · refine ⟨l₂, ?_⟩
+                  refine And.intro hin2 ?_
+                  refine ⟨a₂, ?_⟩
+                  exact And.intro hlookup2 hv2
+            | poisoned_noPred_ref hpoison _ _ _ _ _ _ _ _ =>
+                have hcontra : False := by
+                  have hpoison' : false = true := by
+                    calc
+                      false = res.qualType.poison := by
+                        symm
+                        exact hret_poison
+                      _ = true := by
+                        exact hpoison
+                  cases hpoison'
+                exact (False.elim hcontra)
+            | withPred_true_ref _ htag hregime hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                rename_i t' ls' l₁ l₂ a₁ a₂
+                have href : ETyp.ref t' ls' = ETyp.ref t ls := by
+                  calc
+                    ETyp.ref t' ls' = res.qualType.etyp := by
+                      symm
+                      exact hetyp
+                    _ = ETyp.ref t ls := by
+                      exact hret_et
+                cases href
+                refine And.intro ?_ ?_
+                · refine ⟨l₁, ?_⟩
+                  refine And.intro hin1 ?_
+                  refine ⟨a₁, ?_⟩
+                  exact And.intro hlookup1 hv1
+                · refine ⟨l₂, ?_⟩
+                  refine And.intro hin2 ?_
+                  refine ⟨a₂, ?_⟩
+                  exact And.intro hlookup2 hv2
+            | clean_eq_nonref _ hnotref _ =>
+                have : False := by
+                  apply hnotref
+                  exact ⟨t, ls, hret_et⟩
+                exact (False.elim this)
+            | poisoned_noPred_eq_nonref _ _ hnotref _ =>
+                have : False := by
+                  apply hnotref
+                  exact ⟨t, ls, hret_et⟩
+                exact (False.elim this)
+            | withPred_true_eq _ _ _ hnotref _ =>
+                have : False := by
+                  apply hnotref
+                  exact ⟨t, ls, hret_et⟩
+                exact (False.elim this)
+            | withPred_false_poisoned_fail _ _ _ _ hpoison' _ _ =>
+                have hcontra : False := by
+                  have hpoison'' : false = true := by
+                    calc
+                      false = res.qualType.poison := by
+                        symm
+                        exact hret_poison
+                      _ = true := by
+                        exact hpoison'
+                  cases hpoison''
+                exact (False.elim hcontra)
+            | guardOnly_false_poisoned_any _ _ _ hpoison' =>
+                have hcontra : False := by
+                  have hpoison'' : false = true := by
+                    calc
+                      false = res.qualType.poison := by
+                        symm
+                        exact hret_poison
+                      _ = true := by
+                        exact hpoison'
+                  cases hpoison''
+                exact (False.elim hcontra)
         | int =>
             have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
               rcases hobs_ret _ hretOpt with ⟨het, _⟩
@@ -352,12 +427,24 @@ theorem TypeSystemEnforcesNonInterference_impl :
               simp [het]
             exact ret_eq_of_agreeValueUnder_nonref hnotref hret_wf hret_agree
 
-end TypeSystemEnforcesNonInterference_impl_sketch
+end TypeSystemEnforcesNonInterference_impl_proof
 
+section TypeSystemEnforcesNonInterference_step_proof
 
+theorem TypeSystemEnforcesNonInterference_step
+  (e : Expr)
+  (sᵢ sₒ : InputSpec)
+  (ctxᵢ : TypeContext)
+  (isRetObservable : Bool)
+  (predSat : PredSat) :
+  TypeSystemEnforcesNonInterference_step_spec
+    e sᵢ sₒ ctxᵢ isRetObservable predSat := by
+  sorry
+
+end TypeSystemEnforcesNonInterference_step_proof
+
+-- Top-level theorem
 theorem TypeSystemEnforcesNonInterference (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
   TypeSystemEnforcesNonInterference_spec e s obs := by
   apply TypeSystemEnforcesNonInterference_impl
   exact TypeSystemEnforcesNonInterference_step
-
-end TypeSystemEnforcesNonInterference_proof
