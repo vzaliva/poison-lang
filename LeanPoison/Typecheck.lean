@@ -501,9 +501,18 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
   -- Try to convert the condition e to a PExpr
   let conditionPExpr ← e.toPExpr
   let sCaptured := VarTypeEnv.toCaptured S
+  let checkNoPredOnArrow (qt : QTyp) : TypecheckM Unit := do
+    match qt.etyp with
+    | ETyp.arrow _ _ _ _ | ETyp.parrow _ _ _ _ =>
+        match qt.pred with
+        | Predicate.noPred => pure ()
+        | _ => throw "Function types cannot carry predicates in matchGuard"
+    | _ => pure ()
 
   -- Helper function to check if a predicate's test expression matches the condition
   let checkPredicate (arg : PExpr) (qt : QTyp) : TypecheckM (Option (Tag × Deps)) :=
+    do
+    checkNoPredOnArrow qt
     match qt.pred with
     | Predicate.noPred => return none
     | Predicate.guardOnly _tag => return none  -- Guard-only cannot be matched syntactically
@@ -536,6 +545,7 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
             LocSet.foldM ls (init := (none : Option Predicate)) (fun accPred? l => do
               match G.get? l with
               | some memQt =>
+                  checkNoPredOnArrow memQt
                   let nextPred :=
                     match accPred? with
                     | none => memQt.pred
@@ -546,6 +556,7 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
           let depsMerged ← LocSet.foldM ls (init := LocSet.empty) (fun dacc l => do
             match G.get? l with
             | some memQt =>
+                checkNoPredOnArrow memQt
                 let deps ← extractDepsFromPred memQt.pred
                 pure (LocSet.union dacc (LocSet.union (LocSet.singleton l) deps))
             | none => throw s!"Location {l} not found in memory environment during matchGuard")
