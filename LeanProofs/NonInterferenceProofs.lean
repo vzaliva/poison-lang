@@ -36,6 +36,7 @@ def NonInterferenceSpec_step
         ∃ (θ₀' θ₁' : RealizationMap) (Rₒ : Regime),
           wfRealizationMap θ₀' ∧ wfRealizationMap θ₁' ∧
           wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
+          fullyRealizes sₒ θ₀' ∧ fullyRealizes sₒ θ₁' ∧
           wfRegime Rₒ sₒ ∧
           consistentRegimeSpec predSat Rₒ sₒ cf₀.memory cf₀.varEnv θ₀' ∧
           consistentRegimeSpec predSat Rₒ sₒ cf₁.memory cf₁.varEnv θ₁' ∧
@@ -225,7 +226,7 @@ theorem TypeSystemEnforcesNonInterference_impl :
       hR hθ₀ hθ₁ hics₀ hics₁ hric₀ hric₁ hcrs₀ hcrs₁ hagree
       a₀ a₁ pm ht₀ ht₁
   rcases hstepNI with
-    ⟨θ₀', θ₁', Rₒ, _hθ₀', _hθ₁', _hθ₀ext, _hθ₁ext, _hRₒ_wf,
+    ⟨θ₀', θ₁', Rₒ, _hθ₀', _hθ₁', _hθ₀ext, _hθ₁ext, hfull₀, hfull₁, _hRₒ_wf,
       _hRₒ_cons₀, _hRₒ_cons₁, hRₒ_agree, hRₒ_ret⟩
   rcases hRₒ_agree with ⟨hRₒ_locAgree, _⟩
   refine ⟨θ₀', θ₁', _hθ₀ext, _hθ₁ext, ?_⟩
@@ -289,9 +290,22 @@ theorem TypeSystemEnforcesNonInterference_impl :
         refine And.intro hreal₀ ?_
         refine ⟨a₁', ?_⟩
         exact And.intro hreal₁ hmemEq
-    | both_unrealized _l' _qt' _hnone₀ _hnone₁ =>
-        -- TODO: for observable locations, rule out unrealized cases.
-        sorry
+    | both_unrealized _l' _qt' hnone₀ _hnone₁ =>
+        have hlookup_some : sₒ.locs[l]? = some qt := by
+          simpa [MemoryTypeEnv.lookup] using hlookup_sₒ
+        have hlookup_isSome : (sₒ.locs[l]?).isSome = true := by
+          simp [hlookup_some]
+        have hmem : l ∈ sₒ.locs :=
+          (Std.ExtTreeMap.mem_iff_isSome_getElem?).2 hlookup_isSome
+        have hcontains : sₒ.locs.contains l = true :=
+          (Std.ExtTreeMap.contains_iff_mem).2 hmem
+        have hhasKey : sₒ.locs.hasKey l := by
+          simpa [MemoryTypeEnv.hasKey] using hcontains
+        have hreal := hfull₀ l hhasKey
+        have : False := by
+          apply hreal
+          simpa using hnone₀
+        exact (False.elim this)
   · cases hretOpt : obs.retEtyp? with
     | none =>
         -- sameRet = True

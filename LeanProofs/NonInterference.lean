@@ -64,6 +64,10 @@ structure InputSpec where
   vars : VarTypeEnv
 deriving Repr
 
+-- Output realizations should include every location in the spec.
+def fullyRealizes (s : InputSpec) (θ : RealizationMap) : Prop :=
+  ∀ l, s.locs.hasKey l → θ.lookup l ≠ none
+
 open List
 
 /-- Keys are unique in both `s.locs` (addresses) and `s.vars` (names). -/
