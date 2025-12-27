@@ -439,7 +439,65 @@ theorem TypeSystemEnforcesNonInterference_step
   (predSat : PredSat) :
   TypeSystemEnforcesNonInterference_step_spec
     e sᵢ sₒ ctxᵢ isRetObservable predSat := by
-  sorry
+  unfold TypeSystemEnforcesNonInterference_step_spec
+  intro hctx
+  intro fuel
+  induction fuel using Nat.strong_induction_on with
+  | _ n IH =>
+    intro res htc hsubset
+    cases n with
+    | zero =>
+      simp [typecheck, typecheckExpr] at htc
+    | succ fuel =>
+      cases e with
+      | unit =>
+        sorry
+      | str s =>
+        sorry
+      | num n =>
+        sorry
+      | bool b =>
+        sorry
+      | var name =>
+        sorry
+      | op e1 op e2 =>
+        sorry
+      | unaryop op e =>
+        sorry
+      | ite e1 e2 e3 =>
+        sorry
+      | newRef e =>
+        sorry
+      | assign e1 e2 =>
+        sorry
+      | deref e1 =>
+        sorry
+      | seq e1 e2 =>
+        sorry
+      | kwhile e1 e2 =>
+        sorry
+      | vlet x e1 e2 =>
+        sorry
+      | fn x paramType body returnType =>
+        sorry
+      | pfn x paramType body returnType =>
+        sorry
+      | app e1 e2 =>
+        sorry
+      | rand e =>
+        sorry
+      | frand e =>
+        sorry
+      | printString e =>
+        sorry
+      | printInt e =>
+        sorry
+      | externVal typ poison pred =>
+        sorry
+      | externFn arg argTyp retSpec effects =>
+        sorry
+      | externPfn arg argTyp retSpec =>
+        sorry
 
 end TypeSystemEnforcesNonInterference_step_proof
 
