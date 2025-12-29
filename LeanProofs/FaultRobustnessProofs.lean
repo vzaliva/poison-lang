@@ -7,6 +7,7 @@ import LeanPoison.BigStep
 import Mathlib.Data.List.Forall2
 
 import LeanProofs.FaultRobustness
+import LeanProofs.IOHelpers
 
 open List
 open scoped MemoryTypeEnv
@@ -44,6 +45,138 @@ def StepFR
           wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
           agreeOnClean predSat R (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
           resultAgreesIfClean predSat R cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
+
+private lemma terminatesTo_num_inv (n : Int)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  terminatesTo (Expr.num n) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.num n := by
+  intro ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  have h_eval_world := LeanProofs.evalAtDefault_eq hbeval
+  cases fuel with
+  | zero =>
+      simp [LeanPoison.beval] at h_eval_world
+      cases h_eval_world
+  | succ fuel =>
+      simp [LeanPoison.beval] at h_eval_world
+      injection h_eval_world with hcfg hval
+      cases hcfg
+      cases hval
+      constructor <;> rfl
+
+private lemma terminatesTo_bool_inv (b : Bool)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  terminatesTo (Expr.bool b) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.bool b := by
+  intro ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  have h_eval_world := LeanProofs.evalAtDefault_eq hbeval
+  cases fuel with
+  | zero =>
+      simp [LeanPoison.beval] at h_eval_world
+      cases h_eval_world
+  | succ fuel =>
+      simp [LeanPoison.beval] at h_eval_world
+      injection h_eval_world with hcfg hval
+      cases hcfg
+      cases hval
+      constructor <;> rfl
+
+private lemma terminatesTo_unit_inv
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  terminatesTo Expr.unit { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.unit := by
+  intro ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  have h_eval_world := LeanProofs.evalAtDefault_eq hbeval
+  cases fuel with
+  | zero =>
+      simp [LeanPoison.beval] at h_eval_world
+      cases h_eval_world
+  | succ fuel =>
+      simp [LeanPoison.beval] at h_eval_world
+      injection h_eval_world with hcfg hval
+      cases hcfg
+      cases hval
+      constructor <;> rfl
+
+private lemma terminatesTo_str_inv (s : String)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  terminatesTo (Expr.str s) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.str s := by
+  intro ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  have h_eval_world := LeanProofs.evalAtDefault_eq hbeval
+  cases fuel with
+  | zero =>
+      simp [LeanPoison.beval] at h_eval_world
+      cases h_eval_world
+  | succ fuel =>
+      simp [LeanPoison.beval] at h_eval_world
+      injection h_eval_world with hcfg hval
+      cases hcfg
+      cases hval
+      constructor <;> rfl
+
+private lemma terminatesTo_literal_inv
+  (e : Expr) (v : Value)
+  (hval : Expr.toValue? e = some v)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = v := by
+  intro ht
+  cases e with
+  | unit =>
+      simp [Expr.toValue?] at hval
+      cases hval
+      exact terminatesTo_unit_inv μ ρ a pm cf o ht
+  | num n =>
+      simp [Expr.toValue?] at hval
+      cases hval
+      exact terminatesTo_num_inv n μ ρ a pm cf o ht
+  | bool b =>
+      simp [Expr.toValue?] at hval
+      cases hval
+      exact terminatesTo_bool_inv b μ ρ a pm cf o ht
+  | str s =>
+      simp [Expr.toValue?] at hval
+      cases hval
+      exact terminatesTo_str_inv s μ ρ a pm cf o ht
+  | _ =>
+      simp [Expr.toValue?] at hval
+
+private lemma stepFR_literal
+  (ctx : TypeContext) (predSat : PredSat) (R : Regime)
+  (e : Expr) (res : TypeResult) (v : Value)
+  (hval : Expr.toValue? e = some v)
+  (hpoison : res.qualType.poison = false)
+  (hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls)
+  (hctxAfter : ctxAfter ctx res = ctx) :
+  StepFR ctx R e res predSat := by
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
+  intro hθ₀ hθ₁ hric₀ hric₁ hagree a₀ a₁ pm ht₀ ht₁
+  have hterm₀ := terminatesTo_literal_inv e v hval μ₀ ρ₀ a₀ pm cf₀ o₀ ht₀
+  have hterm₁ := terminatesTo_literal_inv e v hval μ₁ ρ₁ a₁ pm cf₁ o₁ ht₁
+  rcases hterm₀ with ⟨hcf₀, ho₀⟩
+  rcases hterm₁ with ⟨hcf₁, ho₁⟩
+  subst hcf₀
+  subst hcf₁
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_⟩
+  · refine ⟨?_, ?_⟩
+    · intro l a hlookup
+      exact hlookup
+    · intro hwf
+      exact hwf
+  · refine ⟨?_, ?_⟩
+    · intro l a hlookup
+      exact hlookup
+    · intro hwf
+      exact hwf
+  · simpa [hctxAfter] using hagree
+  · intro _hclean
+    have hval' : o₀ = o₁ := by
+      simp [ho₀, ho₁]
+    exact agreeValueUnder.clean_eq_nonref hpoison hnotref hval'
 
 private lemma ret_eq_of_agreeValueUnder_nonref
   {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
@@ -403,13 +536,89 @@ theorem TypeSystemEnforcesFaultRobustness_step
     | succ fuel =>
         cases e with
         | unit =>
-            sorry
+            simp [typecheck, typecheckExpr, typecheckUnit] at htc
+            let res_expected : TypeResult := {
+              qualType := ⟨ETyp.unit, false, Predicate.noPred⟩
+              memEnv' := ctxᵢ.memEnv
+              tagEnv' := ctxᵢ.tagEnv
+              nextLoc' := ctxᵢ.nextLoc
+              nextTag' := ctxᵢ.nextTag
+            }
+            have hres : res = res_expected := by
+              cases htc
+              rfl
+            have hval : Expr.toValue? Expr.unit = some Value.unit := by
+              simp [Expr.toValue?]
+            have hpoison : res.qualType.poison = false := by
+              simp [hres, res_expected]
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hres, res_expected]
+            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+              simp [ctxAfter, hres, res_expected]
+            exact stepFR_literal ctxᵢ predSat R Expr.unit res Value.unit hval hpoison hnotref hctxAfter
         | num n =>
-            sorry
+            simp [typecheck, typecheckExpr, typecheckInt] at htc
+            let res_expected : TypeResult := {
+              qualType := ⟨ETyp.int, false, Predicate.noPred⟩
+              memEnv' := ctxᵢ.memEnv
+              tagEnv' := ctxᵢ.tagEnv
+              nextLoc' := ctxᵢ.nextLoc
+              nextTag' := ctxᵢ.nextTag
+            }
+            have hres : res = res_expected := by
+              cases htc
+              rfl
+            have hval : Expr.toValue? (Expr.num n) = some (Value.num n) := by
+              simp [Expr.toValue?]
+            have hpoison : res.qualType.poison = false := by
+              simp [hres, res_expected]
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hres, res_expected]
+            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+              simp [ctxAfter, hres, res_expected]
+            exact stepFR_literal ctxᵢ predSat R (Expr.num n) res (Value.num n) hval hpoison hnotref hctxAfter
         | bool b =>
-            sorry
+            simp [typecheck, typecheckExpr, typecheckBool] at htc
+            let res_expected : TypeResult := {
+              qualType := ⟨ETyp.bool, false, Predicate.noPred⟩
+              memEnv' := ctxᵢ.memEnv
+              tagEnv' := ctxᵢ.tagEnv
+              nextLoc' := ctxᵢ.nextLoc
+              nextTag' := ctxᵢ.nextTag
+            }
+            have hres : res = res_expected := by
+              cases htc
+              rfl
+            have hval : Expr.toValue? (Expr.bool b) = some (Value.bool b) := by
+              simp [Expr.toValue?]
+            have hpoison : res.qualType.poison = false := by
+              simp [hres, res_expected]
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hres, res_expected]
+            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+              simp [ctxAfter, hres, res_expected]
+            exact stepFR_literal ctxᵢ predSat R (Expr.bool b) res (Value.bool b) hval hpoison hnotref hctxAfter
         | str s =>
-            sorry
+            simp [typecheck, typecheckExpr, typecheckString] at htc
+            let res_expected : TypeResult := {
+              qualType := ⟨ETyp.string, false, Predicate.noPred⟩
+              memEnv' := ctxᵢ.memEnv
+              tagEnv' := ctxᵢ.tagEnv
+              nextLoc' := ctxᵢ.nextLoc
+              nextTag' := ctxᵢ.nextTag
+            }
+            have hres : res = res_expected := by
+              cases htc
+              rfl
+            have hval : Expr.toValue? (Expr.str s) = some (Value.str s) := by
+              simp [Expr.toValue?]
+            have hpoison : res.qualType.poison = false := by
+              simp [hres, res_expected]
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hres, res_expected]
+            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+              simp [ctxAfter, hres, res_expected]
+            exact stepFR_literal ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotref hctxAfter
         | var name =>
             sorry
         | op e1 op e2 =>
