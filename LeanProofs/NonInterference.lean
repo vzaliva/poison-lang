@@ -1,4 +1,6 @@
--- Non-Interference properties for the poison language
+-- Non-Interference properties for the poison language.
+-- NOTE: This file is deprecated in favor of Fault-Robustness (FR) and will be
+-- deleted eventually. It is kept temporarily as a reference/example.
 
 import LeanPoison.Syntax
 import LeanPoison.Typecheck

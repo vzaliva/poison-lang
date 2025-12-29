@@ -244,6 +244,12 @@ result of `e1`, then use that to add `x` as clean for `e2`). If you cannot deriv
 `agreeValueUnder`, the value must remain poisoned in the agreement relation, and
 observable equality cannot rely on it.
 
+**Caveat.** `agreeValueUnder` currently enforces equality for `poisoned` values
+with `no_pred`. As a result, a “faulty” input cannot be modeled by simply
+marking it poisoned unless it also carries a guard tag with `R(k) = false`. This
+is stronger than necessary but sound; the intended way to allow arbitrary
+variation is to attach a guard and let the regime disable it.
+
 ### Ghost locations and realisation maps (design check)
 
 **Motivation.** Logical locations in the typing context may be unrealised in a
