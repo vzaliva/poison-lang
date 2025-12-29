@@ -269,6 +269,13 @@ observed at runtime corresponds to a realised logical location in its locset,
 so realisation proofs can be derived when the program actually produces or
 dereferences a reference.
 
+**Observable locations.** In the top-level spec, `obs` is user-chosen, but the
+step theorem reasons over contexts that may include ghost locations. To avoid
+forcing realisation of ghosts, `observablesEqual` should treat a location as
+observationally equal when it is realised in both runs *or* unrealised in both
+runs. This keeps the bridge proof aligned with `agreeLocUnder` while still
+ensuring agreement whenever an observable location is actually realised.
+
 What still needs to be checked in FR:
 
 - The new “agree-on-clean” relation must not accidentally quantify over all

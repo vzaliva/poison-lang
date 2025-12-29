@@ -160,10 +160,12 @@ def observablesEqual (obs : ObservableSpec)
     (c₁ c₂ : Config) (o₁ o₂ : Value) : Prop :=
   let sameMem : Prop :=
     ∀ {l et}, obs.locs.lookup l = some et →
-      ∃ a₁ a₂,
+      (∃ a₁ a₂,
         θ₁.lookup l = some a₁ ∧
         θ₂.lookup l = some a₂ ∧
-        c₁.memory.lookup a₁ = c₂.memory.lookup a₂
+        c₁.memory.lookup a₁ = c₂.memory.lookup a₂)
+      ∨
+      (θ₁.lookup l = none ∧ θ₂.lookup l = none)
   let sameRet : Prop :=
     match obs.retEtyp? with
     | none => True
