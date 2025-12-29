@@ -392,7 +392,64 @@ section TypeSystemEnforcesFaultRobustness_step_proof
 theorem TypeSystemEnforcesFaultRobustness_step
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
   TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat := by
-  sorry
+  unfold TypeSystemEnforcesFaultRobustness_step_spec
+  intro fuel
+  induction fuel using Nat.strong_induction_on with
+  | _ n IH =>
+    intro res htc R
+    cases n with
+    | zero =>
+        simp [typecheck, typecheckExpr] at htc
+    | succ fuel =>
+        cases e with
+        | unit =>
+            sorry
+        | num n =>
+            sorry
+        | bool b =>
+            sorry
+        | str s =>
+            sorry
+        | var name =>
+            sorry
+        | op e1 op e2 =>
+            sorry
+        | unaryop op e =>
+            sorry
+        | ite e1 e2 e3 =>
+            sorry
+        | newRef e =>
+            sorry
+        | assign e1 e2 =>
+            sorry
+        | deref e =>
+            sorry
+        | seq e1 e2 =>
+            sorry
+        | kwhile e1 e2 =>
+            sorry
+        | vlet name e1 e2 =>
+            sorry
+        | fn name ty e1 ty2 =>
+            sorry
+        | pfn name ty e1 ty2 =>
+            sorry
+        | app e1 e2 =>
+            sorry
+        | rand e =>
+            sorry
+        | frand e =>
+            sorry
+        | printString e =>
+            sorry
+        | printInt e =>
+            sorry
+        | externVal ty b sp =>
+            sorry
+        | externFn name ty ret effs =>
+            sorry
+        | externPfn name ty ret =>
+            sorry
 
 end TypeSystemEnforcesFaultRobustness_step_proof
 
