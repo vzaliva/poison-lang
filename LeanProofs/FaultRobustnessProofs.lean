@@ -68,7 +68,83 @@ private lemma agreeOnCriticalAndTrusted_implies_agreeOnClean
   agreeOnCriticalInputsUnderRegimeSpec predSat R s μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
   agreeOnTrustedInputs predSat R s ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
   agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ := by
-  sorry
+  intro hctx hcrit htrusted
+  rcases hctx with ⟨hctx_mem, hctx_vars⟩
+  rcases hcrit with ⟨hcrit_locs, hcrit_vars⟩
+  rcases htrusted with ⟨htrusted_locs, htrusted_vars⟩
+  constructor
+  · intro l qt hctx_lookup hclean
+    by_cases hkey : s.locs.hasKey l
+    · -- Critical location: use agreement from the input spec.
+      have hcontains : s.locs.contains l = true := by
+        simpa [MemoryTypeEnv.hasKey] using hkey
+      have hmem : l ∈ s.locs :=
+        (Std.ExtTreeMap.contains_iff_mem).1 hcontains
+      have hlookup_isSome : (s.locs[l]?).isSome = true :=
+        (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
+      cases hlookup_s : s.locs[l]? with
+      | none =>
+          simp [hlookup_s] at hlookup_isSome
+      | some qt_s =>
+          have hlookup_s : s.locs.lookup l = some qt_s := by
+            simpa [MemoryTypeEnv.lookup] using hlookup_s
+          have hctx_lookup' : ctx.memEnv.lookup l = some qt_s := hctx_mem hlookup_s
+          have hqt : qt_s = qt := by
+            have : some qt_s = some qt := by
+              calc
+                some qt_s = ctx.memEnv.lookup l := by
+                  symm
+                  exact hctx_lookup'
+                _ = some qt := by
+                  exact hctx_lookup
+            exact Option.some.inj this
+          have hcrit_locs' := hcrit_locs
+          rw [List.forall_iff_forall_mem] at hcrit_locs'
+          have hmem' : (l, qt_s) ∈ s.locs.toList := by
+            rw [Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some]
+            dsimp [MemoryTypeEnv.lookup] at hlookup_s
+            simpa using hlookup_s
+          have hlocEntry : agreeLocUnder predSat R μ₀ μ₁ θ₀ θ₁ (l, qt_s) :=
+            hcrit_locs' (l, qt_s) hmem'
+          simpa [hqt] using hlocEntry
+    · -- Trusted location: use trusted-input agreement.
+      exact htrusted_locs l qt hctx_lookup hkey hclean
+  · intro x qt hctx_lookup hclean
+    by_cases hkey : s.vars.hasKey x
+    · -- Critical variable: use agreement from the input spec.
+      have hcontains : s.vars.contains x = true := by
+        simpa [VarTypeEnv.hasKey] using hkey
+      have hmem : x ∈ s.vars :=
+        (Std.ExtTreeMap.contains_iff_mem).1 hcontains
+      have hlookup_isSome : (s.vars[x]?).isSome = true :=
+        (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
+      cases hlookup_s : s.vars[x]? with
+      | none =>
+          simp [hlookup_s] at hlookup_isSome
+      | some qt_s =>
+          have hlookup_s : s.vars.lookup x = some qt_s := by
+            simpa [VarTypeEnv.lookup] using hlookup_s
+          have hctx_lookup' : ctx.varEnv.lookup x = some qt_s := hctx_vars hlookup_s
+          have hqt : qt_s = qt := by
+            have : some qt_s = some qt := by
+              calc
+                some qt_s = ctx.varEnv.lookup x := by
+                  symm
+                  exact hctx_lookup'
+                _ = some qt := by
+                  exact hctx_lookup
+            exact Option.some.inj this
+          have hcrit_vars' := hcrit_vars
+          rw [List.forall_iff_forall_mem] at hcrit_vars'
+          have hmem' : (x, qt_s) ∈ s.vars.toList := by
+            rw [Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some]
+            dsimp [VarTypeEnv.lookup] at hlookup_s
+            simpa using hlookup_s
+          have hvarEntry : agreeVarUnder predSat R μ₀ ρ₀ μ₁ ρ₁ θ₀ θ₁ (x, qt_s) :=
+            hcrit_vars' (x, qt_s) hmem'
+          simpa [hqt] using hvarEntry
+    · -- Trusted variable: use trusted-input agreement.
+      exact htrusted_vars x qt hctx_lookup hkey hclean
 
 theorem TypeSystemEnforcesFaultRobustness_impl :
   (∀ e ctxᵢ predSat,
