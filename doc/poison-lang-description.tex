@@ -1200,23 +1200,16 @@ result value has the expected enriched type and the final runtime state
 configurations, as they are implementation details not tracked by the type
 system.
 
-\subsection{Non-interference}
+\subsection{Fault Robustness}
 
-We define the non-interference property for the Poison language, which ensures
-that the program's observable behaviour depends solely on critical inputs.
-Additionally, the property allows for fault isolation, where some critical
-inputs must be checked for validity before use.
+We define the \emph{Fault Robustness} property for the Poison language, which refines the traditional non-interference property. While non-interference typically requires outputs to be independent of all inputs not explicitly classified as low-integrity, fault robustness allows outputs to depend on \emph{trusted} inputs (those assumed to be non-faulty) while ensuring independence from \emph{faults} in critical inputs.
 
 \paragraph{We distinguish three classes of inputs:}
 \begin{itemize}
   \item \textbf{Critical inputs}: exactly those listed in the specification $S$;
-  they determine the guard regime and thus govern non-interference.
-  \item \textbf{Contextual non-critical inputs}: not listed in $S$ but present
-  in the initial typing context because the program refers to them. They are
-  always recorded as poisoned with \texttt{no\_pred} in the context and must be
-  instantiated at runtime to avoid stuckness; they cannot be de-poisoned.
-  \item \textbf{Unused inputs}: neither listed in $S$ nor present in the initial
-  typing context; they are irrelevant and may be absent at runtime.
+  they determine the guard regime and are the source of potential faults.
+  \item \textbf{Trusted inputs}: inputs present in the initial typing context but not listed in $S$. These are assumed to be reliable (clean) and must agree across executions.
+  \item \textbf{Unused inputs}: neither listed in $S$ nor present in the initial typing context; they are irrelevant.
 \end{itemize}
 
 \begin{definition}[Input/Output Classification]
@@ -1231,17 +1224,14 @@ We fix a \emph{critical-input specification} $S$ comprising lists of critical \e
   S.\mathrm{locs} = \bigl[(l_1, Q_1),\ldots,(l_m, Q_m)\bigr],\qquad
   S.\mathrm{vars} = \bigl[(x_1, Q'_1),\ldots,(x_n, Q'_n)\bigr].
 \]
-Entries not listed in $S$ are considered non-critical and are \emph{unconstrained by the specification}.
+Context entries not listed in $S$ are considered \emph{trusted inputs}.
 
 Outputs consist of:
 \begin{itemize}
     \item Final memory: $\mu_f : \text{Address} \rightarrow \text{Value}$
     \item Program return value: $v$
 \end{itemize}
-With observable outputs designated as $(L_{obs}, v_{obs})$ where $L_{obs}$ is a set of logical locations and $v_{obs} \in \{\text{true}, \text{false}\}$ indicates whether the return value is observable. Observing a logical location $l \in L_{obs}$ means observing the concrete cell at address $\theta(l)$ in that run.
-Non-observable outputs are unconstrained.
-
-Note: Variable bindings are local to expressions and do not persist as program outputs. Only memory locations and the return value constitute observable outputs.
+With observable outputs designated as $(L_{obs}, v_{obs})$ where $L_{obs}$ is a set of logical locations and $v_{obs} \in \{\text{true}, \text{false}\}$ indicates whether the return value is observable.
 \end{definition}
 
 \begin{definition}[Guard Regime]
@@ -1252,45 +1242,27 @@ A \emph{guard regime} is a total mapping $R : K_S \to
 \{\text{true},\text{false}\}$ assigning a truth value to each tag. It prescribes
 which guards are considered true in an execution.
 
-The specification $S$ determines the constraints for critical inputs and the
-initial typing context; a guard regime $R$ supplies truth values for tags in
-$K_S$ that instantiate these constraints at comparison time.
-
-\paragraph{Regime/Specification consistency.}
-For a single run with initial memory and variable environments $(\mu,\rho)$ and realisation map $\theta$, we say that $R$ is \emph{consistent} with $(\mu,\rho,\theta)$ when, for every critical entry in $S$:
+For a single run, we say that $R$ is \emph{consistent} with the critical inputs when:
 \begin{itemize}
-  \item if the entry has no predicate, it is trivially consistent (statically
-  valid by $S$);
-  \item if it has a \emph{guard-only} tag $k$, there is no consistency
-  requirement and it is trivially consistent.
-  \item if it has a predicate \emph{with closure} tagged $k$, the predicate
+  \item if a critical entry has a \emph{guard-only} tag $k$, there is no consistency requirement.
+  \item if a critical entry has a predicate \emph{with closure} tagged $k$, the predicate
   closure applied to the entry's runtime value evaluates to $\text{true}$ iff
-  $R(k)=\text{true}$ and to $\text{false}$ iff $R(k)=\text{false}$;
+  $R(k)=\text{true}$ and to $\text{false}$ iff $R(k)=\text{false}$.
 \end{itemize}
-
-\textbf{Excluding non-critical guards.} Regimes range only over $K_S$. Tags originating solely from non-critical inputs are outside the regime and, by construction, cannot influence the observable behaviour required by the property.
 \end{definition}
 
-\begin{definition}[Non-Interference Property]
-A program $e$ satisfies non-interference with respect to the critical-input specification $S$ and observable outputs if, for each guard regime $R$:
+\begin{definition}[Fault Robustness Property]
+A program $e$ satisfies fault robustness with respect to the critical-input specification $S$ and observable outputs if, for each guard regime $R$:
 
-Given two executions with the same observable-behaviour form as defined above,
-$\langle e, \mu_1, \rho_1 \rangle \Downarrow \langle \mu_{1,1}, v_1 \rangle$ and
-$\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu_{2,1}, v_2 \rangle$, together with (proof-level) realisation maps $\theta_1,\theta_2$ linking logical locations to concrete addresses in each run, the following hold:
+Given two executions $\langle e, \mu_1, \rho_1 \rangle \Downarrow \langle \mu_{1,1}, v_1 \rangle$ and $\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu_{2,1}, v_2 \rangle$, together with realisation maps $\theta_1,\theta_2$, the following hold:
 \begin{itemize}
-    \item \textbf{Agreement on critical inputs under $R$:}
+    \item \textbf{Agreement on Trusted Inputs:} The executions agree on all initial context entries not in $S$ that are typed clean under $R$.
+    \item \textbf{Agreement on Critical Inputs under $R$:} For every entry in $S$:
     \begin{itemize}
-        \item For critical entries without predicates, the corresponding initial
-        values are identical across the two executions.
-        \item For entries with predicate \emph{closures} tagged $k$: when
-        $R(k)=\text{true}$ the initial values satisfy the closure and are
-        identical; when $R(k)=\text{false}$ the initial values may differ but
-        both fail the closure.
-        \item For entries with \emph{guard-only} tag $k$: when $R(k)=\text{true}$ the
-        initial values are identical; when $R(k)=\text{false}$ the initial values may
-        differ.
+        \item For critical entries without predicates, the corresponding initial values are identical.
+        \item For entries with predicate \emph{closures} tagged $k$: when $R(k)=\text{true}$ the initial values satisfy the closure and are identical; when $R(k)=\text{false}$ the initial values may differ but both fail the closure.
+        \item For entries with \emph{guard-only} tag $k$: when $R(k)=\text{true}$ the initial values are identical; when $R(k)=\text{false}$ the initial values may differ.
     \end{itemize}
-    \item \textbf{Non-critical inputs:} unconstrained.
 \end{itemize}
 Then the observable outputs coincide:
 \begin{itemize}
@@ -1301,73 +1273,37 @@ Then the observable outputs coincide:
 
 \subsubsection*{Ghost Locations and Realisation}
 
-A subtlety arises with "ghost" locations: logical locations that exist in the
+A subtlety arises with ``ghost'' locations: logical locations that exist in the
 typing environment $\Gamma$ but are not allocated in a particular program
-execution (e.g., allocations in an untaken branch). The type system's
-flow-insensitive nature accumulates these locations in the output $\Gamma$.
-Because they are typed as clean, they may appear in the critical input
-specification for subsequent steps.
-
-Our definition of input conformance (\texttt{inputsConformSpec}) handles this by
-requiring that a logical location must exist in memory \emph{only if} it is
+execution. Input conformance requires that a logical location must exist in memory \emph{only if} it is
 realised in the current run's realisation map $\theta$. Unrealised ghost
-locations satisfy the spec trivially. This is sound because the proof's value
-typing relation (\texttt{valueHasETyp}) guarantees that any reference value
-\texttt{loc a} held by the program must map to a realised logical location
-($\theta(l) = a$). Thus, the program can never attempt to access a ghost
-location, making their absence from memory harmless.
+locations satisfy the spec trivially.
 
-The key insight initial values asymmetry governed by the regime $R$:
-\begin{itemize}
-    \item If a critical entry is annotated with tag $k$ and $R(k)=\text{true}$,
-    it is treated as valid; the compared runs must agree on its initial value
-    (for predicate closures), and the observable behaviour may depend on that
-    value.
-    \item If $R(k)=\text{false}$, the entry is treated as invalid; the compared
-    runs need not agree on its initial value (for predicate closures, both must
-    fail), yet observables must coincide.
-    \item Entries without predicates are statically valid by $S$ and must agree
-    across runs.
-\end{itemize}
-
-This is a runtime property which is impossible, in general, to guarantee statically. However,
-in the next definition, we will show that we can conservatively approximate it
-via the type system.
-
-\begin{theorem}[Type System Enforces Non-Interference]
-Assume a well-formed critical-only input specification $S$ and observable spec
+\begin{theorem}[Type System Enforces Fault Robustness]
+Assume a well-formed critical-input specification $S$ and observable spec
 $\text{obs}$. For any initial typing context $(pc,\Gamma,\sigma,\mathcal{L})$
-that matches $S$ (namely: $pc=\text{clean}$, $\mathcal{L}=\emptyset$; the
-entries of $S$ appear in $\Gamma$ and $\sigma$ with exactly the specified
-qualified types; any other entries present are poisoned with $\text{no\_pred}$),
+that matches $S$ (contains all entries in $S$ with their specified types),
 the following implication holds:
 
 If typechecking $e$ under this context succeeds and the inferred
-result satisfies the observable constraints (observable locations and, if
-requested, the return are clean), then for \emph{any} abstract predicate 
-satisfaction relation $\text{PredSat} : \text{Tag} \to \text{Memory} \to 
-\text{Value} \to \text{Prop}$ satisfying the universal axioms 
-(syntactic matching and memory monotonicity as described below), 
-the program $e$ satisfies the non-interference property with respect to 
+result satisfies the observable constraints, then for \emph{any} abstract predicate
+satisfaction relation $\text{PredSat}$ satisfying the universal axioms,
+the program $e$ satisfies the fault robustness property with respect to
 $S$, $\text{obs}$, and $\text{PredSat}$.
-
-The runtime premises for each compared run are: (i) critical inputs conform to
-$S$ via their run-specific realisation map $\theta$, and (ii) the concrete
-initial memory and environment instantiate the whole context
-$(pc,\Gamma,\sigma,\mathcal{L})$ under $\theta$.
 \end{theorem}
 
 The predicate system enables graceful degradation: programs can produce correct
 outputs even when some critical inputs are faulty, provided those inputs have
 associated validity checks that are properly exercised.
 
+
 \subsection{Abstract Predicate Satisfaction}
 
-The non-interference proof employs an \emph{abstract predicate satisfaction} approach to handle predicates with captured lexical environments. This design addresses the fundamental architectural constraint that runtime values carry no type information or tags.
+The fault robustness proof employs an \emph{abstract predicate satisfaction} approach to handle predicates with captured lexical environments. This design addresses the fundamental architectural constraint that runtime values carry no type information or tags.
 
 \subsubsection{The Challenge}
 
-Predicate closures \texttt{guard k pred\_closure (x, pe, r)} capture a typing environment \texttt{r : List (Name × QTyp)} at definition time. However, the non-interference proof must reason about whether predicates are satisfied by runtime values without access to the captured runtime variable bindings. The typing environment contains only type information, not the actual values of captured variables.
+Predicate closures \texttt{guard k pred\_closure (x, pe, r)} capture a typing environment \texttt{r : List (Name × QTyp)} at definition time. However, the fault robustness proof must reason about whether predicates are satisfied by runtime values without access to the captured runtime variable bindings. The typing environment contains only type information, not the actual values of captured variables.
 
 \subsubsection{The Solution: Abstract Satisfaction Relation}
 
@@ -1381,7 +1317,7 @@ This relation specifies whether a predicate (identified by its tag) is satisfied
 \begin{itemize}
     \item \textbf{No variable environment parameter}: Captured variables are encoded in the tag's identity. Each tag uniquely identifies both the predicate body and its captured lexical context.
     \item \textbf{Memory parameter}: Required because predicates may dereference heap locations (e.g., \texttt{!x}), which can change during execution.
-    \item \textbf{Universal quantification}: The non-interference theorem quantifies over all \texttt{PredSat} relations satisfying certain axioms, proving the property holds regardless of what predicates mean.
+    \item \textbf{Universal quantification}: The fault robustness theorem quantifies over all \texttt{PredSat} relations satisfying certain axioms, proving the property holds regardless of what predicates mean.
 \end{itemize}
 
 \subsubsection{Universal Axioms}
@@ -1435,7 +1371,7 @@ including shadowing, without evaluating them in incorrect environments.
 
 The theorem thus states: for \emph{any} interpretation of predicates satisfying
 the type system's operational constraints (syntactic matching and dependency
-tracking), well-typed programs satisfy non-interference.
+tracking), well-typed programs satisfy fault robustness.
 
 \subsection{Non-Completeness}
 
