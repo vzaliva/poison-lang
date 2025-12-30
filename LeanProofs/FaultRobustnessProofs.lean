@@ -410,6 +410,29 @@ end TypeSystemEnforcesFaultRobustness_impl_proof
 
 section TypeSystemEnforcesFaultRobustness_step_proof
 
+private def isExternExpr : Expr → Prop
+  | Expr.externVal _ _ _ => True
+  | Expr.externFn _ _ _ _ => True
+  | Expr.externPfn _ _ _ => True
+  | _ => False
+
+private lemma terminatesTo_extern_false
+  {e : Expr} {c₀ c₁ : Config} {o : Value} :
+  isExternExpr e →
+  terminatesTo e c₀ c₁ o → False := by
+  intro hex ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  have h_eval_world := LeanProofs.evalAtDefault_eq hbeval
+  cases e with
+  | externVal _ _ _ =>
+      cases fuel <;> simp [LeanPoison.beval] at h_eval_world <;> cases h_eval_world
+  | externFn _ _ _ _ =>
+      cases fuel <;> simp [LeanPoison.beval] at h_eval_world <;> cases h_eval_world
+  | externPfn _ _ _ =>
+      cases fuel <;> simp [LeanPoison.beval] at h_eval_world <;> cases h_eval_world
+  | _ =>
+      cases hex
+
 private lemma terminatesTo_num_inv (n : Int)
   (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
   terminatesTo (Expr.num n) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
@@ -1343,11 +1366,41 @@ theorem TypeSystemEnforcesFaultRobustness_step
         | printInt e =>
             sorry
         | externVal ty b sp =>
-            sorry
+            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm ht₀ _ht₁
+            have hfalse :
+                False :=
+              terminatesTo_extern_false
+                (e := Expr.externVal ty b sp)
+                (c₀ := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm })
+                (c₁ := cf₀)
+                (o := o₀)
+                (by simp [isExternExpr])
+                ht₀
+            exact False.elim hfalse
         | externFn name ty ret effs =>
-            sorry
+            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm ht₀ _ht₁
+            have hfalse :
+                False :=
+              terminatesTo_extern_false
+                (e := Expr.externFn name ty ret effs)
+                (c₀ := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm })
+                (c₁ := cf₀)
+                (o := o₀)
+                (by simp [isExternExpr])
+                ht₀
+            exact False.elim hfalse
         | externPfn name ty ret =>
-            sorry
+            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm ht₀ _ht₁
+            have hfalse :
+                False :=
+              terminatesTo_extern_false
+                (e := Expr.externPfn name ty ret)
+                (c₀ := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm })
+                (c₁ := cf₀)
+                (o := o₀)
+                (by simp [isExternExpr])
+                ht₀
+            exact False.elim hfalse
 
 end TypeSystemEnforcesFaultRobustness_step_proof
 
