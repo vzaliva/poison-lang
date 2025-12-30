@@ -24,6 +24,11 @@ def resultAgreesIfClean (predSat : PredSat) (R : Regime) (μ₀ μ₁ : Memory)
 def ctxAfter (ctx : TypeContext) (res : TypeResult) : TypeContext :=
   { ctx with memEnv := res.memEnv', tagEnv := res.tagEnv', nextLoc := res.nextLoc', nextTag := res.nextTag' }
 
+-- Tag-environment consistency for a regime: tags known true in the typing
+-- context must be true in the regime interpretation.
+def tagEnvConsistentWithRegime (tagEnv : TagEnv) (R : Regime) : Prop :=
+  ∀ k deps, tagEnv.get? k = some ⟨true, deps⟩ → R k = some true
+
 -- Step theorem (context-driven, no input/output specs).
 -- It assumes agreement on clean items in the initial context and preserves it
 -- for the post-context, plus result agreement when the result is clean under R.
@@ -37,6 +42,7 @@ def StepFR
       (cf₀ cf₁ : Config) (o₀ o₁ : Value),
       wfRealizationMap θ₀ → wfRealizationMap θ₁ →
       runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
+      tagEnvConsistentWithRegime ctx.tagEnv R →
       agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
       ∀ (a₀ a₁ : Address) (pm : Bool),
         terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ →
@@ -97,6 +103,13 @@ private lemma ret_eq_of_agreeValueUnder_nonref
             _ = true := by exact hpoison'
         cases this
       exact False.elim hcontra
+
+private lemma joinPoison_eq_false {p1 p2 : Poison} :
+  joinPoison p1 p2 = false → p1 = false ∧ p2 = false := by
+  intro h
+  cases p1 <;> cases p2
+  all_goals
+    simp [joinPoison] at h ⊢
 
 -- Bridge lemma: top-level agreement premises imply the step-level invariant.
 -- This is the key link from spec-driven premises to the context-driven StepFR.
@@ -201,9 +214,16 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
       agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ :=
     agreeOnCriticalAndTrusted_implies_agreeOnClean
       predSat R s ctx μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hctx hagree htrusted
+  have htagR : tagEnvConsistentWithRegime ctx.tagEnv R := by
+    intro k deps hlookup
+    -- Empty tag environment at the top level.
+    have : (ctx.tagEnv.get? k) = none := by
+      simp [_hte]
+    rw [this] at hlookup
+    cases hlookup
   have hstepFR :=
     (hstep' R) μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-      hθ₀ hθ₁ hric₀ hric₁ hagree_clean
+      hθ₀ hθ₁ hric₀ hric₁ htagR hagree_clean
       a₀ a₁ pm ht₀ ht₁
   rcases hstepFR with ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, hagree_clean', hret_agree⟩
   refine ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, ?_⟩
@@ -594,7 +614,7 @@ private lemma stepFR_literal
   (hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls)
   (hctxAfter : ctxAfter ctx res = ctx) :
   StepFR ctx R e res predSat := by
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ hagree a₀ a₁ pm ht₀ ht₁
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ _htagR hagree a₀ a₁ pm ht₀ ht₁
   have hterm₀ := terminatesTo_literal_inv e v hval μ₀ ρ₀ a₀ pm cf₀ o₀ ht₀
   have hterm₁ := terminatesTo_literal_inv e v hval μ₁ ρ₁ a₁ pm cf₁ o₁ ht₁
   rcases hterm₀ with ⟨hcf₀, ho₀⟩
@@ -617,6 +637,579 @@ private lemma stepFR_literal
     have hval' : o₀ = o₁ := by
       simp [ho₀, ho₁]
     exact agreeValueUnder.clean_eq_nonref hpoison hnotref hval'
+
+private lemma stepFR_var
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (name : Name) (res : TypeResult) (fuel : Nat)
+  (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
+  StepFR ctxᵢ R (Expr.var name) res predSat := by
+  -- Variable case proof skeleton (full proof requires case analysis
+  -- on predicates and tag environment).
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm ht₀ ht₁
+  have hterm₀ := terminatesTo_var_inv name μ₀ ρ₀ a₀ pm cf₀ o₀ ht₀
+  have hterm₁ := terminatesTo_var_inv name μ₁ ρ₁ a₁ pm cf₁ o₁ ht₁
+  rcases hterm₀ with ⟨v₀, _hlookup₀, hcf₀, _ho₀⟩
+  rcases hterm₁ with ⟨v₁, _hlookup₁, hcf₁, _ho₁⟩
+  subst hcf₀
+  subst hcf₁
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_⟩
+  · refine ⟨?_, ?_⟩
+    · intro l a hlookup'
+      exact hlookup'
+    · intro hwf
+      exact hwf
+  · refine ⟨?_, ?_⟩
+    · intro l a hlookup'
+      exact hlookup'
+    · intro hwf
+      exact hwf
+  · -- typecheckVar does not change the context
+    -- (memEnv, tagEnv, and fresh supplies are preserved)
+    have htc' : typecheckVar ctxᵢ name = .ok res := by
+      simpa [typecheck, typecheckExpr] using htc
+    have hmem : res.memEnv' = ctxᵢ.memEnv :=
+      typecheckVar_preserves_memEnv ctxᵢ name res htc'
+    have htag : res.tagEnv' = ctxᵢ.tagEnv :=
+      typecheckVar_preserves_tagEnv ctxᵢ name res htc'
+    have hnextLoc : res.nextLoc' = ctxᵢ.nextLoc :=
+      typecheckVar_preserves_nextLoc ctxᵢ name res htc'
+    have hnextTag : res.nextTag' = ctxᵢ.nextTag :=
+      typecheckVar_preserves_nextTag ctxᵢ name res htc'
+    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag] using hagree
+  · -- Result agreement for clean outputs (requires predicate/tagEnv analysis).
+    intro hclean
+    have htc' : typecheckVar ctxᵢ name = .ok res := by
+      simpa [typecheck, typecheckExpr] using htc
+    cases hlookup_ctx : ctxᵢ.varEnv.lookup name with
+    | none =>
+        -- typecheckVar cannot succeed if the variable is missing
+        simp [typecheckVar, hlookup_ctx] at htc'
+    | some qt =>
+        have hvar_agree_of_clean :
+            qtypCleanUnder R qt →
+            agreeVarUnder predSat R μ₀ ρ₀ μ₁ ρ₁ θ₀ θ₁ (name, qt) := by
+          intro hclean_qt
+          exact (hagree.2 name qt hlookup_ctx hclean_qt)
+        cases hpred : qt.pred with
+        | noPred =>
+            have hres :
+                res.qualType =
+                  ⟨qt.etyp, joinPoison ctxᵢ.pc qt.poison, Predicate.noPred⟩ := by
+              have htc'' := htc'
+              cases hqt : qt with
+              | mk etyp poison pred =>
+                  have hpred' : pred = Predicate.noPred := by
+                    simpa [hqt] using hpred
+                  simp [typecheckVar, hlookup_ctx, hpred', hqt] at htc''
+                  cases htc''
+                  rfl
+            have hjoin : joinPoison ctxᵢ.pc qt.poison = false := by
+              simpa [qtypCleanUnder, qtypGuardTag, hres] using hclean
+            have hpc_poison := joinPoison_eq_false hjoin
+            have hpc : ctxᵢ.pc = false := hpc_poison.1
+            have hpoison : qt.poison = false := hpc_poison.2
+            have hclean_qt : qtypCleanUnder R qt := by
+              simp [qtypCleanUnder, qtypGuardTag, hpred, hpoison]
+            have hvar := hvar_agree_of_clean hclean_qt
+            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
+              agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+            have hres_eq : res.qualType = qt := by
+              cases qt with
+              | mk etyp poison pred =>
+                  cases hpred
+                  simp [hres, hpc, joinPoison]
+            have hres_agree :
+                agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+              simpa [hres_eq] using hval
+            simpa [_ho₀, _ho₁] using hres_agree
+        | guardOnly k =>
+            cases htag : ctxᵢ.tagEnv.get? k with
+            | none =>
+                have hres :
+                    res.qualType =
+                      ⟨qt.etyp, joinPoison ctxᵢ.pc qt.poison, qt.pred⟩ := by
+                  have htc'' := htc'
+                  cases hqt : qt with
+                  | mk etyp poison pred =>
+                      have hpred' : pred = Predicate.guardOnly k := by
+                        simpa [hqt] using hpred
+                      have htag' : ctxᵢ.tagEnv[k]? = none := by
+                        simpa using htag
+                      simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                      cases htc''
+                      simp [hpred']
+                cases hclean with
+                | inl hpoison_res =>
+                    have hjoin : joinPoison ctxᵢ.pc qt.poison = false := by
+                      have hpoison_res' := hpoison_res
+                      simp [hres] at hpoison_res'
+                      exact hpoison_res'
+                    have hpc_poison := joinPoison_eq_false hjoin
+                    have hpc : ctxᵢ.pc = false := hpc_poison.1
+                    have hpoison : qt.poison = false := hpc_poison.2
+                    have hclean_qt : qtypCleanUnder R qt := by
+                      left
+                      exact hpoison
+                    have hvar := hvar_agree_of_clean hclean_qt
+                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
+                      agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+                    have hres_eq : res.qualType = qt := by
+                      cases qt with
+                      | mk etyp poison pred =>
+                          cases hpred
+                          simp [hres, hpc, joinPoison]
+                    have hres_agree :
+                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                      simpa [hres_eq] using hval
+                    simpa [_ho₀, _ho₁] using hres_agree
+                | inr hguard =>
+                    rcases hguard with ⟨k', htag', hregime⟩
+                    have hk : k = k' := by
+                      have : some k = some k' := by
+                        simpa [qtypGuardTag, hres, hpred] using htag'
+                      exact Option.some.inj this
+                    subst hk
+                    have hclean_qt : qtypCleanUnder R qt := by
+                      right
+                      refine ⟨k, ?_, hregime⟩
+                      simp [qtypGuardTag, hpred]
+                    have hvar := hvar_agree_of_clean hclean_qt
+                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
+                      agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+                    have hres_agree :
+                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                      cases hval with
+                      | clean_eq_nonref _ hnotref hEq =>
+                          have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                            intro ⟨t, ls, h⟩
+                            apply hnotref
+                            exact ⟨t, ls, by simpa [hres] using h⟩
+                          have htagRes : qtypGuardTag res.qualType = some k := by
+                            simp [qtypGuardTag, hres, hpred]
+                          exact agreeValueUnder.withPred_true_eq k htagRes hregime hnotref' hEq
+                      | poisoned_noPred_eq_nonref _ hpred' _ _ =>
+                          have : Predicate.noPred = Predicate.guardOnly k := by
+                            calc
+                              Predicate.noPred = qt.pred := by symm; exact hpred'
+                              _ = Predicate.guardOnly k := by exact hpred
+                          cases this
+                      | clean_ref _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                          have htagRes : qtypGuardTag res.qualType = some k := by
+                            simp [qtypGuardTag, hres, hpred]
+                          have hetyp' : res.qualType.etyp = qt.etyp := by
+                            simp [hres]
+                          exact agreeValueUnder.withPred_true_ref k htagRes hregime (hetyp'.trans hetyp)
+                            hlookup1 hin1 hv1 hlookup2 hin2 hv2
+                      | poisoned_noPred_ref _ hpred' hetyp _ _ _ _ _ _ =>
+                          have : Predicate.noPred = Predicate.guardOnly k := by
+                            calc
+                              Predicate.noPred = qt.pred := by symm; exact hpred'
+                              _ = Predicate.guardOnly k := by exact hpred
+                          cases this
+                      | withPred_true_eq _ _ _ hnotref hEq =>
+                          have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                            intro ⟨t, ls, h⟩
+                            apply hnotref
+                            exact ⟨t, ls, by simpa [hres] using h⟩
+                          have htagRes : qtypGuardTag res.qualType = some k := by
+                            simp [qtypGuardTag, hres, hpred]
+                          exact agreeValueUnder.withPred_true_eq k htagRes hregime hnotref' hEq
+                      | withPred_true_ref _ _ _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                          have htagRes : qtypGuardTag res.qualType = some k := by
+                            simp [qtypGuardTag, hres, hpred]
+                          have hetyp' : res.qualType.etyp = qt.etyp := by
+                            simp [hres]
+                          exact agreeValueUnder.withPred_true_ref k htagRes hregime (hetyp'.trans hetyp)
+                            hlookup1 hin1 hv1 hlookup2 hin2 hv2
+                      | withPred_false_poisoned_fail k' _ htag hreg _ _ _ =>
+                          have hk : k = k' := by
+                            have : some k = some k' := by
+                              calc
+                                some k = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
+                                _ = some k' := by exact htag
+                            exact Option.some.inj this
+                          subst hk
+                          have : (some false : Option Bool) = some true := by
+                            calc
+                              some false = R k := by symm; exact hreg
+                              _ = some true := by exact hregime
+                          cases this
+                      | guardOnly_false_poisoned_any k' hgo hreg _ =>
+                          have hk : k = k' := by
+                            have : some k = some k' := by
+                              calc
+                                some k = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
+                                _ = some k' := by simp [qtypGuardTag, hgo]
+                            exact Option.some.inj this
+                          subst hk
+                          have : (some false : Option Bool) = some true := by
+                            calc
+                              some false = R k := by symm; exact hreg
+                              _ = some true := by exact hregime
+                          cases this
+                    simpa [_ho₀, _ho₁] using hres_agree
+            | some tv =>
+                cases tv with
+                | mk b deps =>
+                    cases b with
+                    | true =>
+                        have hres :
+                            res.qualType =
+                              ⟨qt.etyp, ctxᵢ.pc, Predicate.noPred⟩ := by
+                          have htc'' := htc'
+                          cases hqt : qt with
+                          | mk etyp poison pred =>
+                              have hpred' : pred = Predicate.guardOnly k := by
+                                simpa [hqt] using hpred
+                              have htag' : ctxᵢ.tagEnv[k]? = some ⟨true, deps⟩ := by
+                                simpa using htag
+                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                              cases htc''
+                              rfl
+                        have hpc : ctxᵢ.pc = false := by
+                          -- clean result requires pc = false
+                          simpa [qtypCleanUnder, qtypGuardTag, hres] using hclean
+                        have hregime : R k = some true := by
+                          exact htagR k deps (by simpa [htag] using htag)
+                        have hclean_qt : qtypCleanUnder R qt := by
+                          right
+                          refine ⟨k, ?_, hregime⟩
+                          simp [qtypGuardTag, hpred]
+                        have hvar := hvar_agree_of_clean hclean_qt
+                        have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
+                          agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+                        have hres_agree :
+                            agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                          cases hval with
+                          | clean_eq_nonref _ hnotref hEq =>
+                              have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                                intro ⟨t, ls, h⟩
+                                apply hnotref
+                                exact ⟨t, ls, by simpa [hres] using h⟩
+                              exact agreeValueUnder.clean_eq_nonref (by simp [hres, hpc]) hnotref' hEq
+                          | poisoned_noPred_eq_nonref _ hpred' _ _ =>
+                              have : Predicate.noPred = Predicate.guardOnly k := by
+                                calc
+                                  Predicate.noPred = qt.pred := by symm; exact hpred'
+                                  _ = Predicate.guardOnly k := by exact hpred
+                              cases this
+                          | clean_ref _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                              have hetyp' : res.qualType.etyp = qt.etyp := by
+                                simp [hres]
+                              have hpoison' : res.qualType.poison = false := by
+                                simp [hres, hpc]
+                              exact agreeValueUnder.clean_ref hpoison' (hetyp'.trans hetyp)
+                                hlookup1 hin1 hv1 hlookup2 hin2 hv2
+                          | poisoned_noPred_ref _ hpred' hetyp _ _ _ _ _ _ =>
+                              have : Predicate.noPred = Predicate.guardOnly k := by
+                                calc
+                                  Predicate.noPred = qt.pred := by symm; exact hpred'
+                                  _ = Predicate.guardOnly k := by exact hpred
+                              cases this
+                          | withPred_true_eq _ _ _ hnotref hEq =>
+                              have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                                intro ⟨t, ls, h⟩
+                                apply hnotref
+                                exact ⟨t, ls, by simpa [hres] using h⟩
+                              have hpoison' : res.qualType.poison = false := by
+                                simp [hres, hpc]
+                              exact agreeValueUnder.clean_eq_nonref hpoison' hnotref' hEq
+                          | withPred_true_ref _ _ _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                              have hetyp' : res.qualType.etyp = qt.etyp := by
+                                simp [hres]
+                              have hpoison' : res.qualType.poison = false := by
+                                simp [hres, hpc]
+                              exact agreeValueUnder.clean_ref hpoison' (hetyp'.trans hetyp)
+                                hlookup1 hin1 hv1 hlookup2 hin2 hv2
+                          | withPred_false_poisoned_fail k' _ htag hreg _ _ _ =>
+                              have hk : k = k' := by
+                                have : some k = some k' := by
+                                  calc
+                                    some k = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
+                                    _ = some k' := by exact htag
+                                exact Option.some.inj this
+                              subst hk
+                              have : (some false : Option Bool) = some true := by
+                                calc
+                                  some false = R k := by symm; exact hreg
+                                  _ = some true := by exact hregime
+                              cases this
+                          | guardOnly_false_poisoned_any k' hgo hreg _ =>
+                              have hk : k = k' := by
+                                have : some k = some k' := by
+                                  calc
+                                    some k = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
+                                    _ = some k' := by simp [qtypGuardTag, hgo]
+                                exact Option.some.inj this
+                              subst hk
+                              have : (some false : Option Bool) = some true := by
+                                calc
+                                  some false = R k := by symm; exact hreg
+                                  _ = some true := by exact hregime
+                              cases this
+                        simpa [_ho₀, _ho₁] using hres_agree
+                    | false =>
+                        have hres :
+                            res.qualType =
+                              ⟨qt.etyp, true, Predicate.noPred⟩ := by
+                          have htc'' := htc'
+                          cases hqt : qt with
+                          | mk etyp poison pred =>
+                              have hpred' : pred = Predicate.guardOnly k := by
+                                simpa [hqt] using hpred
+                              have htag' : ctxᵢ.tagEnv[k]? = some ⟨false, deps⟩ := by
+                                simpa using htag
+                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                              cases htc''
+                              rfl
+                        -- poisoned result is not clean
+                        simp [qtypCleanUnder, qtypGuardTag, hres] at hclean
+        | guardClosure k arg_name pred_body var_env =>
+            cases htag : ctxᵢ.tagEnv.get? k with
+            | none =>
+                have hres :
+                    res.qualType =
+                      ⟨qt.etyp, joinPoison ctxᵢ.pc qt.poison, qt.pred⟩ := by
+                  have htc'' := htc'
+                  cases hqt : qt with
+                  | mk etyp poison pred =>
+                      have hpred' : pred = Predicate.guardClosure k arg_name pred_body var_env := by
+                        simpa [hqt] using hpred
+                      have htag' : ctxᵢ.tagEnv[k]? = none := by
+                        simpa using htag
+                      simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                      cases htc''
+                      simp [hpred']
+                cases hclean with
+                | inl hpoison_res =>
+                    have hjoin : joinPoison ctxᵢ.pc qt.poison = false := by
+                      have hpoison_res' := hpoison_res
+                      simp [hres] at hpoison_res'
+                      exact hpoison_res'
+                    have hpc_poison := joinPoison_eq_false hjoin
+                    have hpc : ctxᵢ.pc = false := hpc_poison.1
+                    have hpoison : qt.poison = false := hpc_poison.2
+                    have hclean_qt : qtypCleanUnder R qt := by
+                      left
+                      exact hpoison
+                    have hvar := hvar_agree_of_clean hclean_qt
+                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
+                      agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+                    have hres_agree :
+                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                      have hqt_eq : qt = ⟨qt.etyp, false, qt.pred⟩ := by
+                        cases qt with
+                        | mk etyp poison pred =>
+                            simpa [hpoison]
+                      have hres_eq : res.qualType = qt := by
+                        have : res.qualType = ⟨qt.etyp, false, qt.pred⟩ := by
+                          simp [hres, hpoison, hpc, joinPoison]
+                        exact this.trans hqt_eq.symm
+                      simpa [hres_eq] using hval
+                    simpa [_ho₀, _ho₁] using hres_agree
+                | inr hguard =>
+                    rcases hguard with ⟨k', htag', hregime⟩
+                    have hk : k = k' := by
+                      have : some k = some k' := by
+                        simpa [qtypGuardTag, hres, hpred] using htag'
+                      exact Option.some.inj this
+                    subst hk
+                    have hclean_qt : qtypCleanUnder R qt := by
+                      right
+                      refine ⟨k, ?_, hregime⟩
+                      simp [qtypGuardTag, hpred]
+                    have hvar := hvar_agree_of_clean hclean_qt
+                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
+                      agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+                    have hres_agree :
+                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                      cases hval with
+                      | clean_eq_nonref _ hnotref hEq =>
+                          have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                            intro ⟨t, ls, h⟩
+                            apply hnotref
+                            exact ⟨t, ls, by simpa [hres] using h⟩
+                          have htagRes : qtypGuardTag res.qualType = some k := by
+                            simp [qtypGuardTag, hres, hpred]
+                          exact agreeValueUnder.withPred_true_eq k htagRes hregime hnotref' hEq
+                      | poisoned_noPred_eq_nonref _ hpred' _ _ =>
+                          have : Predicate.noPred = Predicate.guardClosure k arg_name pred_body var_env := by
+                            calc
+                              Predicate.noPred = qt.pred := by symm; exact hpred'
+                              _ = Predicate.guardClosure k arg_name pred_body var_env := by exact hpred
+                          cases this
+                      | clean_ref _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                          have htagRes : qtypGuardTag res.qualType = some k := by
+                            simp [qtypGuardTag, hres, hpred]
+                          have hetyp' : res.qualType.etyp = qt.etyp := by
+                            simp [hres]
+                          exact agreeValueUnder.withPred_true_ref k htagRes hregime (hetyp'.trans hetyp)
+                            hlookup1 hin1 hv1 hlookup2 hin2 hv2
+                      | poisoned_noPred_ref _ hpred' hetyp _ _ _ _ _ _ =>
+                          have : Predicate.noPred = Predicate.guardClosure k arg_name pred_body var_env := by
+                            calc
+                              Predicate.noPred = qt.pred := by symm; exact hpred'
+                              _ = Predicate.guardClosure k arg_name pred_body var_env := by exact hpred
+                          cases this
+                      | withPred_true_eq _ _ _ hnotref hEq =>
+                          have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                            intro ⟨t, ls, h⟩
+                            apply hnotref
+                            exact ⟨t, ls, by simpa [hres] using h⟩
+                          have htagRes : qtypGuardTag res.qualType = some k := by
+                            simp [qtypGuardTag, hres, hpred]
+                          exact agreeValueUnder.withPred_true_eq k htagRes hregime hnotref' hEq
+                      | withPred_true_ref _ _ _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                          have htagRes : qtypGuardTag res.qualType = some k := by
+                            simp [qtypGuardTag, hres, hpred]
+                          have hetyp' : res.qualType.etyp = qt.etyp := by
+                            simp [hres]
+                          exact agreeValueUnder.withPred_true_ref k htagRes hregime (hetyp'.trans hetyp)
+                            hlookup1 hin1 hv1 hlookup2 hin2 hv2
+                      | withPred_false_poisoned_fail k' _ htag hreg _ _ _ =>
+                          have hk : k = k' := by
+                            have : some k = some k' := by
+                              calc
+                                some k = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
+                                _ = some k' := by exact htag
+                            exact Option.some.inj this
+                          subst hk
+                          have : (some false : Option Bool) = some true := by
+                            calc
+                              some false = R k := by symm; exact hreg
+                              _ = some true := by exact hregime
+                          cases this
+                      | guardOnly_false_poisoned_any k' hgo hreg _ =>
+                          have hk : k = k' := by
+                            have : some k = some k' := by
+                              calc
+                                some k = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
+                                _ = some k' := by simp [qtypGuardTag, hgo]
+                            exact Option.some.inj this
+                          subst hk
+                          have : (some false : Option Bool) = some true := by
+                            calc
+                              some false = R k := by symm; exact hreg
+                              _ = some true := by exact hregime
+                          cases this
+                    simpa [_ho₀, _ho₁] using hres_agree
+            | some tv =>
+                cases tv with
+                | mk b deps =>
+                    cases b with
+                    | true =>
+                        have hres :
+                            res.qualType =
+                              ⟨qt.etyp, ctxᵢ.pc, Predicate.noPred⟩ := by
+                          have htc'' := htc'
+                          cases hqt : qt with
+                          | mk etyp poison pred =>
+                              have hpred' : pred = Predicate.guardClosure k arg_name pred_body var_env := by
+                                simpa [hqt] using hpred
+                              have htag' : ctxᵢ.tagEnv[k]? = some ⟨true, deps⟩ := by
+                                simpa using htag
+                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                              cases htc''
+                              rfl
+                        have hpc : ctxᵢ.pc = false := by
+                          simpa [qtypCleanUnder, qtypGuardTag, hres] using hclean
+                        have hregime : R k = some true := by
+                          exact htagR k deps (by simpa [htag] using htag)
+                        have hclean_qt : qtypCleanUnder R qt := by
+                          right
+                          refine ⟨k, ?_, hregime⟩
+                          simp [qtypGuardTag, hpred]
+                        have hvar := hvar_agree_of_clean hclean_qt
+                        have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
+                          agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+                        have hres_agree :
+                            agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                          cases hval with
+                          | clean_eq_nonref _ hnotref hEq =>
+                              have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                                intro ⟨t, ls, h⟩
+                                apply hnotref
+                                exact ⟨t, ls, by simpa [hres] using h⟩
+                              have hpoison' : res.qualType.poison = false := by
+                                simp [hres, hpc]
+                              exact agreeValueUnder.clean_eq_nonref hpoison' hnotref' hEq
+                          | poisoned_noPred_eq_nonref _ hpred' _ _ =>
+                              have : Predicate.noPred = Predicate.guardClosure k arg_name pred_body var_env := by
+                                calc
+                                  Predicate.noPred = qt.pred := by symm; exact hpred'
+                                  _ = Predicate.guardClosure k arg_name pred_body var_env := by exact hpred
+                              cases this
+                          | clean_ref _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                              have hetyp' : res.qualType.etyp = qt.etyp := by
+                                simp [hres]
+                              have hpoison' : res.qualType.poison = false := by
+                                simp [hres, hpc]
+                              exact agreeValueUnder.clean_ref hpoison' (hetyp'.trans hetyp)
+                                hlookup1 hin1 hv1 hlookup2 hin2 hv2
+                          | poisoned_noPred_ref _ hpred' hetyp _ _ _ _ _ _ =>
+                              have : Predicate.noPred = Predicate.guardClosure k arg_name pred_body var_env := by
+                                calc
+                                  Predicate.noPred = qt.pred := by symm; exact hpred'
+                                  _ = Predicate.guardClosure k arg_name pred_body var_env := by exact hpred
+                              cases this
+                          | withPred_true_eq _ _ _ hnotref hEq =>
+                              have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                                intro ⟨t, ls, h⟩
+                                apply hnotref
+                                exact ⟨t, ls, by simpa [hres] using h⟩
+                              have hpoison' : res.qualType.poison = false := by
+                                simp [hres, hpc]
+                              exact agreeValueUnder.clean_eq_nonref hpoison' hnotref' hEq
+                          | withPred_true_ref _ _ _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                              have hetyp' : res.qualType.etyp = qt.etyp := by
+                                simp [hres]
+                              have hpoison' : res.qualType.poison = false := by
+                                simp [hres, hpc]
+                              exact agreeValueUnder.clean_ref hpoison' (hetyp'.trans hetyp)
+                                hlookup1 hin1 hv1 hlookup2 hin2 hv2
+                          | withPred_false_poisoned_fail k' _ htag hreg _ _ _ =>
+                              have hk : k = k' := by
+                                have : some k = some k' := by
+                                  calc
+                                    some k = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
+                                    _ = some k' := by exact htag
+                                exact Option.some.inj this
+                              subst hk
+                              have : (some false : Option Bool) = some true := by
+                                calc
+                                  some false = R k := by symm; exact hreg
+                                  _ = some true := by exact hregime
+                              cases this
+                          | guardOnly_false_poisoned_any k' hgo hreg _ =>
+                              have hk : k = k' := by
+                                have : some k = some k' := by
+                                  calc
+                                    some k = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
+                                    _ = some k' := by simp [qtypGuardTag, hgo]
+                                exact Option.some.inj this
+                              subst hk
+                              have : (some false : Option Bool) = some true := by
+                                calc
+                                  some false = R k := by symm; exact hreg
+                                  _ = some true := by exact hregime
+                              cases this
+                        simpa [_ho₀, _ho₁] using hres_agree
+                    | false =>
+                        have hres :
+                            res.qualType =
+                              ⟨qt.etyp, true, Predicate.noPred⟩ := by
+                          have htc'' := htc'
+                          cases hqt : qt with
+                          | mk etyp poison pred =>
+                              have hpred' : pred = Predicate.guardClosure k arg_name pred_body var_env := by
+                                simpa [hqt] using hpred
+                              have htag' : ctxᵢ.tagEnv[k]? = some ⟨false, deps⟩ := by
+                                simpa using htag
+                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                              cases htc''
+                              rfl
+                        -- poisoned result is not clean
+                        simp [qtypCleanUnder, qtypGuardTag, hres] at hclean
 
 theorem TypeSystemEnforcesFaultRobustness_step
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
@@ -716,42 +1309,7 @@ theorem TypeSystemEnforcesFaultRobustness_step
               simp [ctxAfter, hres, res_expected]
             exact stepFR_literal ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotref hctxAfter
         | var name =>
-            -- Variable case proof skeleton (full proof requires case analysis
-            -- on predicates and tag environment).
-            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ hagree a₀ a₁ pm ht₀ ht₁
-            have hterm₀ := terminatesTo_var_inv name μ₀ ρ₀ a₀ pm cf₀ o₀ ht₀
-            have hterm₁ := terminatesTo_var_inv name μ₁ ρ₁ a₁ pm cf₁ o₁ ht₁
-            rcases hterm₀ with ⟨v₀, _hlookup₀, hcf₀, _ho₀⟩
-            rcases hterm₁ with ⟨v₁, _hlookup₁, hcf₁, _ho₁⟩
-            subst hcf₀
-            subst hcf₁
-            refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_⟩
-            · refine ⟨?_, ?_⟩
-              · intro l a hlookup'
-                exact hlookup'
-              · intro hwf
-                exact hwf
-            · refine ⟨?_, ?_⟩
-              · intro l a hlookup'
-                exact hlookup'
-              · intro hwf
-                exact hwf
-            · -- typecheckVar does not change the context
-              -- (memEnv, tagEnv, and fresh supplies are preserved)
-              have htc' : typecheckVar ctxᵢ name = .ok res := by
-                simpa [typecheck, typecheckExpr] using htc
-              have hmem : res.memEnv' = ctxᵢ.memEnv :=
-                typecheckVar_preserves_memEnv ctxᵢ name res htc'
-              have htag : res.tagEnv' = ctxᵢ.tagEnv :=
-                typecheckVar_preserves_tagEnv ctxᵢ name res htc'
-              have hnextLoc : res.nextLoc' = ctxᵢ.nextLoc :=
-                typecheckVar_preserves_nextLoc ctxᵢ name res htc'
-              have hnextTag : res.nextTag' = ctxᵢ.nextTag :=
-                typecheckVar_preserves_nextTag ctxᵢ name res htc'
-              simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag] using hagree
-            · -- Result agreement for clean outputs (requires predicate/tagEnv analysis).
-              -- TODO: finish variable case.
-              sorry
+            exact stepFR_var ctxᵢ predSat R name res fuel htc
         | op e1 op e2 =>
             sorry
         | unaryop op e =>
