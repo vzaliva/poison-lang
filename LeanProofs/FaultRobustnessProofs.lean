@@ -489,6 +489,103 @@ private lemma terminatesTo_literal_inv
   | _ =>
       simp [Expr.toValue?] at hval
 
+private lemma terminatesTo_var_inv
+  (x : Name) (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  terminatesTo (Expr.var x) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  ∃ v, ρ.lookup x = some v ∧
+    cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧
+    o = v := by
+  intro ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  have h_eval_world := LeanProofs.evalAtDefault_eq hbeval
+  cases fuel with
+  | zero =>
+      simp [LeanPoison.beval] at h_eval_world
+      cases h_eval_world
+  | succ fuel =>
+      simp [LeanPoison.beval] at h_eval_world
+      cases hlookup : ρ.lookup x with
+      | none =>
+          simp [hlookup] at h_eval_world
+          cases h_eval_world
+      | some v' =>
+          simp [hlookup] at h_eval_world
+          injection h_eval_world with hcfg hval
+          cases hcfg
+          cases hval
+          refine ⟨o, ?_⟩
+          refine And.intro ?_ ?_
+          · rfl
+          · exact And.intro rfl rfl
+
+private lemma agreeValueUnder_of_agreeVarUnder
+  {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {ρ₀ ρ₁ : VarEnv}
+  {θ₀ θ₁ : RealizationMap} {x : Name} {qt : QTyp} {v₀ v₁ : Value} :
+  agreeVarUnder predSat R μ₀ ρ₀ μ₁ ρ₁ θ₀ θ₁ (x, qt) →
+  ρ₀.lookup x = some v₀ →
+  ρ₁.lookup x = some v₁ →
+  agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
+  intro hvar hlookup₀ hlookup₁
+  cases hvar with
+  | agree_values _ _ v₀' v₁' hlookup₀' hlookup₁' hagree =>
+      have hv₀ : v₀' = v₀ := by
+        have : some v₀' = some v₀ := by
+          calc
+            some v₀' = ρ₀.lookup x := by symm; exact hlookup₀'
+            _ = some v₀ := by exact hlookup₀
+        exact Option.some.inj this
+      have hv₁ : v₁' = v₁ := by
+        have : some v₁' = some v₁ := by
+          calc
+            some v₁' = ρ₁.lookup x := by symm; exact hlookup₁'
+            _ = some v₁ := by exact hlookup₁
+        exact Option.some.inj this
+      simpa [hv₀, hv₁] using hagree
+  | both_none _ _ hnone₀ _ =>
+      have : False := by
+        have : some v₀ = none := by
+          calc
+            some v₀ = ρ₀.lookup x := by symm; exact hlookup₀
+            _ = none := by exact hnone₀
+        cases this
+      exact False.elim this
+
+private lemma typecheckVar_preserves_memEnv (ctx : TypeContext) (x : Name) (res : TypeResult) :
+  typecheckVar ctx x = .ok res →
+  res.memEnv' = ctx.memEnv := by
+  intro h_typecheck
+  simp [typecheckVar] at h_typecheck
+  split at h_typecheck
+  · repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
+  · simp at h_typecheck
+
+private lemma typecheckVar_preserves_tagEnv (ctx : TypeContext) (x : Name) (res : TypeResult) :
+  typecheckVar ctx x = .ok res →
+  res.tagEnv' = ctx.tagEnv := by
+  intro h_typecheck
+  simp [typecheckVar] at h_typecheck
+  split at h_typecheck
+  · repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
+  · simp at h_typecheck
+
+private lemma typecheckVar_preserves_nextLoc (ctx : TypeContext) (x : Name) (res : TypeResult) :
+  typecheckVar ctx x = .ok res →
+  res.nextLoc' = ctx.nextLoc := by
+  intro h_typecheck
+  simp [typecheckVar] at h_typecheck
+  split at h_typecheck
+  · repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
+  · simp at h_typecheck
+
+private lemma typecheckVar_preserves_nextTag (ctx : TypeContext) (x : Name) (res : TypeResult) :
+  typecheckVar ctx x = .ok res →
+  res.nextTag' = ctx.nextTag := by
+  intro h_typecheck
+  simp [typecheckVar] at h_typecheck
+  split at h_typecheck
+  · repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
+  · simp at h_typecheck
+
 private lemma stepFR_literal
   (ctx : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (res : TypeResult) (v : Value)
@@ -619,7 +716,42 @@ theorem TypeSystemEnforcesFaultRobustness_step
               simp [ctxAfter, hres, res_expected]
             exact stepFR_literal ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotref hctxAfter
         | var name =>
-            sorry
+            -- Variable case proof skeleton (full proof requires case analysis
+            -- on predicates and tag environment).
+            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ hagree a₀ a₁ pm ht₀ ht₁
+            have hterm₀ := terminatesTo_var_inv name μ₀ ρ₀ a₀ pm cf₀ o₀ ht₀
+            have hterm₁ := terminatesTo_var_inv name μ₁ ρ₁ a₁ pm cf₁ o₁ ht₁
+            rcases hterm₀ with ⟨v₀, _hlookup₀, hcf₀, _ho₀⟩
+            rcases hterm₁ with ⟨v₁, _hlookup₁, hcf₁, _ho₁⟩
+            subst hcf₀
+            subst hcf₁
+            refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_⟩
+            · refine ⟨?_, ?_⟩
+              · intro l a hlookup'
+                exact hlookup'
+              · intro hwf
+                exact hwf
+            · refine ⟨?_, ?_⟩
+              · intro l a hlookup'
+                exact hlookup'
+              · intro hwf
+                exact hwf
+            · -- typecheckVar does not change the context
+              -- (memEnv, tagEnv, and fresh supplies are preserved)
+              have htc' : typecheckVar ctxᵢ name = .ok res := by
+                simpa [typecheck, typecheckExpr] using htc
+              have hmem : res.memEnv' = ctxᵢ.memEnv :=
+                typecheckVar_preserves_memEnv ctxᵢ name res htc'
+              have htag : res.tagEnv' = ctxᵢ.tagEnv :=
+                typecheckVar_preserves_tagEnv ctxᵢ name res htc'
+              have hnextLoc : res.nextLoc' = ctxᵢ.nextLoc :=
+                typecheckVar_preserves_nextLoc ctxᵢ name res htc'
+              have hnextTag : res.nextTag' = ctxᵢ.nextTag :=
+                typecheckVar_preserves_nextTag ctxᵢ name res htc'
+              simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag] using hagree
+            · -- Result agreement for clean outputs (requires predicate/tagEnv analysis).
+              -- TODO: finish variable case.
+              sorry
         | op e1 op e2 =>
             sorry
         | unaryop op e =>
