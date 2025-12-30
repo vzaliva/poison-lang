@@ -249,6 +249,11 @@ def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
   ∃ (fuel : Nat) (verbose : Bool),
     LeanPoison.beval fuel c₀ e verbose = pure (LeanPoison.EvalResult.success c₁ out)
 
+-- World-indexed termination (IO equality-friendly).
+def terminatesToW (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
+  ∃ (fuel : Nat) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld),
+    LeanPoison.beval fuel c₀ e verbose w₀ = EST.Out.ok (.success c₁ out) w₁
+
 -- Divergence relation: program runs out of fuel
 def diverges (e : Expr) (c₀ : Config) : Prop :=
   ∀ (fuel : Nat) (verbose : Bool),
