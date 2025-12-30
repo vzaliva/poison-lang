@@ -140,6 +140,44 @@ exact IH fuel' h_fuel e1 verbose config₀ config' v' h_beval1_ex
 
 By using indexed equalities, we can track the world flow through IO operation chains while maintaining compatibility with induction hypotheses.
 
+## World-indexed termination wrapper
+
+When public statements are phrased in terms of a non-indexed `terminatesTo`, it is often easiest
+to keep those statements unchanged and prove an internal, **world-indexed** variant instead.
+This keeps IO reasoning local while avoiding public API churn.
+
+### Pattern
+
+Define a world-indexed termination predicate:
+```lean
+private def terminatesToW (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
+  ∃ (fuel : Nat) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld),
+    LeanPoison.beval fuel c₀ e verbose w₀ = EST.Out.ok (.success c₁ out) w₁
+```
+
+Use a world-indexed step theorem internally:
+```lean
+private def StepFRW ... :=
+  ∀ ... , terminatesToW e c₀ c₁ o₀ → terminatesToW e c₀' c₁' o₁ → ...
+```
+
+Then derive the original statement with a wrapper lemma:
+```lean
+private lemma terminatesToW_of_terminatesTo :
+  terminatesTo e c₀ c₁ o → terminatesToW e c₀ c₁ o
+
+private lemma StepFR_of_StepFRW :
+  StepFRW ctx R e res predSat → StepFR ctx R e res predSat
+```
+
+### Why it helps
+- `terminatesTo` hides worlds, which is convenient for statements but awkward for IO proofs.
+- `terminatesToW` exposes worlds, making `simp [EST.bind]` and bind-chain extraction straightforward.
+- The wrapper lemmas let you keep the external API (and downstream proofs) unchanged.
+
+In practice, apply `terminatesToW_of_terminatesTo` early in a proof, and then work exclusively
+with `terminatesToW` and indexed equalities.
+
 ## Summary of changes from Lean ≤ 4.25 to Lean 4.26+
 
 | Old (≤ 4.25) | New (4.26+) |
