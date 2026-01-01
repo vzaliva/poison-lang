@@ -481,6 +481,12 @@ theorem List.mapM_Except_preserves_property
 def wfTypeContext (ctx : TypeContext) : Prop :=
   ∀ l, ctx.memEnv.contains l → l < ctx.nextLoc
 
+/-- A runtime configuration is well-formed if all addresses in memory are below nextAddr.
+    This captures that nextAddr is the "high-water mark" for allocated physical addresses,
+    analogous to wfTypeContext for logical locations. -/
+def wfConfig (cfg : Config) : Prop :=
+  ∀ a, cfg.memory.contains a → a < cfg.nextAddr
+
 /-- The typing result is well-formed if all locations in memEnv' are below nextLoc'. -/
 def wfTypeResult (res : TypeResult) : Prop :=
   ∀ l, res.memEnv'.contains l → l < res.nextLoc'
