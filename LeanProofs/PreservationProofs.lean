@@ -901,7 +901,7 @@ private lemma preservation_printInt (e1 : Expr) (ctx : TypeContext)
         typecheckPrintInt_structure ctx e1 fuel_tc' res h_typecheck
 
       -- Extract evaluation structure
-      obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
+      obtain ⟨config₁, v1, h_eval1_ex, _hv1_shape, h_v_unit, h_mem_eq, h_varenv_eq⟩ :=
         bevalPrintInt_structure e1 fuel'.succ verbose
           { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
@@ -923,8 +923,8 @@ private lemma preservation_printInt (e1 : Expr) (ctx : TypeContext)
 
       constructor
       · -- valueHasETyp v res.qualType.etyp
-        rw [h_etyp]
-        exact h_v_type
+        rw [h_etyp, h_v_unit]
+        exact valueHasETyp.unit
       · -- runtimeInstantiatesCtx
         have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
         have h_tc1' : typecheck ctx e1 (fuel_tc' - 1) = .ok result1 := by
@@ -974,7 +974,7 @@ private lemma preservation_printString (e1 : Expr) (ctx : TypeContext)
         typecheckPrintString_structure ctx e1 fuel_tc' res h_typecheck
 
       -- Extract evaluation structure
-      obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
+      obtain ⟨config₁, v1, h_eval1_ex, _hv1_shape, h_v_unit, h_mem_eq, h_varenv_eq⟩ :=
         bevalPrintString_structure e1 fuel'.succ verbose
           { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
@@ -996,8 +996,8 @@ private lemma preservation_printString (e1 : Expr) (ctx : TypeContext)
 
       constructor
       · -- valueHasETyp v res.qualType.etyp
-        rw [h_etyp]
-        exact h_v_type
+        rw [h_etyp, h_v_unit]
+        exact valueHasETyp.unit
       · -- runtimeInstantiatesCtx
         have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
         have h_tc1' : typecheck ctx e1 (fuel_tc' - 1) = .ok result1 := by

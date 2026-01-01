@@ -1591,8 +1591,8 @@ private lemma bevalPrintInt_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
       EST.Out.ok (.success config₁ v) w₁) →
   ∃ (config' : Config) (v1 : Value),
     (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁') ∧
-    valueHasETyp (θ := {}) v1 ETyp.int ∧
-    valueHasETyp (θ := {}) v ETyp.unit ∧
+    (∃ n, v1 = Value.num n) ∧
+    v = Value.unit ∧
     config'.memory = config₁.memory ∧
     config'.varEnv = config₁.varEnv := by
   intro h_eval
@@ -1622,7 +1622,10 @@ private lemma bevalPrintInt_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
             have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num v₁)) w₁' :=
               ⟨w₀, h_state1, h_beval1⟩
             simp only [Nat.add_sub_cancel]
-            exact ⟨config', Value.num v₁, h_beval1_ex, valueHasETyp.num _, valueHasETyp.unit, rfl, rfl⟩
+            refine ⟨config', Value.num v₁, h_beval1_ex, ⟨v₁, rfl⟩, ?_, ?_, ?_⟩
+            · simp
+            · simp
+            · simp
           · next p_error p_state =>
             injection h_eq
         · next v =>
@@ -1650,8 +1653,8 @@ private lemma bevalPrintString_structure (e1 : Expr) (fuel : Nat) (verbose : Boo
       EST.Out.ok (.success config₁ v) w₁) →
   ∃ (config' : Config) (v1 : Value),
     (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁') ∧
-    valueHasETyp (θ := {}) v1 ETyp.string ∧
-    valueHasETyp (θ := {}) v ETyp.unit ∧
+    (∃ s, v1 = Value.str s) ∧
+    v = Value.unit ∧
     config'.memory = config₁.memory ∧
     config'.varEnv = config₁.varEnv := by
   intro h_eval
@@ -1681,7 +1684,10 @@ private lemma bevalPrintString_structure (e1 : Expr) (fuel : Nat) (verbose : Boo
             have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.str v₁)) w₁' :=
               ⟨w₀, h_state1, h_beval1⟩
             simp only [Nat.add_sub_cancel]
-            exact ⟨config', Value.str v₁, h_beval1_ex, valueHasETyp.str _, valueHasETyp.unit, rfl, rfl⟩
+            refine ⟨config', Value.str v₁, h_beval1_ex, ⟨v₁, rfl⟩, ?_, ?_, ?_⟩
+            · simp
+            · simp
+            · simp
           · next p_error p_state =>
             injection h_eq
         · next v =>
