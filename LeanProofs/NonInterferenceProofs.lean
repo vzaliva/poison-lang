@@ -442,7 +442,8 @@ theorem TypeSystemEnforcesNonInterference_step
   TypeSystemEnforcesNonInterference_step_spec
     e sᵢ sₒ ctxᵢ isRetObservable predSat := by
   unfold TypeSystemEnforcesNonInterference_step_spec
-  intro hctx fuel
+  intro hctx
+  intro fuel
   induction fuel using Nat.strong_induction_on with
   | _ n IH =>
     intro res htc hsubset

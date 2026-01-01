@@ -23,11 +23,6 @@ def resultAgreesIfClean (predSat : PredSat) (R : Regime) (μ₀ μ₁ : Memory)
   qtypCleanUnder R qt →
     agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁
 
--- Post-context derived from typing result.
--- This is how the step theorem accounts for context evolution (new locs/vars, tags).
-def ctxAfter (ctx : TypeContext) (res : TypeResult) : TypeContext :=
-  { ctx with memEnv := res.memEnv', tagEnv := res.tagEnv', nextLoc := res.nextLoc', nextTag := res.nextTag' }
-
 -- Tag-environment consistency for a regime: tags known true in the typing
 -- context must be true in the regime interpretation.
 def tagEnvConsistentWithRegime (tagEnv : TagEnv) (R : Regime) : Prop :=
@@ -45,6 +40,7 @@ def StepFR
     ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
       (cf₀ cf₁ : Config) (o₀ o₁ : Value),
       wfRealizationMap θ₀ → wfRealizationMap θ₁ →
+      wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
       tagEnvConsistentWithRegime ctx.tagEnv R →
       agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
@@ -53,6 +49,7 @@ def StepFR
         terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
         ∃ (θ₀' θ₁' : RealizationMap),
           wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
+          wfTypeContext (ctxAfter ctx res) ∧
           agreeOnClean predSat R (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
           resultAgreesIfClean predSat R cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
 
@@ -414,7 +411,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
     TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat) →
   (∀ e s obs, TypeSystemEnforcesFaultRobustness_spec e s obs) := by
   intro hstep e s obs
-  rintro his _hos ctx hctx _hpc _hte predSat _hps ⟨fuel, res, htc, hobs⟩
+  rintro his _hos ctx hctx _hwf _hpc _hte predSat _hps ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
   have hstep' := hstep e ctx predSat
   have hstep' := hstep' fuel res htc
@@ -433,9 +430,9 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
     cases hlookup
   have hstepFR :=
     (hstep' R) μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-      hθ₀ hθ₁ hric₀ hric₁ htagR hagree_clean
+      hθ₀ hθ₁ _hwf hric₀ hric₁ htagR hagree_clean
       a₀ a₁ pm ht₀ ht₁
-  rcases hstepFR with ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, hagree_clean', hret_agree⟩
+  rcases hstepFR with ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, _hwf', hagree_clean', hret_agree⟩
   refine ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, ?_⟩
   -- Bridge from post-state agreement to observables.
   simp [observablesEqual]
@@ -621,6 +618,7 @@ end TypeSystemEnforcesFaultRobustness_impl_proof
 section TypeSystemEnforcesFaultRobustness_step_proof
 
 -- Step theorem variant that uses world-indexed termination premises.
+-- Includes wfTypeContext premises and conclusion for freshness reasoning.
 private def StepFRW
   (ctx : TypeContext)
   (R : Regime)
@@ -630,6 +628,7 @@ private def StepFRW
     ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
       (cf₀ cf₁ : Config) (o₀ o₁ : Value),
       wfRealizationMap θ₀ → wfRealizationMap θ₁ →
+      wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
       tagEnvConsistentWithRegime ctx.tagEnv R →
       agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
@@ -638,6 +637,7 @@ private def StepFRW
         terminatesToW e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ } cf₁ o₁ →
         ∃ (θ₀' θ₁' : RealizationMap),
           wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
+          wfTypeContext (ctxAfter ctx res) ∧
           runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
           runtimeInstantiatesCtx (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
           tagEnvConsistentWithRegime (ctxAfter ctx res).tagEnv R ∧
@@ -659,13 +659,13 @@ private lemma StepFR_of_StepFRW
   {ctx : TypeContext} {R : Regime} {e : Expr} {res : TypeResult} {predSat : PredSat} :
   StepFRW ctx R e res predSat → StepFR ctx R e res predSat := by
   intro hstep μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-    hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm ht₀ ht₁
+    hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm ht₀ ht₁
   have ht₀w := terminatesToW_of_terminatesTo ht₀
   have ht₁w := terminatesToW_of_terminatesTo ht₁
   rcases hstep μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-      hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm pm ht₀w ht₁w with
-    ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, _hric₀', _hric₁', _htagR', hagree', hret⟩
-  exact ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, hagree', hret⟩
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm pm ht₀w ht₁w with
+    ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, hwf', _hric₀', _hric₁', _htagR', hagree', hret⟩
+  exact ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, hwf', hagree', hret⟩
 
 private def isExternExpr : Expr → Prop
   | Expr.externVal _ _ _ => True
@@ -1697,24 +1697,25 @@ private lemma stepFR_literal
   (hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls)
   (hctxAfter : ctxAfter ctx res = ctx) :
   StepFRW ctx R e res predSat := by
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
   have hterm₀ := terminatesTo_literal_inv e v hval μ₀ ρ₀ a₀ pm₀ cf₀ o₀ ht₀
   have hterm₁ := terminatesTo_literal_inv e v hval μ₁ ρ₁ a₁ pm₁ cf₁ o₁ ht₁
   rcases hterm₀ with ⟨hcf₀, ho₀⟩
   rcases hterm₁ with ⟨hcf₁, ho₁⟩
   subst hcf₀
   subst hcf₁
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · refine ⟨?_, ?_⟩
     · intro l a hlookup
       exact hlookup
-    · intro hwf
-      exact hwf
+    · intro hwf'
+      exact hwf'
   · refine ⟨?_, ?_⟩
     · intro l a hlookup
       exact hlookup
-    · intro hwf
-      exact hwf
+    · intro hwf'
+      exact hwf'
+  · simpa [hctxAfter] using hwf
   · simpa [hctxAfter] using hric₀
   · simpa [hctxAfter] using hric₁
   · simpa [hctxAfter] using htagR
@@ -1731,25 +1732,33 @@ private lemma stepFR_var
   StepFRW ctxᵢ R (Expr.var name) res predSat := by
   -- Variable case proof skeleton (full proof requires case analysis
   -- on predicates and tag environment).
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
   have hterm₀ := terminatesTo_var_inv name μ₀ ρ₀ a₀ pm₀ cf₀ o₀ ht₀
   have hterm₁ := terminatesTo_var_inv name μ₁ ρ₁ a₁ pm₁ cf₁ o₁ ht₁
   rcases hterm₀ with ⟨v₀, _hlookup₀, hcf₀, _ho₀⟩
   rcases hterm₁ with ⟨v₁, _hlookup₁, hcf₁, _ho₁⟩
   subst hcf₀
   subst hcf₁
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · refine ⟨?_, ?_⟩
     · intro l a hlookup'
       exact hlookup'
-    · intro hwf
-      exact hwf
+    · intro hwf'
+      exact hwf'
   · refine ⟨?_, ?_⟩
     · intro l a hlookup'
       exact hlookup'
-    · intro hwf
-      exact hwf
-  · -- typecheckVar does not change the context
+    · intro hwf'
+      exact hwf'
+  · -- wfTypeContext: typecheckVar does not change the context
+    have htc' : typecheckVar ctxᵢ name = .ok res := by
+      simpa [typecheck, typecheckExpr] using htc
+    have hmem : res.memEnv' = ctxᵢ.memEnv :=
+      typecheckVar_preserves_memEnv ctxᵢ name res htc'
+    have hnextLoc : res.nextLoc' = ctxᵢ.nextLoc :=
+      typecheckVar_preserves_nextLoc ctxᵢ name res htc'
+    simpa [ctxAfter, wfTypeContext, hmem, hnextLoc] using hwf
+  · -- runtimeInstantiatesCtx for θ₀: typecheckVar does not change the context
     -- (memEnv, tagEnv, and fresh supplies are preserved)
     have htc' : typecheckVar ctxᵢ name = .ok res := by
       simpa [typecheck, typecheckExpr] using htc
@@ -2464,7 +2473,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   e1 ctxᵢ res1 htc1' R
                 have hIH2 := IH (m := fuel') (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
                   e2 ctx' res2 htc2' R
-                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
+                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalOp_structure e1 e2 op fuel₀ verbose₀
@@ -2493,9 +2502,9 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   ⟨fuel₁ - 1, verbose₁, w₁e1, w₁e1', hbeval₁_e1'⟩
                 have hstep_e1 :=
                   hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-                    hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e1 ht₁_e1
+                    hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e1 ht₁_e1
                 rcases hstep_e1 with
-                  ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
+                  ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
                 have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
                 have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
                 have htagR_ctx' : tagEnvConsistentWithRegime ctx'.tagEnv R := by
@@ -2511,13 +2520,14 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   ⟨fuel₀ - 1, verbose₀, w₀e2, w₀e2', hbeval₀_e2'⟩
                 have ht₁_e2 : terminatesToW e2 cfg₁1 cfg₁2 v₁2 :=
                   ⟨fuel₁ - 1, verbose₁, w₁e2, w₁e2', hbeval₁_e2'⟩
+                have hwf1' : wfTypeContext ctx' := by simpa [ctx', ctxAfter] using hwf1
                 have hstep_e2 :=
                   hIH2 cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
                     cfg₀2 cfg₁2 v₀2 v₁2
-                    hθ₀1wf hθ₁1wf hric₀1' hric₁1' htagR_ctx' hagree_clean1'
+                    hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR_ctx' hagree_clean1'
                     cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode cfg₁1.pureMode ht₀_e2 ht₁_e2
                 rcases hstep_e2 with
-                  ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+                  ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
                 have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
                 have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
                 have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctx' res2 := by
@@ -2534,7 +2544,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                     agreeOnClean predSat R (ctxAfter ctxᵢ res)
                       cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
                   simpa [hctxAfter, hmem₀, hvar₀, hmem₁, hvar₁] using hagree_clean2
-                refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                · simpa [hctxAfter] using hwf2
                 intro hclean
                 have hpoison_res : res.qualType.poison = false := by
                   simpa [qtypCleanUnder, qtypGuardTag, h_ret_pred] using hclean
@@ -2611,7 +2622,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   simpa [typecheck, Nat.succ_sub_one] using htc1
                 have hIH := IH (m := fuel') (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
                   e ctxᵢ res1 htc1' R
-                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
+                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalUnaryOp_structure op e fuel₀ verbose₀
@@ -2638,8 +2649,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   ⟨fuel₁ - 1, verbose₁, w₁', w₁'', hbeval₁_e'⟩
                 have hstep_e :=
                   hIH μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' v₀' v₁'
-                    hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e ht₁_e
-                rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hric₀', hric₁', htagR', hagree_clean_e, hres_agree_e⟩
+                    hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e ht₁_e
+                rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hwf', hric₀', hric₁', htagR', hagree_clean_e, hres_agree_e⟩
                 have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
                   simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag]
                 have hric₀'' :
@@ -2654,7 +2665,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                     agreeOnClean predSat R (ctxAfter ctxᵢ res)
                       cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
                   simpa [hctxAfter, hmem₀, hvar₀, hmem₁, hvar₁] using hagree_clean_e
-                refine ⟨θ₀', θ₁', hθext₀, hθext₁, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                · simpa [hctxAfter] using hwf'
                 intro hclean
                 have hpoison_res : res.qualType.poison = false := by
                   simpa [qtypCleanUnder, qtypGuardTag, h_ret_pred] using hclean
@@ -2727,7 +2739,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   e1 ctxᵢ res1 htc1' R
                 have hIH2 := IH (m := fuel') (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
                   e2 ctx' res2 htc2' R
-                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
+                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalSeq_structure e1 e2 fuel₀ verbose₀
@@ -2756,9 +2768,9 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   ⟨fuel₁ - 1, verbose₁, w₁e1, w₁e1', hbeval₁_e1'⟩
                 have hstep_e1 :=
                   hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-                    hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e1 ht₁_e1
+                    hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e1 ht₁_e1
                 rcases hstep_e1 with
-                  ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
+                  ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
                 have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
                 have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
                 have htagR_ctx' : tagEnvConsistentWithRegime ctx'.tagEnv R := by
@@ -2774,13 +2786,14 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   ⟨fuel₀ - 1, verbose₀, w₀e2, w₀e2', hbeval₀_e2'⟩
                 have ht₁_e2 : terminatesToW e2 cfg₁1 cf₁ o₁ :=
                   ⟨fuel₁ - 1, verbose₁, w₁e2, w₁e2', hbeval₁_e2'⟩
+                have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using hwf1
                 have hstep_e2 :=
                   hIH2 cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
                     cf₀ cf₁ o₀ o₁
-                    hθ₀1wf hθ₁1wf hric₀1' hric₁1' htagR_ctx' hagree_clean1'
+                    hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR_ctx' hagree_clean1'
                     cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode cfg₁1.pureMode ht₀_e2 ht₁_e2
                 rcases hstep_e2 with
-                  ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+                  ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
                 have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
                 have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
                 have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctx' res2 := by
@@ -2797,7 +2810,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                     agreeOnClean predSat R (ctxAfter ctxᵢ res)
                       cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
                   simpa [hctxAfter] using hagree_clean2
-                refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                · simpa [hctxAfter] using hwf2
                 intro hclean
                 have hpoison_imp : res.qualType.poison = false → res2.qualType.poison = false := by
                   intro hpoison_res
@@ -2842,7 +2856,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   e1 ctxᵢ res1 htc1' R
                 have hIH2 := IH (m := fuel') (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
                   e2 ctx' res2 htc2' R
-                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
+                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalVlet_structure vname e1 e2 fuel₀ verbose₀
@@ -2871,9 +2885,9 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   ⟨fuel₁ - 1, verbose₁, w₁e1, w₁e1', hbeval₁_e1'⟩
                 have hstep_e1 :=
                   hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-                    hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e1 ht₁_e1
+                    hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e1 ht₁_e1
                 rcases hstep_e1 with
-                  ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
+                  ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
                 have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
                 have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
                 have hric₀1_mem :
@@ -2883,17 +2897,17 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                     runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₁1.memory cfg₁1.varEnv θ₁1 := by
                   simpa [ctxAfter] using hric₁1
                 have hv₀1_typed : valueHasETyp θ₀1 v₀1 res1.qualType.etyp := by
-                  exact preservation_valueW e1 ctxᵢ fuel' res1
+                  exact (preservation_valueW e1 ctxᵢ fuel' res1
                     μ₀ cfg₀1.memory ρ₀ cfg₀1.varEnv θ₀ θ₀1
                     a₀ cfg₀1.nextAddr pm₀ cfg₀1.pureMode v₀1
-                    htc1' hθ₀ hθ₀1wf hθext₀1 hric₀ hric₀1_mem
-                    ⟨fuel₀ - 1, verbose₀, w₀e1, w₀e1', hbeval₀_e1'⟩
+                    hwf htc1' hθ₀ hθ₀1wf hθext₀1 hric₀ hric₀1_mem
+                    ⟨fuel₀ - 1, verbose₀, w₀e1, w₀e1', hbeval₀_e1'⟩).1
                 have hv₁1_typed : valueHasETyp θ₁1 v₁1 res1.qualType.etyp := by
-                  exact preservation_valueW e1 ctxᵢ fuel' res1
+                  exact (preservation_valueW e1 ctxᵢ fuel' res1
                     μ₁ cfg₁1.memory ρ₁ cfg₁1.varEnv θ₁ θ₁1
                     a₁ cfg₁1.nextAddr pm₁ cfg₁1.pureMode v₁1
-                    htc1' hθ₁ hθ₁1wf hθext₁1 hric₁ hric₁1_mem
-                    ⟨fuel₁ - 1, verbose₁, w₁e1, w₁e1', hbeval₁_e1'⟩
+                    hwf htc1' hθ₁ hθ₁1wf hθext₁1 hric₁ hric₁1_mem
+                    ⟨fuel₁ - 1, verbose₁, w₁e1, w₁e1', hbeval₁_e1'⟩).1
                 have htagR_ctx' : tagEnvConsistentWithRegime ctx'.tagEnv R := by
                   simpa [hctx', ctxAfter] using htagR1
                 have hric₀1' : runtimeInstantiatesCtx ctx' cfg₀2.memory cfg₀2.varEnv θ₀1 := by
@@ -3014,13 +3028,14 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   ⟨fuel₀ - 1, verbose₀, w₀e2, w₀e2', hbeval₀_e2'⟩
                 have ht₁_e2 : terminatesToW e2 cfg₁2 cfg₁3 o₁ :=
                   ⟨fuel₁ - 1, verbose₁, w₁e2, w₁e2', hbeval₁_e2'⟩
+                have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using hwf1
                 have hstep_e2 :=
                   hIH2 cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀1 θ₁1
                     cfg₀3 cfg₁3 o₀ o₁
-                    hθ₀1wf hθ₁1wf hric₀1' hric₁1' htagR_ctx' hagree_clean1'
+                    hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR_ctx' hagree_clean1'
                     cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode cfg₁2.pureMode ht₀_e2 ht₁_e2
                 rcases hstep_e2 with
-                  ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+                  ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
                 have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
                 have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
                 have hvar_pres₀ : cfg₀3.varEnv = cfg₀2.varEnv := by
@@ -3134,7 +3149,10 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                           have hnone₁' : cf₁.varEnv.lookup w = none := by
                             simpa [hcfg₁final] using hnone₁1
                           exact agreeVarUnder.both_none w qt hnone₀' hnone₁'
-                refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                · -- wfTypeContext (ctxAfter ctxᵢ res) from hwf2 via res.memEnv' = res2.memEnv'
+                  simp only [ctxAfter, wfTypeContext, h_mem, h_loc] at hwf2 ⊢
+                  exact hwf2
                 intro hclean
                 have hpoison_imp : res.qualType.poison = false → res2.qualType.poison = false := by
                   intro hpoison_res
@@ -3181,7 +3199,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   simpa [typecheck, Nat.succ_sub_one] using htc1
                 have hIH := IH (m := fuel') (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
                   e ctxᵢ res1 htc1' R
-                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
+                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalPrintString_structure e fuel₀ verbose₀
@@ -3208,8 +3226,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   ⟨fuel₁ - 1, verbose₁, w₁', w₁'', hbeval₁_e'⟩
                 have hstep_e :=
                   hIH μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' v₀' v₁'
-                    hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e ht₁_e
-                rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hric₀', hric₁', htagR', hagree_clean_e, _hres_agree_e⟩
+                    hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e ht₁_e
+                rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hwf', hric₀', hric₁', htagR', hagree_clean_e, _hres_agree_e⟩
                 have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
                   simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag]
                 have ho₀ : o₀ = Value.unit := by
@@ -3230,7 +3248,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                     agreeOnClean predSat R (ctxAfter ctxᵢ res)
                       cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
                   simpa [hctxAfter, hmem₀, hvar₀, hmem₁, hvar₁] using hagree_clean_e
-                refine ⟨θ₀', θ₁', hθext₀, hθext₁, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                · simpa [hctxAfter] using hwf'
                 intro hclean
                 cases hclean with
                 | inl hpoison =>
@@ -3259,7 +3278,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   simpa [typecheck, Nat.succ_sub_one] using htc1
                 have hIH := IH (m := fuel') (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
                   e ctxᵢ res1 htc1' R
-                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
+                intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀ ht₁
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalPrintInt_structure e fuel₀ verbose₀
@@ -3286,8 +3305,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   ⟨fuel₁ - 1, verbose₁, w₁', w₁'', hbeval₁_e'⟩
                 have hstep_e :=
                   hIH μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' v₀' v₁'
-                    hθ₀ hθ₁ hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e ht₁_e
-                rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hric₀', hric₁', htagR', hagree_clean_e, _hres_agree_e⟩
+                    hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ ht₀_e ht₁_e
+                rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hwf', hric₀', hric₁', htagR', hagree_clean_e, _hres_agree_e⟩
                 have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
                   simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag]
                 have ho₀ : o₀ = Value.unit := by
@@ -3308,7 +3327,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                     agreeOnClean predSat R (ctxAfter ctxᵢ res)
                       cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
                   simpa [hctxAfter, hmem₀, hvar₀, hmem₁, hvar₁] using hagree_clean_e
-                refine ⟨θ₀', θ₁', hθext₀, hθext₁, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hric₀'', hric₁'', htagR'', hagree_clean, ?_⟩
+                · simpa [hctxAfter] using hwf'
                 intro hclean
                 cases hclean with
                 | inl hpoison =>
@@ -3325,7 +3345,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                       simp [ho₀, ho₁]
                     exact agreeValueUnder.withPred_true_eq k htag hreg hnotref hEq
         | externVal ty b sp =>
-            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm₀ _pm₁ ht₀ _ht₁
+            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hwf _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm₀ _pm₁ ht₀ _ht₁
             have hfalse :
                 False :=
               terminatesTo_extern_false
@@ -3337,7 +3357,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                 ht₀
             exact False.elim hfalse
         | externFn name ty ret effs =>
-            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm₀ _pm₁ ht₀ _ht₁
+            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hwf _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm₀ _pm₁ ht₀ _ht₁
             have hfalse :
                 False :=
               terminatesTo_extern_false
@@ -3349,7 +3369,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                 ht₀
             exact False.elim hfalse
         | externPfn name ty ret =>
-            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm₀ _pm₁ ht₀ _ht₁
+            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hwf _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm₀ _pm₁ ht₀ _ht₁
             have hfalse :
                 False :=
               terminatesTo_extern_false

@@ -471,3 +471,41 @@ theorem List.mapM_Except_preserves_property
           exact h_preserve x z h_fx_z
         | inr h_mem_rest =>
           exact ih rest_results h_map_results z h_mem_rest
+
+-- ================================================================
+-- TypeContext Well-formedness
+-- ================================================================
+
+/-- A TypeContext is well-formed if all locations in memEnv are below nextLoc.
+    This captures that nextLoc is the "high-water mark" for allocated logical locations. -/
+def wfTypeContext (ctx : TypeContext) : Prop :=
+  ∀ l, ctx.memEnv.contains l → l < ctx.nextLoc
+
+/-- The typing result is well-formed if all locations in memEnv' are below nextLoc'. -/
+def wfTypeResult (res : TypeResult) : Prop :=
+  ∀ l, res.memEnv'.contains l → l < res.nextLoc'
+
+/-- Post-context derived from typing result. -/
+def ctxAfter (ctx : TypeContext) (res : TypeResult) : TypeContext :=
+  { ctx with memEnv := res.memEnv', tagEnv := res.tagEnv', nextLoc := res.nextLoc', nextTag := res.nextTag' }
+
+/-- wfTypeResult implies wfTypeContext for the post-context. -/
+lemma wfTypeContext_of_wfTypeResult (ctx : TypeContext) (res : TypeResult) :
+    wfTypeResult res → wfTypeContext (ctxAfter ctx res) := by
+  intro hwf l hcontains
+  simp only [ctxAfter] at hcontains ⊢
+  exact hwf l hcontains
+
+/-- A location at or above ctx.nextLoc is not realized in θ if runtimeInstantiatesCtx holds. -/
+lemma freshLoc_not_realized (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (l : Loc) :
+    wfTypeContext ctx →
+    runtimeInstantiatesCtx ctx μ ρ θ →
+    l ≥ ctx.nextLoc →
+    θ.lookup l = none := by
+  intro hwf hric hge
+  by_contra hne
+  push_neg at hne
+  obtain ⟨a, ha⟩ := Option.ne_none_iff_exists'.mp hne
+  have ⟨hmem, _⟩ := hric.1 l a ha
+  have hlt := hwf l hmem
+  exact Nat.lt_irrefl l (Nat.lt_of_lt_of_le hlt hge)

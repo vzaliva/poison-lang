@@ -3029,10 +3029,12 @@ theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx := by
 -- World-indexed value-typing lemma used by FaultRobustness proofs.
 -- This is a convenient form of preservation that matches the IO-friendly
 -- termination relation used in the step theorem.
+-- Includes wfTypeContext premise and wfTypeResult conclusion for freshness reasoning.
 theorem preservation_valueW (e : Expr) (ctx : TypeContext) :
   ∀ (fuel_tc : Nat) (res : TypeResult)
     (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
     (a₀ a₁ : Address) (pm₀ pm₁ : Bool) (v : Value),
+    wfTypeContext ctx →
     typecheck ctx e fuel_tc = .ok res →
     wfRealizationMap θ₀ →
     wfRealizationMap θ₁ →
@@ -3042,5 +3044,5 @@ theorem preservation_valueW (e : Expr) (ctx : TypeContext) :
     terminatesToW e
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ } v →
-    valueHasETyp θ₁ v res.qualType.etyp := by
+    valueHasETyp θ₁ v res.qualType.etyp ∧ wfTypeResult res := by
   sorry

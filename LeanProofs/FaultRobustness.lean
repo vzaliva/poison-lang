@@ -530,6 +530,7 @@ def TypeSystemEnforcesFaultRobustness_spec
   wfObsSpec obs →
   ∀ (ctx : TypeContext),
       ctxMatchesInputSpec s ctx →
+      wfTypeContext ctx → -- all locations in memEnv are below nextLoc
       ctx.pc = false → -- we start from clean program counter
       ctx.tagEnv = {} → -- we start with empty tag environment
       ∀ (predSat : PredSat),
