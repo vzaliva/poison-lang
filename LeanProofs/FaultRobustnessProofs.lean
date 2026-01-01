@@ -8,6 +8,7 @@ import Mathlib.Data.List.Forall2
 
 import LeanProofs.FaultRobustness
 import LeanProofs.TypeSafety
+import LeanProofs.SemanticsProperties
 import LeanProofs.IOHelpers
 import LeanProofs.LookupUpdate
 import LeanProofs.PreservationProofs

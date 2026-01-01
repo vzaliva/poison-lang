@@ -5,6 +5,7 @@ import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.TypeSafety
+import LeanProofs.SemanticsProperties
 import Mathlib.Data.List.Forall2
 import Std.Data.ExtTreeMap
 open Std

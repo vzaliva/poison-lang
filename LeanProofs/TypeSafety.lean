@@ -240,31 +240,6 @@ theorem Except.bind_eq_ok {ε α β : Type} (x : Except ε α) (f : α → Excep
     simpa [Except.bind] using h
 
 -- ================================================================
--- Evaluation Relations
--- ================================================================
-
--- Big-step termination relation to a final configuration and resulting Value
--- Note: evaluation returns EvalResult
-def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
-  ∃ (fuel : Nat) (verbose : Bool),
-    LeanPoison.beval fuel c₀ e verbose = pure (LeanPoison.EvalResult.success c₁ out)
-
--- World-indexed termination (IO equality-friendly).
-def terminatesToW (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
-  ∃ (fuel : Nat) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld),
-    LeanPoison.beval fuel c₀ e verbose w₀ = EST.Out.ok (.success c₁ out) w₁
-
--- Divergence relation: program runs out of fuel
-def diverges (e : Expr) (c₀ : Config) : Prop :=
-  ∀ (fuel : Nat) (verbose : Bool),
-    LeanPoison.beval fuel c₀ e verbose = pure LeanPoison.EvalResult.outOfFuel
-
--- Stuck relation: program encounters a runtime error
-def stuck (e : Expr) (c₀ : Config) : Prop :=
-  ∃ (fuel : Nat) (verbose : Bool) (msg : String),
-    LeanPoison.beval fuel c₀ e verbose = pure (LeanPoison.EvalResult.runtimeError msg)
-
--- ================================================================
 -- Realisation Maps and Value Typing
 -- ================================================================
 
@@ -480,12 +455,6 @@ theorem List.mapM_Except_preserves_property
     This captures that nextLoc is the "high-water mark" for allocated logical locations. -/
 def wfTypeContext (ctx : TypeContext) : Prop :=
   ∀ l, ctx.memEnv.contains l → l < ctx.nextLoc
-
-/-- A runtime configuration is well-formed if all addresses in memory are below nextAddr.
-    This captures that nextAddr is the "high-water mark" for allocated physical addresses,
-    analogous to wfTypeContext for logical locations. -/
-def wfConfig (cfg : Config) : Prop :=
-  ∀ a, cfg.memory.contains a → a < cfg.nextAddr
 
 /-- The typing result is well-formed if all locations in memEnv' are below nextLoc'. -/
 def wfTypeResult (res : TypeResult) : Prop :=

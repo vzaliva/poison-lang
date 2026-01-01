@@ -11,6 +11,7 @@ import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.Preservation
 import LeanProofs.TypeSafety
+import LeanProofs.SemanticsProperties
 import LeanProofs.Properties
 import LeanProofs.VarEnvPreservation
 import LeanProofs.LookupUpdate

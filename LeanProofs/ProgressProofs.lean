@@ -10,6 +10,7 @@ import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.Progress
 import LeanProofs.TypeSafety
+import LeanProofs.SemanticsProperties
 import LeanProofs.IOHelpers
 
 -- ================================================================

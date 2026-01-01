@@ -5,7 +5,7 @@ import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.Equality
 import LeanProofs.IOHelpers
-import LeanProofs.TypeSafety
+import LeanProofs.SemanticsProperties
 import Mathlib.Data.Nat.Basic  -- for Nat.strong_induction_on
 import Mathlib.Tactic
 import Mathlib.Tactic.Linarith
@@ -1392,40 +1392,3 @@ lemma beval_memory_monotonic : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
       -- Print: memory changes only from e1
       -- Use helper lemma for printString
       exact beval_memory_monotonic_printString e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
-
--- ================================================================
--- Config Well-formedness Preservation
--- ================================================================
-
-/-- If a config is well-formed, then nextAddr is not already in memory.
-    This is the key property needed to prove freshness of newly allocated addresses. -/
-lemma nextAddr_not_in_memory (cfg : Config) :
-    wfConfig cfg → ¬cfg.memory.contains cfg.nextAddr := by
-  intro hwf hcontains
-  have h := hwf cfg.nextAddr hcontains
-  exact Nat.lt_irrefl cfg.nextAddr h
-
-/-- Evaluation preserves config well-formedness: if we start from a well-formed config
-    (all addresses in memory are below nextAddr), then the final config is also well-formed.
-    This follows from the fact that freshAddr returns nextAddr and increments it. -/
-lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
-    terminatesTo e cfg₀ cfg₁ v →
-    wfConfig cfg₀ →
-    wfConfig cfg₁ := by
-  -- TODO: Prove by induction on evaluation structure.
-  -- Key insight: only newRef allocates new addresses, and it uses freshAddr which
-  -- returns config.nextAddr and increments it to config.nextAddr + 1.
-  -- For any address a in the new memory:
-  --   - If a was in old memory: a < old_nextAddr ≤ new_nextAddr
-  --   - If a = old_nextAddr: a < old_nextAddr + 1 = new_nextAddr
-  sorry
-
-/-- World-indexed version of wfConfig_preserved for use in FR proofs. -/
-lemma wfConfig_preservedW (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
-    terminatesToW e cfg₀ cfg₁ v →
-    wfConfig cfg₀ →
-    wfConfig cfg₁ := by
-  intro _hterm hwf₀
-  -- TODO: Follows from wfConfig_preserved once that is proven.
-  -- The termination witness can be converted between terminatesToW and terminatesTo.
-  sorry

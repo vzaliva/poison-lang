@@ -8,6 +8,7 @@ import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanProofs.TypeSafety
+import LeanProofs.SemanticsProperties
 
 -- ================================================================
 -- Progress Property
