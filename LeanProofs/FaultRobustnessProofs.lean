@@ -1689,6 +1689,197 @@ private lemma bevalPrintString_structure (e1 : Expr) (fuel : Nat) (verbose : Boo
       · next h_error1 h_state1 =>
         injection h_eq
 
+-- Helper lemma: extract structure from typecheckNewRef
+private lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckNewRef ctx e1 fuel = .ok res →
+  ∃ (result1 : TypeResult) (l : Loc) (etyp : ETyp),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    l = result1.nextLoc' ∧
+    res.qualType.etyp = ETyp.ref etyp (LocSet.singleton l) ∧
+    res.qualType.poison = ctx.pc ∧
+    res.qualType.pred = Predicate.noPred ∧
+    res.memEnv' = updateMemEnv result1.memEnv' l ⟨etyp, joinPoison ctx.pc result1.qualType.poison, result1.qualType.pred⟩ ∧
+    res.tagEnv' = result1.tagEnv' ∧
+    res.nextLoc' = result1.nextLoc' + 1 ∧
+    res.nextTag' = result1.nextTag' := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+    unfold typecheckNewRef at h_typecheck
+    simp at h_typecheck
+  | succ fuel' =>
+    unfold typecheckNewRef at h_typecheck
+    simp at h_typecheck
+    simp [bind, Except.bind] at h_typecheck
+    cases h_tc1 : typecheckExpr ctx e1 fuel' with
+    | ok result1 =>
+      simp [h_tc1] at h_typecheck
+      cases h_qt1 : result1.qualType with
+      | mk etyp poison pred =>
+        rw [h_qt1] at h_typecheck
+        simp at h_typecheck
+        -- Extract freshTLocRes result
+        -- freshTLocRes result1 = (result1.nextLoc', { result1 with nextLoc' := result1.nextLoc' + 1 })
+        have h_fresh : (result1.nextLoc', { result1 with nextLoc' := result1.nextLoc' + 1 }) = freshTLocRes result1 := rfl
+        -- Simplify the do notation
+        simp [pure, Except.pure] at h_typecheck
+        -- Extract projections from h_fresh to rewrite freshTLocRes in h_typecheck
+        have h_fresh1 : (freshTLocRes result1).1 = result1.nextLoc' := by
+          simp [← h_fresh]
+        have h_fresh2 : (freshTLocRes result1).2 = { result1 with nextLoc' := result1.nextLoc' + 1 } := by
+          simp [← h_fresh]
+        rw [h_fresh1, h_fresh2] at h_typecheck
+        simp at h_typecheck
+        -- Now h_typecheck is a record equality: {...} = res
+        -- Extract field equalities by projecting from the record equality
+        have h_qualType : res.qualType = ⟨ETyp.ref etyp (LocSet.singleton result1.nextLoc'), ctx.pc, Predicate.noPred⟩ := by
+          have := congrArg TypeResult.qualType h_typecheck
+          simp at this
+          exact this.symm
+        have h_memEnv : res.memEnv' = updateMemEnv result1.memEnv' result1.nextLoc' ⟨etyp, joinPoison ctx.pc poison, pred⟩ := by
+          have := congrArg TypeResult.memEnv' h_typecheck
+          simp at this
+          exact this.symm
+        have h_tagEnv : res.tagEnv' = result1.tagEnv' := by
+          have := congrArg TypeResult.tagEnv' h_typecheck
+          simp at this
+          exact this.symm
+        have h_nextLoc : res.nextLoc' = result1.nextLoc' + 1 := by
+          have := congrArg TypeResult.nextLoc' h_typecheck
+          simp at this
+          exact this.symm
+        have h_nextTag : res.nextTag' = result1.nextTag' := by
+          have := congrArg TypeResult.nextTag' h_typecheck
+          simp at this
+          exact this.symm
+        -- Extract qualType field equalities (QTyp is a structure, so we use congrArg)
+        have h_etyp : res.qualType.etyp = ETyp.ref etyp (LocSet.singleton result1.nextLoc') := by
+          have := congrArg QTyp.etyp h_qualType
+          simp at this
+          exact this
+        have h_poison_eq : res.qualType.poison = ctx.pc := by
+          have := congrArg QTyp.poison h_qualType
+          simp at this
+          exact this
+        have h_pred_eq : res.qualType.pred = Predicate.noPred := by
+          have := congrArg QTyp.pred h_qualType
+          simp at this
+          exact this
+        -- Now we have all the field equalities
+        -- Construct the existential
+        simp only [Nat.add_sub_cancel]
+        use result1, result1.nextLoc', etyp
+        constructor
+        · exact h_tc1
+        constructor
+        · rfl  -- l = result1.nextLoc'
+        constructor
+        · -- res.qualType.etyp = ETyp.ref etyp (LocSet.singleton l)
+          rw [h_etyp]
+        constructor
+        · -- res.qualType.poison = ctx.pc
+          rw [h_poison_eq]
+        constructor
+        · -- res.qualType.pred = Predicate.noPred
+          rw [h_pred_eq]
+        constructor
+        · -- res.memEnv' = updateMemEnv result1.memEnv' result1.nextLoc' ...
+          rw [h_memEnv]
+          -- The goal is: updateMemEnv ... { etyp := etyp, poison := joinPoison ctx.pc poison, pred := pred } =
+          --            updateMemEnv ... { etyp := etyp, poison := joinPoison ctx.pc result1.qualType.poison, pred := result1.qualType.pred }
+          -- We need to show poison = result1.qualType.poison and pred = result1.qualType.pred
+          -- This follows from h_qt1
+          congr 1
+          congr 1
+          -- Extract poison and pred from h_qt1
+          -- h_qt1 shows result1.qualType = { etyp := etyp, poison := poison, pred := pred }
+          -- So result1.qualType.poison = poison and result1.qualType.pred = pred
+          -- Use congr to show the equalities
+          congr 1
+          -- Now we need to show poison = result1.qualType.poison
+          -- This follows from h_qt1 by extracting the poison field
+          -- h_qt1 shows result1.qualType = { etyp := etyp, poison := poison, pred := pred }
+          -- So result1.qualType.poison = poison
+          simp [h_qt1]
+          -- And pred = result1.qualType.pred
+          simp [h_qt1]
+        constructor
+        · -- res.tagEnv' = result1.tagEnv'
+          rw [h_tagEnv]
+        constructor
+        · -- res.nextLoc' = result1.nextLoc' + 1
+          rw [h_nextLoc]
+        · -- res.nextTag' = result1.nextTag'
+          rw [h_nextTag]
+    | error err =>
+      simp [h_tc1] at h_typecheck
+
+-- Helper lemma: extract evaluation structure from successful beval of newRef
+private lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₂ : Config) (v : Value) :
+  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.newRef e1) verbose w₀ =
+      EST.Out.ok (.success config₂ v) w₁) →
+  ∃ (config₁ : Config) (n : Int) (a : Address),
+    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' =
+        EST.Out.ok (.success config₁ (Value.num n)) w₁') ∧
+    a = config₁.nextAddr ∧
+    config₂.memory = (config₁.memory.update a n) ∧
+    config₂.nextAddr = config₁.nextAddr + 1 ∧
+    config₂.varEnv = config₁.varEnv ∧
+    v = Value.loc a := by
+  intro h_eval
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  cases fuel with
+  | zero =>
+    unfold LeanPoison.beval at h_eq
+    simp at h_eq
+    injection h_eq with h_contr
+    cases h_contr
+  | succ fuel' =>
+    unfold LeanPoison.beval at h_eq
+    simp at h_eq
+    simp [bind, Bind.bind, EST.bind] at h_eq
+    split at h_eq
+    · next h_result1 h_state1 h_beval1 =>
+      cases h_result1 with
+      | success config' v' =>
+        cases v' with
+        | num n =>
+          simp at h_eq
+          injection h_eq with h_eq_result h_eq_state
+          injection h_eq_result with h_eq_cfg h_eq_val
+          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' =
+              EST.Out.ok (.success config' (Value.num n)) w₁' :=
+            ⟨w₀, h_state1, h_beval1⟩
+          simp only [Nat.add_sub_cancel]
+          use config', n, config'.nextAddr, h_beval1_ex, rfl
+          simp [freshAddr] at h_eq_cfg h_eq_val
+          constructor
+          · -- config₂.memory = config₁.memory.update a n
+            rw [← h_eq_cfg]
+          constructor
+          · -- config₂.nextAddr = config₁.nextAddr + 1
+            rw [← h_eq_cfg]
+          constructor
+          · -- config₂.varEnv = config₁.varEnv
+            rw [← h_eq_cfg]
+          · -- v = Value.loc a
+            rw [← h_eq_val]
+        | bool _ | unit | str _ | loc _ | closure _ _ _ | peClosure _ _ _ =>
+          simp [pure] at h_eq
+          injection h_eq with h_contr
+          cases h_contr
+      | outOfFuel =>
+        simp [pure] at h_eq
+        injection h_eq with h_contr
+        cases h_contr
+      | runtimeError msg =>
+        simp [pure] at h_eq
+        injection h_eq with h_contr
+        cases h_contr
+    · next h_error1 h_state1 =>
+      injection h_eq
+
 private lemma stepFR_literal
   (ctx : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (res : TypeResult) (v : Value)
@@ -2716,6 +2907,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
         | ite e1 e2 e3 =>
             sorry
         | newRef e =>
+            -- newRef case: allocate fresh location and store initial value
+            -- Key: use freshLoc_not_realized to prove the new location is fresh
             sorry
         | assign e1 e2 =>
             sorry
