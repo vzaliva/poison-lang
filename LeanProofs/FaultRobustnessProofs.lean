@@ -1822,8 +1822,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   e2 ctx' res2 htc2' R
                 intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ ht₀ ht₁
                 -- Derive wfConfig for final configs using preservation lemma
-                have hwfcf₀_final : wfConfig cf₀ := wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀
-                have hwfcf₁_final : wfConfig cf₁ := wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁
+                have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀).1
+                have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁).1
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalOp_structure e1 e2 op fuel₀ verbose₀
@@ -1976,8 +1976,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   e ctxᵢ res1 htc1' R
                 intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ ht₀ ht₁
                 -- Derive wfConfig for final configs using preservation lemma
-                have hwfcf₀_final : wfConfig cf₀ := wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀
-                have hwfcf₁_final : wfConfig cf₁ := wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁
+                have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀).1
+                have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁).1
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalUnaryOp_structure op e fuel₀ verbose₀
@@ -2089,8 +2089,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   e ctxᵢ res1 htc1' R
                 intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ ht₀ ht₁
                 -- Derive wfConfig for final configs using preservation lemma
-                have hwfcf₀_final : wfConfig cf₀ := wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀
-                have hwfcf₁_final : wfConfig cf₁ := wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁
+                have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀).1
+                have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁).1
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalNewRef_structure e fuel₀ verbose₀
@@ -2224,7 +2224,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                         (hric₀1_ctx.1 l' a₀_new h_lookup).2
                       -- Use wfConfig: cfg₀'.memory.contains cfg₀'.nextAddr contradicts wfConfig cfg₀'
                       rw [ha₀_new] at h_contains
-                      exact Nat.lt_irrefl cfg₀'.nextAddr (hwfcf₀1 cfg₀'.nextAddr h_contains)
+                      exact Nat.lt_irrefl cfg₀'.nextAddr (hwfcf₀1.1 cfg₀'.nextAddr h_contains)
                     have h_inj' : ∀ k₁ k₂ a, θ₀1.get? k₁ = some a → θ₀1.get? k₂ = some a → k₁ = k₂ := by
                       intro k₁ k₂ a h1 h2
                       exact hWF k₁ k₂ a h1 h2
@@ -2275,7 +2275,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                       have h_contains : cfg₁'.memory.contains a₁_new :=
                         (hric₁1_ctx.1 l' a₁_new h_lookup).2
                       rw [ha₁_new] at h_contains
-                      exact Nat.lt_irrefl cfg₁'.nextAddr (hwfcf₁1 cfg₁'.nextAddr h_contains)
+                      exact Nat.lt_irrefl cfg₁'.nextAddr (hwfcf₁1.1 cfg₁'.nextAddr h_contains)
                     have h_inj' : ∀ k₁ k₂ a, θ₁1.get? k₁ = some a → θ₁1.get? k₂ = some a → k₁ = k₂ := by
                       intro k₁ k₂ a h1 h2
                       exact hWF k₁ k₂ a h1 h2
@@ -2368,8 +2368,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   e2 ctx' res2 htc2' R
                 intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ ht₀ ht₁
                 -- Derive wfConfig for final configs using preservation lemma
-                have hwfcf₀_final : wfConfig cf₀ := wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀
-                have hwfcf₁_final : wfConfig cf₁ := wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁
+                have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀).1
+                have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁).1
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalSeq_structure e1 e2 fuel₀ verbose₀
@@ -2490,8 +2490,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   e2 ctx' res2 htc2' R
                 intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ ht₀ ht₁
                 -- Derive wfConfig for final configs using preservation lemma
-                have hwfcf₀_final : wfConfig cf₀ := wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀
-                have hwfcf₁_final : wfConfig cf₁ := wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁
+                have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀).1
+                have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁).1
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalVlet_structure vname e1 e2 fuel₀ verbose₀
@@ -2543,6 +2543,12 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                     a₁ cfg₁1.nextAddr pm₁ cfg₁1.pureMode v₁1
                     hwf htc1' hθ₁ hθ₁1wf hθext₁1 hric₁ hric₁1_mem
                     ⟨fuel₁ - 1, verbose₁, w₁e1, w₁e1', hbeval₁_e1'⟩).1
+                have hpres₀_e1 : wfConfig cfg₀1 ∧ wfValue cfg₀1.nextAddr v₀1 :=
+                  wfConfig_preservedW _ _ _ _ ht₀_e1 hwfcfg₀
+                have hpres₁_e1 : wfConfig cfg₁1 ∧ wfValue cfg₁1.nextAddr v₁1 :=
+                  wfConfig_preservedW _ _ _ _ ht₁_e1 hwfcfg₁
+                have hv₀1_wf : wfValue cfg₀1.nextAddr v₀1 := hpres₀_e1.2
+                have hv₁1_wf : wfValue cfg₁1.nextAddr v₁1 := hpres₁_e1.2
                 have htagR_ctx' : tagEnvConsistentWithRegime ctx'.tagEnv R := by
                   simpa [hctx', ctxAfter] using htagR1
                 have hric₀1' : runtimeInstantiatesCtx ctx' cfg₀2.memory cfg₀2.varEnv θ₀1 := by
@@ -2666,8 +2672,20 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                 have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using hwf1
                 -- wfConfig cfg₀2 follows from wfConfig cfg₀1 since they have the same memory and nextAddr
                 -- (vlet only changes varEnv, not memory or nextAddr before evaluating e2)
-                have hwfcfg₀2' : wfConfig cfg₀2 := by simp only [hcfg₀2]; exact hwfcf₀1
-                have hwfcfg₁2' : wfConfig cfg₁2 := by simp only [hcfg₁2]; exact hwfcf₁1
+                have hwfcfg₀2' : wfConfig cfg₀2 := by
+                  rcases hwfcf₀1 with ⟨hwfmem₀, hwfenv₀⟩
+                  refine ⟨?_, ?_⟩
+                  · simpa [hcfg₀2] using hwfmem₀
+                  · have hwfenv₀' : wfVarEnv cfg₀1.nextAddr ((vname, v₀1) :: cfg₀1.varEnv) :=
+                      wfVarEnv.cons vname v₀1 cfg₀1.varEnv hv₀1_wf hwfenv₀
+                    simpa [hcfg₀2, VarEnv.update] using hwfenv₀'
+                have hwfcfg₁2' : wfConfig cfg₁2 := by
+                  rcases hwfcf₁1 with ⟨hwfmem₁, hwfenv₁⟩
+                  refine ⟨?_, ?_⟩
+                  · simpa [hcfg₁2] using hwfmem₁
+                  · have hwfenv₁' : wfVarEnv cfg₁1.nextAddr ((vname, v₁1) :: cfg₁1.varEnv) :=
+                      wfVarEnv.cons vname v₁1 cfg₁1.varEnv hv₁1_wf hwfenv₁
+                    simpa [hcfg₁2, VarEnv.update] using hwfenv₁'
                 have hstep_e2 :=
                   hIH2 cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀1 θ₁1
                     cfg₀3 cfg₁3 o₀ o₁
@@ -2843,8 +2861,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   e ctxᵢ res1 htc1' R
                 intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ ht₀ ht₁
                 -- Derive wfConfig for final configs using preservation lemma
-                have hwfcf₀_final : wfConfig cf₀ := wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀
-                have hwfcf₁_final : wfConfig cf₁ := wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁
+                have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀).1
+                have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁).1
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalPrintString_structure e fuel₀ verbose₀
@@ -2927,8 +2945,8 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   e ctxᵢ res1 htc1' R
                 intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ ht₀ ht₁
                 -- Derive wfConfig for final configs using preservation lemma
-                have hwfcf₀_final : wfConfig cf₀ := wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀
-                have hwfcf₁_final : wfConfig cf₁ := wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁
+                have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW _ _ _ _ ht₀ hwfcfg₀).1
+                have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW _ _ _ _ ht₁ hwfcfg₁).1
                 rcases ht₀ with ⟨fuel₀, verbose₀, w₀₀, w₀₁, hbeval₀⟩
                 have hstruct₀ :=
                   bevalPrintInt_structure e fuel₀ verbose₀

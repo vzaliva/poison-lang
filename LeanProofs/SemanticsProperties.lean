@@ -38,43 +38,50 @@ def stuck (e : Expr) (c₀ : Config) : Prop :=
 -- Runtime Configuration Well-formedness
 -- ================================================================
 
-/-- A runtime configuration is well-formed if all addresses in memory are below nextAddr.
+mutual
+  /-- A runtime value is well-formed w.r.t. a bound on addresses. -/
+  inductive wfValue (next : Address) : Value → Prop
+    | num (n : Int) : wfValue next (Value.num n)
+    | bool (b : Bool) : wfValue next (Value.bool b)
+    | unit : wfValue next Value.unit
+    | str (s : String) : wfValue next (Value.str s)
+    | loc {a : Address} : a < next → wfValue next (Value.loc a)
+    | closure (x : Name) (e : Expr) (env : VarEnv) :
+        wfVarEnv next env → wfValue next (Value.closure x e env)
+    | peClosure (x : Name) (e : Expr) (env : VarEnv) :
+        wfVarEnv next env → wfValue next (Value.peClosure x e env)
+
+  /-- A runtime variable environment is well-formed if all stored values are. -/
+  inductive wfVarEnv (next : Address) : VarEnv → Prop
+    | nil : wfVarEnv next []
+    | cons (x : Name) (v : Value) (env : VarEnv) :
+        wfValue next v → wfVarEnv next env → wfVarEnv next ((x, v) :: env)
+end
+
+/-- A runtime configuration is well-formed if:
+    (1) all addresses in memory are below nextAddr, and
+    (2) all values in varEnv only reference addresses below nextAddr.
     This captures that nextAddr is the "high-water mark" for allocated physical addresses,
     analogous to wfTypeContext for logical locations. -/
 def wfConfig (cfg : Config) : Prop :=
-  ∀ a, cfg.memory.contains a → a < cfg.nextAddr
+  (∀ a, cfg.memory.contains a → a < cfg.nextAddr) ∧
+  wfVarEnv cfg.nextAddr cfg.varEnv
 
 /-- If a config is well-formed, then nextAddr is not already in memory.
     This is the key property needed to prove freshness of newly allocated addresses. -/
 lemma nextAddr_not_in_memory (cfg : Config) :
     wfConfig cfg → ¬cfg.memory.contains cfg.nextAddr := by
   intro hwf hcontains
-  have h := hwf cfg.nextAddr hcontains
+  have h := hwf.1 cfg.nextAddr hcontains
   exact Nat.lt_irrefl cfg.nextAddr h
 
-/-- Evaluation preserves config well-formedness: if we start from a well-formed config
-    (all addresses in memory are below nextAddr), then the final config is also well-formed.
-    This follows from the fact that freshAddr returns nextAddr and increments it. -/
-lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
-    terminatesTo e cfg₀ cfg₁ v →
-    wfConfig cfg₀ →
-    wfConfig cfg₁ := by
-  -- TODO: Prove by induction on evaluation structure.
-  -- Key insight: only newRef allocates new addresses, and it uses freshAddr which
-  -- returns config.nextAddr and increments it to config.nextAddr + 1.
-  -- For any address a in the new memory:
-  --   - If a was in old memory: a < old_nextAddr ≤ new_nextAddr
-  --   - If a = old_nextAddr: a < old_nextAddr + 1 = new_nextAddr
-  sorry
-
-/-- World-indexed version of wfConfig_preserved for use in FR proofs. -/
+/-- Evaluation preserves config well-formedness (world-indexed), for use in FR proofs. -/
 lemma wfConfig_preservedW (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
     terminatesToW e cfg₀ cfg₁ v →
     wfConfig cfg₀ →
-    wfConfig cfg₁ := by
+    wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
   intro _hterm hwf₀
-  -- TODO: Follows from wfConfig_preserved once that is proven.
-  -- The termination witness can be converted between terminatesToW and terminatesTo.
+  -- TODO: Prove by induction on evaluation structure (world-indexed).
   sorry
 
 -- ================================================================
