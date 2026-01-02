@@ -2022,15 +2022,28 @@ lemma wfConfig_preservedW (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
     wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
   intro hterm hwf₀
   rcases hterm with ⟨fuel, verbose, w₀, w₁, hbeval⟩
-  -- Proof by induction on fuel; main split is on the expression.
-  induction fuel generalizing e cfg₀ cfg₁ v w₀ w₁ with
-  | zero =>
-      -- beval 0 cannot succeed.
-      unfold LeanPoison.beval at hbeval
-      simp at hbeval
-      cases hbeval
-  | succ fuel ih =>
-      cases e with
+  -- Strong induction on fuel; main split is on the expression.
+  revert e cfg₀ cfg₁ v verbose w₀ w₁ hbeval hwf₀
+  induction fuel using Nat.strong_induction_on with
+  | _ fuel IH =>
+      intro e cfg₀ cfg₁ v hwf₀ verbose w₀ w₁ hbeval
+      cases fuel with
+      | zero =>
+          -- beval 0 cannot succeed.
+          unfold LeanPoison.beval at hbeval
+          simp at hbeval
+          cases hbeval
+      | succ fuel =>
+          have ih :
+              ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
+                wfConfig cfg₀' →
+                ∀ (w₀' w₁' : Void IO.RealWorld),
+                  LeanPoison.beval fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
+                  wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v' := by
+            intro e cfg₀' cfg₁' v' hwf₀' w₀' w₁' hbeval'
+            have hlt : fuel < fuel.succ := Nat.lt_succ_self fuel
+            exact IH fuel hlt e cfg₀' cfg₁' v' hwf₀' verbose w₀' w₁' hbeval'
+          cases e with
       -- Literals (simple cases: config unchanged, value is well-formed)
       | num n =>
           unfold LeanPoison.beval at hbeval
