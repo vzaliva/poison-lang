@@ -756,7 +756,7 @@ private lemma preservation_printInt (e1 : Expr) (ctx : TypeContext)
         typecheckPrintInt_structure ctx e1 fuel_tc' res h_typecheck
 
       -- Extract evaluation structure
-      obtain ⟨config₁, v1, h_eval1_ex, _hv1_shape, h_v_unit, h_mem_eq, h_varenv_eq⟩ :=
+      obtain ⟨config₁, v1, h_eval1_ex, _hv1_shape, h_v_unit, h_mem_eq, h_varenv_eq, _h_next_eq, _h_pure_eq⟩ :=
         bevalPrintInt_structure e1 fuel'.succ verbose
           { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
@@ -829,7 +829,7 @@ private lemma preservation_printString (e1 : Expr) (ctx : TypeContext)
         typecheckPrintString_structure ctx e1 fuel_tc' res h_typecheck
 
       -- Extract evaluation structure
-      obtain ⟨config₁, v1, h_eval1_ex, _hv1_shape, h_v_unit, h_mem_eq, h_varenv_eq⟩ :=
+      obtain ⟨config₁, v1, h_eval1_ex, _hv1_shape, h_v_unit, h_mem_eq, h_varenv_eq, _h_next_eq, _h_pure_eq⟩ :=
         bevalPrintString_structure e1 fuel'.succ verbose
           { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
@@ -902,7 +902,7 @@ private lemma preservation_rand (e1 : Expr) (ctx : TypeContext)
         typecheckRand_structure ctx e1 fuel_tc' res h_typecheck
 
       -- Extract evaluation structure
-      obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
+      obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq, _h_next_eq, _h_pure_eq⟩ :=
         bevalRand_structure e1 fuel'.succ verbose
           { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
@@ -975,7 +975,7 @@ private lemma preservation_frand (e1 : Expr) (ctx : TypeContext)
         typecheckFrand_structure ctx e1 fuel_tc' res h_typecheck
 
       -- Extract evaluation structure
-      obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
+      obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq, _h_next_eq, _h_pure_eq⟩ :=
         bevalFrand_structure e1 fuel'.succ verbose
           { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }

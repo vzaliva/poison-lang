@@ -2872,13 +2872,13 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   bevalPrintString_structure e fuel₀ verbose₀
                     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
                     cf₀ o₀ ⟨w₀₀, w₀₁, hbeval₀⟩
-                rcases hstruct₀ with ⟨cfg₀', v₀', hbeval₀_e, _hvstr₀, hvunit₀, hmem₀, hvar₀⟩
+                rcases hstruct₀ with ⟨cfg₀', v₀', hbeval₀_e, _hvstr₀, hvunit₀, hmem₀, hvar₀, _hnext₀, _hpure₀⟩
                 rcases ht₁ with ⟨fuel₁, verbose₁, w₁₀, w₁₁, hbeval₁⟩
                 have hstruct₁ :=
                   bevalPrintString_structure e fuel₁ verbose₁
                     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
                     cf₁ o₁ ⟨w₁₀, w₁₁, hbeval₁⟩
-                rcases hstruct₁ with ⟨cfg₁', v₁', hbeval₁_e, _hvstr₁, hvunit₁, hmem₁, hvar₁⟩
+                rcases hstruct₁ with ⟨cfg₁', v₁', hbeval₁_e, _hvstr₁, hvunit₁, hmem₁, hvar₁, _hnext₁, _hpure₁⟩
                 rcases hbeval₀_e with ⟨w₀', w₀'', hbeval₀_e'⟩
                 rcases hbeval₁_e with ⟨w₁', w₁'', hbeval₁_e'⟩
                 have ht₀_e :
@@ -2956,13 +2956,13 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                   bevalPrintInt_structure e fuel₀ verbose₀
                     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
                     cf₀ o₀ ⟨w₀₀, w₀₁, hbeval₀⟩
-                rcases hstruct₀ with ⟨cfg₀', v₀', hbeval₀_e, _hvint₀, hvunit₀, hmem₀, hvar₀⟩
+                rcases hstruct₀ with ⟨cfg₀', v₀', hbeval₀_e, _hvint₀, hvunit₀, hmem₀, hvar₀, _hnext₀, _hpure₀⟩
                 rcases ht₁ with ⟨fuel₁, verbose₁, w₁₀, w₁₁, hbeval₁⟩
                 have hstruct₁ :=
                   bevalPrintInt_structure e fuel₁ verbose₁
                     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
                     cf₁ o₁ ⟨w₁₀, w₁₁, hbeval₁⟩
-                rcases hstruct₁ with ⟨cfg₁', v₁', hbeval₁_e, _hvint₁, hvunit₁, hmem₁, hvar₁⟩
+                rcases hstruct₁ with ⟨cfg₁', v₁', hbeval₁_e, _hvint₁, hvunit₁, hmem₁, hvar₁, _hnext₁, _hpure₁⟩
                 rcases hbeval₀_e with ⟨w₀', w₀'', hbeval₀_e'⟩
                 rcases hbeval₁_e with ⟨w₁', w₁'', hbeval₁_e'⟩
                 have ht₀_e :
