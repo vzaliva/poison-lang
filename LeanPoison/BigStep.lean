@@ -203,7 +203,9 @@ mutual
             else
               bevalFunctionBody (fuel - 1) verbose config'' env x v2 body false
           | .success config'' (Value.peClosure x body env) =>
-            bevalFunctionBody (fuel - 1) verbose config'' env x v2 body true
+            match Expr.toPExpr? body with
+            | some _ => bevalFunctionBody (fuel - 1) verbose config'' env x v2 body true
+            | none => return .runtimeError "Pure closure body is not pure"
           | .success _ _ => return .runtimeError "Runtime type error: expected function in application"
           | .outOfFuel => return .outOfFuel
           | .runtimeError msg => return .runtimeError msg

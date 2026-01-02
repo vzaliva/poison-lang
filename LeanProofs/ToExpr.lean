@@ -17,20 +17,24 @@ import Batteries.Data.List.Lemmas
 
 open Std
 
-theorem toExpr_toPExpr (pe : PExpr) :
-  pe.toExpr.toPExpr = Except.ok pe := by
+theorem toExpr_toPExpr? (pe : PExpr) :
+  pe.toExpr.toPExpr? = some pe := by
   induction pe with
   | unit | num _ | bool _ | str _ | var _ =>
-    simp [PExpr.toExpr, Expr.toPExpr, pure, Except.pure]
+    simp [PExpr.toExpr, Expr.toPExpr?]
   | vlet x e1 e2 IH1 IH2 =>
-    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2]
+    simp [PExpr.toExpr, Expr.toPExpr?, IH1, IH2]
   | app e1 e2 IH1 IH2 =>
-    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2]
+    simp [PExpr.toExpr, Expr.toPExpr?, IH1, IH2]
   | op e1 o e2 IH1 IH2 =>
-    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2]
+    simp [PExpr.toExpr, Expr.toPExpr?, IH1, IH2]
   | unaryop opname e IH =>
-    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, IH]
+    simp [PExpr.toExpr, Expr.toPExpr?, IH]
   | ite e1 e2 e3 IH1 IH2 IH3 =>
-    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, Seq.seq, Except.bind, IH1, IH2, IH3]
+    simp [PExpr.toExpr, Expr.toPExpr?, IH1, IH2, IH3]
   | deref e IH =>
-    simp [PExpr.toExpr, Expr.toPExpr, Functor.map, Except.map, IH]
+    simp [PExpr.toExpr, Expr.toPExpr?, IH]
+
+theorem toExpr_toPExpr (pe : PExpr) :
+  pe.toExpr.toPExpr = Except.ok pe := by
+  simp [Expr.toPExpr, toExpr_toPExpr?, pure, Except.pure]

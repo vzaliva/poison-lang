@@ -453,6 +453,38 @@ inductive PExpr : Type where
   | vlet : Name → PExpr → PExpr → PExpr            -- let x : T = e1 in e2
   | app : PExpr → PExpr → PExpr                    -- e1 e2
 
+-- Pure conversion: returns none if the expression is not a pure expression.
+def Expr.toPExpr? : Expr → Option PExpr
+  | Expr.unit => some .unit
+  | Expr.num n => some (.num n)
+  | Expr.bool b => some (.bool b)
+  | Expr.str s => some (.str s)
+  | Expr.var x => some (.var x)
+  | Expr.op e1 opName e2 => do
+      let pe1 ← Expr.toPExpr? e1
+      let pe2 ← Expr.toPExpr? e2
+      some (.op pe1 opName pe2)
+  | Expr.unaryop opName e => do
+      let pe ← Expr.toPExpr? e
+      some (.unaryop opName pe)
+  | Expr.ite e1 e2 e3 => do
+      let pe1 ← Expr.toPExpr? e1
+      let pe2 ← Expr.toPExpr? e2
+      let pe3 ← Expr.toPExpr? e3
+      some (.ite pe1 pe2 pe3)
+  | Expr.deref e => do
+      let pe ← Expr.toPExpr? e
+      some (.deref pe)
+  | Expr.vlet x e1 e2 => do
+      let pe1 ← Expr.toPExpr? e1
+      let pe2 ← Expr.toPExpr? e2
+      some (.vlet x pe1 pe2)
+  | Expr.app e1 e2 => do
+      let pe1 ← Expr.toPExpr? e1
+      let pe2 ← Expr.toPExpr? e2
+      some (.app pe1 pe2)
+  | _ => none
+
 -- Use mutual block to define interdependent types
 mutual
 

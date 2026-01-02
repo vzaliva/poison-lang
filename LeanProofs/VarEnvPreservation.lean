@@ -653,27 +653,34 @@ private lemma beval_preserves_varEnv_app (e1 e2 : Expr) (fuel' : Nat) (verbose :
             -- Chain: config₀.varEnv = config₁'.varEnv (by h_varEnv_eq2) = config₂.varEnv (by h_varEnv_eq1) = config₁.varEnv (by h_funcBody)
             exact Eq.trans (Eq.trans h_varEnv_eq2 h_varEnv_eq1) h_funcBody
         · next config₂ x body env =>
-          -- peClosure case (pure function), call bevalFunctionBody with isPure=true
-          -- h_eq contains: bevalFunctionBody fuel' verbose config₂ env x v₂ body true h_state2 = Result.ok (.success config₁ v) w₁
-          have h_bevalFunctionBody_eq : LeanPoison.bevalFunctionBody fuel' verbose config₂ env x v₂ body true h_state2 =
-              EST.Out.ok (.success config₁ v) w₁ := h_eq
-          -- We don't need config₂ = config₁; bevalFunctionBody_preserves_varEnv will show config₂.varEnv = config₁.varEnv
-          have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-          -- Construct existentials for e1 and e2
-          have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e2 verbose w₀' = EST.Out.ok (.success config₁' v₂) w₁' :=
-            ⟨w₀, h_state1, h_beval2⟩
-          have h_varEnv_eq2 : config₀.varEnv = config₁'.varEnv := IH fuel' h_fuel e2 verbose config₀ config₁' v₂ h_beval2_ex
-          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₁' e1 verbose w₀' = EST.Out.ok (.success config₂ (Value.peClosure x body env)) w₁' :=
-            ⟨h_state1, h_state2, h_beval1⟩
-          have h_varEnv_eq1 : config₁'.varEnv = config₂.varEnv := IH fuel' h_fuel e1 verbose config₁' config₂ (Value.peClosure x body env) h_beval1_ex
-          -- Apply helper lemma directly with the indexed equality
-          have h_bevalFunctionBody_ex : ∃ w₀' w₁', LeanPoison.bevalFunctionBody fuel' verbose config₂ env x v₂ body true w₀' =
-              EST.Out.ok (.success config₁ v) w₁' :=
-            ⟨h_state2, w₁, h_bevalFunctionBody_eq⟩
-          have h_funcBody : config₂.varEnv = config₁.varEnv :=
-            bevalFunctionBody_preserves_varEnv fuel' verbose config₂ config₁ env x v₂ body true v h_bevalFunctionBody_ex
-          -- Chain: config₀.varEnv = config₁'.varEnv (by h_varEnv_eq2) = config₂.varEnv (by h_varEnv_eq1) = config₁.varEnv (by h_funcBody)
-          exact Eq.trans (Eq.trans h_varEnv_eq2 h_varEnv_eq1) h_funcBody
+          cases h_pure : Expr.toPExpr? body with
+          | none =>
+              simp [h_pure, pure] at h_eq
+              injection h_eq with h_result h_world
+              injection h_result
+          | some _ =>
+              simp [h_pure] at h_eq
+              -- peClosure case (pure function), call bevalFunctionBody with isPure=true
+              -- h_eq contains: bevalFunctionBody fuel' verbose config₂ env x v₂ body true h_state2 = Result.ok (.success config₁ v) w₁
+              have h_bevalFunctionBody_eq : LeanPoison.bevalFunctionBody fuel' verbose config₂ env x v₂ body true h_state2 =
+                  EST.Out.ok (.success config₁ v) w₁ := h_eq
+              -- We don't need config₂ = config₁; bevalFunctionBody_preserves_varEnv will show config₂.varEnv = config₁.varEnv
+              have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+              -- Construct existentials for e1 and e2
+              have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e2 verbose w₀' = EST.Out.ok (.success config₁' v₂) w₁' :=
+                ⟨w₀, h_state1, h_beval2⟩
+              have h_varEnv_eq2 : config₀.varEnv = config₁'.varEnv := IH fuel' h_fuel e2 verbose config₀ config₁' v₂ h_beval2_ex
+              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₁' e1 verbose w₀' = EST.Out.ok (.success config₂ (Value.peClosure x body env)) w₁' :=
+                ⟨h_state1, h_state2, h_beval1⟩
+              have h_varEnv_eq1 : config₁'.varEnv = config₂.varEnv := IH fuel' h_fuel e1 verbose config₁' config₂ (Value.peClosure x body env) h_beval1_ex
+              -- Apply helper lemma directly with the indexed equality
+              have h_bevalFunctionBody_ex : ∃ w₀' w₁', LeanPoison.bevalFunctionBody fuel' verbose config₂ env x v₂ body true w₀' =
+                  EST.Out.ok (.success config₁ v) w₁' :=
+                ⟨h_state2, w₁, h_bevalFunctionBody_eq⟩
+              have h_funcBody : config₂.varEnv = config₁.varEnv :=
+                bevalFunctionBody_preserves_varEnv fuel' verbose config₂ config₁ env x v₂ body true v h_bevalFunctionBody_ex
+              -- Chain: config₀.varEnv = config₁'.varEnv (by h_varEnv_eq2) = config₂.varEnv (by h_varEnv_eq1) = config₁.varEnv (by h_funcBody)
+              exact Eq.trans (Eq.trans h_varEnv_eq2 h_varEnv_eq1) h_funcBody
         · next v => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
         · next => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
         · next msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result

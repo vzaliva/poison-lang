@@ -330,19 +330,9 @@ def joinTagEnvs (env1 env2 : TagEnv) : TagEnv :=
 
 -- Helper function to convert Expr to PExpr
 def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
-  match e with
-  | Expr.unit => return .unit
-  | Expr.num n => return .num n
-  | Expr.bool b => return .bool b
-  | Expr.str s => return .str s
-  | Expr.var x => return .var x
-  | Expr.op e1 opname e2 => (fun pe1 pe2 => PExpr.op pe1 opname pe2) <$> e1.toPExpr <*> e2.toPExpr
-  | Expr.unaryop opname e => PExpr.unaryop opname <$> e.toPExpr
-  | Expr.ite e1 e2 e3 => PExpr.ite <$> e1.toPExpr <*> e2.toPExpr <*> e3.toPExpr
-  | Expr.deref e => .deref <$> e.toPExpr
-  | Expr.vlet x e1 e2 => (fun pe1 pe2 => .vlet x pe1 pe2) <$> e1.toPExpr <*> e2.toPExpr
-  | Expr.app e1 e2 => .app <$> e1.toPExpr <*> e2.toPExpr
-  | _ => throw "Cannot convert expression to PExpr"
+  match Expr.toPExpr? e with
+  | some pe => return pe
+  | none => throw "Cannot convert expression to PExpr"
 
 -- Helper function to project ETyp to Typ By stripping poison and closure
 -- information from arrows and locations from references.

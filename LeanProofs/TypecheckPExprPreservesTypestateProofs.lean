@@ -146,14 +146,16 @@ private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExp
     simp_all
   | ok result1 =>
     -- use IH
-    simp [Expr.toPExpr, Functor.map, Except.map] at P
-    cases h1: e1.toPExpr with
-    | error err =>
-      simp_all
-    | ok pe1 =>
-      simp [h1] at P
+    simp [Expr.toPExpr, Expr.toPExpr?] at P
+    cases h1: Expr.toPExpr? e1 with
+    | none =>
+      simp [Expr.toPExpr, Expr.toPExpr?, h1, pure, Except.pure] at P
+    | some pe1 =>
+      have h1' : e1.toPExpr = Except.ok pe1 := by
+        simp [Expr.toPExpr, h1, pure, Except.pure]
+      simp [Expr.toPExpr, Expr.toPExpr?, h1, pure, Except.pure] at P
       have hfuel : fuel' < fuel' + 1 + 1 := by linarith
-      specialize IH fuel' hfuel ctx e1 pe1 result1 h1 C h0
+      specialize IH fuel' hfuel ctx e1 pe1 result1 h1' C h0
       unfold preservesTypestate at IH
       rcases IH with ⟨H1, H2, H3, H4⟩
       simp_all
@@ -243,197 +245,215 @@ private lemma typecheck_ite_preserves_typestate (ctx : TypeContext) (pe : PExpr)
   unfold preservesTypestate
   simp [typecheckExpr] at H
   (cases fuel with | zero |succ fuel') <;> simp_all [typecheckIf, bind, Except.bind]
-  simp [Expr.toPExpr, Functor.map, Except.map] at P
-  (cases h1: e1.toPExpr with| error err | ok pe1 ) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
-  (cases h3: e2.toPExpr with | error err | ok pe2) <;> simp [h3] at P
-  (cases h4: e3.toPExpr with | error err | ok pe3) <;> simp [h4] at P
+  simp [Expr.toPExpr, Expr.toPExpr?] at P
+  cases h1: Expr.toPExpr? e1 with
+  | none =>
+      simp [Expr.toPExpr, Expr.toPExpr?, h1, pure, Except.pure] at P
+  | some pe1 =>
+      have h1' : e1.toPExpr = Except.ok pe1 := by
+        simp [Expr.toPExpr, h1, pure, Except.pure]
+      simp [Expr.toPExpr, Expr.toPExpr?, h1, pure, Except.pure] at P
+      cases h3: Expr.toPExpr? e2 with
+      | none =>
+          simp [Expr.toPExpr, Expr.toPExpr?, h3, pure, Except.pure] at P
+      | some pe2 =>
+          have h3' : e2.toPExpr = Except.ok pe2 := by
+            simp [Expr.toPExpr, h3, pure, Except.pure]
+          simp [Expr.toPExpr, Expr.toPExpr?, h3, pure, Except.pure] at P
+          cases h4: Expr.toPExpr? e3 with
+          | none =>
+              simp [Expr.toPExpr, Expr.toPExpr?, h4, pure, Except.pure] at P
+          | some pe3 =>
+              have h4' : e3.toPExpr = Except.ok pe3 := by
+                simp [Expr.toPExpr, h4, pure, Except.pure]
+              simp [Expr.toPExpr, Expr.toPExpr?, h4, pure, Except.pure] at P
 
-  cases h8: matchGuard e1 ctx.memEnv ctx.varEnv with
-  | error err =>
-    -- simple case: no matching predicate found
-    simp_all
-    cases h5: typecheckExpr ctx e1 fuel' with
-    | error err =>
-      simp_all
-    | ok result1 =>
-      simp [h5] at H
-      have hfuel : fuel' < fuel' + 1 + 1 := by linarith
-      have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 C h5
-      unfold preservesTypestate at IH1
-      rcases IH1 with ⟨H1, H2, H3, H4⟩
-      simp_all
-      cases h6: result1.qualType with
-      | mk etyp' poison' pred' =>
-        simp_all
-        cases h7: etyp' != ETyp.bool with
-        | true =>
-          simp_all
-        | false =>
-          simp_all [pure, Except.pure]
-          cases h9: typecheckExpr
-                      { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                        tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
-                      e2 fuel' with
-          | error err =>
-            simp_all
-          | ok result2 =>
-            simp_all
-            cases h10: result2.qualType with
-            | mk etyp2 p'' pred =>
-              simp_all
-              cases h11: typecheckExpr
-                      { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                        tagEnv := result1.tagEnv',
-                        nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := ctx.pureCtx }
-                      e3 fuel' with
+              cases h8: matchGuard e1 ctx.memEnv ctx.varEnv with
               | error err =>
+                -- simple case: no matching predicate found
                 simp_all
-              | ok result3 =>
-                simp_all
-                cases h12: result3.qualType with
-                | mk etyp3 p''' pred =>
+                cases h5: typecheckExpr ctx e1 fuel' with
+                | error err =>
                   simp_all
-                  cases h13: beqETypSignature etyp2 etyp3 with
-                  | false =>
+                | ok result1 =>
+                  simp [h5] at H
+                  have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+                  have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1' C h5
+                  unfold preservesTypestate at IH1
+                  rcases IH1 with ⟨H1, H2, H3, H4⟩
+                  simp_all
+                  cases h6: result1.qualType with
+                  | mk etyp' poison' pred' =>
                     simp_all
-                  | true =>
-                    simp_all [pure, Except.pure]
-                    have C' : ({ pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                 tagEnv := result1.tagEnv',
-                                 nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := true } : TypeContext).pureCtx = true
-                            := by simp_all
-                    have IH2 := IH fuel' hfuel
-                        { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                          tagEnv := result1.tagEnv',
-                          nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := true }
-                        e2 pe2 result2 h3 C' h9
-                    have C'' : ({ pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                  tagEnv := result1.tagEnv',
-                                  nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true } : TypeContext).pureCtx = true
-                            := by simp_all
-                    have IH3 := IH fuel' hfuel
-                        { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                          tagEnv := result1.tagEnv',
-                          nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
-                        e3 pe3 result3 h4 C'' h11
-                    unfold preservesTypestate at IH2 IH3
-                    rcases IH2 with ⟨H14, H15, H16⟩
-                    rcases IH3 with ⟨H17, H18, H19⟩
-                    -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv' ∧ result1.memEnv'.equiv result3.memEnv'
-                    -- Goal: memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv')
-                    -- Use joinMemEnv_idempotent with m=result1.memEnv', m1=result2.memEnv', m2=result3.memEnv'
-                    have H_join : result1.memEnv'.equiv (joinMemEnvs result2.memEnv' result3.memEnv') :=
-                      joinMemEnv_idempotent result1.memEnv' result2.memEnv' result3.memEnv' H14 H17
-                    have H_trans : ctx.memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv') :=
-                      MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' (joinMemEnvs result2.memEnv' result3.memEnv') H1 H_join
-                    cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
-  | ok k_deps =>
-    -- predicate-based case: matching predicate found
-    simp_all
-    have ctx_eta :
-      { pc := ctx.pc,
-        memEnv := ctx.memEnv,
-        varEnv := ctx.varEnv,
-        tagEnv := ctx.tagEnv,
-        nextLoc := ctx.nextLoc,
-        nextTag := ctx.nextTag,
-        pureCtx := true } = ctx := by
-      rw [← C]
-
-    cases h5: typecheckExpr {
-                              pc := ctx.pc,
-                              memEnv := ctx.memEnv,
-                              varEnv := ctx.varEnv,
-                              tagEnv := ctx.tagEnv,
-                              nextLoc := ctx.nextLoc,
-                              nextTag := ctx.nextTag,
-                              pureCtx := true
-                            } e1 fuel' with
-    | error err =>
-       rw [h5] at H
-       simp at H
-    | ok result1 =>
-      rw [h5] at H
-      simp at H
-      cases h6: result1.qualType with
-      | mk etyp1 p' pred =>
-        simp_all
-        cases h7: etyp1 != ETyp.bool
-        · -- false case: etyp1 = ETyp.bool, proceed with the then/else branches
-          simp_all [pure, Except.pure]
-          cases h9:  typecheckExpr
-                      { pc := ctx.pc,
-                        memEnv := ctx.memEnv,
-                        varEnv := ctx.varEnv,
-                        tagEnv := ctx.tagEnv.insert k_deps.1 { value := true, deps := k_deps.2 },
-                        nextLoc := ctx.nextLoc,
-                        nextTag := ctx.nextTag,
-                        pureCtx := true }
-                      e2 fuel' with
-          | error err =>
-            simp [h9] at H
-          | ok result2 =>
-            simp [h9] at H
-            cases h10: result2.qualType with
-            | mk etyp2 p'' pred =>
-              simp [h10] at H
-              cases h11: typecheckExpr
-                      { pc := ctx.pc,
-                        memEnv := ctx.memEnv,
-                        varEnv := ctx.varEnv,
-                        tagEnv := ctx.tagEnv.insert k_deps.1 { value := false, deps := k_deps.2 },
-                        nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
-                      e3 fuel' with
-              | error err =>
-                simp [h11] at H
-              | ok result3 =>
-                simp [h11] at H
-                cases h12: result3.qualType with
-                | mk etyp3 p''' pred =>
-                  simp [h12] at H
-                  cases h13: beqETypSignature etyp2 etyp3 with
-                  | false =>
-                    simp [h13] at H
-                  | true =>
-                    simp [h13] at H
-                    have hfuel : fuel' < fuel' + 1 + 1 := by linarith
-                    have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 C h5
-                    unfold preservesTypestate at IH1
-                    rcases IH1 with ⟨H1, H2, H3, H4⟩
-                    have C' : ({ pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
-                                 tagEnv := ctx.tagEnv.insert k_deps.1 { value := true, deps := k_deps.2 },
-                                 nextLoc := ctx.nextLoc, nextTag := ctx.nextTag, pureCtx := true } : TypeContext).pureCtx = true
-                            := by simp
-                    have IH2 :=
-                      IH fuel' hfuel { pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
-                                       tagEnv := ctx.tagEnv.insert k_deps.1 { value := true, deps := k_deps.2 },
-                                       nextLoc := ctx.nextLoc, nextTag := ctx.nextTag, pureCtx := true }
-                                       e2 pe2 result2 h3 C' h9
-
-                    have C'' : ({ pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
-                                       tagEnv := ctx.tagEnv.insert k_deps.1 { value := false, deps := k_deps.2 },
-                                       nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true } : TypeContext).pureCtx = true
-                            := by simp
-                    have IH3 :=
-                      IH fuel' hfuel
-                        { pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
-                          tagEnv := ctx.tagEnv.insert k_deps.1 { value := false, deps := k_deps.2 },
-                          nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
-                        e3 pe3 result3 h4 C'' h11
-                    unfold preservesTypestate at IH2 IH3
-                    rcases IH2 with ⟨H14, H15, H16⟩
-                    rcases IH3 with ⟨H17, H18, H19⟩
-                    -- Prove: memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv')
-                    -- We have: memEnv.equiv memEnv (reflexivity from H1)
-                    -- And: memEnv.equiv result2.memEnv' (from H14)
-                    -- And: memEnv.equiv result3.memEnv' (from H17)
-                    -- Use joinMemEnv_idempotent with m=memEnv, m1=result2.memEnv', m2=result3.memEnv'
-                    have H_join : ctx.memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv') :=
-                      joinMemEnv_idempotent ctx.memEnv result2.memEnv' result3.memEnv' H14 H17
-                    cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
-        · -- true case: etyp1 != ETyp.bool, the else branch returns an error (contradiction)
-          simp_all
-
+                    cases h7: etyp' != ETyp.bool with
+                    | true =>
+                      simp_all
+                    | false =>
+                      simp_all [pure, Except.pure]
+                      cases h9: typecheckExpr
+                                  { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                    tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
+                                  e2 fuel' with
+                      | error err =>
+                        simp_all
+                      | ok result2 =>
+                        simp_all
+                        cases h10: result2.qualType with
+                        | mk etyp2 p'' pred =>
+                          simp_all
+                          cases h11: typecheckExpr
+                                  { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                    tagEnv := result1.tagEnv',
+                                    nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := ctx.pureCtx }
+                                  e3 fuel' with
+                          | error err =>
+                            simp_all
+                          | ok result3 =>
+                            simp_all
+                            cases h12: result3.qualType with
+                            | mk etyp3 p''' pred =>
+                              simp_all
+                              cases h13: beqETypSignature etyp2 etyp3 with
+                              | false =>
+                                simp_all
+                              | true =>
+                                simp_all [pure, Except.pure]
+                                have C' : ({ pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                             tagEnv := result1.tagEnv',
+                                             nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := true } : TypeContext).pureCtx = true
+                                        := by simp_all
+                                have IH2 := IH fuel' hfuel
+                                    { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                      tagEnv := result1.tagEnv',
+                                      nextLoc := result1.nextLoc', nextTag := result1.nextTag', pureCtx := true }
+                                    e2 pe2 result2 h3' C' h9
+                                have C'' : ({ pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                              tagEnv := result1.tagEnv',
+                                              nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true } : TypeContext).pureCtx = true
+                                        := by simp_all
+                                have IH3 := IH fuel' hfuel
+                                    { pc := joinPoison ctx.pc poison', memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                      tagEnv := result1.tagEnv',
+                                      nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
+                                    e3 pe3 result3 h4' C'' h11
+                                unfold preservesTypestate at IH2 IH3
+                                rcases IH2 with ⟨H14, H15, H16⟩
+                                rcases IH3 with ⟨H17, H18, H19⟩
+                                -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv' ∧ result1.memEnv'.equiv result3.memEnv'
+                                -- Goal: memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv')
+                                -- Use joinMemEnv_idempotent with m=result1.memEnv', m1=result2.memEnv', m2=result3.memEnv'
+                                have H_join : result1.memEnv'.equiv (joinMemEnvs result2.memEnv' result3.memEnv') :=
+                                  joinMemEnv_idempotent result1.memEnv' result2.memEnv' result3.memEnv' H14 H17
+                                have H_trans : ctx.memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv') :=
+                                  MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' (joinMemEnvs result2.memEnv' result3.memEnv') H1 H_join
+                                cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
+              | ok k_deps =>
+                -- predicate-based case: matching predicate found
+                simp_all
+                have ctx_eta :
+                  { pc := ctx.pc,
+                    memEnv := ctx.memEnv,
+                    varEnv := ctx.varEnv,
+                    tagEnv := ctx.tagEnv,
+                    nextLoc := ctx.nextLoc,
+                    nextTag := ctx.nextTag,
+                    pureCtx := true } = ctx := by
+                  rw [← C]
+            
+                cases h5: typecheckExpr {
+                                          pc := ctx.pc,
+                                          memEnv := ctx.memEnv,
+                                          varEnv := ctx.varEnv,
+                                          tagEnv := ctx.tagEnv,
+                                          nextLoc := ctx.nextLoc,
+                                          nextTag := ctx.nextTag,
+                                          pureCtx := true
+                                        } e1 fuel' with
+                | error err =>
+                   rw [h5] at H
+                   simp at H
+                | ok result1 =>
+                  rw [h5] at H
+                  simp at H
+                  cases h6: result1.qualType with
+                  | mk etyp1 p' pred =>
+                    simp_all
+                    cases h7: etyp1 != ETyp.bool
+                    · -- false case: etyp1 = ETyp.bool, proceed with the then/else branches
+                      simp_all [pure, Except.pure]
+                      cases h9:  typecheckExpr
+                                  { pc := ctx.pc,
+                                    memEnv := ctx.memEnv,
+                                    varEnv := ctx.varEnv,
+                                    tagEnv := ctx.tagEnv.insert k_deps.1 { value := true, deps := k_deps.2 },
+                                    nextLoc := ctx.nextLoc,
+                                    nextTag := ctx.nextTag,
+                                    pureCtx := true }
+                                  e2 fuel' with
+                      | error err =>
+                        simp [h9] at H
+                      | ok result2 =>
+                        simp [h9] at H
+                        cases h10: result2.qualType with
+                        | mk etyp2 p'' pred =>
+                          simp [h10] at H
+                          cases h11: typecheckExpr
+                                  { pc := ctx.pc,
+                                    memEnv := ctx.memEnv,
+                                    varEnv := ctx.varEnv,
+                                    tagEnv := ctx.tagEnv.insert k_deps.1 { value := false, deps := k_deps.2 },
+                                    nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
+                                  e3 fuel' with
+                          | error err =>
+                            simp [h11] at H
+                          | ok result3 =>
+                            simp [h11] at H
+                            cases h12: result3.qualType with
+                            | mk etyp3 p''' pred =>
+                              simp [h12] at H
+                              cases h13: beqETypSignature etyp2 etyp3 with
+                              | false =>
+                                simp [h13] at H
+                              | true =>
+                                simp [h13] at H
+                                have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+                                have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1' C h5
+                                unfold preservesTypestate at IH1
+                                rcases IH1 with ⟨H1, H2, H3, H4⟩
+                                have C' : ({ pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
+                                             tagEnv := ctx.tagEnv.insert k_deps.1 { value := true, deps := k_deps.2 },
+                                             nextLoc := ctx.nextLoc, nextTag := ctx.nextTag, pureCtx := true } : TypeContext).pureCtx = true
+                                        := by simp
+                                have IH2 :=
+                                  IH fuel' hfuel { pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
+                                                   tagEnv := ctx.tagEnv.insert k_deps.1 { value := true, deps := k_deps.2 },
+                                                   nextLoc := ctx.nextLoc, nextTag := ctx.nextTag, pureCtx := true }
+                                                   e2 pe2 result2 h3' C' h9
+            
+                                have C'' : ({ pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
+                                                   tagEnv := ctx.tagEnv.insert k_deps.1 { value := false, deps := k_deps.2 },
+                                                   nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true } : TypeContext).pureCtx = true
+                                        := by simp
+                                have IH3 :=
+                                  IH fuel' hfuel
+                                    { pc := ctx.pc, memEnv := ctx.memEnv, varEnv := ctx.varEnv,
+                                      tagEnv := ctx.tagEnv.insert k_deps.1 { value := false, deps := k_deps.2 },
+                                      nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := true }
+                                    e3 pe3 result3 h4' C'' h11
+                                unfold preservesTypestate at IH2 IH3
+                                rcases IH2 with ⟨H14, H15, H16⟩
+                                rcases IH3 with ⟨H17, H18, H19⟩
+                                -- Prove: memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv')
+                                -- We have: memEnv.equiv memEnv (reflexivity from H1)
+                                -- And: memEnv.equiv result2.memEnv' (from H14)
+                                -- And: memEnv.equiv result3.memEnv' (from H17)
+                                -- Use joinMemEnv_idempotent with m=memEnv, m1=result2.memEnv', m2=result3.memEnv'
+                                have H_join : ctx.memEnv.equiv (joinMemEnvs result2.memEnv' result3.memEnv') :=
+                                  joinMemEnv_idempotent ctx.memEnv result2.memEnv' result3.memEnv' H14 H17
+                                cases result; cases result1; cases result2; cases result3; cases ctx; cases H; simp_all
+                    · -- true case: etyp1 != ETyp.bool, the else branch returns an error (contradiction)
+                      simp_all
+            
 -- Private lemma for op case
 private lemma typecheck_op_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (e1 : Expr) (op : Op) (e2 : Expr)
   (C : ctx.pureCtx = true) (P : (e1.op op e2).toPExpr = Except.ok pe) (H : typecheckExpr ctx (e1.op op e2) (fuel + 1) = Except.ok result)
@@ -446,68 +466,80 @@ private lemma typecheck_op_preserves_typestate (ctx : TypeContext) (pe : PExpr) 
   unfold preservesTypestate
   simp [typecheckExpr] at H
   (cases fuel with | zero |succ fuel') <;> simp_all [typecheckOp, bind, Except.bind]
-  simp [Expr.toPExpr, Functor.map, Except.map] at P
-  (cases h1: e1.toPExpr with | error err | ok pe1) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
-  (cases h2: e2.toPExpr with | error err | ok pe2) <;> simp [h2, Seq.seq, Except.bind, Except.map] at P
-  cases h3: typecheckExpr ctx e1 fuel' with
-  | error err =>
-    simp_all
-  | ok result1 =>
-    simp [h3] at H
-    have hfuel : fuel' < fuel' + 1 + 1 := by linarith
-    have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 C h3
-    rcases IH1 with ⟨H1, H2, H3, H4⟩
-    simp_all
-    cases h4: result1.qualType with
-    | mk etyp1 p1 pred1 =>
-      simp_all
-      cases h5: typecheckExpr
-                      { pc := ctx.pc, memEnv := result1.memEnv',
-                        varEnv := ctx.varEnv,
-                        tagEnv := result1.tagEnv',
-                        nextLoc := result1.nextLoc',
-                        nextTag := result1.nextTag',
-                        pureCtx := ctx.pureCtx }
-                      e2 fuel' with
-      | error err =>
-        simp_all
-      | ok result2 =>
-        simp_all
-        cases h6: result2.qualType with
-        | mk etyp2 p2 pred2 =>
-          simp_all
-          cases h7: opEType? op etyp1 etyp2 with
-          | some etyp3 =>
-            simp_all [pure, Except.pure]
-            have C' : ({ pc := ctx.pc,
-                         memEnv := result1.memEnv',
-                         varEnv := ctx.varEnv,
-                         tagEnv := result1.tagEnv',
-                         nextLoc := result1.nextLoc',
-                         nextTag := result1.nextTag',
-                         pureCtx := true } : TypeContext).pureCtx = true
-                    := by simp_all
-            have IH2 := IH fuel' hfuel
-                      { pc := ctx.pc,
-                        memEnv := result1.memEnv',
-                        varEnv := ctx.varEnv,
-                        tagEnv := result1.tagEnv',
-                        nextLoc := result1.nextLoc',
-                        nextTag := result1.nextTag',
-                        pureCtx := true }
-                      e2 pe2 result2 h2 C' h5
-            unfold preservesTypestate at IH2
-            rcases IH2 with ⟨H8, H9, H10⟩
-            -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv'
-            -- H1: ctx.memEnv.equiv result1.memEnv'
-            -- H8: result1.memEnv'.equiv result2.memEnv'
-            -- Goal: ctx.memEnv.equiv result.memEnv' where result.memEnv' = result2.memEnv'
-            have H_trans : ctx.memEnv.equiv result2.memEnv' := MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' result2.memEnv' H1 H8
-            simp_all [H_trans]
-            cases result; cases result1; cases result2; cases ctx; cases H; simp_all
-          | none =>
+  simp [Expr.toPExpr, Expr.toPExpr?] at P
+  cases h1: Expr.toPExpr? e1 with
+  | none =>
+      simp [Expr.toPExpr, Expr.toPExpr?, h1, pure, Except.pure] at P
+  | some pe1 =>
+      have h1' : e1.toPExpr = Except.ok pe1 := by
+        simp [Expr.toPExpr, h1, pure, Except.pure]
+      simp [Expr.toPExpr, Expr.toPExpr?, h1, pure, Except.pure] at P
+      cases h2: Expr.toPExpr? e2 with
+      | none =>
+          simp [Expr.toPExpr, Expr.toPExpr?, h2, pure, Except.pure] at P
+      | some pe2 =>
+          have h2' : e2.toPExpr = Except.ok pe2 := by
+            simp [Expr.toPExpr, h2, pure, Except.pure]
+          simp [Expr.toPExpr, Expr.toPExpr?, h2, pure, Except.pure] at P
+          cases h3: typecheckExpr ctx e1 fuel' with
+          | error err =>
             simp_all
-
+          | ok result1 =>
+            simp [h3] at H
+            have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+            have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1' C h3
+            rcases IH1 with ⟨H1, H2, H3, H4⟩
+            simp_all
+            cases h4: result1.qualType with
+            | mk etyp1 p1 pred1 =>
+              simp_all
+              cases h5: typecheckExpr
+                              { pc := ctx.pc, memEnv := result1.memEnv',
+                                varEnv := ctx.varEnv,
+                                tagEnv := result1.tagEnv',
+                                nextLoc := result1.nextLoc',
+                                nextTag := result1.nextTag',
+                                pureCtx := ctx.pureCtx }
+                              e2 fuel' with
+              | error err =>
+                simp_all
+              | ok result2 =>
+                simp_all
+                cases h6: result2.qualType with
+                | mk etyp2 p2 pred2 =>
+                  simp_all
+                  cases h7: opEType? op etyp1 etyp2 with
+                  | some etyp3 =>
+                    simp_all [pure, Except.pure]
+                    have C' : ({ pc := ctx.pc,
+                                 memEnv := result1.memEnv',
+                                 varEnv := ctx.varEnv,
+                                 tagEnv := result1.tagEnv',
+                                 nextLoc := result1.nextLoc',
+                                 nextTag := result1.nextTag',
+                                 pureCtx := true } : TypeContext).pureCtx = true
+                            := by simp_all
+                    have IH2 := IH fuel' hfuel
+                              { pc := ctx.pc,
+                                memEnv := result1.memEnv',
+                                varEnv := ctx.varEnv,
+                                tagEnv := result1.tagEnv',
+                                nextLoc := result1.nextLoc',
+                                nextTag := result1.nextTag',
+                                pureCtx := true }
+                              e2 pe2 result2 h2' C' h5
+                    unfold preservesTypestate at IH2
+                    rcases IH2 with ⟨H8, H9, H10⟩
+                    -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv'
+                    -- H1: ctx.memEnv.equiv result1.memEnv'
+                    -- H8: result1.memEnv'.equiv result2.memEnv'
+                    -- Goal: ctx.memEnv.equiv result.memEnv' where result.memEnv' = result2.memEnv'
+                    have H_trans : ctx.memEnv.equiv result2.memEnv' := MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' result2.memEnv' H1 H8
+                    simp_all [H_trans]
+                    cases result; cases result1; cases result2; cases ctx; cases H; simp_all
+                  | none =>
+                    simp_all
+        
 -- Private lemma for unaryop case
 private lemma typecheck_unaryop_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (op : UnaryOp) (e : Expr)
   (C : ctx.pureCtx = true) (P : (Expr.unaryop op e).toPExpr = Except.ok pe) (H : typecheckExpr ctx (Expr.unaryop op e) (fuel + 1) = Except.ok result)
@@ -520,28 +552,34 @@ private lemma typecheck_unaryop_preserves_typestate (ctx : TypeContext) (pe : PE
   unfold preservesTypestate
   simp [typecheckExpr] at H
   (cases fuel with | zero |succ fuel') <;> simp_all [typecheckUnaryOp, bind, Except.bind]
-  simp [Expr.toPExpr, Functor.map, Except.map] at P
-  (cases h1: e.toPExpr with | error err | ok pe1) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
-  cases h2: typecheckExpr ctx e fuel' with
-  | error err =>
-    simp_all
-  | ok result1 =>
-    simp [h2] at H
-    have hfuel : fuel' < fuel' + 1 + 1 := by linarith
-    cases h4: result1.qualType with
-    | mk etyp p pred =>
+  simp [Expr.toPExpr, Expr.toPExpr?] at P
+  cases h1: Expr.toPExpr? e with
+  | none =>
+    simp [Expr.toPExpr, Expr.toPExpr?, h1, pure, Except.pure] at P
+  | some pe1 =>
+    have h1' : e.toPExpr = Except.ok pe1 := by
+      simp [Expr.toPExpr, h1, pure, Except.pure]
+    simp [Expr.toPExpr, Expr.toPExpr?, h1, pure, Except.pure] at P
+    cases h2: typecheckExpr ctx e fuel' with
+    | error err =>
       simp_all
-      cases h7: opUnaryEType? op etyp with
-      | some r =>
-        simp_all [pure, Except.pure]
-        specialize IH fuel' hfuel ctx e pe1 result1 h1 C h2
-        unfold preservesTypestate at IH
-        rcases IH with ⟨H8, H9, H10⟩
+    | ok result1 =>
+      simp [h2] at H
+      have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+      cases h4: result1.qualType with
+      | mk etyp p pred =>
         simp_all
-        cases result; cases result1; cases ctx; cases H; simp_all
-      | none =>
-        simp_all
-
+        cases h7: opUnaryEType? op etyp with
+        | some r =>
+          simp_all [pure, Except.pure]
+          specialize IH fuel' hfuel ctx e pe1 result1 h1' C h2
+          unfold preservesTypestate at IH
+          rcases IH with ⟨H8, H9, H10⟩
+          simp_all
+          cases result; cases result1; cases ctx; cases H; simp_all
+        | none =>
+          simp_all
+  
 -- Private lemma for vlet case
 private lemma typecheck_vlet_preserves_typestate (ctx : TypeContext) (pe : PExpr) (result : TypeResult) (fuel : Nat) (x : Name) (e1 e2 : Expr)
   (C : ctx.pureCtx = true) (P : (Expr.vlet x e1 e2).toPExpr = Except.ok pe) (H : typecheckExpr ctx (Expr.vlet x e1 e2) (fuel + 1) = Except.ok result)
@@ -554,63 +592,75 @@ private lemma typecheck_vlet_preserves_typestate (ctx : TypeContext) (pe : PExpr
   unfold preservesTypestate
   simp [typecheckExpr] at H
   (cases fuel with | zero |succ fuel') <;> simp_all [typecheckVlet, bind, Except.bind]
-  simp [Expr.toPExpr, Functor.map, Except.map] at P
-  (cases h1: e1.toPExpr with | error err | ok pe1) <;> simp [h1, Seq.seq, Except.bind, Except.map] at P
-  (cases h2: e2.toPExpr with | error err | ok pe2) <;> simp [h2, Seq.seq, Except.bind, Except.map] at P
-  cases h3: typecheckExpr ctx e1 fuel' with
-  | error err =>
-    simp_all
-  | ok result1 =>
-    simp [h3] at H
-    have hfuel : fuel' < fuel' + 1 + 1 := by linarith
-    have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1 C h3
-    rcases IH1 with ⟨H1, H2, H3, H4⟩
-    simp_all
-    cases h4: result1.qualType with
-    | mk etyp1 p1 pred1 =>
-      simp_all
-      cases h4: typecheckExpr
-                      { pc := ctx.pc, memEnv := result1.memEnv',
-                        varEnv := ctx.varEnv.update x { etyp := etyp1, poison := p1, pred := pred1 },
-                        tagEnv := result1.tagEnv',
-                        nextLoc := result1.nextLoc',
-                        nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
-                      e2 fuel' with
-      | error err =>
-        simp_all
-      | ok result2 =>
-        simp_all
-        cases h5: result2.qualType with
-        | mk etyp2 p2 pred2 =>
-          simp_all [pure, Except.pure]
-          have C' : ({ pc := ctx.pc,
-                       memEnv := result1.memEnv',
-                       varEnv := ctx.varEnv.update x { etyp := etyp1, poison := p1, pred := pred1 },
-                       tagEnv := result1.tagEnv',
-                       nextLoc := result1.nextLoc',
-                       nextTag := result1.nextTag',
-                       pureCtx := true } : TypeContext).pureCtx = true
-                      := by simp_all
-          have IH2 := IH fuel' hfuel
-            { pc := ctx.pc,
-              memEnv := result1.memEnv',
-              varEnv := ctx.varEnv.update x { etyp := etyp1, poison := p1, pred := pred1 },
-              tagEnv := result1.tagEnv',
-              nextLoc := result1.nextLoc',
-              nextTag := result1.nextTag',
-              pureCtx := true }
-            e2 pe2 result2 h2 C' h4
-          unfold preservesTypestate at IH2
-          rcases IH2 with ⟨H8, H9, H10⟩
-          -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv'
-          -- H1: ctx.memEnv.equiv result1.memEnv'
-          -- H8: result1.memEnv'.equiv result2.memEnv'
-          -- Goal: ctx.memEnv.equiv result.memEnv' where result.memEnv' = result2.memEnv'
-          have H_trans : ctx.memEnv.equiv result2.memEnv' := MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' result2.memEnv' H1 H8
-          simp_all [H_trans]
-          cases result; cases result1; cases result2; cases ctx; cases H; simp_all
-
--- ================================================================
+  simp [Expr.toPExpr, Expr.toPExpr?] at P
+  cases h1: Expr.toPExpr? e1 with
+  | none =>
+      simp [Expr.toPExpr, Expr.toPExpr?, h1, pure, Except.pure] at P
+  | some pe1 =>
+      have h1' : e1.toPExpr = Except.ok pe1 := by
+        simp [Expr.toPExpr, h1, pure, Except.pure]
+      simp [Expr.toPExpr, Expr.toPExpr?, h1, pure, Except.pure] at P
+      cases h2: Expr.toPExpr? e2 with
+      | none =>
+          simp [Expr.toPExpr, Expr.toPExpr?, h2, pure, Except.pure] at P
+      | some pe2 =>
+          have h2' : e2.toPExpr = Except.ok pe2 := by
+            simp [Expr.toPExpr, h2, pure, Except.pure]
+          simp [Expr.toPExpr, Expr.toPExpr?, h2, pure, Except.pure] at P
+          cases h3: typecheckExpr ctx e1 fuel' with
+          | error err =>
+            simp_all
+          | ok result1 =>
+            simp [h3] at H
+            have hfuel : fuel' < fuel' + 1 + 1 := by linarith
+            have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h1' C h3
+            rcases IH1 with ⟨H1, H2, H3, H4⟩
+            simp_all
+            cases h4: result1.qualType with
+            | mk etyp1 p1 pred1 =>
+              simp_all
+              cases h4: typecheckExpr
+                              { pc := ctx.pc, memEnv := result1.memEnv',
+                                varEnv := ctx.varEnv.update x { etyp := etyp1, poison := p1, pred := pred1 },
+                                tagEnv := result1.tagEnv',
+                                nextLoc := result1.nextLoc',
+                                nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
+                              e2 fuel' with
+              | error err =>
+                simp_all
+              | ok result2 =>
+                simp_all
+                cases h5: result2.qualType with
+                | mk etyp2 p2 pred2 =>
+                  simp_all [pure, Except.pure]
+                  have C' : ({ pc := ctx.pc,
+                               memEnv := result1.memEnv',
+                               varEnv := ctx.varEnv.update x { etyp := etyp1, poison := p1, pred := pred1 },
+                               tagEnv := result1.tagEnv',
+                               nextLoc := result1.nextLoc',
+                               nextTag := result1.nextTag',
+                               pureCtx := true } : TypeContext).pureCtx = true
+                              := by simp_all
+                  have IH2 := IH fuel' hfuel
+                    { pc := ctx.pc,
+                      memEnv := result1.memEnv',
+                      varEnv := ctx.varEnv.update x { etyp := etyp1, poison := p1, pred := pred1 },
+                      tagEnv := result1.tagEnv',
+                      nextLoc := result1.nextLoc',
+                      nextTag := result1.nextTag',
+                      pureCtx := true }
+                    e2 pe2 result2 h2' C' h4
+                  unfold preservesTypestate at IH2
+                  rcases IH2 with ⟨H8, H9, H10⟩
+                  -- Prove transitivity: memEnv.equiv result1.memEnv' ∧ result1.memEnv'.equiv result2.memEnv'
+                  -- H1: ctx.memEnv.equiv result1.memEnv'
+                  -- H8: result1.memEnv'.equiv result2.memEnv'
+                  -- Goal: ctx.memEnv.equiv result.memEnv' where result.memEnv' = result2.memEnv'
+                  have H_trans : ctx.memEnv.equiv result2.memEnv' := MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' result2.memEnv' H1 H8
+                  simp_all [H_trans]
+                  cases result; cases result1; cases result2; cases ctx; cases H; simp_all
+        
+        -- ================================================================
 -- Helper lemmas for app case
 -- ================================================================
 
@@ -1017,184 +1067,190 @@ private lemma typecheck_app_preserves_typestate (ctx : TypeContext) (pe : PExpr)
   | succ fuel' =>
     simp only [typecheckApp, bind, Except.bind] at H
     -- Extract pe1, pe2 from P
-    simp only [Expr.toPExpr, Functor.map, Except.map] at P
-    cases h_pe1 : e1.toPExpr with
-    | error _ => simp [h_pe1, Seq.seq, Except.bind] at P
-    | ok pe1 =>
-      simp [h_pe1, Seq.seq, Except.bind] at P
-      cases h_pe2 : e2.toPExpr with
-      | error _ => simp [h_pe2, Except.map] at P
-      | ok pe2 =>
-        simp [h_pe2] at P
-        -- Step 1: typecheck e1
-        cases h_tc1 : typecheckExpr ctx e1 fuel' with
-        | error _ => simp [h_tc1] at H
-        | ok result1 =>
-          simp [h_tc1] at H
-          have hfuel : fuel' < fuel' + 1 + 1 := by omega
-          have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h_pe1 C h_tc1
-          unfold preservesTypestate at IH1
-          obtain ⟨H1_memEnv, H1_tagEnv, H1_nextLoc, H1_nextTag⟩ := IH1
-          -- Case split on result1.qualType.etyp
-          match h_qt1 : result1.qualType with
-          | ⟨etyp1, p1, _pred1⟩ =>
-            simp only [h_qt1] at H
-            match etyp1 with
-            | .arrow _ _ _ _ =>
-              -- Arrow in pure context throws error
-              simp [C] at H
-            | .parrow st1 st2 p tcls =>
-              simp only at H
-              cases h_empty : tcls.isEmpty with
-              | true =>
-                have h_nil : tcls = [] := by rwa [List.isEmpty_iff] at h_empty
-                simp [h_nil] at H
-              | false =>
-                have h_nonempty : tcls ≠ [] := by
-                  intro h_nil
-                  simp [h_nil] at h_empty
-                simp only [h_nonempty, ↓reduceIte, pure, Except.pure] at H
-                -- Step 2: typecheck e2 with updated context
-                cases h_tc2 : typecheckExpr { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                               tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
-                                               nextTag := result1.nextTag', pureCtx := ctx.pureCtx } e2 fuel' with
-                | error _ => simp [h_tc2] at H
-                | ok result2 =>
-                  simp [h_tc2] at H
-                  let ctx' : TypeContext := { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
-                                               tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
-                                               nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
-                  have C' : ctx'.pureCtx = true := C
-                  have IH2 := IH fuel' hfuel ctx' e2 pe2 result2 h_pe2 C' h_tc2
-                  unfold preservesTypestate at IH2
-                  obtain ⟨H2_memEnv, H2_tagEnv, H2_nextLoc, H2_nextTag⟩ := IH2
-                  -- Transitivity for all 4 components
-                  have H_memEnv_trans : ctx.memEnv.equiv result2.memEnv' := MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' result2.memEnv' H1_memEnv H2_memEnv
-                  have H_tagEnv_trans : ctx.tagEnv = result2.tagEnv' := by rw [H1_tagEnv]; exact H2_tagEnv
-                  have H_nextLoc_trans : ctx.nextLoc = result2.nextLoc' := by rw [H1_nextLoc]; exact H2_nextLoc
-                  have H_nextTag_trans : ctx.nextTag = result2.nextTag' := by rw [H1_nextTag]; exact H2_nextTag
-                  -- Subtype check: if isSubtype st1 result2.qualType = false then error else ...
-                  cases h_sub : isSubtype st1 result2.qualType with
-                  | true =>
-                    simp only [h_sub, ↓reduceIte] at H
-                    -- Destruct result2.qualType for the inner match
-                    cases h_qt2 : result2.qualType with
-                    | mk etyp2 p2 pred2 =>
-                      simp only [h_qt2] at H
-                      -- Step 3: mapM applyPFnTClosure
-                      cases h_map : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls with
-                      | error _ => simp [h_map] at H
-                      | ok closureResults =>
-                        simp only [h_map] at H
-                        match h_res : closureResults with
-                        | [] =>
-                          -- Empty list: H becomes throw ... = Except.ok, contradiction
-                          simp only [h_res, Bool.true_eq_false, ↓reduceIte] at H
-                          -- H : throw ... = Except.ok result is a contradiction (Except.error ≠ Except.ok)
-                          cases H
-                        | firstResult :: restResults =>
-                          simp only [h_res] at H
-                          -- Use mapM helper: all results preserve typestate relative to result2
-                          have IH_lower : ∀ m < fuel', ∀ (ctx' : TypeContext) (e : Expr) (pe' : PExpr) (res : TypeResult),
-                              e.toPExpr = Except.ok pe' → ctx'.pureCtx = true → typecheckExpr ctx' e m = Except.ok res →
-                              preservesTypestate ctx'.memEnv ctx'.tagEnv ctx'.nextLoc ctx'.nextTag res := by
-                            intro m hm ctx'' e' pe' res h_pe' h_ctx h_tc
-                            exact IH m (by omega) ctx'' e' pe' res h_pe' h_ctx h_tc
-                          -- h_map was specialized by the match, so closureResults = firstResult :: restResults
-                          have h_map' : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls = Except.ok (firstResult :: restResults) := h_map
-                          have h_all := mapM_applyPFnTClosure_preserves_typestate tcls st1 st2 p p1 etyp2 p2 pred2
-                              ctx result2 fuel' (firstResult :: restResults) h_map' IH_lower
-                          -- All closure results preserve typestate relative to result2
-                          have h_first_mem : firstResult ∈ (firstResult :: restResults) := by simp
-                          have h_first := h_all firstResult h_first_mem
-                          have h_rest : ∀ r ∈ restResults, preservesTypestate result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag' r := by
-                            intro r h_mem
-                            have : r ∈ (firstResult :: restResults) := by simp [h_mem]
-                            exact h_all r this
-                          -- Extract individual components from preservesTypestate
-                          have h_first_memEnv : result2.memEnv'.equiv firstResult.memEnv' := h_first.1
-                          have h_first_tagEnv : result2.tagEnv' = firstResult.tagEnv' := h_first.2.1
-                          have h_first_nextLoc : result2.nextLoc' = firstResult.nextLoc' := h_first.2.2.1
-                          have h_first_nextTag : result2.nextTag' = firstResult.nextTag' := h_first.2.2.2
-                          have h_rest_memEnv : ∀ r ∈ restResults, result2.memEnv'.equiv r.memEnv' := fun r h => (h_rest r h).1
-                          have h_rest_tagEnv : ∀ r ∈ restResults, result2.tagEnv' = r.tagEnv' := fun r h => (h_rest r h).2.1
-                          have h_rest_nextLoc : ∀ r ∈ restResults, result2.nextLoc' = r.nextLoc' := fun r h => (h_rest r h).2.2.1
-                          have h_rest_nextTag : ∀ r ∈ restResults, result2.nextTag' = r.nextTag' := fun r h => (h_rest r h).2.2.2
-                          -- Use joinTypeResults_preserves_typestate (strengthened version)
-                          have h_join_result := joinTypeResults_preserves_typestate ctx
-                              result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag'
-                              firstResult restResults result
-                              (by
-                                intro r h_mem
-                                exact h_all r h_mem)
-                              H
-                          obtain ⟨h_final_memEnv, h_final_tagEnv, h_final_nextLoc, h_final_nextTag⟩ := h_join_result
-                          -- Final transitivity
-                          -- H_memEnv_trans: ctx.memEnv.equiv result2.memEnv'
-                          -- h_final_memEnv: result2.memEnv'.equiv result.memEnv'
-                          -- Goal: ctx.memEnv.equiv result.memEnv'
-                          have H_final_memEnv_trans : ctx.memEnv.equiv result.memEnv' :=
-                            MemoryTypeEnv.equiv.trans ctx.memEnv result2.memEnv' result.memEnv' H_memEnv_trans h_final_memEnv
-                          refine ⟨H_final_memEnv_trans, ?_, ?_, ?_⟩
-                          · rw [H_tagEnv_trans]; exact h_final_tagEnv
-                          · rw [H_nextLoc_trans]; exact h_final_nextLoc
-                          · rw [H_nextTag_trans]; exact h_final_nextTag
-                  | false =>
-                    -- isSubtype fails: H becomes Except.error = Except.ok, contradiction
-                    simp only [h_sub, ↓reduceIte] at H
-                    cases h_qt2 : result2.qualType with
-                    | mk _ _ _ =>
-                      simp only [h_qt2] at H
-                      exact absurd H (by simp)
-            | .int | .bool | .unit | .string | .ref _ _ => simp at H
-
-theorem typecheck_PExpr_preserves_typestate : TypecheckPExprPreservesTypestate := by
-  unfold TypecheckPExprPreservesTypestate
-  intro fuel
-   -- strong induction on `fuel`
-  induction fuel using Nat.strong_induction_on with
-  | _ n IH =>
-    intro ctx e pe result P C H
-    cases n with
-    | zero =>
-      simp [typecheckExpr] at H
-    | succ fuel =>
-      cases e with
-      | unit =>
-        apply typecheck_unit_preserves_typestate ctx pe result fuel C P H
-      | str s =>
-        apply typecheck_str_preserves_typestate ctx pe result fuel s C P H
-      | num n =>
-        apply typecheck_num_preserves_typestate ctx pe result fuel n C P H
-      | bool b =>
-        apply typecheck_bool_preserves_typestate ctx pe result fuel b C P H
-      | var name =>
-        apply typecheck_var_preserves_typestate ctx pe result fuel name C P H
-      | deref e1 =>
-        apply typecheck_deref_preserves_typestate ctx pe result fuel e1 C P H IH
-      | ite e1 e2 e3  =>
-        apply typecheck_ite_preserves_typestate ctx pe result fuel e1 e2 e3 C P H IH
-      | op e1 op e2 =>
-        apply typecheck_op_preserves_typestate ctx pe result fuel e1 op e2 C P H IH
-      | unaryop op e =>
-        apply typecheck_unaryop_preserves_typestate ctx pe result fuel op e C P H IH
-      | vlet x e1 e2 =>
-        apply typecheck_vlet_preserves_typestate ctx pe result fuel x e1 e2 C P H IH
-      | app e1 e2 =>
-        apply typecheck_app_preserves_typestate ctx pe result fuel e1 e2 C P H IH
-      /- The following cases are not possible to convert to PExpr -/
-      | newRef _
-      | assign _ _
-      | seq _ _
-      | kwhile _ _
-      | fn _ _ _ _
-      | pfn _ _ _ _
-      | rand _
-      | frand _
-      | printString _
-      | printInt _
-      | externVal _ _ _
-      | externFn _ _ _ _
-      | externPfn _ _ _
-        =>
-        contradiction
+    simp [Expr.toPExpr, Expr.toPExpr?] at P
+    cases h_pe1 : Expr.toPExpr? e1 with
+    | none =>
+        simp [Expr.toPExpr, Expr.toPExpr?, h_pe1, pure, Except.pure] at P
+    | some pe1 =>
+        have h_pe1' : e1.toPExpr = Except.ok pe1 := by
+          simp [Expr.toPExpr, h_pe1, pure, Except.pure]
+        simp [Expr.toPExpr, Expr.toPExpr?, h_pe1, pure, Except.pure] at P
+        cases h_pe2 : Expr.toPExpr? e2 with
+        | none =>
+          simp [Expr.toPExpr, Expr.toPExpr?, h_pe2, pure, Except.pure] at P
+        | some pe2 =>
+          have h_pe2' : e2.toPExpr = Except.ok pe2 := by
+            simp [Expr.toPExpr, h_pe2, pure, Except.pure]
+          simp [Expr.toPExpr, Expr.toPExpr?, h_pe2, pure, Except.pure] at P
+          -- Step 1: typecheck e1
+          cases h_tc1 : typecheckExpr ctx e1 fuel' with
+          | error _ => simp [h_tc1] at H
+          | ok result1 =>
+            simp [h_tc1] at H
+            have hfuel : fuel' < fuel' + 1 + 1 := by omega
+            have IH1 := IH fuel' hfuel ctx e1 pe1 result1 h_pe1' C h_tc1
+            unfold preservesTypestate at IH1
+            obtain ⟨H1_memEnv, H1_tagEnv, H1_nextLoc, H1_nextTag⟩ := IH1
+            -- Case split on result1.qualType.etyp
+            match h_qt1 : result1.qualType with
+            | ⟨etyp1, p1, _pred1⟩ =>
+              simp only [h_qt1] at H
+              match etyp1 with
+              | .arrow _ _ _ _ =>
+                -- Arrow in pure context throws error
+                simp [C] at H
+              | .parrow st1 st2 p tcls =>
+                simp only at H
+                cases h_empty : tcls.isEmpty with
+                | true =>
+                  have h_nil : tcls = [] := by rwa [List.isEmpty_iff] at h_empty
+                  simp [h_nil] at H
+                | false =>
+                  have h_nonempty : tcls ≠ [] := by
+                    intro h_nil
+                    simp [h_nil] at h_empty
+                  simp only [h_nonempty, ↓reduceIte, pure, Except.pure] at H
+                  -- Step 2: typecheck e2 with updated context
+                  cases h_tc2 : typecheckExpr { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                                 tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                                 nextTag := result1.nextTag', pureCtx := ctx.pureCtx } e2 fuel' with
+                  | error _ => simp [h_tc2] at H
+                  | ok result2 =>
+                    simp [h_tc2] at H
+                    let ctx' : TypeContext := { pc := ctx.pc, memEnv := result1.memEnv', varEnv := ctx.varEnv,
+                                                 tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                                 nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
+                    have C' : ctx'.pureCtx = true := C
+                    have IH2 := IH fuel' hfuel ctx' e2 pe2 result2 h_pe2' C' h_tc2
+                    unfold preservesTypestate at IH2
+                    obtain ⟨H2_memEnv, H2_tagEnv, H2_nextLoc, H2_nextTag⟩ := IH2
+                    -- Transitivity for all 4 components
+                    have H_memEnv_trans : ctx.memEnv.equiv result2.memEnv' := MemoryTypeEnv.equiv.trans ctx.memEnv result1.memEnv' result2.memEnv' H1_memEnv H2_memEnv
+                    have H_tagEnv_trans : ctx.tagEnv = result2.tagEnv' := by rw [H1_tagEnv]; exact H2_tagEnv
+                    have H_nextLoc_trans : ctx.nextLoc = result2.nextLoc' := by rw [H1_nextLoc]; exact H2_nextLoc
+                    have H_nextTag_trans : ctx.nextTag = result2.nextTag' := by rw [H1_nextTag]; exact H2_nextTag
+                    -- Subtype check: if isSubtype st1 result2.qualType = false then error else ...
+                    cases h_sub : isSubtype st1 result2.qualType with
+                    | true =>
+                      simp only [h_sub, ↓reduceIte] at H
+                      -- Destruct result2.qualType for the inner match
+                      cases h_qt2 : result2.qualType with
+                      | mk etyp2 p2 pred2 =>
+                        simp only [h_qt2] at H
+                        -- Step 3: mapM applyPFnTClosure
+                        cases h_map : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls with
+                        | error _ => simp [h_map] at H
+                        | ok closureResults =>
+                          simp only [h_map] at H
+                          match h_res : closureResults with
+                          | [] =>
+                            -- Empty list: H becomes throw ... = Except.ok, contradiction
+                            simp only [h_res, Bool.true_eq_false, ↓reduceIte] at H
+                            -- H : throw ... = Except.ok result is a contradiction (Except.error ≠ Except.ok)
+                            cases H
+                          | firstResult :: restResults =>
+                            simp only [h_res] at H
+                            -- Use mapM helper: all results preserve typestate relative to result2
+                            have IH_lower : ∀ m < fuel', ∀ (ctx' : TypeContext) (e : Expr) (pe' : PExpr) (res : TypeResult),
+                                e.toPExpr = Except.ok pe' → ctx'.pureCtx = true → typecheckExpr ctx' e m = Except.ok res →
+                                preservesTypestate ctx'.memEnv ctx'.tagEnv ctx'.nextLoc ctx'.nextTag res := by
+                              intro m hm ctx'' e' pe' res h_pe' h_ctx h_tc
+                              exact IH m (by omega) ctx'' e' pe' res h_pe' h_ctx h_tc
+                            -- h_map was specialized by the match, so closureResults = firstResult :: restResults
+                            have h_map' : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls = Except.ok (firstResult :: restResults) := h_map
+                            have h_all := mapM_applyPFnTClosure_preserves_typestate tcls st1 st2 p p1 etyp2 p2 pred2
+                                ctx result2 fuel' (firstResult :: restResults) h_map' IH_lower
+                            -- All closure results preserve typestate relative to result2
+                            have h_first_mem : firstResult ∈ (firstResult :: restResults) := by simp
+                            have h_first := h_all firstResult h_first_mem
+                            have h_rest : ∀ r ∈ restResults, preservesTypestate result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag' r := by
+                              intro r h_mem
+                              have : r ∈ (firstResult :: restResults) := by simp [h_mem]
+                              exact h_all r this
+                            -- Extract individual components from preservesTypestate
+                            have h_first_memEnv : result2.memEnv'.equiv firstResult.memEnv' := h_first.1
+                            have h_first_tagEnv : result2.tagEnv' = firstResult.tagEnv' := h_first.2.1
+                            have h_first_nextLoc : result2.nextLoc' = firstResult.nextLoc' := h_first.2.2.1
+                            have h_first_nextTag : result2.nextTag' = firstResult.nextTag' := h_first.2.2.2
+                            have h_rest_memEnv : ∀ r ∈ restResults, result2.memEnv'.equiv r.memEnv' := fun r h => (h_rest r h).1
+                            have h_rest_tagEnv : ∀ r ∈ restResults, result2.tagEnv' = r.tagEnv' := fun r h => (h_rest r h).2.1
+                            have h_rest_nextLoc : ∀ r ∈ restResults, result2.nextLoc' = r.nextLoc' := fun r h => (h_rest r h).2.2.1
+                            have h_rest_nextTag : ∀ r ∈ restResults, result2.nextTag' = r.nextTag' := fun r h => (h_rest r h).2.2.2
+                            -- Use joinTypeResults_preserves_typestate (strengthened version)
+                            have h_join_result := joinTypeResults_preserves_typestate ctx
+                                result2.memEnv' result2.tagEnv' result2.nextLoc' result2.nextTag'
+                                firstResult restResults result
+                                (by
+                                  intro r h_mem
+                                  exact h_all r h_mem)
+                                H
+                            obtain ⟨h_final_memEnv, h_final_tagEnv, h_final_nextLoc, h_final_nextTag⟩ := h_join_result
+                            -- Final transitivity
+                            -- H_memEnv_trans: ctx.memEnv.equiv result2.memEnv'
+                            -- h_final_memEnv: result2.memEnv'.equiv result.memEnv'
+                            -- Goal: ctx.memEnv.equiv result.memEnv'
+                            have H_final_memEnv_trans : ctx.memEnv.equiv result.memEnv' :=
+                              MemoryTypeEnv.equiv.trans ctx.memEnv result2.memEnv' result.memEnv' H_memEnv_trans h_final_memEnv
+                            refine ⟨H_final_memEnv_trans, ?_, ?_, ?_⟩
+                            · rw [H_tagEnv_trans]; exact h_final_tagEnv
+                            · rw [H_nextLoc_trans]; exact h_final_nextLoc
+                            · rw [H_nextTag_trans]; exact h_final_nextTag
+                    | false =>
+                      -- isSubtype fails: H becomes Except.error = Except.ok, contradiction
+                      simp only [h_sub, ↓reduceIte] at H
+                      cases h_qt2 : result2.qualType with
+                      | mk _ _ _ =>
+                        simp only [h_qt2] at H
+                        exact absurd H (by simp)
+              | .int | .bool | .unit | .string | .ref _ _ => simp at H
+  
+  theorem typecheck_PExpr_preserves_typestate : TypecheckPExprPreservesTypestate := by
+    unfold TypecheckPExprPreservesTypestate
+    intro fuel
+     -- strong induction on `fuel`
+    induction fuel using Nat.strong_induction_on with
+    | _ n IH =>
+      intro ctx e pe result P C H
+      cases n with
+      | zero =>
+        simp [typecheckExpr] at H
+      | succ fuel =>
+        cases e with
+        | unit =>
+          apply typecheck_unit_preserves_typestate ctx pe result fuel C P H
+        | str s =>
+          apply typecheck_str_preserves_typestate ctx pe result fuel s C P H
+        | num n =>
+          apply typecheck_num_preserves_typestate ctx pe result fuel n C P H
+        | bool b =>
+          apply typecheck_bool_preserves_typestate ctx pe result fuel b C P H
+        | var name =>
+          apply typecheck_var_preserves_typestate ctx pe result fuel name C P H
+        | deref e1 =>
+          apply typecheck_deref_preserves_typestate ctx pe result fuel e1 C P H IH
+        | ite e1 e2 e3  =>
+          apply typecheck_ite_preserves_typestate ctx pe result fuel e1 e2 e3 C P H IH
+        | op e1 op e2 =>
+          apply typecheck_op_preserves_typestate ctx pe result fuel e1 op e2 C P H IH
+        | unaryop op e =>
+          apply typecheck_unaryop_preserves_typestate ctx pe result fuel op e C P H IH
+        | vlet x e1 e2 =>
+          apply typecheck_vlet_preserves_typestate ctx pe result fuel x e1 e2 C P H IH
+        | app e1 e2 =>
+          apply typecheck_app_preserves_typestate ctx pe result fuel e1 e2 C P H IH
+        /- The following cases are not possible to convert to PExpr -/
+        | newRef _
+        | assign _ _
+        | seq _ _
+        | kwhile _ _
+        | fn _ _ _ _
+        | pfn _ _ _ _
+        | rand _
+        | frand _
+        | printString _
+        | printInt _
+        | externVal _ _ _
+        | externFn _ _ _ _
+        | externPfn _ _ _
+          =>
+          contradiction
