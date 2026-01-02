@@ -583,7 +583,7 @@ private lemma preservation_unaryop (op : UnaryOp) (e1 : Expr) (ctx : TypeContext
         typecheckUnaryOp_structure ctx op e1 fuel_tc' res h_typecheck
 
       -- Extract evaluation structure
-      obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq⟩ :=
+      obtain ⟨config₁, v1, h_eval1_ex, h_v1_type, h_v_type, h_mem_eq, h_varenv_eq, _hnext_eq, _hpure_eq⟩ :=
         bevalUnaryOp_structure op e1 fuel'.succ verbose
           { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
           { memory := μ₂, varEnv := ρ₂, nextAddr := l₂, pureMode := pm₂ }

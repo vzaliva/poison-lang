@@ -787,6 +787,86 @@ private lemma wfVarEnv_lookup (next : Address) (env : VarEnv) (x : Name) (v : Va
                   simp [h_eq] at h_lookup
                   exact ih h_wf_tail h_lookup
 
+-- Monotonicity of well-formedness: larger bounds preserve wfValue/wfVarEnv.
+mutual
+  private lemma wfValue_mono {n m : Address} (h : n ≤ m) :
+      ∀ v, wfValue n v → wfValue m v := by
+    intro v hv
+    cases hv with
+    | num n => exact wfValue.num n
+    | bool b => exact wfValue.bool b
+    | unit => exact wfValue.unit
+    | str s => exact wfValue.str s
+    | loc hlt =>
+        exact wfValue.loc (Nat.lt_of_lt_of_le hlt h)
+    | closure x e env hwf =>
+        exact wfValue.closure x e env (wfVarEnv_mono h env hwf)
+    | peClosure x e env hwf =>
+        exact wfValue.peClosure x e env (wfVarEnv_mono h env hwf)
+
+  private lemma wfVarEnv_mono {n m : Address} (h : n ≤ m) :
+      ∀ env, wfVarEnv n env → wfVarEnv m env := by
+    intro env hwf
+    cases hwf with
+    | nil => exact wfVarEnv.nil
+    | cons x v env hv hwf_tail =>
+        exact wfVarEnv.cons x v env (wfValue_mono h v hv) (wfVarEnv_mono h env hwf_tail)
+end
+
+/-- Helper lemma for newRef case of wfConfig_preservedW. -/
+private lemma wfConfig_preservedW_newRef (e1 : Expr) (fuel : Nat)
+    (cfg₀ cfg₁ : Config) (v : Value) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld)
+    (hbeval : LeanPoison.beval (fuel + 1) cfg₀ (Expr.newRef e1) verbose w₀ =
+        EST.Out.ok (.success cfg₁ v) w₁)
+    (hwf₀ : wfConfig cfg₀)
+    (ih : ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value) (w₀' w₁' : Void IO.RealWorld),
+        wfConfig cfg₀' →
+        LeanPoison.beval fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
+        wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
+    wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
+  have hstruct :=
+    bevalNewRef_structure e1 (fuel + 1) verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
+  rcases hstruct with ⟨cfg₁1, n, a, hbeval1, ha, hmem_eq, hnext_eq, hvar_eq, hval_eq⟩
+  rcases hbeval1 with ⟨w₀1, w₁1, hbeval1'⟩
+  have hih1 := ih e1 cfg₀ cfg₁1 (Value.num n) w₀1 w₁1 hwf₀ hbeval1'
+  -- wfConfig for cfg₁
+  constructor
+  · rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
+    constructor
+    · intro addr hcontains
+      -- rewrite memory update
+      have hcontains' : (cfg₁1.memory.update a n).contains addr := by
+        simp [hmem_eq] at hcontains
+        exact hcontains
+      by_cases h_eq : addr = a
+      · subst h_eq
+        -- a = cfg₁1.nextAddr and cfg₁.nextAddr = cfg₁1.nextAddr + 1
+        simp [ha, hnext_eq]
+      · have hcmp : compare a addr ≠ Ordering.eq := by
+          intro hcmp
+          have h_eq' : a = addr := LawfulEqCmp.eq_of_compare hcmp
+          exact h_eq h_eq'.symm
+        have hcontains1 : cfg₁1.memory.contains addr := by
+          -- update is insert; since addr ≠ a, contains must come from old memory
+          simpa [Memory.update] using
+            (ExtTreeMap.contains_of_contains_insert (t := cfg₁1.memory) (k := a) (a := addr) (v := n) hcontains' hcmp)
+        have hlt := hwfmem1 addr hcontains1
+        have hlt' : addr < cfg₁1.nextAddr + 1 :=
+          Nat.lt_trans hlt (Nat.lt_succ_self _)
+        simp [hnext_eq]
+        exact hlt'
+    · -- varEnv unchanged; lift bound to nextAddr+1
+      have hle : cfg₁1.nextAddr ≤ cfg₁.nextAddr := by
+        simp [hnext_eq]
+      have hwfenv1' : wfVarEnv cfg₁.nextAddr cfg₁1.varEnv :=
+        wfVarEnv_mono hle cfg₁1.varEnv hwfenv1
+      simp [hvar_eq]
+      exact hwfenv1'
+  · -- result value is the fresh location
+    have hlt : a < cfg₁.nextAddr := by
+      simp [ha, hnext_eq]
+    simpa [hval_eq] using (wfValue.loc hlt)
+
 /-- Evaluation preserves config well-formedness (world-indexed), for use in FR proofs. -/
 lemma wfConfig_preservedW (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
     terminatesToW e cfg₀ cfg₁ v →
@@ -930,7 +1010,16 @@ lemma wfConfig_preservedW (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
             have h_evalOp_v : LeanPoison.evalUnaryOp op v1 = some v := h_evalOp
             exact evalUnaryOp_preserves_wfValue cfg₁.nextAddr op v1 v (by simpa [h_next] using hih1.2) h_evalOp_v
       | ite e1 e2 e3 => sorry
-      | newRef e1 => sorry
+      | newRef e1 =>
+          have ih' :
+              ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value) (w₀' w₁' : Void IO.RealWorld),
+                wfConfig cfg₀' →
+                LeanPoison.beval fuel cfg₀' e verbose w₀' =
+                  EST.Out.ok (.success cfg₁' v') w₁' →
+                wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v' := by
+            intro e cfg₀' cfg₁' v' w₀' w₁' hwf hbeval'
+            exact ih e cfg₀' cfg₁' v' hwf w₀' w₁' hbeval'
+          exact wfConfig_preservedW_newRef e1 fuel cfg₀ cfg₁ v verbose w₀ w₁ hbeval hwf₀ ih'
       | assign e1 e2 => sorry
       | deref e1 => sorry
       | seq e1 e2 => sorry
