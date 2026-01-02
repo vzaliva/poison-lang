@@ -1476,6 +1476,15 @@ private lemma wfVarEnv_lookup (next : Address) (env : VarEnv) (x : Name) (v : Va
                   simp [h_eq] at h_lookup
                   exact ih h_wf_tail h_lookup
 
+/-- Updating a well-formed varEnv with a well-formed value preserves well-formedness. -/
+private lemma wfVarEnv_update (next : Address) (env : VarEnv) (x : Name) (v : Value) :
+    wfVarEnv next env →
+    wfValue next v →
+    wfVarEnv next (VarEnv.update env x v) := by
+  intro hwf_env hwf_v
+  -- VarEnv.update adds the binding to the front of the list
+  exact wfVarEnv.cons x v env hwf_v hwf_env
+
 -- Monotonicity of well-formedness: larger bounds preserve wfValue/wfVarEnv.
 mutual
   private lemma wfValue_mono {n m : Address} (h : n ≤ m) :
@@ -1562,39 +1571,213 @@ private lemma wfConfig_preservedW_ite (e1 e2 e3 : Expr) (fuel : Nat)
     (hbeval : LeanPoison.beval (fuel + 1) cfg₀ (Expr.ite e1 e2 e3) verbose w₀ =
         EST.Out.ok (.success cfg₁ v) w₁)
     (hwf₀ : wfConfig cfg₀)
-    (ih : ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
-        wfConfig cfg₀' →
-        ∀ (w₀' w₁' : Void IO.RealWorld),
-          LeanPoison.beval fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
-          wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
-    wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
-  sorry
+  (ih : ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
+      wfConfig cfg₀' →
+      ∀ (w₀' w₁' : Void IO.RealWorld),
+        LeanPoison.beval fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
+        wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
+  wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
+  -- Expose the recursive structure
+  unfold LeanPoison.beval at hbeval
+  simp at hbeval
+  simp [bind, Bind.bind, EST.bind] at hbeval
+  split at hbeval
+  · next h_result1 h_state1 h_beval1 =>
+    split at hbeval
+    · next config₁' =>
+      simp [EST.bind] at hbeval
+      split at hbeval
+      · next h_result2 h_state2 h_beval2 =>
+        split at hbeval
+        · next config₂ v₂ =>
+          injection hbeval with h_result h_world
+          injection h_result with h_eq_config h_eq_val
+          subst h_eq_config h_eq_val
+          have hih1 := ih e1 cfg₀ config₁' (Value.bool true) hwf₀ w₀ h_state1 h_beval1
+          have hih2 := ih e2 config₁' config₂ v₂ hih1.1 h_state1 h_state2 h_beval2
+          exact hih2
+        · next =>
+          simp [pure] at hbeval
+          injection hbeval with h_result h_world
+          injection h_result
+        · next msg =>
+          simp [pure] at hbeval
+          injection hbeval with h_result h_world
+          injection h_result
+      · next h_error2 h_state2 =>
+        injection hbeval
+    · next config₁' =>
+      simp [EST.bind] at hbeval
+      split at hbeval
+      · next h_result3 h_state3 h_beval3 =>
+        split at hbeval
+        · next config₂ v₃ =>
+          injection hbeval with h_result h_world
+          injection h_result with h_eq_config h_eq_val
+          subst h_eq_config h_eq_val
+          have hih1 := ih e1 cfg₀ config₁' (Value.bool false) hwf₀ w₀ h_state1 h_beval1
+          have hih3 := ih e3 config₁' config₂ v₃ hih1.1 h_state1 h_state3 h_beval3
+          exact hih3
+        · next =>
+          simp [pure] at hbeval
+          injection hbeval with h_result h_world
+          injection h_result
+        · next msg =>
+          simp [pure] at hbeval
+          injection hbeval with h_result h_world
+          injection h_result
+      · next h_error3 h_state3 =>
+        injection hbeval
+    · next v =>
+      simp [pure] at hbeval
+      injection hbeval with h_result h_world
+      injection h_result
+    · next =>
+      simp [pure] at hbeval
+      injection hbeval with h_result h_world
+      injection h_result
+    · next msg =>
+      simp [pure] at hbeval
+      injection hbeval with h_result h_world
+      injection h_result
+  · next h_error1 h_state1 =>
+    injection hbeval
 
 private lemma wfConfig_preservedW_assign (e1 e2 : Expr) (fuel : Nat)
     (cfg₀ cfg₁ : Config) (v : Value) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld)
     (hbeval : LeanPoison.beval (fuel + 1) cfg₀ (Expr.assign e1 e2) verbose w₀ =
         EST.Out.ok (.success cfg₁ v) w₁)
     (hwf₀ : wfConfig cfg₀)
-    (ih : ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
-        wfConfig cfg₀' →
-        ∀ (w₀' w₁' : Void IO.RealWorld),
-          LeanPoison.beval fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
-          wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
-    wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
-  sorry
+  (ih : ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
+      wfConfig cfg₀' →
+      ∀ (w₀' w₁' : Void IO.RealWorld),
+        LeanPoison.beval fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
+        wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
+  wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
+  -- Expose the recursive structure
+  unfold LeanPoison.beval at hbeval
+  simp at hbeval
+  simp [bind, Bind.bind, EST.bind] at hbeval
+  split at hbeval
+  · next h_result1 h_state1 h_beval1 =>
+    split at hbeval
+    · next config' loc_val =>
+      simp [EST.bind] at hbeval
+      split at hbeval
+      · next h_result2 h_state2 h_beval2 =>
+        split at hbeval
+        · next config'' n_val =>
+          injection hbeval with h_result h_world
+          injection h_result with h_eq_config h_eq_val
+          subst h_eq_config h_eq_val
+          have hih1 := ih e1 cfg₀ config' (Value.loc loc_val) hwf₀ w₀ h_state1 h_beval1
+          have hih2 := ih e2 config' config'' (Value.num n_val) hih1.1 h_state1 h_state2 h_beval2
+          -- Extract loc_val < config'.nextAddr from hih1
+          have hloc_lt : loc_val < config'.nextAddr := by
+            cases hih1.2 with
+            | loc hlt => exact hlt
+          -- nextAddr monotonicity for e2
+          have hterm : terminatesToW e2 config' config'' (Value.num n_val) :=
+            ⟨fuel, verbose, h_state1, h_state2, h_beval2⟩
+          have hle_next : config'.nextAddr ≤ config''.nextAddr :=
+            terminatesToW_nextAddr_mono e2 config' config'' (Value.num n_val) hterm
+          have hloc_lt' : loc_val < config''.nextAddr :=
+            Nat.lt_of_lt_of_le hloc_lt hle_next
+          constructor
+          · rcases hih2.1 with ⟨hwfmem2, hwfenv2⟩
+            constructor
+            · intro addr hcontains
+              by_cases h_eq : addr = loc_val
+              · subst h_eq
+                exact hloc_lt'
+              · have hcmp : compare loc_val addr ≠ Ordering.eq := by
+                  intro hcmp
+                  have h_eq' : loc_val = addr := LawfulEqCmp.eq_of_compare hcmp
+                  exact h_eq h_eq'.symm
+                have hcontains_old : config''.memory.contains addr := by
+                  simpa [Memory.update] using
+                    (ExtTreeMap.contains_of_contains_insert (t := config''.memory) (k := loc_val) (a := addr) (v := n_val) hcontains hcmp)
+                exact hwfmem2 addr hcontains_old
+            · simpa using hwfenv2
+          · exact wfValue.unit
+        · next v =>
+          simp [pure] at hbeval
+          injection hbeval with h_result h_world
+          injection h_result
+        · next =>
+          simp [pure] at hbeval
+          injection hbeval with h_result h_world
+          injection h_result
+        · next msg =>
+          simp [pure] at hbeval
+          injection hbeval with h_result h_world
+          injection h_result
+      · next h_error2 h_state2 =>
+        injection hbeval
+    · next v =>
+      simp [pure] at hbeval
+      injection hbeval with h_result h_world
+      injection h_result
+    · next =>
+      simp [pure] at hbeval
+      injection hbeval with h_result h_world
+      injection h_result
+    · next msg =>
+      simp [pure] at hbeval
+      injection hbeval with h_result h_world
+      injection h_result
+  · next h_error1 h_state1 =>
+    injection hbeval
 
 private lemma wfConfig_preservedW_deref (e1 : Expr) (fuel : Nat)
     (cfg₀ cfg₁ : Config) (v : Value) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld)
     (hbeval : LeanPoison.beval (fuel + 1) cfg₀ (Expr.deref e1) verbose w₀ =
         EST.Out.ok (.success cfg₁ v) w₁)
     (hwf₀ : wfConfig cfg₀)
-    (ih : ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
-        wfConfig cfg₀' →
-        ∀ (w₀' w₁' : Void IO.RealWorld),
-          LeanPoison.beval fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
-          wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
-    wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
-  sorry
+  (ih : ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
+      wfConfig cfg₀' →
+      ∀ (w₀' w₁' : Void IO.RealWorld),
+        LeanPoison.beval fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
+        wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
+  wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
+  -- Expose the recursive structure
+  unfold LeanPoison.beval at hbeval
+  simp at hbeval
+  simp [bind, Bind.bind, EST.bind] at hbeval
+  split at hbeval
+  · next h_result1 h_state1 h_beval1 =>
+    split at hbeval
+    · next config' loc_val =>
+      cases h_mem_lookup : config'.memory.get? loc_val with
+      | some n =>
+        have h_mem_eq : config'.memory[loc_val]? = some n := h_mem_lookup
+        rw [h_mem_eq] at hbeval
+        injection hbeval with h_result h_world
+        injection h_result with h_eq_config h_eq_val
+        subst h_eq_config h_eq_val
+        have hih1 := ih e1 cfg₀ config' (Value.loc loc_val) hwf₀ w₀ h_state1 h_beval1
+        constructor
+        · exact hih1.1
+        · exact wfValue.num n
+      | none =>
+        have h_mem_eq : config'.memory[loc_val]? = none := h_mem_lookup
+        rw [h_mem_eq] at hbeval
+        injection hbeval with h_result h_world
+        injection h_result
+    · next h_result1_error =>
+      simp [pure] at hbeval
+      injection hbeval with h_result h_world
+      injection h_result
+    · next msg =>
+      simp [pure] at hbeval
+      injection hbeval with h_result h_world
+      injection h_result
+    · next h_val =>
+      simp [pure] at hbeval
+      injection hbeval with h_result h_world
+      injection h_result
+  · next h_error1 h_state1 =>
+    injection hbeval
 
 private lemma wfConfig_preservedW_seq (e1 e2 : Expr) (fuel : Nat)
     (cfg₀ cfg₁ : Config) (v : Value) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld)
@@ -1621,13 +1804,21 @@ private lemma wfConfig_preservedW_kwhile (e1 e2 : Expr) (fuel : Nat)
     (hbeval : LeanPoison.beval (fuel + 1) cfg₀ (Expr.kwhile e1 e2) verbose w₀ =
         EST.Out.ok (.success cfg₁ v) w₁)
     (hwf₀ : wfConfig cfg₀)
-    (ih : ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
-        wfConfig cfg₀' →
-        ∀ (w₀' w₁' : Void IO.RealWorld),
-          LeanPoison.beval fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
-          wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
-    wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
-  sorry
+  (ih : ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
+      wfConfig cfg₀' →
+      ∀ (w₀' w₁' : Void IO.RealWorld),
+        LeanPoison.beval fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
+        wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
+  wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
+  -- Expose the recursive structure
+  unfold LeanPoison.beval at hbeval
+  simp at hbeval
+  let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
+  have hbeval_unfolded :
+      LeanPoison.beval fuel cfg₀ unfolded verbose w₀ =
+        EST.Out.ok (.success cfg₁ v) w₁ := by
+    simpa using hbeval
+  exact ih unfolded cfg₀ cfg₁ v hwf₀ w₀ w₁ hbeval_unfolded
 
 private lemma wfConfig_preservedW_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat)
     (cfg₀ cfg₁ : Config) (v : Value) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld)
@@ -1640,7 +1831,36 @@ private lemma wfConfig_preservedW_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat)
           LeanPoison.beval fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
           wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
     wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
-  sorry
+  have hstruct :=
+    bevalVlet_structure x e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
+  rcases hstruct with ⟨cfg₁1, cfg₂, cfg₃, v1, hbeval1, hcfg2_eq, hbeval2, hcfg_final_eq⟩
+  rcases hbeval1 with ⟨w₀1, w₁1, hbeval1'⟩
+  rcases hbeval2 with ⟨w₀2, w₁2, hbeval2'⟩
+  have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ w₀1 w₁1 hbeval1'
+  -- Show cfg₂ is well-formed (varEnv updated with v1)
+  have hwf_cfg2 : wfConfig cfg₂ := by
+    rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
+    have hwfenv2 : wfVarEnv cfg₁1.nextAddr (cfg₁1.varEnv.update x v1) :=
+      wfVarEnv_update cfg₁1.nextAddr cfg₁1.varEnv x v1 hwfenv1 hih1.2
+    -- cfg₂ = { cfg₁1 with varEnv := cfg₁1.varEnv.update x v1 }
+    subst hcfg2_eq
+    exact ⟨hwfmem1, hwfenv2⟩
+  have hih2 := ih e2 cfg₂ cfg₃ v hwf_cfg2 w₀2 w₁2 hbeval2'
+  -- Lift cfg₁1.varEnv to cfg₃.nextAddr (since e2 may allocate)
+  have hterm : terminatesToW e2 cfg₂ cfg₃ v := ⟨fuel, verbose, w₀2, w₁2, hbeval2'⟩
+  have hle_next : cfg₁1.nextAddr ≤ cfg₃.nextAddr := by
+    have hle := terminatesToW_nextAddr_mono e2 cfg₂ cfg₃ v hterm
+    simpa [hcfg2_eq] using hle
+  have hwfenv1_lift : wfVarEnv cfg₃.nextAddr cfg₁1.varEnv :=
+    wfVarEnv_mono hle_next cfg₁1.varEnv hih1.1.2
+  -- Final config restores cfg₁1.varEnv
+  subst hcfg_final_eq
+  constructor
+  · rcases hih2.1 with ⟨hwfmem3, _hwfenv3⟩
+    constructor
+    · simpa using hwfmem3
+    · simpa using hwfenv1_lift
+  · simpa using hih2.2
 
 private lemma wfConfig_preservedW_app (e1 e2 : Expr) (fuel : Nat)
     (cfg₀ cfg₁ : Config) (v : Value) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld)
