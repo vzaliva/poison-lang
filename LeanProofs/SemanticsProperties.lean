@@ -735,6 +735,679 @@ lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
       injection h_eq
 
 -- ================================================================
+-- NextAddr Monotonicity
+-- ================================================================
+
+section nextAddr_monotonic
+
+/-- Helper lemma: bevalFunctionBody preserves monotonicity of nextAddr. -/
+private lemma bevalFunctionBody_nextAddr_mono
+    (fuel : Nat) (verbose : Bool) (currentConfig finalConfig : Config)
+    (closureEnv : VarEnv) (paramName : Name) (argValue : Value) (body : Expr) (isPure : Bool) (v : Value)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      config₀.nextAddr ≤ config₁.nextAddr) :
+  (∃ w₀ w₁, LeanPoison.bevalFunctionBody fuel verbose currentConfig closureEnv paramName argValue body isPure w₀ =
+      EST.Out.ok (.success finalConfig v) w₁) →
+  currentConfig.nextAddr ≤ finalConfig.nextAddr := by
+  intro h_eval
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  cases fuel with
+  | zero =>
+      unfold LeanPoison.bevalFunctionBody at h_eq
+      simp [pure] at h_eq
+      cases h_eq
+  | succ fuel' =>
+      unfold LeanPoison.bevalFunctionBody at h_eq
+      simp at h_eq
+      simp [bind, Bind.bind, EST.bind] at h_eq
+      split at h_eq
+      · next h_body_result h_body_state h_beval_body =>
+        split at h_eq
+        · next evalConfig v_body =>
+          split at h_eq
+          · -- isPure = true
+            injection h_eq with h_result h_world
+            injection h_result with h_cfg_eq h_val_eq
+            have h_next_eq : finalConfig.nextAddr = currentConfig.nextAddr := by
+              have h_congr : ({ currentConfig with pureMode := false } : Config).nextAddr = finalConfig.nextAddr :=
+                congrArg Config.nextAddr h_cfg_eq
+              calc
+                finalConfig.nextAddr = ({ currentConfig with pureMode := false } : Config).nextAddr := by
+                  symm
+                  exact h_congr
+                _ = currentConfig.nextAddr := rfl
+            simp [h_next_eq]
+          · -- isPure = false
+            injection h_eq with h_result h_world
+            injection h_result with h_cfg_eq h_val_eq
+            have h_next_eq : finalConfig.nextAddr = evalConfig.nextAddr := by
+              have h_congr : ({ currentConfig with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr, pureMode := false } : Config).nextAddr = finalConfig.nextAddr :=
+                congrArg Config.nextAddr h_cfg_eq
+              calc
+                finalConfig.nextAddr = ({ currentConfig with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr, pureMode := false } : Config).nextAddr := by
+                  symm
+                  exact h_congr
+                _ = evalConfig.nextAddr := rfl
+            have h_bodyConfig_next : ({ currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure } : Config).nextAddr = currentConfig.nextAddr := rfl
+            have h_fuel' : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have h_beval_body_ex : ∃ w₀' w₁', LeanPoison.beval fuel' ({ currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure }) body verbose w₀' =
+                EST.Out.ok (.success evalConfig v_body) w₁' :=
+              ⟨w₀, h_body_state, h_beval_body⟩
+            have IH_body := IH fuel' h_fuel' body ({ currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure }) evalConfig v_body h_beval_body_ex
+            have IH_body' : currentConfig.nextAddr ≤ evalConfig.nextAddr := by
+              simpa [h_bodyConfig_next] using IH_body
+            simp [h_next_eq]
+            exact IH_body'
+        · next =>
+          injection h_eq with h_result h_world
+          injection h_result
+        · next msg =>
+          injection h_eq with h_result h_world
+          injection h_result
+      · next h_body_error h_body_state =>
+        injection h_eq
+
+private lemma beval_nextAddr_mono_ite (e1 e2 e3 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      config₀.nextAddr ≤ config₁.nextAddr) :
+  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.ite e1 e2 e3) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  config₀.nextAddr ≤ config₁.nextAddr := by
+  intro h_eval
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  cases fuel with
+  | zero =>
+      unfold LeanPoison.beval at h_eq
+      simp at h_eq
+      cases h_eq
+  | succ fuel' =>
+      unfold LeanPoison.beval at h_eq
+      simp at h_eq
+      simp [bind, Bind.bind, EST.bind] at h_eq
+      split at h_eq
+      · next h_result1 h_state1 h_beval1 =>
+        split at h_eq
+        · next config₁' =>
+          simp [EST.bind] at h_eq
+          split at h_eq
+          · next h_result2 h_state2 h_beval2 =>
+            split at h_eq
+            · next config₂ v₂ =>
+              injection h_eq with h_result h_world
+              injection h_result with h_eq_config h_eq_val
+              subst h_eq_config
+              have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁' (Value.bool true)) w₁' :=
+                ⟨w₀, h_state1, h_beval1⟩
+              have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₁' e2 verbose w₀' = EST.Out.ok (.success config₂ v₂) w₁' :=
+                ⟨h_state1, h_state2, h_beval2⟩
+              have IH1 := IH fuel' h_fuel e1 config₀ config₁' (Value.bool true) h_beval1_ex
+              have IH2 := IH fuel' h_fuel e2 config₁' config₂ v₂ h_beval2_ex
+              exact Nat.le_trans IH1 IH2
+            · next =>
+              simp [pure] at h_eq
+              injection h_eq with h_result h_world
+              injection h_result
+            · next msg =>
+              simp [pure] at h_eq
+              injection h_eq with h_result h_world
+              injection h_result
+          · next h_error2 h_state2 =>
+            injection h_eq
+        · next config₁' =>
+          simp [EST.bind] at h_eq
+          split at h_eq
+          · next h_result3 h_state3 h_beval3 =>
+            split at h_eq
+            · next config₂ v₃ =>
+              injection h_eq with h_result h_world
+              injection h_result with h_eq_config h_eq_val
+              subst h_eq_config
+              have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁' (Value.bool false)) w₁' :=
+                ⟨w₀, h_state1, h_beval1⟩
+              have h_beval3_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₁' e3 verbose w₀' = EST.Out.ok (.success config₂ v₃) w₁' :=
+                ⟨h_state1, h_state3, h_beval3⟩
+              have IH1 := IH fuel' h_fuel e1 config₀ config₁' (Value.bool false) h_beval1_ex
+              have IH3 := IH fuel' h_fuel e3 config₁' config₂ v₃ h_beval3_ex
+              exact Nat.le_trans IH1 IH3
+            · next =>
+              simp [pure] at h_eq
+              injection h_eq with h_result h_world
+              injection h_result
+            · next msg =>
+              simp [pure] at h_eq
+              injection h_eq with h_result h_world
+              injection h_result
+          · next h_error3 h_state3 =>
+            injection h_eq
+        · next v =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next msg =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+      · next h_error1 h_state1 =>
+        injection h_eq
+
+private lemma beval_nextAddr_mono_deref (e1 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      config₀.nextAddr ≤ config₁.nextAddr) :
+  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.deref e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  config₀.nextAddr ≤ config₁.nextAddr := by
+  intro h_eval
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  cases fuel with
+  | zero =>
+      unfold LeanPoison.beval at h_eq
+      simp at h_eq
+      cases h_eq
+  | succ fuel' =>
+      unfold LeanPoison.beval at h_eq
+      simp at h_eq
+      simp [bind, Bind.bind, EST.bind] at h_eq
+      split at h_eq
+      · next h_result1 h_state1 h_beval1 =>
+        split at h_eq
+        · next config' loc_val =>
+          cases h_mem_lookup : config'.memory.get? loc_val with
+          | some n =>
+            have h_mem_eq : config'.memory[loc_val]? = some n := h_mem_lookup
+            rw [h_mem_eq] at h_eq
+            injection h_eq with h_result h_world
+            injection h_result with h_eq_config h_eq_val
+            subst h_eq_config
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.loc loc_val)) w₁' :=
+              ⟨w₀, h_state1, h_beval1⟩
+            exact IH fuel' h_fuel e1 config₀ config' (Value.loc loc_val) h_beval1_ex
+          | none =>
+            have h_mem_eq : config'.memory[loc_val]? = none := by
+              simpa using h_mem_lookup
+            simp [h_mem_eq] at h_eq
+            injection h_eq with h_result h_world
+            injection h_result
+        · next v =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next msg =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+      · next h_error1 h_state1 =>
+        injection h_eq
+
+private lemma beval_nextAddr_mono_assign (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      config₀.nextAddr ≤ config₁.nextAddr) :
+  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.assign e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  config₀.nextAddr ≤ config₁.nextAddr := by
+  intro h_eval
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  cases fuel with
+  | zero =>
+      unfold LeanPoison.beval at h_eq
+      simp at h_eq
+      cases h_eq
+  | succ fuel' =>
+      unfold LeanPoison.beval at h_eq
+      simp at h_eq
+      simp [bind, Bind.bind, EST.bind] at h_eq
+      split at h_eq
+      · next h_result1 h_state1 h_beval1 =>
+        split at h_eq
+        · next config' loc_val =>
+          simp [EST.bind] at h_eq
+          split at h_eq
+          · next h_result2 h_state2 h_beval2 =>
+            split at h_eq
+            · next config'' n_val =>
+              injection h_eq with h_result h_world
+              injection h_result with h_eq_config h_eq_val
+              subst h_eq_config
+              -- Chain through IH on e1 and e2
+              have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.loc loc_val)) w₁' :=
+                ⟨w₀, h_state1, h_beval1⟩
+              have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config' e2 verbose w₀' = EST.Out.ok (.success config'' (Value.num n_val)) w₁' :=
+                ⟨h_state1, h_state2, h_beval2⟩
+              have IH1 := IH fuel' h_fuel e1 config₀ config' (Value.loc loc_val) h_beval1_ex
+              have IH2 := IH fuel' h_fuel e2 config' config'' (Value.num n_val) h_beval2_ex
+              exact Nat.le_trans IH1 IH2
+            · next v =>
+              simp [pure] at h_eq
+              injection h_eq with h_result h_world
+              injection h_result
+            · next =>
+              simp [pure] at h_eq
+              injection h_eq with h_result h_world
+              injection h_result
+            · next msg =>
+              simp [pure] at h_eq
+              injection h_eq with h_result h_world
+              injection h_result
+          · next h_error2 h_state2 =>
+            injection h_eq
+        · next v =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next msg =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+      · next h_error1 h_state1 =>
+        injection h_eq
+
+private lemma beval_nextAddr_mono_app (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      config₀.nextAddr ≤ config₁.nextAddr) :
+  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.app e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  config₀.nextAddr ≤ config₁.nextAddr := by
+  intro h_eval
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  cases fuel with
+  | zero =>
+      unfold LeanPoison.beval at h_eq
+      simp at h_eq
+      cases h_eq
+  | succ fuel' =>
+      unfold LeanPoison.beval at h_eq
+      simp at h_eq
+      simp [bind, Bind.bind, EST.bind] at h_eq
+      split at h_eq
+      · next h_result2 h_state2 h_beval2 =>
+        split at h_eq
+        · next config₁' v₂ =>
+          simp [EST.bind] at h_eq
+          split at h_eq
+          · next h_result1 h_state1 h_beval1 =>
+            split at h_eq
+            · next config₂ x body env =>
+              split at h_eq
+              · next h_pureMode =>
+                injection h_eq with h_result h_world
+                injection h_result
+              · next h_notPureMode =>
+                have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+                have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e2 verbose w₀' = EST.Out.ok (.success config₁' v₂) w₁' :=
+                  ⟨w₀, h_state2, h_beval2⟩
+                have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₁' e1 verbose w₀' = EST.Out.ok (.success config₂ (Value.closure x body env)) w₁' :=
+                  ⟨h_state2, h_state1, h_beval1⟩
+                have IH2 := IH fuel' h_fuel e2 config₀ config₁' v₂ h_beval2_ex
+                have IH1 := IH fuel' h_fuel e1 config₁' config₂ (Value.closure x body env) h_beval1_ex
+                have h_bevalFunctionBody_ex : ∃ w₀' w₁', LeanPoison.bevalFunctionBody fuel' verbose config₂ env x v₂ body false w₀' =
+                    EST.Out.ok (.success config₁ v) w₁' :=
+                  ⟨h_state1, w₁, h_eq⟩
+                have IH_fuel' : ∀ m < fuel', ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+                  (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+                  config₀.nextAddr ≤ config₁.nextAddr := by
+                  intro m h_m_lt e config₀ config₁ v h_beval_ex
+                  have h_m_lt_succ : m < fuel'.succ := Nat.lt_of_lt_of_le h_m_lt (Nat.le_succ fuel')
+                  exact IH m h_m_lt_succ e config₀ config₁ v h_beval_ex
+                have IH_body :=
+                  bevalFunctionBody_nextAddr_mono fuel' verbose config₂ config₁ env x v₂ body false v IH_fuel' h_bevalFunctionBody_ex
+                exact Nat.le_trans IH2 (Nat.le_trans IH1 IH_body)
+            · next config₂ x body env =>
+              have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+              have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e2 verbose w₀' = EST.Out.ok (.success config₁' v₂) w₁' :=
+                ⟨w₀, h_state2, h_beval2⟩
+              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₁' e1 verbose w₀' = EST.Out.ok (.success config₂ (Value.peClosure x body env)) w₁' :=
+                ⟨h_state2, h_state1, h_beval1⟩
+              have IH2 := IH fuel' h_fuel e2 config₀ config₁' v₂ h_beval2_ex
+              have IH1 := IH fuel' h_fuel e1 config₁' config₂ (Value.peClosure x body env) h_beval1_ex
+              have h_bevalFunctionBody_ex : ∃ w₀' w₁', LeanPoison.bevalFunctionBody fuel' verbose config₂ env x v₂ body true w₀' =
+                  EST.Out.ok (.success config₁ v) w₁' :=
+                ⟨h_state1, w₁, h_eq⟩
+              have IH_fuel' : ∀ m < fuel', ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+                (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+                config₀.nextAddr ≤ config₁.nextAddr := by
+                intro m h_m_lt e config₀ config₁ v h_beval_ex
+                have h_m_lt_succ : m < fuel'.succ := Nat.lt_of_lt_of_le h_m_lt (Nat.le_succ fuel')
+                exact IH m h_m_lt_succ e config₀ config₁ v h_beval_ex
+              have IH_body :=
+                bevalFunctionBody_nextAddr_mono fuel' verbose config₂ config₁ env x v₂ body true v IH_fuel' h_bevalFunctionBody_ex
+              exact Nat.le_trans IH2 (Nat.le_trans IH1 IH_body)
+            · next v =>
+              injection h_eq with h_result h_world
+              injection h_result
+            · next =>
+              injection h_eq with h_result h_world
+              injection h_result
+            · next msg =>
+              injection h_eq with h_result h_world
+              injection h_result
+          · next h_error1 h_state1 =>
+            injection h_eq
+        · next =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next msg =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+      · next h_error2 h_state2 =>
+        injection h_eq
+
+private lemma beval_nextAddr_mono_kwhile (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      config₀.nextAddr ≤ config₁.nextAddr) :
+  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.kwhile e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  config₀.nextAddr ≤ config₁.nextAddr := by
+  intro h_eval
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  unfold LeanPoison.beval at h_eq
+  simp at h_eq
+  cases fuel with
+  | zero =>
+      simp at h_eq
+      cases h_eq
+  | succ fuel' =>
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+      let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
+      have h_beval_unfolded_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ unfolded verbose w₀' = EST.Out.ok (.success config₁ v) w₁' :=
+        ⟨w₀, w₁, h_eq⟩
+      exact IH fuel' h_fuel unfolded config₀ config₁ v h_beval_unfolded_ex
+
+private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value),
+  (∃ w₀ w₁, LeanPoison.beval fuel config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  config₀.nextAddr ≤ config₁.nextAddr := by
+  intro e fuel verbose config₀ config₁ v h_eval
+  revert e verbose config₀ config₁ v h_eval
+  induction fuel using Nat.strong_induction_on with
+  | _ fuel IH =>
+    intro e verbose config₀ config₁ v h_eval
+    have IH_converted : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      config₀.nextAddr ≤ config₁.nextAddr := by
+      intro m h_lt e' config₀' config₁' v' h_eval'
+      exact IH m h_lt e' verbose config₀' config₁' v' h_eval'
+    cases e with
+    | externVal typ poison pred =>
+        rcases h_eval with ⟨w₀, w₁, h_eq⟩
+        cases fuel with
+        | zero =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+    | externFn arg argTyp retSpec effects =>
+        rcases h_eval with ⟨w₀, w₁, h_eq⟩
+        cases fuel with
+        | zero =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+    | externPfn arg argTyp retSpec =>
+        rcases h_eval with ⟨w₀, w₁, h_eq⟩
+        cases fuel with
+        | zero =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+    | num n | bool b | unit | str s =>
+        rcases h_eval with ⟨w₀, w₁, h_eq⟩
+        cases fuel with
+        | zero =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            injection h_eq with h_result h_world
+            injection h_result with h_eq_config h_eq_val
+            subst h_eq_config
+            exact le_rfl
+    | var x =>
+        rcases h_eval with ⟨w₀, w₁, h_eq⟩
+        cases fuel with
+        | zero =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_lookup : config₀.varEnv.lookup x with
+            | some v_lookup =>
+                simp [h_lookup] at h_eq
+                injection h_eq with h_result h_world
+                injection h_result with h_eq_config h_eq_val
+                subst h_eq_config
+                exact le_rfl
+            | none =>
+                simp [h_lookup] at h_eq
+                injection h_eq with h_result h_world
+                injection h_result
+    | fn x paramType body returnType =>
+        rcases h_eval with ⟨w₀, w₁, h_eq⟩
+        cases fuel with
+        | zero =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            injection h_eq with h_result h_world
+            injection h_result with h_eq_config h_eq_val
+            subst h_eq_config
+            exact le_rfl
+    | pfn x paramType body returnType =>
+        rcases h_eval with ⟨w₀, w₁, h_eq⟩
+        cases fuel with
+        | zero =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            injection h_eq with h_result h_world
+            injection h_result with h_eq_config h_eq_val
+            subst h_eq_config
+            exact le_rfl
+    | op e1 op e2 =>
+        cases fuel with
+        | zero =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            have hstruct :=
+              bevalOp_structure e1 e2 op (fuel' + 1) verbose config₀ config₁ v h_eval
+            rcases hstruct with ⟨cfg₁1, cfg₁2, v1, v2, hbeval1, hbeval2, _h_evalOp, _h_mem, _h_var, h_next, _h_pure⟩
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
+            have hle2 := IH_converted fuel' h_fuel e2 cfg₁1 cfg₁2 v2 hbeval2
+            have hle02 : config₀.nextAddr ≤ cfg₁2.nextAddr := Nat.le_trans hle1 hle2
+            simpa [h_next] using hle02
+    | unaryop op e1 =>
+        cases fuel with
+        | zero =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            have hstruct :=
+              bevalUnaryOp_structure op e1 (fuel' + 1) verbose config₀ config₁ v h_eval
+            rcases hstruct with ⟨cfg₁1, v1, hbeval1, _h_evalOp, _h_mem, _h_var, h_next, _h_pure⟩
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
+            simpa [h_next] using hle1
+    | ite e1 e2 e3 =>
+        exact beval_nextAddr_mono_ite e1 e2 e3 fuel verbose config₀ config₁ v IH_converted h_eval
+    | newRef e1 =>
+        cases fuel with
+        | zero =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            have hstruct :=
+              bevalNewRef_structure e1 (fuel' + 1) verbose config₀ config₁ v h_eval
+            rcases hstruct with ⟨cfg₁1, n, a, hbeval1, _ha, _hmem, h_next, _hvar, _hval⟩
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 (Value.num n) hbeval1
+            have hle1' : config₀.nextAddr ≤ cfg₁1.nextAddr + 1 :=
+              Nat.le_trans hle1 (Nat.le_succ _)
+            simpa [h_next] using hle1'
+    | assign e1 e2 =>
+        exact beval_nextAddr_mono_assign e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval
+    | deref e1 =>
+        exact beval_nextAddr_mono_deref e1 fuel verbose config₀ config₁ v IH_converted h_eval
+    | seq e1 e2 =>
+        cases fuel with
+        | zero =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            have hstruct :=
+              bevalSeq_structure e1 e2 (fuel' + 1) verbose config₀ config₁ v h_eval
+            rcases hstruct with ⟨cfg₁1, v1, hbeval1, hbeval2⟩
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
+            have hle2 := IH_converted fuel' h_fuel e2 cfg₁1 config₁ v hbeval2
+            exact Nat.le_trans hle1 hle2
+    | kwhile e1 e2 =>
+        exact beval_nextAddr_mono_kwhile e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval
+    | vlet x e1 e2 =>
+        cases fuel with
+        | zero =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            have hstruct :=
+              bevalVlet_structure x e1 e2 (fuel' + 1) verbose config₀ config₁ v h_eval
+            rcases hstruct with ⟨cfg₁1, cfg₁2, cfg₁3, v1, hbeval1, hcfg2, hbeval2, hcfg_final⟩
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
+            have hle2 := IH_converted fuel' h_fuel e2 cfg₁2 cfg₁3 v hbeval2
+            -- nextAddr unchanged by varEnv updates
+            have h_next_eq1 : cfg₁2.nextAddr = cfg₁1.nextAddr := by
+              simp [hcfg2]
+            have h_next_eq2 : config₁.nextAddr = cfg₁3.nextAddr := by
+              simp [hcfg_final]
+            have hle01 : config₀.nextAddr ≤ cfg₁2.nextAddr := by
+              simpa [h_next_eq1] using hle1
+            have hle03 : config₀.nextAddr ≤ cfg₁3.nextAddr := Nat.le_trans hle01 hle2
+            simpa [h_next_eq2] using hle03
+    | app e1 e2 =>
+        exact beval_nextAddr_mono_app e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval
+    | rand e1 =>
+        cases fuel with
+        | zero =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            have hstruct :=
+              bevalRand_structure e1 (fuel' + 1) verbose config₀ config₁ v h_eval
+            rcases hstruct with ⟨cfg₁1, v1, hbeval1, _hv1_num, _hv_num, _h_mem, _h_var, h_next, _h_pure⟩
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
+            simpa [h_next] using hle1
+    | frand e1 =>
+        cases fuel with
+        | zero =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            have hstruct :=
+              bevalFrand_structure e1 (fuel' + 1) verbose config₀ config₁ v h_eval
+            rcases hstruct with ⟨cfg₁1, v1, hbeval1, _hv1_num, _hv_num, _h_mem, _h_var, h_next, _h_pure⟩
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
+            simpa [h_next] using hle1
+    | printInt e1 =>
+        cases fuel with
+        | zero =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            have hstruct :=
+              bevalPrintInt_structure e1 (fuel' + 1) verbose config₀ config₁ v h_eval
+            rcases hstruct with ⟨cfg₁1, v1, hbeval1, _hv1_num, _hv_unit, _h_mem, _h_var, h_next, _h_pure⟩
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
+            simpa [h_next] using hle1
+    | printString e1 =>
+        cases fuel with
+        | zero =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
+            unfold LeanPoison.beval at h_eq
+            simp at h_eq
+            cases h_eq
+        | succ fuel' =>
+            have hstruct :=
+              bevalPrintString_structure e1 (fuel' + 1) verbose config₀ config₁ v h_eval
+            rcases hstruct with ⟨cfg₁1, v1, hbeval1, _hv1_str, _hv_unit, _h_mem, _h_var, h_next, _h_pure⟩
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
+            simpa [h_next] using hle1
+
+/-- Next address is monotone for terminating evaluations. -/
+lemma terminatesToW_nextAddr_mono (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
+    terminatesToW e cfg₀ cfg₁ v →
+    cfg₀.nextAddr ≤ cfg₁.nextAddr := by
+  intro hterm
+  rcases hterm with ⟨fuel, verbose, w₀, w₁, hbeval⟩
+  exact beval_nextAddr_mono e fuel verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
+
+end nextAddr_monotonic
+
+-- ================================================================
 -- wfConfig_preservedW Proof
 -- ================================================================
 
