@@ -556,17 +556,15 @@ lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
       injection h_eq
 
 
-/- TODO: The following lemmas are moved from old code and need to be ported/repaired
-
 -- Helper lemma: extract evaluation structure from successful beval of rand
-private lemma bevalRand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
+lemma bevalRand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.rand e1) verbose w₀ =
       EST.Out.ok (.success config₁ v) w₁) →
   ∃ (config' : Config) (v1 : Value),
     (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁') ∧
-    valueHasETyp v1 ETyp.int ∧
-    valueHasETyp v ETyp.int ∧
+    (∃ n, v1 = Value.num n) ∧
+    (∃ randomNo, v = Value.num randomNo) ∧
     config'.memory = config₁.memory ∧
     config'.varEnv = config₁.varEnv := by
   intro h_eval
@@ -588,23 +586,32 @@ private lemma bevalRand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
         -- Check what v₁ is: must be Value.num for success path
         split at h_eq
         . next h_nonneg =>
-           simp [Functor.map, EST.bind] at h_eq
+           simp [EST.bind] at h_eq
            split at h_eq
            · next r_result r_state =>
              injection h_eq with h_eq_result h_eq_state
              injection h_eq_result with h_eq_cfg h_eq_val
-             subst h_eq_cfg h_eq_val
+             -- h_eq_val is Value.num randomNo = v (equality direction from injection)
+             subst h_eq_cfg
+             -- Use h_eq_val.symm to get v = Value.num randomNo and extract randomNo
+             -- h_eq_val.symm gives us v = Value.num (Int.ofNat a✝) for rand or v = Value.num (Int.ofNat a✝ - 2*v₁) for frand
+             -- Extract the number by pattern matching on the right-hand side
+             have h_v_num : ∃ randomNo, v = Value.num randomNo := ⟨_, h_eq_val.symm⟩
+             obtain ⟨randomNo, h_v_eq⟩ := h_v_num
+             subst h_v_eq
              -- Construct existential for h_beval1
              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num v₁)) w₁' :=
                ⟨w₀, h_state1, h_beval1⟩
              simp only [Nat.add_sub_cancel]
-             exact ⟨config', Value.num v₁, h_beval1_ex, valueHasETyp.num _, valueHasETyp.num _, rfl, rfl⟩
+             refine ⟨config', Value.num v₁, h_beval1_ex, ⟨v₁, rfl⟩, ⟨randomNo, rfl⟩, ?_, ?_⟩
+             · simp
+             · simp
            · next r_error r_state =>
              -- IO operation failed, but we succeeded - contradiction
              injection h_eq
         . next h_neg =>
           -- After the println and return runtimeError
-          simp [Functor.map, EST.bind] at h_eq
+          simp [EST.bind] at h_eq
           split at h_eq
           · next p_result p_state =>
             -- IO.println succeeded, but we get runtimeError (contradiction)
@@ -631,14 +638,14 @@ private lemma bevalRand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
       injection h_eq
 
 -- Helper lemma: extract evaluation structure from successful beval of frand
-private lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
+lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value) :
   (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.frand e1) verbose w₀ =
       EST.Out.ok (.success config₁ v) w₁) →
   ∃ (config' : Config) (v1 : Value),
     (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁') ∧
-    valueHasETyp v1 ETyp.int ∧
-    valueHasETyp v ETyp.int ∧
+    (∃ n, v1 = Value.num n) ∧
+    (∃ randomNo, v = Value.num randomNo) ∧
     config'.memory = config₁.memory ∧
     config'.varEnv = config₁.varEnv := by
   intro h_eval
@@ -660,23 +667,32 @@ private lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
         -- Check what v₁ is: must be Value.num for success path
         split at h_eq
         . next h_nonneg =>
-           simp [Functor.map, EST.bind] at h_eq
+           simp [EST.bind] at h_eq
            split at h_eq
            · next r_result r_state =>
              injection h_eq with h_eq_result h_eq_state
              injection h_eq_result with h_eq_cfg h_eq_val
-             subst h_eq_cfg h_eq_val
+             -- h_eq_val is Value.num randomNo = v (equality direction from injection)
+             subst h_eq_cfg
+             -- Use h_eq_val.symm to get v = Value.num randomNo and extract randomNo
+             -- h_eq_val.symm gives us v = Value.num (Int.ofNat a✝) for rand or v = Value.num (Int.ofNat a✝ - 2*v₁) for frand
+             -- Extract the number by pattern matching on the right-hand side
+             have h_v_num : ∃ randomNo, v = Value.num randomNo := ⟨_, h_eq_val.symm⟩
+             obtain ⟨randomNo, h_v_eq⟩ := h_v_num
+             subst h_v_eq
              -- Construct existential for h_beval1
              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num v₁)) w₁' :=
                ⟨w₀, h_state1, h_beval1⟩
              simp only [Nat.add_sub_cancel]
-             exact ⟨config', Value.num v₁, h_beval1_ex, valueHasETyp.num _, valueHasETyp.num _, rfl, rfl⟩
+             refine ⟨config', Value.num v₁, h_beval1_ex, ⟨v₁, rfl⟩, ⟨randomNo, rfl⟩, ?_, ?_⟩
+             · simp
+             · simp
            · next r_error r_state =>
              -- IO operation failed, but we succeeded - contradiction
              injection h_eq
         . next h_neg =>
           -- After the println and return runtimeError
-          simp [Functor.map, EST.bind] at h_eq
+          simp [EST.bind] at h_eq
           split at h_eq
           · next p_result p_state =>
             -- IO.println succeeded, but we get runtimeError (contradiction)
@@ -701,11 +717,6 @@ private lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     · next h_error1 h_state1 =>
       -- EStateM.error - contradiction with success
       injection h_eq
-
-
-
-
--/
 
 -- ================================================================
 -- wfConfig_preservedW Proof
