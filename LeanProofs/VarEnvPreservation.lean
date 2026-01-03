@@ -71,14 +71,15 @@ private lemma bevalFunctionBody_preserves_varEnv
             injection h_eq with h_result h_world
             injection h_result with h_cfg_eq h_val_eq
             subst h_cfg_eq
-            -- finalConfig = { currentConfig with pureMode := false }
+            -- finalConfig = { currentConfig with pureMode := currentConfig.pureMode }
             -- So finalConfig.varEnv = currentConfig.varEnv (record update doesn't touch varEnv)
             simp
           · -- isPure = false branch
             injection h_eq with h_result h_world
             injection h_result with h_cfg_eq h_val_eq
             subst h_cfg_eq
-            -- finalConfig = { currentConfig with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr, pureMode := false }
+            -- finalConfig = { currentConfig with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr,
+            --                 pureMode := currentConfig.pureMode }
             -- So finalConfig.varEnv = currentConfig.varEnv (record update doesn't touch varEnv)
             simp
         · next =>

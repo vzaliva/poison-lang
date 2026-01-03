@@ -281,9 +281,10 @@ mutual
       match <- beval fuel' bodyConfig body verbose with
       | .success evalConfig v =>
         if isPure then
-          return .success ({ currentConfig with pureMode := false }) v
+          -- Restore caller's pureMode (pure bodies stay pure when caller is pure)
+          return .success ({ currentConfig with pureMode := currentConfig.pureMode }) v
         else
-          let finalConfig := { currentConfig with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr, pureMode := false }
+          let finalConfig := { currentConfig with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr, pureMode := currentConfig.pureMode }
           return .success finalConfig v
       | .outOfFuel => return .outOfFuel
       | .runtimeError msg => return .runtimeError msg

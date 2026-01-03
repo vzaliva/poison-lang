@@ -701,13 +701,19 @@ private lemma bevalFunctionBody_memory_monotonic
         -- Body evaluation succeeded
         -- Now handle the if-then-else on isPure using split
         split at h_eq
-        · -- isPure = true branch: finalConfig = {currentConfig with pureMode := false}
+        · -- isPure = true branch: finalConfig = {currentConfig with pureMode := currentConfig.pureMode}
           injection h_eq with h_result h_world
           injection h_result with h_cfg_eq h_val_eq
           -- Extract memory equality: finalConfig.memory = currentConfig.memory
           have h_mem_eq : finalConfig.memory = currentConfig.memory := by
-            have h_lhs_mem : ({ memory := currentConfig.memory, varEnv := currentConfig.varEnv, nextAddr := currentConfig.nextAddr, pureMode := false } : Config).memory = currentConfig.memory := rfl
-            have h_congr : ({ memory := currentConfig.memory, varEnv := currentConfig.varEnv, nextAddr := currentConfig.nextAddr, pureMode := false } : Config).memory = finalConfig.memory :=
+            have h_lhs_mem :
+                ({ memory := currentConfig.memory, varEnv := currentConfig.varEnv,
+                   nextAddr := currentConfig.nextAddr, pureMode := currentConfig.pureMode } : Config).memory =
+                  currentConfig.memory := rfl
+            have h_congr :
+                ({ memory := currentConfig.memory, varEnv := currentConfig.varEnv,
+                   nextAddr := currentConfig.nextAddr, pureMode := currentConfig.pureMode } : Config).memory =
+                  finalConfig.memory :=
               congrArg Config.memory h_cfg_eq
             rw [← h_congr, h_lhs_mem]
           rw [h_mem_eq]
@@ -717,8 +723,12 @@ private lemma bevalFunctionBody_memory_monotonic
           injection h_result with h_cfg_eq h_val_eq
           -- Extract memory: finalConfig.memory = evalConfig.memory
           have h_mem_eq : finalConfig.memory = evalConfig.memory := by
-            have h_lhs_mem : ({ memory := evalConfig.memory, varEnv := currentConfig.varEnv, nextAddr := evalConfig.nextAddr, pureMode := false } : Config).memory = evalConfig.memory := rfl
-            have h_congr : ({ memory := evalConfig.memory, varEnv := currentConfig.varEnv, nextAddr := evalConfig.nextAddr, pureMode := false } : Config).memory = finalConfig.memory :=
+            have h_lhs_mem :
+                ({ memory := evalConfig.memory, varEnv := currentConfig.varEnv, nextAddr := evalConfig.nextAddr,
+                   pureMode := currentConfig.pureMode } : Config).memory = evalConfig.memory := rfl
+            have h_congr :
+                ({ memory := evalConfig.memory, varEnv := currentConfig.varEnv, nextAddr := evalConfig.nextAddr,
+                   pureMode := currentConfig.pureMode } : Config).memory = finalConfig.memory :=
               congrArg Config.memory h_cfg_eq
             rw [← h_congr, h_lhs_mem]
           -- bodyConfig = {currentConfig with varEnv := env.update x v₂, pureMode := isPure}
