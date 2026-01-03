@@ -434,7 +434,7 @@ inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ�
 inductive agreeLocUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
     (θ₁ θ₂ : RealizationMap)
     : (Loc × QTyp) → Prop where
-  | agree_values (l : Loc) (qt : QTyp) (a₁ a₂ : Address) (n₁ n₂ : Nat)
+  | agree_values (l : Loc) (qt : QTyp) (a₁ a₂ : Address) (n₁ n₂ : Int)
       (hreal1 : θ₁.lookup l = some a₁)
       (hreal2 : θ₂.lookup l = some a₂)
       (hlookup1 : μ₁.lookup a₁ = some n₁)

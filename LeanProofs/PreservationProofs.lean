@@ -1149,7 +1149,7 @@ private lemma preservation_newRef (e1 : Expr) (ctx : TypeContext)
     | succ fuel_tc' =>
       simp only [typecheck, typecheckExpr] at h_typecheck
       -- Extract typechecking structure
-      have ⟨result1, l, etyp, h_tc1, h_fresh, h_etyp, h_mem, h_tag, h_loc, h_ntag⟩ :=
+      have ⟨result1, l, etyp, h_tc1, h_fresh, _h_etyp1, h_etyp, h_mem, h_tag, h_loc, h_ntag⟩ :=
         typecheckNewRef_structure ctx e1 fuel_tc' res h_typecheck
 
       -- Extract evaluation structure

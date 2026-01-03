@@ -778,6 +778,7 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
   ∃ (result1 : TypeResult) (l : Loc) (etyp : ETyp),
     typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
     l = result1.nextLoc' ∧
+    etyp = result1.qualType.etyp ∧
     res.qualType.etyp = ETyp.ref etyp (LocSet.singleton l) ∧
     res.qualType.poison = ctx.pc ∧
     res.qualType.pred = Predicate.noPred ∧
@@ -856,6 +857,9 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
         · exact h_tc1
         constructor
         · rfl  -- l = result1.nextLoc'
+        constructor
+        · -- etyp = result1.qualType.etyp
+          simp [h_qt1]
         constructor
         · -- res.qualType.etyp = ETyp.ref etyp (LocSet.singleton l)
           rw [h_etyp]
