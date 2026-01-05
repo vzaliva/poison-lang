@@ -65,7 +65,7 @@ def resultAgreesIfClean (predSat : PredSat) (R : Regime) (μ₀ μ₁ : Memory)
 -- Tag-environment consistency for a regime: tags known true in the typing
 -- context must be true in the regime interpretation.
 def tagEnvConsistentWithRegime (tagEnv : TagEnv) (R : Regime) : Prop :=
-  ∀ k deps, tagEnv.get? k = some ⟨true, deps⟩ → R k = some true
+  ∀ k deps, tagEnv.get? k = some ⟨true, deps⟩ → R.lookup? k = some true
 
 -- Regime boundedness (imported from `FaultRobustness.lean`): tags at or above the initial
 -- `nextTag` supply are outside the regime's domain (model faulty inputs only).
@@ -86,7 +86,7 @@ def StepFR
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
       tagEnvConsistentWithRegime ctx.tagEnv R →
-      regimeBounded ctx.nextTag R →
+      regimeBounded R →
       agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
       ∀ (a₀ a₁ : Address) (pm : Bool),
         wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } →  -- NEW: initial config₀ well-formed
@@ -194,7 +194,7 @@ private lemma agreeValueUnder_nonref_eq_of_clean
           subst hk
           have : (some false : Option Bool) = some true := by
             calc
-              some false = R k := by symm; exact hreg
+              some false = R.lookup? k := by symm; exact hreg
               _ = some true := by exact hreg'
           cases this
   | guardOnly_false_poisoned_any k hgo hreg hpoison =>
@@ -216,7 +216,7 @@ private lemma agreeValueUnder_nonref_eq_of_clean
           subst hk
           have : (some false : Option Bool) = some true := by
             calc
-              some false = R k := by symm; exact hreg
+              some false = R.lookup? k := by symm; exact hreg
               _ = some true := by exact hreg'
           cases this
 
@@ -329,7 +329,7 @@ private lemma agreeValueUnder_transport_clean
           subst hk
           have : (some false : Option Bool) = some true := by
             calc
-              some false = R k := by symm; exact hreg'
+              some false = R.lookup? k := by symm; exact hreg'
               _ = some true := by exact hreg
           cases this
       | guardOnly_false_poisoned_any k' hgo hreg' _ =>
@@ -345,7 +345,7 @@ private lemma agreeValueUnder_transport_clean
           subst hk
           have : (some false : Option Bool) = some true := by
             calc
-              some false = R k := by symm; exact hreg'
+              some false = R.lookup? k := by symm; exact hreg'
               _ = some true := by exact hreg
           cases this
 private lemma joinPoison_eq_false {p1 p2 : Poison} :
@@ -463,12 +463,14 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
   have hstep' := hstep e ctx predSat
   have hstep' := hstep' fuel res htc
-  rintro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ a₀ a₁ pm R cf₀ cf₁ o₀ o₁
-  rintro hR hRbound hθ₀ hθ₁ hwfcfg₀ hwfcfg₁ hics₀ hics₁ hric₀ hric₁ hcrs₀ hcrs₁ hagree htrusted ht₀ ht₁
+  intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm check
+  dsimp only [FaultRobustnessSpec]
+  intro cf₁ cf₂ o₁ o₂ hR hRbound hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
+  set R : Regime := ⟨ctx.nextTag, check⟩ with hRdef
   have hagree_clean :
-      agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ :=
+      agreeOnClean predSat R ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ :=
     agreeOnCriticalAndTrusted_implies_agreeOnClean
-      predSat R s ctx μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hctx hagree htrusted
+      predSat R s ctx μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ hctx hagree htrusted
   have htagR : tagEnvConsistentWithRegime ctx.tagEnv R := by
     intro k deps hlookup
     -- Empty tag environment at the top level.
@@ -477,11 +479,11 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
     rw [this] at hlookup
     cases hlookup
   have hstepFR :=
-    (hstep' R) μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-      hθ₀ hθ₁ _hwf hric₀ hric₁ htagR hRbound hagree_clean
-      a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  rcases hstepFR with ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, _hwf', _hwfcf₀', _hwfcf₁', hagree_clean', hret_agree⟩
-  refine ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, ?_⟩
+    (hstep' R) μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂
+      hθ₁ hθ₂ _hwf hric₁ hric₂ htagR hRbound hagree_clean
+      a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
+  rcases hstepFR with ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, _hwf', _hwfcf₁', _hwfcf₂', hagree_clean', hret_agree⟩
+  refine ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, ?_⟩
   -- Bridge from post-state agreement to observables.
   simp [observablesEqual]
   constructor
@@ -492,12 +494,12 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
     have hclean : qtypCleanUnder R qt := by
       left
       exact hpoison
-    have hlocEntry : agreeLocUnder predSat R cf₀.memory cf₁.memory θ₀' θ₁' (l, qt) :=
+    have hlocEntry : agreeLocUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' (l, qt) :=
       (hagree_clean'.1 l qt hctx_lookup hclean)
     cases hlocEntry with
-    | agree_values _l _qt a₀' a₁' n₀ n₁ hreal₀ hreal₁ hlookup₀ hlookup₁ hagree =>
+    | agree_values _l _qt a₁' a₂' n₁ n₂ hreal₁ hreal₂ hlookup₁ hlookup₂ hagree =>
         -- Reduce to equality of stored ints via agreement on the stored values.
-        have hvalEq : n₀ = n₁ := by
+        have hvalEq : n₁ = n₂ := by
           cases hagree with
           | clean_eq_nonref _ _ hval =>
               cases hval
@@ -523,16 +525,16 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
                 simp [hpoison] at hpoison'
               exact False.elim this
         refine Or.inl ?_
-        refine ⟨a₀', ?_⟩
-        refine And.intro hreal₀ ?_
         refine ⟨a₁', ?_⟩
         refine And.intro hreal₁ ?_
+        refine ⟨a₂', ?_⟩
+        refine And.intro hreal₂ ?_
         calc
-          cf₀.memory.lookup a₀' = some n₀ := hlookup₀
-          _ = some n₁ := by simp [hvalEq]
-          _ = cf₁.memory.lookup a₁' := by symm; exact hlookup₁
-    | both_unrealized _l _qt _hnone₀ _hnone₁ =>
-        exact Or.inr ⟨_hnone₀, _hnone₁⟩
+          cf₁.memory.lookup a₁' = some n₁ := hlookup₁
+          _ = some n₂ := by simp [hvalEq]
+          _ = cf₂.memory.lookup a₂' := by symm; exact hlookup₂
+    | both_unrealized _l _qt _hnone₁ _hnone₂ =>
+        exact Or.inr ⟨_hnone₁, _hnone₂⟩
   · cases hretOpt : obs.retEtyp? with
     | none =>
         simp
@@ -543,7 +545,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
           left
           exact hret_poison
         have hret_agree' :
-            agreeValueUnder predSat R cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁ :=
+            agreeValueUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' res.qualType o₁ o₂ :=
           hret_agree hret_clean
         cases et with
         | ref t ls =>
@@ -664,7 +666,6 @@ section TypeSystemEnforcesFaultRobustness_step_proof
 -- Step theorem variant that uses world-indexed termination premises.
 -- Includes wfTypeContext premises and conclusion for freshness reasoning.
 private def StepFRW
-  (tagBound : Tag)
   (ctx : TypeContext)
   (R : Regime)
   (e : Expr)
@@ -677,7 +678,7 @@ private def StepFRW
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
       tagEnvConsistentWithRegime ctx.tagEnv R →
-      regimeBounded tagBound R →
+      regimeBounded R →
       agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
       ∀ (a₀ a₁ : Address) (pm₀ pm₁ : Bool),
         wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ } →  -- NEW: initial config₀ well-formed
@@ -724,7 +725,7 @@ private lemma terminatesToW_of_terminatesTo
 -- Use StepFRW to derive the original StepFR premises.
 private lemma StepFR_of_StepFRW
   {ctx : TypeContext} {R : Regime} {e : Expr} {res : TypeResult} {predSat : PredSat} :
-  StepFRW ctx.nextTag ctx R e res predSat → StepFR ctx R e res predSat := by
+  StepFRW ctx R e res predSat → StepFR ctx R e res predSat := by
   intro hstep μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
     hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   let w : Void IO.RealWorld := LeanProofs.defaultWorld
@@ -1004,7 +1005,7 @@ private lemma agreeValueUnder_clean_extends
           subst hk
           have : (some false : Option Bool) = some true := by
             calc
-              some false = R k := by symm; exact hreg
+              some false = R.lookup? k := by symm; exact hreg
               _ = some true := by exact hreg'
           cases this
   | guardOnly_false_poisoned_any k hgo hreg hpoison =>
@@ -1026,7 +1027,7 @@ private lemma agreeValueUnder_clean_extends
           subst hk
           have : (some false : Option Bool) = some true := by
             calc
-              some false = R k := by symm; exact hreg
+              some false = R.lookup? k := by symm; exact hreg
               _ = some true := by exact hreg'
           cases this
 
@@ -1433,13 +1434,13 @@ private lemma typecheckFrand_structure (ctx : TypeContext) (e1 : Expr) (fuel : N
 -- Structure lemma for seq typechecking.
 -- Structure lemma for vlet typechecking.
 private lemma stepFR_literal
-  (tagBound : Tag) (ctx : TypeContext) (predSat : PredSat) (R : Regime)
+  (ctx : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (res : TypeResult) (v : Value)
   (hval : Expr.toValue? e = some v)
   (hpoison : res.qualType.poison = false)
   (hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls)
   (hctxAfter : ctxAfter ctx res = ctx) :
-  StepFRW tagBound ctx R e res predSat := by
+  StepFRW ctx R e res predSat := by
   intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   have hterm₀ := terminatesTo_literal_inv e v hval μ₀ ρ₀ a₀ pm₀ cf₀ o₀ w w₀' ht₀
   have hterm₁ := terminatesTo_literal_inv e v hval μ₁ ρ₁ a₁ pm₁ cf₁ o₁ w w₁' ht₁
@@ -1533,10 +1534,10 @@ private lemma stepFR_literal
     exact agreeValueUnder.clean_eq_nonref hpoison hnotref hval'
 
 private lemma stepFR_var
-  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
-  StepFRW tagBound ctxᵢ R (Expr.var name) res predSat := by
+  StepFRW ctxᵢ R (Expr.var name) res predSat := by
   -- Variable case proof skeleton (full proof requires case analysis
   -- on predicates and tag environment).
   intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
@@ -1802,7 +1803,7 @@ private lemma stepFR_var
                           subst hk
                           have : (some false : Option Bool) = some true := by
                             calc
-                              some false = R k := by symm; exact hreg
+                              some false = R.lookup? k := by symm; exact hreg
                               _ = some true := by exact hregime
                           cases this
                       | guardOnly_false_poisoned_any k' hgo hreg _ =>
@@ -1815,7 +1816,7 @@ private lemma stepFR_var
                           subst hk
                           have : (some false : Option Bool) = some true := by
                             calc
-                              some false = R k := by symm; exact hreg
+                              some false = R.lookup? k := by symm; exact hreg
                               _ = some true := by exact hregime
                           cases this
                     simpa [_ho₀, _ho₁] using hres_agree
@@ -1840,7 +1841,7 @@ private lemma stepFR_var
                         have hpc : ctxᵢ.pc = false := by
                           -- clean result requires pc = false
                           simpa [qtypCleanUnder, qtypGuardTag, hres] using hclean
-                        have hregime : R k = some true := by
+                        have hregime : R.lookup? k = some true := by
                           exact htagR k deps (by simpa [htag] using htag)
                         have hclean_qt : qtypCleanUnder R qt := by
                           right
@@ -1902,7 +1903,7 @@ private lemma stepFR_var
                               subst hk
                               have : (some false : Option Bool) = some true := by
                                 calc
-                                  some false = R k := by symm; exact hreg
+                                  some false = R.lookup? k := by symm; exact hreg
                                   _ = some true := by exact hregime
                               cases this
                           | guardOnly_false_poisoned_any k' hgo hreg _ =>
@@ -1915,7 +1916,7 @@ private lemma stepFR_var
                               subst hk
                               have : (some false : Option Bool) = some true := by
                                 calc
-                                  some false = R k := by symm; exact hreg
+                                  some false = R.lookup? k := by symm; exact hreg
                                   _ = some true := by exact hregime
                               cases this
                         simpa [_ho₀, _ho₁] using hres_agree
@@ -2047,7 +2048,7 @@ private lemma stepFR_var
                           subst hk
                           have : (some false : Option Bool) = some true := by
                             calc
-                              some false = R k := by symm; exact hreg
+                              some false = R.lookup? k := by symm; exact hreg
                               _ = some true := by exact hregime
                           cases this
                       | guardOnly_false_poisoned_any k' hgo hreg _ =>
@@ -2060,7 +2061,7 @@ private lemma stepFR_var
                           subst hk
                           have : (some false : Option Bool) = some true := by
                             calc
-                              some false = R k := by symm; exact hreg
+                              some false = R.lookup? k := by symm; exact hreg
                               _ = some true := by exact hregime
                           cases this
                     simpa [_ho₀, _ho₁] using hres_agree
@@ -2084,7 +2085,7 @@ private lemma stepFR_var
                               rfl
                         have hpc : ctxᵢ.pc = false := by
                           simpa [qtypCleanUnder, qtypGuardTag, hres] using hclean
-                        have hregime : R k = some true := by
+                        have hregime : R.lookup? k = some true := by
                           exact htagR k deps (by simpa [htag] using htag)
                         have hclean_qt : qtypCleanUnder R qt := by
                           right
@@ -2148,7 +2149,7 @@ private lemma stepFR_var
                               subst hk
                               have : (some false : Option Bool) = some true := by
                                 calc
-                                  some false = R k := by symm; exact hreg
+                                  some false = R.lookup? k := by symm; exact hreg
                                   _ = some true := by exact hregime
                               cases this
                           | guardOnly_false_poisoned_any k' hgo hreg _ =>
@@ -2161,7 +2162,7 @@ private lemma stepFR_var
                               subst hk
                               have : (some false : Option Bool) = some true := by
                                 calc
-                                  some false = R k := by symm; exact hreg
+                                  some false = R.lookup? k := by symm; exact hreg
                                   _ = some true := by exact hregime
                               cases this
                         simpa [_ho₀, _ho₁] using hres_agree
@@ -2184,23 +2185,22 @@ private lemma stepFR_var
 
 -- Step theorem spec variant using world-indexed termination.
 private def TypeSystemEnforcesFaultRobustness_step_specW
-  (tagBound : Tag)
   (e : Expr)
   (ctxᵢ : TypeContext)
   (predSat : PredSat) : Prop :=
   ∀ (fuel : Nat) (res : TypeResult),
     typecheck ctxᵢ e fuel = .ok res →
     ∀ (R : Regime),
-      StepFRW tagBound ctxᵢ R e res predSat
+      StepFRW ctxᵢ R e res predSat
 
 -- Helper lemma for op expressions
 private lemma stepFRW_op
-  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW tagBound ctxᵢ R (Expr.op e1 op e2) res predSat := by
+  StepFRW ctxᵢ R (Expr.op e1 op e2) res predSat := by
   have htc' : typecheckOp ctxᵢ e1 e2 (Nat.succ fuel') op = .ok res := by
     simp [typecheck, typecheckExpr_op_succ] at htc
     exact htc
@@ -2364,12 +2364,12 @@ private lemma stepFRW_op
 
 -- Helper lemma for unaryop expressions
 private lemma stepFRW_unaryop
-  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (op : UnaryOp) (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW tagBound ctxᵢ R (Expr.unaryop op e) res predSat := by
+  StepFRW ctxᵢ R (Expr.unaryop op e) res predSat := by
   have htc' : typecheckUnaryOp ctxᵢ op e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_unaryop_succ] at htc
     exact htc
@@ -2479,12 +2479,12 @@ private lemma stepFRW_unaryop
 
 -- Helper lemma for newRef expressions
 private lemma stepFRW_newRef
-  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW tagBound ctxᵢ R (Expr.newRef e) res predSat := by
+  StepFRW ctxᵢ R (Expr.newRef e) res predSat := by
   have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
@@ -2894,12 +2894,12 @@ private lemma stepFRW_newRef
 
 -- Helper lemma for seq expressions
 private lemma stepFRW_seq
-  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW tagBound ctxᵢ R (Expr.seq e1 e2) res predSat := by
+  StepFRW ctxᵢ R (Expr.seq e1 e2) res predSat := by
   have htc' : typecheckSeq ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_seq_succ] at htc
     exact htc
@@ -3016,12 +3016,12 @@ private lemma stepFRW_seq
 
 -- Helper lemma for vlet expressions
 private lemma stepFRW_vlet
-  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW tagBound ctxᵢ R (Expr.vlet vname e1 e2) res predSat := by
+  StepFRW ctxᵢ R (Expr.vlet vname e1 e2) res predSat := by
   have htc' : typecheckVlet ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_vlet_succ] at htc
     exact htc
@@ -3644,12 +3644,12 @@ private lemma bevalFrand_structureW (e1 : Expr) (fuel : Nat) (verbose : Bool)
 
 -- Helper lemma for rand expressions
 private lemma stepFRW_rand
-  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.rand e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW tagBound ctxᵢ R (Expr.rand e) res predSat := by
+  StepFRW ctxᵢ R (Expr.rand e) res predSat := by
   have htc' : typecheckRand ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
@@ -3768,12 +3768,12 @@ private lemma stepFRW_rand
 
 -- Helper lemma for frand expressions
 private lemma stepFRW_frand
-  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.frand e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW tagBound ctxᵢ R (Expr.frand e) res predSat := by
+  StepFRW ctxᵢ R (Expr.frand e) res predSat := by
   have htc' : typecheckFrand ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
@@ -3900,12 +3900,12 @@ private lemma stepFRW_frand
 
 -- Helper lemma for printString expressions
 private lemma stepFRW_printString
-  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.printString e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW tagBound ctxᵢ R (Expr.printString e) res predSat := by
+  StepFRW ctxᵢ R (Expr.printString e) res predSat := by
   have htc' : typecheckPrintString ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
@@ -3995,12 +3995,12 @@ private lemma stepFRW_printString
 
 -- Helper lemma for printInt expressions
 private lemma stepFRW_printInt
-  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.printInt e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW tagBound ctxᵢ R (Expr.printInt e) res predSat := by
+  StepFRW ctxᵢ R (Expr.printInt e) res predSat := by
   have htc' : typecheckPrintInt ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
@@ -4084,8 +4084,8 @@ private lemma stepFRW_printInt
       exact agreeValueUnder.withPred_true_eq k htag hreg hnotref hEq
 
 private theorem TypeSystemEnforcesFaultRobustness_stepW
-  (tagBound : Tag) (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
-  TypeSystemEnforcesFaultRobustness_step_specW tagBound e ctxᵢ predSat := by
+  (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
+  TypeSystemEnforcesFaultRobustness_step_specW e ctxᵢ predSat := by
   unfold TypeSystemEnforcesFaultRobustness_step_specW
   intro fuel
   revert e ctxᵢ
@@ -4117,7 +4117,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal tagBound ctxᵢ predSat R Expr.unit res Value.unit hval hpoison hnotref hctxAfter
+            exact stepFR_literal ctxᵢ predSat R Expr.unit res Value.unit hval hpoison hnotref hctxAfter
         | num n =>
             simp [typecheck, typecheckExpr, typecheckInt] at htc
             let res_expected : TypeResult := {
@@ -4138,7 +4138,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal tagBound ctxᵢ predSat R (Expr.num n) res (Value.num n) hval hpoison hnotref hctxAfter
+            exact stepFR_literal ctxᵢ predSat R (Expr.num n) res (Value.num n) hval hpoison hnotref hctxAfter
         | bool b =>
             simp [typecheck, typecheckExpr, typecheckBool] at htc
             let res_expected : TypeResult := {
@@ -4159,7 +4159,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal tagBound ctxᵢ predSat R (Expr.bool b) res (Value.bool b) hval hpoison hnotref hctxAfter
+            exact stepFR_literal ctxᵢ predSat R (Expr.bool b) res (Value.bool b) hval hpoison hnotref hctxAfter
         | str s =>
             simp [typecheck, typecheckExpr, typecheckString] at htc
             let res_expected : TypeResult := {
@@ -4180,21 +4180,21 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal tagBound ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotref hctxAfter
+            exact stepFR_literal ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotref hctxAfter
         | var name =>
-            exact stepFR_var tagBound ctxᵢ predSat R name res fuel htc
+            exact stepFR_var ctxᵢ predSat R name res fuel htc
         | op e1 op e2 =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr_op_succ, typecheckOp] at htc
             | succ fuel' =>
-                exact stepFRW_op tagBound ctxᵢ predSat R e1 e2 op fuel' res IH htc
+                exact stepFRW_op ctxᵢ predSat R e1 e2 op fuel' res IH htc
         | unaryop op e =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
             | succ fuel' =>
-                exact stepFRW_unaryop tagBound ctxᵢ predSat R op e fuel' res IH htc
+                exact stepFRW_unaryop ctxᵢ predSat R op e fuel' res IH htc
         | ite e1 e2 e3 =>
             sorry
         | newRef e =>
@@ -4202,7 +4202,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckNewRef] at htc
             | succ fuel' =>
-                exact stepFRW_newRef tagBound ctxᵢ predSat R e fuel' res IH htc
+                exact stepFRW_newRef ctxᵢ predSat R e fuel' res IH htc
         | assign e1 e2 =>
             sorry
         | deref e =>
@@ -4212,7 +4212,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
             | zero =>
                 simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
             | succ fuel' =>
-                exact stepFRW_seq tagBound ctxᵢ predSat R e1 e2 fuel' res IH htc
+                exact stepFRW_seq ctxᵢ predSat R e1 e2 fuel' res IH htc
         | kwhile e1 e2 =>
             sorry
         | vlet z e1 e2 =>
@@ -4221,7 +4221,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
             | zero =>
                 simp [typecheck, typecheckExpr_vlet_succ, typecheckVlet] at htc
             | succ fuel' =>
-                exact stepFRW_vlet tagBound ctxᵢ predSat R vname e1 e2 fuel' res IH htc
+                exact stepFRW_vlet ctxᵢ predSat R vname e1 e2 fuel' res IH htc
         | fn name ty e1 ty2 =>
             sorry
         | pfn name ty e1 ty2 =>
@@ -4237,13 +4237,13 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckPrintString] at htc
             | succ fuel' =>
-                exact stepFRW_printString tagBound ctxᵢ predSat R e fuel' res IH htc
+                exact stepFRW_printString ctxᵢ predSat R e fuel' res IH htc
         | printInt e =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckPrintInt] at htc
             | succ fuel' =>
-                exact stepFRW_printInt tagBound ctxᵢ predSat R e fuel' res IH htc
+                exact stepFRW_printInt ctxᵢ predSat R e fuel' res IH htc
         | externVal ty b sp =>
             intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hwf _hric₀ _hric₁ _htagR _hRbound _hagree a₀ _a₁ pm₀ _pm₁ _hwfcfg₀ _hwfcfg₁ w₀' _w₁' ht₀ _ht₁
             have hfalse :
@@ -4287,8 +4287,8 @@ theorem TypeSystemEnforcesFaultRobustness_step
   TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat := by
   unfold TypeSystemEnforcesFaultRobustness_step_spec
   intro fuel res htc R
-  have hW : StepFRW ctxᵢ.nextTag ctxᵢ R e res predSat :=
-    TypeSystemEnforcesFaultRobustness_stepW ctxᵢ.nextTag e ctxᵢ predSat fuel res htc R
+  have hW : StepFRW ctxᵢ R e res predSat :=
+    TypeSystemEnforcesFaultRobustness_stepW e ctxᵢ predSat fuel res htc R
   exact StepFR_of_StepFRW hW
 
 end TypeSystemEnforcesFaultRobustness_step_proof

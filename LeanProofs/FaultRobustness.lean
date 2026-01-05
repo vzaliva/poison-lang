@@ -71,13 +71,17 @@ def inputKeysUnique (vars : VarTypeEnv) : Prop :=
   vars.keys.Nodup
   -- `vars` is an ExtTreeMap, so keys are already unique
 
--- Regime: partial mapping from guard tags to their truth values.
-abbrev Regime := Tag → Option Bool
+-- Regime: bounded partial mapping from guard tags to their truth values.
+-- The `bound` field ensures regimes only interpret input/spec tags (tags < bound),
+-- excluding fresh internal tags introduced during typing (tags ≥ bound).
+structure Regime where
+  bound : Tag
+  lookup? : Tag → Option Bool
 
 -- Regime boundedness: tags at or above the bound are outside the regime's domain.
 -- Intended reading: `R` models fault injection choices for *input tags only*.
-def regimeBounded (tagBound : Tag) (R : Regime) : Prop :=
-  ∀ k, k ≥ tagBound → R k = none
+def regimeBounded (R : Regime) : Prop :=
+  ∀ k, k ≥ R.bound → R.lookup? k = none
 
 -- Extract all guard tags from the input specification (functional version for wfRegime)
 def inputSpecTags (s : InputSpec) : List Tag :=
@@ -94,10 +98,12 @@ def isGuardOnly (qt : QTyp) : Prop :=
   ∃ k, qt.pred = Predicate.guardOnly k
 
 -- Regime is well-formed with respect to spec S if it's defined exactly for tags in S.
+-- Additionally, all spec tags must be below the regime's bound.
 def wfRegime (R : Regime) (s : InputSpec) : Prop :=
   let tags := inputSpecTags s
-  (∀ k, k ∈ tags → (R k).isSome) ∧
-  (∀ k, (R k).isSome → k ∈ tags)
+  (∀ k, k ∈ tags → k < R.bound) ∧
+  (∀ k, k ∈ tags → (R.lookup? k).isSome) ∧
+  (∀ k, (R.lookup? k).isSome → k ∈ tags)
 
 inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
   | noPred (retType : QTyp)
@@ -105,11 +111,11 @@ inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
       wfRegimeForReturn R retType
   | guardOnly (retType : QTyp) (k : Tag)
       (hpred : retType.pred = Predicate.guardOnly k)
-      (hregime : R k = some true) :
+      (hregime : R.lookup? k = some true) :
       wfRegimeForReturn R retType
   | guardClosure (retType : QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
       (hpred : retType.pred = Predicate.guardClosure k arg_name pred_body var_env)
-      (hregime : R k = some true) :
+      (hregime : R.lookup? k = some true) :
       wfRegimeForReturn R retType
 
 -- Abstract predicate satisfaction: does a predicate with the given tag hold
@@ -333,7 +339,7 @@ inductive locsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (θ : Realiz
   | withPred_ok (entry : Loc × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
       (a : Address) (n : Int) (b : Bool)
       (hclos : entry.snd.pred = Predicate.guardClosure k arg_name pred_body var_env)
-      (hregime : R k = some b)
+      (hregime : R.lookup? k = some b)
       (hreal : θ.lookup entry.fst = some a)
       (hmem : μ.lookup a = some n)
       (hconsist : (b = true → qtypPredHolds predSat entry.snd μ (Value.num n)) ∧
@@ -353,7 +359,7 @@ inductive varsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (ρ : VarEnv
   | withPred_ok (entry : Name × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
       (v : Value) (b : Bool)
       (hclos : entry.snd.pred = Predicate.guardClosure k arg_name pred_body var_env)
-      (hregime : R k = some b)
+      (hregime : R.lookup? k = some b)
       (hvar : ρ.lookup entry.fst = some v)
       (hconsist : (b = true → qtypPredHolds predSat entry.snd μ v) ∧
                   (b = false → ¬qtypPredHolds predSat entry.snd μ v)) :
@@ -404,13 +410,13 @@ inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ�
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
   | withPred_true_eq (k : Tag)
       (htag : qtypGuardTag qt = some k)
-      (hregime : R k = some true)
+      (hregime : R.lookup? k = some true)
       (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
       (hagree : v₁ = v₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
   | withPred_true_ref (k : Tag) {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
       (htag : qtypGuardTag qt = some k)
-      (hregime : R k = some true)
+      (hregime : R.lookup? k = some true)
       (hetyp : qt.etyp = ETyp.ref t ls)
       (hlookup1 : θ₁.lookup l₁ = some a₁)
       (hin1 : l₁ ∈ ls)
@@ -422,14 +428,14 @@ inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ�
   | withPred_false_poisoned_fail (k : Tag)
       (hclos : isGuardClosure qt)
       (htag : qtypGuardTag qt = some k)
-      (hregime : R k = some false)
+      (hregime : R.lookup? k = some false)
       (hpoison : qt.poison = true)
       (hfail1 : ¬qtypPredHolds predSat qt μ₁ v₁)
       (hfail2 : ¬qtypPredHolds predSat qt μ₂ v₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
   | guardOnly_false_poisoned_any (k : Tag)
       (hgo : qt.pred = Predicate.guardOnly k)
-      (hregime : R k = some false)
+      (hregime : R.lookup? k = some false)
       (hpoison : qt.poison = true) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
 
@@ -485,7 +491,7 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
 -- or if its guard tag is true under R (de-poisoned).
 -- This is the "clean-under-R" predicate used by the step theorem.
 def qtypCleanUnder (R : Regime) (qt : QTyp) : Prop :=
-  qt.poison = false ∨ (∃ k, qtypGuardTag qt = some k ∧ R k = some true)
+  qt.poison = false ∨ (∃ k, qtypGuardTag qt = some k ∧ R.lookup? k = some true)
 
 -- Agreement on all clean items in the typing context (variables and locations).
 -- This is the step-level invariant: only clean-under-R entries must agree.
@@ -513,10 +519,11 @@ def agreeOnTrustedInputs (predSat : PredSat) (R : Regime) (s : InputSpec) (ctx :
 -- Fault-Robustness property (top-level, spec-driven).
 -- Same shape as NI but with an extra premise requiring agreement on trusted inputs.
 def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) : Prop :=
-  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool) (R : Regime)
-    (cf₁ cf₂ : Config) (o₁ o₂ : Value),
+  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool) (check : Tag → Option Bool),
+    let R : Regime := ⟨ctx.nextTag, check⟩
+    ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
     wfRegime R s →
-    regimeBounded ctx.nextTag R →
+    regimeBounded R →
     wfRealizationMap θ₁ →  wfRealizationMap θ₂ →
     wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →  -- NEW: initial config₁ well-formed
     wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } →  -- NEW: initial config₂ well-formed

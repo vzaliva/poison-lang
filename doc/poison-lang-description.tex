@@ -1238,9 +1238,13 @@ With observable outputs designated as $(L_{obs}, v_{obs})$ where $L_{obs}$ is a 
 Let $K_S$ be the finite set of guard tags that occur in predicates attached to
 entries of $S$.
 
-A \emph{guard regime} is a total mapping $R : K_S \to
-\{\text{true},\text{false}\}$ assigning a truth value to each tag. It prescribes
-which guards are considered true in an execution.
+A \emph{guard regime} is a bounded partial mapping $R : \text{Tag} \rightharpoonup
+\{\text{true},\text{false}\}$ with an associated bound $b \in \text{Tag}$. The regime
+is defined exactly on $K_S$ (assigning a truth value to each tag in $K_S$) and satisfies
+\emph{boundedness}: for all tags $k \geq b$, $R(k)$ is undefined. The bound $b$ is set
+to the initial tag supply of the typing context, ensuring that regimes classify only
+input/spec tags whilst excluding fresh internal tags introduced during typing (which
+are allocated from the tag supply and thus have tags $\geq b$).
 
 For a single run, we say that $R$ is \emph{consistent} with the critical inputs when:
 \begin{itemize}
