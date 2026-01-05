@@ -27,9 +27,10 @@ However, when the inferred result type is clean-under-\(R\), the step theorem re
 
 #### 1) Thread worlds through the step theorem premises (input and output)
 
-We will replace “existential worlds” termination premises with an explicit input-world form, so that the step theorem can take worlds as inputs and produce worlds as outputs. One convenient predicate is:
+We will replace “existential worlds” termination premises with an explicit input/output-world form, so that proofs can refer to the *starting* world and the *ending* world directly. The new formulation of the predicate:
 
-- `terminatesToWFrom (w : Void IO.RealWorld) e c₀ c₁ o := ∃ fuel verbose w', beval fuel c₀ e verbose w = ok ... w'`.
+- `terminatesToW (w₀ w₁ : Void IO.RealWorld) (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
+     ∃ (fuel : Nat) (verbose : Bool), beval fuel c₀ e verbose w₀ = ok (.success c₁ out) w₁`.
 
 The FR step theorem will be reformulated to take a (single) shared input world `w` for the two runs and to return a **shared** output world `w'` (i.e. both runs are shown to advance the world in the same way). This makes “world synchronisation” a first-class induction invariant rather than an implicit side condition, and it is what allows the induction hypothesis to be chained through constructs such as `seq`.
 
@@ -95,9 +96,10 @@ This is an explicit trust boundary: the FR proofs reduce `rand`/`frand` reasonin
     - State **Axiom A** (printing) and **Axiom B** (randomness) as Lean axioms in `LeanProofs/FaultRobustnessProofs.lean`, alongside opaque step functions `printStep` and `randStep` (bounds-independent).
 
 2.  **Modify Termination Predicates in place**
-    - Instead of creating a new `terminatesToWFrom`, modify `terminatesToW` in `LeanProofs/SemanticsProperties.lean` to take explicit input and output worlds:
-      `def terminatesToW (w₀ w₁ : Void IO.RealWorld) (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop`
-    - Update the definition to assert `beval ... w₀ = ok ... w₁`.
+    - Modify `terminatesToW` in `LeanProofs/SemanticsProperties.lean` to take **explicit input and output worlds**:
+      - `terminatesToW w₀ w₁ e c₀ c₁ out` means that, starting from world `w₀`, evaluating `e` terminates with output world `w₁`.
+      - The definition should be of the form `∃ fuel verbose, beval ... w₀ = ok ... w₁`.
+    - Termination “from a given input world” is then expressed by existentially quantifying the output world (and, in our FR development, proving it is shared across the two runs).
     - **Refactor impacted lemmas in `SemanticsProperties.lean`**:
         - `terminatesToW_nextAddr_mono`: Update type signature and proof to use explicit world arguments.
         - `wfConfig_preservedW`: Update type signature and proof to use explicit world arguments.
@@ -105,8 +107,8 @@ This is an explicit trust boundary: the FR proofs reduce `rand`/`frand` reasonin
 
 3.  **Refactor `StepFRW` Definition**
     - Modify `StepFRW` in `LeanProofs/FaultRobustnessProofs.lean` to take a single shared input world argument `w`.
-    - Update the termination premises to use the modified `terminatesToW` with `w` as the input world.
-    - Add a shared output world `w'` to the existential result, ensuring both runs terminate to `w'`.
+    - Update the termination premises to use the modified `terminatesToW` with `w` as the input world, and let each run produce its own output world initially.
+    - Add a shared output world `w'` to the existential result and prove the two per-run output worlds are equal to `w'` using the IO axioms (`printStep`/`randStep`), so the IH can be chained through `seq`.
 
 4.  **Update Structural Helper Lemmas**
     - Update `stepFRW_op`, `stepFRW_seq`, `stepFRW_if`, etc., to propagate the shared world token.
@@ -120,12 +122,11 @@ This is an explicit trust boundary: the FR proofs reduce `rand`/`frand` reasonin
 6.  **Connect to Main Theorem**
     - Update `StepFR_of_StepFRW` to instantiate the initial world using `LeanProofs.defaultWorld` (from `IOHelpers.lean`) and verify the standard `StepFR` still holds by discarding the world threading.
 
-### Documentation Updates
+7. **Documentation Updates**
+    - **`poison-lang/doc/poison-lang-description.tex`**:
+        - Add a new subsection under "Fault Robustness Theorem" describing the "World-Threaded Step Theorem".
+        - Explain the IO axioms (argument-insensitive printing, bounds-insensitive randomness) and their justification.
+        - Clarify that the theorem holds relative to a trusted IO environment.
 
-- **`poison-lang/doc/poison-lang-description.tex`**:
-  - Add a new subsection under "Fault Robustness Theorem" describing the "World-Threaded Step Theorem".
-  - Explain the IO axioms (argument-insensitive printing, bounds-insensitive randomness) and their justification.
-  - Clarify that the theorem holds relative to a trusted IO environment.
-
-- **`poison-lang/doc/IO_equality_approach.md`**:
-  - Update the "World-indexed termination wrapper" section to reflect the new definition of `terminatesToW` (taking explicit input/output worlds) instead of the existential definition.
+    - **`poison-lang/doc/IO_equality_approach.md`**:
+        - Update the "World-indexed termination wrapper" section to reflect the new definition of `terminatesToW` (taking explicit input/output worlds) instead of the existential definition.
