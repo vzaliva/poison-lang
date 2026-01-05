@@ -20,8 +20,8 @@ def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
     LeanPoison.beval fuel c₀ e verbose = pure (LeanPoison.EvalResult.success c₁ out)
 
 -- World-indexed termination (IO equality-friendly).
-def terminatesToW (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
-  ∃ (fuel : Nat) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld),
+def terminatesToW (w₀ w₁ : Void IO.RealWorld) (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
+  ∃ (fuel : Nat) (verbose : Bool),
     LeanPoison.beval fuel c₀ e verbose w₀ = EST.Out.ok (.success c₁ out) w₁
 
 -- Divergence relation: program runs out of fuel
@@ -1394,10 +1394,10 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
 
 /-- Next address is monotone for terminating evaluations. -/
 lemma terminatesToW_nextAddr_mono (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
-    terminatesToW e cfg₀ cfg₁ v →
+    ∀ (w₀ w₁ : Void IO.RealWorld), terminatesToW w₀ w₁ e cfg₀ cfg₁ v →
     cfg₀.nextAddr ≤ cfg₁.nextAddr := by
-  intro hterm
-  rcases hterm with ⟨fuel, verbose, w₀, w₁, hbeval⟩
+  intro w₀ w₁ hterm
+  rcases hterm with ⟨fuel, verbose, hbeval⟩
   exact beval_nextAddr_mono e fuel verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
 
 end nextAddr_monotonic
@@ -2062,10 +2062,10 @@ private lemma wfConfig_preservedW_assign (e1 e2 : Expr) (fuel : Nat)
             cases hih1.2 with
             | loc hlt => exact hlt
           -- nextAddr monotonicity for e2
-          have hterm : terminatesToW e2 config' config'' (Value.num n_val) :=
-            ⟨fuel, verbose, h_state1, h_state2, h_beval2⟩
+          have hterm : terminatesToW h_state1 h_state2 e2 config' config'' (Value.num n_val) :=
+            ⟨fuel, verbose, h_beval2⟩
           have hle_next : config'.nextAddr ≤ config''.nextAddr :=
-            terminatesToW_nextAddr_mono e2 config' config'' (Value.num n_val) hterm
+            terminatesToW_nextAddr_mono e2 config' config'' (Value.num n_val) h_state1 h_state2 hterm
           have hloc_lt' : loc_val < config''.nextAddr :=
             Nat.lt_of_lt_of_le hloc_lt hle_next
           constructor
@@ -2232,9 +2232,9 @@ private lemma wfConfig_preservedW_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat)
     exact ⟨hwfmem1, hwfenv2⟩
   have hih2 := ih e2 cfg₂ cfg₃ v hwf_cfg2 w₀2 w₁2 hbeval2'
   -- Lift cfg₁1.varEnv to cfg₃.nextAddr (since e2 may allocate)
-  have hterm : terminatesToW e2 cfg₂ cfg₃ v := ⟨fuel, verbose, w₀2, w₁2, hbeval2'⟩
+  have hterm : terminatesToW w₀2 w₁2 e2 cfg₂ cfg₃ v := ⟨fuel, verbose, hbeval2'⟩
   have hle_next : cfg₁1.nextAddr ≤ cfg₃.nextAddr := by
-    have hle := terminatesToW_nextAddr_mono e2 cfg₂ cfg₃ v hterm
+    have hle := terminatesToW_nextAddr_mono e2 cfg₂ cfg₃ v w₀2 w₁2 hterm
     simpa [hcfg2_eq] using hle
   have hwfenv1_lift : wfVarEnv cfg₃.nextAddr cfg₁1.varEnv :=
     wfVarEnv_mono hle_next cfg₁1.varEnv hih1.1.2
@@ -2302,10 +2302,10 @@ private lemma wfConfig_preservedW_app (e1 e2 : Expr) (fuel : Nat)
                       cases hih1.2 with
                       | closure _ _ _ hwf_env => exact hwf_env
                     -- Prove argument value is well-formed at cfg₂
-                    have hterm1 : terminatesToW e1 cfg₁' cfg₂ (Value.closure x body env) :=
-                      ⟨fuel'.succ, verbose, h_state2, h_state1, h_beval1⟩
+                    have hterm1 : terminatesToW h_state2 h_state1 e1 cfg₁' cfg₂ (Value.closure x body env) :=
+                      ⟨fuel'.succ, verbose, h_beval1⟩
                     have hle_arg : cfg₁'.nextAddr ≤ cfg₂.nextAddr :=
-                      terminatesToW_nextAddr_mono e1 cfg₁' cfg₂ (Value.closure x body env) hterm1
+                      terminatesToW_nextAddr_mono e1 cfg₁' cfg₂ (Value.closure x body env) h_state2 h_state1 hterm1
                     have hv2_wf : wfValue cfg₂.nextAddr v₂ :=
                       wfValue_mono hle_arg v₂ hih2.2
                     -- Prove function body starting config is well-formed
@@ -2331,13 +2331,14 @@ private lemma wfConfig_preservedW_app (e1 e2 : Expr) (fuel : Nat)
                           simpa using hcontains
                         exact hwfmem_body a hcontains'
                       · have hterm_body :
-                          terminatesToW body
+                          terminatesToW h_state1 h_body_state body
                             { cfg₂ with varEnv := VarEnv.update env x v₂, pureMode := false } evalConfig v_body :=
-                          ⟨fuel', verbose, h_state1, h_body_state, h_beval_body⟩
+                          ⟨fuel', verbose, h_beval_body⟩
                         have hle_body : cfg₂.nextAddr ≤ evalConfig.nextAddr := by
                           have hle :=
                             terminatesToW_nextAddr_mono body
-                              { cfg₂ with varEnv := VarEnv.update env x v₂, pureMode := false } evalConfig v_body hterm_body
+                              { cfg₂ with varEnv := VarEnv.update env x v₂, pureMode := false } evalConfig v_body
+                              h_state1 h_body_state hterm_body
                           simpa using hle
                         have hwfenv2 : wfVarEnv cfg₂.nextAddr cfg₂.varEnv := hih1.1.2
                         exact wfVarEnv_mono hle_body cfg₂.varEnv hwfenv2
@@ -2383,10 +2384,10 @@ private lemma wfConfig_preservedW_app (e1 e2 : Expr) (fuel : Nat)
                       have h_env_wf : wfVarEnv cfg₂.nextAddr env := by
                         cases hih1.2 with
                         | peClosure _ _ _ hwf_env => exact hwf_env
-                      have hterm1 : terminatesToW e1 cfg₁' cfg₂ (Value.peClosure x body env) :=
-                        ⟨fuel'.succ, verbose, h_state2, h_state1, h_beval1⟩
+                      have hterm1 : terminatesToW h_state2 h_state1 e1 cfg₁' cfg₂ (Value.peClosure x body env) :=
+                        ⟨fuel'.succ, verbose, h_beval1⟩
                       have hle_arg : cfg₁'.nextAddr ≤ cfg₂.nextAddr :=
-                        terminatesToW_nextAddr_mono e1 cfg₁' cfg₂ (Value.peClosure x body env) hterm1
+                        terminatesToW_nextAddr_mono e1 cfg₁' cfg₂ (Value.peClosure x body env) h_state2 h_state1 hterm1
                       have hv2_wf : wfValue cfg₂.nextAddr v₂ :=
                         wfValue_mono hle_arg v₂ hih2.2
                       have hwf_env_updated : wfVarEnv cfg₂.nextAddr (VarEnv.update env x v₂) :=
@@ -2588,17 +2589,19 @@ private lemma wfConfig_preservedW_externPfn (name : Name) (t : Typ) (ret : Exter
   cases hbeval
 
 /-- Evaluation preserves config well-formedness (world-indexed), for use in FR proofs. -/
-lemma wfConfig_preservedW (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
-    terminatesToW e cfg₀ cfg₁ v →
+lemma wfConfig_preservedW (w₀ w₁ : Void IO.RealWorld) (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
+    terminatesToW w₀ w₁ e cfg₀ cfg₁ v →
     wfConfig cfg₀ →
     wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
   intro hterm hwf₀
-  rcases hterm with ⟨fuel, verbose, w₀, w₁, hbeval⟩
+  rcases hterm with ⟨fuel, verbose, hbeval⟩
   -- Strong induction on fuel; main split is on the expression.
-  revert e cfg₀ cfg₁ v verbose w₀ w₁ hbeval hwf₀
+  -- We generalise the world parameters as well (they are irrelevant to well-formedness),
+  -- so the IH can be applied to sub-evaluations that thread intermediate worlds.
+  revert w₀ w₁ e cfg₀ cfg₁ v hwf₀ verbose hbeval
   induction fuel using Nat.strong_induction_on with
   | _ fuel IH =>
-      intro e cfg₀ cfg₁ v hwf₀ verbose w₀ w₁ hbeval
+      intro w₀ w₁ e cfg₀ cfg₁ v hwf₀ verbose hbeval
       cases fuel with
       | zero =>
           -- beval 0 cannot succeed.
@@ -2614,7 +2617,7 @@ lemma wfConfig_preservedW (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
                   wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v' := by
             intro e cfg₀' cfg₁' v' hwf₀' w₀' w₁' hbeval'
             have hlt : fuel < fuel.succ := Nat.lt_succ_self fuel
-            exact IH fuel hlt e cfg₀' cfg₁' v' hwf₀' verbose w₀' w₁' hbeval'
+            exact IH fuel hlt w₀' w₁' e cfg₀' cfg₁' v' hwf₀' verbose hbeval'
           cases e with
       -- Literals (simple cases: config unchanged, value is well-formed)
       | num n =>
@@ -2765,7 +2768,7 @@ lemma wfConfig_preservedW (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
                     LeanPoison.beval m cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
                     wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v' := by
             intro m hlt e cfg₀' cfg₁' v' hwf₀' w₀' w₁' hbeval'
-            exact IH m hlt e cfg₀' cfg₁' v' hwf₀' verbose w₀' w₁' hbeval'
+            exact IH m hlt w₀' w₁' e cfg₀' cfg₁' v' hwf₀' verbose hbeval'
           exact wfConfig_preservedW_app e1 e2 fuel cfg₀ cfg₁ v verbose w₀ w₁ hbeval hwf₀ ih_strong
       | rand e1 =>
           exact wfConfig_preservedW_rand e1 fuel cfg₀ cfg₁ v verbose w₀ w₁ hbeval hwf₀ ih
