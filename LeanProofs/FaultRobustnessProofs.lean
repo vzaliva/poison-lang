@@ -17,6 +17,40 @@ import LeanProofs.MemoryMonotonicity
 import Std.Data.ExtTreeMap.Lemmas
 import Std.Data.ExtTreeSet.Lemmas
 
+section IO_Axioms
+
+-- ================================================================
+-- IO Axioms
+-- ================================================================
+
+-- Opaque transition functions for world evolution
+axiom printStep : Void IO.RealWorld → Void IO.RealWorld
+axiom randStep : Void IO.RealWorld → Void IO.RealWorld
+
+-- Axiom A: Printing is argument-insensitive for world evolution
+-- We assume IO.println advances the world in a way that depends only on the current world,
+-- not on the content printed.
+axiom io_println_step {α} [ToString α] (w : Void IO.RealWorld) (a : α) :
+  (IO.println a) w = EST.Out.ok () (printStep w)
+
+-- Axiom B: Randomness is deterministic, well-ranged, and bounds-insensitive for world evolution
+--
+-- 1. Determinism: (IO.rand 0 hi).toIO is a function. Applied to the same world 'w',
+--    it returns the same unique result 'n'.
+-- 2. Range: The result 'n' satisfies n ≤ hi.
+-- 3. World Synchronization: The next world is 'randStep w', which depends ONLY on 'w',
+--    ignoring the bound 'hi'. This ensures that even if 'rand' or 'frand'
+--    are called with different bounds (e.g. due to poisoned arguments), the world
+--    evolves in sync, allowing subsequent proof steps to align.
+--
+-- Specialized to lo=0 as used in the interpreter to avoid inconsistency from lo > hi.
+axiom io_rand_step (w : Void IO.RealWorld) (hi : Nat) :
+  ∃ (n : Nat),
+    n ≤ hi ∧
+    (IO.rand 0 hi).toIO w = EST.Out.ok n (randStep w)
+
+end IO_Axioms
+
 open List
 open Std
 open scoped MemoryTypeEnv
