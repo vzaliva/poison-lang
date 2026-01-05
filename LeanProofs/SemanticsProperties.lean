@@ -81,19 +81,18 @@ lemma nextAddr_not_in_memory (cfg : Config) :
 
 -- Helper lemma: extract evaluation structure from successful beval of unary operation.
 lemma bevalUnaryOp_structure (op : UnaryOp) (e1 : Expr) (fuel : Nat) (verbose : Bool)
-    (config₀ config₂ : Config) (v : Value) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.unaryop op e1) verbose w₀ =
-      EST.Out.ok (.success config₂ v) w₁) →
+    (config₀ config₂ : Config) (v : Value) (w₀ w₁ : Void IO.RealWorld) :
+  LeanPoison.beval fuel config₀ (Expr.unaryop op e1) verbose w₀ =
+      EST.Out.ok (.success config₂ v) w₁ →
   ∃ (config₁ : Config) (v1 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' =
-        EST.Out.ok (.success config₁ v1) w₁') ∧
+    LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀ =
+        EST.Out.ok (.success config₁ v1) w₁ ∧
     LeanPoison.evalUnaryOp op v1 = some v ∧
     config₁.memory = config₂.memory ∧
     config₁.varEnv = config₂.varEnv ∧
     config₁.nextAddr = config₂.nextAddr ∧
     config₁.pureMode = config₂.pureMode := by
-  intro h_eval
-  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  intro h_eq
   cases fuel with
   | zero =>
       unfold LeanPoison.beval at h_eq
@@ -124,11 +123,13 @@ lemma bevalUnaryOp_structure (op : UnaryOp) (e1 : Expr) (fuel : Nat) (verbose : 
               -- Rewrite evalUnaryOp to use the final value v.
               rw [h_eq_val] at h_evalOp
               subst h_eq_cfg
-              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' =
-                  EST.Out.ok (.success config₁ v₁) w₁' :=
-                ⟨w₀, h_state1, h_beval1⟩
+              -- `h_eq_state` identifies the final world of the whole unaryop evaluation.
+              -- After rewriting, we can return the *outer* output world `w₁` as `w_mid`.
+              -- This is convenient for world-threading proofs.
               simp only [Nat.add_sub_cancel]
-              exact ⟨config₁, v₁, h_beval1_ex, h_evalOp, h_mem_eq, h_var_eq, h_next_eq, h_pure_eq⟩
+              refine ⟨config₁, v₁, ?_, h_evalOp, h_mem_eq, h_var_eq, h_next_eq, h_pure_eq⟩
+              -- The input world to `e1` is the same as the input world to the whole unaryop.
+              simpa [h_eq_state] using h_beval1
           | none =>
               simp [h_evalOp] at h_eq
               injection h_eq with h_eq_result h_eq_state
@@ -146,21 +147,20 @@ lemma bevalUnaryOp_structure (op : UnaryOp) (e1 : Expr) (fuel : Nat) (verbose : 
 
 -- Helper lemma: extract evaluation structure from successful beval of binary operation.
 lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose : Bool)
-    (config₀ config₃ : Config) (v : Value) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.op e1 op e2) verbose w₀ =
-      EST.Out.ok (.success config₃ v) w₁) →
-  ∃ (config₁ config₂ : Config) (v1 v2 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' =
-        EST.Out.ok (.success config₁ v1) w₁') ∧
-    (∃ w₀'' w₁'', LeanPoison.beval (fuel - 1) config₁ e2 verbose w₀'' =
-        EST.Out.ok (.success config₂ v2) w₁'') ∧
+    (config₀ config₃ : Config) (v : Value) (w₀ w₁ : Void IO.RealWorld) :
+  LeanPoison.beval fuel config₀ (Expr.op e1 op e2) verbose w₀ =
+      EST.Out.ok (.success config₃ v) w₁ →
+  ∃ (config₁ config₂ : Config) (v1 v2 : Value) (w_mid : Void IO.RealWorld),
+    LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀ =
+        EST.Out.ok (.success config₁ v1) w_mid ∧
+    LeanPoison.beval (fuel - 1) config₁ e2 verbose w_mid =
+        EST.Out.ok (.success config₂ v2) w₁ ∧
     LeanPoison.evalOp op v1 v2 = some v ∧
     config₂.memory = config₃.memory ∧
     config₂.varEnv = config₃.varEnv ∧
     config₂.nextAddr = config₃.nextAddr ∧
     config₂.pureMode = config₃.pureMode := by
-  intro h_eval
-  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  intro h_eq
   cases fuel with
   | zero =>
       unfold LeanPoison.beval at h_eq
@@ -195,14 +195,12 @@ lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose : Bool)
                     rw [h_eq_cfg]
                   rw [h_eq_val] at h_evalOp
                   subst h_eq_cfg
-                  have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' =
-                        EST.Out.ok (.success config₁ v₁) w₁' :=
-                    ⟨w₀, h_state1, h_beval1⟩
-                  have h_beval2_ex : ∃ w₀'' w₁'', LeanPoison.beval fuel' config₁ e2 verbose w₀'' =
-                        EST.Out.ok (.success config₂ v₂) w₁'' :=
-                    ⟨h_state1, h_state2, h_beval2⟩
                   simp only [Nat.add_sub_cancel]
-                  exact ⟨config₁, config₂, v₁, v₂, h_beval1_ex, h_beval2_ex, h_evalOp, h_mem_eq, h_var_eq, h_next_eq, h_pure_eq⟩
+                  -- `h_eq_state` already identifies the final world.
+                  subst h_eq_state
+                  refine ⟨config₁, config₂, v₁, v₂, h_state1, ?_, ?_, h_evalOp, h_mem_eq, h_var_eq, h_next_eq, h_pure_eq⟩
+                  · exact h_beval1
+                  · exact h_beval2
               | none =>
                   simp [h_evalOp] at h_eq
                   injection h_eq with h_eq_result h_eq_state
@@ -230,16 +228,15 @@ lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose : Bool)
 
 -- Helper lemma: extract evaluation structure from successful beval of sequence.
 lemma bevalSeq_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
-    (config₀ config₂ : Config) (v : Value) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.seq e1 e2) verbose w₀ =
-      EST.Out.ok (.success config₂ v) w₁) →
-  ∃ (config₁ : Config) (v1 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' =
-        EST.Out.ok (.success config₁ v1) w₁') ∧
-    (∃ w₀'' w₁'', LeanPoison.beval (fuel - 1) config₁ e2 verbose w₀'' =
-        EST.Out.ok (.success config₂ v) w₁'') := by
-  intro h_eval
-  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+    (config₀ config₂ : Config) (v : Value) (w₀ w₁ : Void IO.RealWorld) :
+  LeanPoison.beval fuel config₀ (Expr.seq e1 e2) verbose w₀ =
+      EST.Out.ok (.success config₂ v) w₁ →
+  ∃ (config₁ : Config) (v1 : Value) (w_mid : Void IO.RealWorld),
+    LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀ =
+        EST.Out.ok (.success config₁ v1) w_mid ∧
+    LeanPoison.beval (fuel - 1) config₁ e2 verbose w_mid =
+        EST.Out.ok (.success config₂ v) w₁ := by
+  intro h_eq
   cases fuel with
   | zero =>
       unfold LeanPoison.beval at h_eq
@@ -263,14 +260,11 @@ lemma bevalSeq_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
               injection h_eq_result with h_eq_cfg h_eq_val
               subst h_eq_val
               subst h_eq_cfg
-              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' =
-                    EST.Out.ok (.success config₁ v₁) w₁' :=
-                ⟨w₀, h_state1, h_beval1⟩
-              have h_beval2_ex : ∃ w₀'' w₁'', LeanPoison.beval fuel' config₁ e2 verbose w₀'' =
-                    EST.Out.ok (.success config₂ v₂) w₁'' :=
-                ⟨h_state1, h_state2, h_beval2⟩
+              have hw : h_state2 = w₁ := by
+                exact h_eq_state
               simp only [Nat.add_sub_cancel]
-              exact ⟨config₁, v₁, h_beval1_ex, h_beval2_ex⟩
+              refine ⟨config₁, v₁, h_state1, h_beval1, ?_⟩
+              simpa [hw] using h_beval2
             · next =>
                 simp [pure] at h_eq
                 injection h_eq with h_eq_result h_eq_state
@@ -294,18 +288,17 @@ lemma bevalSeq_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
 
 -- Helper lemma: extract evaluation structure from successful beval of vlet.
 lemma bevalVlet_structure (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
-    (config₀ config_final : Config) (v : Value) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.vlet x e1 e2) verbose w₀ =
-      EST.Out.ok (.success config_final v) w₁) →
-  ∃ (config₁ config₂ config₃ : Config) (v1 : Value),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' =
-        EST.Out.ok (.success config₁ v1) w₁') ∧
+    (config₀ config_final : Config) (v : Value) (w₀ w₁ : Void IO.RealWorld) :
+  LeanPoison.beval fuel config₀ (Expr.vlet x e1 e2) verbose w₀ =
+      EST.Out.ok (.success config_final v) w₁ →
+  ∃ (config₁ config₂ config₃ : Config) (v1 : Value) (w_mid : Void IO.RealWorld),
+    LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀ =
+        EST.Out.ok (.success config₁ v1) w_mid ∧
     config₂ = { config₁ with varEnv := config₁.varEnv.update x v1 } ∧
-    (∃ w₀'' w₁'', LeanPoison.beval (fuel - 1) config₂ e2 verbose w₀'' =
-        EST.Out.ok (.success config₃ v) w₁'') ∧
+    LeanPoison.beval (fuel - 1) config₂ e2 verbose w_mid =
+        EST.Out.ok (.success config₃ v) w₁ ∧
     config_final = { config₃ with varEnv := config₁.varEnv } := by
-  intro h_eval
-  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  intro h_eq
   cases fuel with
   | zero =>
       unfold LeanPoison.beval at h_eq
@@ -331,19 +324,16 @@ lemma bevalVlet_structure (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool
               -- e2 evaluated successfully
               injection h_eq with h_eq_result h_eq_state
               injection h_eq_result with h_eq_cfg h_eq_val
-              -- Construct existentials for h_beval1 and h_beval2
-              have h_beval1_ex :
-                  ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' =
-                    EST.Out.ok (.success config₁' v₁) w₁' :=
-                ⟨w₀, h_state1, h_beval1⟩
-              have h_beval2_ex :
-                  ∃ w₀'' w₁'', LeanPoison.beval fuel' config₂' e2 verbose w₀'' =
-                    EST.Out.ok (.success config₃' v₂) w₁'' :=
-                ⟨h_state1, h_state2, h_beval2⟩
               -- Now subst to get final config and value
               subst h_eq_cfg h_eq_val
               simp only [Nat.add_sub_cancel]
-              exact ⟨config₁', config₂', config₃', v₁, h_beval1_ex, rfl, h_beval2_ex, rfl⟩
+              have hw : h_state2 = w₁ := by
+                exact h_eq_state
+              refine ⟨config₁', config₂', config₃', v₁, h_state1, ?_, rfl, ?_, rfl⟩
+              · -- beval e1
+                exact h_beval1
+              · -- beval e2 (rewrite final world)
+                simpa [hw] using h_beval2
             · next =>
               simp [pure] at h_eq
               injection h_eq with h_eq_result h_eq_state
@@ -499,19 +489,18 @@ lemma bevalPrintString_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
 
 -- Helper lemma: extract evaluation structure from successful beval of newRef
 lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
-    (config₀ config₂ : Config) (v : Value) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.newRef e1) verbose w₀ =
-      EST.Out.ok (.success config₂ v) w₁) →
+    (config₀ config₂ : Config) (v : Value) (w₀ w₁ : Void IO.RealWorld) :
+  LeanPoison.beval fuel config₀ (Expr.newRef e1) verbose w₀ =
+      EST.Out.ok (.success config₂ v) w₁ →
   ∃ (config₁ : Config) (n : Int) (a : Address),
-    (∃ w₀' w₁', LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀' =
-        EST.Out.ok (.success config₁ (Value.num n)) w₁') ∧
+    LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀ =
+        EST.Out.ok (.success config₁ (Value.num n)) w₁ ∧
     a = config₁.nextAddr ∧
     config₂.memory = (config₁.memory.update a n) ∧
     config₂.nextAddr = config₁.nextAddr + 1 ∧
     config₂.varEnv = config₁.varEnv ∧
     v = Value.loc a := by
-  intro h_eval
-  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  intro h_eq
   cases fuel with
   | zero =>
     unfold LeanPoison.beval at h_eq
@@ -531,11 +520,13 @@ lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
           simp at h_eq
           injection h_eq with h_eq_result h_eq_state
           injection h_eq_result with h_eq_cfg h_eq_val
-          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' =
-              EST.Out.ok (.success config' (Value.num n)) w₁' :=
-            ⟨w₀, h_state1, h_beval1⟩
           simp only [Nat.add_sub_cancel]
-          use config', n, config'.nextAddr, h_beval1_ex, rfl
+          -- The final world of the whole `newRef` evaluation is the world after `e1`.
+          have hw : h_state1 = w₁ := by
+            exact h_eq_state
+          refine ⟨config', n, config'.nextAddr, ?_, rfl, ?_⟩
+          · -- beval of e1, with the outer worlds
+            simpa [hw] using h_beval1
           simp [freshAddr] at h_eq_cfg h_eq_val
           constructor
           · -- config₂.memory = config₁.memory.update a n
@@ -1249,12 +1240,16 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
             simp at h_eq
             cases h_eq
         | succ fuel' =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
             have hstruct :=
-              bevalOp_structure e1 e2 op (fuel' + 1) verbose config₀ config₁ v h_eval
-            rcases hstruct with ⟨cfg₁1, cfg₁2, v1, v2, hbeval1, hbeval2, _h_evalOp, _h_mem, _h_var, h_next, _h_pure⟩
+              bevalOp_structure e1 e2 op (fuel' + 1) verbose config₀ config₁ v w₀ w₁ h_eq
+            rcases hstruct with
+              ⟨cfg₁1, cfg₁2, v1, v2, w_mid, hbeval1, hbeval2, _h_evalOp, _h_mem, _h_var, h_next, _h_pure⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
-            have hle2 := IH_converted fuel' h_fuel e2 cfg₁1 cfg₁2 v2 hbeval2
+            have hle1 :=
+              IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 ⟨w₀, w_mid, hbeval1⟩
+            have hle2 :=
+              IH_converted fuel' h_fuel e2 cfg₁1 cfg₁2 v2 ⟨w_mid, w₁, hbeval2⟩
             have hle02 : config₀.nextAddr ≤ cfg₁2.nextAddr := Nat.le_trans hle1 hle2
             simpa [h_next] using hle02
     | unaryop op e1 =>
@@ -1265,11 +1260,12 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
             simp at h_eq
             cases h_eq
         | succ fuel' =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
             have hstruct :=
-              bevalUnaryOp_structure op e1 (fuel' + 1) verbose config₀ config₁ v h_eval
+              bevalUnaryOp_structure op e1 (fuel' + 1) verbose config₀ config₁ v w₀ w₁ h_eq
             rcases hstruct with ⟨cfg₁1, v1, hbeval1, _h_evalOp, _h_mem, _h_var, h_next, _h_pure⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 ⟨w₀, w₁, hbeval1⟩
             simpa [h_next] using hle1
     | ite e1 e2 e3 =>
         exact beval_nextAddr_mono_ite e1 e2 e3 fuel verbose config₀ config₁ v IH_converted h_eval
@@ -1281,11 +1277,12 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
             simp at h_eq
             cases h_eq
         | succ fuel' =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
             have hstruct :=
-              bevalNewRef_structure e1 (fuel' + 1) verbose config₀ config₁ v h_eval
+              bevalNewRef_structure e1 (fuel' + 1) verbose config₀ config₁ v w₀ w₁ h_eq
             rcases hstruct with ⟨cfg₁1, n, a, hbeval1, _ha, _hmem, h_next, _hvar, _hval⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 (Value.num n) hbeval1
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 (Value.num n) ⟨w₀, w₁, hbeval1⟩
             have hle1' : config₀.nextAddr ≤ cfg₁1.nextAddr + 1 :=
               Nat.le_trans hle1 (Nat.le_succ _)
             simpa [h_next] using hle1'
@@ -1301,12 +1298,13 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
             simp at h_eq
             cases h_eq
         | succ fuel' =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
             have hstruct :=
-              bevalSeq_structure e1 e2 (fuel' + 1) verbose config₀ config₁ v h_eval
-            rcases hstruct with ⟨cfg₁1, v1, hbeval1, hbeval2⟩
+              bevalSeq_structure e1 e2 (fuel' + 1) verbose config₀ config₁ v w₀ w₁ h_eq
+            rcases hstruct with ⟨cfg₁1, v1, w_mid, hbeval1, hbeval2⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
-            have hle2 := IH_converted fuel' h_fuel e2 cfg₁1 config₁ v hbeval2
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 ⟨w₀, w_mid, hbeval1⟩
+            have hle2 := IH_converted fuel' h_fuel e2 cfg₁1 config₁ v ⟨w_mid, w₁, hbeval2⟩
             exact Nat.le_trans hle1 hle2
     | kwhile e1 e2 =>
         exact beval_nextAddr_mono_kwhile e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval
@@ -1318,12 +1316,13 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
             simp at h_eq
             cases h_eq
         | succ fuel' =>
+            rcases h_eval with ⟨w₀, w₁, h_eq⟩
             have hstruct :=
-              bevalVlet_structure x e1 e2 (fuel' + 1) verbose config₀ config₁ v h_eval
-            rcases hstruct with ⟨cfg₁1, cfg₁2, cfg₁3, v1, hbeval1, hcfg2, hbeval2, hcfg_final⟩
+              bevalVlet_structure x e1 e2 (fuel' + 1) verbose config₀ config₁ v w₀ w₁ h_eq
+            rcases hstruct with ⟨cfg₁1, cfg₁2, cfg₁3, v1, w_mid, hbeval1, hcfg2, hbeval2, hcfg_final⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
-            have hle2 := IH_converted fuel' h_fuel e2 cfg₁2 cfg₁3 v hbeval2
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 ⟨w₀, w_mid, hbeval1⟩
+            have hle2 := IH_converted fuel' h_fuel e2 cfg₁2 cfg₁3 v ⟨w_mid, w₁, hbeval2⟩
             -- nextAddr unchanged by varEnv updates
             have h_next_eq1 : cfg₁2.nextAddr = cfg₁1.nextAddr := by
               simp [hcfg2]
@@ -1545,11 +1544,9 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
                 cases hbeval
         | op e1 op e2 =>
             have hstruct :=
-              bevalOp_structure e1 e2 op (fuel' + 1) verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
+              bevalOp_structure e1 e2 op (fuel' + 1) verbose cfg₀ cfg₁ v w₀ w₁ hbeval
             rcases hstruct with
-              ⟨cfg₁1, cfg₁2, v1, v2, hbeval1, hbeval2, _h_evalOp, _h_mem, _h_var, h_next, h_pure_eq⟩
-            rcases hbeval1 with ⟨w₀1, w₁1, hbeval1'⟩
-            rcases hbeval2 with ⟨w₀2, w₁2, hbeval2'⟩
+              ⟨cfg₁1, cfg₁2, v1, v2, w_mid, hbeval1', hbeval2', _h_evalOp, _h_mem, _h_var, h_next, h_pure_eq⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
             simp [Expr.toPExpr?] at h_pure
             cases h_pe1 : Expr.toPExpr? e1 with
@@ -1565,8 +1562,8 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
                     subst h_pure
                     have h_pure_op : (e1.op op e2).toPExpr? = some (pe1.op op pe2) := by
                       simp [Expr.toPExpr?, h_pe1, h_pe2]
-                    have h1 := IH fuel' h_fuel e1 cfg₀ cfg₁1 v1 verbose w₀1 w₁1 pe1 h_pe1 h_pm hbeval1'
-                    have h2 := IH fuel' h_fuel e2 cfg₁1 cfg₁2 v2 verbose w₀2 w₁2 pe2 h_pe2 h1.2 hbeval2'
+                    have h1 := IH fuel' h_fuel e1 cfg₀ cfg₁1 v1 verbose w₀ w_mid pe1 h_pe1 h_pm hbeval1'
+                    have h2 := IH fuel' h_fuel e2 cfg₁1 cfg₁2 v2 verbose w_mid w₁ pe2 h_pe2 h1.2 hbeval2'
                     constructor
                     · calc
                         cfg₁.nextAddr = cfg₁2.nextAddr := h_next.symm
@@ -1577,9 +1574,8 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
                         _ = true := h2.2
         | unaryop op e1 =>
             have hstruct :=
-              bevalUnaryOp_structure op e1 (fuel' + 1) verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
-            rcases hstruct with ⟨cfg₁1, v1, hbeval1, _h_evalOp, _h_mem, _h_var, h_next, h_pure_eq⟩
-            rcases hbeval1 with ⟨w₀1, w₁1, hbeval1'⟩
+              bevalUnaryOp_structure op e1 (fuel' + 1) verbose cfg₀ cfg₁ v w₀ w₁ hbeval
+            rcases hstruct with ⟨cfg₁1, v1, hbeval1', _h_evalOp, _h_mem, _h_var, h_next, h_pure_eq⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
             simp [Expr.toPExpr?] at h_pure
             cases h_pe1 : Expr.toPExpr? e1 with
@@ -1588,7 +1584,7 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
             | some pe1 =>
                 simp [h_pe1] at h_pure
                 subst h_pure
-                have h1 := IH fuel' h_fuel e1 cfg₀ cfg₁1 v1 verbose w₀1 w₁1 pe1 h_pe1 h_pm hbeval1'
+                have h1 := IH fuel' h_fuel e1 cfg₀ cfg₁1 v1 verbose w₀ w₁ pe1 h_pe1 h_pm hbeval1'
                 constructor
                 · calc
                     cfg₁.nextAddr = cfg₁1.nextAddr := h_next.symm
@@ -1723,10 +1719,8 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
               injection hbeval
         | vlet x e1 e2 =>
             have hstruct :=
-              bevalVlet_structure x e1 e2 (fuel' + 1) verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
-            rcases hstruct with ⟨cfg₁1, cfg₂, cfg₃, v1, hbeval1, hcfg2_eq, hbeval2, hcfg_final_eq⟩
-            rcases hbeval1 with ⟨w₀1, w₁1, hbeval1'⟩
-            rcases hbeval2 with ⟨w₀2, w₁2, hbeval2'⟩
+              bevalVlet_structure x e1 e2 (fuel' + 1) verbose cfg₀ cfg₁ v w₀ w₁ hbeval
+            rcases hstruct with ⟨cfg₁1, cfg₂, cfg₃, v1, w_mid, hbeval1, hcfg2_eq, hbeval2, hcfg_final_eq⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
             simp [Expr.toPExpr?] at h_pure
             cases h_pe1 : Expr.toPExpr? e1 with
@@ -1740,10 +1734,10 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
                 | some pe2 =>
                     simp [h_pe2] at h_pure
                     subst h_pure
-                    have h1 := IH fuel' h_fuel e1 cfg₀ cfg₁1 v1 verbose w₀1 w₁1 pe1 h_pe1 h_pm hbeval1'
+                    have h1 := IH fuel' h_fuel e1 cfg₀ cfg₁1 v1 verbose w₀ w_mid pe1 h_pe1 h_pm hbeval1
                     have h_pm2 : cfg₂.pureMode = true := by
                       simpa [hcfg2_eq] using h1.2
-                    have h2 := IH fuel' h_fuel e2 cfg₂ cfg₃ v verbose w₀2 w₁2 pe2 h_pe2 h_pm2 hbeval2'
+                    have h2 := IH fuel' h_fuel e2 cfg₂ cfg₃ v verbose w_mid w₁ pe2 h_pe2 h_pm2 hbeval2
                     subst hcfg2_eq hcfg_final_eq
                     constructor
                     · calc
@@ -1909,10 +1903,9 @@ private lemma wfConfig_preservedW_newRef (e1 : Expr) (fuel : Nat)
           wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
     wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
   have hstruct :=
-    bevalNewRef_structure e1 (fuel + 1) verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
+    bevalNewRef_structure e1 (fuel + 1) verbose cfg₀ cfg₁ v w₀ w₁ hbeval
   rcases hstruct with ⟨cfg₁1, n, a, hbeval1, ha, hmem_eq, hnext_eq, hvar_eq, hval_eq⟩
-  rcases hbeval1 with ⟨w₀1, w₁1, hbeval1'⟩
-  have hih1 := ih e1 cfg₀ cfg₁1 (Value.num n) hwf₀ w₀1 w₁1 hbeval1'
+  have hih1 := ih e1 cfg₀ cfg₁1 (Value.num n) hwf₀ w₀ w₁ hbeval1
   -- wfConfig for cfg₁
   constructor
   · rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
@@ -2176,12 +2169,10 @@ private lemma wfConfig_preservedW_seq (e1 e2 : Expr) (fuel : Nat)
           wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
     wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
   have hstruct :=
-    bevalSeq_structure e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
-  rcases hstruct with ⟨cfg₁1, v1, hbeval1, hbeval2⟩
-  rcases hbeval1 with ⟨w₀1, w₁1, hbeval1'⟩
-  rcases hbeval2 with ⟨w₀2, w₁2, hbeval2'⟩
-  have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ w₀1 w₁1 hbeval1'
-  have hih2 := ih e2 cfg₁1 cfg₁ v hih1.1 w₀2 w₁2 hbeval2'
+    bevalSeq_structure e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v w₀ w₁ hbeval
+  rcases hstruct with ⟨cfg₁1, v1, w_mid, hbeval1, hbeval2⟩
+  have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ w₀ w_mid hbeval1
+  have hih2 := ih e2 cfg₁1 cfg₁ v hih1.1 w_mid w₁ hbeval2
   exact hih2
 
 private lemma wfConfig_preservedW_kwhile (e1 e2 : Expr) (fuel : Nat)
@@ -2217,11 +2208,9 @@ private lemma wfConfig_preservedW_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat)
           wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
     wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
   have hstruct :=
-    bevalVlet_structure x e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
-  rcases hstruct with ⟨cfg₁1, cfg₂, cfg₃, v1, hbeval1, hcfg2_eq, hbeval2, hcfg_final_eq⟩
-  rcases hbeval1 with ⟨w₀1, w₁1, hbeval1'⟩
-  rcases hbeval2 with ⟨w₀2, w₁2, hbeval2'⟩
-  have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ w₀1 w₁1 hbeval1'
+    bevalVlet_structure x e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v w₀ w₁ hbeval
+  rcases hstruct with ⟨cfg₁1, cfg₂, cfg₃, v1, w_mid, hbeval1, hcfg2_eq, hbeval2, hcfg_final_eq⟩
+  have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ w₀ w_mid hbeval1
   -- Show cfg₂ is well-formed (varEnv updated with v1)
   have hwf_cfg2 : wfConfig cfg₂ := by
     rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
@@ -2230,11 +2219,11 @@ private lemma wfConfig_preservedW_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat)
     -- cfg₂ = { cfg₁1 with varEnv := cfg₁1.varEnv.update x v1 }
     subst hcfg2_eq
     exact ⟨hwfmem1, hwfenv2⟩
-  have hih2 := ih e2 cfg₂ cfg₃ v hwf_cfg2 w₀2 w₁2 hbeval2'
+  have hih2 := ih e2 cfg₂ cfg₃ v hwf_cfg2 w_mid w₁ hbeval2
   -- Lift cfg₁1.varEnv to cfg₃.nextAddr (since e2 may allocate)
-  have hterm : terminatesToW w₀2 w₁2 e2 cfg₂ cfg₃ v := ⟨fuel, verbose, hbeval2'⟩
+  have hterm : terminatesToW w_mid w₁ e2 cfg₂ cfg₃ v := ⟨fuel, verbose, hbeval2⟩
   have hle_next : cfg₁1.nextAddr ≤ cfg₃.nextAddr := by
-    have hle := terminatesToW_nextAddr_mono e2 cfg₂ cfg₃ v w₀2 w₁2 hterm
+    have hle := terminatesToW_nextAddr_mono e2 cfg₂ cfg₃ v w_mid w₁ hterm
     simpa [hcfg2_eq] using hle
   have hwfenv1_lift : wfVarEnv cfg₃.nextAddr cfg₁1.varEnv :=
     wfVarEnv_mono hle_next cfg₁1.varEnv hih1.1.2
@@ -2706,13 +2695,11 @@ lemma wfConfig_preservedW (w₀ w₁ : Void IO.RealWorld) (e : Expr) (cfg₀ cfg
       | op e1 op e2 =>
           -- Use the structure lemma for binary operations
           have hstruct :=
-            bevalOp_structure e1 e2 op (fuel + 1) verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
+            bevalOp_structure e1 e2 op (fuel + 1) verbose cfg₀ cfg₁ v w₀ w₁ hbeval
           rcases hstruct with
-            ⟨cfg₁1, cfg₁2, v1, v2, hbeval1, hbeval2, h_evalOp, h_mem, h_var, h_next, _h_pure⟩
-          rcases hbeval1 with ⟨w₀1, w₁1, hbeval1'⟩
-          rcases hbeval2 with ⟨w₀2, w₁2, hbeval2'⟩
-          have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ w₀1 w₁1 hbeval1'
-          have hih2 := ih e2 cfg₁1 cfg₁2 v2 hih1.1 w₀2 w₁2 hbeval2'
+            ⟨cfg₁1, cfg₁2, v1, v2, w_mid, hbeval1', hbeval2', h_evalOp, h_mem, h_var, h_next, _h_pure⟩
+          have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ w₀ w_mid hbeval1'
+          have hih2 := ih e2 cfg₁1 cfg₁2 v2 hih1.1 w_mid w₁ hbeval2'
           constructor
           · -- wfConfig cfg₁
             rcases hih2.1 with ⟨hwfmem2, hwfenv2⟩
@@ -2728,10 +2715,9 @@ lemma wfConfig_preservedW (w₀ w₁ : Void IO.RealWorld) (e : Expr) (cfg₀ cfg
             exact evalOp_preserves_wfValue cfg₁.nextAddr op v1 v2 v h_evalOp
       | unaryop op e1 =>
           have hstruct :=
-            bevalUnaryOp_structure op e1 (fuel + 1) verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
-          rcases hstruct with ⟨cfg₁1, v1, hbeval1, h_evalOp, h_mem, h_var, h_next, _h_pure⟩
-          rcases hbeval1 with ⟨w₀1, w₁1, hbeval1'⟩
-          have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ w₀1 w₁1 hbeval1'
+            bevalUnaryOp_structure op e1 (fuel + 1) verbose cfg₀ cfg₁ v w₀ w₁ hbeval
+          rcases hstruct with ⟨cfg₁1, v1, hbeval1', h_evalOp, h_mem, h_var, h_next, _h_pure⟩
+          have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ w₀ w₁ hbeval1'
           constructor
           · -- wfConfig cfg₁
             rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
