@@ -4229,7 +4229,11 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
         | app e1 e2 =>
             sorry
         | rand e =>
-            sorry
+            cases fuel with
+            | zero =>
+                simp [typecheck, typecheckExpr, typecheckRand] at htc
+            | succ fuel' =>
+                exact stepFRW_rand ctxᵢ predSat R e fuel' res IH htc
         | frand e =>
             sorry
         | printString e =>
