@@ -67,6 +67,10 @@ def resultAgreesIfClean (predSat : PredSat) (R : Regime) (μ₀ μ₁ : Memory)
 def tagEnvConsistentWithRegime (tagEnv : TagEnv) (R : Regime) : Prop :=
   ∀ k deps, tagEnv.get? k = some ⟨true, deps⟩ → R k = some true
 
+-- Regime boundedness (imported from `FaultRobustness.lean`): tags at or above the initial
+-- `nextTag` supply are outside the regime's domain (model faulty inputs only).
+-- We restate it locally for convenience in this file.
+
 -- Step theorem (context-driven, no input/output specs).
 -- It assumes agreement on clean items in the initial context and preserves it
 -- for the post-context, plus result agreement when the result is clean under R.
@@ -82,6 +86,7 @@ def StepFR
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
       tagEnvConsistentWithRegime ctx.tagEnv R →
+      regimeBounded ctx.nextTag R →
       agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
       ∀ (a₀ a₁ : Address) (pm : Bool),
         wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } →  -- NEW: initial config₀ well-formed
@@ -459,7 +464,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
   have hstep' := hstep e ctx predSat
   have hstep' := hstep' fuel res htc
   rintro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ a₀ a₁ pm R cf₀ cf₁ o₀ o₁
-  rintro hR hθ₀ hθ₁ hwfcfg₀ hwfcfg₁ hics₀ hics₁ hric₀ hric₁ hcrs₀ hcrs₁ hagree htrusted ht₀ ht₁
+  rintro hR hRbound hθ₀ hθ₁ hwfcfg₀ hwfcfg₁ hics₀ hics₁ hric₀ hric₁ hcrs₀ hcrs₁ hagree htrusted ht₀ ht₁
   have hagree_clean :
       agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ :=
     agreeOnCriticalAndTrusted_implies_agreeOnClean
@@ -473,7 +478,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
     cases hlookup
   have hstepFR :=
     (hstep' R) μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-      hθ₀ hθ₁ _hwf hric₀ hric₁ htagR hagree_clean
+      hθ₀ hθ₁ _hwf hric₀ hric₁ htagR hRbound hagree_clean
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   rcases hstepFR with ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, _hwf', _hwfcf₀', _hwfcf₁', hagree_clean', hret_agree⟩
   refine ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, ?_⟩
@@ -659,6 +664,7 @@ section TypeSystemEnforcesFaultRobustness_step_proof
 -- Step theorem variant that uses world-indexed termination premises.
 -- Includes wfTypeContext premises and conclusion for freshness reasoning.
 private def StepFRW
+  (tagBound : Tag)
   (ctx : TypeContext)
   (R : Regime)
   (e : Expr)
@@ -671,6 +677,7 @@ private def StepFRW
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
       tagEnvConsistentWithRegime ctx.tagEnv R →
+      regimeBounded tagBound R →
       agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
       ∀ (a₀ a₁ : Address) (pm₀ pm₁ : Bool),
         wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ } →  -- NEW: initial config₀ well-formed
@@ -717,16 +724,16 @@ private lemma terminatesToW_of_terminatesTo
 -- Use StepFRW to derive the original StepFR premises.
 private lemma StepFR_of_StepFRW
   {ctx : TypeContext} {R : Regime} {e : Expr} {res : TypeResult} {predSat : PredSat} :
-  StepFRW ctx R e res predSat → StepFR ctx R e res predSat := by
+  StepFRW ctx.nextTag ctx R e res predSat → StepFR ctx R e res predSat := by
   intro hstep μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-    hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+    hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   let w : Void IO.RealWorld := LeanProofs.defaultWorld
   have ht₀w : terminatesToW w w e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ :=
     terminatesToW_of_terminatesTo w ht₀
   have ht₁w : terminatesToW w w e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ :=
     terminatesToW_of_terminatesTo w ht₁
   rcases hstep w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm pm hwfcfg₀ hwfcfg₁ w w ht₀w ht₁w with
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm pm hwfcfg₀ hwfcfg₁ w w ht₀w ht₁w with
     ⟨θ₀', θ₁', _hw, hθ₀ext, hθ₁ext, hwf', hwfcf₀', hwfcf₁', _hric₀', _hric₁', _htagR', hagree', hret⟩
   exact ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, hwf', hwfcf₀', hwfcf₁', hagree', hret⟩
 
@@ -1426,14 +1433,14 @@ private lemma typecheckFrand_structure (ctx : TypeContext) (e1 : Expr) (fuel : N
 -- Structure lemma for seq typechecking.
 -- Structure lemma for vlet typechecking.
 private lemma stepFR_literal
-  (ctx : TypeContext) (predSat : PredSat) (R : Regime)
+  (tagBound : Tag) (ctx : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (res : TypeResult) (v : Value)
   (hval : Expr.toValue? e = some v)
   (hpoison : res.qualType.poison = false)
   (hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls)
   (hctxAfter : ctxAfter ctx res = ctx) :
-  StepFRW ctx R e res predSat := by
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  StepFRW tagBound ctx R e res predSat := by
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   have hterm₀ := terminatesTo_literal_inv e v hval μ₀ ρ₀ a₀ pm₀ cf₀ o₀ w w₀' ht₀
   have hterm₁ := terminatesTo_literal_inv e v hval μ₁ ρ₁ a₁ pm₁ cf₁ o₁ w w₁' ht₁
   rcases hterm₀ with ⟨hcf₀, ho₀⟩
@@ -1526,13 +1533,13 @@ private lemma stepFR_literal
     exact agreeValueUnder.clean_eq_nonref hpoison hnotref hval'
 
 private lemma stepFR_var
-  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
-  StepFRW ctxᵢ R (Expr.var name) res predSat := by
+  StepFRW tagBound ctxᵢ R (Expr.var name) res predSat := by
   -- Variable case proof skeleton (full proof requires case analysis
   -- on predicates and tag environment).
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   have hterm₀ := terminatesTo_var_inv name μ₀ ρ₀ a₀ pm₀ cf₀ o₀ w w₀' ht₀
   have hterm₁ := terminatesTo_var_inv name μ₁ ρ₁ a₁ pm₁ cf₁ o₁ w w₁' ht₁
   rcases hterm₀ with ⟨v₀, _hlookup₀, hcf₀, _ho₀⟩
@@ -2177,22 +2184,23 @@ private lemma stepFR_var
 
 -- Step theorem spec variant using world-indexed termination.
 private def TypeSystemEnforcesFaultRobustness_step_specW
+  (tagBound : Tag)
   (e : Expr)
   (ctxᵢ : TypeContext)
   (predSat : PredSat) : Prop :=
   ∀ (fuel : Nat) (res : TypeResult),
     typecheck ctxᵢ e fuel = .ok res →
     ∀ (R : Regime),
-      StepFRW ctxᵢ R e res predSat
+      StepFRW tagBound ctxᵢ R e res predSat
 
 -- Helper lemma for op expressions
 private lemma stepFRW_op
-  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.op e1 op e2) res predSat := by
+  StepFRW tagBound ctxᵢ R (Expr.op e1 op e2) res predSat := by
   have htc' : typecheckOp ctxᵢ e1 e2 (Nat.succ fuel') op = .ok res := by
     simp [typecheck, typecheckExpr_op_succ] at htc
     exact htc
@@ -2209,7 +2217,7 @@ private lemma stepFRW_op
     e1 ctxᵢ res1 htc1' R
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' res2 htc2' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   -- Derive wfConfig for final configs using preservation lemma
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
@@ -2237,7 +2245,7 @@ private lemma stepFRW_op
         cfg₁1 v₁1 := ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e1'⟩
   have hstep_e1 :=
     hIH1 w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
       w₀mid w₁mid ht₀_e1 ht₁_e1
   rcases hstep_e1 with
     ⟨θ₀1, θ₁1, hw_mid, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
@@ -2263,7 +2271,7 @@ private lemma stepFRW_op
   have hstep_e2 :=
     hIH2 w₀mid cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cfg₀2 cfg₁2 v₀2 v₁2
-      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR_ctx' hagree_clean1'
+      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR_ctx' hRbound hagree_clean1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode cfg₁1.pureMode hwfcf₀1 hwfcf₁1
       w₀' w₁' ht₀_e2 ht₁_e2
   rcases hstep_e2 with
@@ -2356,12 +2364,12 @@ private lemma stepFRW_op
 
 -- Helper lemma for unaryop expressions
 private lemma stepFRW_unaryop
-  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (op : UnaryOp) (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.unaryop op e) res predSat := by
+  StepFRW tagBound ctxᵢ R (Expr.unaryop op e) res predSat := by
   have htc' : typecheckUnaryOp ctxᵢ op e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_unaryop_succ] at htc
     exact htc
@@ -2371,7 +2379,7 @@ private lemma stepFRW_unaryop
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ res1 htc1' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   -- Derive wfConfig for final configs using preservation lemma
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
@@ -2401,7 +2409,7 @@ private lemma stepFRW_unaryop
     ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e⟩
   have hstep_e :=
     hIH w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' v₀' v₁'
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
       w₀' w₁' ht₀_e ht₁_e
   rcases hstep_e with ⟨θ₀', θ₁', hw_world, hθext₀, hθext₁, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', htagR', hagree_clean_e, hres_agree_e⟩
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
@@ -2471,12 +2479,12 @@ private lemma stepFRW_unaryop
 
 -- Helper lemma for newRef expressions
 private lemma stepFRW_newRef
-  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.newRef e) res predSat := by
+  StepFRW tagBound ctxᵢ R (Expr.newRef e) res predSat := by
   have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
@@ -2486,7 +2494,7 @@ private lemma stepFRW_newRef
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ res1 htc1' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   -- Derive wfConfig for final configs using preservation lemma
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
@@ -2514,7 +2522,7 @@ private lemma stepFRW_newRef
     ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e⟩
   have hstep_e :=
     hIH w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
       w₀' w₁' ht₀_e ht₁_e
   rcases hstep_e with ⟨θ₀1, θ₁1, hw_world, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean_e, hres_agree_e⟩
   -- Fresh logical location l = res1.nextLoc' is not realized after evaluating e.
@@ -2886,12 +2894,12 @@ private lemma stepFRW_newRef
 
 -- Helper lemma for seq expressions
 private lemma stepFRW_seq
-  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.seq e1 e2) res predSat := by
+  StepFRW tagBound ctxᵢ R (Expr.seq e1 e2) res predSat := by
   have htc' : typecheckSeq ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_seq_succ] at htc
     exact htc
@@ -2906,7 +2914,7 @@ private lemma stepFRW_seq
     e1 ctxᵢ res1 htc1' R
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' res2 htc2' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   -- Derive wfConfig for final configs using preservation lemma
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
@@ -2934,7 +2942,7 @@ private lemma stepFRW_seq
     ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e1⟩
   have hstep_e1 :=
     hIH1 w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
       w₀mid w₁mid ht₀_e1 ht₁_e1
   rcases hstep_e1 with
     ⟨θ₀1, θ₁1, hw_mid, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
@@ -2958,7 +2966,7 @@ private lemma stepFRW_seq
   have hstep_e2 :=
     hIH2 w₀mid cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ o₀ o₁
-      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR_ctx' hagree_clean1'
+      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR_ctx' hRbound hagree_clean1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode cfg₁1.pureMode hwfcf₀1 hwfcf₁1 w₀' w₁' ht₀_e2 ht₁_e2
   rcases hstep_e2 with
     ⟨θ₀2, θ₁2, hw_out, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
@@ -3008,12 +3016,12 @@ private lemma stepFRW_seq
 
 -- Helper lemma for vlet expressions
 private lemma stepFRW_vlet
-  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.vlet vname e1 e2) res predSat := by
+  StepFRW tagBound ctxᵢ R (Expr.vlet vname e1 e2) res predSat := by
   have htc' : typecheckVlet ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_vlet_succ] at htc
     exact htc
@@ -3028,7 +3036,7 @@ private lemma stepFRW_vlet
     e1 ctxᵢ res1 htc1' R
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' res2 htc2' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   -- Derive wfConfig for final configs using preservation lemma
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
@@ -3056,7 +3064,7 @@ private lemma stepFRW_vlet
     ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e1⟩
   have hstep_e1 :=
     hIH1 w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
       w₀mid w₁mid ht₀_e1 ht₁_e1
   rcases hstep_e1 with
     ⟨θ₀1, θ₁1, hw_mid, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
@@ -3239,7 +3247,7 @@ private lemma stepFRW_vlet
   have hstep_e2 :=
     hIH2 w₀mid cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀1 θ₁1
       cfg₀3 cfg₁3 o₀ o₁
-      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR_ctx' hagree_clean1'
+      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR_ctx' hRbound hagree_clean1'
       cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode cfg₁2.pureMode hwfcfg₀2' hwfcfg₁2'
       w₀' w₁' ht₀_e2 ht₁_e2
   rcases hstep_e2 with
@@ -3636,12 +3644,12 @@ private lemma bevalFrand_structureW (e1 : Expr) (fuel : Nat) (verbose : Bool)
 
 -- Helper lemma for rand expressions
 private lemma stepFRW_rand
-  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.rand e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.rand e) res predSat := by
+  StepFRW tagBound ctxᵢ R (Expr.rand e) res predSat := by
   have htc' : typecheckRand ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
@@ -3651,7 +3659,7 @@ private lemma stepFRW_rand
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ res1 htc1' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
   rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
@@ -3678,7 +3686,7 @@ private lemma stepFRW_rand
     ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e⟩
   have hstep_e :=
     hIH w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
       w₀mid w₁mid ht₀_e ht₁_e
   rcases hstep_e with
     ⟨θ₀', θ₁', hw_mid, hθext₀, hθext₁, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', htagR', hagree_clean_e, hres_agree_e⟩
@@ -3760,12 +3768,12 @@ private lemma stepFRW_rand
 
 -- Helper lemma for frand expressions
 private lemma stepFRW_frand
-  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.frand e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.frand e) res predSat := by
+  StepFRW tagBound ctxᵢ R (Expr.frand e) res predSat := by
   have htc' : typecheckFrand ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
@@ -3776,7 +3784,7 @@ private lemma stepFRW_frand
     exact htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ res1 htc1' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
   rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
@@ -3803,7 +3811,7 @@ private lemma stepFRW_frand
     ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e⟩
   have hstep_e :=
     hIH w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
       w₀mid w₁mid ht₀_e ht₁_e
   rcases hstep_e with
     ⟨θ₀', θ₁', hw_mid, hθext₀, hθext₁, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', htagR', hagree_clean_e, hres_agree_e⟩
@@ -3892,12 +3900,12 @@ private lemma stepFRW_frand
 
 -- Helper lemma for printString expressions
 private lemma stepFRW_printString
-  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.printString e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.printString e) res predSat := by
+  StepFRW tagBound ctxᵢ R (Expr.printString e) res predSat := by
   have htc' : typecheckPrintString ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
@@ -3907,7 +3915,7 @@ private lemma stepFRW_printString
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ res1 htc1' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   -- Derive wfConfig for final configs using preservation lemma
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
@@ -3938,7 +3946,7 @@ private lemma stepFRW_printString
       simpa using hbeval₁_e⟩
   have hstep_e :=
     hIH w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.str s₀) (Value.str s₁)
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
       w₀mid w₁mid ht₀_e ht₁_e
   rcases hstep_e with
     ⟨θ₀', θ₁', hw_mid, hθext₀, hθext₁, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', htagR', hagree_clean_e, _hres_agree_e⟩
@@ -3987,12 +3995,12 @@ private lemma stepFRW_printString
 
 -- Helper lemma for printInt expressions
 private lemma stepFRW_printInt
-  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (tagBound : Tag) (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW tagBound ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.printInt e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.printInt e) res predSat := by
+  StepFRW tagBound ctxᵢ R (Expr.printInt e) res predSat := by
   have htc' : typecheckPrintInt ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
@@ -4002,7 +4010,7 @@ private lemma stepFRW_printInt
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ res1 htc1' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
   -- Derive wfConfig for final configs using preservation lemma
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
@@ -4030,7 +4038,7 @@ private lemma stepFRW_printInt
     ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e⟩
   have hstep_e :=
     hIH w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
       w₀mid w₁mid ht₀_e ht₁_e
   rcases hstep_e with
     ⟨θ₀', θ₁', hw_mid, hθext₀, hθext₁, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', htagR', hagree_clean_e, _hres_agree_e⟩
@@ -4076,8 +4084,8 @@ private lemma stepFRW_printInt
       exact agreeValueUnder.withPred_true_eq k htag hreg hnotref hEq
 
 private theorem TypeSystemEnforcesFaultRobustness_stepW
-  (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
-  TypeSystemEnforcesFaultRobustness_step_specW e ctxᵢ predSat := by
+  (tagBound : Tag) (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
+  TypeSystemEnforcesFaultRobustness_step_specW tagBound e ctxᵢ predSat := by
   unfold TypeSystemEnforcesFaultRobustness_step_specW
   intro fuel
   revert e ctxᵢ
@@ -4109,7 +4117,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R Expr.unit res Value.unit hval hpoison hnotref hctxAfter
+            exact stepFR_literal tagBound ctxᵢ predSat R Expr.unit res Value.unit hval hpoison hnotref hctxAfter
         | num n =>
             simp [typecheck, typecheckExpr, typecheckInt] at htc
             let res_expected : TypeResult := {
@@ -4130,7 +4138,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R (Expr.num n) res (Value.num n) hval hpoison hnotref hctxAfter
+            exact stepFR_literal tagBound ctxᵢ predSat R (Expr.num n) res (Value.num n) hval hpoison hnotref hctxAfter
         | bool b =>
             simp [typecheck, typecheckExpr, typecheckBool] at htc
             let res_expected : TypeResult := {
@@ -4151,7 +4159,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R (Expr.bool b) res (Value.bool b) hval hpoison hnotref hctxAfter
+            exact stepFR_literal tagBound ctxᵢ predSat R (Expr.bool b) res (Value.bool b) hval hpoison hnotref hctxAfter
         | str s =>
             simp [typecheck, typecheckExpr, typecheckString] at htc
             let res_expected : TypeResult := {
@@ -4172,21 +4180,21 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotref hctxAfter
+            exact stepFR_literal tagBound ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotref hctxAfter
         | var name =>
-            exact stepFR_var ctxᵢ predSat R name res fuel htc
+            exact stepFR_var tagBound ctxᵢ predSat R name res fuel htc
         | op e1 op e2 =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr_op_succ, typecheckOp] at htc
             | succ fuel' =>
-                exact stepFRW_op ctxᵢ predSat R e1 e2 op fuel' res IH htc
+                exact stepFRW_op tagBound ctxᵢ predSat R e1 e2 op fuel' res IH htc
         | unaryop op e =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
             | succ fuel' =>
-                exact stepFRW_unaryop ctxᵢ predSat R op e fuel' res IH htc
+                exact stepFRW_unaryop tagBound ctxᵢ predSat R op e fuel' res IH htc
         | ite e1 e2 e3 =>
             sorry
         | newRef e =>
@@ -4194,7 +4202,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckNewRef] at htc
             | succ fuel' =>
-                exact stepFRW_newRef ctxᵢ predSat R e fuel' res IH htc
+                exact stepFRW_newRef tagBound ctxᵢ predSat R e fuel' res IH htc
         | assign e1 e2 =>
             sorry
         | deref e =>
@@ -4204,7 +4212,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
             | zero =>
                 simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
             | succ fuel' =>
-                exact stepFRW_seq ctxᵢ predSat R e1 e2 fuel' res IH htc
+                exact stepFRW_seq tagBound ctxᵢ predSat R e1 e2 fuel' res IH htc
         | kwhile e1 e2 =>
             sorry
         | vlet z e1 e2 =>
@@ -4213,7 +4221,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
             | zero =>
                 simp [typecheck, typecheckExpr_vlet_succ, typecheckVlet] at htc
             | succ fuel' =>
-                exact stepFRW_vlet ctxᵢ predSat R vname e1 e2 fuel' res IH htc
+                exact stepFRW_vlet tagBound ctxᵢ predSat R vname e1 e2 fuel' res IH htc
         | fn name ty e1 ty2 =>
             sorry
         | pfn name ty e1 ty2 =>
@@ -4229,15 +4237,15 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckPrintString] at htc
             | succ fuel' =>
-                exact stepFRW_printString ctxᵢ predSat R e fuel' res IH htc
+                exact stepFRW_printString tagBound ctxᵢ predSat R e fuel' res IH htc
         | printInt e =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckPrintInt] at htc
             | succ fuel' =>
-                exact stepFRW_printInt ctxᵢ predSat R e fuel' res IH htc
+                exact stepFRW_printInt tagBound ctxᵢ predSat R e fuel' res IH htc
         | externVal ty b sp =>
-            intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hwf _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm₀ _pm₁ _hwfcfg₀ _hwfcfg₁ w₀' _w₁' ht₀ _ht₁
+            intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hwf _hric₀ _hric₁ _htagR _hRbound _hagree a₀ _a₁ pm₀ _pm₁ _hwfcfg₀ _hwfcfg₁ w₀' _w₁' ht₀ _ht₁
             have hfalse :
                 False :=
               terminatesTo_extern_false
@@ -4249,7 +4257,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                 w w₀' ht₀
             exact False.elim hfalse
         | externFn name ty ret effs =>
-            intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hwf _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm₀ _pm₁ _hwfcfg₀ _hwfcfg₁ w₀' _w₁' ht₀ _ht₁
+            intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hwf _hric₀ _hric₁ _htagR _hRbound _hagree a₀ _a₁ pm₀ _pm₁ _hwfcfg₀ _hwfcfg₁ w₀' _w₁' ht₀ _ht₁
             have hfalse :
                 False :=
               terminatesTo_extern_false
@@ -4261,7 +4269,7 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
                 w w₀' ht₀
             exact False.elim hfalse
         | externPfn name ty ret =>
-            intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hwf _hric₀ _hric₁ _htagR _hagree a₀ _a₁ pm₀ _pm₁ _hwfcfg₀ _hwfcfg₁ w₀' _w₁' ht₀ _ht₁
+            intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ _hwf _hric₀ _hric₁ _htagR _hRbound _hagree a₀ _a₁ pm₀ _pm₁ _hwfcfg₀ _hwfcfg₁ w₀' _w₁' ht₀ _ht₁
             have hfalse :
                 False :=
               terminatesTo_extern_false
@@ -4279,8 +4287,8 @@ theorem TypeSystemEnforcesFaultRobustness_step
   TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat := by
   unfold TypeSystemEnforcesFaultRobustness_step_spec
   intro fuel res htc R
-  have hW : StepFRW ctxᵢ R e res predSat :=
-    TypeSystemEnforcesFaultRobustness_stepW e ctxᵢ predSat fuel res htc R
+  have hW : StepFRW ctxᵢ.nextTag ctxᵢ R e res predSat :=
+    TypeSystemEnforcesFaultRobustness_stepW ctxᵢ.nextTag e ctxᵢ predSat fuel res htc R
   exact StepFR_of_StepFRW hW
 
 end TypeSystemEnforcesFaultRobustness_step_proof

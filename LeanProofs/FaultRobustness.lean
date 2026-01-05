@@ -74,6 +74,11 @@ def inputKeysUnique (vars : VarTypeEnv) : Prop :=
 -- Regime: partial mapping from guard tags to their truth values.
 abbrev Regime := Tag → Option Bool
 
+-- Regime boundedness: tags at or above the bound are outside the regime's domain.
+-- Intended reading: `R` models fault injection choices for *input tags only*.
+def regimeBounded (tagBound : Tag) (R : Regime) : Prop :=
+  ∀ k, k ≥ tagBound → R k = none
+
 -- Extract all guard tags from the input specification (functional version for wfRegime)
 def inputSpecTags (s : InputSpec) : List Tag :=
   let locTags := s.locs.toList.filterMap (qtypGuardTag ·.2)
@@ -511,6 +516,7 @@ def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx :
   ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool) (R : Regime)
     (cf₁ cf₂ : Config) (o₁ o₂ : Value),
     wfRegime R s →
+    regimeBounded ctx.nextTag R →
     wfRealizationMap θ₁ →  wfRealizationMap θ₂ →
     wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →  -- NEW: initial config₁ well-formed
     wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } →  -- NEW: initial config₂ well-formed

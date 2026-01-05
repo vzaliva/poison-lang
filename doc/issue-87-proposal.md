@@ -6,10 +6,11 @@ The FR step theorem requires returned values to agree whenever the inferred resu
 
 ### Summary
 
-We will unblock the `rand`/`frand` cases in the Fault-Robustness (FR) step proof by (i) making the `IO` world token an explicit input/output in the step theorem premises (world threading), and (ii) adding a small set of axioms about the `IO` primitives used by the interpreter:
+We will unblock the `rand`/`frand` cases in the Fault-Robustness (FR) step proof by (i) making the `IO` world token an explicit input/output in the step theorem premises (world threading), (ii) adding a small set of axioms about the `IO` primitives used by the interpreter, and (iii) clarifying the intended *scope* of regimes (regimes model faulty inputs only, not internal fresh tags):
 
 - **printing is argument-insensitive** at the level of world evolution, and
 - **random sampling is deterministic** as a function of the world token and its bounds, and satisfies the expected range constraints.
+- **regimes only interpret input tags** (tags below the initial `nextTag` supply), so fresh tags introduced by typing (notably `frand`’s guard tag) are never treated as “true” by a regime.
 
 This removes the need for a separate randomness oracle parameter: the `IO.RealWorld` token itself serves as the randomness state.
 
@@ -54,9 +55,41 @@ As an immediate corollary, the `Expr.frand` result is also predictable given the
 
 These axioms together ensure that (i) differences in printed values do not desynchronise worlds, and (ii) randomness can be coupled by world equality.
 
-#### 3) How this discharges `rand`/`frand` in the FR step proof
+#### 3) Regime scope: `R` models faulty inputs only (exclude fresh internal tags)
 
-With worlds threaded and the IO axioms in place, the `rand` and `frand` proof cases proceed uniformly:
+The current step theorem statements quantify over an arbitrary regime `R : Tag → Option Bool`. However, `frand` is typed with a **fresh** guard tag `k` (generated from the typing supply `nextTag`), and the result is always syntactically poisoned. This creates a subtle mismatch:
+
+- `qtypCleanUnder R qt` treats a poisoned `qt` as “clean-under-\(R\)” whenever the guard tag is true in `R` (i.e. `R k = some true`).
+- if we quantify over *all* `R`, then nothing prevents taking an `R` that sets this fresh `k` to `some true`.
+- but if `R k = some true`, the step theorem requires the two `frand` results to agree (for non-reference types, essentially equality), even when the two runs may legitimately evaluate the argument differently (poisoned input), leading to different bounds and different outcomes.
+
+This is why the `frand` case is **not provable** under the raw `∀ R` quantification: it would amount to a non-interference style guarantee for a fresh internal tag that is not meant to be controlled by input fault injection.
+
+To align the formalisation with the intended reading (“`R` classifies faulty inputs”), we restrict the regime’s domain to *input tags only*. The typechecker already maintains a fresh-name supply `nextTag`; the intended invariant is:
+
+- tags `< ctxᵢ.nextTag` are *input/spec tags* that the regime may interpret, and
+- tags `≥ ctxᵢ.nextTag` are *fresh internal tags* introduced during typing (e.g. by `frand`) and must remain uninterpreted by the regime.
+
+Concretely, we can enforce this by requiring:
+
+- **boundedness**: `∀ k, k ≥ ctxᵢ.nextTag → R k = none`.
+
+Under this boundedness, `frand`’s fresh tag `k` is necessarily outside the domain of `R`, so `qtypCleanUnder R (frand e)` cannot hold via the “tag is true” disjunct. Therefore, the step theorem’s “result agreement if clean-under-\(R\)” obligation becomes *vacuous* for `frand`, which matches the intended semantics: `frand` models faulty randomness and its output is not required to agree across the two runs.
+
+To avoid adding yet another premise to `StepFRW`, we can **fold boundedness into the existing regime-consistency premise** by strengthening `tagEnvConsistentWithRegime` to take the full typing context (or at least its `nextTag` supply) and require both:
+
+- **truth preservation** for tags explicitly set true in the typing tag environment, and
+- **domain boundedness** for all tags above the initial supply.
+
+Informally:
+
+- `regimeConsistentWithCtx ctxᵢ R := (∀ k deps, ctxᵢ.tagEnv[k]? = some ⟨true, deps⟩ → R k = some true) ∧ (∀ k, k ≥ ctxᵢ.nextTag → R k = none)`.
+
+This keeps the *number* of premises stable while capturing the intended trust boundary for regimes.
+
+#### 4) How this discharges `rand`/`frand` in the FR step proof
+
+With worlds threaded and the IO axioms in place (and with regimes restricted to input tags), the `rand` and `frand` proof cases proceed as follows:
 
 - Use the existing `bevalRand_structure` / `bevalFrand_structure` lemmas to expose the evaluation structure, including the world token immediately before the `IO.rand` call.
 - Use the induction hypothesis to obtain agreement of the bound expression when its type is clean-under-\(R\).
@@ -73,6 +106,9 @@ This change is proof-focused but requires a systematic refactor of the step theo
   - reformulate `StepFRW` (and all helper lemmas) to accept/input world tokens and produce/output world tokens,
   - propagate the world-threading through the induction hypothesis of `TypeSystemEnforcesFaultRobustness_stepW`,
   - use the IO axioms in the `rand`/`frand` branches (and, if necessary, in `printInt`/`printString` cases).
+- **Regime consistency** (new detail):
+  - strengthen the existing `tagEnvConsistentWithRegime`-style premise to also enforce that regimes do not interpret fresh internal tags (e.g. tags `≥ ctxᵢ.nextTag`), so `frand`’s fresh tag cannot be marked true by `R`.
+  - this likely requires a small supporting lemma that typechecking is **monotone** in the `nextTag` supply (it does not decrease it), so fresh tags introduced during typing are indeed outside the initial bound.
 - **`LeanProofs/IOHelpers.lean` (or a new small file)**
   - state the IO axioms (printing argument-insensitive; `IO.rand` deterministic + range).
 
@@ -110,22 +146,30 @@ This is an explicit trust boundary: the FR proofs reduce `rand`/`frand` reasonin
     - Update the termination premises to use the modified `terminatesToW` with `w` as the input world, and let each run produce its own output world initially.
     - Add a shared output world `w'` to the existential result and prove the two per-run output worlds are equal to `w'` using the IO axioms (`printStep`/`randStep`), so the IH can be chained through `seq`.
 
-4.  **Update Structural Helper Lemmas**
+4.  **Regime Consistency for Evolving Contexts**
+    - Refine the “regime consistency” premise used by `StepFRW` so that it enforces:
+      - tags explicitly set true in `ctx.tagEnv` are true in `R` (as before), and
+      - tags `≥ ctxᵢ.nextTag` are *outside the domain of* `R` (i.e. `R k = none`).
+    - This ensures the regime models *faulty inputs only*: it does not assign truth values to fresh internal tags introduced by typing (notably the tag introduced by `frand`).
+
+5.  **Update Structural Helper Lemmas**
     - Update `stepFRW_op`, `stepFRW_seq`, `stepFRW_if`, etc., to propagate the shared world token.
     - Ensure `seq` correctly passes the output world of the first statement as the input to the second.
 
-5.  **Implement `rand` and `frand` Cases**
+6.  **Implement `rand` and `frand` Cases**
     - In `TypeSystemEnforcesFaultRobustness_stepW`, apply the IO axioms for `rand` and `frand`.
     - Prove that world synchronization is maintained via `randStep` even when arguments differ (poisoned inputs).
-    - Prove that return values agree when inputs are equal (clean inputs).
+    - For `rand`: prove return values agree when the argument is clean-under-\(R\) (so bounds coincide).
+    - For `frand`: use the bounded-regime property to show that the result type is **not** clean-under-\(R\) (fresh tag outside the regime’s domain), so the return-value agreement obligation is vacuous; only world synchronization is required.
 
-6.  **Connect to Main Theorem**
+7.  **Connect to Main Theorem**
     - Update `StepFR_of_StepFRW` to instantiate the initial world using `LeanProofs.defaultWorld` (from `IOHelpers.lean`) and verify the standard `StepFR` still holds by discarding the world threading.
 
-7. **Documentation Updates**
+8. **Documentation Updates**
     - **`poison-lang/doc/poison-lang-description.tex`**:
         - Add a new subsection under "Fault Robustness Theorem" describing the "World-Threaded Step Theorem".
         - Explain the IO axioms (argument-insensitive printing, bounds-insensitive randomness) and their justification.
+        - Clarify the scope of regimes: regimes interpret only input/spec tags, not fresh internal tags introduced during typing (e.g. `frand`’s tag), and note how this is enforced via the `nextTag` supply.
         - Clarify that the theorem holds relative to a trusted IO environment.
 
     - **`poison-lang/doc/IO_equality_approach.md`**:
