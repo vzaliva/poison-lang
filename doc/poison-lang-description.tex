@@ -1275,6 +1275,89 @@ Then the observable outputs coincide:
 \end{itemize}
 \end{definition}
 
+\subsubsection*{World-threaded execution model for I/O}
+\label{subsec:fr-world-threaded}
+
+The Poison interpreter is implemented in Lean as a fuel-bounded big-step evaluator
+\texttt{beval} whose result type is an \texttt{IO} computation. In Lean, an
+\texttt{IO} computation is a deterministic function of an abstract world token
+$w : \texttt{Void IO.RealWorld}$ that returns both a result and a successor world.
+The world token is not treated as an observable program output; it is part of
+the trusted execution environment used to model external effects such as
+printing and randomness.
+The world token also serves as the randomness state used by \texttt{IO.rand}; no
+separate randomness oracle parameter is introduced.
+
+To reason compositionally about I/O in the two-run fault-robustness proof, the
+development uses a world-indexed termination relation
+\[
+  \mathsf{terminatesToW}(w_0,w_1,e,c_0,c_1,v),
+\]
+which states that evaluating $e$ from configuration $c_0$ in world $w_0$
+terminates with configuration $c_1$, value $v$, and final world $w_1$. The
+internal step theorem for fault robustness is formulated with a \emph{single
+shared input world} $w$ for both runs and proves that both runs produce the same
+output world $w'$. This ``world synchronisation'' invariant is what allows the
+induction hypothesis to be chained through sequencing and other constructs.
+
+\subsubsection*{Trusted I/O axioms}
+\label{subsec:fr-io-axioms}
+
+The fault-robustness theorem is established relative to a small set of axioms
+that characterise the only I/O primitives used by the interpreter: printing
+(\texttt{printInt}, \texttt{printString}) and random sampling
+(\texttt{rand}, \texttt{frand}). These axioms form an explicit, auditable trust
+boundary.
+
+\paragraph{Axiom (printing is argument-insensitive for world evolution).}
+There exists a world-transition function $\mathsf{printStep}$ such that, for any
+printable argument $a$, evaluating \texttt{IO.println a} in world $w$ terminates
+successfully and advances the world to $\mathsf{printStep}(w)$. In particular,
+world evolution is independent of the printed argument. This is sound for our
+observational model because printing is not an observable output in the
+fault-robustness specification; it is treated as ``noise'' that may advance the
+world but does not encode information about printed data into the randomness
+state.
+
+\paragraph{Axiom (randomness is world-deterministic, well-ranged, and bounds-insensitive on worlds).}
+There exists a world-transition function $\mathsf{randStep}$ such that, for any
+bound $h \in \mathbb{N}$, evaluating \texttt{IO.rand 0 h} in world $w$ terminates
+successfully with a sampled number $n$ satisfying $0 \leq n \leq h$, and advances
+the world to $\mathsf{randStep}(w)$. The crucial property for compositional
+two-run reasoning is that the world transition depends only on $w$ and not on
+the bound $h$. Consequently, if two executions reach \texttt{IO.rand} with the
+same input world and the same bound, they obtain the same sampled number and the
+same post-world; if they reach it with the same world but different bounds, the
+sampled numbers may differ but the post-worlds still coincide.
+
+\subsubsection*{Coupling of \texttt{rand} and \texttt{frand} across two executions}
+\label{subsec:fr-rand-frand-coupling}
+
+Both \texttt{rand} and \texttt{frand} evaluate their argument to a non-negative
+integer and then perform a single call to \texttt{IO.rand 0 h} for an appropriate
+bound $h$ (for \texttt{frand}, the bound is a fixed multiple of the argument).
+Under the world-threaded step theorem and the I/O axioms above, the two
+executions remain synchronised on worlds even if their bounds differ, because
+the post-world is always $\mathsf{randStep}$ applied to the shared pre-world at
+the call site.
+
+When the inferred result type is clean under a regime $R$, the step theorem
+requires the two returned values to agree. For \texttt{rand}, cleanliness entails
+that the bound expression is itself clean under $R$, hence it agrees across the
+two runs; the random calls therefore use the same bound and, by world
+determinism, return the same sampled number.
+
+The construct \texttt{frand} models faulty randomness. It returns a value that
+is syntactically poisoned and is guarded by a fresh tag drawn from the typing
+context's tag supply. By boundedness of regimes (Definition \emph{Guard Regime}),
+such fresh internal tags are outside the regime's domain. Therefore a
+\texttt{frand} result is never considered clean under $R$, and the step theorem
+imposes no return-value equality obligation for \texttt{frand}; only the state
+and world-synchronisation properties are required. This matches the intended
+interpretation: \texttt{frand} may vary across executions in the presence of
+faulty inputs, but it does not permit desynchronisation of the trusted I/O
+environment.
+
 \subsubsection*{Ghost Locations and Realisation}
 
 A subtlety arises with ``ghost'' locations: logical locations that exist in the

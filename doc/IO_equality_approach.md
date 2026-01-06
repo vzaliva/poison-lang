@@ -1,190 +1,89 @@
-# IO Equality Proof Pattern (Lean 4.26+)
+# IO proof patterns (Lean 4.26+)
 
-## Historical background
+This note is a practical guide for proving properties about the Poison
+interpreter's `IO`-based evaluator in Lean 4.26+.
 
-### Lean ≤ 4.23
-When we needed to inspect an equality between `IO` computations,
-```lean
-h : beval … = pure …
-```
-we would simply run
-```lean
-apply congrFun (a := ()) at h
-```
-to evaluate both sides at the dummy world `() : Unit`. The resulting equality
-```lean
-h : beval … () = …
-```
-still counted as a *function* equality (Lean silently elaborated `IO α` to `Unit → EStateM.Result …`), so we could `simp [EStateM.pure]` and feed `h` straight into induction hypotheses that demanded the original function type.
+## Mental model
 
-### Lean 4.24
-Lean 4.24's IO elaboration exposed the actual `IO.RealWorld`. The `EStateM` approach still worked, but required explicit world handling.
-
-### Lean 4.26
-Lean 4.26 introduced a new IO implementation using `EST` (Error-State Transformer) with `Void` wrapper types:
-```lean
-IO α = EIO IO.Error α = EST IO.Error IO.RealWorld α = Void IO.RealWorld → EST.Out IO.Error IO.RealWorld α
-```
-
-Key changes:
-- The world token type is now `Void IO.RealWorld` (an opaque wrapper), not `IO.RealWorld` directly
-- The result type is `EST.Out ε σ α` instead of `EStateM.Result ε σ α`
-- Bind is now `EST.bind` instead of `EStateM.bind`
-- Map is now via `EST.bind` and `EST.pure` (no separate `EStateM.map`)
-
-## Current approach (Lean 4.26+)
-
-### World token type
-The `Void σ` type wraps the state type opaquely. To create a witness world for proofs:
-```lean
-noncomputable def defaultWorld : Void IO.RealWorld :=
-  Void.mk (Classical.choice (inferInstance : Nonempty IO.RealWorld))
-```
-
-### Result type
-Use `EST.Out.ok` and `EST.Out.error` instead of `EStateM.Result.ok` and `EStateM.Result.error`:
-```lean
--- Old (Lean ≤ 4.25):
-h : beval m config₀ e verbose w₀ = EStateM.Result.ok (.success config₁ v) w₁
-
--- New (Lean 4.26+):
-h : beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁
-```
-
-### Unfolding bind chains
-Use `EST.bind` instead of `EStateM.bind` in simp calls:
-```lean
--- Old:
-simp [bind, Bind.bind, EStateM.bind] at h_eq
-
--- New:
-simp [bind, Bind.bind, EST.bind] at h_eq
-```
-
-### Handling Functor.map
-For expressions using `<$>` (fmap), use `EST.bind` to unfold:
-```lean
--- Old:
-simp [Functor.map, EStateM.map] at h_eq
-
--- New:
-simp [Functor.map, EST.bind] at h_eq
-```
-
-## Indexed equality pattern
-
-The key insight is to use **existential equalities** in induction hypotheses rather than function equalities. This pattern is essential when proving properties about chains of IO operations (e.g., `e1 op e2`).
-
-### The indexed equality form
-
-Instead of requiring function equalities in top-level lemmas and IHs:
-```lean
-IH : ∀ m < fuel'.succ, ∀ …,
-  beval m config₀ e verbose = pure (.success config₁ v) →
-  config₀.varEnv = config₁.varEnv
-```
-
-We now use existential equalities that explicitly track worlds:
-```lean
-IH : ∀ m < fuel'.succ, ∀ …,
-  (∃ w₀ w₁, beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
-  config₀.varEnv = config₁.varEnv
-```
-
-We fix `e`, `fuel`, `verbose`, `config₀`. For any particular `config₁` and `v`, the lemma says:
-
-If there exists some starting world `w₀` and final world `w₁` such that running
-`beval` from `config₀` on `e` succeeds with result `(.success config₁ v)`, then
-`config₀.varEnv = config₁.varEnv`.
-
-### Why this matters for chained operations
-
-When proving properties about `e1 op e2`, we need to:
-1. Evaluate `e1` at world `w₀`, producing result at world `w₁`
-2. Evaluate `e2` at world `w₁`, producing result at world `w₂`
-3. Combine the results
-
-The existential form allows us to extract these intermediate worlds from the bind chain and construct the existential needed for the IH:
+In Lean 4.26+, `IO` is a deterministic function of a world token:
 
 ```lean
--- From the bind chain, we have:
-h_beval1 : beval fuel' config₀ e1 verbose w₀ = 
-           EST.Out.ok (.success config' v') w₁
-
--- We construct the existential for the IH:
-have h_beval1_ex : ∃ w₀' w₁', beval fuel' config₀ e1 verbose w₀' = 
-                              EST.Out.ok (.success config' v') w₁' :=
-  ⟨w₀, w₁, h_beval1⟩
-
--- Now we can apply the IH:
-exact IH fuel' h_fuel e1 verbose config₀ config' v' h_beval1_ex
+IO α = Void IO.RealWorld → EST.Out IO.Error IO.RealWorld α
 ```
 
-### Proof pattern
+Success cases appear as `EST.Out.ok result nextWorld`. In particular, when
+reasoning about `beval`, one typically needs to expose and thread the world
+tokens through bind chains.
 
-1. **Extract worlds from the hypothesis.** Use `rcases` to extract `w₀` and `w₁` from the existential:
-   ```lean
-   rcases h_eval with ⟨w₀, w₁, h_eq⟩
-   ```
+## Recommended helper definitions
 
-2. **Unfold and simplify to expose bind chains.** For chained operations, use `simp [bind, Bind.bind, EST.bind]` to expose the intermediate evaluations.
+The development provides a fixed witness world and evaluation lemmas in
+`LeanProofs/IOHelpers.lean`:
 
-3. **Split on intermediate results.** Use `split` to case-analyse on each step of the bind chain, extracting intermediate worlds and results.
-
-4. **Construct existentials for IHs.** When applying the IH to a sub-expression, construct the existential using the worlds extracted from the bind chain:
-   ```lean
-   have h_sub_ex : ∃ w₀' w₁', … := ⟨w₀, w₁, h_beval1⟩
-   ```
-
-5. **Use injection for constructor reasoning.** After simplifying, use `injection` to extract equalities between constructors (configs, values, worlds).
-
-By using indexed equalities, we can track the world flow through IO operation chains while maintaining compatibility with induction hypotheses.
-
-## World-indexed termination wrapper
-
-When public statements are phrased in terms of a non-indexed `terminatesTo`, it is often easiest
-to keep those statements unchanged and prove an internal, **world-indexed** variant instead.
-This keeps IO reasoning local while avoiding public API churn.
-
-### Pattern
-
-Define a world-indexed termination predicate:
 ```lean
-private def terminatesToW (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
-  ∃ (fuel : Nat) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld),
-    LeanPoison.beval fuel c₀ e verbose w₀ = EST.Out.ok (.success c₁ out) w₁
+noncomputable def defaultWorld : Void IO.RealWorld := ...
+
+@[simp] theorem evalAtWorld_eq {α} (w : Void IO.RealWorld) {m n : IO α} :
+  m = n → m w = n w := ...
+
+@[simp] theorem evalAtDefault_eq {α} {m n : IO α} :
+  m = n → m defaultWorld = n defaultWorld := ...
 ```
 
-Use a world-indexed step theorem internally:
+Use `evalAtWorld_eq` to turn an equality of `IO` computations into a concrete
+equality at a chosen world token.
+
+## Unfolding bind chains (`do`-notation)
+
+When `simp`ping goals or hypotheses produced by `beval`, the relevant
+definitions are:
+
 ```lean
-private def StepFRW ... :=
-  ∀ ... , terminatesToW e c₀ c₁ o₀ → terminatesToW e c₀' c₁' o₁ → ...
+simp [bind, Bind.bind, EST.bind] at h
+simp [Functor.map, EST.bind, EST.pure] at h
 ```
 
-Then derive the original statement with a wrapper lemma:
+After unfolding, use `split` to case-analyse intermediate results and `injection`
+to extract equalities from constructor equalities (`.success`, `EST.Out.ok`, etc.).
+
+## World-indexed termination (world threading)
+
+For proofs that must track I/O effects, prefer the explicit world-indexed
+termination judgement from `LeanProofs/SemanticsProperties.lean`:
+
 ```lean
-private lemma terminatesToW_of_terminatesTo :
-  terminatesTo e c₀ c₁ o → terminatesToW e c₀ c₁ o
-
-private lemma StepFR_of_StepFRW :
-  StepFRW ctx R e res predSat → StepFR ctx R e res predSat
+def terminatesToW (w₀ w₁ : Void IO.RealWorld) (e : Expr) (c₀ c₁ : Config) (out : Value) : Prop :=
+  ∃ (fuel : Nat) (verbose : Bool),
+    beval fuel c₀ e verbose w₀ = EST.Out.ok (.success c₁ out) w₁
 ```
 
-### Why it helps
-- `terminatesTo` hides worlds, which is convenient for statements but awkward for IO proofs.
-- `terminatesToW` exposes worlds, making `simp [EST.bind]` and bind-chain extraction straightforward.
-- The wrapper lemmas let you keep the external API (and downstream proofs) unchanged.
+This form supports world-threading: in sequential constructs, the output world
+of the first sub-evaluation becomes the input world of the next.
 
-In practice, apply `terminatesToW_of_terminatesTo` early in a proof, and then work exclusively
-with `terminatesToW` and indexed equalities.
+In two-run developments (notably fault robustness), the internal step theorem is
+formulated with a **shared input world** `w` for both runs and proves that the
+two runs produce the **same output world**. This “world synchronisation”
+invariant is an essential induction invariant for sequencing.
 
-## Summary of changes from Lean ≤ 4.25 to Lean 4.26+
+## Bridging from world-free statements
 
-| Old (≤ 4.25) | New (4.26+) |
-|--------------|-------------|
-| `IO.RealWorld` as world type | `Void IO.RealWorld` as world type |
-| `EStateM.Result.ok` | `EST.Out.ok` |
-| `EStateM.Result.error` | `EST.Out.error` |
-| `EStateM.bind` | `EST.bind` |
-| `EStateM.map` | `EST.bind` (via Functor instance) |
-| `EStateM.pure` | `EST.pure` |
+Many public statements use a world-free `terminatesTo` (expressed via equality of
+`IO` computations). To work with explicit worlds, evaluate the equality at a
+world and simplify `pure`:
+
+```lean
+rcases ht with ⟨fuel, verbose, hbeval⟩
+have h_at_w := LeanProofs.evalAtWorld_eq w hbeval
+-- now simp [pure] at h_at_w yields:
+-- beval fuel c₀ e verbose w = EST.Out.ok (.success c₁ out) w
+```
+
+From this, one typically derives `terminatesToW w w e c₀ c₁ out`.
+
+## Checklist
+
+- Use `terminatesToW` when the proof must compose I/O effects (world threading).
+- Fix a world token (often `defaultWorld`) when turning `IO` equalities into
+  concrete equalities.
+- Use `simp [EST.bind]` / `split` / `injection` to expose and manipulate bind
+  chains.
