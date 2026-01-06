@@ -490,6 +490,8 @@ lemma freshLoc_not_realized (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ 
 -- Typechecker structure lemmas
 -- ================================================================
 
+section typecheck_structure_lemmas
+
 -- Structure lemma for printInt typechecking.
 lemma typecheckPrintInt_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckPrintInt ctx e1 fuel = .ok res →
@@ -1137,6 +1139,123 @@ lemma typecheckAssign_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) 
       | error _err =>
           simp [h_tc1] at h_typecheck
 
+-- Structure lemma for deref typechecking
+-- All branches preserve nextTag' from the subexpression result
+lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckDeref ctx e fuel = .ok res →
+  ∃ (result1 : TypeResult),
+    typecheckExpr ctx e (fuel - 1) = .ok result1 ∧
+    res.memEnv' = result1.memEnv' ∧
+    res.tagEnv' = result1.tagEnv' ∧
+    res.nextLoc' = result1.nextLoc' ∧
+    res.nextTag' = result1.nextTag' := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+      unfold typecheckDeref at h_typecheck
+      simp at h_typecheck
+  | succ fuel' =>
+      unfold typecheckDeref at h_typecheck
+      simp at h_typecheck
+      simp [bind, Except.bind] at h_typecheck
+      cases h_tc1 : typecheckExpr ctx e fuel' with
+      | ok result1 =>
+          simp [h_tc1] at h_typecheck
+          -- All return branches have the form:
+          -- return { qualType := qt, memEnv' := result1.memEnv', tagEnv' := result1.tagEnv',
+          --          nextLoc' := result1.nextLoc', nextTag' := result1.nextTag' }
+          -- So we can conclude the result regardless of which branch was taken
+          refine ⟨result1, ?_, ?_, ?_, ?_, ?_⟩
+          · -- typecheckExpr ctx e (fuel - 1) = .ok result1
+            simp only [Nat.add_sub_cancel]
+            exact h_tc1
+          · -- res.memEnv' = result1.memEnv'
+            -- All return branches have: memEnv' := result1.memEnv'
+            cases h_qt : result1.qualType with
+            | mk etyp poisonRef predRef =>
+                rw [h_qt] at h_typecheck
+                simp at h_typecheck
+                cases etyp <;> simp at h_typecheck
+                -- Only the ref case succeeds
+                rename_i t ls
+                split at h_typecheck
+                · -- ls.isEmpty - error case
+                  contradiction
+                · -- ls not empty - split on foldM result
+                  split at h_typecheck
+                  · -- foldM error case
+                    simp at h_typecheck
+                  · -- foldM success case - now split on poisonRef
+                    split at h_typecheck
+                    · -- poisonRef = true
+                      simp [pure, Except.pure] at h_typecheck
+                      cases h_typecheck; rfl
+                    · -- poisonRef = false - split on merged predicate
+                      split at h_typecheck
+                      · -- noPred case (h_1)
+                        simp [pure, Except.pure] at h_typecheck
+                        cases h_typecheck; rfl
+                      · -- guardOnly case (h_2) - split on tag lookup
+                        split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                      · -- guardClosure case (h_3) - split on tag lookup
+                        split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+          · -- res.tagEnv' = result1.tagEnv'
+            -- Same analysis as memEnv'
+            cases h_qt : result1.qualType with
+            | mk etyp poisonRef predRef =>
+                rw [h_qt] at h_typecheck
+                simp at h_typecheck
+                cases etyp <;> simp at h_typecheck
+                rename_i t ls
+                split at h_typecheck
+                · contradiction
+                · split at h_typecheck
+                  · simp at h_typecheck
+                  · split at h_typecheck
+                    · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                    · split at h_typecheck
+                      · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+          · -- res.nextLoc' = result1.nextLoc'
+            cases h_qt : result1.qualType with
+            | mk etyp poisonRef predRef =>
+                rw [h_qt] at h_typecheck
+                simp at h_typecheck
+                cases etyp <;> simp at h_typecheck
+                rename_i t ls
+                split at h_typecheck
+                · contradiction
+                · split at h_typecheck
+                  · simp at h_typecheck
+                  · split at h_typecheck
+                    · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                    · split at h_typecheck
+                      · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+          · -- res.nextTag' = result1.nextTag'
+            cases h_qt : result1.qualType with
+            | mk etyp poisonRef predRef =>
+                rw [h_qt] at h_typecheck
+                simp at h_typecheck
+                cases etyp <;> simp at h_typecheck
+                rename_i t ls
+                split at h_typecheck
+                · contradiction
+                · split at h_typecheck
+                  · simp at h_typecheck
+                  · split at h_typecheck
+                    · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                    · split at h_typecheck
+                      · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+      | error _err =>
+          simp [h_tc1] at h_typecheck
+
+end typecheck_structure_lemmas
+
 -- ================================================================
 -- Typechecker monotonicity lemmas
 -- ================================================================
@@ -1303,21 +1422,9 @@ lemma typecheckDeref_preserves_nextTag (ctx : TypeContext) (e : Expr) (fuel : Na
     typecheckExpr ctx e (fuel - 1) = .ok result1 ∧
     res.nextTag' = result1.nextTag' := by
   intro htc
-  cases fuel with
-  | zero => unfold typecheckDeref at htc; simp at htc
-  | succ fuel' =>
-      unfold typecheckDeref at htc
-      simp [bind, Except.bind] at htc
-      cases htc1 : typecheckExpr ctx e fuel' with
-      | error _ => simp [htc1] at htc
-      | ok result1 =>
-          simp [htc1] at htc
-          -- All return branches have nextTag' := result1.nextTag'
-          -- We need to show this is preserved through all the case splits
-          refine ⟨result1, ?_, ?_⟩
-          · simpa using htc1
-          · -- Show res.nextTag' = result1.nextTag' by analyzing all branches
-            sorry  -- This requires detailed case analysis on the match expressions
+  have hstruct := typecheckDeref_structure ctx e fuel res htc
+  rcases hstruct with ⟨result1, htc1, _hmem, _htag, _hloc, hnexttag⟩
+  exact ⟨result1, htc1, hnexttag⟩
 
 private lemma typecheckDeref_nextTag_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
