@@ -4,6 +4,7 @@
 -- properties, including evaluation relations and runtime context instantiation.
 
 import LeanPoison.Syntax
+import LeanProofs.Equality
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
@@ -398,8 +399,7 @@ theorem LocSet.foldM_Except_preserves_property
     ∀ (result : β), LocSet.foldM s init f = Except.ok result → P result := by
   intro result h_fold
   -- Convert LocSet.foldM to ExtTreeSet.foldlM
-  have h_eq : LocSet.foldM s init f = ExtTreeSet.foldlM (f := fun acc l => f acc l) (init := init) s := rfl
-  rw [h_eq] at h_fold
+  unfold LocSet.foldM at h_fold
   -- Use foldlM_eq_foldlM_toList to convert to list fold
   rw [ExtTreeSet.foldlM_eq_foldlM_toList] at h_fold
   -- Apply the list lemma
@@ -516,11 +516,26 @@ lemma typecheckPrintInt_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (
               rw [h_qt] at h_typecheck
               cases h_b : (etyp != ETyp.int) with
               | true =>
+                  -- Convert boolean inequality to propositional inequality
+                  have h_neq : etyp ≠ ETyp.int := by
+                    intro h_eq
+                    subst h_eq
+                    simp [bne] at h_b
                   have h_typecheck' := h_typecheck
-                  simp [h_b, throw] at h_typecheck'
+                  simp at h_typecheck'
+                  rw [if_neg h_neq] at h_typecheck'
+                  simp [throwThe, throw] at h_typecheck'
               | false =>
+                  -- Convert boolean equality to propositional equality
+                  have h_eq : etyp = ETyp.int := by
+                    have : (etyp == ETyp.int) = true := by
+                      simp only [bne, Bool.not_eq_false'] at h_b
+                      exact h_b
+                    exact eq_of_beq this
                   have h_typecheck' := h_typecheck
-                  simp [h_b, pure, Except.pure] at h_typecheck'
+                  simp only at h_typecheck'
+                  rw [if_pos h_eq] at h_typecheck'
+                  simp [pure, Except.pure] at h_typecheck'
                   have h_res :
                       { qualType := { etyp := ETyp.unit, poison := joinPoison ctx.pc poison, pred := Predicate.noPred },
                         memEnv' := result1.memEnv', tagEnv' := result1.tagEnv', nextLoc' := result1.nextLoc',
@@ -559,11 +574,26 @@ lemma typecheckPrintString_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat
               rw [h_qt] at h_typecheck
               cases h_b : (etyp != ETyp.string) with
               | true =>
+                  -- Convert boolean inequality to propositional inequality
+                  have h_neq : etyp ≠ ETyp.string := by
+                    intro h_eq
+                    subst h_eq
+                    simp [bne] at h_b
                   have h_typecheck' := h_typecheck
-                  simp [h_b, throw] at h_typecheck'
+                  simp at h_typecheck'
+                  rw [if_neg h_neq] at h_typecheck'
+                  simp [throwThe, throw] at h_typecheck'
               | false =>
+                  -- Convert boolean equality to propositional equality
+                  have h_eq : etyp = ETyp.string := by
+                    have : (etyp == ETyp.string) = true := by
+                      simp only [bne, Bool.not_eq_false'] at h_b
+                      exact h_b
+                    exact eq_of_beq this
                   have h_typecheck' := h_typecheck
-                  simp [h_b, pure, Except.pure] at h_typecheck'
+                  simp at h_typecheck'
+                  rw [if_pos h_eq] at h_typecheck'
+                  simp [pure, Except.pure] at h_typecheck'
                   have h_res :
                       { qualType := { etyp := ETyp.unit, poison := joinPoison ctx.pc poison, pred := Predicate.noPred },
                         memEnv' := result1.memEnv', tagEnv' := result1.tagEnv', nextLoc' := result1.nextLoc',
@@ -892,6 +922,148 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
           rw [h_nextTag]
     | error _err =>
       simp [h_tc1] at h_typecheck
+
+
+-- Extract the guard tag from a qualified type's predicate, if present.
+def qtypGuardTag (qt : QTyp) : Option Tag :=
+  match qt.pred with
+  | Predicate.guardClosure k _ _ _ => some k
+  | Predicate.guardOnly k => some k
+  | Predicate.noPred => none
+
+-- Structure lemma for rand typechecking.
+lemma typecheckRand_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckRand ctx e1 fuel = .ok res →
+  ∃ (result1 : TypeResult),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    result1.qualType.etyp = ETyp.int ∧
+    res.memEnv' = result1.memEnv' ∧
+    res.tagEnv' = result1.tagEnv' ∧
+    res.nextLoc' = result1.nextLoc' ∧
+    res.nextTag' = result1.nextTag' ∧
+    res.qualType.etyp = ETyp.int ∧
+    res.qualType.poison = joinPoison ctx.pc result1.qualType.poison ∧
+    res.qualType.pred = Predicate.noPred := by
+  intro htc
+  cases fuel with
+  | zero =>
+      simp [typecheckRand] at htc
+  | succ fuel' =>
+      unfold typecheckRand at htc
+      simp [bind, Except.bind] at htc
+      cases htc1 : typecheckExpr ctx e1 fuel' with
+      | ok result1 =>
+          simp [htc1] at htc
+          cases hqt : result1.qualType with
+          | mk et poison pred =>
+              rw [hqt] at htc
+              cases hbad : (et != ETyp.int) with
+              | true =>
+                  -- would throw, contradiction
+                  -- If `et = int`, then `et != int` cannot be true; otherwise `typecheckRand` throws.
+                  cases et with
+                  | int =>
+                      -- `int != int` is false
+                      simp at hbad
+                  | bool | unit | string | ref _ _ | arrow _ _ _ _ | parrow _ _ _ _ =>
+                      -- in all non-int cases `typecheckRand` throws, contradicting `.ok res`
+                      simp [throw] at htc
+              | false =>
+                  -- success: result is `result1` with updated qualType
+                  -- first, record `et = int` from the boolean check
+                  have het : et = ETyp.int := by
+                    cases et <;> simp at hbad
+                    rfl
+                  subst het
+                  have htc' := htc
+                  simp [pure, Except.pure] at htc'
+                  have h_res :
+                      { qualType := { etyp := ETyp.int, poison := joinPoison ctx.pc poison, pred := Predicate.noPred },
+                        memEnv' := result1.memEnv', tagEnv' := result1.tagEnv', nextLoc' := result1.nextLoc',
+                        nextTag' := result1.nextTag' } = res := by
+                    cases htc'
+                    rfl
+                  refine ⟨result1, ?_, ?_⟩
+                  · -- sub typecheck
+                    simpa [Nat.succ_sub_one] using htc1
+                  · -- remaining field equalities
+                    refine ⟨?_, ?_⟩
+                    · -- result1 etyp = int
+                      simp [hqt]
+                    · -- rest follows by rewriting `res` using `h_res`
+                      cases h_res
+                      simp [hqt]
+      | error msg =>
+          simp [htc1] at htc
+
+-- Structure lemma for frand typechecking.
+-- We keep it coarse: expose the subresult and the key field equalities.
+lemma typecheckFrand_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckFrand ctx e1 fuel = .ok res →
+  ∃ (result1 : TypeResult),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    res.memEnv' = result1.memEnv' ∧
+    res.tagEnv' = result1.tagEnv' ∧
+    res.nextLoc' = result1.nextLoc' ∧
+    res.nextTag' = result1.nextTag' + 1 ∧
+    res.qualType.etyp = ETyp.int ∧
+    res.qualType.poison = true ∧
+    qtypGuardTag res.qualType = some result1.nextTag' := by
+  intro htc
+  cases fuel with
+  | zero =>
+      simp [typecheckFrand] at htc
+  | succ fuel' =>
+      unfold typecheckFrand at htc
+      simp [bind, Except.bind] at htc
+      cases htc1 : typecheckExpr ctx e1 fuel' with
+      | ok result1 =>
+          simp [htc1] at htc
+          cases hqt : result1.qualType with
+          | mk et poison pred =>
+              rw [hqt] at htc
+              cases hbad : (et != ETyp.int) with
+              | true =>
+                  -- If `et = int`, then `et != int` cannot be true; otherwise we throw.
+                  cases et with
+                  | int =>
+                      simp at hbad
+                  | bool | unit | string | ref _ _ | arrow _ _ _ _ | parrow _ _ _ _ =>
+                      simp [throw] at htc
+              | false =>
+                  -- `et != int = false` forces `et = int`.
+                  have het : et = ETyp.int := by
+                    cases et <;> simp at hbad
+                    rfl
+                  subst het
+                  -- Peel off the `Expr.toPExpr` bind by splitting on it.
+                  cases hpb : Expr.toPExpr
+                      (Expr.op (Expr.op (Expr.var (generateFreshVar ctx "limit" 0 fuel')) Op.gte (Expr.num 0)) Op.and
+                        (Expr.op (Expr.var (generateFreshVar ctx "limit" 0 fuel')) Op.lte e1)) with
+                  | ok predBody =>
+                      have htc' := htc
+                      -- After substituting `et = int`, the outer `if` reduces to the success branch.
+                      simp [hpb, pure, Except.pure, generateFreshTagRes] at htc'
+                      have h_res :
+                          { qualType :=
+                              { etyp := ETyp.int, poison := true,
+                                pred := Predicate.guardClosure result1.nextTag' (generateFreshVar ctx "limit" 0 fuel') predBody
+                                  (VarTypeEnv.toCaptured ctx.varEnv) },
+                            memEnv' := result1.memEnv', tagEnv' := result1.tagEnv', nextLoc' := result1.nextLoc',
+                            nextTag' := result1.nextTag' + 1 } = res := by
+                        cases htc'
+                        rfl
+                      refine ⟨result1, ?_, ?_⟩
+                      · simpa [Nat.succ_sub_one] using htc1
+                      · -- remaining field equalities
+                        cases h_res
+                        refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, ?_⟩
+                        simp [qtypGuardTag]
+                  | error msg =>
+                      -- If `Expr.toPExpr` failed, `typecheckFrand` would fail.
+                      simp [hpb] at htc
+      | error msg =>
+          simp [htc1] at htc
 
 -- ================================================================
 -- Typechecker monotonicity lemmas

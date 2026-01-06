@@ -35,13 +35,6 @@ namespace MemoryETypEnv
 
 end MemoryETypEnv
 
--- Extract the guard tag from a qualified type's predicate, if present.
-def qtypGuardTag (qt : QTyp) : Option Tag :=
-  match qt.pred with
-  | Predicate.guardClosure k _ _ _ => some k
-  | Predicate.guardOnly k => some k
-  | Predicate.noPred => none
-
 def nonClosureQTyp (qt : QTyp) : Prop :=
   match qt.etyp with
   | ETyp.arrow _ _ _ _ => False
