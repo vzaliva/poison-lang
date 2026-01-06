@@ -1065,6 +1065,78 @@ lemma typecheckFrand_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res
       | error msg =>
           simp [htc1] at htc
 
+-- Structure lemma for assign typechecking
+lemma typecheckAssign_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckAssign ctx e1 e2 fuel = .ok res →
+  ∃ (result1 result2 : TypeResult) (t : ETyp) (ls : LocSet),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    result1.qualType.etyp = ETyp.ref t ls ∧
+    typecheckExpr { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                             nextLoc := result1.nextLoc', nextTag := result1.nextTag' } e2 (fuel - 1) = .ok result2 ∧
+    result2.qualType.etyp = t ∧
+    res.nextLoc' = result2.nextLoc' ∧
+    res.nextTag' = result2.nextTag' ∧
+    res.qualType.etyp = ETyp.unit ∧
+    res.qualType.poison = joinPoison ctx.pc result1.qualType.poison ∧
+    res.qualType.pred = Predicate.noPred := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+      unfold typecheckAssign at h_typecheck
+      simp at h_typecheck
+  | succ fuel' =>
+      unfold typecheckAssign at h_typecheck
+      simp at h_typecheck
+      simp [bind, Except.bind] at h_typecheck
+      cases h_tc1 : typecheckExpr ctx e1 fuel' with
+      | ok result1 =>
+          simp [h_tc1] at h_typecheck
+          cases h_qt1 : result1.qualType with
+          | mk etyp1 p1 pred1 =>
+              rw [h_qt1] at h_typecheck
+              simp at h_typecheck
+              cases etyp1 with
+              | ref t ls =>
+                  simp at h_typecheck
+                  let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                                         nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+                  cases h_tc2 : typecheckExpr ctx' e2 fuel' with
+                  | ok result2 =>
+                      rw [h_tc2] at h_typecheck
+                      simp at h_typecheck
+                      cases h_qt2 : result2.qualType with
+                      | mk etyp2 p2 pred2 =>
+                          rw [h_qt2] at h_typecheck
+                          simp at h_typecheck
+                          -- The code checks: if t = etyp2 then ... else throw
+                          split at h_typecheck
+                          · rename_i h_eq  -- t = etyp2
+                            simp [pure, Except.pure] at h_typecheck
+                            cases h_typecheck
+                            refine ⟨result1, result2, t, ls, ?_, ?_, ?_, ?_, rfl, rfl, rfl, ?_, rfl⟩
+                            · -- typecheckExpr ctx e1 (fuel - 1) = .ok result1
+                              simp only [Nat.add_sub_cancel]
+                              exact h_tc1
+                            · -- result1.qualType.etyp = ETyp.ref t ls
+                              rw [h_qt1]
+                            · -- typecheckExpr ctx' e2 (fuel - 1) = .ok result2
+                              simp only [Nat.add_sub_cancel]
+                              exact h_tc2
+                            · -- result2.qualType.etyp = t
+                              rw [h_qt2, h_eq]
+                            · -- res.qualType.poison = joinPoison ctx.pc p1
+                              rw [h_qt1]
+                          · -- error branch: t ≠ etyp2 would throw, contradiction
+                            contradiction
+                  | error _err =>
+                      rw [h_tc2] at h_typecheck
+                      simp at h_typecheck
+              | _ =>
+                  -- Non-reference type - error case
+                  simp at h_typecheck
+      | error _err =>
+          simp [h_tc1] at h_typecheck
+
 -- ================================================================
 -- Typechecker monotonicity lemmas
 -- ================================================================
@@ -1194,9 +1266,11 @@ lemma typecheckAssign_preserves_nextTag (ctx : TypeContext) (e1 e2 : Expr) (fuel
     typecheckExpr ctx' e2 (fuel - 1) = .ok result2 ∧
     res.nextTag' = result2.nextTag' := by
   intro htc
-  cases fuel with
-  | zero => unfold typecheckAssign at htc; simp at htc
-  | succ fuel' =>sorry  -- Detailed proof requires case analysis
+  have hstruct := typecheckAssign_structure ctx e1 e2 fuel res htc
+  rcases hstruct with ⟨result1, result2, _t, _ls, htc1, _hetyp1, htc2, _hetyp2, _hloc, hnexttag, _⟩
+  let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                         nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+  exact ⟨result1, result2, ctx', htc1, rfl, htc2, hnexttag⟩
 
 private lemma typecheckAssign_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
