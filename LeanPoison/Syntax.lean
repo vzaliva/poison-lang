@@ -527,6 +527,24 @@ inductive ETyp : Type where
 
 end
 
+namespace ETyp
+
+/-- Check if an enriched type is an arrow type. -/
+def isArrow : ETyp → Bool
+  | .arrow _ _ _ _ => true
+  | _ => false
+
+/-- Check if an enriched type is a parrow (pure arrow) type. -/
+def isParrow : ETyp → Bool
+  | .parrow _ _ _ _ => true
+  | _ => false
+
+/-- Check if an enriched type is a function type (either arrow or parrow). -/
+def isFunctionType (t : ETyp) : Bool :=
+  t.isArrow || t.isParrow
+
+end ETyp
+
 -- Captured variable environments are association lists.
 abbrev CapturedVarEnv := List (Name × QTyp)
 

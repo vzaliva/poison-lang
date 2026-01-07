@@ -347,7 +347,7 @@ After each stage:
 Add small classifiers for function types to `LeanPoison/Syntax.lean`, since they are generic and likely useful beyond the
 fault-robustness development. Proofs can then refer to these shared helpers rather than duplicating ad-hoc pattern matches.
 
-- [ ] **1.1** In `LeanPoison/Syntax.lean`, add:
+- [x] **1.1** In `LeanPoison/Syntax.lean`, add:
   ```lean
   def ETyp.isArrow : ETyp → Bool
     | .arrow _ _ _ _ => true
@@ -360,8 +360,8 @@ fault-robustness development. Proofs can then refer to these shared helpers rath
   def ETyp.isFunctionType (t : ETyp) : Bool :=
     t.isArrow || t.isParrow
   ```
-- [ ] **1.2** Run `lake build` to confirm the project still compiles.
-- [ ] **1.3** Suggested commit message: *"LeanPoison: add ETyp.isArrow/isParrow/isFunctionType helpers"*
+- [x] **1.2** Run `lake build` to confirm the project still compiles.
+- [x] **1.3** Suggested commit message: *"LeanPoison: add ETyp.isArrow/isParrow/isFunctionType helpers"*
 
 ### Stage 2: Fuel-indexed refactor (skeleton + plumbing; closure agreement remains a stub)
 
