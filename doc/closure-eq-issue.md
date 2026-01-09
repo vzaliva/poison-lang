@@ -1,7 +1,8 @@
 ## Closure equality issue in fault-robustness proofs
 
 This note documents a specification-level mismatch that blocks the `fn` and `pfn` cases in
-`LeanProofs/FaultRobustnessProofs.lean` (currently around the `TypeSystemEnforcesFaultRobustness_stepW` proof).
+`LeanProofs/FaultRobustnessProofs.lean` (currently around the `TypeSystemEnforcesFaultRobustness_stepW` proof),
+and proposes a fix using structural closure agreement.
 
 The core problem is that the current fault-robustness agreement relation treats **clean non-references**
 as agreeing only when they are **literally equal**. Since function values are closures (and closures
@@ -23,7 +24,7 @@ The cases left as `sorry` at the time of writing are the branches:
 
 ## The specification that forces literal closure equality
 
-### Step result agreement when “clean under the regime”
+### Step result agreement when "clean under the regime"
 
 The step theorem requires agreement of the returned values whenever the returned qualified type is
 clean-under-\(R\) (schematically):
@@ -92,7 +93,7 @@ This is the fundamental mismatch:
   the runtime environments captured into closures.
 
 
-## Why `LeanProofs/Equality.lean` does not (yet) resolve the proof
+## Why `LeanProofs/Equality.lean` does not resolve the proof
 
 `LeanProofs/Equality.lean` provides `LawfulBEq` and `DecidableEq` instances, including for `Value`.
 For closures, boolean equality (`beqValue`) is *structural*:
@@ -116,334 +117,396 @@ Separately, `Equality.lean` also documents an important design choice at the typ
 closure contents when comparing arrow/parrow types, because full structural equality of closure lists is
 too strict for type-checking, and (by design) it is not a sound notion of equality for function types.
 Accordingly, `beqETypSignature` should not be changed or repurposed to support fault-robustness proofs.
-Any additional equality/relational structure needed for closures should be introduced as a *new* definition
-(for example, by adding arrow/parrow cases to `agreeValueUnder`, or by defining a separate closure-agreement
-predicate), rather than by strengthening `beqETypSignature`.
 
 
-## Proposed fix: make StepFRW the core of closure agreement
+---
 
-The specification-level fix is to stop treating arrow/parrow values as “just another non-reference” in `agreeValueUnder`.
-Instead, we introduce a dedicated closure-agreement predicate `closuresAgreeUnder` and make it **use `StepFRW` as the
-engine** for reasoning about closure bodies.
+## Proposed fix: structural closure agreement
 
-This is more principled than trying to compare closures directly, because `StepFRW` already encapsulates exactly what the
-fault-robustness development is built to prove: a two-run property of evaluation that preserves `agreeOnClean` and forces
-agreement of clean results.
+The specification-level fix is to stop treating arrow/parrow values as "just another non-reference" in
+`agreeValueUnder`. Instead, we define closure agreement **structurally**: two closures agree if they have
+the same binder and body, and their captured environments agree on clean entries.
 
-### Mutual recursion (fuel-indexed) to avoid circularity
+### Structural agreement for closures
 
-There is an unavoidable dependency cycle:
+Two closure values `v₁` and `v₂` agree structurally (under regime \(R\)) if:
 
-- `StepFRW` concludes return-value agreement via `agreeValueUnder`.
-- For arrow/parrow types, `agreeValueUnder` should delegate to `closuresAgreeUnder` (rather than demanding `v₀ = v₁`).
-- `closuresAgreeUnder` wants to justify behavioural agreement of closures by invoking `StepFRW` on the closure body.
+1. **Same binder and body**: the parameter names and body expressions are syntactically equal.
+2. **Captured environments agree**: for each variable `x` in the captured environment:
+   - if the variable's type is clean-under-\(R\), the captured values must agree (recursively);
+   - if the variable's type is not clean-under-\(R\), the captured values may differ.
 
-To make this acceptable to Lean, we use a **fuel index** as a step index and make the *step theorem itself* fuel-indexed.
-Concretely, within `LeanProofs/FaultRobustnessProofs.lean` we do not maintain a separate “indexed copy” alongside an unindexed `StepFRW`:
-we refactor the existing (local) `StepFRW` into an indexed form `StepFRW k` (where \(k\) is the **type-checking fuel**),
-and define the corresponding fuel-indexed agreement relations it depends on.
+This definition is **recursively well-founded**: captured environments may contain other closures, but
+those closures are strictly smaller (they were created earlier in the evaluation). No fuel indexing is
+required.
 
-In other words, the mutually recursive core becomes:
-
-- `StepFRW k` (a world-indexed step theorem parameterised by type-checking fuel \(k\)),
-- `agreeValueUnder k`, and
-- `closuresAgreeUnder k`,
-
-with the invariant that recursive calls always go to a strictly smaller index. This aligns with the implementation:
-typing a closure body at application time consumes fuel, so body typing naturally happens at a smaller fuel than the outer
-typing call.
-
-**Fuel alignment note:** the index \(k\) here is the *type-checking* fuel (the `fuel` argument passed to `typecheck`).
-The evaluator’s fuel is existential inside `terminatesToW`; we do not need to index on evaluation fuel to break the
-definitional cycle between `StepFRW` and closure agreement.
-
-### From fuel-indexed `StepFRW` to the exported step theorem (`StepFR`)
-
-`StepFRW` is only used as an intermediate lemma in this file: it is immediately converted to the non-world step theorem
-`StepFR` (and then to the top-level fault-robustness statement). After refactoring `StepFRW` to be fuel-indexed, we simply
-generalise that one conversion lemma to accept an explicit fuel parameter:
-
-- `StepFR_of_StepFRW (k : Nat) : StepFRW k ctx R e res predSat → StepFR ctx R e res predSat`.
-
-No wrapper is needed. In `TypeSystemEnforcesFaultRobustness_step`, the `fuel` argument is already in scope (from the typing
-premise `typecheck ctx e fuel = .ok res`), so we instantiate `k := fuel` and apply the same erasure argument as before.
-
-### Sketch: `agreeValueUnder k` delegates arrow/parrow to `closuresAgreeUnder k`
-
-Keep the existing cases of `agreeValueUnder` for base types and references.
-Replace the “clean non-reference implies equality” behaviour for arrow/parrow results with an arrow/parrow case that requires
-`closuresAgreeUnder k`.
-
-In practice, this also requires ensuring that the existing `clean_eq_nonref` case does **not** continue to apply to
-arrow/parrow types (since arrows are non-references). One can enforce this by strengthening its side condition so that it
-excludes function types, or by otherwise arranging that the arrow/parrow case is the one used for function results.
-
-Intuitively:
-
-- for non-function, non-reference types: clean results still force literal equality;
-- for references: agreement remains via realisation maps and locsets (as in the current development);
-- for functions: agreement is **behavioural**, defined by `closuresAgreeUnder k`.
-
-Here “behavioural” means: two closure values agree not because their captured environments are literally equal, but because
-whenever they are applied to *related arguments*, their bodies can be shown to produce related outcomes under the existing
-two-run step theorem.
-
-The word “related” is **regime-dependent**: the minimal requirement is that if the argument’s qualified type is
-clean-under-\(R\) (i.e. `qtypCleanUnder R qt_arg` holds), then the two argument values satisfy `agreeValueUnder k_arg` at
-`qt_arg` for some strictly smaller index \(k_{arg} < k\). If `qt_arg` is not clean-under-\(R\), then no equality
-obligation is imposed by the step invariant, and the argument values may be unconstrained.
-
-From there, `StepFRW k` yields return agreement in the same style: it provides `agreeValueUnder k` for the body’s return value
-whenever the inferred return qualified type is clean-under-\(R\). For base (non-reference, non-function) return types,
-`agreeValueUnder` reduces to literal equality by inversion (via the `clean_eq_nonref` constructor); for reference returns,
-it yields the appropriate locset/realisation agreement; and for functional returns it recurses via `closuresAgreeUnder k`.
-
-### Sketch: invoking `StepFRW` from `closuresAgreeUnder`
-
-Fix a regime `R` and predicate-satisfaction relation `predSat`. Closure agreement is always *relative to the same* `R`:
-the regime is a run-level parameter that models which input guard tags are true/false, so it does not change when we
-enter a closure body.
-
-#### Runtime closures versus typing closures (and why both appear)
+### Runtime closures versus typing closures
 
 It is important to keep two distinct notions separate:
 
-- **Runtime closures** are values produced by evaluation, of the form `Value.closure x body ρcap` or `Value.peClosure x body ρcap`,
-  where `ρcap : VarEnv` is a list of *runtime* bindings `(Name × Value)`.
-- **Typing closures** are a type-system device stored inside arrow/parrow enriched types (the closure list in `ETyp.arrow` / `ETyp.parrow`),
-  of the form `FnTClosure.regular x body σcap` or `PFnTClosure.regular x body σcap`, where `σcap : VarTypeEnv` (captured) is a list of
-  *typing* bindings `(Name × QTyp)`.
+- **Runtime closures** are values produced by evaluation, of the form `Value.closure x body ρcap` or
+  `Value.peClosure x body ρcap`, where `ρcap : VarEnv` is a list of *runtime* bindings `(Name × Value)`.
+- **Typing closures** are a type-system device stored inside arrow/parrow enriched types (the closure
+  list in `ETyp.arrow` / `ETyp.parrow`), of the form `FnTClosure.regular x body σcap` or
+  `PFnTClosure.regular x body σcap`, where `σcap : CapturedVarEnv` (i.e. `List (Name × QTyp)`) is a list of
+  *typing* bindings.
 
-The **problem** diagnosed earlier is purely about runtime closures (they capture the whole runtime environment, but `agreeOnClean` only constrains
-clean entries). Typing closures are not the source of the mismatch; they are needed in the *fix* because `StepFRW` is a statement about evaluating an
-expression under a typing context, so to invoke it on a closure body we must supply the appropriate typing context at application time.
+The **problem** diagnosed earlier is purely about runtime closures (they capture the whole runtime
+environment, but `agreeOnClean` only constrains clean entries). Typing closures provide the **type
+information** needed to determine which captured variables are clean-under-\(R\).
 
-For the `fn` / `pfn` branches specifically, the typing-closure list introduced by `typecheckFn` / `typecheckPfn` has **exactly one element**. More generally,
-arrow/parrow types may carry typing-closure lists of any length (for example, after control-flow joins); the proposal below therefore treats the list generically.
-This is always a statement about the *type-level* typing-closure list inside `ETyp.arrow` / `ETyp.parrow`, not about runtime values: at runtime, evaluation
-produces a single closure value.
+**Important structural differences:**
 
-For an impure function value, the runtime closure has the shape:
+1. **Multiple typing closures**: Arrow types can carry *lists* of typing closures (from control-flow
+   joins). A runtime closure must be matched to one typing closure in the list via binder/body comparison.
 
-- `v₀ = Value.closure x₀ body ρcap₀`
-- `v₁ = Value.closure x₁ body ρcap₁`
+2. **List structure mismatch**: `σcap : CapturedVarEnv` in the typing closure may have different
+   structure than runtime `ρcap : VarEnv` (a cons-list that may have duplicates from `VarEnv.update`).
+   Positional list recursion will not work; agreement must be defined **extensionally** using
+   `CapturedVarEnv.lookup` and `VarEnv.lookup`.
 
-In the `fn`/`pfn` step cases, both runs evaluate the same syntactic abstraction, so the binders coincide
-(\(x₀ = x₁\)) and the stored bodies coincide as well. The distinction only matters when generalising closure agreement
-beyond those cases.
+3. **Pure closure body types**: `PFnTClosure.regular` stores a `PExpr` body, but `Value.peClosure`
+   stores an `Expr` body. Matching binder/body requires a bridge (e.g. comparing via `Expr.toPExpr`
+   or storing compatible representations).
 
-and its *type* is an arrow whose typing-closure list contains at least one typing closure whose binder/body match the runtime closure, providing a captured typing
-environment for the body:
+### Structural agreement definition
 
-- `tcl = FnTClosure.regular x body σcap` with `tcl ∈ tcls`
+The structural approach requires:
 
-In the `fn` / `pfn` cases, `tcls` has exactly one element, so this witness is unique. When `tcls` is non-singleton, the witness is not an arbitrary “choice”:
-it must match the actual runtime closure (binder/body), and is therefore determined by the runtime value (up to benign ambiguity if multiple typing closures have the
-same binder/body).
+1. **Typing closure witness selection**: For arrow types with multiple typing closures (from joins),
+   we require an existential witness `tcl ∈ tcls` whose binder and body match the runtime closure.
 
-Define `closuresAgreeUnder k … qt_fun v₀ v₁` so that, when the closures are “used”, we first select such a typing-closure witness from the list and then
-**instantiate** `StepFRW` for the (matched) body:
+2. **Extensional captured-environment agreement**: Since `σcap` and `ρcap` have different list
+   structures (sorted/unique vs cons-list with duplicates), agreement is defined by **name lookup**
+   rather than positional list recursion.
 
-1. **Handle the argument**: quantify over an argument qualified type `qt_arg` and runtime values `arg₀ arg₁`.
-   Require the standard interface condition (as in the type checker) that `isSubtype st1 qt_arg` holds, and require:
-   if `qtypCleanUnder R qt_arg`, then `agreeValueUnder k_arg … qt_arg arg₀ arg₁` at some strictly smaller index \(k_{arg} < k\).
-   (This matches exactly what is needed to establish `agreeOnClean` for the closure body’s typing context.)
-2. **Replace the runtime environment by the captured one**: to evaluate the body, we use exactly the operational
-   mechanism of closure application: extend the captured environments with the parameter binding:
+### When arrow/parrow constructors should fire
 
-   - `ρ₀' := VarEnv.update ρcap₀ x₀ arg₀`
-   - `ρ₁' := VarEnv.update ρcap₁ x₁ arg₁`
+Arrow types should not have predicates (invariant: `guardClosure` is never applied to arrows), but
+they can have guard tags which, if set true in the regime, de-poison them. The new arrow/parrow
+constructors must **not** fire unconditionally — they should only fire when there is a
+clean-under-\(R\) reason. Otherwise, we would silently enlarge `agreeValueUnder` for poisoned/no-tag
+functions, weakening the specification beyond "clean-under-\(R\) ⇒ agree".
 
-3. **Select a typing-closure witness and build the typing context**: choose `tcl ∈ tcls` of the form `FnTClosure.regular x body σcap` whose binder and body
-   match the two runtime closures (since both runs evaluate the same `fn`/`pfn`, we have \(x = x₀ = x₁\) and bodies are syntactically equal). Let `ctx_body` be the context under which the body is
-   type-checked at application time. Its variable typing environment is the captured one `σcap` extended with the parameter binding (as constructed by the type checker);
-   its memory and tag environments come from the call site typing state.
-4. **Invoke `StepFRW`**: choose some fuel `k_body < k` such that `typecheck ctx_body body k_body = .ok res_body`,
-   and apply `StepFRW k_body ctx_body R body res_body predSat` to the two evaluations of `body` starting from
-   var-envs `ρ₀'` and `ρ₁'` (and whatever memories/realisation maps the caller supplies, subject to the standard
-   `StepFRW` premises such as `runtimeInstantiatesCtx` and `agreeOnClean` for `ctx_body`).
+The constructors mirror the existing split for non-function types:
 
-At this point the key “bridge” obligation becomes explicit:
+1. **`clean_arrow`/`clean_parrow`**: Fire when `qt.poison = false` (clean via poison-false path).
+2. **`guardOnly_true_arrow`/`guardOnly_true_parrow`**: Fire when `qtypGuardTag qt = some k` and
+   `R.lookup? k = some true` (de-poison via guard tag path).
 
-- to invoke `StepFRW k_body ctx_body …`, we must establish `agreeOnClean predSat R ctx_body μ₀ ρ₀' θ₀ μ₁ ρ₁' θ₁`.
+The existing "equality-for-nonrefs" constructors (`clean_eq_nonref`, `withPred_true_eq`,
+`poisoned_noPred_eq_nonref`, etc.) must continue to **exclude function types** via
+`qt.etyp.isFunctionType = false`.
 
-This splits cleanly:
+Schematically:
 
-- **Parameter binding**: the only new variable entry in `ctx_body.varEnv` is the parameter binder (`x`, with \(x = x₀ = x₁\) in the `fn`/`pfn` cases)
-  bound to (a variant of) `qt_arg`.
-  If that parameter binding is clean-under-\(R\), the required agreement is exactly the assumption from step (1).
-- **Captured variables**: for every captured variable `(y, qt_y)` in `σcap`, if `qt_y` is clean-under-\(R\), then the required
-  runtime agreement between `ρcap₀.lookup y` and `ρcap₁.lookup y` is inherited from the *outer* `agreeOnClean` at function-definition
-  time. For poisoned variables, the values in `ρcap₀` and `ρcap₁` may differ — this is expected and does not violate `agreeOnClean`,
-  which imposes no constraint on non-clean entries.
-- **Memory/tag environments**: `ctx_body.memEnv` and `ctx_body.tagEnv` come from the call site; the caller supplies the corresponding
-  `agreeOnClean` and instantiation premises for those components when `closuresAgreeUnder k` is used to justify an application.
+```lean
+inductive agreeValueUnder (predSat : PredSat) (R : Regime)
+    (μ₁ : Memory) (θ₁ : RealizationMap) (μ₂ : Memory) (θ₂ : RealizationMap)
+    : QTyp → Value → Value → Prop where
+  | int (n : Int) : agreeValueUnder ... qt (.int n) (.int n)
+  | bool (b : Bool) : agreeValueUnder ... qt (.bool b) (.bool b)
+  | unit : agreeValueUnder ... qt .unit .unit
+  | loc ... : agreeValueUnder ... qt (.loc l₁) (.loc l₂)
 
-For readability, one can summarise the intended quantifier structure as the following schematic (not a final Lean definition):
+  -- Clean arrow (qt.poison = false at QTyp level)
+  | clean_arrow
+      (hclean : qt.poison = false)                        -- QTyp-level poison
+      (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)       -- deconstruct etyp (p is arrow-internal)
+      (htcl : tcl ∈ tcls)
+      (hmatch_binder : tcl.binder = x)
+      (hmatch_body : tcl.body = body)
+      (hcap : agreeCapturedEnv ... tcl.σcap ρcap₁ ρcap₂)
+      : agreeValueUnder ... qt (.closure x body ρcap₁) (.closure x body ρcap₂)
 
-```text
-closuresAgreeUnder k … qt_fun v₀ v₁ :=
-  ∃ tcl ∈ tcls, tcl = FnTClosure.regular x body σcap ∧ (binder/body match v₀ and v₁),
-    ∀ qt_arg arg₀ arg₁,
-      isSubtype st1 qt_arg →
-      (qtypCleanUnder R qt_arg → agreeValueUnder k_arg … qt_arg arg₀ arg₁) →
-      let ρ₀' := VarEnv.update ρcap₀ x₀ arg₀
-      let ρ₁' := VarEnv.update ρcap₁ x₁ arg₁
-      … (premises to build ctx_body from σcap, runtimeInstantiatesCtx, agreeOnClean) … →
-      StepFRW k_body ctx_body R body res_body predSat …
+  -- Guard-only true arrow (de-poison via guard tag)
+  | guardOnly_true_arrow
+      (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)       -- deconstruct etyp
+      (htag : qtypGuardTag qt = some k)
+      (hregime : R.lookup? k = some true)
+      (htcl : tcl ∈ tcls)
+      (hmatch_binder : tcl.binder = x)
+      (hmatch_body : tcl.body = body)
+      (hcap : agreeCapturedEnv ... tcl.σcap ρcap₁ ρcap₂)
+      : agreeValueUnder ... qt (.closure x body ρcap₁) (.closure x body ρcap₂)
+
+  -- Similar for parrow (with PExpr/Expr bridge for body)
+  | clean_parrow
+      (hclean : qt.poison = false)
+      (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
+      ...
+  | guardOnly_true_parrow
+      (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
+      (htag : qtypGuardTag qt = some k)
+      (hregime : R.lookup? k = some true)
+      ...
+
+-- Lookup-based agreement: for each name in σcap, lookup in ρcap agrees
+def agreeCapturedEnv (predSat : PredSat) (R : Regime)
+    (μ₁ : Memory) (θ₁ : RealizationMap) (μ₂ : Memory) (θ₂ : RealizationMap)
+    (σcap : CapturedVarEnv) (ρcap₁ ρcap₂ : VarEnv) : Prop :=
+  ∀ x qt, σcap.lookup x = some qt →
+    match ρcap₁.lookup x, ρcap₂.lookup x with
+    | some v₁, some v₂ =>
+        qtypCleanUnder R qt → agreeValueUnder ... qt v₁ v₂
+    | _, _ => True  -- variable not in runtime env (shouldn't happen if well-typed)
 ```
 
-The conclusion obtained from `StepFRW` is exactly what closure agreement needs:
+**Note on mutual recursion**: The extensional definition uses `∀` with `agreeValueUnder` in the body.
+If this causes Lean kernel issues (similar to the behavioural approach), we may need to:
+- Define `agreeCapturedEnv` inductively over the domain `σcap` (a finite list), or
+- Use a well-founded recursion on value structure (captured values are subterms).
 
-- post-state preservation of `agreeOnClean` (in the `ctxAfter` post-context), and
-- return-value agreement whenever the inferred return type is clean-under-\(R\), stated using `agreeValueUnder k_body`.
+The key difference from the behavioural approach is that we do not invoke `StepFR` — we only recurse
+on strictly smaller values (those in the captured environment).
 
-The `pfn` case is analogous, with `Value.peClosure` and `ETyp.parrow`. Pure bodies cannot perform I/O in the operational semantics,
-so they do not introduce any additional world-desynchronisation concern beyond what `StepFRW` already handles.
+### Typing closure witness selection
 
-**Scope notes:**
+For arrow types, the typing closure list `tcls` may contain multiple entries (from control-flow joins).
+The `arrow` constructor requires:
 
-- **Non-singleton typing-closure lists:** although runtime values never carry "closure sets", arrow/parrow *types* may carry typing-closure lists with multiple
-  elements. In this proposal, `closuresAgreeUnder` handles such lists by **witness selection**: it requires the existence of a typing closure in the list whose
-  binder/body match the runtime closure, and then uses the corresponding captured typing environment to invoke `StepFRW` for that body.
-  
-  This is sound because the witness is constrained by the runtime value: we are not guessing which alternative the program “should have” taken; rather, we pick an
-  alternative that matches the closure that was actually produced at runtime. In the clean-under-\(R\) situations where closure agreement is required, the two-run
-  reasoning typically forces both executions to follow the same control-flow for clean tests, so both runs produce matching runtime closures and hence share (at least)
-  one common witness in the typing-closure list.
-- **Extern typing closures:** the type system can construct `FnTClosure.extern` / `PFnTClosure.extern`, but the operational semantics does
-  not evaluate extern expressions to runtime closures (extern expressions do not terminate). The closure-agreement problem discussed in this
-  note concerns runtime `Value.closure` / `Value.peClosure` produced by `fn`/`pfn`.
+1. A witness `tcl ∈ tcls` that matches the runtime closure by binder and body.
+2. The captured typing environment `tcl.σcap` is then used for `agreeCapturedEnv`.
 
-### How this discharges the `fn` / `pfn` step cases
+This is well-defined because in contexts where closure agreement matters (clean-under-\(R\)), both
+runs evaluate the same syntactic `fn`/`pfn`, producing closures with the same binder and body. The
+witness is therefore determined by the runtime value.
 
-In the `fn` and `pfn` branches, evaluation returns closure values capturing the current runtime environment.
-To satisfy `resultAgreesIfClean`, we must show `agreeValueUnder k` at the returned arrow/parrow qualified type (for the
-current step index \(k\), instantiated from the typing fuel in the step proof).
-By construction, that reduces to showing `closuresAgreeUnder k` for the produced closures, which is proved by unfolding
-`closuresAgreeUnder k` and appealing (at smaller fuel) to `StepFRW` for the closure body.
+**⚠️ Open issue: non-unique witness selection**
+
+After control-flow joins, `tcls` may contain multiple typing closures with the **same binder and body**
+but **different captured typing environments** `σcap`. In this case, binder/body matching does not
+uniquely identify the typing closure.
+
+Possible resolutions:
+
+1. **Uniqueness property**: Prove that `tcls` never contains duplicates with same binder/body but
+   different `σcap`. This seems unlikely given how joins work.
+
+2. **Separate witnesses per side**: Allow each run to select its own witness `tcl₁ ∈ tcls` and
+   `tcl₂ ∈ tcls` (both matching the runtime closure by binder/body), and require that their
+   captured typing environments are "compatible" in the sense that `agreeCapturedEnv` can
+   be established using either.
+
+3. **Weaker witness requirement**: Require only that *some* `tcl ∈ tcls` with matching binder/body
+   has a `σcap` for which `agreeCapturedEnv` holds. The proof obligation then becomes showing
+   such a witness exists.
+
+**Status**: To be resolved before Stage 2 implementation. May require examining how `mergeFnTClosures`
+constructs `tcls` after joins and what invariants hold.
+
+### Pure closure body bridge
+
+For `parrow` types, `PFnTClosure.regular` stores a `PExpr` body while `Value.peClosure` stores an
+`Expr` body. Use the pure conversion `Expr.toPExpr?` (not the monadic `Expr.toPExpr`):
+
+```lean
+-- Body match for parrow: convert runtime Expr to PExpr and compare
+hmatch_body : body.toPExpr? = some pbody ∧ tcl.body = pbody
+```
+
+This requires a bridge lemma showing that if a `pfn` expression type-checks, then `body.toPExpr?`
+succeeds and produces the same `PExpr` stored in the typing closure. The lemma should be
+established in Stage 2 before implementing the `parrow` case.
+
+
+---
+
+## How this discharges the `fn` / `pfn` step cases
+
+In the `fn` and `pfn` branches, evaluation returns closure values capturing the current runtime
+environment. To satisfy `resultAgreesIfClean`, we must show `agreeValueUnder` at the returned
+arrow/parrow qualified type.
+
+The closures produced have:
+- **Same binder**: both runs evaluate the same syntactic `fn x ...` or `pfn x ...`, so `x₁ = x₂`.
+- **Same body**: both runs store the same body expression.
+- **Captured environments that agree on clean entries**: from `agreeOnClean` at function-definition
+  time, clean variables have agreeing values. The structural definition explicitly allows poisoned
+  entries to differ.
+
+The typing closure `σcap` is obtained from the arrow type produced by `typecheckFn` / `typecheckPfn`.
+It records the types of all captured variables, enabling the `agreeCapturedEnv` predicate to
+distinguish clean from poisoned entries.
+
+
+---
+
+## How `app` (function application) is handled
+
+When proving fault-robustness for `Expr.app f arg`:
+
+1. The induction hypothesis gives us `agreeValueUnder` for the closure values (from evaluating `f`).
+   By inversion on the `closure` constructor, we obtain:
+   - same binder and body,
+   - `agreeCapturedEnv` for the captured environments.
+
+2. The induction hypothesis gives us `agreeValueUnder` for the argument values (from evaluating `arg`).
+
+3. We must show that evaluating the two closure bodies produces agreeing results.
+
+The key insight is that the **main fault-robustness theorem** (`TypeSystemEnforcesFaultRobustness_stepW`)
+is proved by induction on evaluation. When we reach the `app` case:
+
+- The closure body is evaluated with:
+  - runtime environments `ρ₀' := VarEnv.update ρcap₀ x arg₀` and `ρ₁' := VarEnv.update ρcap₁ x arg₁`
+  - the same body expression
+  - the typing context built from the captured typing environment extended with the parameter binding
+
+- The `agreeOnClean` precondition for the body evaluation is established from:
+  - `agreeCapturedEnv` for the captured variables (from closure agreement), and
+  - `agreeValueUnder` for the argument (from the argument evaluation).
+
+- The induction hypothesis (applied to the body evaluation) then yields the required post-condition:
+  `agreeOnClean` preservation and return-value agreement.
+
+This reasoning happens in the **proof** of the main theorem, not in the definition of `agreeValueUnder`.
+The structural definition simply records that closures have the same structure; the behavioural
+consequence (that applying them produces agreeing results) follows from the induction.
+
+
+---
+
+## Summary
+
+| Aspect | Original (literal equality) | Structural agreement |
+|--------|---------------------------|---------------------|
+| Closure agreement | `v₁ = v₂` (full equality) | Same binder/body + captured envs agree on clean |
+| Poisoned captured vars | Must be equal (unprovable) | May differ |
+| Lean encoding | Blocked (unprovable premise) | Simple mutual induction, no fuel |
+| `fn`/`pfn` cases | Blocked | Provable from `agreeOnClean` |
+| `app` case | Blocked | Uses main theorem's induction hypothesis |
+
+The structural approach is stronger than strictly necessary (structurally agreeing closures certainly
+behave the same), but it is provable from the available hypotheses and avoids the Lean kernel
+limitations that block alternative encodings.
 
 
 ---
 
 ## Implementation plan
 
-This section provides a staged implementation plan. Per the agreed scope, the new machinery (fuel-indexed `StepFRW`,
-behavioural closure agreement, and the fuel-indexed value-agreement relation) does not need to be exposed outside
-`LeanProofs/FaultRobustnessProofs.lean`. Accordingly, the plan below keeps all new definitions `private` within that file.
+This section provides a staged implementation plan. Each stage ends in a state where the project
+builds (i.e. `lake build` succeeds), allowing incremental commits.
 
-Each stage is intended to end in a state where **the project builds** (i.e. `lake build` succeeds). It is acceptable for
-intermediate stages to contain `sorry` (feature-branch iteration), as long as the build succeeds.
+**Important**: `agreeValueUnder` is defined in `LeanProofs/FaultRobustness.lean`, not privately in
+`FaultRobustnessProofs.lean`. Changes to its definition will affect dependent lemmas throughout the
+proof development.
 
-After each stage:
+### Architectural note: module separation
 
-- run `lake build`,
-- review the diff, and
-- **suggest** (but do not automatically perform) a commit with the message listed for that stage.
+The proof development maintains a separation between:
 
-### Stage 1: Shared `ETyp` classifiers (no semantic changes)
+- **`LeanProofs/SemanticsProperties.lean`**: High-level definitions and theorems about evaluation
+  semantics (`terminatesTo`, `terminatesToW`, `wfConfig`, etc.), independent of fault-robustness
+  specifics.
 
-Add small classifiers for function types to `LeanPoison/Syntax.lean`, since they are generic and likely useful beyond the
-fault-robustness development. Proofs can then refer to these shared helpers rather than duplicating ad-hoc pattern matches.
+- **`LeanProofs/FaultRobustness.lean`**: Fault-robustness specification (top-level theorem statements,
+  `agreeValueUnder`, `agreeOnClean`, `Regime`, etc.).
 
-- [x] **1.1** In `LeanPoison/Syntax.lean`, add:
+- **`LeanProofs/FaultRobustnessProofs.lean`**: Implementation of fault-robustness proofs, including
+  world-indexed step-based reasoning (`StepFRW`, `resultAgreesIfClean`, etc.).
+
+**Guideline**: World-indexing and step-based proof machinery should remain in `FaultRobustnessProofs.lean`
+and not leak into `SemanticsProperties.lean`. The new structural agreement definitions (`agreeCapturedEnv`,
+arrow/parrow cases) belong in `FaultRobustness.lean` (specification level) since `agreeValueUnder` is
+already defined there.
+
+### Stage 1: Add gated arrow/parrow cases to `agreeValueUnder` with stubs
+
+Extend `agreeValueUnder` in `LeanProofs/FaultRobustness.lean` with new **gated** constructors for
+function types (clean via `qt.poison = false` or guard-tag de-poison), using stub predicates initially.
+
+- [ ] **1.1** In `LeanProofs/FaultRobustness.lean`, add new constructors to `agreeValueUnder`:
   ```lean
-  def ETyp.isArrow : ETyp → Bool
-    | .arrow _ _ _ _ => true
-    | _ => false
+  -- Clean arrow (qt.poison = false)
+  | clean_arrow
+      (hclean : qt.poison = false)
+      (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
+      (htcl : tcl ∈ tcls)
+      (hmatch : True)  -- stub: binder/body match
+      (hcap : True)    -- stub: captured env agreement
+      : agreeValueUnder ... qt (.closure x body ρcap₁) (.closure x body ρcap₂)
 
-  def ETyp.isParrow : ETyp → Bool
-    | .parrow _ _ _ _ => true
-    | _ => false
+  -- Guard-only true arrow (de-poison via guard tag)
+  | guardOnly_true_arrow
+      (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
+      (htag : qtypGuardTag qt = some k)
+      (hregime : R.lookup? k = some true)
+      (htcl : tcl ∈ tcls)
+      (hmatch : True)  -- stub
+      (hcap : True)    -- stub
+      : agreeValueUnder ... qt (.closure x body ρcap₁) (.closure x body ρcap₂)
 
-  def ETyp.isFunctionType (t : ETyp) : Bool :=
-    t.isArrow || t.isParrow
+  -- Similar for parrow (clean_parrow, guardOnly_true_parrow)
+  ...
   ```
-- [x] **1.2** Run `lake build` to confirm the project still compiles.
-- [x] **1.3** Suggested commit message: *"LeanPoison: add ETyp.isArrow/isParrow/isFunctionType helpers"*
+- [ ] **1.2** Update **all** cases that imply literal equality for non-references to exclude function
+  types. This includes not just `clean_eq_nonref` but any case like `withPred_true_eq` or similar
+  that could fire for clean function types. Add side condition `qt.etyp.isFunctionType = false`.
+- [ ] **1.3** Update helper lemmas in `FaultRobustness.lean` and `FaultRobustnessProofs.lean` that
+  depend on `agreeValueUnder` to handle the new cases (may require additional pattern matches).
+- [ ] **1.4** Run `lake build` to confirm the project compiles.
+- [ ] **1.5** Suggested commit message: *"FaultRobustness: add gated arrow/parrow cases to agreeValueUnder (stubs)"*
 
-### Stage 2: Fuel-indexed refactor (skeleton + plumbing; closure agreement remains a stub)
+### Stage 2: Implement captured environment agreement
 
-Refactor the world-indexed step theorem and its value-agreement dependency to be indexed by the **type-checking fuel**.
-In practice this cannot be split meaningfully into two separate stages: once `StepFRW` and `agreeValueUnder` are made fuel-indexed,
-all dependent helper lemmas in `LeanProofs/FaultRobustnessProofs.lean` must be updated to mention the fuel parameter, otherwise the
-file will not compile.
+Define the extensional (lookup-based) captured environment agreement predicate and wire it into the
+arrow/parrow cases.
 
-At the end of this stage, the project should compile, but **behavioural closure agreement is still a stub**: `closuresAgreeUnder` need
-not call `StepFRW` yet, and the `fn`/`pfn` proof branches may remain `sorry`.
+- [ ] **2.1** Define `agreeCapturedEnv` over `CapturedVarEnv` using name-based lookup:
+  ```lean
+  def agreeCapturedEnv (predSat : PredSat) (R : Regime)
+      (μ₁ : Memory) (θ₁ : RealizationMap) (μ₂ : Memory) (θ₂ : RealizationMap)
+      (σcap : CapturedVarEnv) (ρcap₁ ρcap₂ : VarEnv) : Prop :=
+    ∀ x qt, σcap.lookup x = some qt →
+      ∀ v₁ v₂, ρcap₁.lookup x = some v₁ → ρcap₂.lookup x = some v₂ →
+        qtypCleanUnder R qt → agreeValueUnder ... qt v₁ v₂
+  ```
+  If this causes Lean kernel issues with mutual recursion, define it inductively over the
+  finite list `σcap : CapturedVarEnv`.
+- [ ] **2.2** Update the `arrow` case to use `agreeCapturedEnv` with proper binder/body matching:
+  - `htcl : tcl ∈ tcls` (witness selection)
+  - `hmatch_binder : tcl.binder = x`
+  - `hmatch_body : tcl.body = body`
+  - `hcap : agreeCapturedEnv ... tcl.σcap ρcap₁ ρcap₂`
+- [ ] **2.3** For `parrow`, handle the `PExpr`/`Expr` body mismatch using `Expr.toPExpr?`:
+  - Use `body.toPExpr? = some pbody ∧ tcl.body = pbody` as the body-match condition
+  - Add bridge lemma: if `pfn` type-checks, then `body.toPExpr?` succeeds and matches `tcl.body`
+- [ ] **2.4** Add helper lemmas for `agreeCapturedEnv` (e.g. relating to `agreeOnClean`).
+- [ ] **2.5** Run `lake build` to confirm the project compiles.
+- [ ] **2.6** Suggested commit message: *"FaultRobustness: implement extensional captured env agreement"*
 
-- [ ] **2.1** In `LeanProofs/FaultRobustnessProofs.lean`, introduce a `mutual` block (all `private`) containing:
-  - `StepFRW (k : Nat) …` (fuel-indexed),
-  - `agreeValueUnder (k : Nat) …` (fuel-indexed), and
-  - `closuresAgreeUnder (k : Nat) …` (fuel-indexed).
+### Stage 3: Discharge `fn` / `pfn` cases in `TypeSystemEnforcesFaultRobustness_stepW`
 
-  At this stage, it is fine for `closuresAgreeUnder` to be a `sorry` stub. In particular, it does **not** need to invoke `StepFRW`
-  on the closure body yet.
-- [ ] **2.2** Refactor `resultAgreesIfClean` and the conclusion of `StepFRW` to use `agreeValueUnder k` (rather than an unindexed relation).
-- [ ] **2.3** Update all local helper lemmas in `LeanProofs/FaultRobustnessProofs.lean` that mention `agreeValueUnder` so that they take an explicit
-  fuel parameter `k` (or are otherwise stated in terms of the new indexed relation). This includes, for example:
-  - lemmas extracting equality for clean non-reference results, and
-  - lemmas transporting/lifting agreement across context/realisation-map changes.
-- [ ] **2.4** Update the conversion lemma that erases worlds to accept the fuel parameter:
-  - `StepFR_of_StepFRW (k : Nat) : StepFRW k ctx R e res predSat → StepFR ctx R e res predSat`.
-  Then update `TypeSystemEnforcesFaultRobustness_step` to instantiate `k := fuel` and apply this lemma as before.
-- [ ] **2.5** Ensure the `fn`/`pfn` branches in `TypeSystemEnforcesFaultRobustness_stepW` remain blocked only by the intended `sorry`
-  (and not by type errors stemming from the refactor).
-- [ ] **2.6** Run `lake build` to confirm the project compiles.
-- [ ] **2.7** Suggested commit message: *"LeanProofs: fuel-index StepFRW and agreement lemmas (closure agreement stub)"*
+Use the structural agreement predicates to eliminate the `sorry` blocks for `Expr.fn` and `Expr.pfn`.
 
-### Stage 3: Implement `closuresAgreeUnder` (replace stub; existential witness over typing-closure lists)
+- [ ] **3.1** In the `Expr.fn` branch, show:
+  - the typing closure list has a witness matching the runtime closure (from `typecheckFn`),
+  - the binder and body match (syntactic, from same source expression),
+  - `agreeCapturedEnv` holds using `agreeOnClean` at function-definition time.
+- [ ] **3.2** Similarly discharge `Expr.pfn`, handling the `PExpr`/`Expr` bridge.
+- [ ] **3.3** Add bridge lemmas connecting `agreeOnClean` to `agreeCapturedEnv`:
+  - For each `(x, qt) ∈ σcap`, if `qtypCleanUnder R qt`, then `agreeOnClean` provides agreement
+    for the values at `ρ₁.lookup x` and `ρ₂.lookup x`.
+- [ ] **3.4** Run `lake build` to confirm the project compiles with no `sorry` in `fn`/`pfn` cases.
+- [ ] **3.5** Suggested commit message: *"FaultRobustnessProofs: discharge fn/pfn cases using structural closure agreement"*
 
-Implement behavioural closure agreement for arrow/parrow values, using the generic witness-based approach (no singleton special-casing):
+### Stage 4: Documentation update
 
-- [ ] **3.1** Define (proof-local) match predicates that relate a runtime closure to a typing closure **by binder and body only**:
-  - for impure: `Value.closure x body ρcap` matches `FnTClosure.regular x body σcap`;
-  - for pure: `Value.peClosure x pbody ρcap` matches `PFnTClosure.regular x pbody σcap`.
+Update the prose documentation to reflect the structural closure agreement design.
 
-  Captured runtime environments are deliberately **not** compared.
-- [ ] **3.2** Define `closuresAgreeUnder` so that it requires:
-  - an existential typing-closure witness `tcl ∈ tcls` matching both runtime closures, and
-  - a universal property over arguments: for “related” arguments (regime-dependent, i.e. required only when the argument type is clean-under-\(R\)),
-    applying the two runtime closures yields results related by `agreeValueUnder` via an invocation of `StepFRW` on the closure body
-    (at a strictly smaller fuel index).
-- [ ] **3.3** In the proof obligations produced by the `StepFRW` call, discharge the `agreeOnClean` premise for the body context by
-  combining:
-  - inherited agreement for captured variables (from the outer `agreeOnClean`), and
-  - the argument-relatedness premise for the binder introduced by `VarEnv.update`.
-- [ ] **3.4** Run `lake build` to confirm the project compiles.
-- [ ] **3.5** Suggested commit message: *"LeanProofs: implement closuresAgreeUnder (existential witness over typing-closure lists)"*
+- [ ] **4.1** Update `doc/poison-lang-description.tex` (Fault Robustness / Formal Properties section)
+  to describe:
+  - that function values are runtime closures that capture environments, so agreement for clean
+    functions cannot be stated as literal closure equality; and
+  - that the proof uses structural closure agreement, comparing binder/body and checking that
+    captured environments agree on clean entries.
+- [ ] **4.2** Run `make -C doc` to confirm the documentation builds.
+- [ ] **4.3** Suggested commit message: *"Doc: describe structural closure agreement in fault-robustness proof"*
 
-### Stage 4: Discharge the `fn` / `pfn` branches in `TypeSystemEnforcesFaultRobustness_stepW`
+### Future work: `app` case
 
-Use the new local machinery to eliminate the `sorry` blocks for `Expr.fn` and `Expr.pfn`.
-
-- [ ] **4.1** In the `Expr.fn` branch, show:
-  - the two runs return runtime closures with the same binder and body (captured environments may differ), and
-  - `agreeValueUnder` holds for the arrow qualified type by applying the arrow/parrow case (delegating to `closuresAgreeUnder`).
-  The existential witness for the typing closure is obtained from the typing-closure list produced by `typecheckFn` (a singleton in this case),
-  but the definition and the proof principle remain the generic “∃ witness in the list” form.
-- [ ] **4.2** Similarly discharge `Expr.pfn` using the parrow variant.
-- [ ] **4.3** Run `lake build` to confirm the project compiles.
-- [ ] **4.4** Suggested commit message: *"LeanProofs: discharge fn/pfn cases using behavioural closure agreement"*
-
-### Stage 5: Consolidate helper lemmas (as needed)
-
-Add narrowly-scoped helper lemmas when they prevent repeated low-level reasoning. Prefer generic, list-based lemmas over singleton-only lemmas, since the closure-list
-design is already non-singleton in other parts of the development.
-
-- [ ] **5.1** List/witness lemmas (e.g. extracting a `FnTClosure.regular …` witness from membership, reasoning about binder/body match).
-- [ ] **5.2** `agreeOnClean` “body-context bridge” lemmas (captured environment + argument binding).
-- [ ] **5.3** Any runtime-instantiation lemmas needed to invoke the indexed `StepFRW` on the body.
-- [ ] **5.4** After each coherent batch of helper lemmas, run `lake build` to confirm the project compiles.
-- [ ] **5.5** Suggested commit message (per batch): *"LeanProofs: add helper lemmas for behavioural closure agreement"*
-
-### Stage 6: Documentation update (last)
-
-Update the prose documentation to reflect the closure-agreement design used by the fault-robustness proof.
-
-- [ ] **6.1** Update `doc/poison-lang-description.tex` (Fault Robustness / Formal Properties section) to describe:
-  - that function values are runtime closures that capture environments, so agreement for clean functions cannot be stated as literal closure equality; and
-  - that the proof uses behavioural (extensional) closure agreement, defined via the (fuel-indexed) world-threaded step theorem on closure bodies.
-- [ ] **6.2** Run `make -C doc` to confirm the documentation still builds.
-- [ ] **6.3** Suggested commit message: *"Doc: describe behavioural closure agreement in fault-robustness proof"*
+The `app` case (function application) will be addressed separately. It requires showing that
+applying structurally agreeing closures to agreeing arguments produces agreeing results. This
+follows from the main theorem's induction hypothesis applied to the closure body evaluation.
