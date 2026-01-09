@@ -294,8 +294,11 @@ def wfInputSpec (s : InputSpec) : Prop :=
   wfInputSpecMem s.locs ∧ wfInputSpecVarsDeep s.vars
 
 -- Well-formedness: observable spec
--- Always correct by construction
-def wfObsSpec (_obs : ObservableSpec) : Prop := True
+-- Return values of function type are not treated as observables.
+def wfObsSpec (obs : ObservableSpec) : Prop :=
+  match obs.retEtyp? with
+  | none => True
+  | some et => et.isFunctionType = false
 
 -- Derive return-observability and a conservative QTyp for the return from ObservableSpec.
 def isRetObservableFromObs (obs : ObservableSpec) : Bool :=
@@ -371,14 +374,58 @@ inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ�
     (qt: QTyp) (v₁ v₂ : Value) : Prop where
   | clean_eq_nonref
       (hpoison : qt.poison = false)
+      (hnotfun : qt.etyp.isFunctionType = false)
       (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
       (hagree : v₁ = v₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
   | poisoned_noPred_eq_nonref
       (hpoison : qt.poison = true)
       (hpred : qt.pred = Predicate.noPred)
+      (hnotfun : qt.etyp.isFunctionType = false)
       (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
       (hagree : v₁ = v₂) :
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  | clean_arrow {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
+      {tcl : FnTClosure} {x : Name} {body : Expr} {ρcap₁ ρcap₂ : VarEnv}
+      (hclean : qt.poison = false)
+      (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
+      (htcl : tcl ∈ tcls)
+      (hmatch : True)  -- stub: binder/body match
+      (hcap : True)    -- stub: captured environment agreement
+      (hv₁ : v₁ = Value.closure x body ρcap₁)
+      (hv₂ : v₂ = Value.closure x body ρcap₂) :
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  | guardOnly_true_arrow {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
+      {k : Tag} {tcl : FnTClosure} {x : Name} {body : Expr} {ρcap₁ ρcap₂ : VarEnv}
+      (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
+      (htag : qtypGuardTag qt = some k)
+      (hregime : R.lookup? k = some true)
+      (htcl : tcl ∈ tcls)
+      (hmatch : True)  -- stub: binder/body match
+      (hcap : True)    -- stub: captured environment agreement
+      (hv₁ : v₁ = Value.closure x body ρcap₁)
+      (hv₂ : v₂ = Value.closure x body ρcap₂) :
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  | clean_parrow {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
+      {tcl : PFnTClosure} {x : Name} {body : Expr} {ρcap₁ ρcap₂ : VarEnv}
+      (hclean : qt.poison = false)
+      (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
+      (htcl : tcl ∈ tcls)
+      (hmatch : True)  -- stub: binder/body match
+      (hcap : True)    -- stub: captured environment agreement
+      (hv₁ : v₁ = Value.peClosure x body ρcap₁)
+      (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
+      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+  | guardOnly_true_parrow {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
+      {k : Tag} {tcl : PFnTClosure} {x : Name} {body : Expr} {ρcap₁ ρcap₂ : VarEnv}
+      (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
+      (htag : qtypGuardTag qt = some k)
+      (hregime : R.lookup? k = some true)
+      (htcl : tcl ∈ tcls)
+      (hmatch : True)  -- stub: binder/body match
+      (hcap : True)    -- stub: captured environment agreement
+      (hv₁ : v₁ = Value.peClosure x body ρcap₁)
+      (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
   | clean_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
       (hpoison : qt.poison = false)
@@ -404,6 +451,7 @@ inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ�
   | withPred_true_eq (k : Tag)
       (htag : qtypGuardTag qt = some k)
       (hregime : R.lookup? k = some true)
+      (hnotfun : qt.etyp.isFunctionType = false)
       (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
       (hagree : v₁ = v₂) :
       agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂

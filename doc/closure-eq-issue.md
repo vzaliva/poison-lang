@@ -384,6 +384,41 @@ limitations that block alternative encodings.
 
 ---
 
+## Implementation Notes
+
+### Observable returns and function types
+
+At the moment, `observablesEqual` treats any **non-reference** return value as
+observable via **literal equality** (`o₁ = o₂`). Since function values are
+runtime closures that capture a `VarEnv`, this would force *structural closure
+equality* (including equality of captured environments), reintroducing the exact
+mismatch described in this note: the step invariant (`agreeOnClean`) only
+provides agreement on **clean-under-\(R\)** context entries, not full
+environment equality.
+
+The implementation therefore adds a *temporary restriction* on observable specs:
+`wfObsSpec` requires that an observed return type is **not** a function type
+(`ETyp.arrow` / `ETyp.parrow`). The intent is that this restriction applies only
+to the **top-level** FR theorem: it is used when converting the step theorem’s
+return-value agreement postcondition into the `observablesEqual` return clause.
+The step theorems themselves do not depend on `wfObsSpec`, so
+evaluation/typechecking of subexpressions may still produce function values;
+they are just not treated as observable *final* return values in the current
+top-level statement.
+
+**Potential future fix (more principled):** redefine return/memory observability in terms of the
+existing agreement relations:
+
+- Use `agreeLocUnder` to compare each observed location in `obs.locs`.
+- Use `agreeValueUnder` to compare the observed return value (with the appropriate `QTyp`).
+
+This would allow observing **clean function returns** via the arrow/parrow
+agreement cases rather than requiring literal closure equality. Implementing
+this likely requires threading `predSat` and the regime `R` (and a `QTyp` for
+each observed type, e.g. from the typechecker result) into the definition of
+`observablesEqual`, or introducing a separate `observablesEqualUnder` predicate.
+However this is left as known design limitation.
+
 ## Implementation plan
 
 This section provides a staged implementation plan. Each stage ends in a state where the project
@@ -417,7 +452,7 @@ already defined there.
 Extend `agreeValueUnder` in `LeanProofs/FaultRobustness.lean` with new **gated** constructors for
 function types (clean via `qt.poison = false` or guard-tag de-poison), using stub predicates initially.
 
-- [ ] **1.1** In `LeanProofs/FaultRobustness.lean`, add new constructors to `agreeValueUnder`:
+- [x] **1.1** In `LeanProofs/FaultRobustness.lean`, add new constructors to `agreeValueUnder`:
   ```lean
   -- Clean arrow (qt.poison = false)
   | clean_arrow
@@ -441,13 +476,13 @@ function types (clean via `qt.poison = false` or guard-tag de-poison), using stu
   -- Similar for parrow (clean_parrow, guardOnly_true_parrow)
   ...
   ```
-- [ ] **1.2** Update **all** cases that imply literal equality for non-references to exclude function
+- [x] **1.2** Update **all** cases that imply literal equality for non-references to exclude function
   types. This includes not just `clean_eq_nonref` but any case like `withPred_true_eq` or similar
   that could fire for clean function types. Add side condition `qt.etyp.isFunctionType = false`.
-- [ ] **1.3** Update helper lemmas in `FaultRobustness.lean` and `FaultRobustnessProofs.lean` that
+- [x] **1.3** Update helper lemmas in `FaultRobustness.lean` and `FaultRobustnessProofs.lean` that
   depend on `agreeValueUnder` to handle the new cases (may require additional pattern matches).
-- [ ] **1.4** Run `lake build` to confirm the project compiles.
-- [ ] **1.5** Suggested commit message: *"FaultRobustness: add gated arrow/parrow cases to agreeValueUnder (stubs)"*
+- [x] **1.4** Run `lake build` to confirm the project compiles.
+- [x] **1.5** Suggested commit message: *"FaultRobustness: add gated arrow/parrow cases to agreeValueUnder (stubs)"*
 
 ### Stage 2: Implement captured environment agreement
 
