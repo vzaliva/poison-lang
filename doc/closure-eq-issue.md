@@ -532,16 +532,16 @@ arrow/parrow cases.
 
 Use the structural agreement predicates to eliminate the `sorry` blocks for `Expr.fn` and `Expr.pfn`.
 
-- [ ] **3.1** In the `Expr.fn` branch, show:
+- [x] **3.1** In the `Expr.fn` branch, show (implemented via `stepFRW_fn`, using `terminatesTo_fn_inv`):
   - the typing closure list has a witness matching the runtime closure (from `typecheckFn`),
   - the binder and body match (syntactic, from same source expression),
   - `agreeCapturedEnv` holds using `agreeOnClean` at function-definition time.
-- [ ] **3.2** Similarly discharge `Expr.pfn`, handling the `PExpr`/`Expr` bridge.
-- [ ] **3.3** Add bridge lemmas connecting `agreeOnClean` to `agreeCapturedEnv`:
+- [x] **3.2** Similarly discharge `Expr.pfn`, handling the `PExpr`/`Expr` bridge (implemented via `stepFRW_pfn`, using `terminatesTo_pfn_inv`).
+- [x] **3.3** Add bridge lemmas connecting `agreeOnClean` to `agreeCapturedEnv`:
   - For each `(x, qt) ∈ σcap`, if `qtypCleanUnder R qt`, then `agreeOnClean` provides agreement
-    for the values at `ρ₁.lookup x` and `ρ₂.lookup x`.
-- [ ] **3.4** Run `lake build` to confirm the project compiles with no `sorry` in `fn`/`pfn` cases.
-- [ ] **3.5** Suggested commit message: *"FaultRobustnessProofs: discharge fn/pfn cases using structural closure agreement"*
+    for the values at `ρ₁.lookup x` and `ρ₂.lookup x` (via `agreeCapturedEnv_of_agreeOnClean` / `_aux` from Stage 2).
+- [x] **3.4** Run `lake build` to confirm the project compiles with no `sorry` in `fn`/`pfn` cases.
+- [x] **3.5** Suggested commit message: *"FaultRobustnessProofs: discharge fn/pfn cases using structural closure agreement"*
 
 ### Stage 4: Documentation update
 

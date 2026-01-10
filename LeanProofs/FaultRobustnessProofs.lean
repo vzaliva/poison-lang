@@ -958,6 +958,48 @@ private lemma terminatesTo_var_inv
           · rfl
           · exact And.intro rfl rfl
 
+private lemma terminatesTo_fn_inv
+  (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  ∀ (w₀ w₁ : Void IO.RealWorld),
+    terminatesToW w₀ w₁ (Expr.fn x paramType body returnType)
+      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧
+    o = Value.closure x body ρ := by
+  intro w₀ w₁ ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp [LeanPoison.beval] at hbeval
+      cases hbeval
+  | succ fuel =>
+      simp [LeanPoison.beval] at hbeval
+      injection hbeval with hcfg hval
+      cases hcfg
+      cases hval
+      constructor <;> rfl
+
+private lemma terminatesTo_pfn_inv
+  (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  ∀ (w₀ w₁ : Void IO.RealWorld),
+    terminatesToW w₀ w₁ (Expr.pfn x paramType body returnType)
+      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧
+    o = Value.peClosure x body ρ := by
+  intro w₀ w₁ ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp [LeanPoison.beval] at hbeval
+      cases hbeval
+  | succ fuel =>
+      simp [LeanPoison.beval] at hbeval
+      injection hbeval with hcfg hval
+      cases hcfg
+      cases hval
+      constructor <;> rfl
+
 private lemma agreeValueUnder_of_agreeVarUnder
   {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {ρ₀ ρ₁ : VarEnv}
   {θ₀ θ₁ : RealizationMap} {x : Name} {qt : QTyp} {v₀ v₁ : Value} :
@@ -4454,6 +4496,225 @@ private lemma stepFRW_printInt
         simp [ho₀, ho₁]
       exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun hnotref hEq
 
+-- Helper lemma for fn expressions
+private lemma stepFRW_fn
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+  (fuel : Nat) (res : TypeResult)
+  (htc : typecheck ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
+  StepFRW ctxᵢ R (Expr.fn x paramType body returnType) res predSat := by
+  have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
+    have h := htc
+    simp [typecheck, typecheckExpr] at h
+    exact h
+  let res_expected : TypeResult := {
+    qualType :=
+      ⟨ETyp.arrow paramType returnType ctxᵢ.pc
+          [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)],
+        ctxᵢ.pc, Predicate.noPred⟩
+    memEnv' := ctxᵢ.memEnv
+    tagEnv' := ctxᵢ.tagEnv
+    nextLoc' := ctxᵢ.nextLoc
+    nextTag' := ctxᵢ.nextTag
+  }
+  have hres : res = res_expected := by
+    have htc' := htcFn
+    simp [typecheckFn] at htc'
+    cases htc'
+    rfl
+  have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+    simp [ctxAfter, hres, res_expected]
+  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm₀ pm₁
+    hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  have hterm₀ :=
+    terminatesTo_fn_inv x paramType body returnType μ₀ ρ₀ a₀ pm₀ cf₀ o₀ w w₀' ht₀
+  have hterm₁ :=
+    terminatesTo_fn_inv x paramType body returnType μ₁ ρ₁ a₁ pm₁ cf₁ o₁ w w₁' ht₁
+  rcases hterm₀ with ⟨hcf₀, ho₀⟩
+  rcases hterm₁ with ⟨hcf₁, ho₁⟩
+  subst hcf₀
+  subst hcf₁
+  -- `fn` does not perform IO, so the world is unchanged.
+  have hw₀' : w₀' = w := by
+    rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+    cases fuel₀ with
+    | zero =>
+        simp [LeanPoison.beval] at hbeval₀
+        cases hbeval₀
+    | succ fuel₀ =>
+        simp [LeanPoison.beval] at hbeval₀
+        injection hbeval₀ with _hres hw
+        exact hw.symm
+  have hw₁' : w₁' = w := by
+    rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+    cases fuel₁ with
+    | zero =>
+        simp [LeanPoison.beval] at hbeval₁
+        cases hbeval₁
+    | succ fuel₁ =>
+        simp [LeanPoison.beval] at hbeval₁
+        injection hbeval₁ with _hres hw
+        exact hw.symm
+  have hcap :
+      agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ :=
+    agreeCapturedEnv_of_agreeOnClean predSat R ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- worlds are equal
+    simp [hw₀', hw₁']
+  · refine ⟨?_, ?_⟩
+    · intro l a hlookup
+      exact hlookup
+    · intro hwf'
+      exact hwf'
+  · refine ⟨?_, ?_⟩
+    · intro l a hlookup
+      exact hlookup
+    · intro hwf'
+      exact hwf'
+  · simpa [hctxAfter] using hwf
+  · -- final config₀ well-formed
+    simpa using hwfcfg₀
+  · -- final config₁ well-formed
+    simpa using hwfcfg₁
+  · simpa [hctxAfter] using hric₀
+  · simpa [hctxAfter] using hric₁
+  · simpa [hctxAfter] using hreg
+  · simpa [hctxAfter] using hagree
+  · intro hclean
+    cases hclean with
+    | inl hpoison =>
+        have hetyp :
+            res.qualType.etyp =
+              ETyp.arrow paramType returnType ctxᵢ.pc
+                [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+          simp [hres, res_expected]
+        have hpred : qtypGuardTag res.qualType = none := by
+          simp [qtypGuardTag, hres, res_expected]
+        exact
+          agreeValueUnder.clean_arrow
+            (tcl := FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv))
+            (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
+            hpoison hetyp (by simp) rfl hcap (by simp [ho₀]) (by simp [ho₁])
+    | inr hguard =>
+        rcases hguard with ⟨k, htag, _hregime⟩
+        have : False := by
+          have hpred : qtypGuardTag res.qualType = none := by
+            simp [qtypGuardTag, hres, res_expected]
+          simp [hpred] at htag
+        exact False.elim this
+
+-- Helper lemma for pfn expressions
+private lemma stepFRW_pfn
+  (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
+  (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+  (fuel : Nat) (res : TypeResult)
+  (htc : typecheck ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
+  StepFRW ctxᵢ R (Expr.pfn x paramType body returnType) res predSat := by
+  have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
+    have h := htc
+    simp [typecheck, typecheckExpr] at h
+    exact h
+  cases hbody : body.toPExpr with
+  | error err =>
+      simp [typecheckPfn, hbody] at htcPfn
+  | ok pbody =>
+      let res_expected : TypeResult := {
+        qualType :=
+          ⟨ETyp.parrow paramType returnType ctxᵢ.pc
+              [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)],
+            ctxᵢ.pc, Predicate.noPred⟩
+        memEnv' := ctxᵢ.memEnv
+        tagEnv' := ctxᵢ.tagEnv
+        nextLoc' := ctxᵢ.nextLoc
+        nextTag' := ctxᵢ.nextTag
+      }
+      have hres : res = res_expected := by
+        have htc' := htcPfn
+        simp [typecheckPfn, hbody] at htc'
+        cases htc'
+        rfl
+      have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+        simp [ctxAfter, hres, res_expected]
+      have hto : Expr.toPExpr? body = some pbody :=
+        Expr_toPExpr?_eq_some_of_toPExpr_ok body pbody hbody
+      intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm₀ pm₁
+        hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+      have hterm₀ :=
+        terminatesTo_pfn_inv x paramType body returnType μ₀ ρ₀ a₀ pm₀ cf₀ o₀ w w₀' ht₀
+      have hterm₁ :=
+        terminatesTo_pfn_inv x paramType body returnType μ₁ ρ₁ a₁ pm₁ cf₁ o₁ w w₁' ht₁
+      rcases hterm₀ with ⟨hcf₀, ho₀⟩
+      rcases hterm₁ with ⟨hcf₁, ho₁⟩
+      subst hcf₀
+      subst hcf₁
+      -- `pfn` does not perform IO, so the world is unchanged.
+      have hw₀' : w₀' = w := by
+        rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+        cases fuel₀ with
+        | zero =>
+            simp [LeanPoison.beval] at hbeval₀
+            cases hbeval₀
+        | succ fuel₀ =>
+            simp [LeanPoison.beval] at hbeval₀
+            injection hbeval₀ with _hres hw
+            exact hw.symm
+      have hw₁' : w₁' = w := by
+        rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+        cases fuel₁ with
+        | zero =>
+            simp [LeanPoison.beval] at hbeval₁
+            cases hbeval₁
+        | succ fuel₁ =>
+            simp [LeanPoison.beval] at hbeval₁
+            injection hbeval₁ with _hres hw
+            exact hw.symm
+      have hcap :
+          agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ :=
+        agreeCapturedEnv_of_agreeOnClean predSat R ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
+      refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · -- worlds are equal
+        simp [hw₀', hw₁']
+      · refine ⟨?_, ?_⟩
+        · intro l a hlookup
+          exact hlookup
+        · intro hwf'
+          exact hwf'
+      · refine ⟨?_, ?_⟩
+        · intro l a hlookup
+          exact hlookup
+        · intro hwf'
+          exact hwf'
+      · simpa [hctxAfter] using hwf
+      · -- final config₀ well-formed
+        simpa using hwfcfg₀
+      · -- final config₁ well-formed
+        simpa using hwfcfg₁
+      · simpa [hctxAfter] using hric₀
+      · simpa [hctxAfter] using hric₁
+      · simpa [hctxAfter] using hreg
+      · simpa [hctxAfter] using hagree
+      · intro hclean
+        cases hclean with
+        | inl hpoison =>
+            have hetyp :
+                res.qualType.etyp =
+                  ETyp.parrow paramType returnType ctxᵢ.pc
+                    [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+              simp [hres, res_expected]
+            exact
+              agreeValueUnder.clean_parrow
+                (tcl := PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv))
+                (pbody := pbody) (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv)
+                (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
+                hpoison hetyp (by simp) (by exact ⟨hto, rfl⟩) hcap (by simp [ho₀]) (by simp [ho₁])
+        | inr hguard =>
+            rcases hguard with ⟨k, htag, _hregime⟩
+            have : False := by
+              have hpred : qtypGuardTag res.qualType = none := by
+                simp [qtypGuardTag, hres, res_expected]
+              simp [hpred] at htag
+            exact False.elim this
+
 private theorem TypeSystemEnforcesFaultRobustness_stepW
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
   TypeSystemEnforcesFaultRobustness_step_specW e ctxᵢ predSat := by
@@ -4602,9 +4863,9 @@ private theorem TypeSystemEnforcesFaultRobustness_stepW
             | succ fuel' =>
                 exact stepFRW_vlet ctxᵢ predSat R vname e1 e2 fuel' res IH htc
         | fn name ty e1 ty2 =>
-            sorry
+            exact stepFRW_fn ctxᵢ predSat R name ty e1 ty2 fuel res htc
         | pfn name ty e1 ty2 =>
-            sorry
+            exact stepFRW_pfn ctxᵢ predSat R name ty e1 ty2 fuel res htc
         | app e1 e2 =>
             sorry
         | rand e =>
