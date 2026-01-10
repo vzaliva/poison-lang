@@ -419,6 +419,27 @@ each observed type, e.g. from the typechecker result) into the definition of
 `observablesEqual`, or introducing a separate `observablesEqualUnder` predicate.
 However this is left as known design limitation.
 
+### Captured environments and duplicate keys
+
+Both runtime environments (`VarEnv`) and captured typing environments (`CapturedVarEnv`) are
+association lists.
+
+- Duplicates in a runtime `VarEnv` are handled: lookup is left-biased (the most recent binding wins).
+- Duplicates in a captured typing environment are *not* handled by the current `agreeCapturedEnv`
+  definition (which is structural over the full list): if duplicate keys were present, agreement
+  obligations would apply to each occurrence rather than only the most recent one.
+- In practice, the captured typing environments used in closures are produced via
+  `VarTypeEnv.toCaptured` (from an `ExtTreeMap`), so duplicate keys do not occur by construction.
+
+### Captured environment agreement vs typing
+
+The current `agreeCapturedEnv` predicate is intentionally *agreement-only*: in the clean case it
+requires that the looked-up values exist in both captured runtime environments and satisfy
+`agreeValueUnder … qt v₁ v₂`, but it does **not** additionally record that `v₁`/`v₂` have enriched type
+`qt.etyp`. When needed, those typing facts are obtained separately from `runtimeInstantiatesCtx` (plus
+the fact that `σcap` comes from `ctx.varEnv` via `VarTypeEnv.toCaptured`), keeping agreement and typing
+obligations modular.
+
 ## Implementation plan
 
 This section provides a staged implementation plan. Each stage ends in a state where the project
@@ -489,28 +510,23 @@ function types (clean via `qt.poison = false` or guard-tag de-poison), using stu
 Define the extensional (lookup-based) captured environment agreement predicate and wire it into the
 arrow/parrow cases.
 
-- [ ] **2.1** Define `agreeCapturedEnv` over `CapturedVarEnv` using name-based lookup:
-  ```lean
-  def agreeCapturedEnv (predSat : PredSat) (R : Regime)
-      (μ₁ : Memory) (θ₁ : RealizationMap) (μ₂ : Memory) (θ₂ : RealizationMap)
-      (σcap : CapturedVarEnv) (ρcap₁ ρcap₂ : VarEnv) : Prop :=
-    ∀ x qt, σcap.lookup x = some qt →
-      ∀ v₁ v₂, ρcap₁.lookup x = some v₁ → ρcap₂.lookup x = some v₂ →
-        qtypCleanUnder R qt → agreeValueUnder ... qt v₁ v₂
-  ```
-  If this causes Lean kernel issues with mutual recursion, define it inductively over the
-  finite list `σcap : CapturedVarEnv`.
-- [ ] **2.2** Update the `arrow` case to use `agreeCapturedEnv` with proper binder/body matching:
+- [x] **2.1** Define `agreeCapturedEnv` over `CapturedVarEnv`.
+  Implemented as an inductive predicate over the finite list `σcap` (to avoid mutual recursion issues):
+  `agreeCapturedEnv.nil`, `agreeCapturedEnv.cons_clean`, `agreeCapturedEnv.cons_dirty`.
+- [x] **2.2** Update the `arrow` case to use `agreeCapturedEnv` with proper binder/body matching:
   - `htcl : tcl ∈ tcls` (witness selection)
-  - `hmatch_binder : tcl.binder = x`
-  - `hmatch_body : tcl.body = body`
+  - implemented as `hmatch : tcl = FnTClosure.regular x body σcap`
   - `hcap : agreeCapturedEnv ... tcl.σcap ρcap₁ ρcap₂`
-- [ ] **2.3** For `parrow`, handle the `PExpr`/`Expr` body mismatch using `Expr.toPExpr?`:
-  - Use `body.toPExpr? = some pbody ∧ tcl.body = pbody` as the body-match condition
-  - Add bridge lemma: if `pfn` type-checks, then `body.toPExpr?` succeeds and matches `tcl.body`
-- [ ] **2.4** Add helper lemmas for `agreeCapturedEnv` (e.g. relating to `agreeOnClean`).
-- [ ] **2.5** Run `lake build` to confirm the project compiles.
-- [ ] **2.6** Suggested commit message: *"FaultRobustness: implement extensional captured env agreement"*
+- [x] **2.3** For `parrow`, handle the `PExpr`/`Expr` body mismatch using `Expr.toPExpr?`:
+  - use `hmatch : Expr.toPExpr? body = some pbody ∧ tcl = PFnTClosure.regular x pbody σcap`
+  - bridge lemmas (in `LeanProofs/FaultRobustnessProofs.lean`):
+    - `Expr_toPExpr?_eq_some_of_toPExpr_ok`
+    - `typecheckPfn_ok_body_toPExpr?`
+- [x] **2.4** Add helper lemmas for `agreeCapturedEnv`:
+  - relating to `agreeOnClean`: `agreeCapturedEnv_of_agreeOnClean` (and `agreeCapturedEnv_of_agreeOnClean_aux`)
+  - transport across realisation-map extensions: `agreeCapturedEnv_clean_extends` (and `agreeValueUnder_clean_extends`)
+- [x] **2.5** Run `lake build` to confirm the project compiles.
+- [x] **2.6** Suggested commit message: *"FaultRobustness: implement extensional captured env agreement"*
 
 ### Stage 3: Discharge `fn` / `pfn` cases in `TypeSystemEnforcesFaultRobustness_stepW`
 

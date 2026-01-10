@@ -302,22 +302,16 @@ private lemma agreeValueUnder_transport_clean
       | guardOnly_true_parrow hetyp1 _ _ htcl hmatch hcap hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           exact agreeValueUnder.clean_parrow hpoison hetyp' htcl hmatch hcap hv₁ hv₂
-      | @clean_ref t ls l₁ l₂ a₁ a₂ _ hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-          have hetyp' : qt.etyp = ETyp.ref t ls := by
-            simpa [hetyp] using hetyp1
-          exact agreeValueUnder.clean_ref hpoison hetyp'
-            hlookup1 hin1 hv1 hlookup2 hin2 hv2
+      | clean_ref _hpoison2 hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+          exact agreeValueUnder.clean_ref hpoison (hetyp.trans hetyp1) hlookup1 hin1 hv1 hlookup2 hin2 hv2
       | poisoned_noPred_ref hpoison' _ _ _ _ _ _ _ =>
           have : false = true := by
             calc
               false = qt2.poison := by symm; exact hpoison2
               _ = true := by exact hpoison'
           cases this
-      | @withPred_true_ref _ t ls l₁ l₂ a₁ a₂ _ _ hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-          have hetyp' : qt.etyp = ETyp.ref t ls := by
-            simpa [hetyp] using hetyp1
-          exact agreeValueUnder.clean_ref hpoison hetyp'
-            hlookup1 hin1 hv1 hlookup2 hin2 hv2
+      | withPred_true_ref _k _htag _hregime hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+          exact agreeValueUnder.clean_ref hpoison (hetyp.trans hetyp1) hlookup1 hin1 hv1 hlookup2 hin2 hv2
       | withPred_false_poisoned_fail _ _ _ _ hpoison' _ _ =>
           have : false = true := by
             calc
@@ -369,21 +363,12 @@ private lemma agreeValueUnder_transport_clean
       | guardOnly_true_parrow hetyp1 _ _ htcl hmatch hcap hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           exact agreeValueUnder.guardOnly_true_parrow hetyp' htag hreg htcl hmatch hcap hv₁ hv₂
-      | @clean_ref t ls l₁ l₂ a₁ a₂ _ hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-          have hetyp' : qt.etyp = ETyp.ref t ls := by
-            simpa [hetyp] using hetyp1
-          exact agreeValueUnder.withPred_true_ref k htag hreg hetyp'
-            hlookup1 hin1 hv1 hlookup2 hin2 hv2
-      | @poisoned_noPred_ref t ls l₁ l₂ a₁ a₂ _ _ hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-          have hetyp' : qt.etyp = ETyp.ref t ls := by
-            simpa [hetyp] using hetyp1
-          exact agreeValueUnder.withPred_true_ref k htag hreg hetyp'
-            hlookup1 hin1 hv1 hlookup2 hin2 hv2
-      | @withPred_true_ref _ t ls l₁ l₂ a₁ a₂ _ _ hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-          have hetyp' : qt.etyp = ETyp.ref t ls := by
-            simpa [hetyp] using hetyp1
-          exact agreeValueUnder.withPred_true_ref k htag hreg hetyp'
-            hlookup1 hin1 hv1 hlookup2 hin2 hv2
+      | clean_ref _hpoison2 hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+          exact agreeValueUnder.withPred_true_ref k htag hreg (hetyp.trans hetyp1) hlookup1 hin1 hv1 hlookup2 hin2 hv2
+      | poisoned_noPred_ref _hpoison2 _hpred2 hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+          exact agreeValueUnder.withPred_true_ref k htag hreg (hetyp.trans hetyp1) hlookup1 hin1 hv1 hlookup2 hin2 hv2
+      | withPred_true_ref _k2 _htag2 _hregime2 hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+          exact agreeValueUnder.withPred_true_ref k htag hreg (hetyp.trans hetyp1) hlookup1 hin1 hv1 hlookup2 hin2 hv2
       | withPred_false_poisoned_fail k' _ htag' hreg' _ _ _ =>
           have hk : k = k' := by
             have : some k = some k' := by
@@ -632,14 +617,8 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
         cases et with
         | ref t ls =>
             cases hret_agree' with
-            | @clean_ref t' ls' l₁ l₂ a₁ a₂ hpoison hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-                have href : ETyp.ref t' ls' = ETyp.ref t ls := by
-                  calc
-                    ETyp.ref t' ls' = res.qualType.etyp := by
-                      symm
-                      exact hetyp
-                    _ = ETyp.ref t ls := by
-                      exact hret_et
+            | @clean_ref _t _ls l₁ l₂ a₁ a₂ _qt _v₁ _v₂ hpoison hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                have href := Eq.trans (Eq.symm hetyp) hret_et
                 cases href
                 refine And.intro ?_ ?_
                 · refine ⟨l₁, ?_⟩
@@ -650,14 +629,8 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
                   refine And.intro hin2 ?_
                   refine ⟨a₂, ?_⟩
                   exact And.intro hlookup2 hv2
-            | @withPred_true_ref k t' ls' l₁ l₂ a₁ a₂ htag hregime hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-                have href : ETyp.ref t' ls' = ETyp.ref t ls := by
-                  calc
-                    ETyp.ref t' ls' = res.qualType.etyp := by
-                      symm
-                      exact hetyp
-                    _ = ETyp.ref t ls := by
-                      exact hret_et
+            | @withPred_true_ref k _t _ls l₁ l₂ a₁ a₂ _qt _v₁ _v₂ htag hregime hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                have href := Eq.trans (Eq.symm hetyp) hret_et
                 cases href
                 refine And.intro ?_ ?_
                 · refine ⟨l₁, ?_⟩
@@ -1044,96 +1017,372 @@ private lemma agreeValueUnder_clean_extends
   agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
   agreeValueUnder predSat R μ₀' μ₁' θ₀' θ₁' qt v₀ v₁ := by
   intro hclean hθ₀ hθ₁ hagree
-  cases hagree with
-  | clean_eq_nonref hpoison hnotfun hnotref hEq =>
-      exact agreeValueUnder.clean_eq_nonref hpoison hnotfun hnotref hEq
-  | clean_arrow hpoison hetyp htcl hmatch hcap hv₁ hv₂ =>
-      exact agreeValueUnder.clean_arrow hpoison hetyp htcl hmatch hcap hv₁ hv₂
-  | guardOnly_true_arrow hetyp htag hreg htcl hmatch hcap hv₁ hv₂ =>
-      exact agreeValueUnder.guardOnly_true_arrow hetyp htag hreg htcl hmatch hcap hv₁ hv₂
-  | clean_parrow hpoison hetyp htcl hmatch hcap hv₁ hv₂ =>
-      exact agreeValueUnder.clean_parrow hpoison hetyp htcl hmatch hcap hv₁ hv₂
-  | guardOnly_true_parrow hetyp htag hreg htcl hmatch hcap hv₁ hv₂ =>
-      exact agreeValueUnder.guardOnly_true_parrow hetyp htag hreg htcl hmatch hcap hv₁ hv₂
-  | clean_ref hpoison hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-      exact agreeValueUnder.clean_ref hpoison hetyp (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2
-  | poisoned_noPred_eq_nonref hpoison hpred _hnotfun _hnotref _hEq =>
-      cases hclean with
-      | inl hpoison' =>
-          have : false = true := by
-            calc
-              false = qt.poison := by symm; exact hpoison'
-              _ = true := by exact hpoison
-          cases this
-      | inr hguard =>
-          rcases hguard with ⟨k, htag, _⟩
-          have htag' : False := by
-            have htag'' := htag
-            simp [qtypGuardTag, hpred] at htag''
-          cases htag'
-  | poisoned_noPred_ref hpoison hpred _hetyp _hlookup1 _hin1 _hv1 _hlookup2 _hin2 _hv2 =>
-      cases hclean with
-      | inl hpoison' =>
-          have : false = true := by
-            calc
-              false = qt.poison := by symm; exact hpoison'
-              _ = true := by exact hpoison
-          cases this
-      | inr hguard =>
-          rcases hguard with ⟨k, htag, _⟩
-          have htag' : False := by
-            have htag'' := htag
-            simp [qtypGuardTag, hpred] at htag''
-          cases htag'
-  | withPred_true_eq k htag hreg hnotfun hnotref hEq =>
-      exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun hnotref hEq
-  | withPred_true_ref k htag hreg hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-      exact agreeValueUnder.withPred_true_ref k htag hreg hetyp
-        (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2
-  | withPred_false_poisoned_fail k _hclos htag hreg hpoison _hfail1 _hfail2 =>
-      cases hclean with
-      | inl hpoison' =>
-          have : false = true := by
-            calc
-              false = qt.poison := by symm; exact hpoison'
-              _ = true := by exact hpoison
-          cases this
-      | inr hguard =>
-          rcases hguard with ⟨k', htag', hreg'⟩
-          have hk : k = k' := by
-            have : some k = some k' := by
+  let motive₁ :
+      (a : QTyp) → (a_1 a_2 : Value) → agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
+    fun qt v₁ v₂ _ =>
+      qtypCleanUnder R qt →
+        θ₀.extendsMap θ₀' →
+          θ₁.extendsMap θ₁' →
+            agreeValueUnder predSat R μ₀' μ₁' θ₀' θ₁' qt v₁ v₂
+  let motive₂ :
+      (a : CapturedVarEnv) → (a_1 a_2 : VarEnv) → agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
+    fun σcap ρcap₁ ρcap₂ _ =>
+      θ₀.extendsMap θ₀' →
+        θ₁.extendsMap θ₁' →
+          agreeCapturedEnv predSat R μ₀' μ₁' θ₀' θ₁' σcap ρcap₁ ρcap₂
+  have htransport : motive₁ qt v₀ v₁ hagree :=
+    agreeValueUnder.rec (predSat := predSat) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
+      (motive_1 := motive₁) (motive_2 := motive₂)
+      (clean_eq_nonref := by
+        intro qt v₁ v₂ hpoison hnotfun hnotref hagree _hclean _hθ₀ _hθ₁
+        exact agreeValueUnder.clean_eq_nonref hpoison hnotfun hnotref hagree)
+      (poisoned_noPred_eq_nonref := by
+        intro qt v₁ v₂ hpoison hpred hnotfun hnotref hagree hclean _hθ₀ _hθ₁
+        cases hclean with
+        | inl hpoison' =>
+            have : false = true := by
               calc
-                some k = qtypGuardTag qt := by symm; exact htag
-                _ = some k' := by exact htag'
-            exact Option.some.inj this
-          subst hk
-          have : (some false : Option Bool) = some true := by
-            calc
-              some false = R.lookup? k := by symm; exact hreg
-              _ = some true := by exact hreg'
-          cases this
-  | guardOnly_false_poisoned_any k hgo hreg hpoison =>
-      cases hclean with
-      | inl hpoison' =>
-          have : false = true := by
-            calc
-              false = qt.poison := by symm; exact hpoison'
-              _ = true := by exact hpoison
-          cases this
-      | inr hguard =>
-          rcases hguard with ⟨k', htag', hreg'⟩
-          have hk : k = k' := by
-            have : some k = some k' := by
+                false = qt.poison := by symm; exact hpoison'
+                _ = true := by exact hpoison
+            cases this
+        | inr hguard =>
+            rcases hguard with ⟨k, htag, _⟩
+            have htag' : False := by
+              have htag'' := htag
+              simp [qtypGuardTag, hpred] at htag''
+            cases htag')
+      (clean_arrow := by
+        intro st1 st2 p tcls qt tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hpoison hetyp htcl hmatch hcap hv₁ hv₂ ihCap _hclean
+          hθ₀ hθ₁
+        exact agreeValueUnder.clean_arrow hpoison hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (guardOnly_true_arrow := by
+        intro st1 st2 p tcls qt k tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hetyp htag hregime htcl hmatch hcap hv₁ hv₂ ihCap
+          _hclean hθ₀ hθ₁
+        exact agreeValueUnder.guardOnly_true_arrow hetyp htag hregime htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (clean_parrow := by
+        intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hpoison hetyp htcl hmatch hcap hv₁ hv₂ ihCap
+          _hclean hθ₀ hθ₁
+        exact agreeValueUnder.clean_parrow hpoison hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (guardOnly_true_parrow := by
+        intro st1 st2 p tcls qt k tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hetyp htag hregime htcl hmatch hcap hv₁ hv₂
+          ihCap _hclean hθ₀ hθ₁
+        exact agreeValueUnder.guardOnly_true_parrow hetyp htag hregime htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (clean_ref := by
+        intro t ls l₁ l₂ a₁ a₂ qt v₁ v₂ hpoison hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 _hclean hθ₀ hθ₁
+        exact agreeValueUnder.clean_ref hpoison hetyp (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2)
+      (poisoned_noPred_ref := by
+        intro t ls l₁ l₂ a₁ a₂ qt v₁ v₂ hpoison hpred hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 hclean _hθ₀ _hθ₁
+        cases hclean with
+        | inl hpoison' =>
+            have : false = true := by
               calc
-                some k = qtypGuardTag qt := by simp [qtypGuardTag, hgo]
-                _ = some k' := by exact htag'
-            exact Option.some.inj this
-          subst hk
-          have : (some false : Option Bool) = some true := by
-            calc
-              some false = R.lookup? k := by symm; exact hreg
-              _ = some true := by exact hreg'
-          cases this
+                false = qt.poison := by symm; exact hpoison'
+                _ = true := by exact hpoison
+            cases this
+        | inr hguard =>
+            rcases hguard with ⟨k, htag, _⟩
+            have htag' : False := by
+              have htag'' := htag
+              simp [qtypGuardTag, hpred] at htag''
+            cases htag')
+      (withPred_true_eq := by
+        intro k qt v₁ v₂ htag hregime hnotfun hnotref hagree _hclean _hθ₀ _hθ₁
+        exact agreeValueUnder.withPred_true_eq k htag hregime hnotfun hnotref hagree)
+      (withPred_true_ref := by
+        intro k t ls l₁ l₂ a₁ a₂ qt v₁ v₂ htag hregime hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 _hclean hθ₀ hθ₁
+        exact agreeValueUnder.withPred_true_ref k htag hregime hetyp
+          (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2)
+      (withPred_false_poisoned_fail := by
+        intro k qt v₁ v₂ hclos htag hregime hpoison hfail1 hfail2 hclean _hθ₀ _hθ₁
+        cases hclean with
+        | inl hpoison' =>
+            have : false = true := by
+              calc
+                false = qt.poison := by symm; exact hpoison'
+                _ = true := by exact hpoison
+            cases this
+        | inr hguard =>
+            rcases hguard with ⟨k', htag', hreg'⟩
+            have hk : k = k' := by
+              have : some k = some k' := by
+                calc
+                  some k = qtypGuardTag qt := by symm; exact htag
+                  _ = some k' := by exact htag'
+              exact Option.some.inj this
+            subst hk
+            have : (some false : Option Bool) = some true := by
+              calc
+                some false = R.lookup? k := by symm; exact hregime
+                _ = some true := by exact hreg'
+            cases this)
+      (guardOnly_false_poisoned_any := by
+        intro k qt v₁ v₂ hgo hregime hpoison hclean _hθ₀ _hθ₁
+        cases hclean with
+        | inl hpoison' =>
+            have : false = true := by
+              calc
+                false = qt.poison := by symm; exact hpoison'
+                _ = true := by exact hpoison
+            cases this
+        | inr hguard =>
+            rcases hguard with ⟨k', htag', hreg'⟩
+            have hk : k = k' := by
+              have : some k = some k' := by
+                calc
+                  some k = qtypGuardTag qt := by simp [qtypGuardTag, hgo]
+                  _ = some k' := by exact htag'
+              exact Option.some.inj this
+            subst hk
+            have : (some false : Option Bool) = some true := by
+              calc
+                some false = R.lookup? k := by symm; exact hregime
+                _ = some true := by exact hreg'
+            cases this)
+      (nil := by
+        intro ρcap₁ ρcap₂ _hθ₀ _hθ₁
+        exact agreeCapturedEnv.nil)
+      (cons_clean := by
+        intro x qt σcap ρcap₁ ρcap₂ v₁ v₂ hclean hlookup1 hlookup2 hagree htail ihAgree ihTail hθ₀ hθ₁
+        exact agreeCapturedEnv.cons_clean hclean hlookup1 hlookup2 (ihAgree hclean hθ₀ hθ₁) (ihTail hθ₀ hθ₁))
+      (cons_dirty := by
+        intro x qt σcap ρcap₁ ρcap₂ hdirty htail ihTail hθ₀ hθ₁
+        exact agreeCapturedEnv.cons_dirty hdirty (ihTail hθ₀ hθ₁))
+      hagree
+  exact htransport hclean hθ₀ hθ₁
+
+private lemma agreeCapturedEnv_clean_extends
+  {predSat : PredSat} {R : Regime} {μ₀ μ₁ μ₀' μ₁' : Memory}
+  {θ₀ θ₁ θ₀' θ₁' : RealizationMap} {σcap : CapturedVarEnv} {ρcap₀ ρcap₁ : VarEnv} :
+  θ₀.extendsMap θ₀' →
+  θ₁.extendsMap θ₁' →
+  agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁ →
+  agreeCapturedEnv predSat R μ₀' μ₁' θ₀' θ₁' σcap ρcap₀ ρcap₁ := by
+  intro hθ₀ hθ₁ hcap
+  let motive₁ :
+      (a : QTyp) → (a_1 a_2 : Value) → agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
+    fun qt v₁ v₂ _ =>
+      qtypCleanUnder R qt →
+        θ₀.extendsMap θ₀' →
+          θ₁.extendsMap θ₁' →
+            agreeValueUnder predSat R μ₀' μ₁' θ₀' θ₁' qt v₁ v₂
+  let motive₂ :
+      (a : CapturedVarEnv) → (a_1 a_2 : VarEnv) → agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
+    fun σcap ρcap₁ ρcap₂ _ =>
+      θ₀.extendsMap θ₀' →
+        θ₁.extendsMap θ₁' →
+          agreeCapturedEnv predSat R μ₀' μ₁' θ₀' θ₁' σcap ρcap₁ ρcap₂
+  have htransport : motive₂ σcap ρcap₀ ρcap₁ hcap :=
+    agreeCapturedEnv.rec (predSat := predSat) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
+      (motive_1 := motive₁) (motive_2 := motive₂)
+      (clean_eq_nonref := by
+        intro qt v₁ v₂ hpoison hnotfun hnotref hagree _hclean _hθ₀ _hθ₁
+        exact agreeValueUnder.clean_eq_nonref hpoison hnotfun hnotref hagree)
+      (poisoned_noPred_eq_nonref := by
+        intro qt v₁ v₂ hpoison hpred hnotfun hnotref hagree hclean _hθ₀ _hθ₁
+        cases hclean with
+        | inl hpoison' =>
+            have : false = true := by
+              calc
+                false = qt.poison := by symm; exact hpoison'
+                _ = true := by exact hpoison
+            cases this
+        | inr hguard =>
+            rcases hguard with ⟨k, htag, _⟩
+            have htag' : False := by
+              have htag'' := htag
+              simp [qtypGuardTag, hpred] at htag''
+            cases htag')
+      (clean_arrow := by
+        intro st1 st2 p tcls qt tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hpoison hetyp htcl hmatch hcap hv₁ hv₂ ihCap _hclean
+          hθ₀ hθ₁
+        exact agreeValueUnder.clean_arrow hpoison hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (guardOnly_true_arrow := by
+        intro st1 st2 p tcls qt k tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hetyp htag hregime htcl hmatch hcap hv₁ hv₂ ihCap
+          _hclean hθ₀ hθ₁
+        exact agreeValueUnder.guardOnly_true_arrow hetyp htag hregime htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (clean_parrow := by
+        intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hpoison hetyp htcl hmatch hcap hv₁ hv₂ ihCap
+          _hclean hθ₀ hθ₁
+        exact agreeValueUnder.clean_parrow hpoison hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (guardOnly_true_parrow := by
+        intro st1 st2 p tcls qt k tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hetyp htag hregime htcl hmatch hcap hv₁ hv₂
+          ihCap _hclean hθ₀ hθ₁
+        exact agreeValueUnder.guardOnly_true_parrow hetyp htag hregime htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (clean_ref := by
+        intro t ls l₁ l₂ a₁ a₂ qt v₁ v₂ hpoison hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 _hclean hθ₀ hθ₁
+        exact agreeValueUnder.clean_ref hpoison hetyp (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2)
+      (poisoned_noPred_ref := by
+        intro t ls l₁ l₂ a₁ a₂ qt v₁ v₂ hpoison hpred hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 hclean _hθ₀ _hθ₁
+        cases hclean with
+        | inl hpoison' =>
+            have : false = true := by
+              calc
+                false = qt.poison := by symm; exact hpoison'
+                _ = true := by exact hpoison
+            cases this
+        | inr hguard =>
+            rcases hguard with ⟨k, htag, _⟩
+            have htag' : False := by
+              have htag'' := htag
+              simp [qtypGuardTag, hpred] at htag''
+            cases htag')
+      (withPred_true_eq := by
+        intro k qt v₁ v₂ htag hregime hnotfun hnotref hagree _hclean _hθ₀ _hθ₁
+        exact agreeValueUnder.withPred_true_eq k htag hregime hnotfun hnotref hagree)
+      (withPred_true_ref := by
+        intro k t ls l₁ l₂ a₁ a₂ qt v₁ v₂ htag hregime hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 _hclean hθ₀ hθ₁
+        exact agreeValueUnder.withPred_true_ref k htag hregime hetyp
+          (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2)
+      (withPred_false_poisoned_fail := by
+        intro k qt v₁ v₂ hclos htag hregime hpoison hfail1 hfail2 hclean _hθ₀ _hθ₁
+        cases hclean with
+        | inl hpoison' =>
+            have : false = true := by
+              calc
+                false = qt.poison := by symm; exact hpoison'
+                _ = true := by exact hpoison
+            cases this
+        | inr hguard =>
+            rcases hguard with ⟨k', htag', hreg'⟩
+            have hk : k = k' := by
+              have : some k = some k' := by
+                calc
+                  some k = qtypGuardTag qt := by symm; exact htag
+                  _ = some k' := by exact htag'
+              exact Option.some.inj this
+            subst hk
+            have : (some false : Option Bool) = some true := by
+              calc
+                some false = R.lookup? k := by symm; exact hregime
+                _ = some true := by exact hreg'
+            cases this)
+      (guardOnly_false_poisoned_any := by
+        intro k qt v₁ v₂ hgo hregime hpoison hclean _hθ₀ _hθ₁
+        cases hclean with
+        | inl hpoison' =>
+            have : false = true := by
+              calc
+                false = qt.poison := by symm; exact hpoison'
+                _ = true := by exact hpoison
+            cases this
+        | inr hguard =>
+            rcases hguard with ⟨k', htag', hreg'⟩
+            have hk : k = k' := by
+              have : some k = some k' := by
+                calc
+                  some k = qtypGuardTag qt := by simp [qtypGuardTag, hgo]
+                  _ = some k' := by exact htag'
+              exact Option.some.inj this
+            subst hk
+            have : (some false : Option Bool) = some true := by
+              calc
+                some false = R.lookup? k := by symm; exact hregime
+                _ = some true := by exact hreg'
+            cases this)
+      (nil := by
+        intro ρcap₁ ρcap₂ _hθ₀ _hθ₁
+        exact agreeCapturedEnv.nil)
+      (cons_clean := by
+        intro x qt σcap ρcap₁ ρcap₂ v₁ v₂ hclean hlookup1 hlookup2 hagree htail ihAgree ihTail hθ₀ hθ₁
+        exact agreeCapturedEnv.cons_clean hclean hlookup1 hlookup2 (ihAgree hclean hθ₀ hθ₁) (ihTail hθ₀ hθ₁))
+      (cons_dirty := by
+        intro x qt σcap ρcap₁ ρcap₂ hdirty htail ihTail hθ₀ hθ₁
+        exact agreeCapturedEnv.cons_dirty hdirty (ihTail hθ₀ hθ₁))
+      hcap
+  exact htransport hθ₀ hθ₁
+
+private lemma Expr_toPExpr?_eq_some_of_toPExpr_ok (e : Expr) (pe : PExpr) :
+  e.toPExpr = .ok pe →
+  Expr.toPExpr? e = some pe := by
+  intro h
+  unfold Expr.toPExpr at h
+  cases hpe : Expr.toPExpr? e with
+  | none =>
+      simp [hpe] at h
+  | some pe' =>
+      -- Goal: `some pe' = some pe`.
+      simp [hpe] at h
+      simp [pure, Except.pure] at h
+      cases h
+      rfl
+
+private lemma typecheckPfn_ok_body_toPExpr?
+  (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) (res : TypeResult) :
+  typecheckPfn ctx x st1 body st2 = .ok res →
+  ∃ pbody,
+    Expr.toPExpr? body = some pbody ∧
+    res.qualType.etyp = ETyp.parrow st1 st2 ctx.pc [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctx.varEnv)] := by
+  intro htc
+  cases hbody : body.toPExpr with
+  | error err =>
+      simp [typecheckPfn, hbody] at htc
+  | ok pbody =>
+      have hto : Expr.toPExpr? body = some pbody :=
+        Expr_toPExpr?_eq_some_of_toPExpr_ok body pbody hbody
+      have hres :
+          res.qualType.etyp =
+            ETyp.parrow st1 st2 ctx.pc [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctx.varEnv)] := by
+        simp [typecheckPfn, hbody] at htc
+        cases htc
+        rfl
+      exact ⟨pbody, hto, hres⟩
+
+private lemma agreeCapturedEnv_of_agreeOnClean_aux
+  (predSat : PredSat) (R : Regime) (ctx : TypeContext)
+  (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap) (σcap : CapturedVarEnv) :
+  runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ →
+  runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
+  agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
+  (∀ x qt, (x, qt) ∈ σcap → ctx.varEnv.lookup x = some qt) →
+  agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ σcap ρ₀ ρ₁ := by
+  intro hric₀ hric₁ hagree
+  rcases hric₀ with ⟨_hmem₀, hvars₀⟩
+  rcases hric₁ with ⟨_hmem₁, hvars₁⟩
+  rcases hagree with ⟨_hlocs, hvarsAg⟩
+  induction σcap with
+  | nil =>
+      intro _hσlookup
+      exact agreeCapturedEnv.nil
+  | cons entry tail ih =>
+      intro hσlookup
+      rcases entry with ⟨x, qt⟩
+      have hσlookup_tail : ∀ x qt, (x, qt) ∈ tail → ctx.varEnv.lookup x = some qt := by
+        intro x qt hx
+        exact hσlookup x qt (by simp [hx])
+      by_cases hclean : qtypCleanUnder R qt
+      · have hctx_lookup : ctx.varEnv.lookup x = some qt :=
+          hσlookup x qt (by simp)
+        have hvarEntry : agreeVarUnder predSat R μ₀ ρ₀ μ₁ ρ₁ θ₀ θ₁ (x, qt) :=
+          hvarsAg x qt hctx_lookup hclean
+        cases hvarEntry with
+        | agree_values _ _ v₀ v₁ hlookup₀ hlookup₁ hagreeVal =>
+            exact agreeCapturedEnv.cons_clean hclean hlookup₀ hlookup₁ hagreeVal (ih hσlookup_tail)
+        | both_none _ _ hnone₀ _hnone₁ =>
+            obtain ⟨v₀, hv₀, _⟩ := hvars₀ hctx_lookup
+            have : (some v₀ : Option Value) = none := by
+              calc
+                some v₀ = ρ₀.lookup x := by symm; exact hv₀
+                _ = none := by exact hnone₀
+            cases this
+      · exact agreeCapturedEnv.cons_dirty hclean (ih hσlookup_tail)
+
+private lemma agreeCapturedEnv_of_agreeOnClean
+  (predSat : PredSat) (R : Regime) (ctx : TypeContext)
+  (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap) :
+  runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ →
+  runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
+  agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
+  agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ ρ₁ := by
+  intro hric₀ hric₁ hagree
+  refine
+    agreeCapturedEnv_of_agreeOnClean_aux predSat R ctx μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctx.varEnv)
+      hric₀ hric₁ hagree ?_
+  intro x qt hmem
+  have hmem' : (x, qt) ∈ ctx.varEnv.toList := by
+    simpa [VarTypeEnv.toCaptured] using hmem
+  have hget : ctx.varEnv[x]? = some qt :=
+    (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some).1 hmem'
+  simpa [VarTypeEnv.lookup, ExtTreeMap.get?_eq_getElem?] using hget
 
 private lemma RealizationMap_lookup_update_ne
   {θ : RealizationMap} {l l' : Loc} {addr : Address} :

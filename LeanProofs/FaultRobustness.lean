@@ -367,118 +367,167 @@ def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : 
   List.Forall (locsRegime predSat R μ θ) s.locs.toList ∧
   List.Forall (varsRegime predSat R μ ρ) s.vars.toList
 
+-- A qualified type is considered clean under regime R if it is clean outright
+-- or if its guard tag is true under R (de-poisoned).
+-- This is the "clean-under-R" predicate used by the step theorem.
+def qtypCleanUnder (R : Regime) (qt : QTyp) : Prop :=
+  qt.poison = false ∨ (∃ k, qtypGuardTag qt = some k ∧ R.lookup? k = some true)
+
 -- Two values agree under a given regime and memory environments.
 -- Clean values must agree; poisoned values may agree vacuously depending on regime.
-inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
-    (θ₁ θ₂ : RealizationMap)
-    (qt: QTyp) (v₁ v₂ : Value) : Prop where
-  | clean_eq_nonref
-      (hpoison : qt.poison = false)
-      (hnotfun : qt.etyp.isFunctionType = false)
-      (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
-      (hagree : v₁ = v₂) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | poisoned_noPred_eq_nonref
-      (hpoison : qt.poison = true)
-      (hpred : qt.pred = Predicate.noPred)
-      (hnotfun : qt.etyp.isFunctionType = false)
-      (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
-      (hagree : v₁ = v₂) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | clean_arrow {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
-      {tcl : FnTClosure} {x : Name} {body : Expr} {ρcap₁ ρcap₂ : VarEnv}
-      (hclean : qt.poison = false)
-      (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
-      (htcl : tcl ∈ tcls)
-      (hmatch : True)  -- stub: binder/body match
-      (hcap : True)    -- stub: captured environment agreement
-      (hv₁ : v₁ = Value.closure x body ρcap₁)
-      (hv₂ : v₂ = Value.closure x body ρcap₂) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | guardOnly_true_arrow {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
-      {k : Tag} {tcl : FnTClosure} {x : Name} {body : Expr} {ρcap₁ ρcap₂ : VarEnv}
-      (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
-      (htag : qtypGuardTag qt = some k)
-      (hregime : R.lookup? k = some true)
-      (htcl : tcl ∈ tcls)
-      (hmatch : True)  -- stub: binder/body match
-      (hcap : True)    -- stub: captured environment agreement
-      (hv₁ : v₁ = Value.closure x body ρcap₁)
-      (hv₂ : v₂ = Value.closure x body ρcap₂) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | clean_parrow {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
-      {tcl : PFnTClosure} {x : Name} {body : Expr} {ρcap₁ ρcap₂ : VarEnv}
-      (hclean : qt.poison = false)
-      (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
-      (htcl : tcl ∈ tcls)
-      (hmatch : True)  -- stub: binder/body match
-      (hcap : True)    -- stub: captured environment agreement
-      (hv₁ : v₁ = Value.peClosure x body ρcap₁)
-      (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | guardOnly_true_parrow {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
-      {k : Tag} {tcl : PFnTClosure} {x : Name} {body : Expr} {ρcap₁ ρcap₂ : VarEnv}
-      (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
-      (htag : qtypGuardTag qt = some k)
-      (hregime : R.lookup? k = some true)
-      (htcl : tcl ∈ tcls)
-      (hmatch : True)  -- stub: binder/body match
-      (hcap : True)    -- stub: captured environment agreement
-      (hv₁ : v₁ = Value.peClosure x body ρcap₁)
-      (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | clean_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
-      (hpoison : qt.poison = false)
-      (hetyp : qt.etyp = ETyp.ref t ls)
-      (hlookup1 : θ₁.lookup l₁ = some a₁)
-      (hin1 : l₁ ∈ ls)
-      (hv1 : v₁ = Value.loc a₁)
-      (hlookup2 : θ₂.lookup l₂ = some a₂)
-      (hin2 : l₂ ∈ ls)
-      (hv2 : v₂ = Value.loc a₂) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | poisoned_noPred_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
-      (hpoison : qt.poison = true)
-      (hpred : qt.pred = Predicate.noPred)
-      (hetyp : qt.etyp = ETyp.ref t ls)
-      (hlookup1 : θ₁.lookup l₁ = some a₁)
-      (hin1 : l₁ ∈ ls)
-      (hv1 : v₁ = Value.loc a₁)
-      (hlookup2 : θ₂.lookup l₂ = some a₂)
-      (hin2 : l₂ ∈ ls)
-      (hv2 : v₂ = Value.loc a₂) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | withPred_true_eq (k : Tag)
-      (htag : qtypGuardTag qt = some k)
-      (hregime : R.lookup? k = some true)
-      (hnotfun : qt.etyp.isFunctionType = false)
-      (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
-      (hagree : v₁ = v₂) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | withPred_true_ref (k : Tag) {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
-      (htag : qtypGuardTag qt = some k)
-      (hregime : R.lookup? k = some true)
-      (hetyp : qt.etyp = ETyp.ref t ls)
-      (hlookup1 : θ₁.lookup l₁ = some a₁)
-      (hin1 : l₁ ∈ ls)
-      (hv1 : v₁ = Value.loc a₁)
-      (hlookup2 : θ₂.lookup l₂ = some a₂)
-      (hin2 : l₂ ∈ ls)
-      (hv2 : v₂ = Value.loc a₂) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | withPred_false_poisoned_fail (k : Tag)
-      (hclos : isGuardClosure qt)
-      (htag : qtypGuardTag qt = some k)
-      (hregime : R.lookup? k = some false)
-      (hpoison : qt.poison = true)
-      (hfail1 : ¬qtypPredHolds predSat qt μ₁ v₁)
-      (hfail2 : ¬qtypPredHolds predSat qt μ₂ v₂) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-  | guardOnly_false_poisoned_any (k : Tag)
-      (hgo : qt.pred = Predicate.guardOnly k)
-      (hregime : R.lookup? k = some false)
-      (hpoison : qt.poison = true) :
-      agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+mutual
+  inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
+      (θ₁ θ₂ : RealizationMap) :
+      QTyp → Value → Value → Prop where
+    | clean_eq_nonref
+        {qt : QTyp} {v₁ v₂ : Value}
+        (hpoison : qt.poison = false)
+        (hnotfun : qt.etyp.isFunctionType = false)
+        (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
+        (hagree : v₁ = v₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | poisoned_noPred_eq_nonref
+        {qt : QTyp} {v₁ v₂ : Value}
+        (hpoison : qt.poison = true)
+        (hpred : qt.pred = Predicate.noPred)
+        (hnotfun : qt.etyp.isFunctionType = false)
+        (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
+        (hagree : v₁ = v₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | clean_arrow {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
+        {qt : QTyp} {tcl : FnTClosure} {x : Name} {body : Expr} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        {v₁ v₂ : Value}
+        (hclean : qt.poison = false)
+        (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
+        (htcl : tcl ∈ tcls)
+        (hmatch : tcl = FnTClosure.regular x body σcap)
+        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
+        (hv₁ : v₁ = Value.closure x body ρcap₁)
+        (hv₂ : v₂ = Value.closure x body ρcap₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | guardOnly_true_arrow {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
+        {qt : QTyp} {k : Tag} {tcl : FnTClosure} {x : Name} {body : Expr} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        {v₁ v₂ : Value}
+        (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
+        (htag : qtypGuardTag qt = some k)
+        (hregime : R.lookup? k = some true)
+        (htcl : tcl ∈ tcls)
+        (hmatch : tcl = FnTClosure.regular x body σcap)
+        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
+        (hv₁ : v₁ = Value.closure x body ρcap₁)
+        (hv₂ : v₂ = Value.closure x body ρcap₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | clean_parrow {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
+        {qt : QTyp} {tcl : PFnTClosure} {x : Name} {body : Expr} {pbody : PExpr} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        {v₁ v₂ : Value}
+        (hclean : qt.poison = false)
+        (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
+        (htcl : tcl ∈ tcls)
+        (hmatch : Expr.toPExpr? body = some pbody ∧ tcl = PFnTClosure.regular x pbody σcap)
+        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
+        (hv₁ : v₁ = Value.peClosure x body ρcap₁)
+        (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | guardOnly_true_parrow {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
+        {qt : QTyp} {k : Tag} {tcl : PFnTClosure} {x : Name} {body : Expr} {pbody : PExpr} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        {v₁ v₂ : Value}
+        (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
+        (htag : qtypGuardTag qt = some k)
+        (hregime : R.lookup? k = some true)
+        (htcl : tcl ∈ tcls)
+        (hmatch : Expr.toPExpr? body = some pbody ∧ tcl = PFnTClosure.regular x pbody σcap)
+        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
+        (hv₁ : v₁ = Value.peClosure x body ρcap₁)
+        (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | clean_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
+        {qt : QTyp} {v₁ v₂ : Value}
+        (hpoison : qt.poison = false)
+        (hetyp : qt.etyp = ETyp.ref t ls)
+        (hlookup1 : θ₁.lookup l₁ = some a₁)
+        (hin1 : l₁ ∈ ls)
+        (hv1 : v₁ = Value.loc a₁)
+        (hlookup2 : θ₂.lookup l₂ = some a₂)
+        (hin2 : l₂ ∈ ls)
+        (hv2 : v₂ = Value.loc a₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | poisoned_noPred_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
+        {qt : QTyp} {v₁ v₂ : Value}
+        (hpoison : qt.poison = true)
+        (hpred : qt.pred = Predicate.noPred)
+        (hetyp : qt.etyp = ETyp.ref t ls)
+        (hlookup1 : θ₁.lookup l₁ = some a₁)
+        (hin1 : l₁ ∈ ls)
+        (hv1 : v₁ = Value.loc a₁)
+        (hlookup2 : θ₂.lookup l₂ = some a₂)
+        (hin2 : l₂ ∈ ls)
+        (hv2 : v₂ = Value.loc a₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | withPred_true_eq (k : Tag)
+        {qt : QTyp} {v₁ v₂ : Value}
+        (htag : qtypGuardTag qt = some k)
+        (hregime : R.lookup? k = some true)
+        (hnotfun : qt.etyp.isFunctionType = false)
+        (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
+        (hagree : v₁ = v₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | withPred_true_ref (k : Tag) {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
+        {qt : QTyp} {v₁ v₂ : Value}
+        (htag : qtypGuardTag qt = some k)
+        (hregime : R.lookup? k = some true)
+        (hetyp : qt.etyp = ETyp.ref t ls)
+        (hlookup1 : θ₁.lookup l₁ = some a₁)
+        (hin1 : l₁ ∈ ls)
+        (hv1 : v₁ = Value.loc a₁)
+        (hlookup2 : θ₂.lookup l₂ = some a₂)
+        (hin2 : l₂ ∈ ls)
+        (hv2 : v₂ = Value.loc a₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | withPred_false_poisoned_fail (k : Tag)
+        {qt : QTyp} {v₁ v₂ : Value}
+        (hclos : isGuardClosure qt)
+        (htag : qtypGuardTag qt = some k)
+        (hregime : R.lookup? k = some false)
+        (hpoison : qt.poison = true)
+        (hfail1 : ¬qtypPredHolds predSat qt μ₁ v₁)
+        (hfail2 : ¬qtypPredHolds predSat qt μ₂ v₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | guardOnly_false_poisoned_any (k : Tag)
+        {qt : QTyp} {v₁ v₂ : Value}
+        (hgo : qt.pred = Predicate.guardOnly k)
+        (hregime : R.lookup? k = some false)
+        (hpoison : qt.poison = true) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+
+  /-- Agreement of captured runtime environments w.r.t. the captured typing environment.
+
+  The captured typing environment `σcap` is a finite association list (produced by `VarTypeEnv.toCaptured`).
+  For each captured entry `(x, qt)`:
+  - if `qt` is clean-under-`R`, then the two runtime captured environments must bind `x` to values `v₁` and
+    `v₂` that agree under `agreeValueUnder`;
+  - otherwise, there is no agreement obligation for `x`.
+
+  This is defined inductively over the finite list `σcap` to support structural inversion and recursion in
+  proofs (e.g. when transporting agreement across realisation-map extensions).
+  -/
+  inductive agreeCapturedEnv (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
+      (θ₁ θ₂ : RealizationMap) :
+      CapturedVarEnv → VarEnv → VarEnv → Prop where
+    | nil {ρcap₁ ρcap₂ : VarEnv} :
+        agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ [] ρcap₁ ρcap₂
+    | cons_clean {x : Name} {qt : QTyp} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        {v₁ v₂ : Value}
+        (hclean : qtypCleanUnder R qt)
+        (hlookup1 : ρcap₁.lookup x = some v₁)
+        (hlookup2 : ρcap₂.lookup x = some v₂)
+        (hagree : agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂)
+        (htail : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂) :
+        agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ ((x, qt) :: σcap) ρcap₁ ρcap₂
+    | cons_dirty {x : Name} {qt : QTyp} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        (hdirty : ¬ qtypCleanUnder R qt)
+        (htail : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂) :
+        agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ ((x, qt) :: σcap) ρcap₁ ρcap₂
+end
 
 -- Two initial states agree on a critical location under a given regime.
 -- Note: address agreement for refs lives in agreeValueUnder; heap contents
@@ -527,12 +576,6 @@ def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
   let memMatches : Prop :=
     ∀ l et, obs.locs.lookup l = some et → ∃ qt, (res.memEnv'.lookup l = some qt ∧ qt.etyp = et ∧ qt.poison = false)
   retMatches ∧ memMatches
-
--- A qualified type is considered clean under regime R if it is clean outright
--- or if its guard tag is true under R (de-poisoned).
--- This is the "clean-under-R" predicate used by the step theorem.
-def qtypCleanUnder (R : Regime) (qt : QTyp) : Prop :=
-  qt.poison = false ∨ (∃ k, qtypGuardTag qt = some k ∧ R.lookup? k = some true)
 
 -- Agreement on all clean items in the typing context (variables and locations).
 -- This is the step-level invariant: only clean-under-R entries must agree.
