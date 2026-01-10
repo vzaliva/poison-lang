@@ -547,14 +547,20 @@ Use the structural agreement predicates to eliminate the `sorry` blocks for `Exp
 
 Update the prose documentation to reflect the structural closure agreement design.
 
-- [ ] **4.1** Update `doc/poison-lang-description.tex` (Fault Robustness / Formal Properties section)
+- [x] **4.0** Add comment to `agreeValueUnder` that when comparing closures it assumes
+     they are structurally similar (coming from two executions of the same code) and body
+     and argument name must match, while captured env. is compared wrt. \(R\).
+- [x] **4.1** Update `doc/poison-lang-description.tex` (Fault Robustness / Formal Properties section)
   to describe:
+  - design decision that per `observablesEqual` functions are not
+    allowed to be observable. (pragmatic limitaion, no conceptual
+    issue to extend to functoins later if needed).
   - that function values are runtime closures that capture environments, so agreement for clean
     functions cannot be stated as literal closure equality; and
   - that the proof uses structural closure agreement, comparing binder/body and checking that
     captured environments agree on clean entries.
-- [ ] **4.2** Run `make -C doc` to confirm the documentation builds.
-- [ ] **4.3** Suggested commit message: *"Doc: describe structural closure agreement in fault-robustness proof"*
+- [x] **4.2** Run `make -C doc` to confirm the documentation builds.
+- [x] **4.3** Suggested commit message: *"Doc: describe structural closure agreement in fault-robustness proof"*
 
 ### Future work: `app` case
 

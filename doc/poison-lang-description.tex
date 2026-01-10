@@ -1347,6 +1347,29 @@ that the bound expression is itself clean under $R$, hence it agrees across the
 two runs; the random calls therefore use the same bound and, by world
 determinism, return the same sampled number.
 
+\paragraph{Structural agreement for closures.}
+Agreement in the fault-robustness step theorem is \emph{type-directed}: for clean
+non-reference base values (\texttt{int}, \texttt{bool}, \texttt{unit}) it reduces
+to literal equality, and for references it compares the concrete heap cells
+selected by the two realisation maps. Function values require special treatment.
+The evaluator produces runtime closures $\text{closure}(x,e,\rho)$ and pure
+closures $\text{pe\_closure}(x,e,\rho)$ that capture the entire runtime
+environment $\rho$ at definition time. Since the two-run invariant only enforces
+agreement on context entries that are clean under $R$, the captured environments
+may legitimately differ on poisoned bindings; therefore, demanding propositional
+equality of closures would be too strong.
+Instead, the proof uses a \emph{structural closure agreement}: two closures agree
+when their parameter names and bodies match syntactically (no alpha-equivalence),
+and their captured runtime environments agree on each captured variable whose
+qualified type is clean under $R$ (as determined by the typing closure's captured
+typing environment).
+At the top level, the current \texttt{observablesEqual} predicate treats
+non-reference return values as observable by literal equality, so (as a pragmatic
+limitation) the well-formedness condition for observable specs disallows function
+returns from being observable. There is no conceptual obstacle to observing clean
+function returns: one would instead define observability of functions in terms of
+this structural closure agreement.
+
 The construct \texttt{frand} models faulty randomness. It returns a value that
 is syntactically poisoned and is guarded by a fresh tag drawn from the typing
 context's tag supply. By boundedness of regimes (Definition \emph{Guard Regime}),

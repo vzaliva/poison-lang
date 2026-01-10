@@ -394,6 +394,9 @@ mutual
         (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
         (hagree : v₁ = v₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    -- Closure agreement cases are intended for comparing values produced by two executions of the same code.
+    -- We require the parameter name and body to match syntactically (no alpha-equivalence), and compare the
+    -- captured runtime environments only on entries that are clean under the regime `R` (via `agreeCapturedEnv`).
     | clean_arrow {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
         {qt : QTyp} {tcl : FnTClosure} {x : Name} {body : Expr} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
         {v₁ v₂ : Value}
