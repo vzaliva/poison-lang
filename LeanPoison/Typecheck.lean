@@ -1411,8 +1411,16 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-    -- Premise 1: pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
-    let result1 ← typecheckExpr ctx e1 fuel
+    -- NOTE: The operational semantics evaluates application argument-first (see `beval`),
+    -- so we typecheck the argument before the function to mirror the evaluation order.
+    --
+    -- Premise 1 (re-ordered): pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G' ; L'
+    let result2 ← typecheckExpr ctx e2 fuel
+    let ⟨etyp2, p2, pred2⟩ := result2.qualType
+
+    -- Premise 2 (re-ordered): pc ; G' ; S ; L' |- e1 : ST1 -> ST2 # p typing_closure (...) :> p1 { P1 } -| G'' ; L''
+    let ctx' := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+    let result1 ← typecheckExpr ctx' e1 fuel
     let ⟨etyp1, p1, _pred1⟩ := result1.qualType
     match etyp1 with
     | ETyp.arrow st1 st2 p tcls =>
@@ -1423,11 +1431,6 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       -- Check for empty closure list (should never happen in well-formed programs)
       if tcls.isEmpty then
         throw "Function type has empty closure set"
-
-      -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
-      let result2 ← typecheckExpr ctx' e2 fuel
-      let ⟨etyp2, p2, pred2⟩ := result2.qualType
 
       -- Premise 3: ST1 <: T1 (check subtyping)
       if not (isSubtype st1 result2.qualType) then
@@ -1444,11 +1447,6 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       -- Check for empty closure list (should never happen in well-formed programs)
       if tcls.isEmpty then
         throw "Function type has empty closure set"
-
-      -- Premise 2: pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
-      let result2 ← typecheckExpr ctx' e2 fuel
-      let ⟨etyp2, p2, pred2⟩ := result2.qualType
 
       -- Premise 3: ST1 <: T1 (check subtyping)
       if not (isSubtype st1 result2.qualType) then
