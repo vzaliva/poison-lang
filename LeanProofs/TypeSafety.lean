@@ -1490,18 +1490,185 @@ private lemma typecheckIf_nextTag_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fu
   | zero => unfold typecheckIf at htc; simp at htc
   | succ fuel' => sorry  -- Complex proof due to two branches and matchGuard
 
--- Helper lemma for typecheckApp: preserves nextTag' from result2
-lemma typecheckApp_preserves_nextTag (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
-  typecheckApp ctx e1 e2 fuel = .ok res →
-  ∃ (result1 result2 : TypeResult) (ctx' : TypeContext),
-    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
-    ctx' = { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' } ∧
-    typecheckExpr ctx' e2 (fuel - 1) = .ok result2 ∧
-    res.nextTag' = result2.nextTag' := by
-  intro htc
-  cases fuel with
-  | zero => unfold typecheckApp at htc; simp at htc
-  | succ fuel' => sorry  -- Detailed proof requires case analysis
+private lemma joinTypeResults_nextTag_eq_max
+  (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) :
+    joinTypeResults ctx r rs = .ok res →
+    res.nextTag' = List.max (r.nextTag' :: rs.map TypeResult.nextTag') (by intro h; cases h) := by
+  intro hjoin
+  -- Helper: the join fold computes the max of nextTag' across the list.
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) (result : TypeResult) =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvs acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              max acc.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2 result.nextTag')
+  have h_fold_nextTag :
+      ∀ (rs : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag),
+        List.foldlM joinStep acc rs = Except.ok acc' →
+        acc'.2.2.2.2.2.2 = List.foldl max acc.2.2.2.2.2.2 (rs.map TypeResult.nextTag') := by
+    intro rs acc acc' h
+    induction rs generalizing acc with
+    | nil =>
+        simp [List.foldlM_nil, pure, Except.pure] at h
+        cases h
+        simp
+    | cons x xs ih =>
+        cases hqx : x.qualType with
+        | mk resEtyp resPoison resPred =>
+            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at h
+            -- h is now about the tail fold; apply the IH.
+            have h' := ih _ h
+            -- foldl on a cons updates the max with the head.
+            simpa [List.foldl_cons] using h'
+  -- Unfold joinTypeResults and split on the fold checks.
+  cases hqt : r.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw, TypecheckM] at hjoin
+      cases hcheck :
+          (List.foldlM
+      (fun x result =>
+        match result.qualType with
+        | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+          if beqETypSignature etyp resEtyp = false then
+            Except.error
+              (toString "Closure alternatives produced incompatible result types: " ++ toString (repr etyp) ++
+                  toString " vs " ++
+                toString (repr resEtyp))
+          else Except.ok ())
+      () rs : Except String Unit) with
+      | error err =>
+          erw [hcheck] at hjoin
+          simp at hjoin
+      | ok _ =>
+          erw [hcheck] at hjoin
+          simp at hjoin
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, r.memEnv', poison, pred, r.tagEnv', r.nextLoc', r.nextTag') rs with
+          | error err =>
+              erw [hfold] at hjoin
+              simp at hjoin
+          | ok a =>
+              erw [hfold] at hjoin
+              simp at hjoin
+              subst res
+              simp
+              have h_fold := h_fold_nextTag rs _ _ hfold
+              -- List.max on a non-empty list is foldl max.
+              simpa [List.max] using h_fold
+
+private lemma applyFnTClosure_nextTag_mono
+  (tcl : FnTClosure) (ctx : TypeContext)
+  (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (r1 r2 : TypeResult) (fuel : Nat)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        typecheck ctx' e m = .ok res' → ctx'.nextTag ≤ res'.nextTag') :
+  applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
+  r1.nextTag' ≤ r2.nextTag' := by
+  intro happly
+  unfold applyFnTClosure at happly
+  cases fuel <;> simp at happly
+  cases tcl <;> simp at happly
+  · simp [bind, Except.bind] at happly
+    rcases htc : typecheckExpr _ _ _ with _ | ⟨r⟩
+      <;> rw [htc] at happly
+      <;> simp at happly
+    rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
+    simp [hqt] at happly
+    rcases hsub : isSubtype st2 _
+      <;> rw [hsub] at happly
+      <;> simp at happly
+    · simp [Functor.map, Except.map] at happly
+    · simp [pure, Except.pure] at happly
+      subst r2
+      specialize IH _ (lt_add_one _) _ _ _ htc
+      simp at IH
+      exact IH
+  · simp [bind, Except.bind] at happly
+    rename_i argName retSpec effects capturedEnv
+    set unifiedEnv :=
+      (VarTypeEnv.ofCaptured capturedEnv).update argName
+        { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred }
+    split at happly
+    · cases happly
+    · cases retSpec with
+      | nestedFn innerArg innerArgTyp innerRet innerEffects =>
+          simp [pure, Except.pure] at happly
+          cases happly
+          exact le_rfl
+      | nestedPfn innerArg innerArgTyp innerRet =>
+          simp [pure, Except.pure] at happly
+          cases happly
+          exact le_rfl
+      | simple typ poison pred =>
+          simp at happly
+          split at happly
+          · cases happly
+          · rename_i hret retVal
+            cases hret_etyp : hret.1.etyp with
+            | ref t ls =>
+                simp [hret_etyp] at happly
+                split at happly
+                · simp [Functor.map, Except.map] at happly
+                  split at happly
+                  · cases happly
+                  · cases happly
+                    exact le_rfl
+                · simp [pure, Except.pure] at happly
+                  cases happly
+                  exact le_rfl
+            | int =>
+                simp [hret_etyp] at happly
+                split at happly
+                · simp [Functor.map, Except.map] at happly
+                · simp [pure, Except.pure] at happly
+                  cases happly
+                  exact le_rfl
+            | bool =>
+                simp [hret_etyp] at happly
+                split at happly
+                · simp [Functor.map, Except.map] at happly
+                · simp [pure, Except.pure] at happly
+                  cases happly
+                  exact le_rfl
+            | unit =>
+                simp [hret_etyp] at happly
+                split at happly
+                · simp [Functor.map, Except.map] at happly
+                · simp [pure, Except.pure] at happly
+                  cases happly
+                  exact le_rfl
+            | string =>
+                simp [hret_etyp] at happly
+                split at happly
+                · simp [Functor.map, Except.map] at happly
+                · simp [pure, Except.pure] at happly
+                  cases happly
+                  exact le_rfl
+            | arrow arg retTy poison tcls =>
+                simp [hret_etyp] at happly
+                split at happly
+                · simp [Functor.map, Except.map] at happly
+                · simp [pure, Except.pure] at happly
+                  cases happly
+                  exact le_rfl
+            | parrow arg retTy poison tcls =>
+                simp [hret_etyp] at happly
+                split at happly
+                · simp [Functor.map, Except.map] at happly
+                · simp [pure, Except.pure] at happly
+                  cases happly
+                  exact le_rfl
 
 private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
@@ -1510,22 +1677,231 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
   typecheckApp ctx e1 e2 fuel = .ok res →
   ctx.nextTag ≤ res.nextTag' := by
   intro htc
-  have hstruct := typecheckApp_preserves_nextTag ctx e1 e2 fuel res htc
-  rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, hnexttag⟩
-  cases fuel with
-  | zero => unfold typecheckApp at htc; simp at htc
-  | succ fuel' =>
-      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-      have htc1_simp : typecheckExpr ctx e1 fuel' = .ok result1 := by simpa using htc1
-      have IH1 := IH fuel' h_fuel e1 ctx result1 htc1_simp
-      have htc2_simp : typecheckExpr ctx' e2 fuel' = .ok result2 := by simpa using htc2
-      have IH2 := IH fuel' h_fuel e2 ctx' result2 htc2_simp
-      have h_ctx'_nextTag : ctx'.nextTag = result1.nextTag' := by simp [hctx']
-      calc ctx.nextTag
-        _ ≤ result1.nextTag' := IH1
-        _ = ctx'.nextTag := h_ctx'_nextTag.symm
-        _ ≤ result2.nextTag' := IH2
-        _ = res.nextTag' := hnexttag.symm
+  unfold typecheckApp at htc
+  cases fuel <;> simp at htc
+  rename_i fuel'
+  simp [bind, Except.bind] at htc
+  rcases hcte2 : typecheckExpr ctx e2 _ with _ | ⟨res2⟩
+    <;> rw [hcte2] at htc
+    <;> simp at htc
+  rcases hq2 : res2.qualType with ⟨etyp2, poison2, pred2⟩
+  simp [hq2] at htc
+  set ctx' : TypeContext := {
+    pc := ctx.pc,
+    memEnv := res2.memEnv',
+    varEnv := ctx.varEnv,
+    tagEnv := res2.tagEnv',
+    nextLoc := res2.nextLoc',
+    nextTag := res2.nextTag',
+    pureCtx := ctx.pureCtx } with hctx'
+  rcases htce1 : typecheckExpr ctx' e1 _ with _ | ⟨res1⟩
+    <;> rw [htce1] at htc
+    <;> simp at htc
+  rcases hq1 : res1.qualType with ⟨etyp1, poison1, pred1⟩
+  simp [hq1] at htc
+  rcases etyp1 with _ | _ | _ | _ | _ | ⟨t1, t2, p, fs⟩ | _
+    <;> simp at htc
+  · rcases hctx : ctx.pureCtx <;> simp [hctx] at htc
+    rcases fs with _ | ⟨f, fs'⟩ <;> simp at htc
+    rcases hsub1 : isSubtype t1 _
+      <;> rw [hsub1] at htc
+      <;> simp at htc
+    simp [bind, Except.bind] at htc
+    rcases happly : applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res2 _ with _ | ⟨r⟩
+      <;> rw [happly] at htc
+      <;> simp at htc
+    rcases hcons : List.cons r <$> List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs' with _ | ⟨rs⟩
+      <;> rw [hcons] at htc
+      <;> simp at htc
+    rcases hrs : rs with _ | ⟨r1, rs'⟩
+      <;> rw [hrs] at htc
+      <;> simp at htc
+    subst rs
+    simp [Functor.map, Except.map] at hcons
+    rcases hmap : List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs' with _ | ⟨rs''⟩
+      <;> rw [hmap] at hcons
+      <;> simp at hcons
+    rcases hcons with ⟨heq1, heq2⟩
+    subst r1
+    subst rs''
+    -- ctx.nextTag <= res1.nextTag (by IH on htce1)
+    -- res1.nextTag = ctx'.nextTag
+    -- ctx'.nextTag <= res2.nextTag (by IH on hcte2)
+    -- res2.nextTag <= r.nextTag (by applyFnTClosure_nextTag_mono)
+    -- forall r in rs', res2.nextTag <= r.nextTag (by applyFnTClosure_nextTag_mono)
+    -- res2.nextTag <= max (r.nextTag, map rs' .nextTag) (follows from above)
+    -- max (res2.nextTag, map rs' .nextTag) = res.nextTag (by joinTypeResults_nextTag_eq_max)
+    have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
+    have hcte2' : typecheck ctx e2 fuel' = .ok res2 := by
+      simpa [typecheck] using hcte2
+    have IH2 := IH fuel' h_fuel e2 ctx res2 hcte2'
+    have htce1' : typecheck ctx' e1 fuel' = .ok res1 := by
+      simpa [typecheck] using htce1
+    have _IH1 := IH fuel' h_fuel e1 ctx' res1 htce1'
+    have IH' :
+        ∀ m < fuel', ∀ (e : Expr) (ctx'' : TypeContext) (res' : TypeResult),
+          typecheck ctx'' e m = .ok res' → ctx''.nextTag ≤ res'.nextTag' := by
+      intro m hm e ctx'' res' htc'
+      exact IH m (Nat.lt_trans hm h_fuel) e ctx'' res' htc'
+    have h_r : res2.nextTag' ≤ r.nextTag' := by
+      exact applyFnTClosure_nextTag_mono f ctx t1 t2 p poison1 etyp2 poison2 pred2 res2 r fuel' IH' happly
+    have h_join :
+        res.nextTag' =
+          List.max (r.nextTag' :: rs'.map TypeResult.nextTag') (by intro h; cases h) :=
+      joinTypeResults_nextTag_eq_max ctx r rs' res htc
+    have h_r_le_res : r.nextTag' ≤ res.nextTag' := by
+      have h_r_le_max :
+          r.nextTag' ≤
+            List.max (r.nextTag' :: rs'.map TypeResult.nextTag') (by intro h; cases h) := by
+        apply List.le_max_of_mem
+        simp
+      simpa [h_join] using h_r_le_max
+    calc
+      ctx.nextTag ≤ res2.nextTag' := IH2
+      _ = ctx'.nextTag := by simp [hctx']
+      _ ≤ r.nextTag' := h_r
+      _ ≤ res.nextTag' := h_r_le_res
+  · rename_i st1 st2 p tcls
+    rcases tcls with _ | ⟨f, fs'⟩ <;> simp at htc
+    rcases hsub1 : isSubtype st1 _
+      <;> rw [hsub1] at htc
+      <;> simp at htc
+    simp [bind, Except.bind] at htc
+    rcases happly : applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res2 _ with _ | ⟨r⟩
+      <;> rw [happly] at htc
+      <;> simp at htc
+    rcases hcons :
+        List.cons r <$>
+          List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs'
+        with _ | ⟨rs⟩
+      <;> rw [hcons] at htc
+      <;> simp at htc
+    rcases hrs : rs with _ | ⟨r1, rs'⟩
+      <;> rw [hrs] at htc
+      <;> simp at htc
+    subst rs
+    simp [Functor.map, Except.map] at hcons
+    rcases hmap :
+        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs'
+        with _ | ⟨rs''⟩
+      <;> rw [hmap] at hcons
+      <;> simp at hcons
+    rcases hcons with ⟨heq1, heq2⟩
+    subst r1
+    subst rs''
+    have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
+    have hcte2' : typecheck ctx e2 fuel' = .ok res2 := by
+      simpa [typecheck] using hcte2
+    have IH2 := IH fuel' h_fuel e2 ctx res2 hcte2'
+    have htce1' : typecheck ctx' e1 fuel' = .ok res1 := by
+      simpa [typecheck] using htce1
+    have _IH1 := IH fuel' h_fuel e1 ctx' res1 htce1'
+    have IH' :
+        ∀ m < fuel', ∀ (e : Expr) (ctx'' : TypeContext) (res' : TypeResult),
+          typecheck ctx'' e m = .ok res' → ctx''.nextTag ≤ res'.nextTag' := by
+      intro m hm e ctx'' res' htc'
+      exact IH m (Nat.lt_trans hm h_fuel) e ctx'' res' htc'
+    have h_r : res2.nextTag' ≤ r.nextTag' := by
+      unfold applyPFnTClosure at happly
+      cases fuel' with
+      | zero =>
+          simp at happly
+      | succ fuel'' =>
+          cases f with
+          | regular x body env =>
+              simp [bind, Except.bind] at happly
+              cases htc_body : typecheckExpr _ _ _ with
+              | error err =>
+                  rw [htc_body] at happly
+                  simp at happly
+              | ok r3 =>
+                  rw [htc_body] at happly
+                  simp at happly
+                  rcases hq3 : r3.qualType with ⟨etyp3, poison3, pred3⟩
+                  simp [hq3] at happly
+                  cases hsub : isSubtype st2 { etyp := etyp3, poison := poison3, pred := pred3 } with
+                  | false =>
+                      rw [hsub] at happly
+                      simp at happly
+                  | true =>
+                      rw [hsub] at happly
+                      simp [pure, Except.pure] at happly
+                      set ctx'' : TypeContext :=
+                        { pc := joinPoison p (joinPoison ctx.pc poison1),
+                          memEnv := res2.memEnv',
+                          varEnv :=
+                            (VarTypeEnv.ofCaptured env).update x
+                              { etyp := etyp2, poison := joinPoison ctx.pc poison2, pred := pred2 },
+                          tagEnv := res2.tagEnv',
+                          nextLoc := res2.nextLoc',
+                          nextTag := res2.nextTag',
+                          pureCtx := true } with hctx''
+                      have htc_body' : typecheck ctx'' body.toExpr fuel'' = .ok r3 := by
+                        simpa [typecheck, hctx''] using htc_body
+                      have IH_body := IH' fuel'' (Nat.lt_succ_self fuel'') body.toExpr ctx'' r3 htc_body'
+                      cases happly
+                      simpa using IH_body
+          | extern x retSpec capturedEnv =>
+              cases retSpec with
+              | simple typ poison pred =>
+                  simp [bind, Except.bind] at happly
+                  cases hret : returnSpecToQTyp _ _ _ _ _ with
+                  | error err =>
+                      rw [hret] at happly
+                      simp at happly
+                  | ok ret =>
+                      rw [hret] at happly
+                      simp [pure, Except.pure] at happly
+                      cases happly
+                      exact le_rfl
+              | nestedFn innerArg innerArgTyp innerRet innerEffects =>
+                  simp [pure, Except.pure] at happly
+                  cases happly
+                  exact le_rfl
+              | nestedPfn innerArg innerArgTyp innerRet =>
+                  simp [pure, Except.pure] at happly
+                  cases happly
+                  exact le_rfl
+    have h_join :
+        res.nextTag' =
+          List.max (r.nextTag' :: rs'.map TypeResult.nextTag') (by intro h; cases h) :=
+      joinTypeResults_nextTag_eq_max ctx r rs' res htc
+    have h_r_le_res : r.nextTag' ≤ res.nextTag' := by
+      have h_r_le_max :
+          r.nextTag' ≤
+            List.max (r.nextTag' :: rs'.map TypeResult.nextTag') (by intro h; cases h) := by
+        apply List.le_max_of_mem
+        simp
+      simpa [h_join] using h_r_le_max
+    calc
+      ctx.nextTag ≤ res2.nextTag' := IH2
+      _ = ctx'.nextTag := by simp [hctx']
+      _ ≤ r.nextTag' := h_r
+      _ ≤ res.nextTag' := h_r_le_res
+
+-- private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
+--     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+--       typecheck ctx' e m = .ok res' →
+--       ctx'.nextTag ≤ res'.nextTag') :
+--   typecheckApp ctx e1 e2 fuel = .ok res →
+--   ctx.nextTag ≤ res.nextTag' := by
+--   intro htc
+--   have hstruct := typecheckApp_preserves_nextTag ctx e1 e2 fuel res htc
+--   rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, hnexttag⟩
+--   cases fuel with
+--   | zero => unfold typecheckApp at htc; simp at htc
+--   | succ fuel' =>
+--       have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+--       have htc1_simp : typecheckExpr ctx e1 fuel' = .ok result1 := by simpa using htc1
+--       have IH1 := IH fuel' h_fuel e1 ctx result1 htc1_simp
+--       have htc2_simp : typecheckExpr ctx' e2 fuel' = .ok result2 := by simpa using htc2
+--       have IH2 := IH fuel' h_fuel e2 ctx' result2 htc2_simp
+--       have h_ctx'_nextTag : ctx'.nextTag = result1.nextTag' := by simp [hctx']
+--       calc ctx.nextTag
+--         _ ≤ result1.nextTag' := IH1
+--         _ = ctx'.nextTag := h_ctx'_nextTag.symm
+--         _ ≤ result2.nextTag' := IH2
+--         _ = res.nextTag' := hnexttag.symm
 
 private lemma typecheckWhile_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
