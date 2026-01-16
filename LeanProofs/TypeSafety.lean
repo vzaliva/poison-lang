@@ -1469,16 +1469,6 @@ private lemma typecheckVlet_nextTag_mono (ctx : TypeContext) (x : Name) (e1 e2 :
         _ ≤ result2.nextTag' := IH2
         _ = res.nextTag' := hnexttag.symm
 
--- Helper lemma for typecheckIf: preserves nextTag' from max of result2 and result3
-lemma typecheckIf_preserves_nextTag (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult) :
-  typecheckIf ctx e1 e2 e3 fuel = .ok res →
-  ∃ (result1 result2 result3 : TypeResult),
-    res.nextTag' = max result2.nextTag' result3.nextTag' := by
-  intro htc
-  cases fuel with
-  | zero => unfold typecheckIf at htc; simp at htc
-  | succ fuel' => sorry  -- Detailed proof requires case analysis of both if_depoison and if_std branches
-
 private lemma typecheckIf_nextTag_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
       typecheck ctx' e m = .ok res' →
@@ -1488,7 +1478,97 @@ private lemma typecheckIf_nextTag_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fu
   intro htc
   cases fuel with
   | zero => unfold typecheckIf at htc; simp at htc
-  | succ fuel' => sorry  -- Complex proof due to two branches and matchGuard
+  | succ fuel' =>
+      unfold typecheckIf at htc
+      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv with
+      | ok g =>
+          rcases g with ⟨k, deps⟩
+          simp [hguard, bind, Except.bind] at htc
+          set pureCtx : TypeContext := { ctx with pureCtx := true } with hpure
+          rcases htc1 : typecheckExpr pureCtx e1 fuel' with _ | ⟨res1⟩
+            <;> erw [htc1] at htc
+            <;> simp at htc
+          rcases hq1 : res1.qualType with ⟨etyp1, p1, pred1⟩
+          simp [hq1] at htc
+          by_cases hbool : etyp1 != ETyp.bool
+          · simp at hbool; simp [hbool] at htc
+          · simp at hbool; simp [hbool] at htc
+            set ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } with hctxTrue
+            set ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } with hctxFalse
+            rcases htc2 : typecheckExpr ctxTrue e2 fuel' with _ | ⟨res2⟩
+              <;> erw [htc2] at htc
+              <;> simp [pure, Except.pure] at htc
+            rcases hq2 : res2.qualType with ⟨etyp2, p2, pred2⟩
+            simp [hq2] at htc
+            set ctxFalse' : TypeContext :=
+              { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' } with hctxFalse'
+            rcases htc3 : typecheckExpr ctxFalse' e3 fuel' with _ | ⟨res3⟩
+              <;> erw [htc3] at htc
+              <;> simp at htc
+            rcases hq3 : res3.qualType with ⟨etyp3, p3, pred3⟩
+            simp [hq3] at htc
+            cases hsig : beqETypSignature etyp2 etyp3 <;> simp [hsig] at htc
+            cases htc
+            have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
+            have htc2' : typecheck ctxTrue e2 fuel' = .ok res2 := by
+              simpa [typecheck] using htc2
+            have IH2 := IH fuel' h_fuel e2 ctxTrue res2 htc2'
+            have h_ctxTrue_nextTag : ctxTrue.nextTag = ctx.nextTag := by
+              simp [hctxTrue]
+            have h_ctx_nextTag_le : ctx.nextTag ≤ res2.nextTag' := by
+              simpa [h_ctxTrue_nextTag] using IH2
+            dsimp
+            transitivity
+            · exact h_ctx_nextTag_le
+            · apply Nat.le_max_left
+      | error err =>
+          simp [hguard, bind, Except.bind] at htc
+          rcases htc1 : typecheckExpr ctx e1 fuel' with _ | ⟨res1⟩
+            <;> erw [htc1] at htc
+            <;> simp at htc
+          rcases hq1 : res1.qualType with ⟨etyp1, p1, pred1⟩
+          simp [hq1] at htc
+          by_cases hbool : etyp1 != ETyp.bool
+          · simp at hbool; simp [hbool] at htc
+          · simp at hbool; simp [hbool] at htc
+            simp [pure, Except.pure] at htc
+            set ctx' : TypeContext :=
+              { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag' } with hctx'
+            set ctx'' : TypeContext := { ctx' with pc := joinPoison ctx.pc p1 } with hctx''
+            rcases htc2 : typecheckExpr ctx'' e2 fuel' with _ | ⟨res2⟩
+              <;> erw [htc2] at htc
+              <;> simp at htc
+            rcases hq2 : res2.qualType with ⟨etyp2, p2, pred2⟩
+            simp [hq2] at htc
+            set ctxForE3 : TypeContext :=
+              { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' } with hctxForE3
+            rcases htc3 : typecheckExpr ctxForE3 e3 fuel' with _ | ⟨res3⟩
+              <;> erw [htc3] at htc
+              <;> simp at htc
+            rcases hq3 : res3.qualType with ⟨etyp3, p3, pred3⟩
+            simp [hq3] at htc
+            cases hsig : beqETypSignature etyp2 etyp3 <;> simp [hsig] at htc
+            cases htc
+            have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
+            have htc1' : typecheck ctx e1 fuel' = .ok res1 := by
+              simpa [typecheck] using htc1
+            have IH1 := IH fuel' h_fuel e1 ctx res1 htc1'
+            have h_ctx'_nextTag : ctx'.nextTag = res1.nextTag' := by
+              simp [hctx']
+            have htc2' : typecheck ctx'' e2 fuel' = .ok res2 := by
+              simpa [typecheck] using htc2
+            have IH2 := IH fuel' h_fuel e2 ctx'' res2 htc2'
+            have h_ctx''_nextTag : ctx''.nextTag = ctx'.nextTag := by
+              simp [hctx'']
+            have h_ctx_nextTag_le : ctx.nextTag ≤ res2.nextTag' := by
+              calc
+                ctx.nextTag ≤ res1.nextTag' := IH1
+                _ = ctx'.nextTag := h_ctx'_nextTag.symm
+                _ = ctx''.nextTag := h_ctx''_nextTag.symm
+                _ ≤ res2.nextTag' := IH2
+            transitivity
+            · exact h_ctx_nextTag_le
+            · apply Nat.le_max_left
 
 private lemma joinTypeResults_nextTag_eq_max
   (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) :
@@ -1878,30 +1958,6 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
       _ = ctx'.nextTag := by simp [hctx']
       _ ≤ r.nextTag' := h_r
       _ ≤ res.nextTag' := h_r_le_res
-
--- private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
---     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
---       typecheck ctx' e m = .ok res' →
---       ctx'.nextTag ≤ res'.nextTag') :
---   typecheckApp ctx e1 e2 fuel = .ok res →
---   ctx.nextTag ≤ res.nextTag' := by
---   intro htc
---   have hstruct := typecheckApp_preserves_nextTag ctx e1 e2 fuel res htc
---   rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, hnexttag⟩
---   cases fuel with
---   | zero => unfold typecheckApp at htc; simp at htc
---   | succ fuel' =>
---       have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
---       have htc1_simp : typecheckExpr ctx e1 fuel' = .ok result1 := by simpa using htc1
---       have IH1 := IH fuel' h_fuel e1 ctx result1 htc1_simp
---       have htc2_simp : typecheckExpr ctx' e2 fuel' = .ok result2 := by simpa using htc2
---       have IH2 := IH fuel' h_fuel e2 ctx' result2 htc2_simp
---       have h_ctx'_nextTag : ctx'.nextTag = result1.nextTag' := by simp [hctx']
---       calc ctx.nextTag
---         _ ≤ result1.nextTag' := IH1
---         _ = ctx'.nextTag := h_ctx'_nextTag.symm
---         _ ≤ result2.nextTag' := IH2
---         _ = res.nextTag' := hnexttag.symm
 
 private lemma typecheckWhile_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
