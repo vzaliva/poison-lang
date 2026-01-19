@@ -134,6 +134,9 @@ structure TypeResult where
 /-- Type checking monad for error handling -/
 abbrev TypecheckM := Except String
 
+/-- Update the context with the result of a type checking operation -/
+def updateCtxFromResult (ctx : TypeContext) (result : TypeResult) : TypeContext :=
+  { ctx with memEnv := result.memEnv', tagEnv := result.tagEnv', nextLoc := result.nextLoc', nextTag := result.nextTag'}
 
 /-- Extract dependencies from a predicate by analyzing free variables in the predicate body -/
 def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
@@ -1222,15 +1225,9 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
     let result1 ← typecheckExpr ctx e1 fuel
-    let ⟨_etyp1, p1, _  ⟩ := result1.qualType
-
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+    let ctx' := updateCtxFromResult ctx result1
     let result2 ← typecheckExpr ctx' e2 fuel
-    let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
-
-    let poison := joinPoison p1 p2
-    let qt : QTyp := ⟨etyp2, poison, pred2⟩
-    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag' }
+    return result2
 termination_by fuel
 
 

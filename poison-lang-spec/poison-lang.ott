@@ -710,16 +710,13 @@ pm ; pc ; G ; S ; L |- !e : T :> join pc p { guard k } -| G1 ; L1
 -------------------------------  :: unit
 pm ; pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G ; L
 
-% Sequence: e1's poison is included because e2 only executes if e1 completes
-% successfully. This captures the control dependency between e1 and e2. The
-% first expression can have any type T1, but its value is discarded. The result
-% type is the type of the second expression T2. This is  a conservative
+% The result type is the type of the second expression T2. This is  a conservative
 % approach. Alternatively, we could ignore e1's poison in result, as the e1's
 % value is propagated to e2.
 pm ; pc ; G ; S ; L |- e1 : T1 :> p1 { P1 } -| G1 ; L1
 pm ; pc ; G1 ; S ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: seq
-pm ; pc ; G ; S ; L |- e1 ; e2  : T2 :> join p1 p2 { P2 } -| G2 ; L2
+pm ; pc ; G ; S ; L |- e1 ; e2  : T2 :> p2 { P2 } -| G2 ; L2
 
 % Function abstraction typing with explicit return type annotation.
 % The user provides both parameter type ST1 and return type ST2.
