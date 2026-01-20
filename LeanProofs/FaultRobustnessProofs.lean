@@ -2563,14 +2563,14 @@ private def TypeSystemEnforcesFaultRobustness_step_specW
     ∀ (R : Regime),
       StepFRW ctxᵢ R e res predSat
 
--- Helper lemma for op expressions
-private lemma stepFRW_op
+-- World-free version of stepFRW_op
+private lemma stepFR_op
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.op e1 op e2) res predSat := by
+  StepFR ctxᵢ R (Expr.op e1 op e2) res predSat := by
   have htc' : typecheckOp ctxᵢ e1 e2 (Nat.succ fuel') op = .ok res := by
     simp [typecheck, typecheckExpr_op_succ] at htc
     exact htc
@@ -2587,38 +2587,47 @@ private lemma stepFRW_op
     e1 ctxᵢ res1 htc1' R
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' res2 htc2' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
-  -- Derive wfConfig for final configs using preservation lemma
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Extract fuel/verbose from terminatesTo
   rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+  -- Use bevalOp_structure with defaultWorld (world doesn't matter for pure evaluation)
+  let w_default := LeanProofs.defaultWorld
+  have hbeval₀_w : LeanPoison.beval fuel₀ { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } (Expr.op e1 op e2) verbose₀ w_default = EST.Out.ok (.success cf₀ o₀) w_default := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₀
+    simpa [pure] using h_eq
+  have hbeval₁_w : LeanPoison.beval fuel₁ { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } (Expr.op e1 op e2) verbose₁ w_default = EST.Out.ok (.success cf₁ o₁) w_default := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₁
+    simpa [pure] using h_eq
   have hstruct₀ :=
     bevalOp_structure e1 e2 op fuel₀ verbose₀
-      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
-      cf₀ o₀ w w₀' hbeval₀
+      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
+      cf₀ o₀ w_default w_default hbeval₀_w
   rcases hstruct₀ with
-    ⟨cfg₀1, cfg₀2, v₀1, v₀2, w₀mid, hbeval₀_e1', hbeval₀_e2', h_evalop₀, hmem₀, hvar₀, _hnext₀, _hpure₀⟩
-  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+    ⟨cfg₀1, cfg₀2, v₀1, v₀2, _w₀mid, hbeval₀_e1', hbeval₀_e2', h_evalop₀, hmem₀, hvar₀, _hnext₀, _hpure₀⟩
   have hstruct₁ :=
     bevalOp_structure e1 e2 op fuel₁ verbose₁
-      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
-      cf₁ o₁ w w₁' hbeval₁
+      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+      cf₁ o₁ w_default w_default hbeval₁_w
   rcases hstruct₁ with
-    ⟨cfg₁1, cfg₁2, v₁1, v₁2, w₁mid, hbeval₁_e1', hbeval₁_e2', h_evalop₁, hmem₁, hvar₁, _hnext₁, _hpure₁⟩
-  have ht₀_e1 :
-      terminatesToW w w₀mid e1
-        { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
-        cfg₀1 v₀1 := ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e1'⟩
-  have ht₁_e1 :
-      terminatesToW w w₁mid e1
-        { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
-        cfg₁1 v₁1 := ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e1'⟩
+    ⟨cfg₁1, cfg₁2, v₁1, v₁2, _w₁mid, hbeval₁_e1', hbeval₁_e2', h_evalop₁, hmem₁, hvar₁, _hnext₁, _hpure₁⟩
+  -- Convert to world-free terminatesTo
+  have ht₀_e1 : terminatesTo e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 :=
+    ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e1'⟩
+  have ht₁_e1 : terminatesTo e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 :=
+    ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e1'⟩
+  -- Derive wfConfig for intermediate configs
+  have hwfcf₀1 : wfConfig cfg₀1 := by
+    have hterm := terminatesTo_nextAddr_mono e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1
+    exact wfConfig_mono hwfcfg₀ hterm
+  have hwfcf₁1 : wfConfig cfg₁1 := by
+    have hterm := terminatesTo_nextAddr_mono e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1
+    exact wfConfig_mono hwfcfg₁ hterm
   have hstep_e1 :=
-    hIH1 w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
-      w₀mid w₁mid ht₀_e1 ht₁_e1
+    hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with
-    ⟨θ₀1, θ₁1, hw_mid, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
+    ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1', hwfcf₁1', hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
   have hreg_ctx' : regimeConsistentWithCtx ctx' R := by
@@ -2630,22 +2639,20 @@ private lemma stepFRW_op
   have hagree_clean1' :
       agreeOnClean predSat R ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctx', ctxAfter] using hagree_clean1
-  -- Synchronise the intermediate world after `e1` using `hw_mid`.
-  have ht₀_e2 : terminatesToW w₀mid w₀' e2 cfg₀1 cfg₀2 v₀2 :=
+  -- Convert e2 evaluations to world-free
+  have ht₀_e2 : terminatesTo e2 cfg₀1 cfg₀2 v₀2 :=
     ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e2'⟩
-  have ht₁_e2 : terminatesToW w₀mid w₁' e2 cfg₁1 cfg₁2 v₁2 := by
-    -- rewrite the input world of run1's `e2` evaluation to the common `w₀mid`
-    subst hw_mid
-    exact ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e2'⟩
+  have ht₁_e2 : terminatesTo e2 cfg₁1 cfg₁2 v₁2 :=
+    ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e2'⟩
   have hwf1' : wfTypeContext ctx' := by simpa [ctx', ctxAfter] using hwf1
   have hstep_e2 :=
-    hIH2 w₀mid cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
+    hIH2 cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cfg₀2 cfg₁2 v₀2 v₁2
       hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' hreg_ctx' hRbound hagree_clean1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode cfg₁1.pureMode hwfcf₀1 hwfcf₁1
-      w₀' w₁' ht₀_e2 ht₁_e2
+      ht₀_e2 ht₁_e2
   rcases hstep_e2 with
-    ⟨θ₀2, θ₁2, hw_out, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+    ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctx' res2 := by
@@ -2662,12 +2669,15 @@ private lemma stepFRW_op
       agreeOnClean predSat R (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
     simpa [hctxAfter, hmem₀, hvar₀, hmem₁, hvar₁] using hagree_clean2
-  refine ⟨θ₀2, θ₁2, ?_, hθext₀, hθext₁, ?_, ?_, ?_, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
-  · -- world outputs for the full `op` are equal
-    exact hw_out
+  -- Derive wfConfig for final configs
+  have hwfcf₀_final : wfConfig cf₀ := by
+    have hterm := terminatesTo_nextAddr_mono (Expr.op e1 op e2) { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    exact wfConfig_mono hwfcfg₀ hterm
+  have hwfcf₁_final : wfConfig cf₁ := by
+    have hterm := terminatesTo_nextAddr_mono (Expr.op e1 op e2) { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    exact wfConfig_mono hwfcfg₁ hterm
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
   · simpa [hctxAfter] using hwf2
-  · exact hwfcf₀_final
-  · exact hwfcf₁_final
   intro hclean
   have hpoison_res : res.qualType.poison = false := by
     simpa [qtypCleanUnder, qtypGuardTag, h_ret_pred] using hclean
@@ -2739,14 +2749,14 @@ private lemma stepFRW_op
     simpa [h_ret_etyp] using hnonfun_args.2.2
   exact agreeValueUnder.clean_eq_nonref hpoison_res hnotfun_res hnotref hEq
 
--- Helper lemma for unaryop expressions
-private lemma stepFRW_unaryop
+-- World-free version of stepFRW_unaryop
+private lemma stepFR_unaryop
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (op : UnaryOp) (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.unaryop op e) res predSat := by
+  StepFR ctxᵢ R (Expr.unaryop op e) res predSat := by
   have htc' : typecheckUnaryOp ctxᵢ op e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_unaryop_succ] at htc
     exact htc
@@ -2756,39 +2766,46 @@ private lemma stepFRW_unaryop
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ res1 htc1' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
-  -- Derive wfConfig for final configs using preservation lemma
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Extract fuel/verbose from terminatesTo
   rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+  -- Use bevalUnaryOp_structure with defaultWorld
+  let w_default := LeanProofs.defaultWorld
+  have hbeval₀_w : LeanPoison.beval fuel₀ { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } (Expr.unaryop op e) verbose₀ w_default = EST.Out.ok (.success cf₀ o₀) w_default := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₀
+    simpa [pure] using h_eq
+  have hbeval₁_w : LeanPoison.beval fuel₁ { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } (Expr.unaryop op e) verbose₁ w_default = EST.Out.ok (.success cf₁ o₁) w_default := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₁
+    simpa [pure] using h_eq
   have hstruct₀ :=
     bevalUnaryOp_structure op e fuel₀ verbose₀
-      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
-      cf₀ o₀ w w₀' hbeval₀
+      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
+      cf₀ o₀ w_default w_default hbeval₀_w
   rcases hstruct₀ with
-    ⟨cfg₀', v₀', hbeval₀_e, h_evalop₀, hmem₀, hvar₀, _hnext₀, _hpure₀⟩
-  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+    ⟨cfg₀', v₀', _w₀', hbeval₀_e, h_evalop₀, hmem₀, hvar₀, _hnext₀, _hpure₀⟩
   have hstruct₁ :=
     bevalUnaryOp_structure op e fuel₁ verbose₁
-      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
-      cf₁ o₁ w w₁' hbeval₁
+      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+      cf₁ o₁ w_default w_default hbeval₁_w
   rcases hstruct₁ with
-    ⟨cfg₁', v₁', hbeval₁_e, h_evalop₁, hmem₁, hvar₁, _hnext₁, _hpure₁⟩
-  have ht₀_e :
-      terminatesToW w w₀' e
-        { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
-        cfg₀' v₀' :=
+    ⟨cfg₁', v₁', _w₁', hbeval₁_e, h_evalop₁, hmem₁, hvar₁, _hnext₁, _hpure₁⟩
+  -- Convert to world-free terminatesTo
+  have ht₀_e : terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀' v₀' :=
     ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e⟩
-  have ht₁_e :
-      terminatesToW w w₁' e
-        { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
-        cfg₁' v₁' :=
+  have ht₁_e : terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁' v₁' :=
     ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e⟩
+  -- Derive wfConfig for intermediate configs
+  have hwfcf₀' : wfConfig cfg₀' := by
+    have hterm := terminatesTo_nextAddr_mono e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀' v₀' ht₀_e
+    exact wfConfig_mono hwfcfg₀ hterm
+  have hwfcf₁' : wfConfig cfg₁' := by
+    have hterm := terminatesTo_nextAddr_mono e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁' v₁' ht₁_e
+    exact wfConfig_mono hwfcfg₁ hterm
   have hstep_e :=
-    hIH w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' v₀' v₁'
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
-      w₀' w₁' ht₀_e ht₁_e
-  rcases hstep_e with ⟨θ₀', θ₁', hw_world, hθext₀, hθext₁, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', htagR', hagree_clean_e, hres_agree_e⟩
+    hIH μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' v₀' v₁'
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
+  rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', htagR', hagree_clean_e, hres_agree_e⟩
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
     simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag]
   have hric₀'' :
@@ -2803,10 +2820,15 @@ private lemma stepFRW_unaryop
       agreeOnClean predSat R (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
     simpa [hctxAfter, hmem₀, hvar₀, hmem₁, hvar₁] using hagree_clean_e
-  refine ⟨θ₀', θ₁', hw_world, hθext₀, hθext₁, ?_, ?_, ?_, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
+  -- Derive wfConfig for final configs
+  have hwfcf₀_final : wfConfig cf₀ := by
+    have hterm := terminatesTo_nextAddr_mono (Expr.unaryop op e) { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    exact wfConfig_mono hwfcfg₀ hterm
+  have hwfcf₁_final : wfConfig cf₁ := by
+    have hterm := terminatesTo_nextAddr_mono (Expr.unaryop op e) { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    exact wfConfig_mono hwfcfg₁ hterm
+  refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
   · simpa [hctxAfter] using hwf'
-  · exact hwfcf₀_final
-  · exact hwfcf₁_final
   intro hclean
   have hpoison_res : res.qualType.poison = false := by
     simpa [qtypCleanUnder, qtypGuardTag, h_ret_pred] using hclean
@@ -2858,14 +2880,14 @@ private lemma stepFRW_unaryop
     simpa [h_ret_etyp] using hnonfun_arg.2
   exact agreeValueUnder.clean_eq_nonref hpoison_res hnotfun_res hnotref hEq
 
--- Helper lemma for newRef expressions
-private lemma stepFRW_newRef
+-- World-free version of stepFRW_newRef
+private lemma stepFR_newRef
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.newRef e) res predSat := by
+  StepFR ctxᵢ R (Expr.newRef e) res predSat := by
   have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
@@ -2875,37 +2897,44 @@ private lemma stepFRW_newRef
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ res1 htc1' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
-  -- Derive wfConfig for final configs using preservation lemma
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Extract fuel/verbose from terminatesTo
   rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+  -- Use bevalNewRef_structure with defaultWorld
+  let w_default := LeanProofs.defaultWorld
+  have hbeval₀_w : LeanPoison.beval fuel₀ { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } (Expr.newRef e) verbose₀ w_default = EST.Out.ok (.success cf₀ o₀) w_default := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₀
+    simpa [pure] using h_eq
+  have hbeval₁_w : LeanPoison.beval fuel₁ { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } (Expr.newRef e) verbose₁ w_default = EST.Out.ok (.success cf₁ o₁) w_default := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₁
+    simpa [pure] using h_eq
   have hstruct₀ :=
     bevalNewRef_structure e fuel₀ verbose₀
-      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
-      cf₀ o₀ w w₀' hbeval₀
+      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
+      cf₀ o₀ w_default w_default hbeval₀_w
   rcases hstruct₀ with ⟨cfg₀', n₀, a₀_new, hbeval₀_e, ha₀_new, hmem₀, hnextaddr₀, hvar₀, ho₀⟩
-  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
   have hstruct₁ :=
     bevalNewRef_structure e fuel₁ verbose₁
-      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
-      cf₁ o₁ w w₁' hbeval₁
+      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+      cf₁ o₁ w_default w_default hbeval₁_w
   rcases hstruct₁ with ⟨cfg₁', n₁, a₁_new, hbeval₁_e, ha₁_new, hmem₁, hnextaddr₁, hvar₁, ho₁⟩
-  have ht₀_e :
-      terminatesToW w w₀' e
-        { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
-        cfg₀' (Value.num n₀) :=
+  -- Convert to world-free terminatesTo
+  have ht₀_e : terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀' (Value.num n₀) :=
     ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e⟩
-  have ht₁_e :
-      terminatesToW w w₁' e
-        { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
-        cfg₁' (Value.num n₁) :=
+  have ht₁_e : terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁' (Value.num n₁) :=
     ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e⟩
+  -- Derive wfConfig for intermediate configs
+  have hwfcf₀' : wfConfig cfg₀' := by
+    have hterm := terminatesTo_nextAddr_mono e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀' (Value.num n₀) ht₀_e
+    exact wfConfig_mono hwfcfg₀ hterm
+  have hwfcf₁' : wfConfig cfg₁' := by
+    have hterm := terminatesTo_nextAddr_mono e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁' (Value.num n₁) ht₁_e
+    exact wfConfig_mono hwfcfg₁ hterm
   have hstep_e :=
-    hIH w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
-      w₀' w₁' ht₀_e ht₁_e
-  rcases hstep_e with ⟨θ₀1, θ₁1, hw_world, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean_e, hres_agree_e⟩
+    hIH μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
+  rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean_e, hres_agree_e⟩
   -- Fresh logical location l = res1.nextLoc' is not realized after evaluating e.
   have h_fresh₀ : θ₀1.lookup l = none := by
     have hge : l ≥ (ctxAfter ctxᵢ res1).nextLoc := by
@@ -2918,70 +2947,38 @@ private lemma stepFRW_newRef
   -- Extend maps: θ₀' = θ₀1.update l a₀_new, θ₁' = θ₁1.update l a₁_new
   let θ₀' := θ₀1.update l a₀_new
   let θ₁' := θ₁1.update l a₁_new
-  -- Prove wfExtendsMap for the extended maps
+  -- Prove wfExtendsMap for the extended maps (same as world-threaded version)
   have hθext₀' : wfExtendsMap θ₀1 θ₀' := by
     refine ⟨?_, ?_⟩
-    · -- extendsMap: θ₀1.lookup l' = some a' → θ₀'.lookup l' = some a'
-      intro l' a' hlookup
+    · intro l' a' hlookup
       simp [RealizationMap.lookup]
-      -- If l' = l, then θ₀' has l → a₀_new, but θ₀1 doesn't have l (h_fresh₀)
-      -- So l' ≠ l, and insert preserves existing lookups
       by_cases h_eq : l' = l
-      · -- l' = l: contradiction since θ₀1.lookup l = none
-        subst h_eq
+      · subst h_eq
         rw [h_fresh₀] at hlookup
         cases hlookup
-      · -- l' ≠ l: insert preserves lookup
-        -- θ₀' = θ₀1.update l a₀_new = θ₀1.insert l a₀_new
-        -- Since l' ≠ l, the lookup should be preserved
-        -- Expand θ₀' definition and use ExtTreeMap.getElem?_insert
+      · have hcmp : compare l l' ≠ Ordering.eq := by
+          intro hcmp
+          have : l = l' := LawfulEqCmp.eq_of_compare hcmp
+          exact h_eq this.symm
         have h_theta_def : θ₀' = θ₀1.insert l a₀_new := rfl
         rw [h_theta_def]
         rw [ExtTreeMap.getElem?_insert]
-        -- Need to show cmp l l' ≠ Ordering.eq (where cmp is Nat.compare since Loc = Nat)
-        by_cases h_cmp : compare l l' = Ordering.eq
-        · -- If cmp l l' = Ordering.eq, then l = l', which contradicts h_eq : ¬l' = l
-          have h_eq' : l = l' := LawfulEqCmp.eq_of_compare h_cmp
-          exact absurd h_eq'.symm h_eq
-        · -- cmp l l' ≠ Ordering.eq, so the if-then-else evaluates to θ₀1[l']?
-          simp [h_cmp]
-          -- Now we need θ₀1[l']? = some a', which is hlookup
-          -- hlookup is: θ₀1.lookup l' = some a'
-          -- Convert lookup to getElem? and use hlookup
-          simp [RealizationMap.lookup] at hlookup
-          rw [← ExtTreeMap.get?_eq_getElem?]
-          exact hlookup
-    · -- Preserves injectivity
-      intro hWF
-      -- θ₀' = θ₀1.insert l a₀_new, and l is fresh (not in θ₀1)
-      -- If θ₀1 is injective and l is fresh, then θ₀' is also injective
-      -- Use ExtTreeMap_insert_preserves_injectivity lemma
-      -- hWF : wfRealizationMap θ₀1 means θ₀1.isInjective
-      -- h_fresh₀ : θ₀1.lookup l = none means l is fresh
-      -- Convert to ExtTreeMap operations for the generic lemma
-      -- wfRealizationMap θ₀' = θ₀'.isInjective
+        simp [hcmp]
+        simp [RealizationMap.lookup] at hlookup
+        rw [← ExtTreeMap.get?_eq_getElem?]
+        exact hlookup
+    · intro hWF
       simp only [wfRealizationMap] at hWF ⊢
       unfold RealizationMap.isInjective
       intro l₁ l₂ a hlookup1 hlookup2
-      -- Convert RealizationMap.lookup to ExtTreeMap.get?
-      -- Prove that a₀_new is not already in the range of θ₀1
-      -- This follows from the fact that a₀_new is a fresh address (nextAddr)
-      -- and runtimeInstantiatesCtx ensures all realized addresses are in memory
-      -- Since a₀_new hasn't been allocated yet, it's not in the range
       have h_fresh_value' : ∀ l', θ₀1.get? l' ≠ some a₀_new := by
         intro l' h_eq
-        -- If θ₀1.get? l' = some a₀_new, then by runtimeInstantiatesCtx,
-        -- we have cfg₀'.memory.contains a₀_new
-        -- But a₀_new = cfg₀'.nextAddr is the next address to allocate,
-        -- so it hasn't been allocated yet (not in cfg₀'.memory)
-        -- This is a contradiction
         have h_lookup : θ₀1.lookup l' = some a₀_new := by
           rw [RealizationMap.lookup]
           rw [ExtTreeMap.get?_eq_getElem?]
           exact h_eq
         have h_contains : cfg₀'.memory.contains a₀_new :=
           (hric₀1.1 l' a₀_new h_lookup).2
-        -- Use wfConfig: cfg₀'.memory.contains cfg₀'.nextAddr contradicts wfConfig cfg₀'
         rw [ha₀_new] at h_contains
         exact Nat.lt_irrefl cfg₀'.nextAddr (hwfcf₀1.1 cfg₀'.nextAddr h_contains)
       have h_inj' : ∀ k₁ k₂ a, θ₀1.get? k₁ = some a → θ₀1.get? k₂ = some a → k₁ = k₂ := by
@@ -2991,7 +2988,6 @@ private lemma stepFRW_newRef
       have hlookup2' : (θ₀1.insert l a₀_new).get? l₂ = some a := hlookup2
       exact ExtTreeMap_insert_preserves_injectivity θ₀1 l a₀_new h_fresh_value' h_inj' l₁ l₂ a hlookup1' hlookup2'
   have hθext₁' : wfExtendsMap θ₁1 θ₁' := by
-    -- Similar to hθext₀'
     refine ⟨?_, ?_⟩
     · intro l' a' hlookup
       simp [RealizationMap.lookup]
@@ -2999,40 +2995,29 @@ private lemma stepFRW_newRef
       · subst l'
         rw [h_fresh₁] at hlookup
         cases hlookup
-      · -- ExtTreeMap.insert preserves lookups for different keys
-        -- θ₁' = θ₁1.update l a₁_new = θ₁1.insert l a₁_new
-        -- Since l' ≠ l, the lookup should be preserved
+      · have hcmp : compare l l' ≠ Ordering.eq := by
+          intro hcmp
+          have : l = l' := LawfulEqCmp.eq_of_compare hcmp
+          exact h_eq this.symm
         have h_theta_def : θ₁' = θ₁1.insert l a₁_new := rfl
         rw [h_theta_def]
         rw [ExtTreeMap.getElem?_insert]
-        -- Need to show cmp l l' ≠ Ordering.eq (where cmp is Nat.compare since Loc = Nat)
-        by_cases h_cmp : compare l l' = Ordering.eq
-        · -- If cmp l l' = Ordering.eq, then l = l', which contradicts h_eq : ¬l' = l
-          have h_eq' : l = l' := LawfulEqCmp.eq_of_compare h_cmp
-          exact absurd h_eq'.symm h_eq
-        · -- cmp l l' ≠ Ordering.eq, so the if-then-else evaluates to θ₁1[l']?
-          simp [h_cmp]
-          simp [RealizationMap.lookup] at hlookup
-          rw [← ExtTreeMap.get?_eq_getElem?]
-          exact hlookup
+        simp [hcmp]
+        simp [RealizationMap.lookup] at hlookup
+        rw [← ExtTreeMap.get?_eq_getElem?]
+        exact hlookup
     · intro hWF
-      -- Similar to hθext₀', use ExtTreeMap_insert_preserves_injectivity
       simp only [wfRealizationMap] at hWF ⊢
       unfold RealizationMap.isInjective
       intro l₁ l₂ a hlookup1 hlookup2
-      -- Convert RealizationMap.lookup to ExtTreeMap.get?
-      -- Prove that a₁_new is not already in the range of θ₁1 (similar to above)
       have h_fresh_value' : ∀ l', θ₁1.get? l' ≠ some a₁_new := by
         intro l' h_eq
-        -- Similar to θ₀1: use wfConfig to derive contradiction
-        have hric₁1_ctx := hric₁1
-        simp only [ctxAfter] at hric₁1_ctx
         have h_lookup : θ₁1.lookup l' = some a₁_new := by
           rw [RealizationMap.lookup]
           rw [ExtTreeMap.get?_eq_getElem?]
           exact h_eq
         have h_contains : cfg₁'.memory.contains a₁_new :=
-          (hric₁1_ctx.1 l' a₁_new h_lookup).2
+          (hric₁1.1 l' a₁_new h_lookup).2
         rw [ha₁_new] at h_contains
         exact Nat.lt_irrefl cfg₁'.nextAddr (hwfcf₁1.1 cfg₁'.nextAddr h_contains)
       have h_inj' : ∀ k₁ k₂ a, θ₁1.get? k₁ = some a → θ₁1.get? k₂ = some a → k₁ = k₂ := by
@@ -3041,22 +3026,17 @@ private lemma stepFRW_newRef
       have hlookup1' : (θ₁1.insert l a₁_new).get? l₁ = some a := hlookup1
       have hlookup2' : (θ₁1.insert l a₁_new).get? l₂ = some a := hlookup2
       exact ExtTreeMap_insert_preserves_injectivity θ₁1 l a₁_new h_fresh_value' h_inj' l₁ l₂ a hlookup1' hlookup2'
-  -- Prove wfTypeContext for result
+  -- Prove wfTypeContext for result (same as world-threaded version)
   have hwf_result : wfTypeContext (ctxAfter ctxᵢ res) := by
     intro l' hcontains
-    -- Goal: l' < res.nextLoc' given l' ∈ dom(res.memEnv')
     simp [ctxAfter] at hcontains ⊢
-    -- Unfold the newRef typing result structure
     rw [h_mem] at hcontains
     rw [h_loc]
-    -- Now: l' < res1.nextLoc' + 1 given l' ∈ dom(res1.memEnv'.insert l storedQt)
     by_cases h_eq : l' = l
     · subst h_eq
-      -- l is exactly res1.nextLoc'
       rw [hl]
       exact Nat.lt_succ_self res1.nextLoc'
-    · -- l' is an old location from res1.memEnv'
-      have hmem :
+    · have hmem :
           l' ∈ updateMemEnv res1.memEnv' l
             ⟨etyp, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩ := by
         exact (Std.ExtTreeMap.contains_iff_mem).1 hcontains
@@ -3070,7 +3050,6 @@ private lemma stepFRW_newRef
         have : l = l' := LawfulEqCmp.eq_of_compare hcmp
         exact h_eq this.symm
       have h_isSome' : (res1.memEnv'[l']?).isSome = true := by
-        -- Inserting at l does not affect lookup at l' when l' ≠ l
         simpa [updateMemEnv, ExtTreeMap.getElem?_insert, h_cmp_ne] using h_isSome
       have hmem' : l' ∈ res1.memEnv' :=
         (Std.ExtTreeMap.mem_iff_isSome_getElem?).2 h_isSome'
@@ -3081,19 +3060,15 @@ private lemma stepFRW_newRef
           simpa [ctxAfter] using hcontains'
         exact hwf1 l' this
       exact Nat.lt_succ_of_lt hlt
-  -- Prove runtimeInstantiatesCtx (new location is realized)
+  -- Prove runtimeInstantiatesCtx (same as world-threaded version)
   have hric₀' : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
-    -- Need to show: all locations in res.memEnv' are in cf₀.memory with correct types
-    -- and the new location l is realized as a₀_new
     unfold runtimeInstantiatesCtx
     rcases hric₀1 with ⟨hmem₀1, hvars₀1⟩
     constructor
     · intro l' a hlookup
       by_cases h_eq : l' = l
       · subst l'
-        -- l is the fresh location mapped to a₀_new
         have ha : a = a₀_new := by
-          -- θ₀' maps l to a₀_new by construction
           have hself : θ₀'.lookup l = some a₀_new := by
             simp [θ₀', RealizationMap.update, RealizationMap.lookup]
           have : (some a : Option Address) = some a₀_new := by
@@ -3103,7 +3078,6 @@ private lemma stepFRW_newRef
           exact Option.some.inj this
         subst a
         have hctx_mem : (ctxAfter ctxᵢ res).memEnv.contains l := by
-          -- res.memEnv' is an insert at l
           have : res.memEnv'.contains l := by
             rw [h_mem]
             simp [updateMemEnv, ExtTreeMap.contains_insert]
@@ -3112,13 +3086,11 @@ private lemma stepFRW_newRef
           rw [hmem₀]
           simp [Memory.update, ExtTreeMap.contains_insert]
         exact ⟨hctx_mem, hμ_mem⟩
-      · -- l' is an old location: reduce to hmem₀1 and lift through inserts
-        have hcmp : compare l l' ≠ Ordering.eq := by
+      · have hcmp : compare l l' ≠ Ordering.eq := by
           intro hcmp
           have : l = l' := LawfulEqCmp.eq_of_compare hcmp
           exact h_eq this.symm
         have hlookup_old : θ₀1.lookup l' = some a := by
-          -- lookup preserved for different key
           have hget : (θ₀1.insert l a₀_new).get? l' = some a := by
             simpa [θ₀', RealizationMap.update, RealizationMap.lookup] using hlookup
           have hElem : (θ₀1.insert l a₀_new)[l']? = some a := by
@@ -3211,75 +3183,58 @@ private lemma stepFRW_newRef
       refine ⟨v, ?_, ?_⟩
       · simpa [hvar₁] using hvlookup
       · exact valueHasETyp_extends hθext₁'.1 hvtyp
-  -- Prove regimeConsistentWithCtx (depends only on tagEnv/nextTag, which newRef preserves)
+  -- Prove regimeConsistentWithCtx
   have hreg' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) R := by
     simpa [regimeConsistentWithCtx, ctxAfter, h_tag, h_ntag] using htagR1
   -- Prove agreeOnClean
-  -- `hagree_clean` is the step-level invariant: for every context entry that is
-  -- clean-under-`R`, the two runs agree on its value (and, for refs, on the realized
-  -- addresses / heap contents).
-  --
-  -- The `newRef` case is tricky because it simultaneously:
-  -- (1) extends the typing memEnv with a fresh logical location `l`,
-  -- (2) extends both realization maps with fresh concrete addresses, and
-  -- (3) updates both memories at those fresh addresses.
-  -- We must show old clean entries are unaffected (freshness prevents aliasing),
-  -- and the new entry agrees by transporting agreement from `res1.qualType` to the
-  -- stored heap QTyp (with joined poison) and then lifting through the extensions.
   have hagree_clean :
       agreeOnClean predSat R (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
-    -- Use hagree_clean_e and extend with the new location
     exact agreeOnClean_newRef_extend
       predSat R ctxᵢ res1 res l etyp
       cfg₀' cfg₁' cf₀ cf₁ n₀ n₁ a₀_new a₁_new θ₀1 θ₁1 θ₀' θ₁'
       h_mem h_etyp1.symm ha₀_new ha₁_new hmem₀ hmem₁ hvar₀ hvar₁ rfl rfl
       hθext₀' hθext₁' hwfcf₀1 hwfcf₁1 hagree_clean_e hres_agree_e
-  refine ⟨θ₀', θ₁', hw_world, ?_, ?_, ?_, ?_, ?_, hric₀', hric₁', hreg', hagree_clean, ?_⟩
+  -- Derive wfConfig for final configs
+  have hwfcf₀_final : wfConfig cf₀ := by
+    have hterm := terminatesTo_nextAddr_mono (Expr.newRef e) { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    exact wfConfig_mono hwfcfg₀ hterm
+  have hwfcf₁_final : wfConfig cf₁ := by
+    have hterm := terminatesTo_nextAddr_mono (Expr.newRef e) { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    exact wfConfig_mono hwfcfg₁ hterm
+  refine ⟨θ₀', θ₁', ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hagree_clean, ?_⟩
   · -- wfExtendsMap θ₀ θ₀'
     exact wfExtendsMap_trans hθext₀1 hθext₀'
   · -- wfExtendsMap θ₁ θ₁'
     exact wfExtendsMap_trans hθext₁1 hθext₁'
   · -- wfTypeContext (ctxAfter ctxᵢ res)
     exact hwf_result
-  · exact hwfcf₀_final
-  · exact hwfcf₁_final
   · -- resultAgreesIfClean
     intro hclean
-    -- res.qualType.etyp = ETyp.ref etyp (LocSet.singleton l)
-    -- o₀ = Value.loc a₀_new, o₁ = Value.loc a₁_new
-    -- Need to use agreeValueUnder.clean_ref
     have hpoison_res : res.qualType.poison = false := by
       simpa [qtypCleanUnder, qtypGuardTag, h_pred] using hclean
-    -- Use agreeValueUnder.clean_ref
     have hlookup1 : θ₀'.lookup l = some a₀_new := by
-      -- θ₀' = θ₀1.insert l a₀_new, so lookup l should return some a₀_new
-      -- Use ExtTreeMap.getElem?_insert_self: (t.insert k v)[k]? = some v
       simp [RealizationMap.lookup]
       rw [← ExtTreeMap.get?_eq_getElem?]
       exact ExtTreeMap.getElem?_insert_self
     have hlookup2 : θ₁'.lookup l = some a₁_new := by
-      -- Use ExtTreeMap.getElem?_insert_self: (t.insert k v)[k]? = some v
       simp [RealizationMap.lookup]
       rw [← ExtTreeMap.get?_eq_getElem?]
       exact ExtTreeMap.getElem?_insert_self
     have hin1 : l ∈ LocSet.singleton l := by
-      -- LocSet.singleton l = (∅ : LocSet).insert l
-      -- Need to show l is in this set
-      -- LocSet = ExtTreeSet Loc, so we need l ∈ (∅ : ExtTreeSet Loc).insert l
       simp [LocSet.singleton]
     have hin2 : l ∈ LocSet.singleton l := by
       simp [LocSet.singleton]
     exact agreeValueUnder.clean_ref hpoison_res h_etyp hlookup1 hin1 ho₀ hlookup2 hin2 ho₁
 
--- Helper lemma for seq expressions
-private lemma stepFRW_seq
+-- World-free version of stepFRW_seq
+private lemma stepFR_seq
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.seq e1 e2) res predSat := by
+  StepFR ctxᵢ R (Expr.seq e1 e2) res predSat := by
   have htc' : typecheckSeq ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_seq_succ] at htc
     exact htc
@@ -3294,38 +3249,45 @@ private lemma stepFRW_seq
     e1 ctxᵢ res1 htc1' R
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' res2 htc2' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
-  -- Derive wfConfig for final configs using preservation lemma
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Extract fuel/verbose from terminatesTo
   rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+  -- Use bevalSeq_structure with defaultWorld
+  let w_default := LeanProofs.defaultWorld
+  have hbeval₀_w : LeanPoison.beval fuel₀ { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } (Expr.seq e1 e2) verbose₀ w_default = EST.Out.ok (.success cf₀ o₀) w_default := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₀
+    simpa [pure] using h_eq
+  have hbeval₁_w : LeanPoison.beval fuel₁ { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } (Expr.seq e1 e2) verbose₁ w_default = EST.Out.ok (.success cf₁ o₁) w_default := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₁
+    simpa [pure] using h_eq
   have hstruct₀ :=
     bevalSeq_structure e1 e2 fuel₀ verbose₀
-      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
-      cf₀ o₀ w w₀' hbeval₀
-  rcases hstruct₀ with ⟨cfg₀1, v₀1, w₀mid, hbeval₀_e1, hbeval₀_e2⟩
-  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
+      cf₀ o₀ w_default w_default hbeval₀_w
+  rcases hstruct₀ with ⟨cfg₀1, v₀1, _w₀mid, hbeval₀_e1, hbeval₀_e2⟩
   have hstruct₁ :=
     bevalSeq_structure e1 e2 fuel₁ verbose₁
-      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
-      cf₁ o₁ w w₁' hbeval₁
-  rcases hstruct₁ with ⟨cfg₁1, v₁1, w₁mid, hbeval₁_e1, hbeval₁_e2⟩
-  have ht₀_e1 :
-      terminatesToW w w₀mid e1
-        { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
-        cfg₀1 v₀1 :=
+      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+      cf₁ o₁ w_default w_default hbeval₁_w
+  rcases hstruct₁ with ⟨cfg₁1, v₁1, _w₁mid, hbeval₁_e1, hbeval₁_e2⟩
+  -- Convert to world-free terminatesTo
+  have ht₀_e1 : terminatesTo e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 :=
     ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e1⟩
-  have ht₁_e1 :
-      terminatesToW w w₁mid e1
-        { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
-        cfg₁1 v₁1 :=
+  have ht₁_e1 : terminatesTo e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 :=
     ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e1⟩
+  -- Derive wfConfig for intermediate configs
+  have hwfcf₀1 : wfConfig cfg₀1 := by
+    have hterm := terminatesTo_nextAddr_mono e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1
+    exact wfConfig_mono hwfcfg₀ hterm
+  have hwfcf₁1 : wfConfig cfg₁1 := by
+    have hterm := terminatesTo_nextAddr_mono e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1
+    exact wfConfig_mono hwfcfg₁ hterm
   have hstep_e1 :=
-    hIH1 w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
-      w₀mid w₁mid ht₀_e1 ht₁_e1
+    hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with
-    ⟨θ₀1, θ₁1, hw_mid, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
+    ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1', hwfcf₁1', hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
   have hreg_ctx' : regimeConsistentWithCtx ctx' R := by
@@ -3337,19 +3299,20 @@ private lemma stepFRW_seq
   have hagree_clean1' :
       agreeOnClean predSat R ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [hctx', ctxAfter] using hagree_clean1
-  have ht₀_e2 : terminatesToW w₀mid w₀' e2 cfg₀1 cf₀ o₀ :=
+  -- Convert e2 evaluations to world-free
+  have ht₀_e2 : terminatesTo e2 cfg₀1 cf₀ o₀ :=
     ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e2⟩
-  have ht₁_e2 : terminatesToW w₀mid w₁' e2 cfg₁1 cf₁ o₁ := by
-    subst hw_mid
-    exact ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e2⟩
+  have ht₁_e2 : terminatesTo e2 cfg₁1 cf₁ o₁ :=
+    ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e2⟩
   have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using hwf1
   have hstep_e2 :=
-    hIH2 w₀mid cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
+    hIH2 cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ o₀ o₁
       hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' hreg_ctx' hRbound hagree_clean1'
-      cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode cfg₁1.pureMode hwfcf₀1 hwfcf₁1 w₀' w₁' ht₀_e2 ht₁_e2
+      cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode cfg₁1.pureMode hwfcf₀1 hwfcf₁1
+      ht₀_e2 ht₁_e2
   rcases hstep_e2 with
-    ⟨θ₀2, θ₁2, hw_out, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+    ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctx' res2 := by
@@ -3366,10 +3329,15 @@ private lemma stepFRW_seq
       agreeOnClean predSat R (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
     simpa [hctxAfter] using hagree_clean2
-  refine ⟨θ₀2, θ₁2, hw_out, hθext₀, hθext₁, ?_, ?_, ?_, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
+  -- Derive wfConfig for final configs
+  have hwfcf₀_final : wfConfig cf₀ := by
+    have hterm := terminatesTo_nextAddr_mono (Expr.seq e1 e2) { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    exact wfConfig_mono hwfcfg₀ hterm
+  have hwfcf₁_final : wfConfig cf₁ := by
+    have hterm := terminatesTo_nextAddr_mono (Expr.seq e1 e2) { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    exact wfConfig_mono hwfcfg₁ hterm
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
   · simpa [hctxAfter] using hwf2
-  · exact hwfcf₀_final
-  · exact hwfcf₁_final
   intro hclean
   have hpoison_imp : res.qualType.poison = false → res2.qualType.poison = false := by
     intro hpoison_res
@@ -3394,14 +3362,14 @@ private lemma stepFRW_seq
     hres_agree2 hclean2
   exact agreeValueUnder_transport_clean hclean h_ret_etyp h_ret_pred hpoison_imp hagree2
 
--- Helper lemma for vlet expressions
-private lemma stepFRW_vlet
+-- World-free version of stepFRW_vlet
+private lemma stepFR_vlet
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFRW ctxᵢ R e res predSat)
+    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
   (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRW ctxᵢ R (Expr.vlet vname e1 e2) res predSat := by
+  StepFR ctxᵢ R (Expr.vlet vname e1 e2) res predSat := by
   have htc' : typecheckVlet ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_vlet_succ] at htc
     exact htc
@@ -3416,38 +3384,45 @@ private lemma stepFRW_vlet
     e1 ctxᵢ res1 htc1' R
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' res2 htc2' R
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
-  -- Derive wfConfig for final configs using preservation lemma
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preservedW w w₀' _ _ _ _ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preservedW w w₁' _ _ _ _ ht₁ hwfcfg₁).1
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Extract fuel/verbose from terminatesTo
   rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+  -- Use bevalVlet_structure with defaultWorld
+  let w_default := LeanProofs.defaultWorld
+  have hbeval₀_w : LeanPoison.beval fuel₀ { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } (Expr.vlet vname e1 e2) verbose₀ w_default = EST.Out.ok (.success cf₀ o₀) w_default := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₀
+    simpa [pure] using h_eq
+  have hbeval₁_w : LeanPoison.beval fuel₁ { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } (Expr.vlet vname e1 e2) verbose₁ w_default = EST.Out.ok (.success cf₁ o₁) w_default := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₁
+    simpa [pure] using h_eq
   have hstruct₀ :=
     bevalVlet_structure vname e1 e2 fuel₀ verbose₀
-      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
-      cf₀ o₀ w w₀' hbeval₀
-  rcases hstruct₀ with ⟨cfg₀1, cfg₀2, cfg₀3, v₀1, w₀mid, hbeval₀_e1, hcfg₀2, hbeval₀_e2, hcfg₀final⟩
-  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
+      cf₀ o₀ w_default w_default hbeval₀_w
+  rcases hstruct₀ with ⟨cfg₀1, cfg₀2, cfg₀3, v₀1, _w₀mid, hbeval₀_e1, hcfg₀2, hbeval₀_e2, hcfg₀final⟩
   have hstruct₁ :=
     bevalVlet_structure vname e1 e2 fuel₁ verbose₁
-      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
-      cf₁ o₁ w w₁' hbeval₁
-  rcases hstruct₁ with ⟨cfg₁1, cfg₁2, cfg₁3, v₁1, w₁mid, hbeval₁_e1, hcfg₁2, hbeval₁_e2, hcfg₁final⟩
-  have ht₀_e1 :
-      terminatesToW w w₀mid e1
-        { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
-        cfg₀1 v₀1 :=
+      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+      cf₁ o₁ w_default w_default hbeval₁_w
+  rcases hstruct₁ with ⟨cfg₁1, cfg₁2, cfg₁3, v₁1, _w₁mid, hbeval₁_e1, hcfg₁2, hbeval₁_e2, hcfg₁final⟩
+  -- Convert to world-free terminatesTo
+  have ht₀_e1 : terminatesTo e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 :=
     ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e1⟩
-  have ht₁_e1 :
-      terminatesToW w w₁mid e1
-        { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
-        cfg₁1 v₁1 :=
+  have ht₁_e1 : terminatesTo e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 :=
     ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e1⟩
+  -- Derive wfConfig for intermediate configs
+  have hwfcf₀1 : wfConfig cfg₀1 := by
+    have hterm := terminatesTo_nextAddr_mono e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1
+    exact wfConfig_mono hwfcfg₀ hterm
+  have hwfcf₁1 : wfConfig cfg₁1 := by
+    have hterm := terminatesTo_nextAddr_mono e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1
+    exact wfConfig_mono hwfcfg₁ hterm
   have hstep_e1 :=
-    hIH1 w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁
-      w₀mid w₁mid ht₀_e1 ht₁_e1
+    hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with
-    ⟨θ₀1, θ₁1, hw_mid, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
+    ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1', hwfcf₁1', hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
   have hric₀1_mem :
@@ -3456,32 +3431,25 @@ private lemma stepFRW_vlet
   have hric₁1_mem :
       runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctxAfter] using hric₁1
-  have hv₀1_typed : valueHasETyp θ₀1 v₀1 res1.qualType.etyp := by
-    exact
-      (preservation_valueW e1 ctxᵢ
-        fuel' res1
-        μ₀ cfg₀1.memory ρ₀ cfg₀1.varEnv θ₀ θ₀1
-        a₀ cfg₀1.nextAddr pm₀ cfg₀1.pureMode v₀1
-        w w₀mid
-        hwf htc1' hθ₀ hθ₀1wf hθext₀1 hric₀ hric₀1_mem ht₀_e1).1
-  have hv₁1_typed : valueHasETyp θ₁1 v₁1 res1.qualType.etyp := by
-    exact
-      (preservation_valueW e1 ctxᵢ
-        fuel' res1
-        μ₁ cfg₁1.memory ρ₁ cfg₁1.varEnv θ₁ θ₁1
-        a₁ cfg₁1.nextAddr pm₁ cfg₁1.pureMode v₁1
-        w w₁mid
-        hwf htc1' hθ₁ hθ₁1wf hθext₁1 hric₁ hric₁1_mem ht₁_e1).1
-  have hpres₀_e1 : wfConfig cfg₀1 ∧ wfValue cfg₀1.nextAddr v₀1 :=
-    wfConfig_preservedW w w₀mid e1
-      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
-      cfg₀1 v₀1 ht₀_e1 hwfcfg₀
-  have hpres₁_e1 : wfConfig cfg₁1 ∧ wfValue cfg₁1.nextAddr v₁1 :=
-    wfConfig_preservedW w w₁mid e1
-      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ }
-      cfg₁1 v₁1 ht₁_e1 hwfcfg₁
-  have hv₀1_wf : wfValue cfg₀1.nextAddr v₀1 := hpres₀_e1.2
-  have hv₁1_wf : wfValue cfg₁1.nextAddr v₁1 := hpres₁_e1.2
+  -- Get value types using preservation with defaultWorld
+  have ht₀_e1_w : terminatesToW w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default (by simpa using hbeval₀_e1)
+    exact ⟨fuel₀ - 1, verbose₀, by simpa [pure] using h_eq⟩
+  have ht₁_e1_w : terminatesToW w_default w_default e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default (by simpa using hbeval₁_e1)
+    exact ⟨fuel₁ - 1, verbose₁, by simpa [pure] using h_eq⟩
+  have hv₀1_typed : valueHasETyp θ₀1 v₀1 res1.qualType.etyp :=
+    (preservation_valueW e1 ctxᵢ fuel' res1 μ₀ cfg₀1.memory ρ₀ cfg₀1.varEnv θ₀ θ₀1
+      a₀ cfg₀1.nextAddr pm cfg₀1.pureMode v₀1 w_default w_default
+      hwf htc1' hθ₀ hθ₀1wf hθext₀1 hric₀ hric₀1_mem ht₀_e1_w).1
+  have hv₁1_typed : valueHasETyp θ₁1 v₁1 res1.qualType.etyp :=
+    (preservation_valueW e1 ctxᵢ fuel' res1 μ₁ cfg₁1.memory ρ₁ cfg₁1.varEnv θ₁ θ₁1
+      a₁ cfg₁1.nextAddr pm cfg₁1.pureMode v₁1 w_default w_default
+      hwf htc1' hθ₁ hθ₁1wf hθext₁1 hric₁ hric₁1_mem ht₁_e1_w).1
+  have hv₀1_wf : wfValue cfg₀1.nextAddr v₀1 :=
+    (wfConfig_preservedW w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1_w hwfcfg₀).2
+  have hv₁1_wf : wfValue cfg₁1.nextAddr v₁1 :=
+    (wfConfig_preservedW w_default w_default e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1_w hwfcfg₁).2
   have hreg_ctx' : regimeConsistentWithCtx ctx' R := by
     simpa [hctx', ctxAfter] using htagR1
   have hric₀1' : runtimeInstantiatesCtx ctx' cfg₀2.memory cfg₀2.varEnv θ₀1 := by
@@ -3598,48 +3566,50 @@ private lemma stepFRW_vlet
             have hnone₁' : cfg₁2.varEnv.lookup w = none := by
               simpa [hcfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname w v₁1 hw] using hnone₁
             exact agreeVarUnder.both_none w qt hnone₀' hnone₁'
-  have ht₀_e2 : terminatesToW w₀mid w₀' e2 cfg₀2 cfg₀3 o₀ :=
-    ⟨fuel₀ - 1, verbose₀, by
-      -- `bevalVlet_structure` already gives `e2` evaluated from `w₀mid` to `w₀'`
-      simpa [hcfg₀2] using hbeval₀_e2⟩
-  have ht₁_e2 : terminatesToW w₀mid w₁' e2 cfg₁2 cfg₁3 o₁ := by
-    -- align input world for the second run using `hw_mid`
-    subst hw_mid
-    exact ⟨fuel₁ - 1, verbose₁, by
-      simpa [hcfg₁2] using hbeval₁_e2⟩
+  -- Convert e2 evaluations to world-free
+  have ht₀_e2 : terminatesTo e2 cfg₀2 cfg₀3 o₀ :=
+    ⟨fuel₀ - 1, verbose₀, by simpa [hcfg₀2] using hbeval₀_e2⟩
+  have ht₁_e2 : terminatesTo e2 cfg₁2 cfg₁3 o₁ :=
+    ⟨fuel₁ - 1, verbose₁, by simpa [hcfg₁2] using hbeval₁_e2⟩
   have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using hwf1
   -- wfConfig cfg₀2 follows from wfConfig cfg₀1 since they have the same memory and nextAddr
-  -- (vlet only changes varEnv, not memory or nextAddr before evaluating e2)
   have hwfcfg₀2' : wfConfig cfg₀2 := by
-    rcases hwfcf₀1 with ⟨hwfmem₀, hwfenv₀⟩
+    rcases hwfcf₀1' with ⟨hwfmem₀, hwfenv₀⟩
     refine ⟨?_, ?_⟩
     · simpa [hcfg₀2] using hwfmem₀
     · have hwfenv₀' : wfVarEnv cfg₀1.nextAddr ((vname, v₀1) :: cfg₀1.varEnv) :=
         wfVarEnv.cons vname v₀1 cfg₀1.varEnv hv₀1_wf hwfenv₀
       simpa [hcfg₀2, VarEnv.update] using hwfenv₀'
   have hwfcfg₁2' : wfConfig cfg₁2 := by
-    rcases hwfcf₁1 with ⟨hwfmem₁, hwfenv₁⟩
+    rcases hwfcf₁1' with ⟨hwfmem₁, hwfenv₁⟩
     refine ⟨?_, ?_⟩
     · simpa [hcfg₁2] using hwfmem₁
     · have hwfenv₁' : wfVarEnv cfg₁1.nextAddr ((vname, v₁1) :: cfg₁1.varEnv) :=
         wfVarEnv.cons vname v₁1 cfg₁1.varEnv hv₁1_wf hwfenv₁
       simpa [hcfg₁2, VarEnv.update] using hwfenv₁'
   have hstep_e2 :=
-    hIH2 w₀mid cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀1 θ₁1
+    hIH2 cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀1 θ₁1
       cfg₀3 cfg₁3 o₀ o₁
       hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' hreg_ctx' hRbound hagree_clean1'
       cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode cfg₁2.pureMode hwfcfg₀2' hwfcfg₁2'
-      w₀' w₁' ht₀_e2 ht₁_e2
+      ht₀_e2 ht₁_e2
   rcases hstep_e2 with
-    ⟨θ₀2, θ₁2, hw_out, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+    ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
+  -- Convert to terminatesToW for beval_preserves_varEnv
+  have ht₀_e2_w : terminatesToW w_default w_default e2 cfg₀2 cfg₀3 o₀ := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default (by simpa [hcfg₀2] using hbeval₀_e2)
+    exact ⟨fuel₀ - 1, verbose₀, by simpa [pure] using h_eq⟩
+  have ht₁_e2_w : terminatesToW w_default w_default e2 cfg₁2 cfg₁3 o₁ := by
+    have h_eq := LeanProofs.evalAtWorld_eq w_default (by simpa [hcfg₁2] using hbeval₁_e2)
+    exact ⟨fuel₁ - 1, verbose₁, by simpa [pure] using h_eq⟩
   have hvar_pres₀ : cfg₀3.varEnv = cfg₀2.varEnv := by
     symm
-    exact beval_preserves_varEnv e2 (fuel₀ - 1) verbose₀ cfg₀2 cfg₀3 o₀ ⟨w₀mid, w₀', by simpa [hcfg₀2] using hbeval₀_e2⟩
+    exact beval_preserves_varEnv e2 (fuel₀ - 1) verbose₀ cfg₀2 cfg₀3 o₀ ht₀_e2_w
   have hvar_pres₁ : cfg₁3.varEnv = cfg₁2.varEnv := by
     symm
-    exact beval_preserves_varEnv e2 (fuel₁ - 1) verbose₁ cfg₁2 cfg₁3 o₁ ⟨w₁mid, w₁', by simpa [hcfg₁2] using hbeval₁_e2⟩
+    exact beval_preserves_varEnv e2 (fuel₁ - 1) verbose₁ cfg₁2 cfg₁3 o₁ ht₁_e2_w
   have hric₀'' :
       runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     unfold runtimeInstantiatesCtx
@@ -3745,13 +3715,18 @@ private lemma stepFRW_vlet
             have hnone₁' : cf₁.varEnv.lookup w = none := by
               simpa [hcfg₁final] using hnone₁1
             exact agreeVarUnder.both_none w qt hnone₀' hnone₁'
-  refine ⟨θ₀2, θ₁2, hw_out, hθext₀, hθext₁, ?_, ?_, ?_, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
+  -- Derive wfConfig for final configs
+  have hwfcf₀_final : wfConfig cf₀ := by
+    have hterm := terminatesTo_nextAddr_mono (Expr.vlet vname e1 e2) { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    exact wfConfig_mono hwfcfg₀ hterm
+  have hwfcf₁_final : wfConfig cf₁ := by
+    have hterm := terminatesTo_nextAddr_mono (Expr.vlet vname e1 e2) { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    exact wfConfig_mono hwfcfg₁ hterm
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
   -- wfTypeContext only depends on memEnv and nextLoc (not varEnv)
   · intro l hcontains
     simp only [ctxAfter, h_mem, h_loc] at hcontains ⊢
     exact hwf2 l hcontains
-  · exact hwfcf₀_final
-  · exact hwfcf₁_final
   intro hclean
   have hpoison_imp : res.qualType.poison = false → res2.qualType.poison = false := by
     intro hpoison_res
@@ -3776,13 +3751,13 @@ private lemma stepFRW_vlet
     simpa [hcfg₀final, hcfg₁final] using (hres_agree2 hclean2)
   exact agreeValueUnder_transport_clean hclean h_ret_etyp h_ret_pred hpoison_imp hagree2
 
--- Helper lemma for fn expressions
-private lemma stepFRW_fn
+-- World-free version of stepFRW_fn
+private lemma stepFR_fn
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFRW ctxᵢ R (Expr.fn x paramType body returnType) res predSat := by
+  StepFR ctxᵢ R (Expr.fn x paramType body returnType) res predSat := by
   have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
     simp [typecheck, typecheckExpr] at h
@@ -3804,43 +3779,57 @@ private lemma stepFRW_fn
     rfl
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm₀ pm₁
-    hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
-  have hterm₀ :=
-    terminatesTo_fn_inv x paramType body returnType μ₀ ρ₀ a₀ pm₀ cf₀ o₀ w w₀' ht₀
-  have hterm₁ :=
-    terminatesTo_fn_inv x paramType body returnType μ₁ ρ₁ a₁ pm₁ cf₁ o₁ w w₁' ht₁
-  rcases hterm₀ with ⟨hcf₀, ho₀⟩
-  rcases hterm₁ with ⟨hcf₁, ho₁⟩
-  subst hcf₀
-  subst hcf₁
-  -- `fn` does not perform IO, so the world is unchanged.
-  have hw₀' : w₀' = w := by
-    rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Extract config and value from terminatesTo
+  rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+  -- fn doesn't change config or perform I/O
+  have hcf₀ : cf₀ = { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } := by
     cases fuel₀ with
     | zero =>
         simp [LeanPoison.beval] at hbeval₀
         cases hbeval₀
     | succ fuel₀ =>
-        simp [LeanPoison.beval] at hbeval₀
-        injection hbeval₀ with _hres hw
-        exact hw.symm
-  have hw₁' : w₁' = w := by
-    rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+        simp [LeanPoison.beval, pure] at hbeval₀
+        injection hbeval₀ with hcfg
+        cases hcfg
+        rfl
+  have hcf₁ : cf₁ = { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } := by
     cases fuel₁ with
     | zero =>
         simp [LeanPoison.beval] at hbeval₁
         cases hbeval₁
     | succ fuel₁ =>
+        simp [LeanPoison.beval, pure] at hbeval₁
+        injection hbeval₁ with hcfg
+        cases hcfg
+        rfl
+  have ho₀ : o₀ = Value.closure x body ρ₀ := by
+    cases fuel₀ with
+    | zero =>
+        simp [LeanPoison.beval] at hbeval₀
+        cases hbeval₀
+    | succ fuel₀ =>
+        simp [LeanPoison.beval, pure] at hbeval₀
+        injection hbeval₀ with _hcfg hval
+        cases hval
+        rfl
+  have ho₁ : o₁ = Value.closure x body ρ₁ := by
+    cases fuel₁ with
+    | zero =>
         simp [LeanPoison.beval] at hbeval₁
-        injection hbeval₁ with _hres hw
-        exact hw.symm
+        cases hbeval₁
+    | succ fuel₁ =>
+        simp [LeanPoison.beval, pure] at hbeval₁
+        injection hbeval₁ with _hcfg hval
+        cases hval
+        rfl
+  subst hcf₀
+  subst hcf₁
   have hcap :
       agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ :=
     agreeCapturedEnv_of_agreeOnClean predSat R ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · -- worlds are equal
-    simp [hw₀', hw₁']
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_⟩
   · refine ⟨?_, ?_⟩
     · intro l a hlookup
       exact hlookup
@@ -3852,10 +3841,6 @@ private lemma stepFRW_fn
     · intro hwf'
       exact hwf'
   · simpa [hctxAfter] using hwf
-  · -- final config₀ well-formed
-    simpa using hwfcfg₀
-  · -- final config₁ well-formed
-    simpa using hwfcfg₁
   · simpa [hctxAfter] using hric₀
   · simpa [hctxAfter] using hric₁
   · simpa [hctxAfter] using hreg
@@ -3881,15 +3866,15 @@ private lemma stepFRW_fn
           have hpred : qtypGuardTag res.qualType = none := by
             simp [qtypGuardTag, hres, res_expected]
           simp [hpred] at htag
-        exact False.elim this
+            exact False.elim this
 
--- Helper lemma for pfn expressions
-private lemma stepFRW_pfn
+-- World-free version of stepFRW_pfn
+private lemma stepFR_pfn
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFRW ctxᵢ R (Expr.pfn x paramType body returnType) res predSat := by
+  StepFR ctxᵢ R (Expr.pfn x paramType body returnType) res predSat := by
   have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
     simp [typecheck, typecheckExpr] at h
@@ -3917,43 +3902,57 @@ private lemma stepFRW_pfn
         simp [ctxAfter, hres, res_expected]
       have hto : Expr.toPExpr? body = some pbody :=
         Expr_toPExpr?_eq_some_of_toPExpr_ok body pbody hbody
-      intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm₀ pm₁
-        hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
-      have hterm₀ :=
-        terminatesTo_pfn_inv x paramType body returnType μ₀ ρ₀ a₀ pm₀ cf₀ o₀ w w₀' ht₀
-      have hterm₁ :=
-        terminatesTo_pfn_inv x paramType body returnType μ₁ ρ₁ a₁ pm₁ cf₁ o₁ w w₁' ht₁
-      rcases hterm₀ with ⟨hcf₀, ho₀⟩
-      rcases hterm₁ with ⟨hcf₁, ho₁⟩
-      subst hcf₀
-      subst hcf₁
-      -- `pfn` does not perform IO, so the world is unchanged.
-      have hw₀' : w₀' = w := by
-        rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+      intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+      -- Extract config and value from terminatesTo
+      rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+      rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+      -- pfn doesn't change config or perform I/O
+      have hcf₀ : cf₀ = { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } := by
         cases fuel₀ with
         | zero =>
             simp [LeanPoison.beval] at hbeval₀
             cases hbeval₀
         | succ fuel₀ =>
-            simp [LeanPoison.beval] at hbeval₀
-            injection hbeval₀ with _hres hw
-            exact hw.symm
-      have hw₁' : w₁' = w := by
-        rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+            simp [LeanPoison.beval, pure] at hbeval₀
+            injection hbeval₀ with hcfg
+            cases hcfg
+            rfl
+      have hcf₁ : cf₁ = { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } := by
         cases fuel₁ with
         | zero =>
             simp [LeanPoison.beval] at hbeval₁
             cases hbeval₁
         | succ fuel₁ =>
+            simp [LeanPoison.beval, pure] at hbeval₁
+            injection hbeval₁ with hcfg
+            cases hcfg
+            rfl
+      have ho₀ : o₀ = Value.pclosure x pbody ρ₀ := by
+        cases fuel₀ with
+        | zero =>
+            simp [LeanPoison.beval] at hbeval₀
+            cases hbeval₀
+        | succ fuel₀ =>
+            simp [LeanPoison.beval, pure] at hbeval₀
+            injection hbeval₀ with _hcfg hval
+            cases hval
+            rfl
+      have ho₁ : o₁ = Value.pclosure x pbody ρ₁ := by
+        cases fuel₁ with
+        | zero =>
             simp [LeanPoison.beval] at hbeval₁
-            injection hbeval₁ with _hres hw
-            exact hw.symm
+            cases hbeval₁
+        | succ fuel₁ =>
+            simp [LeanPoison.beval, pure] at hbeval₁
+            injection hbeval₁ with _hcfg hval
+            cases hval
+            rfl
+      subst hcf₀
+      subst hcf₁
       have hcap :
           agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ :=
         agreeCapturedEnv_of_agreeOnClean predSat R ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
-      refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-      · -- worlds are equal
-        simp [hw₀', hw₁']
+      refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_⟩
       · refine ⟨?_, ?_⟩
         · intro l a hlookup
           exact hlookup
@@ -3965,10 +3964,6 @@ private lemma stepFRW_pfn
         · intro hwf'
           exact hwf'
       · simpa [hctxAfter] using hwf
-      · -- final config₀ well-formed
-        simpa using hwfcfg₀
-      · -- final config₁ well-formed
-        simpa using hwfcfg₁
       · simpa [hctxAfter] using hric₀
       · simpa [hctxAfter] using hric₁
       · simpa [hctxAfter] using hreg
@@ -3984,9 +3979,8 @@ private lemma stepFRW_pfn
             exact
               agreeValueUnder.clean_parrow
                 (tcl := PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv))
-                (pbody := pbody) (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv)
-                (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
-                hpoison hetyp (by simp) (by exact ⟨hto, rfl⟩) hcap (by simp [ho₀]) (by simp [ho₁])
+                (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
+                hpoison hetyp (by simp) rfl hto hcap (by simp [ho₀]) (by simp [ho₁])
         | inr hguard =>
             rcases hguard with ⟨k, htag, _hregime⟩
             have : False := by

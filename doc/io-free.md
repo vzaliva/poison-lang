@@ -382,7 +382,7 @@ The file `FaultRobustnessProofs.lean` currently contains extensive world-threade
    - Old `TypeSystemEnforcesFaultRobustness_impl` (line 510)
    - Old `TypeSystemEnforcesFaultRobustness_step` (lines 4933-4940)
    - Old `TypeSystemEnforcesFaultRobustness` (line 4944)
-   - Any helper lemmas that only existed to support the world-threaded path
+   - Any helper lemmas that only existed to support the world-threaded  path, such as `terminatesToW_of_terminatesTo`
    
    **Verification strategy:**
    ```bash
