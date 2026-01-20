@@ -2984,6 +2984,9 @@ private lemma stepFR_vlet
   have hstruct₁ := terminatesTo_vlet_inv' vname e1 e2
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
   rcases hstruct₁ with ⟨cfg₁1, v₁1, cfg₁3, ht₁_e1, ht₁_e2, hcf₁_eq, hpm₁1, hpm₁2⟩
+  -- Define intermediate configs with extended varEnv
+  let cfg₀2 : Config := { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 }
+  let cfg₁2 : Config := { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 }
   -- Apply IH for e1
   have hstep_e1 :=
     hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
@@ -2993,143 +2996,20 @@ private lemma stepFR_vlet
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
   have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using hwf1
-  -- For vlet, the context for e2 includes the bound variable
-  -- The configs for e2 have updated varEnv
-  have hric₀1' : runtimeInstantiatesCtx ctx'
-      { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 }.memory
-      { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 }.varEnv θ₀1 := by
-    sorry -- Complex: needs preservation_value and variable binding handling
-  have hric₁1' : runtimeInstantiatesCtx ctx'
-      { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 }.memory
-      { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 }.varEnv θ₁1 := by
-    sorry -- Complex: needs preservation_value and variable binding handling
-  have htagR1 : regimeConsistentWithCtx ctx' R := by
-    sorry -- Derive from relationship
-  have hwfcf₀1' : wfConfig { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 } := by
-    sorry -- Derive from wfcf₀1 and wfValue
-  have hwfcf₁1' : wfConfig { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 } := by
-    sorry -- Derive from wfcf₁1 and wfValue
-  have hagree_clean1' :
-      agreeOnClean predSat R ctx'
-        { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 }.memory
-        { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 }.varEnv θ₀1
-        { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 }.memory
-        { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 }.varEnv θ₁1 := by
-    sorry -- Complex: needs variable agreement handling
-  -- Handle pureMode for IH2
-  have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
-  -- The e2 evaluation starts from the extended env config and terminates to cfg₀3/cfg₁3
-  have hstep_e2 :=
-    hIH2 cfg₀1.memory cfg₁1.memory
-      (cfg₀1.varEnv.update vname v₀1) (cfg₁1.varEnv.update vname v₁1)
-      θ₀1 θ₁1 cfg₀3 cfg₁3 o₀ o₁
-      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR1 hRbound hagree_clean1'
-      cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1' (by rw [← hpm_eq]; exact hwfcf₁1')
-      ht₀_e2 (by rw [← hpm_eq]; convert ht₁_e2 using 2 <;> simp [hpm_eq])
-  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀3, hwfcf₁3, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
-  -- Combine results
-  have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
-  have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
-  -- Note: ctxAfter ctxᵢ res ≠ ctxAfter ctx' res2 due to varEnv (vname binding)
-  -- The vlet binding is lexically scoped, so varEnv reverts outside
-  -- Derive wfConfig for cf₀ and cf₁ from cfg₀3 and cfg₁3
-  -- cf₀ = {cfg₀3 with varEnv := cfg₀1.varEnv}, cf₁ = {cfg₁3 with varEnv := cfg₁1.varEnv}
-  have hwfcf₀ : wfConfig cf₀ := by
-    rw [hcf₀_eq]
-    -- wfConfig is a conjunction of wfMemory and wfVarEnv
-    -- cfg₀3's wfMemory + cfg₀1's wfVarEnv
-    sorry
-  have hwfcf₁ : wfConfig cf₁ := by
-    rw [hcf₁_eq]
-    sorry
-  have hagree_clean :
-      agreeOnClean predSat R (ctxAfter ctxᵢ res)
-        cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
-    sorry -- Complex: varEnv handling for scoped bindings
-  have hwf_after : wfTypeContext (ctxAfter ctxᵢ res) := by
-    sorry -- Derive from hwf2 and context relationship
-  have hric₀_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
-    sorry -- Complex: varEnv restoration for scoped bindings
-  have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
-    sorry -- Complex: varEnv restoration for scoped bindings
-  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) R := by
-    sorry -- Derive from htagR2 and context relationship
-  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, hwf_after, hwfcf₀, hwfcf₁, hric₀_final, hric₁_final, htag_final, hagree_clean, ?_⟩
-  intro hclean
-  -- Need to handle the result agreement
-  -- res.qualType and res2.qualType have same etyp and pred (h_ret_etyp, h_ret_pred)
-  -- but different poison (res.qualType.poison = joinPoison pc res2.qualType.poison)
-  -- Complex: converting agreeValueUnder from res2.qualType to res.qualType
-  sorry
-  /- OLD PROOF (needs refactoring):
-  have htc' : typecheckVlet ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr_vlet_succ] at htc
-    exact htc
-  obtain ⟨res1, res2, ctx', htc1, hctx', htc2, h_ret_etyp, h_mem, h_tag, h_loc, h_ntag,
-          h_ret_poison, h_ret_pred⟩ :=
-    typecheckVlet_structure ctxᵢ vname e1 e2 (Nat.succ fuel') res htc'
-  have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
-    simpa [typecheck, Nat.succ_sub_one] using htc1
-  have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
-    simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
-  have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ res1 htc1' R
-  have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' res2 htc2' R
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  -- Extract fuel/verbose from terminatesTo
-  rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
-  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
-  -- Use bevalVlet_structure with defaultWorld
-  let w_default := LeanProofs.defaultWorld
-  have hbeval₀_w : LeanPoison.beval fuel₀ { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } (Expr.vlet vname e1 e2) verbose₀ w_default = EST.Out.ok (.success cf₀ o₀) w_default := by
-    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₀
-    simpa [pure] using h_eq
-  have hbeval₁_w : LeanPoison.beval fuel₁ { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } (Expr.vlet vname e1 e2) verbose₁ w_default = EST.Out.ok (.success cf₁ o₁) w_default := by
-    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₁
-    simpa [pure] using h_eq
-  have hstruct₀ :=
-    bevalVlet_structure vname e1 e2 fuel₀ verbose₀
-      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
-      cf₀ o₀ w_default w_default hbeval₀_w
-  rcases hstruct₀ with ⟨cfg₀1, cfg₀2, cfg₀3, v₀1, _w₀mid, hbeval₀_e1, hcfg₀2, hbeval₀_e2, hcfg₀final⟩
-  have hstruct₁ :=
-    bevalVlet_structure vname e1 e2 fuel₁ verbose₁
-      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
-      cf₁ o₁ w_default w_default hbeval₁_w
-  rcases hstruct₁ with ⟨cfg₁1, cfg₁2, cfg₁3, v₁1, _w₁mid, hbeval₁_e1, hcfg₁2, hbeval₁_e2, hcfg₁final⟩
-  -- Convert to world-free terminatesTo
-  have ht₀_e1 : terminatesTo e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 :=
-    ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e1⟩
-  have ht₁_e1 : terminatesTo e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 :=
-    ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e1⟩
-  -- Derive wfConfig for intermediate configs
-  have hwfcf₀1 : wfConfig cfg₀1 := by
-    have hterm := terminatesTo_nextAddr_mono e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1
-    exact wfConfig_mono hwfcfg₀ hterm
-  have hwfcf₁1 : wfConfig cfg₁1 := by
-    have hterm := terminatesTo_nextAddr_mono e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1
-    exact wfConfig_mono hwfcfg₁ hterm
-  have hstep_e1 :=
-    hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
-  rcases hstep_e1 with
-    ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1', hwfcf₁1', hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
-  have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
-  have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
-  have hric₀1_mem :
-      runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+  have hric₀1_mem : runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₀1.memory cfg₀1.varEnv θ₀1 := by
     simpa [ctxAfter] using hric₀1
-  have hric₁1_mem :
-      runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+  have hric₁1_mem : runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctxAfter] using hric₁1
   -- Get value types using preservation with defaultWorld
+  let w_default := LeanProofs.defaultWorld
   have ht₀_e1_w : terminatesToW w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 := by
-    have h_eq := LeanProofs.evalAtWorld_eq w_default (by simpa using hbeval₀_e1)
-    exact ⟨fuel₀ - 1, verbose₀, by simpa [pure] using h_eq⟩
+    rcases ht₀_e1 with ⟨fuel₀, verbose₀, hpure₀⟩
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₀
+    exact ⟨fuel₀, verbose₀, by simpa [pure] using h_eq⟩
   have ht₁_e1_w : terminatesToW w_default w_default e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 := by
-    have h_eq := LeanProofs.evalAtWorld_eq w_default (by simpa using hbeval₁_e1)
-    exact ⟨fuel₁ - 1, verbose₁, by simpa [pure] using h_eq⟩
+    rcases ht₁_e1 with ⟨fuel₁, verbose₁, hpure₁⟩
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₁
+    exact ⟨fuel₁, verbose₁, by simpa [pure] using h_eq⟩
   have hv₀1_typed : valueHasETyp θ₀1 v₀1 res1.qualType.etyp :=
     (preservation_valueW e1 ctxᵢ fuel' res1 μ₀ cfg₀1.memory ρ₀ cfg₀1.varEnv θ₀ θ₀1
       a₀ cfg₀1.nextAddr pm cfg₀1.pureMode v₀1 w_default w_default
@@ -3144,13 +3024,14 @@ private lemma stepFR_vlet
     (wfConfig_preservedW w_default w_default e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1_w hwfcfg₁).2
   have hreg_ctx' : regimeConsistentWithCtx ctx' R := by
     simpa [hctx', ctxAfter] using htagR1
+  -- runtimeInstantiatesCtx for extended configs
   have hric₀1' : runtimeInstantiatesCtx ctx' cfg₀2.memory cfg₀2.varEnv θ₀1 := by
     unfold runtimeInstantiatesCtx at hric₀1 ⊢
     rcases hric₀1 with ⟨hmem₀1, hvars₀1⟩
     constructor
     · intro l a hlookup
       have hmem := hmem₀1 l a hlookup
-      simpa [hctx', ctxAfter, hcfg₀2] using hmem
+      simpa [hctx', ctxAfter, cfg₀2] using hmem
     · intro w qt hlookup
       by_cases hw : w = vname
       · subst hw
@@ -3159,12 +3040,11 @@ private lemma stepFR_vlet
         have hqt : qt = res1.qualType := by
           have h := VarTypeEnv_lookup_update_eq ctxᵢ.varEnv w res1.qualType
           have : some qt = some res1.qualType := by
-            calc
-              some qt = (ctxᵢ.varEnv.update w res1.qualType).lookup w := by symm; exact hlookup'
-              _ = some res1.qualType := by exact h
+            calc some qt = (ctxᵢ.varEnv.update w res1.qualType).lookup w := by symm; exact hlookup'
+                 _ = some res1.qualType := by exact h
           exact Option.some.inj this
         have hlookup_var : cfg₀2.varEnv.lookup w = some v₀1 := by
-          simp [hcfg₀2, VarEnv.update, VarEnv.lookup]
+          simp [cfg₀2, VarEnv.update, VarEnv.lookup]
         refine ⟨v₀1, hlookup_var, ?_⟩
         simpa [hqt] using hv₀1_typed
       · have hlookup' : (ctxᵢ.varEnv.update vname res1.qualType).lookup w = some qt := by
@@ -3173,7 +3053,7 @@ private lemma stepFR_vlet
           simpa [VarTypeEnv_lookup_update_ne ctxᵢ.varEnv vname w res1.qualType hw] using hlookup'
         obtain ⟨v, hvlookup, hvtyp⟩ := hvars₀1 hlookup_ctx
         have hvlookup' : cfg₀2.varEnv.lookup w = some v := by
-          simpa [hcfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname w v₀1 hw] using hvlookup
+          simpa [cfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname w v₀1 hw] using hvlookup
         exact ⟨v, hvlookup', hvtyp⟩
   have hric₁1' : runtimeInstantiatesCtx ctx' cfg₁2.memory cfg₁2.varEnv θ₁1 := by
     unfold runtimeInstantiatesCtx at hric₁1 ⊢
@@ -3181,7 +3061,7 @@ private lemma stepFR_vlet
     constructor
     · intro l a hlookup
       have hmem := hmem₁1 l a hlookup
-      simpa [hctx', ctxAfter, hcfg₁2] using hmem
+      simpa [hctx', ctxAfter, cfg₁2] using hmem
     · intro w qt hlookup
       by_cases hw : w = vname
       · subst hw
@@ -3190,12 +3070,11 @@ private lemma stepFR_vlet
         have hqt : qt = res1.qualType := by
           have h := VarTypeEnv_lookup_update_eq ctxᵢ.varEnv w res1.qualType
           have : some qt = some res1.qualType := by
-            calc
-              some qt = (ctxᵢ.varEnv.update w res1.qualType).lookup w := by symm; exact hlookup'
-              _ = some res1.qualType := by exact h
+            calc some qt = (ctxᵢ.varEnv.update w res1.qualType).lookup w := by symm; exact hlookup'
+                 _ = some res1.qualType := by exact h
           exact Option.some.inj this
         have hlookup_var : cfg₁2.varEnv.lookup w = some v₁1 := by
-          simp [hcfg₁2, VarEnv.update, VarEnv.lookup]
+          simp [cfg₁2, VarEnv.update, VarEnv.lookup]
         refine ⟨v₁1, hlookup_var, ?_⟩
         simpa [hqt] using hv₁1_typed
       · have hlookup' : (ctxᵢ.varEnv.update vname res1.qualType).lookup w = some qt := by
@@ -3204,8 +3083,24 @@ private lemma stepFR_vlet
           simpa [VarTypeEnv_lookup_update_ne ctxᵢ.varEnv vname w res1.qualType hw] using hlookup'
         obtain ⟨v, hvlookup, hvtyp⟩ := hvars₁1 hlookup_ctx
         have hvlookup' : cfg₁2.varEnv.lookup w = some v := by
-          simpa [hcfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname w v₁1 hw] using hvlookup
+          simpa [cfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname w v₁1 hw] using hvlookup
         exact ⟨v, hvlookup', hvtyp⟩
+  -- wfConfig for extended configs
+  have hwfcfg₀2 : wfConfig cfg₀2 := by
+    rcases hwfcf₀1 with ⟨hwfmem₀, hwfenv₀⟩
+    refine ⟨?_, ?_⟩
+    · simpa [cfg₀2] using hwfmem₀
+    · have hwfenv₀' : wfVarEnv cfg₀1.nextAddr ((vname, v₀1) :: cfg₀1.varEnv) :=
+        wfVarEnv.cons vname v₀1 cfg₀1.varEnv hv₀1_wf hwfenv₀
+      simpa [cfg₀2, VarEnv.update] using hwfenv₀'
+  have hwfcfg₁2 : wfConfig cfg₁2 := by
+    rcases hwfcf₁1 with ⟨hwfmem₁, hwfenv₁⟩
+    refine ⟨?_, ?_⟩
+    · simpa [cfg₁2] using hwfmem₁
+    · have hwfenv₁' : wfVarEnv cfg₁1.nextAddr ((vname, v₁1) :: cfg₁1.varEnv) :=
+        wfVarEnv.cons vname v₁1 cfg₁1.varEnv hv₁1_wf hwfenv₁
+      simpa [cfg₁2, VarEnv.update] using hwfenv₁'
+  -- agreeOnClean for extended configs
   have hagree_clean1' :
       agreeOnClean predSat R ctx' cfg₀2.memory cfg₀2.varEnv θ₀1 cfg₁2.memory cfg₁2.varEnv θ₁1 := by
     constructor
@@ -3213,7 +3108,7 @@ private lemma stepFR_vlet
       have hlookup' : (ctxAfter ctxᵢ res1).memEnv.lookup l = some qt := by
         simpa [hctx', ctxAfter] using hlookup
       have hagree_loc := (hagree_clean1.1 l qt hlookup' hclean)
-      simpa [hcfg₀2, hcfg₁2] using hagree_loc
+      simpa [cfg₀2, cfg₁2] using hagree_loc
     · intro w qt hlookup hclean
       by_cases hw : w = vname
       · subst hw
@@ -3222,19 +3117,17 @@ private lemma stepFR_vlet
         have hqt : qt = res1.qualType := by
           have h := VarTypeEnv_lookup_update_eq ctxᵢ.varEnv w res1.qualType
           have : some qt = some res1.qualType := by
-            calc
-              some qt = (ctxᵢ.varEnv.update w res1.qualType).lookup w := by symm; exact hlookup'
-              _ = some res1.qualType := by exact h
+            calc some qt = (ctxᵢ.varEnv.update w res1.qualType).lookup w := by symm; exact hlookup'
+                 _ = some res1.qualType := by exact h
           exact Option.some.inj this
         have hlookup₀ : cfg₀2.varEnv.lookup w = some v₀1 := by
-          simp [hcfg₀2, VarEnv.update, VarEnv.lookup]
+          simp [cfg₀2, VarEnv.update, VarEnv.lookup]
         have hlookup₁ : cfg₁2.varEnv.lookup w = some v₁1 := by
-          simp [hcfg₁2, VarEnv.update, VarEnv.lookup]
-        have hclean1 : qtypCleanUnder R res1.qualType := by
-          simpa [hqt] using hclean
+          simp [cfg₁2, VarEnv.update, VarEnv.lookup]
+        have hclean1 : qtypCleanUnder R res1.qualType := by simpa [hqt] using hclean
         have hagree_val : agreeValueUnder predSat R cfg₀2.memory cfg₁2.memory θ₀1 θ₁1 res1.qualType v₀1 v₁1 := by
           have hagree := hres_agree1 hclean1
-          simpa [hcfg₀2, hcfg₁2] using hagree
+          simpa [cfg₀2, cfg₁2] using hagree
         have hagree_val' : agreeValueUnder predSat R cfg₀2.memory cfg₁2.memory θ₀1 θ₁1 qt v₀1 v₁1 := by
           simpa [hqt] using hagree_val
         exact agreeVarUnder.agree_values w qt v₀1 v₁1 hlookup₀ hlookup₁ hagree_val'
@@ -3246,109 +3139,105 @@ private lemma stepFR_vlet
         cases hagree_var with
         | agree_values _ _ v₀ v₁ hlookup₀ hlookup₁ hagree =>
             have hlookup₀' : cfg₀2.varEnv.lookup w = some v₀ := by
-              simpa [hcfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname w v₀1 hw] using hlookup₀
+              simpa [cfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname w v₀1 hw] using hlookup₀
             have hlookup₁' : cfg₁2.varEnv.lookup w = some v₁ := by
-              simpa [hcfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname w v₁1 hw] using hlookup₁
+              simpa [cfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname w v₁1 hw] using hlookup₁
             have hagree' : agreeValueUnder predSat R cfg₀2.memory cfg₁2.memory θ₀1 θ₁1 qt v₀ v₁ := by
-              simpa [hcfg₀2, hcfg₁2] using hagree
+              simpa [cfg₀2, cfg₁2] using hagree
             exact agreeVarUnder.agree_values w qt v₀ v₁ hlookup₀' hlookup₁' hagree'
         | both_none _ _ hnone₀ hnone₁ =>
             have hnone₀' : cfg₀2.varEnv.lookup w = none := by
-              simpa [hcfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname w v₀1 hw] using hnone₀
+              simpa [cfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname w v₀1 hw] using hnone₀
             have hnone₁' : cfg₁2.varEnv.lookup w = none := by
-              simpa [hcfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname w v₁1 hw] using hnone₁
+              simpa [cfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname w v₁1 hw] using hnone₁
             exact agreeVarUnder.both_none w qt hnone₀' hnone₁'
-  -- Convert e2 evaluations to world-free
-  have ht₀_e2 : terminatesTo e2 cfg₀2 cfg₀3 o₀ :=
-    ⟨fuel₀ - 1, verbose₀, by simpa [hcfg₀2] using hbeval₀_e2⟩
-  have ht₁_e2 : terminatesTo e2 cfg₁2 cfg₁3 o₁ :=
-    ⟨fuel₁ - 1, verbose₁, by simpa [hcfg₁2] using hbeval₁_e2⟩
-  have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using hwf1
-  -- wfConfig cfg₀2 follows from wfConfig cfg₀1 since they have the same memory and nextAddr
-  have hwfcfg₀2' : wfConfig cfg₀2 := by
-    rcases hwfcf₀1' with ⟨hwfmem₀, hwfenv₀⟩
-    refine ⟨?_, ?_⟩
-    · simpa [hcfg₀2] using hwfmem₀
-    · have hwfenv₀' : wfVarEnv cfg₀1.nextAddr ((vname, v₀1) :: cfg₀1.varEnv) :=
-        wfVarEnv.cons vname v₀1 cfg₀1.varEnv hv₀1_wf hwfenv₀
-      simpa [hcfg₀2, VarEnv.update] using hwfenv₀'
-  have hwfcfg₁2' : wfConfig cfg₁2 := by
-    rcases hwfcf₁1' with ⟨hwfmem₁, hwfenv₁⟩
-    refine ⟨?_, ?_⟩
-    · simpa [hcfg₁2] using hwfmem₁
-    · have hwfenv₁' : wfVarEnv cfg₁1.nextAddr ((vname, v₁1) :: cfg₁1.varEnv) :=
-        wfVarEnv.cons vname v₁1 cfg₁1.varEnv hv₁1_wf hwfenv₁
-      simpa [hcfg₁2, VarEnv.update] using hwfenv₁'
+  -- Handle pureMode for IH2
+  have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
+  have hcfg₀2_eq : cfg₀2 = { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 } := rfl
+  have hcfg₁2_eq : cfg₁2 = { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 } := rfl
+  -- Convert ht₁_e2 to have matching pureMode
+  have ht₁_e2' : terminatesTo e2 { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1, pureMode := cfg₀1.pureMode } cfg₁3 o₁ := by
+    have hcfg_eq : ({ cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 } : Config) =
+                   { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1, pureMode := cfg₀1.pureMode } := by
+      simp [hpm_eq]
+    rw [← hcfg_eq]; exact ht₁_e2
+  -- wfConfig for cfg₁2 with adjusted pureMode
+  have hwfcfg₁2' : wfConfig { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1, pureMode := cfg₀1.pureMode } := by
+    have hcfg_eq : cfg₁2 = { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1, pureMode := cfg₀1.pureMode } := by
+      simp [cfg₁2, hpm_eq]
+    rw [← hcfg_eq]; exact hwfcfg₁2
+  -- Apply IH for e2
   have hstep_e2 :=
     hIH2 cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀1 θ₁1
       cfg₀3 cfg₁3 o₀ o₁
       hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' hreg_ctx' hRbound hagree_clean1'
-      cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode cfg₁2.pureMode hwfcfg₀2' hwfcfg₁2'
-      ht₀_e2 ht₁_e2
-  rcases hstep_e2 with
-    ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+      cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode hwfcfg₀2 hwfcfg₁2'
+      ht₀_e2 ht₁_e2'
+  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀3, hwfcf₁3, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+  -- Combine map extensions
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
-  -- Convert to terminatesToW for beval_preserves_varEnv
+  -- VarEnv preservation through e2
   have ht₀_e2_w : terminatesToW w_default w_default e2 cfg₀2 cfg₀3 o₀ := by
-    have h_eq := LeanProofs.evalAtWorld_eq w_default (by simpa [hcfg₀2] using hbeval₀_e2)
-    exact ⟨fuel₀ - 1, verbose₀, by simpa [pure] using h_eq⟩
+    rcases ht₀_e2 with ⟨fuel₀, verbose₀, hpure₀⟩
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₀
+    exact ⟨fuel₀, verbose₀, by simpa [pure] using h_eq⟩
   have ht₁_e2_w : terminatesToW w_default w_default e2 cfg₁2 cfg₁3 o₁ := by
-    have h_eq := LeanProofs.evalAtWorld_eq w_default (by simpa [hcfg₁2] using hbeval₁_e2)
-    exact ⟨fuel₁ - 1, verbose₁, by simpa [pure] using h_eq⟩
+    rcases ht₁_e2 with ⟨fuel₁, verbose₁, hpure₁⟩
+    have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₁
+    exact ⟨fuel₁, verbose₁, by simpa [pure] using h_eq⟩
   have hvar_pres₀ : cfg₀3.varEnv = cfg₀2.varEnv := by
     symm
-    exact beval_preserves_varEnv e2 (fuel₀ - 1) verbose₀ cfg₀2 cfg₀3 o₀ ht₀_e2_w
+    rcases ht₀_e2_w with ⟨fuel₀', verbose₀', heval₀⟩
+    exact beval_preserves_varEnv e2 fuel₀' verbose₀' cfg₀2 cfg₀3 o₀ ⟨w_default, w_default, heval₀⟩
   have hvar_pres₁ : cfg₁3.varEnv = cfg₁2.varEnv := by
     symm
-    exact beval_preserves_varEnv e2 (fuel₁ - 1) verbose₁ cfg₁2 cfg₁3 o₁ ht₁_e2_w
-  have hric₀'' :
-      runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
+    rcases ht₁_e2_w with ⟨fuel₁', verbose₁', heval₁⟩
+    exact beval_preserves_varEnv e2 fuel₁' verbose₁' cfg₁2 cfg₁3 o₁ ⟨w_default, w_default, heval₁⟩
+  -- Final runtimeInstantiatesCtx
+  have hric₀'' : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     unfold runtimeInstantiatesCtx
     rcases hric₀2 with ⟨hmem₂, _hvars₂⟩
     rcases hric₀1 with ⟨_hmem₁, hvars₁⟩
     constructor
     · intro l a hlookup
       have hmem := hmem₂ l a hlookup
-      simpa [ctxAfter, h_mem, h_tag, h_loc, h_ntag, hcfg₀final] using hmem
+      simpa [ctxAfter, h_mem, h_tag, h_loc, h_ntag, hcf₀_eq] using hmem
     · intro u qt hlookup
       have hlookup' : (ctxAfter ctxᵢ res1).varEnv.lookup u = some qt := by
         simpa [ctxAfter] using hlookup
       obtain ⟨v, hvlookup, hvtyp⟩ := hvars₁ hlookup'
       have hvlookup' : cf₀.varEnv.lookup u = some v := by
-        simpa [hcfg₀final] using hvlookup
-      have hvtyp' : valueHasETyp θ₀2 v qt.etyp :=
-        valueHasETyp_extends hθext₀2.1 hvtyp
+        simpa [hcf₀_eq] using hvlookup
+      have hvtyp' : valueHasETyp θ₀2 v qt.etyp := valueHasETyp_extends hθext₀2.1 hvtyp
       exact ⟨v, hvlookup', hvtyp'⟩
-  have hric₁'' :
-      runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
+  have hric₁'' : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
     unfold runtimeInstantiatesCtx
     rcases hric₁2 with ⟨hmem₂, _hvars₂⟩
     rcases hric₁1 with ⟨_hmem₁, hvars₁⟩
     constructor
     · intro l a hlookup
       have hmem := hmem₂ l a hlookup
-      simpa [ctxAfter, h_mem, h_tag, h_loc, h_ntag, hcfg₁final] using hmem
+      simpa [ctxAfter, h_mem, h_tag, h_loc, h_ntag, hcf₁_eq] using hmem
     · intro u qt hlookup
       have hlookup' : (ctxAfter ctxᵢ res1).varEnv.lookup u = some qt := by
         simpa [ctxAfter] using hlookup
       obtain ⟨v, hvlookup, hvtyp⟩ := hvars₁ hlookup'
       have hvlookup' : cf₁.varEnv.lookup u = some v := by
-        simpa [hcfg₁final] using hvlookup
-      have hvtyp' : valueHasETyp θ₁2 v qt.etyp :=
-        valueHasETyp_extends hθext₁2.1 hvtyp
+        simpa [hcf₁_eq] using hvlookup
+      have hvtyp' : valueHasETyp θ₁2 v qt.etyp := valueHasETyp_extends hθext₁2.1 hvtyp
       exact ⟨v, hvlookup', hvtyp'⟩
   have hreg'' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) R := by
     simpa [regimeConsistentWithCtx, ctxAfter, h_tag, h_loc, h_ntag] using htagR2
+  -- Final agreeOnClean
   have hagree_clean :
-      agreeOnClean predSat R (ctxAfter ctxᵢ res)
-        cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
+      agreeOnClean predSat R (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
     constructor
     · intro l qt hlookup hclean
       have hlookup' : (ctxAfter ctx' res2).memEnv.lookup l = some qt := by
         simpa [ctxAfter, h_mem, h_tag, h_loc, h_ntag] using hlookup
       have hagree_loc := (hagree_clean2.1 l qt hlookup' hclean)
-      simpa [hcfg₀final, hcfg₁final] using hagree_loc
+      simpa [hcf₀_eq, hcf₁_eq] using hagree_loc
     · intro w qt hlookup hclean
       by_cases hw : w = vname
       · subst hw
@@ -3358,18 +3247,15 @@ private lemma stepFR_vlet
         cases hagree_var with
         | agree_values _ _ v₀ v₁ hlookup₀ hlookup₁ hagree =>
             have hlookup₀' : cf₀.varEnv.lookup w = some v₀ := by
-              simpa [hcfg₀final] using hlookup₀
+              simpa [hcf₀_eq] using hlookup₀
             have hlookup₁' : cf₁.varEnv.lookup w = some v₁ := by
-              simpa [hcfg₁final] using hlookup₁
-            have hagree' :
-                agreeValueUnder predSat R cf₀.memory cf₁.memory θ₀2 θ₁2 qt v₀ v₁ :=
+              simpa [hcf₁_eq] using hlookup₁
+            have hagree' : agreeValueUnder predSat R cf₀.memory cf₁.memory θ₀2 θ₁2 qt v₀ v₁ :=
               agreeValueUnder_clean_extends hclean hθext₀2.1 hθext₁2.1 hagree
             exact agreeVarUnder.agree_values w qt v₀ v₁ hlookup₀' hlookup₁' hagree'
         | both_none _ _ hnone₀ hnone₁ =>
-            have hnone₀' : cf₀.varEnv.lookup w = none := by
-              simpa [hcfg₀final] using hnone₀
-            have hnone₁' : cf₁.varEnv.lookup w = none := by
-              simpa [hcfg₁final] using hnone₁
+            have hnone₀' : cf₀.varEnv.lookup w = none := by simpa [hcf₀_eq] using hnone₀
+            have hnone₁' : cf₁.varEnv.lookup w = none := by simpa [hcf₁_eq] using hnone₁
             exact agreeVarUnder.both_none w qt hnone₀' hnone₁'
       · have hlookup' : (ctxᵢ.varEnv.update vname res1.qualType).lookup w = some qt := by
           simpa [VarTypeEnv_lookup_update_ne ctxᵢ.varEnv vname w res1.qualType hw] using hlookup
@@ -3383,15 +3269,15 @@ private lemma stepFR_vlet
             have hlookup₁2 : cfg₁2.varEnv.lookup w = some v₁ := by
               simpa [hvar_pres₁] using hlookup₁
             have hlookup₀1 : cfg₀1.varEnv.lookup w = some v₀ := by
-              simpa [hcfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname w v₀1 hw] using hlookup₀2
+              simpa [cfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname w v₀1 hw] using hlookup₀2
             have hlookup₁1 : cfg₁1.varEnv.lookup w = some v₁ := by
-              simpa [hcfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname w v₁1 hw] using hlookup₁2
+              simpa [cfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname w v₁1 hw] using hlookup₁2
             have hlookup₀' : cf₀.varEnv.lookup w = some v₀ := by
-              simpa [hcfg₀final] using hlookup₀1
+              simpa [hcf₀_eq] using hlookup₀1
             have hlookup₁' : cf₁.varEnv.lookup w = some v₁ := by
-              simpa [hcfg₁final] using hlookup₁1
+              simpa [hcf₁_eq] using hlookup₁1
             have hagree' : agreeValueUnder predSat R cf₀.memory cf₁.memory θ₀2 θ₁2 qt v₀ v₁ := by
-              simpa [hcfg₀final, hcfg₁final] using hagree
+              simpa [hcf₀_eq, hcf₁_eq] using hagree
             exact agreeVarUnder.agree_values w qt v₀ v₁ hlookup₀' hlookup₁' hagree'
         | both_none _ _ hnone₀ hnone₁ =>
             have hnone₀2 : cfg₀2.varEnv.lookup w = none := by
@@ -3399,50 +3285,40 @@ private lemma stepFR_vlet
             have hnone₁2 : cfg₁2.varEnv.lookup w = none := by
               simpa [hvar_pres₁] using hnone₁
             have hnone₀1 : cfg₀1.varEnv.lookup w = none := by
-              simpa [hcfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname w v₀1 hw] using hnone₀2
+              simpa [cfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname w v₀1 hw] using hnone₀2
             have hnone₁1 : cfg₁1.varEnv.lookup w = none := by
-              simpa [hcfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname w v₁1 hw] using hnone₁2
-            have hnone₀' : cf₀.varEnv.lookup w = none := by
-              simpa [hcfg₀final] using hnone₀1
-            have hnone₁' : cf₁.varEnv.lookup w = none := by
-              simpa [hcfg₁final] using hnone₁1
+              simpa [cfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname w v₁1 hw] using hnone₁2
+            have hnone₀' : cf₀.varEnv.lookup w = none := by simpa [hcf₀_eq] using hnone₀1
+            have hnone₁' : cf₁.varEnv.lookup w = none := by simpa [hcf₁_eq] using hnone₁1
             exact agreeVarUnder.both_none w qt hnone₀' hnone₁'
-  -- Derive wfConfig for final configs
-  have hwfcf₀_final : wfConfig cf₀ := by
-    have hterm := terminatesTo_nextAddr_mono (Expr.vlet vname e1 e2) { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-    exact wfConfig_mono hwfcfg₀ hterm
-  have hwfcf₁_final : wfConfig cf₁ := by
-    have hterm := terminatesTo_nextAddr_mono (Expr.vlet vname e1 e2) { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
-    exact wfConfig_mono hwfcfg₁ hterm
+  -- Final wfConfig
+  have hwfcf₀_final : wfConfig cf₀ :=
+    (wfConfig_preserved (Expr.vlet vname e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ :=
+    (wfConfig_preserved (Expr.vlet vname e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
-  -- wfTypeContext only depends on memEnv and nextLoc (not varEnv)
+  -- wfTypeContext
   · intro l hcontains
     simp only [ctxAfter, h_mem, h_loc] at hcontains ⊢
     exact hwf2 l hcontains
-  intro hclean
-  have hpoison_imp : res.qualType.poison = false → res2.qualType.poison = false := by
-    intro hpoison_res
-    have hjoin : joinPoison ctxᵢ.pc res2.qualType.poison = false := by
-      calc
-        joinPoison ctxᵢ.pc res2.qualType.poison = res.qualType.poison := by
-          symm
-          exact h_ret_poison
-        _ = false := by exact hpoison_res
-    exact (joinPoison_eq_false hjoin).2
-  have hclean2 : qtypCleanUnder R res2.qualType := by
-    cases hclean with
-    | inl hpoison_res =>
-        left
-        exact hpoison_imp hpoison_res
-    | inr hguard =>
-        rcases hguard with ⟨k, htag, hreg⟩
-        right
-        refine ⟨k, ?_, hreg⟩
-        simpa [qtypGuardTag, h_ret_pred] using htag
-  have hagree2 : agreeValueUnder predSat R cf₀.memory cf₁.memory θ₀2 θ₁2 res2.qualType o₀ o₁ := by
-    simpa [hcfg₀final, hcfg₁final] using (hres_agree2 hclean2)
-  exact agreeValueUnder_transport_clean hclean h_ret_etyp h_ret_pred hpoison_imp hagree2
-  -/
+  -- resultAgreesIfClean
+  · intro hclean
+    have hpoison_imp : res.qualType.poison = false → res2.qualType.poison = false := by
+      intro hpoison_res
+      have hjoin : joinPoison ctxᵢ.pc res2.qualType.poison = false := by
+        calc joinPoison ctxᵢ.pc res2.qualType.poison = res.qualType.poison := by symm; exact h_ret_poison
+             _ = false := by exact hpoison_res
+      exact (joinPoison_eq_false hjoin).2
+    have hclean2 : qtypCleanUnder R res2.qualType := by
+      cases hclean with
+      | inl hpoison_res => left; exact hpoison_imp hpoison_res
+      | inr hguard =>
+          rcases hguard with ⟨k, htag, hreg⟩
+          right; refine ⟨k, ?_, hreg⟩
+          simpa [qtypGuardTag, h_ret_pred] using htag
+    have hagree2 : agreeValueUnder predSat R cf₀.memory cf₁.memory θ₀2 θ₁2 res2.qualType o₀ o₁ := by
+      simpa [hcf₀_eq, hcf₁_eq] using (hres_agree2 hclean2)
+    exact agreeValueUnder_transport_clean hclean h_ret_etyp h_ret_pred hpoison_imp hagree2
 
 -- World-free version of stepFRW_fn
 private lemma stepFR_fn
