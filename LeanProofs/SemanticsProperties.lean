@@ -78,50 +78,6 @@ lemma nextAddr_not_in_memory (cfg : Config) :
   exact Nat.lt_irrefl cfg.nextAddr h
 
 -- ================================================================
--- IOFree World Preservation
--- ================================================================
-
--- For IOFree expressions, beval doesn't perform any actual I/O operations,
--- so the world state is preserved. This allows us to convert between
--- world-indexed evaluation (terminatesToW) and world-free evaluation (terminatesTo).
-
-/-- For IOFree expressions, successful beval preserves the world (output = input).
-    This is the key lemma that enables reuse of world-indexed structure lemmas
-    to prove world-free inversion lemmas.
-
-    Note: The `app` case requires that closures contain IOFree bodies, which
-    cannot be recovered from the runtime closure value. For applications,
-    we rely on the IOFree predicate covering the entire expression including
-    the closure definition site. -/
-lemma beval_IOFree_preserves_world (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Bool)
-    (r : LeanPoison.EvalResult) (w₀ w₁ : Void IO.RealWorld) :
-    IOFree e →
-    LeanPoison.beval fuel cfg e verbose w₀ = EST.Out.ok r w₁ →
-    w₁ = w₀ := by
-  sorry
-
-/-- For IOFree expressions, beval at any world produces the same result.
-    Combined with world preservation, this allows us to convert world-indexed
-    evaluation to world-free (pure) evaluation. -/
-lemma beval_IOFree_result_eq (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Bool)
-    (r₁ r₂ : LeanPoison.EvalResult) (w₁ w₂ w₁' w₂' : Void IO.RealWorld) :
-    IOFree e →
-    LeanPoison.beval fuel cfg e verbose w₁ = EST.Out.ok r₁ w₁' →
-    LeanPoison.beval fuel cfg e verbose w₂ = EST.Out.ok r₂ w₂' →
-    r₁ = r₂ := by
-  sorry
-
-/-- Convert world-indexed evaluation to world-free evaluation for IOFree expressions.
-    This is the key bridge lemma that allows using world-indexed structure lemmas
-    to prove world-free inversion lemmas. -/
-lemma beval_IOFree_eq_pure (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Bool)
-    (r : LeanPoison.EvalResult) (w : Void IO.RealWorld) :
-    IOFree e →
-    LeanPoison.beval fuel cfg e verbose w = EST.Out.ok r w →
-    LeanPoison.beval fuel cfg e verbose = pure r := by
-  sorry
-
--- ================================================================
 -- Evaluation Structure Lemmas
 -- ================================================================
 
@@ -1007,6 +963,364 @@ lemma bevalKwhile_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
   sorry
 
 -- ================================================================
+-- IOFree World Preservation
+-- ================================================================
+
+-- For IOFree expressions, beval doesn't perform any actual I/O operations,
+-- so the world state is preserved. This allows us to convert between
+-- world-indexed evaluation (terminatesToW) and world-free evaluation (terminatesTo).
+
+/-- For IOFree expressions, successful beval preserves the world (output = input).
+    This is the key lemma that enables reuse of world-indexed structure lemmas
+    to prove world-free inversion lemmas.
+
+    Note: The `app` case requires that closures contain IOFree bodies, which
+    cannot be recovered from the runtime closure value. For applications,
+    we rely on the IOFree predicate covering the entire expression including
+    the closure definition site. -/
+lemma beval_IOFree_preserves_world (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Bool)
+    (r : LeanPoison.EvalResult) (w₀ w₁ : Void IO.RealWorld) :
+    IOFree e →
+    LeanPoison.beval fuel cfg e verbose w₀ = EST.Out.ok r w₁ →
+    w₁ = w₀ := by
+  sorry
+
+/-- For IOFree expressions, beval at any world produces the same result.
+    Combined with world preservation, this allows us to convert world-indexed
+    evaluation to world-free (pure) evaluation. -/
+lemma beval_IOFree_result_eq (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Bool)
+    (r₁ r₂ : LeanPoison.EvalResult) (w₁ w₂ w₁' w₂' : Void IO.RealWorld) :
+    IOFree e →
+    LeanPoison.beval fuel cfg e verbose w₁ = EST.Out.ok r₁ w₁' →
+    LeanPoison.beval fuel cfg e verbose w₂ = EST.Out.ok r₂ w₂' →
+    r₁ = r₂ := by
+  sorry
+
+/-- Convert world-indexed evaluation to world-free evaluation for IOFree expressions.
+    This is the key bridge lemma that allows using world-indexed structure lemmas
+    to prove world-free inversion lemmas. -/
+lemma beval_IOFree_eq_pure (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Bool)
+    (r : LeanPoison.EvalResult) (w : Void IO.RealWorld) :
+    IOFree e →
+    LeanPoison.beval fuel cfg e verbose w = EST.Out.ok r w →
+    LeanPoison.beval fuel cfg e verbose = pure r := by
+  intro hio heval_w
+  -- For IOFree expressions, beval doesn't perform I/O, so the result is independent of the world
+  -- We'll prove this by structural case analysis on e, showing that beval equals pure r
+  -- by proving they're equal at all worlds (without using extensionality)
+  -- Actually, we can use functional extensionality for functions: if f x = g x for all x, then f = g
+  -- But IO is not a function type directly. Instead, we'll prove by cases that
+  -- beval fuel cfg e verbose w' = pure r w' for all w', which implies beval fuel cfg e verbose = pure r
+  -- We'll do this by structural induction on the expression
+  cases e with
+  | num n =>
+    cases fuel with
+    | zero =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+    | succ _ =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+  | bool b =>
+    cases fuel with
+    | zero =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+    | succ _ =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+  | unit =>
+    cases fuel with
+    | zero =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+    | succ _ =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+  | str s =>
+    cases fuel with
+    | zero =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+    | succ _ =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+  | var x =>
+    cases fuel with
+    | zero =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+    | succ _ =>
+      simp only [LeanPoison.beval] at heval_w
+      cases h_lookup : cfg.varEnv.lookup x with
+      | none =>
+        simp [h_lookup, pure] at heval_w
+        injection heval_w with h_result h_world
+        subst h_result
+        apply funext
+        intro w'
+        simp [LeanPoison.beval, h_lookup, pure]
+      | some v =>
+        simp [h_lookup, pure] at heval_w
+        injection heval_w with h_result h_world
+        subst h_result
+        apply funext
+        intro w'
+        simp [LeanPoison.beval, h_lookup, pure]
+  | fn x paramType body returnType =>
+    cases fuel with
+    | zero =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+    | succ _ =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+  | pfn x paramType body returnType =>
+    cases fuel with
+    | zero =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+    | succ _ =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+  | unaryop op e' =>
+    have hio' : IOFree e' := by cases hio; assumption
+    -- For unaryop, use the structure lemma and prove recursively
+    cases fuel with
+    | zero =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+    | succ fuel' =>
+      -- Extract config and value from r
+      cases r with
+      | success config₂ v =>
+        -- Use the structure lemma to extract the evaluation structure
+        have hstruct := bevalUnaryOp_structure op e' (fuel' + 1) verbose cfg config₂ v w w heval_w
+        rcases hstruct with ⟨config₁, v₁, hbeval_e, hevalOp, hmem, hvar, hnext, hpure_mode⟩
+        -- Note: hbeval_e has fuel' + 1 - 1 = fuel' (by Nat.add_sub_cancel)
+        simp only [Nat.add_sub_cancel] at hbeval_e
+        -- By IH: beval fuel' cfg e' verbose = pure (.success config₁ v₁)
+        have h_ih := beval_IOFree_eq_pure fuel' cfg e' verbose (.success config₁ v₁) w hio' hbeval_e
+        -- Now show: beval (fuel' + 1) cfg (Expr.unaryop op e') verbose = pure (.success config₂ v)
+        apply funext
+        intro w'
+        simp only [LeanPoison.beval, Nat.add_sub_cancel]
+        -- Simplify the if condition: fuel' + 1 ≠ 0
+        simp only [Nat.add_one_ne_zero, ↓reduceIte]
+        simp only [bind, Bind.bind, EST.bind]
+        -- Use IH to show sub-expression evaluation
+        have h_beval_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success config₁ v₁) w' := by
+          have h_ih_w' := congrFun h_ih w'
+          simp only [pure] at h_ih_w'
+          exact h_ih_w'
+        rw [h_beval_w']
+        -- Simplify the match on EST.Out.ok
+        simp only []
+        -- From hevalOp: evalUnaryOp op v₁ = some v
+        rw [hevalOp]
+        simp only [pure]
+        -- Goal is now: EST.Out.ok (.success config₁ v) w' = EST.Out.ok (.success config₂ v) w'
+        -- We need to show config₁ = config₂
+        congr 1
+        congr 1
+        -- Now goal is: config₁ = config₂
+        -- Use cases to expose constructors, then use field equalities
+        cases config₁; cases config₂
+        simp only [Config.mk.injEq]
+        -- Goal is now a conjunction of field equalities
+        exact ⟨hmem, hvar, hnext, hpure_mode⟩
+      | outOfFuel =>
+        -- outOfFuel can only come from sub-expression returning outOfFuel
+        -- (success would give success or runtimeError, runtimeError gives runtimeError)
+        apply funext
+        intro w'
+        simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+        simp only [bind, Bind.bind, EST.bind]
+        -- Analyze what sub-expression returns at world w
+        simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                   bind, Bind.bind, EST.bind] at heval_w
+        -- Case split on what sub-expression returns
+        cases h_sub : LeanPoison.beval fuel' cfg e' verbose w with
+        | ok r_sub w_sub =>
+          cases r_sub with
+          | success cfg_sub v_sub =>
+            -- Sub succeeded, but then we get success or runtimeError, not outOfFuel
+            simp only [h_sub] at heval_w
+            cases h_op : LeanPoison.evalUnaryOp op v_sub with
+            | some v_res =>
+              simp only [h_op, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr  -- success ≠ outOfFuel
+            | none =>
+              simp only [h_op, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr  -- runtimeError ≠ outOfFuel
+          | outOfFuel =>
+            -- Sub returned outOfFuel - this is the valid case
+            simp only [h_sub, pure] at heval_w
+            -- World preservation: w_sub = w for IOFree
+            have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose .outOfFuel w w_sub hio' h_sub
+            -- Rewrite h_sub to use w instead of w_sub
+            rw [hw_eq] at h_sub
+            -- By IH: beval fuel' cfg e' verbose = pure outOfFuel
+            have h_ih := beval_IOFree_eq_pure fuel' cfg e' verbose .outOfFuel w hio' h_sub
+            have h_sub_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok .outOfFuel w' := by
+              have := congrFun h_ih w'
+              simp only [pure] at this
+              exact this
+            simp only [h_sub_w', pure]
+          | runtimeError sub_msg =>
+            -- Sub returned runtimeError, which propagates as runtimeError, not outOfFuel
+            simp only [h_sub, pure] at heval_w
+            injection heval_w with h_contr
+            injection h_contr  -- runtimeError ≠ outOfFuel
+        | error e_err =>
+          -- Contradiction: EST.Out.error ≠ EST.Out.ok
+          simp only [h_sub] at heval_w
+          injection heval_w
+      | runtimeError msg =>
+        -- runtimeError can come from:
+        -- 1. Sub-expression returning runtimeError
+        -- 2. Sub-expression succeeding but evalUnaryOp returning none
+        apply funext
+        intro w'
+        simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+        simp only [bind, Bind.bind, EST.bind]
+        -- Analyze what sub-expression returns at world w
+        simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                   bind, Bind.bind, EST.bind] at heval_w
+        -- Case split on what sub-expression returns
+        cases h_sub : LeanPoison.beval fuel' cfg e' verbose w with
+        | ok r_sub w_sub =>
+          cases r_sub with
+          | success cfg_sub v_sub =>
+            -- Sub succeeded, check evalUnaryOp
+            simp only [h_sub] at heval_w
+            cases h_op : LeanPoison.evalUnaryOp op v_sub with
+            | some v_res =>
+              -- evalUnaryOp succeeded, gives success, not runtimeError
+              simp only [h_op, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr  -- success ≠ runtimeError
+            | none =>
+              -- evalUnaryOp failed, gives runtimeError - valid case
+              simp only [h_op, pure] at heval_w
+              injection heval_w with h_msg_eq h_world_eq
+              -- World preservation: w_sub = w for IOFree
+              have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub v_sub) w w_sub hio' h_sub
+              rw [hw_eq] at h_sub
+              -- By IH: beval fuel' cfg e' verbose = pure (success cfg_sub v_sub)
+              have h_ih := beval_IOFree_eq_pure fuel' cfg e' verbose (.success cfg_sub v_sub) w hio' h_sub
+              have h_sub_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub v_sub) w' := by
+                have := congrFun h_ih w'
+                simp only [pure] at this
+                exact this
+              simp only [h_sub_w']
+              simp only [h_op, pure]
+              rw [← h_msg_eq]
+          | outOfFuel =>
+            -- Sub returned outOfFuel, which propagates as outOfFuel, not runtimeError
+            simp only [h_sub, pure] at heval_w
+            injection heval_w with h_contr
+            injection h_contr  -- outOfFuel ≠ runtimeError
+          | runtimeError sub_msg =>
+            -- Sub returned runtimeError - valid case
+            simp only [h_sub, pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            -- World preservation: w_sub = w for IOFree
+            have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose (.runtimeError sub_msg) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            -- By IH: beval fuel' cfg e' verbose = pure (runtimeError sub_msg)
+            have h_ih := beval_IOFree_eq_pure fuel' cfg e' verbose (.runtimeError sub_msg) w hio' h_sub
+            have h_sub_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+              have := congrFun h_ih w'
+              simp only [pure] at this
+              exact this
+            simp only [h_sub_w', pure]
+            rw [← h_msg_eq]
+        | error e_err =>
+          -- Contradiction: EST.Out.error ≠ EST.Out.ok
+          simp only [h_sub] at heval_w
+          injection heval_w
+  | op e₁ op' e₂ | seq e₁ e₂ | vlet _ e₁ e₂ | deref _ | newRef _ | assign e₁ e₂ | ite _ _ _ | kwhile _ _ | app _ _ =>
+    -- For compound expressions, we'll use a similar pattern:
+    -- 1. Use structure lemma to extract evaluation structure
+    -- 2. Use IH recursively for sub-expressions
+    -- 3. Show the final result equals pure r
+    sorry  -- Will complete systematically
+  | printInt _ | printString _ | rand _ | frand _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
+    cases hio  -- These cases are not IOFree, so this branch is unreachable
+
 -- World-Free Termination Inversion Lemmas
 -- ================================================================
 
