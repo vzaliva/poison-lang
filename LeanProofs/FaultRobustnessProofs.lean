@@ -1614,6 +1614,12 @@ private lemma opUnaryEType_implies_nonfun (op : UnaryOp) (et1 result : ETyp) :
       | parrow st1 st2 p tcls =>
           cases h
 
+-- IOFree-restricted induction hypothesis type for stepFR_* lemmas
+-- This requires the expression to be IOFree before applying the IH
+abbrev StepFR_IH (predSat : PredSat) (fuel : Nat) : Prop :=
+  ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext),
+    IOFree e → ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat
+
 private lemma stepFR_literal
   (ctx : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (res : TypeResult) (v : Value)
@@ -2488,8 +2494,8 @@ private lemma stepFR_var
 private lemma stepFR_op
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
-  (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
+  (hio1 : IOFree e1) (hio2 : IOFree e2)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.op e1 op e2) res predSat := by
   sorry
@@ -2678,8 +2684,8 @@ private lemma stepFR_op
 private lemma stepFR_unaryop
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (op : UnaryOp) (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
+  (hioe : IOFree e)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.unaryop op e) res predSat := by
   sorry
@@ -2813,8 +2819,8 @@ private lemma stepFR_unaryop
 private lemma stepFR_newRef
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
+  (hioe : IOFree e)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.newRef e) res predSat := by
   sorry
@@ -3164,8 +3170,8 @@ private lemma stepFR_newRef
 private lemma stepFR_seq
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
+  (hio1 : IOFree e1) (hio2 : IOFree e2)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.seq e1 e2) res predSat := by
   sorry
@@ -3282,8 +3288,8 @@ private lemma stepFR_seq
 private lemma stepFR_vlet
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
+  (hio1 : IOFree e1) (hio2 : IOFree e2)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.vlet vname e1 e2) res predSat := by
   sorry
@@ -3920,8 +3926,8 @@ private lemma stepFR_pfn
 private lemma stepFR_ite
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
+  (hio1 : IOFree e1) (hio2 : IOFree e2) (hio3 : IOFree e3)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.ite e1 e2 e3) res predSat := by
   sorry
@@ -3930,8 +3936,8 @@ private lemma stepFR_ite
 private lemma stepFR_assign
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
+  (hio1 : IOFree e1) (hio2 : IOFree e2)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.assign e1 e2) res predSat := by
   sorry
@@ -3940,8 +3946,8 @@ private lemma stepFR_assign
 private lemma stepFR_deref
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
+  (hioe : IOFree e)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.deref e) res predSat := by
   sorry
@@ -3950,8 +3956,8 @@ private lemma stepFR_deref
 private lemma stepFR_kwhile
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
+  (hio1 : IOFree e1) (hio2 : IOFree e2)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.kwhile e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.kwhile e1 e2) res predSat := by
   sorry
@@ -3960,8 +3966,8 @@ private lemma stepFR_kwhile
 private lemma stepFR_app
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat)
+  (hio1 : IOFree e1) (hio2 : IOFree e2)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.app e1 e2) res predSat := by
   sorry
@@ -4095,12 +4101,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 | zero =>
                     simp [typecheck, typecheckExpr_op_succ, typecheckOp] at htc
                 | succ fuel' =>
-                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
-                      intro m hm e' ctx' res' htc' R'
-                      have hio' : IOFree e' := by sorry -- TODO: proven by sub-expression analysis
-                      exact IH m hm e' ctx' hio' res' htc' R'
-                    exact stepFR_op ctxᵢ predSat R e1 e2 op fuel' res hIH htc
+                    exact stepFR_op ctxᵢ predSat R e1 e2 op fuel' res hio1 hio2 IH htc
         | unaryop uop e =>
             cases hio with
             | unaryop _ _ hioe =>
@@ -4108,12 +4109,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 | zero =>
                     simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
                 | succ fuel' =>
-                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
-                      intro m hm e' ctx' res' htc' R'
-                      have hio' : IOFree e' := by sorry -- TODO: proven by sub-expression analysis
-                      exact IH m hm e' ctx' hio' res' htc' R'
-                    exact stepFR_unaryop ctxᵢ predSat R uop e fuel' res hIH htc
+                    exact stepFR_unaryop ctxᵢ predSat R uop e fuel' res hioe IH htc
         | ite e1 e2 e3 =>
             cases hio with
             | ite _ _ _ hio1 hio2 hio3 =>
@@ -4121,12 +4117,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 | zero =>
                     simp [typecheck, typecheckExpr, typecheckIf] at htc
                 | succ fuel' =>
-                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
-                      intro m hm e' ctx' res' htc' R'
-                      have hio' : IOFree e' := by sorry
-                      exact IH m hm e' ctx' hio' res' htc' R'
-                    exact stepFR_ite ctxᵢ predSat R e1 e2 e3 fuel' res hIH htc
+                    exact stepFR_ite ctxᵢ predSat R e1 e2 e3 fuel' res hio1 hio2 hio3 IH htc
         | newRef e =>
             cases hio with
             | newRef _ hioe =>
@@ -4134,12 +4125,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 | zero =>
                     simp [typecheck, typecheckExpr, typecheckNewRef] at htc
                 | succ fuel' =>
-                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
-                      intro m hm e' ctx' res' htc' R'
-                      have hio' : IOFree e' := by sorry
-                      exact IH m hm e' ctx' hio' res' htc' R'
-                    exact stepFR_newRef ctxᵢ predSat R e fuel' res hIH htc
+                    exact stepFR_newRef ctxᵢ predSat R e fuel' res hioe IH htc
         | assign e1 e2 =>
             cases hio with
             | assign _ _ hio1 hio2 =>
@@ -4147,12 +4133,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 | zero =>
                     simp [typecheck, typecheckExpr, typecheckAssign] at htc
                 | succ fuel' =>
-                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
-                      intro m hm e' ctx' res' htc' R'
-                      have hio' : IOFree e' := by sorry
-                      exact IH m hm e' ctx' hio' res' htc' R'
-                    exact stepFR_assign ctxᵢ predSat R e1 e2 fuel' res hIH htc
+                    exact stepFR_assign ctxᵢ predSat R e1 e2 fuel' res hio1 hio2 IH htc
         | deref e =>
             cases hio with
             | deref _ hioe =>
@@ -4160,12 +4141,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 | zero =>
                     simp [typecheck, typecheckExpr, typecheckDeref] at htc
                 | succ fuel' =>
-                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
-                      intro m hm e' ctx' res' htc' R'
-                      have hio' : IOFree e' := by sorry
-                      exact IH m hm e' ctx' hio' res' htc' R'
-                    exact stepFR_deref ctxᵢ predSat R e fuel' res hIH htc
+                    exact stepFR_deref ctxᵢ predSat R e fuel' res hioe IH htc
         | seq e1 e2 =>
             cases hio with
             | seq _ _ hio1 hio2 =>
@@ -4173,12 +4149,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 | zero =>
                     simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
                 | succ fuel' =>
-                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
-                      intro m hm e' ctx' res' htc' R'
-                      have hio' : IOFree e' := by sorry
-                      exact IH m hm e' ctx' hio' res' htc' R'
-                    exact stepFR_seq ctxᵢ predSat R e1 e2 fuel' res hIH htc
+                    exact stepFR_seq ctxᵢ predSat R e1 e2 fuel' res hio1 hio2 IH htc
         | kwhile e1 e2 =>
             cases hio with
             | kwhile _ _ hio1 hio2 =>
@@ -4186,12 +4157,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 | zero =>
                     simp [typecheck, typecheckExpr, typecheckWhile] at htc
                 | succ fuel' =>
-                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
-                      intro m hm e' ctx' res' htc' R'
-                      have hio' : IOFree e' := by sorry
-                      exact IH m hm e' ctx' hio' res' htc' R'
-                    exact stepFR_kwhile ctxᵢ predSat R e1 e2 fuel' res hIH htc
+                    exact stepFR_kwhile ctxᵢ predSat R e1 e2 fuel' res hio1 hio2 IH htc
         | vlet z e1 e2 =>
             cases hio with
             | vlet _ _ _ hio1 hio2 =>
@@ -4200,12 +4166,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 | zero =>
                     simp [typecheck, typecheckExpr_vlet_succ, typecheckVlet] at htc
                 | succ fuel' =>
-                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
-                      intro m hm e' ctx' res' htc' R'
-                      have hio' : IOFree e' := by sorry
-                      exact IH m hm e' ctx' hio' res' htc' R'
-                    exact stepFR_vlet ctxᵢ predSat R vname e1 e2 fuel' res hIH htc
+                    exact stepFR_vlet ctxᵢ predSat R vname e1 e2 fuel' res hio1 hio2 IH htc
         | fn name ty e1 ty2 =>
             cases hio with
             | fn _ _ _ _ hiobody => exact stepFR_fn ctxᵢ predSat R name ty e1 ty2 fuel res htc
@@ -4219,12 +4180,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 | zero =>
                     simp [typecheck, typecheckExpr, typecheckApp] at htc
                 | succ fuel' =>
-                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
-                      intro m hm e' ctx' res' htc' R'
-                      have hio' : IOFree e' := by sorry
-                      exact IH m hm e' ctx' hio' res' htc' R'
-                    exact stepFR_app ctxᵢ predSat R e1 e2 fuel' res hIH htc
+                    exact stepFR_app ctxᵢ predSat R e1 e2 fuel' res hio1 hio2 IH htc
         | rand _ | frand _ | printString _ | printInt _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
             -- These cases are impossible due to IOFree assumption
             cases hio
