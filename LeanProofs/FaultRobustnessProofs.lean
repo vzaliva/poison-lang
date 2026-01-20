@@ -2476,11 +2476,12 @@ private lemma stepFR_op
     e2 ctx' hio2 res2 htc2' R
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for binary op
+  have hio : IOFree (Expr.op e1 op e2) := IOFree.op e1 op e2 hio1 hio2
   have hstruct₀ := terminatesTo_op_inv' e1 op e2
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
   rcases hstruct₀ with ⟨cfg₀1, v₀1, v₀2, ht₀_e1, ht₀_e2, h_evalop₀, hpm₀1, hpm₀2⟩
   have hstruct₁ := terminatesTo_op_inv' e1 op e2
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
   rcases hstruct₁ with ⟨cfg₁1, v₁1, v₁2, ht₁_e1, ht₁_e2, h_evalop₁, hpm₁1, hpm₁2⟩
   -- Apply IH for e1
   have hstep_e1 :=
@@ -2790,11 +2791,12 @@ private lemma stepFR_unaryop
     e ctxᵢ hioe res1 htc1' R
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for unaryop
+  have hio : IOFree (Expr.unaryop op e) := IOFree.unaryop op e hioe
   have hstruct₀ := terminatesTo_unaryop_inv' op e
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
   rcases hstruct₀ with ⟨cfg₀', v₀', ht₀_e, h_evalop₀, hmem₀, hvar₀, _hnext₀, _hpure₀⟩
   have hstruct₁ := terminatesTo_unaryop_inv' op e
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
   rcases hstruct₁ with ⟨cfg₁', v₁', ht₁_e, h_evalop₁, hmem₁, hvar₁, _hnext₁, _hpure₁⟩
   -- Apply IH for sub-expression
   have hstep_e :=
@@ -2884,11 +2886,12 @@ private lemma stepFR_newRef
     e ctxᵢ hioe res1 htc1' R
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for newRef
+  have hio : IOFree (Expr.newRef e) := IOFree.newRef e hioe
   have hstruct₀ := terminatesTo_newRef_inv' e
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
   rcases hstruct₀ with ⟨cfg₀', n₀, ht₀_e, ho₀, hmem₀, hnext₀, hvar₀, hpm₀⟩
   have hstruct₁ := terminatesTo_newRef_inv' e
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
   rcases hstruct₁ with ⟨cfg₁', n₁, ht₁_e, ho₁, hmem₁, hnext₁, hvar₁, hpm₁⟩
   -- Apply IH for e
   have hstep_e :=
@@ -3285,11 +3288,12 @@ private lemma stepFR_seq
     e2 ctx' hio2 res htc2' R
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for seq
+  have hio : IOFree (Expr.seq e1 e2) := IOFree.seq e1 e2 hio1 hio2
   have hstruct₀ := terminatesTo_seq_inv' e1 e2
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
   rcases hstruct₀ with ⟨cfg₀1, v₀1, ht₀_e1, ht₀_e2, hpm₀1, hpm₀2⟩
   have hstruct₁ := terminatesTo_seq_inv' e1 e2
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
   rcases hstruct₁ with ⟨cfg₁1, v₁1, ht₁_e1, ht₁_e2, hpm₁1, hpm₁2⟩
   -- Apply IH for e1
   have hstep_e1 :=
@@ -3473,12 +3477,13 @@ private lemma stepFR_vlet
     e2 ctx' hio2 res2 htc2' R
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for vlet
+  have hio : IOFree (Expr.vlet vname e1 e2) := IOFree.vlet vname e1 e2 hio1 hio2
   have hstruct₀ := terminatesTo_vlet_inv' vname e1 e2
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-  rcases hstruct₀ with ⟨cfg₀1, v₀1, ht₀_e1, ht₀_e2, hpm₀1, hpm₀2⟩
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
+  rcases hstruct₀ with ⟨cfg₀1, v₀1, cfg₀3, ht₀_e1, ht₀_e2, hcf₀_eq, hpm₀1, hpm₀2⟩
   have hstruct₁ := terminatesTo_vlet_inv' vname e1 e2
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
-  rcases hstruct₁ with ⟨cfg₁1, v₁1, ht₁_e1, ht₁_e2, hpm₁1, hpm₁2⟩
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
+  rcases hstruct₁ with ⟨cfg₁1, v₁1, cfg₁3, ht₁_e1, ht₁_e2, hcf₁_eq, hpm₁1, hpm₁2⟩
   -- Apply IH for e1
   have hstep_e1 :=
     hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
@@ -3513,27 +3518,37 @@ private lemma stepFR_vlet
     sorry -- Complex: needs variable agreement handling
   -- Handle pureMode for IH2
   have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
-  -- The e2 evaluation starts from the extended env config
+  -- The e2 evaluation starts from the extended env config and terminates to cfg₀3/cfg₁3
   have hstep_e2 :=
     hIH2 cfg₀1.memory cfg₁1.memory
       (cfg₀1.varEnv.update vname v₀1) (cfg₁1.varEnv.update vname v₁1)
-      θ₀1 θ₁1 cf₀ cf₁ o₀ o₁
+      θ₀1 θ₁1 cfg₀3 cfg₁3 o₀ o₁
       hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR1 hRbound hagree_clean1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1' (by rw [← hpm_eq]; exact hwfcf₁1')
       ht₀_e2 (by rw [← hpm_eq]; convert ht₁_e2 using 2 <;> simp [hpm_eq])
-  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hagree_clean2, hres_agree2⟩
+  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀3, hwfcf₁3, hagree_clean2, hres_agree2⟩
   -- Combine results
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
   -- Note: ctxAfter ctxᵢ res ≠ ctxAfter ctx' res2 due to varEnv (vname binding)
   -- The vlet binding is lexically scoped, so varEnv reverts outside
+  -- Derive wfConfig for cf₀ and cf₁ from cfg₀3 and cfg₁3
+  -- cf₀ = {cfg₀3 with varEnv := cfg₀1.varEnv}, cf₁ = {cfg₁3 with varEnv := cfg₁1.varEnv}
+  have hwfcf₀ : wfConfig cf₀ := by
+    rw [hcf₀_eq]
+    -- wfConfig is a conjunction of wfMemory and wfVarEnv
+    -- cfg₀3's wfMemory + cfg₀1's wfVarEnv
+    sorry
+  have hwfcf₁ : wfConfig cf₁ := by
+    rw [hcf₁_eq]
+    sorry
   have hagree_clean :
       agreeOnClean predSat R (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
     sorry -- Complex: varEnv handling for scoped bindings
   have hwf_after : wfTypeContext (ctxAfter ctxᵢ res) := by
     sorry -- Derive from hwf2 and context relationship
-  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, hwf_after, hwfcf₀2, hwfcf₁2, hagree_clean, ?_⟩
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, hwf_after, hwfcf₀, hwfcf₁, hagree_clean, ?_⟩
   intro hclean
   -- Need to handle the result agreement
   -- res.qualType and res2.qualType have same etyp and pred (h_ret_etyp, h_ret_pred)
