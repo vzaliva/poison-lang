@@ -699,81 +699,6 @@ end TypeSystemEnforcesFaultRobustness_impl_proof
 
 section TypeSystemEnforcesFaultRobustness_step_proof
 
--- Step theorem variant that uses world-indexed termination premises.
--- Includes wfTypeContext premises and conclusion for freshness reasoning.
-private def StepFRW
-  (ctx : TypeContext)
-  (R : Regime)
-  (e : Expr)
-  (res : TypeResult)
-  (predSat : PredSat) : Prop :=
-    ∀ (w : Void IO.RealWorld)
-      (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
-      (cf₀ cf₁ : Config) (o₀ o₁ : Value),
-      wfRealizationMap θ₀ → wfRealizationMap θ₁ →
-      wfTypeContext ctx →
-      runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
-      regimeConsistentWithCtx ctx R →
-      regimeBounded R →
-      agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
-      ∀ (a₀ a₁ : Address) (pm₀ pm₁ : Bool),
-        wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ } →  -- NEW: initial config₀ well-formed
-        wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ } →  -- NEW: initial config₁ well-formed
-        ∀ (w₀' w₁' : Void IO.RealWorld),
-          terminatesToW w w₀' e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ } cf₀ o₀ →
-          terminatesToW w w₁' e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ } cf₁ o₁ →
-          ∃ (θ₀' θ₁' : RealizationMap),
-            w₀' = w₁' ∧
-            wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
-            wfTypeContext (ctxAfter ctx res) ∧
-            wfConfig cf₀ ∧  -- NEW: final config₀ well-formed
-            wfConfig cf₁ ∧  -- NEW: final config₁ well-formed
-            runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
-            runtimeInstantiatesCtx (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
-            regimeConsistentWithCtx (ctxAfter ctx res) R ∧
-            agreeOnClean predSat R (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
-            resultAgreesIfClean predSat R cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
-
--- Convert function-equality termination to world-indexed termination.
-private lemma terminatesToW_of_terminatesTo
-  {e : Expr} {c₀ c₁ : Config} {o : Value} (w : Void IO.RealWorld) :
-  terminatesTo e c₀ c₁ o → terminatesToW w w e c₀ c₁ o := by
-  intro ht
-  rcases ht with ⟨fuel, verbose, hbeval⟩
-  have h_eval_world := LeanProofs.evalAtDefault_eq hbeval
-  refine ⟨fuel, verbose, ?_⟩
-  -- `terminatesTo` is a function equality; evaluate it at the fixed witness
-  -- and then transport to the given world `w` using rewriting.
-  -- (We keep the proof in terms of `defaultWorld` to avoid any axioms about worlds.)
-  have h_at_default :
-      LeanPoison.beval fuel c₀ e verbose LeanProofs.defaultWorld =
-        EST.Out.ok (.success c₁ o) LeanProofs.defaultWorld := by
-    simpa [pure] using h_eval_world
-  -- Rewrite the world tokens to `w` (world is abstract; we only need existence of a proof).
-  -- Since `IO` computations are functions of the world token, we can evaluate `hbeval`
-  -- directly at `w` as well.
-  have h_at_w : LeanPoison.beval fuel c₀ e verbose w = EST.Out.ok (.success c₁ o) w := by
-    -- Use the original function equality at `w`
-    have := LeanProofs.evalAtWorld_eq w hbeval
-    simpa [pure] using this
-  exact h_at_w
-
--- Use StepFRW to derive the original StepFR premises.
-private lemma StepFR_of_StepFRW
-  {ctx : TypeContext} {R : Regime} {e : Expr} {res : TypeResult} {predSat : PredSat} :
-  StepFRW ctx R e res predSat → StepFR ctx R e res predSat := by
-  intro hstep μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-    hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  let w : Void IO.RealWorld := LeanProofs.defaultWorld
-  have ht₀w : terminatesToW w w e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ :=
-    terminatesToW_of_terminatesTo w ht₀
-  have ht₁w : terminatesToW w w e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ :=
-    terminatesToW_of_terminatesTo w ht₁
-  rcases hstep w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-      hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm pm hwfcfg₀ hwfcfg₁ w w ht₀w ht₁w with
-    ⟨θ₀', θ₁', _hw, hθ₀ext, hθ₁ext, hwf', hwfcf₀', hwfcf₁', _hric₀', _hric₁', _hreg', hagree', hret⟩
-  exact ⟨θ₀', θ₁', hθ₀ext, hθ₁ext, hwf', hwfcf₀', hwfcf₁', hagree', hret⟩
-
 private def isExternExpr : Expr → Prop
   | Expr.externVal _ _ _ => True
   | Expr.externFn _ _ _ _ => True
@@ -1697,81 +1622,54 @@ private lemma stepFR_literal
   (hnotfun : res.qualType.etyp.isFunctionType = false)
   (hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls)
   (hctxAfter : ctxAfter ctx res = ctx) :
-  StepFRW ctx R e res predSat := by
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
-  have hterm₀ := terminatesTo_literal_inv e v hval μ₀ ρ₀ a₀ pm₀ cf₀ o₀ w w₀' ht₀
-  have hterm₁ := terminatesTo_literal_inv e v hval μ₁ ρ₁ a₁ pm₁ cf₁ o₁ w w₁' ht₁
-  rcases hterm₀ with ⟨hcf₀, ho₀⟩
-  rcases hterm₁ with ⟨hcf₁, ho₁⟩
-  subst hcf₀
-  subst hcf₁
-  -- Literals do not perform IO, so the world is unchanged: pick shared output world `w`.
-  -- Avoid a full `cases e` (which is expensive); `hval` restricts us to literal cases.
-  have hw₀' : w₀' = w := by
-    rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+  StepFR ctx R e res predSat := by
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Extract config and value from terminatesTo (literals don't change config or perform I/O)
+  rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+  have hcf₀ : cf₀ = { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } := by
     cases fuel₀ with
     | zero =>
-        -- `beval 0` cannot succeed
-        unfold LeanPoison.beval at hbeval₀
-        simp at hbeval₀
+        simp [LeanPoison.beval] at hbeval₀
         cases hbeval₀
     | succ fuel₀ =>
-        cases e with
-        | num n =>
-            simp [Expr.toValue?, LeanPoison.beval] at hval hbeval₀
-            injection hbeval₀ with _hcfg hw
-            exact hw.symm
-        | bool b =>
-            simp [Expr.toValue?, LeanPoison.beval] at hval hbeval₀
-            injection hbeval₀ with _hcfg hw
-            exact hw.symm
-        | unit =>
-            simp [Expr.toValue?, LeanPoison.beval] at hval hbeval₀
-            injection hbeval₀ with _hcfg hw
-            exact hw.symm
-        | str s =>
-            simp [Expr.toValue?, LeanPoison.beval] at hval hbeval₀
-            injection hbeval₀ with _hcfg hw
-            exact hw.symm
-        | var _ | op _ _ _ | unaryop _ _ | ite _ _ _ | newRef _ | assign _ _ | deref _ | seq _ _
-        | kwhile _ _ | vlet _ _ _ | fn _ _ _ _ | pfn _ _ _ _ | app _ _ | rand _ | frand _
-        | printString _ | printInt _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
-            -- Impossible since `Expr.toValue?` returns `none` on non-literals.
-            simp [Expr.toValue?] at hval
-  have hw₁' : w₁' = w := by
-    rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+        simp [LeanPoison.beval, pure] at hbeval₀
+        injection hbeval₀ with hcfg
+        cases hcfg
+        rfl
+  have hcf₁ : cf₁ = { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } := by
     cases fuel₁ with
     | zero =>
-        -- `beval 0` cannot succeed
-        unfold LeanPoison.beval at hbeval₁
-        simp at hbeval₁
+        simp [LeanPoison.beval] at hbeval₁
         cases hbeval₁
     | succ fuel₁ =>
-        cases e with
-        | num n =>
-            simp [Expr.toValue?, LeanPoison.beval] at hval hbeval₁
-            injection hbeval₁ with _hcfg hw
-            exact hw.symm
-        | bool b =>
-            simp [Expr.toValue?, LeanPoison.beval] at hval hbeval₁
-            injection hbeval₁ with _hcfg hw
-            exact hw.symm
-        | unit =>
-            simp [Expr.toValue?, LeanPoison.beval] at hval hbeval₁
-            injection hbeval₁ with _hcfg hw
-            exact hw.symm
-        | str s =>
-            simp [Expr.toValue?, LeanPoison.beval] at hval hbeval₁
-            injection hbeval₁ with _hcfg hw
-            exact hw.symm
-        | var _ | op _ _ _ | unaryop _ _ | ite _ _ _ | newRef _ | assign _ _ | deref _ | seq _ _
-        | kwhile _ _ | vlet _ _ _ | fn _ _ _ _ | pfn _ _ _ _ | app _ _ | rand _ | frand _
-        | printString _ | printInt _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
-            simp [Expr.toValue?] at hval
-  -- Literals do not perform IO, so both runs keep the input world.
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · -- worlds are equal
-    simp [hw₀', hw₁']
+        simp [LeanPoison.beval, pure] at hbeval₁
+        injection hbeval₁ with hcfg
+        cases hcfg
+        rfl
+  have ho₀ : o₀ = v := by
+    cases fuel₀ with
+    | zero =>
+        simp [LeanPoison.beval] at hbeval₀
+        cases hbeval₀
+    | succ fuel₀ =>
+        simp [LeanPoison.beval, pure] at hbeval₀
+        injection hbeval₀ with _hcfg hval'
+        cases hval'
+        rfl
+  have ho₁ : o₁ = v := by
+    cases fuel₁ with
+    | zero =>
+        simp [LeanPoison.beval] at hbeval₁
+        cases hbeval₁
+    | succ fuel₁ =>
+        simp [LeanPoison.beval, pure] at hbeval₁
+        injection hbeval₁ with _hcfg hval'
+        cases hval'
+        rfl
+  subst hcf₀
+  subst hcf₁
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_⟩
   · refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup
     · intro hwf'; exact hwf'
@@ -1779,8 +1677,6 @@ private lemma stepFR_literal
     · intro l a hlookup; exact hlookup
     · intro hwf'; exact hwf'
   · simpa [hctxAfter] using hwf
-  · exact hwfcfg₀  -- final config₀ well-formed
-  · exact hwfcfg₁  -- final config₁ well-formed
   · simpa [hctxAfter] using hric₀
   · simpa [hctxAfter] using hric₁
   · -- regime consistency (tag agreement + bound below supply)
@@ -1797,48 +1693,57 @@ private lemma stepFR_var
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
-  StepFRW ctxᵢ R (Expr.var name) res predSat := by
+  StepFR ctxᵢ R (Expr.var name) res predSat := by
   -- Variable case proof skeleton (full proof requires case analysis
   -- on predicates and tag environment).
-  intro w μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm₀ pm₁ hwfcfg₀ hwfcfg₁ w₀' w₁' ht₀ ht₁
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv R := hreg.1
-  have hterm₀ := terminatesTo_var_inv name μ₀ ρ₀ a₀ pm₀ cf₀ o₀ w w₀' ht₀
-  have hterm₁ := terminatesTo_var_inv name μ₁ ρ₁ a₁ pm₁ cf₁ o₁ w w₁' ht₁
-  rcases hterm₀ with ⟨v₀, _hlookup₀, hcf₀, _ho₀⟩
-  rcases hterm₁ with ⟨v₁, _hlookup₁, hcf₁, _ho₁⟩
-  subst hcf₀
-  subst hcf₁
-  -- Vars do not perform IO, so the world is unchanged: pick shared output world `w`.
-  have hw₀' : w₀' = w := by
-    rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+  -- Extract config and value from terminatesTo (vars don't change config or perform I/O)
+  rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
+  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+  have hcf₀ : cf₀ = { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } := by
     cases fuel₀ with
     | zero =>
-        unfold LeanPoison.beval at hbeval₀
-        simp at hbeval₀
+        simp [LeanPoison.beval] at hbeval₀
         cases hbeval₀
     | succ fuel₀ =>
-        -- Use the lookup fact from the inversion lemma to avoid case splits.
-        have hlookup₀' : ρ₀.lookup name = some o₀ := by
-          simpa [_ho₀] using _hlookup₀
-        simp [LeanPoison.beval, hlookup₀'] at hbeval₀
-        injection hbeval₀ with _hcfg hw
-        exact hw.symm
-  have hw₁' : w₁' = w := by
-    rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
+        simp [LeanPoison.beval, pure] at hbeval₀
+        injection hbeval₀ with hcfg
+        cases hcfg
+        rfl
+  have hcf₁ : cf₁ = { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } := by
     cases fuel₁ with
     | zero =>
-        unfold LeanPoison.beval at hbeval₁
-        simp at hbeval₁
+        simp [LeanPoison.beval] at hbeval₁
         cases hbeval₁
     | succ fuel₁ =>
-        have hlookup₁' : ρ₁.lookup name = some o₁ := by
-          simpa [_ho₁] using _hlookup₁
-        simp [LeanPoison.beval, hlookup₁'] at hbeval₁
-        injection hbeval₁ with _hcfg hw
-        exact hw.symm
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · -- worlds are equal (both are `w`)
-    simp [hw₀', hw₁']
+        simp [LeanPoison.beval, pure] at hbeval₁
+        injection hbeval₁ with hcfg
+        cases hcfg
+        rfl
+  have hlookup₀ : ρ₀.lookup name = some o₀ := by
+    cases fuel₀ with
+    | zero =>
+        simp [LeanPoison.beval] at hbeval₀
+        cases hbeval₀
+    | succ fuel₀ =>
+        simp [LeanPoison.beval, pure] at hbeval₀
+        injection hbeval₀ with _hcfg hval
+        cases hval
+        rfl
+  have hlookup₁ : ρ₁.lookup name = some o₁ := by
+    cases fuel₁ with
+    | zero =>
+        simp [LeanPoison.beval] at hbeval₁
+        cases hbeval₁
+    | succ fuel₁ =>
+        simp [LeanPoison.beval, pure] at hbeval₁
+        injection hbeval₁ with _hcfg hval
+        cases hval
+        rfl
+  subst hcf₀
+  subst hcf₁
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_⟩
   · refine ⟨?_, ?_⟩
     · intro l a hlookup'
       exact hlookup'
@@ -1946,17 +1851,17 @@ private lemma stepFR_var
             have hclean_qt : qtypCleanUnder R qt := by
               simp [qtypCleanUnder, qtypGuardTag, hpred, hpoison]
             have hvar := hvar_agree_of_clean hclean_qt
-            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
-              agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
             have hres_eq : res.qualType = qt := by
               cases qt with
               | mk etyp poison pred =>
                   cases hpred
                   simp [hres, hpc, joinPoison]
             have hres_agree :
-                agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
               simpa [hres_eq] using hval
-            simpa [_ho₀, _ho₁] using hres_agree
+            exact hres_agree
         | guardOnly k =>
           cases htag : ctxᵢ.tagEnv.get? k with
             | none =>
@@ -1986,17 +1891,17 @@ private lemma stepFR_var
                       left
                       exact hpoison
                     have hvar := hvar_agree_of_clean hclean_qt
-                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
-                      agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_eq : res.qualType = qt := by
                       cases qt with
                       | mk etyp poison pred =>
                           cases hpred
                           simp [hres, hpc, joinPoison]
                     have hres_agree :
-                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       simpa [hres_eq] using hval
-                    simpa [_ho₀, _ho₁] using hres_agree
+                    simpa [hlookup₀, hlookup₁] using hres_agree
                 | inr hguard =>
                     rcases hguard with ⟨k', htag', hregime⟩
                     have hk : k = k' := by
@@ -2009,10 +1914,10 @@ private lemma stepFR_var
                       refine ⟨k, ?_, hregime⟩
                       simp [qtypGuardTag, hpred]
                     have hvar := hvar_agree_of_clean hclean_qt
-                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
-                      agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_agree :
-                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       cases hval with
                       | clean_eq_nonref _ hnotfun hnotref hEq =>
                           have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
@@ -2106,7 +2011,7 @@ private lemma stepFR_var
                               some false = R.lookup? k := by symm; exact hreg
                               _ = some true := by exact hregime
                           cases this
-                    simpa [_ho₀, _ho₁] using hres_agree
+                    simpa [hlookup₀, hlookup₁] using hres_agree
             | some tv =>
                 cases tv with
                 | mk b deps =>
@@ -2135,10 +2040,10 @@ private lemma stepFR_var
                           refine ⟨k, ?_, hregime⟩
                           simp [qtypGuardTag, hpred]
                         have hvar := hvar_agree_of_clean hclean_qt
-                        have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
-                          agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                         have hres_agree :
-                            agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                            agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                           cases hval with
                           | clean_eq_nonref _ hnotfun hnotref hEq =>
                               have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
@@ -2230,7 +2135,7 @@ private lemma stepFR_var
                                   some false = R.lookup? k := by symm; exact hreg
                                   _ = some true := by exact hregime
                               cases this
-                        simpa [_ho₀, _ho₁] using hres_agree
+                        simpa [hlookup₀, hlookup₁] using hres_agree
                     | false =>
                         have hres :
                             res.qualType =
@@ -2276,10 +2181,10 @@ private lemma stepFR_var
                       left
                       exact hpoison
                     have hvar := hvar_agree_of_clean hclean_qt
-                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
-                      agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_agree :
-                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       have hqt_eq : qt = ⟨qt.etyp, false, qt.pred⟩ := by
                         cases qt with
                         | mk etyp poison pred =>
@@ -2289,7 +2194,7 @@ private lemma stepFR_var
                           simp [hres, hpoison, hpc, joinPoison]
                         exact this.trans hqt_eq.symm
                       simpa [hres_eq] using hval
-                    simpa [_ho₀, _ho₁] using hres_agree
+                    simpa [hlookup₀, hlookup₁] using hres_agree
                 | inr hguard =>
                     rcases hguard with ⟨k', htag', hregime⟩
                     have hk : k = k' := by
@@ -2302,10 +2207,10 @@ private lemma stepFR_var
                       refine ⟨k, ?_, hregime⟩
                       simp [qtypGuardTag, hpred]
                     have hvar := hvar_agree_of_clean hclean_qt
-                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
-                      agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_agree :
-                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       cases hval with
                       | clean_eq_nonref _ hnotfun hnotref hEq =>
                           have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
@@ -2407,7 +2312,7 @@ private lemma stepFR_var
                               some false = R.lookup? k := by symm; exact hreg
                               _ = some true := by exact hregime
                           cases this
-                    simpa [_ho₀, _ho₁] using hres_agree
+                    simpa [hlookup₀, hlookup₁] using hres_agree
             | some tv =>
                 cases tv with
                 | mk b deps =>
@@ -2435,10 +2340,10 @@ private lemma stepFR_var
                           refine ⟨k, ?_, hregime⟩
                           simp [qtypGuardTag, hpred]
                         have hvar := hvar_agree_of_clean hclean_qt
-                        have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
-                          agreeValueUnder_of_agreeVarUnder hvar _hlookup₀ _hlookup₁
+            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                         have hres_agree :
-                            agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType v₀ v₁ := by
+                            agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                           cases hval with
                           | clean_eq_nonref _ hnotfun hnotref hEq =>
                               have hnotref' : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
@@ -2536,7 +2441,7 @@ private lemma stepFR_var
                                   some false = R.lookup? k := by symm; exact hreg
                                   _ = some true := by exact hregime
                               cases this
-                        simpa [_ho₀, _ho₁] using hres_agree
+                        simpa [hlookup₀, hlookup₁] using hres_agree
                     | false =>
                         have hres :
                             res.qualType =
@@ -2553,16 +2458,6 @@ private lemma stepFR_var
                               rfl
                         -- poisoned result is not clean
                         simp [qtypCleanUnder, qtypGuardTag, hres] at hclean
-
--- Step theorem spec variant using world-indexed termination.
-private def TypeSystemEnforcesFaultRobustness_step_specW
-  (e : Expr)
-  (ctxᵢ : TypeContext)
-  (predSat : PredSat) : Prop :=
-  ∀ (fuel : Nat) (res : TypeResult),
-    typecheck ctxᵢ e fuel = .ok res →
-    ∀ (R : Regime),
-      StepFRW ctxᵢ R e res predSat
 
 -- World-free version of stepFRW_op
 private lemma stepFR_op
@@ -3990,176 +3885,6 @@ private lemma stepFR_pfn
               simp [hpred] at htag
             exact False.elim this
 
-private theorem TypeSystemEnforcesFaultRobustness_stepW
-  (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
-  TypeSystemEnforcesFaultRobustness_step_specW e ctxᵢ predSat := by
-  unfold TypeSystemEnforcesFaultRobustness_step_specW
-  intro fuel
-  revert e ctxᵢ
-  induction fuel using Nat.strong_induction_on with
-  | _ n IH =>
-    intro e ctxᵢ res htc R
-    cases n with
-    | zero =>
-        simp [typecheck, typecheckExpr] at htc
-    | succ fuel =>
-        cases e with
-        | unit =>
-            simp [typecheck, typecheckExpr, typecheckUnit] at htc
-            let res_expected : TypeResult := {
-              qualType := ⟨ETyp.unit, false, Predicate.noPred⟩
-              memEnv' := ctxᵢ.memEnv
-              tagEnv' := ctxᵢ.tagEnv
-              nextLoc' := ctxᵢ.nextLoc
-              nextTag' := ctxᵢ.nextTag
-            }
-            have hres : res = res_expected := by
-              cases htc
-              rfl
-            have hval : Expr.toValue? Expr.unit = some Value.unit := by
-              simp [Expr.toValue?]
-            have hpoison : res.qualType.poison = false := by
-              simp [hres, res_expected]
-            have hnotfun : res.qualType.etyp.isFunctionType = false := by
-              simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
-              simp [hres, res_expected]
-            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
-              simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R Expr.unit res Value.unit hval hpoison hnotfun hnotref hctxAfter
-        | num n =>
-            simp [typecheck, typecheckExpr, typecheckInt] at htc
-            let res_expected : TypeResult := {
-              qualType := ⟨ETyp.int, false, Predicate.noPred⟩
-              memEnv' := ctxᵢ.memEnv
-              tagEnv' := ctxᵢ.tagEnv
-              nextLoc' := ctxᵢ.nextLoc
-              nextTag' := ctxᵢ.nextTag
-            }
-            have hres : res = res_expected := by
-              cases htc
-              rfl
-            have hval : Expr.toValue? (Expr.num n) = some (Value.num n) := by
-              simp [Expr.toValue?]
-            have hpoison : res.qualType.poison = false := by
-              simp [hres, res_expected]
-            have hnotfun : res.qualType.etyp.isFunctionType = false := by
-              simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
-              simp [hres, res_expected]
-            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
-              simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R (Expr.num n) res (Value.num n) hval hpoison hnotfun hnotref hctxAfter
-        | bool b =>
-            simp [typecheck, typecheckExpr, typecheckBool] at htc
-            let res_expected : TypeResult := {
-              qualType := ⟨ETyp.bool, false, Predicate.noPred⟩
-              memEnv' := ctxᵢ.memEnv
-              tagEnv' := ctxᵢ.tagEnv
-              nextLoc' := ctxᵢ.nextLoc
-              nextTag' := ctxᵢ.nextTag
-            }
-            have hres : res = res_expected := by
-              cases htc
-              rfl
-            have hval : Expr.toValue? (Expr.bool b) = some (Value.bool b) := by
-              simp [Expr.toValue?]
-            have hpoison : res.qualType.poison = false := by
-              simp [hres, res_expected]
-            have hnotfun : res.qualType.etyp.isFunctionType = false := by
-              simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
-              simp [hres, res_expected]
-            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
-              simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R (Expr.bool b) res (Value.bool b) hval hpoison hnotfun hnotref hctxAfter
-        | str s =>
-            simp [typecheck, typecheckExpr, typecheckString] at htc
-            let res_expected : TypeResult := {
-              qualType := ⟨ETyp.string, false, Predicate.noPred⟩
-              memEnv' := ctxᵢ.memEnv
-              tagEnv' := ctxᵢ.tagEnv
-              nextLoc' := ctxᵢ.nextLoc
-              nextTag' := ctxᵢ.nextTag
-            }
-            have hres : res = res_expected := by
-              cases htc
-              rfl
-            have hval : Expr.toValue? (Expr.str s) = some (Value.str s) := by
-              simp [Expr.toValue?]
-            have hpoison : res.qualType.poison = false := by
-              simp [hres, res_expected]
-            have hnotfun : res.qualType.etyp.isFunctionType = false := by
-              simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
-              simp [hres, res_expected]
-            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
-              simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotfun hnotref hctxAfter
-        | var name =>
-            exact stepFR_var ctxᵢ predSat R name res fuel htc
-        | op e1 op e2 =>
-            cases fuel with
-            | zero =>
-                simp [typecheck, typecheckExpr_op_succ, typecheckOp] at htc
-            | succ fuel' =>
-                exact stepFRW_op ctxᵢ predSat R e1 e2 op fuel' res IH htc
-        | unaryop op e =>
-            cases fuel with
-            | zero =>
-                simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
-            | succ fuel' =>
-                exact stepFRW_unaryop ctxᵢ predSat R op e fuel' res IH htc
-        | ite e1 e2 e3 =>
-            sorry
-        | newRef e =>
-            cases fuel with
-            | zero =>
-                simp [typecheck, typecheckExpr, typecheckNewRef] at htc
-            | succ fuel' =>
-                exact stepFRW_newRef ctxᵢ predSat R e fuel' res IH htc
-        | assign e1 e2 =>
-            sorry
-        | deref e =>
-            sorry
-        | seq e1 e2 =>
-            cases fuel with
-            | zero =>
-                simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
-            | succ fuel' =>
-                exact stepFRW_seq ctxᵢ predSat R e1 e2 fuel' res IH htc
-        | kwhile e1 e2 =>
-            sorry
-        | vlet z e1 e2 =>
-            let vname := z
-            cases fuel with
-            | zero =>
-                simp [typecheck, typecheckExpr_vlet_succ, typecheckVlet] at htc
-            | succ fuel' =>
-                exact stepFRW_vlet ctxᵢ predSat R vname e1 e2 fuel' res IH htc
-        | fn name ty e1 ty2 =>
-            exact stepFRW_fn ctxᵢ predSat R name ty e1 ty2 fuel res htc
-        | pfn name ty e1 ty2 =>
-            exact stepFRW_pfn ctxᵢ predSat R name ty e1 ty2 fuel res htc
-        | app e1 e2 =>
-            sorry
-
--- Wrapper: derive the original step spec (terminatesTo) from the world-indexed one.
-theorem TypeSystemEnforcesFaultRobustness_step
-  (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
-  TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat := by
-  unfold TypeSystemEnforcesFaultRobustness_step_spec
-  intro fuel res htc R
-  have hW : StepFRW ctxᵢ R e res predSat :=
-    TypeSystemEnforcesFaultRobustness_stepW e ctxᵢ predSat fuel res htc R
-  exact StepFR_of_StepFRW hW
-
-end TypeSystemEnforcesFaultRobustness_step_proof
-
-theorem TypeSystemEnforcesFaultRobustness (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
-  TypeSystemEnforcesFaultRobustness_spec e s obs := by
-  apply TypeSystemEnforcesFaultRobustness_impl
-  exact TypeSystemEnforcesFaultRobustness_step
 
 -- ================================================================
 -- I/O-free fault-robustness proofs

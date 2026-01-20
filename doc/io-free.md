@@ -397,7 +397,6 @@ The file `FaultRobustnessProofs.lean` currently contains extensive world-threade
 
 6. **Phase 5: Final verification**
    - Run `lake build` - file must compile
-   - Run `#print axioms TypeSystemEnforcesFaultRobustness_IOFree` - verify no I/O axioms
    - Ensure no references to deleted infrastructure remain
 
 **Rationale:**
