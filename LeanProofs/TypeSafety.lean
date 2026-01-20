@@ -2566,3 +2566,99 @@ lemma typecheck_nextLoc_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : 
   -- TODO: This follows the same pattern as typecheck_nextTag_mono
   -- Each typing rule either preserves or increases nextLoc
   sorry
+
+-- Typecheck produces well-formed results if input context is well-formed.
+-- This is a key property: typing never introduces locations beyond nextLoc.
+-- The proof requires induction over typecheck, showing each rule either:
+-- (1) preserves locations from the input context (which are < ctx.nextLoc ≤ res.nextLoc')
+-- (2) allocates new locations using nextLoc values (which are < res.nextLoc' by construction)
+lemma typecheck_wfTypeResult (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
+  wfTypeContext ctx → typecheck ctx e fuel = .ok res → wfTypeResult res := by
+  -- TODO: Prove by induction on typecheck, similar pattern to typecheck_nextLoc_mono
+  sorry
+
+-- ================================================================
+-- joinPoison Properties
+-- ================================================================
+
+/-- If joinPoison returns false, both inputs must be false. -/
+lemma joinPoison_eq_false {p1 p2 : Poison} :
+  joinPoison p1 p2 = false → p1 = false ∧ p2 = false := by
+  intro h
+  cases p1 <;> cases p2
+  all_goals simp [joinPoison] at h ⊢
+
+/-- If the left input is true, joinPoison returns true. -/
+lemma joinPoison_true_left {p1 p2 : Poison} :
+  p1 = true → joinPoison p1 p2 = true := by
+  intro h; cases p1 <;> cases p2 <;> simp [joinPoison] at h ⊢
+
+/-- If the right input is true, joinPoison returns true. -/
+lemma joinPoison_true_right {p1 p2 : Poison} :
+  p2 = true → joinPoison p1 p2 = true := by
+  intro h; cases p1 <;> cases p2 <;> simp [joinPoison] at h ⊢
+
+-- ================================================================
+-- joinMemEnvs Properties
+-- ================================================================
+
+/-- joinMemEnvs contains all locations from the left input. -/
+lemma joinMemEnvs_contains_left (env1 env2 : MemoryTypeEnv) (l : Loc) :
+  env1.contains l → (joinMemEnvs env1 env2).contains l := by
+  -- joinMemEnvs combines env1 and env2, keeping all locations from both
+  -- When l is in env1:
+  -- - If l is also in env2, the join uses the merge function which produces some value
+  -- - If l is only in env1, the join keeps env1's value
+  -- In both cases, l is in the result
+  -- The proof requires going through combineExtTreeMaps machinery
+  sorry
+
+/-- joinMemEnvs contains all locations from the right input. -/
+lemma joinMemEnvs_contains_right (env1 env2 : MemoryTypeEnv) (l : Loc) :
+  env2.contains l → (joinMemEnvs env1 env2).contains l := by
+  sorry
+
+/-- If a location is in joinMemEnvs, it was in at least one of the inputs. -/
+lemma joinMemEnvs_contains_implies_or (env1 env2 : MemoryTypeEnv) (l : Loc) :
+  (joinMemEnvs env1 env2).contains l → env1.contains l ∨ env2.contains l := by
+  intro hcontains
+  have hmem : l ∈ (joinMemEnvs env1 env2) := (Std.ExtTreeMap.contains_iff_mem).1 hcontains
+  simp only [joinMemEnvs, Std.ExtTreeMap.mem_iff_isSome_getElem?] at hmem
+  by_cases h1 : env1.contains l
+  · left; exact h1
+  · by_cases h2 : env2.contains l
+    · right; exact h2
+    · exfalso
+      have h1' : env1[l]? = none := Std.ExtTreeMap.getElem?_eq_none ((Std.ExtTreeMap.contains_iff_mem).not.1 h1)
+      have h2' : env2[l]? = none := Std.ExtTreeMap.getElem?_eq_none ((Std.ExtTreeMap.contains_iff_mem).not.1 h2)
+      simp only [joinMemEnvs] at hcontains
+      -- The combining function produces none when both inputs are none
+      sorry
+
+/-- If a clean type is in joinMemEnvs and the left input has something at that location,
+    then the left input's type is also clean (since joinPoison false = requires both false). -/
+lemma joinMemEnvs_lookup_clean_left (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : QTyp) :
+  (joinMemEnvs env1 env2).lookup l = some qt →
+  qt.poison = false →
+  env1.lookup l ≠ none →
+  ∃ qt1, env1.lookup l = some qt1 ∧ qt1.etyp = qt.etyp ∧ qt1.poison = false := by
+  -- From joinMemEnvs definition: if result has qt with poison=false,
+  -- and env1 has something at l, the input from env1 must also have poison=false
+  -- (since joinPoison p1 p2 = false implies p1 = false)
+  sorry
+
+/-- wfTypeContext property is preserved under joinMemEnvs with max nextLoc. -/
+lemma wfTypeContext_joinMemEnvs_max
+  (env1 env2 : MemoryTypeEnv) (nl1 nl2 : Nat)
+  (hwf1 : ∀ l, env1.contains l → l < nl1)
+  (hwf2 : ∀ l, env2.contains l → l < nl2) :
+  ∀ l, (joinMemEnvs env1 env2).contains l → l < max nl1 nl2 := by
+  intro l hcontains
+  have hor := joinMemEnvs_contains_implies_or env1 env2 l hcontains
+  cases hor with
+  | inl h1 =>
+    have hlt1 : l < nl1 := hwf1 l h1
+    exact Nat.lt_of_lt_of_le hlt1 (Nat.le_max_left nl1 nl2)
+  | inr h2 =>
+    have hlt2 : l < nl2 := hwf2 l h2
+    exact Nat.lt_of_lt_of_le hlt2 (Nat.le_max_right nl1 nl2)

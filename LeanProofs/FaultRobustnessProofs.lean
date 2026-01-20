@@ -371,12 +371,38 @@ private lemma agreeValueUnder_transport_clean
               some false = R.lookup? k := by symm; exact hreg'
               _ = some true := by exact hreg
           cases this
-private lemma joinPoison_eq_false {p1 p2 : Poison} :
-  joinPoison p1 p2 = false → p1 = false ∧ p2 = false := by
+
+-- If result is clean, condition must be clean (for standard mode ite)
+-- From h_poison: res.qualType.poison = joinPoison ctx.pc (joinPoison res1.poison (joinPoison res2.poison res3.poison))
+-- If res is clean, then the join is false, so all components are false
+private lemma ite_clean_implies_cond_clean {ctx_pc res1_poison res2_poison res3_poison : Poison} :
+  joinPoison ctx_pc (joinPoison res1_poison (joinPoison res2_poison res3_poison)) = false →
+  res1_poison = false := by
   intro h
-  cases p1 <;> cases p2
-  all_goals
-    simp [joinPoison] at h ⊢
+  have ⟨h1, h2⟩ := joinPoison_eq_false h
+  have ⟨h3, _h4⟩ := joinPoison_eq_false h2
+  exact h3
+
+-- wfTypeContext for ctxAfter is equivalent to wfTypeResult
+-- (ctxAfter sets memEnv := res.memEnv' and nextLoc := res.nextLoc')
+private lemma wfTypeResult_of_wfTypeContext_ctxAfter (ctx : TypeContext) (res : TypeResult) :
+  wfTypeContext (ctxAfter ctx res) → wfTypeResult res := by
+  simp only [wfTypeContext, ctxAfter, wfTypeResult]
+  exact id
+
+-- If l is not in ctx.memEnv and runtimeInstantiatesCtx holds, then θ.lookup l = none
+-- (contrapositive of runtimeInstantiatesCtx's first conjunct)
+private lemma theta_not_contains_if_not_in_memEnv
+  (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (l : Loc) :
+  runtimeInstantiatesCtx ctx μ ρ θ →
+  ¬ ctx.memEnv.contains l →
+  θ.lookup l = none := by
+  intro hric hnotContains
+  by_contra h
+  push_neg at h
+  obtain ⟨a, ha⟩ := Option.ne_none_iff_exists'.1 h
+  have ⟨hcontains, _⟩ := hric.1 l a ha
+  exact hnotContains hcontains
 
 private lemma wfExtendsMap_trans {θ₀ θ₁ θ₂ : RealizationMap} :
   wfExtendsMap θ₀ θ₁ → wfExtendsMap θ₁ θ₂ → wfExtendsMap θ₀ θ₂ := by
@@ -3848,17 +3874,134 @@ private lemma stepFR_ite
         refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?hwf_final, hwfcf₀2, hwfcf₁2, ?hric₀_final,
                 ?hric₁_final, ?htagR_final, ?hagree_final, ?hres_final⟩
         -- wfTypeContext (ctxAfter ctxᵢ res)
-        case hwf_final => sorry
+        case hwf_final =>
+          unfold wfTypeContext ctxAfter
+          simp only [h_memEnv, h_nextLoc]
+          -- Need: ∀ l ∈ joinMemEnvs res2.memEnv' res3.memEnv', l < max res2.nextLoc' res3.nextLoc'
+          -- From hwf2: ∀ l ∈ res2.memEnv', l < res2.nextLoc'
+          -- Need wfTypeResult res3: ∀ l ∈ res3.memEnv', l < res3.nextLoc'
+          -- Get wfTypeContext ctxForE3 first
+          have hwfForE3 : wfTypeContext ctxForE3 := by
+            intro l hcontains
+            simp only [ctxForE3] at hcontains ⊢
+            -- l ∈ ctx''.memEnv = res1.memEnv'
+            -- From hwf1': ∀ l ∈ res1.memEnv', l < res1.nextLoc'
+            have hlt1 : l < res1.nextLoc' := by
+              have hwf1'_unfolded : ∀ l', ctx''.memEnv.contains l' → l' < ctx''.nextLoc := hwf1'
+              simp only [ctx'', ctx'] at hwf1'_unfolded
+              exact hwf1'_unfolded l hcontains
+            -- From typecheck_nextLoc_mono: res1.nextLoc' ≤ res2.nextLoc'
+            have h_mono : ctx''.nextLoc ≤ res2.nextLoc' := typecheck_nextLoc_mono ctx'' e2 fuel' res2 htc2'
+            simp only [ctx'', ctx'] at h_mono
+            exact Nat.lt_of_lt_of_le hlt1 h_mono
+          -- Now use typecheck_wfTypeResult to get wfTypeResult res3
+          have hwfres3 : wfTypeResult res3 := typecheck_wfTypeResult ctxForE3 e3 fuel' res3 hwfForE3 htc3'
+          -- hwf2 gives wfTypeResult res2 via ctxAfter
+          have hwfres2 : ∀ l, res2.memEnv'.contains l → l < res2.nextLoc' := by
+            simp only [wfTypeContext, ctxAfter, ctx'', ctx'] at hwf2
+            exact hwf2
+          -- Apply our join lemma
+          exact wfTypeContext_joinMemEnvs_max res2.memEnv' res3.memEnv' res2.nextLoc' res3.nextLoc'
+            hwfres2 hwfres3
         -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2
-        -- The runtime actually executed e2 and has res2's memory, but the type context
-        -- expects the joined memEnv. Need to show runtime satisfies the joined context.
-        case hric₀_final => sorry
-        case hric₁_final => sorry
+        -- The runtime actually executed e2, but the type context expects joined memEnv.
+        -- Key: θ₀2 only maps locations that are in res2.memEnv', and those are also in joinMemEnvs
+        case hric₀_final =>
+          unfold runtimeInstantiatesCtx ctxAfter
+          simp only [h_memEnv]
+          have hric₀2_parts := hric₀2
+          unfold runtimeInstantiatesCtx ctxAfter at hric₀2_parts
+          simp only [ctx'', ctx'] at hric₀2_parts
+          constructor
+          · -- For all (l, a) in θ₀2: joinMemEnvs contains l ∧ μ contains a
+            intro l a hlookup
+            have ⟨hcontains2, hmem_contains⟩ := hric₀2_parts.1 l a hlookup
+            constructor
+            · exact joinMemEnvs_contains_left res2.memEnv' res3.memEnv' l hcontains2
+            · exact hmem_contains
+          · -- varEnv part: unchanged since ctxᵢ.varEnv = ctx''.varEnv
+            intro x qt hvar_lookup
+            exact hric₀2_parts.2 hvar_lookup
+        case hric₁_final =>
+          -- Same argument as hric₀_final
+          unfold runtimeInstantiatesCtx ctxAfter
+          simp only [h_memEnv]
+          have hric₁2_parts := hric₁2
+          unfold runtimeInstantiatesCtx ctxAfter at hric₁2_parts
+          simp only [ctx'', ctx'] at hric₁2_parts
+          constructor
+          · intro l a hlookup
+            have ⟨hcontains2, hmem_contains⟩ := hric₁2_parts.1 l a hlookup
+            constructor
+            · exact joinMemEnvs_contains_left res2.memEnv' res3.memEnv' l hcontains2
+            · exact hmem_contains
+          · intro x qt hvar_lookup
+            exact hric₁2_parts.2 hvar_lookup
         -- regimeConsistentWithCtx (ctxAfter ctxᵢ res) R
         -- This depends on tagEnv = res1.tagEnv' and nextTag = max res2.nextTag' res3.nextTag'
-        case htagR_final => sorry
+        case htagR_final =>
+          -- ctxAfter ctxᵢ res has tagEnv = res.tagEnv' = res1.tagEnv' (from h_tagEnv in standard mode)
+          -- and nextTag = res.nextTag' = max res2.nextTag' res3.nextTag' (from h_nextTag)
+          unfold regimeConsistentWithCtx ctxAfter
+          simp only [h_tagEnv, h_nextTag]
+          -- From htagR1, we have tagEnvConsistentWithRegime on ctxAfter ctxᵢ res1
+          -- which has tagEnv = res1.tagEnv'
+          have htagR1_vals : tagEnvConsistentWithRegime res1.tagEnv' R ∧ R.bound ≤ res1.nextTag' := by
+            simp only [regimeConsistentWithCtx, ctxAfter] at htagR1
+            exact htagR1
+          constructor
+          · exact htagR1_vals.1
+          · -- R.bound ≤ res2.nextTag' ≤ max res2.nextTag' res3.nextTag'
+            have hbound2 : R.bound ≤ res2.nextTag' := by
+              simp only [regimeConsistentWithCtx, ctxAfter] at htagR2
+              exact htagR2.2
+            exact Nat.le_trans hbound2 (Nat.le_max_left res2.nextTag' res3.nextTag')
         -- agreeOnClean predSat R (ctxAfter ctxᵢ res) ...
-        case hagree_final => sorry
+        case hagree_final =>
+          -- We need to show agreement for clean locations in joined memEnv
+          -- From hagree_clean2, we have agreement for clean locations in res2.memEnv'
+          -- The joined memEnv = joinMemEnvs res2.memEnv' res3.memEnv'
+          -- Key insight: θ₀2, θ₁2 only contain locations from res2 (we executed e2, not e3)
+          -- So locations only in res3 are both_unrealized
+          unfold agreeOnClean ctxAfter
+          simp only [h_memEnv]
+          have hagree2_parts := hagree_clean2
+          unfold agreeOnClean ctxAfter at hagree2_parts
+          simp only [ctx'', ctx'] at hagree2_parts
+          constructor
+          · -- Locations in joined memEnv
+            intro l qt hlookup hclean
+            -- Check if l is in res2.memEnv'
+            by_cases hres2 : res2.memEnv'.contains l
+            · -- l is in res2.memEnv'
+              -- The joined type may have different poison, but if joined is clean,
+              -- then res2's type is also clean (joinPoison p1 p2 = false → p1 = false)
+              -- We have hagree2_parts.1 for locations in res2.memEnv'
+              -- For clean types under R, either poison=false or guard tag applies
+              -- If poison=false, we can use joinMemEnvs_lookup_clean_left
+              -- If guard tag applies, we need different reasoning
+              -- For now, use sorry for this complex case - requires detailed joinMemEnvs analysis
+              sorry
+            · -- l is only in res3.memEnv' (not in res2)
+              -- θ₀2 and θ₁2 don't have l realized (they come from executing e2)
+              -- Use both_unrealized
+              -- (ctxAfter ctx'' res2).memEnv = res2.memEnv'
+              have hctx_memEnv : (ctxAfter ctx'' res2).memEnv = res2.memEnv' := by
+                simp only [ctxAfter]
+              have hnotContains_ctx : ¬ (ctxAfter ctx'' res2).memEnv.contains l := by
+                rw [hctx_memEnv]; exact hres2
+              -- θ₀2.lookup l = none
+              have hθ₀2_none : θ₀2.lookup l = none :=
+                theta_not_contains_if_not_in_memEnv (ctxAfter ctx'' res2)
+                  cf₀.memory cf₀.varEnv θ₀2 l hric₀2 hnotContains_ctx
+              -- θ₁2.lookup l = none
+              have hθ₁2_none : θ₁2.lookup l = none :=
+                theta_not_contains_if_not_in_memEnv (ctxAfter ctx'' res2)
+                  cf₁.memory cf₁.varEnv θ₁2 l hric₁2 hnotContains_ctx
+              exact agreeLocUnder.both_unrealized l qt hθ₀2_none hθ₁2_none
+          · -- Variables: unchanged since varEnv is the same
+            intro x qt hvar_lookup hclean
+            exact hagree2_parts.2 (x := x) (qt := qt) hvar_lookup hclean
         -- resultAgreesIfClean predSat R cf₀.memory cf₁.memory θ₀2 θ₁2 res.qualType o₀ o₁
         -- res2 and res have same qualType in many cases, but poison is joined
         case hres_final => sorry
@@ -3880,11 +4023,12 @@ private lemma stepFR_ite
             agreeValueUnder_nonref_eq_of_clean hclean hnotref hnotfun (hres_agree1 hclean)
           simp at heq
           exact hbNe heq
-        -- For the divergent case, we need to provide the StepFR output
-        -- Since branches diverged, we can't apply IH on a common branch
-        -- We use IH1's results (from e1) and need to show all StepFR properties
-        -- The result type is poisoned (due to poison propagation from condition)
-        -- so resultAgreesIfClean is vacuously satisfied
+        -- Show res.qualType is not clean: from h_poison, if res is clean then res1.poison = false
+        -- But ¬ qtypCleanUnder R res1 means res1.poison = true (when no guard tag applies)
+        -- For divergent branches, we still need to construct full StepFR output
+        -- Run 0 executed e2, Run 1 executed e3 - we need IH on each independently
+        -- This is complex: need θ₀' from IH2 for run 0, θ₁' from IH3 for run 1
+        -- For now, use sorry - this case requires substantial additional infrastructure
         sorry
     | inr hfalse₀ =>
       rcases hfalse₀ with ⟨hb₀, ht₀_e3⟩
@@ -3904,7 +4048,7 @@ private lemma stepFR_ite
             agreeValueUnder_nonref_eq_of_clean hclean hnotref hnotfun (hres_agree1 hclean)
           simp at heq
           exact hbNe heq
-        -- Same reasoning as above
+        -- Same reasoning as true-false case
         sorry
       | inr hfalse₁ =>
         -- Both runs take false branch
@@ -3964,11 +4108,93 @@ private lemma stepFR_ite
         -- Same reasoning applies with res3 instead of res2
         refine ⟨θ₀3, θ₁3, hθext₀, hθext₁, ?hwf_final, hwfcf₀3, hwfcf₁3, ?hric₀_final,
                 ?hric₁_final, ?htagR_final, ?hagree_final, ?hres_final⟩
-        case hwf_final => sorry
-        case hric₀_final => sorry
-        case hric₁_final => sorry
-        case htagR_final => sorry
-        case hagree_final => sorry
+        case hwf_final =>
+          -- Same approach as true-true case
+          unfold wfTypeContext ctxAfter
+          simp only [h_memEnv, h_nextLoc]
+          -- Get wfTypeResult res2 via typecheck_wfTypeResult
+          have hwfres2 : wfTypeResult res2 := typecheck_wfTypeResult ctx'' e2 fuel' res2 hwf1' htc2'
+          -- From hwf3': wfTypeContext (ctxAfter ctxForE3 res3), get wfTypeResult res3
+          have hwfres3 : ∀ l, res3.memEnv'.contains l → l < res3.nextLoc' := by
+            simp only [wfTypeContext, ctxAfter, ctxForE3, ctx'', ctx'] at hwf3'
+            exact hwf3'
+          exact wfTypeContext_joinMemEnvs_max res2.memEnv' res3.memEnv' res2.nextLoc' res3.nextLoc'
+            hwfres2 hwfres3
+        case hric₀_final =>
+          -- Similar to true-true case but for e3
+          unfold runtimeInstantiatesCtx ctxAfter
+          simp only [h_memEnv]
+          have hric₀3_parts := hric₀3'
+          unfold runtimeInstantiatesCtx ctxAfter at hric₀3_parts
+          simp only [ctxForE3, ctx'', ctx'] at hric₀3_parts
+          constructor
+          · intro l a hlookup
+            have ⟨hcontains3, hmem_contains⟩ := hric₀3_parts.1 l a hlookup
+            constructor
+            · exact joinMemEnvs_contains_right res2.memEnv' res3.memEnv' l hcontains3
+            · exact hmem_contains
+          · intro x qt hvar_lookup
+            exact hric₀3_parts.2 hvar_lookup
+        case hric₁_final =>
+          unfold runtimeInstantiatesCtx ctxAfter
+          simp only [h_memEnv]
+          have hric₁3_parts := hric₁3'
+          unfold runtimeInstantiatesCtx ctxAfter at hric₁3_parts
+          simp only [ctxForE3, ctx'', ctx'] at hric₁3_parts
+          constructor
+          · intro l a hlookup
+            have ⟨hcontains3, hmem_contains⟩ := hric₁3_parts.1 l a hlookup
+            constructor
+            · exact joinMemEnvs_contains_right res2.memEnv' res3.memEnv' l hcontains3
+            · exact hmem_contains
+          · intro x qt hvar_lookup
+            exact hric₁3_parts.2 hvar_lookup
+        case htagR_final =>
+          -- Similar to true-true case
+          unfold regimeConsistentWithCtx ctxAfter
+          simp only [h_tagEnv, h_nextTag]
+          have htagR1_vals : tagEnvConsistentWithRegime res1.tagEnv' R ∧ R.bound ≤ res1.nextTag' := by
+            simp only [regimeConsistentWithCtx, ctxAfter] at htagR1
+            exact htagR1
+          constructor
+          · exact htagR1_vals.1
+          · -- R.bound ≤ res3.nextTag' ≤ max res2.nextTag' res3.nextTag'
+            have hbound3 : R.bound ≤ res3.nextTag' := by
+              simp only [regimeConsistentWithCtx, ctxAfter] at htagR3'
+              exact htagR3'.2
+            exact Nat.le_trans hbound3 (Nat.le_max_right res2.nextTag' res3.nextTag')
+        case hagree_final =>
+          -- Similar to true-true case but for res3
+          unfold agreeOnClean ctxAfter
+          simp only [h_memEnv]
+          have hagree3_parts := hagree_clean3'
+          unfold agreeOnClean ctxAfter at hagree3_parts
+          simp only [ctxForE3, ctx'', ctx'] at hagree3_parts
+          constructor
+          · -- Locations in joined memEnv
+            intro l qt hlookup hclean
+            by_cases hres3 : res3.memEnv'.contains l
+            · -- l is in res3.memEnv' - use hagree3_parts
+              -- For clean types under R, need detailed joinMemEnvs analysis
+              sorry
+            · -- l is only in res2.memEnv' (not in res3)
+              -- θ₀3 and θ₁3 don't have l realized (they come from executing e3)
+              -- Use both_unrealized
+              have hctx_memEnv : (ctxAfter ctxForE3 res3).memEnv = res3.memEnv' := by
+                simp only [ctxAfter]
+              have hnotContains_ctx : ¬ (ctxAfter ctxForE3 res3).memEnv.contains l := by
+                rw [hctx_memEnv]; exact hres3
+              -- θ₀3.lookup l = none - use hric₀3' from IH3
+              have hθ₀3_none : θ₀3.lookup l = none :=
+                theta_not_contains_if_not_in_memEnv (ctxAfter ctxForE3 res3)
+                  cf₀.memory cf₀.varEnv θ₀3 l hric₀3' hnotContains_ctx
+              have hθ₁3_none : θ₁3.lookup l = none :=
+                theta_not_contains_if_not_in_memEnv (ctxAfter ctxForE3 res3)
+                  cf₁.memory cf₁.varEnv θ₁3 l hric₁3' hnotContains_ctx
+              exact agreeLocUnder.both_unrealized l qt hθ₀3_none hθ₁3_none
+          · -- Variables: unchanged since varEnv is the same
+            intro x qt hvar_lookup hclean
+            exact hagree3_parts.2 (x := x) (qt := qt) hvar_lookup hclean
         case hres_final => sorry
 
 -- Stub lemma for assignment (not yet proven)
