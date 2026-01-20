@@ -2903,12 +2903,14 @@ private lemma stepFR_seq
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
   have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using hwf1
-  have hric₀1 : runtimeInstantiatesCtx ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
-    sorry -- TODO: Derive from relationship
-  have hric₁1 : runtimeInstantiatesCtx ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    sorry -- TODO: Derive from relationship
-  have htagR1 : regimeConsistentWithCtx ctx' R := by
-    sorry -- TODO: Derive from relationship
+  -- hric₀1, hric₁1, htagR1 are already extracted from hstep_e1 for (ctxAfter ctxᵢ res1)
+  -- Since ctx' = ctxAfter ctxᵢ res1, we convert them
+  have hric₀1' : runtimeInstantiatesCtx ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+    simpa [hctx', ctxAfter] using hric₀1
+  have hric₁1' : runtimeInstantiatesCtx ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    simpa [hctx', ctxAfter] using hric₁1
+  have htagR1' : regimeConsistentWithCtx ctx' R := by
+    simpa [hctx', ctxAfter] using htagR1
   have hagree_clean1' :
       agreeOnClean predSat R ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [hctx', ctxAfter] using hagree_clean1
@@ -2926,7 +2928,7 @@ private lemma stepFR_seq
   have hstep_e2 :=
     hIH2 cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ o₀ o₁
-      hθ₀1wf hθ₁1wf hwf1' hric₀1 hric₁1 htagR1 hRbound hagree_clean1'
+      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR1' hRbound hagree_clean1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
       ht₀_e2 ht₁_e2'
   rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
@@ -2949,113 +2951,6 @@ private lemma stepFR_seq
   · simpa [hctxAfter] using hwf2
   -- Since res is directly the result of e2, hres_agree2 gives us the result directly
   exact hres_agree2
-  /- OLD PROOF (needs refactoring):
-  have htc' : typecheckSeq ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr_seq_succ] at htc
-    exact htc
-  obtain ⟨res1, ctx', htc1, hctx', htc2⟩ :=
-    typecheckSeq_structure ctxᵢ e1 e2 (Nat.succ fuel') res htc'
-  have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
-    simpa [typecheck, Nat.succ_sub_one] using htc1
-  have htc2' : typecheck ctx' e2 fuel' = .ok res := by
-    simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
-  have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ res1 htc1' R
-  have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' res htc2' R
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  -- Extract fuel/verbose from terminatesTo
-  rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
-  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
-  -- Use bevalSeq_structure with defaultWorld
-  let w_default := LeanProofs.defaultWorld
-  have hbeval₀_w : LeanPoison.beval fuel₀ { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } (Expr.seq e1 e2) verbose₀ w_default = EST.Out.ok (.success cf₀ o₀) w_default := by
-    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₀
-    simpa [pure] using h_eq
-  have hbeval₁_w : LeanPoison.beval fuel₁ { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } (Expr.seq e1 e2) verbose₁ w_default = EST.Out.ok (.success cf₁ o₁) w_default := by
-    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₁
-    simpa [pure] using h_eq
-  have hstruct₀ :=
-    bevalSeq_structure e1 e2 fuel₀ verbose₀
-      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
-      cf₀ o₀ w_default w_default hbeval₀_w
-  rcases hstruct₀ with ⟨cfg₀1, v₀1, _w₀mid, hbeval₀_e1, hbeval₀_e2⟩
-  have hstruct₁ :=
-    bevalSeq_structure e1 e2 fuel₁ verbose₁
-      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
-      cf₁ o₁ w_default w_default hbeval₁_w
-  rcases hstruct₁ with ⟨cfg₁1, v₁1, _w₁mid, hbeval₁_e1, hbeval₁_e2⟩
-  -- Convert to world-free terminatesTo
-  have ht₀_e1 : terminatesTo e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 :=
-    ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e1⟩
-  have ht₁_e1 : terminatesTo e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 :=
-    ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e1⟩
-  -- Derive wfConfig for intermediate configs
-  have hwfcf₀1 : wfConfig cfg₀1 := by
-    have hterm := terminatesTo_nextAddr_mono e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1
-    exact wfConfig_mono hwfcfg₀ hterm
-  have hwfcf₁1 : wfConfig cfg₁1 := by
-    have hterm := terminatesTo_nextAddr_mono e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1
-    exact wfConfig_mono hwfcfg₁ hterm
-  have hstep_e1 :=
-    hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
-  rcases hstep_e1 with
-    ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1', hwfcf₁1', hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
-  have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
-  have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
-  have hreg_ctx' : regimeConsistentWithCtx ctx' R := by
-    simpa [hctx', ctxAfter] using htagR1
-  have hric₀1' : runtimeInstantiatesCtx ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
-    simpa [hctx', ctxAfter] using hric₀1
-  have hric₁1' : runtimeInstantiatesCtx ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    simpa [hctx', ctxAfter] using hric₁1
-  have hagree_clean1' :
-      agreeOnClean predSat R ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    simpa [hctx', ctxAfter] using hagree_clean1
-  -- Convert e2 evaluations to world-free
-  have ht₀_e2 : terminatesTo e2 cfg₀1 cf₀ o₀ :=
-    ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e2⟩
-  have ht₁_e2 : terminatesTo e2 cfg₁1 cf₁ o₁ :=
-    ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e2⟩
-  have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using hwf1
-  have hstep_e2 :=
-    hIH2 cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
-      cf₀ cf₁ o₀ o₁
-      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' hreg_ctx' hRbound hagree_clean1'
-      cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode cfg₁1.pureMode hwfcf₀1 hwfcf₁1
-      ht₀_e2 ht₁_e2
-  rcases hstep_e2 with
-    ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
-  have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
-  have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
-  -- Since typecheckSeq returns result2 directly, res = result2 and ctxAfter is the same
-  have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctx' res := by
-    simp [ctxAfter, hctx', updateCtxFromResult]
-  have hric₀'' :
-      runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
-    simpa [hctxAfter] using hric₀2
-  have hric₁'' :
-      runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
-    simpa [hctxAfter] using hric₁2
-  have hreg'' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) R := by
-    simpa [hctxAfter] using htagR2
-  have hagree_clean :
-      agreeOnClean predSat R (ctxAfter ctxᵢ res)
-        cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
-    simpa [hctxAfter] using hagree_clean2
-  -- Derive wfConfig for final configs
-  have hwfcf₀_final : wfConfig cf₀ := by
-    have hterm := terminatesTo_nextAddr_mono (Expr.seq e1 e2) { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-    exact wfConfig_mono hwfcfg₀ hterm
-  have hwfcf₁_final : wfConfig cf₁ := by
-    have hterm := terminatesTo_nextAddr_mono (Expr.seq e1 e2) { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
-    exact wfConfig_mono hwfcfg₁ hterm
-  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
-  · simpa [hctxAfter] using hwf2
-  -- Since res is directly the result of e2, hres_agree2 gives us the result directly
-  exact hres_agree2
-  -/
 
 -- World-free version of stepFRW_vlet
 private lemma stepFR_vlet
