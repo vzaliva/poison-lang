@@ -948,7 +948,8 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
     | succ fuel_tc' =>
       simp only [typecheck, typecheckExpr] at h_typecheck
       -- Extract typechecking structure using helper lemma
-      have ⟨result1, result2, ctx', h_tc1, h_ctx_eq, h_tc2, h_etyp, h_mem, h_tag, h_loc, h_ntag⟩ :=
+      -- Note: typecheckSeq returns result2 directly, so res is the result of e2
+      have ⟨result1, ctx', h_tc1, h_ctx_eq, h_tc2⟩ :=
         typecheckSeq_structure ctx e1 e2 fuel_tc' res h_typecheck
       -- Extract evaluation structure using helper lemma
       obtain ⟨config₁, v1, h_eval1_ex, h_eval2_ex⟩ :=
@@ -995,7 +996,8 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
       have h_runtime1' : runtimeInstantiatesCtx ctx' config₁.memory config₁.varEnv := by
         subst h_ctx_eq
         exact h_runtime1
-      have h_tc2' : typecheck ctx' e2 (fuel_tc' - 1) = .ok result2 := by
+      -- Since res is directly the result of e2 typechecking
+      have h_tc2' : typecheck ctx' e2 (fuel_tc' - 1) = .ok res := by
         simp [typecheck]
         exact h_tc2
       -- Convert h_eval2_ex to use explicit config structure
@@ -1003,22 +1005,20 @@ private lemma preservation_seq (e1 e2 : Expr) (ctx : TypeContext)
       have h_eval2' : ∃ w₀''' w₁''', LeanPoison.beval fuel' { memory := config₁.memory, varEnv := config₁.varEnv, nextAddr := config₁.nextAddr, pureMode := config₁.pureMode } e2 verbose w₀''' =
           EST.Out.ok (.success { memory := μ₂, varEnv := ρ₂, nextAddr := l₂, pureMode := pm₂ } v) w₁''' :=
         ⟨w₀'', w₁'', h_eval2_eq⟩
-      have IH2 := IH fuel' h_fuel e2 ctx' (fuel_tc' - 1) result2
+      have IH2 := IH fuel' h_fuel e2 ctx' (fuel_tc' - 1) res
                       config₁.memory μ₂ config₁.varEnv ρ₂
                       config₁.nextAddr l₂ config₁.pureMode pm₂ v verbose
                       h_tc2' h_runtime1' h_eval2'
       obtain ⟨h_v_type, h_runtime2⟩ := IH2
 
       constructor
-      · -- valueHasETyp v res.qualType.etyp
-        rw [h_etyp]
+      · -- valueHasETyp v res.qualType.etyp - directly from IH2
         exact h_v_type
       · -- runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₂ ρ₂
-        simp only [h_mem]
         -- runtimeInstantiatesCtx only depends on memEnv and varEnv
         -- ctx'.varEnv = ctx.varEnv, so they're equivalent
         subst h_ctx_eq
-        simp only [runtimeInstantiatesCtx] at h_runtime2 ⊢
+        simp only [runtimeInstantiatesCtx, updateCtxFromResult] at h_runtime2 ⊢
         exact h_runtime2
 
 -- Helper lemma for conditionals

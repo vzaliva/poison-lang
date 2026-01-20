@@ -710,51 +710,34 @@ lemma typecheckOp_structure (ctx : TypeContext) (e1 e2 : Expr) (op : Op) (fuel :
           simp [h_tc1_result, bind, Except.bind] at h_typecheck
 
 -- Structure lemma for seq typechecking.
+-- Note: typecheckSeq simply returns result2 (the result of e2), no poison join is performed.
 lemma typecheckSeq_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckSeq ctx e1 e2 fuel = .ok res →
-  ∃ (result1 result2 : TypeResult) (ctx' : TypeContext),
+  ∃ (result1 : TypeResult) (ctx' : TypeContext),
     typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
-    ctx' = { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' } ∧
-    typecheckExpr ctx' e2 (fuel - 1) = .ok result2 ∧
-    res.qualType.etyp = result2.qualType.etyp ∧
-    res.memEnv' = result2.memEnv' ∧
-    res.tagEnv' = result2.tagEnv' ∧
-    res.nextLoc' = result2.nextLoc' ∧
-    res.nextTag' = result2.nextTag' ∧
-    res.qualType.poison = joinPoison result1.qualType.poison result2.qualType.poison ∧
-    res.qualType.pred = result2.qualType.pred := by
+    ctx' = updateCtxFromResult ctx result1 ∧
+    typecheckExpr ctx' e2 (fuel - 1) = .ok res := by
   intro h_typecheck
   cases fuel with
   | zero =>
       simp [typecheckSeq] at h_typecheck
   | succ fuel' =>
       unfold typecheckSeq at h_typecheck
-      simp at h_typecheck
-      simp [bind, Except.bind] at h_typecheck
+      simp only [bind, Except.bind] at h_typecheck
       cases h_tc1 : typecheckExpr ctx e1 fuel' with
       | ok result1 =>
-          simp [h_tc1] at h_typecheck
-          cases h_qt1 : result1.qualType with
-          | mk _etyp1 p1 pred1 =>
-              rw [h_qt1] at h_typecheck
-              simp at h_typecheck
-              cases h_tc2 :
-                (typecheckExpr { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-                                             nextLoc := result1.nextLoc', nextTag := result1.nextTag' } e2 fuel') with
-              | ok result2 =>
-                  simp (config := { failIfUnchanged := false }) [h_tc2] at h_typecheck
-                  cases h_qt2 : result2.qualType with
-                  | mk _etyp2 p2 pred2 =>
-                      rw [h_qt2] at h_typecheck
-                      simp at h_typecheck
-                      simp [pure, Except.pure] at h_typecheck
-                      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-                                              nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
-                      cases h_typecheck
-                      refine ⟨result1, result2, ctx', ?_⟩
-                      simp [ctx', h_tc1, h_tc2, h_qt1, h_qt2]
-              | error _err =>
-                  simp (config := { failIfUnchanged := false }) [h_tc2] at h_typecheck
+          simp only [h_tc1, pure, Except.pure] at h_typecheck
+          cases h_tc2 : typecheckExpr (updateCtxFromResult ctx result1) e2 fuel' with
+          | ok result2 =>
+              simp only [h_tc2] at h_typecheck
+              have hres : result2 = res := by injection h_typecheck
+              refine ⟨result1, updateCtxFromResult ctx result1, h_tc1, rfl, ?_⟩
+              simp only [Nat.succ_sub_one]
+              rw [← hres]
+              exact h_tc2
+          | error _err =>
+              simp only [h_tc2] at h_typecheck
+              exact absurd h_typecheck (by simp)
       | error _err =>
           simp [h_tc1] at h_typecheck
 
@@ -1341,21 +1324,20 @@ private lemma typecheckSeq_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
   ctx.nextTag ≤ res.nextTag' := by
   intro htc
   have hstruct := typecheckSeq_structure ctx e1 e2 fuel res htc
-  rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, _hetyp, _hmem, _htag, _hloc, hnexttag, _⟩
+  rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
   cases fuel with
   | zero => unfold typecheckSeq at htc; simp at htc
   | succ fuel' =>
       have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
       have htc1_simp : typecheckExpr ctx e1 fuel' = .ok result1 := by simpa using htc1
       have IH1 := IH fuel' h_fuel e1 ctx result1 htc1_simp
-      have htc2_simp : typecheckExpr ctx' e2 fuel' = .ok result2 := by simpa using htc2
-      have IH2 := IH fuel' h_fuel e2 ctx' result2 htc2_simp
-      have h_ctx'_nextTag : ctx'.nextTag = result1.nextTag' := by simp [hctx']
+      have htc2_simp : typecheckExpr ctx' e2 fuel' = .ok res := by simpa using htc2
+      have IH2 := IH fuel' h_fuel e2 ctx' res htc2_simp
+      have h_ctx'_nextTag : ctx'.nextTag = result1.nextTag' := by simp [hctx', updateCtxFromResult]
       calc ctx.nextTag
         _ ≤ result1.nextTag' := IH1
         _ = ctx'.nextTag := h_ctx'_nextTag.symm
-        _ ≤ result2.nextTag' := IH2
-        _ = res.nextTag' := hnexttag.symm
+        _ ≤ res.nextTag' := IH2
 
 private lemma typecheckNewRef_nextTag_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
