@@ -1664,85 +1664,34 @@ private lemma stepFR_var
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
   StepFR ctxᵢ R (Expr.var name) res predSat := by
-  -- TODO: This proof needs refactoring - StepFR structure changed (removed runtimeInstantiatesCtx
-  -- and regimeConsistentWithCtx from the existential).
-  -- Also needs adjustment for IO monad structure of beval (extraction lemmas).
-  -- The old proof below needs to be updated to match the new StepFR definition.
-  sorry
-  /-  -- OLD PROOF (preserved for reference, needs refactoring):
-  -- Variable case proof skeleton (full proof requires case analysis
-  -- on predicates and tag environment).
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv R := hreg.1
-  -- Extract config and value from terminatesTo (vars don't change config or perform I/O)
-  rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
-  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
-  -- TODO: Fix - needs adjustment for IO monad structure of beval.
-  -- OLD PROOF APPROACH (for reference):
-  /-
-  have hcf₀ : cf₀ = { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } := by
-    cases fuel₀ with
-    | zero =>
-        simp [LeanPoison.beval] at hbeval₀
-        cases hbeval₀
-    | succ fuel₀ =>
-        simp [LeanPoison.beval, pure] at hbeval₀
-        injection hbeval₀ with hcfg
-        cases hcfg
-        rfl
-  have hcf₁ : cf₁ = { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } := by
-    cases fuel₁ with
-    | zero =>
-        simp [LeanPoison.beval] at hbeval₁
-        cases hbeval₁
-    | succ fuel₁ =>
-        simp [LeanPoison.beval, pure] at hbeval₁
-        injection hbeval₁ with hcfg
-        cases hcfg
-        rfl
-  have hlookup₀ : ρ₀.lookup name = some o₀ := by
-    cases fuel₀ with
-    | zero =>
-        simp [LeanPoison.beval] at hbeval₀
-        cases hbeval₀
-    | succ fuel₀ =>
-        simp [LeanPoison.beval, pure] at hbeval₀
-        injection hbeval₀ with _hcfg hval
-        cases hval
-        rfl
-  have hlookup₁ : ρ₁.lookup name = some o₁ := by
-    cases fuel₁ with
-    | zero =>
-        simp [LeanPoison.beval] at hbeval₁
-        cases hbeval₁
-    | succ fuel₁ =>
-        simp [LeanPoison.beval, pure] at hbeval₁
-        injection hbeval₁ with _hcfg hval
-        cases hval
-        rfl
-  -/
-  have hcf₀ : cf₀ = { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } := by
-    sorry -- TODO: extract config from beval for var
-  have hcf₁ : cf₁ = { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } := by
-    sorry -- TODO: extract config from beval for var
-  have hlookup₀ : ρ₀.lookup name = some o₀ := by
-    sorry -- TODO: extract lookup from beval for var
-  have hlookup₁ : ρ₁.lookup name = some o₁ := by
-    sorry -- TODO: extract lookup from beval for var
-  subst hcf₀
-  subst hcf₁
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_⟩
-  · refine ⟨?_, ?_⟩
-    · intro l a hlookup'
-      exact hlookup'
-    · intro hwf'
-      exact hwf'
-  · refine ⟨?_, ?_⟩
-    · intro l a hlookup'
-      exact hlookup'
-    · intro hwf'
-      exact hwf'
-  · -- wfTypeContext: typecheckVar does not change the context
+  -- Use inversion lemma to extract config and value
+  have hinv₀ := terminatesTo_var_inv' name
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+  have hinv₁ := terminatesTo_var_inv' name
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+  rcases hinv₀ with ⟨v₀', hlookup₀, hcf₀, hv₀⟩
+  rcases hinv₁ with ⟨v₁', hlookup₁, hcf₁, hv₁⟩
+  -- Substitute: o₀ = v₀', o₁ = v₁'
+  subst hv₀ hv₁
+  -- After subst hcf₀/hcf₁, cf₀ and cf₁ become the original input configs
+  subst hcf₀ hcf₁
+  -- StepFR existential structure:
+  -- ∃ θ₀' θ₁', wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
+  --            wfTypeContext (ctxAfter ctx res) ∧
+  --            wfConfig cf₀ ∧ wfConfig cf₁ ∧
+  --            agreeOnClean ... ∧ resultAgreesIfClean ...
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
+    refine ⟨?_, ?_⟩
+    · intro l a hlookup; exact hlookup
+    · intro hwf'; exact hwf'
+  · -- wfExtendsMap θ₁ θ₁ (θ₁ = θ₁')
+    refine ⟨?_, ?_⟩
+    · intro l a hlookup; exact hlookup
+    · intro hwf'; exact hwf'
+  · -- wfTypeContext (ctxAfter ctxᵢ res): typecheckVar does not change the context
     have htc' : typecheckVar ctxᵢ name = .ok res := by
       simpa [typecheck, typecheckExpr] using htc
     have hmem : res.memEnv' = ctxᵢ.memEnv :=
@@ -1750,49 +1699,11 @@ private lemma stepFR_var
     have hnextLoc : res.nextLoc' = ctxᵢ.nextLoc :=
       typecheckVar_preserves_nextLoc ctxᵢ name res htc'
     simpa [ctxAfter, wfTypeContext, hmem, hnextLoc] using hwf
-  · exact hwfcfg₀  -- wfConfig cf₀ (unchanged since var doesn't modify config)
-  · exact hwfcfg₁  -- wfConfig cf₁ (unchanged since var doesn't modify config)
-  · -- runtimeInstantiatesCtx for θ₀: typecheckVar does not change the context
-    -- (memEnv, tagEnv, and fresh supplies are preserved)
-    have htc' : typecheckVar ctxᵢ name = .ok res := by
-      simpa [typecheck, typecheckExpr] using htc
-    have hmem : res.memEnv' = ctxᵢ.memEnv :=
-      typecheckVar_preserves_memEnv ctxᵢ name res htc'
-    have htag : res.tagEnv' = ctxᵢ.tagEnv :=
-      typecheckVar_preserves_tagEnv ctxᵢ name res htc'
-    have hnextLoc : res.nextLoc' = ctxᵢ.nextLoc :=
-      typecheckVar_preserves_nextLoc ctxᵢ name res htc'
-    have hnextTag : res.nextTag' = ctxᵢ.nextTag :=
-      typecheckVar_preserves_nextTag ctxᵢ name res htc'
-    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag] using hric₀
-  ·
-    have htc' : typecheckVar ctxᵢ name = .ok res := by
-      simpa [typecheck, typecheckExpr] using htc
-    have hmem : res.memEnv' = ctxᵢ.memEnv :=
-      typecheckVar_preserves_memEnv ctxᵢ name res htc'
-    have htag : res.tagEnv' = ctxᵢ.tagEnv :=
-      typecheckVar_preserves_tagEnv ctxᵢ name res htc'
-    have hnextLoc : res.nextLoc' = ctxᵢ.nextLoc :=
-      typecheckVar_preserves_nextLoc ctxᵢ name res htc'
-    have hnextTag : res.nextTag' = ctxᵢ.nextTag :=
-      typecheckVar_preserves_nextTag ctxᵢ name res htc'
-    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag] using hric₁
-  · -- regime consistency: tag-env agreement and `R.bound ≤ nextTag` are preserved
-    have htc' : typecheckVar ctxᵢ name = .ok res := by
-      simpa [typecheck, typecheckExpr] using htc
-    have hmem : res.memEnv' = ctxᵢ.memEnv :=
-      typecheckVar_preserves_memEnv ctxᵢ name res htc'
-    have htag : res.tagEnv' = ctxᵢ.tagEnv :=
-      typecheckVar_preserves_tagEnv ctxᵢ name res htc'
-    have hnextLoc : res.nextLoc' = ctxᵢ.nextLoc :=
-      typecheckVar_preserves_nextLoc ctxᵢ name res htc'
-    have hnextTag : res.nextTag' = ctxᵢ.nextTag :=
-      typecheckVar_preserves_nextTag ctxᵢ name res htc'
-    refine ⟨?_, ?_⟩
-    · simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag] using hreg.1
-    · simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag] using hreg.2
-  · -- typecheckVar does not change the context
-    -- (memEnv, tagEnv, and fresh supplies are preserved)
+  · -- wfConfig cf₀ (unchanged since var doesn't modify config)
+    exact hwfcfg₀
+  · -- wfConfig cf₁ (unchanged since var doesn't modify config)
+    exact hwfcfg₁
+  · -- agreeOnClean for ctxAfter: typecheckVar doesn't change the context
     have htc' : typecheckVar ctxᵢ name = .ok res := by
       simpa [typecheck, typecheckExpr] using htc
     have hmem : res.memEnv' = ctxᵢ.memEnv :=
@@ -1879,8 +1790,8 @@ private lemma stepFR_var
                       left
                       exact hpoison
                     have hvar := hvar_agree_of_clean hclean_qt
-            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
-              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
+                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                      agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_eq : res.qualType = qt := by
                       cases qt with
                       | mk etyp poison pred =>
@@ -1902,8 +1813,8 @@ private lemma stepFR_var
                       refine ⟨k, ?_, hregime⟩
                       simp [qtypGuardTag, hpred]
                     have hvar := hvar_agree_of_clean hclean_qt
-            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
-              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
+                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                      agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_agree :
                         agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       cases hval with
@@ -2028,8 +1939,8 @@ private lemma stepFR_var
                           refine ⟨k, ?_, hregime⟩
                           simp [qtypGuardTag, hpred]
                         have hvar := hvar_agree_of_clean hclean_qt
-            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
-              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
+                        have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                          agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                         have hres_agree :
                             agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                           cases hval with
@@ -2169,8 +2080,8 @@ private lemma stepFR_var
                       left
                       exact hpoison
                     have hvar := hvar_agree_of_clean hclean_qt
-            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
-              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
+                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                      agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_agree :
                         agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       have hqt_eq : qt = ⟨qt.etyp, false, qt.pred⟩ := by
@@ -2195,8 +2106,8 @@ private lemma stepFR_var
                       refine ⟨k, ?_, hregime⟩
                       simp [qtypGuardTag, hpred]
                     have hvar := hvar_agree_of_clean hclean_qt
-            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
-              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
+                    have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                      agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_agree :
                         agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       cases hval with
@@ -2328,8 +2239,8 @@ private lemma stepFR_var
                           refine ⟨k, ?_, hregime⟩
                           simp [qtypGuardTag, hpred]
                         have hvar := hvar_agree_of_clean hclean_qt
-            have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
-              agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
+                        have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                          agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                         have hres_agree :
                             agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                           cases hval with
@@ -2446,7 +2357,6 @@ private lemma stepFR_var
                               rfl
                         -- poisoned result is not clean
                         simp [qtypCleanUnder, qtypGuardTag, hres] at hclean
-  -/
 
 -- World-free version of stepFRW_op
 -- TODO: Needs refactoring - StepFR structure changed and terminatesTo lemmas need adjusting
