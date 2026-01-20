@@ -2620,7 +2620,6 @@ private lemma stepFR_unaryop
   exact agreeValueUnder.clean_eq_nonref hpoison_res hnotfun_res hnotref hEq
 
 -- World-free version of stepFRW_newRef
--- TODO: Needs refactoring
 private lemma stepFR_newRef
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
@@ -2632,7 +2631,7 @@ private lemma stepFR_newRef
   have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
-  obtain ⟨res1, l, _etyp, htc1, hl, _h_etyp1, _h_etyp, _h_poison, _h_pred, h_mem, h_tag, h_loc, h_ntag⟩ :=
+  obtain ⟨res1, l, etyp, htc1, hl, h_etyp1, h_etyp, h_poison, h_pred, h_mem, h_tag, h_loc, h_ntag⟩ :=
     typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
@@ -2652,211 +2651,94 @@ private lemma stepFR_newRef
     hIH μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
       hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
   rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean_e, hres_agree_e⟩
-  -- The newRef allocates at fresh location l = res1.nextLoc'
-  -- Need to extend maps θ₀1 → θ₀' with l ↦ cfg₀'.nextAddr
-  -- This is complex; use sorry for now
-  have hwfcf₀ : wfConfig cf₀ := (wfConfig_preserved (Expr.newRef e) _ cf₀ o₀ ht₀ hwfcfg₀).1
-  have hwfcf₁ : wfConfig cf₁ := (wfConfig_preserved (Expr.newRef e) _ cf₁ o₁ ht₁ hwfcfg₁).1
-  -- Extended maps need to include the new allocation: l ↦ cfg'.nextAddr
-  -- The old proof extends θ₀1 to θ₀' = θ₀1.update l cfg₀'.nextAddr
-  -- For now, use sorry for the complex extension proofs
-  -- Note: The real proof needs extended maps, but θ₀1/θ₁1 are used as placeholder
-  use θ₀1.update l cfg₀'.nextAddr
-  use θ₁1.update l cfg₁'.nextAddr
-  refine ⟨?_, ?_, ?_, hwfcf₀, hwfcf₁, ?_, ?_, ?_, ?_, ?_⟩
-  · -- wfExtendsMap θ₀ θ₀'
-    sorry -- TODO: complex map extension proof
-  · -- wfExtendsMap θ₁ θ₁'
-    sorry -- TODO: complex map extension proof
-  · -- wfTypeContext (ctxAfter ctxᵢ res)
-    sorry -- TODO: derive from hwf1
-  · -- runtimeInstantiatesCtx for θ₀'
-    sorry -- TODO: derive from hric₀1 with map and memory update
-  · -- runtimeInstantiatesCtx for θ₁'
-    sorry -- TODO: derive from hric₁1 with map and memory update
-  · -- regimeConsistentWithCtx
-    sorry -- TODO: derive from htagR1
-  · -- agreeOnClean
-    sorry -- TODO: derive from hagree_clean_e and memory updates
-  · -- resultAgreesIfClean
-    intro _hclean
-    -- o₀ = Value.loc cfg₀'.nextAddr, o₁ = Value.loc cfg₁'.nextAddr
-    -- These are locations for freshly allocated refs; agreement depends on map extension
-    sorry -- TODO: complex agreement proof for ref type
-  /- OLD PROOF (needs refactoring):
-  have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr] at htc
-    exact htc
-  obtain ⟨res1, l, etyp, htc1, hl, h_etyp1, h_etyp, h_poison, h_pred, h_mem, h_tag, h_loc, h_ntag⟩ :=
-    typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
-  have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
-    simpa [typecheck, Nat.succ_sub_one] using htc1
-  have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ res1 htc1' R
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  -- Extract fuel/verbose from terminatesTo
-  rcases ht₀ with ⟨fuel₀, verbose₀, hbeval₀⟩
-  rcases ht₁ with ⟨fuel₁, verbose₁, hbeval₁⟩
-  -- Use bevalNewRef_structure with defaultWorld
-  let w_default := LeanProofs.defaultWorld
-  have hbeval₀_w : LeanPoison.beval fuel₀ { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } (Expr.newRef e) verbose₀ w_default = EST.Out.ok (.success cf₀ o₀) w_default := by
-    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₀
-    simpa [pure] using h_eq
-  have hbeval₁_w : LeanPoison.beval fuel₁ { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } (Expr.newRef e) verbose₁ w_default = EST.Out.ok (.success cf₁ o₁) w_default := by
-    have h_eq := LeanProofs.evalAtWorld_eq w_default hbeval₁
-    simpa [pure] using h_eq
-  have hstruct₀ :=
-    bevalNewRef_structure e fuel₀ verbose₀
-      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
-      cf₀ o₀ w_default w_default hbeval₀_w
-  rcases hstruct₀ with ⟨cfg₀', n₀, a₀_new, hbeval₀_e, ha₀_new, hmem₀, hnextaddr₀, hvar₀, ho₀⟩
-  have hstruct₁ :=
-    bevalNewRef_structure e fuel₁ verbose₁
-      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
-      cf₁ o₁ w_default w_default hbeval₁_w
-  rcases hstruct₁ with ⟨cfg₁', n₁, a₁_new, hbeval₁_e, ha₁_new, hmem₁, hnextaddr₁, hvar₁, ho₁⟩
-  -- Convert to world-free terminatesTo
-  have ht₀_e : terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀' (Value.num n₀) :=
-    ⟨fuel₀ - 1, verbose₀, by simpa using hbeval₀_e⟩
-  have ht₁_e : terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁' (Value.num n₁) :=
-    ⟨fuel₁ - 1, verbose₁, by simpa using hbeval₁_e⟩
-  -- Derive wfConfig for intermediate configs
-  have hwfcf₀' : wfConfig cfg₀' := by
-    have hterm := terminatesTo_nextAddr_mono e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀' (Value.num n₀) ht₀_e
-    exact wfConfig_mono hwfcfg₀ hterm
-  have hwfcf₁' : wfConfig cfg₁' := by
-    have hterm := terminatesTo_nextAddr_mono e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁' (Value.num n₁) ht₁_e
-    exact wfConfig_mono hwfcfg₁ hterm
-  have hstep_e :=
-    hIH μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
-  rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean_e, hres_agree_e⟩
-  -- Fresh logical location l = res1.nextLoc' is not realized after evaluating e.
+  -- Fresh logical location l = res1.nextLoc' is not realized after evaluating e
   have h_fresh₀ : θ₀1.lookup l = none := by
-    have hge : l ≥ (ctxAfter ctxᵢ res1).nextLoc := by
-      simp [ctxAfter, hl]
+    have hge : l ≥ (ctxAfter ctxᵢ res1).nextLoc := by simp [ctxAfter, hl]
     exact freshLoc_not_realized (ctxAfter ctxᵢ res1) cfg₀'.memory cfg₀'.varEnv θ₀1 l hwf1 hric₀1 hge
   have h_fresh₁ : θ₁1.lookup l = none := by
-    have hge : l ≥ (ctxAfter ctxᵢ res1).nextLoc := by
-      simp [ctxAfter, hl]
+    have hge : l ≥ (ctxAfter ctxᵢ res1).nextLoc := by simp [ctxAfter, hl]
     exact freshLoc_not_realized (ctxAfter ctxᵢ res1) cfg₁'.memory cfg₁'.varEnv θ₁1 l hwf1 hric₁1 hge
-  -- Extend maps: θ₀' = θ₀1.update l a₀_new, θ₁' = θ₁1.update l a₁_new
-  let θ₀' := θ₀1.update l a₀_new
-  let θ₁' := θ₁1.update l a₁_new
-  -- Prove wfExtendsMap for the extended maps (same as world-threaded version)
+  -- Extended maps: θ₀' = θ₀1.update l cfg₀'.nextAddr, θ₁' = θ₁1.update l cfg₁'.nextAddr
+  let θ₀' := θ₀1.update l cfg₀'.nextAddr
+  let θ₁' := θ₁1.update l cfg₁'.nextAddr
+  -- Prove wfExtendsMap for the extended maps
   have hθext₀' : wfExtendsMap θ₀1 θ₀' := by
     refine ⟨?_, ?_⟩
     · intro l' a' hlookup
       simp [RealizationMap.lookup]
       by_cases h_eq : l' = l
-      · subst h_eq
-        rw [h_fresh₀] at hlookup
-        cases hlookup
+      · subst h_eq; rw [h_fresh₀] at hlookup; cases hlookup
       · have hcmp : compare l l' ≠ Ordering.eq := by
-          intro hcmp
-          have : l = l' := LawfulEqCmp.eq_of_compare hcmp
-          exact h_eq this.symm
-        have h_theta_def : θ₀' = θ₀1.insert l a₀_new := rfl
-        rw [h_theta_def]
-        rw [ExtTreeMap.getElem?_insert]
-        simp [hcmp]
+          intro hcmp; have : l = l' := LawfulEqCmp.eq_of_compare hcmp; exact h_eq this.symm
+        have h_theta_def : θ₀' = θ₀1.insert l cfg₀'.nextAddr := rfl
+        rw [h_theta_def, ExtTreeMap.getElem?_insert]; simp [hcmp]
         simp [RealizationMap.lookup] at hlookup
-        rw [← ExtTreeMap.get?_eq_getElem?]
-        exact hlookup
+        rw [← ExtTreeMap.get?_eq_getElem?]; exact hlookup
     · intro hWF
       simp only [wfRealizationMap] at hWF ⊢
       unfold RealizationMap.isInjective
       intro l₁ l₂ a hlookup1 hlookup2
-      have h_fresh_value' : ∀ l', θ₀1.get? l' ≠ some a₀_new := by
+      have h_fresh_value' : ∀ l', θ₀1.get? l' ≠ some cfg₀'.nextAddr := by
         intro l' h_eq
-        have h_lookup : θ₀1.lookup l' = some a₀_new := by
-          rw [RealizationMap.lookup]
-          rw [ExtTreeMap.get?_eq_getElem?]
-          exact h_eq
-        have h_contains : cfg₀'.memory.contains a₀_new :=
-          (hric₀1.1 l' a₀_new h_lookup).2
-        rw [ha₀_new] at h_contains
+        have h_lookup : θ₀1.lookup l' = some cfg₀'.nextAddr := by
+          rw [RealizationMap.lookup, ExtTreeMap.get?_eq_getElem?]; exact h_eq
+        have h_contains : cfg₀'.memory.contains cfg₀'.nextAddr := (hric₀1.1 l' cfg₀'.nextAddr h_lookup).2
         exact Nat.lt_irrefl cfg₀'.nextAddr (hwfcf₀1.1 cfg₀'.nextAddr h_contains)
       have h_inj' : ∀ k₁ k₂ a, θ₀1.get? k₁ = some a → θ₀1.get? k₂ = some a → k₁ = k₂ := by
-        intro k₁ k₂ a h1 h2
-        exact hWF k₁ k₂ a h1 h2
-      have hlookup1' : (θ₀1.insert l a₀_new).get? l₁ = some a := hlookup1
-      have hlookup2' : (θ₀1.insert l a₀_new).get? l₂ = some a := hlookup2
-      exact ExtTreeMap_insert_preserves_injectivity θ₀1 l a₀_new h_fresh_value' h_inj' l₁ l₂ a hlookup1' hlookup2'
+        intro k₁ k₂ a h1 h2; exact hWF k₁ k₂ a h1 h2
+      have hlookup1' : (θ₀1.insert l cfg₀'.nextAddr).get? l₁ = some a := hlookup1
+      have hlookup2' : (θ₀1.insert l cfg₀'.nextAddr).get? l₂ = some a := hlookup2
+      exact ExtTreeMap_insert_preserves_injectivity θ₀1 l cfg₀'.nextAddr h_fresh_value' h_inj' l₁ l₂ a hlookup1' hlookup2'
   have hθext₁' : wfExtendsMap θ₁1 θ₁' := by
     refine ⟨?_, ?_⟩
     · intro l' a' hlookup
       simp [RealizationMap.lookup]
       by_cases h_eq : l' = l
-      · subst l'
-        rw [h_fresh₁] at hlookup
-        cases hlookup
+      · subst l'; rw [h_fresh₁] at hlookup; cases hlookup
       · have hcmp : compare l l' ≠ Ordering.eq := by
-          intro hcmp
-          have : l = l' := LawfulEqCmp.eq_of_compare hcmp
-          exact h_eq this.symm
-        have h_theta_def : θ₁' = θ₁1.insert l a₁_new := rfl
-        rw [h_theta_def]
-        rw [ExtTreeMap.getElem?_insert]
-        simp [hcmp]
+          intro hcmp; have : l = l' := LawfulEqCmp.eq_of_compare hcmp; exact h_eq this.symm
+        have h_theta_def : θ₁' = θ₁1.insert l cfg₁'.nextAddr := rfl
+        rw [h_theta_def, ExtTreeMap.getElem?_insert]; simp [hcmp]
         simp [RealizationMap.lookup] at hlookup
-        rw [← ExtTreeMap.get?_eq_getElem?]
-        exact hlookup
+        rw [← ExtTreeMap.get?_eq_getElem?]; exact hlookup
     · intro hWF
       simp only [wfRealizationMap] at hWF ⊢
       unfold RealizationMap.isInjective
       intro l₁ l₂ a hlookup1 hlookup2
-      have h_fresh_value' : ∀ l', θ₁1.get? l' ≠ some a₁_new := by
+      have h_fresh_value' : ∀ l', θ₁1.get? l' ≠ some cfg₁'.nextAddr := by
         intro l' h_eq
-        have h_lookup : θ₁1.lookup l' = some a₁_new := by
-          rw [RealizationMap.lookup]
-          rw [ExtTreeMap.get?_eq_getElem?]
-          exact h_eq
-        have h_contains : cfg₁'.memory.contains a₁_new :=
-          (hric₁1.1 l' a₁_new h_lookup).2
-        rw [ha₁_new] at h_contains
+        have h_lookup : θ₁1.lookup l' = some cfg₁'.nextAddr := by
+          rw [RealizationMap.lookup, ExtTreeMap.get?_eq_getElem?]; exact h_eq
+        have h_contains : cfg₁'.memory.contains cfg₁'.nextAddr := (hric₁1.1 l' cfg₁'.nextAddr h_lookup).2
         exact Nat.lt_irrefl cfg₁'.nextAddr (hwfcf₁1.1 cfg₁'.nextAddr h_contains)
       have h_inj' : ∀ k₁ k₂ a, θ₁1.get? k₁ = some a → θ₁1.get? k₂ = some a → k₁ = k₂ := by
-        intro k₁ k₂ a h1 h2
-        exact hWF k₁ k₂ a h1 h2
-      have hlookup1' : (θ₁1.insert l a₁_new).get? l₁ = some a := hlookup1
-      have hlookup2' : (θ₁1.insert l a₁_new).get? l₂ = some a := hlookup2
-      exact ExtTreeMap_insert_preserves_injectivity θ₁1 l a₁_new h_fresh_value' h_inj' l₁ l₂ a hlookup1' hlookup2'
-  -- Prove wfTypeContext for result (same as world-threaded version)
+        intro k₁ k₂ a h1 h2; exact hWF k₁ k₂ a h1 h2
+      have hlookup1' : (θ₁1.insert l cfg₁'.nextAddr).get? l₁ = some a := hlookup1
+      have hlookup2' : (θ₁1.insert l cfg₁'.nextAddr).get? l₂ = some a := hlookup2
+      exact ExtTreeMap_insert_preserves_injectivity θ₁1 l cfg₁'.nextAddr h_fresh_value' h_inj' l₁ l₂ a hlookup1' hlookup2'
+  -- Prove wfTypeContext for result
   have hwf_result : wfTypeContext (ctxAfter ctxᵢ res) := by
     intro l' hcontains
     simp [ctxAfter] at hcontains ⊢
     rw [h_mem] at hcontains
     rw [h_loc]
     by_cases h_eq : l' = l
-    · subst h_eq
-      rw [hl]
-      exact Nat.lt_succ_self res1.nextLoc'
-    · have hmem :
-          l' ∈ updateMemEnv res1.memEnv' l
-            ⟨etyp, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩ := by
-        exact (Std.ExtTreeMap.contains_iff_mem).1 hcontains
-      have h_isSome :
-          ((updateMemEnv res1.memEnv' l
-              ⟨etyp, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩)[l']?).isSome =
-            true :=
+    · subst h_eq; rw [hl]; exact Nat.lt_succ_self res1.nextLoc'
+    · have hmem : l' ∈ updateMemEnv res1.memEnv' l ⟨etyp, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩ :=
+        (Std.ExtTreeMap.contains_iff_mem).1 hcontains
+      have h_isSome : ((updateMemEnv res1.memEnv' l ⟨etyp, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩)[l']?).isSome = true :=
         (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
       have h_cmp_ne : compare l l' ≠ Ordering.eq := by
-        intro hcmp
-        have : l = l' := LawfulEqCmp.eq_of_compare hcmp
-        exact h_eq this.symm
+        intro hcmp; have : l = l' := LawfulEqCmp.eq_of_compare hcmp; exact h_eq this.symm
       have h_isSome' : (res1.memEnv'[l']?).isSome = true := by
         simpa [updateMemEnv, ExtTreeMap.getElem?_insert, h_cmp_ne] using h_isSome
-      have hmem' : l' ∈ res1.memEnv' :=
-        (Std.ExtTreeMap.mem_iff_isSome_getElem?).2 h_isSome'
-      have hcontains' : res1.memEnv'.contains l' = true :=
-        (Std.ExtTreeMap.contains_iff_mem).2 hmem'
+      have hmem' : l' ∈ res1.memEnv' := (Std.ExtTreeMap.mem_iff_isSome_getElem?).2 h_isSome'
+      have hcontains' : res1.memEnv'.contains l' = true := (Std.ExtTreeMap.contains_iff_mem).2 hmem'
       have hlt : l' < res1.nextLoc' := by
-        have : (ctxAfter ctxᵢ res1).memEnv.contains l' := by
-          simpa [ctxAfter] using hcontains'
+        have : (ctxAfter ctxᵢ res1).memEnv.contains l' := by simpa [ctxAfter] using hcontains'
         exact hwf1 l' this
       exact Nat.lt_succ_of_lt hlt
-  -- Prove runtimeInstantiatesCtx (same as world-threaded version)
+  -- Prove runtimeInstantiatesCtx for θ₀'
   have hric₀' : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
     unfold runtimeInstantiatesCtx
     rcases hric₀1 with ⟨hmem₀1, hvars₀1⟩
@@ -2864,60 +2746,45 @@ private lemma stepFR_newRef
     · intro l' a hlookup
       by_cases h_eq : l' = l
       · subst l'
-        have ha : a = a₀_new := by
-          have hself : θ₀'.lookup l = some a₀_new := by
-            simp [θ₀', RealizationMap.update, RealizationMap.lookup]
-          have : (some a : Option Address) = some a₀_new := by
-            calc
-              some a = θ₀'.lookup l := by symm; exact hlookup
-              _ = some a₀_new := by exact hself
+        have ha : a = cfg₀'.nextAddr := by
+          have hself : θ₀'.lookup l = some cfg₀'.nextAddr := by simp [θ₀', RealizationMap.update, RealizationMap.lookup]
+          have : (some a : Option Address) = some cfg₀'.nextAddr := by
+            calc some a = θ₀'.lookup l := by symm; exact hlookup
+                 _ = some cfg₀'.nextAddr := by exact hself
           exact Option.some.inj this
         subst a
         have hctx_mem : (ctxAfter ctxᵢ res).memEnv.contains l := by
-          have : res.memEnv'.contains l := by
-            rw [h_mem]
-            simp [updateMemEnv, ExtTreeMap.contains_insert]
+          have : res.memEnv'.contains l := by rw [h_mem]; simp [updateMemEnv, ExtTreeMap.contains_insert]
           simpa [ctxAfter] using this
-        have hμ_mem : cf₀.memory.contains a₀_new := by
-          rw [hmem₀]
-          simp [Memory.update, ExtTreeMap.contains_insert]
+        have hμ_mem : cf₀.memory.contains cfg₀'.nextAddr := by
+          rw [hmem₀]; simp [ExtTreeMap.contains_insert]
         exact ⟨hctx_mem, hμ_mem⟩
       · have hcmp : compare l l' ≠ Ordering.eq := by
-          intro hcmp
-          have : l = l' := LawfulEqCmp.eq_of_compare hcmp
-          exact h_eq this.symm
+          intro hcmp; have : l = l' := LawfulEqCmp.eq_of_compare hcmp; exact h_eq this.symm
         have hlookup_old : θ₀1.lookup l' = some a := by
-          have hget : (θ₀1.insert l a₀_new).get? l' = some a := by
+          have hget : (θ₀1.insert l cfg₀'.nextAddr).get? l' = some a := by
             simpa [θ₀', RealizationMap.update, RealizationMap.lookup] using hlookup
-          have hElem : (θ₀1.insert l a₀_new)[l']? = some a := by
+          have hElem : (θ₀1.insert l cfg₀'.nextAddr)[l']? = some a := by
             simpa [ExtTreeMap.get?_eq_getElem?] using hget
-          have hElem2 : θ₀1[l']? = some a := by
-            simpa [ExtTreeMap.getElem?_insert, hcmp] using hElem
-          have : θ₀1.get? l' = some a := by
-            simpa [ExtTreeMap.get?_eq_getElem?] using hElem2
+          have hElem2 : θ₀1[l']? = some a := by simpa [ExtTreeMap.getElem?_insert, hcmp] using hElem
+          have : θ₀1.get? l' = some a := by simpa [ExtTreeMap.get?_eq_getElem?] using hElem2
           simpa [RealizationMap.lookup] using this
         have hmem := hmem₀1 l' a hlookup_old
-        have hctx_mem1 : res1.memEnv'.contains l' := by
-          simpa [ctxAfter] using hmem.1
+        have hctx_mem1 : res1.memEnv'.contains l' := by simpa [ctxAfter] using hmem.1
         have hctx_mem : (ctxAfter ctxᵢ res).memEnv.contains l' := by
           have : res.memEnv'.contains l' := by
-            rw [h_mem]
-            rw [updateMemEnv]
-            rw [ExtTreeMap.contains_insert]
-            simp [hctx_mem1]
+            rw [h_mem, updateMemEnv, ExtTreeMap.contains_insert]; simp [hctx_mem1]
           simpa [ctxAfter] using this
         have hμ_mem : cf₀.memory.contains a := by
           have hμ1 : cfg₀'.memory.contains a := hmem.2
-          rw [hmem₀]
-          rw [Memory.update]
-          rw [ExtTreeMap.contains_insert]
-          simp [hμ1]
+          rw [hmem₀, ExtTreeMap.contains_insert]; simp [hμ1]
         exact ⟨hctx_mem, hμ_mem⟩
     · intro x qt hlookup
       obtain ⟨v, hvlookup, hvtyp⟩ := hvars₀1 (by simpa [ctxAfter] using hlookup)
       refine ⟨v, ?_, ?_⟩
       · simpa [hvar₀] using hvlookup
       · exact valueHasETyp_extends hθext₀'.1 hvtyp
+  -- Prove runtimeInstantiatesCtx for θ₁'
   have hric₁' : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
     unfold runtimeInstantiatesCtx
     rcases hric₁1 with ⟨hmem₁1, hvars₁1⟩
@@ -2925,54 +2792,38 @@ private lemma stepFR_newRef
     · intro l' a hlookup
       by_cases h_eq : l' = l
       · subst l'
-        have ha : a = a₁_new := by
-          have hself : θ₁'.lookup l = some a₁_new := by
-            simp [θ₁', RealizationMap.update, RealizationMap.lookup]
-          have : (some a : Option Address) = some a₁_new := by
-            calc
-              some a = θ₁'.lookup l := by symm; exact hlookup
-              _ = some a₁_new := by exact hself
+        have ha : a = cfg₁'.nextAddr := by
+          have hself : θ₁'.lookup l = some cfg₁'.nextAddr := by simp [θ₁', RealizationMap.update, RealizationMap.lookup]
+          have : (some a : Option Address) = some cfg₁'.nextAddr := by
+            calc some a = θ₁'.lookup l := by symm; exact hlookup
+                 _ = some cfg₁'.nextAddr := by exact hself
           exact Option.some.inj this
         subst a
         have hctx_mem : (ctxAfter ctxᵢ res).memEnv.contains l := by
-          have : res.memEnv'.contains l := by
-            rw [h_mem]
-            simp [updateMemEnv, ExtTreeMap.contains_insert]
+          have : res.memEnv'.contains l := by rw [h_mem]; simp [updateMemEnv, ExtTreeMap.contains_insert]
           simpa [ctxAfter] using this
-        have hμ_mem : cf₁.memory.contains a₁_new := by
-          rw [hmem₁]
-          simp [Memory.update, ExtTreeMap.contains_insert]
+        have hμ_mem : cf₁.memory.contains cfg₁'.nextAddr := by
+          rw [hmem₁]; simp [ExtTreeMap.contains_insert]
         exact ⟨hctx_mem, hμ_mem⟩
       · have hcmp : compare l l' ≠ Ordering.eq := by
-          intro hcmp
-          have : l = l' := LawfulEqCmp.eq_of_compare hcmp
-          exact h_eq this.symm
+          intro hcmp; have : l = l' := LawfulEqCmp.eq_of_compare hcmp; exact h_eq this.symm
         have hlookup_old : θ₁1.lookup l' = some a := by
-          have hget : (θ₁1.insert l a₁_new).get? l' = some a := by
+          have hget : (θ₁1.insert l cfg₁'.nextAddr).get? l' = some a := by
             simpa [θ₁', RealizationMap.update, RealizationMap.lookup] using hlookup
-          have hElem : (θ₁1.insert l a₁_new)[l']? = some a := by
+          have hElem : (θ₁1.insert l cfg₁'.nextAddr)[l']? = some a := by
             simpa [ExtTreeMap.get?_eq_getElem?] using hget
-          have hElem2 : θ₁1[l']? = some a := by
-            simpa [ExtTreeMap.getElem?_insert, hcmp] using hElem
-          have : θ₁1.get? l' = some a := by
-            simpa [ExtTreeMap.get?_eq_getElem?] using hElem2
+          have hElem2 : θ₁1[l']? = some a := by simpa [ExtTreeMap.getElem?_insert, hcmp] using hElem
+          have : θ₁1.get? l' = some a := by simpa [ExtTreeMap.get?_eq_getElem?] using hElem2
           simpa [RealizationMap.lookup] using this
         have hmem := hmem₁1 l' a hlookup_old
-        have hctx_mem1 : res1.memEnv'.contains l' := by
-          simpa [ctxAfter] using hmem.1
+        have hctx_mem1 : res1.memEnv'.contains l' := by simpa [ctxAfter] using hmem.1
         have hctx_mem : (ctxAfter ctxᵢ res).memEnv.contains l' := by
           have : res.memEnv'.contains l' := by
-            rw [h_mem]
-            rw [updateMemEnv]
-            rw [ExtTreeMap.contains_insert]
-            simp [hctx_mem1]
+            rw [h_mem, updateMemEnv, ExtTreeMap.contains_insert]; simp [hctx_mem1]
           simpa [ctxAfter] using this
         have hμ_mem : cf₁.memory.contains a := by
           have hμ1 : cfg₁'.memory.contains a := hmem.2
-          rw [hmem₁]
-          rw [Memory.update]
-          rw [ExtTreeMap.contains_insert]
-          simp [hμ1]
+          rw [hmem₁, ExtTreeMap.contains_insert]; simp [hμ1]
         exact ⟨hctx_mem, hμ_mem⟩
     · intro x qt hlookup
       obtain ⟨v, hvlookup, hvtyp⟩ := hvars₁1 (by simpa [ctxAfter] using hlookup)
@@ -2984,20 +2835,15 @@ private lemma stepFR_newRef
     simpa [regimeConsistentWithCtx, ctxAfter, h_tag, h_ntag] using htagR1
   -- Prove agreeOnClean
   have hagree_clean :
-      agreeOnClean predSat R (ctxAfter ctxᵢ res)
-        cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
-    exact agreeOnClean_newRef_extend
+      agreeOnClean predSat R (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' :=
+    agreeOnClean_newRef_extend
       predSat R ctxᵢ res1 res l etyp
-      cfg₀' cfg₁' cf₀ cf₁ n₀ n₁ a₀_new a₁_new θ₀1 θ₁1 θ₀' θ₁'
-      h_mem h_etyp1.symm ha₀_new ha₁_new hmem₀ hmem₁ hvar₀ hvar₁ rfl rfl
+      cfg₀' cfg₁' cf₀ cf₁ n₀ n₁ cfg₀'.nextAddr cfg₁'.nextAddr θ₀1 θ₁1 θ₀' θ₁'
+      h_mem h_etyp1.symm rfl rfl hmem₀ hmem₁ hvar₀ hvar₁ rfl rfl
       hθext₀' hθext₁' hwfcf₀1 hwfcf₁1 hagree_clean_e hres_agree_e
   -- Derive wfConfig for final configs
-  have hwfcf₀_final : wfConfig cf₀ := by
-    have hterm := terminatesTo_nextAddr_mono (Expr.newRef e) { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-    exact wfConfig_mono hwfcfg₀ hterm
-  have hwfcf₁_final : wfConfig cf₁ := by
-    have hterm := terminatesTo_nextAddr_mono (Expr.newRef e) { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
-    exact wfConfig_mono hwfcfg₁ hterm
+  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.newRef e) _ cf₀ o₀ ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.newRef e) _ cf₁ o₁ ht₁ hwfcfg₁).1
   refine ⟨θ₀', θ₁', ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hagree_clean, ?_⟩
   · -- wfExtendsMap θ₀ θ₀'
     exact wfExtendsMap_trans hθext₀1 hθext₀'
@@ -3009,20 +2855,13 @@ private lemma stepFR_newRef
     intro hclean
     have hpoison_res : res.qualType.poison = false := by
       simpa [qtypCleanUnder, qtypGuardTag, h_pred] using hclean
-    have hlookup1 : θ₀'.lookup l = some a₀_new := by
-      simp [RealizationMap.lookup]
-      rw [← ExtTreeMap.get?_eq_getElem?]
-      exact ExtTreeMap.getElem?_insert_self
-    have hlookup2 : θ₁'.lookup l = some a₁_new := by
-      simp [RealizationMap.lookup]
-      rw [← ExtTreeMap.get?_eq_getElem?]
-      exact ExtTreeMap.getElem?_insert_self
-    have hin1 : l ∈ LocSet.singleton l := by
-      simp [LocSet.singleton]
-    have hin2 : l ∈ LocSet.singleton l := by
-      simp [LocSet.singleton]
+    have hlookup1 : θ₀'.lookup l = some cfg₀'.nextAddr := by
+      simp [RealizationMap.lookup]; rw [← ExtTreeMap.get?_eq_getElem?]; exact ExtTreeMap.getElem?_insert_self
+    have hlookup2 : θ₁'.lookup l = some cfg₁'.nextAddr := by
+      simp [RealizationMap.lookup]; rw [← ExtTreeMap.get?_eq_getElem?]; exact ExtTreeMap.getElem?_insert_self
+    have hin1 : l ∈ LocSet.singleton l := by simp [LocSet.singleton]
+    have hin2 : l ∈ LocSet.singleton l := by simp [LocSet.singleton]
     exact agreeValueUnder.clean_ref hpoison_res h_etyp hlookup1 hin1 ho₀ hlookup2 hin2 ho₁
-  -/
 
 -- World-free version of stepFRW_seq
 private lemma stepFR_seq
