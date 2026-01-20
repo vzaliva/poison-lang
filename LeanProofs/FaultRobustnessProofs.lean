@@ -14,6 +14,7 @@ import LeanProofs.LookupUpdate
 import LeanProofs.PreservationProofs
 import LeanProofs.VarEnvPreservation
 import LeanProofs.MemoryMonotonicity
+import LeanProofs.IOFree
 import Std.Data.ExtTreeMap.Lemmas
 import Std.Data.ExtTreeSet.Lemmas
 
@@ -4159,3 +4160,283 @@ theorem TypeSystemEnforcesFaultRobustness (e : Expr) (s : InputSpec) (obs : Obse
   TypeSystemEnforcesFaultRobustness_spec e s obs := by
   apply TypeSystemEnforcesFaultRobustness_impl
   exact TypeSystemEnforcesFaultRobustness_step
+
+-- ================================================================
+-- I/O-free fault-robustness proofs
+-- ================================================================
+
+section TypeSystemEnforcesFaultRobustness_IOFree_proof
+
+-- I/O-free step theorem: proves StepFR directly (no world-threading)
+theorem TypeSystemEnforcesFaultRobustness_step_IOFree
+  (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
+  IOFree e →
+  TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat := by
+  intro hio
+  unfold TypeSystemEnforcesFaultRobustness_step_spec
+  intro fuel res htc R
+  -- Prove StepFR by induction on the typecheck derivation
+  -- The IOFree hypothesis hio eliminates all I/O cases
+  revert e ctxᵢ
+  induction fuel using Nat.strong_induction_on with
+  | _ n IH =>
+    intro e ctxᵢ res htc R
+    cases n with
+    | zero =>
+        simp [typecheck, typecheckExpr] at htc
+    | succ fuel =>
+        cases e with
+        | unit =>
+            simp [typecheck, typecheckExpr, typecheckUnit] at htc
+            let res_expected : TypeResult := {
+              qualType := ⟨ETyp.unit, false, Predicate.noPred⟩
+              memEnv' := ctxᵢ.memEnv
+              tagEnv' := ctxᵢ.tagEnv
+              nextLoc' := ctxᵢ.nextLoc
+              nextTag' := ctxᵢ.nextTag
+            }
+            have hres : res = res_expected := by
+              cases htc
+              rfl
+            have hval : Expr.toValue? Expr.unit = some Value.unit := by
+              simp [Expr.toValue?]
+            have hpoison : res.qualType.poison = false := by
+              simp [hres, res_expected]
+            have hnotfun : res.qualType.etyp.isFunctionType = false := by
+              simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hres, res_expected]
+            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+              simp [ctxAfter, hres, res_expected]
+            exact stepFR_literal ctxᵢ predSat R Expr.unit res Value.unit hval hpoison hnotfun hnotref hctxAfter
+        | num n =>
+            simp [typecheck, typecheckExpr, typecheckInt] at htc
+            let res_expected : TypeResult := {
+              qualType := ⟨ETyp.int, false, Predicate.noPred⟩
+              memEnv' := ctxᵢ.memEnv
+              tagEnv' := ctxᵢ.tagEnv
+              nextLoc' := ctxᵢ.nextLoc
+              nextTag' := ctxᵢ.nextTag
+            }
+            have hres : res = res_expected := by
+              cases htc
+              rfl
+            have hval : Expr.toValue? (Expr.num n) = some (Value.num n) := by
+              simp [Expr.toValue?]
+            have hpoison : res.qualType.poison = false := by
+              simp [hres, res_expected]
+            have hnotfun : res.qualType.etyp.isFunctionType = false := by
+              simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hres, res_expected]
+            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+              simp [ctxAfter, hres, res_expected]
+            exact stepFR_literal ctxᵢ predSat R (Expr.num n) res (Value.num n) hval hpoison hnotfun hnotref hctxAfter
+        | bool b =>
+            simp [typecheck, typecheckExpr, typecheckBool] at htc
+            let res_expected : TypeResult := {
+              qualType := ⟨ETyp.bool, false, Predicate.noPred⟩
+              memEnv' := ctxᵢ.memEnv
+              tagEnv' := ctxᵢ.tagEnv
+              nextLoc' := ctxᵢ.nextLoc
+              nextTag' := ctxᵢ.nextTag
+            }
+            have hres : res = res_expected := by
+              cases htc
+              rfl
+            have hval : Expr.toValue? (Expr.bool b) = some (Value.bool b) := by
+              simp [Expr.toValue?]
+            have hpoison : res.qualType.poison = false := by
+              simp [hres, res_expected]
+            have hnotfun : res.qualType.etyp.isFunctionType = false := by
+              simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hres, res_expected]
+            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+              simp [ctxAfter, hres, res_expected]
+            exact stepFR_literal ctxᵢ predSat R (Expr.bool b) res (Value.bool b) hval hpoison hnotfun hnotref hctxAfter
+        | str s =>
+            simp [typecheck, typecheckExpr, typecheckString] at htc
+            let res_expected : TypeResult := {
+              qualType := ⟨ETyp.string, false, Predicate.noPred⟩
+              memEnv' := ctxᵢ.memEnv
+              tagEnv' := ctxᵢ.tagEnv
+              nextLoc' := ctxᵢ.nextLoc
+              nextTag' := ctxᵢ.nextTag
+            }
+            have hres : res = res_expected := by
+              cases htc
+              rfl
+            have hval : Expr.toValue? (Expr.str s) = some (Value.str s) := by
+              simp [Expr.toValue?]
+            have hpoison : res.qualType.poison = false := by
+              simp [hres, res_expected]
+            have hnotfun : res.qualType.etyp.isFunctionType = false := by
+              simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hres, res_expected]
+            have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+              simp [ctxAfter, hres, res_expected]
+            exact stepFR_literal ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotfun hnotref hctxAfter
+        | var name =>
+            cases hio with
+            | var => exact stepFR_var ctxᵢ predSat R name res fuel htc
+            | _ => contradiction
+        | op e1 op e2 =>
+            cases hio with
+            | op _ _ _ hio1 hio2 =>
+                cases fuel with
+                | zero =>
+                    simp [typecheck, typecheckExpr_op_succ, typecheckOp] at htc
+                | succ fuel' =>
+                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
+                      intro m hm e' ctx' res' htc' R'
+                      exact IH m hm e' ctx' predSat hio' res' htc' R'
+                      where hio' : IOFree e' := by
+                        -- This will be proven by inversion on hio in each case
+                        sorry
+                    exact stepFR_op ctxᵢ predSat R e1 e2 op fuel' res hIH htc
+            | _ => contradiction
+        | unaryop op e =>
+            cases hio with
+            | unaryop _ _ hioe =>
+                cases fuel with
+                | zero =>
+                    simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
+                | succ fuel' =>
+                    have hIH : ∀ m < Nat.succ fuel', ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
+                      intro m hm e' ctx' res' htc' R'
+                      exact IH m hm e' ctx' predSat hio' res' htc' R'
+                      where hio' : IOFree e' := by sorry
+                    exact stepFR_unaryop ctxᵢ predSat R op e fuel' res hIH htc
+            | _ => contradiction
+        | ite e1 e2 e3 =>
+            cases hio with
+            | ite _ _ _ hio1 hio2 hio3 => sorry  -- TODO: implement stepFR_ite
+            | _ => contradiction
+        | newRef e =>
+            cases hio with
+            | newRef _ hioe =>
+                cases fuel with
+                | zero =>
+                    simp [typecheck, typecheckExpr, typecheckNewRef] at htc
+                | succ fuel' =>
+                    have hIH : ∀ m < Nat.succ fuel', ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
+                      intro m hm e' ctx' res' htc' R'
+                      exact IH m hm e' ctx' predSat hio' res' htc' R'
+                      where hio' : IOFree e' := by sorry
+                    exact stepFR_newRef ctxᵢ predSat R e fuel' res hIH htc
+            | _ => contradiction
+        | assign e1 e2 =>
+            cases hio with
+            | assign _ _ hio1 hio2 => sorry  -- TODO: implement stepFR_assign
+            | _ => contradiction
+        | deref e =>
+            cases hio with
+            | deref _ hioe => sorry  -- TODO: implement stepFR_deref
+            | _ => contradiction
+        | seq e1 e2 =>
+            cases hio with
+            | seq _ _ hio1 hio2 =>
+                cases fuel with
+                | zero =>
+                    simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
+                | succ fuel' =>
+                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
+                      intro m hm e' ctx' res' htc' R'
+                      exact IH m hm e' ctx' predSat hio' res' htc' R'
+                      where hio' : IOFree e' := by sorry
+                    exact stepFR_seq ctxᵢ predSat R e1 e2 fuel' res hIH htc
+            | _ => contradiction
+        | kwhile e1 e2 =>
+            cases hio with
+            | kwhile _ _ hio1 hio2 => sorry  -- TODO: implement stepFR_kwhile
+            | _ => contradiction
+        | vlet z e1 e2 =>
+            cases hio with
+            | vlet _ _ _ hio1 hio2 =>
+                let vname := z
+                cases fuel with
+                | zero =>
+                    simp [typecheck, typecheckExpr_vlet_succ, typecheckVlet] at htc
+                | succ fuel' =>
+                    have hIH : ∀ m < Nat.succ (Nat.succ fuel'), ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+                      typecheck ctx' e' m = .ok res' → ∀ (R' : Regime), StepFR ctx' R' e' res' predSat := by
+                      intro m hm e' ctx' res' htc' R'
+                      exact IH m hm e' ctx' predSat hio' res' htc' R'
+                      where hio' : IOFree e' := by sorry
+                    exact stepFR_vlet ctxᵢ predSat R vname e1 e2 fuel' res hIH htc
+            | _ => contradiction
+        | fn name ty e1 ty2 =>
+            cases hio with
+            | fn _ _ _ _ hiobody => exact stepFR_fn ctxᵢ predSat R name ty e1 ty2 fuel res htc
+            | _ => contradiction
+        | pfn name ty e1 ty2 =>
+            cases hio with
+            | pfn _ _ _ _ hiobody => exact stepFR_pfn ctxᵢ predSat R name ty e1 ty2 fuel res htc
+            | _ => contradiction
+        | app e1 e2 =>
+            cases hio with
+            | app _ _ hio1 hio2 => sorry  -- TODO: implement stepFR_app
+            | _ => contradiction
+        | rand _ | frand _ | printString _ | printInt _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
+            -- These cases are impossible due to IOFree assumption
+            cases hio
+
+end TypeSystemEnforcesFaultRobustness_IOFree_proof
+
+-- Modified impl that accepts IOFree restriction
+theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
+  (∀ e ctxᵢ predSat, IOFree e → TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat) →
+  (∀ e s obs, IOFree e → TypeSystemEnforcesFaultRobustness_spec e s obs) := by
+  intro hstep e s obs hio
+  rintro his _hos ctx hctx _hwf _hpc _hte predSat _hps ⟨fuel, res, htc, hobs⟩
+  rcases hobs with ⟨hobs_ret, hobs_mem⟩
+  have hstep' := hstep e ctx predSat hio
+  have hstep' := hstep' fuel res htc
+  intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm check
+  dsimp only [FaultRobustnessSpec]
+  intro cf₁ cf₂ o₁ o₂ hR hRbound hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
+  set R : Regime := ⟨ctx.nextTag, check⟩ with hRdef
+  have hagree_clean :
+      agreeOnClean predSat R ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ :=
+    agreeOnCriticalAndTrusted_implies_agreeOnClean
+      predSat R s ctx μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ hctx hagree htrusted
+  have htagR : tagEnvConsistentWithRegime ctx.tagEnv R := by
+    intro k deps hlookup
+    -- Empty tag environment at the top level.
+    have : (ctx.tagEnv.get? k) = none := by
+      simp [_hte]
+    rw [this] at hlookup
+    cases hlookup
+  have hreg : regimeConsistentWithCtx ctx R := by
+    intro k deps hlookup
+    -- Empty tag environment at the top level.
+    have : (ctx.tagEnv.get? k) = none := by
+      simp [_hte]
+    rw [this] at hlookup
+    cases hlookup
+  have hRbound' : regimeBounded R := hRbound
+  have hwf : wfTypeContext ctx := _hwf
+  have hric₁' : runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ := hric₁
+  have hric₂' : runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ := hric₂
+  have hstep_fr := hstep' μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂ hθ₁ hθ₂ hwf hric₁' hric₂' hreg hRbound' hagree_clean a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
+  rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, hwfctx', hwfcfg₁', hwfcfg₂', hric₁'', hric₂'', hreg', hagree', hresult⟩
+  refine ⟨θ₁', θ₂', hwfext₁, hwfext₂, ?_⟩
+  -- Prove observablesEqual using the result agreement
+  sorry  -- TODO: bridge from resultAgreesIfClean to observablesEqual
+
+-- Main I/O-free theorem
+theorem TypeSystemEnforcesFaultRobustness_IOFree
+  (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
+  IOFree e →
+  TypeSystemEnforcesFaultRobustness_spec e s obs := by
+  intro hio
+  apply TypeSystemEnforcesFaultRobustness_impl_IOFree
+  · intro e' ctxᵢ predSat hio'
+    exact TypeSystemEnforcesFaultRobustness_step_IOFree e' ctxᵢ predSat hio'
+  · exact hio
