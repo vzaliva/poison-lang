@@ -882,6 +882,88 @@ lemma terminatesTo_pfn_inv' (x : Name) (paramType : Typ) (body : Expr) (returnTy
       injection heq with hcfg hval
       exact ⟨hcfg.symm, hval.symm⟩
 
+/-- Inversion lemma for terminatesTo on unaryop.
+    Extracts the sub-expression evaluation and operation application.
+    Note: Requires proving beval is world-independent for non-IO expressions. -/
+lemma terminatesTo_unaryop_inv' (op : UnaryOp) (e : Expr) (c₀ c₁ : Config) (v : Value) :
+    terminatesTo (Expr.unaryop op e) c₀ c₁ v →
+    ∃ c₁' v', terminatesTo e c₀ c₁' v' ∧
+              LeanPoison.evalUnaryOp op v' = some v ∧
+              c₁.memory = c₁'.memory ∧
+              c₁.varEnv = c₁'.varEnv ∧
+              c₁.nextAddr = c₁'.nextAddr ∧
+              c₁.pureMode = c₁'.pureMode := by
+  sorry
+
+/-- Inversion lemma for terminatesTo on newRef.
+    Extracts the sub-expression evaluation and allocation info.
+    TODO: Requires IOFree property to convert world-indexed to world-free. -/
+lemma terminatesTo_newRef_inv' (e : Expr) (c₀ c₁ : Config) (v : Value) :
+    terminatesTo (Expr.newRef e) c₀ c₁ v →
+    ∃ (c₁' : Config) (n : Int), terminatesTo e c₀ c₁' (Value.num n) ∧
+              v = Value.loc c₁'.nextAddr ∧
+              c₁.memory = c₁'.memory.insert c₁'.nextAddr n ∧
+              c₁.nextAddr = c₁'.nextAddr + 1 ∧
+              c₁.varEnv = c₁'.varEnv ∧
+              c₁.pureMode = c₁'.pureMode := by
+  sorry
+
+/-- Inversion lemma for terminatesTo on deref.
+    Note: pureMode is preserved through evaluation. -/
+lemma terminatesTo_deref_inv' (e : Expr) (c₀ c₁ : Config) (v : Value) :
+    terminatesTo (Expr.deref e) c₀ c₁ v →
+    ∃ (c₁' : Config) (a : Address) (n : Int), terminatesTo e c₀ c₁' (Value.loc a) ∧
+              c₁'.memory.lookup a = some n ∧
+              v = Value.num n ∧
+              c₁.memory = c₁'.memory ∧
+              c₁.varEnv = c₁'.varEnv ∧
+              c₁.nextAddr = c₁'.nextAddr ∧
+              c₁.pureMode = c₁'.pureMode ∧
+              c₁'.pureMode = c₀.pureMode := by
+  sorry
+
+/-- Inversion lemma for terminatesTo on binary op.
+    Note: c₁.pureMode = c₀.pureMode = c₂.pureMode is preserved through evaluation. -/
+lemma terminatesTo_op_inv' (e₁ : Expr) (op : Op) (e₂ : Expr) (c₀ c₂ : Config) (v : Value) :
+    terminatesTo (Expr.op e₁ op e₂) c₀ c₂ v →
+    ∃ c₁ v₁ v₂, terminatesTo e₁ c₀ c₁ v₁ ∧
+                terminatesTo e₂ c₁ c₂ v₂ ∧
+                LeanPoison.evalOp op v₁ v₂ = some v ∧
+                c₁.pureMode = c₀.pureMode ∧
+                c₂.pureMode = c₀.pureMode := by
+  sorry
+
+/-- Inversion lemma for terminatesTo on seq.
+    Note: pureMode is preserved through evaluation. -/
+lemma terminatesTo_seq_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) :
+    terminatesTo (Expr.seq e₁ e₂) c₀ c₂ v →
+    ∃ c₁ v₁, terminatesTo e₁ c₀ c₁ v₁ ∧
+             terminatesTo e₂ c₁ c₂ v ∧
+             c₁.pureMode = c₀.pureMode ∧
+             c₂.pureMode = c₀.pureMode := by
+  sorry
+
+/-- Inversion lemma for terminatesTo on vlet.
+    Note: pureMode is preserved through evaluation. -/
+lemma terminatesTo_vlet_inv' (x : Name) (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) :
+    terminatesTo (Expr.vlet x e₁ e₂) c₀ c₂ v →
+    ∃ c₁ v₁, terminatesTo e₁ c₀ c₁ v₁ ∧
+             terminatesTo e₂ { c₁ with varEnv := c₁.varEnv.update x v₁ } c₂ v ∧
+             c₁.pureMode = c₀.pureMode ∧
+             c₂.pureMode = c₀.pureMode := by
+  sorry
+
+/-- Inversion lemma for terminatesTo on assign.
+    TODO: Requires IOFree property to convert world-indexed to world-free. -/
+lemma terminatesTo_assign_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) :
+    terminatesTo (Expr.assign e₁ e₂) c₀ c₂ v →
+    ∃ (c₁ : Config) (a : Address) (n : Int),
+                           terminatesTo e₁ c₀ c₁ (Value.loc a) ∧
+                           terminatesTo e₂ c₁ c₂ (Value.num n) ∧
+                           v = Value.unit ∧
+                           c₂.memory = c₂.memory.insert a n := by
+  sorry
+
 -- ================================================================
 -- NextAddr Monotonicity
 -- ================================================================
