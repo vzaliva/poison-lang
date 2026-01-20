@@ -4231,7 +4231,6 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
 
 end TypeSystemEnforcesFaultRobustness_IOFree_proof
 
--- Modified impl that accepts IOFree restriction
 -- Bridges from step theorem to full specification
 theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
   (∀ e ctxᵢ predSat, IOFree e → TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat) →
@@ -4263,12 +4262,196 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
   have hstep_fr := hstep' R μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂ hθ₁ hθ₂ hwf hric₁ hric₂ hreg hRbound hagree_clean a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
   -- StepFR result structure: ∃ θ₁' θ₂', wfExtendsMap ∧ wfExtendsMap ∧ wfTypeContext ∧
   --   wfConfig ∧ wfConfig ∧ agreeOnClean ∧ resultAgreesIfClean
-  rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, _hwfctx', _hwfcfg₁', _hwfcfg₂', _hagree', hresult⟩
+  rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, _hwfctx', _hwfcfg₁', _hwfcfg₂', hagree_clean', hret_agree⟩
   refine ⟨θ₁', θ₂', hwfext₁, hwfext₂, ?_⟩
-  -- Bridge from resultAgreesIfClean to observablesEqual
-  -- TODO: This requires showing that if observable outputs are clean under R,
-  -- then they agree when the result agrees
-  sorry
+  -- Bridge from post-state agreement to observables.
+  simp [observablesEqual]
+  constructor
+  · -- Observable memory locations agree
+    intro l et hobs_lookup
+    obtain ⟨qt, hlookup_mem, _het_eq, hpoison⟩ := hobs_mem l et hobs_lookup
+    have hctx_lookup : (ctxAfter ctx res).memEnv.lookup l = some qt := by
+      simpa [ctxAfter] using hlookup_mem
+    have hclean : qtypCleanUnder R qt := by
+      left
+      exact hpoison
+    have hlocEntry : agreeLocUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' (l, qt) :=
+      (hagree_clean'.1 l qt hctx_lookup hclean)
+    cases hlocEntry with
+    | agree_values _l _qt a₁' a₂' n₁ n₂ hreal₁ hreal₂ hlookup₁ hlookup₂ hagree =>
+        -- Reduce to equality of stored ints via agreement on the stored values.
+        have hvalEq : n₁ = n₂ := by
+          cases hagree with
+          | clean_eq_nonref _ _ _ hval =>
+              cases hval
+              rfl
+          | poisoned_noPred_eq_nonref _ _ _ _ hval =>
+              cases hval
+              rfl
+          | clean_arrow _ _ _ _ _ hv1 _ =>
+              cases hv1
+          | guardOnly_true_arrow _ _ _ _ _ _ hv1 _ =>
+              cases hv1
+          | clean_parrow _ _ _ _ _ hv1 _ =>
+              cases hv1
+          | guardOnly_true_parrow _ _ _ _ _ _ hv1 _ =>
+              cases hv1
+          | clean_ref _ _ _ _ hv1 _ _ _ =>
+              cases hv1
+          | poisoned_noPred_ref _ _ _ _ _ hv1 _ _ _ =>
+              cases hv1
+          | withPred_true_eq _ _ _ _ _ hval =>
+              cases hval
+              rfl
+          | withPred_true_ref _ _ _ _ _ _ hv1 _ _ _ =>
+              cases hv1
+          | withPred_false_poisoned_fail _ _ _ _ hpoison' _ _ =>
+              have : False := by
+                simp [hpoison] at hpoison'
+              exact False.elim this
+          | guardOnly_false_poisoned_any _ _ _ hpoison' =>
+              have : False := by
+                simp [hpoison] at hpoison'
+              exact False.elim this
+        refine Or.inl ?_
+        refine ⟨a₁', ?_⟩
+        refine And.intro hreal₁ ?_
+        refine ⟨a₂', ?_⟩
+        refine And.intro hreal₂ ?_
+        calc
+          cf₁.memory.lookup a₁' = some n₁ := hlookup₁
+          _ = some n₂ := by simp [hvalEq]
+          _ = cf₂.memory.lookup a₂' := by symm; exact hlookup₂
+    | both_unrealized _l _qt _hnone₁ _hnone₂ =>
+        exact Or.inr ⟨_hnone₁, _hnone₂⟩
+  · -- Return value agrees
+    cases hretOpt : obs.retEtyp? with
+    | none =>
+        simp
+    | some et =>
+        -- Use return agreement from the step proof.
+        rcases hobs_ret _ hretOpt with ⟨hret_et, hret_poison⟩
+        have hret_notfun_obs : et.isFunctionType = false := by
+          simpa [wfObsSpec, hretOpt] using _hos
+        have hret_clean : qtypCleanUnder R res.qualType := by
+          left
+          exact hret_poison
+        have hret_agree' :
+            agreeValueUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' res.qualType o₁ o₂ :=
+          hret_agree hret_clean
+        cases et with
+        | ref t ls =>
+            cases hret_agree' with
+            | @clean_ref _t _ls l₁ l₂ a₁' a₂' _qt _v₁ _v₂ hpoison' hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                have href := Eq.trans (Eq.symm hetyp) hret_et
+                cases href
+                refine And.intro ?_ ?_
+                · refine ⟨l₁, ?_⟩
+                  refine And.intro hin1 ?_
+                  refine ⟨a₁', ?_⟩
+                  exact And.intro hlookup1 hv1
+                · refine ⟨l₂, ?_⟩
+                  refine And.intro hin2 ?_
+                  refine ⟨a₂', ?_⟩
+                  exact And.intro hlookup2 hv2
+            | @withPred_true_ref k _t _ls l₁ l₂ a₁' a₂' _qt _v₁ _v₂ htag hregime hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+                have href := Eq.trans (Eq.symm hetyp) hret_et
+                cases href
+                refine And.intro ?_ ?_
+                · refine ⟨l₁, ?_⟩
+                  refine And.intro hin1 ?_
+                  refine ⟨a₁', ?_⟩
+                  exact And.intro hlookup1 hv1
+                · refine ⟨l₂, ?_⟩
+                  refine And.intro hin2 ?_
+                  refine ⟨a₂', ?_⟩
+                  exact And.intro hlookup2 hv2
+            | clean_eq_nonref _ _ hnotref _ =>
+                have : False := by
+                  apply hnotref
+                  exact ⟨t, ls, hret_et⟩
+                exact False.elim this
+            | poisoned_noPred_eq_nonref _ _ _ hnotref _ =>
+                have : False := by
+                  apply hnotref
+                  exact ⟨t, ls, hret_et⟩
+                exact False.elim this
+            | withPred_true_eq _ _ _ _ hnotref _ =>
+                have : False := by
+                  apply hnotref
+                  exact ⟨t, ls, hret_et⟩
+                exact False.elim this
+            | clean_arrow _ hetyp _ _ _ _ _ =>
+                cases (Eq.trans (Eq.symm hetyp) hret_et)
+            | guardOnly_true_arrow hetyp _ _ _ _ _ _ _ =>
+                cases (Eq.trans (Eq.symm hetyp) hret_et)
+            | clean_parrow _ hetyp _ _ _ _ _ =>
+                cases (Eq.trans (Eq.symm hetyp) hret_et)
+            | guardOnly_true_parrow hetyp _ _ _ _ _ _ _ =>
+                cases (Eq.trans (Eq.symm hetyp) hret_et)
+            | poisoned_noPred_ref hpoison' _ _ _ _ _ _ _ _ =>
+                have hcontra : False := by
+                  have : false = true := by
+                    calc
+                      false = res.qualType.poison := by
+                        symm
+                        exact hret_poison
+                      _ = true := by
+                        exact hpoison'
+                  cases this
+                exact False.elim hcontra
+            | withPred_false_poisoned_fail _ _ _ _ hpoison' _ _ =>
+                have hcontra : False := by
+                  have : false = true := by
+                    calc
+                      false = res.qualType.poison := by
+                        symm
+                        exact hret_poison
+                      _ = true := by
+                        exact hpoison'
+                  cases this
+                exact False.elim hcontra
+            | guardOnly_false_poisoned_any _ _ _ hpoison' =>
+                have hcontra : False := by
+                  have : false = true := by
+                    calc
+                      false = res.qualType.poison := by
+                        symm
+                        exact hret_poison
+                      _ = true := by
+                        exact hpoison'
+                  cases this
+                exact False.elim hcontra
+        | int =>
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hret_et]
+            have hnotfun : res.qualType.etyp.isFunctionType = false := by
+              simp [hret_et, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            exact ret_eq_of_agreeValueUnder_nonref hnotref hnotfun hret_poison hret_agree'
+        | bool =>
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hret_et]
+            have hnotfun : res.qualType.etyp.isFunctionType = false := by
+              simp [hret_et, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            exact ret_eq_of_agreeValueUnder_nonref hnotref hnotfun hret_poison hret_agree'
+        | unit =>
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hret_et]
+            have hnotfun : res.qualType.etyp.isFunctionType = false := by
+              simp [hret_et, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            exact ret_eq_of_agreeValueUnder_nonref hnotref hnotfun hret_poison hret_agree'
+        | string =>
+            have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+              simp [hret_et]
+            have hnotfun : res.qualType.etyp.isFunctionType = false := by
+              simp [hret_et, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            exact ret_eq_of_agreeValueUnder_nonref hnotref hnotfun hret_poison hret_agree'
+        | arrow st₁ st₂ p tcls =>
+            exfalso
+            simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hret_notfun_obs
+        | parrow st₁ st₂ p tcls =>
+            exfalso
+            simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hret_notfun_obs
 
 -- Main I/O-free theorem
 theorem TypeSystemEnforcesFaultRobustness_IOFree
