@@ -6,6 +6,7 @@
 import LeanPoison.Syntax
 import LeanPoison.Runtime
 import LeanPoison.BigStep
+import LeanProofs.IOHelpers
 
 open Std
 
@@ -724,6 +725,162 @@ lemma bevalFrand_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     · next h_error1 h_state1 =>
       -- EStateM.error - contradiction with success
       injection h_eq
+
+-- ================================================================
+-- World-Free Termination Inversion Lemmas
+-- ================================================================
+
+-- These lemmas extract config and value information from terminatesTo
+-- (world-free termination) for I/O-free expression forms.
+
+-- Helper: apply IO equality at default world to extract underlying equality
+private lemma pure_eq_pure_imp {α : Type} (a b : α) :
+    (pure a : IO α) = pure b → a = b := by
+  intro h
+  have heq := congrArg (fun f => f LeanProofs.defaultWorld) h
+  injection heq
+
+/-- Inversion lemma for terminatesTo on number literals. -/
+lemma terminatesTo_num_inv' (n : Int) (c₀ c₁ : Config) (v : Value) :
+    terminatesTo (Expr.num n) c₀ c₁ v → c₁ = c₀ ∧ v = Value.num n := by
+  intro ⟨fuel, _verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp only [LeanPoison.beval] at hbeval
+      have := pure_eq_pure_imp _ _ hbeval
+      cases this
+  | succ fuel' =>
+      simp only [LeanPoison.beval, pure] at hbeval
+      have heq := pure_eq_pure_imp _ _ hbeval
+      injection heq with hcfg hval
+      exact ⟨hcfg.symm, hval.symm⟩
+
+/-- Inversion lemma for terminatesTo on boolean literals. -/
+lemma terminatesTo_bool_inv' (b : Bool) (c₀ c₁ : Config) (v : Value) :
+    terminatesTo (Expr.bool b) c₀ c₁ v → c₁ = c₀ ∧ v = Value.bool b := by
+  intro ⟨fuel, _verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp only [LeanPoison.beval] at hbeval
+      have := pure_eq_pure_imp _ _ hbeval
+      cases this
+  | succ fuel' =>
+      simp only [LeanPoison.beval, pure] at hbeval
+      have heq := pure_eq_pure_imp _ _ hbeval
+      injection heq with hcfg hval
+      exact ⟨hcfg.symm, hval.symm⟩
+
+/-- Inversion lemma for terminatesTo on unit. -/
+lemma terminatesTo_unit_inv' (c₀ c₁ : Config) (v : Value) :
+    terminatesTo Expr.unit c₀ c₁ v → c₁ = c₀ ∧ v = Value.unit := by
+  intro ⟨fuel, _verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp only [LeanPoison.beval] at hbeval
+      have := pure_eq_pure_imp _ _ hbeval
+      cases this
+  | succ fuel' =>
+      simp only [LeanPoison.beval, pure] at hbeval
+      have heq := pure_eq_pure_imp _ _ hbeval
+      injection heq with hcfg hval
+      exact ⟨hcfg.symm, hval.symm⟩
+
+/-- Inversion lemma for terminatesTo on string literals. -/
+lemma terminatesTo_str_inv' (s : String) (c₀ c₁ : Config) (v : Value) :
+    terminatesTo (Expr.str s) c₀ c₁ v → c₁ = c₀ ∧ v = Value.str s := by
+  intro ⟨fuel, _verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp only [LeanPoison.beval] at hbeval
+      have := pure_eq_pure_imp _ _ hbeval
+      cases this
+  | succ fuel' =>
+      simp only [LeanPoison.beval, pure] at hbeval
+      have heq := pure_eq_pure_imp _ _ hbeval
+      injection heq with hcfg hval
+      exact ⟨hcfg.symm, hval.symm⟩
+
+/-- Combined inversion lemma for terminatesTo on any literal expression. -/
+lemma terminatesTo_literal_inv' (e : Expr) (v_expected : Value)
+    (hval : Expr.toValue? e = some v_expected) (c₀ c₁ : Config) (v : Value) :
+    terminatesTo e c₀ c₁ v → c₁ = c₀ ∧ v = v_expected := by
+  intro ht
+  cases e with
+  | unit =>
+      simp [Expr.toValue?] at hval
+      cases hval
+      exact terminatesTo_unit_inv' c₀ c₁ v ht
+  | num n =>
+      simp [Expr.toValue?] at hval
+      cases hval
+      exact terminatesTo_num_inv' n c₀ c₁ v ht
+  | bool b =>
+      simp [Expr.toValue?] at hval
+      cases hval
+      exact terminatesTo_bool_inv' b c₀ c₁ v ht
+  | str s =>
+      simp [Expr.toValue?] at hval
+      cases hval
+      exact terminatesTo_str_inv' s c₀ c₁ v ht
+  | _ => simp [Expr.toValue?] at hval
+
+/-- Inversion lemma for terminatesTo on variable lookup. -/
+lemma terminatesTo_var_inv' (x : Name) (c₀ c₁ : Config) (v : Value) :
+    terminatesTo (Expr.var x) c₀ c₁ v →
+    ∃ v', c₀.varEnv.lookup x = some v' ∧ c₁ = c₀ ∧ v = v' := by
+  intro ⟨fuel, _verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp only [LeanPoison.beval] at hbeval
+      have := pure_eq_pure_imp _ _ hbeval
+      cases this
+  | succ fuel' =>
+      simp only [LeanPoison.beval, pure] at hbeval
+      cases hlookup : c₀.varEnv.lookup x with
+      | none =>
+          simp only [hlookup] at hbeval
+          have := pure_eq_pure_imp _ _ hbeval
+          cases this
+      | some v' =>
+          simp only [hlookup] at hbeval
+          have heq := pure_eq_pure_imp _ _ hbeval
+          injection heq with hcfg hval
+          refine ⟨v', ?_, hcfg.symm, hval.symm⟩
+          rw [← hlookup]
+
+/-- Inversion lemma for terminatesTo on fn (regular function). -/
+lemma terminatesTo_fn_inv' (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+    (c₀ c₁ : Config) (v : Value) :
+    terminatesTo (Expr.fn x paramType body returnType) c₀ c₁ v →
+    c₁ = c₀ ∧ v = Value.closure x body c₀.varEnv := by
+  intro ⟨fuel, _verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp only [LeanPoison.beval] at hbeval
+      have := pure_eq_pure_imp _ _ hbeval
+      cases this
+  | succ fuel' =>
+      simp only [LeanPoison.beval, pure] at hbeval
+      have heq := pure_eq_pure_imp _ _ hbeval
+      injection heq with hcfg hval
+      exact ⟨hcfg.symm, hval.symm⟩
+
+/-- Inversion lemma for terminatesTo on pfn (predicated function). -/
+lemma terminatesTo_pfn_inv' (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+    (c₀ c₁ : Config) (v : Value) :
+    terminatesTo (Expr.pfn x paramType body returnType) c₀ c₁ v →
+    c₁ = c₀ ∧ v = Value.peClosure x body c₀.varEnv := by
+  intro ⟨fuel, _verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp only [LeanPoison.beval] at hbeval
+      have := pure_eq_pure_imp _ _ hbeval
+      cases this
+  | succ fuel' =>
+      simp only [LeanPoison.beval, pure] at hbeval
+      have heq := pure_eq_pure_imp _ _ hbeval
+      injection heq with hcfg hval
+      exact ⟨hcfg.symm, hval.symm⟩
 
 -- ================================================================
 -- NextAddr Monotonicity
