@@ -1578,6 +1578,10 @@ private lemma typecheckExpr_vlet_succ (ctx : TypeContext) (x : Name) (e1 e2 : Ex
   typecheckExpr ctx (Expr.vlet x e1 e2) (fuel + 1) = typecheckVlet ctx x e1 e2 fuel := by
   simp [typecheckExpr]
 
+private lemma typecheckExpr_ite_succ (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) :
+  typecheckExpr ctx (Expr.ite e1 e2 e3) (fuel + 1) = typecheckIf ctx e1 e2 e3 fuel := by
+  simp [typecheckExpr]
+
 private lemma opEType_ne_ref (op : Op) (et1 et2 : ETyp) (t : ETyp) (ls : LocSet) :
   opEType? op et1 et2 ≠ some (ETyp.ref t ls) := by
   cases op <;> cases et1 <;> cases et2 <;> simp [opEType?]
@@ -3714,7 +3718,8 @@ private lemma stepFR_pfn
             exact False.elim this
   -/
 
--- Stub lemma for if-then-else (not yet proven)
+-- World-free version of ite fault-robustness
+-- Key insight: if condition is clean, both runs take same branch
 private lemma stepFR_ite
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
@@ -3722,7 +3727,249 @@ private lemma stepFR_ite
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.ite e1 e2 e3) res predSat := by
-  sorry
+  -- Parse typecheck result
+  have htc' : typecheckIf ctxᵢ e1 e2 e3 (Nat.succ fuel') = .ok res := by
+    simp [typecheck, typecheckExpr_ite_succ] at htc
+    exact htc
+  -- Get structure from typecheckIf
+  have hstruct := typecheckIf_structure ctxᵢ e1 e2 e3 (Nat.succ fuel') res htc'
+  -- Introduce quantified variables
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Use world-free inversion lemma for ite
+  have hio : IOFree (Expr.ite e1 e2 e3) := IOFree.ite e1 e2 e3 hio1 hio2 hio3
+  have hinv₀ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
+  rcases hinv₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀2⟩
+  have hinv₁ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
+  rcases hinv₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁2⟩
+  -- Both modes share the property that e1 typechecks to bool and e2, e3 typecheck
+  -- We handle both modes uniformly by extracting the key properties
+  cases hstruct with
+  | inl hmode1 =>
+    -- Mode 1: Predicate-based (matchGuard succeeds)
+    -- In this mode, e2/e3 use original memEnv with modified tagEnv
+    -- This is complex because the IH contexts differ from ctxAfter
+    -- For now, we admit this case - it requires careful handling of
+    -- the different context structures
+    sorry
+  | inr hmode2 =>
+    -- Mode 2: Standard (matchGuard fails)
+    -- This is similar to seq/vlet - contexts chain through
+    rcases hmode2 with ⟨⟨err, hmatch_fail⟩, res1, htc1, hbool1, res2, htc2, res3, htc3,
+                        h_memEnv, h_tagEnv, h_nextLoc, h_nextTag, h_poison⟩
+    -- Convert typecheck results to full typecheck form
+    have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
+      simpa [typecheck, Nat.succ_sub_one] using htc1
+    -- Define intermediate contexts
+    let ctx' := { ctxᵢ with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
+                            nextLoc := res1.nextLoc', nextTag := res1.nextTag' }
+    let pc' := joinPoison ctxᵢ.pc res1.qualType.poison
+    let ctx'' := { ctx' with pc := pc' }
+    have htc2' : typecheck ctx'' e2 fuel' = .ok res2 := by
+      simpa [ctx'', ctx', typecheck, Nat.succ_sub_one] using htc2
+    let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+    have htc3' : typecheck ctxForE3 e3 fuel' = .ok res3 := by
+      simpa [ctxForE3, ctx'', ctx', typecheck, Nat.succ_sub_one] using htc3
+    -- Get IH for e1
+    have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+      e1 ctxᵢ hio1 res1 htc1' R
+    -- Apply IH for e1
+    have hstep_e1 :=
+      hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+        hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+    rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1,
+                          hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
+    -- Prepare for branch IH
+    have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
+    have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
+    -- ctx'' has elevated pc, need to establish properties
+    have hwf1' : wfTypeContext ctx'' := by
+      simp only [ctx'', ctx']
+      unfold wfTypeContext at hwf1 ⊢
+      simpa [ctxAfter] using hwf1
+    have hric₀1' : runtimeInstantiatesCtx ctx'' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+      simpa [ctx'', ctx', ctxAfter] using hric₀1
+    have hric₁1' : runtimeInstantiatesCtx ctx'' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+      simpa [ctx'', ctx', ctxAfter] using hric₁1
+    have htagR1' : regimeConsistentWithCtx ctx'' R := by
+      simpa [ctx'', ctx', ctxAfter] using htagR1
+    -- agreeOnClean for ctx'' (pc is elevated but other fields preserved)
+    have hagree_clean1' : agreeOnClean predSat R ctx'' cfg₀1.memory cfg₀1.varEnv θ₀1
+                                                      cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+      -- agreeOnClean depends on memEnv, varEnv, tagEnv - not pc
+      -- ctx'' has same memEnv, varEnv, tagEnv as ctxAfter ctxᵢ res1
+      simpa [ctx'', ctx', ctxAfter] using hagree_clean1
+    -- Handle pureMode equality for branch IH
+    have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
+    have hcfg₁1_eq : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv,
+                               nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
+      cases cfg₁1; simp only [Config.mk.injEq, true_and]; exact hpm_eq
+    have hwfcf₁1' : wfConfig { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv,
+                               nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
+      rw [← hcfg₁1_eq]; exact hwfcf₁1
+    -- The key insight: if result is clean, condition must be clean, so b₀ = b₁
+    -- First, let's establish that both runs take the same branch when result is clean
+    -- We'll case split on the branch and apply appropriate IH
+    cases hbranch₀ with
+    | inl htrue₀ =>
+      rcases htrue₀ with ⟨hb₀, ht₀_e2⟩
+      cases hbranch₁ with
+      | inl htrue₁ =>
+        -- Both runs take true branch
+        rcases htrue₁ with ⟨hb₁, ht₁_e2⟩
+        -- Get IH for e2
+        have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+          e2 ctx'' hio2 res2 htc2' R
+        have ht₁_e2' : terminatesTo e2
+            { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv,
+              nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode }
+            cf₁ o₁ := by rw [← hcfg₁1_eq]; exact ht₁_e2
+        -- Apply IH for e2
+        have hstep_e2 :=
+          hIH2 cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
+            cf₀ cf₁ o₀ o₁
+            hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR1' hRbound hagree_clean1'
+            cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
+            ht₀_e2 ht₁_e2'
+        rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2,
+                              hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+        have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
+        have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
+        -- For ite in standard mode, the final result is constructed from branch results
+        -- res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv'
+        -- res.tagEnv' = res1.tagEnv' (the tagEnv from e1's result)
+        -- But both runs took the true branch (e2), so we use res2's properties
+        -- The key insight: since only one branch executed at runtime, the actual
+        -- memory environment is res2.memEnv' (from e2), not the joined one
+        -- This creates a gap between typing context and runtime
+        -- Need lemmas about join being conservative: properties of res2.memEnv' ⊆ joinMemEnvs
+        -- For now, we refine the result using sorry for the complex join-related proofs
+        refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?hwf_final, hwfcf₀2, hwfcf₁2, ?hric₀_final,
+                ?hric₁_final, ?htagR_final, ?hagree_final, ?hres_final⟩
+        -- wfTypeContext (ctxAfter ctxᵢ res)
+        case hwf_final => sorry
+        -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2
+        -- The runtime actually executed e2 and has res2's memory, but the type context
+        -- expects the joined memEnv. Need to show runtime satisfies the joined context.
+        case hric₀_final => sorry
+        case hric₁_final => sorry
+        -- regimeConsistentWithCtx (ctxAfter ctxᵢ res) R
+        -- This depends on tagEnv = res1.tagEnv' and nextTag = max res2.nextTag' res3.nextTag'
+        case htagR_final => sorry
+        -- agreeOnClean predSat R (ctxAfter ctxᵢ res) ...
+        case hagree_final => sorry
+        -- resultAgreesIfClean predSat R cf₀.memory cf₁.memory θ₀2 θ₁2 res.qualType o₀ o₁
+        -- res2 and res have same qualType in many cases, but poison is joined
+        case hres_final => sorry
+      | inr hfalse₁ =>
+        -- Run 0 takes true branch, Run 1 takes false branch
+        -- This can only happen if the condition is NOT clean under R
+        rcases hfalse₁ with ⟨hb₁, ht₁_e3⟩
+        -- The condition bool values differ: b₀ = true ≠ false = b₁
+        have hbNe : b₀ ≠ b₁ := by simp [hb₀, hb₁]
+        -- If res1.qualType were clean under R, then from hres_agree1, the bool values must agree
+        -- Since they differ, res1.qualType is NOT clean under R
+        have hres1_not_clean : ¬ qtypCleanUnder R res1.qualType := fun hclean => by
+          have hbool_typ : res1.qualType.etyp = ETyp.bool := hbool1
+          have hnotref : ¬ ∃ t ls, res1.qualType.etyp = ETyp.ref t ls := by
+            simp [hbool_typ]
+          have hnotfun : res1.qualType.etyp.isFunctionType = false := by
+            simp [hbool_typ, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+          have heq : Value.bool b₀ = Value.bool b₁ :=
+            agreeValueUnder_nonref_eq_of_clean hclean hnotref hnotfun (hres_agree1 hclean)
+          simp at heq
+          exact hbNe heq
+        -- For the divergent case, we need to provide the StepFR output
+        -- Since branches diverged, we can't apply IH on a common branch
+        -- We use IH1's results (from e1) and need to show all StepFR properties
+        -- The result type is poisoned (due to poison propagation from condition)
+        -- so resultAgreesIfClean is vacuously satisfied
+        sorry
+    | inr hfalse₀ =>
+      rcases hfalse₀ with ⟨hb₀, ht₀_e3⟩
+      cases hbranch₁ with
+      | inl htrue₁ =>
+        -- Run 0 takes false branch, Run 1 takes true branch
+        -- Similar to above - condition is not clean under R
+        rcases htrue₁ with ⟨hb₁, ht₁_e2⟩
+        have hbNe : b₀ ≠ b₁ := by simp [hb₀, hb₁]
+        have hres1_not_clean : ¬ qtypCleanUnder R res1.qualType := fun hclean => by
+          have hbool_typ : res1.qualType.etyp = ETyp.bool := hbool1
+          have hnotref : ¬ ∃ t ls, res1.qualType.etyp = ETyp.ref t ls := by
+            simp [hbool_typ]
+          have hnotfun : res1.qualType.etyp.isFunctionType = false := by
+            simp [hbool_typ, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+          have heq : Value.bool b₀ = Value.bool b₁ :=
+            agreeValueUnder_nonref_eq_of_clean hclean hnotref hnotfun (hres_agree1 hclean)
+          simp at heq
+          exact hbNe heq
+        -- Same reasoning as above
+        sorry
+      | inr hfalse₁ =>
+        -- Both runs take false branch
+        rcases hfalse₁ with ⟨hb₁, ht₁_e3⟩
+        -- Get IH for e3
+        have hIH3 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+          e3 ctxForE3 hio3 res3 htc3' R
+        -- Use monotonicity lemmas to relate nextLoc/nextTag across typechecking
+        have hlocMono : res1.nextLoc' ≤ res2.nextLoc' := by
+          have : ctx''.nextLoc ≤ res2.nextLoc' := typecheck_nextLoc_mono ctx'' e2 fuel' res2 htc2'
+          simp only [ctx'', ctx'] at this
+          exact this
+        have htagMono : res1.nextTag' ≤ res2.nextTag' := by
+          have : ctx''.nextTag ≤ res2.nextTag' := typecheck_nextTag_mono ctx'' e2 fuel' res2 htc2'
+          simp only [ctx'', ctx'] at this
+          exact this
+        -- ctxForE3 context setup - need to prove wfTypeContext
+        have hwf3 : wfTypeContext ctxForE3 := by
+          simp only [ctxForE3, ctx'', ctx']
+          unfold wfTypeContext at hwf1 ⊢
+          simp only [ctxAfter] at hwf1
+          intro l hmem
+          have hlt1 : l < res1.nextLoc' := hwf1 l hmem
+          exact Nat.lt_of_lt_of_le hlt1 hlocMono
+        have hric₀3 : runtimeInstantiatesCtx ctxForE3 cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+          -- runtimeInstantiatesCtx depends on memEnv and varEnv
+          -- ctxForE3 has same memEnv and varEnv as ctx'' (only nextLoc/nextTag differ)
+          simpa [ctxForE3, ctx'', ctx', ctxAfter] using hric₀1
+        have hric₁3 : runtimeInstantiatesCtx ctxForE3 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+          simpa [ctxForE3, ctx'', ctx', ctxAfter] using hric₁1
+        have htagR3 : regimeConsistentWithCtx ctxForE3 R := by
+          -- regimeConsistentWithCtx = tagEnvConsistentWithRegime ∧ R.bound ≤ nextTag
+          simp only [ctxForE3, ctx'', ctx', regimeConsistentWithCtx]
+          simp only [ctxAfter, regimeConsistentWithCtx] at htagR1
+          constructor
+          · exact htagR1.1  -- tagEnvConsistentWithRegime preserved
+          · exact Nat.le_trans htagR1.2 htagMono  -- R.bound ≤ res2.nextTag'
+        have hagree_clean3 : agreeOnClean predSat R ctxForE3 cfg₀1.memory cfg₀1.varEnv θ₀1
+                                                            cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+          simpa [ctxForE3, ctx'', ctx', ctxAfter] using hagree_clean1
+        have ht₁_e3' : terminatesTo e3
+            { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv,
+              nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode }
+            cf₁ o₁ := by rw [← hcfg₁1_eq]; exact ht₁_e3
+        -- Apply IH for e3
+        have hstep_e3 :=
+          hIH3 cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
+            cf₀ cf₁ o₀ o₁
+            hθ₀1wf hθ₁1wf hwf3 hric₀3 hric₁3 htagR3 hRbound hagree_clean3
+            cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
+            ht₀_e3 ht₁_e3'
+        rcases hstep_e3 with ⟨θ₀3, θ₁3, hθext₀3, hθext₁3, hwf3', hwfcf₀3, hwfcf₁3,
+                              hric₀3', hric₁3', htagR3', hagree_clean3', hres_agree3⟩
+        have hθext₀ : wfExtendsMap θ₀ θ₀3 := wfExtendsMap_trans hθext₀1 hθext₀3
+        have hθext₁ : wfExtendsMap θ₁ θ₁3 := wfExtendsMap_trans hθext₁1 hθext₁3
+        -- Similar to true-true case - both runs took false branch (e3)
+        -- Same reasoning applies with res3 instead of res2
+        refine ⟨θ₀3, θ₁3, hθext₀, hθext₁, ?hwf_final, hwfcf₀3, hwfcf₁3, ?hric₀_final,
+                ?hric₁_final, ?htagR_final, ?hagree_final, ?hres_final⟩
+        case hwf_final => sorry
+        case hric₀_final => sorry
+        case hric₁_final => sorry
+        case htagR_final => sorry
+        case hagree_final => sorry
+        case hres_final => sorry
 
 -- Stub lemma for assignment (not yet proven)
 private lemma stepFR_assign

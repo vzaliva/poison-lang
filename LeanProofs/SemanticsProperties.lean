@@ -1682,7 +1682,35 @@ lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v 
     rw [hpure_mode', hrec₂, hrec₁]
   | printInt _ | printString _ | rand _ | frand _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
     cases hio  -- These cases are not IOFree, so this branch is unreachable
-  | kwhile _ _ | app _ _ | ite _ _ _ =>
+  | ite e₁ e₂ e₃ =>
+    have hio₁ : IOFree e₁ := by cases hio; assumption
+    have hio₂ : IOFree e₂ := by cases hio; assumption
+    have hio₃ : IOFree e₃ := by cases hio; assumption
+    -- Use structure lemma and prove recursively for sub-expressions
+    rcases ht with ⟨fuel, verbose, hpure⟩
+    let w := LeanProofs.defaultWorld
+    have heval_w := LeanProofs.evalAtWorld_eq w hpure
+    have hstruct := bevalIte_structure e₁ e₂ e₃ fuel verbose c₀ c₁ v w w heval_w
+    rcases hstruct with ⟨cfg₁, b, w_mid, hbeval_e1, hbranch⟩
+    have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+    subst hw_mid_eq
+    have hpure_e1 : LeanPoison.beval (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ (Value.bool b)) :=
+      beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ (Value.bool b)) w hio₁ hbeval_e1
+    have hrec₁ := terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ (Value.bool b) hio₁ ⟨fuel - 1, verbose, hpure_e1⟩
+    cases hbranch with
+    | inl htrue =>
+      rcases htrue with ⟨_, hbeval_e2⟩
+      have hpure_e2 : LeanPoison.beval (fuel - 1) cfg₁ e₂ verbose = pure (.success c₁ v) :=
+        beval_IOFree_eq_pure (fuel - 1) cfg₁ e₂ verbose (.success c₁ v) w hio₂ hbeval_e2
+      have hrec₂ := terminatesTo_IOFree_preserves_pureMode e₂ cfg₁ c₁ v hio₂ ⟨fuel - 1, verbose, hpure_e2⟩
+      rw [hrec₂, hrec₁]
+    | inr hfalse =>
+      rcases hfalse with ⟨_, hbeval_e3⟩
+      have hpure_e3 : LeanPoison.beval (fuel - 1) cfg₁ e₃ verbose = pure (.success c₁ v) :=
+        beval_IOFree_eq_pure (fuel - 1) cfg₁ e₃ verbose (.success c₁ v) w hio₃ hbeval_e3
+      have hrec₃ := terminatesTo_IOFree_preserves_pureMode e₃ cfg₁ c₁ v hio₃ ⟨fuel - 1, verbose, hpure_e3⟩
+      rw [hrec₃, hrec₁]
+  | kwhile _ _ | app _ _ =>
     -- These cases can be IOFree but we don't have inversion lemmas for them yet
     -- For now, we use sorry; these can be proven when the corresponding inversion lemmas are added
     sorry
@@ -1850,6 +1878,47 @@ lemma terminatesTo_vlet_inv' (x : Name) (e₁ e₂ : Expr) (c₀ c₂ : Config) 
     rw [hrec₂]
     rw [h_pure_cfg2]
     exact hrec₁
+
+/-- Inversion lemma for terminatesTo on ite (if-then-else).
+    Returns intermediate config after condition, which branch was taken, and preserves pureMode. -/
+lemma terminatesTo_ite_inv' (e₁ e₂ e₃ : Expr) (c₀ c₂ : Config) (v : Value) :
+    IOFree (Expr.ite e₁ e₂ e₃) →
+    terminatesTo (Expr.ite e₁ e₂ e₃) c₀ c₂ v →
+    ∃ (c₁ : Config) (b : Bool),
+              terminatesTo e₁ c₀ c₁ (Value.bool b) ∧
+              ((b = true ∧ terminatesTo e₂ c₁ c₂ v) ∨
+               (b = false ∧ terminatesTo e₃ c₁ c₂ v)) ∧
+              c₁.pureMode = c₀.pureMode ∧
+              c₂.pureMode = c₀.pureMode := by
+  intro hio ⟨fuel, verbose, hpure⟩
+  let w := LeanProofs.defaultWorld
+  have heval_w := LeanProofs.evalAtWorld_eq w hpure
+  have hstruct := bevalIte_structure e₁ e₂ e₃ fuel verbose c₀ c₂ v w w heval_w
+  rcases hstruct with ⟨cfg₁, b, w_mid, hbeval_e1, hbranch⟩
+  have hio₁ : IOFree e₁ := by cases hio; assumption
+  have hio₂ : IOFree e₂ := by cases hio; assumption
+  have hio₃ : IOFree e₃ := by cases hio; assumption
+  -- World preservation: w_mid = w
+  have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+  subst hw_mid_eq
+  have hpure_e1 : LeanPoison.beval (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ (Value.bool b)) :=
+    beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ (Value.bool b)) w hio₁ hbeval_e1
+  have hrec₁ := terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ (Value.bool b) hio₁ ⟨fuel - 1, verbose, hpure_e1⟩
+  cases hbranch with
+  | inl htrue =>
+    rcases htrue with ⟨hb, hbeval_e2⟩
+    have hpure_e2 : LeanPoison.beval (fuel - 1) cfg₁ e₂ verbose = pure (.success c₂ v) :=
+      beval_IOFree_eq_pure (fuel - 1) cfg₁ e₂ verbose (.success c₂ v) w hio₂ hbeval_e2
+    have hrec₂ := terminatesTo_IOFree_preserves_pureMode e₂ cfg₁ c₂ v hio₂ ⟨fuel - 1, verbose, hpure_e2⟩
+    refine ⟨cfg₁, b, ⟨fuel - 1, verbose, hpure_e1⟩, Or.inl ⟨hb, ⟨fuel - 1, verbose, hpure_e2⟩⟩, hrec₁, ?_⟩
+    rw [hrec₂, hrec₁]
+  | inr hfalse =>
+    rcases hfalse with ⟨hb, hbeval_e3⟩
+    have hpure_e3 : LeanPoison.beval (fuel - 1) cfg₁ e₃ verbose = pure (.success c₂ v) :=
+      beval_IOFree_eq_pure (fuel - 1) cfg₁ e₃ verbose (.success c₂ v) w hio₃ hbeval_e3
+    have hrec₃ := terminatesTo_IOFree_preserves_pureMode e₃ cfg₁ c₂ v hio₃ ⟨fuel - 1, verbose, hpure_e3⟩
+    refine ⟨cfg₁, b, ⟨fuel - 1, verbose, hpure_e1⟩, Or.inr ⟨hb, ⟨fuel - 1, verbose, hpure_e3⟩⟩, hrec₁, ?_⟩
+    rw [hrec₃, hrec₁]
 
 /-- Inversion lemma for terminatesTo on assign. -/
 lemma terminatesTo_assign_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) :

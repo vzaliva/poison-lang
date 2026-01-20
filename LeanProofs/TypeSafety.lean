@@ -916,6 +916,195 @@ def qtypGuardTag (qt : QTyp) : Option Tag :=
   | Predicate.guardOnly k => some k
   | Predicate.noPred => none
 
+/-- Structure lemma for typecheckIf with both modes explicitly exposed.
+    Mode 1 (predicate-based): matchGuard succeeds, e2/e3 use original memEnv with modified tagEnv
+    Mode 2 (standard): matchGuard fails, e2/e3 use ctxAfter from e1's result -/
+lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult) :
+    typecheckIf ctx e1 e2 e3 fuel = .ok res →
+    -- Case disjunction on matchGuard result
+    (-- Mode 1: Predicate-based (matchGuard succeeds)
+     ∃ (k : Tag) (deps : Deps),
+       matchGuard e1 ctx.memEnv ctx.varEnv = .ok (k, deps) ∧
+       ∃ res1 : TypeResult,
+         -- e1 typechecks in pure context
+         typecheckExpr { ctx with pureCtx := true } e1 (fuel - 1) = .ok res1 ∧
+         res1.qualType.etyp = ETyp.bool ∧
+         ∃ res2 : TypeResult,
+           let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+           -- e2 typechecks in true-tag context (original memEnv!)
+           typecheckExpr ctxTrue e2 (fuel - 1) = .ok res2 ∧
+           ∃ res3 : TypeResult,
+             let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
+             let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+             -- e3 typechecks in false-tag context (original memEnv!)
+             typecheckExpr ctxFalse' e3 (fuel - 1) = .ok res3 ∧
+             -- Output structure
+             res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv' ∧
+             res.tagEnv' = ctx.tagEnv ∧
+             res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
+             res.nextTag' = max res2.nextTag' res3.nextTag')
+    ∨
+    (-- Mode 2: Standard (matchGuard fails)
+     (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv = .error err) ∧
+     ∃ res1 : TypeResult,
+       -- e1 typechecks in original context
+       typecheckExpr ctx e1 (fuel - 1) = .ok res1 ∧
+       res1.qualType.etyp = ETyp.bool ∧
+       ∃ res2 : TypeResult,
+         let ctx' := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
+                                nextLoc := res1.nextLoc', nextTag := res1.nextTag' }
+         let pc' := joinPoison ctx.pc res1.qualType.poison
+         let ctx'' := { ctx' with pc := pc' }
+         -- e2 typechecks in context derived from res1
+         typecheckExpr ctx'' e2 (fuel - 1) = .ok res2 ∧
+         ∃ res3 : TypeResult,
+           let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+           -- e3 typechecks in context with advanced nextLoc/nextTag
+           typecheckExpr ctxForE3 e3 (fuel - 1) = .ok res3 ∧
+           -- Output structure
+           res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv' ∧
+           let ctx' := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
+                                  nextLoc := res1.nextLoc', nextTag := res1.nextTag' }
+           res.tagEnv' = ctx'.tagEnv ∧
+           res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
+           res.nextTag' = max res2.nextTag' res3.nextTag' ∧
+           -- Poison computation
+           res.qualType.poison = joinPoison ctx.pc (joinPoison res1.qualType.poison
+                                   (joinPoison res2.qualType.poison res3.qualType.poison))) := by
+  intro htc
+  cases fuel with
+  | zero =>
+    simp [typecheckIf] at htc
+  | succ fuel' =>
+    simp only [Nat.succ_sub_one]
+    unfold typecheckIf at htc
+    simp only [bind, Except.bind] at htc
+    -- Case split on matchGuard
+    cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv with
+    | ok kd =>
+      -- Mode 1: Predicate-based
+      left
+      obtain ⟨k, deps⟩ := kd
+      simp only [hmatch] at htc
+      refine ⟨k, deps, rfl, ?_⟩
+      -- Extract result1
+      cases htc1 : typecheckExpr { ctx with pureCtx := true } e1 fuel' with
+      | error e =>
+        simp only [htc1] at htc
+        cases htc
+      | ok result1 =>
+        simp only [htc1] at htc
+        refine ⟨result1, rfl, ?_⟩
+        -- Destructure result1.qualType and check bool type
+        match hq1 : result1.qualType with
+        | ⟨etyp1, p1, pred1⟩ =>
+        simp only [hq1] at htc
+        by_cases hbool : etyp1 = ETyp.bool
+        · constructor
+          · exact hbool
+          simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at htc
+          -- Extract result2
+          cases htc2 : typecheckExpr { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' with
+          | error e =>
+            simp only [htc2] at htc
+            cases htc
+          | ok result2 =>
+            simp only [htc2] at htc
+            refine ⟨result2, rfl, ?_⟩
+            -- Destructure result2.qualType
+            match hq2 : result2.qualType with
+            | ⟨etyp2, p2, pred2⟩ =>
+            simp only [hq2] at htc
+            -- Extract result3
+            let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
+            let ctxFalse' := { ctxFalse with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+            cases htc3 : typecheckExpr ctxFalse' e3 fuel' with
+            | error e =>
+              rw [htc3] at htc
+              cases htc
+            | ok result3 =>
+              rw [htc3] at htc
+              refine ⟨result3, rfl, ?_⟩
+              -- Destructure result3.qualType
+              match hq3 : result3.qualType with
+              | ⟨etyp3, p3, pred3⟩ =>
+              simp only [hq3] at htc
+              -- Check type compatibility
+              by_cases hcompat : beqETypSignature etyp2 etyp3 = false
+              · simp only [hcompat, Bool.not_eq_true', ↓reduceIte] at htc
+                cases htc
+              · -- hcompat : ¬ beqETypSignature etyp2 etyp3 = false, so it equals true
+                have hcompat' : beqETypSignature etyp2 etyp3 = true := by
+                  cases h : beqETypSignature etyp2 etyp3 <;> simp_all
+                simp only [hcompat', Bool.not_true, Bool.false_eq_true, ↓reduceIte, Except.ok.injEq] at htc
+                rw [← htc]
+                simp
+        · simp only [hbool, bne_iff_ne, ne_eq] at htc
+          cases htc
+    | error err =>
+      -- Mode 2: Standard
+      right
+      simp only [hmatch] at htc
+      constructor
+      · exact ⟨err, rfl⟩
+      -- Extract result1
+      cases htc1 : typecheckExpr ctx e1 fuel' with
+      | error e =>
+        simp only [htc1] at htc
+        cases htc
+      | ok result1 =>
+        simp only [htc1] at htc
+        refine ⟨result1, rfl, ?_⟩
+        -- Destructure result1.qualType and check bool type
+        match hq1 : result1.qualType with
+        | ⟨etyp1, p1, pred1⟩ =>
+        simp only [hq1] at htc
+        by_cases hbool : etyp1 = ETyp.bool
+        · constructor
+          · exact hbool
+          simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at htc
+          -- Extract result2
+          let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                                 nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+          let pc' := joinPoison ctx.pc p1
+          let ctx'' := { ctx' with pc := pc' }
+          cases htc2 : typecheckExpr ctx'' e2 fuel' with
+          | error e =>
+            rw [htc2] at htc
+            cases htc
+          | ok result2 =>
+            rw [htc2] at htc
+            refine ⟨result2, rfl, ?_⟩
+            -- Destructure result2.qualType
+            match hq2 : result2.qualType with
+            | ⟨etyp2, p2, pred2⟩ =>
+            simp only [hq2] at htc
+            -- Extract result3
+            let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+            cases htc3 : typecheckExpr ctxForE3 e3 fuel' with
+            | error e =>
+              rw [htc3] at htc
+              cases htc
+            | ok result3 =>
+              rw [htc3] at htc
+              refine ⟨result3, rfl, ?_⟩
+              -- Destructure result3.qualType
+              match hq3 : result3.qualType with
+              | ⟨etyp3, p3, pred3⟩ =>
+              simp only [hq3] at htc
+              -- Check type compatibility
+              by_cases hcompat : beqETypSignature etyp2 etyp3 = false
+              · simp only [hcompat, Bool.not_eq_true', ↓reduceIte] at htc
+                cases htc
+              · -- hcompat : ¬ beqETypSignature etyp2 etyp3 = false, so it equals true
+                have hcompat' : beqETypSignature etyp2 etyp3 = true := by
+                  cases h : beqETypSignature etyp2 etyp3 <;> simp_all
+                simp only [hcompat', Bool.not_true, Bool.false_eq_true, ↓reduceIte, Except.ok.injEq] at htc
+                rw [← htc]
+                simp
+        · simp only [hbool, bne_iff_ne, ne_eq] at htc
+          cases htc
+
 -- Structure lemma for rand typechecking.
 lemma typecheckRand_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckRand ctx e1 fuel = .ok res →
@@ -2368,3 +2557,12 @@ lemma typecheck_nextTag_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : 
   ctx.nextTag ≤ res.nextTag' := by
   intro htc
   exact typecheck_nextTag_mono_main ctx e fuel res htc
+
+-- `nextLoc` is monotone for successful typechecking: typing never decreases the fresh-location supply.
+-- This is analogous to typecheck_nextTag_mono but for memory locations.
+lemma typecheck_nextLoc_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheck ctx e fuel = .ok res →
+  ctx.nextLoc ≤ res.nextLoc' := by
+  -- TODO: This follows the same pattern as typecheck_nextTag_mono
+  -- Each typing rule either preserves or increases nextLoc
+  sorry
