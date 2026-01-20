@@ -1548,13 +1548,23 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
             have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
             simpa [h_next] using hle1
 
-/-- Next address is monotone for terminating evaluations. -/
+/-- Next address is monotone for terminating evaluations (world-indexed). -/
 lemma terminatesToW_nextAddr_mono (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
     ∀ (w₀ w₁ : Void IO.RealWorld), terminatesToW w₀ w₁ e cfg₀ cfg₁ v →
     cfg₀.nextAddr ≤ cfg₁.nextAddr := by
   intro w₀ w₁ hterm
   rcases hterm with ⟨fuel, verbose, hbeval⟩
   exact beval_nextAddr_mono e fuel verbose cfg₀ cfg₁ v ⟨w₀, w₁, hbeval⟩
+
+/-- Next address is monotone for terminating evaluations (world-free). -/
+lemma terminatesTo_nextAddr_mono (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
+    terminatesTo e cfg₀ cfg₁ v → cfg₀.nextAddr ≤ cfg₁.nextAddr := by
+  intro ⟨fuel, verbose, hbeval⟩
+  -- Convert world-free to world-indexed by applying at defaultWorld
+  have hterm_w : terminatesToW LeanProofs.defaultWorld LeanProofs.defaultWorld e cfg₀ cfg₁ v := by
+    refine ⟨fuel, verbose, ?_⟩
+    exact LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld hbeval
+  exact terminatesToW_nextAddr_mono e cfg₀ cfg₁ v LeanProofs.defaultWorld LeanProofs.defaultWorld hterm_w
 
 end nextAddr_monotonic
 
@@ -2046,6 +2056,18 @@ mutual
     | cons x v env hv hwf_tail =>
         exact wfVarEnv.cons x v env (wfValue_mono h v hv) (wfVarEnv_mono h env hwf_tail)
 end
+
+/-- If wfConfig holds and nextAddr only increases (with same memory/varEnv structure),
+    then wfConfig is preserved. Useful for configs where only nextAddr changed. -/
+lemma wfConfig_mono (cfg₀ : Config) (n' : Address) :
+    wfConfig cfg₀ →
+    cfg₀.nextAddr ≤ n' →
+    wfConfig { cfg₀ with nextAddr := n' } := by
+  intro ⟨hmem, henv⟩ hle
+  constructor
+  · intro a ha
+    exact Nat.lt_of_lt_of_le (hmem a ha) hle
+  · exact wfVarEnv_mono hle cfg₀.varEnv henv
 
 /-- Helper lemma for newRef case of wfConfig_preservedW. -/
 private lemma wfConfig_preservedW_newRef (e1 : Expr) (fuel : Nat)
@@ -2930,3 +2952,15 @@ lemma wfConfig_preservedW (w₀ w₁ : Void IO.RealWorld) (e : Expr) (cfg₀ cfg
           exact wfConfig_preservedW_externPfn name t ret fuel cfg₀ cfg₁ v verbose w₀ w₁ hbeval
 
 end wfConfig_preservedW_proof
+
+/-- Evaluation preserves config well-formedness (world-free). -/
+lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
+    terminatesTo e cfg₀ cfg₁ v →
+    wfConfig cfg₀ →
+    wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
+  intro ⟨fuel, verbose, hbeval⟩ hwf₀
+  -- Convert world-free to world-indexed by applying at defaultWorld
+  have hterm_w : terminatesToW LeanProofs.defaultWorld LeanProofs.defaultWorld e cfg₀ cfg₁ v := by
+    refine ⟨fuel, verbose, ?_⟩
+    exact LeanProofs.evalAtWorld_eq LeanProofs.defaultWorld hbeval
+  exact wfConfig_preservedW LeanProofs.defaultWorld LeanProofs.defaultWorld e cfg₀ cfg₁ v hterm_w hwf₀
