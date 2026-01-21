@@ -369,9 +369,36 @@ def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : 
 
 -- A qualified type is considered clean under regime R if it is clean outright
 -- or if its guard tag is true under R (de-poisoned).
+-- Guard tags may de-poison only non-function types: for functions, outer poison
+-- must be literally clean; guard tags do not make a function clean-under-R.
+--
 -- This is the "clean-under-R" predicate used by the step theorem.
-def qtypCleanUnder (R : Regime) (qt : QTyp) : Prop :=
-  qt.poison = false ∨ (∃ k, qtypGuardTag qt = some k ∧ R.lookup? k = some true)
+inductive qtypCleanUnder (R : Regime) : QTyp → Prop where
+  | clean {qt : QTyp} (hpoison : qt.poison = false) :
+      qtypCleanUnder R qt
+  | guard {qt : QTyp} (k : Tag)
+      (htag : qtypGuardTag qt = some k)
+      (hregime : R.lookup? k = some true)
+      (hnotfun : qt.etyp.isFunctionType = false) :
+      qtypCleanUnder R qt
+
+-- Extract internal poison from arrow/parrow types.
+-- For non-function types, returns none.
+def getInternalPoison (et : ETyp) : Option Poison :=
+  match et with
+  | ETyp.arrow _ _ p _ => some p
+  | ETyp.parrow _ _ p _ => some p
+  | _ => none
+
+-- Internal poison cleanliness for function types.
+-- For arrow/parrow types, internal poison is clean if and only if the
+-- internal poison boolean is literally false. Guard tags do NOT de-poison
+-- internal arrow poison.
+-- For non-function types, this is vacuously true.
+def internalPoisonClean (qt : QTyp) : Prop :=
+  match getInternalPoison qt.etyp with
+  | none => True        -- non-function types
+  | some p => p = false -- clean iff internal poison is literally false
 
 -- Two values agree under a given regime and memory environments.
 -- Clean values must agree; poisoned values may agree vacuously depending on regime.
@@ -394,13 +421,13 @@ mutual
         (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
         (hagree : v₁ = v₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    -- Closure agreement cases are intended for comparing values produced by two executions of the same code.
-    -- We require the parameter name and body to match syntactically (no alpha-equivalence), and compare the
-    -- captured runtime environments only on entries that are clean under the regime `R` (via `agreeCapturedEnv`).
-    | clean_arrow {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
+    -- Closure agreement cases are gated on INTERNAL poison, not outer poison.
+    -- When internal poison is clean, we require same body and captured environment agreement.
+    -- When internal poison is dirty, we impose no constraints (vacuous agreement).
+    | clean_internal_arrow {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
         {qt : QTyp} {tcl : FnTClosure} {x : Name} {body : Expr} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
         {v₁ v₂ : Value}
-        (hclean : qt.poison = false)
+        (hclean_internal : internalPoisonClean qt)
         (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
         (htcl : tcl ∈ tcls)
         (hmatch : tcl = FnTClosure.regular x body σcap)
@@ -408,22 +435,15 @@ mutual
         (hv₁ : v₁ = Value.closure x body ρcap₁)
         (hv₂ : v₂ = Value.closure x body ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    | guardOnly_true_arrow {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
-        {qt : QTyp} {k : Tag} {tcl : FnTClosure} {x : Name} {body : Expr} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
-        {v₁ v₂ : Value}
-        (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
-        (htag : qtypGuardTag qt = some k)
-        (hregime : R.lookup? k = some true)
-        (htcl : tcl ∈ tcls)
-        (hmatch : tcl = FnTClosure.regular x body σcap)
-        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
-        (hv₁ : v₁ = Value.closure x body ρcap₁)
-        (hv₂ : v₂ = Value.closure x body ρcap₂) :
+    | dirty_internal_arrow
+        {qt : QTyp} {v₁ v₂ : Value}
+        (hdirty_internal : ¬ internalPoisonClean qt)
+        (hisArrow : qt.etyp.isArrow = true) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    | clean_parrow {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
+    | clean_internal_parrow {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
         {qt : QTyp} {tcl : PFnTClosure} {x : Name} {body : Expr} {pbody : PExpr} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
         {v₁ v₂ : Value}
-        (hclean : qt.poison = false)
+        (hclean_internal : internalPoisonClean qt)
         (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
         (htcl : tcl ∈ tcls)
         (hmatch : Expr.toPExpr? body = some pbody ∧ tcl = PFnTClosure.regular x pbody σcap)
@@ -431,17 +451,10 @@ mutual
         (hv₁ : v₁ = Value.peClosure x body ρcap₁)
         (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    | guardOnly_true_parrow {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
-        {qt : QTyp} {k : Tag} {tcl : PFnTClosure} {x : Name} {body : Expr} {pbody : PExpr} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
-        {v₁ v₂ : Value}
-        (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
-        (htag : qtypGuardTag qt = some k)
-        (hregime : R.lookup? k = some true)
-        (htcl : tcl ∈ tcls)
-        (hmatch : Expr.toPExpr? body = some pbody ∧ tcl = PFnTClosure.regular x pbody σcap)
-        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
-        (hv₁ : v₁ = Value.peClosure x body ρcap₁)
-        (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
+    | dirty_internal_parrow
+        {qt : QTyp} {v₁ v₂ : Value}
+        (hdirty_internal : ¬ internalPoisonClean qt)
+        (hisParrow : qt.etyp.isParrow = true) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | clean_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
         {qt : QTyp} {v₁ v₂ : Value}

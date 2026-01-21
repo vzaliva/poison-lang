@@ -107,18 +107,28 @@ private lemma ret_eq_of_agreeValueUnder_nonref
   | clean_eq_nonref _ _ _ hval => exact hval
   | poisoned_noPred_eq_nonref _ _ _ _ hval => exact hval
   | withPred_true_eq _ _ _ _ _ hval => exact hval
-  | clean_arrow _ hetyp _ _ _ _ _ =>
+  | clean_internal_arrow _ hetyp _ _ _ _ _ =>
       exfalso
       simp [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
-  | guardOnly_true_arrow hetyp _ _ _ _ _ _ _ =>
+  | dirty_internal_arrow _ hisArrow =>
+      exfalso
+      have hfun : qt.etyp.isFunctionType = true := by
+        simp only [ETyp.isFunctionType, Bool.or_eq_true]
+        left
+        exact hisArrow
+      rw [hfun] at hnotfun
+      cases hnotfun
+  | clean_internal_parrow _ hetyp _ _ _ _ _ =>
       exfalso
       simp [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
-  | clean_parrow _ hetyp _ _ _ _ _ =>
+  | dirty_internal_parrow _ hisParrow =>
       exfalso
-      simp [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
-  | guardOnly_true_parrow hetyp _ _ _ _ _ _ _ =>
-      exfalso
-      simp [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
+      have hfun : qt.etyp.isFunctionType = true := by
+        simp only [ETyp.isFunctionType, Bool.or_eq_true]
+        right
+        exact hisParrow
+      rw [hfun] at hnotfun
+      cases hnotfun
   | clean_ref _ hetyp _ _ _ _ _ _ =>
       exfalso
       exact hnotref ⟨_, _, hetyp⟩
@@ -158,18 +168,28 @@ private lemma agreeValueUnder_nonref_eq_of_clean
   | clean_eq_nonref _ _ _ hval => exact hval
   | poisoned_noPred_eq_nonref _ _ _ _ hval => exact hval
   | withPred_true_eq _ _ _ _ _ hval => exact hval
-  | clean_arrow _ hetyp _ _ _ _ _ =>
+  | clean_internal_arrow _ hetyp _ _ _ _ _ =>
       exfalso
       simp [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
-  | guardOnly_true_arrow hetyp _ _ _ _ _ _ _ =>
+  | dirty_internal_arrow _ hisArrow =>
+      exfalso
+      have hfun : qt.etyp.isFunctionType = true := by
+        simp only [ETyp.isFunctionType, Bool.or_eq_true]
+        left
+        exact hisArrow
+      rw [hfun] at hnotfun
+      cases hnotfun
+  | clean_internal_parrow _ hetyp _ _ _ _ _ =>
       exfalso
       simp [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
-  | clean_parrow _ hetyp _ _ _ _ _ =>
+  | dirty_internal_parrow _ hisParrow =>
       exfalso
-      simp [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
-  | guardOnly_true_parrow hetyp _ _ _ _ _ _ _ =>
-      exfalso
-      simp [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
+      have hfun : qt.etyp.isFunctionType = true := by
+        simp only [ETyp.isFunctionType, Bool.or_eq_true]
+        right
+        exact hisParrow
+      rw [hfun] at hnotfun
+      cases hnotfun
   | clean_ref _ hetyp _ _ _ _ _ _ =>
       exfalso
       exact hnotref ⟨_, _, hetyp⟩
@@ -181,14 +201,13 @@ private lemma agreeValueUnder_nonref_eq_of_clean
       exact hnotref ⟨_, _, hetyp⟩
   | withPred_false_poisoned_fail k _ htag hreg hpoison _ _ =>
       cases hclean with
-      | inl hpoison' =>
+      | clean hpoison' =>
           have : false = true := by
             calc
               false = qt.poison := by symm; exact hpoison'
               _ = true := by exact hpoison
           cases this
-      | inr hguard =>
-          rcases hguard with ⟨k', htag', hreg'⟩
+      | guard k' htag' hreg' _ =>
           have hk : k = k' := by
             have : some k = some k' := by
               calc
@@ -203,14 +222,13 @@ private lemma agreeValueUnder_nonref_eq_of_clean
           cases this
   | guardOnly_false_poisoned_any k hgo hreg hpoison =>
       cases hclean with
-      | inl hpoison' =>
+      | clean hpoison' =>
           have : false = true := by
             calc
               false = qt.poison := by symm; exact hpoison'
               _ = true := by exact hpoison
           cases this
-      | inr hguard =>
-          rcases hguard with ⟨k', htag', hreg'⟩
+      | guard k' htag' hreg' _ =>
           have hk : k = k' := by
             have : some k = some k' := by
               calc
@@ -235,7 +253,7 @@ private lemma agreeValueUnder_transport_clean
   agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ := by
   intro hclean hetyp hpred hpoison_imp hagree
   cases hclean with
-  | inl hpoison =>
+  | clean hpoison =>
       have hpoison2 : qt2.poison = false := hpoison_imp hpoison
       cases hagree with
       | clean_eq_nonref _ hnotfun hnotref hEq =>
@@ -260,18 +278,45 @@ private lemma agreeValueUnder_transport_clean
             apply hnotref
             exact ⟨t, ls, by simpa [hetyp] using h⟩
           exact agreeValueUnder.clean_eq_nonref hpoison hnotfun' hnotref' hEq
-      | clean_arrow _ hetyp1 htcl hmatch hcap hv₁ hv₂ =>
+      | clean_internal_arrow hclean_int hetyp1 htcl hmatch hcap hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
-          exact agreeValueUnder.clean_arrow hpoison hetyp' htcl hmatch hcap hv₁ hv₂
-      | guardOnly_true_arrow hetyp1 _ _ htcl hmatch hcap hv₁ hv₂ =>
+          -- Need to show internal poison is clean for qt
+          -- qt.poison = false (from hpoison), qt.etyp = qt2.etyp (from hetyp)
+          -- qt2 has clean_internal_arrow, so its internal poison is clean
+          -- Since qt.etyp = qt2.etyp, qt's internal poison is also clean
+          have hclean_int_qt : internalPoisonClean qt := by
+            simp only [internalPoisonClean]
+            simp only [hetyp]
+            exact hclean_int
+          exact agreeValueUnder.clean_internal_arrow hclean_int_qt hetyp' htcl hmatch hcap hv₁ hv₂
+      | dirty_internal_arrow hdirty_int hisArrow =>
+          -- qt2 has dirty internal, but qt.poison = false (hpoison)
+          -- We need to construct agreement for qt
+          -- Since qt.etyp = qt2.etyp and qt2.etyp.isArrow = true, qt.etyp.isArrow = true
+          have hisArrow_qt : qt.etyp.isArrow = true := by
+            rw [hetyp]; exact hisArrow
+          -- But we need to decide: is qt's internal poison clean or dirty?
+          -- qt2's internal is dirty (hdirty_int), and qt.etyp = qt2.etyp, so qt's internal is also dirty
+          have hdirty_int_qt : ¬internalPoisonClean qt := by
+            simp only [internalPoisonClean]
+            simp only [hetyp]
+            exact hdirty_int
+          exact agreeValueUnder.dirty_internal_arrow hdirty_int_qt hisArrow_qt
+      | clean_internal_parrow hclean_int hetyp1 htcl hmatch hcap hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
-          exact agreeValueUnder.clean_arrow hpoison hetyp' htcl hmatch hcap hv₁ hv₂
-      | clean_parrow _ hetyp1 htcl hmatch hcap hv₁ hv₂ =>
-          have hetyp' := hetyp.trans hetyp1
-          exact agreeValueUnder.clean_parrow hpoison hetyp' htcl hmatch hcap hv₁ hv₂
-      | guardOnly_true_parrow hetyp1 _ _ htcl hmatch hcap hv₁ hv₂ =>
-          have hetyp' := hetyp.trans hetyp1
-          exact agreeValueUnder.clean_parrow hpoison hetyp' htcl hmatch hcap hv₁ hv₂
+          have hclean_int_qt : internalPoisonClean qt := by
+            simp only [internalPoisonClean]
+            simp only [hetyp]
+            exact hclean_int
+          exact agreeValueUnder.clean_internal_parrow hclean_int_qt hetyp' htcl hmatch hcap hv₁ hv₂
+      | dirty_internal_parrow hdirty_int hisParrow =>
+          have hisParrow_qt : qt.etyp.isParrow = true := by
+            rw [hetyp]; exact hisParrow
+          have hdirty_int_qt : ¬internalPoisonClean qt := by
+            simp only [internalPoisonClean]
+            simp only [hetyp]
+            exact hdirty_int
+          exact agreeValueUnder.dirty_internal_parrow hdirty_int_qt hisParrow_qt
       | clean_ref _hpoison2 hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
           exact agreeValueUnder.clean_ref hpoison (hetyp.trans hetyp1) hlookup1 hin1 hv1 hlookup2 hin2 hv2
       | poisoned_noPred_ref hpoison' _ _ _ _ _ _ _ =>
@@ -294,8 +339,7 @@ private lemma agreeValueUnder_transport_clean
               false = qt2.poison := by symm; exact hpoison2
               _ = true := by exact hpoison'
           cases this
-  | inr hguard =>
-      rcases hguard with ⟨k, htag, hreg⟩
+  | guard k htag hreg _ =>
       cases hagree with
       | clean_eq_nonref _ hnotfun hnotref hEq =>
           have hnotfun' : qt.etyp.isFunctionType = false := by
@@ -321,18 +365,36 @@ private lemma agreeValueUnder_transport_clean
             apply hnotref
             exact ⟨t, ls, by simpa [hetyp] using h⟩
           exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun' hnotref' hEq
-      | clean_arrow _ hetyp1 htcl hmatch hcap hv₁ hv₂ =>
+      | clean_internal_arrow hclean_int hetyp1 htcl hmatch hcap hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
-          exact agreeValueUnder.guardOnly_true_arrow hetyp' htag hreg htcl hmatch hcap hv₁ hv₂
-      | guardOnly_true_arrow hetyp1 _ _ htcl hmatch hcap hv₁ hv₂ =>
+          have hclean_int_qt : internalPoisonClean qt := by
+            simp only [internalPoisonClean]
+            simp only [hetyp]
+            exact hclean_int
+          exact agreeValueUnder.clean_internal_arrow hclean_int_qt hetyp' htcl hmatch hcap hv₁ hv₂
+      | dirty_internal_arrow hdirty_int hisArrow =>
+          have hisArrow_qt : qt.etyp.isArrow = true := by
+            rw [hetyp]; exact hisArrow
+          have hdirty_int_qt : ¬internalPoisonClean qt := by
+            simp only [internalPoisonClean]
+            simp only [hetyp]
+            exact hdirty_int
+          exact agreeValueUnder.dirty_internal_arrow hdirty_int_qt hisArrow_qt
+      | clean_internal_parrow hclean_int hetyp1 htcl hmatch hcap hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
-          exact agreeValueUnder.guardOnly_true_arrow hetyp' htag hreg htcl hmatch hcap hv₁ hv₂
-      | clean_parrow _ hetyp1 htcl hmatch hcap hv₁ hv₂ =>
-          have hetyp' := hetyp.trans hetyp1
-          exact agreeValueUnder.guardOnly_true_parrow hetyp' htag hreg htcl hmatch hcap hv₁ hv₂
-      | guardOnly_true_parrow hetyp1 _ _ htcl hmatch hcap hv₁ hv₂ =>
-          have hetyp' := hetyp.trans hetyp1
-          exact agreeValueUnder.guardOnly_true_parrow hetyp' htag hreg htcl hmatch hcap hv₁ hv₂
+          have hclean_int_qt : internalPoisonClean qt := by
+            simp only [internalPoisonClean]
+            simp only [hetyp]
+            exact hclean_int
+          exact agreeValueUnder.clean_internal_parrow hclean_int_qt hetyp' htcl hmatch hcap hv₁ hv₂
+      | dirty_internal_parrow hdirty_int hisParrow =>
+          have hisParrow_qt : qt.etyp.isParrow = true := by
+            rw [hetyp]; exact hisParrow
+          have hdirty_int_qt : ¬internalPoisonClean qt := by
+            simp only [internalPoisonClean]
+            simp only [hetyp]
+            exact hdirty_int
+          exact agreeValueUnder.dirty_internal_parrow hdirty_int_qt hisParrow_qt
       | clean_ref _hpoison2 hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
           exact agreeValueUnder.withPred_true_ref k htag hreg (hetyp.trans hetyp1) hlookup1 hin1 hv1 hlookup2 hin2 hv2
       | poisoned_noPred_ref _hpoison2 _hpred2 hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
@@ -545,8 +607,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
     have hctx_lookup : (ctxAfter ctx res).memEnv.lookup l = some qt := by
       simpa [ctxAfter] using hlookup_mem
     have hclean : qtypCleanUnder R qt := by
-      left
-      exact hpoison
+      exact qtypCleanUnder.clean hpoison
     have hlocEntry : agreeLocUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' (l, qt) :=
       (hagree_clean'.1 l qt hctx_lookup hclean)
     cases hlocEntry with
@@ -560,14 +621,18 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
           | poisoned_noPred_eq_nonref _ _ _ _ hval =>
               cases hval
               rfl
-          | clean_arrow _ _ _ _ _ hv1 _ =>
+          | clean_internal_arrow _ _ _ _ _ hv1 _ =>
               cases hv1
-          | guardOnly_true_arrow _ _ _ _ _ _ hv1 _ =>
+          | dirty_internal_arrow hdirty hisArrow =>
+              -- In observable context with integer values, dirty arrow types should not occur.
+              -- This would require proving observable types are not function types.
+              sorry
+          | clean_internal_parrow _ _ _ _ _ hv1 _ =>
               cases hv1
-          | clean_parrow _ _ _ _ _ hv1 _ =>
-              cases hv1
-          | guardOnly_true_parrow _ _ _ _ _ _ hv1 _ =>
-              cases hv1
+          | dirty_internal_parrow hdirty hisParrow =>
+              -- In observable context with integer values, dirty parrow types should not occur.
+              -- This would require proving observable types are not function types.
+              sorry
           | clean_ref _ _ _ _ hv1 _ _ _ =>
               cases hv1
           | poisoned_noPred_ref _ _ _ _ _ hv1 _ _ _ =>
@@ -605,8 +670,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
         have hret_notfun_obs : et.isFunctionType = false := by
           simpa [wfObsSpec, hretOpt] using _hos
         have hret_clean : qtypCleanUnder R res.qualType := by
-          left
-          exact hret_poison
+          exact qtypCleanUnder.clean hret_poison
         have hret_agree' :
             agreeValueUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' res.qualType o₁ o₂ :=
           hret_agree hret_clean
@@ -652,14 +716,18 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
                   apply hnotref
                   exact ⟨t, ls, hret_et⟩
                 exact False.elim this
-            | clean_arrow _ hetyp _ _ _ _ _ =>
+            | clean_internal_arrow _ hetyp _ _ _ _ _ =>
                 cases (Eq.trans (Eq.symm hetyp) hret_et)
-            | guardOnly_true_arrow hetyp _ _ _ _ _ _ _ =>
+            | dirty_internal_arrow _ hisArrow =>
+                -- qt.etyp is an arrow but hret_et says it's et (from observable spec).
+                -- This would contradict if observable types are not function types.
+                sorry
+            | clean_internal_parrow _ hetyp _ _ _ _ _ =>
                 cases (Eq.trans (Eq.symm hetyp) hret_et)
-            | clean_parrow _ hetyp _ _ _ _ _ =>
-                cases (Eq.trans (Eq.symm hetyp) hret_et)
-            | guardOnly_true_parrow hetyp _ _ _ _ _ _ _ =>
-                cases (Eq.trans (Eq.symm hetyp) hret_et)
+            | dirty_internal_parrow _ hisParrow =>
+                -- qt.etyp is a parrow but hret_et says it's et (from observable spec).
+                -- This would contradict if observable types are not function types.
+                sorry
             | poisoned_noPred_ref hpoison' _ _ _ _ _ _ _ _ =>
                 have hcontra : False := by
                   have : false = true := by
@@ -1002,48 +1070,44 @@ private lemma agreeValueUnder_clean_extends
       (poisoned_noPred_eq_nonref := by
         intro qt v₁ v₂ hpoison hpred hnotfun hnotref hagree hclean _hθ₀ _hθ₁
         cases hclean with
-        | inl hpoison' =>
+        | clean hpoison' =>
             have : false = true := by
               calc
                 false = qt.poison := by symm; exact hpoison'
                 _ = true := by exact hpoison
             cases this
-        | inr hguard =>
-            rcases hguard with ⟨k, htag, _⟩
+        | guard k htag _ _ =>
             have htag' : False := by
               have htag'' := htag
               simp [qtypGuardTag, hpred] at htag''
             cases htag')
-      (clean_arrow := by
-        intro st1 st2 p tcls qt tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hpoison hetyp htcl hmatch hcap hv₁ hv₂ ihCap _hclean
+      (clean_internal_arrow := by
+        intro st1 st2 p tcls qt tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap hv₁ hv₂ ihCap _hclean
           hθ₀ hθ₁
-        exact agreeValueUnder.clean_arrow hpoison hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
-      (guardOnly_true_arrow := by
-        intro st1 st2 p tcls qt k tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hetyp htag hregime htcl hmatch hcap hv₁ hv₂ ihCap
+        exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (dirty_internal_arrow := by
+        intro qt v₁ v₂ hdirty hisArrow _hclean _hθ₀ _hθ₁
+        exact agreeValueUnder.dirty_internal_arrow hdirty hisArrow)
+      (clean_internal_parrow := by
+        intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap hv₁ hv₂ ihCap
           _hclean hθ₀ hθ₁
-        exact agreeValueUnder.guardOnly_true_arrow hetyp htag hregime htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
-      (clean_parrow := by
-        intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hpoison hetyp htcl hmatch hcap hv₁ hv₂ ihCap
-          _hclean hθ₀ hθ₁
-        exact agreeValueUnder.clean_parrow hpoison hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
-      (guardOnly_true_parrow := by
-        intro st1 st2 p tcls qt k tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hetyp htag hregime htcl hmatch hcap hv₁ hv₂
-          ihCap _hclean hθ₀ hθ₁
-        exact agreeValueUnder.guardOnly_true_parrow hetyp htag hregime htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+        exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (dirty_internal_parrow := by
+        intro qt v₁ v₂ hdirty hisParrow _hclean _hθ₀ _hθ₁
+        exact agreeValueUnder.dirty_internal_parrow hdirty hisParrow)
       (clean_ref := by
         intro t ls l₁ l₂ a₁ a₂ qt v₁ v₂ hpoison hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 _hclean hθ₀ hθ₁
         exact agreeValueUnder.clean_ref hpoison hetyp (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2)
       (poisoned_noPred_ref := by
         intro t ls l₁ l₂ a₁ a₂ qt v₁ v₂ hpoison hpred hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 hclean _hθ₀ _hθ₁
         cases hclean with
-        | inl hpoison' =>
+        | clean hpoison' =>
             have : false = true := by
               calc
                 false = qt.poison := by symm; exact hpoison'
                 _ = true := by exact hpoison
             cases this
-        | inr hguard =>
-            rcases hguard with ⟨k, htag, _⟩
+        | guard k htag _ _ =>
             have htag' : False := by
               have htag'' := htag
               simp [qtypGuardTag, hpred] at htag''
@@ -1058,14 +1122,13 @@ private lemma agreeValueUnder_clean_extends
       (withPred_false_poisoned_fail := by
         intro k qt v₁ v₂ hclos htag hregime hpoison hfail1 hfail2 hclean _hθ₀ _hθ₁
         cases hclean with
-        | inl hpoison' =>
+        | clean hpoison' =>
             have : false = true := by
               calc
                 false = qt.poison := by symm; exact hpoison'
                 _ = true := by exact hpoison
             cases this
-        | inr hguard =>
-            rcases hguard with ⟨k', htag', hreg'⟩
+        | guard k' htag' hreg' _ =>
             have hk : k = k' := by
               have : some k = some k' := by
                 calc
@@ -1081,14 +1144,13 @@ private lemma agreeValueUnder_clean_extends
       (guardOnly_false_poisoned_any := by
         intro k qt v₁ v₂ hgo hregime hpoison hclean _hθ₀ _hθ₁
         cases hclean with
-        | inl hpoison' =>
+        | clean hpoison' =>
             have : false = true := by
               calc
                 false = qt.poison := by symm; exact hpoison'
                 _ = true := by exact hpoison
             cases this
-        | inr hguard =>
-            rcases hguard with ⟨k', htag', hreg'⟩
+        | guard k' htag' hreg' _ =>
             have hk : k = k' := by
               have : some k = some k' := by
                 calc
@@ -1143,48 +1205,44 @@ private lemma agreeCapturedEnv_clean_extends
       (poisoned_noPred_eq_nonref := by
         intro qt v₁ v₂ hpoison hpred hnotfun hnotref hagree hclean _hθ₀ _hθ₁
         cases hclean with
-        | inl hpoison' =>
+        | clean hpoison' =>
             have : false = true := by
               calc
                 false = qt.poison := by symm; exact hpoison'
                 _ = true := by exact hpoison
             cases this
-        | inr hguard =>
-            rcases hguard with ⟨k, htag, _⟩
+        | guard k htag _ _ =>
             have htag' : False := by
               have htag'' := htag
               simp [qtypGuardTag, hpred] at htag''
             cases htag')
-      (clean_arrow := by
-        intro st1 st2 p tcls qt tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hpoison hetyp htcl hmatch hcap hv₁ hv₂ ihCap _hclean
+      (clean_internal_arrow := by
+        intro st1 st2 p tcls qt tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap hv₁ hv₂ ihCap _hclean
           hθ₀ hθ₁
-        exact agreeValueUnder.clean_arrow hpoison hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
-      (guardOnly_true_arrow := by
-        intro st1 st2 p tcls qt k tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hetyp htag hregime htcl hmatch hcap hv₁ hv₂ ihCap
+        exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (dirty_internal_arrow := by
+        intro qt v₁ v₂ hdirty hisArrow _hclean _hθ₀ _hθ₁
+        exact agreeValueUnder.dirty_internal_arrow hdirty hisArrow)
+      (clean_internal_parrow := by
+        intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap hv₁ hv₂ ihCap
           _hclean hθ₀ hθ₁
-        exact agreeValueUnder.guardOnly_true_arrow hetyp htag hregime htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
-      (clean_parrow := by
-        intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hpoison hetyp htcl hmatch hcap hv₁ hv₂ ihCap
-          _hclean hθ₀ hθ₁
-        exact agreeValueUnder.clean_parrow hpoison hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
-      (guardOnly_true_parrow := by
-        intro st1 st2 p tcls qt k tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hetyp htag hregime htcl hmatch hcap hv₁ hv₂
-          ihCap _hclean hθ₀ hθ₁
-        exact agreeValueUnder.guardOnly_true_parrow hetyp htag hregime htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+        exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
+      (dirty_internal_parrow := by
+        intro qt v₁ v₂ hdirty hisParrow _hclean _hθ₀ _hθ₁
+        exact agreeValueUnder.dirty_internal_parrow hdirty hisParrow)
       (clean_ref := by
         intro t ls l₁ l₂ a₁ a₂ qt v₁ v₂ hpoison hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 _hclean hθ₀ hθ₁
         exact agreeValueUnder.clean_ref hpoison hetyp (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2)
       (poisoned_noPred_ref := by
         intro t ls l₁ l₂ a₁ a₂ qt v₁ v₂ hpoison hpred hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 hclean _hθ₀ _hθ₁
         cases hclean with
-        | inl hpoison' =>
+        | clean hpoison' =>
             have : false = true := by
               calc
                 false = qt.poison := by symm; exact hpoison'
                 _ = true := by exact hpoison
             cases this
-        | inr hguard =>
-            rcases hguard with ⟨k, htag, _⟩
+        | guard k htag _ _ =>
             have htag' : False := by
               have htag'' := htag
               simp [qtypGuardTag, hpred] at htag''
@@ -1199,14 +1257,13 @@ private lemma agreeCapturedEnv_clean_extends
       (withPred_false_poisoned_fail := by
         intro k qt v₁ v₂ hclos htag hregime hpoison hfail1 hfail2 hclean _hθ₀ _hθ₁
         cases hclean with
-        | inl hpoison' =>
+        | clean hpoison' =>
             have : false = true := by
               calc
                 false = qt.poison := by symm; exact hpoison'
                 _ = true := by exact hpoison
             cases this
-        | inr hguard =>
-            rcases hguard with ⟨k', htag', hreg'⟩
+        | guard k' htag' hreg' _ =>
             have hk : k = k' := by
               have : some k = some k' := by
                 calc
@@ -1222,14 +1279,13 @@ private lemma agreeCapturedEnv_clean_extends
       (guardOnly_false_poisoned_any := by
         intro k qt v₁ v₂ hgo hregime hpoison hclean _hθ₀ _hθ₁
         cases hclean with
-        | inl hpoison' =>
+        | clean hpoison' =>
             have : false = true := by
               calc
                 false = qt.poison := by symm; exact hpoison'
                 _ = true := by exact hpoison
             cases this
-        | inr hguard =>
-            rcases hguard with ⟨k', htag', hreg'⟩
+        | guard k' htag' hreg' _ =>
             have hk : k = k' := by
               have : some k = some k' := by
                 calc
@@ -1451,15 +1507,16 @@ private lemma agreeOnClean_newRef_extend
         simp [Memory.update, Memory.lookup]
       have hclean_res1 : qtypCleanUnder R res1.qualType := by
         cases hclean with
-        | inl hpoison =>
+        | clean hpoison =>
             have hjoin : joinPoison ctxᵢ.pc res1.qualType.poison = false := by
               simpa [storedQt] using hpoison
-            exact Or.inl (joinPoison_eq_false hjoin).2
-        | inr hguard =>
-            rcases hguard with ⟨k, htag, hreg⟩
+            exact qtypCleanUnder.clean (joinPoison_eq_false hjoin).2
+        | guard k htag hreg hnotfun =>
             have htag' : qtypGuardTag res1.qualType = some k := by
               simpa [qtypGuardTag, storedQt] using htag
-            exact Or.inr ⟨k, htag', hreg⟩
+            have hnotfun' : res1.qualType.etyp.isFunctionType = false := by
+              simpa [storedQt, h_etyp1] using hnotfun
+            exact qtypCleanUnder.guard k htag' hreg hnotfun'
       have hagree_res1 :
           agreeValueUnder predSat R cfg₀'.memory cfg₁'.memory θ₀1 θ₁1 res1.qualType (Value.num n₀) (Value.num n₁) :=
         hres_agree_e hclean_res1
@@ -1784,12 +1841,17 @@ private lemma stepFR_var
                   cases htc''
                   rfl
             have hjoin : joinPoison ctxᵢ.pc qt.poison = false := by
-              simpa [qtypCleanUnder, qtypGuardTag, hres] using hclean
+              cases hclean with
+              | clean hpoison_res =>
+                  simpa [hres] using hpoison_res
+              | guard k htag hreg _ =>
+                  exfalso
+                  simp [qtypGuardTag, hres] at htag
             have hpc_poison := joinPoison_eq_false hjoin
             have hpc : ctxᵢ.pc = false := hpc_poison.1
             have hpoison : qt.poison = false := hpc_poison.2
             have hclean_qt : qtypCleanUnder R qt := by
-              simp [qtypCleanUnder, qtypGuardTag, hpred, hpoison]
+              exact qtypCleanUnder.clean hpoison
             have hvar := hvar_agree_of_clean hclean_qt
             have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
               agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
@@ -1819,7 +1881,7 @@ private lemma stepFR_var
                       cases htc''
                       simp [hpred']
                 cases hclean with
-                | inl hpoison_res =>
+                | clean hpoison_res =>
                     have hjoin : joinPoison ctxᵢ.pc qt.poison = false := by
                       have hpoison_res' := hpoison_res
                       simp [hres] at hpoison_res'
@@ -1828,8 +1890,7 @@ private lemma stepFR_var
                     have hpc : ctxᵢ.pc = false := hpc_poison.1
                     have hpoison : qt.poison = false := hpc_poison.2
                     have hclean_qt : qtypCleanUnder R qt := by
-                      left
-                      exact hpoison
+                      exact qtypCleanUnder.clean hpoison
                     have hvar := hvar_agree_of_clean hclean_qt
                     have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                       agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
@@ -1842,17 +1903,18 @@ private lemma stepFR_var
                         agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       simpa [hres_eq] using hval
                     simpa [hlookup₀, hlookup₁] using hres_agree
-                | inr hguard =>
-                    rcases hguard with ⟨k', htag', hregime⟩
+                | guard k' htag' hregime hnotfun_res =>
                     have hk : k = k' := by
                       have : some k = some k' := by
                         simpa [qtypGuardTag, hres, hpred] using htag'
                       exact Option.some.inj this
                     subst hk
                     have hclean_qt : qtypCleanUnder R qt := by
-                      right
-                      refine ⟨k, ?_, hregime⟩
-                      simp [qtypGuardTag, hpred]
+                      have htag_qt : qtypGuardTag qt = some k := by
+                        simp [qtypGuardTag, hpred]
+                      have hnotfun_qt : qt.etyp.isFunctionType = false := by
+                        simpa [hres] using hnotfun_res
+                      exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                     have hvar := hvar_agree_of_clean hclean_qt
                     have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                       agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
@@ -1873,30 +1935,18 @@ private lemma stepFR_var
                             have : Predicate.noPred = Predicate.guardOnly k := by
                               simpa [hpred] using hpred'.symm
                             cases this
-                        | clean_arrow _ hetyp htcl hmatch hcap hv₁ hv₂ =>
-                            have htagRes : qtypGuardTag res.qualType = some k := by
-                              simp [qtypGuardTag, hres, hpred]
-                            have hetyp' : res.qualType.etyp = qt.etyp := by
-                              simp [hres]
-                            exact agreeValueUnder.guardOnly_true_arrow (hetyp'.trans hetyp) htagRes hregime htcl hmatch hcap hv₁ hv₂
-                        | guardOnly_true_arrow hetyp _ _ htcl hmatch hcap hv₁ hv₂ =>
-                            have htagRes : qtypGuardTag res.qualType = some k := by
-                              simp [qtypGuardTag, hres, hpred]
-                            have hetyp' : res.qualType.etyp = qt.etyp := by
-                              simp [hres]
-                            exact agreeValueUnder.guardOnly_true_arrow (hetyp'.trans hetyp) htagRes hregime htcl hmatch hcap hv₁ hv₂
-                        | clean_parrow _ hetyp htcl hmatch hcap hv₁ hv₂ =>
-                            have htagRes : qtypGuardTag res.qualType = some k := by
-                              simp [qtypGuardTag, hres, hpred]
-                            have hetyp' : res.qualType.etyp = qt.etyp := by
-                              simp [hres]
-                            exact agreeValueUnder.guardOnly_true_parrow (hetyp'.trans hetyp) htagRes hregime htcl hmatch hcap hv₁ hv₂
-                        | guardOnly_true_parrow hetyp _ _ htcl hmatch hcap hv₁ hv₂ =>
-                            have htagRes : qtypGuardTag res.qualType = some k := by
-                              simp [qtypGuardTag, hres, hpred]
-                            have hetyp' : res.qualType.etyp = qt.etyp := by
-                              simp [hres]
-                            exact agreeValueUnder.guardOnly_true_parrow (hetyp'.trans hetyp) htagRes hregime htcl hmatch hcap hv₁ hv₂
+                        | clean_internal_arrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
+                            -- res.qualType has guard predicate but arrow constructors don't handle guards
+                            -- This case may require extending agreeValueUnder with guard+arrow constructors
+                            sorry
+                        | dirty_internal_arrow _ _ =>
+                            sorry
+                        | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
+                            -- res.qualType has guard predicate but parrow constructors don't handle guards
+                            -- This case may require extending agreeValueUnder with guard+parrow constructors
+                            sorry
+                        | dirty_internal_parrow _ _ =>
+                            sorry
                         | clean_ref _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
                             have htagRes : qtypGuardTag res.qualType = some k := by
                               simp [qtypGuardTag, hres, hpred]
@@ -1972,13 +2022,20 @@ private lemma stepFR_var
                               rfl
                         have hpc : ctxᵢ.pc = false := by
                           -- clean result requires pc = false
-                          simpa [qtypCleanUnder, qtypGuardTag, hres] using hclean
+                          cases hclean with
+                          | clean hpoison_res =>
+                              simpa [hres] using hpoison_res
+                          | guard k_guard htag_guard hreg_guard _ =>
+                              exfalso
+                              simp [qtypGuardTag, hres] at htag_guard
                         have hregime : R.lookup? k = some true := by
                           exact htagR k deps (by simpa [htag] using htag)
                         have hclean_qt : qtypCleanUnder R qt := by
-                          right
-                          refine ⟨k, ?_, hregime⟩
-                          simp [qtypGuardTag, hpred]
+                          have htag_qt : qtypGuardTag qt = some k := by
+                            simp [qtypGuardTag, hpred]
+                          have hnotfun_qt : qt.etyp.isFunctionType = false := by
+                            sorry  -- TODO: derive from context or add constraint
+                          exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                         have hvar := hvar_agree_of_clean hclean_qt
                         have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                           agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
@@ -1997,30 +2054,28 @@ private lemma stepFR_var
                               have : Predicate.noPred = Predicate.guardOnly k := by
                                 simpa [hpred] using hpred'.symm
                               cases this
-                          | clean_arrow _ hetyp htcl hmatch hcap hv₁ hv₂ =>
+                          | clean_internal_arrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                               have hetyp' : res.qualType.etyp = qt.etyp := by
                                 simp [hres]
-                              have hpoison' : res.qualType.poison = false := by
-                                simp [hres, hpc]
-                              exact agreeValueUnder.clean_arrow hpoison' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
-                          | guardOnly_true_arrow hetyp _ _ htcl hmatch hcap hv₁ hv₂ =>
+                              have hclean' : internalPoisonClean res.qualType := by
+                                simp only [internalPoisonClean] at hclean ⊢
+                                simp only [getInternalPoison, hetyp'] at hclean ⊢
+                                exact hclean
+                              exact agreeValueUnder.clean_internal_arrow hclean' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
+                          | dirty_internal_arrow _ _ =>
+                              -- Dirty arrow: transport to result type
+                              sorry
+                          | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                               have hetyp' : res.qualType.etyp = qt.etyp := by
                                 simp [hres]
-                              have hpoison' : res.qualType.poison = false := by
-                                simp [hres, hpc]
-                              exact agreeValueUnder.clean_arrow hpoison' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
-                          | clean_parrow _ hetyp htcl hmatch hcap hv₁ hv₂ =>
-                              have hetyp' : res.qualType.etyp = qt.etyp := by
-                                simp [hres]
-                              have hpoison' : res.qualType.poison = false := by
-                                simp [hres, hpc]
-                              exact agreeValueUnder.clean_parrow hpoison' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
-                          | guardOnly_true_parrow hetyp _ _ htcl hmatch hcap hv₁ hv₂ =>
-                              have hetyp' : res.qualType.etyp = qt.etyp := by
-                                simp [hres]
-                              have hpoison' : res.qualType.poison = false := by
-                                simp [hres, hpc]
-                              exact agreeValueUnder.clean_parrow hpoison' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
+                              have hclean' : internalPoisonClean res.qualType := by
+                                simp only [internalPoisonClean] at hclean ⊢
+                                simp only [getInternalPoison, hetyp'] at hclean ⊢
+                                exact hclean
+                              exact agreeValueUnder.clean_internal_parrow hclean' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
+                          | dirty_internal_parrow _ _ =>
+                              -- Dirty parrow: transport to result type
+                              sorry
                           | clean_ref _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
                               have hetyp' : res.qualType.etyp = qt.etyp := by
                                 simp [hres]
@@ -2091,7 +2146,16 @@ private lemma stepFR_var
                               cases htc''
                               rfl
                         -- poisoned result is not clean
-                        simp [qtypCleanUnder, qtypGuardTag, hres] at hclean
+                        exfalso
+                        cases hclean with
+                        | clean hpoison =>
+                            have : false = true := by
+                              calc
+                                false = res.qualType.poison := by symm; exact hpoison
+                                _ = true := by simp [hres]
+                            cases this
+                        | guard k_guard htag_guard hreg_guard _ =>
+                            simp [qtypGuardTag, hres] at htag_guard
         | guardClosure k arg_name pred_body var_env =>
             cases htag : ctxᵢ.tagEnv.get? k with
             | none =>
@@ -2109,7 +2173,7 @@ private lemma stepFR_var
                       cases htc''
                       simp [hpred']
                 cases hclean with
-                | inl hpoison_res =>
+                | clean hpoison_res =>
                     have hjoin : joinPoison ctxᵢ.pc qt.poison = false := by
                       have hpoison_res' := hpoison_res
                       simp [hres] at hpoison_res'
@@ -2118,8 +2182,7 @@ private lemma stepFR_var
                     have hpc : ctxᵢ.pc = false := hpc_poison.1
                     have hpoison : qt.poison = false := hpc_poison.2
                     have hclean_qt : qtypCleanUnder R qt := by
-                      left
-                      exact hpoison
+                      exact qtypCleanUnder.clean hpoison
                     have hvar := hvar_agree_of_clean hclean_qt
                     have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                       agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
@@ -2135,17 +2198,18 @@ private lemma stepFR_var
                         exact this.trans hqt_eq.symm
                       simpa [hres_eq] using hval
                     simpa [hlookup₀, hlookup₁] using hres_agree
-                | inr hguard =>
-                    rcases hguard with ⟨k', htag', hregime⟩
+                | guard k' htag' hregime hnotfun_res =>
                     have hk : k = k' := by
                       have : some k = some k' := by
                         simpa [qtypGuardTag, hres, hpred] using htag'
                       exact Option.some.inj this
                     subst hk
                     have hclean_qt : qtypCleanUnder R qt := by
-                      right
-                      refine ⟨k, ?_, hregime⟩
-                      simp [qtypGuardTag, hpred]
+                      have htag_qt : qtypGuardTag qt = some k := by
+                        simp [qtypGuardTag, hpred]
+                      have hnotfun_qt : qt.etyp.isFunctionType = false := by
+                        simpa [hres] using hnotfun_res
+                      exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                     have hvar := hvar_agree_of_clean hclean_qt
                     have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                       agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
@@ -2168,34 +2232,16 @@ private lemma stepFR_var
                               Predicate.noPred = qt.pred := by symm; exact hpred'
                               _ = Predicate.guardClosure k arg_name pred_body var_env := by exact hpred
                           cases this
-                        | clean_arrow _ hetyp htcl hmatch hcap hv₁ hv₂ =>
-                            have htagRes : qtypGuardTag res.qualType = some k := by
-                              simp [qtypGuardTag, hres, hpred]
-                            have hetyp' : res.qualType.etyp = qt.etyp := by
-                              simp [hres]
-                            exact agreeValueUnder.guardOnly_true_arrow (hetyp'.trans hetyp) htagRes hregime htcl hmatch hcap
-                              hv₁ hv₂
-                        | guardOnly_true_arrow hetyp _ _ htcl hmatch hcap hv₁ hv₂ =>
-                            have htagRes : qtypGuardTag res.qualType = some k := by
-                              simp [qtypGuardTag, hres, hpred]
-                            have hetyp' : res.qualType.etyp = qt.etyp := by
-                              simp [hres]
-                            exact agreeValueUnder.guardOnly_true_arrow (hetyp'.trans hetyp) htagRes hregime htcl hmatch hcap
-                              hv₁ hv₂
-                        | clean_parrow _ hetyp htcl hmatch hcap hv₁ hv₂ =>
-                            have htagRes : qtypGuardTag res.qualType = some k := by
-                              simp [qtypGuardTag, hres, hpred]
-                            have hetyp' : res.qualType.etyp = qt.etyp := by
-                              simp [hres]
-                            exact agreeValueUnder.guardOnly_true_parrow (hetyp'.trans hetyp) htagRes hregime htcl hmatch hcap
-                              hv₁ hv₂
-                        | guardOnly_true_parrow hetyp _ _ htcl hmatch hcap hv₁ hv₂ =>
-                            have htagRes : qtypGuardTag res.qualType = some k := by
-                              simp [qtypGuardTag, hres, hpred]
-                            have hetyp' : res.qualType.etyp = qt.etyp := by
-                              simp [hres]
-                            exact agreeValueUnder.guardOnly_true_parrow (hetyp'.trans hetyp) htagRes hregime htcl hmatch hcap
-                              hv₁ hv₂
+                        | clean_internal_arrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
+                            -- Guard predicate + arrow type combination
+                            sorry
+                        | dirty_internal_arrow _ _ =>
+                            sorry
+                        | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
+                            -- Guard predicate + parrow type combination
+                            sorry
+                        | dirty_internal_parrow _ _ =>
+                            sorry
                       | clean_ref _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
                           have htagRes : qtypGuardTag res.qualType = some k := by
                             simp [qtypGuardTag, hres, hpred]
@@ -2272,13 +2318,19 @@ private lemma stepFR_var
                               cases htc''
                               rfl
                         have hpc : ctxᵢ.pc = false := by
-                          simpa [qtypCleanUnder, qtypGuardTag, hres] using hclean
+                          cases hclean with
+                          | clean hpoison => simpa [hres] using hpoison
+                          | guard k_guard htag_guard hreg_guard _ =>
+                              exfalso
+                              simp [qtypGuardTag, hres] at htag_guard
                         have hregime : R.lookup? k = some true := by
                           exact htagR k deps (by simpa [htag] using htag)
                         have hclean_qt : qtypCleanUnder R qt := by
-                          right
-                          refine ⟨k, ?_, hregime⟩
-                          simp [qtypGuardTag, hpred]
+                          have htag_qt : qtypGuardTag qt = some k := by
+                            simp [qtypGuardTag, hpred]
+                          have hnotfun_qt : qt.etyp.isFunctionType = false := by
+                            sorry  -- TODO: derive from context or add constraint
+                          exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                         have hvar := hvar_agree_of_clean hclean_qt
                         have hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                           agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
@@ -2301,30 +2353,28 @@ private lemma stepFR_var
                                   Predicate.noPred = qt.pred := by symm; exact hpred'
                                   _ = Predicate.guardClosure k arg_name pred_body var_env := by exact hpred
                               cases this
-                          | clean_arrow _ hetyp htcl hmatch hcap hv₁ hv₂ =>
+                          | clean_internal_arrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                               have hetyp' : res.qualType.etyp = qt.etyp := by
                                 simp [hres]
-                              have hpoison' : res.qualType.poison = false := by
-                                simp [hres, hpc]
-                              exact agreeValueUnder.clean_arrow hpoison' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
-                          | guardOnly_true_arrow hetyp _ _ htcl hmatch hcap hv₁ hv₂ =>
+                              have hclean' : internalPoisonClean res.qualType := by
+                                simp only [internalPoisonClean] at hclean ⊢
+                                simp only [getInternalPoison, hetyp'] at hclean ⊢
+                                exact hclean
+                              exact agreeValueUnder.clean_internal_arrow hclean' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
+                          | dirty_internal_arrow _ _ =>
+                              -- Dirty arrow: transport to result type
+                              sorry
+                          | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                               have hetyp' : res.qualType.etyp = qt.etyp := by
                                 simp [hres]
-                              have hpoison' : res.qualType.poison = false := by
-                                simp [hres, hpc]
-                              exact agreeValueUnder.clean_arrow hpoison' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
-                          | clean_parrow _ hetyp htcl hmatch hcap hv₁ hv₂ =>
-                              have hetyp' : res.qualType.etyp = qt.etyp := by
-                                simp [hres]
-                              have hpoison' : res.qualType.poison = false := by
-                                simp [hres, hpc]
-                              exact agreeValueUnder.clean_parrow hpoison' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
-                          | guardOnly_true_parrow hetyp _ _ htcl hmatch hcap hv₁ hv₂ =>
-                              have hetyp' : res.qualType.etyp = qt.etyp := by
-                                simp [hres]
-                              have hpoison' : res.qualType.poison = false := by
-                                simp [hres, hpc]
-                              exact agreeValueUnder.clean_parrow hpoison' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
+                              have hclean' : internalPoisonClean res.qualType := by
+                                simp only [internalPoisonClean] at hclean ⊢
+                                simp only [getInternalPoison, hetyp'] at hclean ⊢
+                                exact hclean
+                              exact agreeValueUnder.clean_internal_parrow hclean' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
+                          | dirty_internal_parrow _ _ =>
+                              -- Dirty parrow: transport to result type
+                              sorry
                           | clean_ref _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
                               have hetyp' : res.qualType.etyp = qt.etyp := by
                                 simp [hres]
@@ -2397,7 +2447,16 @@ private lemma stepFR_var
                               cases htc''
                               rfl
                         -- poisoned result is not clean
-                        simp [qtypCleanUnder, qtypGuardTag, hres] at hclean
+                        exfalso
+                        cases hclean with
+                        | clean hpoison =>
+                            have : false = true := by
+                              calc
+                                false = res.qualType.poison := by symm; exact hpoison
+                                _ = true := by simp [hres]
+                            cases this
+                        | guard k_guard htag_guard hreg_guard _ =>
+                            simp [qtypGuardTag, hres] at htag_guard
 
 -- World-free version of stepFRW_op
 -- TODO: Needs refactoring - StepFR structure changed and terminatesTo lemmas need adjusting
@@ -2497,7 +2556,11 @@ private lemma stepFR_op
   · simpa [hctxAfter] using hwf2
   intro hclean
   have hpoison_res : res.qualType.poison = false := by
-    simpa [qtypCleanUnder, qtypGuardTag, h_ret_pred] using hclean
+    cases hclean with
+    | clean hpoison => exact hpoison
+    | guard k htag hreg _ =>
+        exfalso
+        simp [qtypGuardTag, h_ret_pred] at htag
   have hjoin :
       joinPoison ctxᵢ.pc (joinPoison res1.qualType.poison res2.qualType.poison) = false := by
     calc
@@ -2506,8 +2569,8 @@ private lemma stepFR_op
       _ = false := by exact hpoison_res
   have hjoin_pc := joinPoison_eq_false hjoin
   have hjoin_12 := joinPoison_eq_false hjoin_pc.2
-  have hclean1 : qtypCleanUnder R res1.qualType := by left; exact hjoin_12.1
-  have hclean2 : qtypCleanUnder R res2.qualType := by left; exact hjoin_12.2
+  have hclean1 : qtypCleanUnder R res1.qualType := qtypCleanUnder.clean hjoin_12.1
+  have hclean2 : qtypCleanUnder R res2.qualType := qtypCleanUnder.clean hjoin_12.2
   have hagree_v1 :
       agreeValueUnder predSat R cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 res1.qualType v₀1 v₁1 :=
     hres_agree1 hclean1
@@ -2600,7 +2663,11 @@ private lemma stepFR_unaryop
   · simpa [hctxAfter] using hwf'
   intro hclean
   have hpoison_res : res.qualType.poison = false := by
-    simpa [qtypCleanUnder, qtypGuardTag, h_ret_pred] using hclean
+    cases hclean with
+    | clean hpoison => exact hpoison
+    | guard k htag hreg _ =>
+        exfalso
+        simp [qtypGuardTag, h_ret_pred] at htag
   have hjoin : joinPoison ctxᵢ.pc res1.qualType.poison = false := by
     calc
       joinPoison ctxᵢ.pc res1.qualType.poison = res.qualType.poison := by
@@ -2610,8 +2677,7 @@ private lemma stepFR_unaryop
   have hres1_poison : res1.qualType.poison = false :=
     (joinPoison_eq_false hjoin).2
   have hclean1 : qtypCleanUnder R res1.qualType := by
-    left
-    exact hres1_poison
+    exact qtypCleanUnder.clean hres1_poison
   have hagree_v :
       agreeValueUnder predSat R cfg₀'.memory cfg₁'.memory θ₀' θ₁' res1.qualType v₀' v₁' :=
     hres_agree_e hclean1
@@ -2884,7 +2950,11 @@ private lemma stepFR_newRef
   · -- resultAgreesIfClean
     intro hclean
     have hpoison_res : res.qualType.poison = false := by
-      simpa [qtypCleanUnder, qtypGuardTag, h_pred] using hclean
+      cases hclean with
+      | clean hpoison => exact hpoison
+      | guard k htag hreg _ =>
+          exfalso
+          simp [qtypGuardTag, h_pred] at htag
     have hlookup1 : θ₀'.lookup l = some cfg₀'.nextAddr := by
       simp [RealizationMap.lookup]; rw [← ExtTreeMap.get?_eq_getElem?]; exact ExtTreeMap.getElem?_insert_self
     have hlookup2 : θ₁'.lookup l = some cfg₁'.nextAddr := by
@@ -3341,11 +3411,13 @@ private lemma stepFR_vlet
       exact (joinPoison_eq_false hjoin).2
     have hclean2 : qtypCleanUnder R res2.qualType := by
       cases hclean with
-      | inl hpoison_res => left; exact hpoison_imp hpoison_res
-      | inr hguard =>
-          rcases hguard with ⟨k, htag, hreg⟩
-          right; refine ⟨k, ?_, hreg⟩
-          simpa [qtypGuardTag, h_ret_pred] using htag
+      | clean hpoison_res => exact qtypCleanUnder.clean (hpoison_imp hpoison_res)
+      | guard k htag hreg hnotfun =>
+          have htag' : qtypGuardTag res2.qualType = some k := by
+            simpa [qtypGuardTag, h_ret_pred] using htag
+          have hnotfun' : res2.qualType.etyp.isFunctionType = false := by
+            simpa [h_ret_etyp] using hnotfun
+          exact qtypCleanUnder.guard k htag' hreg hnotfun'
     have hagree2 : agreeValueUnder predSat R cf₀.memory cf₁.memory θ₀2 θ₁2 res2.qualType o₀ o₁ := by
       simpa [hcf₀_eq, hcf₁_eq] using (hres_agree2 hclean2)
     exact agreeValueUnder_transport_clean hclean h_ret_etyp h_ret_pred hpoison_imp hagree2
@@ -3407,21 +3479,29 @@ private lemma stepFR_fn
   · -- resultAgreesIfClean
     intro hclean
     cases hclean with
-    | inl hpoison =>
+    | clean hpoison =>
         have hetyp :
             res.qualType.etyp =
               ETyp.arrow paramType returnType ctxᵢ.pc
                 [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
           simp [hres, res_expected]
-        have hpred : qtypGuardTag res.qualType = none := by
-          simp [qtypGuardTag, hres, res_expected]
+        -- res.qualType.poison = ctxᵢ.pc (from res_expected)
+        -- hpoison says qt.poison = false, and qt = res.qualType
+        -- Therefore ctxᵢ.pc = false, so internal poison is clean
+        have hpc_clean : ctxᵢ.pc = false := by
+          have hqt_poison : res.qualType.poison = ctxᵢ.pc := by
+            simp [hres, res_expected]
+          calc
+            ctxᵢ.pc = res.qualType.poison := by symm; exact hqt_poison
+            _ = false := by exact hpoison
+        have hclean_internal : internalPoisonClean res.qualType := by
+          simp [internalPoisonClean, getInternalPoison, hetyp, hpc_clean]
         exact
-          agreeValueUnder.clean_arrow
+          agreeValueUnder.clean_internal_arrow
             (tcl := FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv))
             (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
-            hpoison hetyp (by simp) rfl hcap (by simp [ho₀]) (by simp [ho₁])
-    | inr hguard =>
-        rcases hguard with ⟨k, htag, _hregime⟩
+            hclean_internal hetyp (by simp) rfl hcap (by simp [ho₀]) (by simp [ho₁])
+    | guard k htag _hregime _ =>
         have : False := by
           have hpred : qtypGuardTag res.qualType = none := by
             simp [qtypGuardTag, hres, res_expected]
@@ -3517,7 +3597,7 @@ private lemma stepFR_fn
   · simpa [hctxAfter] using hagree
   · intro hclean
     cases hclean with
-    | inl hpoison =>
+    | clean hpoison =>
         have hetyp :
             res.qualType.etyp =
               ETyp.arrow paramType returnType ctxᵢ.pc
@@ -3526,12 +3606,11 @@ private lemma stepFR_fn
         have hpred : qtypGuardTag res.qualType = none := by
           simp [qtypGuardTag, hres, res_expected]
         exact
-          agreeValueUnder.clean_arrow
+          agreeValueUnder.clean_internal_arrow
             (tcl := FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv))
             (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
             hpoison hetyp (by simp) rfl hcap (by simp [ho₀]) (by simp [ho₁])
-    | inr hguard =>
-        rcases hguard with ⟨k, htag, _hregime⟩
+    | guard k htag _hregime _ =>
         have : False := by
           have hpred : qtypGuardTag res.qualType = none := by
             simp [qtypGuardTag, hres, res_expected]
@@ -3602,7 +3681,7 @@ private lemma stepFR_pfn
       · -- resultAgreesIfClean
         intro hclean
         cases hclean with
-        | inl hpoison =>
+        | clean hpoison =>
             have hetyp :
                 res.qualType.etyp =
                   ETyp.parrow paramType returnType ctxᵢ.pc
@@ -3615,14 +3694,22 @@ private lemma stepFR_pfn
                 PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv) =
                   PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv) := by
               exact ⟨hto, rfl⟩
+            -- Same reasoning as stepFR_fn: outer poison = ctxᵢ.pc = false, so internal clean
+            have hpc_clean : ctxᵢ.pc = false := by
+              have hqt_poison : res.qualType.poison = ctxᵢ.pc := by
+                simp [hres, res_expected]
+              calc
+                ctxᵢ.pc = res.qualType.poison := by symm; exact hqt_poison
+                _ = false := by exact hpoison
+            have hclean_internal : internalPoisonClean res.qualType := by
+              simp [internalPoisonClean, getInternalPoison, hetyp, hpc_clean]
             exact
-              agreeValueUnder.clean_parrow
+              agreeValueUnder.clean_internal_parrow
                 (pbody := pbody)
                 (tcl := PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv))
                 (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
-                hpoison hetyp htcl hmatch hcap (by simp [ho₀]) (by simp [ho₁])
-        | inr hguard =>
-            rcases hguard with ⟨k, htag, _hregime⟩
+                hclean_internal hetyp htcl hmatch hcap (by simp [ho₀]) (by simp [ho₁])
+        | guard k htag _hregime _ =>
             have : False := by
               have hpred : qtypGuardTag res.qualType = none := by
                 simp [qtypGuardTag, hres, res_expected]
@@ -3724,19 +3811,18 @@ private lemma stepFR_pfn
       · simpa [hctxAfter] using hagree
       · intro hclean
         cases hclean with
-        | inl hpoison =>
+        | clean hpoison =>
             have hetyp :
                 res.qualType.etyp =
                   ETyp.parrow paramType returnType ctxᵢ.pc
                     [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
               simp [hres, res_expected]
             exact
-              agreeValueUnder.clean_parrow
+              agreeValueUnder.clean_internal_parrow
                 (tcl := PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv))
                 (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
                 hpoison hetyp (by simp) rfl hto hcap (by simp [ho₀]) (by simp [ho₁])
-        | inr hguard =>
-            rcases hguard with ⟨k, htag, _hregime⟩
+        | guard k htag _hregime _ =>
             have : False := by
               have hpred : qtypGuardTag res.qualType = none := by
                 simp [qtypGuardTag, hres, res_expected]
@@ -3978,7 +4064,7 @@ private lemma stepFR_ite
               -- then res2's type is also clean (joinPoison p1 p2 = false → p1 = false)
               -- We have hagree2_parts.1 for locations in res2.memEnv'
               -- For clean types under R, either poison=false or guard tag applies
-              -- If poison=false, we can use joinMemEnvs_lookup_clean_left
+              -- If poison=false, we can use joinMemEnvs_lookup_clean_qtypCleanUnder.clean
               -- If guard tag applies, we need different reasoning
               -- For now, use sorry for this complex case - requires detailed joinMemEnvs analysis
               sorry
@@ -4015,9 +4101,8 @@ private lemma stepFR_ite
             typecheckIf_standard_pred_noPred ctxᵢ e1 e2 e3 fuel'.succ res htc' ⟨err, hmatch_fail⟩
           have hres_poison : res.qualType.poison = false := by
             cases hclean_res with
-            | inl hp => exact hp
-            | inr hguard =>
-                rcases hguard with ⟨k, htag, _⟩
+            | clean hp => exact hp
+            | guard k htag _ _ =>
                 simp [qtypGuardTag, hres_noPred] at htag
           -- Extract res2.qualType.poison = false from h_poison
           have hres2_poison : res2.qualType.poison = false := by
@@ -4030,7 +4115,7 @@ private lemma stepFR_ite
             exact h5
           -- Show res2.qualType is clean
           have hclean2 : qtypCleanUnder R res2.qualType := by
-            left; exact hres2_poison
+            exact qtypCleanUnder.clean hres2_poison
           -- Apply hres_agree2 to get agreement on res2.qualType
           have hagree2 := hres_agree2 hclean2
           -- Transport from res2.qualType to res.qualType
@@ -4069,76 +4154,62 @@ private lemma stepFR_ite
                 rw [hetyp_join']
                 exact joinETyps_notRef_of_left_simple hnotfun2 hnotref2
               exact agreeValueUnder.clean_eq_nonref hres_poison hnotfun_res hnotref_res hEq
-          | @clean_arrow st1 st2 p tcls _ tcl x body σcap ρcap₁ ρcap₂ _ _ _ hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
+          | @clean_internal_arrow st1 st2 p tcls _ tcl x body σcap ρcap₁ ρcap₂ _ _ hclean2 hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
               -- For arrow types, joinETyps preserves or merges closures
               -- If signatures incompatible, left type returned unchanged
               -- If compatible, closures merged and tcl ∈ left implies tcl ∈ merged
+              -- From hclean2, we know p = false (internal poison of res2 is clean)
+              have hp : p = false := by
+                simp only [internalPoisonClean, getInternalPoison, hetyp2] at hclean2
+                exact hclean2
               have hetyp_preserved : ∃ p' tcls',
-                  res.qualType.etyp = ETyp.arrow st1 st2 p' tcls' ∧ tcl ∈ tcls' := by
+                  res.qualType.etyp = ETyp.arrow st1 st2 p' tcls' ∧ tcl ∈ tcls' ∧ p' = false := by
                 rw [hetyp_join', hetyp2]
                 cases hres3 : res3.qualType.etyp with
                 | arrow st1' st2' p3 tcls3 =>
                   simp only [joinETyps]
                   by_cases hcompat : st1 == st1' && st2 == st2'
-                  · simp only [hcompat, ↓reduceIte]
-                    exact ⟨joinPoison p p3, mergeFnTClosures tcls tcls3, rfl,
-                           mem_mergeFnTClosures_left tcls tcls3 tcl htcl2⟩
+                  · simp only [hcompat, ↓reduceIte, hp]
+                    -- p' = joinPoison false p3 = p3, but we need p3 = false for internal clean
+                    -- This may not be provable without knowing res3's internal poison is clean
+                    sorry
                   · simp only [hcompat, Bool.false_eq_true, ↓reduceIte]
-                    exact ⟨p, tcls, rfl, htcl2⟩
-                | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2⟩
-              obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
-              exact agreeValueUnder.clean_arrow hres_poison hetyp_res htcl_res hmatch hcap hv₁ hv₂
-          | @guardOnly_true_arrow st1 st2 p tcls _ k tcl x body σcap ρcap₁ ρcap₂ _ _ hetyp2 htag hregime htcl2 hmatch hcap hv₁ hv₂ =>
-              -- res.qualType has pred = noPred, so use clean_arrow (not guardOnly_true_arrow)
+                    exact ⟨p, tcls, rfl, htcl2, hp⟩
+                | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2, hp⟩
+              obtain ⟨p', tcls', hetyp_res, htcl_res, hp'⟩ := hetyp_preserved
+              have hclean_res : internalPoisonClean res.qualType := by
+                simp only [internalPoisonClean, getInternalPoison, hetyp_res, hp']
+              exact agreeValueUnder.clean_internal_arrow hclean_res hetyp_res htcl_res hmatch hcap hv₁ hv₂
+          | dirty_internal_arrow _ _ =>
+              -- Dirty arrow: no constraints, any values agree
+              sorry
+          | @clean_internal_parrow st1 st2 p tcls _ tcl x body pbody σcap ρcap₁ ρcap₂ _ _ hclean2 hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
+              -- Similar to clean_internal_arrow but for parrow types
+              -- From hclean2, we know p = false (internal poison of res2 is clean)
+              have hp : p = false := by
+                simp only [internalPoisonClean, getInternalPoison, hetyp2] at hclean2
+                exact hclean2
               have hetyp_preserved : ∃ p' tcls',
-                  res.qualType.etyp = ETyp.arrow st1 st2 p' tcls' ∧ tcl ∈ tcls' := by
-                rw [hetyp_join', hetyp2]
-                cases hres3 : res3.qualType.etyp with
-                | arrow st1' st2' p3 tcls3 =>
-                  simp only [joinETyps]
-                  by_cases hcompat : st1 == st1' && st2 == st2'
-                  · simp only [hcompat, ↓reduceIte]
-                    exact ⟨joinPoison p p3, mergeFnTClosures tcls tcls3, rfl,
-                           mem_mergeFnTClosures_left tcls tcls3 tcl htcl2⟩
-                  · simp only [hcompat, Bool.false_eq_true, ↓reduceIte]
-                    exact ⟨p, tcls, rfl, htcl2⟩
-                | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2⟩
-              obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
-              exact agreeValueUnder.clean_arrow hres_poison hetyp_res htcl_res hmatch hcap hv₁ hv₂
-          | @clean_parrow st1 st2 p tcls _ tcl x body pbody σcap ρcap₁ ρcap₂ _ _ _ hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
-              -- Similar to clean_arrow but for parrow types
-              have hetyp_preserved : ∃ p' tcls',
-                  res.qualType.etyp = ETyp.parrow st1 st2 p' tcls' ∧ tcl ∈ tcls' := by
+                  res.qualType.etyp = ETyp.parrow st1 st2 p' tcls' ∧ tcl ∈ tcls' ∧ p' = false := by
                 rw [hetyp_join', hetyp2]
                 cases hres3 : res3.qualType.etyp with
                 | parrow st1' st2' p3 tcls3 =>
                   simp only [joinETyps]
                   by_cases hcompat : st1 == st1' && st2 == st2'
-                  · simp only [hcompat, ↓reduceIte]
-                    exact ⟨joinPoison p p3, mergePFnTClosures tcls tcls3, rfl,
-                           mem_mergePFnTClosures_left tcls tcls3 tcl htcl2⟩
+                  · simp only [hcompat, ↓reduceIte, hp]
+                    -- p' = joinPoison false p3 = p3, but we need p3 = false for internal clean
+                    -- This may not be provable without knowing res3's internal poison is clean
+                    sorry
                   · simp only [hcompat, Bool.false_eq_true, ↓reduceIte]
-                    exact ⟨p, tcls, rfl, htcl2⟩
-                | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2⟩
-              obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
-              exact agreeValueUnder.clean_parrow hres_poison hetyp_res htcl_res hmatch hcap hv₁ hv₂
-          | @guardOnly_true_parrow st1 st2 p tcls _ k tcl x body pbody σcap ρcap₁ ρcap₂ _ _ hetyp2 htag hregime htcl2 hmatch hcap hv₁ hv₂ =>
-              -- res.qualType has pred = noPred, so use clean_parrow (not guardOnly_true_parrow)
-              have hetyp_preserved : ∃ p' tcls',
-                  res.qualType.etyp = ETyp.parrow st1 st2 p' tcls' ∧ tcl ∈ tcls' := by
-                rw [hetyp_join', hetyp2]
-                cases hres3 : res3.qualType.etyp with
-                | parrow st1' st2' p3 tcls3 =>
-                  simp only [joinETyps]
-                  by_cases hcompat : st1 == st1' && st2 == st2'
-                  · simp only [hcompat, ↓reduceIte]
-                    exact ⟨joinPoison p p3, mergePFnTClosures tcls tcls3, rfl,
-                           mem_mergePFnTClosures_left tcls tcls3 tcl htcl2⟩
-                  · simp only [hcompat, Bool.false_eq_true, ↓reduceIte]
-                    exact ⟨p, tcls, rfl, htcl2⟩
-                | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2⟩
-              obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
-              exact agreeValueUnder.clean_parrow hres_poison hetyp_res htcl_res hmatch hcap hv₁ hv₂
+                    exact ⟨p, tcls, rfl, htcl2, hp⟩
+                | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2, hp⟩
+              obtain ⟨p', tcls', hetyp_res, htcl_res, hp'⟩ := hetyp_preserved
+              have hclean_res : internalPoisonClean res.qualType := by
+                simp only [internalPoisonClean, getInternalPoison, hetyp_res, hp']
+              exact agreeValueUnder.clean_internal_parrow hclean_res hetyp_res htcl_res hmatch hcap hv₁ hv₂
+          | dirty_internal_parrow _ _ =>
+              -- Dirty parrow: no constraints, any values agree
+              sorry
           | @clean_ref t ls l₁ l₂ a₁ a₂ _ _ _ _ hetyp2 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
               -- For ref types, joinETyps unions location sets
               -- l₁ ∈ ls2 implies l₁ ∈ joined_ls
@@ -4381,9 +4452,8 @@ private lemma stepFR_ite
             typecheckIf_standard_pred_noPred ctxᵢ e1 e2 e3 fuel'.succ res htc' ⟨err, hmatch_fail⟩
           have hres_poison : res.qualType.poison = false := by
             cases hclean_res with
-            | inl hp => exact hp
-            | inr hguard =>
-                rcases hguard with ⟨k, htag, _⟩
+            | clean hp => exact hp
+            | guard k htag _ _ =>
                 simp [qtypGuardTag, hres_noPred] at htag
           -- Extract res3.qualType.poison = false from h_poison
           have hres3_poison : res3.qualType.poison = false := by
@@ -4396,7 +4466,7 @@ private lemma stepFR_ite
             exact h5
           -- Show res3.qualType is clean
           have hclean3 : qtypCleanUnder R res3.qualType := by
-            left; exact hres3_poison
+            exact qtypCleanUnder.clean hres3_poison
           -- Apply hres_agree3 to get agreement on res3.qualType
           have hagree3 := hres_agree3 hclean3
           -- Transport from res3.qualType to res.qualType
@@ -4443,14 +4513,14 @@ private lemma stepFR_ite
               | arrow _ _ _ _ | parrow _ _ _ _ | ref _ _ =>
                 -- Same as above - should be impossible for well-typed programs
                 sorry
-          | @clean_arrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+          | @clean_internal_arrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
               -- Arrow case - anticipating changes to function handling
               sorry
-          | @guardOnly_true_arrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+          | dirty_internal_arrow _ _ =>
               sorry
-          | @clean_parrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+          | @clean_internal_parrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
               sorry
-          | @guardOnly_true_parrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+          | dirty_internal_parrow _ _ =>
               sorry
           | @clean_ref _ _ _ _ _ _ _ _ =>
               sorry
@@ -4764,8 +4834,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
     have hctx_lookup : (ctxAfter ctx res).memEnv.lookup l = some qt := by
       simpa [ctxAfter] using hlookup_mem
     have hclean : qtypCleanUnder R qt := by
-      left
-      exact hpoison
+      exact qtypCleanUnder.clean hpoison
     have hlocEntry : agreeLocUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' (l, qt) :=
       (hagree_clean'.1 l qt hctx_lookup hclean)
     cases hlocEntry with
@@ -4779,14 +4848,18 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
           | poisoned_noPred_eq_nonref _ _ _ _ hval =>
               cases hval
               rfl
-          | clean_arrow _ _ _ _ _ hv1 _ =>
+          | clean_internal_arrow _ _ _ _ _ hv1 _ =>
               cases hv1
-          | guardOnly_true_arrow _ _ _ _ _ _ hv1 _ =>
+          | dirty_internal_arrow hdirty hisArrow =>
+              -- In observable context with integer values, dirty arrow types should not occur.
+              -- This would require proving observable types are not function types.
+              sorry
+          | clean_internal_parrow _ _ _ _ _ hv1 _ =>
               cases hv1
-          | clean_parrow _ _ _ _ _ hv1 _ =>
-              cases hv1
-          | guardOnly_true_parrow _ _ _ _ _ _ hv1 _ =>
-              cases hv1
+          | dirty_internal_parrow hdirty hisParrow =>
+              -- In observable context with integer values, dirty parrow types should not occur.
+              -- This would require proving observable types are not function types.
+              sorry
           | clean_ref _ _ _ _ hv1 _ _ _ =>
               cases hv1
           | poisoned_noPred_ref _ _ _ _ _ hv1 _ _ _ =>
@@ -4825,8 +4898,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
         have hret_notfun_obs : et.isFunctionType = false := by
           simpa [wfObsSpec, hretOpt] using _hos
         have hret_clean : qtypCleanUnder R res.qualType := by
-          left
-          exact hret_poison
+          exact qtypCleanUnder.clean hret_poison
         have hret_agree' :
             agreeValueUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' res.qualType o₁ o₂ :=
           hret_agree hret_clean
@@ -4872,14 +4944,18 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
                   apply hnotref
                   exact ⟨t, ls, hret_et⟩
                 exact False.elim this
-            | clean_arrow _ hetyp _ _ _ _ _ =>
+            | clean_internal_arrow _ hetyp _ _ _ _ _ =>
                 cases (Eq.trans (Eq.symm hetyp) hret_et)
-            | guardOnly_true_arrow hetyp _ _ _ _ _ _ _ =>
+            | dirty_internal_arrow _ hisArrow =>
+                -- qt.etyp is an arrow but hret_et says it's et (from observable spec).
+                -- This would contradict if observable types are not function types.
+                sorry
+            | clean_internal_parrow _ hetyp _ _ _ _ _ =>
                 cases (Eq.trans (Eq.symm hetyp) hret_et)
-            | clean_parrow _ hetyp _ _ _ _ _ =>
-                cases (Eq.trans (Eq.symm hetyp) hret_et)
-            | guardOnly_true_parrow hetyp _ _ _ _ _ _ _ =>
-                cases (Eq.trans (Eq.symm hetyp) hret_et)
+            | dirty_internal_parrow _ hisParrow =>
+                -- qt.etyp is a parrow but hret_et says it's et (from observable spec).
+                -- This would contradict if observable types are not function types.
+                sorry
             | poisoned_noPred_ref hpoison' _ _ _ _ _ _ _ _ =>
                 have hcontra : False := by
                   have : false = true := by

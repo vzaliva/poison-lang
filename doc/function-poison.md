@@ -54,7 +54,7 @@ because dirty functions produce dirty results regardless.
 ### Definition
 
 ```
-internalPoisonCleanUnder(R, qt) :=
+internalPoisonClean(qt) :=
   match qt.etyp with
   | arrow _ _ p _  => p = false
   | parrow _ _ p _ => p = false
@@ -78,12 +78,12 @@ arrow poison.
    patterns. The expressiveness loss is minimal.
 
 4. **Future extensibility**: If guard-based de-poisoning is later needed, the
-   design can be extended by modifying `internalPoisonCleanUnder` without
+   design can be extended by modifying `internalPoisonClean` without
    restructuring the proof architecture.
 
 ## Lean Implementation
 
-### New Predicate: `internalPoisonCleanUnder`
+### New Predicate: `internalPoisonClean`
 
 ```lean
 def getInternalPoison (et : ETyp) : Option Poison :=
@@ -92,7 +92,7 @@ def getInternalPoison (et : ETyp) : Option Poison :=
   | ETyp.parrow _ _ p _ => some p
   | _ => none
 
-def internalPoisonCleanUnder (R : Regime) (qt : QTyp) : Prop :=
+def internalPoisonClean (qt : QTyp) : Prop :=
   match getInternalPoison qt.etyp with
   | none => True        -- non-function types
   | some p => p = false -- clean iff internal poison is literally false
@@ -105,7 +105,7 @@ Add cases that gate on internal poison:
 ```lean
 -- Clean internal poison: require same body + captured env agreement
 | clean_internal_arrow {qt : QTyp} {tcl : FnTClosure} ...
-    (hclean : internalPoisonCleanUnder R qt)
+    (hclean : internalPoisonClean qt)
     (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
     (htcl : tcl ∈ tcls)
     (hmatch : tcl = FnTClosure.regular x body σcap)
@@ -116,7 +116,7 @@ Add cases that gate on internal poison:
 
 -- Dirty internal poison: no constraints
 | dirty_internal_arrow {qt : QTyp} {v₁ v₂ : Value}
-    (hdirty : ¬ internalPoisonCleanUnder R qt)
+    (hdirty : ¬ internalPoisonClean qt)
     (hisArrow : qt.etyp.isArrow = true) :
     agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
 
