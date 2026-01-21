@@ -2849,6 +2849,139 @@ lemma joinETyps_notRef_of_left_simple {t1 t2 : ETyp} {p1 p2 : Poison} :
   | arrow _ _ _ _ | parrow _ _ _ _ =>
       simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
 
+/-- Helper: adding unique elements preserves membership from accumulator. -/
+private lemma foldl_addUnique_mem_of_acc {α : Type} [BEq α] [LawfulBEq α]
+    (xs : List α) (acc : List α) (x : α) :
+    x ∈ acc → x ∈ xs.foldl (fun acc' y => if acc'.contains y then acc' else acc' ++ [y]) acc := by
+  intro hmem
+  induction xs generalizing acc with
+  | nil => exact hmem
+  | cons hd tl ih =>
+    simp only [List.foldl_cons]
+    by_cases hc : acc.contains hd
+    · simp only [hc, ↓reduceIte]
+      exact ih acc hmem
+    · simp only [hc, Bool.false_eq_true, ↓reduceIte]
+      exact ih (acc ++ [hd]) (List.mem_append_left [hd] hmem)
+
+/-- Helper: adding unique elements from a list preserves membership from input. -/
+private lemma foldl_addUnique_mem_of_input {α : Type} [BEq α] [LawfulBEq α]
+    (xs : List α) (acc : List α) (x : α) :
+    x ∈ xs → x ∈ xs.foldl (fun acc' y => if acc'.contains y then acc' else acc' ++ [y]) acc := by
+  intro hmem
+  induction xs generalizing acc with
+  | nil => simp at hmem
+  | cons hd tl ih =>
+    simp only [List.foldl_cons]
+    cases List.mem_cons.mp hmem with
+    | inl heq =>
+      subst heq
+      by_cases hc : acc.contains x
+      · simp only [hc, ↓reduceIte]
+        exact foldl_addUnique_mem_of_acc tl acc x (List.mem_of_elem_eq_true hc)
+      · simp only [hc, Bool.false_eq_true, ↓reduceIte]
+        have hmem_append : x ∈ acc ++ [x] := List.mem_append_right acc (List.mem_singleton_self x)
+        exact foldl_addUnique_mem_of_acc tl (acc ++ [x]) x hmem_append
+    | inr hmem_tl =>
+      by_cases hc : acc.contains hd
+      · simp only [hc, ↓reduceIte]
+        exact ih acc hmem_tl
+      · simp only [hc, Bool.false_eq_true, ↓reduceIte]
+        exact ih (acc ++ [hd]) hmem_tl
+
+/-- mergeFnTClosures preserves membership from the left list. -/
+lemma mem_mergeFnTClosures_left (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
+    tcl ∈ tcls1 → tcl ∈ mergeFnTClosures tcls1 tcls2 := by
+  intro hmem
+  simp only [mergeFnTClosures]
+  -- First show tcl is in the result of processing tcls1
+  have h1 : tcl ∈ tcls1.foldl (fun acc x => if acc.contains x then acc else acc ++ [x]) [] :=
+    foldl_addUnique_mem_of_input tcls1 [] tcl hmem
+  -- Then show it's preserved when processing tcls2
+  exact foldl_addUnique_mem_of_acc tcls2 _ tcl h1
+
+/-- mergeFnTClosures preserves membership from the right list. -/
+lemma mem_mergeFnTClosures_right (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
+    tcl ∈ tcls2 → tcl ∈ mergeFnTClosures tcls1 tcls2 := by
+  intro hmem
+  simp only [mergeFnTClosures]
+  -- tcl is in tcls2, and the outer foldl processes tcls2
+  exact foldl_addUnique_mem_of_input tcls2 _ tcl hmem
+
+/-- mergePFnTClosures preserves membership from the left list. -/
+lemma mem_mergePFnTClosures_left (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
+    tcl ∈ tcls1 → tcl ∈ mergePFnTClosures tcls1 tcls2 := by
+  intro hmem
+  simp only [mergePFnTClosures]
+  have h1 : tcl ∈ tcls1.foldl (fun acc x => if acc.contains x then acc else acc ++ [x]) [] :=
+    foldl_addUnique_mem_of_input tcls1 [] tcl hmem
+  exact foldl_addUnique_mem_of_acc tcls2 _ tcl h1
+
+/-- mergePFnTClosures preserves membership from the right list. -/
+lemma mem_mergePFnTClosures_right (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
+    tcl ∈ tcls2 → tcl ∈ mergePFnTClosures tcls1 tcls2 := by
+  intro hmem
+  simp only [mergePFnTClosures]
+  exact foldl_addUnique_mem_of_input tcls2 _ tcl hmem
+
+/-- joinETyps for arrow types with compatible signatures produces an arrow type
+    with merged closures. -/
+lemma joinETyps_arrow_structure {st1 st2 : Typ} {p1 : Poison} {tcls1 : List FnTClosure}
+    {t2 : ETyp} {p1' p2' : Poison} :
+    t2.isArrow →
+    beqETypSignature (ETyp.arrow st1 st2 p1 tcls1) t2 →
+    ∃ (p' : Poison) (tcls' : List FnTClosure),
+      joinETyps (ETyp.arrow st1 st2 p1 tcls1) t2 p1' p2' = ETyp.arrow st1 st2 p' tcls' ∧
+      (∀ tcl, tcl ∈ tcls1 → tcl ∈ tcls') := by
+  intro hisArrow hcompat
+  cases t2 with
+  | arrow st1' st2' p2 tcls2 =>
+    simp only [joinETyps]
+    by_cases heq : st1 == st1' && st2 == st2'
+    · simp only [heq, ↓reduceIte]
+      refine ⟨joinPoison p1 p2, mergeFnTClosures tcls1 tcls2, rfl, ?_⟩
+      intro tcl hmem
+      exact mem_mergeFnTClosures_left tcls1 tcls2 tcl hmem
+    · simp only [heq, Bool.false_eq_true, ↓reduceIte]
+      refine ⟨p1, tcls1, rfl, ?_⟩
+      intro _ h; exact h
+  | _ => simp [ETyp.isArrow] at hisArrow
+
+/-- joinETyps for parrow types with compatible signatures produces a parrow type
+    with merged closures. -/
+lemma joinETyps_parrow_structure {st1 st2 : Typ} {p1 : Poison} {tcls1 : List PFnTClosure}
+    {t2 : ETyp} {p1' p2' : Poison} :
+    t2.isParrow →
+    beqETypSignature (ETyp.parrow st1 st2 p1 tcls1) t2 →
+    ∃ (p' : Poison) (tcls' : List PFnTClosure),
+      joinETyps (ETyp.parrow st1 st2 p1 tcls1) t2 p1' p2' = ETyp.parrow st1 st2 p' tcls' ∧
+      (∀ tcl, tcl ∈ tcls1 → tcl ∈ tcls') := by
+  intro hisParrow hcompat
+  cases t2 with
+  | parrow st1' st2' p2 tcls2 =>
+    simp only [joinETyps]
+    by_cases heq : st1 == st1' && st2 == st2'
+    · simp only [heq, ↓reduceIte]
+      refine ⟨joinPoison p1 p2, mergePFnTClosures tcls1 tcls2, rfl, ?_⟩
+      intro tcl hmem
+      exact mem_mergePFnTClosures_left tcls1 tcls2 tcl hmem
+    · simp only [heq, Bool.false_eq_true, ↓reduceIte]
+      refine ⟨p1, tcls1, rfl, ?_⟩
+      intro _ h; exact h
+  | _ => simp [ETyp.isParrow] at hisParrow
+
+/-- joinETyps for ref types with compatible signatures produces a ref type. -/
+lemma joinETyps_ref_structure {inner : ETyp} {ls1 : LocSet} {t2 : ETyp} {p1' p2' : Poison} :
+    (∃ inner2 ls2, t2 = ETyp.ref inner2 ls2) →
+    beqETypSignature (ETyp.ref inner ls1) t2 →
+    ∃ ls', joinETyps (ETyp.ref inner ls1) t2 p1' p2' = ETyp.ref inner ls' := by
+  intro ⟨inner2, ls2, ht2⟩ hcompat
+  subst ht2
+  simp only [joinETyps]
+  by_cases heq : beqETypSignature inner inner2
+  · simp [heq]
+  · simp [heq]
+
 -- ================================================================
 -- joinMemEnvs Properties
 -- ================================================================

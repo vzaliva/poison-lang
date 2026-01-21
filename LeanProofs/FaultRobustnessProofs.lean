@@ -4069,21 +4069,127 @@ private lemma stepFR_ite
                 rw [hetyp_join']
                 exact joinETyps_notRef_of_left_simple hnotfun2 hnotref2
               exact agreeValueUnder.clean_eq_nonref hres_poison hnotfun_res hnotref_res hEq
-          | clean_arrow _ hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
-              -- For arrow types, joinETyps merges closures but tcl2 ∈ merged
-              sorry
-          | guardOnly_true_arrow hetyp2 _ _ htcl2 hmatch hcap hv₁ hv₂ =>
-              sorry
-          | clean_parrow _ hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
-              sorry
-          | guardOnly_true_parrow hetyp2 _ _ htcl2 hmatch hcap hv₁ hv₂ =>
-              sorry
-          | clean_ref _ hetyp2 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-              sorry
+          | @clean_arrow st1 st2 p tcls _ tcl x body σcap ρcap₁ ρcap₂ _ _ _ hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
+              -- For arrow types, joinETyps preserves or merges closures
+              -- If signatures incompatible, left type returned unchanged
+              -- If compatible, closures merged and tcl ∈ left implies tcl ∈ merged
+              have hetyp_preserved : ∃ p' tcls',
+                  res.qualType.etyp = ETyp.arrow st1 st2 p' tcls' ∧ tcl ∈ tcls' := by
+                rw [hetyp_join', hetyp2]
+                cases hres3 : res3.qualType.etyp with
+                | arrow st1' st2' p3 tcls3 =>
+                  simp only [joinETyps]
+                  by_cases hcompat : st1 == st1' && st2 == st2'
+                  · simp only [hcompat, ↓reduceIte]
+                    exact ⟨joinPoison p p3, mergeFnTClosures tcls tcls3, rfl,
+                           mem_mergeFnTClosures_left tcls tcls3 tcl htcl2⟩
+                  · simp only [hcompat, Bool.false_eq_true, ↓reduceIte]
+                    exact ⟨p, tcls, rfl, htcl2⟩
+                | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2⟩
+              obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
+              exact agreeValueUnder.clean_arrow hres_poison hetyp_res htcl_res hmatch hcap hv₁ hv₂
+          | @guardOnly_true_arrow st1 st2 p tcls _ k tcl x body σcap ρcap₁ ρcap₂ _ _ hetyp2 htag hregime htcl2 hmatch hcap hv₁ hv₂ =>
+              -- Similar to clean_arrow but with guard tag
+              have hetyp_preserved : ∃ p' tcls',
+                  res.qualType.etyp = ETyp.arrow st1 st2 p' tcls' ∧ tcl ∈ tcls' := by
+                rw [hetyp_join', hetyp2]
+                cases hres3 : res3.qualType.etyp with
+                | arrow st1' st2' p3 tcls3 =>
+                  simp only [joinETyps]
+                  by_cases hcompat : st1 == st1' && st2 == st2'
+                  · simp only [hcompat, ↓reduceIte]
+                    exact ⟨joinPoison p p3, mergeFnTClosures tcls tcls3, rfl,
+                           mem_mergeFnTClosures_left tcls tcls3 tcl htcl2⟩
+                  · simp only [hcompat, Bool.false_eq_true, ↓reduceIte]
+                    exact ⟨p, tcls, rfl, htcl2⟩
+                | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2⟩
+              obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
+              -- Need to show res.qualType has same guard tag
+              -- joinQTyps preserves pred from res2 (both branches have same pred structure)
+              have htag_preserved : qtypGuardTag res.qualType = some k := by
+                -- The joined qualType has pred from res2 (since res2.poison = false)
+                -- This requires analysis of joinQTyps behavior on predicate
+                sorry  -- TODO: prove qtypGuardTag preservation through joinQTyps
+              exact agreeValueUnder.guardOnly_true_arrow hetyp_res htag_preserved hregime htcl_res hmatch hcap hv₁ hv₂
+          | @clean_parrow st1 st2 p tcls _ tcl x body pbody σcap ρcap₁ ρcap₂ _ _ _ hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
+              -- Similar to clean_arrow but for parrow types
+              have hetyp_preserved : ∃ p' tcls',
+                  res.qualType.etyp = ETyp.parrow st1 st2 p' tcls' ∧ tcl ∈ tcls' := by
+                rw [hetyp_join', hetyp2]
+                cases hres3 : res3.qualType.etyp with
+                | parrow st1' st2' p3 tcls3 =>
+                  simp only [joinETyps]
+                  by_cases hcompat : st1 == st1' && st2 == st2'
+                  · simp only [hcompat, ↓reduceIte]
+                    exact ⟨joinPoison p p3, mergePFnTClosures tcls tcls3, rfl,
+                           mem_mergePFnTClosures_left tcls tcls3 tcl htcl2⟩
+                  · simp only [hcompat, Bool.false_eq_true, ↓reduceIte]
+                    exact ⟨p, tcls, rfl, htcl2⟩
+                | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2⟩
+              obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
+              exact agreeValueUnder.clean_parrow hres_poison hetyp_res htcl_res hmatch hcap hv₁ hv₂
+          | @guardOnly_true_parrow st1 st2 p tcls _ k tcl x body pbody σcap ρcap₁ ρcap₂ _ _ hetyp2 htag hregime htcl2 hmatch hcap hv₁ hv₂ =>
+              -- Similar to guardOnly_true_arrow but for parrow
+              have hetyp_preserved : ∃ p' tcls',
+                  res.qualType.etyp = ETyp.parrow st1 st2 p' tcls' ∧ tcl ∈ tcls' := by
+                rw [hetyp_join', hetyp2]
+                cases hres3 : res3.qualType.etyp with
+                | parrow st1' st2' p3 tcls3 =>
+                  simp only [joinETyps]
+                  by_cases hcompat : st1 == st1' && st2 == st2'
+                  · simp only [hcompat, ↓reduceIte]
+                    exact ⟨joinPoison p p3, mergePFnTClosures tcls tcls3, rfl,
+                           mem_mergePFnTClosures_left tcls tcls3 tcl htcl2⟩
+                  · simp only [hcompat, Bool.false_eq_true, ↓reduceIte]
+                    exact ⟨p, tcls, rfl, htcl2⟩
+                | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2⟩
+              obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
+              have htag_preserved : qtypGuardTag res.qualType = some k := by
+                sorry  -- TODO: prove qtypGuardTag preservation through joinQTyps
+              exact agreeValueUnder.guardOnly_true_parrow hetyp_res htag_preserved hregime htcl_res hmatch hcap hv₁ hv₂
+          | @clean_ref t ls l₁ l₂ a₁ a₂ _ _ _ _ hetyp2 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+              -- For ref types, joinETyps unions location sets
+              -- l₁ ∈ ls2 implies l₁ ∈ joined_ls
+              have hetyp_preserved : ∃ ls',
+                  res.qualType.etyp = ETyp.ref t ls' ∧ l₁ ∈ ls' ∧ l₂ ∈ ls' := by
+                rw [hetyp_join', hetyp2]
+                cases hres3 : res3.qualType.etyp with
+                | ref t3 ls3 =>
+                  simp only [joinETyps]
+                  by_cases hcompat : beqETypSignature t t3
+                  · simp only [hcompat, ↓reduceIte]
+                    exact ⟨LocSet.union ls ls3, rfl,
+                           Std.ExtTreeSet.mem_union_iff.mpr (Or.inl hin1),
+                           Std.ExtTreeSet.mem_union_iff.mpr (Or.inl hin2)⟩
+                  · simp only [hcompat, Bool.false_eq_true, ↓reduceIte]
+                    exact ⟨ls, rfl, hin1, hin2⟩
+                | _ => simp only [joinETyps]; exact ⟨ls, rfl, hin1, hin2⟩
+              obtain ⟨ls', hetyp_res, hin1', hin2'⟩ := hetyp_preserved
+              exact agreeValueUnder.clean_ref hres_poison hetyp_res hlookup1 hin1' hv1 hlookup2 hin2' hv2
           | poisoned_noPred_ref hpoison2 _ _ _ _ _ _ _ =>
               simp [hres2_poison] at hpoison2
-          | withPred_true_ref _ _ _ hetyp2 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-              sorry
+          | @withPred_true_ref k t ls l₁ l₂ a₁ a₂ _ _ _ htag2 hregime hetyp2 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+              -- For ref types with guard predicate, similar to clean_ref
+              have hetyp_preserved : ∃ ls',
+                  res.qualType.etyp = ETyp.ref t ls' ∧ l₁ ∈ ls' ∧ l₂ ∈ ls' := by
+                rw [hetyp_join', hetyp2]
+                cases hres3 : res3.qualType.etyp with
+                | ref t3 ls3 =>
+                  simp only [joinETyps]
+                  by_cases hcompat : beqETypSignature t t3
+                  · simp only [hcompat, ↓reduceIte]
+                    exact ⟨LocSet.union ls ls3, rfl,
+                           Std.ExtTreeSet.mem_union_iff.mpr (Or.inl hin1),
+                           Std.ExtTreeSet.mem_union_iff.mpr (Or.inl hin2)⟩
+                  · simp only [hcompat, Bool.false_eq_true, ↓reduceIte]
+                    exact ⟨ls, rfl, hin1, hin2⟩
+                | _ => simp only [joinETyps]; exact ⟨ls, rfl, hin1, hin2⟩
+              obtain ⟨ls', hetyp_res, hin1', hin2'⟩ := hetyp_preserved
+              -- Need to show res.qualType has same guard tag
+              have htag_preserved : qtypGuardTag res.qualType = some k := by
+                -- The joined qualType has pred from res2 (since res2.poison = false)
+                sorry  -- TODO: prove qtypGuardTag preservation through joinQTyps
+              exact agreeValueUnder.withPred_true_ref k htag_preserved hregime hetyp_res hlookup1 hin1' hv1 hlookup2 hin2' hv2
           | withPred_false_poisoned_fail _ _ _ _ hpoison2 _ _ =>
               simp [hres2_poison] at hpoison2
           | guardOnly_false_poisoned_any _ _ _ hpoison2 =>
