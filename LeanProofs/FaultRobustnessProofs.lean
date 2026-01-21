@@ -4004,7 +4004,90 @@ private lemma stepFR_ite
             exact hagree2_parts.2 (x := x) (qt := qt) hvar_lookup hclean
         -- resultAgreesIfClean predSat R cf₀.memory cf₁.memory θ₀2 θ₁2 res.qualType o₀ o₁
         -- res2 and res have same qualType in many cases, but poison is joined
-        case hres_final => sorry
+        case hres_final =>
+          -- Show that if res.qualType is clean, then res2.qualType is also clean
+          -- From h_poison: res.qualType.poison = joinPoison ctx.pc (joinPoison res1.poison (joinPoison res2.poison res3.poison))
+          unfold resultAgreesIfClean
+          intro hclean_res
+          -- Since res.qualType.pred = Predicate.noPred (from typecheckIf standard mode),
+          -- cleanness must be via poison = false
+          have hres_noPred : res.qualType.pred = Predicate.noPred :=
+            typecheckIf_standard_pred_noPred ctxᵢ e1 e2 e3 fuel'.succ res htc' ⟨err, hmatch_fail⟩
+          have hres_poison : res.qualType.poison = false := by
+            cases hclean_res with
+            | inl hp => exact hp
+            | inr hguard =>
+                rcases hguard with ⟨k, htag, _⟩
+                simp [qtypGuardTag, hres_noPred] at htag
+          -- Extract res2.qualType.poison = false from h_poison
+          have hres2_poison : res2.qualType.poison = false := by
+            have hjoin : joinPoison ctxᵢ.pc
+              (joinPoison res1.qualType.poison (joinPoison res2.qualType.poison res3.qualType.poison)) = false := by
+              rw [← h_poison]; exact hres_poison
+            have ⟨_, h2⟩ := joinPoison_eq_false hjoin
+            have ⟨_, h4⟩ := joinPoison_eq_false h2
+            have ⟨h5, _⟩ := joinPoison_eq_false h4
+            exact h5
+          -- Show res2.qualType is clean
+          have hclean2 : qtypCleanUnder R res2.qualType := by
+            left; exact hres2_poison
+          -- Apply hres_agree2 to get agreement on res2.qualType
+          have hagree2 := hres_agree2 hclean2
+          -- Transport from res2.qualType to res.qualType
+          -- Both have poison = false (hres_poison, hres2_poison)
+          -- res.qualType.etyp = joinETyps res2.etyp res3.etyp p'' p'''
+          -- For non-function, non-ref types: joinETyps t1 t2 _ _ = t1
+          -- Get the etyp relationship using the specific lemma with our res2, res3
+          have hetyp_join' : res.qualType.etyp = joinETyps res2.qualType.etyp res3.qualType.etyp
+                              res2.qualType.poison res3.qualType.poison := by
+            apply typecheckIf_standard_etyp' ctxᵢ e1 e2 e3 fuel'.succ res res1 res2 res3
+              htc' ⟨err, hmatch_fail⟩
+            · simp only [Nat.succ_sub_one]; exact htc1
+            · exact hbool1
+            · simp only [Nat.succ_sub_one] at htc2 ⊢; exact htc2
+            · simp only [Nat.succ_sub_one] at htc3 ⊢; exact htc3
+          -- Case analyze on hagree2 to reconstruct agreement
+          cases hagree2 with
+          | clean_eq_nonref _hpoison2 hnotfun2 hnotref2 hEq =>
+              -- o₀ = o₁, and res.qualType is clean with same etyp category
+              -- joinETyps on non-arrow, non-ref returns t1, so res.etyp preserves non-fun/non-ref
+              have hnotfun_res : res.qualType.etyp.isFunctionType = false := by
+                rw [hetyp_join']
+                exact joinETyps_isFunctionType_false_of_left hnotfun2 hnotref2
+              have hnotref_res : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                rw [hetyp_join']
+                exact joinETyps_notRef_of_left_simple hnotfun2 hnotref2
+              exact agreeValueUnder.clean_eq_nonref hres_poison hnotfun_res hnotref_res hEq
+          | poisoned_noPred_eq_nonref hpoison2 _ _ _ _ =>
+              -- Contradiction: res2.qualType.poison = false but hpoison2 says true
+              simp [hres2_poison] at hpoison2
+          | withPred_true_eq _ _ _ hnotfun2 hnotref2 hEq =>
+              have hnotfun_res : res.qualType.etyp.isFunctionType = false := by
+                rw [hetyp_join']
+                exact joinETyps_isFunctionType_false_of_left hnotfun2 hnotref2
+              have hnotref_res : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                rw [hetyp_join']
+                exact joinETyps_notRef_of_left_simple hnotfun2 hnotref2
+              exact agreeValueUnder.clean_eq_nonref hres_poison hnotfun_res hnotref_res hEq
+          | clean_arrow _ hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
+              -- For arrow types, joinETyps merges closures but tcl2 ∈ merged
+              sorry
+          | guardOnly_true_arrow hetyp2 _ _ htcl2 hmatch hcap hv₁ hv₂ =>
+              sorry
+          | clean_parrow _ hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
+              sorry
+          | guardOnly_true_parrow hetyp2 _ _ htcl2 hmatch hcap hv₁ hv₂ =>
+              sorry
+          | clean_ref _ hetyp2 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+              sorry
+          | poisoned_noPred_ref hpoison2 _ _ _ _ _ _ _ =>
+              simp [hres2_poison] at hpoison2
+          | withPred_true_ref _ _ _ hetyp2 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
+              sorry
+          | withPred_false_poisoned_fail _ _ _ _ hpoison2 _ _ =>
+              simp [hres2_poison] at hpoison2
+          | guardOnly_false_poisoned_any _ _ _ hpoison2 =>
+              simp [hres2_poison] at hpoison2
       | inr hfalse₁ =>
         -- Run 0 takes true branch, Run 1 takes false branch
         -- This can only happen if the condition is NOT clean under R
