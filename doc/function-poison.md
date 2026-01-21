@@ -1,211 +1,155 @@
-# Function poison: intended semantics and design options
+# Function Poison: Design Specification
 
-This note records the current ambiguity around *function poison* in Poison, and
-proposes concrete design directions. The aim is to converge on a stable
-interpretation before further proof engineering (notably, the `app` case of the
-fault-robustness step theorem). In line with the I/O-free proof plan, this note
-focuses only on relational obligations for closures and their captured
-environments.
+This document specifies the semantics of function poison in Poison and the
+corresponding proof obligations for fault-robustness. The design resolves the
+`stepFR_app` proof obstacle by gating closure agreement on the arrow's internal
+poison.
 
-## Background: two “poison carriers” for functions
+## Background: Two Poison Carriers for Functions
 
-In the current formalism (Ott + Lean), function values carry poison information
-in two places:
+Function values carry poison information in two places:
 
 - **Outer poison (qualified type)**: the `p` in `QTyp` / `Q` (`T :> p {P}`).
-  This is the generic poison flag for “the result may be corrupted / not
-  specification-relevant”.
+  Generic poison flag for expression results.
 
-- **Inner poison (arrow type)**: the `p` in arrow/parrow types (`ST1 -> ST2 # p …`).
-  This is a function-specific poison component that propagates through
-  application typing via the body’s `pc` (Ott: `join p join p1 pc`).
+- **Internal poison (arrow type)**: the `p` in arrow/parrow types
+  (`ST1 -> ST2 # p …`). Function-specific poison that records the `pc` at the
+  function's definition site.
 
-### Why the design has two components
+### Semantic Distinction
 
-The working notes (`doc/poison-lang-description.tex`) motivate two orthogonal
-poison flags for closures/variables and, for functions in particular, tie the
-inner arrow poison to *deferred* body typechecking:
+- **Definition-time control taint** (internal `# p`): Records the program-counter
+  poison at the function's definition site. Stored in the type because the body
+  is re-typechecked at application time.
 
-- **Definition-time control taint**: the arrow’s internal poison `# p` records the
-  program-counter poison at the function’s definition site. This information must
-  be stored in the type because the body is not fully analysed “once and for all”
-  at definition time; instead it is re-typechecked at application time against the
-  actual argument’s qualified type and the current logical environment.
+- **Call-site provenance taint** (outer `Q.poison`): Tracks reliability of the
+  function value as an expression result (e.g., selection under poisoned control
+  flow).
 
-- **Call-site provenance taint**: the outer qualified-type poison (`Q.poison`)
-  tracks the reliability of the *function value as an expression result* (for
-  example, selection under poisoned control flow or tainted storage). In the
-  application rule, this outer poison also contributes to the poison context
-  under which the body is re-typechecked (via a join with the ambient `pc`),
-  reflecting that the *choice of function* may itself be control-dependent on
-  faults.
+## Design Decision: Internal Poison Governs Closure Agreement
 
-This separation is conceptually useful, but it is exactly what makes the current
-fault-robustness `app` case sensitive to the intended meaning of “dirty
-functions”.
+**Chosen approach**: Gate closure agreement predicates on the *internal* arrow
+poison, not on outer `Q.poison`.
 
-The design question is: *which of these should govern the semantic and proof
-obligations for closures, in particular agreement of captured environments?*
+### Rationale
 
-## Intuition: what “dirty function” should mean
+The fault-robustness step theorem requires `agreeOnClean` for the body's typing
+context when proving the `app` case. This requires agreement of captured runtime
+environments on clean entries. For "dirty functions" (where internal poison is
+not clean), the proof cannot establish this premise—nor should it need to,
+because dirty functions produce dirty results regardless.
 
-We use “dirty function” to mean: a closure value whose *provenance* makes it
-unreliable as a specification-level value (e.g. selected under poisoned control
-flow). Importantly, this is an epistemic notion:
+### Key Principle
 
-- **Still well-formed**: it remains a syntactically valid closure with a
-  well-formed captured environment (no stuckness implied).
-- **Relational guarantees may weaken**: cross-run agreement about the chosen
-  closure (and its captured environment) may not hold without additional
-  hypotheses.
+- **If internal poison is clean**: Closure agreement requires same body and
+  agreement of captured environments on entries that are clean-under-R.
+- **If internal poison is dirty**: No closure agreement constraints. Different
+  bodies and captured environments are permitted across runs. Application results
+  are not required to agree.
 
-## Practical scenarios that produce dirty functions
+## Design Decision: No De-poisoning for Functions
 
-From the perspective of program semantics, dirtiness arises in typical ways:
+**Chosen approach**: Functions cannot be de-poisoned via guard tags.
 
-- **Poisoned control flow**: selecting between closures under a poisoned
-  condition (e.g. `if` with a corrupted test). The resulting value is a valid
-  closure, but it may differ across runs.
+### Definition
 
-- **Tainted storage**: assigning a closure into a variable under poisoned `pc`,
-  and reading it later. The closure is well-formed but may not match the
-  programmer’s intended one.
+```
+internalPoisonCleanUnder(R, qt) :=
+  match qt.etyp with
+  | arrow _ _ p _  => p = false
+  | parrow _ _ p _ => p = false
+  | _              => True
+```
 
-- **Higher-order propagation**: returning functions from computations influenced
-  by poisoned inputs (including conditionals and calls that join closure
-  alternatives).
+Internal poison is clean-under-R if and only if the internal poison boolean is
+literally `false`. Guard tags on `QTyp.pred` do **not** de-poison the internal
+arrow poison.
 
-These scenarios suggest that “dirty” should *not* invalidate the closure’s
-captured environment, but can invalidate assumptions about agreement across
-runs.
+### Rationale
 
-## The immediate proof pressure (fault-robustness `app`)
+1. **Semantic clarity**: Internal poison reflects definition-time `pc`. Guard
+   tags verify properties of values, not definition contexts. Conflating these
+   is semantically unsound.
 
-The step theorem used by fault-robustness requires (among other things):
+2. **Proof simplicity**: Avoids additional case analysis for guard-based
+   de-poisoning in closure agreement proofs.
 
-- preservation of agreement on clean state (`agreeOnClean …`), and
+3. **Practical impact**: Functions rarely carry guard tags in typical code
+   patterns. The expressiveness loss is minimal.
 
-for application as well.
+4. **Future extensibility**: If guard-based de-poisoning is later needed, the
+   design can be extended by modifying `internalPoisonCleanUnder` without
+   restructuring the proof architecture.
 
-In the current `app` proof attempt, “dirty functions” create an obstacle:
+## Lean Implementation
 
-**`agreeOnClean` for the body context**: to apply the IH to the function body in
-the two-run setting, we need `agreeOnClean …` for the body’s typing context.
-Operationally this amounts to requiring agreement of the two captured runtime
-environments on those captured entries whose qualified types are
-clean-under-\(R\). For dirty functions, the current proof infrastructure does
-not justify this agreement premise.
+### New Predicate: `internalPoisonCleanUnder`
 
-The rest of this note discusses design options to address it.
+```lean
+def getInternalPoison (et : ETyp) : Option Poison :=
+  match et with
+  | ETyp.arrow _ _ p _ => some p
+  | ETyp.parrow _ _ p _ => some p
+  | _ => none
 
-## Design direction (function-special): outer-clean closures, internal poison governs reliability
+def internalPoisonCleanUnder (R : Regime) (qt : QTyp) : Prop :=
+  match getInternalPoison qt.etyp with
+  | none => True        -- non-function types
+  | some p => p = false -- clean iff internal poison is literally false
+```
 
-**Core idea**: treat closure values as always outer-clean (`Q.poison = clean`
-for arrow/parrow), and track their reliability solely via the arrow’s internal
-poison field (`# p`). Informally, the closure is always a well-formed object,
-but the internal poison controls what we may conclude about its behaviour.
+### Modified `agreeValueUnder` for Closures
 
-Concretely, this means:
+Add cases that gate on internal poison:
 
-- **Closure values**: outer-clean does *not* mean “fully relationally reliable”.
-  Instead, the closure agreement predicate is made sensitive to the internal
-  poison of the arrow/parrow type.
-- **Closure applications**: when internal poison is not clean-under-\(R\), we do
-  not require relational agreement of application results.
+```lean
+-- Clean internal poison: require same body + captured env agreement
+| clean_internal_arrow {qt : QTyp} {tcl : FnTClosure} ...
+    (hclean : internalPoisonCleanUnder R qt)
+    (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
+    (htcl : tcl ∈ tcls)
+    (hmatch : tcl = FnTClosure.regular x body σcap)
+    (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
+    (hv₁ : v₁ = Value.closure x body ρcap₁)
+    (hv₂ : v₂ = Value.closure x body ρcap₂) :
+    agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
 
-This requires a principled replacement for “clean-under-\(R\)” for function-typed
-values:
+-- Dirty internal poison: no constraints
+| dirty_internal_arrow {qt : QTyp} {v₁ v₂ : Value}
+    (hdirty : ¬ internalPoisonCleanUnder R qt)
+    (hisArrow : qt.etyp.isArrow = true) :
+    agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
 
-- either redefine cleanliness for function types to depend on the *internal*
-  poison `p` (and guard tags), or
-- modify agreement predicates so that closure agreement (including captured
-  environment agreement) is gated by the internal poison, not by `Q.poison`.
+-- Similarly for parrow...
+```
 
-**Pros**:
-- Matches the intuition that “the closure object exists and is well-formed even
-  when unreliable”.
-- Gives a single place (the internal poison) to control relational obligations
-  for closures.
+### Impact on Existing Proofs
 
-**Cons**:
-- Non-trivial changes to typing rules and to the proof-layer definitions that
-  currently inspect outer poison (`qtypCleanUnder`, `resultAgreesIfClean`).
-- The main pitfall is an *incorrect* interpretation of “outer-clean” as implying
-  unconditional closure agreement. Under poisoned control flow one can obtain
-  different closure bodies across runs; therefore, any obligation that forces
-  “same closure” (same body) must be gated by internal reliability, not by
-  outer-cleanliness alone.
+| Lemma | Change Required |
+|-------|-----------------|
+| `stepFR_fn` | Use `clean_internal_arrow` when `ctx.pc = false`; otherwise `dirty_internal_arrow` |
+| `stepFR_pfn` | Same pattern as `stepFR_fn` |
+| `stepFR_app` | Check internal poison; only establish `agreeCapturedEnv` when clean |
+| `agreeCapturedEnv_of_agreeOnClean` | No change; called conditionally |
+| `agreeValueUnder_transport_clean` | Update to handle new closure cases |
 
-## Consequences for Lean (two concrete implementation sketches)
+### `stepFR_app` Proof Strategy
 
-### Lean sketch 1: redefine cleanliness for function types
+1. Extract internal poison `p` from the function's arrow type
+2. **Case `p = false`** (clean internal):
+   - Establish `agreeCapturedEnv` using `agreeCapturedEnv_of_agreeOnClean`
+   - Apply IH for body with `agreeOnClean` premise
+   - Conclude result agreement via `clean_internal_arrow`
+3. **Case `p = true`** (dirty internal):
+   - Use `dirty_internal_arrow` for function agreement (no constraints)
+   - Result agreement not required (dirty function → dirty result)
+   - No need to establish `agreeCapturedEnv`
 
-Keep `QTyp.poison` always `false` for `arrow/parrow`, but redefine:
+## Summary
 
-- `qtypCleanUnder` (or a function-specific predicate) so that for
-  `qt.etyp = arrow/parrow … p …`, cleanliness is determined by the *internal*
-  poison `p` (and guard tags), not by `qt.poison`.
-
-This keeps the existing “clean gating” pattern but moves the gate.
-
-### Lean sketch 2: keep `qtypCleanUnder`, refine agreement predicates for closures
-
-Leave `qtypCleanUnder` as a generic predicate, but change:
-
-- the closure cases of `agreeValueUnder`, and/or
-- the interface `resultAgreesIfClean`,
-
-so that, for function values:
-
-- **If internal poison is clean-under-\(R\)**: closure agreement requires (at
-  least) *same body* and agreement of captured environments on those captured
-  entries whose qualified types are clean-under-\(R\).
-- **If internal poison is not clean-under-\(R\)**: closure agreement imposes no
-  such constraints (intentionally allowing different bodies and/or captured
-  environments across runs), and application-result agreement is not required.
-
-This is often more explicit but touches more proof plumbing.
-
-**Scope**: this direction is aimed at obstacle (2) (making the captured
-environment agreement obligations line up with when we consider a function
-relationally reliable).
-
-## Consequences for Ott rules (high-level edits)
-
-Under this direction (outer-clean closures), the Ott typing rules must be updated
-in the places where they currently set outer poison to `pc` (or to joins that
-include `pc`) for function-typed results:
-
-- **`fn_abs` / `pfn_abs`**:
-  - currently: `… # pc … :> pc { no_pred }`
-  - proposed: `… # pc … :> clean { no_pred }` (outer poison forced to clean),
-    keeping internal `# pc`.
-
-- **Conditional rules producing functions** (`if_*_fn`, `if_*_pfn`):
-  - currently: return poison includes outer joins of branch poisons (and
-    possibly guard poison).
-  - proposed: for function-typed conclusions, outer `:>` becomes `clean`, while
-    internal arrow poison is still joined (`p = join p' p''`), and closure sets
-    are merged as before.
-
-- **Application rules producing functions** (`app_*_arrow` / `app_*_parrow`):
-  - currently: outer poison includes `join pc p3` (or similar).
-  - proposed: for function-typed results, outer `:>` becomes `clean`, and the
-    internal arrow poison accounts for reliability.
-
-Any such Ott changes must be reflected in the Lean typechecker (`typecheckFn`,
-`typecheckPfn`, `typecheckIf`, `typecheckApp`, `joinTypeResults`) and in the
-documentation that mirrors the Ott spec.
-
-## Open decisions (to settle before implementation)
-
-- **What is the intended relational guarantee for dirty closures?**
-  - Must captured environments agree on clean entries even when the closure is
-    dirty, or is that intentionally not required?
-
-- **Which poison carrier is authoritative for function reliability?**
-  - Outer `Q.poison`, internal arrow poison `# p`, or a combination?
-
-Once these are fixed, we can implement the corresponding Lean/Ott changes and
-finish the `app` proof accordingly.
-
+| Aspect | Decision |
+|--------|----------|
+| Agreement gate | Internal arrow poison, not outer `Q.poison` |
+| De-poisoning | Not supported for functions |
+| Clean internal | Same body + `agreeCapturedEnv` on clean entries |
+| Dirty internal | No constraints; any closures "agree" vacuously |
