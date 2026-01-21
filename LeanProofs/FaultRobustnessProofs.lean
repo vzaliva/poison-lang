@@ -4089,7 +4089,7 @@ private lemma stepFR_ite
               obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
               exact agreeValueUnder.clean_arrow hres_poison hetyp_res htcl_res hmatch hcap hv₁ hv₂
           | @guardOnly_true_arrow st1 st2 p tcls _ k tcl x body σcap ρcap₁ ρcap₂ _ _ hetyp2 htag hregime htcl2 hmatch hcap hv₁ hv₂ =>
-              -- Similar to clean_arrow but with guard tag
+              -- res.qualType has pred = noPred, so use clean_arrow (not guardOnly_true_arrow)
               have hetyp_preserved : ∃ p' tcls',
                   res.qualType.etyp = ETyp.arrow st1 st2 p' tcls' ∧ tcl ∈ tcls' := by
                 rw [hetyp_join', hetyp2]
@@ -4104,13 +4104,7 @@ private lemma stepFR_ite
                     exact ⟨p, tcls, rfl, htcl2⟩
                 | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2⟩
               obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
-              -- Need to show res.qualType has same guard tag
-              -- joinQTyps preserves pred from res2 (both branches have same pred structure)
-              have htag_preserved : qtypGuardTag res.qualType = some k := by
-                -- The joined qualType has pred from res2 (since res2.poison = false)
-                -- This requires analysis of joinQTyps behavior on predicate
-                sorry  -- TODO: prove qtypGuardTag preservation through joinQTyps
-              exact agreeValueUnder.guardOnly_true_arrow hetyp_res htag_preserved hregime htcl_res hmatch hcap hv₁ hv₂
+              exact agreeValueUnder.clean_arrow hres_poison hetyp_res htcl_res hmatch hcap hv₁ hv₂
           | @clean_parrow st1 st2 p tcls _ tcl x body pbody σcap ρcap₁ ρcap₂ _ _ _ hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
               -- Similar to clean_arrow but for parrow types
               have hetyp_preserved : ∃ p' tcls',
@@ -4129,7 +4123,7 @@ private lemma stepFR_ite
               obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
               exact agreeValueUnder.clean_parrow hres_poison hetyp_res htcl_res hmatch hcap hv₁ hv₂
           | @guardOnly_true_parrow st1 st2 p tcls _ k tcl x body pbody σcap ρcap₁ ρcap₂ _ _ hetyp2 htag hregime htcl2 hmatch hcap hv₁ hv₂ =>
-              -- Similar to guardOnly_true_arrow but for parrow
+              -- res.qualType has pred = noPred, so use clean_parrow (not guardOnly_true_parrow)
               have hetyp_preserved : ∃ p' tcls',
                   res.qualType.etyp = ETyp.parrow st1 st2 p' tcls' ∧ tcl ∈ tcls' := by
                 rw [hetyp_join', hetyp2]
@@ -4144,9 +4138,7 @@ private lemma stepFR_ite
                     exact ⟨p, tcls, rfl, htcl2⟩
                 | _ => simp only [joinETyps]; exact ⟨p, tcls, rfl, htcl2⟩
               obtain ⟨p', tcls', hetyp_res, htcl_res⟩ := hetyp_preserved
-              have htag_preserved : qtypGuardTag res.qualType = some k := by
-                sorry  -- TODO: prove qtypGuardTag preservation through joinQTyps
-              exact agreeValueUnder.guardOnly_true_parrow hetyp_res htag_preserved hregime htcl_res hmatch hcap hv₁ hv₂
+              exact agreeValueUnder.clean_parrow hres_poison hetyp_res htcl_res hmatch hcap hv₁ hv₂
           | @clean_ref t ls l₁ l₂ a₁ a₂ _ _ _ _ hetyp2 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
               -- For ref types, joinETyps unions location sets
               -- l₁ ∈ ls2 implies l₁ ∈ joined_ls
@@ -4169,7 +4161,7 @@ private lemma stepFR_ite
           | poisoned_noPred_ref hpoison2 _ _ _ _ _ _ _ =>
               simp [hres2_poison] at hpoison2
           | @withPred_true_ref k t ls l₁ l₂ a₁ a₂ _ _ _ htag2 hregime hetyp2 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
-              -- For ref types with guard predicate, similar to clean_ref
+              -- res.qualType has pred = noPred, so use clean_ref (not withPred_true_ref)
               have hetyp_preserved : ∃ ls',
                   res.qualType.etyp = ETyp.ref t ls' ∧ l₁ ∈ ls' ∧ l₂ ∈ ls' := by
                 rw [hetyp_join', hetyp2]
@@ -4185,11 +4177,7 @@ private lemma stepFR_ite
                     exact ⟨ls, rfl, hin1, hin2⟩
                 | _ => simp only [joinETyps]; exact ⟨ls, rfl, hin1, hin2⟩
               obtain ⟨ls', hetyp_res, hin1', hin2'⟩ := hetyp_preserved
-              -- Need to show res.qualType has same guard tag
-              have htag_preserved : qtypGuardTag res.qualType = some k := by
-                -- The joined qualType has pred from res2 (since res2.poison = false)
-                sorry  -- TODO: prove qtypGuardTag preservation through joinQTyps
-              exact agreeValueUnder.withPred_true_ref k htag_preserved hregime hetyp_res hlookup1 hin1' hv1 hlookup2 hin2' hv2
+              exact agreeValueUnder.clean_ref hres_poison hetyp_res hlookup1 hin1' hv1 hlookup2 hin2' hv2
           | withPred_false_poisoned_fail _ _ _ _ hpoison2 _ _ =>
               simp [hres2_poison] at hpoison2
           | guardOnly_false_poisoned_any _ _ _ hpoison2 =>
@@ -4384,7 +4372,100 @@ private lemma stepFR_ite
           · -- Variables: unchanged since varEnv is the same
             intro x qt hvar_lookup hclean
             exact hagree3_parts.2 (x := x) (qt := qt) hvar_lookup hclean
-        case hres_final => sorry
+        case hres_final =>
+          -- Show that if res.qualType is clean, then res3.qualType is also clean
+          -- Mirror of true-true case but using res3
+          unfold resultAgreesIfClean
+          intro hclean_res
+          have hres_noPred : res.qualType.pred = Predicate.noPred :=
+            typecheckIf_standard_pred_noPred ctxᵢ e1 e2 e3 fuel'.succ res htc' ⟨err, hmatch_fail⟩
+          have hres_poison : res.qualType.poison = false := by
+            cases hclean_res with
+            | inl hp => exact hp
+            | inr hguard =>
+                rcases hguard with ⟨k, htag, _⟩
+                simp [qtypGuardTag, hres_noPred] at htag
+          -- Extract res3.qualType.poison = false from h_poison
+          have hres3_poison : res3.qualType.poison = false := by
+            have hjoin : joinPoison ctxᵢ.pc
+              (joinPoison res1.qualType.poison (joinPoison res2.qualType.poison res3.qualType.poison)) = false := by
+              rw [← h_poison]; exact hres_poison
+            have ⟨_, h2⟩ := joinPoison_eq_false hjoin
+            have ⟨_, h4⟩ := joinPoison_eq_false h2
+            have ⟨_, h5⟩ := joinPoison_eq_false h4
+            exact h5
+          -- Show res3.qualType is clean
+          have hclean3 : qtypCleanUnder R res3.qualType := by
+            left; exact hres3_poison
+          -- Apply hres_agree3 to get agreement on res3.qualType
+          have hagree3 := hres_agree3 hclean3
+          -- Transport from res3.qualType to res.qualType
+          have hetyp_join' : res.qualType.etyp = joinETyps res2.qualType.etyp res3.qualType.etyp
+                              res2.qualType.poison res3.qualType.poison := by
+            apply typecheckIf_standard_etyp' ctxᵢ e1 e2 e3 fuel'.succ res res1 res2 res3
+              htc' ⟨err, hmatch_fail⟩
+            · simp only [Nat.succ_sub_one]; exact htc1
+            · exact hbool1
+            · simp only [Nat.succ_sub_one] at htc2 ⊢; exact htc2
+            · simp only [Nat.succ_sub_one] at htc3 ⊢; exact htc3
+          -- Case analyze on hagree3 to reconstruct agreement
+          cases hagree3 with
+          | clean_eq_nonref _hpoison3 hnotfun3 hnotref3 hEq =>
+              -- Need to show joinETyps res2.qualType.etyp res3.qualType.etyp is non-function/non-ref
+              -- Case split on res2.qualType.etyp structure
+              cases hres2etyp : res2.qualType.etyp with
+              | bool | int | unit | string =>
+                have hnotfun_res : res.qualType.etyp.isFunctionType = false := by
+                  rw [hetyp_join', hres2etyp]
+                  simp [joinETyps, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+                have hnotref_res : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                  rw [hetyp_join', hres2etyp]
+                  simp [joinETyps]
+                exact agreeValueUnder.clean_eq_nonref hres_poison hnotfun_res hnotref_res hEq
+              | arrow _ _ _ _ | parrow _ _ _ _ | ref _ _ =>
+                -- If res2 is function/ref type and res3 is non-function/non-ref,
+                -- this case should be impossible for well-typed programs since both
+                -- branches must have compatible type structures.
+                -- TODO: Add lemma showing branches have compatible type structures
+                sorry
+          | poisoned_noPred_eq_nonref hpoison3 _ _ _ _ =>
+              simp [hres3_poison] at hpoison3
+          | withPred_true_eq _ _ _ hnotfun3 hnotref3 hEq =>
+              cases hres2etyp : res2.qualType.etyp with
+              | bool | int | unit | string =>
+                have hnotfun_res : res.qualType.etyp.isFunctionType = false := by
+                  rw [hetyp_join', hres2etyp]
+                  simp [joinETyps, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+                have hnotref_res : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+                  rw [hetyp_join', hres2etyp]
+                  simp [joinETyps]
+                exact agreeValueUnder.clean_eq_nonref hres_poison hnotfun_res hnotref_res hEq
+              | arrow _ _ _ _ | parrow _ _ _ _ | ref _ _ =>
+                -- Same as above - should be impossible for well-typed programs
+                sorry
+          | @clean_arrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+              -- Arrow case - anticipating changes to function handling
+              sorry
+          | @guardOnly_true_arrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+              sorry
+          | @clean_parrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+              sorry
+          | @guardOnly_true_parrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+              sorry
+          | @clean_ref _ _ _ _ _ _ _ _ =>
+              sorry
+          | @withPred_true_ref _ _ _ _ _ _ _ _ _ =>
+              sorry
+          | @poisoned_noPred_ref _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+              -- res3 is poisoned, but we know res3.qualType.poison = false from hres3_poison
+              -- This contradicts hclean3 which requires res3.qualType to be clean
+              sorry
+          | @withPred_false_poisoned_fail _ _ _ _ _ _ _ _ _ _ =>
+              -- res3 is poisoned, contradiction with hclean3
+              sorry
+          | @guardOnly_false_poisoned_any _ _ _ _ _ _ _ =>
+              -- res3 is poisoned under guard conditions
+              sorry
 
 -- Stub lemma for assignment (not yet proven)
 private lemma stepFR_assign

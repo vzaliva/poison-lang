@@ -2849,6 +2849,41 @@ lemma joinETyps_notRef_of_left_simple {t1 t2 : ETyp} {p1 p2 : Poison} :
   | arrow _ _ _ _ | parrow _ _ _ _ =>
       simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
 
+/-- joinETyps preserves non-function property when BOTH args are non-function/non-ref. -/
+lemma joinETyps_isFunctionType_false_of_both {t1 t2 : ETyp} {p1 p2 : Poison} :
+    t1.isFunctionType = false → ¬ (∃ inner ls, t1 = ETyp.ref inner ls) →
+    t2.isFunctionType = false → ¬ (∃ inner ls, t2 = ETyp.ref inner ls) →
+    (joinETyps t1 t2 p1 p2).isFunctionType = false := by
+  intro hnotfun1 hnotref1 _ _
+  -- Uses the left version since joinETyps returns left for simple types
+  exact joinETyps_isFunctionType_false_of_left hnotfun1 hnotref1
+
+/-- joinETyps preserves non-ref property when BOTH args are non-function/non-ref. -/
+lemma joinETyps_notRef_of_both_simple {t1 t2 : ETyp} {p1 p2 : Poison} :
+    t1.isFunctionType = false → ¬ (∃ inner ls, t1 = ETyp.ref inner ls) →
+    t2.isFunctionType = false → ¬ (∃ inner ls, t2 = ETyp.ref inner ls) →
+    ¬ (∃ inner ls, (joinETyps t1 t2 p1 p2) = ETyp.ref inner ls) := by
+  intro hnotfun1 hnotref1 _ _
+  exact joinETyps_notRef_of_left_simple hnotfun1 hnotref1
+
+/-- When t2 is non-function/non-ref and joinETyps result is non-function/non-ref,
+    it follows from t1 also being non-function/non-ref. -/
+lemma joinETyps_isFunctionType_false_of_right {t1 t2 : ETyp} {p1 p2 : Poison} :
+    t2.isFunctionType = false → ¬ (∃ inner ls, t2 = ETyp.ref inner ls) →
+    t1.isFunctionType = false → ¬ (∃ inner ls, t1 = ETyp.ref inner ls) →
+    (joinETyps t1 t2 p1 p2).isFunctionType = false := by
+  intro _ _ hnotfun1 hnotref1
+  exact joinETyps_isFunctionType_false_of_left hnotfun1 hnotref1
+
+/-- When t2 is non-function/non-ref and joinETyps result is non-ref,
+    it follows from t1 also being non-function/non-ref. -/
+lemma joinETyps_notRef_of_right_simple {t1 t2 : ETyp} {p1 p2 : Poison} :
+    t2.isFunctionType = false → ¬ (∃ inner ls, t2 = ETyp.ref inner ls) →
+    t1.isFunctionType = false → ¬ (∃ inner ls, t1 = ETyp.ref inner ls) →
+    ¬ (∃ inner ls, (joinETyps t1 t2 p1 p2) = ETyp.ref inner ls) := by
+  intro _ _ hnotfun1 hnotref1
+  exact joinETyps_notRef_of_left_simple hnotfun1 hnotref1
+
 /-- Helper: adding unique elements preserves membership from accumulator. -/
 private lemma foldl_addUnique_mem_of_acc {α : Type} [BEq α] [LawfulBEq α]
     (xs : List α) (acc : List α) (x : α) :
