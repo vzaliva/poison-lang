@@ -438,7 +438,9 @@ mutual
     | dirty_internal_arrow
         {qt : QTyp} {v₁ v₂ : Value}
         (hdirty_internal : ¬ internalPoisonClean qt)
-        (hisArrow : qt.etyp.isArrow = true) :
+        (hisArrow : qt.etyp.isArrow = true)
+        (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
+        (htyp2 : valueHasETyp θ₂ v₂ qt.etyp) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | clean_internal_parrow {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
         {qt : QTyp} {tcl : PFnTClosure} {x : Name} {body : Expr} {pbody : PExpr} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
@@ -454,7 +456,9 @@ mutual
     | dirty_internal_parrow
         {qt : QTyp} {v₁ v₂ : Value}
         (hdirty_internal : ¬ internalPoisonClean qt)
-        (hisParrow : qt.etyp.isParrow = true) :
+        (hisParrow : qt.etyp.isParrow = true)
+        (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
+        (htyp2 : valueHasETyp θ₂ v₂ qt.etyp) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | clean_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
         {qt : QTyp} {v₁ v₂ : Value}
@@ -505,6 +509,8 @@ mutual
         (htag : qtypGuardTag qt = some k)
         (hregime : R.lookup? k = some false)
         (hpoison : qt.poison = true)
+        (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
+        (htyp2 : valueHasETyp θ₂ v₂ qt.etyp)
         (hfail1 : ¬qtypPredHolds predSat qt μ₁ v₁)
         (hfail2 : ¬qtypPredHolds predSat qt μ₂ v₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
@@ -512,7 +518,9 @@ mutual
         {qt : QTyp} {v₁ v₂ : Value}
         (hgo : qt.pred = Predicate.guardOnly k)
         (hregime : R.lookup? k = some false)
-        (hpoison : qt.poison = true) :
+        (hpoison : qt.poison = true)
+        (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
+        (htyp2 : valueHasETyp θ₂ v₂ qt.etyp) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
 
   /-- Agreement of captured runtime environments w.r.t. the captured typing environment.

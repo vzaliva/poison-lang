@@ -289,7 +289,7 @@ private lemma agreeValueUnder_transport_clean
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_arrow hclean_int_qt hetyp' htcl hmatch hcap hv₁ hv₂
-      | dirty_internal_arrow hdirty_int hisArrow =>
+      | dirty_internal_arrow hdirty_int hisArrow htyp1_qt2 htyp2_qt2 =>
           -- qt2 has dirty internal, but qt.poison = false (hpoison)
           -- We need to construct agreement for qt
           -- Since qt.etyp = qt2.etyp and qt2.etyp.isArrow = true, qt.etyp.isArrow = true
@@ -301,7 +301,12 @@ private lemma agreeValueUnder_transport_clean
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hdirty_int
-          exact agreeValueUnder.dirty_internal_arrow hdirty_int_qt hisArrow_qt
+          -- Transport typing proofs from qt2.etyp to qt.etyp
+          have htyp1_qt : valueHasETyp θ₀ o₀ qt.etyp := by
+            rw [hetyp]; exact htyp1_qt2
+          have htyp2_qt : valueHasETyp θ₁ o₁ qt.etyp := by
+            rw [hetyp]; exact htyp2_qt2
+          exact agreeValueUnder.dirty_internal_arrow hdirty_int_qt hisArrow_qt htyp1_qt htyp2_qt
       | clean_internal_parrow hclean_int hetyp1 htcl hmatch hcap hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           have hclean_int_qt : internalPoisonClean qt := by
@@ -309,14 +314,19 @@ private lemma agreeValueUnder_transport_clean
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_parrow hclean_int_qt hetyp' htcl hmatch hcap hv₁ hv₂
-      | dirty_internal_parrow hdirty_int hisParrow =>
+      | dirty_internal_parrow hdirty_int hisParrow htyp1_qt2 htyp2_qt2 =>
           have hisParrow_qt : qt.etyp.isParrow = true := by
             rw [hetyp]; exact hisParrow
           have hdirty_int_qt : ¬internalPoisonClean qt := by
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hdirty_int
-          exact agreeValueUnder.dirty_internal_parrow hdirty_int_qt hisParrow_qt
+          -- Transport typing proofs from qt2.etyp to qt.etyp
+          have htyp1_qt : valueHasETyp θ₀ o₀ qt.etyp := by
+            rw [hetyp]; exact htyp1_qt2
+          have htyp2_qt : valueHasETyp θ₁ o₁ qt.etyp := by
+            rw [hetyp]; exact htyp2_qt2
+          exact agreeValueUnder.dirty_internal_parrow hdirty_int_qt hisParrow_qt htyp1_qt htyp2_qt
       | clean_ref _hpoison2 hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
           exact agreeValueUnder.clean_ref hpoison (hetyp.trans hetyp1) hlookup1 hin1 hv1 hlookup2 hin2 hv2
       | poisoned_noPred_ref hpoison' _ _ _ _ _ _ _ =>
@@ -372,14 +382,19 @@ private lemma agreeValueUnder_transport_clean
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_arrow hclean_int_qt hetyp' htcl hmatch hcap hv₁ hv₂
-      | dirty_internal_arrow hdirty_int hisArrow =>
+      | dirty_internal_arrow hdirty_int hisArrow htyp1_qt2 htyp2_qt2 =>
           have hisArrow_qt : qt.etyp.isArrow = true := by
             rw [hetyp]; exact hisArrow
           have hdirty_int_qt : ¬internalPoisonClean qt := by
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hdirty_int
-          exact agreeValueUnder.dirty_internal_arrow hdirty_int_qt hisArrow_qt
+          -- Transport typing proofs from qt2.etyp to qt.etyp
+          have htyp1_qt : valueHasETyp θ₀ o₀ qt.etyp := by
+            rw [hetyp]; exact htyp1_qt2
+          have htyp2_qt : valueHasETyp θ₁ o₁ qt.etyp := by
+            rw [hetyp]; exact htyp2_qt2
+          exact agreeValueUnder.dirty_internal_arrow hdirty_int_qt hisArrow_qt htyp1_qt htyp2_qt
       | clean_internal_parrow hclean_int hetyp1 htcl hmatch hcap hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           have hclean_int_qt : internalPoisonClean qt := by
@@ -387,14 +402,19 @@ private lemma agreeValueUnder_transport_clean
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_parrow hclean_int_qt hetyp' htcl hmatch hcap hv₁ hv₂
-      | dirty_internal_parrow hdirty_int hisParrow =>
+      | dirty_internal_parrow hdirty_int hisParrow htyp1_qt2 htyp2_qt2 =>
           have hisParrow_qt : qt.etyp.isParrow = true := by
             rw [hetyp]; exact hisParrow
           have hdirty_int_qt : ¬internalPoisonClean qt := by
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hdirty_int
-          exact agreeValueUnder.dirty_internal_parrow hdirty_int_qt hisParrow_qt
+          -- Transport typing proofs from qt2.etyp to qt.etyp
+          have htyp1_qt : valueHasETyp θ₀ o₀ qt.etyp := by
+            rw [hetyp]; exact htyp1_qt2
+          have htyp2_qt : valueHasETyp θ₁ o₁ qt.etyp := by
+            rw [hetyp]; exact htyp2_qt2
+          exact agreeValueUnder.dirty_internal_parrow hdirty_int_qt hisParrow_qt htyp1_qt htyp2_qt
       | clean_ref _hpoison2 hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
           exact agreeValueUnder.withPred_true_ref k htag hreg (hetyp.trans hetyp1) hlookup1 hin1 hv1 hlookup2 hin2 hv2
       | poisoned_noPred_ref _hpoison2 _hpred2 hetyp1 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
@@ -1086,15 +1106,17 @@ private lemma agreeValueUnder_clean_extends
           hθ₀ hθ₁
         exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
       (dirty_internal_arrow := by
-        intro qt v₁ v₂ hdirty hisArrow _hclean _hθ₀ _hθ₁
-        exact agreeValueUnder.dirty_internal_arrow hdirty hisArrow)
+        intro qt v₁ v₂ hdirty hisArrow htyp1 htyp2 _hclean hθ₀ hθ₁
+        exact agreeValueUnder.dirty_internal_arrow hdirty hisArrow
+          (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2))
       (clean_internal_parrow := by
         intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap hv₁ hv₂ ihCap
           _hclean hθ₀ hθ₁
         exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
       (dirty_internal_parrow := by
-        intro qt v₁ v₂ hdirty hisParrow _hclean _hθ₀ _hθ₁
-        exact agreeValueUnder.dirty_internal_parrow hdirty hisParrow)
+        intro qt v₁ v₂ hdirty hisParrow htyp1 htyp2 _hclean hθ₀ hθ₁
+        exact agreeValueUnder.dirty_internal_parrow hdirty hisParrow
+          (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2))
       (clean_ref := by
         intro t ls l₁ l₂ a₁ a₂ qt v₁ v₂ hpoison hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 _hclean hθ₀ hθ₁
         exact agreeValueUnder.clean_ref hpoison hetyp (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2)
@@ -1120,7 +1142,7 @@ private lemma agreeValueUnder_clean_extends
         exact agreeValueUnder.withPred_true_ref k htag hregime hetyp
           (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2)
       (withPred_false_poisoned_fail := by
-        intro k qt v₁ v₂ hclos htag hregime hpoison hfail1 hfail2 hclean _hθ₀ _hθ₁
+        intro k qt v₁ v₂ hclos htag hregime hpoison htyp1 htyp2 hfail1 hfail2 hclean _hθ₀ _hθ₁
         cases hclean with
         | clean hpoison' =>
             have : false = true := by
@@ -1142,7 +1164,7 @@ private lemma agreeValueUnder_clean_extends
                 _ = some true := by exact hreg'
             cases this)
       (guardOnly_false_poisoned_any := by
-        intro k qt v₁ v₂ hgo hregime hpoison hclean _hθ₀ _hθ₁
+        intro k qt v₁ v₂ hgo hregime hpoison htyp1 htyp2 hclean _hθ₀ _hθ₁
         cases hclean with
         | clean hpoison' =>
             have : false = true := by
@@ -1221,15 +1243,17 @@ private lemma agreeCapturedEnv_clean_extends
           hθ₀ hθ₁
         exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
       (dirty_internal_arrow := by
-        intro qt v₁ v₂ hdirty hisArrow _hclean _hθ₀ _hθ₁
-        exact agreeValueUnder.dirty_internal_arrow hdirty hisArrow)
+        intro qt v₁ v₂ hdirty hisArrow htyp1 htyp2 _hclean hθ₀ hθ₁
+        exact agreeValueUnder.dirty_internal_arrow hdirty hisArrow
+          (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2))
       (clean_internal_parrow := by
         intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap hv₁ hv₂ ihCap
           _hclean hθ₀ hθ₁
         exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch (ihCap hθ₀ hθ₁) hv₁ hv₂)
       (dirty_internal_parrow := by
-        intro qt v₁ v₂ hdirty hisParrow _hclean _hθ₀ _hθ₁
-        exact agreeValueUnder.dirty_internal_parrow hdirty hisParrow)
+        intro qt v₁ v₂ hdirty hisParrow htyp1 htyp2 _hclean hθ₀ hθ₁
+        exact agreeValueUnder.dirty_internal_parrow hdirty hisParrow
+          (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2))
       (clean_ref := by
         intro t ls l₁ l₂ a₁ a₂ qt v₁ v₂ hpoison hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 _hclean hθ₀ hθ₁
         exact agreeValueUnder.clean_ref hpoison hetyp (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2)
@@ -1255,7 +1279,7 @@ private lemma agreeCapturedEnv_clean_extends
         exact agreeValueUnder.withPred_true_ref k htag hregime hetyp
           (hθ₀ _ _ hlookup1) hin1 hv1 (hθ₁ _ _ hlookup2) hin2 hv2)
       (withPred_false_poisoned_fail := by
-        intro k qt v₁ v₂ hclos htag hregime hpoison hfail1 hfail2 hclean _hθ₀ _hθ₁
+        intro k qt v₁ v₂ hclos htag hregime hpoison htyp1 htyp2 hfail1 hfail2 hclean _hθ₀ _hθ₁
         cases hclean with
         | clean hpoison' =>
             have : false = true := by
@@ -1277,7 +1301,7 @@ private lemma agreeCapturedEnv_clean_extends
                 _ = some true := by exact hreg'
             cases this)
       (guardOnly_false_poisoned_any := by
-        intro k qt v₁ v₂ hgo hregime hpoison hclean _hθ₀ _hθ₁
+        intro k qt v₁ v₂ hgo hregime hpoison htyp1 htyp2 hclean _hθ₀ _hθ₁
         cases hclean with
         | clean hpoison' =>
             have : false = true := by
