@@ -4291,7 +4291,7 @@ private lemma stepFR_ite
                     -- From hdirty, p2 = true
                     have hp2_dirty : p2 = true := by
                       simp only [internalPoisonClean, getInternalPoison, hres2etyp] at hdirty
-                      cases p2 <;> simp at hdirty <;> rfl
+                      cases p2; simp at hdirty; rfl
                     -- Use joinETyps_preserves_dirty_arrow to show res has dirty internal poison
                     have hres_dirty : getInternalPoison res.qualType.etyp = some true := by
                       rw [hetyp_join', hres2etyp]
@@ -4406,7 +4406,7 @@ private lemma stepFR_ite
                     -- From hdirty, p2 = true
                     have hp2_dirty : p2 = true := by
                       simp only [internalPoisonClean, getInternalPoison, hres2etyp] at hdirty
-                      cases p2 <;> simp at hdirty <;> rfl
+                      cases p2; simp at hdirty; rfl
                     -- Use joinETyps_preserves_dirty_parrow to show res has dirty internal poison
                     have hres_dirty : getInternalPoison res.qualType.etyp = some true := by
                       rw [hetyp_join', hres2etyp]
