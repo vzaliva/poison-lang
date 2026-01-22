@@ -945,22 +945,207 @@ lemma bevalIte_structure (e1 e2 e3 : Expr) (fuel : Nat) (verbose : Bool)
       injection h_eq
 
 -- Helper lemma: extract evaluation structure from successful beval of kwhile
--- Note: The kwhile desugars to an ite in beval, making the proof structure complex.
--- For now we leave this as sorry; the inversion lemma can use the ite structure.
 lemma bevalKwhile_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config_final : Config) (v : Value) (w₀ w₁ : Void IO.RealWorld) :
-  LeanPoison.beval fuel config₀ (Expr.kwhile e1 e2) verbose w₀ =
+  LeanPoison.beval fuel.succ.succ.succ config₀ (Expr.kwhile e1 e2) verbose w₀ =
       EST.Out.ok (.success config_final v) w₁ →
   ∃ (config₁ : Config) (b : Bool) (w_mid : Void IO.RealWorld),
-    LeanPoison.beval (fuel - 1) config₀ e1 verbose w₀ =
+    LeanPoison.beval fuel.succ config₀ e1 verbose w₀ =
         EST.Out.ok (.success config₁ (Value.bool b)) w_mid ∧
     ((b = false ∧ v = Value.unit ∧ config_final = config₁ ∧ w₁ = w_mid) ∨
      (b = true ∧ ∃ (config₂ : Config) (v₂ : Value) (w_mid2 : Void IO.RealWorld),
-        LeanPoison.beval (fuel - 1) config₁ e2 verbose w_mid =
+        LeanPoison.beval fuel config₁ e2 verbose w_mid =
             EST.Out.ok (.success config₂ v₂) w_mid2 ∧
-        LeanPoison.beval (fuel - 1) config₂ (Expr.kwhile e1 e2) verbose w_mid2 =
+        LeanPoison.beval fuel config₂ (Expr.kwhile e1 e2) verbose w_mid2 =
             EST.Out.ok (.success config_final v) w₁)) := by
-  sorry
+  intro h_eq
+  let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
+  -- Unfold kwhile evaluation to the ite expansion
+  unfold LeanPoison.beval at h_eq
+  simp at h_eq
+  have h_unfolded :
+      LeanPoison.beval fuel.succ.succ config₀ unfolded verbose w₀ =
+        EST.Out.ok (.success config_final v) w₁ := by
+    simpa [unfolded] using h_eq
+  have hstruct :=
+    bevalIte_structure e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
+      fuel.succ.succ verbose config₀ config_final v w₀ w₁ h_unfolded
+  rcases hstruct with ⟨config₁, b, w_mid, hbeval_e1, hbranch⟩
+  have hbeval_e1' :
+      LeanPoison.beval fuel.succ config₀ e1 verbose w₀ =
+        EST.Out.ok (.success config₁ (Value.bool b)) w_mid := by
+    simpa using hbeval_e1
+  refine ⟨config₁, b, w_mid, hbeval_e1', ?_⟩
+  cases hbranch with
+  | inl htrue =>
+      rcases htrue with ⟨hb_eq, hbeval_seq⟩
+      have hseq :=
+        bevalSeq_structure e2 (Expr.kwhile e1 e2) fuel.succ verbose config₁ config_final v w_mid w₁ hbeval_seq
+      rcases hseq with ⟨config₂, v₂, w_mid2, hbeval_e2, hbeval_k⟩
+      have hbeval_e2' :
+          LeanPoison.beval fuel config₁ e2 verbose w_mid =
+            EST.Out.ok (.success config₂ v₂) w_mid2 := by
+        simpa using hbeval_e2
+      have hbeval_k' :
+          LeanPoison.beval fuel config₂ (Expr.kwhile e1 e2) verbose w_mid2 =
+            EST.Out.ok (.success config_final v) w₁ := by
+        simpa using hbeval_k
+      exact Or.inr ⟨hb_eq, ⟨config₂, v₂, w_mid2, hbeval_e2', hbeval_k'⟩⟩
+  | inr hfalse =>
+      rcases hfalse with ⟨hb_eq, hbeval_unit⟩
+      have h_unit : v = Value.unit ∧ config_final = config₁ ∧ w₁ = w_mid := by
+        cases fuel with
+        | zero =>
+          simp [LeanPoison.beval] at hbeval_unit
+          injection hbeval_unit with h_res h_world
+          injection h_res with h_cfg h_val
+          subst h_cfg h_val
+          exact ⟨rfl, rfl, h_world.symm⟩
+        | succ fuel' =>
+          simp [LeanPoison.beval] at hbeval_unit
+          injection hbeval_unit with h_res h_world
+          injection h_res with h_cfg h_val
+          subst h_cfg h_val
+          exact ⟨rfl, rfl, h_world.symm⟩
+      rcases h_unit with ⟨hv, hcfg, hw⟩
+      exact Or.inl ⟨hb_eq, hv, hcfg, hw⟩
+
+-- Helper lemma: extract evaluation structure from successful beval of app
+lemma bevalApp_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config_final : Config) (v : Value) (w₀ w₁ : Void IO.RealWorld) :
+  LeanPoison.beval fuel config₀ (Expr.app e1 e2) verbose w₀ =
+      EST.Out.ok (.success config_final v) w₁ →
+  ∃ (config₁ config₂ : Config) (v₂ : Value) (x : Name) (body : Expr) (env : VarEnv)
+    (w_mid1 w_mid2 : Void IO.RealWorld),
+    LeanPoison.beval (fuel - 1) config₀ e2 verbose w₀ =
+        EST.Out.ok (.success config₁ v₂) w_mid1 ∧
+    ((LeanPoison.beval (fuel - 1) config₁ e1 verbose w_mid1 =
+          EST.Out.ok (.success config₂ (Value.closure x body env)) w_mid2 ∧
+      LeanPoison.bevalFunctionBody (fuel - 1) verbose config₂ env x v₂ body false w_mid2 =
+          EST.Out.ok (.success config_final v) w₁) ∨
+     (LeanPoison.beval (fuel - 1) config₁ e1 verbose w_mid1 =
+          EST.Out.ok (.success config₂ (Value.peClosure x body env)) w_mid2 ∧
+     Expr.toPExpr? body ≠ none ∧
+      LeanPoison.bevalFunctionBody (fuel - 1) verbose config₂ env x v₂ body true w_mid2 =
+          EST.Out.ok (.success config_final v) w₁)) ∧
+    config_final.pureMode = config₂.pureMode := by
+  intro h_eq
+  -- Helper: bevalFunctionBody success preserves pureMode from currentConfig
+  have hpureMode_of_body :
+      ∀ fuel (currentConfig finalConfig : Config) (env : VarEnv) (x : Name) (argValue : Value)
+        (body : Expr) (isPure : Bool) (w_mid w_out : Void IO.RealWorld),
+        LeanPoison.bevalFunctionBody fuel verbose currentConfig env x argValue body isPure w_mid =
+            EST.Out.ok (.success finalConfig v) w_out →
+        finalConfig.pureMode = currentConfig.pureMode := by
+    intro fuel currentConfig finalConfig env x argValue body isPure w_mid w_out hbeval
+    cases fuel with
+    | zero =>
+        unfold LeanPoison.bevalFunctionBody at hbeval
+        simp [pure] at hbeval
+        cases hbeval
+    | succ fuel' =>
+        unfold LeanPoison.bevalFunctionBody at hbeval
+        simp at hbeval
+        simp [bind, Bind.bind, EST.bind] at hbeval
+        split at hbeval
+        · next h_body_result h_body_state h_beval_body =>
+          split at hbeval
+          · next evalConfig v_body =>
+            split at hbeval
+            · -- isPure = true
+              injection hbeval with h_result h_world
+              injection h_result with h_cfg_eq h_val_eq
+              cases h_cfg_eq
+              rfl
+            · -- isPure = false
+              injection hbeval with h_result h_world
+              injection h_result with h_cfg_eq h_val_eq
+              cases h_cfg_eq
+              rfl
+          · next =>
+            simp [pure] at hbeval
+            injection hbeval with h_result h_world
+            injection h_result
+          · next msg =>
+            simp [pure] at hbeval
+            injection hbeval with h_result h_world
+            injection h_result
+        · next h_body_error h_body_state =>
+          injection hbeval
+  cases fuel with
+  | zero =>
+      unfold LeanPoison.beval at h_eq
+      simp at h_eq
+      injection h_eq with h_contr
+      cases h_contr
+  | succ fuel' =>
+      unfold LeanPoison.beval at h_eq
+      simp at h_eq
+      simp [bind, Bind.bind, EST.bind] at h_eq
+      split at h_eq
+      · next h_result2 h_state2 h_beval2 =>
+        split at h_eq
+        · next config₁ v₂ =>
+          simp [EST.bind] at h_eq
+          split at h_eq
+          · next h_result1 h_state1 h_beval1 =>
+            split at h_eq
+            · next config₂ x body env =>
+              split at h_eq
+              · next h_pureMode =>
+                injection h_eq with h_result h_world
+                injection h_result
+              · next h_notPureMode =>
+                have hpure_mode_final :
+                    config_final.pureMode = config₂.pureMode :=
+                  hpureMode_of_body fuel' config₂ config_final env x v₂ body false h_state1 w₁ h_eq
+                refine ⟨config₁, config₂, v₂, x, body, env, h_state2, h_state1, ?_, ?_, hpure_mode_final⟩
+                · simpa using h_beval2
+                · left
+                  refine ⟨?_, ?_⟩
+                  · simpa using h_beval1
+                  · simpa using h_eq
+            · next config₂ x body env =>
+              cases h_pure : Expr.toPExpr? body with
+              | none =>
+                  simp [h_pure, pure] at h_eq
+                  injection h_eq with h_result h_world
+                  injection h_result
+              | some _ =>
+                  simp [h_pure] at h_eq
+                  have hpure_mode_final :
+                      config_final.pureMode = config₂.pureMode :=
+                    hpureMode_of_body fuel' config₂ config_final env x v₂ body true h_state1 w₁ h_eq
+                  refine ⟨config₁, config₂, v₂, x, body, env, h_state2, h_state1, ?_, ?_, hpure_mode_final⟩
+                  · simpa using h_beval2
+                  · right
+                    refine ⟨?_, ?_, ?_⟩
+                    · simpa using h_beval1
+                    · have h_pure_ne : Expr.toPExpr? body ≠ none := by
+                        simp [h_pure]
+                      exact h_pure_ne
+                    · simpa using h_eq
+            · next v =>
+              injection h_eq with h_result h_world
+              injection h_result
+            · next =>
+              injection h_eq with h_result h_world
+              injection h_result
+            · next msg =>
+              injection h_eq with h_result h_world
+              injection h_result
+          · next h_error2 h_state2 =>
+            injection h_eq
+        · next =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next msg =>
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+      · next h_error1 h_state1 =>
+        injection h_eq
 
 -- ================================================================
 -- IOFree World Preservation
@@ -994,7 +1179,2597 @@ lemma beval_IOFree_result_eq (fuel : Nat) (cfg : Config) (e : Expr) (verbose : B
     LeanPoison.beval fuel cfg e verbose w₁ = EST.Out.ok r₁ w₁' →
     LeanPoison.beval fuel cfg e verbose w₂ = EST.Out.ok r₂ w₂' →
     r₁ = r₂ := by
+  intros hiofree h
   sorry
+
+private def beval_IOFree_eq_pure_IH (fuel : Nat) :=
+  ∀ fuel' < fuel, ∀ cfg e verbose r w, IOFree e →
+    LeanPoison.beval fuel' cfg e verbose w = EST.Out.ok r w →
+    LeanPoison.beval fuel' cfg e verbose = pure r
+
+private lemma beval_IOFree_eq_pure_num (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (n : Int)
+    (heval_w : LeanPoison.beval fuel cfg (Expr.num n) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.num n) verbose = pure r := by
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ _ =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+
+private lemma beval_IOFree_eq_pure_bool (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (b : Bool)
+    (heval_w : LeanPoison.beval fuel cfg (Expr.bool b) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.bool b) verbose = pure r := by
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ _ =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+
+private lemma beval_IOFree_eq_pure_unit (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (heval_w : LeanPoison.beval fuel cfg Expr.unit verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg Expr.unit verbose = pure r := by
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ _ =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+
+private lemma beval_IOFree_eq_pure_str (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (s : String)
+    (heval_w : LeanPoison.beval fuel cfg (Expr.str s) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.str s) verbose = pure r := by
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ _ =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+
+private lemma beval_IOFree_eq_pure_var (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (x : Name)
+    (heval_w : LeanPoison.beval fuel cfg (Expr.var x) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.var x) verbose = pure r := by
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ _ =>
+    simp only [LeanPoison.beval] at heval_w
+    cases h_lookup : cfg.varEnv.lookup x with
+    | none =>
+      simp [h_lookup, pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, h_lookup, pure]
+    | some v =>
+      simp [h_lookup, pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, h_lookup, pure]
+
+private lemma beval_IOFree_eq_pure_fn (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+    (heval_w : LeanPoison.beval fuel cfg (Expr.fn x paramType body returnType) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.fn x paramType body returnType) verbose = pure r := by
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ _ =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+
+private lemma beval_IOFree_eq_pure_pfn (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+    (heval_w : LeanPoison.beval fuel cfg (Expr.pfn x paramType body returnType) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.pfn x paramType body returnType) verbose = pure r := by
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ _ =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+
+private lemma beval_IOFree_eq_pure_unaryop (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (op : UnaryOp) (e' : Expr) (hio : IOFree (Expr.unaryop op e'))
+    (heval_w : LeanPoison.beval fuel cfg (Expr.unaryop op e') verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.unaryop op e') verbose = pure r := by
+  have hio' : IOFree e' := by cases hio; assumption
+  -- For unaryop, use the structure lemma and prove recursively
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ fuel' =>
+    -- Extract config and value from r
+    cases r with
+    | success config₂ v =>
+      -- Use the structure lemma to extract the evaluation structure
+      have hstruct := bevalUnaryOp_structure op e' (fuel' + 1) verbose cfg config₂ v w w heval_w
+      rcases hstruct with ⟨config₁, v₁, hbeval_e, hevalOp, hmem, hvar, hnext, hpure_mode⟩
+      -- Note: hbeval_e has fuel' + 1 - 1 = fuel' (by Nat.add_sub_cancel)
+      simp only [Nat.add_sub_cancel] at hbeval_e
+      -- By IH: beval fuel' cfg e' verbose = pure (.success config₁ v₁)
+      have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success config₁ v₁) w hio' hbeval_e
+      -- Now show: beval (fuel' + 1) cfg (Expr.unaryop op e') verbose = pure (.success config₂ v)
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel]
+      -- Simplify the if condition: fuel' + 1 ≠ 0
+      simp only [Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      -- Use IH to show sub-expression evaluation
+      have h_beval_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success config₁ v₁) w' := by
+        have h_ih_w' := congrFun h_ih w'
+        simp only [pure] at h_ih_w'
+        exact h_ih_w'
+      rw [h_beval_w']
+      -- Simplify the match on EST.Out.ok
+      simp only []
+      -- From hevalOp: evalUnaryOp op v₁ = some v
+      rw [hevalOp]
+      simp only [pure]
+      -- Goal is now: EST.Out.ok (.success config₁ v) w' = EST.Out.ok (.success config₂ v) w'
+      -- We need to show config₁ = config₂
+      congr 1
+      congr 1
+      -- Now goal is: config₁ = config₂
+      -- Use cases to expose constructors, then use field equalities
+      cases config₁; cases config₂
+      simp only [Config.mk.injEq]
+      -- Goal is now a conjunction of field equalities
+      exact ⟨hmem, hvar, hnext, hpure_mode⟩
+    | outOfFuel =>
+      -- outOfFuel can only come from sub-expression returning outOfFuel
+      -- (success would give success or runtimeError, runtimeError gives runtimeError)
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      -- Analyze what sub-expression returns at world w
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      -- Case split on what sub-expression returns
+      cases h_sub : LeanPoison.beval fuel' cfg e' verbose w with
+      | ok r_sub w_sub =>
+        cases r_sub with
+        | success cfg_sub v_sub =>
+          -- Sub succeeded, but then we get success or runtimeError, not outOfFuel
+          simp only [h_sub] at heval_w
+          cases h_op : LeanPoison.evalUnaryOp op v_sub with
+          | some v_res =>
+            simp only [h_op, pure] at heval_w
+            injection heval_w with h_contr
+            injection h_contr  -- success ≠ outOfFuel
+          | none =>
+            simp only [h_op, pure] at heval_w
+            injection heval_w with h_contr
+            injection h_contr  -- runtimeError ≠ outOfFuel
+        | outOfFuel =>
+          -- Sub returned outOfFuel - this is the valid case
+          simp only [h_sub, pure] at heval_w
+          -- World preservation: w_sub = w for IOFree
+          have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose .outOfFuel w w_sub hio' h_sub
+          -- Rewrite h_sub to use w instead of w_sub
+          rw [hw_eq] at h_sub
+          -- By IH: beval fuel' cfg e' verbose = pure outOfFuel
+          have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose .outOfFuel w hio' h_sub
+          have h_sub_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok .outOfFuel w' := by
+            have := congrFun h_ih w'
+            simp only [pure] at this
+            exact this
+          simp only [h_sub_w', pure]
+        | runtimeError sub_msg =>
+          -- Sub returned runtimeError, which propagates as runtimeError, not outOfFuel
+          simp only [h_sub, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr  -- runtimeError ≠ outOfFuel
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub] at heval_w
+        injection heval_w
+    | runtimeError msg =>
+      -- runtimeError can come from:
+      -- 1. Sub-expression returning runtimeError
+      -- 2. Sub-expression succeeding but evalUnaryOp returning none
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      -- Analyze what sub-expression returns at world w
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      -- Case split on what sub-expression returns
+      cases h_sub : LeanPoison.beval fuel' cfg e' verbose w with
+      | ok r_sub w_sub =>
+        cases r_sub with
+        | success cfg_sub v_sub =>
+          -- Sub succeeded, check evalUnaryOp
+          simp only [h_sub] at heval_w
+          cases h_op : LeanPoison.evalUnaryOp op v_sub with
+          | some v_res =>
+            -- evalUnaryOp succeeded, gives success, not runtimeError
+            simp only [h_op, pure] at heval_w
+            injection heval_w with h_contr
+            injection h_contr  -- success ≠ runtimeError
+          | none =>
+            -- evalUnaryOp failed, gives runtimeError - valid case
+            simp only [h_op, pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            -- World preservation: w_sub = w for IOFree
+            have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub v_sub) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            -- By IH: beval fuel' cfg e' verbose = pure (success cfg_sub v_sub)
+            have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub v_sub) w hio' h_sub
+            have h_sub_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub v_sub) w' := by
+              have := congrFun h_ih w'
+              simp only [pure] at this
+              exact this
+            simp only [h_sub_w']
+            simp only [h_op, pure]
+            rw [← h_msg_eq]
+        | outOfFuel =>
+          -- Sub returned outOfFuel, which propagates as outOfFuel, not runtimeError
+          simp only [h_sub, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr  -- outOfFuel ≠ runtimeError
+        | runtimeError sub_msg =>
+          -- Sub returned runtimeError - valid case
+          simp only [h_sub, pure] at heval_w
+          injection heval_w with h_msg_eq h_world_eq
+          -- World preservation: w_sub = w for IOFree
+          have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose (.runtimeError sub_msg) w w_sub hio' h_sub
+          rw [hw_eq] at h_sub
+          -- By IH: beval fuel' cfg e' verbose = pure (runtimeError sub_msg)
+          have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.runtimeError sub_msg) w hio' h_sub
+          have h_sub_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+            have := congrFun h_ih w'
+            simp only [pure] at this
+            exact this
+          simp only [h_sub_w', pure]
+          rw [← h_msg_eq]
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub] at heval_w
+        injection heval_w
+
+private lemma beval_IOFree_eq_pure_op (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (e₁ : Expr) (op' : Op) (e₂ : Expr) (hio : IOFree (Expr.op e₁ op' e₂))
+    (heval_w : LeanPoison.beval fuel cfg (Expr.op e₁ op' e₂) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.op e₁ op' e₂) verbose = pure r := by
+  have hio₁ : IOFree e₁ := by cases hio; assumption
+  have hio₂ : IOFree e₂ := by cases hio; assumption
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ fuel' =>
+    cases r with
+    | success cfg₂ v =>
+      -- Extract structure for successful evaluation
+      have hstruct := bevalOp_structure e₁ e₂ op' (fuel' + 1) verbose cfg cfg₂ v w w heval_w
+      rcases hstruct with ⟨cfg₁, cfg₂', v₁, v₂, w_mid, hbeval_e1, hbeval_e2, hevalOp, hmem, hvar, hnext, hpure_mode⟩
+      simp only [Nat.add_sub_cancel] at hbeval_e1 hbeval_e2
+      -- World preservation for the first sub-expression
+      have hw_mid : w_mid = w :=
+        beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg₁ v₁) w w_mid hio₁ hbeval_e1
+      rw [hw_mid] at hbeval_e1
+      rw [hw_mid] at hbeval_e2
+      -- IH for sub-expressions
+      have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
+      have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg₁ e₂ verbose (.success cfg₂' v₂) w hio₂ hbeval_e2
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      -- Rewrite sub-evaluations using IH
+      have h_beval1_w' :
+          LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg₁ v₁) w' := by
+        have h := congrFun h_ih1 w'
+        simp only [pure] at h
+        exact h
+      rw [h_beval1_w']
+      simp only []
+      have h_beval2_w' :
+          LeanPoison.beval fuel' cfg₁ e₂ verbose w' = EST.Out.ok (.success cfg₂' v₂) w' := by
+        have h := congrFun h_ih2 w'
+        simp only [pure] at h
+        exact h
+      simp [EST.bind]
+      rw [h_beval2_w']
+      simp only [hevalOp, pure]
+      -- Show resulting config equals cfg₂
+      congr 1
+      congr 1
+      cases cfg₂'; cases cfg₂
+      simp only [Config.mk.injEq]
+      exact ⟨hmem, hvar, hnext, hpure_mode⟩
+    | outOfFuel =>
+      -- outOfFuel can only come from a sub-expression returning outOfFuel
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      -- Analyze the evaluation at world w
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub1 : LeanPoison.beval fuel' cfg e₁ verbose w with
+      | ok r_sub1 w_sub1 =>
+        cases r_sub1 with
+        | success cfg_sub1 v_sub1 =>
+          -- Evaluate second operand
+          simp only [h_sub1] at heval_w
+          cases h_sub2 : LeanPoison.beval fuel' cfg_sub1 e₂ verbose w_sub1 with
+          | ok r_sub2 w_sub2 =>
+            cases r_sub2 with
+            | success cfg_sub2 v_sub2 =>
+              -- Then evalOp: cannot yield outOfFuel
+              simp only [EST.bind, h_sub2] at heval_w
+              cases h_op : LeanPoison.evalOp op' v_sub1 v_sub2 with
+              | some v_res =>
+                simp only [h_op, pure] at heval_w
+                injection heval_w with h_contr
+                injection h_contr
+              | none =>
+                simp only [h_op, pure] at heval_w
+                injection heval_w with h_contr
+                injection h_contr
+            | outOfFuel =>
+              -- Second operand outOfFuel: valid case
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              -- World preservation for e₁
+              have hw_eq1 : w_sub1 = w :=
+                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+              rw [hw_eq1] at h_sub1
+              rw [hw_eq1] at h_sub2
+              have hw_eq2 : w_sub2 = w :=
+                beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.outOfFuel) w w_sub2 hio₂ h_sub2
+              rw [hw_eq2] at h_sub2
+              -- IH for sub-expressions
+              have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
+              have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose .outOfFuel w hio₂ h_sub2
+              have h_sub1_w' :
+                  LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 v_sub1) w' := by
+                have h := congrFun h_ih1 w'
+                simp only [pure] at h
+                exact h
+              have h_sub2_w' :
+                  LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' = EST.Out.ok .outOfFuel w' := by
+                have h := congrFun h_ih2 w'
+                simp only [pure] at h
+                exact h
+              rw [h_sub1_w']
+              simp only [EST.bind]
+              rw [h_sub2_w']
+            | runtimeError sub_msg =>
+              -- runtimeError propagates, not outOfFuel
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+          | error e_err =>
+            -- Contradiction: EST.Out.error ≠ EST.Out.ok
+            simp only [EST.bind, h_sub2] at heval_w
+            injection heval_w
+        | outOfFuel =>
+          -- First operand outOfFuel: valid case
+          simp only [h_sub1, pure] at heval_w
+          have hw_sub1 : w_sub1 = w :=
+            beval_IOFree_preserves_world fuel' cfg e₁ verbose _ w w_sub1 hio₁ h_sub1
+          rw [hw_sub1] at h_sub1
+          have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .outOfFuel w hio₁ h_sub1
+          have h_sub1_w' :
+              LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok .outOfFuel w' := by
+            have h := congrFun h_ih1 w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub1_w']
+        | runtimeError sub_msg =>
+          -- runtimeError propagates, not outOfFuel
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub1] at heval_w
+        injection heval_w
+    | runtimeError msg =>
+      -- runtimeError can come from:
+      -- 1. e₁ runtimeError
+      -- 2. e₁ success and e₂ runtimeError
+      -- 3. e₁ success, e₂ success, and evalOp returns none
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      -- Analyze the evaluation at world w
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub1 : LeanPoison.beval fuel' cfg e₁ verbose w with
+      | ok r_sub1 w_sub1 =>
+        cases r_sub1 with
+        | success cfg_sub1 v_sub1 =>
+          simp only [h_sub1] at heval_w
+          cases h_sub2 : LeanPoison.beval fuel' cfg_sub1 e₂ verbose w_sub1 with
+          | ok r_sub2 w_sub2 =>
+            cases r_sub2 with
+            | success cfg_sub2 v_sub2 =>
+              simp only [EST.bind, h_sub2] at heval_w
+              cases h_op : LeanPoison.evalOp op' v_sub1 v_sub2 with
+              | some v_res =>
+                -- success, not runtimeError
+                simp only [h_op, pure] at heval_w
+                injection heval_w with h_contr
+                injection h_contr
+              | none =>
+                -- evalOp failed: runtimeError case
+                simp only [h_op, pure] at heval_w
+                injection heval_w with h_msg_eq h_world_eq
+                -- World preservation for e₁
+                have hw_eq1 : w_sub1 = w :=
+                  beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+                rw [hw_eq1] at h_sub1
+                rw [hw_eq1] at h_sub2
+                have hw_eq2 : w_sub2 = w :=
+                  beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 v_sub2) w w_sub2 hio₂ h_sub2
+                rw [hw_eq2] at h_sub2
+                -- IH for sub-expressions
+                have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
+                have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.success cfg_sub2 v_sub2) w hio₂ h_sub2
+                have h_sub1_w' :
+                    LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 v_sub1) w' := by
+                  have h := congrFun h_ih1 w'
+                  simp only [pure] at h
+                  exact h
+                have h_sub2_w' :
+                    LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' = EST.Out.ok (.success cfg_sub2 v_sub2) w' := by
+                  have h := congrFun h_ih2 w'
+                  simp only [pure] at h
+                  exact h
+                rw [h_sub1_w']
+                simp only [EST.bind]
+                rw [h_sub2_w']
+                simp only [h_op, pure]
+                rw [← h_msg_eq]
+            | outOfFuel =>
+              -- outOfFuel propagates, not runtimeError
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+            | runtimeError sub_msg =>
+              -- Second operand runtimeError: valid case
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_msg_eq h_world_eq
+              -- World preservation for e₁
+              have hw_eq1 : w_sub1 = w :=
+                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+              rw [hw_eq1] at h_sub1
+              rw [hw_eq1] at h_sub2
+              have hw_eq2 : w_sub2 = w :=
+                beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 hio₂ h_sub2
+              rw [hw_eq2] at h_sub2
+              -- IH for sub-expressions
+              have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
+              have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.runtimeError sub_msg) w hio₂ h_sub2
+              have h_sub1_w' :
+                  LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 v_sub1) w' := by
+                have h := congrFun h_ih1 w'
+                simp only [pure] at h
+                exact h
+              have h_sub2_w' :
+                  LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+                have h := congrFun h_ih2 w'
+                simp only [pure] at h
+                exact h
+              rw [h_sub1_w']
+              simp only [EST.bind]
+              rw [h_sub2_w']
+              simp only [pure]
+              rw [← h_msg_eq]
+          | error e_err =>
+            -- Contradiction: EST.Out.error ≠ EST.Out.ok
+            simp only [EST.bind, h_sub2] at heval_w
+            injection heval_w
+        | outOfFuel =>
+          -- outOfFuel propagates, not runtimeError
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+        | runtimeError sub_msg =>
+          -- First operand runtimeError: valid case
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_msg_eq h_world_eq
+          have hw_eq1 : w_sub1 = w :=
+            beval_IOFree_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 hio₁ h_sub1
+          rw [hw_eq1] at h_sub1
+          have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.runtimeError sub_msg) w hio₁ h_sub1
+          have h_sub1_w' :
+              LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+            have h := congrFun h_ih1 w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub1_w']
+          simp only [pure]
+          rw [← h_msg_eq]
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub1] at heval_w
+        injection heval_w
+
+private lemma beval_IOFree_eq_pure_seq (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (e₁ : Expr) (e₂ : Expr) (hio : IOFree (Expr.seq e₁ e₂))
+    (heval_w : LeanPoison.beval fuel cfg (Expr.seq e₁ e₂) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.seq e₁ e₂) verbose = pure r := by
+  have hio₁ : IOFree e₁ := by cases hio; assumption
+  have hio₂ : IOFree e₂ := by cases hio; assumption
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ fuel' =>
+    cases r with
+    | success cfg₂ v =>
+      have hstruct := bevalSeq_structure e₁ e₂ (fuel' + 1) verbose cfg cfg₂ v w w heval_w
+      rcases hstruct with ⟨cfg₁, v₁, w_mid, hbeval_e1, hbeval_e2⟩
+      simp only [Nat.add_sub_cancel] at hbeval_e1 hbeval_e2
+      have hw_mid : w_mid = w :=
+        beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg₁ v₁) w w_mid hio₁ hbeval_e1
+      rw [hw_mid] at hbeval_e1
+      rw [hw_mid] at hbeval_e2
+      have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
+      have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg₁ e₂ verbose (.success cfg₂ v) w hio₂ hbeval_e2
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      have h_beval1_w' :
+          LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg₁ v₁) w' := by
+        have h := congrFun h_ih1 w'
+        simp only [pure] at h
+        exact h
+      rw [h_beval1_w']
+      simp only [EST.bind]
+      have h_beval2_w' :
+          LeanPoison.beval fuel' cfg₁ e₂ verbose w' = EST.Out.ok (.success cfg₂ v) w' := by
+        have h := congrFun h_ih2 w'
+        simp only [pure] at h
+        exact h
+      rw [h_beval2_w']
+    | outOfFuel =>
+      -- outOfFuel can only come from a sub-expression returning outOfFuel
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub1 : LeanPoison.beval fuel' cfg e₁ verbose w with
+      | ok r_sub1 w_sub1 =>
+        cases r_sub1 with
+        | success cfg_sub1 v_sub1 =>
+          simp only [h_sub1] at heval_w
+          cases h_sub2 : LeanPoison.beval fuel' cfg_sub1 e₂ verbose w_sub1 with
+          | ok r_sub2 w_sub2 =>
+            cases r_sub2 with
+            | success cfg_sub2 v_sub2 =>
+              -- success cannot yield outOfFuel
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+            | outOfFuel =>
+              -- Second operand outOfFuel: valid case
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              have hw_eq1 : w_sub1 = w :=
+                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+              rw [hw_eq1] at h_sub1
+              rw [hw_eq1] at h_sub2
+              have hw_eq2 : w_sub2 = w :=
+                beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose .outOfFuel w w_sub2 hio₂ h_sub2
+              rw [hw_eq2] at h_sub2
+              have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
+              have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose .outOfFuel w hio₂ h_sub2
+              have h_sub1_w' :
+                  LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 v_sub1) w' := by
+                have h := congrFun h_ih1 w'
+                simp only [pure] at h
+                exact h
+              have h_sub2_w' :
+                  LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' = EST.Out.ok .outOfFuel w' := by
+                have h := congrFun h_ih2 w'
+                simp only [pure] at h
+                exact h
+              rw [h_sub1_w']
+              simp only [EST.bind]
+              rw [h_sub2_w']
+            | runtimeError sub_msg =>
+              -- runtimeError propagates, not outOfFuel
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+          | error e_err =>
+            -- Contradiction: EST.Out.error ≠ EST.Out.ok
+            simp only [EST.bind, h_sub2] at heval_w
+            injection heval_w
+        | outOfFuel =>
+          -- First operand outOfFuel: valid case
+          simp only [h_sub1, pure] at heval_w
+          have hw_sub1 : w_sub1 = w :=
+            beval_IOFree_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 hio₁ h_sub1
+          rw [hw_sub1] at h_sub1
+          have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .outOfFuel w hio₁ h_sub1
+          have h_sub1_w' :
+              LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok .outOfFuel w' := by
+            have h := congrFun h_ih1 w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub1_w']
+        | runtimeError sub_msg =>
+          -- runtimeError propagates, not outOfFuel
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub1] at heval_w
+        injection heval_w
+    | runtimeError msg =>
+      -- runtimeError can come from:
+      -- 1. e₁ runtimeError
+      -- 2. e₁ success and e₂ runtimeError
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub1 : LeanPoison.beval fuel' cfg e₁ verbose w with
+      | ok r_sub1 w_sub1 =>
+        cases r_sub1 with
+        | success cfg_sub1 v_sub1 =>
+          simp only [h_sub1] at heval_w
+          cases h_sub2 : LeanPoison.beval fuel' cfg_sub1 e₂ verbose w_sub1 with
+          | ok r_sub2 w_sub2 =>
+            cases r_sub2 with
+            | success cfg_sub2 v_sub2 =>
+              -- success, not runtimeError
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+            | outOfFuel =>
+              -- outOfFuel propagates, not runtimeError
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+            | runtimeError sub_msg =>
+              -- Second operand runtimeError: valid case
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_msg_eq h_world_eq
+              have hw_eq1 : w_sub1 = w :=
+                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+              rw [hw_eq1] at h_sub1
+              rw [hw_eq1] at h_sub2
+              have hw_eq2 : w_sub2 = w :=
+                beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 hio₂ h_sub2
+              rw [hw_eq2] at h_sub2
+              have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
+              have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.runtimeError sub_msg) w hio₂ h_sub2
+              have h_sub1_w' :
+                  LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 v_sub1) w' := by
+                have h := congrFun h_ih1 w'
+                simp only [pure] at h
+                exact h
+              have h_sub2_w' :
+                  LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+                have h := congrFun h_ih2 w'
+                simp only [pure] at h
+                exact h
+              rw [h_sub1_w']
+              simp only [EST.bind]
+              rw [h_sub2_w']
+              simp only [pure]
+              rw [← h_msg_eq]
+          | error e_err =>
+            -- Contradiction: EST.Out.error ≠ EST.Out.ok
+            simp only [EST.bind, h_sub2] at heval_w
+            injection heval_w
+        | outOfFuel =>
+          -- outOfFuel propagates, not runtimeError
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+        | runtimeError sub_msg =>
+          -- First operand runtimeError: valid case
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_msg_eq h_world_eq
+          have hw_eq1 : w_sub1 = w :=
+            beval_IOFree_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 hio₁ h_sub1
+          rw [hw_eq1] at h_sub1
+          have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.runtimeError sub_msg) w hio₁ h_sub1
+          have h_sub1_w' :
+              LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+            have h := congrFun h_ih1 w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub1_w']
+          simp only [pure]
+          rw [← h_msg_eq]
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub1] at heval_w
+        injection heval_w
+
+private lemma beval_IOFree_eq_pure_vlet (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (x : Name) (e₁ : Expr) (e₂ : Expr) (hio : IOFree (Expr.vlet x e₁ e₂))
+    (heval_w : LeanPoison.beval fuel cfg (Expr.vlet x e₁ e₂) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.vlet x e₁ e₂) verbose = pure r := by
+  have hio₁ : IOFree e₁ := by cases hio; assumption
+  have hio₂ : IOFree e₂ := by cases hio; assumption
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ fuel' =>
+    cases r with
+    | success cfg_final v =>
+      have hstruct := bevalVlet_structure x e₁ e₂ (fuel' + 1) verbose cfg cfg_final v w w heval_w
+      rcases hstruct with ⟨cfg₁, cfg₂, cfg₃, v₁, w_mid, hbeval_e1, hcfg2_eq, hbeval_e2, hcfg_final⟩
+      simp only [Nat.add_sub_cancel] at hbeval_e1 hbeval_e2
+      have hw_mid : w_mid = w :=
+        beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg₁ v₁) w w_mid hio₁ hbeval_e1
+      rw [hw_mid] at hbeval_e1
+      rw [hw_mid] at hbeval_e2
+      have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
+      have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg₂ e₂ verbose (.success cfg₃ v) w hio₂ hbeval_e2
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      have h_beval1_w' :
+          LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg₁ v₁) w' := by
+        have h := congrFun h_ih1 w'
+        simp only [pure] at h
+        exact h
+      rw [h_beval1_w']
+      simp only [EST.bind]
+      have h_beval2_w' :
+          LeanPoison.beval fuel' { cfg₁ with varEnv := cfg₁.varEnv.update x v₁ } e₂ verbose w' =
+            EST.Out.ok (.success cfg₃ v) w' := by
+        have h := congrFun h_ih2 w'
+        simp only [pure, hcfg2_eq] at h
+        exact h
+      rw [h_beval2_w']
+      simp only [pure, hcfg_final.symm]
+    | outOfFuel =>
+      -- outOfFuel can only come from a sub-expression returning outOfFuel
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub1 : LeanPoison.beval fuel' cfg e₁ verbose w with
+      | ok r_sub1 w_sub1 =>
+        cases r_sub1 with
+        | success cfg_sub1 v_sub1 =>
+          simp only [h_sub1] at heval_w
+          cases h_sub2 :
+              LeanPoison.beval fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
+                e₂ verbose w_sub1 with
+          | ok r_sub2 w_sub2 =>
+            cases r_sub2 with
+            | success cfg_sub2 v_sub2 =>
+              -- success cannot yield outOfFuel
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+            | outOfFuel =>
+              -- Second operand outOfFuel: valid case
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              have hw_eq1 : w_sub1 = w :=
+                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+              rw [hw_eq1] at h_sub1
+              rw [hw_eq1] at h_sub2
+              have hw_eq2 : w_sub2 = w :=
+                beval_IOFree_preserves_world fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
+                  e₂ verbose .outOfFuel w w_sub2 hio₂ h_sub2
+              rw [hw_eq2] at h_sub2
+              have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
+              have h_ih2 :=
+                ih fuel' (Nat.lt_succ_self _) { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
+                  e₂ verbose .outOfFuel w hio₂ h_sub2
+              have h_sub1_w' :
+                  LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 v_sub1) w' := by
+                have h := congrFun h_ih1 w'
+                simp only [pure] at h
+                exact h
+              have h_sub2_w' :
+                  LeanPoison.beval fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
+                    e₂ verbose w' = EST.Out.ok .outOfFuel w' := by
+                have h := congrFun h_ih2 w'
+                simp only [pure] at h
+                exact h
+              rw [h_sub1_w']
+              simp only [EST.bind]
+              rw [h_sub2_w']
+            | runtimeError sub_msg =>
+              -- runtimeError propagates, not outOfFuel
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+          | error e_err =>
+            -- Contradiction: EST.Out.error ≠ EST.Out.ok
+            simp only [EST.bind, h_sub2] at heval_w
+            injection heval_w
+        | outOfFuel =>
+          -- First operand outOfFuel: valid case
+          simp only [h_sub1, pure] at heval_w
+          have hw_sub1 : w_sub1 = w :=
+            beval_IOFree_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 hio₁ h_sub1
+          rw [hw_sub1] at h_sub1
+          have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .outOfFuel w hio₁ h_sub1
+          have h_sub1_w' :
+              LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok .outOfFuel w' := by
+            have h := congrFun h_ih1 w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub1_w']
+        | runtimeError sub_msg =>
+          -- runtimeError propagates, not outOfFuel
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub1] at heval_w
+        injection heval_w
+    | runtimeError msg =>
+      -- runtimeError can come from:
+      -- 1. e₁ runtimeError
+      -- 2. e₁ success and e₂ runtimeError
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub1 : LeanPoison.beval fuel' cfg e₁ verbose w with
+      | ok r_sub1 w_sub1 =>
+        cases r_sub1 with
+        | success cfg_sub1 v_sub1 =>
+          simp only [h_sub1] at heval_w
+          cases h_sub2 :
+              LeanPoison.beval fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
+                e₂ verbose w_sub1 with
+          | ok r_sub2 w_sub2 =>
+            cases r_sub2 with
+            | success cfg_sub2 v_sub2 =>
+              -- success, not runtimeError
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+            | outOfFuel =>
+              -- outOfFuel propagates, not runtimeError
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+            | runtimeError sub_msg =>
+              -- Second operand runtimeError: valid case
+              simp only [EST.bind, h_sub2, pure] at heval_w
+              injection heval_w with h_msg_eq h_world_eq
+              have hw_eq1 : w_sub1 = w :=
+                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+              rw [hw_eq1] at h_sub1
+              rw [hw_eq1] at h_sub2
+              have hw_eq2 : w_sub2 = w :=
+                beval_IOFree_preserves_world fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
+                  e₂ verbose (.runtimeError sub_msg) w w_sub2 hio₂ h_sub2
+              rw [hw_eq2] at h_sub2
+              have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
+              have h_ih2 :=
+                ih fuel' (Nat.lt_succ_self _) { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
+                  e₂ verbose (.runtimeError sub_msg) w hio₂ h_sub2
+              have h_sub1_w' :
+                  LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 v_sub1) w' := by
+                have h := congrFun h_ih1 w'
+                simp only [pure] at h
+                exact h
+              have h_sub2_w' :
+                  LeanPoison.beval fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
+                    e₂ verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+                have h := congrFun h_ih2 w'
+                simp only [pure] at h
+                exact h
+              rw [h_sub1_w']
+              simp only [EST.bind]
+              rw [h_sub2_w']
+              simp only [pure]
+              rw [← h_msg_eq]
+          | error e_err =>
+            -- Contradiction: EST.Out.error ≠ EST.Out.ok
+            simp only [EST.bind, h_sub2] at heval_w
+            injection heval_w
+        | outOfFuel =>
+          -- outOfFuel propagates, not runtimeError
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+        | runtimeError sub_msg =>
+          -- First operand runtimeError: valid case
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_msg_eq h_world_eq
+          have hw_eq1 : w_sub1 = w :=
+            beval_IOFree_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 hio₁ h_sub1
+          rw [hw_eq1] at h_sub1
+          have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.runtimeError sub_msg) w hio₁ h_sub1
+          have h_sub1_w' :
+              LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+            have h := congrFun h_ih1 w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub1_w']
+          simp only [pure]
+          rw [← h_msg_eq]
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub1] at heval_w
+        injection heval_w
+
+private lemma beval_IOFree_eq_pure_deref (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (e' : Expr) (hio : IOFree (Expr.deref e'))
+    (heval_w : LeanPoison.beval fuel cfg (Expr.deref e') verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.deref e') verbose = pure r := by
+  have hio' : IOFree e' := by cases hio; assumption
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ fuel' =>
+    cases r with
+    | success cfg₁ v =>
+      have hstruct := bevalDeref_structure e' (fuel' + 1) verbose cfg cfg₁ v w w heval_w
+      rcases hstruct with ⟨cfg', a, n, hbeval_e, hlookup, hv_eq, hmem, hvar, hnext, hpure_mode⟩
+      simp only [Nat.add_sub_cancel] at hbeval_e
+      have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg' (Value.loc a)) w hio' hbeval_e
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      have h_sub_w' :
+          LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg' (Value.loc a)) w' := by
+        have h := congrFun h_ih w'
+        simp only [pure] at h
+        exact h
+      rw [h_sub_w']
+      have hlookup' : cfg'.memory.get? a = some n := by
+        simpa [Memory.lookup] using hlookup
+      have hlookup'' : cfg'.memory[a]? = some n := by
+        simpa using hlookup'
+      have h_cfg_eq : cfg₁ = cfg' := by
+        cases cfg₁; cases cfg'
+        simp only [Config.mk.injEq]
+        exact ⟨hmem, hvar, hnext, hpure_mode⟩
+      simp [hlookup'', hv_eq, h_cfg_eq, pure]
+    | outOfFuel =>
+      -- outOfFuel can only come from sub-expression returning outOfFuel
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub : LeanPoison.beval fuel' cfg e' verbose w with
+      | ok r_sub w_sub =>
+        cases r_sub with
+        | success cfg_sub v_sub =>
+          simp only [h_sub] at heval_w
+          cases v_sub with
+          | loc a =>
+            cases h_lookup : cfg_sub.memory[a]? with
+            | some n =>
+              simp [h_lookup, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+            | none =>
+              simp [h_lookup, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+          | num _ | bool _ | unit | str _ | closure _ _ _ | peClosure _ _ _ =>
+            simp [pure] at heval_w
+            injection heval_w with h_contr
+            injection h_contr
+        | outOfFuel =>
+          -- Sub returned outOfFuel: valid case
+          simp only [h_sub, pure] at heval_w
+          have hw_eq : w_sub = w :=
+            beval_IOFree_preserves_world fuel' cfg e' verbose .outOfFuel w w_sub hio' h_sub
+          rw [hw_eq] at h_sub
+          have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose .outOfFuel w hio' h_sub
+          have h_sub_w' :
+              LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok .outOfFuel w' := by
+            have h := congrFun h_ih w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub_w']
+        | runtimeError sub_msg =>
+          -- runtimeError propagates, not outOfFuel
+          simp only [h_sub, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub] at heval_w
+        injection heval_w
+    | runtimeError msg =>
+      -- runtimeError can come from:
+      -- 1. sub-expression runtimeError
+      -- 2. sub-expression success with non-location
+      -- 3. sub-expression success with location but missing memory
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub : LeanPoison.beval fuel' cfg e' verbose w with
+      | ok r_sub w_sub =>
+        cases r_sub with
+        | success cfg_sub v_sub =>
+          simp only [h_sub] at heval_w
+          cases v_sub with
+          | loc a =>
+            cases h_lookup : cfg_sub.memory[a]? with
+            | some n =>
+              -- success, not runtimeError
+              simp [h_lookup, pure] at heval_w
+              injection heval_w with h_contr
+              injection h_contr
+            | none =>
+              -- runtimeError due to missing memory: valid case
+              simp [h_lookup, pure] at heval_w
+              injection heval_w with h_msg_eq h_world_eq
+              have hw_eq : w_sub = w :=
+                beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.loc a)) w w_sub hio' h_sub
+              rw [hw_eq] at h_sub
+              have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.loc a)) w hio' h_sub
+              have h_sub_w' :
+                  LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub (Value.loc a)) w' := by
+                have h := congrFun h_ih w'
+                simp only [pure] at h
+                exact h
+              rw [h_sub_w']
+              simp [h_lookup, pure]
+              rw [← h_msg_eq]
+          | num n =>
+            -- runtimeError due to non-location: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.num n)) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.num n)) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub (Value.num n)) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+          | bool b =>
+            -- runtimeError due to non-location: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.bool b)) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.bool b)) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub (Value.bool b)) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+          | unit =>
+            -- runtimeError due to non-location: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub Value.unit) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub Value.unit) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub Value.unit) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+          | str s =>
+            -- runtimeError due to non-location: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.str s)) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.str s)) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub (Value.str s)) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+          | closure x body env =>
+            -- runtimeError due to non-location: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.closure x body env)) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.closure x body env)) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' =
+                  EST.Out.ok (.success cfg_sub (Value.closure x body env)) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+          | peClosure x body env =>
+            -- runtimeError due to non-location: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.peClosure x body env)) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.peClosure x body env)) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' =
+                  EST.Out.ok (.success cfg_sub (Value.peClosure x body env)) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+        | outOfFuel =>
+          -- outOfFuel propagates, not runtimeError
+          simp only [h_sub, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+        | runtimeError sub_msg =>
+          -- Sub returned runtimeError: valid case
+          simp only [h_sub, pure] at heval_w
+          injection heval_w with h_msg_eq h_world_eq
+          have hw_eq : w_sub = w :=
+            beval_IOFree_preserves_world fuel' cfg e' verbose (.runtimeError sub_msg) w w_sub hio' h_sub
+          rw [hw_eq] at h_sub
+          have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.runtimeError sub_msg) w hio' h_sub
+          have h_sub_w' :
+              LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+            have h := congrFun h_ih w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub_w']
+          simp only [pure]
+          rw [← h_msg_eq]
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub] at heval_w
+        injection heval_w
+
+private lemma beval_IOFree_eq_pure_newRef (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (e' : Expr) (hio : IOFree (Expr.newRef e'))
+    (heval_w : LeanPoison.beval fuel cfg (Expr.newRef e') verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.newRef e') verbose = pure r := by
+  have hio' : IOFree e' := by cases hio; assumption
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ fuel' =>
+    cases r with
+    | success cfg₂ v =>
+      have hstruct := bevalNewRef_structure e' (fuel' + 1) verbose cfg cfg₂ v w w heval_w
+      rcases hstruct with ⟨cfg₁, n, a, hbeval_e, ha, hmem, hnext, hvar, hpure_mode, hv⟩
+      simp only [Nat.add_sub_cancel] at hbeval_e
+      have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg₁ (Value.num n)) w hio' hbeval_e
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      have h_sub_w' :
+          LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg₁ (Value.num n)) w' := by
+        have h := congrFun h_ih w'
+        simp only [pure] at h
+        exact h
+      rw [h_sub_w']
+      have hmem' : cfg₂.memory = cfg₁.memory.update cfg₁.nextAddr n := by
+        simpa [ha] using hmem
+      have h_cfg_eq :
+          { cfg₁ with
+              memory := cfg₁.memory.update cfg₁.nextAddr n,
+              nextAddr := cfg₁.nextAddr + 1 } = cfg₂ := by
+        cases cfg₁; cases cfg₂
+        simp [Config.mk.injEq]
+        exact ⟨hmem'.symm, hvar.symm, hnext.symm, hpure_mode.symm⟩
+      have hv' : v = Value.loc cfg₁.nextAddr := by
+        simpa [ha] using hv
+      simp [freshAddr, hv', h_cfg_eq, pure]
+    | outOfFuel =>
+      -- outOfFuel can only come from sub-expression returning outOfFuel
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub : LeanPoison.beval fuel' cfg e' verbose w with
+      | ok r_sub w_sub =>
+        cases r_sub with
+        | success cfg_sub v_sub =>
+          simp only [h_sub] at heval_w
+          cases v_sub with
+          | num _ =>
+            -- success, not outOfFuel
+            simp [pure] at heval_w
+            injection heval_w with h_contr
+            injection h_contr
+          | bool _ | unit | str _ | loc _ | closure _ _ _ | peClosure _ _ _ =>
+            -- runtimeError, not outOfFuel
+            simp [pure] at heval_w
+            injection heval_w with h_contr
+            injection h_contr
+        | outOfFuel =>
+          -- Sub returned outOfFuel: valid case
+          simp only [h_sub, pure] at heval_w
+          have hw_eq : w_sub = w :=
+            beval_IOFree_preserves_world fuel' cfg e' verbose .outOfFuel w w_sub hio' h_sub
+          rw [hw_eq] at h_sub
+          have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose .outOfFuel w hio' h_sub
+          have h_sub_w' :
+              LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok .outOfFuel w' := by
+            have h := congrFun h_ih w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub_w']
+        | runtimeError sub_msg =>
+          -- runtimeError propagates, not outOfFuel
+          simp only [h_sub, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub] at heval_w
+        injection heval_w
+    | runtimeError msg =>
+      -- runtimeError can come from:
+      -- 1. sub-expression runtimeError
+      -- 2. sub-expression success with non-number
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub : LeanPoison.beval fuel' cfg e' verbose w with
+      | ok r_sub w_sub =>
+        cases r_sub with
+        | success cfg_sub v_sub =>
+          simp only [h_sub] at heval_w
+          cases v_sub with
+          | num _ =>
+            -- success, not runtimeError
+            simp [pure] at heval_w
+            injection heval_w with h_contr
+            injection h_contr
+          | bool b =>
+            -- runtimeError due to non-number: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.bool b)) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.bool b)) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub (Value.bool b)) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+          | unit =>
+            -- runtimeError due to non-number: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub Value.unit) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub Value.unit) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub Value.unit) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+          | str s =>
+            -- runtimeError due to non-number: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.str s)) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.str s)) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub (Value.str s)) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+          | loc a =>
+            -- runtimeError due to non-number: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.loc a)) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.loc a)) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub (Value.loc a)) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+          | closure x body env =>
+            -- runtimeError due to non-number: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.closure x body env)) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.closure x body env)) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' =
+                  EST.Out.ok (.success cfg_sub (Value.closure x body env)) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+          | peClosure x body env =>
+            -- runtimeError due to non-number: valid case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub = w :=
+              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.peClosure x body env)) w w_sub hio' h_sub
+            rw [hw_eq] at h_sub
+            have h_ih :=
+              ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.peClosure x body env)) w hio' h_sub
+            have h_sub_w' :
+                LeanPoison.beval fuel' cfg e' verbose w' =
+                  EST.Out.ok (.success cfg_sub (Value.peClosure x body env)) w' := by
+              have h := congrFun h_ih w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub_w']
+            simp [pure]
+            rw [← h_msg_eq]
+        | outOfFuel =>
+          -- outOfFuel propagates, not runtimeError
+          simp only [h_sub, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+        | runtimeError sub_msg =>
+          -- Sub returned runtimeError: valid case
+          simp only [h_sub, pure] at heval_w
+          injection heval_w with h_msg_eq h_world_eq
+          have hw_eq : w_sub = w :=
+            beval_IOFree_preserves_world fuel' cfg e' verbose (.runtimeError sub_msg) w w_sub hio' h_sub
+          rw [hw_eq] at h_sub
+          have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.runtimeError sub_msg) w hio' h_sub
+          have h_sub_w' :
+              LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+            have h := congrFun h_ih w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub_w']
+          simp only [pure]
+          rw [← h_msg_eq]
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub] at heval_w
+        injection heval_w
+
+private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (e₁ : Expr) (e₂ : Expr) (hio : IOFree (Expr.assign e₁ e₂))
+    (heval_w : LeanPoison.beval fuel cfg (Expr.assign e₁ e₂) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.assign e₁ e₂) verbose = pure r := by
+  have hio₁ : IOFree e₁ := by cases hio; assumption
+  have hio₂ : IOFree e₂ := by cases hio; assumption
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ fuel' =>
+    cases r with
+    | success cfg₂ v =>
+      have hstruct := bevalAssign_structure e₁ e₂ (fuel' + 1) verbose cfg cfg₂ v w w heval_w
+      rcases hstruct with ⟨cfg₁, cfg₁', a, n, w_mid, hbeval_e1, hbeval_e2, hv, hmem, hvar, hnext, hpure_mode⟩
+      simp only [Nat.add_sub_cancel] at hbeval_e1 hbeval_e2
+      have hw_mid : w_mid = w :=
+        beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg₁ (Value.loc a)) w w_mid hio₁ hbeval_e1
+      rw [hw_mid] at hbeval_e1
+      rw [hw_mid] at hbeval_e2
+      have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg₁ (Value.loc a)) w hio₁ hbeval_e1
+      have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg₁ e₂ verbose (.success cfg₁' (Value.num n)) w hio₂ hbeval_e2
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      have h_sub1_w' :
+          LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg₁ (Value.loc a)) w' := by
+        have h := congrFun h_ih1 w'
+        simp only [pure] at h
+        exact h
+      rw [h_sub1_w']
+      simp only [EST.bind]
+      have h_sub2_w' :
+          LeanPoison.beval fuel' cfg₁ e₂ verbose w' = EST.Out.ok (.success cfg₁' (Value.num n)) w' := by
+        have h := congrFun h_ih2 w'
+        simp only [pure] at h
+        exact h
+      rw [h_sub2_w']
+      have h_cfg_eq : { cfg₁' with memory := cfg₁'.memory.update a n } = cfg₂ := by
+        cases cfg₁'; cases cfg₂
+        simp [Config.mk.injEq]
+        exact ⟨hmem.symm, hvar.symm, hnext.symm, hpure_mode.symm⟩
+      simp [hv, h_cfg_eq, pure]
+    | outOfFuel =>
+      -- outOfFuel can only come from a sub-expression returning outOfFuel
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub1 : LeanPoison.beval fuel' cfg e₁ verbose w with
+      | ok r_sub1 w_sub1 =>
+        cases r_sub1 with
+        | success cfg_sub1 v_sub1 =>
+          simp only [h_sub1] at heval_w
+          cases v_sub1 with
+          | loc a =>
+            cases h_sub2 : LeanPoison.beval fuel' cfg_sub1 e₂ verbose w_sub1 with
+            | ok r_sub2 w_sub2 =>
+              cases r_sub2 with
+              | success cfg_sub2 v_sub2 =>
+                -- success cannot yield outOfFuel
+                cases v_sub2 <;>
+                  (simp only [EST.bind, h_sub2, pure] at heval_w
+                   injection heval_w with h_contr
+                   injection h_contr)
+              | outOfFuel =>
+                -- Second operand outOfFuel: valid case
+                simp only [EST.bind, h_sub2, pure] at heval_w
+                have hw_eq1 : w_sub1 = w :=
+                  beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                rw [hw_eq1] at h_sub1
+                rw [hw_eq1] at h_sub2
+                have hw_eq2 : w_sub2 = w :=
+                  beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose .outOfFuel w w_sub2 hio₂ h_sub2
+                rw [hw_eq2] at h_sub2
+                have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
+                have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose .outOfFuel w hio₂ h_sub2
+                have h_sub1_w' :
+                    LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.loc a)) w' := by
+                  have h := congrFun h_ih1 w'
+                  simp only [pure] at h
+                  exact h
+                have h_sub2_w' :
+                    LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' = EST.Out.ok .outOfFuel w' := by
+                  have h := congrFun h_ih2 w'
+                  simp only [pure] at h
+                  exact h
+                rw [h_sub1_w']
+                simp only [EST.bind]
+                rw [h_sub2_w']
+              | runtimeError sub_msg =>
+                -- runtimeError propagates, not outOfFuel
+                simp only [EST.bind, h_sub2, pure] at heval_w
+                injection heval_w with h_contr
+                injection h_contr
+            | error e_err =>
+              -- Contradiction: EST.Out.error ≠ EST.Out.ok
+              simp only [EST.bind, h_sub2] at heval_w
+              injection heval_w
+          | num _ | bool _ | unit | str _ | closure _ _ _ | peClosure _ _ _ =>
+            -- runtimeError, not outOfFuel
+            simp [pure] at heval_w
+            injection heval_w with h_contr
+            injection h_contr
+        | outOfFuel =>
+          -- First operand outOfFuel: valid case
+          simp only [h_sub1, pure] at heval_w
+          have hw_sub1 : w_sub1 = w :=
+            beval_IOFree_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 hio₁ h_sub1
+          rw [hw_sub1] at h_sub1
+          have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .outOfFuel w hio₁ h_sub1
+          have h_sub1_w' :
+              LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok .outOfFuel w' := by
+            have h := congrFun h_ih1 w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub1_w']
+        | runtimeError sub_msg =>
+          -- runtimeError propagates, not outOfFuel
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub1] at heval_w
+        injection heval_w
+    | runtimeError msg =>
+      -- runtimeError can come from:
+      -- 1. e₁ runtimeError
+      -- 2. e₁ success with non-location
+      -- 3. e₁ success loc and e₂ runtimeError
+      -- 4. e₁ success loc and e₂ success non-number
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub1 : LeanPoison.beval fuel' cfg e₁ verbose w with
+      | ok r_sub1 w_sub1 =>
+        cases r_sub1 with
+        | success cfg_sub1 v_sub1 =>
+          simp only [h_sub1] at heval_w
+          cases v_sub1 with
+          | loc a =>
+            cases h_sub2 : LeanPoison.beval fuel' cfg_sub1 e₂ verbose w_sub1 with
+            | ok r_sub2 w_sub2 =>
+              cases r_sub2 with
+              | success cfg_sub2 v_sub2 =>
+                cases v_sub2 with
+                | num n =>
+                  -- success, not runtimeError
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_contr
+                  injection h_contr
+                | bool b =>
+                  -- non-number: runtimeError case
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_msg_eq h_world_eq
+                  have hw_eq1 : w_sub1 = w :=
+                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                  rw [hw_eq1] at h_sub1
+                  rw [hw_eq1] at h_sub2
+                  have hw_eq2 : w_sub2 = w :=
+                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.bool b)) w w_sub2 hio₂ h_sub2
+                  rw [hw_eq2] at h_sub2
+                  have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
+                  have h_ih2 :=
+                    ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.bool b)) w hio₂ h_sub2
+                  have h_sub1_w' :
+                      LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.loc a)) w' := by
+                    have h := congrFun h_ih1 w'
+                    simp only [pure] at h
+                    exact h
+                  have h_sub2_w' :
+                      LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' =
+                        EST.Out.ok (.success cfg_sub2 (Value.bool b)) w' := by
+                    have h := congrFun h_ih2 w'
+                    simp only [pure] at h
+                    exact h
+                  rw [h_sub1_w']
+                  simp only [EST.bind]
+                  rw [h_sub2_w']
+                  simp only [pure]
+                  rw [← h_msg_eq]
+                | unit =>
+                  -- non-number: runtimeError case
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_msg_eq h_world_eq
+                  have hw_eq1 : w_sub1 = w :=
+                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                  rw [hw_eq1] at h_sub1
+                  rw [hw_eq1] at h_sub2
+                  have hw_eq2 : w_sub2 = w :=
+                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 Value.unit) w w_sub2 hio₂ h_sub2
+                  rw [hw_eq2] at h_sub2
+                  have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
+                  have h_ih2 :=
+                    ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.success cfg_sub2 Value.unit) w hio₂ h_sub2
+                  have h_sub1_w' :
+                      LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.loc a)) w' := by
+                    have h := congrFun h_ih1 w'
+                    simp only [pure] at h
+                    exact h
+                  have h_sub2_w' :
+                      LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' =
+                        EST.Out.ok (.success cfg_sub2 Value.unit) w' := by
+                    have h := congrFun h_ih2 w'
+                    simp only [pure] at h
+                    exact h
+                  rw [h_sub1_w']
+                  simp only [EST.bind]
+                  rw [h_sub2_w']
+                  simp only [pure]
+                  rw [← h_msg_eq]
+                | str s =>
+                  -- non-number: runtimeError case
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_msg_eq h_world_eq
+                  have hw_eq1 : w_sub1 = w :=
+                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                  rw [hw_eq1] at h_sub1
+                  rw [hw_eq1] at h_sub2
+                  have hw_eq2 : w_sub2 = w :=
+                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.str s)) w w_sub2 hio₂ h_sub2
+                  rw [hw_eq2] at h_sub2
+                  have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
+                  have h_ih2 :=
+                    ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.str s)) w hio₂ h_sub2
+                  have h_sub1_w' :
+                      LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.loc a)) w' := by
+                    have h := congrFun h_ih1 w'
+                    simp only [pure] at h
+                    exact h
+                  have h_sub2_w' :
+                      LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' =
+                        EST.Out.ok (.success cfg_sub2 (Value.str s)) w' := by
+                    have h := congrFun h_ih2 w'
+                    simp only [pure] at h
+                    exact h
+                  rw [h_sub1_w']
+                  simp only [EST.bind]
+                  rw [h_sub2_w']
+                  simp only [pure]
+                  rw [← h_msg_eq]
+                | loc l =>
+                  -- non-number: runtimeError case
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_msg_eq h_world_eq
+                  have hw_eq1 : w_sub1 = w :=
+                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                  rw [hw_eq1] at h_sub1
+                  rw [hw_eq1] at h_sub2
+                  have hw_eq2 : w_sub2 = w :=
+                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.loc l)) w w_sub2 hio₂ h_sub2
+                  rw [hw_eq2] at h_sub2
+                  have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
+                  have h_ih2 :=
+                    ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.loc l)) w hio₂ h_sub2
+                  have h_sub1_w' :
+                      LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.loc a)) w' := by
+                    have h := congrFun h_ih1 w'
+                    simp only [pure] at h
+                    exact h
+                  have h_sub2_w' :
+                      LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' =
+                        EST.Out.ok (.success cfg_sub2 (Value.loc l)) w' := by
+                    have h := congrFun h_ih2 w'
+                    simp only [pure] at h
+                    exact h
+                  rw [h_sub1_w']
+                  simp only [EST.bind]
+                  rw [h_sub2_w']
+                  simp only [pure]
+                  rw [← h_msg_eq]
+                | closure x body env =>
+                  -- non-number: runtimeError case
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_msg_eq h_world_eq
+                  have hw_eq1 : w_sub1 = w :=
+                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                  rw [hw_eq1] at h_sub1
+                  rw [hw_eq1] at h_sub2
+                  have hw_eq2 : w_sub2 = w :=
+                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.closure x body env)) w w_sub2 hio₂ h_sub2
+                  rw [hw_eq2] at h_sub2
+                  have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
+                  have h_ih2 :=
+                    ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.closure x body env)) w hio₂ h_sub2
+                  have h_sub1_w' :
+                      LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.loc a)) w' := by
+                    have h := congrFun h_ih1 w'
+                    simp only [pure] at h
+                    exact h
+                  have h_sub2_w' :
+                      LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' =
+                        EST.Out.ok (.success cfg_sub2 (Value.closure x body env)) w' := by
+                    have h := congrFun h_ih2 w'
+                    simp only [pure] at h
+                    exact h
+                  rw [h_sub1_w']
+                  simp only [EST.bind]
+                  rw [h_sub2_w']
+                  simp only [pure]
+                  rw [← h_msg_eq]
+                | peClosure x body env =>
+                  -- non-number: runtimeError case
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_msg_eq h_world_eq
+                  have hw_eq1 : w_sub1 = w :=
+                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                  rw [hw_eq1] at h_sub1
+                  rw [hw_eq1] at h_sub2
+                  have hw_eq2 : w_sub2 = w :=
+                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.peClosure x body env)) w w_sub2 hio₂ h_sub2
+                  rw [hw_eq2] at h_sub2
+                  have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
+                  have h_ih2 :=
+                    ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.peClosure x body env)) w hio₂ h_sub2
+                  have h_sub1_w' :
+                      LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.loc a)) w' := by
+                    have h := congrFun h_ih1 w'
+                    simp only [pure] at h
+                    exact h
+                  have h_sub2_w' :
+                      LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' =
+                        EST.Out.ok (.success cfg_sub2 (Value.peClosure x body env)) w' := by
+                    have h := congrFun h_ih2 w'
+                    simp only [pure] at h
+                    exact h
+                  rw [h_sub1_w']
+                  simp only [EST.bind]
+                  rw [h_sub2_w']
+                  simp only [pure]
+                  rw [← h_msg_eq]
+              | outOfFuel =>
+                -- outOfFuel propagates, not runtimeError
+                simp only [EST.bind, h_sub2, pure] at heval_w
+                injection heval_w with h_contr
+                injection h_contr
+              | runtimeError sub_msg =>
+                -- Second operand runtimeError: valid case
+                simp only [EST.bind, h_sub2, pure] at heval_w
+                injection heval_w with h_msg_eq h_world_eq
+                have hw_eq1 : w_sub1 = w :=
+                  beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                rw [hw_eq1] at h_sub1
+                rw [hw_eq1] at h_sub2
+                have hw_eq2 : w_sub2 = w :=
+                  beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 hio₂ h_sub2
+                rw [hw_eq2] at h_sub2
+                have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
+                have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.runtimeError sub_msg) w hio₂ h_sub2
+                have h_sub1_w' :
+                    LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.loc a)) w' := by
+                  have h := congrFun h_ih1 w'
+                  simp only [pure] at h
+                  exact h
+                have h_sub2_w' :
+                    LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+                  have h := congrFun h_ih2 w'
+                  simp only [pure] at h
+                  exact h
+                rw [h_sub1_w']
+                simp only [EST.bind]
+                rw [h_sub2_w']
+                simp only [pure]
+                rw [← h_msg_eq]
+            | error e_err =>
+              -- Contradiction: EST.Out.error ≠ EST.Out.ok
+              simp only [EST.bind, h_sub2] at heval_w
+              injection heval_w
+          | num n =>
+            -- Left operand not location: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.num n)) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.num n)) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.num n)) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+          | bool b =>
+            -- Left operand not location: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool b)) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool b)) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.bool b)) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+          | unit =>
+            -- Left operand not location: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 Value.unit) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 Value.unit) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 Value.unit) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+          | str s =>
+            -- Left operand not location: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.str s)) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.str s)) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.str s)) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+          | closure x body env =>
+            -- Left operand not location: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.closure x body env)) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 :=
+              ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.closure x body env)) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' =
+                  EST.Out.ok (.success cfg_sub1 (Value.closure x body env)) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+          | peClosure x body env =>
+            -- Left operand not location: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.peClosure x body env)) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 :=
+              ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.peClosure x body env)) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' =
+                  EST.Out.ok (.success cfg_sub1 (Value.peClosure x body env)) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+        | outOfFuel =>
+          -- outOfFuel propagates, not runtimeError
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+        | runtimeError sub_msg =>
+          -- First operand runtimeError: valid case
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_msg_eq h_world_eq
+          have hw_eq1 : w_sub1 = w :=
+            beval_IOFree_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 hio₁ h_sub1
+          rw [hw_eq1] at h_sub1
+          have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.runtimeError sub_msg) w hio₁ h_sub1
+          have h_sub1_w' :
+              LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+            have h := congrFun h_ih1 w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub1_w']
+          simp only [pure]
+          rw [← h_msg_eq]
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub1] at heval_w
+        injection heval_w
+
+private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (e₁ : Expr) (e₂ : Expr) (e₃ : Expr) (hio : IOFree (Expr.ite e₁ e₂ e₃))
+    (heval_w : LeanPoison.beval fuel cfg (Expr.ite e₁ e₂ e₃) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.ite e₁ e₂ e₃) verbose = pure r := by
+  have hio₁ : IOFree e₁ := by cases hio; assumption
+  have hio₂ : IOFree e₂ := by cases hio; assumption
+  have hio₃ : IOFree e₃ := by cases hio; assumption
+  cases fuel with
+  | zero =>
+    simp only [LeanPoison.beval] at heval_w
+    simp [pure] at heval_w
+    injection heval_w with h_result h_world
+    subst h_result
+    apply funext
+    intro w'
+    simp [LeanPoison.beval, pure]
+  | succ fuel' =>
+    cases r with
+    | success cfg₂ v =>
+      have hstruct := bevalIte_structure e₁ e₂ e₃ (fuel' + 1) verbose cfg cfg₂ v w w heval_w
+      rcases hstruct with ⟨cfg₁, b, w_mid, hbeval_e1, hcases⟩
+      simp only [Nat.add_sub_cancel] at hbeval_e1
+      have hw_mid : w_mid = w :=
+        beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg₁ (Value.bool b)) w w_mid hio₁ hbeval_e1
+      rw [hw_mid] at hbeval_e1
+      have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg₁ (Value.bool b)) w hio₁ hbeval_e1
+      cases hcases with
+      | inl htrue =>
+        rcases htrue with ⟨hb, hbeval_e2⟩
+        rw [hw_mid] at hbeval_e2
+        simp only [Nat.add_sub_cancel] at hbeval_e2
+        have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg₁ e₂ verbose (.success cfg₂ v) w hio₂ hbeval_e2
+        apply funext
+        intro w'
+        simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+        simp only [bind, Bind.bind, EST.bind]
+        have h_sub1_w' :
+            LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg₁ (Value.bool b)) w' := by
+          have h := congrFun h_ih1 w'
+          simp only [pure] at h
+          exact h
+        rw [h_sub1_w']
+        have h_sub2_w' :
+            LeanPoison.beval fuel' cfg₁ e₂ verbose w' = EST.Out.ok (.success cfg₂ v) w' := by
+          have h := congrFun h_ih2 w'
+          simp only [pure] at h
+          exact h
+        simp [hb, EST.bind, h_sub2_w', pure]  -- choose the true branch
+      | inr hfalse =>
+        rcases hfalse with ⟨hb, hbeval_e3⟩
+        rw [hw_mid] at hbeval_e3
+        simp only [Nat.add_sub_cancel] at hbeval_e3
+        have h_ih3 := ih fuel' (Nat.lt_succ_self _) cfg₁ e₃ verbose (.success cfg₂ v) w hio₃ hbeval_e3
+        apply funext
+        intro w'
+        simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+        simp only [bind, Bind.bind, EST.bind]
+        have h_sub1_w' :
+            LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg₁ (Value.bool b)) w' := by
+          have h := congrFun h_ih1 w'
+          simp only [pure] at h
+          exact h
+        rw [h_sub1_w']
+        have h_sub3_w' :
+            LeanPoison.beval fuel' cfg₁ e₃ verbose w' = EST.Out.ok (.success cfg₂ v) w' := by
+          have h := congrFun h_ih3 w'
+          simp only [pure] at h
+          exact h
+        simp [hb, EST.bind, h_sub3_w', pure]  -- choose the false branch
+    | outOfFuel =>
+      -- outOfFuel can only come from sub-expression returning outOfFuel
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub1 : LeanPoison.beval fuel' cfg e₁ verbose w with
+      | ok r_sub1 w_sub1 =>
+        cases r_sub1 with
+        | success cfg_sub1 v_sub1 =>
+          simp only [h_sub1] at heval_w
+          cases v_sub1 with
+          | bool b =>
+            cases b with
+            | true =>
+              cases h_sub2 : LeanPoison.beval fuel' cfg_sub1 e₂ verbose w_sub1 with
+              | ok r_sub2 w_sub2 =>
+                cases r_sub2 with
+                | success cfg_sub2 v_sub2 =>
+                  -- success cannot yield outOfFuel
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_contr
+                  injection h_contr
+                | outOfFuel =>
+                  -- Second operand outOfFuel: valid case
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  have hw_eq1 : w_sub1 = w :=
+                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w w_sub1 hio₁ h_sub1
+                  rw [hw_eq1] at h_sub1
+                  rw [hw_eq1] at h_sub2
+                  have hw_eq2 : w_sub2 = w :=
+                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose .outOfFuel w w_sub2 hio₂ h_sub2
+                  rw [hw_eq2] at h_sub2
+                  have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w hio₁ h_sub1
+                  have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose .outOfFuel w hio₂ h_sub2
+                  have h_sub1_w' :
+                      LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.bool true)) w' := by
+                    have h := congrFun h_ih1 w'
+                    simp only [pure] at h
+                    exact h
+                  have h_sub2_w' :
+                      LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' = EST.Out.ok .outOfFuel w' := by
+                    have h := congrFun h_ih2 w'
+                    simp only [pure] at h
+                    exact h
+                  rw [h_sub1_w']
+                  simp only [EST.bind]
+                  rw [h_sub2_w']
+                | runtimeError sub_msg =>
+                  -- runtimeError propagates, not outOfFuel
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_contr
+                  injection h_contr
+              | error e_err =>
+                -- Contradiction: EST.Out.error ≠ EST.Out.ok
+                simp only [EST.bind, h_sub2] at heval_w
+                injection heval_w
+            | false =>
+              cases h_sub3 : LeanPoison.beval fuel' cfg_sub1 e₃ verbose w_sub1 with
+              | ok r_sub3 w_sub3 =>
+                cases r_sub3 with
+                | success cfg_sub3 v_sub3 =>
+                  -- success cannot yield outOfFuel
+                  simp only [EST.bind, h_sub3, pure] at heval_w
+                  injection heval_w with h_contr
+                  injection h_contr
+                | outOfFuel =>
+                  -- Third operand outOfFuel: valid case
+                  simp only [EST.bind, h_sub3, pure] at heval_w
+                  have hw_eq1 : w_sub1 = w :=
+                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w w_sub1 hio₁ h_sub1
+                  rw [hw_eq1] at h_sub1
+                  rw [hw_eq1] at h_sub3
+                  have hw_eq3 : w_sub3 = w :=
+                    beval_IOFree_preserves_world fuel' cfg_sub1 e₃ verbose .outOfFuel w w_sub3 hio₃ h_sub3
+                  rw [hw_eq3] at h_sub3
+                  have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w hio₁ h_sub1
+                  have h_ih3 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₃ verbose .outOfFuel w hio₃ h_sub3
+                  have h_sub1_w' :
+                      LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.bool false)) w' := by
+                    have h := congrFun h_ih1 w'
+                    simp only [pure] at h
+                    exact h
+                  have h_sub3_w' :
+                      LeanPoison.beval fuel' cfg_sub1 e₃ verbose w' = EST.Out.ok .outOfFuel w' := by
+                    have h := congrFun h_ih3 w'
+                    simp only [pure] at h
+                    exact h
+                  rw [h_sub1_w']
+                  simp only [EST.bind]
+                  rw [h_sub3_w']
+                | runtimeError sub_msg =>
+                  -- runtimeError propagates, not outOfFuel
+                  simp only [EST.bind, h_sub3, pure] at heval_w
+                  injection heval_w with h_contr
+                  injection h_contr
+              | error e_err =>
+                -- Contradiction: EST.Out.error ≠ EST.Out.ok
+                simp only [EST.bind, h_sub3] at heval_w
+                injection heval_w
+          | num _ | unit | str _ | loc _ | closure _ _ _ | peClosure _ _ _ =>
+            -- non-boolean condition gives runtimeError, not outOfFuel
+            simp [pure] at heval_w
+            injection heval_w with h_contr
+            injection h_contr
+        | outOfFuel =>
+          -- First operand outOfFuel: valid case
+          simp only [h_sub1, pure] at heval_w
+          have hw_sub1 : w_sub1 = w :=
+            beval_IOFree_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 hio₁ h_sub1
+          rw [hw_sub1] at h_sub1
+          have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .outOfFuel w hio₁ h_sub1
+          have h_sub1_w' :
+              LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok .outOfFuel w' := by
+            have h := congrFun h_ih1 w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub1_w']
+        | runtimeError sub_msg =>
+          -- runtimeError propagates, not outOfFuel
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub1] at heval_w
+        injection heval_w
+    | runtimeError msg =>
+      -- runtimeError can come from:
+      -- 1. condition runtimeError
+      -- 2. condition success with non-boolean
+      -- 3. condition success boolean and branch runtimeError
+      apply funext
+      intro w'
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
+      simp only [bind, Bind.bind, EST.bind]
+      simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
+                 bind, Bind.bind, EST.bind] at heval_w
+      cases h_sub1 : LeanPoison.beval fuel' cfg e₁ verbose w with
+      | ok r_sub1 w_sub1 =>
+        cases r_sub1 with
+        | success cfg_sub1 v_sub1 =>
+          simp only [h_sub1] at heval_w
+          cases v_sub1 with
+          | bool b =>
+            cases b with
+            | true =>
+              cases h_sub2 : LeanPoison.beval fuel' cfg_sub1 e₂ verbose w_sub1 with
+              | ok r_sub2 w_sub2 =>
+                cases r_sub2 with
+                | success cfg_sub2 v_sub2 =>
+                  -- success, not runtimeError
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_contr
+                  injection h_contr
+                | outOfFuel =>
+                  -- outOfFuel propagates, not runtimeError
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_contr
+                  injection h_contr
+                | runtimeError sub_msg =>
+                  -- Branch runtimeError: valid case
+                  simp only [EST.bind, h_sub2, pure] at heval_w
+                  injection heval_w with h_msg_eq h_world_eq
+                  have hw_eq1 : w_sub1 = w :=
+                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w w_sub1 hio₁ h_sub1
+                  rw [hw_eq1] at h_sub1
+                  rw [hw_eq1] at h_sub2
+                  have hw_eq2 : w_sub2 = w :=
+                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 hio₂ h_sub2
+                  rw [hw_eq2] at h_sub2
+                  have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w hio₁ h_sub1
+                  have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.runtimeError sub_msg) w hio₂ h_sub2
+                  have h_sub1_w' :
+                      LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.bool true)) w' := by
+                    have h := congrFun h_ih1 w'
+                    simp only [pure] at h
+                    exact h
+                  have h_sub2_w' :
+                      LeanPoison.beval fuel' cfg_sub1 e₂ verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+                    have h := congrFun h_ih2 w'
+                    simp only [pure] at h
+                    exact h
+                  rw [h_sub1_w']
+                  simp only [EST.bind]
+                  rw [h_sub2_w']
+                  simp only [pure]
+                  rw [← h_msg_eq]
+              | error e_err =>
+                -- Contradiction: EST.Out.error ≠ EST.Out.ok
+                simp only [EST.bind, h_sub2] at heval_w
+                injection heval_w
+            | false =>
+              cases h_sub3 : LeanPoison.beval fuel' cfg_sub1 e₃ verbose w_sub1 with
+              | ok r_sub3 w_sub3 =>
+                cases r_sub3 with
+                | success cfg_sub3 v_sub3 =>
+                  -- success, not runtimeError
+                  simp only [EST.bind, h_sub3, pure] at heval_w
+                  injection heval_w with h_contr
+                  injection h_contr
+                | outOfFuel =>
+                  -- outOfFuel propagates, not runtimeError
+                  simp only [EST.bind, h_sub3, pure] at heval_w
+                  injection heval_w with h_contr
+                  injection h_contr
+                | runtimeError sub_msg =>
+                  -- Branch runtimeError: valid case
+                  simp only [EST.bind, h_sub3, pure] at heval_w
+                  injection heval_w with h_msg_eq h_world_eq
+                  have hw_eq1 : w_sub1 = w :=
+                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w w_sub1 hio₁ h_sub1
+                  rw [hw_eq1] at h_sub1
+                  rw [hw_eq1] at h_sub3
+                  have hw_eq3 : w_sub3 = w :=
+                    beval_IOFree_preserves_world fuel' cfg_sub1 e₃ verbose (.runtimeError sub_msg) w w_sub3 hio₃ h_sub3
+                  rw [hw_eq3] at h_sub3
+                  have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w hio₁ h_sub1
+                  have h_ih3 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₃ verbose (.runtimeError sub_msg) w hio₃ h_sub3
+                  have h_sub1_w' :
+                      LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.bool false)) w' := by
+                    have h := congrFun h_ih1 w'
+                    simp only [pure] at h
+                    exact h
+                  have h_sub3_w' :
+                      LeanPoison.beval fuel' cfg_sub1 e₃ verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+                    have h := congrFun h_ih3 w'
+                    simp only [pure] at h
+                    exact h
+                  rw [h_sub1_w']
+                  simp only [EST.bind]
+                  rw [h_sub3_w']
+                  simp only [pure]
+                  rw [← h_msg_eq]
+              | error e_err =>
+                -- Contradiction: EST.Out.error ≠ EST.Out.ok
+                simp only [EST.bind, h_sub3] at heval_w
+                injection heval_w
+          | num n =>
+            -- non-boolean condition: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.num n)) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 :=
+              ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.num n)) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.num n)) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+          | unit =>
+            -- non-boolean condition: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 Value.unit) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 :=
+              ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 Value.unit) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 Value.unit) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+          | str s =>
+            -- non-boolean condition: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.str s)) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 :=
+              ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.str s)) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.str s)) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+          | loc a =>
+            -- non-boolean condition: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 :=
+              ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.success cfg_sub1 (Value.loc a)) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+          | closure x body env =>
+            -- non-boolean condition: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.closure x body env)) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 :=
+              ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.closure x body env)) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' =
+                  EST.Out.ok (.success cfg_sub1 (Value.closure x body env)) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+          | peClosure x body env =>
+            -- non-boolean condition: runtimeError case
+            simp [pure] at heval_w
+            injection heval_w with h_msg_eq h_world_eq
+            have hw_eq : w_sub1 = w :=
+              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.peClosure x body env)) w w_sub1 hio₁ h_sub1
+            rw [hw_eq] at h_sub1
+            have h_ih1 :=
+              ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.peClosure x body env)) w hio₁ h_sub1
+            have h_sub1_w' :
+                LeanPoison.beval fuel' cfg e₁ verbose w' =
+                  EST.Out.ok (.success cfg_sub1 (Value.peClosure x body env)) w' := by
+              have h := congrFun h_ih1 w'
+              simp only [pure] at h
+              exact h
+            rw [h_sub1_w']
+            simp only [pure]
+            rw [← h_msg_eq]
+        | outOfFuel =>
+          -- outOfFuel propagates, not runtimeError
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_contr
+          injection h_contr
+        | runtimeError sub_msg =>
+          -- First operand runtimeError: valid case
+          simp only [h_sub1, pure] at heval_w
+          injection heval_w with h_msg_eq h_world_eq
+          have hw_eq1 : w_sub1 = w :=
+            beval_IOFree_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 hio₁ h_sub1
+          rw [hw_eq1] at h_sub1
+          have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.runtimeError sub_msg) w hio₁ h_sub1
+          have h_sub1_w' :
+              LeanPoison.beval fuel' cfg e₁ verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
+            have h := congrFun h_ih1 w'
+            simp only [pure] at h
+            exact h
+          rw [h_sub1_w']
+          simp only [pure]
+          rw [← h_msg_eq]
+      | error e_err =>
+        -- Contradiction: EST.Out.error ≠ EST.Out.ok
+        simp only [h_sub1] at heval_w
+        injection heval_w
+
+private lemma beval_IOFree_eq_pure_kwhile (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (e₁ : Expr) (e₂ : Expr) (hio : IOFree (Expr.kwhile e₁ e₂))
+    (heval_w : LeanPoison.beval fuel cfg (Expr.kwhile e₁ e₂) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.kwhile e₁ e₂) verbose = pure r := by
+  have hio₁ : IOFree e₁ := by cases hio; assumption
+  have hio₂ : IOFree e₂ := by cases hio; assumption
+  cases fuel with
+  | zero =>
+    unfold LeanPoison.beval at heval_w
+    rw [if_pos rfl] at heval_w
+    cases heval_w
+    apply funext
+    intro w'
+    unfold LeanPoison.beval
+    rw [if_pos rfl]
+  | succ fuel' =>
+    let unfolded := Expr.ite e₁ (Expr.seq e₂ (Expr.kwhile e₁ e₂)) Expr.unit
+    have hio_unfolded : IOFree unfolded := by
+      -- kwhile unfolds to ite e₁ (seq e₂ (kwhile e₁ e₂)) unit
+      exact IOFree.ite _ _ _ hio₁ (IOFree.seq _ _ hio₂ hio) IOFree.unit
+    have h_unfolded_eval :
+        LeanPoison.beval fuel' cfg unfolded verbose w = EST.Out.ok r w := by
+      -- unfold kwhile evaluation
+      unfold LeanPoison.beval at heval_w
+      rw [if_neg (Nat.add_one_ne_zero _)] at heval_w
+      exact heval_w
+    have h_unfolded_pure :=
+      ih fuel' (Nat.lt_succ_self _) cfg unfolded verbose r w hio_unfolded h_unfolded_eval
+    apply funext
+    intro w'
+    -- reduce kwhile to unfolded and use the IH on unfolded
+    have h_unfolded_w' := congrFun h_unfolded_pure w'
+    -- unfold kwhile at w' and use the unfolded equality
+    unfold LeanPoison.beval
+    rw [if_neg (Nat.add_one_ne_zero _)]
+    unfold unfolded at h_unfolded_w'
+    apply h_unfolded_w'
+
+private lemma beval_IOFree_eq_pure_app (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
+    (e₁ : Expr) (e₂ : Expr) (hio : IOFree (Expr.app e₁ e₂))
+    (heval_w : LeanPoison.beval fuel cfg (Expr.app e₁ e₂) verbose w = EST.Out.ok r w) :
+    LeanPoison.beval fuel cfg (Expr.app e₁ e₂) verbose = pure r := by
+  cases fuel with
+  | zero =>
+      simp only [LeanPoison.beval] at heval_w
+      simp [pure] at heval_w
+      injection heval_w with h_result h_world
+      subst h_result
+      apply funext
+      intro w'
+      simp [LeanPoison.beval, pure]
+  | succ fuel' =>
+      sorry
+
+private lemma beval_IOFree_eq_pure_rand (fuel : Nat)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult)
+    (e' : Expr) (hio : IOFree (Expr.rand e')) :
+    LeanPoison.beval fuel cfg (Expr.rand e') verbose = pure r := by
+  cases hio
+
+private lemma beval_IOFree_eq_pure_frand (fuel : Nat)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult)
+    (e' : Expr) (hio : IOFree (Expr.frand e')) :
+    LeanPoison.beval fuel cfg (Expr.frand e') verbose = pure r := by
+  cases hio
+
+private lemma beval_IOFree_eq_pure_printString (fuel : Nat)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult)
+    (e' : Expr) (hio : IOFree (Expr.printString e')) :
+    LeanPoison.beval fuel cfg (Expr.printString e') verbose = pure r := by
+  cases hio
+
+private lemma beval_IOFree_eq_pure_printInt (fuel : Nat)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult)
+    (e' : Expr) (hio : IOFree (Expr.printInt e')) :
+    LeanPoison.beval fuel cfg (Expr.printInt e') verbose = pure r := by
+  cases hio
+
+private lemma beval_IOFree_eq_pure_externVal (fuel : Nat)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult)
+    (t : Typ) (p : Bool) (pred : SyntaxPredicate) (hio : IOFree (Expr.externVal t p pred)) :
+    LeanPoison.beval fuel cfg (Expr.externVal t p pred) verbose = pure r := by
+  cases hio
+
+private lemma beval_IOFree_eq_pure_externFn (fuel : Nat)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult)
+    (x : Name) (t : Typ) (ret : ExternReturn) (effs : List Effect) (hio : IOFree (Expr.externFn x t ret effs)) :
+    LeanPoison.beval fuel cfg (Expr.externFn x t ret effs) verbose = pure r := by
+  cases hio
+
+private lemma beval_IOFree_eq_pure_externPfn (fuel : Nat)
+    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult)
+    (x : Name) (t : Typ) (ret : ExternReturn) (hio : IOFree (Expr.externPfn x t ret)) :
+    LeanPoison.beval fuel cfg (Expr.externPfn x t ret) verbose = pure r := by
+  cases hio
+
 
 /-- Convert world-indexed evaluation to world-free evaluation for IOFree expressions.
     This is the key bridge lemma that allows using world-indexed structure lemmas
@@ -1004,322 +3779,66 @@ lemma beval_IOFree_eq_pure (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Boo
     IOFree e →
     LeanPoison.beval fuel cfg e verbose w = EST.Out.ok r w →
     LeanPoison.beval fuel cfg e verbose = pure r := by
-  intro hio heval_w
-  -- For IOFree expressions, beval doesn't perform I/O, so the result is independent of the world
-  -- We'll prove this by structural case analysis on e, showing that beval equals pure r
-  -- by proving they're equal at all worlds (without using extensionality)
-  -- Actually, we can use functional extensionality for functions: if f x = g x for all x, then f = g
-  -- But IO is not a function type directly. Instead, we'll prove by cases that
-  -- beval fuel cfg e verbose w' = pure r w' for all w', which implies beval fuel cfg e verbose = pure r
-  -- We'll do this by structural induction on the expression
-  cases e with
-  | num n =>
-    cases fuel with
-    | zero =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-    | succ _ =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-  | bool b =>
-    cases fuel with
-    | zero =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-    | succ _ =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-  | unit =>
-    cases fuel with
-    | zero =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-    | succ _ =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-  | str s =>
-    cases fuel with
-    | zero =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-    | succ _ =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-  | var x =>
-    cases fuel with
-    | zero =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-    | succ _ =>
-      simp only [LeanPoison.beval] at heval_w
-      cases h_lookup : cfg.varEnv.lookup x with
-      | none =>
-        simp [h_lookup, pure] at heval_w
-        injection heval_w with h_result h_world
-        subst h_result
-        apply funext
-        intro w'
-        simp [LeanPoison.beval, h_lookup, pure]
-      | some v =>
-        simp [h_lookup, pure] at heval_w
-        injection heval_w with h_result h_world
-        subst h_result
-        apply funext
-        intro w'
-        simp [LeanPoison.beval, h_lookup, pure]
-  | fn x paramType body returnType =>
-    cases fuel with
-    | zero =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-    | succ _ =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-  | pfn x paramType body returnType =>
-    cases fuel with
-    | zero =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-    | succ _ =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-  | unaryop op e' =>
-    have hio' : IOFree e' := by cases hio; assumption
-    -- For unaryop, use the structure lemma and prove recursively
-    cases fuel with
-    | zero =>
-      simp only [LeanPoison.beval] at heval_w
-      simp [pure] at heval_w
-      injection heval_w with h_result h_world
-      subst h_result
-      apply funext
-      intro w'
-      simp [LeanPoison.beval, pure]
-    | succ fuel' =>
-      -- Extract config and value from r
-      cases r with
-      | success config₂ v =>
-        -- Use the structure lemma to extract the evaluation structure
-        have hstruct := bevalUnaryOp_structure op e' (fuel' + 1) verbose cfg config₂ v w w heval_w
-        rcases hstruct with ⟨config₁, v₁, hbeval_e, hevalOp, hmem, hvar, hnext, hpure_mode⟩
-        -- Note: hbeval_e has fuel' + 1 - 1 = fuel' (by Nat.add_sub_cancel)
-        simp only [Nat.add_sub_cancel] at hbeval_e
-        -- By IH: beval fuel' cfg e' verbose = pure (.success config₁ v₁)
-        have h_ih := beval_IOFree_eq_pure fuel' cfg e' verbose (.success config₁ v₁) w hio' hbeval_e
-        -- Now show: beval (fuel' + 1) cfg (Expr.unaryop op e') verbose = pure (.success config₂ v)
-        apply funext
-        intro w'
-        simp only [LeanPoison.beval, Nat.add_sub_cancel]
-        -- Simplify the if condition: fuel' + 1 ≠ 0
-        simp only [Nat.add_one_ne_zero, ↓reduceIte]
-        simp only [bind, Bind.bind, EST.bind]
-        -- Use IH to show sub-expression evaluation
-        have h_beval_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success config₁ v₁) w' := by
-          have h_ih_w' := congrFun h_ih w'
-          simp only [pure] at h_ih_w'
-          exact h_ih_w'
-        rw [h_beval_w']
-        -- Simplify the match on EST.Out.ok
-        simp only []
-        -- From hevalOp: evalUnaryOp op v₁ = some v
-        rw [hevalOp]
-        simp only [pure]
-        -- Goal is now: EST.Out.ok (.success config₁ v) w' = EST.Out.ok (.success config₂ v) w'
-        -- We need to show config₁ = config₂
-        congr 1
-        congr 1
-        -- Now goal is: config₁ = config₂
-        -- Use cases to expose constructors, then use field equalities
-        cases config₁; cases config₂
-        simp only [Config.mk.injEq]
-        -- Goal is now a conjunction of field equalities
-        exact ⟨hmem, hvar, hnext, hpure_mode⟩
-      | outOfFuel =>
-        -- outOfFuel can only come from sub-expression returning outOfFuel
-        -- (success would give success or runtimeError, runtimeError gives runtimeError)
-        apply funext
-        intro w'
-        simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
-        simp only [bind, Bind.bind, EST.bind]
-        -- Analyze what sub-expression returns at world w
-        simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
-                   bind, Bind.bind, EST.bind] at heval_w
-        -- Case split on what sub-expression returns
-        cases h_sub : LeanPoison.beval fuel' cfg e' verbose w with
-        | ok r_sub w_sub =>
-          cases r_sub with
-          | success cfg_sub v_sub =>
-            -- Sub succeeded, but then we get success or runtimeError, not outOfFuel
-            simp only [h_sub] at heval_w
-            cases h_op : LeanPoison.evalUnaryOp op v_sub with
-            | some v_res =>
-              simp only [h_op, pure] at heval_w
-              injection heval_w with h_contr
-              injection h_contr  -- success ≠ outOfFuel
-            | none =>
-              simp only [h_op, pure] at heval_w
-              injection heval_w with h_contr
-              injection h_contr  -- runtimeError ≠ outOfFuel
-          | outOfFuel =>
-            -- Sub returned outOfFuel - this is the valid case
-            simp only [h_sub, pure] at heval_w
-            -- World preservation: w_sub = w for IOFree
-            have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose .outOfFuel w w_sub hio' h_sub
-            -- Rewrite h_sub to use w instead of w_sub
-            rw [hw_eq] at h_sub
-            -- By IH: beval fuel' cfg e' verbose = pure outOfFuel
-            have h_ih := beval_IOFree_eq_pure fuel' cfg e' verbose .outOfFuel w hio' h_sub
-            have h_sub_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok .outOfFuel w' := by
-              have := congrFun h_ih w'
-              simp only [pure] at this
-              exact this
-            simp only [h_sub_w', pure]
-          | runtimeError sub_msg =>
-            -- Sub returned runtimeError, which propagates as runtimeError, not outOfFuel
-            simp only [h_sub, pure] at heval_w
-            injection heval_w with h_contr
-            injection h_contr  -- runtimeError ≠ outOfFuel
-        | error e_err =>
-          -- Contradiction: EST.Out.error ≠ EST.Out.ok
-          simp only [h_sub] at heval_w
-          injection heval_w
-      | runtimeError msg =>
-        -- runtimeError can come from:
-        -- 1. Sub-expression returning runtimeError
-        -- 2. Sub-expression succeeding but evalUnaryOp returning none
-        apply funext
-        intro w'
-        simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte]
-        simp only [bind, Bind.bind, EST.bind]
-        -- Analyze what sub-expression returns at world w
-        simp only [LeanPoison.beval, Nat.add_sub_cancel, Nat.add_one_ne_zero, ↓reduceIte,
-                   bind, Bind.bind, EST.bind] at heval_w
-        -- Case split on what sub-expression returns
-        cases h_sub : LeanPoison.beval fuel' cfg e' verbose w with
-        | ok r_sub w_sub =>
-          cases r_sub with
-          | success cfg_sub v_sub =>
-            -- Sub succeeded, check evalUnaryOp
-            simp only [h_sub] at heval_w
-            cases h_op : LeanPoison.evalUnaryOp op v_sub with
-            | some v_res =>
-              -- evalUnaryOp succeeded, gives success, not runtimeError
-              simp only [h_op, pure] at heval_w
-              injection heval_w with h_contr
-              injection h_contr  -- success ≠ runtimeError
-            | none =>
-              -- evalUnaryOp failed, gives runtimeError - valid case
-              simp only [h_op, pure] at heval_w
-              injection heval_w with h_msg_eq h_world_eq
-              -- World preservation: w_sub = w for IOFree
-              have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub v_sub) w w_sub hio' h_sub
-              rw [hw_eq] at h_sub
-              -- By IH: beval fuel' cfg e' verbose = pure (success cfg_sub v_sub)
-              have h_ih := beval_IOFree_eq_pure fuel' cfg e' verbose (.success cfg_sub v_sub) w hio' h_sub
-              have h_sub_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.success cfg_sub v_sub) w' := by
-                have := congrFun h_ih w'
-                simp only [pure] at this
-                exact this
-              simp only [h_sub_w']
-              simp only [h_op, pure]
-              rw [← h_msg_eq]
-          | outOfFuel =>
-            -- Sub returned outOfFuel, which propagates as outOfFuel, not runtimeError
-            simp only [h_sub, pure] at heval_w
-            injection heval_w with h_contr
-            injection h_contr  -- outOfFuel ≠ runtimeError
-          | runtimeError sub_msg =>
-            -- Sub returned runtimeError - valid case
-            simp only [h_sub, pure] at heval_w
-            injection heval_w with h_msg_eq h_world_eq
-            -- World preservation: w_sub = w for IOFree
-            have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose (.runtimeError sub_msg) w w_sub hio' h_sub
-            rw [hw_eq] at h_sub
-            -- By IH: beval fuel' cfg e' verbose = pure (runtimeError sub_msg)
-            have h_ih := beval_IOFree_eq_pure fuel' cfg e' verbose (.runtimeError sub_msg) w hio' h_sub
-            have h_sub_w' : LeanPoison.beval fuel' cfg e' verbose w' = EST.Out.ok (.runtimeError sub_msg) w' := by
-              have := congrFun h_ih w'
-              simp only [pure] at this
-              exact this
-            simp only [h_sub_w', pure]
-            rw [← h_msg_eq]
-        | error e_err =>
-          -- Contradiction: EST.Out.error ≠ EST.Out.ok
-          simp only [h_sub] at heval_w
-          injection heval_w
-  | op e₁ op' e₂ | seq e₁ e₂ | vlet _ e₁ e₂ | deref _ | newRef _ | assign e₁ e₂ | ite _ _ _ | kwhile _ _ | app _ _ =>
-    -- For compound expressions, we'll use a similar pattern:
-    -- 1. Use structure lemma to extract evaluation structure
-    -- 2. Use IH recursively for sub-expressions
-    -- 3. Show the final result equals pure r
-    sorry  -- Will complete systematically
-  | printInt _ | printString _ | rand _ | frand _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
-    cases hio  -- These cases are not IOFree, so this branch is unreachable
+  revert cfg e verbose r w
+  induction fuel using Nat.strong_induction_on with
+  | _ fuel ih =>
+    intro cfg e verbose r w hio heval_w
+    -- For IOFree expressions, beval doesn't perform I/O, so the result is independent of the world
+    -- We'll prove this by structural case analysis on e, showing that beval equals pure r
+    -- by proving they're equal at all worlds (without using extensionality)
+    -- Actually, we can use functional extensionality for functions: if f x = g x for all x, then f = g
+    -- But IO is not a function type directly. Instead, we'll prove by cases that
+    -- beval fuel cfg e verbose w' = pure r w' for all w', which implies beval fuel cfg e verbose = pure r
+    -- We'll do this by structural induction on the expression
+    cases e with
+    | num n =>
+      exact beval_IOFree_eq_pure_num fuel ih cfg verbose r w n heval_w
+    | bool b =>
+      exact beval_IOFree_eq_pure_bool fuel ih cfg verbose r w b heval_w
+    | unit =>
+      exact beval_IOFree_eq_pure_unit fuel ih cfg verbose r w heval_w
+    | str s =>
+      exact beval_IOFree_eq_pure_str fuel ih cfg verbose r w s heval_w
+    | var x =>
+      exact beval_IOFree_eq_pure_var fuel ih cfg verbose r w x heval_w
+    | fn x paramType body returnType =>
+      exact beval_IOFree_eq_pure_fn fuel ih cfg verbose r w x paramType body returnType heval_w
+    | pfn x paramType body returnType =>
+      exact beval_IOFree_eq_pure_pfn fuel ih cfg verbose r w x paramType body returnType heval_w
+    | unaryop op e' =>
+      exact beval_IOFree_eq_pure_unaryop fuel ih cfg verbose r w op e' hio heval_w
+    | op e₁ op' e₂ =>
+      exact beval_IOFree_eq_pure_op fuel ih cfg verbose r w e₁ op' e₂ hio heval_w
+    | seq e₁ e₂ =>
+      exact beval_IOFree_eq_pure_seq fuel ih cfg verbose r w e₁ e₂ hio heval_w
+    | vlet x e₁ e₂ =>
+      exact beval_IOFree_eq_pure_vlet fuel ih cfg verbose r w x e₁ e₂ hio heval_w
+    | deref e' =>
+      exact beval_IOFree_eq_pure_deref fuel ih cfg verbose r w e' hio heval_w
+    | newRef e' =>
+      exact beval_IOFree_eq_pure_newRef fuel ih cfg verbose r w e' hio heval_w
+    | assign e₁ e₂ =>
+      exact beval_IOFree_eq_pure_assign fuel ih cfg verbose r w e₁ e₂ hio heval_w
+    | ite e₁ e₂ e₃ =>
+      exact beval_IOFree_eq_pure_ite fuel ih cfg verbose r w e₁ e₂ e₃ hio heval_w
+    | kwhile e₁ e₂ =>
+      exact beval_IOFree_eq_pure_kwhile fuel ih cfg verbose r w e₁ e₂ hio heval_w
+    | app e₁ e₂ =>
+      exact beval_IOFree_eq_pure_app fuel ih cfg verbose r w e₁ e₂ hio heval_w
+    | rand e' =>
+      exact beval_IOFree_eq_pure_rand fuel cfg verbose r e' hio
+    | frand e' =>
+      exact beval_IOFree_eq_pure_frand fuel cfg verbose r e' hio
+    | printString e' =>
+      exact beval_IOFree_eq_pure_printString fuel cfg verbose r e' hio
+    | printInt e' =>
+      exact beval_IOFree_eq_pure_printInt fuel cfg verbose r e' hio
+    | externVal t p pred =>
+      exact beval_IOFree_eq_pure_externVal fuel cfg verbose r t p pred hio
+    | externFn x t ret effs =>
+      exact beval_IOFree_eq_pure_externFn fuel cfg verbose r x t ret effs hio
+    | externPfn x t ret =>
+      exact beval_IOFree_eq_pure_externPfn fuel cfg verbose r x t ret hio
 
 -- World-Free Termination Inversion Lemmas
 -- ================================================================
@@ -1538,182 +4057,310 @@ lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v 
     terminatesTo e c₀ c₁ v →
     c₁.pureMode = c₀.pureMode := by
   intro hio ht
-  -- Use structural case analysis on e to apply appropriate inversion lemmas
-  -- Recursive calls are on sub-expressions, so termination is guaranteed
-  cases e with
-  | num n =>
-    have h := terminatesTo_num_inv' n c₀ c₁ v ht
-    rw [h.1]
-  | bool b =>
-    have h := terminatesTo_bool_inv' b c₀ c₁ v ht
-    rw [h.1]
-  | unit =>
-    have h := terminatesTo_unit_inv' c₀ c₁ v ht
-    rw [h.1]
-  | str s =>
-    have h := terminatesTo_str_inv' s c₀ c₁ v ht
-    rw [h.1]
-  | var x =>
-    have h := terminatesTo_var_inv' x c₀ c₁ v ht
-    rcases h with ⟨v', _, hcfg, _⟩
-    rw [hcfg]
-  | fn x paramType body returnType =>
-    have h := terminatesTo_fn_inv' x paramType body returnType c₀ c₁ v ht
-    rw [h.1]
-  | pfn x paramType body returnType =>
-    have h := terminatesTo_pfn_inv' x paramType body returnType c₀ c₁ v ht
-    rw [h.1]
-  | unaryop op e' =>
-    have hio' : IOFree e' := by cases hio; assumption
-    have h := terminatesTo_unaryop_inv' op e' c₀ c₁ v hio ht
-    rcases h with ⟨c₁', v', ht', _, _, _, _, hpure_mode⟩
-    have hrec := terminatesTo_IOFree_preserves_pureMode e' c₀ c₁' v' hio' ht'
-    rw [hpure_mode, hrec]
-  | op e₁ op' e₂ =>
-    have hio₁ : IOFree e₁ := by cases hio; assumption
-    have hio₂ : IOFree e₂ := by cases hio; assumption
-    -- Use structure lemma and prove recursively for sub-expressions
-    rcases ht with ⟨fuel, verbose, hpure⟩
-    let w := LeanProofs.defaultWorld
-    have heval_w := LeanProofs.evalAtWorld_eq w hpure
-    have hstruct := bevalOp_structure e₁ e₂ op' fuel verbose c₀ c₁ v w w heval_w
-    rcases hstruct with ⟨cfg₁, cfg₂, v₁, v₂, w_mid, hbeval_e1, hbeval_e2, _, hmem, hvar, hnext, hpure_mode_final⟩
-    have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
-    subst hw_mid_eq
-    have hpure_e1 : LeanPoison.beval (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
-      beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
-    have hpure_e2 : LeanPoison.beval (fuel - 1) cfg₁ e₂ verbose = pure (.success cfg₂ v₂) :=
-      beval_IOFree_eq_pure (fuel - 1) cfg₁ e₂ verbose (.success cfg₂ v₂) w hio₂ hbeval_e2
-    have h_cfg2_eq : cfg₂ = c₁ := by
-      cases cfg₂; cases c₁
-      simp only [Config.mk.injEq]
-      exact ⟨hmem, hvar, hnext, hpure_mode_final⟩
-    have hrec₁ := terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ v₁ hio₁ ⟨fuel - 1, verbose, hpure_e1⟩
-    have hrec₂ := terminatesTo_IOFree_preserves_pureMode e₂ cfg₁ cfg₂ v₂ hio₂ ⟨fuel - 1, verbose, hpure_e2⟩
-    -- From h_cfg2_eq: cfg₂ = c₁, so cfg₂.pureMode = c₁.pureMode
-    -- From hrec₂: cfg₂.pureMode = cfg₁.pureMode
-    -- From hrec₁: cfg₁.pureMode = c₀.pureMode
-    -- So: c₁.pureMode = cfg₂.pureMode = cfg₁.pureMode = c₀.pureMode
-    rw [← hpure_mode_final, hrec₂, hrec₁]
-  | seq e₁ e₂ =>
-    have hio₁ : IOFree e₁ := by cases hio; assumption
-    have hio₂ : IOFree e₂ := by cases hio; assumption
-    -- Use structure lemma and prove recursively for sub-expressions
-    rcases ht with ⟨fuel, verbose, hpure⟩
-    let w := LeanProofs.defaultWorld
-    have heval_w := LeanProofs.evalAtWorld_eq w hpure
-    have hstruct := bevalSeq_structure e₁ e₂ fuel verbose c₀ c₁ v w w heval_w
-    rcases hstruct with ⟨cfg₁, v₁, w_mid, hbeval_e1, hbeval_e2⟩
-    have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
-    subst hw_mid_eq
-    have hpure_e1 : LeanPoison.beval (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
-      beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
-    have hpure_e2 : LeanPoison.beval (fuel - 1) cfg₁ e₂ verbose = pure (.success c₁ v) :=
-      beval_IOFree_eq_pure (fuel - 1) cfg₁ e₂ verbose (.success c₁ v) w hio₂ hbeval_e2
-    have hrec₁ := terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ v₁ hio₁ ⟨fuel - 1, verbose, hpure_e1⟩
-    have hrec₂ := terminatesTo_IOFree_preserves_pureMode e₂ cfg₁ c₁ v hio₂ ⟨fuel - 1, verbose, hpure_e2⟩
-    rw [hrec₂, hrec₁]
-  | vlet x e₁ e₂ =>
-    have hio₁ : IOFree e₁ := by cases hio; assumption
-    have hio₂ : IOFree e₂ := by cases hio; assumption
-    -- Use structure lemma and prove recursively for sub-expressions
-    rcases ht with ⟨fuel, verbose, hpure⟩
-    let w := LeanProofs.defaultWorld
-    have heval_w := LeanProofs.evalAtWorld_eq w hpure
-    have hstruct := bevalVlet_structure x e₁ e₂ fuel verbose c₀ c₁ v w w heval_w
-    rcases hstruct with ⟨cfg₁, cfg₂, cfg₃, v₁, w_mid, hbeval_e1, hcfg2_eq, hbeval_e2, hcfg_final⟩
-    have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
-    subst hw_mid_eq
-    have hpure_e1 : LeanPoison.beval (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
-      beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
-    have hpure_e2 : LeanPoison.beval (fuel - 1) cfg₂ e₂ verbose = pure (.success cfg₃ v) :=
-      beval_IOFree_eq_pure (fuel - 1) cfg₂ e₂ verbose (.success cfg₃ v) w hio₂ hbeval_e2
-    have hrec₁ := terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ v₁ hio₁ ⟨fuel - 1, verbose, hpure_e1⟩
-    have hrec₂ := terminatesTo_IOFree_preserves_pureMode e₂ cfg₂ cfg₃ v hio₂ ⟨fuel - 1, verbose, hpure_e2⟩
-    -- From hcfg_final: c₁ = { cfg₃ with varEnv := cfg₁.varEnv }
-    -- So c₁.pureMode = cfg₃.pureMode
-    have h_pure_final : c₁.pureMode = cfg₃.pureMode := by
-      rw [hcfg_final]
-    -- From hcfg2_eq: cfg₂ = { cfg₁ with varEnv := cfg₁.varEnv.update x v₁ }
-    -- So cfg₂.pureMode = cfg₁.pureMode
-    have h_pure_cfg2 : cfg₂.pureMode = cfg₁.pureMode := by
-      rw [hcfg2_eq]
-    -- Chain: c₁.pureMode = cfg₃.pureMode = cfg₂.pureMode = cfg₁.pureMode = c₀.pureMode
-    rw [h_pure_final, hrec₂, h_pure_cfg2, hrec₁]
-  | deref e' =>
-    have hio' : IOFree e' := by cases hio; assumption
-    -- Use structure lemma and prove recursively for sub-expression
-    rcases ht with ⟨fuel, verbose, hpure⟩
-    let w := LeanProofs.defaultWorld
-    have heval_w := LeanProofs.evalAtWorld_eq w hpure
-    have hstruct := bevalDeref_structure e' fuel verbose c₀ c₁ v w w heval_w
-    rcases hstruct with ⟨cfg', a, n, hbeval_e, _, _, _, _, _, hpure_mode⟩
-    have hpure_e : LeanPoison.beval (fuel - 1) c₀ e' verbose = pure (.success cfg' (Value.loc a)) :=
-      beval_IOFree_eq_pure (fuel - 1) c₀ e' verbose (.success cfg' (Value.loc a)) w hio' hbeval_e
-    have hrec := terminatesTo_IOFree_preserves_pureMode e' c₀ cfg' (Value.loc a) hio' ⟨fuel - 1, verbose, hpure_e⟩
-    rw [hpure_mode, hrec]
-  | newRef e' =>
-    have hio' : IOFree e' := by cases hio; assumption
-    have h := terminatesTo_newRef_inv' e' c₀ c₁ v hio ht
-    rcases h with ⟨c₁', _, ht', _, _, _, _, hpure_mode'⟩
-    have hrec := terminatesTo_IOFree_preserves_pureMode e' c₀ c₁' (Value.num _) hio' ht'
-    rw [hpure_mode', hrec]
-  | assign e₁ e₂ =>
-    have hio₁ : IOFree e₁ := by cases hio; assumption
-    have hio₂ : IOFree e₂ := by cases hio; assumption
-    -- For assign, we need to use the structure lemma directly since terminatesTo_assign_inv' is defined later
-    rcases ht with ⟨fuel, verbose, hpure⟩
-    let w := LeanProofs.defaultWorld
-    have heval_w := LeanProofs.evalAtWorld_eq w hpure
-    have hstruct := bevalAssign_structure e₁ e₂ fuel verbose c₀ c₁ v w w heval_w
-    rcases hstruct with ⟨cfg₁, cfg₁', a, n, w_mid, hbeval_e1, hbeval_e2, _, _, _, _, hpure_mode'⟩
-    have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
-    subst hw_mid_eq
-    have hpure_e1 : LeanPoison.beval (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ (Value.loc a)) :=
-      beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ (Value.loc a)) w hio₁ hbeval_e1
-    have hpure_e2 : LeanPoison.beval (fuel - 1) cfg₁ e₂ verbose = pure (.success cfg₁' (Value.num n)) :=
-      beval_IOFree_eq_pure (fuel - 1) cfg₁ e₂ verbose (.success cfg₁' (Value.num n)) w hio₂ hbeval_e2
-    have hrec₁ := terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ (Value.loc a) hio₁ ⟨fuel - 1, verbose, hpure_e1⟩
-    have hrec₂ := terminatesTo_IOFree_preserves_pureMode e₂ cfg₁ cfg₁' (Value.num n) hio₂ ⟨fuel - 1, verbose, hpure_e2⟩
-    -- From hpure_mode': c₁.pureMode = cfg₁'.pureMode
-    -- From hrec₂: cfg₁'.pureMode = cfg₁.pureMode
-    -- From hrec₁: cfg₁.pureMode = c₀.pureMode
-    -- So: c₁.pureMode = cfg₁'.pureMode = cfg₁.pureMode = c₀.pureMode
-    rw [hpure_mode', hrec₂, hrec₁]
-  | printInt _ | printString _ | rand _ | frand _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
-    cases hio  -- These cases are not IOFree, so this branch is unreachable
-  | ite e₁ e₂ e₃ =>
-    have hio₁ : IOFree e₁ := by cases hio; assumption
-    have hio₂ : IOFree e₂ := by cases hio; assumption
-    have hio₃ : IOFree e₃ := by cases hio; assumption
-    -- Use structure lemma and prove recursively for sub-expressions
-    rcases ht with ⟨fuel, verbose, hpure⟩
-    let w := LeanProofs.defaultWorld
-    have heval_w := LeanProofs.evalAtWorld_eq w hpure
-    have hstruct := bevalIte_structure e₁ e₂ e₃ fuel verbose c₀ c₁ v w w heval_w
-    rcases hstruct with ⟨cfg₁, b, w_mid, hbeval_e1, hbranch⟩
-    have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
-    subst hw_mid_eq
-    have hpure_e1 : LeanPoison.beval (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ (Value.bool b)) :=
-      beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ (Value.bool b)) w hio₁ hbeval_e1
-    have hrec₁ := terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ (Value.bool b) hio₁ ⟨fuel - 1, verbose, hpure_e1⟩
-    cases hbranch with
-    | inl htrue =>
-      rcases htrue with ⟨_, hbeval_e2⟩
-      have hpure_e2 : LeanPoison.beval (fuel - 1) cfg₁ e₂ verbose = pure (.success c₁ v) :=
-        beval_IOFree_eq_pure (fuel - 1) cfg₁ e₂ verbose (.success c₁ v) w hio₂ hbeval_e2
-      have hrec₂ := terminatesTo_IOFree_preserves_pureMode e₂ cfg₁ c₁ v hio₂ ⟨fuel - 1, verbose, hpure_e2⟩
-      rw [hrec₂, hrec₁]
-    | inr hfalse =>
-      rcases hfalse with ⟨_, hbeval_e3⟩
-      have hpure_e3 : LeanPoison.beval (fuel - 1) cfg₁ e₃ verbose = pure (.success c₁ v) :=
-        beval_IOFree_eq_pure (fuel - 1) cfg₁ e₃ verbose (.success c₁ v) w hio₃ hbeval_e3
-      have hrec₃ := terminatesTo_IOFree_preserves_pureMode e₃ cfg₁ c₁ v hio₃ ⟨fuel - 1, verbose, hpure_e3⟩
-      rw [hrec₃, hrec₁]
-  | kwhile _ _ | app _ _ =>
-    -- These cases can be IOFree but we don't have inversion lemmas for them yet
-    -- For now, we use sorry; these can be proven when the corresponding inversion lemmas are added
-    sorry
+  rcases ht with ⟨fuel, verbose, hpure⟩
+  -- Strong induction on fuel to justify recursive calls on sub-expressions
+  have hmain :
+      ∀ fuel e c₀ c₁ v verbose,
+        IOFree e →
+        LeanPoison.beval fuel c₀ e verbose = pure (.success c₁ v) →
+        c₁.pureMode = c₀.pureMode := by
+    intro fuel
+    induction fuel using Nat.strong_induction_on with
+    | _ fuel ih =>
+      intro e c₀ c₁ v verbose hio hpure
+      cases fuel with
+      | zero =>
+        have hcontr : (pure LeanPoison.EvalResult.outOfFuel : IO LeanPoison.EvalResult) = pure (.success c₁ v) := by
+          unfold LeanPoison.beval at hpure
+          simp at hpure
+          exact hpure
+        have hcontr' := congrArg (fun m => m LeanProofs.defaultWorld) hcontr
+        simp [pure] at hcontr'
+        cases hcontr'
+      | succ fuel' =>
+        have ht : terminatesTo e c₀ c₁ v := ⟨fuel' + 1, verbose, hpure⟩
+        cases e with
+        | num n =>
+          have h := terminatesTo_num_inv' n c₀ c₁ v ht
+          rw [h.1]
+        | bool b =>
+          have h := terminatesTo_bool_inv' b c₀ c₁ v ht
+          rw [h.1]
+        | unit =>
+          have h := terminatesTo_unit_inv' c₀ c₁ v ht
+          rw [h.1]
+        | str s =>
+          have h := terminatesTo_str_inv' s c₀ c₁ v ht
+          rw [h.1]
+        | var x =>
+          have h := terminatesTo_var_inv' x c₀ c₁ v ht
+          rcases h with ⟨v', _, hcfg, _⟩
+          rw [hcfg]
+        | fn x paramType body returnType =>
+          have h := terminatesTo_fn_inv' x paramType body returnType c₀ c₁ v ht
+          rw [h.1]
+        | pfn x paramType body returnType =>
+          have h := terminatesTo_pfn_inv' x paramType body returnType c₀ c₁ v ht
+          rw [h.1]
+        | unaryop op e' =>
+          have hio' : IOFree e' := by cases hio; assumption
+          let w := LeanProofs.defaultWorld
+          have heval_w := LeanProofs.evalAtWorld_eq w hpure
+          have hstruct := bevalUnaryOp_structure op e' (fuel' + 1) verbose c₀ c₁ v w w heval_w
+          rcases hstruct with ⟨cfg', v', hbeval_e, _, _, _, _, hpure_mode⟩
+          have hpure_e : LeanPoison.beval fuel' c₀ e' verbose = pure (.success cfg' v') := by
+            have hpure_e' : LeanPoison.beval (fuel' + 1 - 1) c₀ e' verbose = pure (.success cfg' v') :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) c₀ e' verbose (.success cfg' v') w hio' hbeval_e
+            simpa using hpure_e'
+          have hrec :=
+            ih fuel' (Nat.lt_succ_self _) e' c₀ cfg' v' verbose hio' hpure_e
+          rw [hpure_mode.symm, hrec]
+        | op e₁ op' e₂ =>
+          have hio₁ : IOFree e₁ := by cases hio; assumption
+          have hio₂ : IOFree e₂ := by cases hio; assumption
+          -- Use structure lemma and prove recursively for sub-expressions
+          let w := LeanProofs.defaultWorld
+          have heval_w := LeanProofs.evalAtWorld_eq w hpure
+          have hstruct := bevalOp_structure e₁ e₂ op' (fuel' + 1) verbose c₀ c₁ v w w heval_w
+          rcases hstruct with ⟨cfg₁, cfg₂, v₁, v₂, w_mid, hbeval_e1, hbeval_e2, _, hmem, hvar, hnext, hpure_mode_final⟩
+          have hw_mid_eq : w_mid = w :=
+            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+          subst hw_mid_eq
+          have hpure_e1 : LeanPoison.beval fuel' c₀ e₁ verbose = pure (.success cfg₁ v₁) := by
+            have hpure_e1' : LeanPoison.beval (fuel' + 1 - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) c₀ e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
+            simpa using hpure_e1'
+          have hpure_e2 : LeanPoison.beval fuel' cfg₁ e₂ verbose = pure (.success cfg₂ v₂) := by
+            have hpure_e2' : LeanPoison.beval (fuel' + 1 - 1) cfg₁ e₂ verbose = pure (.success cfg₂ v₂) :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) cfg₁ e₂ verbose (.success cfg₂ v₂) w hio₂ hbeval_e2
+            simpa using hpure_e2'
+          have h_cfg2_eq : cfg₂ = c₁ := by
+            cases cfg₂; cases c₁
+            simp only [Config.mk.injEq]
+            exact ⟨hmem, hvar, hnext, hpure_mode_final⟩
+          have hrec₁ :=
+            ih fuel' (Nat.lt_succ_self _) e₁ c₀ cfg₁ v₁ verbose hio₁ hpure_e1
+          have hrec₂ :=
+            ih fuel' (Nat.lt_succ_self _) e₂ cfg₁ cfg₂ v₂ verbose hio₂ hpure_e2
+          -- From h_cfg2_eq: cfg₂ = c₁, so cfg₂.pureMode = c₁.pureMode
+          -- From hrec₂: cfg₂.pureMode = cfg₁.pureMode
+          -- From hrec₁: cfg₁.pureMode = c₀.pureMode
+          -- So: c₁.pureMode = cfg₂.pureMode = cfg₁.pureMode = c₀.pureMode
+          rw [← hpure_mode_final, hrec₂, hrec₁]
+        | seq e₁ e₂ =>
+          have hio₁ : IOFree e₁ := by cases hio; assumption
+          have hio₂ : IOFree e₂ := by cases hio; assumption
+          -- Use structure lemma and prove recursively for sub-expressions
+          let w := LeanProofs.defaultWorld
+          have heval_w := LeanProofs.evalAtWorld_eq w hpure
+          have hstruct := bevalSeq_structure e₁ e₂ (fuel' + 1) verbose c₀ c₁ v w w heval_w
+          rcases hstruct with ⟨cfg₁, v₁, w_mid, hbeval_e1, hbeval_e2⟩
+          have hw_mid_eq : w_mid = w :=
+            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+          subst hw_mid_eq
+          have hpure_e1 : LeanPoison.beval fuel' c₀ e₁ verbose = pure (.success cfg₁ v₁) := by
+            have hpure_e1' : LeanPoison.beval (fuel' + 1 - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) c₀ e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
+            simpa using hpure_e1'
+          have hpure_e2 : LeanPoison.beval fuel' cfg₁ e₂ verbose = pure (.success c₁ v) := by
+            have hpure_e2' : LeanPoison.beval (fuel' + 1 - 1) cfg₁ e₂ verbose = pure (.success c₁ v) :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) cfg₁ e₂ verbose (.success c₁ v) w hio₂ hbeval_e2
+            simpa using hpure_e2'
+          have hrec₁ :=
+            ih fuel' (Nat.lt_succ_self _) e₁ c₀ cfg₁ v₁ verbose hio₁ hpure_e1
+          have hrec₂ :=
+            ih fuel' (Nat.lt_succ_self _) e₂ cfg₁ c₁ v verbose hio₂ hpure_e2
+          rw [hrec₂, hrec₁]
+        | vlet x e₁ e₂ =>
+          have hio₁ : IOFree e₁ := by cases hio; assumption
+          have hio₂ : IOFree e₂ := by cases hio; assumption
+          -- Use structure lemma and prove recursively for sub-expressions
+          let w := LeanProofs.defaultWorld
+          have heval_w := LeanProofs.evalAtWorld_eq w hpure
+          have hstruct := bevalVlet_structure x e₁ e₂ (fuel' + 1) verbose c₀ c₁ v w w heval_w
+          rcases hstruct with ⟨cfg₁, cfg₂, cfg₃, v₁, w_mid, hbeval_e1, hcfg2_eq, hbeval_e2, hcfg_final⟩
+          have hw_mid_eq : w_mid = w :=
+            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+          subst hw_mid_eq
+          have hpure_e1 : LeanPoison.beval fuel' c₀ e₁ verbose = pure (.success cfg₁ v₁) := by
+            have hpure_e1' : LeanPoison.beval (fuel' + 1 - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) c₀ e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
+            simpa using hpure_e1'
+          have hpure_e2 : LeanPoison.beval fuel' cfg₂ e₂ verbose = pure (.success cfg₃ v) := by
+            have hpure_e2' : LeanPoison.beval (fuel' + 1 - 1) cfg₂ e₂ verbose = pure (.success cfg₃ v) :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) cfg₂ e₂ verbose (.success cfg₃ v) w hio₂ hbeval_e2
+            simpa using hpure_e2'
+          have hrec₁ :=
+            ih fuel' (Nat.lt_succ_self _) e₁ c₀ cfg₁ v₁ verbose hio₁ hpure_e1
+          have hrec₂ :=
+            ih fuel' (Nat.lt_succ_self _) e₂ cfg₂ cfg₃ v verbose hio₂ hpure_e2
+          -- From hcfg_final: c₁ = { cfg₃ with varEnv := cfg₁.varEnv }
+          -- So c₁.pureMode = cfg₃.pureMode
+          have h_pure_final : c₁.pureMode = cfg₃.pureMode := by
+            rw [hcfg_final]
+          -- From hcfg2_eq: cfg₂ = { cfg₁ with varEnv := cfg₁.varEnv.update x v₁ }
+          -- So cfg₂.pureMode = cfg₁.pureMode
+          have h_pure_cfg2 : cfg₂.pureMode = cfg₁.pureMode := by
+            rw [hcfg2_eq]
+          -- Chain: c₁.pureMode = cfg₃.pureMode = cfg₂.pureMode = cfg₁.pureMode = c₀.pureMode
+          rw [h_pure_final, hrec₂, h_pure_cfg2, hrec₁]
+        | deref e' =>
+          have hio' : IOFree e' := by cases hio; assumption
+          -- Use structure lemma and prove recursively for sub-expression
+          let w := LeanProofs.defaultWorld
+          have heval_w := LeanProofs.evalAtWorld_eq w hpure
+          have hstruct := bevalDeref_structure e' (fuel' + 1) verbose c₀ c₁ v w w heval_w
+          rcases hstruct with ⟨cfg', a, n, hbeval_e, _, _, _, _, _, hpure_mode⟩
+          have hpure_e : LeanPoison.beval fuel' c₀ e' verbose = pure (.success cfg' (Value.loc a)) := by
+            have hpure_e' : LeanPoison.beval (fuel' + 1 - 1) c₀ e' verbose = pure (.success cfg' (Value.loc a)) :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) c₀ e' verbose (.success cfg' (Value.loc a)) w hio' hbeval_e
+            simpa using hpure_e'
+          have hrec :=
+            ih fuel' (Nat.lt_succ_self _) e' c₀ cfg' (Value.loc a) verbose hio' hpure_e
+          rw [hpure_mode, hrec]
+        | newRef e' =>
+          have hio' : IOFree e' := by cases hio; assumption
+          let w := LeanProofs.defaultWorld
+          have heval_w := LeanProofs.evalAtWorld_eq w hpure
+          have hstruct := bevalNewRef_structure e' (fuel' + 1) verbose c₀ c₁ v w w heval_w
+          rcases hstruct with ⟨cfg', n, a, hbeval_e, _, _, _, _, hpure_mode, _⟩
+          have hpure_e : LeanPoison.beval fuel' c₀ e' verbose = pure (.success cfg' (Value.num n)) := by
+            have hpure_e' : LeanPoison.beval (fuel' + 1 - 1) c₀ e' verbose = pure (.success cfg' (Value.num n)) :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) c₀ e' verbose (.success cfg' (Value.num n)) w hio' hbeval_e
+            simpa using hpure_e'
+          have hrec :=
+            ih fuel' (Nat.lt_succ_self _) e' c₀ cfg' (Value.num n) verbose hio' hpure_e
+          rw [hpure_mode, hrec]
+        | assign e₁ e₂ =>
+          have hio₁ : IOFree e₁ := by cases hio; assumption
+          have hio₂ : IOFree e₂ := by cases hio; assumption
+          -- For assign, we need to use the structure lemma directly since terminatesTo_assign_inv' is defined later
+          let w := LeanProofs.defaultWorld
+          have heval_w := LeanProofs.evalAtWorld_eq w hpure
+          have hstruct := bevalAssign_structure e₁ e₂ (fuel' + 1) verbose c₀ c₁ v w w heval_w
+          rcases hstruct with ⟨cfg₁, cfg₁', a, n, w_mid, hbeval_e1, hbeval_e2, _, _, _, _, hpure_mode'⟩
+          have hw_mid_eq : w_mid = w :=
+            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+          subst hw_mid_eq
+          have hpure_e1 : LeanPoison.beval fuel' c₀ e₁ verbose = pure (.success cfg₁ (Value.loc a)) := by
+            have hpure_e1' : LeanPoison.beval (fuel' + 1 - 1) c₀ e₁ verbose = pure (.success cfg₁ (Value.loc a)) :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) c₀ e₁ verbose (.success cfg₁ (Value.loc a)) w hio₁ hbeval_e1
+            simpa using hpure_e1'
+          have hpure_e2 : LeanPoison.beval fuel' cfg₁ e₂ verbose = pure (.success cfg₁' (Value.num n)) := by
+            have hpure_e2' : LeanPoison.beval (fuel' + 1 - 1) cfg₁ e₂ verbose = pure (.success cfg₁' (Value.num n)) :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) cfg₁ e₂ verbose (.success cfg₁' (Value.num n)) w hio₂ hbeval_e2
+            simpa using hpure_e2'
+          have hrec₁ :=
+            ih fuel' (Nat.lt_succ_self _) e₁ c₀ cfg₁ (Value.loc a) verbose hio₁ hpure_e1
+          have hrec₂ :=
+            ih fuel' (Nat.lt_succ_self _) e₂ cfg₁ cfg₁' (Value.num n) verbose hio₂ hpure_e2
+          -- From hpure_mode': c₁.pureMode = cfg₁'.pureMode
+          -- From hrec₂: cfg₁'.pureMode = cfg₁.pureMode
+          -- From hrec₁: cfg₁.pureMode = c₀.pureMode
+          -- So: c₁.pureMode = cfg₁'.pureMode = cfg₁.pureMode = c₀.pureMode
+          rw [hpure_mode', hrec₂, hrec₁]
+        | printInt _ | printString _ | rand _ | frand _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
+          cases hio  -- These cases are not IOFree, so this branch is unreachable
+        | ite e₁ e₂ e₃ =>
+          have hio₁ : IOFree e₁ := by cases hio; assumption
+          have hio₂ : IOFree e₂ := by cases hio; assumption
+          have hio₃ : IOFree e₃ := by cases hio; assumption
+          let w := LeanProofs.defaultWorld
+          have heval_w := LeanProofs.evalAtWorld_eq w hpure
+          have hstruct := bevalIte_structure e₁ e₂ e₃ (fuel' + 1) verbose c₀ c₁ v w w heval_w
+          rcases hstruct with ⟨cfg₁, b, w_mid, hbeval_e1, hbranch⟩
+          have hw_mid_eq : w_mid = w :=
+            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+          subst hw_mid_eq
+          have hpure_e1 : LeanPoison.beval fuel' c₀ e₁ verbose = pure (.success cfg₁ (Value.bool b)) := by
+            have hpure_e1' : LeanPoison.beval (fuel' + 1 - 1) c₀ e₁ verbose = pure (.success cfg₁ (Value.bool b)) :=
+              beval_IOFree_eq_pure (fuel' + 1 - 1) c₀ e₁ verbose (.success cfg₁ (Value.bool b)) w hio₁ hbeval_e1
+            simpa using hpure_e1'
+          have hrec₁ :=
+            ih fuel' (Nat.lt_succ_self _) e₁ c₀ cfg₁ (Value.bool b) verbose hio₁ hpure_e1
+          cases hbranch with
+          | inl hbeval =>
+            rcases hbeval with ⟨_, hbeval_e2⟩
+            have hpure_e2 : LeanPoison.beval fuel' cfg₁ e₂ verbose = pure (.success c₁ v) := by
+              have hpure_e2' : LeanPoison.beval (fuel' + 1 - 1) cfg₁ e₂ verbose = pure (.success c₁ v) :=
+                beval_IOFree_eq_pure (fuel' + 1 - 1) cfg₁ e₂ verbose (.success c₁ v) w hio₂ hbeval_e2
+              simpa using hpure_e2'
+            have hrec₂ :=
+              ih fuel' (Nat.lt_succ_self _) e₂ cfg₁ c₁ v verbose hio₂ hpure_e2
+            rw [hrec₂, hrec₁]
+          | inr hbeval =>
+            rcases hbeval with ⟨_, hbeval_e3⟩
+            have hpure_e3 : LeanPoison.beval fuel' cfg₁ e₃ verbose = pure (.success c₁ v) := by
+              have hpure_e3' : LeanPoison.beval (fuel' + 1 - 1) cfg₁ e₃ verbose = pure (.success c₁ v) :=
+                beval_IOFree_eq_pure (fuel' + 1 - 1) cfg₁ e₃ verbose (.success c₁ v) w hio₃ hbeval_e3
+              simpa using hpure_e3'
+            have hrec₃ :=
+              ih fuel' (Nat.lt_succ_self _) e₃ cfg₁ c₁ v verbose hio₃ hpure_e3
+            rw [hrec₃, hrec₁]
+        | kwhile e₁ e₂ =>
+          have hio₁ : IOFree e₁ := by cases hio; assumption
+          have hio₂ : IOFree e₂ := by cases hio; assumption
+          let unfolded := Expr.ite e₁ (Expr.seq e₂ (Expr.kwhile e₁ e₂)) Expr.unit
+          have hio_unfolded : IOFree unfolded := by
+            exact IOFree.ite _ _ _ hio₁ (IOFree.seq _ _ hio₂ hio) IOFree.unit
+          have hpure_unfolded : LeanPoison.beval fuel' c₀ unfolded verbose = pure (.success c₁ v) := by
+            unfold LeanPoison.beval at hpure
+            rw [if_neg (Nat.succ_ne_zero _)] at hpure
+            simpa [unfolded] using hpure
+          exact
+            ih fuel' (Nat.lt_succ_self _) unfolded c₀ c₁ v verbose hio_unfolded hpure_unfolded
+        | app e₁ e₂  =>
+          have hio₁ : IOFree e₁ := by cases hio; assumption
+          have hio₂ : IOFree e₂ := by cases hio; assumption
+          let w := LeanProofs.defaultWorld
+          have heval_w := LeanProofs.evalAtWorld_eq w hpure
+          have hstruct := bevalApp_structure e₁ e₂ (fuel' + 1) verbose c₀ c₁ v w w heval_w
+          rcases hstruct with ⟨cfg₁, cfg₂, v₂, x, body, env, w_mid1, w_mid2, hbeval_e2, hbranch, hpure_mode_final⟩
+          have hw_mid1_eq : w_mid1 = w :=
+            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₂ verbose _ w w_mid1 hio₂ hbeval_e2
+          subst hw_mid1_eq
+          cases hbranch with
+          | inl hcl =>
+            rcases hcl with ⟨hbeval_e1, hbeval_body⟩
+            have hw_mid2_eq : w_mid2 = w :=
+              beval_IOFree_preserves_world (fuel' + 1 - 1) cfg₁ e₁ verbose _ w w_mid2 hio₁ hbeval_e1
+            subst hw_mid2_eq
+            have hpure_e2 : LeanPoison.beval fuel' c₀ e₂ verbose = pure (.success cfg₁ v₂) := by
+              have hpure_e2' : LeanPoison.beval (fuel' + 1 - 1) c₀ e₂ verbose = pure (.success cfg₁ v₂) :=
+                beval_IOFree_eq_pure (fuel' + 1 - 1) c₀ e₂ verbose (.success cfg₁ v₂) w hio₂ hbeval_e2
+              simpa using hpure_e2'
+            have hpure_e1 : LeanPoison.beval fuel' cfg₁ e₁ verbose =
+                pure (.success cfg₂ (Value.closure x body env)) := by
+              have hpure_e1' : LeanPoison.beval (fuel' + 1 - 1) cfg₁ e₁ verbose =
+                  pure (.success cfg₂ (Value.closure x body env)) :=
+                beval_IOFree_eq_pure (fuel' + 1 - 1) cfg₁ e₁ verbose (.success cfg₂ (Value.closure x body env)) w hio₁ hbeval_e1
+              simpa using hpure_e1'
+            have hrec₂ :=
+              ih fuel' (Nat.lt_succ_self _) e₂ c₀ cfg₁ v₂ verbose hio₂ hpure_e2
+            have hrec₁ :=
+              ih fuel' (Nat.lt_succ_self _) e₁ cfg₁ cfg₂ (Value.closure x body env) verbose hio₁ hpure_e1
+            rw [hpure_mode_final, hrec₁, hrec₂]
+          | inr hpe =>
+            rcases hpe with ⟨hbeval_e1, _, hbeval_body⟩
+            have hw_mid2_eq : w_mid2 = w :=
+              beval_IOFree_preserves_world (fuel' + 1 - 1) cfg₁ e₁ verbose _ w w_mid2 hio₁ hbeval_e1
+            subst hw_mid2_eq
+            have hpure_e2 : LeanPoison.beval fuel' c₀ e₂ verbose = pure (.success cfg₁ v₂) := by
+              have hpure_e2' : LeanPoison.beval (fuel' + 1 - 1) c₀ e₂ verbose = pure (.success cfg₁ v₂) :=
+                beval_IOFree_eq_pure (fuel' + 1 - 1) c₀ e₂ verbose (.success cfg₁ v₂) w hio₂ hbeval_e2
+              simpa using hpure_e2'
+            have hpure_e1 : LeanPoison.beval fuel' cfg₁ e₁ verbose =
+                pure (.success cfg₂ (Value.peClosure x body env)) := by
+              have hpure_e1' : LeanPoison.beval (fuel' + 1 - 1) cfg₁ e₁ verbose =
+                  pure (.success cfg₂ (Value.peClosure x body env)) :=
+                beval_IOFree_eq_pure (fuel' + 1 - 1) cfg₁ e₁ verbose (.success cfg₂ (Value.peClosure x body env)) w hio₁ hbeval_e1
+              simpa using hpure_e1'
+            have hrec₂ :=
+              ih fuel' (Nat.lt_succ_self _) e₂ c₀ cfg₁ v₂ verbose hio₂ hpure_e2
+            have hrec₁ :=
+              ih fuel' (Nat.lt_succ_self _) e₁ cfg₁ cfg₂ (Value.peClosure x body env) verbose hio₁ hpure_e1
+            rw [hpure_mode_final, hrec₁, hrec₂]
+  exact hmain fuel e c₀ c₁ v verbose hio hpure
 
 /-- Inversion lemma for terminatesTo on deref.
     Note: pureMode is preserved through evaluation. -/
