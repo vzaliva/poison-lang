@@ -71,6 +71,9 @@ def handleEvalResult (result : LeanPoison.EvalResult) (verbose : Bool) : IO UInt
   | .runtimeError msg =>
       IO.println s!"Runtime error: {msg}"
       return (6 : UInt32)  -- Exit code 6: Runtime error
+  | .ioForbidden =>
+      IO.println "Error: IO operation attempted in ioFree mode"
+      return (6 : UInt32)  -- Exit code 6: Runtime error (IO forbidden)
 
 def evalProgram (input : String) (verbose : Bool) : IO UInt32 := do
   match parse input with
@@ -91,7 +94,7 @@ def evalProgram (input : String) (verbose : Bool) : IO UInt32 := do
       else
         IO.println s!"Type checking passed: {resultType}"
         let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
-        let result <- LeanPoison.beval defaultFuel initialConfig expr verbose
+        let result <- LeanPoison.beval .normal defaultFuel initialConfig expr verbose
         handleEvalResult result verbose
 
     | Except.error err =>
@@ -143,6 +146,9 @@ partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
         IO.FS.removeFile tmpPath
         replLoop config tmpPath
       | .runtimeError _ =>
+        IO.FS.removeFile tmpPath
+        replLoop config tmpPath
+      | .ioForbidden =>
         IO.FS.removeFile tmpPath
         replLoop config tmpPath
 
@@ -199,7 +205,7 @@ def main (args : List String) : IO UInt32 := do
           IO.println s!"Type checking passed: {resultType}"
           IO.println ""
           let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
-          let result <-  LeanPoison.beval defaultFuel initialConfig expr true
+          let result <-  LeanPoison.beval .normal defaultFuel initialConfig expr true
           handleEvalResult result true
 
     catch e =>
