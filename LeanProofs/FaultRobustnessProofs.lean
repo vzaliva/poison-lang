@@ -4237,11 +4237,29 @@ private lemma stepFR_ite
                     simp [ETyp.isArrow] at hisArrow
               -- Case split on whether res.qualType's internal poison is clean
               by_cases hclean_internal_res : internalPoisonClean res.qualType
-              · -- res.qualType has clean internal poison - can't use dirty constructor
-                -- This means we should derive a contradiction or use clean constructor
-                -- But we're in the dirty_internal_arrow case for res2, so this is complex
-                -- For now, this suggests the types may be incompatible in this scenario
-                sorry
+              · -- res.qualType has clean internal poison - derive contradiction
+                -- This is impossible: res2 has dirty internal poison (hdirty),
+                -- and joinETyps preserves dirty internal poison for arrow types
+                exfalso
+                -- Extract arrow structure from res2.qualType.etyp
+                cases hres2etyp : res2.qualType.etyp with
+                | arrow st1_2 st2_2 p2 tcls2 =>
+                    -- From hdirty, p2 = true
+                    have hp2_dirty : p2 = true := by
+                      simp only [internalPoisonClean, getInternalPoison, hres2etyp] at hdirty
+                      cases p2 <;> simp at hdirty <;> rfl
+                    -- Use joinETyps_preserves_dirty_arrow to show res has dirty internal poison
+                    have hres_dirty : getInternalPoison res.qualType.etyp = some true := by
+                      rw [hetyp_join', hres2etyp]
+                      exact joinETyps_preserves_dirty_arrow hp2_dirty
+                    -- This contradicts hclean_internal_res
+                    simp only [internalPoisonClean, hres_dirty] at hclean_internal_res
+                    -- hclean_internal_res now has type (true = false), which is a contradiction
+                    cases hclean_internal_res
+                | _ =>
+                    -- res2.qualType.etyp is not an arrow, contradicts hisArrow
+                    rw [hres2etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
               · -- res.qualType has dirty internal poison - use dirty_internal_arrow
                 -- Need to transport typing proofs from res2.qualType.etyp to res.qualType.etyp
                 -- Extract arrow structure from res2.qualType.etyp
@@ -4334,8 +4352,29 @@ private lemma stepFR_ite
                     rw [hres2etyp] at hisParrow
                     simp [ETyp.isParrow] at hisParrow
               by_cases hclean_internal_res : internalPoisonClean res.qualType
-              · -- res.qualType has clean internal poison - complex case
-                sorry
+              · -- res.qualType has clean internal poison - derive contradiction
+                -- This is impossible: res2 has dirty internal poison (hdirty),
+                -- and joinETyps preserves dirty internal poison for parrow types
+                exfalso
+                -- Extract parrow structure from res2.qualType.etyp
+                cases hres2etyp : res2.qualType.etyp with
+                | parrow st1_2 st2_2 p2 tcls2 =>
+                    -- From hdirty, p2 = true
+                    have hp2_dirty : p2 = true := by
+                      simp only [internalPoisonClean, getInternalPoison, hres2etyp] at hdirty
+                      cases p2 <;> simp at hdirty <;> rfl
+                    -- Use joinETyps_preserves_dirty_parrow to show res has dirty internal poison
+                    have hres_dirty : getInternalPoison res.qualType.etyp = some true := by
+                      rw [hetyp_join', hres2etyp]
+                      exact joinETyps_preserves_dirty_parrow hp2_dirty
+                    -- This contradicts hclean_internal_res
+                    simp only [internalPoisonClean, hres_dirty] at hclean_internal_res
+                    -- hclean_internal_res now has type (true = false), which is a contradiction
+                    cases hclean_internal_res
+                | _ =>
+                    -- res2.qualType.etyp is not a parrow, contradicts hisParrow
+                    rw [hres2etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
               · -- res.qualType has dirty internal poison - use dirty_internal_parrow
                 have htyp1_res : valueHasETyp θ₀2 o₀ res.qualType.etyp := by
                   cases hres2etyp : res2.qualType.etyp with

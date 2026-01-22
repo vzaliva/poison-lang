@@ -400,6 +400,44 @@ def internalPoisonClean (qt : QTyp) : Prop :=
   | none => True        -- non-function types
   | some p => p = false -- clean iff internal poison is literally false
 
+-- Lemmas about preserving dirty internal poison through joinETyps
+
+/-- If an arrow type has dirty internal poison (p = true), then joinETyps preserves this. -/
+lemma joinETyps_preserves_dirty_arrow
+    {st1 st2 : Typ} {p1 : Poison} {tcls1 : List FnTClosure}
+    {t2 : ETyp} {p1' p2' : Poison}
+    (hDirty : p1 = true) :
+    getInternalPoison (joinETyps (ETyp.arrow st1 st2 p1 tcls1) t2 p1' p2') = some true := by
+  cases t2 with
+  | arrow st1' st2' p2 tcls2 =>
+      simp only [joinETyps]
+      split
+      · -- Compatible signatures: result is arrow with joinPoison p1 p2
+        simp [getInternalPoison, hDirty, joinPoison]
+      · -- Incompatible: result is original arrow with p1
+        simp [getInternalPoison, hDirty]
+  | parrow _ _ _ _ | int | bool | unit | string | ref _ _ =>
+      -- t2 is not arrow: joinETyps returns left operand unchanged
+      simp [joinETyps, getInternalPoison, hDirty]
+
+/-- If a parrow type has dirty internal poison (p = true), then joinETyps preserves this. -/
+lemma joinETyps_preserves_dirty_parrow
+    {st1 st2 : Typ} {p1 : Poison} {tcls1 : List PFnTClosure}
+    {t2 : ETyp} {p1' p2' : Poison}
+    (hDirty : p1 = true) :
+    getInternalPoison (joinETyps (ETyp.parrow st1 st2 p1 tcls1) t2 p1' p2') = some true := by
+  cases t2 with
+  | parrow st1' st2' p2 tcls2 =>
+      simp only [joinETyps]
+      split
+      · -- Compatible signatures: result is parrow with joinPoison p1 p2
+        simp [getInternalPoison, hDirty, joinPoison]
+      · -- Incompatible: result is original parrow with p1
+        simp [getInternalPoison, hDirty]
+  | arrow _ _ _ _ | int | bool | unit | string | ref _ _ =>
+      -- t2 is not parrow: joinETyps returns left operand unchanged
+      simp [joinETyps, getInternalPoison, hDirty]
+
 -- Two values agree under a given regime and memory environments.
 -- Clean values must agree; poisoned values may agree vacuously depending on regime.
 mutual
