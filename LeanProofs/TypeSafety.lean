@@ -908,6 +908,153 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
     | error _err =>
       simp [h_tc1] at h_typecheck
 
+-- Structure lemma for typecheckApp.
+-- Extracts the intermediate typechecking results and function type information.
+-- Note: The actual result comes from joinTypeResults which joins multiple closure results,
+-- but for the proof we mainly need result1, result2, and the function type with internal poison.
+lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckApp ctx e1 e2 fuel = .ok res →
+  ∃ (result2 result1 : TypeResult) (st1 st2 : Typ) (p : Poison) (isArrow : Bool),
+    typecheckExpr ctx e2 (fuel - 1) = .ok result2 ∧
+    typecheckExpr { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv',
+                             nextLoc := result2.nextLoc', nextTag := result2.nextTag' } e1 (fuel - 1) = .ok result1 ∧
+    ((isArrow = true ∧
+      (∃ (tcls : List FnTClosure), result1.qualType.etyp = ETyp.arrow st1 st2 p tcls) ∧
+      (¬ ctx.pureCtx) ∧
+      (isSubtype st1 result2.qualType) ∧
+      res.qualType.etyp.toTyp = st2 ∧
+      res.qualType.pred = Predicate.noPred)
+     ∨
+     (isArrow = false ∧
+      (∃ (tcls_p : List PFnTClosure), result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p) ∧
+      (isSubtype st1 result2.qualType) ∧
+      res.qualType.etyp.toTyp = st2 ∧
+      res.qualType.pred = Predicate.noPred)) := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+      simp [typecheckApp] at h_typecheck
+  | succ fuel' =>
+      unfold typecheckApp at h_typecheck
+      simp at h_typecheck
+      simp [bind, Except.bind] at h_typecheck
+      cases h_tc2_result : typecheckExpr ctx e2 fuel' with
+      | ok result2 =>
+          simp [h_tc2_result] at h_typecheck
+          match h_qt2 : result2.qualType with
+          | QTyp.mk etyp2 p2 pred2 =>
+              rw [h_qt2] at h_typecheck
+              simp at h_typecheck
+              let ctx' := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+              have h_ctx'_eq : ctx' = { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag' } := rfl
+              cases h_tc1_result : typecheckExpr ctx' e1 fuel' with
+              | ok result1 =>
+                  rw [h_ctx'_eq] at h_tc1_result
+                  simp [h_tc1_result] at h_typecheck
+                  match h_qt1 : result1.qualType with
+                  | QTyp.mk etyp1 p1 pred1 =>
+                      rw [h_qt1] at h_typecheck
+                      simp at h_typecheck
+                      cases etyp1 with
+                      | arrow st1 st2 p tcls =>
+                          simp at h_typecheck
+                          split at h_typecheck
+                          · -- pureCtx = true: error case
+                            simp at h_typecheck
+                          · next h_notPureCtx =>
+                            split at h_typecheck
+                            · -- tcls.isEmpty = true: error case
+                              simp at h_typecheck
+                            · next h_notEmpty =>
+                              split at h_typecheck
+                              · -- isSubtype check fails: error case
+                                simp at h_typecheck
+                              · next h_subtype =>
+                                -- Extract structure from joinTypeResults
+                                have h_arrow : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls := by simp [h_qt1]
+                                -- Extract what we can: result2, result1, function type
+                                -- The joinTypeResults analysis is complex, so we extract the essential structure
+                                refine ⟨result2, result1, st1, st2, p, true, ?_, ?_, ?_⟩
+                                · simp only [Nat.add_sub_cancel]
+                                  exact h_tc2_result
+                                · simp only [Nat.add_sub_cancel]
+                                  exact h_tc1_result
+                                · left
+                                  constructor
+                                  · rfl
+                                  constructor
+                                  · -- Show ∃ tcls, result1.qualType.etyp = ETyp.arrow st1 st2 p tcls
+                                    use tcls, h_arrow
+                                  constructor
+                                  · exact h_notPureCtx
+                                  constructor
+                                  · -- Convert h_subtype: ¬isSubtype st1 { etyp := etyp2, ... } = false
+                                    -- means isSubtype st1 { etyp := etyp2, ... } = true
+                                    -- Use h_qt2 to rewrite result2.qualType to the QTyp constructor
+                                    rw [h_qt2]
+                                    simp [h_subtype]
+                                  constructor
+                                  · -- res.qualType.etyp.toTyp = st2
+                                    -- This requires analyzing joinTypeResults which joins closure results
+                                    -- All closures should return compatible types with toTyp = st2
+                                    sorry -- TODO: Show res.qualType.etyp.toTyp = st2 from joinTypeResults
+                                  · -- res.qualType.pred = Predicate.noPred
+                                    -- Use helper lemma: joinTypeResults sets pred to noPred for function types
+                                    -- Extract from h_typecheck that joinTypeResults succeeded
+                                    -- The definition of joinTypeResults (Typecheck.lean:864-867) shows:
+                                    --   match joinedEtyp with | arrow _ _ _ _ => noPred | parrow _ _ _ _ => noPred | _ => joinedPred
+                                    -- So we need to show res.qualType.etyp is arrow or parrow, then the match sets pred = noPred
+                                    -- This follows from joinETyps_arrow_structure preserving arrow structure
+                                    have h_res_arrow : res.qualType.etyp.isArrow := by
+                                      -- Extract from joinTypeResults that the result is arrow st1 st2
+                                      -- This follows from joinETyps_arrow_structure preserving arrow structure
+                                      -- and the fact that all closure results have compatible signatures
+                                      sorry -- TODO: Show res.qualType.etyp.isArrow from joinTypeResults structure
+                                    -- Now use the helper lemma (once we prove it)
+                                    -- For now, use the fact that joinTypeResults sets pred = noPred for function types
+                                    sorry -- TODO: Use joinTypeResults_pred_noPred_for_function_types with h_res_arrow
+                      | parrow st1 st2 p tcls_p =>
+                          simp at h_typecheck
+                          split at h_typecheck
+                          · -- tcls_p.isEmpty = true: error case
+                            simp at h_typecheck
+                          · next h_notEmpty =>
+                            split at h_typecheck
+                            · -- isSubtype check fails: error case
+                              simp at h_typecheck
+                            · next h_subtype =>
+                              have h_parrow : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p := by simp [h_qt1]
+                              refine ⟨result2, result1, st1, st2, p, false, ?_, ?_, ?_⟩
+                              · simp only [Nat.add_sub_cancel]
+                                exact h_tc2_result
+                              · simp only [Nat.add_sub_cancel]
+                                exact h_tc1_result
+                              · right
+                                constructor
+                                · rfl
+                                constructor
+                                · -- Show ∃ tcls_p, result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p
+                                  use tcls_p, h_parrow
+                                constructor
+                                · -- Convert h_subtype using h_qt2
+                                  rw [h_qt2]
+                                  simp [h_subtype]
+                                constructor
+                                · -- res.qualType.etyp.toTyp = st2
+                                  sorry -- TODO: Show res.qualType.etyp.toTyp = st2 from joinTypeResults
+                                · -- res.qualType.pred = Predicate.noPred
+                                  -- Similar to arrow case: use joinTypeResults_pred_noPred_for_function_types
+                                  have h_res_parrow : res.qualType.etyp.isParrow := by
+                                    sorry -- TODO: Show res.qualType.etyp.isParrow from joinTypeResults structure
+                                  sorry -- TODO: Extract structure and use joinTypeResults_pred_noPred_for_function_types
+                      | _ =>
+                          -- Not a function type: error case
+                          simp at h_typecheck
+              | error _msg =>
+                  rw [h_ctx'_eq] at h_tc1_result
+                  simp [h_tc1_result] at h_typecheck
+      | error _msg =>
+          simp [h_tc2_result] at h_typecheck
 
 -- Extract the guard tag from a qualified type's predicate, if present.
 def qtypGuardTag (qt : QTyp) : Option Tag :=
@@ -2028,6 +2175,217 @@ private lemma joinTypeResults_nextTag_eq_max
               have h_fold := h_fold_nextTag rs _ _ hfold
               -- List.max on a non-empty list is foldl max.
               simpa [List.max] using h_fold
+
+/-- joinTypeResults preserves arrow/parrow structure: if first result is arrow st1 st2, result is arrow st1 st2.
+    TODO: this is not a good way to prove this. We need to define helper lemma on FoldM which holds a pairwise property and proves that it holds for the resut!
+-/
+private lemma joinTypeResults_preserves_arrow_structure
+  (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult)
+  (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure) :
+    r.qualType.etyp = ETyp.arrow st1 st2 p tcls →
+    joinTypeResults ctx r rs = .ok res →
+    ∃ (p' : Poison) (tcls' : List FnTClosure),
+      res.qualType.etyp = ETyp.arrow st1 st2 p' tcls' := by
+  intro h_first_arrow hjoin
+  -- Unfold joinTypeResults to extract the fold structure
+  cases hqt : r.qualType with
+  | mk etyp poison pred =>
+      -- etyp = ETyp.arrow st1 st2 p tcls from h_first_arrow
+      have h_etyp_eq : etyp = ETyp.arrow st1 st2 p tcls := by
+        rw [hqt] at h_first_arrow
+        simp at h_first_arrow
+        exact h_first_arrow
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw, TypecheckM] at hjoin
+      -- Extract the signature compatibility check
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++ toString (repr etyp) ++
+                        toString " vs " ++
+                      toString (repr resEtyp))
+                else Except.ok ())
+            () rs : Except String Unit) with
+      | error err =>
+          erw [hcheck] at hjoin
+          simp at hjoin
+      | ok _ =>
+          erw [hcheck] at hjoin
+          simp at hjoin
+          -- Extract the join fold
+          let joinStep :
+              (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) →
+                TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) :=
+            fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) (result : TypeResult) =>
+              match result.qualType with
+              | ⟨resEtyp, resPoison, resPred⟩ =>
+                  Except.ok
+                    (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+                      joinMemEnvs acc.2.1 result.memEnv',
+                      joinPoison acc.2.2.1 resPoison,
+                      joinPredicates acc.2.2.2.1 resPred,
+                      joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+                      max acc.2.2.2.2.2.1 result.nextLoc',
+                      max acc.2.2.2.2.2.2 result.nextTag')
+          -- Helper: the join fold preserves arrow structure
+          -- Generalized to work with any p' tcls' that have signature st1 st2
+          have h_fold_arrow :
+              ∀ (rs : List TypeResult)
+                (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag)
+                (p_acc : Poison) (tcls_acc : List FnTClosure),
+                acc.1 = ETyp.arrow st1 st2 p_acc tcls_acc →
+                (∀ r' ∈ rs, beqETypSignature (ETyp.arrow st1 st2 p_acc tcls_acc) r'.qualType.etyp = true) →
+                List.foldlM joinStep acc rs = Except.ok acc' →
+                ∃ (p' : Poison) (tcls' : List FnTClosure),
+                  acc'.1 = ETyp.arrow st1 st2 p' tcls' := by
+            intro rs acc acc' p_acc tcls_acc h_acc_arrow h_compat h_fold
+            induction rs generalizing acc with
+            | nil =>
+                simp [List.foldlM_nil, pure, Except.pure] at h_fold
+                cases h_fold
+                exact ⟨p_acc, tcls_acc, h_acc_arrow⟩
+            | cons x xs ih =>
+                -- x has compatible signature
+                have h_x_compat : beqETypSignature (ETyp.arrow st1 st2 p_acc tcls_acc) x.qualType.etyp = true := by
+                  have h_mem : x ∈ x :: xs := by simp
+                  exact h_compat x h_mem
+                -- x.qualType.etyp.isArrow (since compatible with arrow)
+                have h_x_arrow : x.qualType.etyp.isArrow := by
+                  -- beqETypSignature returns true only when both are arrows with same st1, st2
+                  cases h_x_etyp : x.qualType.etyp with
+                  | arrow _ _ _ _ =>
+                      simp [ETyp.isArrow]
+                  | parrow _ _ _ _ =>
+                      -- parrow is not compatible with arrow (beqETypSignature returns false)
+                      simp [beqETypSignature, h_x_etyp] at h_x_compat
+                  | int | bool | unit | string =>
+                      -- Non-function types are not compatible with arrow
+                      simp [beqETypSignature, h_x_etyp] at h_x_compat
+                  | ref _ _ =>
+                      -- ref types are not compatible with arrow
+                      simp [beqETypSignature, h_x_etyp] at h_x_compat
+                -- Extract resEtyp from x.qualType
+                cases h_x_qt : x.qualType with
+                | mk resEtyp resPoison resPred =>
+                    have h_resEtyp_eq : x.qualType.etyp = resEtyp := by
+                      rw [h_x_qt]
+                    have h_resEtyp_arrow : resEtyp.isArrow := by
+                      rw [← h_resEtyp_eq]
+                      exact h_x_arrow
+                    have h_resEtyp_compat : beqETypSignature (ETyp.arrow st1 st2 p_acc tcls_acc) resEtyp = true := by
+                      rw [← h_resEtyp_eq]
+                      exact h_x_compat
+                    -- resEtyp must be arrow with same st1, st2 (from compatibility)
+                    have h_resEtyp_arrow_form : ∃ (st1' st2' : Typ) (p2 : Poison) (tcls2 : List FnTClosure),
+                        resEtyp = ETyp.arrow st1' st2' p2 tcls2 := by
+                      cases resEtyp with
+                      | arrow st1' st2' p2 tcls2 =>
+                          exact ⟨st1', st2', p2, tcls2, rfl⟩
+                      | _ => simp [ETyp.isArrow] at h_resEtyp_arrow
+                    obtain ⟨st1', st2', p2, tcls2, h_resEtyp_form⟩ := h_resEtyp_arrow_form
+                    -- Compatibility means (st1 == st1' && st2 == st2') = true
+                    have h_sig_eq : (st1 == st1' && st2 == st2') = true := by
+                      rw [h_resEtyp_form] at h_resEtyp_compat
+                      simp only [beqETypSignature] at h_resEtyp_compat
+                      assumption
+                    -- Now show joinETyps preserves arrow structure
+                    have h_join_arrow : ∃ (p' : Poison) (tcls' : List FnTClosure),
+                        joinETyps (ETyp.arrow st1 st2 p_acc tcls_acc) resEtyp acc.2.2.1 resPoison = ETyp.arrow st1 st2 p' tcls' := by
+                      rw [h_resEtyp_form]
+                      simp only [joinETyps]
+                      simp [h_sig_eq, ↓reduceIte]
+                    obtain ⟨p_joined, tcls_joined, h_join_eq⟩ := h_join_arrow
+                    -- Now apply IH on the tail
+                    -- h_fold shows: List.foldlM joinStep acc (x :: xs) = Except.ok acc'
+                    -- Extract the new accumulator from h_fold
+                    simp [List.foldlM_cons, bind, Except.bind] at h_fold
+                    -- h_fold now shows: (joinStep acc x >>= fun acc_new => fold on tail) = Except.ok acc'
+                    -- Extract joinStep result
+                    match h_step_val : joinStep acc x with
+                    | Except.error err =>
+                        simp [h_step_val] at h_fold
+                    | Except.ok acc_new_val =>
+                        simp [h_step_val] at h_fold
+                        -- h_step_val shows: joinStep acc x = Except.ok acc_new_val
+                        -- Simplify joinStep to extract tuple
+                        simp [joinStep, h_x_qt] at h_step_val
+                        -- Now h_step_val is: Except.ok (tuple) = Except.ok acc_new_val
+                        -- Extract tuple equality from Except.ok equality
+                        have h_step_eq : (joinETyps acc.1 resEtyp acc.2.2.1 resPoison, joinMemEnvs acc.2.1 x.memEnv', joinPoison acc.2.2.1 resPoison,
+                            joinPredicates acc.2.2.2.1 resPred, joinTagEnvs acc.2.2.2.2.1 x.tagEnv', max acc.2.2.2.2.2.1 x.nextLoc',
+                            max acc.2.2.2.2.2.2 x.nextTag') = acc_new_val := by
+                          sorry -- TODO: Extract from Except.ok equality
+                        -- Extract first component
+                        have h_acc_new_1 : acc_new_val.1 = joinETyps acc.1 resEtyp acc.2.2.1 resPoison := by
+                          sorry -- TODO: Extract from tuple equality h_step_eq
+                        have h_acc_new_arrow_joined : acc_new_val.1 = ETyp.arrow st1 st2 p_joined tcls_joined := by
+                          rw [h_acc_new_1, h_acc_arrow, h_join_eq]
+                        -- Apply IH on tail with acc_new_val
+                        have h_compat_tail : ∀ r' ∈ xs, beqETypSignature (ETyp.arrow st1 st2 p_joined tcls_joined) r'.qualType.etyp = true := by
+                          intro r' h_mem
+                          -- Original compatibility with arrow st1 st2 p_acc tcls_acc
+                          have h_orig : beqETypSignature (ETyp.arrow st1 st2 p_acc tcls_acc) r'.qualType.etyp = true := by
+                            have h_mem' : r' ∈ x :: xs := by simp [h_mem]
+                            exact h_compat r' h_mem'
+                          -- beqETypSignature only checks st1 == st1' && st2 == st2', so compatibility is preserved
+                          sorry -- TODO: Show compatibility preserved when changing p_acc/tcls_acc to p_joined/tcls_joined
+                        -- Apply generalized IH with p_joined and tcls_joined
+                        -- The IH signature is: ∀ acc, acc.1 = arrow st1 st2 p_acc tcls_acc → ...
+                        -- We need to use p_joined and tcls_joined as p_acc and tcls_acc
+                        -- But the IH is quantified over p_acc and tcls_acc, so we can instantiate it
+                        sorry -- TODO: Apply IH with p_joined and tcls_joined - need to fix IH signature
+          -- Apply the helper
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, r.memEnv', poison, pred, r.tagEnv', r.nextLoc', r.nextTag') rs with
+          | error err =>
+              erw [hfold] at hjoin
+              simp at hjoin
+          | ok a =>
+              erw [hfold] at hjoin
+              simp at hjoin
+              -- Extract that res.qualType.etyp = a.1
+              -- hjoin shows: { qualType := { etyp := a.1, ... }, ... } = res
+              -- Extract etyp equality
+              have h_res_etyp : res.qualType.etyp = a.1 := by
+                sorry -- TODO: Extract etyp from record equality hjoin
+              -- Use h_fold_arrow to show a.1 is arrow
+              have h_compat_all : ∀ r' ∈ rs, beqETypSignature (ETyp.arrow st1 st2 p tcls) r'.qualType.etyp = true := by
+                -- This follows from the signature check passing in hcheck
+                -- hcheck shows that all r' in rs have beqETypSignature etyp r'.qualType.etyp = true
+                -- and etyp = arrow st1 st2 p tcls, so the result follows
+                intro r' h_mem
+                -- Extract from hcheck that beqETypSignature etyp r'.qualType.etyp = true
+                -- This requires unfolding the fold in hcheck
+                sorry -- TODO: Extract from hcheck - need to show foldlM check implies compatibility
+              have h_fold_arrow_result := h_fold_arrow rs (etyp, r.memEnv', poison, pred, r.tagEnv', r.nextLoc', r.nextTag') a p tcls h_etyp_eq h_compat_all hfold
+              obtain ⟨p', tcls', h_a1_arrow⟩ := h_fold_arrow_result
+              -- Now show res.qualType.etyp = arrow st1 st2 p' tcls'
+              use p', tcls'
+              rw [h_res_etyp, h_a1_arrow]
+
+
+/-- joinTypeResults sets pred to noPred when the joined etyp is a function type (arrow or parrow).
+    NOTE: This lemma may be difficult to prove directly because it requires extracting
+    the structure from the nested match in joinTypeResults. Consider using a stronger
+    lemma that extracts the full structure first. -/
+private lemma joinTypeResults_pred_noPred_for_function_types
+  (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) :
+    joinTypeResults ctx r rs = .ok res →
+    (res.qualType.etyp.isArrow ∨ res.qualType.etyp.isParrow) →
+    res.qualType.pred = Predicate.noPred := by
+  -- This lemma requires extracting v.1 = res.qualType.etyp from the nested match structure
+  -- in hjoin, which is complex. The proof would need to:
+  -- 1. Unfold the nested matches in joinTypeResults
+  -- 2. Extract that v.1 = res.qualType.etyp from the result structure equality
+  -- 3. Use isArrow/isParrow to show v.1 is arrow/parrow
+  -- 4. Use the match to show pred = noPred
+  -- This is provable but complex. Consider proving a stronger structural lemma first.
+  sorry
+
 
 private lemma applyFnTClosure_nextTag_mono
   (tcl : FnTClosure) (ctx : TypeContext)
