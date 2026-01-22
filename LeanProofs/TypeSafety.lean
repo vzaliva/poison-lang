@@ -914,12 +914,13 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
 -- but for the proof we mainly need result1, result2, and the function type with internal poison.
 lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckApp ctx e1 e2 fuel = .ok res →
-  ∃ (result2 result1 : TypeResult) (st1 st2 : Typ) (p : Poison) (isArrow : Bool),
+  ∃ (result2 result1 : TypeResult) (st1 st2 : Typ) (p p1 : Poison) (isArrow : Bool),
     typecheckExpr ctx e2 (fuel - 1) = .ok result2 ∧
     typecheckExpr { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv',
                              nextLoc := result2.nextLoc', nextTag := result2.nextTag' } e1 (fuel - 1) = .ok result1 ∧
     ((isArrow = true ∧
       (∃ (tcls : List FnTClosure), result1.qualType.etyp = ETyp.arrow st1 st2 p tcls) ∧
+      result1.qualType.poison = p1 ∧
       (¬ ctx.pureCtx) ∧
       (isSubtype st1 result2.qualType) ∧
       res.qualType.etyp.toTyp = st2 ∧
@@ -927,6 +928,7 @@ lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (re
      ∨
      (isArrow = false ∧
       (∃ (tcls_p : List PFnTClosure), result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p) ∧
+      result1.qualType.poison = p1 ∧
       (isSubtype st1 result2.qualType) ∧
       res.qualType.etyp.toTyp = st2 ∧
       res.qualType.pred = Predicate.noPred)) := by
@@ -974,7 +976,7 @@ lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (re
                                 have h_arrow : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls := by simp [h_qt1]
                                 -- Extract what we can: result2, result1, function type
                                 -- The joinTypeResults analysis is complex, so we extract the essential structure
-                                refine ⟨result2, result1, st1, st2, p, true, ?_, ?_, ?_⟩
+                                refine ⟨result2, result1, st1, st2, p, p1, true, ?_, ?_, ?_⟩
                                 · simp only [Nat.add_sub_cancel]
                                   exact h_tc2_result
                                 · simp only [Nat.add_sub_cancel]
@@ -985,6 +987,9 @@ lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (re
                                   constructor
                                   · -- Show ∃ tcls, result1.qualType.etyp = ETyp.arrow st1 st2 p tcls
                                     use tcls, h_arrow
+                                  constructor
+                                  · -- result1.qualType.poison = p1
+                                    simp [h_qt1]
                                   constructor
                                   · exact h_notPureCtx
                                   constructor
@@ -1024,7 +1029,7 @@ lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (re
                               simp at h_typecheck
                             · next h_subtype =>
                               have h_parrow : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p := by simp [h_qt1]
-                              refine ⟨result2, result1, st1, st2, p, false, ?_, ?_, ?_⟩
+                              refine ⟨result2, result1, st1, st2, p, p1, false, ?_, ?_, ?_⟩
                               · simp only [Nat.add_sub_cancel]
                                 exact h_tc2_result
                               · simp only [Nat.add_sub_cancel]
@@ -1035,6 +1040,9 @@ lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (re
                                 constructor
                                 · -- Show ∃ tcls_p, result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p
                                   use tcls_p, h_parrow
+                                constructor
+                                · -- result1.qualType.poison = p1
+                                  simp [h_qt1]
                                 constructor
                                 · -- Convert h_subtype using h_qt2
                                   rw [h_qt2]
