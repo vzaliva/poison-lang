@@ -643,16 +643,18 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
               rfl
           | clean_internal_arrow _ _ _ _ _ hv1 _ =>
               cases hv1
-          | dirty_internal_arrow hdirty hisArrow =>
-              -- In observable context with integer values, dirty arrow types should not occur.
-              -- This would require proving observable types are not function types.
-              sorry
+          | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
+              -- A Value.num can only have type ETyp.int, but isArrow = true implies function type
+              have het : qt.etyp = ETyp.int := by
+                generalize hqte : qt.etyp = qte at htyp1; cases htyp1; rfl
+              exact absurd (het ▸ hisArrow) (by decide)
           | clean_internal_parrow _ _ _ _ _ hv1 _ =>
               cases hv1
-          | dirty_internal_parrow hdirty hisParrow =>
-              -- In observable context with integer values, dirty parrow types should not occur.
-              -- This would require proving observable types are not function types.
-              sorry
+          | dirty_internal_parrow hdirty hisParrow htyp1 htyp2 =>
+              -- A Value.num can only have type ETyp.int, but isParrow = true implies parrow type
+              have het : qt.etyp = ETyp.int := by
+                generalize hqte : qt.etyp = qte at htyp1; cases htyp1; rfl
+              exact absurd (het ▸ hisParrow) (by decide)
           | clean_ref _ _ _ _ hv1 _ _ _ =>
               cases hv1
           | poisoned_noPred_ref _ _ _ _ _ hv1 _ _ _ =>
@@ -1960,17 +1962,25 @@ private lemma stepFR_var
                               simpa [hpred] using hpred'.symm
                             cases this
                         | clean_internal_arrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
-                            -- res.qualType has guard predicate but arrow constructors don't handle guards
-                            -- This case may require extending agreeValueUnder with guard+arrow constructors
-                            sorry
-                        | dirty_internal_arrow _ _ =>
-                            sorry
+                            -- Arrow types are function types, contradicting hnotfun_res
+                            simp only [hres, hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                              Bool.true_or] at hnotfun_res
+                            cases hnotfun_res
+                        | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
+                            -- dirty_internal_arrow requires isArrow = true, contradicting hnotfun_res
+                            simp only [hres, ETyp.isFunctionType] at hnotfun_res
+                            rw [hisArrow, Bool.true_or] at hnotfun_res
+                            cases hnotfun_res
                         | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
-                            -- res.qualType has guard predicate but parrow constructors don't handle guards
-                            -- This case may require extending agreeValueUnder with guard+parrow constructors
-                            sorry
-                        | dirty_internal_parrow _ _ =>
-                            sorry
+                            -- Parrow types are function types, contradicting hnotfun_res
+                            simp only [hres, hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                              Bool.or_true] at hnotfun_res
+                            cases hnotfun_res
+                        | dirty_internal_parrow hdirty hisParrow htyp1 htyp2 =>
+                            -- dirty_internal_parrow requires isParrow = true, contradicting hnotfun_res
+                            simp only [hres, ETyp.isFunctionType] at hnotfun_res
+                            rw [hisParrow, Bool.or_true] at hnotfun_res
+                            cases hnotfun_res
                         | clean_ref _ hetyp hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
                             have htagRes : qtypGuardTag res.qualType = some k := by
                               simp [qtypGuardTag, hres, hpred]
@@ -4084,14 +4094,44 @@ private lemma stepFR_ite
             -- Check if l is in res2.memEnv'
             by_cases hres2 : res2.memEnv'.contains l
             · -- l is in res2.memEnv'
-              -- The joined type may have different poison, but if joined is clean,
-              -- then res2's type is also clean (joinPoison p1 p2 = false → p1 = false)
-              -- We have hagree2_parts.1 for locations in res2.memEnv'
-              -- For clean types under R, either poison=false or guard tag applies
-              -- If poison=false, we can use joinMemEnvs_lookup_clean_qtypCleanUnder.clean
-              -- If guard tag applies, we need different reasoning
-              -- For now, use sorry for this complex case - requires detailed joinMemEnvs analysis
-              sorry
+              -- Key insight: if the joined type qt is clean (poison=false), then
+              -- res2's type at l must also be clean since joinPoison p1 p2 = false → p1 = false.
+              -- We need to get the actual type from res2.memEnv' and apply hagree2_parts.1.
+              cases hclean with
+              | clean hpoison =>
+                  -- qt.poison = false, so by joinMemEnvs_lookup_clean_left, res2's type has poison=false
+                  have hres2_lookup_ne : res2.memEnv'.lookup l ≠ none := by
+                    simp only [MemoryTypeEnv.lookup]
+                    have hmem : l ∈ res2.memEnv' := (Std.ExtTreeMap.contains_iff_mem).1 hres2
+                    rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_eq_some_getElem hmem]
+                    exact Option.some_ne_none _
+                  have ⟨qt1, hlookup1, hetyp1, hpoison1⟩ :=
+                    joinMemEnvs_lookup_clean_left res2.memEnv' res3.memEnv' l qt hlookup hpoison hres2_lookup_ne
+                  -- qt1 is clean via poison = false
+                  have hclean1 : qtypCleanUnder R qt1 := qtypCleanUnder.clean hpoison1
+                  -- Apply hagree2_parts.1 to get agreement for (l, qt1)
+                  have hagree_qt1 := hagree2_parts.1 l qt1 hlookup1 hclean1
+                  -- Transport from qt1 to qt
+                  cases hagree_qt1 with
+                  | agree_values _ _ a₁ a₂ n₁ n₂ hreal1 hreal2 hmem1 hmem2 hagree_val =>
+                      apply agreeLocUnder.agree_values l qt a₁ a₂ n₁ n₂ hreal1 hreal2 hmem1 hmem2
+                      cases hagree_val with
+                      | clean_eq_nonref _ hnotfun1 hnotref1 hEq =>
+                          have hnotfun : qt.etyp.isFunctionType = false := by rw [← hetyp1]; exact hnotfun1
+                          have hnotref : ¬ (∃ t ls, qt.etyp = ETyp.ref t ls) := by
+                            intro ⟨t, ls, heq⟩; apply hnotref1; exact ⟨t, ls, hetyp1 ▸ heq⟩
+                          exact agreeValueUnder.clean_eq_nonref hpoison hnotfun hnotref hEq
+                      | poisoned_noPred_eq_nonref hp _ _ _ _ =>
+                          -- Contradiction: qt1 has poison = false but this case requires poison = true
+                          simp [hpoison1] at hp
+                      | _ =>
+                          -- Function/ref types - need more detailed handling
+                          sorry
+                  | both_unrealized _ _ hreal1 hreal2 =>
+                      exact agreeLocUnder.both_unrealized l qt hreal1 hreal2
+              | guard k htag hregime hnotfun =>
+                  -- Guarded cleanness: requires predicate analysis through joinMemEnvs
+                  sorry
             · -- l is only in res3.memEnv' (not in res2)
               -- θ₀2 and θ₁2 don't have l realized (they come from executing e2)
               -- Use both_unrealized
@@ -5187,16 +5227,18 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
               rfl
           | clean_internal_arrow _ _ _ _ _ hv1 _ =>
               cases hv1
-          | dirty_internal_arrow hdirty hisArrow =>
-              -- In observable context with integer values, dirty arrow types should not occur.
-              -- This would require proving observable types are not function types.
-              sorry
+          | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
+              -- A Value.num can only have type ETyp.int, but isArrow = true implies function type
+              have het : qt.etyp = ETyp.int := by
+                generalize hqte : qt.etyp = qte at htyp1; cases htyp1; rfl
+              exact absurd (het ▸ hisArrow) (by decide)
           | clean_internal_parrow _ _ _ _ _ hv1 _ =>
               cases hv1
-          | dirty_internal_parrow hdirty hisParrow =>
-              -- In observable context with integer values, dirty parrow types should not occur.
-              -- This would require proving observable types are not function types.
-              sorry
+          | dirty_internal_parrow hdirty hisParrow htyp1 htyp2 =>
+              -- A Value.num can only have type ETyp.int, but isParrow = true implies parrow type
+              have het : qt.etyp = ETyp.int := by
+                generalize hqte : qt.etyp = qte at htyp1; cases htyp1; rfl
+              exact absurd (het ▸ hisParrow) (by decide)
           | clean_ref _ _ _ _ hv1 _ _ _ =>
               cases hv1
           | poisoned_noPred_ref _ _ _ _ _ hv1 _ _ _ =>
