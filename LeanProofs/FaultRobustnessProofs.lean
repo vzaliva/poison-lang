@@ -4204,9 +4204,82 @@ private lemma stepFR_ite
               have hclean_res : internalPoisonClean res.qualType := by
                 simp only [internalPoisonClean, getInternalPoison, hetyp_res, hp']
               exact agreeValueUnder.clean_internal_arrow hclean_res hetyp_res htcl_res hmatch hcap hv₁ hv₂
-          | dirty_internal_arrow _ _ =>
-              -- Dirty arrow: no constraints, any values agree
-              sorry
+          | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
+              -- Dirty arrow: need to show res.qualType.etyp is arrow and transport typing proofs
+              -- First show res.qualType.etyp is an arrow type
+              have hisArrow_res : res.qualType.etyp.isArrow = true := by
+                rw [hetyp_join']
+                -- Extract arrow structure from res2.qualType.etyp
+                cases hres2etyp : res2.qualType.etyp with
+                | arrow st1 st2 p tcls =>
+                    cases hres3etyp : res3.qualType.etyp with
+                    | arrow st1' st2' p3 tcls3 =>
+                        simp only [joinETyps]
+                        split <;> simp [ETyp.isArrow]
+                    | _ => simp only [joinETyps, ETyp.isArrow]
+                | int =>
+                    rw [hres2etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+                | bool =>
+                    rw [hres2etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+                | unit =>
+                    rw [hres2etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+                | string =>
+                    rw [hres2etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+                | ref _ _ =>
+                    rw [hres2etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+                | parrow _ _ _ _ =>
+                    rw [hres2etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+              -- Case split on whether res.qualType's internal poison is clean
+              by_cases hclean_internal_res : internalPoisonClean res.qualType
+              · -- res.qualType has clean internal poison - can't use dirty constructor
+                -- This means we should derive a contradiction or use clean constructor
+                -- But we're in the dirty_internal_arrow case for res2, so this is complex
+                -- For now, this suggests the types may be incompatible in this scenario
+                sorry
+              · -- res.qualType has dirty internal poison - use dirty_internal_arrow
+                -- Need to transport typing proofs from res2.qualType.etyp to res.qualType.etyp
+                -- Extract arrow structure from res2.qualType.etyp
+                have htyp1_res : valueHasETyp θ₀2 o₀ res.qualType.etyp := by
+                  -- Extract arrow structure from res2.qualType.etyp
+                  cases hres2etyp : res2.qualType.etyp with
+                  | arrow st1_2 st2_2 p2 tcls2 =>
+                      -- Rewrite htyp1 to match the arrow structure
+                      have htyp1' : valueHasETyp θ₀2 o₀ (ETyp.arrow st1_2 st2_2 p2 tcls2) := by
+                        rw [← hres2etyp]; exact htyp1
+                      cases htyp1' with
+                      | closure x e env _ _ _ _ =>
+                          rw [hetyp_join', hres2etyp]
+                          cases hres3etyp : res3.qualType.etyp with
+                          | arrow st1' st2' p3 tcls3 =>
+                              simp only [joinETyps]
+                              split <;> exact valueHasETyp.closure x e env _ _ _ _
+                          | _ => simp only [joinETyps]; exact valueHasETyp.closure x e env _ _ _ _
+                  | _ =>
+                      rw [hres2etyp] at hisArrow
+                      simp [ETyp.isArrow] at hisArrow
+                have htyp2_res : valueHasETyp θ₁2 o₁ res.qualType.etyp := by
+                  cases hres2etyp : res2.qualType.etyp with
+                  | arrow st1_2 st2_2 p2 tcls2 =>
+                      have htyp2' : valueHasETyp θ₁2 o₁ (ETyp.arrow st1_2 st2_2 p2 tcls2) := by
+                        rw [← hres2etyp]; exact htyp2
+                      cases htyp2' with
+                      | closure x e env _ _ _ _ =>
+                          rw [hetyp_join', hres2etyp]
+                          cases hres3etyp : res3.qualType.etyp with
+                          | arrow st1' st2' p3 tcls3 =>
+                              simp only [joinETyps]
+                              split <;> exact valueHasETyp.closure x e env _ _ _ _
+                          | _ => simp only [joinETyps]; exact valueHasETyp.closure x e env _ _ _ _
+                  | _ =>
+                      rw [hres2etyp] at hisArrow
+                      simp [ETyp.isArrow] at hisArrow
+                exact agreeValueUnder.dirty_internal_arrow hclean_internal_res hisArrow_res htyp1_res htyp2_res
           | @clean_internal_parrow st1 st2 p tcls _ tcl x body pbody σcap ρcap₁ ρcap₂ _ _ hclean2 hetyp2 htcl2 hmatch hcap hv₁ hv₂ =>
               -- Similar to clean_internal_arrow but for parrow types
               -- From hclean2, we know p = false (internal poison of res2 is clean)
@@ -4231,9 +4304,72 @@ private lemma stepFR_ite
               have hclean_res : internalPoisonClean res.qualType := by
                 simp only [internalPoisonClean, getInternalPoison, hetyp_res, hp']
               exact agreeValueUnder.clean_internal_parrow hclean_res hetyp_res htcl_res hmatch hcap hv₁ hv₂
-          | dirty_internal_parrow _ _ =>
-              -- Dirty parrow: no constraints, any values agree
-              sorry
+          | dirty_internal_parrow hdirty hisParrow htyp1 htyp2 =>
+              -- Dirty parrow: need to show res.qualType.etyp is parrow and transport typing proofs
+              have hisParrow_res : res.qualType.etyp.isParrow = true := by
+                rw [hetyp_join']
+                cases hres2etyp : res2.qualType.etyp with
+                | parrow st1 st2 p tcls =>
+                    cases hres3etyp : res3.qualType.etyp with
+                    | parrow st1' st2' p3 tcls3 =>
+                        simp only [joinETyps]
+                        split <;> simp [ETyp.isParrow]
+                    | _ => simp only [joinETyps, ETyp.isParrow]
+                | int =>
+                    rw [hres2etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+                | bool =>
+                    rw [hres2etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+                | unit =>
+                    rw [hres2etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+                | string =>
+                    rw [hres2etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+                | ref _ _ =>
+                    rw [hres2etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+                | arrow _ _ _ _ =>
+                    rw [hres2etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+              by_cases hclean_internal_res : internalPoisonClean res.qualType
+              · -- res.qualType has clean internal poison - complex case
+                sorry
+              · -- res.qualType has dirty internal poison - use dirty_internal_parrow
+                have htyp1_res : valueHasETyp θ₀2 o₀ res.qualType.etyp := by
+                  cases hres2etyp : res2.qualType.etyp with
+                  | parrow st1_2 st2_2 p2 tcls2 =>
+                      have htyp1' : valueHasETyp θ₀2 o₀ (ETyp.parrow st1_2 st2_2 p2 tcls2) := by
+                        rw [← hres2etyp]; exact htyp1
+                      cases htyp1' with
+                      | peClosure x pe env _ _ _ _ =>
+                          rw [hetyp_join', hres2etyp]
+                          cases hres3etyp : res3.qualType.etyp with
+                          | parrow st1' st2' p3 tcls3 =>
+                              simp only [joinETyps]
+                              split <;> exact valueHasETyp.peClosure x pe env _ _ _ _
+                          | _ => simp only [joinETyps]; exact valueHasETyp.peClosure x pe env _ _ _ _
+                  | _ =>
+                      rw [hres2etyp] at hisParrow
+                      simp [ETyp.isParrow] at hisParrow
+                have htyp2_res : valueHasETyp θ₁2 o₁ res.qualType.etyp := by
+                  cases hres2etyp : res2.qualType.etyp with
+                  | parrow st1_2 st2_2 p2 tcls2 =>
+                      have htyp2' : valueHasETyp θ₁2 o₁ (ETyp.parrow st1_2 st2_2 p2 tcls2) := by
+                        rw [← hres2etyp]; exact htyp2
+                      cases htyp2' with
+                      | peClosure x pe env _ _ _ _ =>
+                          rw [hetyp_join', hres2etyp]
+                          cases hres3etyp : res3.qualType.etyp with
+                          | parrow st1' st2' p3 tcls3 =>
+                              simp only [joinETyps]
+                              split <;> exact valueHasETyp.peClosure x pe env _ _ _ _
+                          | _ => simp only [joinETyps]; exact valueHasETyp.peClosure x pe env _ _ _ _
+                  | _ =>
+                      rw [hres2etyp] at hisParrow
+                      simp [ETyp.isParrow] at hisParrow
+                exact agreeValueUnder.dirty_internal_parrow hclean_internal_res hisParrow_res htyp1_res htyp2_res
           | @clean_ref t ls l₁ l₂ a₁ a₂ _ _ _ _ hetyp2 hlookup1 hin1 hv1 hlookup2 hin2 hv2 =>
               -- For ref types, joinETyps unions location sets
               -- l₁ ∈ ls2 implies l₁ ∈ joined_ls
@@ -4540,12 +4676,150 @@ private lemma stepFR_ite
           | @clean_internal_arrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
               -- Arrow case - anticipating changes to function handling
               sorry
-          | dirty_internal_arrow _ _ =>
-              sorry
+          | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
+              -- Dirty arrow: same approach as true-true case but with res3
+              have hisArrow_res : res.qualType.etyp.isArrow = true := by
+                rw [hetyp_join']
+                -- Extract arrow structure from res3.qualType.etyp
+                cases hres3etyp : res3.qualType.etyp with
+                | arrow st1 st2 p tcls =>
+                    cases hres2etyp : res2.qualType.etyp with
+                    | arrow st1' st2' p2 tcls2 =>
+                        simp only [joinETyps]
+                        split <;> simp [ETyp.isArrow]
+                    | int | bool | unit | string | ref _ _ | parrow _ _ _ _ =>
+                        -- Impossible: type mismatch would cause typechecker to fail
+                        -- res3.etyp is arrow but res2.etyp is not, violates beqETypSignature check
+                        sorry
+                | int =>
+                    rw [hres3etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+                | bool =>
+                    rw [hres3etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+                | unit =>
+                    rw [hres3etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+                | string =>
+                    rw [hres3etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+                | ref _ _ =>
+                    rw [hres3etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+                | parrow _ _ _ _ =>
+                    rw [hres3etyp] at hisArrow
+                    simp [ETyp.isArrow] at hisArrow
+              by_cases hclean_internal_res : internalPoisonClean res.qualType
+              · sorry
+              · have htyp1_res : valueHasETyp θ₀3 o₀ res.qualType.etyp := by
+                  cases hres3etyp : res3.qualType.etyp with
+                  | arrow st1_3 st2_3 p3 tcls3 =>
+                      have htyp1' : valueHasETyp θ₀3 o₀ (ETyp.arrow st1_3 st2_3 p3 tcls3) := by
+                        rw [← hres3etyp]; exact htyp1
+                      cases htyp1' with
+                      | closure x e env _ _ _ _ =>
+                          rw [hetyp_join', hres3etyp]
+                          cases hres2etyp : res2.qualType.etyp with
+                          | arrow st1' st2' p2 tcls2 =>
+                              simp only [joinETyps]
+                              split <;> exact valueHasETyp.closure x e env _ _ _ _
+                          | int | bool | unit | string | ref _ _ | parrow _ _ _ _ =>
+                              -- Impossible: contradicts hisArrow_res (type mismatch)
+                              sorry
+                  | _ =>
+                      rw [hres3etyp] at hisArrow
+                      simp [ETyp.isArrow] at hisArrow
+                have htyp2_res : valueHasETyp θ₁3 o₁ res.qualType.etyp := by
+                  cases hres3etyp : res3.qualType.etyp with
+                  | arrow st1_3 st2_3 p3 tcls3 =>
+                      have htyp2' : valueHasETyp θ₁3 o₁ (ETyp.arrow st1_3 st2_3 p3 tcls3) := by
+                        rw [← hres3etyp]; exact htyp2
+                      cases htyp2' with
+                      | closure x e env _ _ _ _ =>
+                          rw [hetyp_join', hres3etyp]
+                          cases hres2etyp : res2.qualType.etyp with
+                          | arrow st1' st2' p2 tcls2 =>
+                              simp only [joinETyps]
+                              split <;> exact valueHasETyp.closure x e env _ _ _ _
+                          | int | bool | unit | string | ref _ _ | parrow _ _ _ _ =>
+                              -- Impossible: contradicts hisArrow_res (type mismatch)
+                              sorry
+                  | _ =>
+                      rw [hres3etyp] at hisArrow
+                      simp [ETyp.isArrow] at hisArrow
+                exact agreeValueUnder.dirty_internal_arrow hclean_internal_res hisArrow_res htyp1_res htyp2_res
           | @clean_internal_parrow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
               sorry
-          | dirty_internal_parrow _ _ =>
-              sorry
+          | dirty_internal_parrow hdirty hisParrow htyp1 htyp2 =>
+              have hisParrow_res : res.qualType.etyp.isParrow = true := by
+                rw [hetyp_join']
+                cases hres3etyp : res3.qualType.etyp with
+                | parrow st1 st2 p tcls =>
+                    cases hres2etyp : res2.qualType.etyp with
+                    | parrow st1' st2' p2 tcls2 =>
+                        simp only [joinETyps]
+                        split <;> simp [ETyp.isParrow]
+                    | int | bool | unit | string | ref _ _ | arrow _ _ _ _ =>
+                        -- Impossible: type mismatch would cause typechecker to fail
+                        -- res3.etyp is parrow but res2.etyp is not, violates beqETypSignature check
+                        sorry
+                | int =>
+                    rw [hres3etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+                | bool =>
+                    rw [hres3etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+                | unit =>
+                    rw [hres3etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+                | string =>
+                    rw [hres3etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+                | ref _ _ =>
+                    rw [hres3etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+                | arrow _ _ _ _ =>
+                    rw [hres3etyp] at hisParrow
+                    simp [ETyp.isParrow] at hisParrow
+              by_cases hclean_internal_res : internalPoisonClean res.qualType
+              · sorry
+              · have htyp1_res : valueHasETyp θ₀3 o₀ res.qualType.etyp := by
+                  cases hres3etyp : res3.qualType.etyp with
+                  | parrow st1_3 st2_3 p3 tcls3 =>
+                      have htyp1' : valueHasETyp θ₀3 o₀ (ETyp.parrow st1_3 st2_3 p3 tcls3) := by
+                        rw [← hres3etyp]; exact htyp1
+                      cases htyp1' with
+                      | peClosure x pe env _ _ _ _ =>
+                          rw [hetyp_join', hres3etyp]
+                          cases hres2etyp : res2.qualType.etyp with
+                          | parrow st1' st2' p2 tcls2 =>
+                              simp only [joinETyps]
+                              split <;> exact valueHasETyp.peClosure x pe env _ _ _ _
+                          | int | bool | unit | string | ref _ _ | arrow _ _ _ _ =>
+                              -- Impossible: contradicts hisParrow_res (type mismatch)
+                              sorry
+                  | _ =>
+                      rw [hres3etyp] at hisParrow
+                      simp [ETyp.isParrow] at hisParrow
+                have htyp2_res : valueHasETyp θ₁3 o₁ res.qualType.etyp := by
+                  cases hres3etyp : res3.qualType.etyp with
+                  | parrow st1_3 st2_3 p3 tcls3 =>
+                      have htyp2' : valueHasETyp θ₁3 o₁ (ETyp.parrow st1_3 st2_3 p3 tcls3) := by
+                        rw [← hres3etyp]; exact htyp2
+                      cases htyp2' with
+                      | peClosure x pe env _ _ _ _ =>
+                          rw [hetyp_join', hres3etyp]
+                          cases hres2etyp : res2.qualType.etyp with
+                          | parrow st1' st2' p2 tcls2 =>
+                              simp only [joinETyps]
+                              split <;> exact valueHasETyp.peClosure x pe env _ _ _ _
+                          | int | bool | unit | string | ref _ _ | arrow _ _ _ _ =>
+                              -- Impossible: contradicts hisParrow_res (type mismatch)
+                              sorry
+                  | _ =>
+                      rw [hres3etyp] at hisParrow
+                      simp [ETyp.isParrow] at hisParrow
+                exact agreeValueUnder.dirty_internal_parrow hclean_internal_res hisParrow_res htyp1_res htyp2_res
           | @clean_ref _ _ _ _ _ _ _ _ =>
               sorry
           | @withPred_true_ref _ _ _ _ _ _ _ _ _ =>
