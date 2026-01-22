@@ -2377,14 +2377,65 @@ private lemma joinTypeResults_pred_noPred_for_function_types
     joinTypeResults ctx r rs = .ok res →
     (res.qualType.etyp.isArrow ∨ res.qualType.etyp.isParrow) →
     res.qualType.pred = Predicate.noPred := by
-  -- This lemma requires extracting v.1 = res.qualType.etyp from the nested match structure
-  -- in hjoin, which is complex. The proof would need to:
-  -- 1. Unfold the nested matches in joinTypeResults
-  -- 2. Extract that v.1 = res.qualType.etyp from the result structure equality
-  -- 3. Use isArrow/isParrow to show v.1 is arrow/parrow
-  -- 4. Use the match to show pred = noPred
-  -- This is provable but complex. Consider proving a stronger structural lemma first.
-  sorry
+  intro hjoin hfun
+  -- Unfold joinTypeResults just far enough to expose the `finalPred` match
+  cases hqt : r.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw, TypecheckM] at hjoin
+      -- The signature-check fold must have succeeded (otherwise `.ok res` is impossible).
+      cases hcheck :
+          (List.foldlM
+              (fun x result =>
+                match result.qualType with
+                | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                    if beqETypSignature etyp resEtyp = false then
+                      Except.error
+                        (toString "Closure alternatives produced incompatible result types: " ++
+                          toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                    else Except.ok ())
+              () rs : Except String Unit) with
+      | error err =>
+          erw [hcheck] at hjoin
+          simp at hjoin
+      | ok _ =>
+          erw [hcheck] at hjoin
+          simp at hjoin
+          -- The join fold must have succeeded too.
+          let joinStep :
+              (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) →
+                TypeResult →
+                  Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) :=
+            fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag)
+              (result : TypeResult) =>
+              match result.qualType with
+              | ⟨resEtyp, resPoison, resPred⟩ =>
+                  Except.ok
+                    (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+                      joinMemEnvs acc.2.1 result.memEnv',
+                      joinPoison acc.2.2.1 resPoison,
+                      joinPredicates acc.2.2.2.1 resPred,
+                      joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+                      max acc.2.2.2.2.2.1 result.nextLoc',
+                      max acc.2.2.2.2.2.2 result.nextTag')
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, r.memEnv', poison, pred, r.tagEnv', r.nextLoc', r.nextTag') rs with
+          | error err =>
+              erw [hfold] at hjoin
+              simp at hjoin
+          | ok a =>
+              erw [hfold] at hjoin
+              -- At this point `hjoin` pins down `res` (including the `finalPred` match).
+              simp at hjoin
+              cases hjoin
+              -- Destructure the fold accumulator so we can case-split on the joined etyp directly.
+              rcases a with ⟨joinedEtyp, joinedMemEnv, joinedPoison, joinedPred, joinedTagEnv, maxNextLoc, maxNextTag⟩
+              -- Reduce the goal to the `finalPred` match, and eliminate non-function cases
+              have hfun' : joinedEtyp.isArrow = true ∨ joinedEtyp.isParrow = true := by
+                simpa using hfun
+              cases joinedEtyp <;>
+                (simp [ETyp.isArrow, ETyp.isParrow] at hfun' <;> simp)
 
 
 private lemma applyFnTClosure_nextTag_mono
