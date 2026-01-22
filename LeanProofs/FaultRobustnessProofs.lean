@@ -5403,6 +5403,9 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
                 -- qt.etyp is a parrow but hret_et says it's et (from observable spec).
                 -- This would contradict if observable types are not function types.
                 sorry
+
+
+
             | poisoned_noPred_ref hpoison' _ _ _ _ _ _ _ _ =>
                 have hcontra : False := by
                   have : false = true := by
