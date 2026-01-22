@@ -1691,6 +1691,10 @@ private lemma typecheckExpr_ite_succ (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel
   typecheckExpr ctx (Expr.ite e1 e2 e3) (fuel + 1) = typecheckIf ctx e1 e2 e3 fuel := by
   simp [typecheckExpr]
 
+private lemma typecheckExpr_app_succ (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) :
+  typecheckExpr ctx (Expr.app e1 e2) (fuel + 1) = typecheckApp ctx e1 e2 fuel := by
+  simp [typecheckExpr]
+
 private lemma opEType_ne_ref (op : Op) (et1 et2 : ETyp) (t : ETyp) (ls : LocSet) :
   opEType? op et1 et2 ≠ some (ETyp.ref t ls) := by
   cases op <;> cases et1 <;> cases et2 <;> simp [opEType?]
@@ -4952,7 +4956,71 @@ private lemma stepFR_app
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ R (Expr.app e1 e2) res predSat := by
-  sorry
+  /-
+  PROOF STRATEGY (based on function-poison.md):
+
+  The key design decision is that closure agreement is gated on INTERNAL poison
+  (the `p` in the arrow type), not outer poison:
+
+  1. Parse typecheck result to extract:
+     - res2: result of typechecking e2 (argument)
+     - res1: result of typechecking e1 (function)
+     - Function type: arrow st1 st2 p tcls (with internal poison p)
+
+  2. For StepFR, introduce premises and apply IH:
+     - Apply IH for e2 → agreement on argument value, intermediate state agreement
+     - Apply IH for e1 → agreement on function value (closure)
+
+  3. Case split on internal poison p (the key insight from function-poison.md):
+
+     CASE p = false (clean internal poison):
+     - Both runs have closures with the same body (from clean_internal_arrow agreement)
+     - Establish agreeCapturedEnv from agreeOnClean using agreeCapturedEnv_of_agreeOnClean
+     - Set up body evaluation context with parameter bound to agreeing arguments
+     - Apply IH for body to get result agreement
+     - Build final StepFR result
+
+     CASE p = true (dirty internal poison):
+     - Use dirty_internal_arrow for closure agreement (no constraints)
+     - The body's pc will include p = true, making results necessarily dirty
+     - resultAgreesIfClean is vacuously satisfied:
+       * If result is clean_under_R, then its poison must be false
+       * But result poison includes internal poison p = true
+       * So clean result is impossible, making the implication vacuously true
+     - Build StepFR result with extended realization maps
+
+  The proof requires:
+  - terminatesTo_app_inv': Inversion lemma for app evaluation (TODO)
+  - typecheckApp_structure: Helper to extract typecheck structure (TODO)
+  - IH application for body evaluation (recursive case)
+  -/
+  -- Parse typecheck result
+  have htc' : typecheckApp ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
+    simp [typecheck, typecheckExpr] at htc
+    exact htc
+  obtain ⟨res2, res1, st1, st2, p, p1, isArrow, htc2, htc1, h_app_structure⟩ :=
+    typecheckApp_structure ctxᵢ e1 e2 (Nat.succ fuel') res htc'
+  -- Extract structure information
+  have htc2' : typecheck ctxᵢ e2 fuel' = .ok res2 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc2
+  let ctx' : TypeContext :=
+    { ctxᵢ with memEnv := res2.memEnv', tagEnv := res2.tagEnv', nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+  have htc1' : typecheck ctx' e1 fuel' = .ok res1 := by
+    simpa [ctx', typecheck, Nat.succ_sub_one] using htc1
+  -- Apply IH for e2 and e1
+  have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e2 ctxᵢ hio2 res2 htc2' R
+  have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 ctx' hio1 res1 htc1' R
+  -- Introduce StepFR premises
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Use inversion lemma for app evaluation
+  have hio : IOFree (Expr.app e1 e2) := IOFree.app e1 e2 hio1 hio2
+  have hstruct₀ := terminatesTo_app_inv' e1 e2
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
+  -- Note: terminatesTo_app_inv' has some sorry for bevalFunctionBody conversion
+  -- For now, we'll structure the proof assuming it works
+  sorry -- TODO: Complete using hstruct₀ and case split on internal poison p
 
 
 -- ================================================================
