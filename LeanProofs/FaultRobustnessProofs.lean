@@ -1760,7 +1760,6 @@ private lemma opUnaryEType_implies_nonfun (op : UnaryOp) (et1 result : ETyp) :
           cases h
 
 -- IOFree-restricted induction hypothesis type for stepFR_* lemmas
--- This requires the expression to be IOFree before applying the IH
 abbrev StepFR_IH (predSat : PredSat) (fuel : Nat) : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext),
     IOFree e → ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR .ioFree ctxᵢ R e res predSat
