@@ -8,6 +8,7 @@ import LeanProofs.Equality
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
+import LeanProofs.Properties
 import Std.Data.ExtTreeSet.Lemmas
 import Std.Data.ExtTreeMap
 
@@ -1792,6 +1793,179 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
                       · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
       | error _err =>
           simp [h_tc1] at h_typecheck
+
+-- A stronger arrow-case structure lemma for `typecheckApp` that exposes the `mapM` call and the
+-- subsequent `joinTypeResults` call. This is designed to support fault-robustness proofs for `app`.
+-- Full application structure: successful `typecheckApp` must go through either the `.arrow` or `.parrow`
+-- branch, exposing the `mapM` call and the final `joinTypeResults`.
+lemma typecheckApp_arrow_structure_full
+  (ctx : TypeContext) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult) :
+  typecheckApp ctx e1 e2 (Nat.succ fuel') = .ok res →
+  ∃ (result2 result1 : TypeResult) (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate),
+    result2.qualType = ⟨etyp2, p2, pred2⟩ ∧
+    typecheckExpr ctx e2 fuel' = .ok result2 ∧
+    typecheckExpr
+        { ctx with
+            memEnv := result2.memEnv',
+            tagEnv := result2.tagEnv',
+            nextLoc := result2.nextLoc',
+            nextTag := result2.nextTag' }
+        e1 fuel' = .ok result1 ∧
+    (
+      (∃ (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure)
+          (results : List TypeResult) (first : TypeResult) (rest : List TypeResult),
+        result1.qualType.etyp = ETyp.arrow st1 st2 p tcls ∧
+        result1.qualType.poison = p1 ∧
+        ¬ ctx.pureCtx ∧
+        tcls ≠ [] ∧
+        isSubtype st1 result2.qualType = true ∧
+        List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls =
+          .ok results ∧
+        results = first :: rest ∧
+        joinTypeResults ctx first rest = .ok res)
+      ∨
+      (∃ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure)
+          (results : List TypeResult) (first : TypeResult) (rest : List TypeResult),
+        result1.qualType.etyp = ETyp.parrow st1 st2 p tcls ∧
+        result1.qualType.poison = p1 ∧
+        tcls ≠ [] ∧
+        isSubtype st1 result2.qualType = true ∧
+        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls =
+          .ok results ∧
+        results = first :: rest ∧
+        joinTypeResults ctx first rest = .ok res)
+    ) := by
+  intro htc
+  unfold typecheckApp at htc
+  simp [bind, Except.bind] at htc
+  cases h_tc2 : typecheckExpr ctx e2 fuel' with
+  | error _err =>
+      simp [h_tc2] at htc
+  | ok result2 =>
+      simp [h_tc2] at htc
+      rcases h_qt2 : result2.qualType with ⟨etyp2, p2, pred2⟩
+      simp [h_qt2] at htc
+      let ctx' : TypeContext :=
+        { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+      cases h_tc1 : typecheckExpr ctx' e1 fuel' with
+      | error _err =>
+          rw [h_tc1] at htc
+          simp at htc
+      | ok result1 =>
+          rw [h_tc1] at htc
+          simp at htc
+          rcases h_qt1 : result1.qualType with ⟨etyp1, p1, pred1⟩
+          simp [h_qt1] at htc
+          cases etyp1 with
+          | arrow st1 st2 p tcls =>
+              -- Discharge the pure-context error branch
+              cases h_pure : ctx.pureCtx with
+              | true =>
+                  simp [h_pure] at htc
+              | false =>
+                  simp [h_pure, pure, Except.pure] at htc
+                  by_cases h_empty : tcls = []
+                  · subst h_empty
+                    simp at htc
+                  · cases h_sub_val : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } with
+                    | false =>
+                        simp [h_sub_val] at htc
+                        simp [h_empty] at htc
+                    | true =>
+                        have h_sub0 : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
+                          simp [h_sub_val]
+                        have h_sub : isSubtype st1 result2.qualType = true := by
+                          simpa [h_qt2] using h_sub0
+                        simp [h_sub_val] at htc
+                        cases h_map :
+                            List.mapM
+                              (fun tcl =>
+                                applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls with
+                        | error _err =>
+                            simp [h_map] at htc
+                            simp [h_empty] at htc
+                        | ok results =>
+                            simp [h_map] at htc
+                            cases results with
+                            | nil =>
+                                simp at htc
+                                simp [h_empty] at htc
+                            | cons first rest =>
+                                cases h_join : joinTypeResults ctx first rest with
+                                | error _err =>
+                                    simp [h_join] at htc
+                                    simp [h_empty] at htc
+                                | ok res' =>
+                                    simp [h_join] at htc
+                                    -- eliminate the empty-closure guard and identify res' = res
+                                    have h_empty' : tcls ≠ [] := h_empty
+                                    simp [h_empty'] at htc
+                                    subst res'
+                                    refine ⟨result2, result1, etyp2, p2, pred2, ?_⟩
+                                    refine And.intro (by simpa [h_qt2]) ?_
+                                    refine And.intro rfl ?_
+                                    refine And.intro (by simpa [ctx', h_pure] using h_tc1) ?_
+                                    left
+                                    refine ⟨st1, st2, p, p1, tcls, first :: rest, first, rest, ?_⟩
+                                    refine And.intro (by simp [h_qt1]) ?_
+                                    refine And.intro (by simp [h_qt1]) ?_
+                                    refine And.intro (by simpa [h_pure]) ?_
+                                    refine And.intro h_empty ?_
+                                    refine And.intro h_sub ?_
+                                    refine And.intro (by simpa using h_map) ?_
+                                    refine And.intro rfl ?_
+                                    simpa using h_join
+          | parrow st1 st2 p tcls =>
+              by_cases h_empty : tcls = []
+              · subst h_empty
+                simp [pure, Except.pure] at htc
+              · cases h_sub_val : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } with
+                | false =>
+                    simp [h_empty, h_sub_val, pure, Except.pure] at htc
+                | true =>
+                    have h_sub0 : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
+                      simp [h_sub_val]
+                    have h_sub : isSubtype st1 result2.qualType = true := by
+                      simpa [h_qt2] using h_sub0
+                    simp [h_sub_val, pure, Except.pure] at htc
+                    cases h_map :
+                        List.mapM
+                          (fun tcl =>
+                            applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls with
+                    | error _err =>
+                        simp [h_map] at htc
+                        simp [h_empty] at htc
+                    | ok results =>
+                        simp [h_map] at htc
+                        cases results with
+                        | nil =>
+                            simp at htc
+                            simp [h_empty] at htc
+                        | cons first rest =>
+                            cases h_join : joinTypeResults ctx first rest with
+                            | error _err =>
+                                simp [h_join] at htc
+                                simp [h_empty] at htc
+                            | ok res' =>
+                                simp [h_join] at htc
+                                have h_empty' : tcls ≠ [] := h_empty
+                                simp [h_empty'] at htc
+                                subst res'
+                                refine ⟨result2, result1, etyp2, p2, pred2, ?_⟩
+                                refine And.intro (by simpa [h_qt2]) ?_
+                                refine And.intro rfl ?_
+                                refine And.intro (by simpa [ctx', h_tc1]) ?_
+                                right
+                                refine ⟨st1, st2, p, p1, tcls, first :: rest, first, rest, ?_⟩
+                                refine And.intro (by simp [h_qt1]) ?_
+                                refine And.intro (by simp [h_qt1]) ?_
+                                refine And.intro h_empty ?_
+                                refine And.intro h_sub ?_
+                                refine And.intro (by simpa using h_map) ?_
+                                refine And.intro rfl ?_
+                                simpa using h_join
+          | _ =>
+              simp at htc
 
 end typecheck_structure_lemmas
 
