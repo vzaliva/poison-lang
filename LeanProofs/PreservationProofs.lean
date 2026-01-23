@@ -1770,14 +1770,14 @@ theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx :=
 -/
 
 -- Placeholder for the main preservation theorem (to be completed later).
-theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx := by
+theorem preservation (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : Preservation mode e ctx := by
   sorry
 
 -- World-indexed value-typing lemma used by FaultRobustness proofs.
 -- This is a convenient form of preservation that matches the IO-friendly
 -- termination relation used in the step theorem.
 -- Includes wfTypeContext premise and wfTypeResult conclusion for freshness reasoning.
-theorem preservation_valueW (e : Expr) (ctx : TypeContext) :
+theorem preservation_valueW (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) :
   ∀ (fuel_tc : Nat) (res : TypeResult)
     (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
     (a₀ a₁ : Address) (pm₀ pm₁ : Bool) (v : Value) (w₀ w₁ : Void IO.RealWorld),
@@ -1788,7 +1788,7 @@ theorem preservation_valueW (e : Expr) (ctx : TypeContext) :
     wfExtendsMap θ₀ θ₁ →
     runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ →
     runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁ θ₁ →
-    terminatesToW w₀ w₁ e
+    terminatesToW mode w₀ w₁ e
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ } v →
     valueHasETyp θ₁ v res.qualType.etyp ∧ wfTypeResult res := by

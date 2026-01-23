@@ -19,9 +19,9 @@ import LeanProofs.SemanticsProperties
 -- - .success (termination)
 -- - .outOfFuel (divergence)
 -- but never .runtimeError (stuck state)
-def Progress (e : Expr) (ctx : TypeContext) : Prop :=
+def Progress (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : Prop :=
   (∃ (fuel : Nat) (res : TypeResult), typecheck ctx e fuel = .ok res) →
   ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (a : Address) (pm : Bool),
     wfRealizationMap θ →
     runtimeInstantiatesCtx ctx μ ρ θ →
-    ¬stuck e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
+    ¬stuck mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
