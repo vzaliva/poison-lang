@@ -1271,27 +1271,19 @@ lemma bevalApp_structure (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat
 -- IOFree World Preservation
 -- ================================================================
 
--- For IOFree expressions, beval doesn't perform any actual I/O operations,
+-- In ioFree mode, beval doesn't perform any actual I/O operations,
 -- so the world state is preserved. This allows us to convert between
 -- world-indexed evaluation (terminatesToW) and world-free evaluation (terminatesTo).
 
--- While some of these lemmas could be proven for arbitrary evaluation modes, we
--- only need them for `ioFree` mode.
-
-/-- For IOFree expressions, successful beval preserves the world (output = input).
-    This is the key lemma that enables reuse of world-indexed structure lemmas
-    to prove world-free inversion lemmas.
-
-    Note: The `app` case requires that closures contain IOFree bodies, which
-    cannot be recovered from the runtime closure value. For applications,
-    we rely on the IOFree predicate covering the entire expression including
-    the closure definition site. -/
-lemma beval_IOFree_preserves_world (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Bool)
+/-- In ioFree mode, successful beval preserves the world (output = input).
+    This is the key semantic property: in ioFree mode, IO operations return
+    ioForbidden immediately without performing IO, so the world is unchanged.
+    This holds for ANY expression, not just syntactically IOFree ones. -/
+lemma beval_ioFree_mode_preserves_world (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Bool)
     (r : LeanPoison.EvalResult) (w₀ w₁ : Void IO.RealWorld) :
-    IOFree e →
     LeanPoison.beval .ioFree fuel cfg e verbose w₀ = EST.Out.ok r w₁ →
     w₁ = w₀ := by
-  sorry
+    sorry
 
 /-- For IOFree expressions, beval at any world produces the same result.
     Combined with world preservation, this allows us to convert world-indexed
@@ -1573,7 +1565,7 @@ private lemma beval_IOFree_eq_pure_unaryop (fuel : Nat) (ih : beval_IOFree_eq_pu
           -- Sub returned ioForbidden - this is the valid case
           simp only [h_sub, pure] at heval_w
           -- World preservation: w_sub = w for IOFree
-          have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose .ioForbidden w w_sub hio' h_sub
+          have hw_eq : w_sub = w := beval_ioFree_mode_preserves_world fuel' cfg e' verbose .ioForbidden w w_sub h_sub
           -- Rewrite h_sub to use w instead of w_sub
           rw [hw_eq] at h_sub
           -- By IH: beval fuel' cfg e' verbose = pure ioForbidden
@@ -1617,7 +1609,7 @@ private lemma beval_IOFree_eq_pure_unaryop (fuel : Nat) (ih : beval_IOFree_eq_pu
           -- Sub returned outOfFuel - this is the valid case
           simp only [h_sub, pure] at heval_w
           -- World preservation: w_sub = w for IOFree
-          have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose .outOfFuel w w_sub hio' h_sub
+          have hw_eq : w_sub = w := beval_ioFree_mode_preserves_world fuel' cfg e' verbose .outOfFuel w w_sub h_sub
           -- Rewrite h_sub to use w instead of w_sub
           rw [hw_eq] at h_sub
           -- By IH: beval fuel' cfg e' verbose = pure outOfFuel
@@ -1670,7 +1662,7 @@ private lemma beval_IOFree_eq_pure_unaryop (fuel : Nat) (ih : beval_IOFree_eq_pu
             simp only [h_op, pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             -- World preservation: w_sub = w for IOFree
-            have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub v_sub) w w_sub hio' h_sub
+            have hw_eq : w_sub = w := beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub v_sub) w w_sub h_sub
             rw [hw_eq] at h_sub
             -- By IH: beval fuel' cfg e' verbose = pure (success cfg_sub v_sub)
             have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub v_sub) w hio' h_sub
@@ -1691,7 +1683,7 @@ private lemma beval_IOFree_eq_pure_unaryop (fuel : Nat) (ih : beval_IOFree_eq_pu
           simp only [h_sub, pure] at heval_w
           injection heval_w with h_msg_eq h_world_eq
           -- World preservation: w_sub = w for IOFree
-          have hw_eq : w_sub = w := beval_IOFree_preserves_world fuel' cfg e' verbose (.runtimeError sub_msg) w w_sub hio' h_sub
+          have hw_eq : w_sub = w := beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.runtimeError sub_msg) w w_sub h_sub
           rw [hw_eq] at h_sub
           -- By IH: beval fuel' cfg e' verbose = pure (runtimeError sub_msg)
           have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.runtimeError sub_msg) w hio' h_sub
@@ -1736,7 +1728,7 @@ private lemma beval_IOFree_eq_pure_op (fuel : Nat) (ih : beval_IOFree_eq_pure_IH
       simp only [Nat.add_sub_cancel] at hbeval_e1 hbeval_e2
       -- World preservation for the first sub-expression
       have hw_mid : w_mid = w :=
-        beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg₁ v₁) w w_mid hio₁ hbeval_e1
+        beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg₁ v₁) w w_mid hbeval_e1
       rw [hw_mid] at hbeval_e1
       rw [hw_mid] at hbeval_e2
       -- IH for sub-expressions
@@ -1803,11 +1795,11 @@ private lemma beval_IOFree_eq_pure_op (fuel : Nat) (ih : beval_IOFree_eq_pure_IH
               simp only [EST.bind, h_sub2, pure] at heval_w
               -- World preservation for e₁
               have hw_eq1 : w_sub1 = w :=
-                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+                beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 h_sub1
               rw [hw_eq1] at h_sub1
               rw [hw_eq1] at h_sub2
               have hw_eq2 : w_sub2 = w :=
-                beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.outOfFuel) w w_sub2 hio₂ h_sub2
+                beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.outOfFuel) w w_sub2 h_sub2
               rw [hw_eq2] at h_sub2
               -- IH for sub-expressions
               have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
@@ -1843,7 +1835,7 @@ private lemma beval_IOFree_eq_pure_op (fuel : Nat) (ih : beval_IOFree_eq_pure_IH
           -- First operand outOfFuel: valid case
           simp only [h_sub1, pure] at heval_w
           have hw_sub1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose _ w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose _ w w_sub1 h_sub1
           rw [hw_sub1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .outOfFuel w hio₁ h_sub1
           have h_sub1_w' :
@@ -1900,11 +1892,11 @@ private lemma beval_IOFree_eq_pure_op (fuel : Nat) (ih : beval_IOFree_eq_pure_IH
                 injection heval_w with h_msg_eq h_world_eq
                 -- World preservation for e₁
                 have hw_eq1 : w_sub1 = w :=
-                  beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+                  beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 h_sub1
                 rw [hw_eq1] at h_sub1
                 rw [hw_eq1] at h_sub2
                 have hw_eq2 : w_sub2 = w :=
-                  beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 v_sub2) w w_sub2 hio₂ h_sub2
+                  beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 v_sub2) w w_sub2 h_sub2
                 rw [hw_eq2] at h_sub2
                 -- IH for sub-expressions
                 have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
@@ -1935,11 +1927,11 @@ private lemma beval_IOFree_eq_pure_op (fuel : Nat) (ih : beval_IOFree_eq_pure_IH
               injection heval_w with h_msg_eq h_world_eq
               -- World preservation for e₁
               have hw_eq1 : w_sub1 = w :=
-                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+                beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 h_sub1
               rw [hw_eq1] at h_sub1
               rw [hw_eq1] at h_sub2
               have hw_eq2 : w_sub2 = w :=
-                beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 hio₂ h_sub2
+                beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 h_sub2
               rw [hw_eq2] at h_sub2
               -- IH for sub-expressions
               have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
@@ -1978,7 +1970,7 @@ private lemma beval_IOFree_eq_pure_op (fuel : Nat) (ih : beval_IOFree_eq_pure_IH
           simp only [h_sub1, pure] at heval_w
           injection heval_w with h_msg_eq h_world_eq
           have hw_eq1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 h_sub1
           rw [hw_eq1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.runtimeError sub_msg) w hio₁ h_sub1
           have h_sub1_w' :
@@ -2042,11 +2034,11 @@ private lemma beval_IOFree_eq_pure_op (fuel : Nat) (ih : beval_IOFree_eq_pure_IH
               -- Second operand ioForbidden: valid case
               simp only [EST.bind, h_sub2, pure] at heval_w
               have hw_eq1 : w_sub1 = w :=
-                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+                beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 h_sub1
               rw [hw_eq1] at h_sub1
               rw [hw_eq1] at h_sub2
               have hw_eq2 : w_sub2 = w :=
-                beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose .ioForbidden w w_sub2 hio₂ h_sub2
+                beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose .ioForbidden w w_sub2 h_sub2
               rw [hw_eq2] at h_sub2
               have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
               have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose .ioForbidden w hio₂ h_sub2
@@ -2076,7 +2068,7 @@ private lemma beval_IOFree_eq_pure_op (fuel : Nat) (ih : beval_IOFree_eq_pure_IH
           -- First operand ioForbidden: valid case
           simp only [h_sub1, pure] at heval_w
           have hw_sub1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose .ioForbidden w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose .ioForbidden w w_sub1 h_sub1
           rw [hw_sub1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .ioForbidden w hio₁ h_sub1
           have h_sub1_w' :
@@ -2113,7 +2105,7 @@ private lemma beval_IOFree_eq_pure_seq (fuel : Nat) (ih : beval_IOFree_eq_pure_I
       rcases hstruct with ⟨cfg₁, v₁, w_mid, hbeval_e1, hbeval_e2⟩
       simp only [Nat.add_sub_cancel] at hbeval_e1 hbeval_e2
       have hw_mid : w_mid = w :=
-        beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg₁ v₁) w w_mid hio₁ hbeval_e1
+        beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg₁ v₁) w w_mid hbeval_e1
       rw [hw_mid] at hbeval_e1
       rw [hw_mid] at hbeval_e2
       have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
@@ -2160,11 +2152,11 @@ private lemma beval_IOFree_eq_pure_seq (fuel : Nat) (ih : beval_IOFree_eq_pure_I
               -- Second operand outOfFuel: valid case
               simp only [EST.bind, h_sub2, pure] at heval_w
               have hw_eq1 : w_sub1 = w :=
-                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+                beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 h_sub1
               rw [hw_eq1] at h_sub1
               rw [hw_eq1] at h_sub2
               have hw_eq2 : w_sub2 = w :=
-                beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose .outOfFuel w w_sub2 hio₂ h_sub2
+                beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose .outOfFuel w w_sub2 h_sub2
               rw [hw_eq2] at h_sub2
               have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
               have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose .outOfFuel w hio₂ h_sub2
@@ -2194,7 +2186,7 @@ private lemma beval_IOFree_eq_pure_seq (fuel : Nat) (ih : beval_IOFree_eq_pure_I
           -- First operand outOfFuel: valid case
           simp only [h_sub1, pure] at heval_w
           have hw_sub1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 h_sub1
           rw [hw_sub1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .outOfFuel w hio₁ h_sub1
           have h_sub1_w' :
@@ -2245,11 +2237,11 @@ private lemma beval_IOFree_eq_pure_seq (fuel : Nat) (ih : beval_IOFree_eq_pure_I
               simp only [EST.bind, h_sub2, pure] at heval_w
               injection heval_w with h_msg_eq h_world_eq
               have hw_eq1 : w_sub1 = w :=
-                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+                beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 h_sub1
               rw [hw_eq1] at h_sub1
               rw [hw_eq1] at h_sub2
               have hw_eq2 : w_sub2 = w :=
-                beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 hio₂ h_sub2
+                beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 h_sub2
               rw [hw_eq2] at h_sub2
               have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
               have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.runtimeError sub_msg) w hio₂ h_sub2
@@ -2287,7 +2279,7 @@ private lemma beval_IOFree_eq_pure_seq (fuel : Nat) (ih : beval_IOFree_eq_pure_I
           simp only [h_sub1, pure] at heval_w
           injection heval_w with h_msg_eq h_world_eq
           have hw_eq1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 h_sub1
           rw [hw_eq1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.runtimeError sub_msg) w hio₁ h_sub1
           have h_sub1_w' :
@@ -2332,11 +2324,11 @@ private lemma beval_IOFree_eq_pure_seq (fuel : Nat) (ih : beval_IOFree_eq_pure_I
               -- Second operand ioForbidden: valid case
               simp only [EST.bind, h_sub2, pure] at heval_w
               have hw_eq1 : w_sub1 = w :=
-                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+                beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 h_sub1
               rw [hw_eq1] at h_sub1
               rw [hw_eq1] at h_sub2
               have hw_eq2 : w_sub2 = w :=
-                beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose .ioForbidden w w_sub2 hio₂ h_sub2
+                beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose .ioForbidden w w_sub2 h_sub2
               rw [hw_eq2] at h_sub2
               have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
               have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose .ioForbidden w hio₂ h_sub2
@@ -2371,7 +2363,7 @@ private lemma beval_IOFree_eq_pure_seq (fuel : Nat) (ih : beval_IOFree_eq_pure_I
           -- First operand ioForbidden: valid case
           simp only [h_sub1, pure] at heval_w
           have hw_eq1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose .ioForbidden w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose .ioForbidden w w_sub1 h_sub1
           rw [hw_eq1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .ioForbidden w hio₁ h_sub1
           have h_sub1_w' :
@@ -2408,7 +2400,7 @@ private lemma beval_IOFree_eq_pure_vlet (fuel : Nat) (ih : beval_IOFree_eq_pure_
       rcases hstruct with ⟨cfg₁, cfg₂, cfg₃, v₁, w_mid, hbeval_e1, hcfg2_eq, hbeval_e2, hcfg_final⟩
       simp only [Nat.add_sub_cancel] at hbeval_e1 hbeval_e2
       have hw_mid : w_mid = w :=
-        beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg₁ v₁) w w_mid hio₁ hbeval_e1
+        beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg₁ v₁) w w_mid hbeval_e1
       rw [hw_mid] at hbeval_e1
       rw [hw_mid] at hbeval_e2
       have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
@@ -2459,12 +2451,12 @@ private lemma beval_IOFree_eq_pure_vlet (fuel : Nat) (ih : beval_IOFree_eq_pure_
               -- Second operand outOfFuel: valid case
               simp only [EST.bind, h_sub2, pure] at heval_w
               have hw_eq1 : w_sub1 = w :=
-                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+                beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 h_sub1
               rw [hw_eq1] at h_sub1
               rw [hw_eq1] at h_sub2
               have hw_eq2 : w_sub2 = w :=
-                beval_IOFree_preserves_world fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
-                  e₂ verbose .outOfFuel w w_sub2 hio₂ h_sub2
+                beval_ioFree_mode_preserves_world fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
+                  e₂ verbose .outOfFuel w w_sub2 h_sub2
               rw [hw_eq2] at h_sub2
               have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
               have h_ih2 :=
@@ -2502,7 +2494,7 @@ private lemma beval_IOFree_eq_pure_vlet (fuel : Nat) (ih : beval_IOFree_eq_pure_
           -- First operand outOfFuel: valid case
           simp only [h_sub1, pure] at heval_w
           have hw_sub1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 h_sub1
           rw [hw_sub1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .outOfFuel w hio₁ h_sub1
           have h_sub1_w' :
@@ -2560,12 +2552,12 @@ private lemma beval_IOFree_eq_pure_vlet (fuel : Nat) (ih : beval_IOFree_eq_pure_
               simp only [EST.bind, h_sub2, pure] at heval_w
               injection heval_w with h_msg_eq h_world_eq
               have hw_eq1 : w_sub1 = w :=
-                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+                beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 h_sub1
               rw [hw_eq1] at h_sub1
               rw [hw_eq1] at h_sub2
               have hw_eq2 : w_sub2 = w :=
-                beval_IOFree_preserves_world fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
-                  e₂ verbose (.runtimeError sub_msg) w w_sub2 hio₂ h_sub2
+                beval_ioFree_mode_preserves_world fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
+                  e₂ verbose (.runtimeError sub_msg) w w_sub2 h_sub2
               rw [hw_eq2] at h_sub2
               have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
               have h_ih2 :=
@@ -2606,7 +2598,7 @@ private lemma beval_IOFree_eq_pure_vlet (fuel : Nat) (ih : beval_IOFree_eq_pure_
           simp only [h_sub1, pure] at heval_w
           injection heval_w with h_msg_eq h_world_eq
           have hw_eq1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 h_sub1
           rw [hw_eq1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.runtimeError sub_msg) w hio₁ h_sub1
           have h_sub1_w' :
@@ -2653,12 +2645,12 @@ private lemma beval_IOFree_eq_pure_vlet (fuel : Nat) (ih : beval_IOFree_eq_pure_
               -- Second operand ioForbidden: valid case
               simp only [EST.bind, h_sub2, pure] at heval_w
               have hw_eq1 : w_sub1 = w :=
-                beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 hio₁ h_sub1
+                beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 v_sub1) w w_sub1 h_sub1
               rw [hw_eq1] at h_sub1
               rw [hw_eq1] at h_sub2
               have hw_eq2 : w_sub2 = w :=
-                beval_IOFree_preserves_world fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
-                  e₂ verbose .ioForbidden w w_sub2 hio₂ h_sub2
+                beval_ioFree_mode_preserves_world fuel' { cfg_sub1 with varEnv := cfg_sub1.varEnv.update x v_sub1 }
+                  e₂ verbose .ioForbidden w w_sub2 h_sub2
               rw [hw_eq2] at h_sub2
               have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 v_sub1) w hio₁ h_sub1
               have h_ih2 :=
@@ -2691,7 +2683,7 @@ private lemma beval_IOFree_eq_pure_vlet (fuel : Nat) (ih : beval_IOFree_eq_pure_
           -- First operand ioForbidden: valid case
           simp only [h_sub1, pure] at heval_w
           have hw_sub1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose .ioForbidden w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose .ioForbidden w w_sub1 h_sub1
           rw [hw_sub1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .ioForbidden w hio₁ h_sub1
           have h_sub1_w' :
@@ -2778,7 +2770,7 @@ private lemma beval_IOFree_eq_pure_deref (fuel : Nat) (ih : beval_IOFree_eq_pure
           -- Sub returned outOfFuel: valid case
           simp only [h_sub, pure] at heval_w
           have hw_eq : w_sub = w :=
-            beval_IOFree_preserves_world fuel' cfg e' verbose .outOfFuel w w_sub hio' h_sub
+            beval_ioFree_mode_preserves_world fuel' cfg e' verbose .outOfFuel w w_sub h_sub
           rw [hw_eq] at h_sub
           have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose .outOfFuel w hio' h_sub
           have h_sub_w' :
@@ -2830,7 +2822,7 @@ private lemma beval_IOFree_eq_pure_deref (fuel : Nat) (ih : beval_IOFree_eq_pure
               simp [h_lookup, pure] at heval_w
               injection heval_w with h_msg_eq h_world_eq
               have hw_eq : w_sub = w :=
-                beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.loc a)) w w_sub hio' h_sub
+                beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.loc a)) w w_sub h_sub
               rw [hw_eq] at h_sub
               have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.loc a)) w hio' h_sub
               have h_sub_w' :
@@ -2846,7 +2838,7 @@ private lemma beval_IOFree_eq_pure_deref (fuel : Nat) (ih : beval_IOFree_eq_pure
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.num n)) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.num n)) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.num n)) w hio' h_sub
@@ -2863,7 +2855,7 @@ private lemma beval_IOFree_eq_pure_deref (fuel : Nat) (ih : beval_IOFree_eq_pure
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.bool b)) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.bool b)) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.bool b)) w hio' h_sub
@@ -2880,7 +2872,7 @@ private lemma beval_IOFree_eq_pure_deref (fuel : Nat) (ih : beval_IOFree_eq_pure
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub Value.unit) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub Value.unit) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub Value.unit) w hio' h_sub
@@ -2897,7 +2889,7 @@ private lemma beval_IOFree_eq_pure_deref (fuel : Nat) (ih : beval_IOFree_eq_pure
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.str s)) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.str s)) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.str s)) w hio' h_sub
@@ -2914,7 +2906,7 @@ private lemma beval_IOFree_eq_pure_deref (fuel : Nat) (ih : beval_IOFree_eq_pure
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.closure x body env)) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.closure x body env)) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.closure x body env)) w hio' h_sub
@@ -2932,7 +2924,7 @@ private lemma beval_IOFree_eq_pure_deref (fuel : Nat) (ih : beval_IOFree_eq_pure
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.peClosure x body env)) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.peClosure x body env)) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.peClosure x body env)) w hio' h_sub
@@ -2955,7 +2947,7 @@ private lemma beval_IOFree_eq_pure_deref (fuel : Nat) (ih : beval_IOFree_eq_pure
           simp only [h_sub, pure] at heval_w
           injection heval_w with h_msg_eq h_world_eq
           have hw_eq : w_sub = w :=
-            beval_IOFree_preserves_world fuel' cfg e' verbose (.runtimeError sub_msg) w w_sub hio' h_sub
+            beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.runtimeError sub_msg) w w_sub h_sub
           rw [hw_eq] at h_sub
           have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.runtimeError sub_msg) w hio' h_sub
           have h_sub_w' :
@@ -3015,7 +3007,7 @@ private lemma beval_IOFree_eq_pure_deref (fuel : Nat) (ih : beval_IOFree_eq_pure
           -- Sub returned ioForbidden: valid case
           simp only [h_sub, pure] at heval_w
           have hw_eq : w_sub = w :=
-            beval_IOFree_preserves_world fuel' cfg e' verbose .ioForbidden w w_sub hio' h_sub
+            beval_ioFree_mode_preserves_world fuel' cfg e' verbose .ioForbidden w w_sub h_sub
           rw [hw_eq] at h_sub
           have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose .ioForbidden w hio' h_sub
           have h_sub_w' :
@@ -3101,7 +3093,7 @@ private lemma beval_IOFree_eq_pure_newRef (fuel : Nat) (ih : beval_IOFree_eq_pur
           -- Sub returned outOfFuel: valid case
           simp only [h_sub, pure] at heval_w
           have hw_eq : w_sub = w :=
-            beval_IOFree_preserves_world fuel' cfg e' verbose .outOfFuel w w_sub hio' h_sub
+            beval_ioFree_mode_preserves_world fuel' cfg e' verbose .outOfFuel w w_sub h_sub
           rw [hw_eq] at h_sub
           have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose .outOfFuel w hio' h_sub
           have h_sub_w' :
@@ -3150,7 +3142,7 @@ private lemma beval_IOFree_eq_pure_newRef (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.bool b)) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.bool b)) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.bool b)) w hio' h_sub
@@ -3167,7 +3159,7 @@ private lemma beval_IOFree_eq_pure_newRef (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub Value.unit) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub Value.unit) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub Value.unit) w hio' h_sub
@@ -3184,7 +3176,7 @@ private lemma beval_IOFree_eq_pure_newRef (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.str s)) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.str s)) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.str s)) w hio' h_sub
@@ -3201,7 +3193,7 @@ private lemma beval_IOFree_eq_pure_newRef (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.loc a)) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.loc a)) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.loc a)) w hio' h_sub
@@ -3218,7 +3210,7 @@ private lemma beval_IOFree_eq_pure_newRef (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.closure x body env)) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.closure x body env)) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.closure x body env)) w hio' h_sub
@@ -3236,7 +3228,7 @@ private lemma beval_IOFree_eq_pure_newRef (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub = w :=
-              beval_IOFree_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.peClosure x body env)) w w_sub hio' h_sub
+              beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.success cfg_sub (Value.peClosure x body env)) w w_sub h_sub
             rw [hw_eq] at h_sub
             have h_ih :=
               ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.success cfg_sub (Value.peClosure x body env)) w hio' h_sub
@@ -3259,7 +3251,7 @@ private lemma beval_IOFree_eq_pure_newRef (fuel : Nat) (ih : beval_IOFree_eq_pur
           simp only [h_sub, pure] at heval_w
           injection heval_w with h_msg_eq h_world_eq
           have hw_eq : w_sub = w :=
-            beval_IOFree_preserves_world fuel' cfg e' verbose (.runtimeError sub_msg) w w_sub hio' h_sub
+            beval_ioFree_mode_preserves_world fuel' cfg e' verbose (.runtimeError sub_msg) w w_sub h_sub
           rw [hw_eq] at h_sub
           have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose (.runtimeError sub_msg) w hio' h_sub
           have h_sub_w' :
@@ -3313,7 +3305,7 @@ private lemma beval_IOFree_eq_pure_newRef (fuel : Nat) (ih : beval_IOFree_eq_pur
           -- Sub returned ioForbidden: valid case
           simp only [h_sub, pure] at heval_w
           have hw_eq : w_sub = w :=
-            beval_IOFree_preserves_world fuel' cfg e' verbose .ioForbidden w w_sub hio' h_sub
+            beval_ioFree_mode_preserves_world fuel' cfg e' verbose .ioForbidden w w_sub h_sub
           rw [hw_eq] at h_sub
           have h_ih := ih fuel' (Nat.lt_succ_self _) cfg e' verbose .ioForbidden w hio' h_sub
           have h_sub_w' :
@@ -3350,7 +3342,7 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
       rcases hstruct with ⟨cfg₁, cfg₁', a, n, w_mid, hbeval_e1, hbeval_e2, hv, hmem, hvar, hnext, hpure_mode⟩
       simp only [Nat.add_sub_cancel] at hbeval_e1 hbeval_e2
       have hw_mid : w_mid = w :=
-        beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg₁ (Value.loc a)) w w_mid hio₁ hbeval_e1
+        beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg₁ (Value.loc a)) w w_mid hbeval_e1
       rw [hw_mid] at hbeval_e1
       rw [hw_mid] at hbeval_e2
       have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg₁ (Value.loc a)) w hio₁ hbeval_e1
@@ -3405,11 +3397,11 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
                 -- Second operand outOfFuel: valid case
                 simp only [EST.bind, h_sub2, pure] at heval_w
                 have hw_eq1 : w_sub1 = w :=
-                  beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                  beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 h_sub1
                 rw [hw_eq1] at h_sub1
                 rw [hw_eq1] at h_sub2
                 have hw_eq2 : w_sub2 = w :=
-                  beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose .outOfFuel w w_sub2 hio₂ h_sub2
+                  beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose .outOfFuel w w_sub2 h_sub2
                 rw [hw_eq2] at h_sub2
                 have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
                 have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose .outOfFuel w hio₂ h_sub2
@@ -3449,7 +3441,7 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
           -- First operand outOfFuel: valid case
           simp only [h_sub1, pure] at heval_w
           have hw_sub1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 h_sub1
           rw [hw_sub1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .outOfFuel w hio₁ h_sub1
           have h_sub1_w' :
@@ -3506,11 +3498,11 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
                   simp only [EST.bind, h_sub2, pure] at heval_w
                   injection heval_w with h_msg_eq h_world_eq
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub2
                   have hw_eq2 : w_sub2 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.bool b)) w w_sub2 hio₂ h_sub2
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.bool b)) w w_sub2 h_sub2
                   rw [hw_eq2] at h_sub2
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
                   have h_ih2 :=
@@ -3536,11 +3528,11 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
                   simp only [EST.bind, h_sub2, pure] at heval_w
                   injection heval_w with h_msg_eq h_world_eq
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub2
                   have hw_eq2 : w_sub2 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 Value.unit) w w_sub2 hio₂ h_sub2
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 Value.unit) w w_sub2 h_sub2
                   rw [hw_eq2] at h_sub2
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
                   have h_ih2 :=
@@ -3566,11 +3558,11 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
                   simp only [EST.bind, h_sub2, pure] at heval_w
                   injection heval_w with h_msg_eq h_world_eq
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub2
                   have hw_eq2 : w_sub2 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.str s)) w w_sub2 hio₂ h_sub2
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.str s)) w w_sub2 h_sub2
                   rw [hw_eq2] at h_sub2
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
                   have h_ih2 :=
@@ -3596,11 +3588,11 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
                   simp only [EST.bind, h_sub2, pure] at heval_w
                   injection heval_w with h_msg_eq h_world_eq
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub2
                   have hw_eq2 : w_sub2 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.loc l)) w w_sub2 hio₂ h_sub2
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.loc l)) w w_sub2 h_sub2
                   rw [hw_eq2] at h_sub2
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
                   have h_ih2 :=
@@ -3626,11 +3618,11 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
                   simp only [EST.bind, h_sub2, pure] at heval_w
                   injection heval_w with h_msg_eq h_world_eq
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub2
                   have hw_eq2 : w_sub2 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.closure x body env)) w w_sub2 hio₂ h_sub2
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.closure x body env)) w w_sub2 h_sub2
                   rw [hw_eq2] at h_sub2
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
                   have h_ih2 :=
@@ -3656,11 +3648,11 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
                   simp only [EST.bind, h_sub2, pure] at heval_w
                   injection heval_w with h_msg_eq h_world_eq
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub2
                   have hw_eq2 : w_sub2 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.peClosure x body env)) w w_sub2 hio₂ h_sub2
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.success cfg_sub2 (Value.peClosure x body env)) w w_sub2 h_sub2
                   rw [hw_eq2] at h_sub2
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
                   have h_ih2 :=
@@ -3691,11 +3683,11 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
                 simp only [EST.bind, h_sub2, pure] at heval_w
                 injection heval_w with h_msg_eq h_world_eq
                 have hw_eq1 : w_sub1 = w :=
-                  beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                  beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 h_sub1
                 rw [hw_eq1] at h_sub1
                 rw [hw_eq1] at h_sub2
                 have hw_eq2 : w_sub2 = w :=
-                  beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 hio₂ h_sub2
+                  beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 h_sub2
                 rw [hw_eq2] at h_sub2
                 have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
                 have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.runtimeError sub_msg) w hio₂ h_sub2
@@ -3728,7 +3720,7 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.num n)) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.num n)) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.num n)) w hio₁ h_sub1
             have h_sub1_w' :
@@ -3744,7 +3736,7 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool b)) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool b)) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool b)) w hio₁ h_sub1
             have h_sub1_w' :
@@ -3760,7 +3752,7 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 Value.unit) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 Value.unit) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 Value.unit) w hio₁ h_sub1
             have h_sub1_w' :
@@ -3776,7 +3768,7 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.str s)) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.str s)) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.str s)) w hio₁ h_sub1
             have h_sub1_w' :
@@ -3792,7 +3784,7 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.closure x body env)) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.closure x body env)) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 :=
               ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.closure x body env)) w hio₁ h_sub1
@@ -3810,7 +3802,7 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.peClosure x body env)) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.peClosure x body env)) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 :=
               ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.peClosure x body env)) w hio₁ h_sub1
@@ -3833,7 +3825,7 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
           simp only [h_sub1, pure] at heval_w
           injection heval_w with h_msg_eq h_world_eq
           have hw_eq1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 h_sub1
           rw [hw_eq1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.runtimeError sub_msg) w hio₁ h_sub1
           have h_sub1_w' :
@@ -3888,11 +3880,11 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
                 -- Second operand ioForbidden: valid case
                 simp only [EST.bind, h_sub2, pure] at heval_w
                 have hw_eq1 : w_sub1 = w :=
-                  beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+                  beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 h_sub1
                 rw [hw_eq1] at h_sub1
                 rw [hw_eq1] at h_sub2
                 have hw_eq2 : w_sub2 = w :=
-                  beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose .ioForbidden w w_sub2 hio₂ h_sub2
+                  beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose .ioForbidden w w_sub2 h_sub2
                 rw [hw_eq2] at h_sub2
                 have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
                 have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose .ioForbidden w hio₂ h_sub2
@@ -3929,7 +3921,7 @@ private lemma beval_IOFree_eq_pure_assign (fuel : Nat) (ih : beval_IOFree_eq_pur
           -- First operand ioForbidden: valid case
           simp only [h_sub1, pure] at heval_w
           have hw_eq1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose .ioForbidden w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose .ioForbidden w w_sub1 h_sub1
           rw [hw_eq1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .ioForbidden w hio₁ h_sub1
           have h_sub1_w' :
@@ -3967,7 +3959,7 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
       rcases hstruct with ⟨cfg₁, b, w_mid, hbeval_e1, hcases⟩
       simp only [Nat.add_sub_cancel] at hbeval_e1
       have hw_mid : w_mid = w :=
-        beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg₁ (Value.bool b)) w w_mid hio₁ hbeval_e1
+        beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg₁ (Value.bool b)) w w_mid hbeval_e1
       rw [hw_mid] at hbeval_e1
       have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg₁ (Value.bool b)) w hio₁ hbeval_e1
       cases hcases with
@@ -4042,11 +4034,11 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
                   -- Second operand outOfFuel: valid case
                   simp only [EST.bind, h_sub2, pure] at heval_w
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub2
                   have hw_eq2 : w_sub2 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose .outOfFuel w w_sub2 hio₂ h_sub2
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose .outOfFuel w w_sub2 h_sub2
                   rw [hw_eq2] at h_sub2
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w hio₁ h_sub1
                   have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose .outOfFuel w hio₂ h_sub2
@@ -4090,11 +4082,11 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
                   -- Third operand outOfFuel: valid case
                   simp only [EST.bind, h_sub3, pure] at heval_w
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub3
                   have hw_eq3 : w_sub3 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₃ verbose .outOfFuel w w_sub3 hio₃ h_sub3
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₃ verbose .outOfFuel w w_sub3 h_sub3
                   rw [hw_eq3] at h_sub3
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w hio₁ h_sub1
                   have h_ih3 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₃ verbose .outOfFuel w hio₃ h_sub3
@@ -4134,7 +4126,7 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
           -- First operand outOfFuel: valid case
           simp only [h_sub1, pure] at heval_w
           have hw_sub1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose .outOfFuel w w_sub1 h_sub1
           rw [hw_sub1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .outOfFuel w hio₁ h_sub1
           have h_sub1_w' :
@@ -4195,11 +4187,11 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
                   simp only [EST.bind, h_sub2, pure] at heval_w
                   injection heval_w with h_msg_eq h_world_eq
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub2
                   have hw_eq2 : w_sub2 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 hio₂ h_sub2
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose (.runtimeError sub_msg) w w_sub2 h_sub2
                   rw [hw_eq2] at h_sub2
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w hio₁ h_sub1
                   have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose (.runtimeError sub_msg) w hio₂ h_sub2
@@ -4246,11 +4238,11 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
                   simp only [EST.bind, h_sub3, pure] at heval_w
                   injection heval_w with h_msg_eq h_world_eq
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub3
                   have hw_eq3 : w_sub3 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₃ verbose (.runtimeError sub_msg) w w_sub3 hio₃ h_sub3
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₃ verbose (.runtimeError sub_msg) w w_sub3 h_sub3
                   rw [hw_eq3] at h_sub3
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w hio₁ h_sub1
                   have h_ih3 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₃ verbose (.runtimeError sub_msg) w hio₃ h_sub3
@@ -4283,7 +4275,7 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.num n)) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.num n)) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 :=
               ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.num n)) w hio₁ h_sub1
@@ -4300,7 +4292,7 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 Value.unit) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 Value.unit) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 :=
               ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 Value.unit) w hio₁ h_sub1
@@ -4317,7 +4309,7 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.str s)) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.str s)) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 :=
               ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.str s)) w hio₁ h_sub1
@@ -4334,7 +4326,7 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 :=
               ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.loc a)) w hio₁ h_sub1
@@ -4351,7 +4343,7 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.closure x body env)) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.closure x body env)) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 :=
               ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.closure x body env)) w hio₁ h_sub1
@@ -4369,7 +4361,7 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
             simp [pure] at heval_w
             injection heval_w with h_msg_eq h_world_eq
             have hw_eq : w_sub1 = w :=
-              beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.peClosure x body env)) w w_sub1 hio₁ h_sub1
+              beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.peClosure x body env)) w w_sub1 h_sub1
             rw [hw_eq] at h_sub1
             have h_ih1 :=
               ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.peClosure x body env)) w hio₁ h_sub1
@@ -4392,7 +4384,7 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
           simp only [h_sub1, pure] at heval_w
           injection heval_w with h_msg_eq h_world_eq
           have hw_eq1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.runtimeError sub_msg)  w w_sub1 h_sub1
           rw [hw_eq1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.runtimeError sub_msg) w hio₁ h_sub1
           have h_sub1_w' :
@@ -4448,11 +4440,11 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
                   -- True branch ioForbidden: valid case
                   simp only [EST.bind, h_sub2, pure] at heval_w
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub2
                   have hw_eq2 : w_sub2 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₂ verbose .ioForbidden w w_sub2 hio₂ h_sub2
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₂ verbose .ioForbidden w w_sub2 h_sub2
                   rw [hw_eq2] at h_sub2
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool true)) w hio₁ h_sub1
                   have h_ih2 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₂ verbose .ioForbidden w hio₂ h_sub2
@@ -4493,11 +4485,11 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
                   -- False branch ioForbidden: valid case
                   simp only [EST.bind, h_sub3, pure] at heval_w
                   have hw_eq1 : w_sub1 = w :=
-                    beval_IOFree_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w w_sub1 hio₁ h_sub1
+                    beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w w_sub1 h_sub1
                   rw [hw_eq1] at h_sub1
                   rw [hw_eq1] at h_sub3
                   have hw_eq3 : w_sub3 = w :=
-                    beval_IOFree_preserves_world fuel' cfg_sub1 e₃ verbose .ioForbidden w w_sub3 hio₃ h_sub3
+                    beval_ioFree_mode_preserves_world fuel' cfg_sub1 e₃ verbose .ioForbidden w w_sub3 h_sub3
                   rw [hw_eq3] at h_sub3
                   have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose (.success cfg_sub1 (Value.bool false)) w hio₁ h_sub1
                   have h_ih3 := ih fuel' (Nat.lt_succ_self _) cfg_sub1 e₃ verbose .ioForbidden w hio₃ h_sub3
@@ -4534,7 +4526,7 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
           -- First operand ioForbidden: valid case
           simp only [h_sub1, pure] at heval_w
           have hw_eq1 : w_sub1 = w :=
-            beval_IOFree_preserves_world fuel' cfg e₁ verbose .ioForbidden w w_sub1 hio₁ h_sub1
+            beval_ioFree_mode_preserves_world fuel' cfg e₁ verbose .ioForbidden w w_sub1 h_sub1
           rw [hw_eq1] at h_sub1
           have h_ih1 := ih fuel' (Nat.lt_succ_self _) cfg e₁ verbose .ioForbidden w hio₁ h_sub1
           have h_sub1_w' :
@@ -5004,7 +4996,7 @@ lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v 
           have hstruct := bevalOp_structure .ioFree  e₁ e₂ op' (fuel' + 1) verbose c₀ c₁ v w w heval_w
           rcases hstruct with ⟨cfg₁, cfg₂, v₁, v₂, w_mid, hbeval_e1, hbeval_e2, _, hmem, hvar, hnext, hpure_mode_final⟩
           have hw_mid_eq : w_mid = w :=
-            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+            beval_ioFree_mode_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hbeval_e1
           subst hw_mid_eq
           have hpure_e1 : LeanPoison.beval .ioFree fuel' c₀ e₁ verbose = pure (.success cfg₁ v₁) := by
             have hpure_e1' : LeanPoison.beval .ioFree (fuel' + 1 - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
@@ -5036,7 +5028,7 @@ lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v 
           have hstruct := bevalSeq_structure .ioFree e₁ e₂ (fuel' + 1) verbose c₀ c₁ v w w heval_w
           rcases hstruct with ⟨cfg₁, v₁, w_mid, hbeval_e1, hbeval_e2⟩
           have hw_mid_eq : w_mid = w :=
-            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+            beval_ioFree_mode_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hbeval_e1
           subst hw_mid_eq
           have hpure_e1 : LeanPoison.beval .ioFree fuel' c₀ e₁ verbose = pure (.success cfg₁ v₁) := by
             have hpure_e1' : LeanPoison.beval .ioFree (fuel' + 1 - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
@@ -5060,7 +5052,7 @@ lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v 
           have hstruct := bevalVlet_structure .ioFree x e₁ e₂ (fuel' + 1) verbose c₀ c₁ v w w heval_w
           rcases hstruct with ⟨cfg₁, cfg₂, cfg₃, v₁, w_mid, hbeval_e1, hcfg2_eq, hbeval_e2, hcfg_final⟩
           have hw_mid_eq : w_mid = w :=
-            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+            beval_ioFree_mode_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hbeval_e1
           subst hw_mid_eq
           have hpure_e1 : LeanPoison.beval .ioFree fuel' c₀ e₁ verbose = pure (.success cfg₁ v₁) := by
             have hpure_e1' : LeanPoison.beval .ioFree (fuel' + 1 - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
@@ -5120,7 +5112,7 @@ lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v 
           have hstruct := bevalAssign_structure .ioFree e₁ e₂ (fuel' + 1) verbose c₀ c₁ v w w heval_w
           rcases hstruct with ⟨cfg₁, cfg₁', a, n, w_mid, hbeval_e1, hbeval_e2, _, _, _, _, hpure_mode'⟩
           have hw_mid_eq : w_mid = w :=
-            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+            beval_ioFree_mode_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hbeval_e1
           subst hw_mid_eq
           have hpure_e1 : LeanPoison.beval .ioFree fuel' c₀ e₁ verbose = pure (.success cfg₁ (Value.loc a)) := by
             have hpure_e1' : LeanPoison.beval .ioFree (fuel' + 1 - 1) c₀ e₁ verbose = pure (.success cfg₁ (Value.loc a)) :=
@@ -5150,7 +5142,7 @@ lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v 
           have hstruct := bevalIte_structure .ioFree e₁ e₂ e₃ (fuel' + 1) verbose c₀ c₁ v w w heval_w
           rcases hstruct with ⟨cfg₁, b, w_mid, hbeval_e1, hbranch⟩
           have hw_mid_eq : w_mid = w :=
-            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+            beval_ioFree_mode_preserves_world (fuel' + 1 - 1) c₀ e₁ verbose _ w w_mid hbeval_e1
           subst hw_mid_eq
           have hpure_e1 : LeanPoison.beval .ioFree fuel' c₀ e₁ verbose = pure (.success cfg₁ (Value.bool b)) := by
             have hpure_e1' : LeanPoison.beval .ioFree (fuel' + 1 - 1) c₀ e₁ verbose = pure (.success cfg₁ (Value.bool b)) :=
@@ -5197,13 +5189,13 @@ lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v 
           have hstruct := bevalApp_structure .ioFree e₁ e₂ (fuel' + 1) verbose c₀ c₁ v w w heval_w
           rcases hstruct with ⟨cfg₁, cfg₂, v₂, x, body, env, w_mid1, w_mid2, hbeval_e2, hbranch, hpure_mode_final⟩
           have hw_mid1_eq : w_mid1 = w :=
-            beval_IOFree_preserves_world (fuel' + 1 - 1) c₀ e₂ verbose _ w w_mid1 hio₂ hbeval_e2
+            beval_ioFree_mode_preserves_world (fuel' + 1 - 1) c₀ e₂ verbose _ w w_mid1 hbeval_e2
           subst hw_mid1_eq
           cases hbranch with
           | inl hcl =>
             rcases hcl with ⟨hbeval_e1, hbeval_body⟩
             have hw_mid2_eq : w_mid2 = w :=
-              beval_IOFree_preserves_world (fuel' + 1 - 1) cfg₁ e₁ verbose _ w w_mid2 hio₁ hbeval_e1
+              beval_ioFree_mode_preserves_world (fuel' + 1 - 1) cfg₁ e₁ verbose _ w w_mid2 hbeval_e1
             subst hw_mid2_eq
             have hpure_e2 : LeanPoison.beval .ioFree fuel' c₀ e₂ verbose = pure (.success cfg₁ v₂) := by
               have hpure_e2' : LeanPoison.beval .ioFree (fuel' + 1 - 1) c₀ e₂ verbose = pure (.success cfg₁ v₂) :=
@@ -5223,7 +5215,7 @@ lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v 
           | inr hpe =>
             rcases hpe with ⟨hbeval_e1, _, hbeval_body⟩
             have hw_mid2_eq : w_mid2 = w :=
-              beval_IOFree_preserves_world (fuel' + 1 - 1) cfg₁ e₁ verbose _ w w_mid2 hio₁ hbeval_e1
+              beval_ioFree_mode_preserves_world (fuel' + 1 - 1) cfg₁ e₁ verbose _ w w_mid2 hbeval_e1
             subst hw_mid2_eq
             have hpure_e2 : LeanPoison.beval .ioFree fuel' c₀ e₂ verbose = pure (.success cfg₁ v₂) := by
               have hpure_e2' : LeanPoison.beval .ioFree (fuel' + 1 - 1) c₀ e₂ verbose = pure (.success cfg₁ v₂) :=
@@ -5285,7 +5277,7 @@ lemma terminatesTo_op_inv' (e₁ : Expr) (op : Op) (e₂ : Expr) (c₀ c₂ : Co
   have hio₁ : IOFree e₁ := by cases hio; assumption
   have hio₂ : IOFree e₂ := by cases hio; assumption
   -- World preservation: w_mid = w
-  have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+  have hw_mid_eq : w_mid = w := beval_ioFree_mode_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hbeval_e1
   subst hw_mid_eq
   have hpure_e1 : LeanPoison.beval .ioFree (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
     beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
@@ -5334,7 +5326,7 @@ lemma terminatesTo_seq_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) 
   have hio₁ : IOFree e₁ := by cases hio; assumption
   have hio₂ : IOFree e₂ := by cases hio; assumption
   -- World preservation: w_mid = w
-  have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+  have hw_mid_eq : w_mid = w := beval_ioFree_mode_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hbeval_e1
   subst hw_mid_eq
   have hpure_e1 : LeanPoison.beval .ioFree (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
     beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
@@ -5367,7 +5359,7 @@ lemma terminatesTo_vlet_inv' (x : Name) (e₁ e₂ : Expr) (c₀ c₂ : Config) 
   have hio₁ : IOFree e₁ := by cases hio; assumption
   have hio₂ : IOFree e₂ := by cases hio; assumption
   -- World preservation: w_mid = w
-  have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+  have hw_mid_eq : w_mid = w := beval_ioFree_mode_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hbeval_e1
   subst hw_mid_eq
   have hpure_e1 : LeanPoison.beval .ioFree (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ v₁) :=
     beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ v₁) w hio₁ hbeval_e1
@@ -5431,7 +5423,7 @@ lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) 
     cases hio
     assumption
   -- World preservation: w_mid1 = w
-  have hw_mid1_eq : w_mid1 = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₂ verbose _ w w_mid1 hio₂ hbeval_e2
+  have hw_mid1_eq : w_mid1 = w := beval_ioFree_mode_preserves_world (fuel - 1) c₀ e₂ verbose _ w w_mid1 hbeval_e2
   subst hw_mid1_eq
   have hpure_e2 : LeanPoison.beval .ioFree (fuel - 1) c₀ e₂ verbose = pure (.success cfg2 v2) :=
     beval_IOFree_eq_pure (fuel - 1) c₀ e₂ verbose (.success cfg2 v2) w hio₂ hbeval_e2
@@ -5446,7 +5438,7 @@ lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) 
     -- Keeping the existing proof sketch (this lemma currently contains `sorry`s).
     sorry
   rcases h_extracted with ⟨hbeval_e1, hbeval_body⟩
-  have hw_mid2_eq : w_mid2 = w := beval_IOFree_preserves_world (fuel - 1) cfg2 e₁ verbose _ w w_mid2 hio₁ hbeval_e1
+  have hw_mid2_eq : w_mid2 = w := beval_ioFree_mode_preserves_world (fuel - 1) cfg2 e₁ verbose _ w w_mid2 hbeval_e1
   subst hw_mid2_eq
   have hpure_e1 : LeanPoison.beval .ioFree (fuel - 1) cfg2 e₁ verbose =
       pure (.success cfg1 (Value.closure x body env)) :=
@@ -5486,7 +5478,7 @@ lemma terminatesTo_ite_inv' (e₁ e₂ e₃ : Expr) (c₀ c₂ : Config) (v : Va
   have hio₂ : IOFree e₂ := by cases hio; assumption
   have hio₃ : IOFree e₃ := by cases hio; assumption
   -- World preservation: w_mid = w
-  have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+  have hw_mid_eq : w_mid = w := beval_ioFree_mode_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hbeval_e1
   subst hw_mid_eq
   have hpure_e1 : LeanPoison.beval .ioFree (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ (Value.bool b)) :=
     beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ (Value.bool b)) w hio₁ hbeval_e1
@@ -5527,7 +5519,7 @@ lemma terminatesTo_assign_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Valu
   have hio₁ : IOFree e₁ := by cases hio; assumption
   have hio₂ : IOFree e₂ := by cases hio; assumption
   -- World preservation: w_mid = w
-  have hw_mid_eq : w_mid = w := beval_IOFree_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hio₁ hbeval_e1
+  have hw_mid_eq : w_mid = w := beval_ioFree_mode_preserves_world (fuel - 1) c₀ e₁ verbose _ w w_mid hbeval_e1
   subst hw_mid_eq
   have hpure_e1 : LeanPoison.beval .ioFree (fuel - 1) c₀ e₁ verbose = pure (.success cfg₁ (Value.loc a)) :=
     beval_IOFree_eq_pure (fuel - 1) c₀ e₁ verbose (.success cfg₁ (Value.loc a)) w hio₁ hbeval_e1
