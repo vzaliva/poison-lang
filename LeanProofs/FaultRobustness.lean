@@ -117,12 +117,12 @@ abbrev PredSat := Tag → Memory → Value → Prop
 
 -- Laws that constrain the abstract `PredSat` relation.
 structure PredSatLaws (predSat : PredSat) : Prop where
-  match_sound : ∀ (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
+  match_sound : ∀ (mode : LeanPoison.EvalMode) (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
                   (k : Tag) (deps : Deps)
                   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (addr : Address) (pm : Bool) (cfg : Config)
                   (v : Value),
     matchGuard condition Γ σ = .ok (k, deps) →
-    terminatesTo condition { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm } cfg (Value.bool true) →
+    terminatesTo mode condition { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm } cfg (Value.bool true) →
     ( (∃ (x : Name) (qt : QTyp),
           σ.lookup x = some qt ∧
           qtypGuardTag qt = some k ∧
@@ -665,7 +665,7 @@ def agreeOnTrustedInputs (predSat : PredSat) (R : Regime) (s : InputSpec) (ctx :
 -- Fault-Robustness property (top-level, spec-driven).
 -- Same shape as NI but with an extra premise requiring agreement on trusted inputs.
 def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) : Prop :=
-  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool) (check : Tag → Option Bool),
+  ∀ (mode : LeanPoison.EvalMode) (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool) (check : Tag → Option Bool),
     let R : Regime := ⟨ctx.nextTag, check⟩
     ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
     wfRegime R s →
@@ -678,8 +678,8 @@ def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx :
     consistentRegimeSpec predSat R s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat R s μ₂ ρ₂ θ₂ →
     agreeOnCriticalInputsUnderRegimeSpec predSat R s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
     agreeOnTrustedInputs predSat R s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
-    terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
-    terminatesTo e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } cf₂ o₂ →
+    terminatesTo mode e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
+    terminatesTo mode e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } cf₂ o₂ →
     ∃ (θ₁' θ₂' : RealizationMap),
       wfExtendsMap θ₁ θ₁' ∧
       wfExtendsMap θ₂ θ₂' ∧

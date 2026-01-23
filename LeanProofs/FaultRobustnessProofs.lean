@@ -50,6 +50,7 @@ def regimeConsistentWithCtx (ctx : TypeContext) (R : Regime) : Prop :=
 -- It assumes agreement on clean items in the initial context and preserves it
 -- for the post-context, plus result agreement when the result is clean under R.
 def StepFR
+  (mode : LeanPoison.EvalMode)
   (ctx : TypeContext)
   (R : Regime)
   (e : Expr)
@@ -66,8 +67,8 @@ def StepFR
       ∀ (a₀ a₁ : Address) (pm : Bool),
         wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } →  -- NEW: initial config₀ well-formed
         wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →  -- NEW: initial config₁ well-formed
-        terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ →
-        terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
+        terminatesTo mode e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ →
+        terminatesTo mode e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
         ∃ (θ₀' θ₁' : RealizationMap),
           wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
           wfTypeContext (ctxAfter ctx res) ∧
@@ -83,13 +84,14 @@ def StepFR
 -- No input/output specs here; they are handled by the top-level FR statement
 -- and the bridge lemma.
 def TypeSystemEnforcesFaultRobustness_step_spec
+  (mode : LeanPoison.EvalMode)
   (e : Expr)
   (ctxᵢ : TypeContext)
   (predSat : PredSat) : Prop :=
   ∀ (fuel : Nat) (res : TypeResult),
     typecheck ctxᵢ e fuel = .ok res →
     ∀ (R : Regime),
-      StepFR ctxᵢ R e res predSat
+      StepFR mode ctxᵢ R e res predSat
 
 
 section TypeSystemEnforcesFaultRobustness_impl_proof
@@ -586,15 +588,15 @@ private lemma agreeOnCriticalAndTrusted_implies_agreeOnClean
 
 -- Bridge theorem: connects the step theorem to the top-level FR spec.
 theorem TypeSystemEnforcesFaultRobustness_impl :
-  (∀ e ctxᵢ predSat,
-    TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat) →
+  (∀ (mode : LeanPoison.EvalMode) e ctxᵢ predSat,
+    TypeSystemEnforcesFaultRobustness_step_spec mode e ctxᵢ predSat) →
   (∀ e s obs, TypeSystemEnforcesFaultRobustness_spec e s obs) := by
   intro hstep e s obs
   rintro his _hos ctx hctx _hwf _hpc _hte predSat _hps ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
-  have hstep' := hstep e ctx predSat
+  intro mode μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm check
+  have hstep' := hstep mode e ctx predSat
   have hstep' := hstep' fuel res htc
-  intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm check
   dsimp only [FaultRobustnessSpec]
   intro cf₁ cf₂ o₁ o₂ hR hRbound hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
   set R : Regime := ⟨ctx.nextTag, check⟩ with hRdef
@@ -743,13 +745,23 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
             | dirty_internal_arrow _ hisArrow =>
                 -- qt.etyp is an arrow but hret_et says it's et (from observable spec).
                 -- This would contradict if observable types are not function types.
-                sorry
+                have : (ETyp.ref t ls).isArrow = true := by
+                  simpa [hret_et] using hisArrow
+                -- But references are not arrow types.
+                have : (false : Bool) = true := by
+                  simp [ETyp.isArrow] at this
+                cases this
             | clean_internal_parrow _ hetyp _ _ _ _ _ =>
                 cases (Eq.trans (Eq.symm hetyp) hret_et)
             | dirty_internal_parrow _ hisParrow =>
                 -- qt.etyp is a parrow but hret_et says it's et (from observable spec).
                 -- This would contradict if observable types are not function types.
-                sorry
+                have : (ETyp.ref t ls).isParrow = true := by
+                  simpa [hret_et] using hisParrow
+                -- But references are not parrow types.
+                have : (false : Bool) = true := by
+                  simp [ETyp.isParrow] at this
+                cases this
             | poisoned_noPred_ref hpoison' _ _ _ _ _ _ _ _ =>
                 have hcontra : False := by
                   have : false = true := by
@@ -825,25 +837,38 @@ private def isExternExpr : Expr → Prop
   | _ => False
 
 private lemma terminatesTo_extern_false
+  (mode : LeanPoison.EvalMode)
   {e : Expr} {c₀ c₁ : Config} {o : Value} :
   isExternExpr e →
-  ∀ (w₀ w₁ : Void IO.RealWorld), terminatesToW w₀ w₁ e c₀ c₁ o → False := by
+  ∀ (w₀ w₁ : Void IO.RealWorld), terminatesToW mode w₀ w₁ e c₀ c₁ o → False := by
   intro hex w₀ w₁ ht
   rcases ht with ⟨fuel, verbose, hbeval⟩
   cases e with
   | externVal _ _ _ =>
-      cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+      cases mode with
+      | ioFree =>
+          cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+      | normal =>
+          cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
   | externFn _ _ _ _ =>
-      cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+      cases mode with
+      | ioFree =>
+          cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+      | normal =>
+          cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
   | externPfn _ _ _ =>
-      cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+      cases mode with
+      | ioFree =>
+          cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+      | normal =>
+          cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
   | _ =>
       cases hex
 
-private lemma terminatesTo_num_inv (n : Int)
+private lemma terminatesTo_num_inv (mode : LeanPoison.EvalMode) (n : Int)
   (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
   ∀ (w₀ w₁ : Void IO.RealWorld),
-    terminatesToW w₀ w₁ (Expr.num n) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+    terminatesToW mode w₀ w₁ (Expr.num n) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
   cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.num n := by
   intro w₀ w₁ ht
   rcases ht with ⟨fuel, verbose, hbeval⟩
@@ -858,10 +883,10 @@ private lemma terminatesTo_num_inv (n : Int)
       cases hval
       constructor <;> rfl
 
-private lemma terminatesTo_bool_inv (b : Bool)
+private lemma terminatesTo_bool_inv (mode : LeanPoison.EvalMode) (b : Bool)
   (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
   ∀ (w₀ w₁ : Void IO.RealWorld),
-    terminatesToW w₀ w₁ (Expr.bool b) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+    terminatesToW mode w₀ w₁ (Expr.bool b) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
   cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.bool b := by
   intro w₀ w₁ ht
   rcases ht with ⟨fuel, verbose, hbeval⟩
@@ -876,10 +901,10 @@ private lemma terminatesTo_bool_inv (b : Bool)
       cases hval
       constructor <;> rfl
 
-private lemma terminatesTo_unit_inv
+private lemma terminatesTo_unit_inv (mode : LeanPoison.EvalMode)
   (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
   ∀ (w₀ w₁ : Void IO.RealWorld),
-    terminatesToW w₀ w₁ Expr.unit { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+    terminatesToW mode w₀ w₁ Expr.unit { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
   cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.unit := by
   intro w₀ w₁ ht
   rcases ht with ⟨fuel, verbose, hbeval⟩
@@ -894,10 +919,10 @@ private lemma terminatesTo_unit_inv
       cases hval
       constructor <;> rfl
 
-private lemma terminatesTo_str_inv (s : String)
+private lemma terminatesTo_str_inv (mode : LeanPoison.EvalMode) (s : String)
   (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
   ∀ (w₀ w₁ : Void IO.RealWorld),
-    terminatesToW w₀ w₁ (Expr.str s) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+    terminatesToW mode w₀ w₁ (Expr.str s) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
   cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.str s := by
   intro w₀ w₁ ht
   rcases ht with ⟨fuel, verbose, hbeval⟩
@@ -912,38 +937,38 @@ private lemma terminatesTo_str_inv (s : String)
       cases hval
       constructor <;> rfl
 
-private lemma terminatesTo_literal_inv
+private lemma terminatesTo_literal_inv (mode : LeanPoison.EvalMode)
   (e : Expr) (v : Value)
   (hval : Expr.toValue? e = some v)
   (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
   ∀ (w₀ w₁ : Void IO.RealWorld),
-    terminatesToW w₀ w₁ e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+    terminatesToW mode w₀ w₁ e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
   cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = v := by
   intro w₀ w₁ ht
   cases e with
   | unit =>
       simp [Expr.toValue?] at hval
       cases hval
-      exact terminatesTo_unit_inv μ ρ a pm cf o w₀ w₁ ht
+      exact terminatesTo_unit_inv mode μ ρ a pm cf o w₀ w₁ ht
   | num n =>
       simp [Expr.toValue?] at hval
       cases hval
-      exact terminatesTo_num_inv n μ ρ a pm cf o w₀ w₁ ht
+      exact terminatesTo_num_inv mode n μ ρ a pm cf o w₀ w₁ ht
   | bool b =>
       simp [Expr.toValue?] at hval
       cases hval
-      exact terminatesTo_bool_inv b μ ρ a pm cf o w₀ w₁ ht
+      exact terminatesTo_bool_inv mode b μ ρ a pm cf o w₀ w₁ ht
   | str s =>
       simp [Expr.toValue?] at hval
       cases hval
-      exact terminatesTo_str_inv s μ ρ a pm cf o w₀ w₁ ht
+      exact terminatesTo_str_inv mode s μ ρ a pm cf o w₀ w₁ ht
   | _ =>
       simp [Expr.toValue?] at hval
 
-private lemma terminatesTo_var_inv
+private lemma terminatesTo_var_inv (mode : LeanPoison.EvalMode)
   (x : Name) (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
   ∀ (w₀ w₁ : Void IO.RealWorld),
-    terminatesToW w₀ w₁ (Expr.var x) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+    terminatesToW mode w₀ w₁ (Expr.var x) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
   ∃ v, ρ.lookup x = some v ∧
     cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧
     o = v := by
@@ -969,11 +994,11 @@ private lemma terminatesTo_var_inv
           · rfl
           · exact And.intro rfl rfl
 
-private lemma terminatesTo_fn_inv
+private lemma terminatesTo_fn_inv (mode : LeanPoison.EvalMode)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
   ∀ (w₀ w₁ : Void IO.RealWorld),
-    terminatesToW w₀ w₁ (Expr.fn x paramType body returnType)
+    terminatesToW mode w₀ w₁ (Expr.fn x paramType body returnType)
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
   cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧
     o = Value.closure x body ρ := by
@@ -990,11 +1015,11 @@ private lemma terminatesTo_fn_inv
       cases hval
       constructor <;> rfl
 
-private lemma terminatesTo_pfn_inv
+private lemma terminatesTo_pfn_inv (mode : LeanPoison.EvalMode)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
   ∀ (w₀ w₁ : Void IO.RealWorld),
-    terminatesToW w₀ w₁ (Expr.pfn x paramType body returnType)
+    terminatesToW mode w₀ w₁ (Expr.pfn x paramType body returnType)
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
   cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧
     o = Value.peClosure x body ρ := by
@@ -1738,9 +1763,10 @@ private lemma opUnaryEType_implies_nonfun (op : UnaryOp) (et1 result : ETyp) :
 -- This requires the expression to be IOFree before applying the IH
 abbrev StepFR_IH (predSat : PredSat) (fuel : Nat) : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext),
-    IOFree e → ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR ctxᵢ R e res predSat
+    IOFree e → ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR .ioFree ctxᵢ R e res predSat
 
 private lemma stepFR_literal
+  (mode : LeanPoison.EvalMode)
   (ctx : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (res : TypeResult) (v : Value)
   (hval : Expr.toValue? e = some v)
@@ -1748,12 +1774,12 @@ private lemma stepFR_literal
   (hnotfun : res.qualType.etyp.isFunctionType = false)
   (hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls)
   (hctxAfter : ctxAfter ctx res = ctx) :
-  StepFR ctx R e res predSat := by
+  StepFR mode ctx R e res predSat := by
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for literals
-  have ⟨hcf₀, ho₀⟩ := terminatesTo_literal_inv' e v hval
+  have ⟨hcf₀, ho₀⟩ := terminatesTo_literal_inv' mode e v hval
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-  have ⟨hcf₁, ho₁⟩ := terminatesTo_literal_inv' e v hval
+  have ⟨hcf₁, ho₁⟩ := terminatesTo_literal_inv' mode e v hval
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   subst hcf₀ hcf₁
   -- StepFR existential has structure:
@@ -1787,16 +1813,17 @@ private lemma stepFR_literal
     exact agreeValueUnder.clean_eq_nonref hpoison hnotfun hnotref hval'
 
 private lemma stepFR_var
+  (mode : LeanPoison.EvalMode)
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ R (Expr.var name) res predSat := by
+  StepFR mode ctxᵢ R (Expr.var name) res predSat := by
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv R := hreg.1
   -- Use inversion lemma to extract config and value
-  have hinv₀ := terminatesTo_var_inv' name
+  have hinv₀ := terminatesTo_var_inv' mode name
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-  have hinv₁ := terminatesTo_var_inv' name
+  have hinv₁ := terminatesTo_var_inv' mode name
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   rcases hinv₀ with ⟨v₀', hlookup₀, hcf₀, hv₀⟩
   rcases hinv₁ with ⟨v₁', hlookup₁, hcf₁, hv₁⟩
@@ -2504,7 +2531,7 @@ private lemma stepFR_op
   (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ R (Expr.op e1 op e2) res predSat := by
+  StepFR .ioFree ctxᵢ R (Expr.op e1 op e2) res predSat := by
   -- Parse typecheck result
   have htc' : typecheckOp ctxᵢ e1 e2 (Nat.succ fuel') op = .ok res := by
     simp [typecheck, typecheckExpr_op_succ] at htc
@@ -2559,7 +2586,7 @@ private lemma stepFR_op
     cases cfg₁1
     simp only [Config.mk.injEq, true_and]
     exact hpm_eq
-  have ht₁_e2' : terminatesTo e2
+  have ht₁_e2' : terminatesTo .ioFree e2
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode }
       cf₁ v₁2 := by
     rw [← hcfg₁1_eq]
@@ -2658,7 +2685,7 @@ private lemma stepFR_unaryop
   (hioe : IOFree e)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ R (Expr.unaryop op e) res predSat := by
+  StepFR .ioFree ctxᵢ R (Expr.unaryop op e) res predSat := by
   have htc' : typecheckUnaryOp ctxᵢ op e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_unaryop_succ] at htc
     exact htc
@@ -2671,11 +2698,11 @@ private lemma stepFR_unaryop
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for unaryop
   have hio : IOFree (Expr.unaryop op e) := IOFree.unaryop op e hioe
-  have hstruct₀ := terminatesTo_unaryop_inv' op e
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
+  have hstruct₀ := terminatesTo_unaryop_inv' .ioFree op e
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ rfl hio ht₀
   rcases hstruct₀ with ⟨cfg₀', v₀', ht₀_e, h_evalop₀, hmem₀, hvar₀, _hnext₀, _hpure₀⟩
-  have hstruct₁ := terminatesTo_unaryop_inv' op e
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
+  have hstruct₁ := terminatesTo_unaryop_inv' .ioFree op e
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ rfl hio ht₁
   rcases hstruct₁ with ⟨cfg₁', v₁', ht₁_e, h_evalop₁, hmem₁, hvar₁, _hnext₁, _hpure₁⟩
   -- Apply IH for sub-expression
   have hstep_e :=
@@ -2695,8 +2722,8 @@ private lemma stepFR_unaryop
   have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) R := by
     simpa [hctxAfter] using hreg'
   -- Derive wfConfig for final configs using wfConfig_preserved
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.unaryop op e) _ cf₀ o₀ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.unaryop op e) _ cf₁ o₁ ht₁ hwfcfg₁).1
+  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.unaryop op e) _ cf₀ o₀ ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved .ioFree (Expr.unaryop op e) _ cf₁ o₁ ht₁ hwfcfg₁).1
   refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hagree_clean, ?_⟩
   · simpa [hctxAfter] using hwf'
   intro hclean
@@ -2760,7 +2787,7 @@ private lemma stepFR_newRef
   (hioe : IOFree e)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ R (Expr.newRef e) res predSat := by
+  StepFR .ioFree ctxᵢ R (Expr.newRef e) res predSat := by
   -- Parse typecheck result
   have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
@@ -2774,11 +2801,11 @@ private lemma stepFR_newRef
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for newRef
   have hio : IOFree (Expr.newRef e) := IOFree.newRef e hioe
-  have hstruct₀ := terminatesTo_newRef_inv' e
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
+  have hstruct₀ := terminatesTo_newRef_inv' .ioFree e
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ rfl hio ht₀
   rcases hstruct₀ with ⟨cfg₀', n₀, ht₀_e, ho₀, hmem₀, hnext₀, hvar₀, hpm₀⟩
-  have hstruct₁ := terminatesTo_newRef_inv' e
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
+  have hstruct₁ := terminatesTo_newRef_inv' .ioFree e
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ rfl hio ht₁
   rcases hstruct₁ with ⟨cfg₁', n₁, ht₁_e, ho₁, hmem₁, hnext₁, hvar₁, hpm₁⟩
   -- Apply IH for e
   have hstep_e :=
@@ -2976,8 +3003,8 @@ private lemma stepFR_newRef
       h_mem h_etyp1.symm rfl rfl hmem₀ hmem₁ hvar₀ hvar₁ rfl rfl
       hθext₀' hθext₁' hwfcf₀1 hwfcf₁1 hagree_clean_e hres_agree_e
   -- Derive wfConfig for final configs
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.newRef e) _ cf₀ o₀ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.newRef e) _ cf₁ o₁ ht₁ hwfcfg₁).1
+  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.newRef e) _ cf₀ o₀ ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved .ioFree (Expr.newRef e) _ cf₁ o₁ ht₁ hwfcfg₁).1
   refine ⟨θ₀', θ₁', ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hagree_clean, ?_⟩
   · -- wfExtendsMap θ₀ θ₀'
     exact wfExtendsMap_trans hθext₀1 hθext₀'
@@ -3008,7 +3035,7 @@ private lemma stepFR_seq
   (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ R (Expr.seq e1 e2) res predSat := by
+  StepFR .ioFree ctxᵢ R (Expr.seq e1 e2) res predSat := by
   -- Parse typecheck result
   have htc' : typecheckSeq ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_seq_succ] at htc
@@ -3056,7 +3083,7 @@ private lemma stepFR_seq
   have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
   have hcfg₁1_eq : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
     cases cfg₁1; simp only [Config.mk.injEq, true_and]; exact hpm_eq
-  have ht₁_e2' : terminatesTo e2
+  have ht₁_e2' : terminatesTo .ioFree e2
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode }
       cf₁ o₁ := by rw [← hcfg₁1_eq]; exact ht₁_e2
   have hwfcf₁1' : wfConfig
@@ -3097,7 +3124,7 @@ private lemma stepFR_vlet
   (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ R (Expr.vlet vname e1 e2) res predSat := by
+  StepFR .ioFree ctxᵢ R (Expr.vlet vname e1 e2) res predSat := by
   -- Parse typecheck result
   have htc' : typecheckVlet ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_vlet_succ] at htc
@@ -3140,26 +3167,27 @@ private lemma stepFR_vlet
     simpa [ctxAfter] using hric₁1
   -- Get value types using preservation with defaultWorld
   let w_default := LeanProofs.defaultWorld
-  have ht₀_e1_w : terminatesToW w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 := by
+  -- TODO: check why we using w_default here
+  have ht₀_e1_w : terminatesToW .ioFree w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 := by
     rcases ht₀_e1 with ⟨fuel₀, verbose₀, hpure₀⟩
     have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₀
     exact ⟨fuel₀, verbose₀, by simpa [pure] using h_eq⟩
-  have ht₁_e1_w : terminatesToW w_default w_default e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 := by
+  have ht₁_e1_w : terminatesToW .ioFree w_default w_default e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 := by
     rcases ht₁_e1 with ⟨fuel₁, verbose₁, hpure₁⟩
     have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₁
     exact ⟨fuel₁, verbose₁, by simpa [pure] using h_eq⟩
   have hv₀1_typed : valueHasETyp θ₀1 v₀1 res1.qualType.etyp :=
-    (preservation_valueW e1 ctxᵢ fuel' res1 μ₀ cfg₀1.memory ρ₀ cfg₀1.varEnv θ₀ θ₀1
+    (preservation_valueW .ioFree e1 ctxᵢ fuel' res1 μ₀ cfg₀1.memory ρ₀ cfg₀1.varEnv θ₀ θ₀1
       a₀ cfg₀1.nextAddr pm cfg₀1.pureMode v₀1 w_default w_default
       hwf htc1' hθ₀ hθ₀1wf hθext₀1 hric₀ hric₀1_mem ht₀_e1_w).1
   have hv₁1_typed : valueHasETyp θ₁1 v₁1 res1.qualType.etyp :=
-    (preservation_valueW e1 ctxᵢ fuel' res1 μ₁ cfg₁1.memory ρ₁ cfg₁1.varEnv θ₁ θ₁1
+    (preservation_valueW .ioFree e1 ctxᵢ fuel' res1 μ₁ cfg₁1.memory ρ₁ cfg₁1.varEnv θ₁ θ₁1
       a₁ cfg₁1.nextAddr pm cfg₁1.pureMode v₁1 w_default w_default
       hwf htc1' hθ₁ hθ₁1wf hθext₁1 hric₁ hric₁1_mem ht₁_e1_w).1
   have hv₀1_wf : wfValue cfg₀1.nextAddr v₀1 :=
-    (wfConfig_preservedW w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1_w hwfcfg₀).2
+    (wfConfig_preservedW .ioFree w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1_w hwfcfg₀).2
   have hv₁1_wf : wfValue cfg₁1.nextAddr v₁1 :=
-    (wfConfig_preservedW w_default w_default e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1_w hwfcfg₁).2
+    (wfConfig_preservedW .ioFree w_default w_default e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1_w hwfcfg₁).2
   have hreg_ctx' : regimeConsistentWithCtx ctx' R := by
     simpa [hctx', ctxAfter] using htagR1
   -- runtimeInstantiatesCtx for extended configs
@@ -3294,7 +3322,7 @@ private lemma stepFR_vlet
   have hcfg₀2_eq : cfg₀2 = { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 } := rfl
   have hcfg₁2_eq : cfg₁2 = { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 } := rfl
   -- Convert ht₁_e2 to have matching pureMode
-  have ht₁_e2' : terminatesTo e2 { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1, pureMode := cfg₀1.pureMode } cfg₁3 o₁ := by
+  have ht₁_e2' : terminatesTo .ioFree e2 { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1, pureMode := cfg₀1.pureMode } cfg₁3 o₁ := by
     have hcfg_eq : ({ cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 } : Config) =
                    { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1, pureMode := cfg₀1.pureMode } := by
       simp [hpm_eq]
@@ -3316,22 +3344,22 @@ private lemma stepFR_vlet
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
   -- VarEnv preservation through e2
-  have ht₀_e2_w : terminatesToW w_default w_default e2 cfg₀2 cfg₀3 o₀ := by
+  have ht₀_e2_w : terminatesToW .ioFree w_default w_default e2 cfg₀2 cfg₀3 o₀ := by
     rcases ht₀_e2 with ⟨fuel₀, verbose₀, hpure₀⟩
     have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₀
     exact ⟨fuel₀, verbose₀, by simpa [pure] using h_eq⟩
-  have ht₁_e2_w : terminatesToW w_default w_default e2 cfg₁2 cfg₁3 o₁ := by
+  have ht₁_e2_w : terminatesToW .ioFree w_default w_default e2 cfg₁2 cfg₁3 o₁ := by
     rcases ht₁_e2 with ⟨fuel₁, verbose₁, hpure₁⟩
     have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₁
     exact ⟨fuel₁, verbose₁, by simpa [pure] using h_eq⟩
   have hvar_pres₀ : cfg₀3.varEnv = cfg₀2.varEnv := by
     symm
     rcases ht₀_e2_w with ⟨fuel₀', verbose₀', heval₀⟩
-    exact beval_preserves_varEnv e2 fuel₀' verbose₀' cfg₀2 cfg₀3 o₀ ⟨w_default, w_default, heval₀⟩
+    exact beval_preserves_varEnv .ioFree e2 fuel₀' verbose₀' cfg₀2 cfg₀3 o₀ ⟨w_default, w_default, heval₀⟩
   have hvar_pres₁ : cfg₁3.varEnv = cfg₁2.varEnv := by
     symm
     rcases ht₁_e2_w with ⟨fuel₁', verbose₁', heval₁⟩
-    exact beval_preserves_varEnv e2 fuel₁' verbose₁' cfg₁2 cfg₁3 o₁ ⟨w_default, w_default, heval₁⟩
+    exact beval_preserves_varEnv .ioFree e2 fuel₁' verbose₁' cfg₁2 cfg₁3 o₁ ⟨w_default, w_default, heval₁⟩
   -- Final runtimeInstantiatesCtx
   have hric₀'' : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     unfold runtimeInstantiatesCtx
@@ -3431,9 +3459,9 @@ private lemma stepFR_vlet
             exact agreeVarUnder.both_none w qt hnone₀' hnone₁'
   -- Final wfConfig
   have hwfcf₀_final : wfConfig cf₀ :=
-    (wfConfig_preserved (Expr.vlet vname e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
+    (wfConfig_preserved .ioFree (Expr.vlet vname e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ :=
-    (wfConfig_preserved (Expr.vlet vname e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
+    (wfConfig_preserved .ioFree (Expr.vlet vname e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
   -- wfTypeContext
   · intro l hcontains
@@ -3462,11 +3490,12 @@ private lemma stepFR_vlet
 
 -- World-free version of stepFRW_fn
 private lemma stepFR_fn
+  (mode : LeanPoison.EvalMode)
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ R (Expr.fn x paramType body returnType) res predSat := by
+  StepFR mode ctxᵢ R (Expr.fn x paramType body returnType) res predSat := by
   -- Extract typecheck result
   have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
@@ -3491,9 +3520,9 @@ private lemma stepFR_fn
     simp [ctxAfter, hres, res_expected]
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma
-  have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' x paramType body returnType
+  have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' mode x paramType body returnType
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-  have ⟨hcf₁, ho₁⟩ := terminatesTo_fn_inv' x paramType body returnType
+  have ⟨hcf₁, ho₁⟩ := terminatesTo_fn_inv' mode x paramType body returnType
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   subst hcf₀ hcf₁
   have hcap :
@@ -3658,11 +3687,12 @@ private lemma stepFR_fn
 
 -- World-free version of stepFRW_pfn
 private lemma stepFR_pfn
+  (mode : LeanPoison.EvalMode)
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ R (Expr.pfn x paramType body returnType) res predSat := by
+  StepFR mode ctxᵢ R (Expr.pfn x paramType body returnType) res predSat := by
   -- Extract typecheck result
   have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
@@ -3691,9 +3721,9 @@ private lemma stepFR_pfn
         simp [ctxAfter, hres, res_expected]
       intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
       -- Use world-free inversion lemma
-      have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' x paramType body returnType
+      have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-      have ⟨hcf₁, ho₁⟩ := terminatesTo_pfn_inv' x paramType body returnType
+      have ⟨hcf₁, ho₁⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
         { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
       subst hcf₀ hcf₁
       have hcap :
@@ -3876,7 +3906,7 @@ private lemma stepFR_ite
   (hio1 : IOFree e1) (hio2 : IOFree e2) (hio3 : IOFree e3)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ R (Expr.ite e1 e2 e3) res predSat := by
+  StepFR .ioFree ctxᵢ R (Expr.ite e1 e2 e3) res predSat := by
   -- Parse typecheck result
   have htc' : typecheckIf ctxᵢ e1 e2 e3 (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_ite_succ] at htc
@@ -3971,7 +4001,7 @@ private lemma stepFR_ite
         -- Get IH for e2
         have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
           e2 ctx'' hio2 res2 htc2' R
-        have ht₁_e2' : terminatesTo e2
+        have ht₁_e2' : terminatesTo .ioFree e2
             { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv,
               nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode }
             cf₁ o₁ := by rw [← hcfg₁1_eq]; exact ht₁_e2
@@ -4580,7 +4610,7 @@ private lemma stepFR_ite
         have hagree_clean3 : agreeOnClean predSat R ctxForE3 cfg₀1.memory cfg₀1.varEnv θ₀1
                                                             cfg₁1.memory cfg₁1.varEnv θ₁1 := by
           simpa [ctxForE3, ctx'', ctx', ctxAfter] using hagree_clean1
-        have ht₁_e3' : terminatesTo e3
+        have ht₁_e3' : terminatesTo .ioFree e3
             { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv,
               nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode }
             cf₁ o₁ := by rw [← hcfg₁1_eq]; exact ht₁_e3
@@ -4925,7 +4955,7 @@ private lemma stepFR_assign
   (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ R (Expr.assign e1 e2) res predSat := by
+  StepFR .ioFree ctxᵢ R (Expr.assign e1 e2) res predSat := by
   sorry
 
 -- World-free version of stepFRW_deref (simplified with sorry)
@@ -4935,7 +4965,7 @@ private lemma stepFR_deref
   (hioe : IOFree e)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ R (Expr.deref e) res predSat := by
+  StepFR .ioFree ctxᵢ R (Expr.deref e) res predSat := by
   sorry -- TODO: Complex proof involving memory lookups and ref type agreement
 
 -- Stub lemma for while loop (not yet proven)
@@ -4945,7 +4975,7 @@ private lemma stepFR_kwhile
   (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.kwhile e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ R (Expr.kwhile e1 e2) res predSat := by
+  StepFR .ioFree ctxᵢ R (Expr.kwhile e1 e2) res predSat := by
   sorry
 
 -- Stub lemma for function application (not yet proven)
@@ -4955,7 +4985,7 @@ private lemma stepFR_app
   (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ R (Expr.app e1 e2) res predSat := by
+  StepFR .ioFree ctxᵢ R (Expr.app e1 e2) res predSat := by
   /-
   PROOF STRATEGY (based on function-poison.md):
 
@@ -5034,7 +5064,7 @@ section TypeSystemEnforcesFaultRobustness_IOFree_proof
 theorem TypeSystemEnforcesFaultRobustness_step_IOFree
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
   IOFree e →
-  TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat := by
+  TypeSystemEnforcesFaultRobustness_step_spec .ioFree e ctxᵢ predSat := by
   intro hio
   unfold TypeSystemEnforcesFaultRobustness_step_spec
   intro fuel res htc R
@@ -5071,7 +5101,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R Expr.unit res Value.unit hval hpoison hnotfun hnotref hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat R Expr.unit res Value.unit hval hpoison hnotfun hnotref hctxAfter
         | num n =>
             simp [typecheck, typecheckExpr, typecheckInt] at htc
             let res_expected : TypeResult := {
@@ -5094,7 +5124,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R (Expr.num n) res (Value.num n) hval hpoison hnotfun hnotref hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat R (Expr.num n) res (Value.num n) hval hpoison hnotfun hnotref hctxAfter
         | bool b =>
             simp [typecheck, typecheckExpr, typecheckBool] at htc
             let res_expected : TypeResult := {
@@ -5117,7 +5147,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R (Expr.bool b) res (Value.bool b) hval hpoison hnotfun hnotref hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat R (Expr.bool b) res (Value.bool b) hval hpoison hnotfun hnotref hctxAfter
         | str s =>
             simp [typecheck, typecheckExpr, typecheckString] at htc
             let res_expected : TypeResult := {
@@ -5140,10 +5170,10 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotfun hnotref hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotfun hnotref hctxAfter
         | var name =>
             cases hio with
-            | var => exact stepFR_var ctxᵢ predSat R name res fuel htc
+            | var => exact stepFR_var .ioFree ctxᵢ predSat R name res fuel htc
         | op e1 op e2 =>
             cases hio with
             | op _ _ _ hio1 hio2 =>
@@ -5219,10 +5249,10 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                     exact stepFR_vlet ctxᵢ predSat R vname e1 e2 fuel' res hio1 hio2 IH htc
         | fn name ty e1 ty2 =>
             cases hio with
-            | fn _ _ _ _ hiobody => exact stepFR_fn ctxᵢ predSat R name ty e1 ty2 fuel res htc
+            | fn _ _ _ _ hiobody => exact stepFR_fn .ioFree ctxᵢ predSat R name ty e1 ty2 fuel res htc
         | pfn name ty e1 ty2 =>
             cases hio with
-            | pfn _ _ _ _ hiobody => exact stepFR_pfn ctxᵢ predSat R name ty e1 ty2 fuel res htc
+            | pfn _ _ _ _ hiobody => exact stepFR_pfn .ioFree ctxᵢ predSat R name ty e1 ty2 fuel res htc
         | app e1 e2 =>
             cases hio with
             | app _ _ hio1 hio2 =>
@@ -5238,16 +5268,53 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
 end TypeSystemEnforcesFaultRobustness_IOFree_proof
 
 -- Bridges from step theorem to full specification
+def FaultRobustnessSpec_ioFree (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) : Prop :=
+  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool) (check : Tag → Option Bool),
+    let R : Regime := ⟨ctx.nextTag, check⟩
+    ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
+    wfRegime R s →
+    regimeBounded R →
+    wfRealizationMap θ₁ →  wfRealizationMap θ₂ →
+    wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →
+    wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } →
+    inputsConformSpec s μ₁ ρ₁ θ₁ →  inputsConformSpec s μ₂ ρ₂ θ₂ →
+    runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
+    consistentRegimeSpec predSat R s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat R s μ₂ ρ₂ θ₂ →
+    agreeOnCriticalInputsUnderRegimeSpec predSat R s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
+    agreeOnTrustedInputs predSat R s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
+    terminatesTo .ioFree e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
+    terminatesTo .ioFree e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } cf₂ o₂ →
+    ∃ (θ₁' θ₂' : RealizationMap),
+      wfExtendsMap θ₁ θ₁' ∧
+      wfExtendsMap θ₂ θ₂' ∧
+      observablesEqual obs θ₁' θ₂' cf₁ cf₂ o₁ o₂
+
+def TypeSystemEnforcesFaultRobustness_spec_ioFree
+  (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
+  wfInputSpec s →
+  wfObsSpec obs →
+  ∀ (ctx : TypeContext),
+      ctxMatchesInputSpec s ctx →
+      wfTypeContext ctx →
+      ctx.pc = false →
+      ctx.tagEnv = {} →
+      ∀ (predSat : PredSat),
+        PredSatLaws predSat →
+        ((∃ (fuel : Nat) (res : TypeResult),
+          typecheck ctx e fuel = .ok res ∧
+          ObsConstraints obs res) →
+          FaultRobustnessSpec_ioFree e s obs ctx predSat)
+
 theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
-  (∀ e ctxᵢ predSat, IOFree e → TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat) →
-  (∀ e s obs, IOFree e → TypeSystemEnforcesFaultRobustness_spec e s obs) := by
+  (∀ e ctxᵢ predSat, IOFree e → TypeSystemEnforcesFaultRobustness_step_spec .ioFree e ctxᵢ predSat) →
+  (∀ e s obs, IOFree e → TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs) := by
   intro hstep e s obs hio
   rintro his _hos ctx hctx hwf _hpc hte predSat _hps ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
+  intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm check
   have hstep' := hstep e ctx predSat hio
   have hstep' := hstep' fuel res htc
-  intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm check
-  dsimp only [FaultRobustnessSpec]
+  dsimp only [FaultRobustnessSpec_ioFree]
   intro cf₁ cf₂ o₁ o₂ hR hRbound hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
   set R : Regime := ⟨ctx.nextTag, check⟩ with hRdef
   have hagree_clean :
@@ -5474,7 +5541,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
 theorem TypeSystemEnforcesFaultRobustness_IOFree
   (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
   IOFree e →
-  TypeSystemEnforcesFaultRobustness_spec e s obs := by
+  TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs := by
   intro hio
   apply TypeSystemEnforcesFaultRobustness_impl_IOFree
   · intro e' ctxᵢ predSat hio'
