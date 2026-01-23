@@ -1123,6 +1123,7 @@ lemma bevalApp_structure (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat
         EST.Out.ok (.success config₁ v₂) w_mid1 ∧
     ((LeanPoison.beval mode (fuel - 1) config₁ e1 verbose w_mid1 =
           EST.Out.ok (.success config₂ (Value.closure x body env)) w_mid2 ∧
+      config₂.pureMode = false ∧  -- Added: pureMode must be false for closure application
       LeanPoison.bevalFunctionBody mode (fuel - 1) verbose config₂ env x v₂ body false w_mid2 =
           EST.Out.ok (.success config_final v) w₁) ∨
      (LeanPoison.beval mode (fuel - 1) config₁ e1 verbose w_mid1 =
@@ -1208,10 +1209,15 @@ lemma bevalApp_structure (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat
                 have hpure_mode_final :
                     config_final.pureMode = config₂.pureMode :=
                   hpureMode_of_body fuel' config₂ config_final env x v₂ body false h_state1 w₁ h_eq
+                -- h_notPureMode says config₂.pureMode ≠ true, which for Bool means = false
+                have h_pureMode_false : config₂.pureMode = false := by
+                  cases h : config₂.pureMode with
+                  | true => exact absurd h h_notPureMode
+                  | false => rfl
                 refine ⟨config₁, config₂, v₂, x, body, env, h_state2, h_state1, ?_, ?_, hpure_mode_final⟩
                 · simpa using h_beval2
                 · left
-                  refine ⟨?_, ?_⟩
+                  refine ⟨?_, h_pureMode_false, ?_⟩
                   · simpa using h_beval1
                   · simpa using h_eq
             · next config₂ x body env =>
@@ -1304,6 +1310,103 @@ lemma beval_ioFree_mode_no_error_if_ok (fuel : Nat) (cfg : Config) (e : Expr) (v
     LeanPoison.beval .ioFree fuel cfg e verbose w₂ = EST.Out.error err w₂' →
     False := by
   sorry
+
+/-- In ioFree mode, if evaluation succeeds at one world, it equals `pure r`.
+    This combines world preservation and result equality to convert world-indexed
+    evaluation to world-free (pure) evaluation. Works for ANY expression. -/
+lemma beval_ioFree_mode_eq_pure (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Bool)
+    (r : LeanPoison.EvalResult) (w : Void IO.RealWorld) :
+    LeanPoison.beval .ioFree fuel cfg e verbose w = EST.Out.ok r w →
+    LeanPoison.beval .ioFree fuel cfg e verbose = pure r := by
+  intro heval_w
+  apply funext
+  intro w'
+  cases h : LeanPoison.beval .ioFree fuel cfg e verbose w' with
+  | error e_err w_err =>
+    exfalso
+    exact beval_ioFree_mode_no_error_if_ok fuel cfg e verbose r w w' heval_w h
+  | ok r' w'' =>
+    have hw'' : w'' = w' := beval_ioFree_mode_preserves_world fuel cfg e verbose r' w' w'' h
+    have hr' : r = r' := beval_ioFree_mode_result_eq fuel cfg e verbose r r' w w' w w'' heval_w h
+    subst hr' hw''
+    rfl
+
+-- Helper: Convert bevalFunctionBody success (in ioFree mode) to terminatesTo for the body
+-- bevalFunctionBody creates bodyConfig = { currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure }
+-- and calls beval on body with that config. The beval produces an intermediate evalConfig,
+-- which bevalFunctionBody then transforms to finalConfig.
+-- This lemma extracts the intermediate termination fact (specialized to ioFree mode).
+lemma bevalFunctionBody_to_terminatesTo
+    (fuel : Nat) (verbose : Bool) (currentConfig : Config) (closureEnv : VarEnv)
+    (paramName : Name) (argValue : Value) (body : Expr) (isPure : Bool)
+    (finalConfig : Config) (v : Value) (w₀ w₁ : Void IO.RealWorld) :
+    LeanPoison.bevalFunctionBody .ioFree fuel verbose currentConfig closureEnv paramName argValue body isPure w₀ =
+        EST.Out.ok (.success finalConfig v) w₁ →
+    ∃ (evalConfig : Config),
+      terminatesTo .ioFree body { currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure } evalConfig v := by
+  intro hbeval_body
+  cases fuel with
+  | zero =>
+    -- fuel = 0 returns outOfFuel, contradiction with success
+    unfold LeanPoison.bevalFunctionBody at hbeval_body
+    simp only [pure] at hbeval_body
+    injection hbeval_body with h_result _h_world
+    injection h_result
+  | succ fuel' =>
+    -- bevalFunctionBody calls beval .ioFree fuel' bodyConfig body verbose
+    unfold LeanPoison.bevalFunctionBody at hbeval_body
+    simp only [bind, Bind.bind, EST.bind] at hbeval_body
+    -- Split on the match inside hbeval_body (the result of beval)
+    split at hbeval_body
+    · -- beval returned EST.Out.ok with some result
+      rename_i _x_out _result_val w_out heq_beval
+      -- Now split on the inner match (the EvalResult cases)
+      split at hbeval_body
+      · -- Body evaluation succeeded with evalConfig and v_body
+        rename_i evalConfig v_body
+        -- Now split on isPure to handle the final config transformation
+        split at hbeval_body
+        · -- isPure = true case
+          simp only [pure] at hbeval_body
+          injection hbeval_body with h_result h_world
+          injection h_result with _h_cfg h_val
+          use evalConfig
+          unfold terminatesTo
+          -- heq_beval : beval .ioFree fuel' bodyConfig body verbose w₀ = ok (success evalConfig v_body) w_out
+          -- World preservation: w_out = w₀
+          have hw_eq : w_out = w₀ :=
+            beval_ioFree_mode_preserves_world fuel' _ body verbose (.success evalConfig v_body) w₀ w_out heq_beval
+          -- Substitute: w₀ ↦ w_out, so now heq_beval : beval ... w_out = ok ... w_out
+          subst hw_eq
+          have hpure := beval_ioFree_mode_eq_pure fuel' _ body verbose (.success evalConfig v_body) w_out heq_beval
+          subst h_val
+          exact ⟨fuel', verbose, hpure⟩
+        · -- isPure = false case
+          simp only [pure] at hbeval_body
+          injection hbeval_body with h_result h_world
+          injection h_result with _h_cfg h_val
+          use evalConfig
+          unfold terminatesTo
+          have hw_eq : w_out = w₀ :=
+            beval_ioFree_mode_preserves_world fuel' _ body verbose (.success evalConfig v_body) w₀ w_out heq_beval
+          subst hw_eq
+          have hpure := beval_ioFree_mode_eq_pure fuel' _ body verbose (.success evalConfig v_body) w_out heq_beval
+          subst h_val
+          exact ⟨fuel', verbose, hpure⟩
+      · -- beval returned outOfFuel
+        simp only [pure] at hbeval_body
+        injection hbeval_body with h_result _h_world
+        injection h_result
+      · -- beval returned runtimeError
+        simp only [pure] at hbeval_body
+        injection hbeval_body with h_result _h_world
+        injection h_result
+      · -- beval returned ioForbidden
+        simp only [pure] at hbeval_body
+        injection hbeval_body with h_result _h_world
+        injection h_result
+    · -- beval returned EST.Out.error, contradiction with success
+      injection hbeval_body
 
 private def beval_IOFree_eq_pure_IH (fuel : Nat) :=
   ∀ fuel' < fuel, ∀ cfg e verbose r w, IOFree e →
@@ -5212,7 +5315,7 @@ lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v 
           subst hw_mid1_eq
           cases hbranch with
           | inl hcl =>
-            rcases hcl with ⟨hbeval_e1, hbeval_body⟩
+            rcases hcl with ⟨hbeval_e1, _hpure_false, hbeval_body⟩
             have hw_mid2_eq : w_mid2 = w :=
               beval_ioFree_mode_preserves_world (fuel' + 1 - 1) cfg₁ e₁ verbose _ w w_mid2 hbeval_e1
             subst hw_mid2_eq
@@ -5417,65 +5520,95 @@ lemma terminatesTo_vlet_inv' (x : Name) (e₁ e₂ : Expr) (c₀ c₂ : Config) 
     rw [h_pure_cfg2]
     exact hrec₁
 
-/-- Inversion lemma for terminatesTo on app (function application).
-    Note: pureMode is preserved through evaluation. -/
+/-- Inversion lemma for terminatesTo on app (function application) - closure case.
+    Note: pureMode is preserved through evaluation.
+    This lemma specifically handles the case where e₁ evaluates to a regular closure.
+    For peClosure case, see terminatesTo_app_inv_peClosure'.
+
+    The body terminates to some intermediate evalConfig (not c₂), because bevalFunctionBody
+    transforms the config after body evaluation. For closure case, c₂ derives from evalConfig
+    by taking memory/nextAddr from evalConfig and varEnv from c₁. -/
 lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) :
     IOFree (Expr.app e₁ e₂) →
     terminatesTo .ioFree (Expr.app e₁ e₂) c₀ c₂ v →
-    ∃ (c₂' : Config) (v₂ : Value) (c₁ : Config) (x : Name) (body : Expr) (env : VarEnv),
+    -- Either the closure case holds...
+    (∃ (c₂' : Config) (v₂ : Value) (c₁ : Config) (x : Name) (body : Expr) (env : VarEnv) (evalConfig : Config),
       terminatesTo .ioFree e₂ c₀ c₂' v₂ ∧
       terminatesTo .ioFree e₁ c₂' c₁ (Value.closure x body env) ∧
       c₁.pureMode = false ∧
-      (∃ (fuel' : Nat), terminatesTo .ioFree body { c₁ with varEnv := c₁.varEnv.update x v₂ } c₂ v) ∧
+      terminatesTo .ioFree body { c₁ with varEnv := env.update x v₂, pureMode := false } evalConfig v ∧
       c₂'.pureMode = c₀.pureMode ∧
-      c₂.pureMode = c₀.pureMode := by
+      c₂.pureMode = c₀.pureMode) ∨
+    -- ...or the peClosure case holds
+    (∃ (c₂' : Config) (v₂ : Value) (c₁ : Config) (x : Name) (body : Expr) (env : VarEnv) (evalConfig : Config),
+      terminatesTo .ioFree e₂ c₀ c₂' v₂ ∧
+      terminatesTo .ioFree e₁ c₂' c₁ (Value.peClosure x body env) ∧
+      Expr.toPExpr? body ≠ none ∧
+      terminatesTo .ioFree body { c₁ with varEnv := env.update x v₂, pureMode := true } evalConfig v ∧
+      c₂'.pureMode = c₀.pureMode ∧
+      c₂.pureMode = c₀.pureMode) := by
   intro hio ⟨fuel, verbose, hpure⟩
+  -- Extract IOFree proofs for sub-expressions
+  have hio₁ : IOFree e₁ := by cases hio; assumption
+  have hio₂ : IOFree e₂ := by cases hio; assumption
+  -- Work with world-indexed evaluation for structure extraction
   let w := LeanProofs.defaultWorld
   have heval_w := LeanProofs.evalAtWorld_eq w hpure
+  -- Extract evaluation structure
   have hstruct := bevalApp_structure .ioFree e₁ e₂ fuel verbose c₀ c₂ v w w heval_w
   rcases hstruct with ⟨cfg2, cfg1, v2, x, body, env, w_mid1, w_mid2, hbeval_e2, h_app, hpure_mode_final⟩
-  -- Extract IOFree proofs for sub-expressions
-  have hio₁ : IOFree e₁ := by
-    cases hio
-    assumption
-  have hio₂ : IOFree e₂ := by
-    cases hio
-    assumption
-  -- World preservation: w_mid1 = w
+  -- World preservation for e₂ evaluation
   have hw_mid1_eq : w_mid1 = w := beval_ioFree_mode_preserves_world (fuel - 1) c₀ e₂ verbose _ w w_mid1 hbeval_e2
   subst hw_mid1_eq
+  -- Convert e₂ evaluation to pure form
   have hpure_e2 : LeanPoison.beval .ioFree (fuel - 1) c₀ e₂ verbose = pure (.success cfg2 v2) :=
     beval_IOFree_eq_pure (fuel - 1) c₀ e₂ verbose (.success cfg2 v2) w hio₂ hbeval_e2
-  -- `h_app` splits into closure vs predicate-closure application.
-  -- This lemma only exposes the regular closure case.
-  have h_extracted :
-      ∃ (hbeval_e1 : LeanPoison.beval .ioFree (fuel - 1) cfg2 e₁ verbose w =
-          EST.Out.ok (.success cfg1 (Value.closure x body env)) w_mid2),
-        LeanPoison.bevalFunctionBody .ioFree (fuel - 1) verbose cfg1 env x v2 body false w_mid2 =
-          EST.Out.ok (.success c₂ v) w := by
-    -- The `peClosure` branch does not match this lemma's statement.
-    -- Keeping the existing proof sketch (this lemma currently contains `sorry`s).
-    sorry
-  rcases h_extracted with ⟨hbeval_e1, hbeval_body⟩
-  have hw_mid2_eq : w_mid2 = w := beval_ioFree_mode_preserves_world (fuel - 1) cfg2 e₁ verbose _ w w_mid2 hbeval_e1
-  subst hw_mid2_eq
-  have hpure_e1 : LeanPoison.beval .ioFree (fuel - 1) cfg2 e₁ verbose =
-      pure (.success cfg1 (Value.closure x body env)) :=
-    beval_IOFree_eq_pure (fuel - 1) cfg2 e₁ verbose (.success cfg1 (Value.closure x body env)) w hio₁ hbeval_e1
-  refine ⟨cfg2, v2, cfg1, x, body, env, ⟨fuel - 1, verbose, hpure_e2⟩, ⟨fuel - 1, verbose, hpure_e1⟩,
-          ?_, ?_, ?_, ?_⟩
-  · -- `cfg1.pureMode = false` (application succeeds only in impure mode)
-    sorry
-  · -- body evaluation (needs a conversion lemma from `bevalFunctionBody`)
-    sorry
-  · -- c₂'.pureMode = c₀.pureMode
-    exact terminatesTo_IOFree_preserves_pureMode e₂ c₀ cfg2 v2 hio₂ ⟨fuel - 1, verbose, hpure_e2⟩
-  · -- c₂.pureMode = c₀.pureMode
-    have hrec_e2 := terminatesTo_IOFree_preserves_pureMode e₂ c₀ cfg2 v2 hio₂ ⟨fuel - 1, verbose, hpure_e2⟩
-    have hrec_e1 := terminatesTo_IOFree_preserves_pureMode e₁ cfg2 cfg1 (Value.closure x body env) hio₁ ⟨fuel - 1, verbose, hpure_e1⟩
-    -- Body evaluation preserves pureMode
-    -- This follows from the fact that body is IOFree and bevalFunctionBody preserves pureMode
-    sorry -- TODO: Show body evaluation preserves pureMode
+  -- pureMode preservation for e₂
+  have hpure_cfg2 : cfg2.pureMode = c₀.pureMode :=
+    terminatesTo_IOFree_preserves_pureMode e₂ c₀ cfg2 v2 hio₂ ⟨fuel - 1, verbose, hpure_e2⟩
+  -- Case split: closure vs peClosure
+  rcases h_app with ⟨hbeval_e1, hpure_false, hbeval_body⟩ | ⟨hbeval_e1, htoPExpr, hbeval_body⟩
+  · -- Case 1: Regular closure
+    left
+    -- World preservation for e₁ evaluation
+    have hw_mid2_eq : w_mid2 = w := beval_ioFree_mode_preserves_world (fuel - 1) cfg2 e₁ verbose _ w w_mid2 hbeval_e1
+    subst hw_mid2_eq
+    -- Convert e₁ evaluation to pure form
+    have hpure_e1 : LeanPoison.beval .ioFree (fuel - 1) cfg2 e₁ verbose =
+        pure (.success cfg1 (Value.closure x body env)) :=
+      beval_IOFree_eq_pure (fuel - 1) cfg2 e₁ verbose (.success cfg1 (Value.closure x body env)) w hio₁ hbeval_e1
+    -- pureMode preservation for e₁
+    have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
+      terminatesTo_IOFree_preserves_pureMode e₁ cfg2 cfg1 (Value.closure x body env) hio₁ ⟨fuel - 1, verbose, hpure_e1⟩
+    -- hpure_false : cfg1.pureMode = false (extracted from bevalApp_structure)
+    -- Convert bevalFunctionBody to terminatesTo
+    -- bevalFunctionBody creates bodyConfig = { cfg1 with varEnv := env.update x v2, pureMode := false }
+    -- and calls beval on body with that config
+    obtain ⟨evalConfig, hbody_terminates⟩ :=
+      bevalFunctionBody_to_terminatesTo (fuel - 1) verbose cfg1 env x v2 body false c₂ v w w hbeval_body
+    refine ⟨cfg2, v2, cfg1, x, body, env, evalConfig, ⟨fuel - 1, verbose, hpure_e2⟩, ⟨fuel - 1, verbose, hpure_e1⟩,
+            hpure_false, hbody_terminates, hpure_cfg2, ?_⟩
+    -- c₂.pureMode = c₀.pureMode
+    rw [hpure_mode_final, hpure_cfg1, hpure_cfg2]
+  · -- Case 2: Pure closure (peClosure)
+    right
+    -- World preservation for e₁ evaluation
+    have hw_mid2_eq : w_mid2 = w := beval_ioFree_mode_preserves_world (fuel - 1) cfg2 e₁ verbose _ w w_mid2 hbeval_e1
+    subst hw_mid2_eq
+    -- Convert e₁ evaluation to pure form
+    have hpure_e1 : LeanPoison.beval .ioFree (fuel - 1) cfg2 e₁ verbose =
+        pure (.success cfg1 (Value.peClosure x body env)) :=
+      beval_IOFree_eq_pure (fuel - 1) cfg2 e₁ verbose (.success cfg1 (Value.peClosure x body env)) w hio₁ hbeval_e1
+    -- pureMode preservation for e₁
+    have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
+      terminatesTo_IOFree_preserves_pureMode e₁ cfg2 cfg1 (Value.peClosure x body env) hio₁ ⟨fuel - 1, verbose, hpure_e1⟩
+    -- Convert bevalFunctionBody to terminatesTo
+    obtain ⟨evalConfig, hbody_terminates⟩ :=
+      bevalFunctionBody_to_terminatesTo (fuel - 1) verbose cfg1 env x v2 body true c₂ v w w hbeval_body
+    refine ⟨cfg2, v2, cfg1, x, body, env, evalConfig, ⟨fuel - 1, verbose, hpure_e2⟩, ⟨fuel - 1, verbose, hpure_e1⟩,
+            htoPExpr, hbody_terminates, hpure_cfg2, ?_⟩
+    -- c₂.pureMode = c₀.pureMode
+    rw [hpure_mode_final, hpure_cfg1, hpure_cfg2]
 
 /-- Inversion lemma for terminatesTo on ite (if-then-else).
     Returns intermediate config after condition, which branch was taken, and preserves pureMode. -/
