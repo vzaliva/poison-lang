@@ -33,12 +33,12 @@ set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySeqFocus false
 
 -- Helper lemma for op case: binary operations chain memory monotonicity through e1 and e2
-private lemma beval_memory_monotonic_op (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_op (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.op e1 op e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.op e1 op e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -58,14 +58,16 @@ private lemma beval_memory_monotonic_op (e1 e2 : Expr) (op : Op) (fuel : Nat) (v
     -- Case analysis on e1 evaluation
     split at h_eq
     · next h_result1 h_state1 h_beval1_eq =>
-      split at h_eq
-      · next config' v1 =>
+      -- Case analysis on e1 evaluation result
+      cases h_result1 with
+      | success config' v1 =>
         -- e1 evaluated successfully
         simp [EST.bind] at h_eq
         split at h_eq
         · next h_result2 h_state2 h_beval2_eq =>
-          split at h_eq
-          · next config'' v2 =>
+          -- Case analysis on e2 evaluation result
+          cases h_result2 with
+          | success config'' v2 =>
             -- e2 evaluated successfully
             -- Case analysis on evalOp result
             cases h_evalOp : LeanPoison.evalOp op v1 v2 with
@@ -78,9 +80,9 @@ private lemma beval_memory_monotonic_op (e1 e2 : Expr) (op : Op) (fuel : Nat) (v
               subst h_eq_config
               -- Construct existentials for IH
               have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁' :=
+              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁' :=
                 ⟨w₀, h_state1, h_beval1_eq⟩
-              have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config' e2 verbose w₀' = EST.Out.ok (.success config'' v2) w₁' :=
+              have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config' e2 verbose w₀' = EST.Out.ok (.success config'' v2) w₁' :=
                 ⟨h_state1, h_state2, h_beval2_eq⟩
               -- Chain through IH
               have IH1 := IH fuel' h_fuel e1 config₀ config' v1 h_beval1_ex l h_contains
@@ -90,20 +92,22 @@ private lemma beval_memory_monotonic_op (e1 e2 : Expr) (op : Op) (fuel : Nat) (v
               simp [h_evalOp] at h_eq
               injection h_eq with h_result h_world
               injection h_result
-          · next => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
-          · next msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+          | outOfFuel => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+          | runtimeError msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+          | ioForbidden => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
         · next h_error2 h_state2 => injection h_eq
-      · next => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
-      · next msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+      | outOfFuel => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+      | runtimeError msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+      | ioForbidden => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
     · next h_error1 h_state1 => injection h_eq
 
 -- Helper lemma for seq case: sequences chain memory monotonicity through e1 then e2
-private lemma beval_memory_monotonic_seq (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_seq (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.seq e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.seq e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -123,14 +127,16 @@ private lemma beval_memory_monotonic_seq (e1 e2 : Expr) (fuel : Nat) (verbose : 
     -- Case analysis on e1 evaluation
     split at h_eq
     · next h_result1 h_state1 h_beval1_eq =>
-      split at h_eq
-      · next config' v1 =>
+      -- Case analysis on e1 evaluation result
+      cases h_result1 with
+      | success config' v1 =>
         -- e1 evaluated successfully
         simp [EST.bind] at h_eq
         split at h_eq
         · next h_result2 h_state2 h_beval2_eq =>
-          split at h_eq
-          · next config'' v2 =>
+          -- Case analysis on e2 evaluation result
+          cases h_result2 with
+          | success config'' v2 =>
             -- e2 evaluated successfully
             injection h_eq with h_result h_world
             injection h_result with h_eq_config h_eq_val
@@ -138,29 +144,31 @@ private lemma beval_memory_monotonic_seq (e1 e2 : Expr) (fuel : Nat) (verbose : 
             subst h_eq_config
             -- Construct existentials for IH
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁' :=
+            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁' :=
               ⟨w₀, h_state1, h_beval1_eq⟩
-            have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config' e2 verbose w₀' = EST.Out.ok (.success config'' v2) w₁' :=
+            have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config' e2 verbose w₀' = EST.Out.ok (.success config'' v2) w₁' :=
               ⟨h_state1, h_state2, h_beval2_eq⟩
             -- Chain through IH
             have IH1 := IH fuel' h_fuel e1 config₀ config' v1 h_beval1_ex l h_contains
             exact IH fuel' h_fuel e2 config' config'' v2 h_beval2_ex l IH1
-          · next => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
-          · next msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+          | outOfFuel => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+          | runtimeError msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+          | ioForbidden => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
         · next h_error2 h_state2 => injection h_eq
-      · next => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
-      · next msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+      | outOfFuel => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+      | runtimeError msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+      | ioForbidden => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
     · next h_error1 h_state1 =>
       -- e1 evaluation returned error from EStateM (contradiction)
       injection h_eq
 
 -- Helper lemma for unaryop case: unary operations chain memory monotonicity through e1
-private lemma beval_memory_monotonic_unaryop (op : UnaryOp) (e1 : Expr) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_unaryop (mode : LeanPoison.EvalMode) (op : UnaryOp) (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.unaryop op e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.unaryop op e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -182,8 +190,8 @@ private lemma beval_memory_monotonic_unaryop (op : UnaryOp) (e1 : Expr) (fuel : 
     split at h_eq
     · next h_result1 h_state1 h_beval1 =>
       -- e1 evaluation succeeded with ok, now split on inner EvalResult
-      split at h_eq
-      · next config' v1 =>
+      cases h_result1 with
+      | success config' v1 =>
         -- e1 evaluated successfully to config', v1
         -- Case analysis on evalUnaryOp result
         cases h_evalOp : LeanPoison.evalUnaryOp op v1 with
@@ -198,7 +206,7 @@ private lemma beval_memory_monotonic_unaryop (op : UnaryOp) (e1 : Expr) (fuel : 
           -- Use IH on e1: fuel' < fuel'.succ
           have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
           -- Construct existential for IH
-          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁' :=
+          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' v1) w₁' :=
             ⟨w₀, h_state1, h_beval1⟩
           -- Apply IH for e1
           exact IH fuel' h_fuel e1 config₀ config' v1 h_beval1_ex l h_contains
@@ -207,13 +215,18 @@ private lemma beval_memory_monotonic_unaryop (op : UnaryOp) (e1 : Expr) (fuel : 
           simp [h_evalOp] at h_eq
           injection h_eq with h_result h_world
           injection h_result
-      · next h_result1_error =>
+      | outOfFuel =>
         -- e1 evaluation returned outOfFuel (contradiction)
         simp [pure] at h_eq
         injection h_eq with h_result h_world
         injection h_result
-      · next msg =>
+      | runtimeError msg =>
         -- e1 evaluation returned runtimeError (contradiction)
+        simp [pure] at h_eq
+        injection h_eq with h_result h_world
+        injection h_result
+      | ioForbidden =>
+        -- e1 evaluation returned ioForbidden (contradiction)
         simp [pure] at h_eq
         injection h_eq with h_result h_world
         injection h_result
@@ -222,12 +235,12 @@ private lemma beval_memory_monotonic_unaryop (op : UnaryOp) (e1 : Expr) (fuel : 
       injection h_eq
 
 -- Helper lemma for ite case: conditionals chain memory monotonicity through e1, then either e2 or e3
-private lemma beval_memory_monotonic_ite (e1 e2 e3 : Expr) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_ite (mode : LeanPoison.EvalMode) (e1 e2 e3 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.ite e1 e2 e3) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.ite e1 e2 e3) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -248,79 +261,91 @@ private lemma beval_memory_monotonic_ite (e1 e2 e3 : Expr) (fuel : Nat) (verbose
     split at h_eq
     · next h_result1 h_state1 h_beval1 =>
       -- e1 evaluation succeeded with ok, now split on inner EvalResult
-      split at h_eq
-      · next config₁' =>
-        -- e1 evaluated successfully to config₁', now branch on boolean value (true case)
-        simp [EST.bind] at h_eq
-        split at h_eq
-        · next h_result2 h_state2 h_beval2 =>
-          -- Branch matched Value.bool true, now evaluate e2
-          split at h_eq
-          · next config₂ v₂ =>
-            -- e2 evaluated successfully
-            injection h_eq with h_result h_world
-            injection h_result with h_eq_config h_eq_val
-            subst h_eq_config
-            -- Construct existentials for IH
-            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁' (Value.bool true)) w₁' :=
-              ⟨w₀, h_state1, h_beval1⟩
-            have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₁' e2 verbose w₀' = EST.Out.ok (.success config₂ v₂) w₁' :=
-              ⟨h_state1, h_state2, h_beval2⟩
-            -- Chain through IH
-            have IH1 := IH fuel' h_fuel e1 config₀ config₁' (Value.bool true) h_beval1_ex l h_contains
-            exact IH fuel' h_fuel e2 config₁' config₂ v₂ h_beval2_ex l IH1
-          · next => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
-          · next msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
-        · next h_error2 h_state2 => injection h_eq
-      · next config₁' =>
-        -- e1 evaluated successfully to config₁', now branch on boolean value (false case)
-        simp [EST.bind] at h_eq
-        split at h_eq
-        · next h_result3 h_state3 h_beval3 =>
-          -- Branch matched Value.bool false, now evaluate e3
-          split at h_eq
-          · next config₂ v₃ =>
-            -- e3 evaluated successfully
-            injection h_eq with h_result h_world
-            injection h_result with h_eq_config h_eq_val
-            subst h_eq_config
-            -- Construct existentials for IH
-            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁' (Value.bool false)) w₁' :=
-              ⟨w₀, h_state1, h_beval1⟩
-            have h_beval3_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₁' e3 verbose w₀' = EST.Out.ok (.success config₂ v₃) w₁' :=
-              ⟨h_state1, h_state3, h_beval3⟩
-            -- Chain through IH
-            have IH1 := IH fuel' h_fuel e1 config₀ config₁' (Value.bool false) h_beval1_ex l h_contains
-            exact IH fuel' h_fuel e3 config₁' config₂ v₃ h_beval3_ex l IH1
-          · next => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
-          · next msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
-        · next h_error3 h_state3 => injection h_eq
-      · next v =>
-        -- e1 evaluated to non-boolean value (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-      · next =>
+      cases h_result1 with
+      | success config₁' v1 =>
+        -- e1 evaluated successfully to config₁', now branch on boolean value
+        cases v1 with
+        | bool b =>
+          cases b with
+          | true =>
+            -- true case: evaluate e2
+            simp [EST.bind] at h_eq
+            split at h_eq
+            · next h_result2 h_state2 h_beval2 =>
+              -- Case analysis on e2 evaluation result
+              cases h_result2 with
+              | success config₂ v₂ =>
+                -- e2 evaluated successfully
+                injection h_eq with h_result h_world
+                injection h_result with h_eq_config h_eq_val
+                subst h_eq_config
+                -- Construct existentials for IH
+                have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+                have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁' (Value.bool true)) w₁' :=
+                  ⟨w₀, h_state1, h_beval1⟩
+                have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₁' e2 verbose w₀' = EST.Out.ok (.success config₂ v₂) w₁' :=
+                  ⟨h_state1, h_state2, h_beval2⟩
+                -- Chain through IH
+                have IH1 := IH fuel' h_fuel e1 config₀ config₁' (Value.bool true) h_beval1_ex l h_contains
+                exact IH fuel' h_fuel e2 config₁' config₂ v₂ h_beval2_ex l IH1
+              | outOfFuel => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+              | runtimeError msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+              | ioForbidden => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+            · next h_error2 h_state2 => injection h_eq
+          | false =>
+            -- false case: evaluate e3
+            simp [EST.bind] at h_eq
+            split at h_eq
+            · next h_result3 h_state3 h_beval3 =>
+              -- Case analysis on e3 evaluation result
+              cases h_result3 with
+              | success config₂ v₃ =>
+                -- e3 evaluated successfully
+                injection h_eq with h_result h_world
+                injection h_result with h_eq_config h_eq_val
+                subst h_eq_config
+                -- Construct existentials for IH
+                have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+                have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁' (Value.bool false)) w₁' :=
+                  ⟨w₀, h_state1, h_beval1⟩
+                have h_beval3_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₁' e3 verbose w₀' = EST.Out.ok (.success config₂ v₃) w₁' :=
+                  ⟨h_state1, h_state3, h_beval3⟩
+                -- Chain through IH
+                have IH1 := IH fuel' h_fuel e1 config₀ config₁' (Value.bool false) h_beval1_ex l h_contains
+                exact IH fuel' h_fuel e3 config₁' config₂ v₃ h_beval3_ex l IH1
+              | outOfFuel => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+              | runtimeError msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+              | ioForbidden => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+            · next h_error3 h_state3 => injection h_eq
+        | _ =>
+          -- e1 evaluated to non-boolean value (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+      | outOfFuel =>
         -- e1 evaluation returned outOfFuel (contradiction)
         simp [pure] at h_eq
         injection h_eq with h_result h_world
         injection h_result
-      · next msg =>
+      | runtimeError msg =>
         -- e1 evaluation returned runtimeError (contradiction)
+        simp [pure] at h_eq
+        injection h_eq with h_result h_world
+        injection h_result
+      | ioForbidden =>
+        -- e1 evaluation returned ioForbidden (contradiction)
         simp [pure] at h_eq
         injection h_eq with h_result h_world
         injection h_result
     · next h_error1 h_state1 => injection h_eq
 
 -- Helper lemma for deref case: dereference chains memory monotonicity through e1
-private lemma beval_memory_monotonic_deref (e1 : Expr) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_deref (mode : LeanPoison.EvalMode) (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.deref e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.deref e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -361,7 +386,7 @@ private lemma beval_memory_monotonic_deref (e1 : Expr) (fuel : Nat) (verbose : B
           -- Use IH on e1: fuel' < fuel'.succ, and beval uses fuel'
           have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
           -- Construct existential for IH
-          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.loc loc_val)) w₁' :=
+          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.loc loc_val)) w₁' :=
             ⟨w₀, h_state1, h_beval1⟩
           -- Apply IH for e1
           exact IH fuel' h_fuel e1 config₀ config' (Value.loc loc_val) h_beval1_ex l h_contains
@@ -384,6 +409,10 @@ private lemma beval_memory_monotonic_deref (e1 : Expr) (fuel : Nat) (verbose : B
         injection h_result
       · next h_val =>
         -- e1 evaluated to non-location value (contradiction)
+        simp [pure] at h_eq
+        injection h_eq with h_result h_world
+        injection h_result
+      · -- e1 evaluation returned ioForbidden (contradiction)
         simp [pure] at h_eq
         injection h_eq with h_result h_world
         injection h_result
@@ -412,12 +441,12 @@ private lemma ExtTreeMap_insert_preserves_contains {α : Type} [Ord α] [BEq α]
     simp [h_contains]
 
 -- Helper lemma for newRef case: newRef allocates memory (adds one location, but preserves existing)
-private lemma beval_memory_monotonic_newRef (e1 : Expr) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_newRef (mode : LeanPoison.EvalMode) (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.newRef e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.newRef e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -460,7 +489,7 @@ private lemma beval_memory_monotonic_newRef (e1 : Expr) (fuel : Nat) (verbose : 
           rw [← h_congr, h_lhs_mem]
         -- Construct existential for IH
         have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-        have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num n)) w₁' :=
+        have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num n)) w₁' :=
           ⟨w₀, h_state, h_beval1⟩
         -- Chain through IH: config₀ → config' (via e1)
         have IH1 := IH fuel' h_fuel e1 config₀ config' (Value.num n) h_beval1_ex l h_contains
@@ -484,15 +513,19 @@ private lemma beval_memory_monotonic_newRef (e1 : Expr) (fuel : Nat) (verbose : 
         simp [pure] at h_eq
         injection h_eq with h_result h_world
         injection h_result
+      · -- e1 evaluation returned ioForbidden (contradiction)
+        simp [pure] at h_eq
+        injection h_eq with h_result h_world
+        injection h_result
     · next h_error h_state => injection h_eq
 
 -- Helper lemma for assign case: assignment chains memory monotonicity through e1 and e2
-private lemma beval_memory_monotonic_assign (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_assign (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.assign e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.assign e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -536,9 +569,9 @@ private lemma beval_memory_monotonic_assign (e1 e2 : Expr) (fuel : Nat) (verbose
               rw [← h_congr, h_lhs_mem]
             -- Construct existentials for IH
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁' (Value.loc loc_val)) w₁' :=
+            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁' (Value.loc loc_val)) w₁' :=
               ⟨w₀, h_state1, h_beval1⟩
-            have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₁' e2 verbose w₀' = EST.Out.ok (.success config₂ (Value.num n)) w₁' :=
+            have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₁' e2 verbose w₀' = EST.Out.ok (.success config₂ (Value.num n)) w₁' :=
               ⟨h_state1, h_state2, h_beval2⟩
             -- Chain through IH: config₀ → config₁' (via e1), then config₁' → config₂ (via e2)
             have IH1 := IH fuel' h_fuel e1 config₀ config₁' (Value.loc loc_val) h_beval1_ex l h_contains
@@ -565,6 +598,10 @@ private lemma beval_memory_monotonic_assign (e1 e2 : Expr) (fuel : Nat) (verbose
             simp [pure] at h_eq
             injection h_eq with h_result h_world
             injection h_result
+          · -- e2 evaluation returned ioForbidden (contradiction)
+            simp [pure] at h_eq
+            injection h_eq with h_result h_world
+            injection h_result
         · next h_error2 h_state2 => injection h_eq
       · next v =>
         -- e1 evaluated to non-location value (contradiction)
@@ -581,15 +618,19 @@ private lemma beval_memory_monotonic_assign (e1 e2 : Expr) (fuel : Nat) (verbose
         simp [pure] at h_eq
         injection h_eq with h_result h_world
         injection h_result
+      · -- e1 evaluation returned ioForbidden (contradiction)
+        simp [pure] at h_eq
+        injection h_eq with h_result h_world
+        injection h_result
     · next h_error1 h_state1 => injection h_eq
 
 -- Helper lemma for vlet case: let binding chains memory monotonicity through e1 and e2
-private lemma beval_memory_monotonic_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_vlet (mode : LeanPoison.EvalMode) (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.vlet x e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.vlet x e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -638,7 +679,7 @@ private lemma beval_memory_monotonic_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat)
               rw [← h_congr, h_lhs_mem]
             -- Construct existentials for IH
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁' v₁) w₁' :=
+            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config₁' v₁) w₁' :=
               ⟨w₀, h_state1, h_beval1⟩
             -- Chain through IH: config₀ → config₁' (via e1)
             have IH1 := IH fuel' h_fuel e1 config₀ config₁' v₁ h_beval1_ex l h_contains
@@ -649,7 +690,7 @@ private lemma beval_memory_monotonic_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat)
               simp
             rw [← h_config''_mem_eq] at IH1
             -- For e2, we evaluate with config'' = {config₁' with varEnv := config₁'.varEnv.update x v₁}
-            have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' ({ config₁' with varEnv := config₁'.varEnv.update x v₁ }) e2 verbose w₀' = EST.Out.ok (.success config₂ v₂) w₁' :=
+            have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' ({ config₁' with varEnv := config₁'.varEnv.update x v₁ }) e2 verbose w₀' = EST.Out.ok (.success config₂ v₂) w₁' :=
               ⟨h_state1, h_state2, h_beval2⟩
             -- Now apply IH on e2: config'' → config₂
             have IH2 := IH fuel' h_fuel e2 ({ config₁' with varEnv := config₁'.varEnv.update x v₁ }) config₂ v₂ h_beval2_ex l IH1
@@ -658,20 +699,22 @@ private lemma beval_memory_monotonic_vlet (x : Name) (e1 e2 : Expr) (fuel : Nat)
             exact IH2
           · next => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
           · next msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+          · simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result  -- ioForbidden
         · next h_error2 h_state2 => injection h_eq
       · next => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
       · next msg => simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result
+      · simp [pure] at h_eq; injection h_eq with h_result h_world; injection h_result  -- ioForbidden
     · next h_error1 h_state1 => injection h_eq
 
 -- Helper lemma: bevalFunctionBody preserves memory monotonicity
 -- This is needed for the app case
 private lemma bevalFunctionBody_memory_monotonic
-    (fuel : Nat) (verbose : Bool) (currentConfig finalConfig : Config)
+    (mode : LeanPoison.EvalMode) (fuel : Nat) (verbose : Bool) (currentConfig finalConfig : Config)
     (closureEnv : VarEnv) (paramName : Name) (argValue : Value) (body : Expr) (isPure : Bool) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.bevalFunctionBody fuel verbose currentConfig closureEnv paramName argValue body isPure w₀ =
+  (∃ w₀ w₁, LeanPoison.bevalFunctionBody mode fuel verbose currentConfig closureEnv paramName argValue body isPure w₀ =
       EST.Out.ok (.success finalConfig v) w₁) →
   ∀ l, currentConfig.memory.contains l → finalConfig.memory.contains l := by
   intro h_eval l h_contains
@@ -739,7 +782,7 @@ private lemma bevalFunctionBody_memory_monotonic
           have h_bodyConfig_mem : ({ currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure } : Config).memory = currentConfig.memory := rfl
           -- Construct existential for IH
           have h_fuel' : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-          have h_beval_body_ex : ∃ w₀' w₁', LeanPoison.beval fuel' ({ currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure }) body verbose w₀' =
+          have h_beval_body_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' ({ currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure }) body verbose w₀' =
               EST.Out.ok (.success evalConfig v_body) w₁' :=
             ⟨w₀, h_body_state, h_beval_body⟩
           -- Apply IH to body evaluation
@@ -751,15 +794,16 @@ private lemma bevalFunctionBody_memory_monotonic
           exact h_mem_contains
       · next => injection h_eq with h_result h_world; injection h_result
       · next msg => injection h_eq with h_result h_world; injection h_result
+      · injection h_eq with h_result h_world; injection h_result  -- ioForbidden
     · next h_body_error h_body_state => injection h_eq
 
 -- Helper lemma for app case: function application chains memory monotonicity through e1, e2, and body
-private lemma beval_memory_monotonic_app (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_app (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.app e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.app e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -801,25 +845,25 @@ private lemma beval_memory_monotonic_app (e1 e2 : Expr) (fuel : Nat) (verbose : 
               -- h_eq: bevalFunctionBody fuel' verbose config₂ env x v₂ body false h_state1 = Result.ok (.success config₁ v) w₁
               have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
               -- Construct existentials for IH
-              have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e2 verbose w₀' = EST.Out.ok (.success config₁' v₂) w₁' :=
+              have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ e2 verbose w₀' = EST.Out.ok (.success config₁' v₂) w₁' :=
                 ⟨w₀, h_state2, h_beval2⟩
-              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₁' e1 verbose w₀' = EST.Out.ok (.success config₂ (Value.closure x body env)) w₁' :=
+              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₁' e1 verbose w₀' = EST.Out.ok (.success config₂ (Value.closure x body env)) w₁' :=
                 ⟨h_state2, h_state1, h_beval1⟩
               -- Chain through IH: config₀ → config₁' (via e2), then config₁' → config₂ (via e1)
               have IH2 := IH fuel' h_fuel e2 config₀ config₁' v₂ h_beval2_ex l h_contains
               have IH1 := IH fuel' h_fuel e1 config₁' config₂ (Value.closure x body env) h_beval1_ex l IH2
               -- Apply bevalFunctionBody memory monotonicity helper
-              have h_bevalFunctionBody_ex : ∃ w₀' w₁', LeanPoison.bevalFunctionBody fuel' verbose config₂ env x v₂ body false w₀' =
+              have h_bevalFunctionBody_ex : ∃ w₀' w₁', LeanPoison.bevalFunctionBody mode fuel' verbose config₂ env x v₂ body false w₀' =
                   EST.Out.ok (.success config₁ v) w₁' :=
                 ⟨h_state1, w₁, h_eq⟩
               -- Construct IH with fuel' bound from fuel'.succ bound
               have IH_fuel' : ∀ m < fuel', ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-                (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+                (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
                 ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
                 intro m h_m_lt_fuel' e config₀ config₁ v h_beval_ex l h_contains_loc
                 have h_m_lt_fuel'_succ : m < fuel'.succ := Nat.lt_of_lt_of_le h_m_lt_fuel' (Nat.le_succ fuel')
                 exact IH m h_m_lt_fuel'_succ e config₀ config₁ v h_beval_ex l h_contains_loc
-              exact bevalFunctionBody_memory_monotonic fuel' verbose config₂ config₁ env x v₂ body false v IH_fuel' h_bevalFunctionBody_ex l IH1
+              exact bevalFunctionBody_memory_monotonic mode fuel' verbose config₂ config₁ env x v₂ body false v IH_fuel' h_bevalFunctionBody_ex l IH1
           · next config₂ x body env =>
             cases h_pure : Expr.toPExpr? body with
             | none =>
@@ -832,25 +876,25 @@ private lemma beval_memory_monotonic_app (e1 e2 : Expr) (fuel : Nat) (verbose : 
                 -- bevalFunctionBody with isPure=true
                 have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
                 -- Construct existentials for IH
-                have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e2 verbose w₀' = EST.Out.ok (.success config₁' v₂) w₁' :=
+                have h_beval2_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ e2 verbose w₀' = EST.Out.ok (.success config₁' v₂) w₁' :=
                   ⟨w₀, h_state2, h_beval2⟩
-                have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₁' e1 verbose w₀' = EST.Out.ok (.success config₂ (Value.peClosure x body env)) w₁' :=
+                have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₁' e1 verbose w₀' = EST.Out.ok (.success config₂ (Value.peClosure x body env)) w₁' :=
                   ⟨h_state2, h_state1, h_beval1⟩
                 -- Chain through IH: config₀ → config₁' (via e2), then config₁' → config₂ (via e1)
                 have IH2 := IH fuel' h_fuel e2 config₀ config₁' v₂ h_beval2_ex l h_contains
                 have IH1 := IH fuel' h_fuel e1 config₁' config₂ (Value.peClosure x body env) h_beval1_ex l IH2
                 -- Apply bevalFunctionBody memory monotonicity helper
-                have h_bevalFunctionBody_ex : ∃ w₀' w₁', LeanPoison.bevalFunctionBody fuel' verbose config₂ env x v₂ body true w₀' =
+                have h_bevalFunctionBody_ex : ∃ w₀' w₁', LeanPoison.bevalFunctionBody mode fuel' verbose config₂ env x v₂ body true w₀' =
                     EST.Out.ok (.success config₁ v) w₁' :=
                   ⟨h_state1, w₁, h_eq⟩
                 -- Construct IH with fuel' bound from fuel'.succ bound
                 have IH_fuel' : ∀ m < fuel', ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-                  (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+                  (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
                   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
                   intro m h_m_lt_fuel' e config₀ config₁ v h_beval_ex l h_contains_loc
                   have h_m_lt_fuel'_succ : m < fuel'.succ := Nat.lt_of_lt_of_le h_m_lt_fuel' (Nat.le_succ fuel')
                   exact IH m h_m_lt_fuel'_succ e config₀ config₁ v h_beval_ex l h_contains_loc
-                exact bevalFunctionBody_memory_monotonic fuel' verbose config₂ config₁ env x v₂ body true v IH_fuel' h_bevalFunctionBody_ex l IH1
+                exact bevalFunctionBody_memory_monotonic mode fuel' verbose config₂ config₁ env x v₂ body true v IH_fuel' h_bevalFunctionBody_ex l IH1
           · next v =>
             -- e1 evaluated to non-closure value (contradiction)
             injection h_eq with h_result h_world
@@ -861,6 +905,9 @@ private lemma beval_memory_monotonic_app (e1 e2 : Expr) (fuel : Nat) (verbose : 
             injection h_result
           · next msg =>
             -- e1 evaluation returned runtimeError (contradiction)
+            injection h_eq with h_result h_world
+            injection h_result
+          · -- e1 evaluation returned ioForbidden (contradiction)
             injection h_eq with h_result h_world
             injection h_result
         · next h_error1 h_state1 => injection h_eq
@@ -874,15 +921,19 @@ private lemma beval_memory_monotonic_app (e1 e2 : Expr) (fuel : Nat) (verbose : 
         simp [pure] at h_eq
         injection h_eq with h_result h_world
         injection h_result
+      · -- e2 evaluation returned ioForbidden (contradiction)
+        simp [pure] at h_eq
+        injection h_eq with h_result h_world
+        injection h_result
     · next h_error2 h_state2 => injection h_eq
 
 -- Helper lemma for rand case: random chains memory monotonicity through e1
-private lemma beval_memory_monotonic_rand (e1 : Expr) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_rand (mode : LeanPoison.EvalMode) (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.rand e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.rand e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -898,65 +949,74 @@ private lemma beval_memory_monotonic_rand (e1 : Expr) (fuel : Nat) (verbose : Bo
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    simp [bind, Bind.bind, EST.bind] at h_eq
-    -- Case analysis on e1 evaluation
+    -- First split on mode (rand checks mode first)
     split at h_eq
-    · next h_result h_state h_beval1 =>
-      -- e1 evaluation succeeded with ok, now split on inner EvalResult
+    · -- mode = ioFree: returns ioForbidden (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
+    · -- mode = normal: proceed with e1 evaluation
+      simp [bind, Bind.bind, EST.bind] at h_eq
       split at h_eq
-      · next config' n =>
-        -- e1 evaluated to Value.num n
-        -- Now split on if n >= 0 (branch for generating random number)
+      · next h_result h_state h_beval1 =>
+        -- e1 evaluation succeeded with ok, now split on inner EvalResult
         split at h_eq
-        · -- n >= 0: generate random number
-          simp [Functor.map, EST.bind] at h_eq
+        · next config' n =>
+          -- e1 evaluated to Value.num n
+          -- Now split on if n >= 0 (branch for generating random number)
           split at h_eq
-          · next r_result r_state =>
-            -- IO.rand succeeded
-            injection h_eq with h_result h_world
-            injection h_result with h_eq_config h_eq_val
-            -- config₁ = config' from h_eq_config
-            subst h_eq_config
-            -- Construct existential for IH
-            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num n)) w₁' :=
-              ⟨w₀, h_state, h_beval1⟩
-            -- Apply IH on e1: rand doesn't modify memory, only e1 evaluation does
-            exact IH fuel' h_fuel e1 config₀ config' (Value.num n) h_beval1_ex l h_contains
-          · next r_error r_state => injection h_eq
-        · -- n < 0: error case (contradiction with success)
-          simp [Functor.map, EST.bind] at h_eq
-          split at h_eq
-          · next p_result p_state =>
-            -- IO.println succeeded, but we get runtimeError (contradiction)
-            -- After the split, h_eq should contain a contradiction
-            injection h_eq with h_result h_world
-            injection h_result
-          · next p_error p_state => injection h_eq
-      · next v =>
-        -- e1 evaluated to non-number value (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-      · next =>
-        -- e1 evaluation returned outOfFuel (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-      · next msg =>
-        -- e1 evaluation returned runtimeError (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-    · next h_error h_state => injection h_eq
+          · -- n >= 0: generate random number
+            simp [Functor.map, EST.bind] at h_eq
+            split at h_eq
+            · next r_result r_state =>
+              -- IO.rand succeeded
+              injection h_eq with h_result h_world
+              injection h_result with h_eq_config h_eq_val
+              -- config₁ = config' from h_eq_config
+              subst h_eq_config
+              -- Construct existential for IH
+              have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval LeanPoison.EvalMode.normal fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num n)) w₁' :=
+                ⟨w₀, h_state, h_beval1⟩
+              -- Apply IH on e1: rand doesn't modify memory, only e1 evaluation does
+              exact IH fuel' h_fuel e1 config₀ config' (Value.num n) h_beval1_ex l h_contains
+            · next r_error r_state => injection h_eq
+          · -- n < 0: error case (contradiction with success)
+            simp [Functor.map, EST.bind] at h_eq
+            split at h_eq
+            · next p_result p_state =>
+              -- IO.println succeeded, but we get runtimeError (contradiction)
+              injection h_eq with h_result h_world
+              injection h_result
+            · next p_error p_state => injection h_eq
+        · next v =>
+          -- e1 evaluated to non-number value (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next =>
+          -- e1 evaluation returned outOfFuel (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next msg =>
+          -- e1 evaluation returned runtimeError (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · -- e1 evaluation returned ioForbidden (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+      · next h_error h_state => injection h_eq
 
 -- Helper lemma for frand case: faulty random chains memory monotonicity through e1
-private lemma beval_memory_monotonic_frand (e1 : Expr) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_frand (mode : LeanPoison.EvalMode) (e1 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.frand e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.frand e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -972,191 +1032,220 @@ private lemma beval_memory_monotonic_frand (e1 : Expr) (fuel : Nat) (verbose : B
     -- When fuel > 0, proceed with evaluation
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    simp [bind, Bind.bind, EST.bind] at h_eq
-    -- Case analysis on e1 evaluation
+    -- First split on mode (frand checks mode first)
     split at h_eq
-    · next h_result h_state h_beval1 =>
-      -- e1 evaluation succeeded with ok, now split on inner EvalResult
+    · -- mode = ioFree: returns ioForbidden (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
+    · -- mode = normal: proceed with e1 evaluation
+      simp [bind, Bind.bind, EST.bind] at h_eq
       split at h_eq
-      · next config' n =>
-        -- e1 evaluated to Value.num n
-        -- Now split on if n >= 0 (branch for generating faulty random number)
+      · next h_result h_state h_beval1 =>
+        -- e1 evaluation succeeded with ok, now split on inner EvalResult
         split at h_eq
-        · -- n >= 0: generate faulty random number
+        · next config' n =>
+          -- e1 evaluated to Value.num n
+          -- Now split on if n >= 0 (branch for generating faulty random number)
+          split at h_eq
+          · -- n >= 0: generate faulty random number
+            simp [Functor.map, EST.bind] at h_eq
+            split at h_eq
+            · next r_result r_state =>
+              -- IO.rand succeeded
+              injection h_eq with h_result h_world
+              injection h_result with h_eq_config h_eq_val
+              -- config₁ = config' from h_eq_config
+              subst h_eq_config
+              -- Construct existential for IH
+              have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+              have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval LeanPoison.EvalMode.normal fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num n)) w₁' :=
+                ⟨w₀, h_state, h_beval1⟩
+              -- Apply IH on e1: frand doesn't modify memory, only e1 evaluation does
+              exact IH fuel' h_fuel e1 config₀ config' (Value.num n) h_beval1_ex l h_contains
+            · next r_error r_state => injection h_eq
+          · -- n < 0: error case (contradiction with success)
+            simp [Functor.map, EST.bind] at h_eq
+            split at h_eq
+            · next p_result p_state =>
+              -- IO.println succeeded, but we get runtimeError (contradiction)
+              injection h_eq with h_result h_world
+              injection h_result
+            · next p_error p_state => injection h_eq
+        · next v =>
+          -- e1 evaluated to non-number value (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next =>
+          -- e1 evaluation returned outOfFuel (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next msg =>
+          -- e1 evaluation returned runtimeError (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · -- e1 evaluation returned ioForbidden (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+      · next h_error h_state => injection h_eq
+
+-- Helper lemma for printInt case: print chains memory monotonicity through e1
+private lemma beval_memory_monotonic_printInt (mode : LeanPoison.EvalMode) (e1 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.printInt e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
+  intro h_eval l h_contains
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  -- Handle fuel check
+  cases fuel with
+  | zero =>
+    -- When fuel = 0, beval returns outOfFuel (contradiction)
+    unfold LeanPoison.beval at h_eq
+    simp [EStateM.pure] at h_eq
+    injection h_eq with h_res
+    cases h_res
+  | succ fuel' =>
+    -- When fuel > 0, proceed with evaluation
+    unfold LeanPoison.beval at h_eq
+    simp at h_eq
+    -- First split on mode (printInt checks mode first)
+    split at h_eq
+    · -- mode = ioFree: returns ioForbidden (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
+    · -- mode = normal: proceed with e1 evaluation
+      simp [bind, Bind.bind, EST.bind] at h_eq
+      split at h_eq
+      · next h_result h_state h_beval1 =>
+        -- e1 evaluation succeeded with ok, now split on inner EvalResult
+        split at h_eq
+        · next config' n =>
+          -- e1 evaluated to Value.num n
+          -- IO.println is wrapped in Functor.map/EST.bind
           simp [Functor.map, EST.bind] at h_eq
           split at h_eq
-          · next r_result r_state =>
-            -- IO.rand succeeded
+          · next p_result p_state =>
+            -- IO.println succeeded
             injection h_eq with h_result h_world
             injection h_result with h_eq_config h_eq_val
             -- config₁ = config' from h_eq_config
             subst h_eq_config
             -- Construct existential for IH
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num n)) w₁' :=
+            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval LeanPoison.EvalMode.normal fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num n)) w₁' :=
               ⟨w₀, h_state, h_beval1⟩
-            -- Apply IH on e1: frand doesn't modify memory, only e1 evaluation does
+            -- Apply IH on e1: printInt doesn't modify memory, only e1 evaluation does
             exact IH fuel' h_fuel e1 config₀ config' (Value.num n) h_beval1_ex l h_contains
-          · next r_error r_state => injection h_eq
-        · -- n < 0: error case (contradiction with success)
+          · next p_error p_state => injection h_eq
+        · next v =>
+          -- e1 evaluated to non-number value (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next =>
+          -- e1 evaluation returned outOfFuel (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · next msg =>
+          -- e1 evaluation returned runtimeError (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · -- e1 evaluation returned ioForbidden (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+      · next h_error h_state => injection h_eq
+
+-- Helper lemma for printString case: print chains memory monotonicity through e1
+private lemma beval_memory_monotonic_printString (mode : LeanPoison.EvalMode) (e1 : Expr) (fuel : Nat) (verbose : Bool)
+    (config₀ config₁ : Config) (v : Value)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.printString e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
+  intro h_eval l h_contains
+  rcases h_eval with ⟨w₀, w₁, h_eq⟩
+  -- Handle fuel check
+  cases fuel with
+  | zero =>
+    -- When fuel = 0, beval returns outOfFuel (contradiction)
+    unfold LeanPoison.beval at h_eq
+    simp [EStateM.pure] at h_eq
+    injection h_eq with h_res
+    cases h_res
+  | succ fuel' =>
+    -- When fuel > 0, proceed with evaluation
+    unfold LeanPoison.beval at h_eq
+    simp at h_eq
+    -- First split on mode (printString checks mode first)
+    split at h_eq
+    · -- mode = ioFree: returns ioForbidden (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
+    · -- mode = normal: proceed with e1 evaluation
+      simp [bind, Bind.bind, EST.bind] at h_eq
+      split at h_eq
+      · next h_result h_state h_beval1 =>
+        -- e1 evaluation succeeded with ok, now split on inner EvalResult
+        split at h_eq
+        · next config' s =>
+          -- e1 evaluated to Value.str s
+          -- IO.println is wrapped in Functor.map/EST.bind
           simp [Functor.map, EST.bind] at h_eq
           split at h_eq
           · next p_result p_state =>
-            -- IO.println succeeded, but we get runtimeError (contradiction)
-            -- After the split, h_eq should contain a contradiction
+            -- IO.println succeeded
             injection h_eq with h_result h_world
-            injection h_result
+            injection h_result with h_eq_config h_eq_val
+            -- config₁ = config' from h_eq_config
+            subst h_eq_config
+            -- Construct existential for IH
+            have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+            have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval LeanPoison.EvalMode.normal fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.str s)) w₁' :=
+              ⟨w₀, h_state, h_beval1⟩
+            -- Apply IH on e1: printString doesn't modify memory, only e1 evaluation does
+            exact IH fuel' h_fuel e1 config₀ config' (Value.str s) h_beval1_ex l h_contains
           · next p_error p_state => injection h_eq
-      · next v =>
-        -- e1 evaluated to non-number value (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-      · next =>
-        -- e1 evaluation returned outOfFuel (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-      · next msg =>
-        -- e1 evaluation returned runtimeError (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-    · next h_error h_state => injection h_eq
-
--- Helper lemma for printInt case: print chains memory monotonicity through e1
-private lemma beval_memory_monotonic_printInt (e1 : Expr) (fuel : Nat) (verbose : Bool)
-    (config₀ config₁ : Config) (v : Value)
-    (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
-      ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.printInt e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
-  ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
-  intro h_eval l h_contains
-  rcases h_eval with ⟨w₀, w₁, h_eq⟩
-  -- Handle fuel check
-  cases fuel with
-  | zero =>
-    -- When fuel = 0, beval returns outOfFuel (contradiction)
-    unfold LeanPoison.beval at h_eq
-    simp [EStateM.pure] at h_eq
-    injection h_eq with h_res
-    cases h_res
-  | succ fuel' =>
-    -- When fuel > 0, proceed with evaluation
-    unfold LeanPoison.beval at h_eq
-    simp at h_eq
-    simp [bind, Bind.bind, EST.bind] at h_eq
-    -- Case analysis on e1 evaluation
-    split at h_eq
-    · next h_result h_state h_beval1 =>
-      -- e1 evaluation succeeded with ok, now split on inner EvalResult
-      split at h_eq
-      · next config' n =>
-        -- e1 evaluated to Value.num n
-        -- IO.println is wrapped in Functor.map/EST.bind
-        simp [Functor.map, EST.bind] at h_eq
-        split at h_eq
-        · next p_result p_state =>
-          -- IO.println succeeded
+        · next v =>
+          -- e1 evaluated to non-string value (contradiction)
+          simp [pure] at h_eq
           injection h_eq with h_result h_world
-          injection h_result with h_eq_config h_eq_val
-          -- config₁ = config' from h_eq_config
-          subst h_eq_config
-          -- Construct existential for IH
-          have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.num n)) w₁' :=
-            ⟨w₀, h_state, h_beval1⟩
-          -- Apply IH on e1: printInt doesn't modify memory, only e1 evaluation does
-          exact IH fuel' h_fuel e1 config₀ config' (Value.num n) h_beval1_ex l h_contains
-        · next p_error p_state => injection h_eq
-      · next v =>
-        -- e1 evaluated to non-number value (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-      · next =>
-        -- e1 evaluation returned outOfFuel (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-      · next msg =>
-        -- e1 evaluation returned runtimeError (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-    · next h_error h_state => injection h_eq
-
--- Helper lemma for printString case: print chains memory monotonicity through e1
-private lemma beval_memory_monotonic_printString (e1 : Expr) (fuel : Nat) (verbose : Bool)
-    (config₀ config₁ : Config) (v : Value)
-    (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
-      ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.printString e1) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
-  ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
-  intro h_eval l h_contains
-  rcases h_eval with ⟨w₀, w₁, h_eq⟩
-  -- Handle fuel check
-  cases fuel with
-  | zero =>
-    -- When fuel = 0, beval returns outOfFuel (contradiction)
-    unfold LeanPoison.beval at h_eq
-    simp [EStateM.pure] at h_eq
-    injection h_eq with h_res
-    cases h_res
-  | succ fuel' =>
-    -- When fuel > 0, proceed with evaluation
-    unfold LeanPoison.beval at h_eq
-    simp at h_eq
-    simp [bind, Bind.bind, EST.bind] at h_eq
-    -- Case analysis on e1 evaluation
-    split at h_eq
-    · next h_result h_state h_beval1 =>
-      -- e1 evaluation succeeded with ok, now split on inner EvalResult
-      split at h_eq
-      · next config' s =>
-        -- e1 evaluated to Value.str s
-        -- IO.println is wrapped in Functor.map/EST.bind
-        simp [Functor.map, EST.bind] at h_eq
-        split at h_eq
-        · next p_result p_state =>
-          -- IO.println succeeded
+          injection h_result
+        · next =>
+          -- e1 evaluation returned outOfFuel (contradiction)
+          simp [pure] at h_eq
           injection h_eq with h_result h_world
-          injection h_result with h_eq_config h_eq_val
-          -- config₁ = config' from h_eq_config
-          subst h_eq_config
-          -- Construct existential for IH
-          have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-          have h_beval1_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ e1 verbose w₀' = EST.Out.ok (.success config' (Value.str s)) w₁' :=
-            ⟨w₀, h_state, h_beval1⟩
-          -- Apply IH on e1: printString doesn't modify memory, only e1 evaluation does
-          exact IH fuel' h_fuel e1 config₀ config' (Value.str s) h_beval1_ex l h_contains
-        · next p_error p_state => injection h_eq
-      · next v =>
-        -- e1 evaluated to non-string value (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-      · next =>
-        -- e1 evaluation returned outOfFuel (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-      · next msg =>
-        -- e1 evaluation returned runtimeError (contradiction)
-        simp [pure] at h_eq
-        injection h_eq with h_result h_world
-        injection h_result
-    · next h_error h_state => injection h_eq
+          injection h_result
+        · next msg =>
+          -- e1 evaluation returned runtimeError (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+        · -- e1 evaluation returned ioForbidden (contradiction)
+          simp [pure] at h_eq
+          injection h_eq with h_result h_world
+          injection h_result
+      · next h_error h_state => injection h_eq
 
 -- Helper lemma for kwhile case: while loops chain memory monotonicity through iterations
-private lemma beval_memory_monotonic_kwhile (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
+private lemma beval_memory_monotonic_kwhile (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.kwhile e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.kwhile e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
   intro h_eval l h_contains
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -1181,14 +1270,14 @@ private lemma beval_memory_monotonic_kwhile (e1 e2 : Expr) (fuel : Nat) (verbose
     let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
     -- h_eq already contains the evaluation of this unfolded expression
     -- Construct existential for IH
-    have h_beval_unfolded_ex : ∃ w₀' w₁', LeanPoison.beval fuel' config₀ unfolded verbose w₀' = EST.Out.ok (.success config₁ v) w₁' :=
+    have h_beval_unfolded_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ unfolded verbose w₀' = EST.Out.ok (.success config₁ v) w₁' :=
       ⟨w₀, w₁, h_eq⟩
     -- Apply IH: since fuel' < fuel'.succ, we can use IH for the unfolded expression
     -- The unfolded expression (ite) preserves memory monotonicity by IH (which internally uses the ite proof)
     exact IH fuel' h_fuel unfolded config₀ config₁ v h_beval_unfolded_ex l h_contains
 
-private lemma beval_memory_monotonic_externVal (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.externVal typ poison pred) verbose w₀ = EST.Out.ok (.success config₁ v) w₁)
+private lemma beval_memory_monotonic_externVal (mode : LeanPoison.EvalMode) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.externVal typ poison pred) verbose w₀ = EST.Out.ok (.success config₁ v) w₁)
     (l : Loc) (_h_contains : config₀.memory.contains l) :
   config₁.memory.contains l := by
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -1200,19 +1289,22 @@ private lemma beval_memory_monotonic_externVal (typ : Typ) (poison : Bool) (pred
     injection h_eq with h_res
     cases h_res
   | succ fuel' =>
-    -- When fuel > 0, beval for Expr.externVal always returns .runtimeError
+    -- When fuel > 0, beval for Expr.externVal matches on mode first
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    -- After simp, we have: pure (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
-    simp [pure] at h_eq
-    -- After simplifying pure, we have: Result.ok (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
-    injection h_eq with h_result h_world
-    -- h_result : .runtimeError ... = .success config₁ v
-    -- This is impossible since runtimeError and success are distinct constructors
-    injection h_result
+    -- Split on mode
+    split at h_eq
+    · -- mode = ioFree: returns ioForbidden (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
+    · -- mode = normal: returns runtimeError (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
 
-private lemma beval_memory_monotonic_externFn (arg : Name) (argTyp : Typ) (retSpec : ExternReturn) (effects : List Effect) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.externFn arg argTyp retSpec effects) verbose w₀ = EST.Out.ok (.success config₁ v) w₁)
+private lemma beval_memory_monotonic_externFn (mode : LeanPoison.EvalMode) (arg : Name) (argTyp : Typ) (retSpec : ExternReturn) (effects : List Effect) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.externFn arg argTyp retSpec effects) verbose w₀ = EST.Out.ok (.success config₁ v) w₁)
     (l : Loc) (_h_contains : config₀.memory.contains l) :
   config₁.memory.contains l := by
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -1224,19 +1316,22 @@ private lemma beval_memory_monotonic_externFn (arg : Name) (argTyp : Typ) (retSp
     injection h_eq with h_res
     cases h_res
   | succ fuel' =>
-    -- When fuel > 0, beval for Expr.externFn always returns .runtimeError
+    -- When fuel > 0, beval for Expr.externFn matches on mode first
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    -- After simp, we have: pure (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
-    simp [pure] at h_eq
-    -- After simplifying pure, we have: Result.ok (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
-    injection h_eq with h_result h_world
-    -- h_result : .runtimeError ... = .success config₁ v
-    -- This is impossible since runtimeError and success are distinct constructors
-    injection h_result
+    -- Split on mode
+    split at h_eq
+    · -- mode = ioFree: returns ioForbidden (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
+    · -- mode = normal: returns runtimeError (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
 
-private lemma beval_memory_monotonic_externPfn (arg : Name) (argTyp : Typ) (retSpec : ExternReturn) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (h_eval : ∃ w₀ w₁, LeanPoison.beval fuel config₀ (Expr.externPfn arg argTyp retSpec) verbose w₀ = EST.Out.ok (.success config₁ v) w₁)
+private lemma beval_memory_monotonic_externPfn (mode : LeanPoison.EvalMode) (arg : Name) (argTyp : Typ) (retSpec : ExternReturn) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
+    (h_eval : ∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.externPfn arg argTyp retSpec) verbose w₀ = EST.Out.ok (.success config₁ v) w₁)
     (l : Loc) (_h_contains : config₀.memory.contains l) :
   config₁.memory.contains l := by
   rcases h_eval with ⟨w₀, w₁, h_eq⟩
@@ -1248,39 +1343,42 @@ private lemma beval_memory_monotonic_externPfn (arg : Name) (argTyp : Typ) (retS
     injection h_eq with h_res
     cases h_res
   | succ fuel' =>
-    -- When fuel > 0, beval for Expr.externPfn always returns .runtimeError
+    -- When fuel > 0, beval for Expr.externPfn matches on mode first
     unfold LeanPoison.beval at h_eq
     simp at h_eq
-    -- After simp, we have: pure (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
-    simp [pure] at h_eq
-    -- After simplifying pure, we have: Result.ok (.runtimeError ...) w₀ = Result.ok (.success config₁ v) w₁
-    injection h_eq with h_result h_world
-    -- h_result : .runtimeError ... = .success config₁ v
-    -- This is impossible since runtimeError and success are distinct constructors
-    injection h_result
+    -- Split on mode
+    split at h_eq
+    · -- mode = ioFree: returns ioForbidden (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
+    · -- mode = normal: returns runtimeError (contradiction with success)
+      simp [pure] at h_eq
+      injection h_eq with h_result h_world
+      injection h_result
 
 -- Memory Monotonicity Lemma: evaluation can only add memory locations, never remove them
 -- This is a key property that follows from the fact that memory locations are never deallocated
-lemma beval_memory_monotonic : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
+lemma beval_memory_monotonic : ∀ (mode : LeanPoison.EvalMode) (e : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value),
-  (∃ w₀ w₁, LeanPoison.beval fuel config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
   ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
-  intro e fuel verbose config₀ config₁ v h_eval l h_contains
+  intro mode e fuel verbose config₀ config₁ v h_eval l h_contains
   -- Proof by strong induction on fuel, then case analysis on expression
-  revert e verbose config₀ config₁ v h_eval l h_contains
+  revert mode e verbose config₀ config₁ v h_eval l h_contains
   induction fuel using Nat.strong_induction_on with
   | _ fuel IH =>
-    intro e verbose config₀ config₁ v h_eval l h_contains
+    intro mode e verbose config₀ config₁ v h_eval l h_contains
     -- Convert IH to match helper lemma signatures
     have IH_converted : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
+      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
       intro m h_lt e' config₀' config₁' v' h_eval' l' h_contains'
-      exact IH m h_lt e' verbose config₀' config₁' v' h_eval' l' h_contains'
+      exact IH m h_lt mode e' verbose config₀' config₁' v' h_eval' l' h_contains'
     cases e with
-    | externVal typ poison pred => exact beval_memory_monotonic_externVal typ poison pred fuel verbose config₀ config₁ v h_eval l h_contains
-    | externFn arg argTyp retSpec effects => exact beval_memory_monotonic_externFn arg argTyp retSpec effects fuel verbose config₀ config₁ v h_eval l h_contains
-    | externPfn arg argTyp retSpec => exact beval_memory_monotonic_externPfn arg argTyp retSpec fuel verbose config₀ config₁ v h_eval l h_contains
+    | externVal typ poison pred => exact beval_memory_monotonic_externVal mode typ poison pred fuel verbose config₀ config₁ v h_eval l h_contains
+    | externFn arg argTyp retSpec effects => exact beval_memory_monotonic_externFn mode arg argTyp retSpec effects fuel verbose config₀ config₁ v h_eval l h_contains
+    | externPfn arg argTyp retSpec => exact beval_memory_monotonic_externPfn mode arg argTyp retSpec fuel verbose config₀ config₁ v h_eval l h_contains
     | num n | bool b | str s | unit =>
       -- Literals don't modify memory: config₁ = config₀
       -- All literals (numbers, booleans, strings, unit) follow the same pattern
@@ -1335,39 +1433,39 @@ lemma beval_memory_monotonic : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
     | op e1 op e2 =>
       -- Binary operations: memory changes come from e1 and e2, evalOp doesn't allocate
       -- Use helper lemma for binary operations
-      exact beval_memory_monotonic_op e1 e2 op fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_op mode e1 e2 op fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | unaryop op e1 =>
       -- Unary operations: memory changes come from e1, evalUnaryOp doesn't modify memory
       -- Use helper lemma for unary operations
-      exact beval_memory_monotonic_unaryop op e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_unaryop mode op e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | ite e1 e2 e3 =>
       -- Conditionals: memory changes from e1, then either e2 or e3
       -- Use helper lemma for conditionals
-      exact beval_memory_monotonic_ite e1 e2 e3 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_ite mode e1 e2 e3 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | newRef e1 =>
       -- newRef allocates memory: adds one location
       -- Use helper lemma for newRef
-      exact beval_memory_monotonic_newRef e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_newRef mode e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | assign e1 e2 =>
       -- Assignment: memory changes from e1 and e2, but no new allocations
       -- Use helper lemma for assign
-      exact beval_memory_monotonic_assign e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_assign mode e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | deref e1 =>
       -- Dereference: memory changes only from e1, deref itself doesn't modify memory
       -- Use helper lemma for deref
-      exact beval_memory_monotonic_deref e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_deref mode e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | seq e1 e2 =>
       -- Sequence: memory changes from e1, then e2
       -- Use helper lemma for sequences
-      exact beval_memory_monotonic_seq e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_seq mode e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | kwhile e1 e2 =>
       -- While loops: needs careful handling of iteration
       -- Use helper lemma for kwhile
-      exact beval_memory_monotonic_kwhile e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_kwhile mode e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | vlet x e1 e2 =>
       -- Let binding: memory changes from e1, then e2
       -- Use helper lemma for vlet
-      exact beval_memory_monotonic_vlet x e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_vlet mode x e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | fn x paramType body returnType | pfn x paramType body returnType =>
       -- Function abstractions don't modify memory: config₁ = config₀
       -- Both fn and pfn just create closures without modifying config
@@ -1392,20 +1490,20 @@ lemma beval_memory_monotonic : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
     | app e1 e2 =>
       -- Function application: memory changes from e1, e2, and function body
       -- Use helper lemma for app
-      exact beval_memory_monotonic_app e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_app mode e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | rand e1 =>
       -- Random: memory changes only from e1
       -- Use helper lemma for rand
-      exact beval_memory_monotonic_rand e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_rand mode e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | frand e1 =>
       -- Faulty random: memory changes only from e1
       -- Use helper lemma for frand
-      exact beval_memory_monotonic_frand e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_frand mode e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | printInt e1 =>
       -- Print: memory changes only from e1
       -- Use helper lemma for printInt
-      exact beval_memory_monotonic_printInt e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_printInt mode e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | printString e1 =>
       -- Print: memory changes only from e1
       -- Use helper lemma for printString
-      exact beval_memory_monotonic_printString e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
+      exact beval_memory_monotonic_printString mode e1 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
