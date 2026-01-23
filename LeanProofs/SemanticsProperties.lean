@@ -1288,13 +1288,12 @@ lemma beval_ioFree_mode_preserves_world (fuel : Nat) (cfg : Config) (e : Expr) (
 /-- For IOFree expressions, beval at any world produces the same result.
     Combined with world preservation, this allows us to convert world-indexed
     evaluation to world-free (pure) evaluation. -/
-lemma beval_IOFree_result_eq (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Bool)
+lemma beval_ioFree_mode_result_eq (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Bool)
     (r₁ r₂ : LeanPoison.EvalResult) (w₁ w₂ w₁' w₂' : Void IO.RealWorld) :
-    IOFree e →
     LeanPoison.beval .ioFree fuel cfg e verbose w₁ = EST.Out.ok r₁ w₁' →
     LeanPoison.beval .ioFree fuel cfg e verbose w₂ = EST.Out.ok r₂ w₂' →
     r₁ = r₂ := by
-  intros hiofree h
+  intros h
   sorry
 
 private def beval_IOFree_eq_pure_IH (fuel : Nat) :=
