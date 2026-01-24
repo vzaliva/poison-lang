@@ -88,3 +88,12 @@ theorem List.Forall2.exists_of_mem_left
       | inr hxrest =>
           obtain ⟨y, hymem, hR⟩ := ih x hxrest
           exact ⟨y, by simp [hymem], hR⟩
+
+-- Helper lemma: if `List.mapM` succeeds, then each input element maps to some output element.
+theorem List.mapM_Except_ok_exists_of_mem_left
+    (xs : List α) (f : α → Except ε β) :
+    ∀ (ys : List β), List.mapM f xs = Except.ok ys →
+      ∀ x ∈ xs, ∃ y, y ∈ ys ∧ f x = Except.ok y := by
+  intro ys hmap x hx
+  have hForall2 := List.mapM_Except_ok_implies_forall2 (xs := xs) (f := f) ys hmap
+  simpa using (List.Forall2.exists_of_mem_left (R := fun x y => f x = Except.ok y) hForall2 x hx)

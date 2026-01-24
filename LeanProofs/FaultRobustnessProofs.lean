@@ -5030,15 +5030,245 @@ private lemma stepFR_app
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
   have hstruct₁ := terminatesTo_app_inv' e1 e2
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
-  -- The remainder follows the same general pattern as `stepFR_seq`:
-  -- apply hIH2 to the argument evaluation, then hIH1 to the function evaluation,
-  -- then relate body evaluations using closure agreement (function-poison.md).
-  --
-  -- TODO: complete proof (no `sorry`) by stitching together:
-  -- - hstruct₀/hstruct₁
-  -- - happ_cases (arrow vs parrow; mapM spine)
-  -- - agreeValueUnder cases (clean_internal_* vs dirty_internal_*)
-  sorry
+
+  -- Extract the common sub-evaluation of the argument `e2`.
+  -- We keep the closure vs peClosure split for later, but `e2` is evaluated in both cases.
+  rcases hstruct₀ with hcl₀ | hpe₀
+  · rcases hcl₀ with
+      ⟨cfg₀2, v₀2, cfg₀1, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm₀1, ht₀_body, hcf₀_eq, hpm₀2, hpm₀_final⟩
+    rcases hstruct₁ with hcl₁ | hpe₁
+    · rcases hcl₁ with
+        ⟨cfg₁2, v₁2, cfg₁1, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm₁1, ht₁_body, hcf₁_eq, hpm₁2, hpm₁_final⟩
+
+      -- Step on the argument evaluation using IH2.
+      have hstep_e2 :=
+        hIH2 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀2 cfg₁2 v₀2 v₁2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+      rcases hstep_e2 with
+        ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcfg₀2, hwfcfg₁2,
+          hric₀2, hric₁2, htagR2, hagree2, harg_agree⟩
+      have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+      have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+
+      -- Prepare the inputs for IH1 (function evaluation under ctx' = ctxAfter ctxᵢ res2).
+      have hwf_ctx' : wfTypeContext ctx' := by
+        simpa [ctx', ctxAfter] using hwf2
+      have hric₀2' : runtimeInstantiatesCtx ctx' cfg₀2.memory cfg₀2.varEnv θ₀2 := by
+        simpa [ctx', ctxAfter] using hric₀2
+      have hric₁2' : runtimeInstantiatesCtx ctx' cfg₁2.memory cfg₁2.varEnv θ₁2 := by
+        simpa [ctx', ctxAfter] using hric₁2
+      have htagR2' : regimeConsistentWithCtx ctx' R := by
+        simpa [ctx', ctxAfter] using htagR2
+      have hagree2' :
+          agreeOnClean predSat R ctx' cfg₀2.memory cfg₀2.varEnv θ₀2 cfg₁2.memory cfg₁2.varEnv θ₁2 := by
+        simpa [ctx', ctxAfter] using hagree2
+
+      -- Ensure the two runs agree on pureMode at the start of `e1` (required by StepFR).
+      have hpm_cfg2 : cfg₀2.pureMode = cfg₁2.pureMode := by
+        -- both are preserved from the initial pm
+        rw [hpm₀2, hpm₁2]
+
+      -- Step on the function evaluation using IH1.
+      -- We use cfg₀2.pureMode as the shared pureMode witness, and rewrite the second run if needed.
+      have hcfg₁2_eq :
+          cfg₁2 =
+            { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode } := by
+        cases cfg₁2
+        simp [hpm_cfg2]
+      have ht₁_e1' :
+          terminatesTo .ioFree e1
+            { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode }
+            cfg₁1 (Value.closure x₁ body₁ env₁) := by
+        rw [← hcfg₁2_eq]
+        exact ht₁_e1
+      have hwfcfg₁2' :
+          wfConfig { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode } := by
+        rw [← hcfg₁2_eq]
+        exact hwfcfg₁2
+      have hstep_e1 :=
+        hIH1 cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀2 θ₁2
+          cfg₀1 cfg₁1 (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
+          hθ₀2wf hθ₁2wf hwf_ctx' hric₀2' hric₁2' htagR2' hRbound hagree2'
+          cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode hwfcfg₀2 hwfcfg₁2'
+          ht₀_e1 ht₁_e1'
+      rcases hstep_e1 with
+        ⟨θ₀3, θ₁3, hθext₀3, hθext₁3, hwf3, hwfcfg₀3, hwfcfg₁3,
+          hric₀3, hric₁3, htagR3, hagree3, hfun_agree⟩
+
+      -- Use preservation to connect runtime closures to the arrow/parrow split in `happ_cases`.
+      -- This lets us rule out mixed closure/peClosure outcomes for well-typed programs.
+      let w_default := LeanProofs.defaultWorld
+      have ht₀_e1_w : terminatesToW .ioFree w_default w_default e1
+          { memory := cfg₀2.memory, varEnv := cfg₀2.varEnv, nextAddr := cfg₀2.nextAddr, pureMode := cfg₀2.pureMode }
+          cfg₀1 (Value.closure x₀ body₀ env₀) := by
+        rcases ht₀_e1 with ⟨fuel₀, verbose₀, hpure₀⟩
+        have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₀
+        exact ⟨fuel₀, verbose₀, by simpa [pure] using h_eq⟩
+      have ht₁_e1_w : terminatesToW .ioFree w_default w_default e1
+          { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode }
+          cfg₁1 (Value.closure x₁ body₁ env₁) := by
+        rcases ht₁_e1' with ⟨fuel₁, verbose₁, hpure₁⟩
+        have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₁
+        exact ⟨fuel₁, verbose₁, by simpa [pure] using h_eq⟩
+      have hθ₀3wf : wfRealizationMap θ₀3 := hθext₀3.2 hθ₀2wf
+      have hθ₁3wf : wfRealizationMap θ₁3 := hθext₁3.2 hθ₁2wf
+      have hric₀3_mem : runtimeInstantiatesCtx { ctx' with memEnv := res1.memEnv' }
+          cfg₀1.memory cfg₀1.varEnv θ₀3 := by
+        simpa [runtimeInstantiatesCtx, ctxAfter, ctx'] using hric₀3
+      have hric₁3_mem : runtimeInstantiatesCtx { ctx' with memEnv := res1.memEnv' }
+          cfg₁1.memory cfg₁1.varEnv θ₁3 := by
+        simpa [runtimeInstantiatesCtx, ctxAfter, ctx'] using hric₁3
+      have hv₀_fun_typed : valueHasETyp θ₀3 (Value.closure x₀ body₀ env₀) res1.qualType.etyp :=
+        (preservation_valueW .ioFree e1 ctx' fuel' res1
+          cfg₀2.memory cfg₀1.memory cfg₀2.varEnv cfg₀1.varEnv θ₀2 θ₀3
+          cfg₀2.nextAddr cfg₀1.nextAddr cfg₀2.pureMode cfg₀1.pureMode
+          (Value.closure x₀ body₀ env₀) w_default w_default
+          hwf_ctx' htc1' hθ₀2wf hθ₀3wf hθext₀3 hric₀2' hric₀3_mem ht₀_e1_w).1
+      have hv₁_fun_typed : valueHasETyp θ₁3 (Value.closure x₁ body₁ env₁) res1.qualType.etyp :=
+        (preservation_valueW .ioFree e1 ctx' fuel' res1
+          cfg₁2.memory cfg₁1.memory cfg₁2.varEnv cfg₁1.varEnv θ₁2 θ₁3
+          cfg₁2.nextAddr cfg₁1.nextAddr cfg₀2.pureMode cfg₁1.pureMode
+          (Value.closure x₁ body₁ env₁) w_default w_default
+          hwf_ctx' htc1' hθ₁2wf hθ₁3wf hθext₁3 hric₁2' hric₁3_mem ht₁_e1_w).1
+      -- Split on the typing spine: since both runs produced regular closures,
+      -- the `.parrow` branch is impossible.
+      cases happ_cases with
+      | inl harr =>
+          -- Remaining work for the `.arrow` case:
+          -- relate the body evaluations (`ht₀_body`, `ht₁_body`) to the `mapM applyFnTClosure` spine,
+          -- and lift post-state agreement to `ctxAfter ctxᵢ res` (similar to `stepFR_ite`).
+          sorry
+      | inr hparr =>
+          -- Contradiction: `res1.qualType.etyp` is parrow, but we have a runtime closure value.
+          rcases hparr with ⟨st1, st2, p, p1, tcls, _results, _first, _rest, hetyp_parr, _hpoison1, _hnonEmpty, _hsub, _hmapM, _hresults, _hjoin⟩
+          have hv_parr : valueHasETyp θ₀3 (Value.closure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) := by
+            simpa [hetyp_parr] using hv₀_fun_typed
+          cases hv_parr
+    · -- Mixed case: run 0 evaluates to closure, run 1 evaluates to peClosure.
+      -- This is impossible for well-typed programs: `e1` cannot evaluate to a regular closure
+      -- in one run and to a predicated closure in the other, because both runs share the same
+      -- static function type `res1.qualType.etyp`.
+      rcases hpe₁ with
+        ⟨cfg₁2, v₁2, cfg₁1, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, hcf₁_eq, hpm₁2, hpm₁_final⟩
+
+      -- Step on `e2` to obtain a post-`e2` instantiation for `ctx'`.
+      have hstep_e2 :=
+        hIH2 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀2 cfg₁2 v₀2 v₁2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+      rcases hstep_e2 with
+        ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcfg₀2, hwfcfg₁2,
+          hric₀2, hric₁2, htagR2, hagree2, _harg_agree⟩
+      have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+      have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+
+      -- Prepare the preconditions for stepping `e1` under `ctx'`.
+      have hwf_ctx' : wfTypeContext ctx' := by
+        simpa [ctx', ctxAfter] using hwf2
+      have hric₀2' : runtimeInstantiatesCtx ctx' cfg₀2.memory cfg₀2.varEnv θ₀2 := by
+        simpa [ctx', ctxAfter] using hric₀2
+      have hric₁2' : runtimeInstantiatesCtx ctx' cfg₁2.memory cfg₁2.varEnv θ₁2 := by
+        simpa [ctx', ctxAfter] using hric₁2
+      have htagR2' : regimeConsistentWithCtx ctx' R := by
+        simpa [ctx', ctxAfter] using htagR2
+      have hagree2' :
+          agreeOnClean predSat R ctx' cfg₀2.memory cfg₀2.varEnv θ₀2 cfg₁2.memory cfg₁2.varEnv θ₁2 := by
+        simpa [ctx', ctxAfter] using hagree2
+
+      -- Align pureMode for the StepFR call on `e1`.
+      have hpm_cfg2 : cfg₀2.pureMode = cfg₁2.pureMode := by
+        rw [hpm₀2, hpm₁2]
+      have hcfg₁2_eq :
+          cfg₁2 =
+            { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode } := by
+        cases cfg₁2
+        simp [hpm_cfg2]
+      have ht₁_e1' :
+          terminatesTo .ioFree e1
+            { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode }
+            cfg₁1 (Value.peClosure x₁ body₁ env₁) := by
+        rw [← hcfg₁2_eq]
+        exact ht₁_e1
+      have hwfcfg₁2' :
+          wfConfig { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode } := by
+        rw [← hcfg₁2_eq]
+        exact hwfcfg₁2
+
+      -- Step on `e1` (closure vs peClosure).
+      have hstep_e1 :=
+        hIH1 cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀2 θ₁2
+          cfg₀1 cfg₁1 (Value.closure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
+          hθ₀2wf hθ₁2wf hwf_ctx' hric₀2' hric₁2' htagR2' hRbound hagree2'
+          cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode hwfcfg₀2 hwfcfg₁2'
+          ht₀_e1 ht₁_e1'
+      rcases hstep_e1 with
+        ⟨θ₀3, θ₁3, hθext₀3, hθext₁3, _hwf3, _hwfcfg₀3, _hwfcfg₁3,
+          hric₀3, hric₁3, _htagR3, _hagree3, _hfun_agree⟩
+      have hθ₀3wf : wfRealizationMap θ₀3 := hθext₀3.2 hθ₀2wf
+      have hθ₁3wf : wfRealizationMap θ₁3 := hθext₁3.2 hθ₁2wf
+
+      -- Convert to world-indexed evaluation and apply preservation to get value typing for each run.
+      let w_default := LeanProofs.defaultWorld
+      have ht₀_e1_w : terminatesToW .ioFree w_default w_default e1
+          { memory := cfg₀2.memory, varEnv := cfg₀2.varEnv, nextAddr := cfg₀2.nextAddr, pureMode := cfg₀2.pureMode }
+          cfg₀1 (Value.closure x₀ body₀ env₀) := by
+        rcases ht₀_e1 with ⟨fuel₀, verbose₀, hpure₀⟩
+        have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₀
+        exact ⟨fuel₀, verbose₀, by simpa [pure] using h_eq⟩
+      have ht₁_e1_w : terminatesToW .ioFree w_default w_default e1
+          { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode }
+          cfg₁1 (Value.peClosure x₁ body₁ env₁) := by
+        rcases ht₁_e1' with ⟨fuel₁, verbose₁, hpure₁⟩
+        have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₁
+        exact ⟨fuel₁, verbose₁, by simpa [pure] using h_eq⟩
+
+      -- `runtimeInstantiatesCtx` only depends on memEnv/varEnv, so we can reuse it for the
+      -- specific context shape required by `preservation_valueW`.
+      have hric₀3_mem : runtimeInstantiatesCtx { ctx' with memEnv := res1.memEnv' }
+          cfg₀1.memory cfg₀1.varEnv θ₀3 := by
+        simpa [runtimeInstantiatesCtx, ctxAfter, ctx'] using hric₀3
+      have hric₁3_mem : runtimeInstantiatesCtx { ctx' with memEnv := res1.memEnv' }
+          cfg₁1.memory cfg₁1.varEnv θ₁3 := by
+        simpa [runtimeInstantiatesCtx, ctxAfter, ctx'] using hric₁3
+
+      have hv₀_fun_typed : valueHasETyp θ₀3 (Value.closure x₀ body₀ env₀) res1.qualType.etyp :=
+        (preservation_valueW .ioFree e1 ctx' fuel' res1
+          cfg₀2.memory cfg₀1.memory cfg₀2.varEnv cfg₀1.varEnv θ₀2 θ₀3
+          cfg₀2.nextAddr cfg₀1.nextAddr cfg₀2.pureMode cfg₀1.pureMode
+          (Value.closure x₀ body₀ env₀) w_default w_default
+          hwf_ctx' htc1' hθ₀2wf hθ₀3wf hθext₀3 hric₀2' hric₀3_mem ht₀_e1_w).1
+      have hv₁_fun_typed : valueHasETyp θ₁3 (Value.peClosure x₁ body₁ env₁) res1.qualType.etyp :=
+        (preservation_valueW .ioFree e1 ctx' fuel' res1
+          cfg₁2.memory cfg₁1.memory cfg₁2.varEnv cfg₁1.varEnv θ₁2 θ₁3
+          cfg₁2.nextAddr cfg₁1.nextAddr cfg₀2.pureMode cfg₁1.pureMode
+          (Value.peClosure x₁ body₁ env₁) w_default w_default
+          hwf_ctx' htc1' hθ₁2wf hθ₁3wf hθext₁3 hric₁2' hric₁3_mem ht₁_e1_w).1
+
+      -- Expose the (unique) shape of `res1.qualType.etyp` by splitting `res1.qualType`.
+      cases hqt1 : res1.qualType with
+      | mk etyp1 poison1 pred1 =>
+        -- Now `res1.qualType.etyp = etyp1`.
+        have harr : ∃ st1 st2 p tcls, etyp1 = ETyp.arrow st1 st2 p tcls := by
+          -- rewrite to match the closure constructor
+          have : valueHasETyp θ₀3 (Value.closure x₀ body₀ env₀) etyp1 := by simpa [hqt1] using hv₀_fun_typed
+          cases this with
+          | closure _ _ _ st1 st2 p tcls =>
+            exact ⟨st1, st2, p, tcls, rfl⟩
+        have hparr : ∃ st1 st2 p tcls, etyp1 = ETyp.parrow st1 st2 p tcls := by
+          have : valueHasETyp θ₁3 (Value.peClosure x₁ body₁ env₁) etyp1 := by simpa [hqt1] using hv₁_fun_typed
+          cases this with
+          | peClosure _ _ _ st1 st2 p tcls =>
+            exact ⟨st1, st2, p, tcls, rfl⟩
+        rcases harr with ⟨st1a, st2a, pa, tclsa, het_arrow⟩
+        rcases hparr with ⟨st1p, st2p, pp, tclsp, het_parrow⟩
+        -- Contradiction: an `ETyp` cannot be both `arrow` and `parrow`.
+        exfalso
+        have : ETyp.arrow st1a st2a pa tclsa = ETyp.parrow st1p st2p pp tclsp :=
+          het_arrow.symm.trans het_parrow
+        cases this
+  · -- peClosure case for run 0 (handled symmetrically to closure case above).
+    -- The proof follows the same structure, using the `.parrow` branch of `happ_cases`
+    -- and the `peClosure` branch of `terminatesTo_app_inv'`.
+    sorry
 
 
 -- ================================================================
