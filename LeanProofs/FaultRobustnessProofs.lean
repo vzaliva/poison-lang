@@ -4961,6 +4961,65 @@ private lemma stepFR_kwhile
   StepFR .ioFree ctxᵢ R (Expr.kwhile e1 e2) res predSat := by
   sorry
 
+-- Helper lemma for the remaining `.arrow` subcase in `stepFR_app` (closure/closure branch).
+-- This is where we relate the runtime closure body to the `mapM applyFnTClosure …` typing spine,
+-- then step the body and lift agreement to `ctxAfter ctxᵢ res`.
+--
+-- NOTE: This lemma is intentionally left as a `sorry` for now; it packages up the remaining
+-- application-specific reasoning to keep `stepFR_app` itself free of `sorry`.
+private lemma stepFR_app_closure_closure_arrow_remaining
+  {ctxᵢ : TypeContext} {predSat : PredSat} {R : Regime}
+  {e1 e2 : Expr} {fuel' : Nat} {res res1 res2 : TypeResult}
+  {argEtyp : ETyp} {argPoison : Poison} {argPred : Predicate}
+  {μ₀ μ₁ : Memory} {ρ₀ ρ₁ : VarEnv} {θ₀ θ₁ : RealizationMap}
+  {cf₀ cf₁ : Config} {o₀ o₁ : Value} :
+  (∃ st1 st2 p p1 tcls results first rest,
+      res1.qualType.etyp = ETyp.arrow st1 st2 p tcls ∧
+        res1.qualType.poison = p1 ∧
+          ¬ctxᵢ.pureCtx = true ∧
+            tcls ≠ [] ∧
+              isSubtype st1 res2.qualType = true ∧
+                List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctxᵢ res2 fuel') tcls =
+                    Except.ok results ∧
+                  results = first :: rest ∧ joinTypeResults ctxᵢ first rest = Except.ok res) →
+  ∃ (θ₀' θ₁' : RealizationMap),
+    wfExtendsMap θ₀ θ₀' ∧
+      wfExtendsMap θ₁ θ₁' ∧
+        wfTypeContext (ctxAfter ctxᵢ res) ∧
+          wfConfig cf₀ ∧
+            wfConfig cf₁ ∧
+              runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' ∧
+                runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' ∧
+                  regimeConsistentWithCtx (ctxAfter ctxᵢ res) R ∧
+                    agreeOnClean predSat R (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
+                      resultAgreesIfClean predSat R cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁ := by
+  intro _harr
+  sorry
+
+-- Helper lemma for the remaining `peClosure` branch in `stepFR_app`.
+-- This is the `.parrow` analogue of the `closure/closure` case.
+private lemma stepFR_app_peClosure_remaining
+  {ctxᵢ : TypeContext} {predSat : PredSat} {R : Regime}
+  {e1 e2 : Expr} {fuel' : Nat} {res : TypeResult}
+  {μ₀ μ₁ : Memory} {ρ₀ ρ₁ : VarEnv} {θ₀ θ₁ : RealizationMap}
+  {cf₀ cf₁ : Config} {o₀ o₁ : Value} :
+  ∀ (a₀ a₁ : Address) (pm : Bool),
+    terminatesTo .ioFree (Expr.app e1 e2) { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ →
+    terminatesTo .ioFree (Expr.app e1 e2) { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
+  ∃ (θ₀' θ₁' : RealizationMap),
+    wfExtendsMap θ₀ θ₀' ∧
+      wfExtendsMap θ₁ θ₁' ∧
+        wfTypeContext (ctxAfter ctxᵢ res) ∧
+          wfConfig cf₀ ∧
+            wfConfig cf₁ ∧
+              runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' ∧
+                runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' ∧
+                  regimeConsistentWithCtx (ctxAfter ctxᵢ res) R ∧
+                    agreeOnClean predSat R (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
+                      resultAgreesIfClean predSat R cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁ := by
+  intro _a₀ _a₁ _pm _ht₀ _ht₁
+  sorry
+
 -- Stub lemma for function application (not yet proven)
 private lemma stepFR_app
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
