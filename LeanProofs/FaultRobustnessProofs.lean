@@ -14,7 +14,6 @@ import LeanProofs.LookupUpdate
 import LeanProofs.PreservationProofs
 import LeanProofs.VarEnvPreservation
 import LeanProofs.MemoryMonotonicity
-import LeanProofs.IOFree
 import Std.Data.ExtTreeMap.Lemmas
 import Std.Data.ExtTreeSet.Lemmas
 
@@ -1762,7 +1761,7 @@ private lemma opUnaryEType_implies_nonfun (op : UnaryOp) (et1 result : ETyp) :
 -- IOFree-restricted induction hypothesis type for stepFR_* lemmas
 abbrev StepFR_IH (predSat : PredSat) (fuel : Nat) : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext),
-    IOFree e → ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR .ioFree ctxᵢ R e res predSat
+    ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res → ∀ (R : Regime), StepFR .ioFree ctxᵢ R e res predSat
 
 private lemma stepFR_literal
   (mode : LeanPoison.EvalMode)
@@ -2527,7 +2526,6 @@ private lemma stepFR_var
 private lemma stepFR_op
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
-  (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.op e1 op e2) res predSat := by
@@ -2545,17 +2543,16 @@ private lemma stepFR_op
   have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
     simpa [ctx', typecheck, Nat.succ_sub_one] using htc2
   have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ hio1 res1 htc1' R
+    e1 ctxᵢ res1 htc1' R
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hio2 res2 htc2' R
+    e2 ctx' res2 htc2' R
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for binary op
-  have hio : IOFree (Expr.op e1 op e2) := IOFree.op e1 op e2 hio1 hio2
   have hstruct₀ := terminatesTo_op_inv' e1 op e2
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, v₀1, v₀2, ht₀_e1, ht₀_e2, h_evalop₀, hpm₀1, hpm₀2⟩
   have hstruct₁ := terminatesTo_op_inv' e1 op e2
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   rcases hstruct₁ with ⟨cfg₁1, v₁1, v₁2, ht₁_e1, ht₁_e2, h_evalop₁, hpm₁1, hpm₁2⟩
   -- Apply IH for e1
   have hstep_e1 :=
@@ -2681,7 +2678,6 @@ private lemma stepFR_op
 private lemma stepFR_unaryop
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (op : UnaryOp) (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (hioe : IOFree e)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.unaryop op e) res predSat := by
@@ -2693,15 +2689,14 @@ private lemma stepFR_unaryop
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ hioe res1 htc1' R
+    e ctxᵢ res1 htc1' R
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for unaryop
-  have hio : IOFree (Expr.unaryop op e) := IOFree.unaryop op e hioe
   have hstruct₀ := terminatesTo_unaryop_inv' .ioFree op e
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ rfl hio ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ rfl ht₀
   rcases hstruct₀ with ⟨cfg₀', v₀', ht₀_e, h_evalop₀, hmem₀, hvar₀, _hnext₀, _hpure₀⟩
   have hstruct₁ := terminatesTo_unaryop_inv' .ioFree op e
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ rfl hio ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ rfl ht₁
   rcases hstruct₁ with ⟨cfg₁', v₁', ht₁_e, h_evalop₁, hmem₁, hvar₁, _hnext₁, _hpure₁⟩
   -- Apply IH for sub-expression
   have hstep_e :=
@@ -2783,7 +2778,6 @@ private lemma stepFR_unaryop
 private lemma stepFR_newRef
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (hioe : IOFree e)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.newRef e) res predSat := by
@@ -2796,15 +2790,14 @@ private lemma stepFR_newRef
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ hioe res1 htc1' R
+    e ctxᵢ res1 htc1' R
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for newRef
-  have hio : IOFree (Expr.newRef e) := IOFree.newRef e hioe
   have hstruct₀ := terminatesTo_newRef_inv' .ioFree e
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ rfl hio ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ rfl ht₀
   rcases hstruct₀ with ⟨cfg₀', n₀, ht₀_e, ho₀, hmem₀, hnext₀, hvar₀, hpm₀⟩
   have hstruct₁ := terminatesTo_newRef_inv' .ioFree e
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ rfl hio ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ rfl ht₁
   rcases hstruct₁ with ⟨cfg₁', n₁, ht₁_e, ho₁, hmem₁, hnext₁, hvar₁, hpm₁⟩
   -- Apply IH for e
   have hstep_e :=
@@ -3031,7 +3024,6 @@ private lemma stepFR_newRef
 private lemma stepFR_seq
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.seq e1 e2) res predSat := by
@@ -3046,17 +3038,16 @@ private lemma stepFR_seq
   have htc2' : typecheck ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ hio1 res1 htc1' R
+    e1 ctxᵢ res1 htc1' R
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hio2 res htc2' R
+    e2 ctx' res htc2' R
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for seq
-  have hio : IOFree (Expr.seq e1 e2) := IOFree.seq e1 e2 hio1 hio2
   have hstruct₀ := terminatesTo_seq_inv' e1 e2
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, v₀1, ht₀_e1, ht₀_e2, hpm₀1, hpm₀2⟩
   have hstruct₁ := terminatesTo_seq_inv' e1 e2
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   rcases hstruct₁ with ⟨cfg₁1, v₁1, ht₁_e1, ht₁_e2, hpm₁1, hpm₁2⟩
   -- Apply IH for e1
   have hstep_e1 :=
@@ -3120,7 +3111,6 @@ private lemma stepFR_seq
 private lemma stepFR_vlet
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.vlet vname e1 e2) res predSat := by
@@ -3136,17 +3126,16 @@ private lemma stepFR_vlet
   have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ hio1 res1 htc1' R
+    e1 ctxᵢ res1 htc1' R
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hio2 res2 htc2' R
+    e2 ctx' res2 htc2' R
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for vlet
-  have hio : IOFree (Expr.vlet vname e1 e2) := IOFree.vlet vname e1 e2 hio1 hio2
   have hstruct₀ := terminatesTo_vlet_inv' vname e1 e2
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, v₀1, cfg₀3, ht₀_e1, ht₀_e2, hcf₀_eq, hpm₀1, hpm₀2⟩
   have hstruct₁ := terminatesTo_vlet_inv' vname e1 e2
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   rcases hstruct₁ with ⟨cfg₁1, v₁1, cfg₁3, ht₁_e1, ht₁_e2, hcf₁_eq, hpm₁1, hpm₁2⟩
   -- Define intermediate configs with extended varEnv
   let cfg₀2 : Config := { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 }
@@ -3902,7 +3891,6 @@ private lemma stepFR_pfn
 private lemma stepFR_ite
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
-  (hio1 : IOFree e1) (hio2 : IOFree e2) (hio3 : IOFree e3)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.ite e1 e2 e3) res predSat := by
@@ -3915,12 +3903,11 @@ private lemma stepFR_ite
   -- Introduce quantified variables
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for ite
-  have hio : IOFree (Expr.ite e1 e2 e3) := IOFree.ite e1 e2 e3 hio1 hio2 hio3
   have hinv₀ := terminatesTo_ite_inv' e1 e2 e3
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
   rcases hinv₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀2⟩
   have hinv₁ := terminatesTo_ite_inv' e1 e2 e3
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ hio ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   rcases hinv₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁2⟩
   -- Both modes share the property that e1 typechecks to bool and e2, e3 typecheck
   -- We handle both modes uniformly by extracting the key properties
@@ -3952,7 +3939,7 @@ private lemma stepFR_ite
       simpa [ctxForE3, ctx'', ctx', typecheck, Nat.succ_sub_one] using htc3
     -- Get IH for e1
     have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-      e1 ctxᵢ hio1 res1 htc1' R
+      e1 ctxᵢ res1 htc1' R
     -- Apply IH for e1
     have hstep_e1 :=
       hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
@@ -3999,7 +3986,7 @@ private lemma stepFR_ite
         rcases htrue₁ with ⟨hb₁, ht₁_e2⟩
         -- Get IH for e2
         have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-          e2 ctx'' hio2 res2 htc2' R
+          e2 ctx'' res2 htc2' R
         have ht₁_e2' : terminatesTo .ioFree e2
             { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv,
               nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode }
@@ -4575,7 +4562,7 @@ private lemma stepFR_ite
         rcases hfalse₁ with ⟨hb₁, ht₁_e3⟩
         -- Get IH for e3
         have hIH3 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-          e3 ctxForE3 hio3 res3 htc3' R
+          e3 ctxForE3 res3 htc3' R
         -- Use monotonicity lemmas to relate nextLoc/nextTag across typechecking
         have hlocMono : res1.nextLoc' ≤ res2.nextLoc' := by
           have : ctx''.nextLoc ≤ res2.nextLoc' := typecheck_nextLoc_mono ctx'' e2 fuel' res2 htc2'
@@ -4951,7 +4938,6 @@ private lemma stepFR_ite
 private lemma stepFR_assign
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.assign e1 e2) res predSat := by
@@ -4961,7 +4947,6 @@ private lemma stepFR_assign
 private lemma stepFR_deref
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (hioe : IOFree e)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.deref e) res predSat := by
@@ -4971,7 +4956,6 @@ private lemma stepFR_deref
 private lemma stepFR_kwhile
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.kwhile e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.kwhile e1 e2) res predSat := by
@@ -4981,7 +4965,6 @@ private lemma stepFR_kwhile
 private lemma stepFR_app
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (hio1 : IOFree e1) (hio2 : IOFree e2)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.app e1 e2) res predSat := by
@@ -5023,33 +5006,39 @@ private lemma stepFR_app
   - typecheckApp_structure: Helper to extract typecheck structure (TODO)
   - IH application for body evaluation (recursive case)
   -/
-  -- Parse typecheck result
+  -- Parse typecheck result (via typecheckApp)
   have htc' : typecheckApp ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
-  obtain ⟨res2, res1, st1, st2, p, p1, isArrow, htc2, htc1, h_app_structure⟩ :=
-    typecheckApp_structure ctxᵢ e1 e2 (Nat.succ fuel') res htc'
-  -- Extract structure information
+  -- Use the full structure lemma (exposes the closure-application mapM spine)
+  obtain ⟨res2, res1, argEtyp, argPoison, argPred, hres2_qt, htc2, htc1, happ_cases⟩ :=
+    typecheckApp_arrow_structure_full ctxᵢ e1 e2 fuel' res htc'
   have htc2' : typecheck ctxᵢ e2 fuel' = .ok res2 := by
-    simpa [typecheck, Nat.succ_sub_one] using htc2
+    simpa [typecheck] using htc2
   let ctx' : TypeContext :=
     { ctxᵢ with memEnv := res2.memEnv', tagEnv := res2.tagEnv', nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
   have htc1' : typecheck ctx' e1 fuel' = .ok res1 := by
-    simpa [ctx', typecheck, Nat.succ_sub_one] using htc1
-  -- Apply IH for e2 and e1
+    simpa [ctx', typecheck] using htc1
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctxᵢ hio2 res2 htc2' R
+    e2 ctxᵢ res2 htc2' R
   have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctx' hio1 res1 htc1' R
+    e1 ctx' res1 htc1' R
   -- Introduce StepFR premises
   intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  -- Use inversion lemma for app evaluation
-  have hio : IOFree (Expr.app e1 e2) := IOFree.app e1 e2 hio1 hio2
+  -- Invert evaluation of app for both runs
   have hstruct₀ := terminatesTo_app_inv' e1 e2
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ hio ht₀
-  -- Note: terminatesTo_app_inv' has some sorry for bevalFunctionBody conversion
-  -- For now, we'll structure the proof assuming it works
-  sorry -- TODO: Complete using hstruct₀ and case split on internal poison p
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+  have hstruct₁ := terminatesTo_app_inv' e1 e2
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+  -- The remainder follows the same general pattern as `stepFR_seq`:
+  -- apply hIH2 to the argument evaluation, then hIH1 to the function evaluation,
+  -- then relate body evaluations using closure agreement (function-poison.md).
+  --
+  -- TODO: complete proof (no `sorry`) by stitching together:
+  -- - hstruct₀/hstruct₁
+  -- - happ_cases (arrow vs parrow; mapM spine)
+  -- - agreeValueUnder cases (clean_internal_* vs dirty_internal_*)
+  sorry
 
 
 -- ================================================================
@@ -5062,17 +5051,15 @@ section TypeSystemEnforcesFaultRobustness_IOFree_proof
 -- Restructured to avoid variable capture: induction is generalized over all expressions
 theorem TypeSystemEnforcesFaultRobustness_step_IOFree
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) :
-  IOFree e →
   TypeSystemEnforcesFaultRobustness_step_spec .ioFree e ctxᵢ predSat := by
-  intro hio
   unfold TypeSystemEnforcesFaultRobustness_step_spec
   intro fuel res htc R
   -- Use strong induction on fuel, generalized over all e and ctxᵢ
   -- The key insight: we need IH to work for any I/O-free expression, not just our specific e
-  revert e ctxᵢ hio res htc R
+  revert e ctxᵢ res htc R
   induction fuel using Nat.strong_induction_on with
   | _ n IH =>
-    intro e ctxᵢ hio res htc R
+    intro e ctxᵢ res htc R
     cases n with
     | zero =>
         simp [typecheck, typecheckExpr] at htc
@@ -5171,98 +5158,89 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [ctxAfter, hres, res_expected]
             exact stepFR_literal .ioFree ctxᵢ predSat R (Expr.str s) res (Value.str s) hval hpoison hnotfun hnotref hctxAfter
         | var name =>
-            cases hio with
-            | var => exact stepFR_var .ioFree ctxᵢ predSat R name res fuel htc
+            exact stepFR_var .ioFree ctxᵢ predSat R name res fuel htc
         | op e1 op e2 =>
-            cases hio with
-            | op _ _ _ hio1 hio2 =>
-                cases fuel with
-                | zero =>
-                    simp [typecheck, typecheckExpr_op_succ, typecheckOp] at htc
-                | succ fuel' =>
-                    exact stepFR_op ctxᵢ predSat R e1 e2 op fuel' res hio1 hio2 IH htc
+            cases fuel with
+            | zero =>
+                simp [typecheck, typecheckExpr_op_succ, typecheckOp] at htc
+            | succ fuel' =>
+                exact stepFR_op ctxᵢ predSat R e1 e2 op fuel' res IH htc
         | unaryop uop e =>
-            cases hio with
-            | unaryop _ _ hioe =>
-                cases fuel with
-                | zero =>
-                    simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
-                | succ fuel' =>
-                    exact stepFR_unaryop ctxᵢ predSat R uop e fuel' res hioe IH htc
+            cases fuel with
+            | zero =>
+                simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
+            | succ fuel' =>
+                exact stepFR_unaryop ctxᵢ predSat R uop e fuel' res IH htc
         | ite e1 e2 e3 =>
-            cases hio with
-            | ite _ _ _ hio1 hio2 hio3 =>
-                cases fuel with
-                | zero =>
-                    simp [typecheck, typecheckExpr, typecheckIf] at htc
-                | succ fuel' =>
-                    exact stepFR_ite ctxᵢ predSat R e1 e2 e3 fuel' res hio1 hio2 hio3 IH htc
+            cases fuel with
+            | zero =>
+                simp [typecheck, typecheckExpr, typecheckIf] at htc
+            | succ fuel' =>
+                exact stepFR_ite ctxᵢ predSat R e1 e2 e3 fuel' res IH htc
         | newRef e =>
-            cases hio with
-            | newRef _ hioe =>
-                cases fuel with
-                | zero =>
-                    simp [typecheck, typecheckExpr, typecheckNewRef] at htc
-                | succ fuel' =>
-                    exact stepFR_newRef ctxᵢ predSat R e fuel' res hioe IH htc
+            cases fuel with
+            | zero =>
+                simp [typecheck, typecheckExpr, typecheckNewRef] at htc
+            | succ fuel' =>
+                exact stepFR_newRef ctxᵢ predSat R e fuel' res IH htc
         | assign e1 e2 =>
-            cases hio with
-            | assign _ _ hio1 hio2 =>
-                cases fuel with
-                | zero =>
-                    simp [typecheck, typecheckExpr, typecheckAssign] at htc
-                | succ fuel' =>
-                    exact stepFR_assign ctxᵢ predSat R e1 e2 fuel' res hio1 hio2 IH htc
+            cases fuel with
+            | zero =>
+                simp [typecheck, typecheckExpr, typecheckAssign] at htc
+            | succ fuel' =>
+                exact stepFR_assign ctxᵢ predSat R e1 e2 fuel' res IH htc
         | deref e =>
-            cases hio with
-            | deref _ hioe =>
-                cases fuel with
-                | zero =>
-                    simp [typecheck, typecheckExpr, typecheckDeref] at htc
-                | succ fuel' =>
-                    exact stepFR_deref ctxᵢ predSat R e fuel' res hioe IH htc
+            cases fuel with
+            | zero =>
+                simp [typecheck, typecheckExpr, typecheckDeref] at htc
+            | succ fuel' =>
+                exact stepFR_deref ctxᵢ predSat R e fuel' res IH htc
         | seq e1 e2 =>
-            cases hio with
-            | seq _ _ hio1 hio2 =>
-                cases fuel with
-                | zero =>
-                    simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
-                | succ fuel' =>
-                    exact stepFR_seq ctxᵢ predSat R e1 e2 fuel' res hio1 hio2 IH htc
+            cases fuel with
+            | zero =>
+                simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
+            | succ fuel' =>
+                exact stepFR_seq ctxᵢ predSat R e1 e2 fuel' res IH htc
         | kwhile e1 e2 =>
-            cases hio with
-            | kwhile _ _ hio1 hio2 =>
-                cases fuel with
-                | zero =>
-                    simp [typecheck, typecheckExpr, typecheckWhile] at htc
-                | succ fuel' =>
-                    exact stepFR_kwhile ctxᵢ predSat R e1 e2 fuel' res hio1 hio2 IH htc
+            cases fuel with
+            | zero =>
+                simp [typecheck, typecheckExpr, typecheckWhile] at htc
+            | succ fuel' =>
+                exact stepFR_kwhile ctxᵢ predSat R e1 e2 fuel' res IH htc
         | vlet z e1 e2 =>
-            cases hio with
-            | vlet _ _ _ hio1 hio2 =>
-                let vname := z
-                cases fuel with
-                | zero =>
-                    simp [typecheck, typecheckExpr_vlet_succ, typecheckVlet] at htc
-                | succ fuel' =>
-                    exact stepFR_vlet ctxᵢ predSat R vname e1 e2 fuel' res hio1 hio2 IH htc
+            let vname := z
+            cases fuel with
+            | zero =>
+                simp [typecheck, typecheckExpr_vlet_succ, typecheckVlet] at htc
+            | succ fuel' =>
+                exact stepFR_vlet ctxᵢ predSat R vname e1 e2 fuel' res IH htc
         | fn name ty e1 ty2 =>
-            cases hio with
-            | fn _ _ _ _ hiobody => exact stepFR_fn .ioFree ctxᵢ predSat R name ty e1 ty2 fuel res htc
+            exact stepFR_fn .ioFree ctxᵢ predSat R name ty e1 ty2 fuel res htc
         | pfn name ty e1 ty2 =>
-            cases hio with
-            | pfn _ _ _ _ hiobody => exact stepFR_pfn .ioFree ctxᵢ predSat R name ty e1 ty2 fuel res htc
+            exact stepFR_pfn .ioFree ctxᵢ predSat R name ty e1 ty2 fuel res htc
         | app e1 e2 =>
-            cases hio with
-            | app _ _ hio1 hio2 =>
-                cases fuel with
-                | zero =>
-                    simp [typecheck, typecheckExpr, typecheckApp] at htc
-                | succ fuel' =>
-                    exact stepFR_app ctxᵢ predSat R e1 e2 fuel' res hio1 hio2 IH htc
+            cases fuel with
+            | zero =>
+                simp [typecheck, typecheckExpr, typecheckApp] at htc
+            | succ fuel' =>
+                exact stepFR_app ctxᵢ predSat R e1 e2 fuel' res IH htc
         | rand _ | frand _ | printString _ | printInt _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
-            -- These cases are impossible due to IOFree assumption
-            cases hio
+            -- In `.ioFree` mode, I/O constructs cannot terminate, so StepFR is vacuous.
+            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+            have : False := by
+              rcases ht₀ with ⟨fuelT, verboseT, hpureT⟩
+              -- In `.ioFree` mode, evaluation yields `ioForbidden`, never `.success`.
+              have h_world := congrArg (fun f => f LeanProofs.defaultWorld) hpureT
+              cases fuelT with
+              | zero =>
+                  -- fuel = 0 yields outOfFuel, not success
+                  simp [LeanPoison.beval, pure] at h_world
+                  cases h_world
+              | succ fuelT' =>
+                  -- fuel > 0: these constructs yield ioForbidden, not success
+                  simp [LeanPoison.beval, pure] at h_world
+                  cases h_world
+            exact False.elim this
 
 end TypeSystemEnforcesFaultRobustness_IOFree_proof
 
@@ -5305,13 +5283,13 @@ def TypeSystemEnforcesFaultRobustness_spec_ioFree
           FaultRobustnessSpec_ioFree e s obs ctx predSat)
 
 theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
-  (∀ e ctxᵢ predSat, IOFree e → TypeSystemEnforcesFaultRobustness_step_spec .ioFree e ctxᵢ predSat) →
-  (∀ e s obs, IOFree e → TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs) := by
-  intro hstep e s obs hio
+  (∀ e ctxᵢ predSat, TypeSystemEnforcesFaultRobustness_step_spec .ioFree e ctxᵢ predSat) →
+  (∀ e s obs, TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs) := by
+  intro hstep e s obs
   rintro his _hos ctx hctx hwf _hpc hte predSat _hps ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
   intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm check
-  have hstep' := hstep e ctx predSat hio
+  have hstep' := hstep e ctx predSat
   have hstep' := hstep' fuel res htc
   dsimp only [FaultRobustnessSpec_ioFree]
   intro cf₁ cf₂ o₁ o₂ hR hRbound hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
@@ -5539,10 +5517,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
 -- Main I/O-free theorem
 theorem TypeSystemEnforcesFaultRobustness_IOFree
   (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
-  IOFree e →
   TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs := by
-  intro hio
   apply TypeSystemEnforcesFaultRobustness_impl_IOFree
-  · intro e' ctxᵢ predSat hio'
-    exact TypeSystemEnforcesFaultRobustness_step_IOFree e' ctxᵢ predSat hio'
-  · exact hio
+  · intro e' ctxᵢ predSat
+    exact TypeSystemEnforcesFaultRobustness_step_IOFree e' ctxᵢ predSat

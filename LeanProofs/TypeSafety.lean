@@ -1902,14 +1902,14 @@ lemma typecheckApp_arrow_structure_full
                                     simp [h_empty'] at htc
                                     subst res'
                                     refine ⟨result2, result1, etyp2, p2, pred2, ?_⟩
-                                    refine And.intro (by simpa [h_qt2]) ?_
+                                    refine And.intro (by simp [h_qt2]) ?_
                                     refine And.intro rfl ?_
                                     refine And.intro (by simpa [ctx', h_pure] using h_tc1) ?_
                                     left
                                     refine ⟨st1, st2, p, p1, tcls, first :: rest, first, rest, ?_⟩
                                     refine And.intro (by simp [h_qt1]) ?_
                                     refine And.intro (by simp [h_qt1]) ?_
-                                    refine And.intro (by simpa [h_pure]) ?_
+                                    refine And.intro (by simp) ?_
                                     refine And.intro h_empty ?_
                                     refine And.intro h_sub ?_
                                     refine And.intro (by simpa using h_map) ?_
@@ -1918,16 +1918,17 @@ lemma typecheckApp_arrow_structure_full
           | parrow st1 st2 p tcls =>
               by_cases h_empty : tcls = []
               · subst h_empty
-                simp [pure, Except.pure] at htc
+                simp at htc
               · cases h_sub_val : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } with
                 | false =>
-                    simp [h_empty, h_sub_val, pure, Except.pure] at htc
+                    simp [h_empty, h_sub_val] at htc
+                    cases htc
                 | true =>
                     have h_sub0 : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
                       simp [h_sub_val]
                     have h_sub : isSubtype st1 result2.qualType = true := by
                       simpa [h_qt2] using h_sub0
-                    simp [h_sub_val, pure, Except.pure] at htc
+                    simp [h_sub_val] at htc
                     cases h_map :
                         List.mapM
                           (fun tcl =>
@@ -1935,26 +1936,29 @@ lemma typecheckApp_arrow_structure_full
                     | error _err =>
                         simp [h_map] at htc
                         simp [h_empty] at htc
+                        cases htc
                     | ok results =>
                         simp [h_map] at htc
                         cases results with
                         | nil =>
                             simp at htc
                             simp [h_empty] at htc
+                            cases htc
                         | cons first rest =>
                             cases h_join : joinTypeResults ctx first rest with
                             | error _err =>
                                 simp [h_join] at htc
                                 simp [h_empty] at htc
+                                cases htc
                             | ok res' =>
                                 simp [h_join] at htc
                                 have h_empty' : tcls ≠ [] := h_empty
                                 simp [h_empty'] at htc
-                                subst res'
+                                cases htc
                                 refine ⟨result2, result1, etyp2, p2, pred2, ?_⟩
-                                refine And.intro (by simpa [h_qt2]) ?_
+                                refine And.intro (by simp [h_qt2]) ?_
                                 refine And.intro rfl ?_
-                                refine And.intro (by simpa [ctx', h_tc1]) ?_
+                                refine And.intro (by simp [ctx', h_tc1]) ?_
                                 right
                                 refine ⟨st1, st2, p, p1, tcls, first :: rest, first, rest, ?_⟩
                                 refine And.intro (by simp [h_qt1]) ?_
