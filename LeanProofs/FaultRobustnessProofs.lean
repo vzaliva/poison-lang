@@ -5020,51 +5020,13 @@ private lemma stepFR_app_peClosure_remaining
   intro _a₀ _a₁ _pm _ht₀ _ht₁
   sorry
 
--- Stub lemma for function application (not yet proven)
+-- Function application case: reduces to helper lemmas for closure/closure and peClosure branches
 private lemma stepFR_app
   (ctxᵢ : TypeContext) (predSat : PredSat) (R : Regime)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.app e1 e2) res predSat := by
-  /-
-  PROOF STRATEGY (based on function-poison.md):
-
-  The key design decision is that closure agreement is gated on INTERNAL poison
-  (the `p` in the arrow type), not outer poison:
-
-  1. Parse typecheck result to extract:
-     - res2: result of typechecking e2 (argument)
-     - res1: result of typechecking e1 (function)
-     - Function type: arrow st1 st2 p tcls (with internal poison p)
-
-  2. For StepFR, introduce premises and apply IH:
-     - Apply IH for e2 → agreement on argument value, intermediate state agreement
-     - Apply IH for e1 → agreement on function value (closure)
-
-  3. Case split on internal poison p (the key insight from function-poison.md):
-
-     CASE p = false (clean internal poison):
-     - Both runs have closures with the same body (from clean_internal_arrow agreement)
-     - Establish agreeCapturedEnv from agreeOnClean using agreeCapturedEnv_of_agreeOnClean
-     - Set up body evaluation context with parameter bound to agreeing arguments
-     - Apply IH for body to get result agreement
-     - Build final StepFR result
-
-     CASE p = true (dirty internal poison):
-     - Use dirty_internal_arrow for closure agreement (no constraints)
-     - The body's pc will include p = true, making results necessarily dirty
-     - resultAgreesIfClean is vacuously satisfied:
-       * If result is clean_under_R, then its poison must be false
-       * But result poison includes internal poison p = true
-       * So clean result is impossible, making the implication vacuously true
-     - Build StepFR result with extended realization maps
-
-  The proof requires:
-  - terminatesTo_app_inv': Inversion lemma for app evaluation (TODO)
-  - typecheckApp_structure: Helper to extract typecheck structure (TODO)
-  - IH application for body evaluation (recursive case)
-  -/
   -- Parse typecheck result (via typecheckApp)
   have htc' : typecheckApp ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
@@ -5196,7 +5158,12 @@ private lemma stepFR_app
           -- Remaining work for the `.arrow` case:
           -- relate the body evaluations (`ht₀_body`, `ht₁_body`) to the `mapM applyFnTClosure` spine,
           -- and lift post-state agreement to `ctxAfter ctxᵢ res` (similar to `stepFR_ite`).
-          sorry
+          exact stepFR_app_closure_closure_arrow_remaining
+            (ctxᵢ := ctxᵢ) (predSat := predSat) (R := R)
+            (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res) (res1 := res1) (res2 := res2)
+            (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+            (μ₀ := μ₀) (μ₁ := μ₁) (ρ₀ := ρ₀) (ρ₁ := ρ₁) (θ₀ := θ₀) (θ₁ := θ₁)
+            (cf₀ := cf₀) (cf₁ := cf₁) (o₀ := o₀) (o₁ := o₁) harr
       | inr hparr =>
           -- Contradiction: `res1.qualType.etyp` is parrow, but we have a runtime closure value.
           rcases hparr with ⟨st1, st2, p, p1, tcls, _results, _first, _rest, hetyp_parr, _hpoison1, _hnonEmpty, _hsub, _hmapM, _hresults, _hjoin⟩
@@ -5327,7 +5294,12 @@ private lemma stepFR_app
   · -- peClosure case for run 0 (handled symmetrically to closure case above).
     -- The proof follows the same structure, using the `.parrow` branch of `happ_cases`
     -- and the `peClosure` branch of `terminatesTo_app_inv'`.
-    sorry
+    exact stepFR_app_peClosure_remaining
+      (ctxᵢ := ctxᵢ) (predSat := predSat) (R := R)
+      (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res)
+      (μ₀ := μ₀) (μ₁ := μ₁) (ρ₀ := ρ₀) (ρ₁ := ρ₁) (θ₀ := θ₀) (θ₁ := θ₁)
+      (cf₀ := cf₀) (cf₁ := cf₁) (o₀ := o₀) (o₁ := o₁)
+      a₀ a₁ pm ht₀ ht₁
 
 
 -- ================================================================
