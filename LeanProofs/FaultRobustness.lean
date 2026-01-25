@@ -444,21 +444,15 @@ mutual
   inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
       (θ₁ θ₂ : RealizationMap) :
       QTyp → Value → Value → Prop where
-    | clean_eq_nonref
+    -- Non-ref/non-arrow cases:
+    | clean_eq_nonref_nonarrow
         {qt : QTyp} {v₁ v₂ : Value}
         (hpoison : qt.poison = false)
         (hnotfun : qt.etyp.isFunctionType = false)
         (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
         (hagree : v₁ = v₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    | poisoned_noPred_eq_nonref
-        {qt : QTyp} {v₁ v₂ : Value}
-        (hpoison : qt.poison = true)
-        (hpred : qt.pred = Predicate.noPred)
-        (hnotfun : qt.etyp.isFunctionType = false)
-        (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
-        (hagree : v₁ = v₂) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    -- Arrow cases:
     -- Closure agreement cases are gated on INTERNAL poison, not outer poison.
     -- When internal poison is clean, we require same body and captured environment agreement.
     -- When internal poison is dirty, we impose no constraints (vacuous agreement).
@@ -498,6 +492,7 @@ mutual
         (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
         (htyp2 : valueHasETyp θ₂ v₂ qt.etyp) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    -- Ref cases:
     | clean_ref {t : ETyp} {ls : LocSet} {l : Loc} {a₁ a₂ : Address}
         {qt : QTyp} {v₁ v₂ : Value}
         (hpoison : qt.poison = false)
@@ -508,17 +503,7 @@ mutual
         (hlookup2 : θ₂.lookup l = some a₂)
         (hv2 : v₂ = Value.loc a₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    | poisoned_noPred_ref {t : ETyp} {ls : LocSet} {l : Loc} {a₁ a₂ : Address}
-        {qt : QTyp} {v₁ v₂ : Value}
-        (hpoison : qt.poison = true)
-        (hpred : qt.pred = Predicate.noPred)
-        (hetyp : qt.etyp = ETyp.ref t ls)
-        (hlookup1 : θ₁.lookup l = some a₁)
-        (hin : l ∈ ls)
-        (hv1 : v₁ = Value.loc a₁)
-        (hlookup2 : θ₂.lookup l = some a₂)
-        (hv2 : v₂ = Value.loc a₂) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    -- de-poisoning cases:
     | withPred_true_eq (k : Tag)
         {qt : QTyp} {v₁ v₂ : Value}
         (htag : qtypGuardTag qt = some k)
@@ -537,25 +522,6 @@ mutual
         (hv1 : v₁ = Value.loc a₁)
         (hlookup2 : θ₂.lookup l = some a₂)
         (hv2 : v₂ = Value.loc a₂) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    | withPred_false_poisoned_fail (k : Tag)
-        {qt : QTyp} {v₁ v₂ : Value}
-        (hclos : isGuardClosure qt)
-        (htag : qtypGuardTag qt = some k)
-        (hregime : R.lookup? k = some false)
-        (hpoison : qt.poison = true)
-        (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
-        (htyp2 : valueHasETyp θ₂ v₂ qt.etyp)
-        (hfail1 : ¬qtypPredHolds predSat qt μ₁ v₁)
-        (hfail2 : ¬qtypPredHolds predSat qt μ₂ v₂) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    | guardOnly_false_poisoned_any (k : Tag)
-        {qt : QTyp} {v₁ v₂ : Value}
-        (hgo : qt.pred = Predicate.guardOnly k)
-        (hregime : R.lookup? k = some false)
-        (hpoison : qt.poison = true)
-        (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
-        (htyp2 : valueHasETyp θ₂ v₂ qt.etyp) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
 
   /-- Agreement of captured runtime environments w.r.t. the captured typing environment.
