@@ -1,4 +1,5 @@
-# Containerfile
+# Containerfile.ai-agent
+# Isolated AI coding agent environment (Claude Code, Codex, etc.) with Lean toolchain
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -6,20 +7,47 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# Base deps (we use rustup for a modern Rust)
+# Base dependencies + Node.js + Python for AI agents
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git ca-certificates \
     build-essential clang lld cmake pkg-config \
     libgmp-dev libuv1-dev \
     xz-utils util-linux \
-  && rm -rf /var/lib/apt/lists/*
+    python3 python3-pip \
+    # Common CLI tools for AI agents
+    ripgrep \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
 
-# Rust (stable) + tree-sitter 0.25.10 (requires recent Cargo with edition2024)
-RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-ENV PATH="/root/.cargo/bin:${PATH}"
-RUN rustup update stable && rustup default stable
-RUN cargo install tree-sitter-cli --version "0.25.10" && \
-    install -m 0755 /root/.cargo/bin/tree-sitter /usr/local/bin/tree-sitter
+# Install GitHub CLI (gh)
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js (LTS)
+RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install AI coding assistants globally
+# Claude Code
+RUN npm install -g @anthropic-ai/claude-code
+
+# OpenAI CLI (includes codex access)
+RUN pip3 install --break-system-packages openai
+
+# Install uv (provides uvx for running Python tools)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && cp /root/.cargo/bin/uv /usr/local/bin/ \
+    && cp /root/.cargo/bin/uvx /usr/local/bin/
+
+# Note: lean-lsp-mcp MCP tool (used by both Claude and Codex) will be
+# downloaded on first use via uvx. It will be cached in the ai_agent_config volume.
 
 # --- Seed Elan toolchain into a read-only location in the image ---
 ARG ELAN_TOOLCHAIN=leanprover/lean4:v4.23.0-rc2
@@ -34,7 +62,7 @@ RUN chmod 755 /home/user
 ENV HOME=/home/user
 WORKDIR /work
 
-# --- ENTRYPOINT: add host UID/GID to passwd, seed ~/.elan into volume once, drop privs, exec ---
+# --- ENTRYPOINT: add host UID/GID to passwd, drop privs, exec ---
 RUN printf '%s\n' \
 '#!/usr/bin/env bash' \
 'set -euo pipefail' \
@@ -62,10 +90,8 @@ RUN printf '%s\n' \
 '' \
 '# Drop to mapped user and exec.' \
 'exec setpriv --reuid="${HOST_UID}" --regid="${HOST_GID}" --clear-groups -- "$@"' \
-> /usr/local/bin/seeded-entrypoint.sh \
- && chmod +x /usr/local/bin/seeded-entrypoint.sh
+> /usr/local/bin/ai-agent-entrypoint.sh \
+ && chmod +x /usr/local/bin/ai-agent-entrypoint.sh
 
-ENTRYPOINT ["/usr/local/bin/seeded-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/ai-agent-entrypoint.sh"]
 CMD ["bash"]
-
-

@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Wrapper script for running AI coding agents (Claude, Codex, etc.) in an isolated
+# Podman container with access to the Poison Language project and Lean toolchain.
+#
+# Uses dedicated volumes (ai_agent_*) that are independent from the poison-dev environment.
+#
+# Usage: ai-agent-jailed <agent> [agent-args...]
+#        claude-jailed [claude-args...]    (via symlink)
+#        codex-jailed [codex-args...]      (via symlink)
+#
+# Agents:
+#   claude   - Anthropic Claude Code
+#   codex    - OpenAI Codex (via openai CLI)
+#
+# Examples:
+#   ai-agent-jailed claude
+#   ai-agent-jailed claude --help
+#   ai-agent-jailed codex
+#   claude-jailed           # If symlinked
+#   codex-jailed --help     # If symlinked
+#
+# Environment variables:
+#   POISON_PROJECT_DIR  - Override default project directory (default: ~/src/poison-lang or git root)
+#   AI_AGENT_IMAGE      - Override container image (default: localhost/poison-ai-agent:latest)
+
+# Detect agent from script name (for symlinks like claude-jailed, codex-jailed)
+SCRIPT_NAME="$(basename "$0")"
+AGENT=""
+
+case "$SCRIPT_NAME" in
+  claude-jailed)
+    AGENT="claude"
+    ;;
+  codex-jailed)
+    AGENT="codex"
+    ;;
+  *)
+    # Not a recognized symlink name, expect agent as first argument
+    if [ $# -eq 0 ]; then
+      echo "Usage: ai-agent-jailed <agent> [agent-args...]" >&2
+      echo "" >&2
+      echo "Available agents:" >&2
+      echo "  claude   - Anthropic Claude Code" >&2
+      echo "  codex    - OpenAI Codex" >&2
+      echo "" >&2
+      echo "Or create symlinks:" >&2
+      echo "  ln -sf ai-agent-jailed claude-jailed" >&2
+      echo "  ln -sf ai-agent-jailed codex-jailed" >&2
+      exit 1
+    fi
+    AGENT="$1"
+    shift
+    ;;
+esac
+
+# Map agent name to actual command and arguments
+case "$AGENT" in
+  claude)
+    CMD="claude"
+    # Add --dangerously-skip-permissions for smoother operation
+    AGENT_ARGS="--dangerously-skip-permissions"
+    ;;
+  codex)
+    CMD="openai"
+    # Add --yolo for smoother operation
+    AGENT_ARGS="--yolo"
+    ;;
+  *)
+    echo "Error: Unknown agent '$AGENT'" >&2
+    echo "Available agents: claude, codex" >&2
+    exit 1
+    ;;
+esac
+
+# Determine project root
+PROJ_DIR="${POISON_PROJECT_DIR:-$HOME/src/poison-lang}"
+
+# If we're inside the project directory tree, use git root
+if command -v git >/dev/null 2>&1; then
+  GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -n "$GIT_ROOT" && "$PWD" == "$GIT_ROOT"* ]]; then
+    PROJ_DIR="$GIT_ROOT"
+  fi
+fi
+
+IMAGE="${AI_AGENT_IMAGE:-localhost/poison-ai-agent:latest}"
+HOST_UID="$(id -u)"
+HOST_GID="$(id -g)"
+HOST_USER="$(id -un)"
+HOST_GROUP="$(id -gn)"
+
+# Build podman run command with SSH agent forwarding if available
+PODMAN_ARGS=(
+  run --rm -it
+  --name poison-ai-agent
+  -e HOST_UID="$HOST_UID"
+  -e HOST_GID="$HOST_GID"
+  -e HOST_USER="$HOST_USER"
+  -e HOST_GROUP="$HOST_GROUP"
+  -e ELAN_HOME=/home/user/.elan
+  -e XDG_CACHE_HOME=/home/user/.cache
+  -v "$PROJ_DIR:/work:Z"
+  -v ai_agent_elan_home:/home/user/.elan:rw
+  -v ai_agent_cache_elan:/home/user/.cache/elan:rw
+  -v ai_agent_cache_lake:/home/user/.cache/lake:rw
+  -v ai_agent_config:/home/user/.config:rw
+)
+
+# Forward SSH agent for git authentication
+if [ -n "${SSH_AUTH_SOCK:-}" ] && [ -S "$SSH_AUTH_SOCK" ]; then
+  PODMAN_ARGS+=(
+    -v "$SSH_AUTH_SOCK:/ssh-agent:ro"
+    -e SSH_AUTH_SOCK=/ssh-agent
+  )
+fi
+
+PODMAN_ARGS+=(
+  -w /work
+  "$IMAGE"
+  "$CMD"
+)
+
+# Add agent-specific arguments
+if [ -n "$AGENT_ARGS" ]; then
+  PODMAN_ARGS+=($AGENT_ARGS)
+fi
+
+# Add user-provided arguments
+PODMAN_ARGS+=("$@")
+
+exec podman "${PODMAN_ARGS[@]}"
