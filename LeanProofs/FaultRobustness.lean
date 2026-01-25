@@ -498,27 +498,25 @@ mutual
         (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
         (htyp2 : valueHasETyp θ₂ v₂ qt.etyp) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    | clean_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
+    | clean_ref {t : ETyp} {ls : LocSet} {l : Loc} {a₁ a₂ : Address}
         {qt : QTyp} {v₁ v₂ : Value}
         (hpoison : qt.poison = false)
         (hetyp : qt.etyp = ETyp.ref t ls)
-        (hlookup1 : θ₁.lookup l₁ = some a₁)
-        (hin1 : l₁ ∈ ls)
+        (hlookup1 : θ₁.lookup l = some a₁)
+        (hin : l ∈ ls)
         (hv1 : v₁ = Value.loc a₁)
-        (hlookup2 : θ₂.lookup l₂ = some a₂)
-        (hin2 : l₂ ∈ ls)
+        (hlookup2 : θ₂.lookup l = some a₂)
         (hv2 : v₂ = Value.loc a₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    | poisoned_noPred_ref {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
+    | poisoned_noPred_ref {t : ETyp} {ls : LocSet} {l : Loc} {a₁ a₂ : Address}
         {qt : QTyp} {v₁ v₂ : Value}
         (hpoison : qt.poison = true)
         (hpred : qt.pred = Predicate.noPred)
         (hetyp : qt.etyp = ETyp.ref t ls)
-        (hlookup1 : θ₁.lookup l₁ = some a₁)
-        (hin1 : l₁ ∈ ls)
+        (hlookup1 : θ₁.lookup l = some a₁)
+        (hin : l ∈ ls)
         (hv1 : v₁ = Value.loc a₁)
-        (hlookup2 : θ₂.lookup l₂ = some a₂)
-        (hin2 : l₂ ∈ ls)
+        (hlookup2 : θ₂.lookup l = some a₂)
         (hv2 : v₂ = Value.loc a₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | withPred_true_eq (k : Tag)
@@ -529,16 +527,15 @@ mutual
         (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
         (hagree : v₁ = v₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    | withPred_true_ref (k : Tag) {t : ETyp} {ls : LocSet} {l₁ l₂ : Loc} {a₁ a₂ : Address}
+    | withPred_true_ref (k : Tag) {t : ETyp} {ls : LocSet} {l : Loc} {a₁ a₂ : Address}
         {qt : QTyp} {v₁ v₂ : Value}
         (htag : qtypGuardTag qt = some k)
         (hregime : R.lookup? k = some true)
         (hetyp : qt.etyp = ETyp.ref t ls)
-        (hlookup1 : θ₁.lookup l₁ = some a₁)
-        (hin1 : l₁ ∈ ls)
+        (hlookup1 : θ₁.lookup l = some a₁)
+        (hin : l ∈ ls)
         (hv1 : v₁ = Value.loc a₁)
-        (hlookup2 : θ₂.lookup l₂ = some a₂)
-        (hin2 : l₂ ∈ ls)
+        (hlookup2 : θ₂.lookup l = some a₂)
         (hv2 : v₂ = Value.loc a₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | withPred_false_poisoned_fail (k : Tag)
