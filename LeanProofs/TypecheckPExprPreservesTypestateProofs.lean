@@ -165,72 +165,76 @@ private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExp
         cases h3: etyp with
         | ref t l =>
           simp_all
-          -- l is a LocSet, not a Loc
-          -- typecheckDeref uses LocSet.foldM to iterate over locations
-          -- Handle the isEmpty check first
-          cases h_empty : l.isEmpty with
-          | true =>
-            -- Empty locset: throws error (contradiction with success)
-            have h_eq_empty : l = ∅ := by
-              rw [ExtTreeSet.isEmpty_iff] at h_empty
-              exact h_empty
-            simp [typecheckDeref, h_empty, h_eq_empty] at H
-          | false =>
-            -- Non-empty: foldM preserves environments
-            -- Key observation: typecheckDeref only reads from result1.memEnv' and result1.tagEnv'
-            -- but never modifies them. All branches return result1.memEnv', result1.tagEnv', etc.
-            -- The foldM only computes (joinedCellPoison, mergedPred?), but doesn't affect environments
-            -- Simplify the `if l = ∅` condition (we know l is non-empty)
-            have h_ne : l ≠ ∅ := by
-              intro heq
-              rw [← ExtTreeSet.isEmpty_iff] at heq
-              simp_all
-            simp only [h_ne, ↓reduceIte, pure, Except.pure] at H
-            -- Now H has the foldM bind structure
-            -- The key observation: ALL return branches in the match expression
-            -- use result1.memEnv', result1.tagEnv', result1.nextLoc', result1.nextTag'.
-            -- We need to show that if H = Except.ok result, then result has these environments.
-            -- Since the structure is complex with nested matches, we use split to handle all cases.
-            split at H
-            · -- foldM error case
-              simp at H
-            · -- foldM ok case
-              rename_i v
+          -- New check: if t != ETyp.int then throw
+          split at H
+          · -- Case: t = ETyp.int (the only successful case)
+            -- l is a LocSet, not a Loc
+            -- typecheckDeref uses LocSet.foldM to iterate over locations
+            -- Handle the isEmpty check first
+            cases h_empty : l.isEmpty with
+            | true =>
+              -- Empty locset: throws error (contradiction with success)
+              have hl_empty : l = ∅ := (ExtTreeSet.isEmpty_iff).1 h_empty
+              simp [hl_empty] at H
+              cases H
+            | false =>
+              -- Non-empty: foldM preserves environments
+              -- Key observation: typecheckDeref only reads from result1.memEnv' and result1.tagEnv'
+              -- but never modifies them. All branches return result1.memEnv', result1.tagEnv', etc.
+              -- The foldM only computes (joinedCellPoison, mergedPred?), but doesn't affect environments
+              -- Simplify the `if l = ∅` condition (we know l is non-empty)
+              have h_ne : l ≠ ∅ := by
+                intro heq
+                rw [← ExtTreeSet.isEmpty_iff] at heq
+                simp_all
+              simp only [h_ne, ↓reduceIte, pure, Except.pure] at H
+              -- Now H has the foldM bind structure
+              -- The key observation: ALL return branches in the match expression
+              -- use result1.memEnv', result1.tagEnv', result1.nextLoc', result1.nextTag'.
+              -- We need to show that if H = Except.ok result, then result has these environments.
+              -- Since the structure is complex with nested matches, we use split to handle all cases.
               split at H
-              · -- poison = true case
-                simp only [↓reduceIte, Except.ok.injEq] at H
-                cases H
-                exact ⟨H1, rfl, rfl, rfl⟩
-              · -- poison = false case
+              · -- foldM error case
+                contradiction
+              · -- foldM ok case
+                rename_i v
                 split at H
-                · -- noPred case
-                  simp only [Except.ok.injEq] at H
+                · -- poison = true case
+                  simp only [↓reduceIte, Except.ok.injEq] at H
                   cases H
                   exact ⟨H1, rfl, rfl, rfl⟩
-                · -- guardOnly case
-                  rename_i k
+                · -- poison = false case
                   split at H
-                  · simp only [Except.ok.injEq] at H
+                  · -- noPred case
+                    simp only [Except.ok.injEq] at H
                     cases H
                     exact ⟨H1, rfl, rfl, rfl⟩
-                  · simp only [Except.ok.injEq] at H
-                    cases H
-                    exact ⟨H1, rfl, rfl, rfl⟩
-                  · simp only [Except.ok.injEq] at H
-                    cases H
-                    exact ⟨H1, rfl, rfl, rfl⟩
-                · -- guardClosure case
-                  rename_i k _ _ _
-                  split at H
-                  · simp only [Except.ok.injEq] at H
-                    cases H
-                    exact ⟨H1, rfl, rfl, rfl⟩
-                  · simp only [Except.ok.injEq] at H
-                    cases H
-                    exact ⟨H1, rfl, rfl, rfl⟩
-                  · simp only [Except.ok.injEq] at H
-                    cases H
-                    exact ⟨H1, rfl, rfl, rfl⟩
+                  · -- guardOnly case
+                    rename_i k
+                    split at H
+                    · simp only [Except.ok.injEq] at H
+                      cases H
+                      exact ⟨H1, rfl, rfl, rfl⟩
+                    · simp only [Except.ok.injEq] at H
+                      cases H
+                      exact ⟨H1, rfl, rfl, rfl⟩
+                    · simp only [Except.ok.injEq] at H
+                      cases H
+                      exact ⟨H1, rfl, rfl, rfl⟩
+                  · -- guardClosure case
+                    rename_i k _ _ _
+                    split at H
+                    · simp only [Except.ok.injEq] at H
+                      cases H
+                      exact ⟨H1, rfl, rfl, rfl⟩
+                    · simp only [Except.ok.injEq] at H
+                      cases H
+                      exact ⟨H1, rfl, rfl, rfl⟩
+                    · simp only [Except.ok.injEq] at H
+                      cases H
+                      exact ⟨H1, rfl, rfl, rfl⟩
+          · -- Case: t ≠ ETyp.int (error - contradiction)
+            cases H
         | _ => simp_all
 
 -- Private lemma for ite case

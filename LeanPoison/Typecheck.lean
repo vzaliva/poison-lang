@@ -712,6 +712,7 @@ def attachVarEnvToPredicate (pred : SyntaxPredicate) (varEnv : VarTypeEnv) : Typ
 /-- Convert (Typ, Bool, SyntaxPredicate) to QTyp for EXTERN VALUES.
     Used only for extern val declarations at definition time.
     May allocate fresh locations for reference types and update Γ.
+    NOTE: Memory can only store integers - reject ref T unless T = int.
 -/
 def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     (varEnv : VarTypeEnv) (ctx : TypeContext) : TypecheckM (QTyp × TypeContext) := do
@@ -722,6 +723,9 @@ def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     | Typ.unit => pure (ETyp.unit, ctx)
     | Typ.string => pure (ETyp.string, ctx)
     | Typ.ref t => do
+        -- Memory can only store integers - reject ref T unless T = int
+        if t != Typ.int then
+          throw s!"Type error: extern val can only use ref int, but got ref {repr t} (memory stores only integers)"
         let (l, ctx') := freshTLoc ctx
         let (innerQt, ctx'') ← surfaceSpecToQTyp t false SyntaxPredicate.noPred varEnv ctx'
         return (ETyp.ref innerQt.etyp (LocSet.singleton l), ctx'')
@@ -1106,10 +1110,11 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
 termination_by fuel
 
 /-- Rule: ref (Ott rule: ref)
--- pc ; G ; S ; L |- e : T :> p { P } -| G' ; L'
+-- pc ; G ; S ; L |- e : int :> p { P } -| G' ; L'
 -- fresh l
 -- -----------------------
--- pc ; G ; S ; L |- ref e : ref T @ l :> pc { no_pred } -| G'[l |-> T :> join pc p { P }] ; L'
+-- pc ; G ; S ; L |- ref e : ref int @ l :> pc { no_pred } -| G'[l |-> int :> join pc p { P }] ; L'
+-- NOTE: Memory can only store integers (matching runtime semantics)
 -/
 def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
@@ -1118,21 +1123,26 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
     let result ← typecheckExpr ctx e fuel
     let ⟨etyp, poison, pred ⟩ := result.qualType
 
+    -- Require that the allocated value has type int (heap stores only integers)
+    if etyp != ETyp.int then
+      throw s!"Type error: ref can only allocate integers, but got {repr etyp}"
+
     -- Generate fresh location (simplified)
     let (l, result') := freshTLocRes result
     let storedPoison := joinPoison ctx.pc poison
-    let storedQt : QTyp := ⟨etyp, storedPoison, pred⟩
+    let storedQt : QTyp := ⟨ETyp.int, storedPoison, pred⟩
     let memEnv' := updateMemEnv result'.memEnv' l storedQt
 
-    let qt : QTyp := ⟨ETyp.ref etyp (LocSet.singleton l), ctx.pc, Predicate.noPred⟩
+    let qt : QTyp := ⟨ETyp.ref ETyp.int (LocSet.singleton l), ctx.pc, Predicate.noPred⟩
     return { qualType := qt, memEnv' := memEnv', tagEnv' := result'.tagEnv', nextLoc' := result'.nextLoc', nextTag' := result'.nextTag' }
 termination_by fuel
 
 /-- Rule: assign (Ott rule: assign)
--- pc ; G ; S ; L |- e1 : ref T @ l :> p' { P' } -| G' ; L'
--- pc ; G' ; S ; L' |- e2 : T :> p'' { P'' } -| G'' ; L''
+-- pc ; G ; S ; L |- e1 : ref int @ l :> p' { P' } -| G' ; L'
+-- pc ; G' ; S ; L' |- e2 : int :> p'' { P'' } -| G'' ; L''
 -- -----------------------
--- pc ; G ; S ; L |- e1 := e2 : unit :> join pc p' { no_pred } -| G''[l |-> T :> join pc join p' p'' { P'' }] ; L''
+-- pc ; G ; S ; L |- e1 := e2 : unit :> join pc p' { no_pred } -| G''[l |-> int :> join pc join p' p'' { P'' }] ; L''
+-- NOTE: Memory can only store integers (matching runtime semantics)
 -/
 def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
@@ -1142,13 +1152,20 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
     match etyp1 with
     | ETyp.ref t ls =>
+      -- Require that the reference stores integers (heap stores only integers)
+      if t != ETyp.int then
+        throw s!"Type error: can only assign to ref int, but got ref {repr t}"
+      
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
-      if not (t == etyp2) then throw "Type mismatch in assignment"
+      
+      -- Require that the RHS has type int
+      if etyp2 != ETyp.int then
+        throw s!"Type error: can only assign int values, but got {repr etyp2}"
 
       let storedPoison := joinPoison ctx.pc (joinPoison p1 p2)
-      let storedQt : QTyp := ⟨t, storedPoison, pred2⟩
+      let storedQt : QTyp := ⟨ETyp.int, storedPoison, pred2⟩
       let memEnv' := LocSet.fold ls result2.memEnv' (fun env l => updateMemEnv env l storedQt)
 
       let resultPoison := joinPoison ctx.pc p1
@@ -1160,6 +1177,7 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
 termination_by fuel
 
 /-- Rules: deref_* (Ott rules: deref_poisoned, deref_no_pred, deref_guard_true, deref_guard_false, deref_guard_unknown)
+-- NOTE: Memory can only store integers (matching runtime semantics)
 --/
 def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
@@ -1169,6 +1187,10 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
     let ⟨etyp, poisonRef, _predRef ⟩ := result.qualType
     match etyp with
     | ETyp.ref t ls =>
+      -- Require that the reference stores integers (heap stores only integers)
+      if t != ETyp.int then
+        throw s!"Type error: can only dereference ref int, but got ref {repr t}"
+      
       if ls.isEmpty then
         throw "Reference locset is empty"
       -- Fetch all referenced memory cells and ensure their types are compatible
@@ -1176,7 +1198,7 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
         LocSet.foldM ls (init := (false, (none : Option Predicate))) (fun (accPoison, accPred?) l => do
           match result.memEnv'.get? l with
           | some qt =>
-              if qt.etyp == t then
+              if qt.etyp == ETyp.int then
                 let nextPoison := joinPoison accPoison qt.poison
                 let nextPred? :=
                   match accPred? with
@@ -1184,32 +1206,32 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
                   | some p => some (joinPredicates p qt.pred)
                 pure (nextPoison, nextPred?)
               else
-                throw s!"Type mismatch in dereference at {l}: {repr qt.etyp} ≠ {repr t}"
+                throw s!"Type mismatch in dereference at {l}: {repr qt.etyp} ≠ int"
           | none => throw s!"Location {l} not found in memory environment")
 
       let mergedPred := mergedPred?.getD Predicate.noPred
 
       if poisonRef then
         -- Reference itself poisoned: ignore predicates, return poisoned
-        let qt : QTyp := ⟨t, true, Predicate.noPred⟩
+        let qt : QTyp := ⟨ETyp.int, true, Predicate.noPred⟩
         return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
       else
         match mergedPred with
         | Predicate.noPred =>
             let poison := joinPoison ctx.pc joinedCellPoison
-            let qt : QTyp := ⟨t, poison, Predicate.noPred⟩
+            let qt : QTyp := ⟨ETyp.int, poison, Predicate.noPred⟩
             return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
         | Predicate.guardOnly k | Predicate.guardClosure k _ _ _ =>
             match result.tagEnv'.get? k with
             | some ⟨true, _deps⟩ =>
-              let qt : QTyp := ⟨t, ctx.pc, Predicate.noPred⟩
+              let qt : QTyp := ⟨ETyp.int, ctx.pc, Predicate.noPred⟩
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
             | some ⟨false, _deps⟩ =>
-              let qt : QTyp := ⟨t, true, Predicate.noPred⟩
+              let qt : QTyp := ⟨ETyp.int, true, Predicate.noPred⟩
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
             | none =>
               let poison := joinPoison ctx.pc joinedCellPoison
-              let qt : QTyp := ⟨t, poison, mergedPred⟩
+              let qt : QTyp := ⟨ETyp.int, poison, mergedPred⟩
               return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag' }
     | _ => throw "Operand of dereference must be a reference"
 termination_by fuel

@@ -634,78 +634,81 @@ pm ; pc ; G ; S ; L |- not e : bool :> join pc p { no_pred } -| G1 ; L1
 
 % New ref creation with region types
 % ref creates a reference with pc poison status and allocates fresh logical location l
-% The region type ref T @ { l } precisely tracks which logical location is allocated
+% The region type ref int @ { l } precisely tracks which logical location is allocated
 % Predicate P is preserved in the memory location
-pm ; pc ; G ; S ; L |- e : T :> p { P } -| G1 ; L1
+% NOTE: Memory can only store integers (matching runtime semantics)
+pm ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
   fresh l
 ----------------------- :: ref
-pm ; pc ; G ; S ; L |- ref e : ref T @ { l } :> pc { no_pred } -| G1[l |-> T :> join pc p { P }] ; L1
+pm ; pc ; G ; S ; L |- ref e : ref int @ { l } :> pc { no_pred } -| G1[l |-> int :> join pc p { P }] ; L1
 
 % Assignment through reference with region types The result of the whole
 % assignment (unit) is poisoned if the reference is poisoned. The stored value
 % is poisoned if the assignment is poisoned, or reference is poisoned, or the
 % value is poisoned. Predicate from e2 is preserved in the memory location.
 % On write to any logical location in the set, invalidate all L entries whose predicates may read those locations.
-pm ; pc ; G ; S ; L |- e1 : ref T @ LS0 :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : T :> p2 { P2 } -| G2 ; L2
+% NOTE: Memory can only store integers (matching runtime semantics)
+pm ; pc ; G ; S ; L |- e1 : ref int @ LS0 :> p1 { P1 } -| G1 ; L1
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 invalidate_deps L2 LS0 = L3
 ----------------------- :: assign
-pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[LS0 |-> T :> join pc join p1 p2 { P2 }] ; L3
+pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[LS0 |-> int :> join pc join p1 p2 { P2 }] ; L3
 
 % Dereference with logical location sets.
 % A poisoned reference yields a poisoned result (predicate erased).
-pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> poisoned { P } -| G1 ; L1
+% NOTE: Memory can only store integers (matching runtime semantics)
+pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> poisoned { P } -| G1 ; L1
 ----------------------- :: deref_poisoned
-pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G1 ; L1
+pm ; pc ; G ; S ; L |- !e : int :> poisoned { no_pred } -| G1 ; L1
 
 % No-predicate case: merge predicates across LS0 yields no_pred; poison joins all cells.
-pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = no_pred
   JoinPoisons G1 LS0 = p
 ----------------------- :: deref_no_pred
-pm ; pc ; G ; S ; L |- !e : T :> join pc p { no_pred } -| G1 ; L1
+pm ; pc ; G ; S ; L |- !e : int :> join pc p { no_pred } -| G1 ; L1
 
 % Guarded predicate evaluates to true after merging across LS0 (de-poison).
-pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k pred_closure pcl
   L1(k) = true using LS
 ----------------------- :: deref_guard_true
-pm ; pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G1 ; L1
+pm ; pc ; G ; S ; L |- !e : int :> pc { no_pred } -| G1 ; L1
 
 % Guard-only predicate evaluates to true after merging.
-pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k
   L1(k) = true using LS
 ----------------------- :: deref_guard_only_true
-pm ; pc ; G ; S ; L |- !e : T :> pc { no_pred } -| G1 ; L1
+pm ; pc ; G ; S ; L |- !e : int :> pc { no_pred } -| G1 ; L1
 
 % Guarded predicate evaluates to false after merging (forces poisoning).
-pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k pred_closure pcl
   L1(k) = false using LS
 ----------------------- :: deref_guard_false
-pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G1 ; L1
+pm ; pc ; G ; S ; L |- !e : int :> poisoned { no_pred } -| G1 ; L1
 
 % Guard-only predicate evaluates to false after merging.
-pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k
   L1(k) = false using LS
 ----------------------- :: deref_guard_only_false
-pm ; pc ; G ; S ; L |- !e : T :> poisoned { no_pred } -| G1 ; L1
+pm ; pc ; G ; S ; L |- !e : int :> poisoned { no_pred } -| G1 ; L1
 
 % Guarded predicate present but tag not known in L: poison joins all cells; predicate retained.
-pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k pred_closure pcl
   JoinPoisons G1 LS0 = p
 ----------------------- :: deref_guard_unknown
-pm ; pc ; G ; S ; L |- !e : T :> join pc p { guard k pred_closure pcl } -| G1 ; L1
+pm ; pc ; G ; S ; L |- !e : int :> join pc p { guard k pred_closure pcl } -| G1 ; L1
 
 % Guard-only predicate present but tag not known in L.
-pm ; pc ; G ; S ; L |- e : ref T @ LS0 :> clean { P } -| G1 ; L1
+pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k
   JoinPoisons G1 LS0 = p
 ----------------------- :: deref_guard_only_unknown
-pm ; pc ; G ; S ; L |- !e : T :> join pc p { guard k } -| G1 ; L1
+pm ; pc ; G ; S ; L |- !e : int :> join pc p { guard k } -| G1 ; L1
 
 -------------------------------  :: unit
 pm ; pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G ; L

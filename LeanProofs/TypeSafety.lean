@@ -790,16 +790,17 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
           simp [h_tc1] at h_typecheck
 
 -- Helper lemma: extract structure from typecheckNewRef
+-- NOTE: Now requires etyp = ETyp.int (heap stores only integers)
 lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckNewRef ctx e1 fuel = .ok res →
-  ∃ (result1 : TypeResult) (l : Loc) (etyp : ETyp),
+  ∃ (result1 : TypeResult) (l : Loc),
     typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
     l = result1.nextLoc' ∧
-    etyp = result1.qualType.etyp ∧
-    res.qualType.etyp = ETyp.ref etyp (LocSet.singleton l) ∧
+    result1.qualType.etyp = ETyp.int ∧
+    res.qualType.etyp = ETyp.ref ETyp.int (LocSet.singleton l) ∧
     res.qualType.poison = ctx.pc ∧
     res.qualType.pred = Predicate.noPred ∧
-    res.memEnv' = updateMemEnv result1.memEnv' l ⟨etyp, joinPoison ctx.pc result1.qualType.poison, result1.qualType.pred⟩ ∧
+    res.memEnv' = updateMemEnv result1.memEnv' l ⟨ETyp.int, joinPoison ctx.pc result1.qualType.poison, result1.qualType.pred⟩ ∧
     res.tagEnv' = result1.tagEnv' ∧
     res.nextLoc' = result1.nextLoc' + 1 ∧
     res.nextTag' = result1.nextTag' := by
@@ -819,93 +820,79 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
       | mk etyp poison pred =>
         rw [h_qt1] at h_typecheck
         simp at h_typecheck
-        -- Extract freshTLocRes result
-        -- freshTLocRes result1 = (result1.nextLoc', { result1 with nextLoc' := result1.nextLoc' + 1 })
-        have h_fresh : (result1.nextLoc', { result1 with nextLoc' := result1.nextLoc' + 1 }) = freshTLocRes result1 := rfl
-        -- Simplify the do notation
-        simp [pure, Except.pure] at h_typecheck
-        -- Extract projections from h_fresh to rewrite freshTLocRes in h_typecheck
-        have h_fresh1 : (freshTLocRes result1).1 = result1.nextLoc' := by
-          simp [← h_fresh]
-        have h_fresh2 : (freshTLocRes result1).2 = { result1 with nextLoc' := result1.nextLoc' + 1 } := by
-          simp [← h_fresh]
-        rw [h_fresh1, h_fresh2] at h_typecheck
-        simp at h_typecheck
-        -- Now h_typecheck is a record equality: {...} = res
-        -- Extract field equalities by projecting from the record equality
-        have h_qualType : res.qualType = ⟨ETyp.ref etyp (LocSet.singleton result1.nextLoc'), ctx.pc, Predicate.noPred⟩ := by
-          have := congrArg TypeResult.qualType h_typecheck
-          simp at this
-          exact this.symm
-        have h_memEnv : res.memEnv' = updateMemEnv result1.memEnv' result1.nextLoc' ⟨etyp, joinPoison ctx.pc poison, pred⟩ := by
-          have := congrArg TypeResult.memEnv' h_typecheck
-          simp at this
-          exact this.symm
-        have h_tagEnv : res.tagEnv' = result1.tagEnv' := by
-          have := congrArg TypeResult.tagEnv' h_typecheck
-          simp at this
-          exact this.symm
-        have h_nextLoc : res.nextLoc' = result1.nextLoc' + 1 := by
-          have := congrArg TypeResult.nextLoc' h_typecheck
-          simp at this
-          exact this.symm
-        have h_nextTag : res.nextTag' = result1.nextTag' := by
-          have := congrArg TypeResult.nextTag' h_typecheck
-          simp at this
-          exact this.symm
-        -- Extract qualType field equalities (QTyp is a structure, so we use congrArg)
-        have h_etyp : res.qualType.etyp = ETyp.ref etyp (LocSet.singleton result1.nextLoc') := by
-          have := congrArg QTyp.etyp h_qualType
-          simp at this
-          exact this
-        have h_poison_eq : res.qualType.poison = ctx.pc := by
-          have := congrArg QTyp.poison h_qualType
-          simp at this
-          exact this
-        have h_pred_eq : res.qualType.pred = Predicate.noPred := by
-          have := congrArg QTyp.pred h_qualType
-          simp at this
-          exact this
-        -- Now we have all the field equalities
-        -- Construct the existential
-        simp only [Nat.add_sub_cancel]
-        use result1, result1.nextLoc', etyp
-        constructor
-        · exact h_tc1
-        constructor
-        · rfl  -- l = result1.nextLoc'
-        constructor
-        · -- etyp = result1.qualType.etyp
-          simp [h_qt1]
-        constructor
-        · -- res.qualType.etyp = ETyp.ref etyp (LocSet.singleton l)
-          rw [h_etyp]
-        constructor
-        · -- res.qualType.poison = ctx.pc
-          rw [h_poison_eq]
-        constructor
-        · -- res.qualType.pred = Predicate.noPred
-          rw [h_pred_eq]
-        constructor
-        · -- res.memEnv' = updateMemEnv result1.memEnv' result1.nextLoc' ...
-          rw [h_memEnv]
-          -- The goal is: updateMemEnv ... { etyp := etyp, poison := joinPoison ctx.pc poison, pred := pred } =
-          --            updateMemEnv ... { etyp := etyp, poison := joinPoison ctx.pc result1.qualType.poison, pred := result1.qualType.pred }
-          -- We need to show poison = result1.qualType.poison and pred = result1.qualType.pred
-          -- This follows from h_qt1
-          congr 1
-          congr 1
-          congr 1
-          simp [h_qt1]
-          simp [h_qt1]
-        constructor
-        · -- res.tagEnv' = result1.tagEnv'
-          rw [h_tagEnv]
-        constructor
-        · -- res.nextLoc' = result1.nextLoc' + 1
-          rw [h_nextLoc]
-        · -- res.nextTag' = result1.nextTag'
-          rw [h_nextTag]
+        -- The new code checks if etyp = ETyp.int
+        split at h_typecheck
+        · -- Case: etyp = ETyp.int (the only successful case)
+          rename_i h_int
+          -- Extract freshTLocRes result
+          have h_fresh : (result1.nextLoc', { result1 with nextLoc' := result1.nextLoc' + 1 }) = freshTLocRes result1 := rfl
+          -- Simplify the do notation
+          simp [pure, Except.pure] at h_typecheck
+          -- Extract projections from h_fresh
+          have h_fresh1 : (freshTLocRes result1).1 = result1.nextLoc' := by simp [← h_fresh]
+          have h_fresh2 : (freshTLocRes result1).2 = { result1 with nextLoc' := result1.nextLoc' + 1 } := by simp [← h_fresh]
+          rw [h_fresh1, h_fresh2] at h_typecheck
+          simp at h_typecheck
+          -- Extract field equalities
+          have h_qualType : res.qualType = ⟨ETyp.ref ETyp.int (LocSet.singleton result1.nextLoc'), ctx.pc, Predicate.noPred⟩ := by
+            have := congrArg TypeResult.qualType h_typecheck
+            simp at this
+            exact this.symm
+          have h_memEnv : res.memEnv' = updateMemEnv result1.memEnv' result1.nextLoc' ⟨ETyp.int, joinPoison ctx.pc poison, pred⟩ := by
+            have := congrArg TypeResult.memEnv' h_typecheck
+            simp at this
+            exact this.symm
+          have h_tagEnv : res.tagEnv' = result1.tagEnv' := by
+            have := congrArg TypeResult.tagEnv' h_typecheck
+            simp at this
+            exact this.symm
+          have h_nextLoc : res.nextLoc' = result1.nextLoc' + 1 := by
+            have := congrArg TypeResult.nextLoc' h_typecheck
+            simp at this
+            exact this.symm
+          have h_nextTag : res.nextTag' = result1.nextTag' := by
+            have := congrArg TypeResult.nextTag' h_typecheck
+            simp at this
+            exact this.symm
+          have h_etyp : res.qualType.etyp = ETyp.ref ETyp.int (LocSet.singleton result1.nextLoc') := by
+            have := congrArg QTyp.etyp h_qualType
+            simp at this
+            exact this
+          have h_poison_eq : res.qualType.poison = ctx.pc := by
+            have := congrArg QTyp.poison h_qualType
+            simp at this
+            exact this
+          have h_pred_eq : res.qualType.pred = Predicate.noPred := by
+            have := congrArg QTyp.pred h_qualType
+            simp at this
+            exact this
+          -- Now we have all the field equalities
+          -- Construct the existential with the new signature (no etyp, it's always ETyp.int)
+          simp only [Nat.add_sub_cancel]
+          use result1, result1.nextLoc'
+          refine ⟨h_tc1, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+          · -- result1.qualType.etyp = ETyp.int
+            rw [h_qt1]
+            simp
+            exact h_int
+          · -- res.qualType.etyp = ETyp.ref ETyp.int (LocSet.singleton l)
+            exact h_etyp
+          · -- res.qualType.poison = ctx.pc
+            exact h_poison_eq
+          · -- res.qualType.pred = Predicate.noPred
+            exact h_pred_eq
+          · -- res.memEnv' = updateMemEnv result1.memEnv' result1.nextLoc' ...
+            rw [h_memEnv, h_qt1]
+          · -- res.tagEnv' = result1.tagEnv'
+            exact h_tagEnv
+          · -- res.nextLoc' = result1.nextLoc' + 1
+            exact h_nextLoc
+          · -- res.nextTag' = result1.nextTag'
+            exact h_nextTag
+        · -- Case: etyp ≠ ETyp.int (error case - contradiction)
+          -- Contradiction: mapping over `throw` cannot yield `Except.ok`.
+          have h_typecheck' := h_typecheck
+          simp [Functor.map, Except.map] at h_typecheck'
     | error _err =>
       simp [h_tc1] at h_typecheck
 
@@ -1608,14 +1595,15 @@ lemma typecheckFrand_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res
           simp [htc1] at htc
 
 -- Structure lemma for assign typechecking
+-- NOTE: Now requires both reference and RHS to be int type (heap stores only integers)
 lemma typecheckAssign_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckAssign ctx e1 e2 fuel = .ok res →
-  ∃ (result1 result2 : TypeResult) (t : ETyp) (ls : LocSet),
+  ∃ (result1 result2 : TypeResult) (ls : LocSet),
     typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
-    result1.qualType.etyp = ETyp.ref t ls ∧
+    result1.qualType.etyp = ETyp.ref ETyp.int ls ∧
     typecheckExpr { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
                              nextLoc := result1.nextLoc', nextTag := result1.nextTag' } e2 (fuel - 1) = .ok result2 ∧
-    result2.qualType.etyp = t ∧
+    result2.qualType.etyp = ETyp.int ∧
     res.nextLoc' = result2.nextLoc' ∧
     res.nextTag' = result2.nextTag' ∧
     res.qualType.etyp = ETyp.unit ∧
@@ -1640,39 +1628,56 @@ lemma typecheckAssign_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) 
               cases etyp1 with
               | ref t ls =>
                   simp at h_typecheck
-                  let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-                                         nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
-                  cases h_tc2 : typecheckExpr ctx' e2 fuel' with
-                  | ok result2 =>
-                      rw [h_tc2] at h_typecheck
-                      simp at h_typecheck
-                      cases h_qt2 : result2.qualType with
-                      | mk etyp2 p2 pred2 =>
-                          rw [h_qt2] at h_typecheck
-                          simp at h_typecheck
-                          -- The code checks: if t = etyp2 then ... else throw
-                          split at h_typecheck
-                          · rename_i h_eq  -- t = etyp2
-                            simp [pure, Except.pure] at h_typecheck
-                            cases h_typecheck
-                            refine ⟨result1, result2, t, ls, ?_, ?_, ?_, ?_, rfl, rfl, rfl, ?_, rfl⟩
-                            · -- typecheckExpr ctx e1 (fuel - 1) = .ok result1
+                  -- The code first checks: if t != ETyp.int then throw
+                  split at h_typecheck
+                  · -- Case: t = ETyp.int (the only successful case)
+                    rename_i h_t_int
+                    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                                           nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+                    cases h_tc2 : typecheckExpr ctx' e2 fuel' with
+                    | ok result2 =>
+                        rw [h_tc2] at h_typecheck
+                        simp at h_typecheck
+                        cases h_qt2 : result2.qualType with
+                        | mk etyp2 p2 pred2 =>
+                            rw [h_qt2] at h_typecheck
+                            simp at h_typecheck
+                            -- The code checks: if etyp2 != ETyp.int then throw
+                            split at h_typecheck
+                            · -- Case: etyp2 = ETyp.int (the only successful case)
+                              rename_i h_etyp2_int
+                              simp [pure, Except.pure] at h_typecheck
+                              cases h_typecheck
                               simp only [Nat.add_sub_cancel]
-                              exact h_tc1
-                            · -- result1.qualType.etyp = ETyp.ref t ls
-                              rw [h_qt1]
-                            · -- typecheckExpr ctx' e2 (fuel - 1) = .ok result2
-                              simp only [Nat.add_sub_cancel]
-                              exact h_tc2
-                            · -- result2.qualType.etyp = t
-                              rw [h_qt2, h_eq]
-                            · -- res.qualType.poison = joinPoison ctx.pc p1
-                              rw [h_qt1]
-                          · -- error branch: t ≠ etyp2 would throw, contradiction
-                            contradiction
-                  | error _err =>
-                      rw [h_tc2] at h_typecheck
-                      simp at h_typecheck
+                              use result1, result2, ls
+                              constructor
+                              · exact h_tc1
+                              constructor
+                              · -- result1.qualType.etyp = ETyp.ref ETyp.int ls
+                                rw [h_qt1, h_t_int]
+                              constructor
+                              · exact h_tc2
+                              constructor
+                              · -- result2.qualType.etyp = ETyp.int
+                                rw [h_qt2]
+                                exact h_etyp2_int
+                              constructor
+                              · trivial  -- res.nextLoc' = result2.nextLoc' (proven by cases h_typecheck)
+                              constructor
+                              · trivial  -- res.nextTag' = result2.nextTag' (proven by cases h_typecheck)
+                              constructor
+                              · trivial  -- res.qualType.etyp = ETyp.unit (proven by cases h_typecheck)
+                              constructor
+                              · -- res.qualType.poison = joinPoison ctx.pc p1
+                                rw [h_qt1]
+                              · trivial  -- res.qualType.pred = Predicate.noPred (proven by cases h_typecheck)
+                            · -- Case: etyp2 ≠ ETyp.int (error - contradiction)
+                              cases h_typecheck
+                    | error _err =>
+                        rw [h_tc2] at h_typecheck
+                        simp at h_typecheck
+                  · -- Case: t ≠ ETyp.int (error - contradiction)
+                    cases h_typecheck
               | _ =>
                   -- Non-reference type - error case
                   simp at h_typecheck
@@ -1718,27 +1723,32 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
                 cases etyp <;> simp at h_typecheck
                 -- Only the ref case succeeds
                 rename_i t ls
+                -- New check: if t != ETyp.int then throw
                 split at h_typecheck
-                · -- ls.isEmpty - error case
-                  contradiction
-                · -- ls not empty - split on foldM result
+                · -- Case: t = ETyp.int (the only successful case)
                   split at h_typecheck
-                  · -- foldM error case
-                    simp at h_typecheck
-                  · -- foldM success case - now split on poisonRef
+                  · -- ls.isEmpty - error case
+                    contradiction
+                  · -- ls not empty - split on foldM result
                     split at h_typecheck
-                    · -- poisonRef = true
-                      simp [pure, Except.pure] at h_typecheck
-                      cases h_typecheck; rfl
-                    · -- poisonRef = false - split on merged predicate
+                    · -- foldM error case - contradiction
+                      contradiction
+                    · -- foldM success case - now split on poisonRef
                       split at h_typecheck
-                      · -- noPred case (h_1)
+                      · -- poisonRef = true
                         simp [pure, Except.pure] at h_typecheck
                         cases h_typecheck; rfl
-                      · -- guardOnly case (h_2) - split on tag lookup
-                        split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
-                      · -- guardClosure case (h_3) - split on tag lookup
-                        split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                      · -- poisonRef = false - split on merged predicate
+                        split at h_typecheck
+                        · -- noPred case (h_1)
+                          simp [pure, Except.pure] at h_typecheck
+                          cases h_typecheck; rfl
+                        · -- guardOnly case (h_2) - split on tag lookup
+                          split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                        · -- guardClosure case (h_3) - split on tag lookup
+                          split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                · -- Case: t ≠ ETyp.int (error - contradiction)
+                  cases h_typecheck
           · -- res.tagEnv' = result1.tagEnv'
             -- Same analysis as memEnv'
             cases h_qt : result1.qualType with
@@ -1747,16 +1757,22 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
                 simp at h_typecheck
                 cases etyp <;> simp at h_typecheck
                 rename_i t ls
+                -- New check: if t != ETyp.int then throw
                 split at h_typecheck
-                · contradiction
-                · split at h_typecheck
-                  · simp at h_typecheck
+                · -- Case: t = ETyp.int
+                  split at h_typecheck
+                  · contradiction
                   · split at h_typecheck
-                    · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                    · -- foldM error case - contradiction
+                      contradiction
                     · split at h_typecheck
                       · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
-                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
-                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                      · split at h_typecheck
+                        · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                        · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                        · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                · -- Case: t ≠ ETyp.int (error - contradiction)
+                  cases h_typecheck
           · -- res.nextLoc' = result1.nextLoc'
             cases h_qt : result1.qualType with
             | mk etyp poisonRef predRef =>
@@ -1764,16 +1780,22 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
                 simp at h_typecheck
                 cases etyp <;> simp at h_typecheck
                 rename_i t ls
+                -- New check: if t != ETyp.int then throw
                 split at h_typecheck
-                · contradiction
-                · split at h_typecheck
-                  · simp at h_typecheck
+                · -- Case: t = ETyp.int
+                  split at h_typecheck
+                  · contradiction
                   · split at h_typecheck
-                    · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                    · -- foldM error case - contradiction
+                      contradiction
                     · split at h_typecheck
                       · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
-                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
-                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                      · split at h_typecheck
+                        · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                        · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                        · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                · -- Case: t ≠ ETyp.int (error - contradiction)
+                  cases h_typecheck
           · -- res.nextTag' = result1.nextTag'
             cases h_qt : result1.qualType with
             | mk etyp poisonRef predRef =>
@@ -1781,16 +1803,22 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
                 simp at h_typecheck
                 cases etyp <;> simp at h_typecheck
                 rename_i t ls
+                -- New check: if t != ETyp.int then throw
                 split at h_typecheck
-                · contradiction
-                · split at h_typecheck
-                  · simp at h_typecheck
+                · -- Case: t = ETyp.int
+                  split at h_typecheck
+                  · contradiction
                   · split at h_typecheck
-                    · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                    · -- foldM error case - contradiction
+                      contradiction
                     · split at h_typecheck
                       · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
-                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
-                      · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                      · split at h_typecheck
+                        · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                        · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                        · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                · -- Case: t ≠ ETyp.int (error - contradiction)
+                  cases h_typecheck
       | error _err =>
           simp [h_tc1] at h_typecheck
 
@@ -2081,7 +2109,7 @@ private lemma typecheckNewRef_nextTag_mono (ctx : TypeContext) (e : Expr) (fuel 
   ctx.nextTag ≤ res.nextTag' := by
   intro htc
   have hstruct := typecheckNewRef_structure ctx e fuel res htc
-  rcases hstruct with ⟨result1, _l, _etyp, htc1, _hl, _hetyp, _hqtetyp, _hqtpoison, _hqtpred, _hmem, _htag, _hloc, hnexttag⟩
+  rcases hstruct with ⟨result1, _l, htc1, _hl, _hetyp, _hqtetyp, _hqtpoison, _hqtpred, _hmem, _htag, _hloc, hnexttag⟩
   cases fuel with
   | zero => unfold typecheckNewRef at htc; simp at htc
   | succ fuel' =>
@@ -2102,7 +2130,7 @@ lemma typecheckAssign_preserves_nextTag (ctx : TypeContext) (e1 e2 : Expr) (fuel
     res.nextTag' = result2.nextTag' := by
   intro htc
   have hstruct := typecheckAssign_structure ctx e1 e2 fuel res htc
-  rcases hstruct with ⟨result1, result2, _t, _ls, htc1, _hetyp1, htc2, _hetyp2, _hloc, hnexttag, _⟩
+  rcases hstruct with ⟨result1, result2, _ls, htc1, _hetyp1, htc2, _hetyp2, _hloc, hnexttag, _⟩
   let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
                          nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
   exact ⟨result1, result2, ctx', htc1, rfl, htc2, hnexttag⟩

@@ -2314,7 +2314,7 @@ private lemma stepFR_newRef
   have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
-  obtain ⟨res1, l, etyp, htc1, hl, h_etyp1, h_etyp, h_poison, h_pred, h_mem, h_tag, h_loc, h_ntag⟩ :=
+  obtain ⟨res1, l, htc1, hl, h_etyp1, h_etyp, h_poison, h_pred, h_mem, h_tag, h_loc, h_ntag⟩ :=
     typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
@@ -2406,9 +2406,9 @@ private lemma stepFR_newRef
     rw [h_loc]
     by_cases h_eq : l' = l
     · subst h_eq; rw [hl]; exact Nat.lt_succ_self res1.nextLoc'
-    · have hmem : l' ∈ updateMemEnv res1.memEnv' l ⟨etyp, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩ :=
+    · have hmem : l' ∈ updateMemEnv res1.memEnv' l ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩ :=
         (Std.ExtTreeMap.contains_iff_mem).1 hcontains
-      have h_isSome : ((updateMemEnv res1.memEnv' l ⟨etyp, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩)[l']?).isSome = true :=
+      have h_isSome : ((updateMemEnv res1.memEnv' l ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩)[l']?).isSome = true :=
         (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
       have h_cmp_ne : compare l l' ≠ Ordering.eq := by
         intro hcmp; have : l = l' := LawfulEqCmp.eq_of_compare hcmp; exact h_eq this.symm
@@ -2519,9 +2519,9 @@ private lemma stepFR_newRef
   have hagree_clean :
       agreeOnClean predSat R (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' :=
     agreeOnClean_newRef_extend
-      predSat R ctxᵢ res1 res l etyp
+      predSat R ctxᵢ res1 res l ETyp.int
       cfg₀' cfg₁' cf₀ cf₁ n₀ n₁ cfg₀'.nextAddr cfg₁'.nextAddr θ₀1 θ₁1 θ₀' θ₁'
-      h_mem h_etyp1.symm rfl rfl hmem₀ hmem₁ hvar₀ hvar₁ rfl rfl
+      h_mem h_etyp1 rfl rfl hmem₀ hmem₁ hvar₀ hvar₁ rfl rfl
       hθext₀' hθext₁' hwfcf₀1 hwfcf₁1 hagree_clean_e hres_agree_e
   -- Derive wfConfig for final configs
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.newRef e) _ cf₀ o₀ ht₀ hwfcfg₀).1
