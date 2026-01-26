@@ -11,6 +11,7 @@ import LeanProofs.TypeSafety
 import LeanProofs.SemanticsProperties
 import LeanProofs.IOHelpers
 import LeanProofs.LookupUpdate
+import LeanProofs.Equality
 import LeanProofs.PreservationProofs
 import LeanProofs.VarEnvPreservation
 import LeanProofs.MemoryMonotonicity
@@ -18,6 +19,7 @@ import Std.Data.ExtTreeMap.Lemmas
 import Std.Data.ExtTreeSet.Lemmas
 
 open List
+open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
@@ -323,6 +325,64 @@ private lemma agreeValueUnder_transport_clean
       | withPred_true_ref _k2 _htag2 _hregime2 hetyp1 hlookup1 hin hv1 hlookup2 hv2 =>
           exact agreeValueUnder.withPred_true_ref k htag hreg (hetyp.trans hetyp1) hlookup1 hin hv1 hlookup2 hv2
 
+private lemma valueHasETyp_num_etyp {θ : RealizationMap} {n : Int} {t : ETyp} :
+  valueHasETyp θ (Value.num n) t → t = ETyp.int := by
+  intro h
+  cases h
+  rfl
+
+private lemma typecheckDeref_etyp_int
+  (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckDeref ctx e fuel = .ok res → res.qualType.etyp = ETyp.int := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+      unfold typecheckDeref at h_typecheck
+      simp at h_typecheck
+  | succ fuel' =>
+      unfold typecheckDeref at h_typecheck
+      simp at h_typecheck
+      simp [bind, Except.bind] at h_typecheck
+      cases h_tc1 : typecheckExpr ctx e fuel' with
+      | error err =>
+          simp [h_tc1] at h_typecheck
+      | ok result1 =>
+          simp [h_tc1] at h_typecheck
+          cases h_qt : result1.qualType with
+          | mk etyp poisonRef predRef =>
+              rw [h_qt] at h_typecheck
+              simp at h_typecheck
+              cases etyp <;> simp at h_typecheck
+              -- only ref case can succeed
+              rename_i t ls
+              split at h_typecheck
+              · -- t = ETyp.int (the only successful case)
+                split at h_typecheck
+                · -- ls.isEmpty - error case
+                  contradiction
+                · -- ls not empty - split on foldM result
+                  split at h_typecheck
+                  · -- foldM error case
+                    contradiction
+                  · -- foldM success case - now split on poisonRef
+                    split at h_typecheck
+                    · -- poisonRef = true
+                      simp [pure, Except.pure] at h_typecheck
+                      cases h_typecheck
+                      rfl
+                    · -- poisonRef = false - split on merged predicate
+                      split at h_typecheck
+                      · -- noPred case
+                        simp [pure, Except.pure] at h_typecheck
+                        cases h_typecheck
+                        rfl
+                      · -- guardOnly case (split on tag lookup)
+                        split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                      · -- guardClosure case (split on tag lookup)
+                        split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+              · -- t ≠ ETyp.int (error - contradiction)
+                cases h_typecheck
+
 -- If result is clean, condition must be clean (for standard mode ite)
 -- From h_poison: res.qualType.poison = joinPoison ctx.pc (joinPoison res1.poison (joinPoison res2.poison res3.poison))
 -- If res is clean, then the join is false, so all components are false
@@ -333,6 +393,363 @@ private lemma ite_clean_implies_cond_clean {ctx_pc res1_poison res2_poison res3_
   have ⟨h1, h2⟩ := joinPoison_eq_false h
   have ⟨h3, _h4⟩ := joinPoison_eq_false h2
   exact h3
+
+-- Extract guard tag directly from a predicate (helper for deref foldM lemmas).
+private def predGuardTag (p : Predicate) : Option Tag :=
+  match p with
+  | Predicate.guardClosure k _ _ _ => some k
+  | Predicate.guardOnly k => some k
+  | Predicate.noPred => none
+
+-- fold function used by typecheckDeref (exposed for local reasoning)
+private def derefFoldF (mem : MemoryTypeEnv) (acc : Bool × Option Predicate) (l : Loc) :
+    Except String (Bool × Option Predicate) :=
+  match mem[l]? with
+  | some qt =>
+      if qt.etyp = ETyp.int then
+        Except.ok
+          (joinPoison acc.1 qt.poison,
+            match acc.2 with
+            | none => some qt.pred
+            | some p => some (joinPredicates p qt.pred))
+      else
+        throw
+          (toString "Type mismatch in dereference at " ++ toString l ++ toString ": " ++
+            toString (repr qt.etyp) ++ toString " ≠ int")
+  | none =>
+      throw
+        (toString "Location " ++ toString l ++ toString " not found in memory environment")
+
+private lemma predGuardTag_joinPredicates {p q : Predicate} {k : Tag} :
+    predGuardTag (joinPredicates p q) = some k →
+    predGuardTag p = some k ∧ predGuardTag q = some k := by
+  cases p with
+  | guardClosure k1 a1 b1 env1 =>
+      cases q with
+      | guardClosure k2 a2 b2 env2 =>
+          intro h
+          by_cases hbeq :
+              beqPredicate (Predicate.guardClosure k1 a1 b1 env1)
+                (Predicate.guardClosure k2 a2 b2 env2) = true
+          · have hpq :
+              Predicate.guardClosure k1 a1 b1 env1 = Predicate.guardClosure k2 a2 b2 env2 := by
+              exact eq_of_beq (a := Predicate.guardClosure k1 a1 b1 env1)
+                (b := Predicate.guardClosure k2 a2 b2 env2) hbeq
+            cases hpq
+            have hk1 : k1 = k := by
+              simpa [joinPredicates, predGuardTag, hbeq] using h
+            exact ⟨by simp [predGuardTag, hk1], by simp [predGuardTag, hk1]⟩
+          · by_cases htag : (k1 == k2) = true
+            · have hk1 : k1 = k := by
+                simpa [joinPredicates, predGuardTag, hbeq, htag] using h
+              have hk12 : k1 = k2 := of_decide_eq_true htag
+              have hk2 : k2 = k := by
+                calc
+                  k2 = k1 := hk12.symm
+                  _ = k := hk1
+              exact ⟨by simp [predGuardTag, hk1], by simp [predGuardTag, hk2]⟩
+            · simp [joinPredicates, predGuardTag, hbeq, htag] at h
+      | guardOnly k2 =>
+          intro h
+          by_cases htag : (k1 == k2) = true
+          · have hk1 : k1 = k := by
+              simpa [joinPredicates, predGuardTag, beqPredicate, htag] using h
+            have hk12 : k1 = k2 := of_decide_eq_true htag
+            have hk2 : k2 = k := by
+              calc
+                k2 = k1 := hk12.symm
+                _ = k := hk1
+            exact ⟨by simp [predGuardTag, hk1], by simp [predGuardTag, hk2]⟩
+          · simp [joinPredicates, predGuardTag, beqPredicate, htag] at h
+      | noPred =>
+          intro h
+          simp [joinPredicates, predGuardTag, beqPredicate] at h
+  | guardOnly k1 =>
+      cases q with
+      | guardClosure k2 a2 b2 env2 =>
+          intro h
+          by_cases htag : (k1 == k2) = true
+          · have hk1 : k1 = k := by
+              simpa [joinPredicates, predGuardTag, beqPredicate, htag] using h
+            have hk12 : k1 = k2 := of_decide_eq_true htag
+            have hk2 : k2 = k := by
+              calc
+                k2 = k1 := hk12.symm
+                _ = k := hk1
+            exact ⟨by simp [predGuardTag, hk1], by simp [predGuardTag, hk2]⟩
+          · simp [joinPredicates, predGuardTag, beqPredicate, htag] at h
+      | guardOnly k2 =>
+          intro h
+          by_cases htag : (k1 == k2) = true
+          · have hk1 : k1 = k := by
+              simpa [joinPredicates, predGuardTag, beqPredicate, htag] using h
+            have hk12 : k1 = k2 := of_decide_eq_true htag
+            have hk2 : k2 = k := by
+              calc
+                k2 = k1 := hk12.symm
+                _ = k := hk1
+            exact ⟨by simp [predGuardTag, hk1], by simp [predGuardTag, hk2]⟩
+          · simp [joinPredicates, predGuardTag, beqPredicate, htag] at h
+      | noPred =>
+          intro h
+          simp [joinPredicates, predGuardTag, beqPredicate] at h
+  | noPred =>
+      cases q with
+      | guardClosure _ _ _ _ =>
+          intro h
+          simp [joinPredicates, predGuardTag, beqPredicate] at h
+      | guardOnly _ =>
+          intro h
+          simp [joinPredicates, predGuardTag, beqPredicate] at h
+      | noPred =>
+          intro h
+          simp [joinPredicates, predGuardTag, beqPredicate] at h
+
+-- If foldlM returns joined poison = false, then the accumulator poison is false.
+private lemma list_foldlM_derefFoldF_acc_false
+  (mem : MemoryTypeEnv) :
+  ∀ (xs : List Loc) (acc : Bool × Option Predicate) (joined : Bool) (pred? : Option Predicate),
+    List.foldlM (derefFoldF mem) acc xs = Except.ok (joined, pred?) →
+    joined = false →
+    acc.1 = false := by
+  intro xs
+  induction xs with
+  | nil =>
+      intro acc joined pred? hfold hjoin
+      simp [List.foldlM_nil, pure, Except.pure] at hfold
+      cases hfold
+      simpa using hjoin
+  | cons x xs ih =>
+      intro acc joined pred? hfold hjoin
+      simp [List.foldlM_cons, bind, Except.bind] at hfold
+      cases hfx : derefFoldF mem acc x with
+      | error err =>
+          simp [hfx] at hfold
+      | ok acc' =>
+          simp [hfx] at hfold
+          -- unfold derefFoldF to relate acc'.1 to acc.1
+          cases hlookup : mem[x]? with
+          | none =>
+              simp [derefFoldF, hlookup] at hfx
+          | some qt =>
+              by_cases h_etyp : qt.etyp = ETyp.int
+              · simp [derefFoldF, hlookup, h_etyp] at hfx
+                have hacc'_fst : acc'.1 = joinPoison acc.1 qt.poison := by
+                  simpa using (congrArg Prod.fst hfx).symm
+                -- apply IH on the tail to get acc'.1 = false
+                have hacc'_false : acc'.1 = false := ih acc' joined pred? hfold hjoin
+                -- now acc.1 must be false
+                have hjoin' : joinPoison acc.1 qt.poison = false := by
+                  simpa [hacc'_fst] using hacc'_false
+                exact (joinPoison_eq_false hjoin').1
+              · simp [derefFoldF, hlookup, h_etyp] at hfx
+
+-- If foldlM returns joined poison = false, then every referenced cell is unpoisoned.
+private lemma list_foldlM_derefFoldF_poison_false
+  (mem : MemoryTypeEnv) :
+  ∀ (xs : List Loc) (acc : Bool × Option Predicate) (joined : Bool) (pred? : Option Predicate),
+    List.foldlM (derefFoldF mem) acc xs = Except.ok (joined, pred?) →
+    joined = false →
+    ∀ l ∈ xs, ∃ qt, mem[l]? = some qt ∧ qt.etyp = ETyp.int ∧ qt.poison = false := by
+  intro xs
+  induction xs with
+  | nil =>
+      intro acc joined pred? hfold _hjoin l hl
+      cases hl
+  | cons x xs ih =>
+      intro acc joined pred? hfold hjoin l hl
+      simp [List.foldlM, bind, Except.bind] at hfold
+      cases hfx : derefFoldF mem acc x with
+      | error err =>
+          simp [hfx] at hfold
+      | ok acc' =>
+          simp [hfx] at hfold
+          -- extract the head cell from hfx
+          cases hlookup : mem[x]? with
+          | none =>
+              simp [derefFoldF, hlookup] at hfx
+          | some qt =>
+              by_cases h_etyp : qt.etyp = ETyp.int
+              · simp [derefFoldF, hlookup, h_etyp] at hfx
+                -- acc' now is the expected pair
+                have hacc' : acc'.1 = joinPoison acc.1 qt.poison := by
+                  simpa using (congrArg Prod.fst hfx).symm
+                -- Since final joined = false, the accumulator into the tail must be false.
+                have hacc'_false : acc'.1 = false :=
+                  list_foldlM_derefFoldF_acc_false mem xs acc' joined pred? hfold hjoin
+                have hpoison_head : qt.poison = false := by
+                  -- joinPoison acc.1 qt.poison = acc'.1 = false
+                  have hjoin' : joinPoison acc.1 qt.poison = false := by simpa [hacc'] using hacc'_false
+                  exact (joinPoison_eq_false hjoin').2
+                rcases (List.mem_cons.mp hl) with rfl | hltail
+                · exact ⟨qt, hlookup, h_etyp, hpoison_head⟩
+                · -- apply IH to the tail
+                  exact ih acc' joined pred? hfold hjoin l hltail
+              · simp [derefFoldF, hlookup, h_etyp] at hfx
+
+-- If foldlM succeeds, then every referenced cell has type int.
+private lemma list_foldlM_derefFoldF_etyp_int
+  (mem : MemoryTypeEnv) :
+  ∀ (xs : List Loc) (acc : Bool × Option Predicate) (joined : Bool) (pred? : Option Predicate),
+    List.foldlM (derefFoldF mem) acc xs = Except.ok (joined, pred?) →
+    ∀ l ∈ xs, ∃ qt, mem[l]? = some qt ∧ qt.etyp = ETyp.int := by
+  intro xs
+  induction xs with
+  | nil =>
+      intro acc joined pred? hfold l hl
+      cases hl
+  | cons x xs ih =>
+      intro acc joined pred? hfold l hl
+      simp [List.foldlM, bind, Except.bind] at hfold
+      cases hfx : derefFoldF mem acc x with
+      | error err =>
+          simp [hfx] at hfold
+      | ok acc' =>
+          simp [hfx] at hfold
+          cases hlookup : mem[x]? with
+          | none =>
+              simp [derefFoldF, hlookup] at hfx
+          | some qt =>
+              by_cases h_etyp : qt.etyp = ETyp.int
+              · simp [derefFoldF, hlookup, h_etyp] at hfx
+                rcases (List.mem_cons.mp hl) with rfl | hltail
+                · exact ⟨qt, hlookup, h_etyp⟩
+                · exact ih acc' joined pred? hfold l hltail
+              · simp [derefFoldF, hlookup, h_etyp] at hfx
+
+-- If foldlM returns a guard tag k, then every referenced cell predicate has tag k.
+private lemma list_foldlM_derefFoldF_guardTag
+  (mem : MemoryTypeEnv) :
+  ∀ (xs : List Loc) (acc : Bool × Option Predicate) (joined : Bool) (pred? : Option Predicate) (k : Tag),
+    List.foldlM (derefFoldF mem) acc xs = Except.ok (joined, pred?) →
+    predGuardTag (pred?.getD Predicate.noPred) = some k →
+    (predGuardTag (acc.2.getD Predicate.noPred) = some k ∨ acc.2 = none) ∧
+    (∀ l ∈ xs, ∃ qt, mem[l]? = some qt ∧ predGuardTag qt.pred = some k) := by
+  intro xs
+  induction xs with
+  | nil =>
+      intro acc joined pred? k hfold hguard
+      simp [List.foldlM, pure, Except.pure] at hfold
+      cases hfold
+      constructor
+      · left
+        simpa using hguard
+      · intro l hl; cases hl
+  | cons x xs ih =>
+      intro acc joined pred? k hfold hguard
+      simp [List.foldlM, bind, Except.bind] at hfold
+      cases hfx : derefFoldF mem acc x with
+      | error err =>
+          simp [hfx] at hfold
+      | ok acc' =>
+          simp [hfx] at hfold
+          -- extract head cell info
+          cases hlookup : mem[x]? with
+          | none =>
+              simp [derefFoldF, hlookup] at hfx
+          | some qt =>
+              by_cases h_etyp : qt.etyp = ETyp.int
+              · simp [derefFoldF, hlookup, h_etyp] at hfx
+                have hacc'_snd :
+                    acc'.2 =
+                      match acc.2 with
+                      | none => some qt.pred
+                      | some p => some (joinPredicates p qt.pred) := by
+                  simpa using (congrArg Prod.snd hfx).symm
+                -- apply IH to tail
+                have ih' := ih acc' joined pred? k hfold hguard
+                rcases ih' with ⟨hacc'_tag, htail⟩
+                have hhead_tag : predGuardTag qt.pred = some k := by
+                  -- acc'.2 is some predHead by construction
+                  -- Use hacc'_tag to derive head tag
+                  cases hacc : acc.2 with
+                  | none =>
+                      have hacc'_snd' : acc'.2 = some qt.pred := by
+                        simpa [hacc] using hacc'_snd
+                      -- acc'.2 = some qt.pred
+                      have hk : predGuardTag (acc'.2.getD Predicate.noPred) = some k := by
+                        cases hacc'_tag with
+                        | inl hk => exact hk
+                        | inr hnone =>
+                            simp [hacc'_snd'] at hnone
+                      simpa [hacc'_snd'] using hk
+                  | some p =>
+                      have hacc'_snd' : acc'.2 = some (joinPredicates p qt.pred) := by
+                        simpa [hacc] using hacc'_snd
+                      have hk : predGuardTag (acc'.2.getD Predicate.noPred) = some k := by
+                        cases hacc'_tag with
+                        | inl hk => exact hk
+                        | inr hnone =>
+                           simp [hacc'_snd'] at hnone
+                      -- unfold acc'.2 and use joinPredicates lemma
+                      have hpred : predGuardTag (joinPredicates p qt.pred) = some k := by
+                        simpa [hacc'_snd'] using hk
+                      exact (predGuardTag_joinPredicates hpred).2
+                constructor
+                · -- propagate tag to accumulator (or none)
+                  cases hacc : acc.2 with
+                  | none =>
+                      right; rfl
+                  | some p =>
+                      -- acc'.2 = joinPredicates p qt.pred, so tag on acc'.2 gives tag on p
+                      have hacc'_snd' : acc'.2 = some (joinPredicates p qt.pred) := by
+                        simpa [hacc] using hacc'_snd
+                      have hk : predGuardTag (acc'.2.getD Predicate.noPred) = some k := by
+                        cases hacc'_tag with
+                        | inl hk => exact hk
+                        | inr hnone =>
+                            simp [hacc'_snd'] at hnone
+                      have hpred : predGuardTag (joinPredicates p qt.pred) = some k := by
+                        simpa [hacc'_snd'] using hk
+                      left
+                      exact (predGuardTag_joinPredicates hpred).1
+                · -- all elements: head + tail
+                  intro l hl
+                  rcases (List.mem_cons.mp hl) with rfl | hltail
+                  · exact ⟨qt, hlookup, hhead_tag⟩
+                  · exact htail l hltail
+              · simp [derefFoldF, hlookup, h_etyp] at hfx
+
+private lemma deref_foldM_poison_false
+  (mem : MemoryTypeEnv) (ls : LocSet) (joined : Bool) (pred? : Option Predicate)
+  (hfold : LocSet.foldM ls (false, (none : Option Predicate)) (derefFoldF mem) =
+    Except.ok (joined, pred?))
+  (hjoin : joined = false) (l : Loc) (hl : l ∈ ls) :
+  ∃ qt, mem[l]? = some qt ∧ qt.etyp = ETyp.int ∧ qt.poison = false := by
+  -- Convert to list fold and apply list lemma
+  unfold LocSet.foldM at hfold
+  rw [ExtTreeSet.foldlM_eq_foldlM_toList] at hfold
+  have hl' : l ∈ ls.toList := by
+    -- lemma in Std.ExtTreeSet.Lemmas
+    simpa using hl
+  exact list_foldlM_derefFoldF_poison_false mem ls.toList (false, none) joined pred? hfold hjoin l hl'
+
+private lemma deref_foldM_guardTag
+  (mem : MemoryTypeEnv) (ls : LocSet) (joined : Bool) (pred? : Option Predicate) (k : Tag)
+  (hfold : LocSet.foldM ls (false, (none : Option Predicate)) (derefFoldF mem) =
+    Except.ok (joined, pred?))
+  (hguard : predGuardTag (pred?.getD Predicate.noPred) = some k)
+  (l : Loc) (hl : l ∈ ls) :
+  ∃ qt, mem[l]? = some qt ∧ predGuardTag qt.pred = some k := by
+  unfold LocSet.foldM at hfold
+  rw [ExtTreeSet.foldlM_eq_foldlM_toList] at hfold
+  have hl' : l ∈ ls.toList := by
+    simpa using hl
+  have haux :=
+    list_foldlM_derefFoldF_guardTag mem ls.toList (false, none) joined pred? k hfold hguard
+  exact (haux.2 l hl')
+
+private lemma deref_foldM_etyp_int
+  (mem : MemoryTypeEnv) (ls : LocSet) (joined : Bool) (pred? : Option Predicate)
+  (hfold : LocSet.foldM ls (false, (none : Option Predicate)) (derefFoldF mem) =
+    Except.ok (joined, pred?))
+  (l : Loc) (hl : l ∈ ls) :
+  ∃ qt, mem[l]? = some qt ∧ qt.etyp = ETyp.int := by
+  unfold LocSet.foldM at hfold
+  rw [ExtTreeSet.foldlM_eq_foldlM_toList] at hfold
+  have hl' : l ∈ ls.toList := by
+    simpa using hl
+  exact list_foldlM_derefFoldF_etyp_int mem ls.toList (false, none) joined pred? hfold l hl'
 
 -- wfTypeContext for ctxAfter is equivalent to wfTypeResult
 -- (ctxAfter sets memEnv := res.memEnv' and nextLoc := res.nextLoc')
@@ -4452,7 +4869,573 @@ private lemma stepFR_deref
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ R (Expr.deref e) res predSat := by
-  sorry -- TODO: Complex proof involving memory lookups and ref type agreement
+  classical
+  -- Parse typecheck result
+  have htc' : typecheckDeref ctxᵢ e (Nat.succ fuel') = .ok res := by
+    simp [typecheck, typecheckExpr] at htc
+    exact htc
+  obtain ⟨res1, htc1, h_mem, h_tag, h_loc, h_ntag⟩ :=
+    typecheckDeref_structure ctxᵢ e (Nat.succ fuel') res htc'
+  have htc1_expr : typecheckExpr ctxᵢ e fuel' = .ok res1 := by
+    simpa [Nat.succ_sub_one] using htc1
+  have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e ctxᵢ res1 htc1' R
+  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Invert deref evaluation (world-free)
+  have hstruct₀ := terminatesTo_deref_inv' e
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+  rcases hstruct₀ with ⟨cfg₀', a₀', n₀, ht₀_e, hlookup₀, hv₀, hmem₀, hvar₀, hnext₀, hpm₀, hpm_e₀⟩
+  have hstruct₁ := terminatesTo_deref_inv' e
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+  rcases hstruct₁ with ⟨cfg₁', a₁', n₁, ht₁_e, hlookup₁, hv₁, hmem₁, hvar₁, hnext₁, hpm₁, hpm_e₁⟩
+  -- Apply IH for sub-expression
+  have hstep_e :=
+    hIH μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.loc a₀') (Value.loc a₁')
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
+  rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hwf', hwfcfg₀', hwfcfg₁', hric₀', hric₁', hreg', hagree_clean_e, hres_agree_e⟩
+  -- Post-context is unchanged by deref (only result type changes)
+  have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
+    simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag]
+  have hagree_clean :
+      agreeOnClean predSat R (ctxAfter ctxᵢ res)
+        cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
+    simpa [hctxAfter, hmem₀, hvar₀, hmem₁, hvar₁] using hagree_clean_e
+  have hric₀_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
+    simpa [hctxAfter, hmem₀, hvar₀] using hric₀'
+  have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
+    simpa [hctxAfter, hmem₁, hvar₁] using hric₁'
+  have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) R := by
+    simpa [hctxAfter] using hreg'
+  -- Derive wfConfig for final configs using wfConfig_preserved
+  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.deref e) _ cf₀ o₀ ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved .ioFree (Expr.deref e) _ cf₁ o₁ ht₁ hwfcfg₁).1
+  refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hagree_clean, ?_⟩
+  · simpa [hctxAfter] using hwf'
+  -- Result agreement when clean: deref reads from a clean location
+  intro hclean
+  -- We need to show o₀ = o₁ (both are ints from the same logical location)
+  -- First, show the argument type is ref int
+  have hres1_etyp : ∃ ls, res1.qualType.etyp = ETyp.ref ETyp.int ls := by
+    have htc'' := htc'
+    simp [typecheckDeref, htc1_expr, bind, Except.bind] at htc''
+    cases hq : res1.qualType with
+    | mk etyp poison pred =>
+        cases etyp <;> simp [hq] at htc''
+        rename_i t ls
+        by_cases ht : t = ETyp.int
+        · subst ht; exact ⟨ls, rfl⟩
+        · have : False := by simp [ht] at htc''
+          exact (False.elim this)
+  -- The reference itself must be unpoisoned if the deref result is clean
+  have hres1_poison_false : res1.qualType.poison = false := by
+    by_contra hbad
+    rcases hres1_etyp with ⟨ls, hres1_etyp⟩
+    cases hq : res1.qualType with
+    | mk etyp poison pred =>
+        -- simplify typecheckDeref under poisonRef = true
+        have h_etyp : etyp = ETyp.ref ETyp.int ls := by
+          simpa [hq] using hres1_etyp
+        have hpoison : poison = true := by
+          cases poison
+          · simp [hq] at hbad
+          · rfl
+        have htc'' := htc'
+        simp [typecheckDeref, htc1_expr, hq, h_etyp, hpoison, bind, Except.bind, pure, Except.pure] at htc''
+        by_cases hls : ls = ∅
+        · -- Empty locset: typecheck would error, contradict success
+          simp [hls] at htc''
+        · -- ls ≠ ∅, so the deref branch returns poisoned result with noPred
+          simp [hls] at htc''
+          -- Case split on the foldM over locations via the outer match in htc''
+          split at htc''
+          · -- foldM error case
+            cases htc''
+          · -- foldM ok case
+            rename_i v
+            cases htc''
+            cases hclean with
+            | clean hpoison =>
+                -- contradiction: clean requires poison = false
+                simp at hpoison
+            | guard k htag _ _ =>
+                -- contradiction: guard tag absent when pred = noPred
+                simp [qtypGuardTag] at htag
+  have hres1_clean : qtypCleanUnder R res1.qualType :=
+    qtypCleanUnder.clean hres1_poison_false
+  have hagree_ref :
+      agreeValueUnder predSat R cfg₀'.memory cfg₁'.memory θ₀' θ₁' res1.qualType (Value.loc a₀') (Value.loc a₁') :=
+    hres_agree_e hres1_clean
+  -- Extract the logical location l from reference agreement
+  rcases hres1_etyp with ⟨ls0, hres1_etyp0⟩
+  have ⟨l, hθ₀l, hθ₁l, hlin⟩ :
+      ∃ l, θ₀'.lookup l = some a₀' ∧ θ₁'.lookup l = some a₁' ∧ l ∈ ls0 := by
+    cases hagree_ref with
+    | @clean_ref t ls l a1 a2 qt v1 v2 _hetyp_poison hetyp hlookup1 hin hv1 hlookup2 hv2 =>
+        have : ETyp.ref t ls = ETyp.ref ETyp.int ls0 := by
+          calc
+            ETyp.ref t ls = res1.qualType.etyp := by symm; exact hetyp
+            _ = ETyp.ref ETyp.int ls0 := hres1_etyp0
+        cases this
+        -- Align addresses using hv1/hv2
+        cases hv1
+        cases hv2
+        exact ⟨l, by simpa using hlookup1, by simpa using hlookup2, hin⟩
+    | @withPred_true_ref k t ls l a1 a2 qt v1 v2 _htag _hreg hetyp hlookup1 hin hv1 hlookup2 hv2 =>
+        have : ETyp.ref t ls = ETyp.ref ETyp.int ls0 := by
+          calc
+            ETyp.ref t ls = res1.qualType.etyp := by symm; exact hetyp
+            _ = ETyp.ref ETyp.int ls0 := hres1_etyp0
+        cases this
+        cases hv1
+        cases hv2
+        exact ⟨l, by simpa using hlookup1, by simpa using hlookup2, hin⟩
+    | clean_eq_nonref_nonarrow _ _ hnotref _ =>
+        exfalso
+        exact hnotref ⟨ETyp.int, ls0, hres1_etyp0⟩
+    | withPred_true_eq _ _ _ _ hnotref _ =>
+        exfalso
+        exact hnotref ⟨ETyp.int, ls0, hres1_etyp0⟩
+    | clean_internal_arrow _ hetyp _ _ _ _ _ =>
+        exfalso
+        have h := hres1_etyp0
+        simp [hetyp] at h
+    | dirty_internal_arrow _ hisArrow _ _ =>
+        exfalso
+        -- res1.etyp is ref, so cannot be arrow
+        have : res1.qualType.etyp.isArrow = false := by
+          simp [hres1_etyp0, ETyp.isArrow]
+        rw [hisArrow] at this
+        cases this
+    | clean_internal_parrow _ hetyp _ _ _ _ _ =>
+        exfalso
+        have h := hres1_etyp0
+        simp [hetyp] at h
+    | dirty_internal_parrow _ hisParrow _ _ =>
+        exfalso
+        have : res1.qualType.etyp.isParrow = false := by
+          simp [hres1_etyp0, ETyp.isParrow]
+        rw [hisParrow] at this
+        cases this
+  -- Obtain the memory type for l from the context
+  have hlookup_ctx : ∃ qt, (ctxAfter ctxᵢ res1).memEnv.lookup l = some qt := by
+    -- Use runtime instantiation to show l is present, then pick its lookup
+    have hcontains : (ctxAfter ctxᵢ res1).memEnv.contains l = true := by
+      -- from runtimeInstantiatesCtx and θ₀' lookup
+      have hctx : (ctxAfter ctxᵢ res1).memEnv.contains l ∧ cfg₀'.memory.contains a₀' :=
+        (hric₀'.1 l a₀' hθ₀l)
+      exact hctx.1
+    have hmem : l ∈ (ctxAfter ctxᵢ res1).memEnv :=
+      (Std.ExtTreeMap.contains_iff_mem).1 hcontains
+    have hlookup_isSome : ((ctxAfter ctxᵢ res1).memEnv[l]?).isSome = true :=
+      (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
+    cases hlookup_l : (ctxAfter ctxᵢ res1).memEnv[l]? with
+    | none =>
+        simp [hlookup_l] at hlookup_isSome
+    | some qt =>
+        -- align lookup with lookup? in the map
+        have hlookup_l' : (ctxAfter ctxᵢ res1).memEnv.lookup l = some qt := by
+          simpa [MemoryTypeEnv.lookup] using hlookup_l
+        exact ⟨qt, hlookup_l'⟩
+  obtain ⟨qt, hlookup_ctx⟩ := hlookup_ctx
+  -- Get agreement on the location from agreeOnClean (location is clean under R)
+  have hclean_loc : qtypCleanUnder R qt := by
+    -- Analyze typecheckDeref to obtain the fold result, then use hclean.
+    cases hq : res1.qualType with
+    | mk etyp poison pred =>
+        have h_etyp : etyp = ETyp.ref ETyp.int ls0 := by
+          simpa [hq] using hres1_etyp0
+        have h_poison : poison = false := by
+          simpa [hq] using hres1_poison_false
+        have htc'' := htc'
+        simp [typecheckDeref, htc1_expr, hq, h_etyp, h_poison, bind, Except.bind] at htc''
+        by_cases hls : ls0 = ∅
+        · simp [hls] at htc''; cases htc''
+        · simp [hls] at htc''
+          cases hfold :
+              ls0.foldM (m := Except String) (false, none) (fun x l =>
+                match res1.memEnv'[l]? with
+                | some qt =>
+                    if qt.etyp = ETyp.int then
+                      pure
+                        (joinPoison x.1 qt.poison,
+                          match x.2 with
+                          | none => some qt.pred
+                          | some p => some (joinPredicates p qt.pred))
+                    else
+                      throw
+                        (toString "Type mismatch in dereference at " ++ toString l ++ toString ": " ++
+                          toString (repr qt.etyp) ++ toString " ≠ int")
+                | none =>
+                    throw
+                      (toString "Location " ++ toString l ++ toString " not found in memory environment")) with
+          | error err =>
+              have htc_bad : typecheckDeref ctxᵢ e (Nat.succ fuel') = Except.error err := by
+                simp [typecheckDeref, htc1_expr, hq, h_etyp, h_poison, hls,
+                  bind, Except.bind, pure, Except.pure]
+                erw [hfold]
+              have htc_bad_false : False := by
+                simp [htc_bad] at htc'
+              cases htc_bad_false
+          | ok v_3 =>
+              have hfold_plain :
+                  ls0.foldM (m := Except String) (false, none) (fun x l =>
+                    match res1.memEnv'[l]? with
+                    | some qt =>
+                        if qt.etyp = ETyp.int then
+                          pure
+                            (joinPoison x.1 qt.poison,
+                              match x.2 with
+                              | none => some qt.pred
+                              | some p => some (joinPredicates p qt.pred))
+                        else
+                          throw
+                            (toString "Type mismatch in dereference at " ++ toString l ++ toString ": " ++
+                              toString (repr qt.etyp) ++ toString " ≠ int")
+                    | none =>
+                        throw
+                          (toString "Location " ++ toString l ++ toString " not found in memory environment")) =
+                    Except.ok v_3 := by
+                simpa using hfold
+              erw [hfold_plain] at htc''
+              have hfold' :
+                  LocSet.foldM ls0 (false, (none : Option Predicate)) (derefFoldF res1.memEnv') =
+                    Except.ok v_3 := by
+                simpa [LocSet.foldM, derefFoldF] using hfold
+              have hlookup_ctx' : res1.memEnv'[l]? = some qt := by
+                simpa [ctxAfter, MemoryTypeEnv.lookup] using hlookup_ctx
+              cases hclean with
+            | clean hpoison =>
+                cases hpred : v_3.2.getD Predicate.noPred with
+                | noPred =>
+                    simp [pure, Except.pure] at htc''
+                    simp [hpred] at htc''
+
+                    cases htc''
+                    have hjoin' : joinPoison ctxᵢ.pc v_3.1 = false := by
+                      simpa [hpoison]
+                    have hjoined_false : v_3.1 = false :=
+                      (joinPoison_eq_false hjoin').2
+                    obtain ⟨qt', hlookup', _het, hpoison'⟩ :=
+                      deref_foldM_poison_false res1.memEnv' ls0 v_3.1 v_3.2 hfold' hjoined_false l hlin
+                    have hqt' : qt' = qt := by
+                      have : some qt' = some qt := by
+                        calc
+                          some qt' = res1.memEnv'[l]? := by symm; exact hlookup'
+                          _ = some qt := hlookup_ctx'
+                      exact Option.some.inj this
+                    have hpoison'' : qt.poison = false := by
+                      simpa [hqt'] using hpoison'
+                    exact qtypCleanUnder.clean hpoison''
+                | guardOnly k =>
+                    cases htagEnv : res1.tagEnv'[k]? with
+                    | none =>
+                        simp [hpred, htagEnv] at htc''
+                        cases htc''
+                        have hjoin' : joinPoison ctxᵢ.pc v_3.1 = false := by
+                          simpa [hpoison]
+                        have hjoined_false : v_3.1 = false :=
+                          (joinPoison_eq_false hjoin').2
+                        obtain ⟨qt', hlookup', _het, hpoison'⟩ :=
+                          deref_foldM_poison_false res1.memEnv' ls0 v_3.1 v_3.2 hfold' hjoined_false l hlin
+                        have hqt' : qt' = qt := by
+                          have : some qt' = some qt := by
+                            calc
+                              some qt' = res1.memEnv'[l]? := by symm; exact hlookup'
+                              _ = some qt := hlookup_ctx'
+                          exact Option.some.inj this
+                        have hpoison'' : qt.poison = false := by
+                          simpa [hqt'] using hpoison'
+                        exact qtypCleanUnder.clean hpoison''
+                    | some tagInfo =>
+                        cases tagInfo with
+                        | mk val deps =>
+                            cases val with
+                            | true =>
+                                simp [hpred, htagEnv] at htc''
+                                cases htc''
+                                have hpc : ctxᵢ.pc = false := by
+                                  simpa [hpoison]
+                                -- regime consistency yields R.lookup? k = some true
+                                have htagEnv' :
+                                    (ctxAfter ctxᵢ res1).tagEnv.get? k = some ⟨true, deps⟩ := by
+                                  simpa [ctxAfter] using htagEnv
+                                have hreg_k : R.lookup? k = some true :=
+                                  (hreg'.1 k deps htagEnv')
+                                have hguard : predGuardTag (v_3.2.getD Predicate.noPred) = some k := by
+                                  simp [hpred]
+                                  simp [predGuardTag]
+                                obtain ⟨qt', hlookup', htagqt⟩ :=
+                                  deref_foldM_guardTag res1.memEnv' ls0 v_3.1 v_3.2 k hfold' hguard l hlin
+                                have hqt' : qt' = qt := by
+                                  have : some qt' = some qt := by
+                                    calc
+                                      some qt' = res1.memEnv'[l]? := by symm; exact hlookup'
+                                      _ = some qt := hlookup_ctx'
+                                  exact Option.some.inj this
+                                have htagqt' : qtypGuardTag qt = some k := by
+                                  simpa [hqt'] using htagqt
+                                obtain ⟨qt'', hlookup'', het⟩ :=
+                                  deref_foldM_etyp_int res1.memEnv' ls0 v_3.1 v_3.2 hfold' l hlin
+                                have hqt'' : qt'' = qt := by
+                                  have : some qt'' = some qt := by
+                                    calc
+                                      some qt'' = res1.memEnv'[l]? := by symm; exact hlookup''
+                                      _ = some qt := hlookup_ctx'
+                                  exact Option.some.inj this
+                                have hnotfun' : qt.etyp.isFunctionType = false := by
+                                  simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+                                  rw [← hqt'']
+                                  simp [het]
+                                exact qtypCleanUnder.guard k htagqt' hreg_k hnotfun'
+                            | false =>
+                                simp [hpred, htagEnv] at htc''
+                                cases htc''
+                                cases hpoison
+                | guardClosure k a b env =>
+                    -- same reasoning as guardOnly
+                    cases htagEnv : res1.tagEnv'[k]? with
+                    | none =>
+                        simp [hpred, htagEnv] at htc''
+                        cases htc''
+                        have hjoin' : joinPoison ctxᵢ.pc v_3.1 = false := by
+                          simpa [hpoison]
+                        have hjoined_false : v_3.1 = false :=
+                          (joinPoison_eq_false hjoin').2
+                        obtain ⟨qt', hlookup', _het, hpoison'⟩ :=
+                          deref_foldM_poison_false res1.memEnv' ls0 v_3.1 v_3.2 hfold' hjoined_false l hlin
+                        have hqt' : qt' = qt := by
+                          have : some qt' = some qt := by
+                            calc
+                              some qt' = res1.memEnv'[l]? := by symm; exact hlookup'
+                              _ = some qt := hlookup_ctx'
+                          exact Option.some.inj this
+                        have hpoison'' : qt.poison = false := by
+                          simpa [hqt'] using hpoison'
+                        exact qtypCleanUnder.clean hpoison''
+                    | some tagInfo =>
+                        cases tagInfo with
+                        | mk val deps =>
+                            cases val with
+                            | true =>
+                                simp [hpred, htagEnv] at htc''
+                                cases htc''
+                                have hpc : ctxᵢ.pc = false := by
+                                  simpa [hpoison]
+                                have htagEnv' :
+                                    (ctxAfter ctxᵢ res1).tagEnv.get? k = some ⟨true, deps⟩ := by
+                                  simpa [ctxAfter] using htagEnv
+                                have hreg_k : R.lookup? k = some true :=
+                                  (hreg'.1 k deps htagEnv')
+                                have hguard : predGuardTag (v_3.2.getD Predicate.noPred) = some k := by
+                                  simp [hpred, predGuardTag]
+                                obtain ⟨qt', hlookup', htagqt⟩ :=
+                                  deref_foldM_guardTag res1.memEnv' ls0 v_3.1 v_3.2 k hfold' hguard l hlin
+                                have hqt' : qt' = qt := by
+                                  have : some qt' = some qt := by
+                                    calc
+                                      some qt' = res1.memEnv'[l]? := by symm; exact hlookup'
+                                      _ = some qt := hlookup_ctx'
+                                  exact Option.some.inj this
+                                have htagqt' : qtypGuardTag qt = some k := by
+                                  simpa [hqt'] using htagqt
+                                obtain ⟨qt'', hlookup'', het⟩ :=
+                                  deref_foldM_etyp_int res1.memEnv' ls0 v_3.1 v_3.2 hfold' l hlin
+                                have hqt'' : qt'' = qt := by
+                                  have : some qt'' = some qt := by
+                                    calc
+                                      some qt'' = res1.memEnv'[l]? := by symm; exact hlookup''
+                                      _ = some qt := hlookup_ctx'
+                                  exact Option.some.inj this
+                                have hnotfun' : qt.etyp.isFunctionType = false := by
+                                  simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+                                  rw [← hqt'']
+                                  simp [het]
+                                exact qtypCleanUnder.guard k htagqt' hreg_k hnotfun'
+                            | false =>
+                                simp [hpred, htagEnv] at htc''
+                                cases htc''
+                                cases hpoison
+            | guard k htag hreg hnotfun =>
+                -- merged predicate must carry tag k
+                cases hpred : v_3.2.getD Predicate.noPred with
+                | noPred =>
+                    simp [hpred, pure, Except.pure] at htc''
+                    rw [← htc''] at htag
+                    -- res.pred is noPred, so qtypGuardTag is none: contradiction
+                    simp [qtypGuardTag] at htag
+                | guardOnly k' =>
+                    -- tagEnv must be none, otherwise res.pred noPred
+                    cases htagEnv : res1.tagEnv'[k']? with
+                    | none =>
+                        simp [hpred, htagEnv] at htc''
+                        cases htc''
+                        have hguard : predGuardTag (v_3.2.getD Predicate.noPred) = some k' := by
+                          simp [hpred, predGuardTag]
+                        obtain ⟨qt', hlookup', htagqt⟩ :=
+                          deref_foldM_guardTag res1.memEnv' ls0 v_3.1 v_3.2 k' hfold' hguard l hlin
+                        have hqt' : qt' = qt := by
+                          have : some qt' = some qt := by
+                            calc
+                              some qt' = res1.memEnv'[l]? := by symm; exact hlookup'
+                              _ = some qt := hlookup_ctx'
+                          exact Option.some.inj this
+                        have htagqt' : qtypGuardTag qt = some k := by
+                          -- align k' with k using htag
+                          simp [qtypGuardTag] at htag
+                          rw [hqt', htag] at htagqt
+                          simp [predGuardTag] at htagqt
+                          simp [qtypGuardTag]
+                          cases hqtpred : qt.pred
+                            <;> simp [hqtpred] at htagqt
+                            <;> simpa using htagqt
+                        -- show not function
+                        obtain ⟨qt'', hlookup'', het⟩ :=
+                          deref_foldM_etyp_int res1.memEnv' ls0 v_3.1 v_3.2 hfold' l hlin
+                        have hqt'' : qt'' = qt := by
+                          have : some qt'' = some qt := by
+                            calc
+                              some qt'' = res1.memEnv'[l]? := by symm; exact hlookup''
+                              _ = some qt := hlookup_ctx'
+                          exact Option.some.inj this
+                        have hnotfun' : qt.etyp.isFunctionType = false := by
+                          simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+                          rw [← hqt'']
+                          simp [het]
+                        exact qtypCleanUnder.guard k htagqt' hreg hnotfun'
+                    | some val =>
+                        simp [hpred, htagEnv, pure, Except.pure] at htc''
+                        rcases hval : val with ⟨b, deps⟩; rcases hb : b
+                          <;> simp [hval, hb] at htc''
+                          <;> rw [← htc''] at htag
+                          <;> simp [qtypGuardTag] at htag
+                | guardClosure k' a b env =>
+                    -- same as guardOnly
+                    cases htagEnv : res1.tagEnv'[k']? with
+                    | none =>
+                        simp [hpred, htagEnv] at htc''
+                        cases htc''
+                        have hguard : predGuardTag (v_3.2.getD Predicate.noPred) = some k' := by
+                          simp [hpred, predGuardTag]
+                        obtain ⟨qt', hlookup', htagqt⟩ :=
+                          deref_foldM_guardTag res1.memEnv' ls0 v_3.1 v_3.2 k' hfold' hguard l hlin
+                        have hqt' : qt' = qt := by
+                          have : some qt' = some qt := by
+                            calc
+                              some qt' = res1.memEnv'[l]? := by symm; exact hlookup'
+                              _ = some qt := hlookup_ctx'
+                          exact Option.some.inj this
+                        have htagqt' : qtypGuardTag qt = some k := by
+                          have hk : k' = k := by
+                            simpa [qtypGuardTag, hpred] using htag
+                          simpa [hk, hqt'] using htagqt
+                        obtain ⟨qt'', hlookup'', het⟩ :=
+                          deref_foldM_etyp_int res1.memEnv' ls0 v_3.1 v_3.2 hfold' l hlin
+                        have hqt'' : qt'' = qt := by
+                          have : some qt'' = some qt := by
+                            calc
+                              some qt'' = res1.memEnv'[l]? := by symm; exact hlookup''
+                              _ = some qt := hlookup_ctx'
+                          exact Option.some.inj this
+                        have hnotfun' : qt.etyp.isFunctionType = false := by
+                          simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+                          rw [← hqt'']
+                          simp [het]
+                        exact qtypCleanUnder.guard k htagqt' hreg hnotfun'
+                    | some val =>
+                        simp [hpred, htagEnv, pure, Except.pure] at htc''
+                        rcases hval : val with ⟨b, deps⟩; rcases hb : b
+                          <;> simp [hval, hb] at htc''
+                          <;> rw [← htc''] at htag
+                          <;> simp [qtypGuardTag] at htag
+  have hagree_loc := (hagree_clean_e.1 l qt hlookup_ctx hclean_loc)
+  have hEq : o₀ = o₁ := by
+    -- Use the agreement on the location to show equality of stored ints.
+    cases hagree_loc with
+    | both_unrealized _ _ hnone0 hnone1 =>
+        -- impossible: deref requires a realized location
+        -- contradict θ₀'.lookup l = some a₀'
+        rw [hθ₀l] at hnone0
+        cases hnone0
+    | agree_values _ _ a0 a1 m0 m1 hreal0 hreal1 hm0 hm1 hagree_val =>
+        -- The addresses must match those from deref
+        have ha0 : a0 = a₀' := by
+          have : some a0 = some a₀' := by
+            calc
+              some a0 = θ₀'.lookup l := by symm; exact hreal0
+              _ = some a₀' := by exact hθ₀l
+          exact Option.some.inj this
+        have ha1 : a1 = a₁' := by
+          have : some a1 = some a₁' := by
+            calc
+              some a1 = θ₁'.lookup l := by symm; exact hreal1
+              _ = some a₁' := by exact hθ₁l
+          exact Option.some.inj this
+        subst ha0; subst ha1
+        have hvalEq : m0 = m1 := by
+          -- Use the structure of agreeValueUnder on integer values
+          cases hagree_val with
+          | clean_eq_nonref_nonarrow _ _ _ hEq =>
+              cases hEq
+              rfl
+          | withPred_true_eq _ _ _ _ _ hEq =>
+              cases hEq
+              rfl
+          | clean_ref _ _ _ _ hv1 _ _ =>
+              cases hv1
+          | @withPred_true_ref k t ls l0 a1 a2 qt' v1 v2 _htag _hreg _hetyp _hlookup1 _hin hv1 _hlookup2 _hv2 =>
+              cases hv1
+          | clean_internal_arrow _ _ _ _ _ hv1 _ =>
+              cases hv1
+          | dirty_internal_arrow _ hisArrow htyp1 _ =>
+              -- Value.num can only have type int, so isArrow must be false.
+              have hqte_int : qt.etyp = ETyp.int :=
+                valueHasETyp_num_etyp htyp1
+              have : qt.etyp.isArrow = false := by
+                simp [hqte_int, ETyp.isArrow]
+              rw [hisArrow] at this
+              cases this
+          | clean_internal_parrow _ _ _ _ _ hv1 _ =>
+              cases hv1
+          | dirty_internal_parrow _ hisParrow htyp1 _ =>
+              -- Value.num can only have type int, so isParrow must be false.
+              have hqte_int : qt.etyp = ETyp.int :=
+                valueHasETyp_num_etyp htyp1
+              have : qt.etyp.isParrow = false := by
+                simp [hqte_int, ETyp.isParrow]
+              rw [hisParrow] at this
+              cases this
+        -- Use memory lookup equalities
+        have : n₀ = n₁ := by
+          have : some n₀ = some n₁ := by
+            calc
+              some n₀ = cfg₀'.memory.lookup a0 := by symm; exact hlookup₀
+              _ = some m0 := by simpa [hmem₀] using hm0
+              _ = some m1 := by simp [hvalEq]
+              _ = cfg₁'.memory.lookup a1 := by symm; simpa [hmem₁] using hm1
+              _ = some n₁ := hlookup₁
+          exact Option.some.inj this
+        -- o₀ and o₁ are Value.num of these ints
+        simp [hv₀, hv₁, this]
+  -- Build agreement on the return value (int)
+  have hres_etyp_int : res.qualType.etyp = ETyp.int :=
+    typecheckDeref_etyp_int ctxᵢ e (Nat.succ fuel') res htc'
+  have hnotref_res : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
+    intro hcontra
+    rcases hcontra with ⟨t, ls, h_etyp⟩
+    -- deref always returns int
+    have : res.qualType.etyp = ETyp.ref t ls := h_etyp
+    rw [hres_etyp_int] at this
+    cases this
+  have hnotfun_res : res.qualType.etyp.isFunctionType = false := by
+    -- deref returns int
+    simp [hres_etyp_int, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+  cases hclean with
+  | clean hpoison =>
+      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun_res hnotref_res hEq
+  | guard k htag hreg hnotfun =>
+      exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun hnotref_res hEq
 
 -- Stub lemma for while loop (not yet proven)
 private lemma stepFR_kwhile
