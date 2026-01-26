@@ -94,45 +94,46 @@ aliasing and higher-order code.
 A simple imperative language with references and functions:
 
 \begin{lstlisting}[language=poison]
-e ::= n | b | x | a                    (* values/variables; a is a runtime-only heap address *)
-    | e1 op e2                          (* arithmetic/comparison *)
+e ::= unit | n | b | s | x
+    | e1 op e2                          (* arithmetic/comparison/boolean/bitwise *)
     | unary_op e                        (* unary operations *)
     | if e1 then e2 else e3             (* conditionals *)
     | ref e | e1 := e2 | !e             (* references *)
-    | unit | e1 ; e2                    (* sequencing *)
+    | e1 ; e2                           (* sequencing *)
     | while e1 do e2                    (* loops *)
     | let x = e1 in e2                  (* local bindings *)
-    | fn x : ST1 => e : ST2 | e1 e2       (* functions with explicit return types *)
-    | pfn x : ST1 => pe : ST2 | pe        (* pure functions with explicit return types *)
-    | extern val : (Q)                   (* extern value placeholder *)
-    | extern fn x : (ST1) -> (Q) effects: { ... }  (* extern impure function *)
-    | extern pfn x : (ST1) -> (Q)        (* extern pure function *)
+    | fn x : ST1 => e : ST2             (* impure functions with explicit types *)
+    | pfn x : ST1 => pe : ST2           (* pure functions with explicit types *)
+    | e1 e2                             (* application *)
+    | rand e | frand e                  (* random primitives *)
+    | printInt e | printString e        (* I/O primitives *)
 
-pe ::= n | b | x | a                   (* pure expressions *)
-     | pe1 op pe2 | if pe1 then pe2 else pe3
-     | unary_op pe
+pe ::= n | b | s | x                    (* pure expressions *)
+     | pe1 op pe2 | unary_op pe
+     | if pe1 then pe2 else pe3
      | !pe | unit
      | let x = pe1 in pe2 | pe1 pe2
-     (* Note: no ref, :=, while, fn, pfn, extern, or ; allowed *)
+     (* Note: no ref, :=, while, fn, pfn, rand, frand, printInt, printString, or ; allowed *)
 
 (* surface types for annotations *)     
-ST ::= int | bool | unit | ref ST | ST1 -> ST2  
+ST ::= int | bool | unit | string | ref ST | ST1 -> ST2  
 
 (* logical location sets (used only in types) *)
 LS ::= { } | { l } | LS1 U LS2
 
 (* enriched types *)
-T ::= int | bool | unit 
-    | ref int @ LS      (* reference type; heap stores only integers *)
+T ::= int | bool | unit | string
+    | ref T @ LS
     | ST1 -> ST2 # p tclosures tcls   (* impure function types with merged typing closures *)
     | ST1 -> ST2 # p tpclosures ptcls (* pure function types with merged pure typing closures *)
 
 (* qualified types with poison status and predicate *)    
-Q ::= T :> p { P }      
+Q ::= T :> p | T :> p { P }      
 
 P ::= guard k pred_closure (x, pe, r)  (* predicate as pure closure *)
     | guard k                          (* guard tag only *)
     | no_pred                          (* trivial predicate *)
+    | indexedP P i1 i2                 (* loop indexing, internal *)
 \end{lstlisting}
 
 \subsection{Three-Level Type System}
@@ -145,7 +146,7 @@ between user annotations, internal type system operations, and fault tracking:
 \begin{itemize}
     \item \textbf{Ott notation:} \texttt{styp, ST}
     \item \textbf{Lean implementation:} \texttt{Typ}
-    \item \textbf{Grammar:} \texttt{ST ::= int | bool | unit | ref ST | ST1 -> ST2}
+    \item \textbf{Grammar:} \texttt{ST ::= int | bool | unit | string | ref ST | ST1 -> ST2}
     \item \textbf{Usage:} Written by programmers in function parameter and return type annotations
     \item \textbf{Examples:} \texttt{fn x : int => x + 1 : int}, \texttt{pfn f : int -> bool => f 42 : bool}
 \end{itemize}
@@ -160,11 +161,11 @@ in their code but never see the more complex internal representations.
 \begin{itemize}
     \item \textbf{Ott notation:} \texttt{typ, T}
     \item \textbf{Lean implementation:} \texttt{ETyp} (Enriched Type)
-    \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | ref int @ LS | ST1 -> ST2 \# p tclosures tcls | ST1 -> ST2 \# p tpclosures ptcls}
+    \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | string | ref T @ LS | ST1 -> ST2 \# p tclosures tcls | ST1 -> ST2 \# p tpclosures ptcls}
     \item \textbf{Usage:} Used internally by the type checker for sound reasoning about references and functions
     \item \textbf{Key additions:}
     \begin{itemize}
-        \item \textbf{Location sets} (\texttt{@LS}): Track a set of possible \emph{logical} locations each reference may point to. Since memory stores only integers, reference types have the form \texttt{ref int @ LS}
+        \item \textbf{Location sets} (\texttt{@LS}): Track a set of possible \emph{logical} locations each reference may point to. The typing rules restrict references to integers, so well-typed reference types have the form \texttt{ref int @ LS}
         \item \textbf{Typing closure sets} (\texttt{tclosures tcls} / \texttt{tpclosures ptcls}): Non-empty sets of closures that capture function bodies and variable contexts for re-typechecking at application time
         \item \textbf{Function poison} (\texttt{\#p}): Track the poison status of the function itself (from the program counter at definition time)
     \end{itemize}
@@ -172,7 +173,7 @@ in their code but never see the more complex internal representations.
 
 Enriched types extend surface types with the machinery needed for sound type
 checking. \emph{Once assigned, an enriched type is \emph{immutable} during
-analysis—only the environments grow around it.} The region annotation
+analysis -- only the environments grow around it.} The region annotation
 \texttt{ref int @ LS} records a \emph{set of logical locations} that the reference
 may target; joins union these sets, preserving aliasing information in a
 flow-insensitive analysis. Logical locations are typechecker-generated names
@@ -196,7 +197,7 @@ definition-time control poison from call-site provenance in the type system.
 \begin{itemize}
     \item \textbf{Ott notation:} \texttt{qualified\_type, Q}
     \item \textbf{Lean implementation:} \texttt{QTyp}
-    \item \textbf{Grammar:} \texttt{Q ::= T :> p \{ P \}}
+    \item \textbf{Grammar:} \texttt{Q ::= T :> p | T :> p \{ P \}}
     \item \textbf{Components:}
     \begin{itemize}
         \item \textbf{Base type} (\texttt{T}): The enriched type describing the value's structure
@@ -209,7 +210,8 @@ definition-time control poison from call-site provenance in the type system.
 Qualified types are the \emph{working currency} of our typestate system. Every
 typing judgement produces a qualified type that captures not just what kind of
 value we have, but also its reliability (poison status) and any conditions under
-which it might be considered reliable (predicates). \underline{The $(p,P)$
+which it might be considered reliable (predicates). We write \texttt{T :> p} as
+shorthand for \texttt{T :> p \{ no\_pred \}}. \underline{The $(p,P)$
 decoration is \emph{mutable}: typing rules may rewrite it as faults propagate,
 while the embedded $T$ remains unchanged}. The type system's primary job is to
 conservatively track poison propagation through qualified types.
@@ -220,7 +222,7 @@ The three type levels are related through systematic transformations:
 
 \begin{itemize}
     \item \textbf{Surface $\to$ Runtime:} Subtyping relation \texttt{ST <: T} (surface type erasure) adds region and closure information
-    \item \textbf{Runtime $\to$ Qualified:} Wrapping with poison status and predicates: \texttt{T $\triangleright$ p \{P\}}
+    \item \textbf{Runtime $\to$ Qualified:} Wrapping with poison status and optional predicates: \texttt{T $\triangleright$ p} or \texttt{T $\triangleright$ p \{P\}}
     \item \textbf{Function definitions:} Surface types in user syntax become enriched types in type checker (with singleton closure sets), then qualified types in poison-propagating environments
     \item \textbf{Function applications:} Function types store surface types for interface and merged typing-closure sets for implementation; all alternatives are re-typechecked and their results joined
 \end{itemize}
@@ -231,12 +233,13 @@ analysis results (qualified types). Users write simple, familiar types while the
 system performs sophisticated poison tracking and higher-order reasoning behind
 the scenes.
 
-\subsection*{Key features}
+\subsection{Key features}
 \begin{itemize}
     \item \textbf{References}: \texttt{ref e} creates, \texttt{e1 := e2} assigns, \texttt{!e} dereferences. Memory stores only integers
     \item \textbf{Functions}: \texttt{fn x : ST1 => e : ST2} creates functions with explicit parameter and return type annotations, \texttt{e1 e2} applies, with closures
-    \item \textbf{Pure functions}: \texttt{pfn x : ST1 => pe : ST2} creates pure functions with explicit parameter and return type annotations that cannot have side effects (note: no nested pure functions allowed)
-    \item \textbf{Extern declarations}: \texttt{extern val}, \texttt{extern fn}, and \texttt{extern pfn} provide placeholders for external implementations with full type specifications including poison status and guard predicates
+    \item \textbf{Pure functions}: \texttt{pfn x : ST1 => pe : ST2} creates pure functions with explicit parameter and return type annotations that cannot have side effects (no nested pure functions)
+    \item \textbf{Strings}: literals of type \texttt{string}
+    \item \textbf{Built-in primitives}: \texttt{rand}, \texttt{frand}, \texttt{printInt}, \texttt{printString} are impure
     \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings
     \item \textbf{Memory access only through references}: You need a valid
     reference to access memory location. There is no pointer arithmetic (but
@@ -248,7 +251,7 @@ the scenes.
 \end{itemize}
 
 Enriched type annotations like location sets (\texttt{@LS}) for references and
-typing closures (\texttt{typing\_closure tcl}) for functions are essential to the
+typing closures (elements \texttt{tcl} in \texttt{tclosures} or \texttt{ptclosures}) for functions are essential to the
 formal system, though not part of the user-visible language syntax. The
 \texttt{LS} denotes a set of \emph{logical} locations (typechecker-generated),
 while the runtime representation of a reference is a concrete heap address.
@@ -260,197 +263,15 @@ time). See the formal specification for complete details. Similarly, qualified
 types are essential to the formal system, though not part of the language
 syntax.
 
-\subsection{Extern Functions}
+\subsection{Implementation-specific extensions}
 
-The language supports \emph{extern functions} and \emph{extern values} as placeholders for external
-implementations that cannot be expressed within the language itself (e.g., I/O
-operations, system calls, or native library calls). Extern declarations provide
-full typing information---including poison status and guard predicates---for
-type-checking incomplete programs. They have no runtime semantics: evaluating
-any extern expression causes a runtime error.
-
-\subsubsection{Syntax}
-
-Extern declarations are introduced with \texttt{let} bindings using one of three forms:
-
-\begin{itemize}
-    \item \textbf{Extern values}: \texttt{let x = extern val : (Q)} where \texttt{Q} is a qualified type
-    \item \textbf{Extern impure functions}: \texttt{let f = extern fn x : (ST$_1$) -> (Q$_2$) effects: \{ ... \}}
-    \item \textbf{Extern pure functions}: \texttt{let g = extern pfn x : (ST$_1$) -> (Q$_2$)}
-\end{itemize}
-
-The qualified type annotation \texttt{(Q)} specifies the observable result type
-with poison status and optional predicates. For functions, this describes the
-return value's qualified type. The \texttt{effects:} block (for impure extern
-functions) specifies how memory locations are updated at application time.
-
-\subsubsection{Guard Placeholders}
-
-Extern declarations use \emph{guard placeholders} (symbolic names like \texttt{g},
-\texttt{gX}) to express correlated predicates across the observable return and
-effects. Placeholders are instantiated to fresh guard tags at typing time:
-
-\begin{itemize}
-    \item For extern values, placeholders are instantiated when the \texttt{let}
-    binding is type-checked
-    \item For extern functions, placeholders are instantiated on first application
-    of the outermost function, with the mapping reused for all nested externs
-    produced by that application
-\end{itemize}
-
-Each placeholder name is local to one extern binding. Reusing the same placeholder
-name in the observable return and multiple effects expresses that they share the
-same guard tag and predicate. All occurrences with the same placeholder must use
-identical predicate bodies (up to renaming of formal arguments) if a body is
-provided; otherwise the specification is ill-formed.
-
-Placeholders may denote either:
-\begin{itemize}
-    \item \textbf{Guard closures}: \texttt{guard g, x => P(x, ...)} with a predicate body
-    \item \textbf{Guard-only}: \texttt{guard g} without a predicate body (cannot be
-    matched syntactically via \texttt{match\_guard}, but can be de-poisoned when
-    the guard tag is known to be true in $\mathcal{L}$)
-\end{itemize}
-
-\subsubsection{Extern Value Syntax}
-
-An extern value declaration specifies a qualified type:
-
-\begin{lstlisting}[language=poison]
-(* With guard closure *)
-let x = extern val : (T :> poisoned { guard gX, a => P(a, ...) })
-
-(* With guard-only *)
-let y = extern val : (T :> poisoned { guard gY })
-
-(* With no predicate *)
-let z = extern val : (T :> clean { no_pred })
-\end{lstlisting}
-
-\subsubsection{Extern Function Syntax}
-
-An extern impure function specifies parameter and return types, plus an optional
-\texttt{effects:} block describing memory updates:
-
-\begin{lstlisting}[language=poison,mathescape=true]
-let f =
-  extern fn a : (ST$_1$) -> (T$_2$ :> poisoned { guard gR, v => P$_1$(v, a, ...) })
-    effects: {
-      !a  :> (int :> poisoned { guard gA,  u => P$_3$(u, a, ...) }),
-      !r1 :> (int :> poisoned { guard g1,  w => P$_4$(w, a, r1, ...) }),
-      !r2 :> (int :> poisoned { guard g2,  z => P$_5$(z, a, r2, ...) })
-    }
-\end{lstlisting}
-
-In the \texttt{effects:} block, \texttt{!name} refers to any in-scope variable of
-reference type (the parameter \texttt{a} or captured references such as
-\texttt{r1}, \texttt{r2}). Each effect entry specifies how the memory location
-pointed to by that reference is updated, including its new qualified type.
-
-An extern pure function omits the \texttt{effects:} block:
-
-\begin{lstlisting}[language=poison,mathescape=true]
-let g =
-  extern pfn a : (ST$_1$) -> (T$_2$ :> poisoned { guard gR, v => P(v, a, ...) })
-\end{lstlisting}
-
-Functions are single-argument and curried. Multi-argument interfaces are expressed
-by returning an extern function from an extern function (nesting).
-
-\subsubsection{Reference Return Restriction}
-\label{subsec:extern-reference-restriction}
-
-\textbf{Important}: Extern functions are \textbf{not allowed to return reference types}.
-This restriction is necessary because the type checker cannot determine which
-memory location an externally-returned reference would point to, making it
-impossible to maintain sound region tracking in the type system.
-
-Attempting to declare an extern function with a reference return type will result
-in a type-checking error.
-
-\textbf{What is allowed}: Extern functions \emph{can} take references as parameters
-and update them via assignment effects. They can also return any non-reference
-types (integers, booleans, units, strings, and function types). If an extern
-function needs to return a reference, the caller can allocate the reference and
-pass it as a parameter, with the extern function updating it via effects using
-\texttt{!name} syntax.
-
-\subsubsection{Typing Behaviour}
-
-Extern declarations are type-checked as follows:
-
-\begin{itemize}
-    \item \textbf{Extern value}: The declared qualified type is synthesised and
-    bound in the variable typing environment $\sigma$. Guard placeholders are
-    instantiated to fresh tags at binding time.
-    
-    \item \textbf{Extern function}: An arrow type \texttt{ST$_1$ -> ST$_2$} is
-    synthesised, carrying an extern closure with the captured variable typing
-    environment at the definition site. The closure's poison at definition is the
-    ambient \texttt{pc}, as with ordinary \texttt{fn}/\texttt{pfn}.
-    
-    \item \textbf{Application of extern function}:
-    \begin{enumerate}
-        \item The argument \texttt{e$_2$} is type-checked and \texttt{ST$_1$ <: T$_{arg}$} is required
-        \item The unified environment $\sigma'$ is formed by extending the captured
-        environment with the parameter bound to \texttt{e$_2$}'s qualified type,
-        joining poison with the current \texttt{pc}
-        \item Guard placeholders are instantiated: fresh tags are allocated for
-        each distinct placeholder name occurring in the extern specification on
-        first application, and the mapping is reused for this call chain (including
-        nested externs returned by the function)
-        \item For every effect \texttt{!v :> QT$_{eff}$}, \texttt{v} is resolved
-        in $\sigma'$ to \texttt{ref T$_v$ @ LS$_v$}. The memory typing environment
-        is updated at \emph{every} $l \in LS_v$ to \texttt{QT$_{eff}$} (joining
-        poison with the current \texttt{pc} and substituting placeholders with
-        allocated tags), and $\mathcal{L}$ is invalidated for tags whose
-        dependencies intersect $LS_v$.
-        \item The declared observable return \texttt{QTyp} is returned, with
-        poison joined with the current \texttt{pc} and with the same placeholder
-        substitutions
-        \item In pure context, application of impure externs is rejected
-    \end{enumerate}
-    
-    \item \textbf{Application of extern pure function}: As above but without
-    effects and in pure context.
-\end{itemize}
-
-\subsubsection{Examples}
-
-\begin{lstlisting}[language=poison]
-(* Extern observable value *)
-let system_ok = extern val : (bool :> clean { no_pred })
-
-(* Extern impure function affecting argument and captured reference *)
-let global_counter : ref int = ref 0 in
-let incrementAndRead =
-  extern fn _ : (unit) -> (int :> clean { no_pred })
-    effects: { !global_counter :> (int :> clean { no_pred }) } in
-...
-
-(* Correlated guard between observable return and argument's location *)
-let readSensor =
-  extern fn s : (ref int) -> (int :> poisoned { guard g, v => (v >= 0 && v <= 255) })
-    effects: { !s :> (int :> poisoned { guard g, u => (u >= 0 && u <= 255) }) }
-
-(* Multi-argument via nesting with shared guard placeholders *)
-let cap : ref int = ref 0 in
-let h =
-  extern fn i : (int) -> (
-    extern fn r : (ref int) -> (
-      int :> poisoned { guard g, v => (v >= 0 && v <= i) }
-    )
-    effects: {
-      !r   :> (int :> poisoned { guard g, u => (u >= 0 && u <= i) }),
-      !cap :> (int :> poisoned { guard g, u => (u >= 0 && u <= i) })
-    }
-  )
-\end{lstlisting}
-
-In the nested example, on first application \texttt{h 10}, a fresh tag is chosen
-for \texttt{g} and attached to both effects carried by the produced inner closure
-(on \texttt{!r} and \texttt{!cap}). On subsequent application \texttt{(h 10) r},
-the same tag is reused for the inner observable and its effects.
+The Lean implementation includes extern placeholders (\texttt{extern val},
+\texttt{extern fn}, \texttt{extern pfn}) for external code and I/O in tests. These
+constructs are not part of the Ott specification and are excluded from the formal
+typing and semantics presented here. The evaluator treats them as I/O operations;
+in \texttt{ioFree} mode they yield \texttt{ioForbidden}. The type checker rejects
+extern functions that return references, but it permits reference parameters and
+explicit effect specifications on referenced locations.
 
 \subsection{Pure Expressions}
 
@@ -458,27 +279,23 @@ The language includes a syntactic subset called \emph{pure expressions} (\texttt
 \begin{itemize}
     \item Create new references (\texttt{ref})
     \item Perform assignments (\texttt{:=})
-    \item Use \texttt{while} loops. (strictly speaking while loops could be
-    side-effects free, but we chose not include them in the ``pure'' subset for
-    simplicity. This design choice is motivated by intended use of pure
-    functions as type predicates which are likely to be simple expressions
-    without complicated control flow.)
+    \item Use \texttt{while} loops
     \item Define functions, including pure functions (\texttt{fn} or \texttt{pfn})
     \item Use sequencing (\texttt{;})
     \item Use non-deterministic primitives (\texttt{rand}, \texttt{frand})
     \item Perform I/O (\texttt{printInt}, \texttt{printString})
 \end{itemize}
 
-Pure expressions can still dereference existing references, perform arithmetic,
-use conditionals, and apply existing pure functions. 
+Pure expressions can still dereference existing references, perform arithmetic and
+boolean operations, use conditionals, manipulate string literals, and apply
+existing pure functions.
 
-\textbf{Design rationale}: Pure expressions are primarily used within predicates
-for de-poisoning. By prohibiting function definition within pure expressions, we
-ensure predicates remain simple test expressions rather than complex
-computations. The absence of sequencing is natural since pure expressions have
+\textbf{Design rationale}: Pure expressions are used within predicates for
+de-poisoning. Excluding loops and function definitions keeps predicates as simple
+test expressions. The absence of sequencing is natural since pure expressions have
 no side effects, making \texttt{pe1 ; pe2} equivalent to just \texttt{pe2}.
-However, pure expressions can still apply pre-existing pure functions, enabling
-code reuse and composition of predicates.
+Pure expressions can still apply pre-existing pure functions, enabling code
+reuse and composition of predicates.
 
 The \texttt{pfn} construct creates pure functions whose bodies must be pure
 expressions, ensuring they cannot introduce side effects. These pure functions
@@ -549,12 +366,12 @@ Conservative: may mark reliable data as poisoned, never marks unreliable data as
 \subsection{Predicate-based de-poisoning}
 \label{sec:de-poisoning}
 
-The language includes a predicate system that allows selective de-poisoning based on runtime conditions. Predicates come in three forms and are associated with guard tags:
+The language includes a predicate system that allows selective de-poisoning based on runtime conditions. Predicates are associated with guard tags:
 
 \begin{itemize}
-    \item \textbf{Qualified types}: Values have types $T\,\triangleright\,p\,\{P\}$
-    where \texttt{T} is the enriched type, \texttt{p} is the poison status, and
-    \texttt{P} is an optional predicate.
+    \item \textbf{Qualified types}: Values have types $T\,\triangleright\,p$ or
+    $T\,\triangleright\,p\,\{P\}$, where \texttt{T} is the enriched type,
+    \texttt{p} is the poison status, and \texttt{P} is an optional predicate.
     \item \textbf{Guard predicates with closure}: \texttt{guard k pred\_closure (x, pe, r)}
     creates a predicate with tag \texttt{k} and pure expression test \texttt{pe}
     (pure function from \texttt{T} to \texttt{bool}). The \texttt{r} captures
@@ -568,24 +385,26 @@ The language includes a predicate system that allows selective de-poisoning base
     syntactically matches a guard's test (via \texttt{match\_guard}), values are
     de-poisoned in the true branch and poisoned in the false branch
     \item \textbf{Logical environment}: Environment $\mathcal{L}$ tracks guard
-    valuations (\texttt{k : true/false}) to enable predicate evaluation for both
-    guard closure and guard-only predicates
+    valuations with dependency sets (\texttt{k : bool using LS}) to enable
+    predicate evaluation for both guard closure and guard-only predicates
 \end{itemize}
+
+\noindent\textbf{Indexed predicates.} The Ott specification includes an
+\texttt{indexedP} constructor used internally to track loop iterations; it does
+not appear in surface syntax.
 
 \noindent\textbf{Function values and de-poisoning.} Predicate-based de-poisoning
 applies only to non-function values. Qualified types for functions always carry
 \texttt{no\_pred}, and \texttt{match\_guard} rejects predicates on arrow types;
 guard tags therefore never de-poison functions.
 
-\textbf{Design Note:} The predicate closure \texttt{pred\_closure (x, pe, r)}
-does not explicitly store the expected argument type for the predicate. This
-design is sound because predicate matching via \texttt{match\_guard} only occurs
-against conditions that have already passed type checking. Since syntactic
-matching requires exact structural correspondence with variable substitution,
-any predicate that successfully matches a well-typed condition is guaranteed to
-be type-compatible with that condition. This approach avoids redundant type
-information in predicates while maintaining type safety through the existing
-type system.
+\textbf{Rationale:} The predicate closure \texttt{pred\_closure (x, pe, r)}
+does not store an explicit argument type. This is sound because
+\texttt{match\_guard} only succeeds on conditions that already typecheck.
+Syntactic matching requires exact structural correspondence with variable
+substitution, so any predicate that matches a well-typed condition is
+type-compatible with that condition. This avoids redundant type annotations in
+predicates while relying on existing typing checks.
 
 \textbf{Tag Uniqueness:} The \texttt{match\_guard} function expects to find at
 most one matching predicate for any given condition. Predicates parametrised by
@@ -604,7 +423,7 @@ suitable for propagating guard information without enabling new syntactic
 matches.
 
 \textbf{Poisoned references and de-poisoning} Any value obtained from a poisoned
-reference is poisoned and could not be de-poisoned further via predicate-based
+reference is poisoned and cannot be de-poisoned further via predicate-based
 de-poisoning. To implement this, there is a special typing rule
 \texttt{deref\_poisoned} for dereferencing a poisoned reference, which not only
 returns a poisoned result but also strips the predicate from its type so it can
@@ -688,36 +507,30 @@ applied, the result inherits this poison.
 \begin{itemize}
     \item \textbf{Arithmetic/Logic}: $e_1 \text{ op } e_2 \rightarrow \text{pc} \sqcup \text{poison}(e_1) \sqcup \text{poison}(e_2)$
     \item \textbf{Conditionals}: Both branches get $\text{pc} \sqcup \text{poison}(\text{condition})$, but predicate-based rules can enable de-poisoning
-    \item \textbf{Predicate conditionals}: When $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, branches are typed with $\mathcal{L}[k \mapsto \text{true}]$ and $\mathcal{L}[k \mapsto \text{false}]$
+    \item \textbf{Predicate conditionals}: When $\text{match\_guard}(e_1, \Gamma, \sigma) = k$ with dependencies $LS$, the guard is typed in pure mode, branches use $\mathcal{L}[k \mapsto \text{true using } LS]$ and $\mathcal{L}[k \mapsto \text{false using } LS]$, and guard poison does not flow to the branches
     \item \textbf{Variable access}: De-poisoning when guard evaluates to true, definite poisoning when false, standard propagation when guard unknown
     \item \textbf{Assignment}: Operation reliability = $\text{pc} \sqcup \text{poison}(\text{ref})$, Data = $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{value})$, invalidates $\mathcal{L}$ entries whose dependency locsets intersect the written reference's locset
     \item \textbf{Dereference}: $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{data\_at\_LS})$ where $\text{data\_at\_LS}$ conservatively joins over all logical locations in the reference's locset; predicates are merged similarly
     \item \textbf{Let bindings}: Variable gets $\text{pc} \sqcup \text{poison}(\text{bound\_value})$ and preserves predicates
-    \item \textbf{Functions}: Abstraction gets $\text{pc}$ and captures body and
-    context, typechecks body to derive return type, application re-typechecks body
-    with actual argument predicates and current $\mathcal{L}$
+    \item \textbf{Functions}: Abstraction captures body and context and records
+    surface types; body typing is deferred to application time with actual
+    argument predicates and current $\mathcal{L}$
 \end{itemize}
 
 \section{Operational Semantics}
 
+We use a big-step (natural) evaluation relation
+$\langle \pi, e, \mu, \rho \rangle \Downarrow \langle \mu_1, v \rangle$.
+A runtime configuration consists of:
 \begin{itemize}
     \item $\pi$: Pure-mode flag (\textit{pure} or \textit{impure})
     \item $\mu$: Memory mapping concrete addresses to integers (only integers can be stored in memory)
     \item $\rho$: Variable environment mapping variables to values
 \end{itemize}
 
-The semantics :
-\begin{itemize}
-  \item \textbf{Big-step} (natural) semantics that evaluate expressions directly to values and a final configuration; we write informally $\langle \pi, e, \mu, \rho \rangle \Downarrow \langle \mu_1, v \rangle$.
-\end{itemize}
-
-
-\subsection*{Key rules:}
-
-
-Note that closures $\text{closure}(x, e, \rho)$ and pure closures $\text{pe\_closure}(x,
-pe, \rho)$ are runtime values that only appear during execution; they are not
-part of the source language and do not have typing rules.
+Runtime values include integers, booleans, strings, unit, concrete addresses, and
+closures ($\text{closure}(x, e, \rho)$ and $\text{pe\_closure}(x, pe, \rho)$).
+Addresses and closures are runtime-only and do not appear in the surface syntax.
 
 
 
@@ -726,9 +539,10 @@ part of the source language and do not have typing rules.
 \subsection{Environments}
 
 \begin{itemize}
+    \item $\pi$: Pure-mode flag (\textit{pure} or \textit{impure})
     \item $\Gamma$: Memory typing environment $l : Q$ (logical location qualified types)
     \item $\sigma$: Variable typing environment $x : Q$ (variable qualified types)
-    \item $\mathcal{L}$: Logical environment $k : bool \times \text{deps}$ (predicate guard evaluations with dependency tracking)
+    \item $\mathcal{L}$: Logical environment $k : bool \text{ using } LS$ (predicate guard evaluations with dependency tracking)
     \item $\text{pc}$: Program counter poison (current context reliability)
 \end{itemize}
 
@@ -773,54 +587,53 @@ associated predicates. The logical environment $\mathcal{L}$ tracks the current
 valuation of predicate guards, enabling predicate-based typing decisions. The
 output logical environment $\mathcal{L}_1$ reflects any updates to guard
 valuations learned during typing (e.g., after a while loop terminates) or
-because of invalidation. due to changed dependencies.
+because of invalidation due to changed dependencies.
 
 \subsection{Key Typing Rules}
 
-\subsubsection*{References with location sets:}
-\[
-\frac{\Gamma(l) = Q}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash l : \text{ref } T @ \{l\} \triangleright \text{clean} \{ \text{no\_pred} \} \dashv \Gamma}
-\]
-
-This internal rule assigns a singleton logical-location set to a reference value
-whose target logical location is known. At runtime the reference is represented
-by a concrete address; the proof layer relates it to the logical $l$ via the
-realisation map.
+\subsubsection*{Runtime locations}
+Logical locations do not appear in surface syntax. In the proof layer, a logical
+location $l$ is treated as a reference value with locset $\{l\}$, with predicate
+information inherited from $\Gamma(l)$. The realisation map relates logical
+locations to concrete addresses at runtime.
 
 \subsubsection*{Variable access with predicate support:}
 When variables have associated predicates, the typing rule checks the logical environment $\mathcal{L}$ to determine if de-poisoning can occur. Both guard closures and guard-only predicates behave identically when checking $\mathcal{L}$:
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true using } LS}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
 \]
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false}}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false using } LS}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
 \]
 
 where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{guard k pred\_closure (y, pe, r)} or simply \texttt{guard k}. The presence or absence of the closure does not affect the typing behaviour when the guard tag is known in $\mathcal{L}$.
 
 \subsubsection*{Reference creation:}
 \[
-\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : \text{int} \rhd p \dashv \Gamma_1 \quad \text{fresh } l}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash \text{ref } e : \text{ref int} @ \{l\} \rhd \text{pc} \dashv \Gamma_1[l \mapsto \text{int} \triangleright \text{pc} \sqcup p]}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e : \text{int} \triangleright p \{ P \} \dashv \Gamma_1 ; \mathcal{L}_1 \quad \text{fresh } l}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash \text{ref } e : \text{ref int} @ \{l\} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_1[l \mapsto \text{int} \triangleright (\text{pc} \sqcup p) \{ P \}] \; ;\; \mathcal{L}_1}
 \]
 
 \subsubsection*{Assignment:}
 \[
-\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 : \text{ref int} @ LS \rhd p_1 \dashv \Gamma_1 \quad \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \vdash e_2 : \text{int} \rhd p_2 \dashv \Gamma_2}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p_1 \dashv \Gamma_2[LS \mapsto \text{int} \triangleright \text{pc} \sqcup p_1 \sqcup p_2]}
+\frac{\begin{array}{c}
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ LS \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
+\text{invalidate\_deps}(\mathcal{L}_2, LS) = \mathcal{L}_3
+\end{array}}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup p_1 \{ \text{no\_pred} \} \dashv \Gamma_2[LS \mapsto \text{int} \triangleright (\text{pc} \sqcup p_1 \sqcup p_2) \{ P_2 \}] \; ;\; \mathcal{L}_3}
 \]
 where $\Gamma[LS \mapsto Q]$ updates $\Gamma$ at every $l \in LS$.
 
 \subsubsection*{Dereference:}
-\[
-\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : \text{ref int} @ LS \rhd p_1 \dashv \Gamma_1 \quad \forall l \in LS.\; \Gamma_1(l) = \text{int} \triangleright p_l}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash !e : \text{int} \rhd \text{pc} \sqcup p_1 \sqcup \bigsqcup_{l \in LS} p_l \dashv \Gamma_1}
-\]
-The predicate attached to the dereference result is obtained by merging all
-predicates attached to the referenced cells (agreement-only: exact match keeps
-the closure, same tag downgrades to \texttt{guard k}, otherwise \texttt{no\_pred}).
+Dereference merges poisons and predicates across the locset. The Ott rules use
+\texttt{MergePreds} and \texttt{JoinPoisons} to combine the predicates and poison
+flags of all locations in $LS$. If the reference itself is poisoned, the result
+is poisoned with \texttt{no\_pred}. If the merged predicate yields a guard tag
+whose valuation in $\mathcal{L}$ is known, the result is de-poisoned or poisoned
+accordingly; otherwise the merged predicate is retained.
 
 \subsubsection*{Function abstraction:}
 Function types include a non-empty set of \emph{typing closures} that captures
@@ -842,44 +655,32 @@ and application uses the pure closures in place of the impure ones.
 \paragraph{Pure-mode typing.} We thread a pure-mode parameter \(\pi\) through
 all typing judgements. Impure function application (\textsc{app\_fn}) is only
 available in impure mode, expressed by a conclusion headed with \textit{impure}.
-Pure function application (\textsc{app\_pfn}) types the callee’s body in pure
-mode but preserves the caller’s \(\pi\) in the conclusion. Thus, pure code can
+Pure function application (\textsc{app\_pfn}) types the callee's body in pure
+mode but preserves the caller's \(\pi\) in the conclusion. Thus, pure code can
 only call pure functions; impure code can call either. The mode \(\pi\) is
 orthogonal to the poison \(pc\): standard poison joins and propagation are
 unchanged. We enter programs with \(\pi = \textit{impure}\).
 
 \subsubsection*{Function application:}
-The function application typing rule extracts typing closures from the function
-type and types the body at application time. Re-typing the body with the
-parameter bound to the actual argument's qualified type (including its
-predicate) and under the current logical environment $\mathcal{L}$ enables
-predicate-based de-poisoning inside function bodies. The subtyping checks
-$ST_1 \!<:\! T_1$ and $ST_2 \!<:\! T_2$ ensure the surface parameter and return
-types are compatible with the actual argument and body types respectively.
-
-\[
-\frac{
-\begin{array}{c}
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : ST_1 \rightarrow ST_2 \# p \;\; \mathsf{tclosures}(x, e, \sigma_1) \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
-\text{pc} ; \Gamma_1 ; \sigma ; \mathcal{L}_1 \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
-ST_1 <: T_1 \\
-\text{join } p_1 \; pc ; \Gamma_2 ; \sigma_1[x \mapsto T_1 \triangleright \text{pc} \sqcup p_2 \{ P_2 \}] ; \mathcal{L}_2 \vdash e : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma_3 ; \mathcal{L}_3 \\
-ST_2 <: T_2
-\end{array}
-}{
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 \; e_2 : T_2 \triangleright \text{pc} \sqcup p_3 \{ P_3 \} \dashv \Gamma_3 ; \mathcal{L}_3
-}
-\]
-
+The function application typing rules extract typing closures from the function
+type and type the body at application time. The body is checked in the captured
+context extended with the actual argument's qualified type (including its
+predicate) and under the current logical environment $\mathcal{L}$, enabling
+predicate-based de-poisoning inside function bodies. The arrow-internal poison,
+the function's outer poison, and the caller's \texttt{pc} are joined into the
+body context. The subtyping checks $ST_1 \!<:\! T_1$ and $ST_2 \!<:\! T_2$ ensure
+the surface parameter and return types are compatible with the actual argument
+and body types respectively. The Ott rules \textsc{app\_fn\_*} and
+\textsc{app\_pfn\_*} spell out the precise case split.
 
 Key aspects of function application:
 \begin{itemize}
-    \item Each typing closure $(x, e, \sigma_1)$ contains the parameter name, function body, and captured variable context
-    \item The function body $e$ is typed using the captured context $\sigma_1$ extended with the actual argument's type
-    \item The argument's qualified type includes its predicates $P_2$, enabling de-poisoning in the function body
-    \item The current logical environment $\mathcal{L}_2$ is used, allowing guard-based de-poisoning
-    \item The result poison $p_3$ reflects any de-poisoning that occurred in the function body
-    \item Function types store both surface parameter type $ST_1$ and return type $ST_2$, with body typing occurring at application time
+    \item Each typing closure contains the parameter name, function body, and captured variable context
+    \item The function body is typed using the captured context extended with the actual argument's qualified type
+    \item The argument's qualified type includes predicates, enabling de-poisoning in the function body
+    \item The current logical environment is used, allowing guard-based de-poisoning
+    \item The result poison reflects any de-poisoning that occurred in the function body
+    \item For function results, the outer predicate is reset to \texttt{no\_pred}; for non-function results, predicates are preserved or joined
 \end{itemize}
 
 For general merged closure sets, the type system applies the same scheme to
@@ -916,50 +717,24 @@ let result : int = f sensor2 in         (* Application types body with predicate
 result                                  (* Result: int :> clean *)
 \end{lstlisting}
 
-In this example:
-\begin{itemize}
-    \item \texttt{sensor1} has predicate \texttt{guard "temp" pred\_closure (y, y >= 0, \_)} - a test that checks if the value is non-negative
-    \item \texttt{sensor2} has predicate \texttt{guard "pressure" pred\_closure (z, z >= 0, \_)} - also tests for non-negative
-    \item When \texttt{f} is applied to \texttt{sensor2}, the function body is typed with:
-    \begin{itemize}
-        \item Captured context $\sigma_1$ containing \texttt{sensor1} with its predicate
-        \item Parameter \texttt{x} bound to \texttt{sensor2}'s type with its predicate  
-        \item Current logical environment $\mathcal{L}$ (initially may be empty)
-    \end{itemize}
-    \item During typing of the function body:
-    \begin{itemize}
-        \item \texttt{if sensor1 >= 0} syntactically matches the test expression in \texttt{guard "temp"}, so the then branch is typed with $\mathcal{L}[$\texttt{"temp"} $\mapsto \text{true}]$
-        \item \texttt{if x >= 0} syntactically matches the test expression in \texttt{guard "pressure"}, so its then branch is typed with $\mathcal{L}[$\texttt{"temp"} $\mapsto \text{true}, $\texttt{"pressure"} $\mapsto \text{true}]$
-        \item In the innermost branch, both values are de-poisoned because their guards are true in $\mathcal{L}$
-        \item The result \texttt{sensor1 + x} has type \texttt{int} $\triangleright$ \texttt{clean}
-    \end{itemize}
-\end{itemize}
+Typing the body under the captured context and current logical environment
+allows guard matches to de-poison values inside the function body; here the
+result is clean in the branch where both guards hold.
 
 \subsubsection*{Predicate-based conditional typing:}
-The type system includes two conditional typing rules that handle predicate-based de-poisoning:
-
-\textbf{Standard conditional rule (when no matching predicate found):}
-\[
-\frac{\begin{array}{c}
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 \\
-\text{join pc } p_1 ; \Gamma_1 ; \sigma ; \mathcal{L} \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 \\
-\text{join pc } p_1 ; \Gamma_1 ; \sigma ; \mathcal{L} \vdash e_3 : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma_3 \\
-T_1 \approx T_2
-\end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T_1 \triangleright \text{join pc } p_1 p_2 p_3 \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma_2 \Gamma_3}
-\]
-
-\textbf{Predicate-based conditional rule (when matching predicate found):}
-\[
-\frac{\begin{array}{c}
-\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e_1 : \text{bool} \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
-\text{match\_guard}(e_1, \Gamma, \sigma) = k \\
-pc ; \Gamma_1 ; \sigma ; \mathcal{L}_1[k \mapsto \text{true}] \vdash e_2 : T_1 \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
-pc ; \Gamma_1 ; \sigma ; \mathcal{L}_1[k \mapsto \text{false}] \vdash e_3 : T_2 \triangleright p_3 \{ P_3 \} \dashv \Gamma_3 ; \mathcal{L}_3 \\
-T_1 \approx T_2
-\end{array}}
-{\text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash \text{if } e_1 \text{ then } e_2 \text{ else } e_3 : T_1 \triangleright \text{join pc } p_2 p_3 \{ \text{no\_pred} \} \dashv \text{JoinG } \Gamma_2 \Gamma_3 ; \mathcal{L}_1}
-\]
+The specification provides two families of conditional typing rules:
+\begin{itemize}
+    \item \textbf{Predicate-matched case} (\textsc{if\_depoison\_*}): when
+    $\text{match\_guard}(e_1, \Gamma, \sigma) = k$ with dependencies $LS$, the
+    guard is typed in pure mode and does not contribute poison to the branches.
+    The branches are typed under $\mathcal{L}_1[k \mapsto \text{true using } LS]$
+    and $\mathcal{L}_1[k \mapsto \text{false using } LS]$. Result types are joined
+    with shape-specific rules: closure sets are unioned for functions, locsets are
+    unioned for references, and base types must agree.
+    \item \textbf{Standard case} (\textsc{if\_std\_*}): when no matching predicate
+    is found, the guard is typed in the current mode and its poison is joined into
+    the branch contexts and the result poison.
+\end{itemize}
 
 The typing rules use a \emph{signature-compatibility} relation (denoted
 $T_1 \approx T_2$) when checking branch results. For base types, this is exact
@@ -968,28 +743,16 @@ differ (they are merged by the join rules rather than by $\approx$). For
 function types, only the surface interface matters: $(ST_1 \rightarrow ST_2)$
 and the purity (impure arrow versus pure arrow) must agree; closure sets and
 arrow-internal poison may differ and are joined separately. Impure and pure
-arrows are never signature-compatible with each other. This allows conditionals
-to join functions that have the same interface but arise from different
-control-flow paths and captured environments.
+arrows are never signature-compatible with each other.
 
-The key difference is that when $\text{match\_guard}(e_1, \Gamma, \sigma) = k$, the branches are typed with different valuations of guard $k$ in environment $\mathcal{L}$. This enables:
-\begin{itemize}
-    \item \textbf{De-poisoning in then branch}: Values guarded by $k$ become clean when $k$ evaluates to true
-    \item \textbf{Definite poisoning in else branch}: Values guarded by $k$ become poisoned when $k$ evaluates to false
-    \item \textbf{Precise fault tracking}: The type system can track exactly which runtime conditions affect poison status
-\end{itemize}
+The key difference is that when a predicate match is used, the branches are typed
+with different valuations of guard $k$ in $\mathcal{L}$, enabling de-poisoning
+in the then branch and definite poisoning in the else branch.
 
-NOTE: In de-poisoning case when predicate is matched we do not propage poison from condition check to the branches.
-
-\paragraph{Note on $\mathcal{L}_1$ propagation:} The predicate-based conditional rule returns $\mathcal{L}_1$ (the environment after evaluating $e_1$) rather than attempting to join $\mathcal{L}_2$ and $\mathcal{L}_3$ from the branches. This is a conservative but sound design choice, as $\mathcal{L}_2$ contains $k \mapsto \text{true}$ while $\mathcal{L}_3$ contains $k \mapsto \text{false}$, making them contradictory. After the conditional completes, we don't know which branch was taken at runtime, so we revert $k$ to unknown status by returning $\mathcal{L}_1$.
-
-\paragraph{Alternative design consideration:} A more precise approach would implement a proper join operation for logical environments where:
-\begin{itemize}
-    \item Guards with the same value in both branches are preserved
-    \item Guards with contradictory values are removed (become unknown)
-    \item Guards only present in one branch are removed
-\end{itemize}
-This would provide more precision but adds complexity. The current approach is simpler while still enabling the key benefit: predicate-based de-poisoning within each branch of the conditional.
+\paragraph{Note on $\mathcal{L}_1$ propagation:} The predicate-matched rules
+return $\mathcal{L}_1$ (the environment after evaluating $e_1$) rather than
+joining branch environments. This is sound because the branches contain
+contradictory valuations for $k$, and at run time the taken branch is unknown.
 
 \subsubsection*{While loops}
 
@@ -1001,11 +764,11 @@ logical environment $\mathcal{L}_i$. The least fixpoint is reached at the smalle
 The formal specification provides \emph{two} mutually exclusive typing rules for loops:
 \begin{itemize}
   \item \textbf{\texttt{while\_depoison}}~-- applied when
-        \texttt{match\_guard}$(e_1,\Gamma,\sigma)=k$ detects that the loop
+        \texttt{match\_guard}$(e_1,\Gamma,\sigma)=k$ with dependencies $LS$ detects that the loop
         guard $e_1$ syntactically matches a predicate guard tagged $k$.
         The guard expression $e_1$ is typed as a \emph{pure} expression (no effects),
         so it does not modify $\Gamma$ or $\mathcal{L}$. The body $e_2$ is typed under
-        the logical environment $\mathcal{L}[k\mapsto{}\text{true}]$, thereby treating
+        the logical environment $\mathcal{L}[k\mapsto{}\text{true using } LS]$, thereby treating
         every value guarded by $k$ as \emph{clean} within the body. Allocations introduced while typing the body do not escape the loop (the loop returns \texttt{unit} and the heap stores no references), so before joining we discard loop-local locations and keep only the pre-loop domain. Across iterations we compute
         the recurrences
         \[
@@ -1058,7 +821,7 @@ the guard expression $e_1$ evaluate to \emph{false}.  Hence the matching tag
 $k$ is \textbf{known to be false at the loop exit}, and every value whose
 qualified type is guarded by $k$ ought to be marked \emph{poisoned}. The
 typing rule correctly updates the logical environment $\mathcal{L}$
-by setting $k$ to false in the output environment (i.e., $\mathcal{L}_n[k \mapsto \text{false}]$ with
+by setting $k$ to false in the output environment (i.e., $\mathcal{L}_n[k \mapsto \text{false using } LS]$ with
 merged dependencies), 
 allowing post-loop code to properly classify values guarded by $k$ as poisoned. 
 This provides precise fault tracking both during and after loop execution.
@@ -1149,13 +912,13 @@ The relations are parameterised by the evaluation mode:
 The main progress property is then stated as:
 
 \begin{lstlisting}[language=caml,mathescape=true]
-def Progress (e : Expr) (ctx : TypeContext) : Prop :=
+def Progress (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : Prop :=
   ($\exists$ (fuel : Nat) (res : TypeResult),
     typecheck ctx e fuel = .ok res) $\rightarrow$
   $\forall$ ($\mu$ : Memory) ($\rho$ : VarEnv) ($\theta$ : RealizationMap) (a : Address) (pm : Bool),
     wfRealizationMap $\theta$ $\rightarrow$
     runtimeInstantiatesCtx ctx $\mu$ $\rho$ $\theta$ $\rightarrow$
-    $\neg$ (stuck e { memory := $\mu$, varEnv := $\rho$, nextAddr := a, pureMode := pm })
+    $\neg$ (stuck mode e { memory := $\mu$, varEnv := $\rho$, nextAddr := a, pureMode := pm })
 \end{lstlisting}
 
 This states that if an expression typechecks and the runtime properly instantiates
@@ -1195,26 +958,28 @@ $\mathcal{L}'$) accurately reflects the actual runtime state after evaluation.
 defined in \texttt{LeanProofs/Preservation.lean}:
 
 \begin{lstlisting}[language=caml,mathescape=true]
-def Preservation (e : Expr) (ctx : TypeContext) : Prop :=
+def Preservation (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : Prop :=
   $\forall$ (fuel_tc : Nat) (res : TypeResult) ($\mu_0$ $\mu_1$ : Memory) ($\rho_0$ $\rho_1$ : VarEnv) ($\theta_0$ : RealizationMap)
     ($a_0$ $a_1$ : Address) (pm0 pm1 : Bool) (v : Value),
+    wfTypeContext ctx $\rightarrow$
     typecheck ctx e fuel_tc = .ok res $\rightarrow$
     wfRealizationMap $\theta_0$ $\rightarrow$
     runtimeInstantiatesCtx ctx $\mu_0$ $\rho_0$ $\theta_0$ $\rightarrow$
-    terminatesTo e { memory := $\mu_0$, varEnv := $\rho_0$, nextAddr := $a_0$, pureMode := pm0 }
+    terminatesTo mode e { memory := $\mu_0$, varEnv := $\rho_0$, nextAddr := $a_0$, pureMode := pm0 }
                    { memory := $\mu_1$, varEnv := $\rho_1$, nextAddr := $a_1$, pureMode := pm1 } v $\rightarrow$
     $\exists$ ($\theta_1$ : RealizationMap),
       wfExtendsMap $\theta_0$ $\theta_1$ $\land$
       valueHasETyp $\theta_1$ v res.qualType.etyp $\land$
+      wfTypeResult res $\land$
       runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } $\mu_1$ $\rho_1$ $\theta_1$
 \end{lstlisting}
 
-This states that if typechecking succeeds and evaluation terminates, then the
-result value has the expected enriched type and the final runtime state
-(memory and variables) instantiates the output typing context. Note that
-\texttt{nextAddr} and \texttt{pureMode} may differ between input and output
-configurations, as they are implementation details not tracked by the type
-system.
+This states that for a well-formed typing context, if typechecking succeeds and
+evaluation terminates, then the result value has the expected enriched type, the
+typing result is well-formed, and the final runtime state instantiates the output
+typing context. Note that \texttt{nextAddr} and \texttt{pureMode} may differ
+between input and output configurations, as they are implementation details not
+tracked by the type system.
 
 \subsection{Fault Robustness}
 
