@@ -1218,13 +1218,13 @@ system.
 
 \subsection{Fault Robustness}
 
-We define the \emph{Fault Robustness} property for the Poison language, which refines the traditional non-interference property. While non-interference typically requires outputs to be independent of all inputs not explicitly classified as low-integrity, fault robustness allows outputs to depend on \emph{trusted} inputs (those assumed to be non-faulty) while ensuring independence from \emph{faults} in critical inputs.
+We define the \emph{Fault Robustness} property for the Poison language, which refines the traditional non-interference property. While non-interference typically requires outputs to be independent of all inputs not explicitly classified as low-integrity, fault robustness allows outputs to depend on \emph{trusted} inputs while ensuring independence from \emph{faults} in critical inputs. Fault robustness is strictly weaker: non-interference implies fault robustness for the same specification, but not conversely. Equivalently, fault robustness is non-interference restricted to pairs of runs that agree on trusted inputs.
 
 \paragraph{We distinguish three classes of inputs:}
 \begin{itemize}
   \item \textbf{Critical inputs}: exactly those listed in the specification $S$;
   they determine the guard regime and are the source of potential faults.
-  \item \textbf{Trusted inputs}: inputs present in the initial typing context but not listed in $S$. These are assumed to be reliable (clean) and must agree across executions.
+  \item \textbf{Trusted inputs}: inputs present in the initial typing context but not listed in $S$. They are not required to be clean; agreement is required only when they are typed clean under the current regime.
   \item \textbf{Unused inputs}: neither listed in $S$ nor present in the initial typing context; they are irrelevant.
 \end{itemize}
 
@@ -1235,19 +1235,14 @@ Inputs consist of initial memory, variables, and a realisation map:
     \item Initial variables: $\rho_0 : \text{Variable} \rightarrow \text{Value}$
     \item Realisation map: $\theta_0 : \text{Location} \rightharpoonup \text{Address}$ (logical $\to$ concrete, per run)
 \end{itemize}
-We fix a \emph{critical-input specification} $S$ comprising lists of critical \emph{logical} locations and variables with their qualified types:
+We fix a \emph{critical-input specification} $S$ comprising finite maps of critical \emph{logical} locations and variables to their qualified types:
 \[
-  S.\mathrm{locs} = \bigl[(l_1, Q_1),\ldots,(l_m, Q_m)\bigr],\qquad
-  S.\mathrm{vars} = \bigl[(x_1, Q'_1),\ldots,(x_n, Q'_n)\bigr].
+  S.\mathrm{locs} : \text{Location} \rightharpoonup Q,\qquad
+  S.\mathrm{vars} : \text{Variable} \rightharpoonup Q.
 \]
 Context entries not listed in $S$ are considered \emph{trusted inputs}.
 
-Outputs consist of:
-\begin{itemize}
-    \item Final memory: $\mu_f : \text{Address} \rightarrow \text{Value}$
-    \item Program return value: $v$
-\end{itemize}
-With observable outputs designated as $(L_{obs}, v_{obs})$ where $L_{obs}$ is a set of logical locations and $v_{obs} \in \{\text{true}, \text{false}\}$ indicates whether the return value is observable.
+Outputs consist of a final memory $\mu_f$ and a program return value $v$. Observable outputs are specified by an \emph{observable specification} $\text{obs}$ comprising a finite map of logical locations to expected enriched types, together with an optional return type. When the return type is absent, the return value is unobservable.
 \end{definition}
 
 \begin{definition}[Guard Regime]
@@ -1272,24 +1267,28 @@ For a single run, we say that $R$ is \emph{consistent} with the critical inputs 
 \end{definition}
 
 \begin{definition}[Fault Robustness Property]
-A program $e$ satisfies fault robustness with respect to the critical-input specification $S$ and observable outputs if, for each guard regime $R$:
-
-Given two executions $\langle e, \mu_1, \rho_1 \rangle \Downarrow \langle \mu_{1,1}, v_1 \rangle$ and $\langle e, \mu_2, \rho_2 \rangle \Downarrow \langle \mu_{2,1}, v_2 \rangle$, together with realisation maps $\theta_1,\theta_2$, the following hold:
+A program $e$ satisfies fault robustness with respect to the critical-input specification $S$, an observable specification $\text{obs}$, and an abstract predicate satisfaction relation, if for each guard regime $R$ and any two runs with initial states $(\mu_1,\rho_1,\theta_1)$ and $(\mu_2,\rho_2,\theta_2)$:
 \begin{itemize}
-    \item \textbf{Agreement on Trusted Inputs:} The executions agree on all initial context entries not in $S$ that are typed clean under $R$.
-    \item \textbf{Agreement on Critical Inputs under $R$:} For every entry in $S$:
-    \begin{itemize}
-        \item For critical entries without predicates, the corresponding initial values are identical.
-        \item For entries with predicate \emph{closures} tagged $k$: when $R(k)=\text{true}$ the initial values satisfy the closure and are identical; when $R(k)=\text{false}$ the initial values may differ but both fail the closure.
-        \item For entries with \emph{guard-only} tag $k$: when $R(k)=\text{true}$ the initial values are identical; when $R(k)=\text{false}$ the initial values may differ.
-    \end{itemize}
+    \item \textbf{Well-formedness of the regime:} $R$ is well-formed for $S$ and bounded by the initial tag supply, so it classifies only tags that occur in $S$.
+    \item \textbf{Well-formed realisations and configurations:} Both realisation maps are well-formed, and both initial runtime configurations are well-formed.
+    \item \textbf{Input conformance:} The two initial states conform to the specification $S$ (critical variables match the specified types, and any critical logical location realised in a run is backed by memory).
+    \item \textbf{Context instantiation:} The initial runtime states instantiate the typing context used to check $e$.
+    \item \textbf{Regime consistency:} For each critical input, the regime is consistent with predicate satisfaction on that input (for guard-only tags there is no additional consistency requirement; for guarded predicates, satisfaction agrees with the regime's truth value).
+    \item \textbf{Agreement on critical inputs under $R$:} The two runs agree on each critical entry in the manner dictated by the regime and predicate satisfaction.
+    \item \textbf{Agreement on trusted inputs:} The two runs agree on context entries not in $S$ whenever those entries are typed clean under $R$.
+    \item \textbf{Termination under the chosen evaluation mode:} Both runs terminate under the same evaluation mode, producing final configurations and return values.
 \end{itemize}
 Then the observable outputs coincide:
 \begin{itemize}
-    \item $\forall l \in L_{obs}.\; \mu_{1,1}(\theta_1(l)) = \mu_{2,1}(\theta_2(l))$
-    \item If $v_{obs} = \text{true}$ then $v_1 = v_2$.
+    \item For each observable location, either both runs realise it and the corresponding heap contents agree, or both runs leave it unrealised.
+    \item If the return value is observable, then the two return values agree (for non-reference types this is literal equality; for references it is mediated by the location set).
 \end{itemize}
 \end{definition}
+
+\paragraph{Proof structure (Lean).}
+The formalisation separates a spec-driven top-level property, \texttt{FaultRobustnessSpec} (\texttt{LeanProofs/FaultRobustness.lean}), from a context-driven step theorem, \texttt{StepFR} (\texttt{LeanProofs/FaultRobustnessProofs.lean}). The step theorem maintains agreement on clean context entries (\texttt{agreeOnClean}) and result agreement when the result is clean under the regime. A bridge lemma shows that the top-level premises, including \texttt{agreeOnTrustedInputs} and \texttt{agreeOnCriticalInputsUnderRegimeSpec}, imply the initial \texttt{agreeOnClean} invariant.
+
+The specification is stated for arbitrary evaluation modes, but the proof establishes the property only for the I/O-free fragment.
 
 \subsubsection*{IO-free evaluation mode}
 \label{subsec:fr-iofree}
@@ -1344,7 +1343,10 @@ A subtlety arises with ``ghost'' locations: logical locations that exist in the
 typing environment $\Gamma$ but are not allocated in a particular program
 execution. Input conformance requires that a logical location must exist in memory \emph{only if} it is
 realised in the current run's realisation map $\theta$. Unrealised ghost
-locations satisfy the spec trivially.
+locations satisfy the spec trivially. Agreement on reference values alone does
+not imply agreement on heap contents; the formal agreement relation compares heap
+cells at realised locations (\texttt{agreeLocUnder}), and the observable equality
+predicate permits both runs to leave an observable location unrealised.
 
 \begin{theorem}[Type System Enforces Fault Robustness]
 Assume a well-formed critical-input specification $S$ and observable spec
