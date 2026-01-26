@@ -123,7 +123,7 @@ LS ::= { } | { l } | LS1 U LS2
 
 (* enriched types *)
 T ::= int | bool | unit 
-    | ref T @ LS        (* reference type with a set of logical locations *)
+    | ref int @ LS      (* reference type; heap stores only integers *)
     | ST1 -> ST2 # p tclosures tcls   (* impure function types with merged typing closures *)
     | ST1 -> ST2 # p tpclosures ptcls (* pure function types with merged pure typing closures *)
 
@@ -160,11 +160,11 @@ in their code but never see the more complex internal representations.
 \begin{itemize}
     \item \textbf{Ott notation:} \texttt{typ, T}
     \item \textbf{Lean implementation:} \texttt{ETyp} (Enriched Type)
-    \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | ref T @ LS | ST1 -> ST2 \# p tclosures tcls | ST1 -> ST2 \# p tpclosures ptcls}
+    \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | ref int @ LS | ST1 -> ST2 \# p tclosures tcls | ST1 -> ST2 \# p tpclosures ptcls}
     \item \textbf{Usage:} Used internally by the type checker for sound reasoning about references and functions
     \item \textbf{Key additions:}
     \begin{itemize}
-        \item \textbf{Location sets} (\texttt{@LS}): Track a set of possible \emph{logical} locations each reference may point to
+        \item \textbf{Location sets} (\texttt{@LS}): Track a set of possible \emph{logical} locations each reference may point to. Since memory stores only integers, reference types have the form \texttt{ref int @ LS}
         \item \textbf{Typing closure sets} (\texttt{tclosures tcls} / \texttt{tpclosures ptcls}): Non-empty sets of closures that capture function bodies and variable contexts for re-typechecking at application time
         \item \textbf{Function poison} (\texttt{\#p}): Track the poison status of the function itself (from the program counter at definition time)
     \end{itemize}
@@ -173,7 +173,7 @@ in their code but never see the more complex internal representations.
 Enriched types extend surface types with the machinery needed for sound type
 checking. \emph{Once assigned, an enriched type is \emph{immutable} during
 analysis—only the environments grow around it.} The region annotation
-\texttt{ref T @ LS} records a \emph{set of logical locations} that the reference
+\texttt{ref int @ LS} records a \emph{set of logical locations} that the reference
 may target; joins union these sets, preserving aliasing information in a
 flow-insensitive analysis. Logical locations are typechecker-generated names
 that are related to concrete runtime addresses by a per-run realisation map
@@ -233,7 +233,7 @@ the scenes.
 
 \subsection*{Key features}
 \begin{itemize}
-    \item \textbf{References}: \texttt{ref e} creates, \texttt{e1 := e2} assigns, \texttt{!e} dereferences (memory stores only integers)
+    \item \textbf{References}: \texttt{ref e} creates, \texttt{e1 := e2} assigns, \texttt{!e} dereferences. Memory stores only integers
     \item \textbf{Functions}: \texttt{fn x : ST1 => e : ST2} creates functions with explicit parameter and return type annotations, \texttt{e1 e2} applies, with closures
     \item \textbf{Pure functions}: \texttt{pfn x : ST1 => pe : ST2} creates pure functions with explicit parameter and return type annotations that cannot have side effects (note: no nested pure functions allowed)
     \item \textbf{Extern declarations}: \texttt{extern val}, \texttt{extern fn}, and \texttt{extern pfn} provide placeholders for external implementations with full type specifications including poison status and guard predicates
@@ -802,21 +802,21 @@ where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{
 
 \subsubsection*{Reference creation:}
 \[
-\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : T \rhd p \dashv \Gamma_1 \quad \text{fresh } l}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash \text{ref } e : \text{ref } T @ \{l\} \rhd \text{pc} \dashv \Gamma_1[l \mapsto T \triangleright \text{pc} \sqcup p]}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : \text{int} \rhd p \dashv \Gamma_1 \quad \text{fresh } l}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash \text{ref } e : \text{ref int} @ \{l\} \rhd \text{pc} \dashv \Gamma_1[l \mapsto \text{int} \triangleright \text{pc} \sqcup p]}
 \]
 
 \subsubsection*{Assignment:}
 \[
-\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 : \text{ref } T @ LS \rhd p_1 \dashv \Gamma_1 \quad \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \vdash e_2 : T \rhd p_2 \dashv \Gamma_2}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p_1 \dashv \Gamma_2[LS \mapsto T \triangleright \text{pc} \sqcup p_1 \sqcup p_2]}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 : \text{ref int} @ LS \rhd p_1 \dashv \Gamma_1 \quad \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \vdash e_2 : \text{int} \rhd p_2 \dashv \Gamma_2}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e_1 := e_2 : \text{unit} \rhd \text{pc} \sqcup p_1 \dashv \Gamma_2[LS \mapsto \text{int} \triangleright \text{pc} \sqcup p_1 \sqcup p_2]}
 \]
 where $\Gamma[LS \mapsto Q]$ updates $\Gamma$ at every $l \in LS$.
 
 \subsubsection*{Dereference:}
 \[
-\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : \text{ref } T @ LS \rhd p_1 \dashv \Gamma_1 \quad \forall l \in LS.\; \Gamma_1(l) = T \triangleright p_l}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash !e : T \rhd \text{pc} \sqcup p_1 \sqcup \bigsqcup_{l \in LS} p_l \dashv \Gamma_1}
+\frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash e : \text{ref int} @ LS \rhd p_1 \dashv \Gamma_1 \quad \forall l \in LS.\; \Gamma_1(l) = \text{int} \triangleright p_l}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \vdash !e : \text{int} \rhd \text{pc} \sqcup p_1 \sqcup \bigsqcup_{l \in LS} p_l \dashv \Gamma_1}
 \]
 The predicate attached to the dereference result is obtained by merging all
 predicates attached to the referenced cells (agreement-only: exact match keeps
@@ -1063,14 +1063,14 @@ merged dependencies),
 allowing post-loop code to properly classify values guarded by $k$ as poisoned. 
 This provides precise fault tracking both during and after loop execution.
 
-\subsection{Location-Set Types for Soundness}
+\subsection{Location-Set Types}
 
-Reference types $\text{ref } T @ LS$ solve the soundness problem in dereference
-while supporting flow-insensitive joins:
+Reference types $\text{ref int} @ LS$ track aliasing through logical location sets:
 \begin{itemize}
-    \item \textbf{Problem}: Without location information, $!e$ cannot determine which heap cell types (and poison/predicates) to consult in $\Gamma$
-    \item \textbf{Solution}: $\text{ref } T @ LS$ explicitly records a set of possible \emph{logical} target locations; joins union these sets, dereference joins over all $l \in LS$, and assignment updates all $l \in LS$
-    \item \textbf{Benefit}: Preserves aliasing information without requiring concrete runtime addresses to appear in types; locations that arise only on untaken paths may remain unrealised (ghost) at runtime
+    \item $\text{ref int} @ LS$ explicitly records a set of possible \emph{logical} target locations
+    \item Joins union location sets; dereference joins poison/predicates over all $l \in LS$; assignment updates all $l \in LS$
+    \item Preserves aliasing information without requiring concrete runtime addresses to appear in types; locations that arise only on untaken paths may remain unrealised (ghost) at runtime
+    \item Memory stores only integers, so all reference types have the form $\text{ref int} @ LS$
 \end{itemize}
 
 \subsection{Environment Evolution}
