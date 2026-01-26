@@ -185,6 +185,12 @@ application build larger sets by taking unions. The type system always
 re-typechecks all available closures at application time and conservatively
 joins their results.
 
+Function values therefore carry two distinct poison indicators: the internal
+arrow poison \texttt{\#p} in $T$ and the outer poison in $Q$. The internal arrow
+poison is fixed at definition time and is not affected by predicate-based
+de-poisoning; guard tags only affect the outer poison. This separates
+definition-time control poison from call-site provenance in the type system.
+
 \subsubsection{Qualified Types (\texttt{Q})}
 \textbf{Purpose:} Complete type information including poison status and predicates for fault tracking.
 \begin{itemize}
@@ -565,6 +571,11 @@ The language includes a predicate system that allows selective de-poisoning base
     valuations (\texttt{k : true/false}) to enable predicate evaluation for both
     guard closure and guard-only predicates
 \end{itemize}
+
+\noindent\textbf{Function values and de-poisoning.} Predicate-based de-poisoning
+applies only to non-function values. Qualified types for functions always carry
+\texttt{no\_pred}, and \texttt{match\_guard} rejects predicates on arrow types;
+guard tags therefore never de-poison functions.
 
 \textbf{Design Note:} The predicate closure \texttt{pred\_closure (x, pe, r)}
 does not explicitly store the expected argument type for the predicate. This
@@ -1363,6 +1374,10 @@ when their parameter names and bodies match syntactically (no alpha-equivalence)
 and their captured runtime environments agree on each captured variable whose
 qualified type is clean under $R$ (as determined by the typing closure's captured
 typing environment).
+Closure agreement is required only when the arrow-internal poison is clean; if
+it is poisoned, the step theorem imposes no agreement obligation on the closure
+structure or captured environment. Any return-value agreement is then governed
+by the resulting qualified type.
 At the top level, the current \texttt{observablesEqual} predicate treats
 non-reference return values as observable by literal equality, so (as a pragmatic
 limitation) the well-formedness condition for observable specs disallows function
