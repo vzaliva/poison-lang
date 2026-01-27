@@ -14,11 +14,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential clang lld cmake pkg-config \
     libgmp-dev libuv1-dev \
     xz-utils util-linux \
+    unzip \
+    m4 \
+    openssl \
     python3 python3-pip \
     # Common CLI tools for AI agents
     ripgrep \
     jq \
+    # LaTeX for PDF generation
+    latexmk texlive-latex-extra texlive-fonts-recommended texlive-latex-recommended texlive-lang-english \
     && rm -rf /var/lib/apt/lists/*
+
+# Install opam from the official binary installer (avoids outdated distro packages).
+# See: https://opam.ocaml.org/doc/Install.html
+RUN curl -fsSL https://opam.ocaml.org/install.sh -o /tmp/opam-install.sh \
+    # The installer prompts once for an installation prefix; accept the default (/usr/local/bin).
+    && printf '\n' | sh /tmp/opam-install.sh --no-backup --fresh \
+    && rm -f /tmp/opam-install.sh
+
+# Install Ott (requires OCaml + opam); install binary to /usr/local/bin.
+# Mirror CI: `opam init -y --disable-sandboxing && opam install -y ott`.
+ENV OPAMROOT=/opt/opam
+RUN opam init -y --disable-sandboxing --no-setup \
+    && opam install -y ott \
+    && install -m 0755 "$(opam var bin)/ott" /usr/local/bin/ott
+
 
 # Install GitHub CLI (gh)
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -46,6 +66,9 @@ RUN mkdir -p "${CLAUDE_SEED}" \
     && HOME="${CLAUDE_SEED}" bash -lc 'curl -fsSL https://claude.ai/install.sh | bash' \
     && install -m 0755 "${CLAUDE_SEED}/.local/bin/claude" /usr/local/bin/claude
 
+# Tree-sitter CLI
+RUN npm i -g tree-sitter-cli
+
 # OpenAI Codex CLI
 RUN npm i -g @openai/codex
 
@@ -70,7 +93,12 @@ RUN mkdir -p "${ELAN_SEED}" && \
 RUN useradd -m -d /home/user -s /bin/bash user || true
 # Rootless Podman commonly maps the host UID to container uid 0, or runs as a
 # non-1000 UID under keep-id. Make HOME writable in either case.
-RUN chmod 1777 /home/user
+RUN mkdir -p /home/user/.cache /home/user/.config \
+    # Important: Podman may create mount parent directories as root:root when mounting
+    # subdirectories (e.g. /home/user/.cache/lake). If /home/user/.cache does not already
+    # exist in the image, it can end up root-owned and non-writable under --userns=keep-id,
+    # breaking tools (e.g. tree-sitter) that need ~/.cache write access.
+    && chmod 1777 /home/user /home/user/.cache /home/user/.config
 ENV HOME=/home/user
 # Some tools (Claude Code native installer, uv installer) expect ~/.local/bin on PATH.
 ENV PATH=/home/user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
