@@ -60,6 +60,9 @@ ai-agent-jailed claude
 
 # Or run Codex
 ai-agent-jailed codex
+
+# Or drop into a shell inside the container
+ai-agent-jailed bash
 ```
 
 That's it! AI agents now run in an isolated container with access to:

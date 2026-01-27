@@ -13,11 +13,13 @@ set -euo pipefail
 # Agents:
 #   claude   - Anthropic Claude Code
 #   codex    - OpenAI Codex
+#   bash     - Shell inside the container
 #
 # Examples:
 #   ai-agent-jailed claude
 #   ai-agent-jailed claude --help
 #   ai-agent-jailed codex
+#   ai-agent-jailed bash
 #   claude-jailed           # If symlinked
 #   codex-jailed --help     # If symlinked
 #
@@ -44,6 +46,7 @@ case "$SCRIPT_NAME" in
       echo "Available agents:" >&2
       echo "  claude   - Anthropic Claude Code" >&2
       echo "  codex    - OpenAI Codex" >&2
+      echo "  bash     - Shell inside the container" >&2
       echo "" >&2
       echo "Or create symlinks:" >&2
       echo "  ln -sf ai-agent-jailed claude-jailed" >&2
@@ -59,8 +62,12 @@ esac
 case "$AGENT" in
   claude)
     CMD="claude"
+    # Persist Claude Code auth/config inside the ai_agent_config volume.
+    # By default Claude stores state under ~/.claude* (not persisted in this container).
+    CLAUDE_CONFIG_DIR="/home/user/.config/poison-claude"
     # Add --dangerously-skip-permissions for smoother operation
-    AGENT_ARGS="--dangerously-skip-permissions"
+    # Also load a persisted MCP config that preconfigures lean-lsp.
+    AGENT_ARGS="--dangerously-skip-permissions --mcp-config ${CLAUDE_CONFIG_DIR}/mcp.json"
     ;;
   codex)
     CMD="codex"
@@ -74,9 +81,13 @@ case "$AGENT" in
     # Add --yolo for smoother operation
     AGENT_ARGS="-c cli_auth_credentials_store=file --yolo"
     ;;
+  bash|sh)
+    CMD="$AGENT"
+    AGENT_ARGS=""
+    ;;
   *)
     echo "Error: Unknown agent '$AGENT'" >&2
-    echo "Available agents: claude, codex" >&2
+    echo "Available agents: claude, codex, bash" >&2
     exit 1
     ;;
 esac
@@ -114,10 +125,21 @@ HOST_GID="$(id -g)"
 HOST_USER="$(id -un)"
 HOST_GROUP="$(id -gn)"
 
+# Rootless Podman userns mapping: keep container UID/GID aligned with the invoking user.
+# This avoids "Permission denied" on /work and ensures tools (e.g. Claude Code) run unprivileged.
+PODMAN_USERNS_ARGS=()
+if [ "$HOST_UID" -ne 0 ]; then
+  PODMAN_USERNS_ARGS+=(--userns=keep-id)
+  # Ensure the process does not run as container-root (Claude rejects root when using
+  # --dangerously-skip-permissions), while still keeping /work readable via keep-id.
+  PODMAN_USERNS_ARGS+=(--user "${HOST_UID}:${HOST_GID}")
+fi
+
 # Build podman run command with SSH agent forwarding if available
 PODMAN_ARGS=(
   run --rm -it
   --name poison-ai-agent
+  "${PODMAN_USERNS_ARGS[@]}"
   -e HOST_UID="$HOST_UID"
   -e HOST_GID="$HOST_GID"
   -e HOST_USER="$HOST_USER"
@@ -126,16 +148,19 @@ PODMAN_ARGS=(
   -e XDG_CACHE_HOME=/home/user/.cache
   -e UV_CACHE_DIR=/home/user/.cache/uv
   -v "$PROJ_DIR:/work:Z"
-  -v ai_agent_elan_home:/home/user/.elan:rw
-  -v ai_agent_cache_elan:/home/user/.cache/elan:rw
-  -v ai_agent_cache_lake:/home/user/.cache/lake:rw
-  -v ai_agent_cache_uv:/home/user/.cache/uv:rw
-  -v ai_agent_config:/home/user/.config:rw
+  -v ai_agent_elan_home:/home/user/.elan:rw,U
+  -v ai_agent_cache_elan:/home/user/.cache/elan:rw,U
+  -v ai_agent_cache_lake:/home/user/.cache/lake:rw,U
+  -v ai_agent_cache_uv:/home/user/.cache/uv:rw,U
+  -v ai_agent_config:/home/user/.config:rw,U
 )
 
 # Optional per-agent env vars
 if [ -n "${CODEX_HOME:-}" ]; then
   PODMAN_ARGS+=(-e CODEX_HOME="$CODEX_HOME")
+fi
+if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+  PODMAN_ARGS+=(-e CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR")
 fi
 if [ -n "${LEAN_PROJECT_PATH:-}" ]; then
   PODMAN_ARGS+=(-e LEAN_PROJECT_PATH="$LEAN_PROJECT_PATH")

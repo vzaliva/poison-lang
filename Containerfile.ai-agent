@@ -57,9 +57,11 @@ RUN mkdir -p "${ELAN_SEED}" && \
     curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
       | ELAN_HOME="${ELAN_SEED}" sh -s -- -y --default-toolchain "${ELAN_TOOLCHAIN}" --no-modify-path
 
-# Non-root runtime user; make traversable to mapped UIDs
+# Non-root runtime user; make usable under rootless UID mappings
 RUN useradd -m -d /home/user -s /bin/bash user || true
-RUN chmod 755 /home/user
+# Rootless Podman commonly maps the host UID to container uid 0, or runs as a
+# non-1000 UID under keep-id. Make HOME writable in either case.
+RUN chmod 1777 /home/user
 ENV HOME=/home/user
 WORKDIR /work
 
@@ -75,6 +77,8 @@ RUN printf '%s\n' \
 ': "${XDG_CACHE_HOME:=/home/user/.cache}"' \
 '# Container-local Codex state (config/auth/history). Overridable by wrapper.' \
 ': "${CODEX_HOME:=/home/user/.config/poison-codex}"' \
+'# Container-local Claude Code state (config/auth). Overridable by wrapper.' \
+': "${CLAUDE_CONFIG_DIR:=/home/user/.config/poison-claude}"' \
 '' \
 '# Ensure mapped identity exists (avoids $HOME warning).' \
 'if [ "$(id -u)" -eq 0 ]; then' \
@@ -87,6 +91,30 @@ RUN printf '%s\n' \
 '  mkdir -p "${d}"' \
  '  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${d}" 2>/dev/null || true; fi' \
 'done' \
+'' \
+'# Ensure Claude Code config dir exists (for persistent auth).' \
+'mkdir -p "${CLAUDE_CONFIG_DIR}"' \
+'if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_CONFIG_DIR}" 2>/dev/null || true; fi' \
+'' \
+'# Seed a minimal Claude MCP config (first run only) to enable lean-lsp via uvx.' \
+'if [ ! -f "${CLAUDE_CONFIG_DIR}/mcp.json" ]; then' \
+'  cat > "${CLAUDE_CONFIG_DIR}/mcp.json" <<'\''EOF'\''' \
+'{' \
+'  "mcpServers": {' \
+'    "lean-lsp": {' \
+'      "type": "stdio",' \
+'      "command": "uvx",' \
+'      "args": ["lean-lsp-mcp"],' \
+'      "env": {' \
+'        "LEAN_PROJECT_PATH": "/work",' \
+'        "LEAN_LOG_LEVEL": "NONE"' \
+'      }' \
+'    }' \
+'  }' \
+'}' \
+'EOF' \
+'  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_CONFIG_DIR}/mcp.json" 2>/dev/null || true; fi' \
+'fi' \
 '' \
 '# Seed a minimal Codex config in CODEX_HOME (first run only).' \
 'mkdir -p "${CODEX_HOME}"' \
@@ -126,6 +154,11 @@ RUN printf '%s\n' \
 '# Prefer volume-managed elan in PATH so updates persist there.' \
 'export PATH="${ELAN_HOME}/bin:${PATH}"' \
 '' \
+'# If we are already running unprivileged, we cannot (and do not need to) drop privileges.' \
+'if [ "$(id -u)" -ne 0 ]; then' \
+'  exec "$@"' \
+'fi' \
+'' \
 '# Rootless Podman commonly maps host UID to container uid 0. In that case, dropping to' \
 '# HOST_UID (e.g. 1000) can make /work bind mounts unreadable. Detect this mapping and' \
 '# keep running as uid 0 when it maps directly to HOST_UID.' \
@@ -133,8 +166,9 @@ RUN printf '%s\n' \
 '  exec "$@"' \
 'fi' \
 '' \
-'# Otherwise, drop to mapped user and exec.' \
-'exec setpriv --reuid="${HOST_UID}" --regid="${HOST_GID}" --clear-groups -- "$@"' \
+'# Otherwise, drop to mapped user and exec. Avoid --clear-groups because setgroups is commonly' \
+'# denied in rootless user namespaces (which would break startup even when uid/gid changes are OK).' \
+'exec setpriv --reuid="${HOST_UID}" --regid="${HOST_GID}" --keep-groups -- "$@"' \
 > /usr/local/bin/ai-agent-entrypoint.sh \
  && chmod +x /usr/local/bin/ai-agent-entrypoint.sh
 
