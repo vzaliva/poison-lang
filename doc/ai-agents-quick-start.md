@@ -20,6 +20,7 @@ podman build -t localhost/poison-ai-agent:latest -f Containerfile.ai-agent .
 
 ```bash
 podman volume create ai_agent_elan_home
+podman volume create ai_agent_ssh
 podman volume create ai_agent_cache_elan
 podman volume create ai_agent_cache_lake
 podman volume create ai_agent_cache_uv

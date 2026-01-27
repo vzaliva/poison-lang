@@ -147,10 +147,17 @@ PODMAN_ARGS=(
   -e HOST_GID="$HOST_GID"
   -e HOST_USER="$HOST_USER"
   -e HOST_GROUP="$HOST_GROUP"
+  # Force a stable HOME so tools use persisted state under /home/user.
+  # (Without this, Podman may set HOME based on the numeric uid's passwd entry,
+  # leading to ~/.ssh, ~/.config, etc. being written somewhere else.)
+  -e HOME=/home/user
+  -e USER=user
+  -e LOGNAME=user
   -e ELAN_HOME=/home/user/.elan
   -e XDG_CACHE_HOME=/home/user/.cache
   -e UV_CACHE_DIR=/home/user/.cache/uv
   -v "$PROJ_DIR:/work:Z"
+  -v ai_agent_ssh:/home/user/.ssh:rw,U
   -v ai_agent_cache_elan:/home/user/.cache/elan:rw,U
   -v ai_agent_cache_lake:/home/user/.cache/lake:rw,U
   -v ai_agent_cache_uv:/home/user/.cache/uv:rw,U

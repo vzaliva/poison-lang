@@ -10,6 +10,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Base dependencies + Node.js + Python for AI agents
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git ca-certificates \
+    openssh-client \
     build-essential clang lld cmake pkg-config \
     libgmp-dev libuv1-dev \
     xz-utils util-linux \
@@ -111,6 +112,26 @@ RUN printf '%s\n' \
 '# We install the binary in /usr/local/bin/claude and keep a symlink for compatibility.' \
 'if [ ! -e "/home/user/.local/bin/claude" ] && [ -x "/usr/local/bin/claude" ]; then' \
 '  ln -sf "/usr/local/bin/claude" "/home/user/.local/bin/claude" 2>/dev/null || true' \
+'fi' \
+'' \
+'# Persist SSH known_hosts (agent keys stay on host; we only keep host fingerprints).' \
+'mkdir -p "${HOME}/.ssh"' \
+'chmod 700 "${HOME}/.ssh" 2>/dev/null || true' \
+'touch "${HOME}/.ssh/known_hosts" 2>/dev/null || true' \
+'chmod 600 "${HOME}/.ssh/known_hosts" 2>/dev/null || true' \
+'if ! grep -q "^github\\.com[ ,]" "${HOME}/.ssh/known_hosts" 2>/dev/null; then' \
+'  ssh-keyscan -H github.com 2>/dev/null >> "${HOME}/.ssh/known_hosts" || true' \
+'fi' \
+'' \
+'# OpenSSH picks UserKnownHostsFile based on the passwd home directory for the current uid,' \
+'# not the HOME environment variable. Under rootless keep-id, the uid may map to a user whose' \
+'# home is /home/ubuntu (or similar). Ensure that home dir uses the persisted /home/user/.ssh.' \
+'USER_HOME="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6 || true)"' \
+'if [ -n "${USER_HOME}" ] && [ "${USER_HOME}" != "${HOME}" ]; then' \
+'  mkdir -p "${USER_HOME}" 2>/dev/null || true' \
+'  if [ ! -e "${USER_HOME}/.ssh" ]; then' \
+'    ln -s "${HOME}/.ssh" "${USER_HOME}/.ssh" 2>/dev/null || true' \
+'  fi' \
 'fi' \
 '' \
 '# Ensure Claude Code config dir exists (for persistent auth).' \
