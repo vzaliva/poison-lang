@@ -66,8 +66,12 @@ RUN mkdir -p "${CLAUDE_SEED}" \
     && HOME="${CLAUDE_SEED}" bash -lc 'curl -fsSL https://claude.ai/install.sh | bash' \
     && install -m 0755 "${CLAUDE_SEED}/.local/bin/claude" /usr/local/bin/claude
 
-# Tree-sitter CLI
-RUN npm i -g tree-sitter-cli
+# Ensure global npm installs land in /usr/local (not /usr).
+# This avoids accidentally picking up an older distro-provided /usr/bin/tree-sitter.
+ENV NPM_CONFIG_PREFIX=/usr/local
+
+# Tree-sitter CLI (pin version; Parser.lean relies on flags like --config-path and -x)
+RUN npm i -g tree-sitter-cli@0.25.10
 
 # OpenAI Codex CLI
 RUN npm i -g @openai/codex
@@ -130,6 +134,19 @@ RUN printf '%s\n' \
 '  mkdir -p "${d}"' \
  '  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${d}" 2>/dev/null || true; fi' \
 'done' \
+'' \
+'# Tree-sitter CLI uses ~/.config/tree-sitter/config.json to locate grammar repos.' \
+'# Seed a minimal config pointing at the project parser directory (first run only).' \
+'mkdir -p "${HOME}/.config/tree-sitter"' \
+'if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "${HOME}/.config/tree-sitter" 2>/dev/null || true; fi' \
+'if [ ! -f "${HOME}/.config/tree-sitter/config.json" ]; then' \
+'  cat > "${HOME}/.config/tree-sitter/config.json" <<'\''EOF'\''' \
+'{' \
+'  "parser-directories": ["/work/parser"]' \
+'}' \
+'EOF' \
+'  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${HOME}/.config/tree-sitter/config.json" 2>/dev/null || true; fi' \
+'fi' \
 '' \
 '# Ensure ~/.local/bin exists and is on PATH (some CLIs expect it).' \
 'mkdir -p "/home/user/.local/bin"' \

@@ -18,8 +18,24 @@ For detailed language features and syntax, see the formal documentation in `doc/
 ### Prerequisites
 - [Lean 4](https://leanprover.github.io/lean4/doc/quickstart.html)
 - LaTeX and latexmk (for building documentation)
-- [tree-sitter](https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html)  version 0.25.6+
+- [tree-sitter](https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html)  version 0.25.10
 - [ott](https://github.com/ott-lang/ott)
+
+### Note on Tree-sitter configuration
+
+If you see:
+
+```
+Warning: You have not configured any parser directories!
+```
+
+initialise a minimal config, for example:
+
+```bash
+tree-sitter init-config
+# then edit ~/.config/tree-sitter/config.json to include this repository, e.g.
+# { "parser-directories": ["./parser"] }
+```
 
 ### Build
 
