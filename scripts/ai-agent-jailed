@@ -12,7 +12,7 @@ set -euo pipefail
 #
 # Agents:
 #   claude   - Anthropic Claude Code
-#   codex    - OpenAI Codex (via openai CLI)
+#   codex    - OpenAI Codex
 #
 # Examples:
 #   ai-agent-jailed claude
@@ -63,9 +63,16 @@ case "$AGENT" in
     AGENT_ARGS="--dangerously-skip-permissions"
     ;;
   codex)
-    CMD="openai"
+    CMD="codex"
+    # Use a container-specific CODEX_HOME to avoid touching host ~/.codex.
+    # This path is inside the ai_agent_config volume, so auth/config persist.
+    CODEX_HOME="/home/user/.config/poison-codex"
+    # MCP server env (lean-lsp-mcp defaults to INFO logging, which can break STDIO MCP handshakes
+    # if logs end up on stdout). Also pin the Lean project root explicitly.
+    LEAN_PROJECT_PATH="/work"
+    LEAN_LOG_LEVEL="NONE"
     # Add --yolo for smoother operation
-    AGENT_ARGS="--yolo"
+    AGENT_ARGS="-c cli_auth_credentials_store=file --yolo"
     ;;
   *)
     echo "Error: Unknown agent '$AGENT'" >&2
@@ -75,14 +82,30 @@ case "$AGENT" in
 esac
 
 # Determine project root
-PROJ_DIR="${POISON_PROJECT_DIR:-$HOME/src/poison-lang}"
+# Priority:
+# 1) POISON_PROJECT_DIR (explicit)
+# 2) git root of current working directory (if inside a git repo)
+# 3) default ~/src/poison-lang (if it exists)
+# 4) git root containing this script (for installed copies/symlinks)
+PROJ_DIR="${POISON_PROJECT_DIR:-}"
 
-# If we're inside the project directory tree, use git root
-if command -v git >/dev/null 2>&1; then
-  GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-  if [[ -n "$GIT_ROOT" && "$PWD" == "$GIT_ROOT"* ]]; then
-    PROJ_DIR="$GIT_ROOT"
-  fi
+if [ -z "$PROJ_DIR" ] && command -v git >/dev/null 2>&1; then
+  PROJ_DIR="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+fi
+
+if [ -z "$PROJ_DIR" ] && [ -d "$HOME/src/poison-lang" ]; then
+  PROJ_DIR="$HOME/src/poison-lang"
+fi
+
+if [ -z "$PROJ_DIR" ] && command -v git >/dev/null 2>&1; then
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+  PROJ_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+fi
+
+if [ -z "$PROJ_DIR" ] || [ ! -d "$PROJ_DIR" ]; then
+  echo "Error: Could not determine project directory to mount at /work." >&2
+  echo "Set POISON_PROJECT_DIR=/absolute/path/to/poison-lang and retry." >&2
+  exit 1
 fi
 
 IMAGE="${AI_AGENT_IMAGE:-localhost/poison-ai-agent:latest}"
@@ -101,12 +124,25 @@ PODMAN_ARGS=(
   -e HOST_GROUP="$HOST_GROUP"
   -e ELAN_HOME=/home/user/.elan
   -e XDG_CACHE_HOME=/home/user/.cache
+  -e UV_CACHE_DIR=/home/user/.cache/uv
   -v "$PROJ_DIR:/work:Z"
   -v ai_agent_elan_home:/home/user/.elan:rw
   -v ai_agent_cache_elan:/home/user/.cache/elan:rw
   -v ai_agent_cache_lake:/home/user/.cache/lake:rw
+  -v ai_agent_cache_uv:/home/user/.cache/uv:rw
   -v ai_agent_config:/home/user/.config:rw
 )
+
+# Optional per-agent env vars
+if [ -n "${CODEX_HOME:-}" ]; then
+  PODMAN_ARGS+=(-e CODEX_HOME="$CODEX_HOME")
+fi
+if [ -n "${LEAN_PROJECT_PATH:-}" ]; then
+  PODMAN_ARGS+=(-e LEAN_PROJECT_PATH="$LEAN_PROJECT_PATH")
+fi
+if [ -n "${LEAN_LOG_LEVEL:-}" ]; then
+  PODMAN_ARGS+=(-e LEAN_LOG_LEVEL="$LEAN_LOG_LEVEL")
+fi
 
 # Forward SSH agent for git authentication
 if [ -n "${SSH_AUTH_SOCK:-}" ] && [ -S "$SSH_AUTH_SOCK" ]; then

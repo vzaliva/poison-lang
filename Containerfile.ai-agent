@@ -20,7 +20,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI (gh)
-RUN snap install gh
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js (LTS)
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
@@ -31,11 +38,14 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
 # Claude Code
 RUN npm install -g @anthropic-ai/claude-code
 
-# OpenAI CLI (includes codex access)
-RUN pip3 install --break-system-packages openai
+# OpenAI Codex CLI
+RUN npm i -g @openai/codex
 
 # Install uv (provides uvx for running Python tools)
-RUN snap install astral-uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && install -m 0755 /root/.local/bin/uv /usr/local/bin/uv \
+    && install -m 0755 /root/.local/bin/uvx /usr/local/bin/uvx \
+    && rm -rf /root/.local/bin
 
 # Note: lean-lsp-mcp MCP tool (used by both Claude and Codex) will be
 # downloaded on first use via uvx. It will be cached in the ai_agent_config volume.
@@ -63,10 +73,47 @@ RUN printf '%s\n' \
 ': "${HOST_GROUP:=user}"' \
 ': "${ELAN_HOME:=/home/user/.elan}"' \
 ': "${XDG_CACHE_HOME:=/home/user/.cache}"' \
+'# Container-local Codex state (config/auth/history). Overridable by wrapper.' \
+': "${CODEX_HOME:=/home/user/.config/poison-codex}"' \
 '' \
 '# Ensure mapped identity exists (avoids $HOME warning).' \
-'if ! getent group "${HOST_GID}" >/dev/null 2>&1; then echo "${HOST_GROUP}:x:${HOST_GID}:" >> /etc/group; fi' \
-'if ! getent passwd "${HOST_UID}" >/dev/null 2>&1; then echo "${HOST_USER}:x:${HOST_UID}:${HOST_GID}:User:/home/user:/bin/bash" >> /etc/passwd; fi' \
+'if [ "$(id -u)" -eq 0 ]; then' \
+'  if ! getent group "${HOST_GID}" >/dev/null 2>&1; then echo "${HOST_GROUP}:x:${HOST_GID}:" >> /etc/group; fi' \
+'  if ! getent passwd "${HOST_UID}" >/dev/null 2>&1; then echo "${HOST_USER}:x:${HOST_UID}:${HOST_GID}:User:/home/user:/bin/bash" >> /etc/passwd; fi' \
+'fi' \
+'' \
+'# Ensure home/config/cache dirs are writable by mapped UID/GID.' \
+'for d in "/home/user" "${XDG_CACHE_HOME}" "/home/user/.config"; do' \
+'  mkdir -p "${d}"' \
+ '  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${d}" 2>/dev/null || true; fi' \
+'done' \
+'' \
+'# Seed a minimal Codex config in CODEX_HOME (first run only).' \
+'mkdir -p "${CODEX_HOME}"' \
+'if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CODEX_HOME}" 2>/dev/null || true; fi' \
+'if [ ! -f "${CODEX_HOME}/config.toml" ]; then' \
+'  cat > "${CODEX_HOME}/config.toml" <<'\''EOF'\''' \
+'model = "gpt-5.2"' \
+'model_reasoning_effort = "xhigh"' \
+'sandbox_mode = "workspace-write"' \
+'approval_policy = "on-request"' \
+'' \
+'[projects."/work"]' \
+'trust_level = "trusted"' \
+'' \
+'[mcp_servers.lean-lsp]' \
+'command = "uvx"' \
+'args = ["lean-lsp-mcp"]' \
+'' \
+'[mcp_servers.lean-lsp.env]' \
+'LEAN_PROJECT_PATH = "/work"' \
+'LEAN_LOG_LEVEL = "NONE"' \
+'' \
+'[features]' \
+'web_search_request = true' \
+'EOF' \
+'  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CODEX_HOME}/config.toml" 2>/dev/null || true; fi' \
+'fi' \
 '' \
 '# First-run seed: if volume ELAN_HOME is empty/missing elan, copy from image seed (fast, no network).' \
 'if [ ! -x "${ELAN_HOME}/bin/elan" ]; then' \
@@ -79,7 +126,14 @@ RUN printf '%s\n' \
 '# Prefer volume-managed elan in PATH so updates persist there.' \
 'export PATH="${ELAN_HOME}/bin:${PATH}"' \
 '' \
-'# Drop to mapped user and exec.' \
+'# Rootless Podman commonly maps host UID to container uid 0. In that case, dropping to' \
+'# HOST_UID (e.g. 1000) can make /work bind mounts unreadable. Detect this mapping and' \
+'# keep running as uid 0 when it maps directly to HOST_UID.' \
+'if [ "$(id -u)" -eq 0 ] && awk '\''NR==1{print $1, $2, $3; exit}'\'' /proc/self/uid_map | grep -qx "0 ${HOST_UID} 1"; then' \
+'  exec "$@"' \
+'fi' \
+'' \
+'# Otherwise, drop to mapped user and exec.' \
 'exec setpriv --reuid="${HOST_UID}" --regid="${HOST_GID}" --clear-groups -- "$@"' \
 > /usr/local/bin/ai-agent-entrypoint.sh \
  && chmod +x /usr/local/bin/ai-agent-entrypoint.sh

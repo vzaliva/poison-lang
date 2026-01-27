@@ -22,6 +22,7 @@ podman build -t localhost/poison-ai-agent:latest -f Containerfile.ai-agent .
 podman volume create ai_agent_elan_home
 podman volume create ai_agent_cache_elan
 podman volume create ai_agent_cache_lake
+podman volume create ai_agent_cache_uv
 podman volume create ai_agent_config
 ```
 
@@ -67,7 +68,7 @@ That's it! AI agents now run in an isolated container with access to:
 - ✓ Common CLI tools (git, gh, rg, jq)
 - ✓ SSH agent for git authentication (if ssh-agent is running on host)
 - ✓ MCP tools via uvx (lean-lsp-mcp)
-- ✓ Persistent configuration
+- ✓ Persistent configuration (including Codex login cache)
 
 On first run, you'll see:
 ```

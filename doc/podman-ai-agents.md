@@ -25,7 +25,7 @@ The worst that can happen is you discard the container. Git serves as the actual
 
 The AI agent container includes:
 * **Node.js LTS** and the `@anthropic-ai/claude-code` npm package (with `--dangerously-skip-permissions` enabled)
-* **Python 3** and the `openai` package for Codex access
+* **OpenAI Codex** via the `@openai/codex` npm package (the `codex` CLI)
 * **uv/uvx** for running Python tools (lean-lsp-mcp MCP server)
 * **Pre-installed Elan toolchain** seeded from the image (v4.23.0-rc2 by default)
 * **Common CLI tools**: git, gh (GitHub CLI), ripgrep (rg), jq
@@ -37,7 +37,7 @@ Runtime state is managed via **Podman volumes**:
 * `ai_agent_elan_home` → `/home/user/.elan` (Elan toolchain installation, persistent)
 * `ai_agent_cache_elan` → `/home/user/.cache/elan` (Elan cache, persistent)
 * `ai_agent_cache_lake` → `/home/user/.cache/lake` (Lake build cache, persistent)
-* `ai_agent_config` → `/home/user/.config` (Agent configurations and uvx cache, persistent)
+* `ai_agent_config` → `/home/user/.config` (Agent configurations, Codex login cache, and uvx cache, persistent)
 
 The project directory is **bind-mounted** from the host at `/work`.
 
@@ -50,7 +50,7 @@ The wrapper script `ai-agent-jailed` supports multiple AI coding agents:
 | Agent | Command | Description |
 |-------|---------|-------------|
 | `claude` | `ai-agent-jailed claude` | Anthropic Claude Code |
-| `codex` | `ai-agent-jailed codex` | OpenAI Codex (via openai CLI) |
+| `codex` | `ai-agent-jailed codex` | OpenAI Codex |
 
 All agents share the same Lean toolchain and volumes but have independent configurations.
 
@@ -71,6 +71,7 @@ podman build -t localhost/poison-ai-agent:latest -f Containerfile.ai-agent .
 podman volume create ai_agent_elan_home
 podman volume create ai_agent_cache_elan
 podman volume create ai_agent_cache_lake
+podman volume create ai_agent_cache_uv
 podman volume create ai_agent_config
 ```
 
@@ -258,7 +259,7 @@ Recommended workflow:
 ## Rebuilding the Image
 
 Rebuild when:
-* Updating AI agent packages (Claude Code, OpenAI CLI)
+* Updating AI agent packages (Claude Code, Codex)
 * Changing the base Node.js or Python version
 * Changing the Elan toolchain version
 * Modifying the entrypoint script
@@ -272,7 +273,7 @@ To update packages without rebuilding the image:
 ```bash
 ai-agent-jailed claude bash
 npm update -g @anthropic-ai/claude-code
-pip3 install --upgrade openai
+npm update -g @openai/codex
 ```
 
 (Changes persist within the container image until next rebuild.)
