@@ -50,8 +50,9 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
 # Note: lean-lsp-mcp MCP tool (used by both Claude and Codex) will be
 # downloaded on first use via uvx. It will be cached in the ai_agent_config volume.
 
-# --- Seed Elan toolchain into a read-only location in the image ---
-ARG ELAN_TOOLCHAIN=leanprover/lean4:v4.23.0-rc2
+# --- Seed Elan into a read-only location in the image ---
+# Do not hardcode a Lean toolchain here; projects specify it via /work/lean-toolchain.
+ARG ELAN_TOOLCHAIN=none
 ENV ELAN_SEED=/opt/elan-seed
 RUN mkdir -p "${ELAN_SEED}" && \
     curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
@@ -145,14 +146,28 @@ RUN printf '%s\n' \
 '' \
 '# First-run seed: if volume ELAN_HOME is empty/missing elan, copy from image seed (fast, no network).' \
 'if [ ! -x "${ELAN_HOME}/bin/elan" ]; then' \
-'  echo "[entrypoint] Seeding ${ELAN_HOME} from ${ELAN_SEED} …"' \
-'  mkdir -p "${ELAN_HOME}"' \
-'  cp -a "${ELAN_SEED}/." "${ELAN_HOME}/"' \
-'  chown -R "${HOST_UID}:${HOST_GID}" "${ELAN_HOME}"' \
+'  if [ -w "${ELAN_HOME}" ]; then' \
+'    echo "[entrypoint] Seeding ${ELAN_HOME} from ${ELAN_SEED} …"' \
+'    mkdir -p "${ELAN_HOME}"' \
+'    cp -a "${ELAN_SEED}/." "${ELAN_HOME}/"' \
+'    if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "${ELAN_HOME}"; fi' \
+'  else' \
+'    # e.g. ELAN_HOME bind-mounted read-only from host; fall back to using the seed elan binary.' \
+'    export PATH="${ELAN_SEED}/bin:${PATH}"' \
+'  fi' \
 'fi' \
 '' \
 '# Prefer volume-managed elan in PATH so updates persist there.' \
 'export PATH="${ELAN_HOME}/bin:${PATH}"' \
+'' \
+'# Ensure the project-specified toolchain exists in ELAN_HOME (if writable). This avoids' \
+'# surprising downloads when the toolchain is already available via a host mount or volume.' \
+'if [ -f "/work/lean-toolchain" ] && [ -w "${ELAN_HOME}" ]; then' \
+'  TOOLCHAIN="$(tr -d '\''\r\n'\'' < /work/lean-toolchain)"' \
+'  if [ -n "${TOOLCHAIN}" ]; then' \
+'    "${ELAN_HOME}/bin/elan" toolchain install "${TOOLCHAIN}" >/dev/null 2>&1 || true' \
+'  fi' \
+'fi' \
 '' \
 '# If we are already running unprivileged, we cannot (and do not need to) drop privileges.' \
 'if [ "$(id -u)" -ne 0 ]; then' \

@@ -77,6 +77,9 @@ podman volume create ai_agent_config
 
 These volumes provide persistence across container runs and store all Elan/Lake/agent state.
 
+**Note**: By default, `ai-agent-jailed` bind-mounts your host `~/.elan` read-only to reuse your existing Lean toolchains.
+Set `AI_AGENT_HOST_ELAN=off` to use the `ai_agent_elan_home` volume instead.
+
 ### Step 3: Install the wrapper script
 
 ```bash

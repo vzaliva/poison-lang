@@ -26,6 +26,9 @@ podman volume create ai_agent_cache_uv
 podman volume create ai_agent_config
 ```
 
+**Note**: By default, the wrapper bind-mounts your host `~/.elan` read-only to reuse your existing Lean toolchains.
+If you prefer a fully isolated toolchain, run agents with `AI_AGENT_HOST_ELAN=off` (then `ai_agent_elan_home` is used).
+
 ### 3. Install the wrapper script
 
 ```bash

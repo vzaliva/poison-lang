@@ -26,6 +26,9 @@ set -euo pipefail
 # Environment variables:
 #   POISON_PROJECT_DIR  - Override default project directory (default: ~/src/poison-lang or git root)
 #   AI_AGENT_IMAGE      - Override container image (default: localhost/poison-ai-agent:latest)
+#   AI_AGENT_HOST_ELAN  - If set to "off", use a dedicated Elan volume instead of the host.
+#                         By default, host ~/.elan is bind-mounted read-only at /home/user/.elan
+#                         (reuses your existing toolchains without exposing other host state).
 
 # Detect agent from script name (for symlinks like claude-jailed, codex-jailed)
 SCRIPT_NAME="$(basename "$0")"
@@ -148,12 +151,31 @@ PODMAN_ARGS=(
   -e XDG_CACHE_HOME=/home/user/.cache
   -e UV_CACHE_DIR=/home/user/.cache/uv
   -v "$PROJ_DIR:/work:Z"
-  -v ai_agent_elan_home:/home/user/.elan:rw,U
   -v ai_agent_cache_elan:/home/user/.cache/elan:rw,U
   -v ai_agent_cache_lake:/home/user/.cache/lake:rw,U
   -v ai_agent_cache_uv:/home/user/.cache/uv:rw,U
   -v ai_agent_config:/home/user/.config:rw,U
 )
+
+# Elan home: by default, bind-mount host ~/.elan read-only.
+# Set AI_AGENT_HOST_ELAN=off to use a dedicated volume (ai_agent_elan_home) instead.
+case "${AI_AGENT_HOST_ELAN:-}" in
+  ""|0|ro)
+    if [ -d "$HOME/.elan" ]; then
+      PODMAN_ARGS+=(-v "$HOME/.elan:/home/user/.elan:ro,Z")
+    else
+      # If the host has no ~/.elan yet, fall back to an isolated volume.
+      PODMAN_ARGS+=(-v ai_agent_elan_home:/home/user/.elan:rw,U)
+    fi
+    ;;
+  off)
+    PODMAN_ARGS+=(-v ai_agent_elan_home:/home/user/.elan:rw,U)
+    ;;
+  *)
+    echo "Error: AI_AGENT_HOST_ELAN must be: off (or unset for default ro)" >&2
+    exit 1
+    ;;
+esac
 
 # Optional per-agent env vars
 if [ -n "${CODEX_HOME:-}" ]; then
