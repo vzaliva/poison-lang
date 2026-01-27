@@ -649,15 +649,32 @@ where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{
 \]
 
 \subsubsection*{Assignment:}
+The Ott specification distinguishes two assignment rules: a strong update for singleton
+location sets, and a conservative weak update for non-singleton location sets.
+
+\paragraph{Singleton (strong update).}
+\[
+\frac{\begin{array}{c}
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ \{l\} \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
+\text{invalidate\_deps}(\mathcal{L}_2, \{l\}) = \mathcal{L}_3
+\end{array}}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup p_1 \{ \text{no\_pred} \} \dashv \Gamma_2[l \mapsto \text{int} \triangleright (\text{pc} \sqcup p_1 \sqcup p_2) \{ P_2 \}] \; ;\; \mathcal{L}_3}
+\]
+
+\paragraph{Non-singleton (weak update).}
+When the reference has a non-singleton location set, the update joins the stored poison and predicate
+with the existing heap-cell information for that set:
 \[
 \frac{\begin{array}{c}
 \pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ LS \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
-\text{invalidate\_deps}(\mathcal{L}_2, LS) = \mathcal{L}_3
+\text{invalidate\_deps}(\mathcal{L}_2, LS) = \mathcal{L}_3 \\
+\text{JoinPoisons}(\Gamma_2, LS) = p_3 \qquad \text{MergePreds}(\Gamma_2, LS) = P_3 \qquad \text{JoinP}(P_2, P_3) = P_4
 \end{array}}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup p_1 \{ \text{no\_pred} \} \dashv \Gamma_2[LS \mapsto \text{int} \triangleright (\text{pc} \sqcup p_1 \sqcup p_2) \{ P_2 \}] \; ;\; \mathcal{L}_3}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup p_1 \{ \text{no\_pred} \} \dashv \Gamma_2[LS \mapsto \text{int} \triangleright (p_3 \sqcup \text{pc} \sqcup p_1 \sqcup p_2) \{ P_4 \}] \; ;\; \mathcal{L}_3}
 \]
-where $\Gamma[LS \mapsto Q]$ updates $\Gamma$ at every $l \in LS$.
+Here $\Gamma[LS \mapsto Q]$ updates $\Gamma$ at every $l \in LS$.
 
 \subsubsection*{Dereference:}
 Dereference merges poisons and predicates across the locset. The Ott rules use
@@ -892,16 +909,18 @@ Memory typing environment $\Gamma$ evolves through:
 \begin{itemize}
     \item \textbf{Reference creation}: Extends $\Gamma$ with both type and poison status
     \item \textbf{Assignment}: Updates poison status of data in $\Gamma$
-    \item \textbf{Control flow}: Joins environments from different branches
-    \item \textbf{Loops}: Iterative fixpoint computation for flow-sensitive analysis
+    \item \textbf{Control flow}: Joins environments from different branches (\texttt{if})
+    \item \textbf{Sequencing/bindings}: Threads the updated $\Gamma$ through subexpressions (\texttt{;}, \texttt{let})
+    \item \textbf{Loops}: Iterative fixpoint computation for flow-sensitive analysis (\texttt{while})
 \end{itemize}
 
 Logical environment $\mathcal{L}$ evolves through:
 \begin{itemize}
-    \item \textbf{Sequence}: Chained through expressions - first expression produces $\mathcal{L}_1$, second uses $\mathcal{L}_1$ and produces $\mathcal{L}_2$
-    \item \textbf{While loops}: After a predicate-matched loop terminates, the guard tag is set to false in $\mathcal{L}_1$
-    \item \textbf{Assignment}: Invalidates entries whose dependencies include the written location
-    \item \textbf{Most other constructs}: Pass through unchanged
+    \item \textbf{Sequencing and let}: Chained through expressions -- the first subexpression produces $\mathcal{L}_1$, which is used to type the second; the result is the second subexpression's $\mathcal{L}_2$ (\texttt{;}, \texttt{let}).
+    \item \textbf{Conditionals}: In the standard case (no predicate match), the result is the logical environment produced by typing the guard (\texttt{if\_std\_*} returns $\mathcal{L}_1$). In the predicate-matched case, branch-local facts are discarded at the merge (\texttt{if\_depoison\_*} returns the pre-conditional $\mathcal{L}$).
+    \item \textbf{While loops}: After a predicate-matched loop terminates, the guard tag is set to false in the output logical environment.
+    \item \textbf{Assignment}: Invalidates entries whose dependencies include the written location set.
+    \item \textbf{Most other constructs}: Pass through unchanged.
 \end{itemize}
 
 \section{Formal Properties}
@@ -1046,8 +1065,8 @@ We define the \emph{Fault Robustness} property for the Poison language, which re
 \begin{definition}[Input/Output Classification]
 Inputs consist of initial memory, variables, and a realisation map:
 \begin{itemize}
-    \item Initial memory: $\mu_0 : \text{Address} \rightarrow \text{Value}$
-    \item Initial variables: $\rho_0 : \text{Variable} \rightarrow \text{Value}$
+    \item Initial memory: $\mu_0 : \text{Address} \rightharpoonup \text{Int}$ (heap cells store integers)
+    \item Initial variables: $\rho_0 : \text{Variable} \rightharpoonup \text{Value}$
     \item Realisation map: $\theta_0 : \text{Location} \rightharpoonup \text{Address}$ (logical $\to$ concrete, per run)
 \end{itemize}
 We fix a \emph{critical-input specification} $S$ comprising finite maps of critical \emph{logical} locations and variables to their qualified types:
@@ -1076,8 +1095,8 @@ For a single run, we say that $R$ is \emph{consistent} with the critical inputs 
 \begin{itemize}
   \item if a critical entry has a \emph{guard-only} tag $k$, there is no consistency requirement.
   \item if a critical entry has a predicate \emph{with closure} tagged $k$, the predicate
-  closure applied to the entry's runtime value evaluates to $\text{true}$ iff
-  $R(k)=\text{true}$ and to $\text{false}$ iff $R(k)=\text{false}$.
+  is satisfied according to the abstract predicate satisfaction relation iff
+  $R(k)=\text{true}$ (and is not satisfied iff $R(k)=\text{false}$).
 \end{itemize}
 \end{definition}
 
@@ -1093,10 +1112,10 @@ A program $e$ satisfies fault robustness with respect to the critical-input spec
     \item \textbf{Agreement on trusted inputs:} The two runs agree on context entries not in $S$ whenever those entries are typed clean under $R$.
     \item \textbf{Termination under the chosen evaluation mode:} Both runs terminate under the same evaluation mode, producing final configurations and return values.
 \end{itemize}
-Then the observable outputs coincide:
+Then there exist final realisation maps $\theta_1'$ and $\theta_2'$ extending $\theta_1$ and $\theta_2$ such that the observable outputs coincide:
 \begin{itemize}
     \item For each observable location, either both runs realise it and the corresponding heap contents agree, or both runs leave it unrealised.
-    \item If the return value is observable, then the two return values agree (for non-reference types this is literal equality; for references it is mediated by the location set).
+    \item If the return value is observable, then either (i) for non-reference return types the two return values are literally equal, or (ii) for reference return types, each run returns a pointer to some realised location in the observable location set (not necessarily the same location).
 \end{itemize}
 \end{definition}
 
@@ -1119,7 +1138,7 @@ bodies can be retrieved dynamically from runtime environments.
 
 \paragraph{Structural agreement for closures.}
 Agreement in the fault-robustness step theorem is \emph{type-directed}: for clean
-non-reference base values (\texttt{int}, \texttt{bool}, \texttt{unit}) it reduces
+non-reference base values (\texttt{int}, \texttt{bool}, \texttt{unit}, \texttt{string}) it reduces
 to literal equality, and for references it compares the concrete heap cells
 selected by the two realisation maps. Function values require special treatment.
 The evaluator produces runtime closures $\text{closure}(x,e,\rho)$ and pure
@@ -1166,7 +1185,9 @@ predicate permits both runs to leave an observable location unrealised.
 \begin{theorem}[Type System Enforces Fault Robustness]
 Assume a well-formed critical-input specification $S$ and observable spec
 $\text{obs}$. For any initial typing context $(pc,\Gamma,\sigma,\mathcal{L})$
-that matches $S$ (contains all entries in $S$ with their specified types),
+that matches $S$ (contains all entries in $S$ with their specified types), is
+well-formed, and starts from a clean program counter ($pc = \text{false}$) with an
+empty tag environment ($\mathcal{L} = \emptyset$),
 the following implication holds:
 
 If typechecking $e$ under this context succeeds and the inferred
