@@ -259,6 +259,19 @@ def joinPredicates (pred1 pred2 : Predicate) : Predicate :=
 def updateMemEnv (env : MemoryTypeEnv) (l : Loc) (qt : QTyp) : MemoryTypeEnv :=
 env.insert l qt
 
+/-- Weak update for non-singleton locsets: join stored int QTyp with existing entries.
+    Computes max poison and merged predicate across all locations, then updates uniformly.
+    This implements the weak update semantics for assign_locset in the Ott spec. -/
+def updateLocsetWeak (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate) : MemoryTypeEnv :=
+  -- First pass: compute joined poison and predicate from existing entries
+  let (joinedPoison, joinedPred) := LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l =>
+    match env.get? l with
+    | some qt => (joinPoison accP qt.poison, joinPredicates accPred qt.pred)
+    | none => (accP, accPred))
+  -- Second pass: update all locations with the joined type
+  let finalQt : QTyp := ⟨ETyp.int, joinedPoison, joinedPred⟩
+  LocSet.fold ls env (fun env l => updateMemEnv env l finalQt)
+
 /-- Join two memory environments (branch join). See JoinG in the Ott spec. -/
 def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
   combineExtTreeMaps env1 env2 (fun _ oq1 oq2 =>
@@ -1137,13 +1150,7 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
     return { qualType := qt, memEnv' := memEnv', tagEnv' := result'.tagEnv', nextLoc' := result'.nextLoc', nextTag' := result'.nextTag' }
 termination_by fuel
 
-/-- Rule: assign (Ott rule: assign)
--- pc ; G ; S ; L |- e1 : ref int @ l :> p' { P' } -| G' ; L'
--- pc ; G' ; S ; L' |- e2 : int :> p'' { P'' } -| G'' ; L''
--- -----------------------
--- pc ; G ; S ; L |- e1 := e2 : unit :> join pc p' { no_pred } -| G''[l |-> int :> join pc join p' p'' { P'' }] ; L''
--- NOTE: Memory can only store integers (matching runtime semantics)
--/
+/-- Rule: assign (Ott rule: assign_singleton, assign_locset) -/
 def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
@@ -1155,18 +1162,24 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
       -- Require that the reference stores integers (heap stores only integers)
       if t != ETyp.int then
         throw s!"Type error: can only assign to ref int, but got ref {repr t}"
-      
+
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
-      
+
       -- Require that the RHS has type int
       if etyp2 != ETyp.int then
         throw s!"Type error: can only assign int values, but got {repr etyp2}"
 
       let storedPoison := joinPoison ctx.pc (joinPoison p1 p2)
-      let storedQt : QTyp := ⟨ETyp.int, storedPoison, pred2⟩
-      let memEnv' := LocSet.fold ls result2.memEnv' (fun env l => updateMemEnv env l storedQt)
+      let memEnv' := match ExtTreeSet.toList ls with
+        | [l] =>
+          -- Singleton: strong update (assign_singleton rule)
+          let storedQt : QTyp := ⟨ETyp.int, storedPoison, pred2⟩
+          updateMemEnv result2.memEnv' l storedQt
+        | _ =>
+          -- Non-singleton: weak update (assign_locset rule)
+          updateLocsetWeak result2.memEnv' ls storedPoison pred2
 
       let resultPoison := joinPoison ctx.pc p1
       let qt : QTyp := ⟨ETyp.unit, resultPoison, Predicate.noPred⟩
@@ -1190,7 +1203,7 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
       -- Require that the reference stores integers (heap stores only integers)
       if t != ETyp.int then
         throw s!"Type error: can only dereference ref int, but got ref {repr t}"
-      
+
       if ls.isEmpty then
         throw "Reference locset is empty"
       -- Fetch all referenced memory cells and ensure their types are compatible

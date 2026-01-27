@@ -1,0 +1,8 @@
+Evaluating file: examples/assign-nonsingleton-weak.poison (verbose mode)
+
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.noPred , MemoryTypeEnv : ofList [(0, QTyp.mk ETyp.int true Predicate.noPred), (1, QTyp.mk ETyp.int true Predicate.noPred)] , tagEnv : ofList [] , nextLoc : 2 
+
+Result: 42
+Final state:
+Variable environment: []
+  Memory: [(0, 42), (1, 0)]

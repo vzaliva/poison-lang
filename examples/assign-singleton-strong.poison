@@ -1,0 +1,14 @@
+-- Test: Singleton locset assignment uses strong update
+--
+-- This test verifies that when assigning to a reference with a singleton locset,
+-- the type system uses strong update (complete overwrite) rather than weak update.
+--
+-- Expected behavior:
+--   1. r1 starts clean with value 0
+--   2. We assign a clean value (42) to r1
+--   3. After assignment, r1 should be clean (strong update)
+--   4. Dereferencing r1 should yield a clean int
+
+let r1 = ref 0 in              -- r1 : ref int @ {l1}, clean
+(r1 := 42;                     -- Assignment with strong update: l1 becomes clean with value 42
+ !r1)                          -- Dereference should be clean

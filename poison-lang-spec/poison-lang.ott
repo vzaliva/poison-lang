@@ -642,17 +642,30 @@ pm ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
 ----------------------- :: ref
 pm ; pc ; G ; S ; L |- ref e : ref int @ { l } :> pc { no_pred } -| G1[l |-> int :> join pc p { P }] ; L1
 
-% Assignment through reference with region types The result of the whole
-% assignment (unit) is poisoned if the reference is poisoned. The stored value
+% Assignment (singleton locset): strong update
+% The result (unit) is poisoned if the reference is poisoned. The stored value
 % is poisoned if the assignment is poisoned, or reference is poisoned, or the
 % value is poisoned. Predicate from e2 is preserved in the memory location.
-% On write to any logical location in the set, invalidate all L entries whose predicates may read those locations.
+% NOTE: Memory can only store integers (matching runtime semantics)
+pm ; pc ; G ; S ; L |- e1 : ref int @ { l } :> p1 { P1 } -| G1 ; L1
+pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+invalidate_deps L2 { l } = L3
+----------------------- :: assign_singleton
+pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[l |-> int :> join pc join p1 p2 { P2 }] ; L3
+
+% Assignment (non-singleton locset): weak update
+% Joins stored type with existing types via JoinPoisons and MergePreds.
+% This ensures soundness when the typechecker cannot determine which location
+% in the locset will be updated at runtime.
 % NOTE: Memory can only store integers (matching runtime semantics)
 pm ; pc ; G ; S ; L |- e1 : ref int @ LS0 :> p1 { P1 } -| G1 ; L1
 pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 invalidate_deps L2 LS0 = L3
------------------------ :: assign
-pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[LS0 |-> int :> join pc join p1 p2 { P2 }] ; L3
+JoinPoisons G2 LS0 = p3
+MergePreds G2 LS0 = P3
+JoinP P2 P3 = P4
+----------------------- :: assign_locset
+pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[LS0 |-> int :> join p3 join pc join p1 p2 { P4 }] ; L3
 
 % Dereference with logical location sets.
 % A poisoned reference yields a poisoned result (predicate erased).

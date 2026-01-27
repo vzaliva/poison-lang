@@ -831,10 +831,22 @@ This provides precise fault tracking both during and after loop execution.
 Reference types $\text{ref int} @ LS$ track aliasing through logical location sets:
 \begin{itemize}
     \item $\text{ref int} @ LS$ explicitly records a set of possible \emph{logical} target locations
-    \item Joins union location sets; dereference joins poison/predicates over all $l \in LS$; assignment updates all $l \in LS$
+    \item Joins union location sets; dereference joins poison/predicates over all $l \in LS$
     \item Preserves aliasing information without requiring concrete runtime addresses to appear in types; locations that arise only on untaken paths may remain unrealised (ghost) at runtime
     \item Memory stores only integers, so all reference types have the form $\text{ref int} @ LS$
 \end{itemize}
+
+\subsubsection{Strong and Weak Updates for Assignment}
+
+Assignment through references uses different update strategies depending on whether the location set is a singleton:
+
+\begin{itemize}
+    \item \textbf{Singleton locsets} ($\text{ref int} @ \{l\}$): The typechecker uses \emph{strong update}, completely replacing the qualified type at location $l$. This is sound because the reference statically identifies exactly which location will be updated at runtime.
+    
+    \item \textbf{Non-singleton locsets} ($\text{ref int} @ LS$ where $|LS| > 1$): The typechecker uses \emph{weak update}, joining the stored type with the existing types at all locations in $LS$. This conservative approach is necessary because the typechecker cannot statically determine which single location will be updated at runtime.
+\end{itemize}
+
+The weak update computes joined poison and predicate using the existing $\mathsf{JoinPoisons}$ and $\mathsf{MergePreds}$ operations over all locations in $LS$, then updates all locations uniformly with this conservative approximation. This ensures soundness: the post-typing environment correctly approximates all possible runtime outcomes, avoiding spurious agreement obligations on locations that may not have been modified.
 
 \subsection{Environment Evolution}
 
