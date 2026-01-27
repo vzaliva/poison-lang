@@ -5,7 +5,7 @@ all: poison-lang-spec lean-build parser
 config.json:
 	rm -f config.json
 	@printf '%s\n' '{' \
-  '  "parser-directories": [ "'$(shell pwd)'/parser" ],' \
+ '  "parser-directories": [ "./parser" ],' \
   '  "theme": {' \
   '    "comment": "green",' \
   '    "keyword": "yellow",' \
