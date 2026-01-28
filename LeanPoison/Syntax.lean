@@ -515,7 +515,7 @@ inductive PFnTClosure : Type where
 
 -- Enriched type (full type)
 -- Arrow types now carry non-empty lists of closures (merged typing closures)
--- to support flow-insensitive joins at conditionals (Issue #63)
+-- to support flow-insensitive joins at conditionals
 inductive ETyp : Type where
   | int : ETyp
   | bool : ETyp
@@ -660,7 +660,7 @@ instance : BEq PExpr where
 
 -- Manual BEq instances for ETyp and related types (updated to do full structural comparison)
 --
--- IMPORTANT NOTE on closure list equality (Issue #63):
+-- IMPORTANT NOTE on closure list equality:
 -- Closure lists semantically represent SETS (order-independent, no duplicates).
 -- However, implementing true set equality in this mutual recursion would require
 -- partial functions, which is not acceptable for core type system operations.
@@ -750,7 +750,7 @@ instance : BEq QTyp where
   beq := beqQTyp
 
 -- Signature-based equality for function types (for type checking)
--- Signature compatibility check for ETyp (Issue #63).
+-- Signature compatibility check for ETyp.
 -- Corresponds to the ≈ operator in the Ott specification (sig_comp).
 -- This checks if two enriched types are signature-compatible:
 -- same shape, ignoring closure sets and arrow-internal poison.
@@ -775,7 +775,7 @@ instance : ToString ETyp where
 instance : ToString QTyp where
   toString e := Std.Format.pretty (repr e)
 
--- Helper functions for merged typing closures (Issue #63)
+-- Helper functions for merged typing closures
 -- Closure lists semantically represent SETS: order-independent, no duplicates
 --
 -- Implementation approach:

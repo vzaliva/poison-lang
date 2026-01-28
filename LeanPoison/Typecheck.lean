@@ -296,7 +296,7 @@ def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
 def restrictMemEnv (envToRestrict base : MemoryTypeEnv) : MemoryTypeEnv :=
   envToRestrict.filter (fun k _ => base.contains k)
 
-/-- Join two ETyps at conditional joins, merging closures for arrow types (Issue #63).
+/-- Join two ETyps at conditional joins, merging closures for arrow types.
     This implements the closure merging logic from the if-typing rules in the Ott spec.
     For arrow types: merge closure sets and join arrow-internal poisons.
     For other types: types must be equal (checked earlier via beqETypSignature).
@@ -774,7 +774,7 @@ def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     | Typ.bool => pure (ETyp.bool, nextLoc)
     | Typ.unit => pure (ETyp.unit, nextLoc)
     | Typ.string => pure (ETyp.string, nextLoc)
-    | Typ.ref _ => throw "Extern functions cannot return reference types (see issue #72)"
+    | Typ.ref _ => throw "Extern functions cannot return reference types"
     | Typ.arrow _ _ => throw "Arrow types not expected in extern specs" : TypecheckM (ETyp × Loc))
 
   let pred' ← attachVarEnvToPredicate pred varEnv
@@ -1468,7 +1468,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if not (isSubtype st1 result2.qualType) then
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
-      -- Apply each closure in the list (Section 5 of the proposal) using List.mapM
+      -- Apply each closure in the list using List.mapM
       let results ← List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel) tcls
 
       -- Check that we have at least one result and join them
@@ -1484,7 +1484,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if not (isSubtype st1 result2.qualType) then
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
-      -- Apply each closure in the list (Section 5 of the proposal) using List.mapM
+      -- Apply each closure in the list using List.mapM
       let results ← List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel) tcls
 
       -- Check that we have at least one result and join them
@@ -1558,7 +1558,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       -- We only need to check that function signatures match (parameter type, return type)
       if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
 
-      -- Join the branch types, merging closures for arrow types (Issue #63)
+      -- Join the branch types, merging closures for arrow types
       let joinedEtyp := joinETyps etyp2 etyp3 p'' p'''
       let poison := joinPoison ctx.pc (joinPoison p'' p''')
      -- dbg_trace s!" Result Poison val for if is {poison}"
@@ -1596,7 +1596,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       -- We only need to check that function signatures match (parameter type, return type)
       if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
 
-      -- Join the branch types, merging closures for arrow types (Issue #63)
+      -- Join the branch types, merging closures for arrow types
       let joinedEtyp := joinETyps etyp2 etyp3 p'' p'''
       let poison := joinPoison ctx.pc (joinPoison p' (joinPoison p'' p'''))
       let qt : QTyp := ⟨joinedEtyp, poison, Predicate.noPred⟩

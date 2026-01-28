@@ -753,7 +753,7 @@ pm ; pc ; G ; S ; L |- pfn x : ST1 => pe : ST2 : ST1 -> ST2 # pc tpclosures ( x 
 % Function application typing - singleton closure case - result is arrow type
 % When the closure list contains a single closure (x, e, S1) and the result is an arrow type:
 % Type-check the body e in the captured context S1 extended with the actual argument.
-% The predicate is no_pred (predicates are only meaningful for basic types per proposal Sections 4 & 5).
+% The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that impure function application is disallowed in pure context.
 impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1
 impure ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
@@ -767,7 +767,7 @@ impure ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { no_pred } -| G3 ; L3
 % Function application typing - singleton closure case - result is parrow type
 % When the closure list contains a single closure (x, e, S1) and the result is a parrow type:
 % Type-check the body e in the captured context S1 extended with the actual argument.
-% The predicate is no_pred (predicates are only meaningful for basic types per proposal Sections 4 & 5).
+% The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that impure function application is disallowed in pure context.
 impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1
 impure ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
@@ -848,7 +848,7 @@ impure ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p' p'' { P3 } -| JoinG G' 
 % Pure function application typing - singleton closure case - result is arrow type
 % When the closure list contains a single closure (x, pe, S1) and the result is an arrow type:
 % Type-check the body pe in the captured context S1 extended with the actual argument.
-% The predicate is no_pred (predicates are only meaningful for basic types per proposal Sections 4 & 5).
+% The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
 pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1
@@ -863,7 +863,7 @@ pm ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { no_pred } -| G3 ; L3
 % Pure function application typing - singleton closure case - result is parrow type
 % When the closure list contains a single closure (x, pe, S1) and the result is a parrow type:
 % Type-check the body pe in the captured context S1 extended with the actual argument.
-% The predicate is no_pred (predicates are only meaningful for basic types per proposal Sections 4 & 5).
+% The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
 pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1

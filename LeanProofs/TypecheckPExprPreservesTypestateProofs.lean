@@ -165,7 +165,7 @@ private lemma typecheck_deref_preserves_typestate (ctx : TypeContext) (pe : PExp
         cases h3: etyp with
         | ref t l =>
           simp_all
-          -- New check: if t != ETyp.int then throw
+          -- if t != ETyp.int then throw
           split at H
           · -- Case: t = ETyp.int (the only successful case)
             -- l is a LocSet, not a Loc

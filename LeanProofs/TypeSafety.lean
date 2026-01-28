@@ -247,7 +247,7 @@ theorem Except.bind_eq_ok {ε α β : Type} (x : Except ε α) (f : α → Excep
 
 -- Proof-level realisation map from logical locations to concrete runtime addresses.
 -- This is a proof artefact used to relate the logical locations in types to a
--- particular execution's heap layout (Issue #76).
+-- particular execution's heap layout.
 abbrev RealizationMap := ExtTreeMap Loc Address
 
 namespace RealizationMap
@@ -279,21 +279,21 @@ namespace RealizationMap
 end RealizationMap
 
 /-- A realisation map is well-formed if it is injective.
-    This predicate can be extended with additional conditions as needed (Issue #76). -/
+    This predicate can be extended with additional conditions as needed. -/
 def wfRealizationMap (θ : RealizationMap) : Prop :=
   θ.isInjective
 
 /-- θ₁ is a well-formed extension of θ₀: it agrees on existing locations
     and preserves injectivity (if θ₀ is injective, so is θ₁).
     This captures that extending a realisation map during evaluation
-    preserves well-formedness (Issue #76). -/
+    preserves well-formedness. -/
 def wfExtendsMap (θ₀ θ₁ : RealizationMap) : Prop :=
   θ₀.extendsMap θ₁ ∧ (wfRealizationMap θ₀ → wfRealizationMap θ₁)
 
 -- Proof-level typing relation for runtime values.
 --
 -- For `ref` types, the concrete address must be the realisation (via `θ`) of some
--- logical location in the `LocSet` annotation (Issue #76).
+-- logical location in the `LocSet` annotation.
 inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
   | num (n): valueHasETyp θ (Value.num n) ETyp.int
   | bool (b): valueHasETyp θ (Value.bool b) ETyp.bool
@@ -316,7 +316,7 @@ inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
 -- every typed variable and memory must contain entries for each typed
 -- location.
 --
--- Note on memory type matching (Issue #76): The proposal requires that heap
+-- Note on memory type matching: We want heap
 -- cells have qualified types matching Γ(l). This is implicitly satisfied because:
 -- (1) Memory only stores integers (Memory := HashMap Address Int)
 -- (2) Well-typed programs only store values of type int in memory
@@ -1723,7 +1723,7 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
                 cases etyp <;> simp at h_typecheck
                 -- Only the ref case succeeds
                 rename_i t ls
-                -- New check: if t != ETyp.int then throw
+                -- if t != ETyp.int then throw
                 split at h_typecheck
                 · -- Case: t = ETyp.int (the only successful case)
                   split at h_typecheck
@@ -1757,7 +1757,7 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
                 simp at h_typecheck
                 cases etyp <;> simp at h_typecheck
                 rename_i t ls
-                -- New check: if t != ETyp.int then throw
+                -- if t != ETyp.int then throw
                 split at h_typecheck
                 · -- Case: t = ETyp.int
                   split at h_typecheck
@@ -1780,7 +1780,7 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
                 simp at h_typecheck
                 cases etyp <;> simp at h_typecheck
                 rename_i t ls
-                -- New check: if t != ETyp.int then throw
+                -- if t != ETyp.int then throw
                 split at h_typecheck
                 · -- Case: t = ETyp.int
                   split at h_typecheck
@@ -1803,7 +1803,7 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
                 simp at h_typecheck
                 cases etyp <;> simp at h_typecheck
                 rename_i t ls
-                -- New check: if t != ETyp.int then throw
+                -- if t != ETyp.int then throw
                 split at h_typecheck
                 · -- Case: t = ETyp.int
                   split at h_typecheck
