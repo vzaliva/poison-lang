@@ -140,6 +140,22 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3
     -| G3 ; L3
 ```
 
+### 3) `while`: keep conservative (unchanged for now)
+
+Unlike `if`, a `while` guard is evaluated repeatedly and the body can update
+memory and invalidate dependencies. Even if `match_guard` identifies the guard
+with a tag `k`, treating `R(k)=some b` as fixing the guard outcome across *all*
+iterations requires additional stability/loop invariants: the matched
+predicate’s truth can change as the loop body mutates memory. In particular,
+`R(k)=some true` should **not** be read as “the loop cannot terminate”; rather,
+it highlights that *using the regime alone* to justify “the guard evaluates to
+`true` on every iteration” is unsound unless `k` ranges over specially stable
+“input-only” checks (or we assume/derive an appropriate stability invariant).
+
+So, for now, we keep the existing `while_depoison` / `while_std` rules unchanged
+(conservative): the body `pc` already includes the guard poison at each
+iteration via `join pc p_guard`, which is the key property needed for FR.
+
 ## Justification and notes
 
 ### Unknown regime values: accept conservatism
