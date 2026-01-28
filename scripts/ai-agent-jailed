@@ -70,7 +70,7 @@ case "$AGENT" in
     CLAUDE_CONFIG_DIR="/home/user/.config/poison-claude"
     # Add --dangerously-skip-permissions for smoother operation
     # Also load a persisted MCP config that preconfigures lean-lsp.
-    AGENT_ARGS="--dangerously-skip-permissions --mcp-config ${CLAUDE_CONFIG_DIR}/mcp.json"
+    AGENT_ARGS="--dangerously-skip-permissions --mcp-config ${CLAUDE_CONFIG_DIR}/mcp.json --continue"
     ;;
   codex)
     CMD="codex"
@@ -82,7 +82,7 @@ case "$AGENT" in
     LEAN_PROJECT_PATH="/work"
     LEAN_LOG_LEVEL="NONE"
     # Add --yolo for smoother operation
-    AGENT_ARGS="-c cli_auth_credentials_store=file --yolo"
+    AGENT_ARGS="-c cli_auth_credentials_store=file --yolo resume --last"
     ;;
   bash|sh)
     CMD="$AGENT"
