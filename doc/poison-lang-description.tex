@@ -211,9 +211,9 @@ Qualified types are the \emph{working currency} of our typestate system. Every
 typing judgement produces a qualified type that captures not just what kind of
 value we have, but also its reliability (poison status) and any conditions under
 which it might be considered reliable (predicates). We write \texttt{T :> p} as
-shorthand for \texttt{T :> p \{ no\_pred \}}. \underline{The $(p,P)$
-decoration is \emph{mutable}: typing rules may rewrite it as faults propagate,
-while the embedded $T$ remains unchanged}. The type system's primary job is to
+shorthand for \texttt{T :> p \{ no\_pred \}}. The $(p,P)$ decoration is
+\emph{mutable}: typing rules may rewrite it as faults propagate, while the
+embedded $T$ remains unchanged. The type system's primary job is to
 conservatively track poison propagation through qualified types.
 
 \subsubsection{Type Relationships}
@@ -1119,10 +1119,43 @@ Then there exist final realisation maps $\theta_1'$ and $\theta_2'$ extending $\
 \end{itemize}
 \end{definition}
 
-\paragraph{Proof structure (Lean).}
-The formalisation separates a spec-driven top-level property, \texttt{FaultRobustnessSpec} (\texttt{LeanProofs/FaultRobustness.lean}), from a context-driven step theorem, \texttt{StepFR} (\texttt{LeanProofs/FaultRobustnessProofs.lean}). The step theorem maintains agreement on clean context entries (\texttt{agreeOnClean}) and result agreement when the result is clean under the regime. A bridge lemma shows that the top-level premises, including \texttt{agreeOnTrustedInputs} and \texttt{agreeOnCriticalInputsUnderRegimeSpec}, imply the initial \texttt{agreeOnClean} invariant.
+\begin{theorem}[Type System Enforces Fault Robustness]
 
-The specification is stated for arbitrary evaluation modes, but the proof establishes the property only for the I/O-free fragment.
+Assume a well-formed critical-input specification $S$ and observable
+specification $\text{obs}$. For any initial typing context
+$(pc,\Gamma,\sigma,\mathcal{L})$ that matches $S$, is well-formed, and starts
+from a clean program counter ($pc = \text{false}$) with an empty tag environment
+($\mathcal{L} = \emptyset$), the following implication holds:
+
+If typechecking $e$ under this context succeeds and the inferred typing result satisfies the
+observable constraints, then for \emph{any} abstract predicate satisfaction relation
+$\text{PredSat}$ satisfying the axioms, the program $e$ satisfies the fault robustness property with
+respect to $S$, $\text{obs}$, and $\text{PredSat}$.
+\end{theorem}
+
+Intuitively, this turns fault robustness into a checkable certificate: once a program typechecks and
+its observable outputs are inferred clean, the semantic two-run property follows for all runtime
+executions that meet the specification assumptions.
+
+\paragraph{Proof structure (Lean).}
+The top-level fault-robustness statement is spec-driven: it relates two runs
+that satisfy the input specification and concludes equality of the observable
+outputs. The proof is organised around a stronger \emph{step theorem},
+\texttt{StepFR} (\texttt{LeanProofs/FaultRobustnessProofs.lean}), proved by
+structural induction over the language constructs (following the structure of
+the typechecker). \texttt{StepFR} is phrased in a compositional ``two-run in,
+two-run out'' form: assuming the two initial runtime states instantiate the same
+typing context and agree on every context entry that is clean under the chosen
+guard regime, it shows that evaluation preserves this agreement in the
+post-typing context and that clean (or de-poisoned) results agree. This
+formulation supports chaining through compound expressions (sequencing, let,
+conditionals, \emph{etc.}). A short bridge argument then shows that the
+spec-level premises (agreement on critical inputs and on trusted clean inputs)
+imply the initial hypothesis required by \texttt{StepFR}, yielding the desired
+observable equality.
+
+The specification is stated for arbitrary evaluation modes, but the proof
+establishes the property only for the I/O-free fragment.
 
 \subsubsection*{IO-free evaluation mode}
 \label{subsec:fr-iofree}
@@ -1132,9 +1165,7 @@ I/O primitives are executed. In \texttt{ioFree} mode, any attempt to execute
 \texttt{rand}, \texttt{frand}, \texttt{printInt}, \texttt{printString}, or extern
 constructs (\texttt{externVal}, \texttt{externFn}, \texttt{externPfn}) yields
 \texttt{ioForbidden}. The fault-robustness development is stated for successful
-evaluations in \texttt{ioFree} mode. This treats I/O absence as a runtime
-constraint rather than a syntactic predicate, which is essential because closure
-bodies can be retrieved dynamically from runtime environments.
+evaluations in \texttt{ioFree} mode.
 
 \paragraph{Structural agreement for closures.}
 Agreement in the fault-robustness step theorem is \emph{type-directed}: for clean
@@ -1163,14 +1194,6 @@ returns from being observable. There is no conceptual obstacle to observing clea
 function returns: one would instead define observability of functions in terms of
 this structural closure agreement.
 
-The construct \texttt{frand} models faulty randomness and is treated as an I/O
-primitive. In \texttt{ioFree} mode it yields \texttt{ioForbidden}, so the
-fault-robustness theorem does not cover executions that reach it. In normal
-mode it returns a syntactically poisoned value guarded by a fresh tag drawn from
-the typing context's tag supply. By boundedness of regimes (Definition
-\emph{Guard Regime}), such fresh internal tags are outside the regime's domain,
-so \texttt{frand} results are never considered clean under $R$.
-
 \subsubsection*{Ghost Locations and Realisation}
 
 A subtlety arises with ``ghost'' locations: logical locations that exist in the
@@ -1182,21 +1205,6 @@ not imply agreement on heap contents; the formal agreement relation compares hea
 cells at realised locations (\texttt{agreeLocUnder}), and the observable equality
 predicate permits both runs to leave an observable location unrealised.
 
-\begin{theorem}[Type System Enforces Fault Robustness]
-Assume a well-formed critical-input specification $S$ and observable spec
-$\text{obs}$. For any initial typing context $(pc,\Gamma,\sigma,\mathcal{L})$
-that matches $S$ (contains all entries in $S$ with their specified types), is
-well-formed, and starts from a clean program counter ($pc = \text{false}$) with an
-empty tag environment ($\mathcal{L} = \emptyset$),
-the following implication holds:
-
-If typechecking $e$ under this context succeeds and the inferred
-result satisfies the observable constraints, then for \emph{any} abstract predicate
-satisfaction relation $\text{PredSat}$ satisfying the universal axioms,
-the program $e$ satisfies the fault robustness property with respect to
-$S$, $\text{obs}$, and $\text{PredSat}$.
-\end{theorem}
-
 The predicate system enables graceful degradation: programs can produce correct
 outputs even when some critical inputs are faulty, provided those inputs have
 associated validity checks that are properly exercised.
@@ -1204,11 +1212,19 @@ associated validity checks that are properly exercised.
 
 \subsection{Abstract Predicate Satisfaction}
 
-The fault robustness proof employs an \emph{abstract predicate satisfaction} approach to handle predicates with captured lexical environments. This design addresses the fundamental architectural constraint that runtime values carry no type information or tags.
+The fault robustness proof employs an \emph{abstract predicate satisfaction}
+approach to handle predicates with captured lexical environments. This design
+addresses the fundamental architectural constraint that runtime values carry no
+type information or tags.
 
 \subsubsection{The Challenge}
 
-Predicate closures \texttt{guard k pred\_closure (x, pe, r)} capture a typing environment \texttt{r : List (Name × QTyp)} at definition time. However, the fault robustness proof must reason about whether predicates are satisfied by runtime values without access to the captured runtime variable bindings. The typing environment contains only type information, not the actual values of captured variables.
+Predicate closures \texttt{guard k pred\_closure (x, pe, r)} capture a typing
+environment \texttt{r : List (Name × QTyp)} at definition time. However, the
+fault robustness proof must reason about whether predicates are satisfied by
+runtime values without access to the captured runtime variable bindings. The
+typing environment contains only type information, not the actual values of
+captured variables.
 
 \subsubsection{The Solution: Abstract Satisfaction Relation}
 
@@ -1217,7 +1233,9 @@ Instead of concretely evaluating predicates, the proof treats predicate satisfac
 \text{PredSat} : \text{Tag} \to \text{Memory} \to \text{Value} \to \text{Prop}
 \]
 
-This relation specifies whether a predicate (identified by its tag) is satisfied by a value in a given memory state, without requiring concrete evaluation. Key design aspects:
+This relation specifies whether a predicate (identified by its tag) is satisfied
+by a value in a given memory state, without requiring concrete evaluation. Key
+design aspects:
 
 \begin{itemize}
     \item \textbf{No variable environment parameter}: Captured variables are encoded in the tag's identity. Each tag uniquely identifies both the predicate body and its captured lexical context.
@@ -1227,36 +1245,59 @@ This relation specifies whether a predicate (identified by its tag) is satisfied
 
 \subsubsection{Universal Axioms}
 
-The abstract \texttt{PredSat} relation is constrained by universal axioms that capture the type system's mechanisms without specifying predicate meanings. These axioms apply to all tags, including those in the initial specification and those generated during execution (e.g., by \texttt{frand} or extern functions).
+The abstract \texttt{PredSat} relation is constrained by universal axioms that
+capture the type system's mechanisms without specifying predicate meanings.
+These axioms apply to all tags, including those in the initial specification and
+those generated during execution (e.g., by \texttt{frand} or extern functions).
 
-\paragraph{Syntactic Matching Axiom (value--sensitive).} If a condition syntactically matches a tagged predicate via \texttt{matchGuard} and evaluates to true under the current runtime state, then the predicate is satisfied for the \emph{specific} runtime value denoted by the matched owner (either a variable \(x\) or a dereference \(!x\)):
+\paragraph{Syntactic Matching Axiom.} If a condition
+syntactically matches a tagged predicate via \texttt{matchGuard} and evaluates
+to true under the current runtime state (omitting the evaluation mode and final
+configuration for brevity), then the predicate is satisfied for the
+\emph{specific} runtime value denoted by the matched owner (either a variable
+\(x\) or a dereference \(!x\)):
+
 \[
 \begin{aligned}
-&\forall\, \text{condition},\; k,\; \text{deps},\; \Gamma,\; \sigma,\; \mu,\; \rho,\; \theta,\; v.\\
-&\text{matchGuard}(\text{condition}, \Gamma, \sigma) = (k, \text{deps})\;\land\;
-\text{terminatesTo}(\text{condition}, \mu, \rho, \text{true})\\
-&\land\;\big(\exists x,\; \sigma(x)\text{ has tag }k\;\land\; \rho(x)=v\;\;\;\;\;\;\;\;\;\;\\
-&\phantom{\land\;}\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\text{(variable case)}\\
-&\phantom{\land}\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\\
-&\ \ \ \ \ \ \ \;\;\lor\;\exists x,\, LS,\, l,\, a,\, n,\; \sigma(x) = \text{ref }T @ LS\;\land\; l \in LS\;\land\; \theta(l)=a\;\land\; \Gamma(l)\text{ has tag }k\;\land\; \mu(a)=n\;\land\; v=n\big)\\
-&\phantom{\land}\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\text{(dereference case)}\\
-&\implies \text{PredSat}\; k\; \mu\; v\,.
+&\forall\, \text{condition},\, \Gamma,\, \sigma,\, k,\, \text{deps},\, \mu,\, \rho,\, \theta,\, v.\\
+&\quad \texttt{matchGuard}(\text{condition}, \Gamma, \sigma) = \texttt{ok}(k, \text{deps})\\
+&\quad \land\; \langle \text{condition}, \mu, \rho \rangle \Downarrow \texttt{true}\\
+&\quad \land\;
+\Big(
+  \exists x.\; \sigma(x)\text{ has tag }k \land \rho(x)=v
+  \;\lor\\
+&\qquad\qquad
+  \exists x,\, LS,\, l,\, a,\, n.\;
+    \sigma(x)\text{ is a ref over }LS \land l \in LS \land \Gamma(l)\text{ has tag }k \\
+&\qquad\qquad\qquad
+    \land\; \theta(l)=a \land \mu(a)=n \land v=\texttt{num}(n)
+\Big)\\
+&\quad \implies \text{PredSat}\; k\; \mu\; v\,.
 \end{aligned}
 \]
 
-This axiom connects the type system's syntactic predicate matching (which returns a tag and dependencies) with the abstract satisfaction relation, while keeping the semantics \emph{value--sensitive}: the conclusion is about the concrete runtime value observed at check time.
+This axiom connects the type system's syntactic predicate matching (which
+returns a tag and dependencies) with the abstract satisfaction relation, while
+keeping the semantics \emph{value--sensitive}: the conclusion is about the
+concrete runtime value observed at check time.
 
 \emph{Captured vs. check--time environments.} The predicate closure stores a captured typing environment \(r\), which \texttt{matchGuard} uses on the \emph{syntactic} side of the comparison. The proof layer never evaluates predicate bodies with captured runtime values. Instead, the captured lexical context is encoded in the tag \(k\). The runtime triple \((\mu, \rho, \theta)\) used above is the \emph{check--time} state: it evaluates the condition and determines the concrete value \(v\) (either \(\rho(x)\) or the memory value at the concrete address \(\theta(l)\) for the realised logical location \(l\) selected by the reference). This separation avoids the environment--capture problem whilst preserving value sensitivity.
 
 \paragraph{Memory Monotonicity Axiom.} Predicates are stable under memory changes that do not affect their dependencies:
 \[
-\forall k, \text{pred}, \mu, \mu', v, \text{deps}, \theta.\;
-\text{extractDepsFromPred}(\text{pred}) = \text{deps}
-\land (\forall l \in \text{deps}.\; \forall a.\; \theta(l)=a \rightarrow \mu(a) = \mu'(a))
-\implies (\text{PredSat}\; k\; \mu\; v \iff \text{PredSat}\; k\; \mu'\; v)
+\begin{aligned}
+&\forall\, k,\, \text{pred},\, \mu,\, \mu',\, v,\, \text{deps},\, \theta.\\
+&\text{extractDepsFromPred}(\text{pred}) = \texttt{ok}(\text{deps})\ \land\\
+&(\forall l \in \text{deps}.\; \forall a.\; \theta(l)=a \rightarrow\\
+&\qquad \mu(a) = \mu'(a))\ \implies\\
+&\qquad (\text{PredSat}\; k\; \mu\; v \iff \text{PredSat}\; k\; \mu'\; v)
+\end{aligned}
 \]
 
-This axiom ensures the abstract relation behaves consistently with the type system's dependency extraction and guard invalidation on assignment. The dependencies are computed directly by \texttt{extractDepsFromPred}, the same function used by the type checker.
+This axiom ensures the abstract relation behaves consistently with the type
+system's dependency extraction and guard invalidation on assignment. The
+dependencies are computed directly by \texttt{extractDepsFromPred}, the same
+function used by the type checker.
 
 \subsubsection{Relationship to Regimes}
 
@@ -1267,7 +1308,11 @@ The guard regime $R$ and abstract satisfaction \texttt{PredSat} serve complement
     \item \textbf{Regime $R$} (execution path): Existentially chosen mapping recording which predicates were satisfied for specific runtime values in a particular execution. Different regimes represent different program runs.
 \end{itemize}
 
-The regime \emph{witnesses} facts about concrete runtime values under the abstract \texttt{PredSat}, rather than defining what \texttt{PredSat} means. Regime consistency requires that for guard closures, $R(k) = \text{true}$ iff \texttt{PredSat} holds for the runtime value, ensuring the regime correctly records predicate satisfaction.
+The regime \emph{witnesses} facts about concrete runtime values under the
+abstract \texttt{PredSat}, rather than defining what \texttt{PredSat} means.
+Regime consistency requires that for guard closures, $R(k) = \text{true}$ iff
+\texttt{PredSat} holds for the runtime value, ensuring the regime correctly
+records predicate satisfaction.
 
 \subsubsection{Benefits}
 
@@ -1288,8 +1333,6 @@ poisoned, even if they are constants or depend on clean values. This is a
 trade-off for soundness, preferring to mark clean values as poisoned rather than
 miss poisoned ones. Thus, while clean-marked values are soundly clean,
 poisoned-marked values are not necessarily poisoned.
-
-
 
 The typestate (memory typing environments $\Gamma$) is monotone only with
 respect to base types (\texttt{T}): once a location receives a type, that type
