@@ -4756,26 +4756,35 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
 end TypeSystemEnforcesFaultRobustness_IOFree_proof
 
 -- Bridges from step theorem to full specification
+-- FaultRobustnessSpec specialized to ioFree mode (implied by FaultRobustnessSpec)
 def FaultRobustnessSpec_ioFree (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) : Prop :=
-  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool) (check : Tag → Option Bool),
-    let R : Regime := ⟨ctx.nextTag, check⟩
+  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool),
     ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
-    wfRegime R s →
-    regimeBounded R →
+    ctx.regime.bound = ctx.nextTag →  -- regime bounded by initial tag supply
+    wfRegime ctx.regime s →
+    regimeBounded ctx.regime →
     wfRealizationMap θ₁ →  wfRealizationMap θ₂ →
     wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →
     wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } →
     inputsConformSpec s μ₁ ρ₁ θ₁ →  inputsConformSpec s μ₂ ρ₂ θ₂ →
     runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
-    consistentRegimeSpec predSat R s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat R s μ₂ ρ₂ θ₂ →
-    agreeOnCriticalInputsUnderRegimeSpec predSat R s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
-    agreeOnTrustedInputs predSat R s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
+    consistentRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat ctx.regime s μ₂ ρ₂ θ₂ →
+    agreeOnCriticalInputsUnderRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
+    agreeOnTrustedInputs predSat ctx.regime s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
     terminatesTo .ioFree e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
     terminatesTo .ioFree e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } cf₂ o₂ →
     ∃ (θ₁' θ₂' : RealizationMap),
       wfExtendsMap θ₁ θ₁' ∧
       wfExtendsMap θ₂ θ₂' ∧
       observablesEqual obs θ₁' θ₂' cf₁ cf₂ o₁ o₂
+
+-- FaultRobustnessSpec implies FaultRobustnessSpec_ioFree (by instantiating mode = .ioFree)
+lemma FaultRobustnessSpec_implies_ioFree (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) :
+    FaultRobustnessSpec e s obs ctx predSat → FaultRobustnessSpec_ioFree e s obs ctx predSat := by
+  intro h
+  unfold FaultRobustnessSpec_ioFree
+  intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm cf₁ cf₂ o₁ o₂
+  exact h .ioFree μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm cf₁ cf₂ o₁ o₂
 
 def TypeSystemEnforcesFaultRobustness_spec_ioFree
   (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
@@ -4792,6 +4801,12 @@ def TypeSystemEnforcesFaultRobustness_spec_ioFree
           typecheck ctx e fuel = .ok res ∧
           ObsConstraints obs res) →
           FaultRobustnessSpec_ioFree e s obs ctx predSat)
+
+-- TypeSystemEnforcesFaultRobustness_spec implies TypeSystemEnforcesFaultRobustness_spec_ioFree
+lemma TypeSystemEnforcesFaultRobustness_spec_implies_ioFree (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
+    TypeSystemEnforcesFaultRobustness_spec e s obs → TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs := by
+  intro h his hos ctx hctx hwf hpc hte predSat hps htc
+  exact FaultRobustnessSpec_implies_ioFree e s obs ctx predSat (h his hos ctx hctx hwf hpc hte predSat hps htc)
 
 theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
   (∀ e ctxᵢ predSat, TypeSystemEnforcesFaultRobustness_step_spec .ioFree e ctxᵢ predSat) →
