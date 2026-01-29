@@ -110,12 +110,14 @@ abbrev PredSat := Tag → Memory → Value → Prop
 
 -- Laws that constrain the abstract `PredSat` relation.
 structure PredSatLaws (predSat : PredSat) : Prop where
-  match_sound : ∀ (mode : LeanPoison.EvalMode) (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
+  -- Bidirectional match law: if match_guard recognizes the condition as tag k,
+  -- then the condition's boolean result matches predSat on the owning value.
+  match_iff : ∀ (mode : LeanPoison.EvalMode) (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
                   (k : Tag) (deps : Deps)
                   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (addr : Address) (pm : Bool) (cfg : Config)
-                  (v : Value),
+                  (v : Value) (b : Bool),
     matchGuard condition Γ σ = .ok (k, deps) →
-    terminatesTo mode condition { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm } cfg (Value.bool true) →
+    terminatesTo mode condition { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm } cfg (Value.bool b) →
     ( (∃ (x : Name) (qt : QTyp),
           σ.lookup x = some qt ∧
           qtypGuardTag qt = some k ∧
@@ -130,7 +132,7 @@ structure PredSatLaws (predSat : PredSat) : Prop where
           θ.lookup l0 = some a ∧
           μ.lookup a = some n ∧
           v = Value.num n) ) →
-    predSat k μ v
+    (b = true ↔ predSat k μ v)
 
   mem_monotone : ∀ (k : Tag) (pred : Predicate) (μ μ' : Memory) (v : Value) (deps : Deps) (θ : RealizationMap),
     extractDepsFromPred pred = .ok deps →
