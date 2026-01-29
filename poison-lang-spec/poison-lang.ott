@@ -204,6 +204,11 @@ L {{ tex \mathcal{L} }} :: L_ ::=     {{ com tag valuation environments }} {{ ph
   | indexL L idx            ::   :: indexL   {{ com indexed tag environment sequence for while-loop fixpoint }} {{ tex [[L]]^{[[idx]]} }}
   | indexedL L idx1 idx2    ::   :: indexedL {{ com doubly-indexed tag environment for while-loop }} {{ tex [[L]]_{[[idx1]]}^{[[idx2]]} }}                  
 
+% Regime (partial map from tags to booleans)
+R {{ tex \mathcal{R} }} :: R_ ::= {{ com regime (partial map from tags to booleans) }}
+  | empty                   ::   :: empty {{ coq [] }}
+  | R [ k |-> b ]           ::   :: extend {{ tex [[R]] [ k \rightharpoonup [[b]] ] }}
+
 poison, p, pc :: 'p_' ::= {{ com poison status }}
   | clean                    ::   :: clean
   | poisoned                 ::   :: poisoned
@@ -278,6 +283,8 @@ formula :: formula_ ::=
   | S ( x ) = Q        :: :: var_type_lookup {{ coq (lookup_var_type [[x]] [[S]] = Some ([[Q]])) }}   
   | r ( x ) = v           :: :: var_lookup {{ coq (lookup_var [[x]] [[r]] = Some ([[v]])) }}   
   | L ( k ) = b using LS :: :: tag_lookup {{ coq (lookup_tag [[k]] [[L]] = Some ([[b]], [[LS]])) }}   
+  | R ( k ) = b           :: :: regime_lookup {{ coq (lookup_regime [[k]] [[R]] = Some ([[b]])) }}
+  | R ( k ) = none        :: :: regime_none {{ coq (lookup_regime [[k]] [[R]] = None) }}
   | p1 = p2                :: :: poison_eq   {{ coq ([[p1]] = [[p2]]) }}   
   | G1 = G2                :: :: type_env_eq {{ coq ([[G1]] = [[G2]]) }}   
   | L1 = L2                :: :: tag_env_eq {{ coq ([[L1]] = [[L2]]) }}   
@@ -512,227 +519,227 @@ n1 = random n
 %% --- Typing rules below ---
 
 defn
-pm ; pc ; G ; S ; L |- e : Q -| G1 ; L1 :: :: typing :: Ty_ by
+pm ; R ; pc ; G ; S ; L |- e : Q -| G1 ; L1 :: :: typing :: Ty_ by
 
 ------------------  :: int
-pm ; pc ; G ; S ; L |- n : int :> clean { no_pred } -| G ; L
+pm ; R ; pc ; G ; S ; L |- n : int :> clean { no_pred } -| G ; L
 
 ------------------  :: bool
-pm ; pc ; G ; S ; L |- b : bool :> clean { no_pred } -| G ; L
+pm ; R ; pc ; G ; S ; L |- b : bool :> clean { no_pred } -| G ; L
 
 ------------------  :: string 
-pm ; pc ; G ; S ; L |- s : string :> clean { no_pred } -| G ; L
+pm ; R ; pc ; G ; S ; L |- s : string :> clean { no_pred } -| G ; L
 
 % Variable typing - with guarded predicate that evaluates to true triggering de-poisoning.
 S(x) = T :> p { guard k pred_closure pcl }
 L(k) = true using LS
 ------------------  :: var_guard_true
-pm ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L
+pm ; R ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L
 
 % Variable typing - with guard only that evaluates to true triggering de-poisoning.
 S(x) = T :> p { guard k }
 L(k) = true using LS
 ------------------  :: var_guard_only_true
-pm ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L
+pm ; R ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L
 
 % Variable typing - with guarded predicate that evaluates to false, triggering poisoning.
 S(x) = T :> p { guard k pred_closure pcl }
 L(k) = false using LS
 ------------------  :: var_guard_false
-pm ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L
+pm ; R ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L
 
 % Variable typing - with guard only that evaluates to false, triggering poisoning.
 S(x) = T :> p { guard k }
 L(k) = false using LS
 ------------------  :: var_guard_only_false
-pm ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L
+pm ; R ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L
 
 % Variable typing - with guarded predicate but tag not in L
 S(x) = T :> p { guard k pred_closure pcl }
 ------------------  :: var_guard_unknown
-pm ; pc ; G ; S ; L |- x : T :> join pc p { guard k pred_closure pcl } -| G ; L
+pm ; R ; pc ; G ; S ; L |- x : T :> join pc p { guard k pred_closure pcl } -| G ; L
 
 % Variable typing - with guard only but tag not in L
 S(x) = T :> p { guard k }
 ------------------  :: var_guard_only_unknown
-pm ; pc ; G ; S ; L |- x : T :> join pc p { guard k } -| G ; L
+pm ; R ; pc ; G ; S ; L |- x : T :> join pc p { guard k } -| G ; L
 
 % Variable typing - no guard case
 S(x) = T :> p { no_pred }
 ------------------  :: var_no_pred
-pm ; pc ; G ; S ; L |- x : T :> join pc p { no_pred } -| G ; L
+pm ; R ; pc ; G ; S ; L |- x : T :> join pc p { no_pred } -| G ; L
 
-pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_plus
-pm ; pc ; G ; S ; L |- e1 + e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 + e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_gteq
-pm ; pc ; G ; S ; L |- e1 >= e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 >= e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_minus
-pm ; pc ; G ; S ; L |- e1 - e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 - e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_mult
-pm ; pc ; G ; S ; L |- e1 * e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 * e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_div
-pm ; pc ; G ; S ; L |- e1 / e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 / e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_lteq
-pm ; pc ; G ; S ; L |- e1 <= e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 <= e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_gt
-pm ; pc ; G ; S ; L |- e1 > e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 > e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_lt
-pm ; pc ; G ; S ; L |- e1 < e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 < e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_eq
-pm ; pc ; G ; S ; L |- e1 = e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 = e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_neq
-pm ; pc ; G ; S ; L |- e1 != e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 != e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1  
-pm ; pc ; G1 ; S ; L1 |- e2 : bool :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1  
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : bool :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_and
-pm ; pc ; G ; S ; L |- e1 && e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 && e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : int :> p1 { P1 } -| G1 ; L1  
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_bitwise_and
-pm ; pc ; G ; S ; L |- e1 & e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 & e2 : int :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
-pm ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1  
-pm ; pc ; G1 ; S ; L1 |- e2 : bool :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1  
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : bool :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: op_or
-pm ; pc ; G ; S ; L |- e1 || e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 || e2 : bool :> join pc join p1 p2 { no_pred } -| G2 ; L2
 
 % Typing for unary operators
-pm ; pc ; G ; S ; L |- e : bool :> p { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : bool :> p { P } -| G1 ; L1
 ----------------------------------------------------------------------  :: unary_op_not_typing
-pm ; pc ; G ; S ; L |- not e : bool :> join pc p { no_pred } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- not e : bool :> join pc p { no_pred } -| G1 ; L1
 
 % New ref creation with region types
 % ref creates a reference with pc poison status and allocates fresh logical location l
 % The region type ref int @ { l } precisely tracks which logical location is allocated
 % Predicate P is preserved in the memory location
 % NOTE: Memory can only store integers (matching runtime semantics)
-pm ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
   fresh l
 ----------------------- :: ref
-pm ; pc ; G ; S ; L |- ref e : ref int @ { l } :> pc { no_pred } -| G1[l |-> int :> join pc p { P }] ; L1
+pm ; R ; pc ; G ; S ; L |- ref e : ref int @ { l } :> pc { no_pred } -| G1[l |-> int :> join pc p { P }] ; L1
 
 % Assignment (singleton locset): strong update
 % The result (unit) is poisoned if the reference is poisoned. The stored value
 % is poisoned if the assignment is poisoned, or reference is poisoned, or the
 % value is poisoned. Predicate from e2 is preserved in the memory location.
 % NOTE: Memory can only store integers (matching runtime semantics)
-pm ; pc ; G ; S ; L |- e1 : ref int @ { l } :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : ref int @ { l } :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 invalidate_deps L2 { l } = L3
 ----------------------- :: assign_singleton
-pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[l |-> int :> join pc join p1 p2 { P2 }] ; L3
+pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[l |-> int :> join pc join p1 p2 { P2 }] ; L3
 
 % Assignment (non-singleton locset): weak update
 % Joins stored type with existing types via JoinPoisons and MergePreds.
 % This ensures soundness when the typechecker cannot determine which location
 % in the locset will be updated at runtime.
 % NOTE: Memory can only store integers (matching runtime semantics)
-pm ; pc ; G ; S ; L |- e1 : ref int @ LS0 :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : ref int @ LS0 :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 invalidate_deps L2 LS0 = L3
 JoinPoisons G2 LS0 = p3
 MergePreds G2 LS0 = P3
 JoinP P2 P3 = P4
 ----------------------- :: assign_locset
-pm ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[LS0 |-> int :> join p3 join pc join p1 p2 { P4 }] ; L3
+pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[LS0 |-> int :> join p3 join pc join p1 p2 { P4 }] ; L3
 
 % Dereference with logical location sets.
 % A poisoned reference yields a poisoned result (predicate erased).
 % NOTE: Memory can only store integers (matching runtime semantics)
-pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> poisoned { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : ref int @ LS0 :> poisoned { P } -| G1 ; L1
 ----------------------- :: deref_poisoned
-pm ; pc ; G ; S ; L |- !e : int :> poisoned { no_pred } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- !e : int :> poisoned { no_pred } -| G1 ; L1
 
 % No-predicate case: merge predicates across LS0 yields no_pred; poison joins all cells.
-pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = no_pred
   JoinPoisons G1 LS0 = p
 ----------------------- :: deref_no_pred
-pm ; pc ; G ; S ; L |- !e : int :> join pc p { no_pred } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- !e : int :> join pc p { no_pred } -| G1 ; L1
 
 % Guarded predicate evaluates to true after merging across LS0 (de-poison).
-pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k pred_closure pcl
   L1(k) = true using LS
 ----------------------- :: deref_guard_true
-pm ; pc ; G ; S ; L |- !e : int :> pc { no_pred } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- !e : int :> pc { no_pred } -| G1 ; L1
 
 % Guard-only predicate evaluates to true after merging.
-pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k
   L1(k) = true using LS
 ----------------------- :: deref_guard_only_true
-pm ; pc ; G ; S ; L |- !e : int :> pc { no_pred } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- !e : int :> pc { no_pred } -| G1 ; L1
 
 % Guarded predicate evaluates to false after merging (forces poisoning).
-pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k pred_closure pcl
   L1(k) = false using LS
 ----------------------- :: deref_guard_false
-pm ; pc ; G ; S ; L |- !e : int :> poisoned { no_pred } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- !e : int :> poisoned { no_pred } -| G1 ; L1
 
 % Guard-only predicate evaluates to false after merging.
-pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k
   L1(k) = false using LS
 ----------------------- :: deref_guard_only_false
-pm ; pc ; G ; S ; L |- !e : int :> poisoned { no_pred } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- !e : int :> poisoned { no_pred } -| G1 ; L1
 
 % Guarded predicate present but tag not known in L: poison joins all cells; predicate retained.
-pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k pred_closure pcl
   JoinPoisons G1 LS0 = p
 ----------------------- :: deref_guard_unknown
-pm ; pc ; G ; S ; L |- !e : int :> join pc p { guard k pred_closure pcl } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- !e : int :> join pc p { guard k pred_closure pcl } -| G1 ; L1
 
 % Guard-only predicate present but tag not known in L.
-pm ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : ref int @ LS0 :> clean { P } -| G1 ; L1
   MergePreds G1 LS0 = guard k
   JoinPoisons G1 LS0 = p
 ----------------------- :: deref_guard_only_unknown
-pm ; pc ; G ; S ; L |- !e : int :> join pc p { guard k } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- !e : int :> join pc p { guard k } -| G1 ; L1
 
 -------------------------------  :: unit
-pm ; pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G ; L
+pm ; R ; pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G ; L
 
 % The result type is the type of the second expression T2. This is  a conservative
 % approach. Alternatively, we could ignore e1's poison in result, as the e1's
 % value is propagated to e2.
-pm ; pc ; G ; S ; L |- e1 : T1 :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : T1 :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2
 -------------------------------  :: seq
-pm ; pc ; G ; S ; L |- e1 ; e2  : T2 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 ; e2  : T2 :> p2 { P2 } -| G2 ; L2
 
 % Function abstraction typing with explicit return type annotation.
 % The user provides both parameter type ST1 and return type ST2.
@@ -740,7 +747,7 @@ pm ; pc ; G ; S ; L |- e1 ; e2  : T2 :> p2 { P2 } -| G2 ; L2
 % Body typechecking is deferred until application time.
 % The closure is stored as a singleton (just the closure, not a list).
 ----------------------------------------------------------------------  :: fn_abs
-pm ; pc ; G ; S ; L |- fn x : ST1 => e : ST2 : ST1 -> ST2 # pc tclosures ( x , e , S ) :> pc { no_pred } -| G ; L
+pm ; R ; pc ; G ; S ; L |- fn x : ST1 => e : ST2 : ST1 -> ST2 # pc tclosures ( x , e , S ) :> pc { no_pred } -| G ; L
 
 % Pure function abstraction typing with explicit return type annotation.
 % The user provides both parameter type ST1 and return type ST2.
@@ -748,47 +755,47 @@ pm ; pc ; G ; S ; L |- fn x : ST1 => e : ST2 : ST1 -> ST2 # pc tclosures ( x , e
 % Body typechecking is deferred until application time.
 % The closure is stored as a singleton (just the closure, not a list).
 ----------------------------------------------------------------------  :: pfn_abs
-pm ; pc ; G ; S ; L |- pfn x : ST1 => pe : ST2 : ST1 -> ST2 # pc tpclosures ( x , pe , S ) :> pc { no_pred } -| G ; L
+pm ; R ; pc ; G ; S ; L |- pfn x : ST1 => pe : ST2 : ST1 -> ST2 # pc tpclosures ( x , pe , S ) :> pc { no_pred } -| G ; L
 
 % Function application typing - singleton closure case - result is arrow type
 % When the closure list contains a single closure (x, e, S1) and the result is an arrow type:
 % Type-check the body e in the captured context S1 extended with the actual argument.
 % The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that impure function application is disallowed in pure context.
-impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1
-impure ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1
+impure ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-impure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T2 :> p3 { P3 } -| G3 ; L3
+impure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T2 :> p3 { P3 } -| G3 ; L3
 ST2 <: T2
 T2 = ST3 -> ST4 # p4 tclosures tcls2
 ----------------------------------------------------------------------  :: app_fn_singleton_arrow
-impure ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { no_pred } -| G3 ; L3
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { no_pred } -| G3 ; L3
 
 % Function application typing - singleton closure case - result is parrow type
 % When the closure list contains a single closure (x, e, S1) and the result is a parrow type:
 % Type-check the body e in the captured context S1 extended with the actual argument.
 % The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that impure function application is disallowed in pure context.
-impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1
-impure ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1
+impure ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-impure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T2 :> p3 { P3 } -| G3 ; L3
+impure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T2 :> p3 { P3 } -| G3 ; L3
 ST2 <: T2
 T2 = ST3 -> ST4 # p4 tpclosures ptcls2
 ----------------------------------------------------------------------  :: app_fn_singleton_parrow
-impure ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { no_pred } -| G3 ; L3
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { no_pred } -| G3 ; L3
 
 % Function application typing - singleton closure case - result is non-function type
 % When the closure list contains a single closure (x, e, S1) and the result is not a function type:
 % Type-check the body e in the captured context S1 extended with the actual argument.
 % Please note that impure function application is disallowed in pure context.
-impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1
-impure ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1
+impure ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-impure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T2 :> p3 { P3 } -| G3 ; L3
+impure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T2 :> p3 { P3 } -| G3 ; L3
 ST2 <: T2
 ----------------------------------------------------------------------  :: app_fn_singleton
-impure ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G3 ; L3
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G3 ; L3
 
 % Function application typing - multiple closures case - result is arrow type
 % When both the head and tail applications return arrow types:
@@ -801,49 +808,49 @@ impure ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G3 ; L3
 % 4. Merge the closure sets from both results via union
 % 5. Join all outputs: poisons, memory environments, tag environments
 % Please note that impure function application is disallowed in pure context.
-impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1
-impure ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1
+impure ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-impure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T' :> p' { P' } -| G' ; L'
-impure ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1
-impure ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
+impure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T' :> p' { P' } -| G' ; L'
+impure ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1
+impure ; R ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
 ST2 <: T'
 T' = ST3 -> ST4 # p3 tclosures tcls3
 T'' = ST3 -> ST4 # p4 tclosures tcls4
 p5 = join p3 p4
 tcls5 = tcls3 U tcls4
 ----------------------------------------------------------------------  :: app_fn_cons_arrow
-impure ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tclosures tcls5 :> join pc join p' p'' { no_pred } -| JoinG G' G'' ; JoinL L' L''
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tclosures tcls5 :> join pc join p' p'' { no_pred } -| JoinG G' G'' ; JoinL L' L''
 
 % Function application typing - multiple closures case - result is non-arrow type (reference result)
 % When both head and tail applications return references with the same inner type, join locsets.
-impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1
-impure ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1
+impure ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-impure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T' :> p' { P' } -| G' ; L'
-impure ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1
-impure ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
+impure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T' :> p' { P' } -| G' ; L'
+impure ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1
+impure ; R ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
 ST2 <: T'
 T' = ref T2 @ LS1
 T'' = ref T2 @ LS2
 LS = LS1 U LS2
 JoinP P' P'' = P3
 ----------------------------------------------------------------------  :: app_fn_cons_ref
-impure ; pc ; G ; S ; L |- e1 e2 : ref T2 @ LS :> join pc join p' p'' { P3 } -| JoinG G' G'' ; JoinL L' L''
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ref T2 @ LS :> join pc join p' p'' { P3 } -| JoinG G' G'' ; JoinL L' L''
 
 % Function application typing - multiple closures case - result is non-arrow type (base result)
 % When results are non-reference, non-arrow types, signature compatibility forces equality; the result type is that base type.
-impure ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1
-impure ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1
+impure ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-impure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T' :> p' { P' } -| G' ; L'
-impure ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1
-impure ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
+impure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T' :> p' { P' } -| G' ; L'
+impure ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1
+impure ; R ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
 ST2 <: T'
 T' ≈ T''
 JoinP P' P'' = P3
 ----------------------------------------------------------------------  :: app_fn_cons
-impure ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p' p'' { P3 } -| JoinG G' G'' ; JoinL L' L''
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p' p'' { P3 } -| JoinG G' G'' ; JoinL L' L''
 
 % Pure function application typing - singleton closure case - result is arrow type
 % When the closure list contains a single closure (x, pe, S1) and the result is an arrow type:
@@ -851,14 +858,14 @@ impure ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p' p'' { P3 } -| JoinG G' 
 % The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
-pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-pure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T2 :> p3 { P3 } -| G3 ; L3
+pure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T2 :> p3 { P3 } -| G3 ; L3
 ST2 <: T2
 T2 = ST3 -> ST4 # p4 tclosures tcls2
 ----------------------------------------------------------------------  :: app_pfn_singleton_arrow
-pm ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { no_pred } -| G3 ; L3
+pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { no_pred } -| G3 ; L3
 
 % Pure function application typing - singleton closure case - result is parrow type
 % When the closure list contains a single closure (x, pe, S1) and the result is a parrow type:
@@ -866,27 +873,27 @@ pm ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { no_pred } -| G3 ; L3
 % The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
-pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-pure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T2 :> p3 { P3 } -| G3 ; L3
+pure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T2 :> p3 { P3 } -| G3 ; L3
 ST2 <: T2
 T2 = ST3 -> ST4 # p4 tpclosures ptcls2
 ----------------------------------------------------------------------  :: app_pfn_singleton_parrow
-pm ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { no_pred } -| G3 ; L3
+pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { no_pred } -| G3 ; L3
 
 % Pure function application typing - singleton closure case - result is non-function type
 % When the closure list contains a single closure (x, pe, S1) and the result is not a function type:
 % Type-check the body pe in the captured context S1 extended with the actual argument.
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
-pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-pure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T2 :> p3 { P3 } -| G3 ; L3
+pure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T2 :> p3 { P3 } -| G3 ; L3
 ST2 <: T2
 ----------------------------------------------------------------------  :: app_pfn_singleton
-pm ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G3 ; L3
+pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G3 ; L3
 
 % Pure function application typing - multiple closures case - result is pure arrow type
 % When both the head and tail applications return pure arrow types:
@@ -900,73 +907,73 @@ pm ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G3 ; L3
 % 5. Join all outputs: poisons, memory environments, tag environments
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
-pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-pure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T' :> p' { P' } -| G' ; L'
-pm ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
+pure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T' :> p' { P' } -| G' ; L'
+pm ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
 ST2 <: T'
 T' = ST3 -> ST4 # p3 tpclosures ptcls3
 T'' = ST3 -> ST4 # p4 tpclosures ptcls4
 p5 = join p3 p4
 ptcls5 = ptcls3 U ptcls4
 ----------------------------------------------------------------------  :: app_pfn_cons_arrow
-pm ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tpclosures ptcls5 :> join pc join p' p'' { no_pred } -| JoinG G' G'' ; JoinL L' L''
+pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tpclosures ptcls5 :> join pc join p' p'' { no_pred } -| JoinG G' G'' ; JoinL L' L''
 
 % Pure function application typing - multiple closures case - result is non-arrow type (reference result)
 % When both head and tail applications return references with the same inner type, join locsets.
-pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-pure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T' :> p' { P' } -| G' ; L'
-pm ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
+pure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T' :> p' { P' } -| G' ; L'
+pm ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
 ST2 <: T'
 T' = ref T2 @ LS1
 T'' = ref T2 @ LS2
 LS = LS1 U LS2
 JoinP P' P'' = P3
 ----------------------------------------------------------------------  :: app_pfn_cons_ref
-pm ; pc ; G ; S ; L |- e1 e2 : ref T2 @ LS :> join pc join p' p'' { P3 } -| JoinG G' G'' ; JoinL L' L''
+pm ; R ; pc ; G ; S ; L |- e1 e2 : ref T2 @ LS :> join pc join p' p'' { P3 } -| JoinG G' G'' ; JoinL L' L''
 
 % Pure function application typing - multiple closures case - result is non-arrow type (base result)
 % When results are non-reference, non-arrow types, signature compatibility forces equality; the result type is that base type.
-pm ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2
 ST1 <: T1
-pure ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T' :> p' { P' } -| G' ; L'
-pm ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
+pure ; R ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T' :> p' { P' } -| G' ; L'
+pm ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L''
 ST2 <: T'
 T' ≈ T''
 JoinP P' P'' = P3
 ----------------------------------------------------------------------  :: app_pfn_cons
-pm ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p' p'' { P3 } -| JoinG G' G'' ; JoinL L' L''
+pm ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p' p'' { P3 } -| JoinG G' G'' ; JoinL L' L''
 
 % Typing for rand - takes integer argument, returns random integer
-pm ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
 ----------------------------------------------------------------------  :: rand_typing
-pm ; pc ; G ; S ; L |- rand e : int :> join pc p { no_pred } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- rand e : int :> join pc p { no_pred } -| G1 ; L1
 
 % Typing for frand - takes integer argument n, returns faulty random integer with predicate
 % the argument is a pure expression, so typechking it does not affect the typing environment
-pm ; pc ; G ; S ; L |- pe : int :> p { P } -| G ; L
+pm ; R ; pc ; G ; S ; L |- pe : int :> p { P } -| G ; L
 fresh k
 fresh x S
 pcl = range x pe S
 ----------------------------------------------------------------------  :: frand_typing
-pm ; pc ; G ; S ; L |- frand pe : int :> poisoned { guard k pred_closure pcl } -| G ; L
+pm ; R ; pc ; G ; S ; L |- frand pe : int :> poisoned { guard k pred_closure pcl } -| G ; L
 
 % Typing for printInt - takes integer argument, returns unit 
-pm ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
 ----------------------------------------------------------------------  :: printInt_typing
-pm ; pc ; G ; S ; L |- printInt e : unit :> join pc p { no_pred } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- printInt e : unit :> join pc p { no_pred } -| G1 ; L1
 
 % Typing for printString - takes string argument, returns unit 
-pm ; pc ; G ; S ; L |- e : string :> p { P } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e : string :> p { P } -| G1 ; L1
 ----------------------------------------------------------------------  :: printString_typing
-pm ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G1 ; L1
 
 
 % Typing for Let Bindings
@@ -986,66 +993,148 @@ pm ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G1 ; L1
 % Predicates are propagated from e1 to x, and the result gets predicate from e2
 % Note: Lexical scoping - the final variable environment S excludes the let-bound variable x
 % The logical environment L1' from evaluating e2 is preserved (knowledge about predicates persists)
-pm ; pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G1 ; L1
-pm ; pc ; G1 ; S[x |-> T :> p1  { P1 }] ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S[x |-> T :> p1  { P1 }] ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2
 ----------------------------------------------------------------------  :: let
-pm ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G2 ; L2
 
 
-% Conditional typing with predicate-based de-poisoning - impure function result
-% When both branches return impure function types with matching surface types (ST1, ST2):
-%   - Branch types T2 and T3 are both impure arrow types with the same surface types
-%   - Arrow-internal poisons p' and p'' are joined
-%   - Outer qualified-type poisons p2 ⊔ p3 are joined
-%   - Closure sets tcls2 and tcls3 are merged via union (deduplicating closures)
-%   - Result: (ST1 -> ST2 # (p' ⊔ p'') tclosures (tcls2 ∪ tcls3)) :> (pc ⊔ p2 ⊔ p3)
+% Conditional typing with predicate-based de-poisoning - impure function result - R(k) unknown
+% When R does not fix the guard outcome, use conservative fallback (poison branch pc, join results)
 match_guard e1 G S = k with LS
-pure ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
-pm ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
-pm ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
+R(k) = none
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; R ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
 T2 = ST1 -> ST2 # p' tclosures tcls2
 T3 = ST1 -> ST2 # p'' tclosures tcls3
 p = join p' p''
 tcls = tcls2 U tcls3
-----------------------------------  :: if_depoison_fn
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> join pc join p2 p3 { no_pred } -| JoinG G2 G3 ; L
+----------------------------------  :: if_depoison_fn_R_unknown
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3
 
-% Conditional typing with predicate-based de-poisoning - pure function result
-% When both branches return pure function types with matching surface types (ST1, ST2):
-%   - Branch types T2 and T3 are both pure arrow types with the same surface types
-%   - Arrow-internal poisons p' and p'' are joined
-%   - Outer qualified-type poisons p2 ⊔ p3 are joined
-%   - Closure sets ptcls2 and ptcls3 are merged via union (deduplicating closures)
-%   - Result: (ST1 -> ST2 # (p' ⊔ p'') tpclosures (ptcls2 ∪ ptcls3)) :> (pc ⊔ p2 ⊔ p3)
+% Conditional typing with predicate-based de-poisoning - impure function result - R(k) = true
+% When R fixes the guard outcome to true, only the then-branch is effective
 match_guard e1 G S = k with LS
-pure ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
-pm ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
-pm ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
+R(k) = true
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
+T2 = ST1 -> ST2 # p' tclosures tcls2
+T3 = ST1 -> ST2 # p'' tclosures tcls3
+----------------------------------  :: if_depoison_fn_R_true
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p' tclosures tcls2 :> join pc p2 { no_pred } -| G2 ; L2
+
+% Conditional typing with predicate-based de-poisoning - impure function result - R(k) = false
+% When R fixes the guard outcome to false, only the else-branch is effective
+match_guard e1 G S = k with LS
+R(k) = false
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
+T2 = ST1 -> ST2 # p' tclosures tcls2
+T3 = ST1 -> ST2 # p'' tclosures tcls3
+----------------------------------  :: if_depoison_fn_R_false
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p'' tclosures tcls3 :> join pc p3 { no_pred } -| G3 ; L3
+
+% Conditional typing with predicate-based de-poisoning - pure function result - R(k) unknown
+% When R does not fix the guard outcome, use conservative fallback (poison branch pc, join results)
+match_guard e1 G S = k with LS
+R(k) = none
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; R ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
 T2 = ST1 -> ST2 # p' tpclosures ptcls2
 T3 = ST1 -> ST2 # p'' tpclosures ptcls3
 p = join p' p''
 ptcls = ptcls2 U ptcls3
-----------------------------------  :: if_depoison_pfn
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p2 p3 { no_pred } -| JoinG G2 G3 ; L
+----------------------------------  :: if_depoison_pfn_R_unknown
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3
 
-% Conditional typing with predicate-based de-poisoning - reference result
-% Explicitly unions location sets when both branches produce refs of the same inner type.
+% Conditional typing with predicate-based de-poisoning - pure function result - R(k) = true
+% When R fixes the guard outcome to true, only the then-branch is effective
 match_guard e1 G S = k with LS
-pure ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
-pm ; pc ; G ; S ; L[k |-> true using LS] |- e2 : ref T @ LS1 :> p2 { P2 } -| G2 ; L2
-pm ; pc ; G ; S ; L[k |-> false using LS] |- e3 : ref T @ LS2 :> p3 { P3 } -| G3 ; L3
+R(k) = true
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
+T2 = ST1 -> ST2 # p' tpclosures ptcls2
+T3 = ST1 -> ST2 # p'' tpclosures ptcls3
+----------------------------------  :: if_depoison_pfn_R_true
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p' tpclosures ptcls2 :> join pc p2 { no_pred } -| G2 ; L2
+
+% Conditional typing with predicate-based de-poisoning - pure function result - R(k) = false
+% When R fixes the guard outcome to false, only the else-branch is effective
+match_guard e1 G S = k with LS
+R(k) = false
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3
+T2 = ST1 -> ST2 # p' tpclosures ptcls2
+T3 = ST1 -> ST2 # p'' tpclosures ptcls3
+----------------------------------  :: if_depoison_pfn_R_false
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p'' tpclosures ptcls3 :> join pc p3 { no_pred } -| G3 ; L3
+
+% Conditional typing with predicate-based de-poisoning - reference result - R(k) unknown
+% When R does not fix the guard outcome, use conservative fallback (poison branch pc, join results)
+match_guard e1 G S = k with LS
+R(k) = none
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : ref T @ LS1 :> p2 { P2 } -| G2 ; L2
+pm ; R ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : ref T @ LS2 :> p3 { P3 } -| G3 ; L3
 LS = LS1 U LS2
-----------------------------------  :: if_depoison_ref
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS :> join pc join p2 p3 { no_pred } -| JoinG G2 G3 ; L
+----------------------------------  :: if_depoison_ref_R_unknown
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3
 
-% Conditional typing with predicate-based de-poisoning - general non-reference case
-% For non-reference types, both branches yield the same surface type T.
+% Conditional typing with predicate-based de-poisoning - reference result - R(k) = true
+% When R fixes the guard outcome to true, only the then-branch is effective
 match_guard e1 G S = k with LS
-pure ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
-pm ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2
-pm ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3
-----------------------------------  :: if_depoison
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p2 p3 { no_pred } -| JoinG G2 G3 ; L
+R(k) = true
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : ref T @ LS1 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : ref T @ LS2 :> p3 { P3 } -| G3 ; L3
+----------------------------------  :: if_depoison_ref_R_true
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS1 :> join pc p2 { no_pred } -| G2 ; L2
+
+% Conditional typing with predicate-based de-poisoning - reference result - R(k) = false
+% When R fixes the guard outcome to false, only the else-branch is effective
+match_guard e1 G S = k with LS
+R(k) = false
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : ref T @ LS1 :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : ref T @ LS2 :> p3 { P3 } -| G3 ; L3
+----------------------------------  :: if_depoison_ref_R_false
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS2 :> join pc p3 { no_pred } -| G3 ; L3
+
+% Conditional typing with predicate-based de-poisoning - general non-reference case - R(k) unknown
+% When R does not fix the guard outcome, use conservative fallback (poison branch pc, join results)
+match_guard e1 G S = k with LS
+R(k) = none
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2
+pm ; R ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3
+----------------------------------  :: if_depoison_R_unknown
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3
+
+% Conditional typing with predicate-based de-poisoning - general non-reference case - R(k) = true
+% When R fixes the guard outcome to true, only the then-branch is effective
+match_guard e1 G S = k with LS
+R(k) = true
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3
+----------------------------------  :: if_depoison_R_true
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc p2 { no_pred } -| G2 ; L2
+
+% Conditional typing with predicate-based de-poisoning - general non-reference case - R(k) = false
+% When R fixes the guard outcome to false, only the else-branch is effective
+match_guard e1 G S = k with LS
+R(k) = false
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L
+pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2
+pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3
+----------------------------------  :: if_depoison_R_false
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc p3 { no_pred } -| G3 ; L3
 
 % Standard conditional typing rule - impure function result
 % (used when no matching predicate found)
@@ -1056,15 +1145,15 @@ pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p2 p3 { no_pred
 %   - Closure sets tcls2 and tcls3 are merged via union (deduplicating closures)
 %   - Guard poison p1 is also included in result poison
 %   - Result: (ST1 -> ST2 # (p' ⊔ p'') tclosures (tcls2 ∪ tcls3)) :> (pc ⊔ p1 ⊔ p2 ⊔ p3)
-pm ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1
-pm ; join pc p1 ; G1 ; S ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2
-pm ; join pc p1 ; G1 ; S ; L1 |- e3 : T3 :> p3 { P3 } -| G3 ; L3
+pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1
+pm ; R ; join pc p1 ; G1 ; S ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; R ; join pc p1 ; G1 ; S ; L1 |- e3 : T3 :> p3 { P3 } -| G3 ; L3
 T2 = ST1 -> ST2 # p' tclosures tcls2
 T3 = ST1 -> ST2 # p'' tclosures tcls3
 p = join p' p''
 tcls = tcls2 U tcls3
 ----------------------------------  :: if_std_fn
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; L1
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3
 
 % Standard conditional typing rule - pure function result
 % (used when no matching predicate found)
@@ -1075,30 +1164,30 @@ pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> 
 %   - Closure sets ptcls2 and ptcls3 are merged via union (deduplicating closures)
 %   - Guard poison p1 is also included in result poison
 %   - Result: (ST1 -> ST2 # (p' ⊔ p'') tpclosures (ptcls2 ∪ ptcls3)) :> (pc ⊔ p1 ⊔ p2 ⊔ p3)
-pm ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1
-pm ; join pc p1 ; G1 ; S ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2
-pm ; join pc p1 ; G1 ; S ; L1 |- e3 : T3 :> p3 { P3 } -| G3 ; L3
+pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1
+pm ; R ; join pc p1 ; G1 ; S ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2
+pm ; R ; join pc p1 ; G1 ; S ; L1 |- e3 : T3 :> p3 { P3 } -| G3 ; L3
 T2 = ST1 -> ST2 # p' tpclosures ptcls2
 T3 = ST1 -> ST2 # p'' tpclosures ptcls3
 p = join p' p''
 ptcls = ptcls2 U ptcls3
 ----------------------------------  :: if_std_pfn
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; L1
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3
 
 % Standard conditional typing rule - reference result (no predicate match)
-pm ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1
-pm ; join pc p1 ; G1 ; S ; L1 |- e2 : ref T @ LS1 :> p2 { P2 } -| G2 ; L2
-pm ; join pc p1 ; G1 ; S ; L1 |- e3 : ref T @ LS2 :> p3 { P3 } -| G3 ; L3
+pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1
+pm ; R ; join pc p1 ; G1 ; S ; L1 |- e2 : ref T @ LS1 :> p2 { P2 } -| G2 ; L2
+pm ; R ; join pc p1 ; G1 ; S ; L1 |- e3 : ref T @ LS2 :> p3 { P3 } -| G3 ; L3
 LS = LS1 U LS2
 ----------------------------------  :: if_std_ref
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; L1
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3
 
 % Standard conditional typing rule - general non-reference case (no predicate match)
-pm ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1
-pm ; join pc p1 ; G1 ; S ; L1 |- e2 : T :> p2 { P2 } -| G2 ; L2
-pm ; join pc p1 ; G1 ; S ; L1 |- e3 : T :> p3 { P3 } -| G3 ; L3
+pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1
+pm ; R ; join pc p1 ; G1 ; S ; L1 |- e2 : T :> p2 { P2 } -| G2 ; L2
+pm ; R ; join pc p1 ; G1 ; S ; L1 |- e3 : T :> p3 { P3 } -| G3 ; L3
 ----------------------------------  :: if_std
-pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; L1
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3
 
 
 %  Flow‑sensitive WHILE à la Hunt & Sands 2006 https://doi.org/10.1145/1111037.1111045
@@ -1115,8 +1204,8 @@ pm ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 {
 
 % Predicate-based while typing rule (when matching predicate found)
 match_guard e1 G S = k with LS
-pure ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexL L i
-pm; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexL L i[k |-> true using LS] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i
+pure ; R ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexL L i
+pm ; R ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexL L i[k |-> true using LS] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i
 indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
 indexG G 0 = G AND indexG G i+1 = JoinRestrict indexG G i indexedG G 2 i
 indexL L 0 = L AND indexL L i+1 = JoinL indexL L i indexedL L 2 i
@@ -1125,13 +1214,13 @@ indexP p n+1 = indexP p n
 indexG G n+1 = indexG G n
 indexL L n+1 = indexL L n
 ---------------------------------------------------------------------------  :: while_depoison
-pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n[k |-> false using LS]
+pm ; R ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n[k |-> false using LS]
 
 % Standard while typing rule (when no matching predicate found) (used as a
 % fallback when match_guard fails) 
 % Unlike while_depoison, `e1` is not pure and can modify G and L
-pm ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexedL L 1 i
-pm ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexedL L 1 i |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i
+pm ; R ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexedL L 1 i
+pm ; R ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexedL L 1 i |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i
 indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
 indexG G 0 = G AND indexG G i+1 = JoinRestrict indexG G i indexedG G 2 i
 indexL L 0 = L AND indexL L i+1 = JoinL indexL L i indexedL L 2 i
@@ -1140,5 +1229,5 @@ indexP p n+1 = indexP p n
 indexG G n+1 = indexG G n
 indexL L n+1 = indexL L n
 ---------------------------------------------------------------------------  :: while_std
-pm ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n
+pm ; R ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n
 
