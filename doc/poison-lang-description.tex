@@ -1100,6 +1100,26 @@ For a single run, we say that $R$ is \emph{consistent} with the critical inputs 
 \end{itemize}
 \end{definition}
 
+\subsubsection{Regime-Aware Typing}
+
+The type system is parametrised by the guard regime $R$ to enable precise reasoning about fault robustness. The typing judgment has the form:
+\[
+  \text{pm} ; R ; \text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
+\]
+where $R$ is the immutable regime parameter threaded unchanged through all typing premises. During normal program execution, the regime is empty ($R = \emptyset$), allowing the type system to conservatively account for all possible runtime guard outcomes. During fault-robustness reasoning, $R$ is instantiated with the fixed guard regime for the two-run scenario, enabling the type system to exploit regime-deterministic guard outcomes.
+
+\paragraph{Regime-aware conditional typing.}
+When typechecking a conditional \texttt{if e1 then e2 else e3} where \texttt{match\_guard} recognises a guard tag $k$, the type system consults $R(k)$:
+\begin{itemize}
+  \item \textbf{$R(k) = \text{true}$} (regime-deterministic true): The conditional is treated as effectively selecting the then-branch. The result type and output environments come from the then-branch, and the program counter is not poisoned by the condition. This reflects that in the fault-robustness scenario, both runs are guaranteed to take the then-branch.
+  \item \textbf{$R(k) = \text{false}$} (regime-deterministic false): Symmetrically, the conditional effectively selects the else-branch, with the result type and environments from the else-branch.
+  \item \textbf{$R(k) = \text{none}$} (regime-unknown): The regime does not fix the guard outcome, so both branches may be taken in different fault-robustness runs. The type system conservatively poisons the branch program counter with the condition's poison (as in standard conditionals) and joins the branch results. This ensures that any writes in divergent branches are typed poisoned, preventing violations of the fault-robustness agreement invariant.
+\end{itemize}
+
+For standard conditionals (where \texttt{match\_guard} fails), the regime is not consulted: both branches are typechecked with a program counter poisoned by the condition, and results are joined.
+
+This regime-aware approach resolves the mismatch between flow-insensitive typing and regime-specific fault-robustness reasoning, enabling the type system to be both validation-friendly (when $R$ is empty) and proof-friendly (when $R$ is instantiated).
+
 \begin{definition}[Fault Robustness Property]
 A program $e$ satisfies fault robustness with respect to the critical-input specification $S$, an observable specification $\text{obs}$, and an abstract predicate satisfaction relation, if for each guard regime $R$ and any two runs with initial states $(\mu_1,\rho_1,\theta_1)$ and $(\mu_2,\rho_2,\theta_2)$:
 \begin{itemize}
@@ -1250,18 +1270,18 @@ capture the type system's mechanisms without specifying predicate meanings.
 These axioms apply to all tags, including those in the initial specification and
 those generated during execution (e.g., by \texttt{frand} or extern functions).
 
-\paragraph{Syntactic Matching Axiom.} If a condition
+\paragraph{Bidirectional matching axiom (\texttt{match\_iff}).} If a condition
 syntactically matches a tagged predicate via \texttt{matchGuard} and evaluates
-to true under the current runtime state (omitting the evaluation mode and final
+to boolean value $b$ under the current runtime state (omitting the evaluation mode and final
 configuration for brevity), then the predicate is satisfied for the
 \emph{specific} runtime value denoted by the matched owner (either a variable
-\(x\) or a dereference \(!x\)):
+\(x\) or a dereference \(!x\)) if and only if $b = \text{true}$:
 
 \[
 \begin{aligned}
-&\forall\, \text{condition},\, \Gamma,\, \sigma,\, k,\, \text{deps},\, \mu,\, \rho,\, \theta,\, v.\\
+&\forall\, \text{condition},\, \Gamma,\, \sigma,\, k,\, \text{deps},\, \mu,\, \rho,\, \theta,\, v,\, b.\\
 &\quad \texttt{matchGuard}(\text{condition}, \Gamma, \sigma) = \texttt{ok}(k, \text{deps})\\
-&\quad \land\; \langle \text{condition}, \mu, \rho \rangle \Downarrow \texttt{true}\\
+&\quad \land\; \langle \text{condition}, \mu, \rho \rangle \Downarrow b\\
 &\quad \land\;
 \Big(
   \exists x.\; \sigma(x)\text{ has tag }k \land \rho(x)=v
@@ -1272,14 +1292,14 @@ configuration for brevity), then the predicate is satisfied for the
 &\qquad\qquad\qquad
     \land\; \theta(l)=a \land \mu(a)=n \land v=\texttt{num}(n)
 \Big)\\
-&\quad \implies \text{PredSat}\; k\; \mu\; v\,.
+&\quad \implies (b = \text{true} \iff \text{PredSat}\; k\; \mu\; v)\,.
 \end{aligned}
 \]
 
-This axiom connects the type system's syntactic predicate matching (which
+This bidirectional axiom connects the type system's syntactic predicate matching (which
 returns a tag and dependencies) with the abstract satisfaction relation, while
-keeping the semantics \emph{value--sensitive}: the conclusion is about the
-concrete runtime value observed at check time.
+keeping the semantics \emph{value--sensitive}: the conclusion relates the
+concrete boolean result to predicate satisfaction for the runtime value observed at check time. The bidirectional form is essential for regime-aware typing: when a regime fixes $R(k) = \text{false}$, the type system must conclude that the predicate is \emph{not} satisfied, which requires both directions of the equivalence.
 
 \emph{Captured vs. check--time environments.} The predicate closure stores a captured typing environment \(r\), which \texttt{matchGuard} uses on the \emph{syntactic} side of the comparison. The proof layer never evaluates predicate bodies with captured runtime values. Instead, the captured lexical context is encoded in the tag \(k\). The runtime triple \((\mu, \rho, \theta)\) used above is the \emph{check--time} state: it evaluates the condition and determines the concrete value \(v\) (either \(\rho(x)\) or the memory value at the concrete address \(\theta(l)\) for the realised logical location \(l\) selected by the reference). This separation avoids the environment--capture problem whilst preserving value sensitivity.
 
