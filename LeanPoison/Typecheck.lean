@@ -113,9 +113,23 @@ def invalidateTagDeps (env : TagEnv) (ls : LocSet) : TagEnv :=
   env.filter (fun _ tv =>
     not <| tv.deps.any ls.contains)
 
+/-- Regime: bounded partial mapping from guard tags to their truth values.
+    The `bound` field ensures regimes only interpret input/spec tags (tags < bound),
+    excluding fresh internal tags introduced during typing (tags ≥ bound). -/
+structure Regime where
+  bound : Tag
+  lookup? : Tag → Option Bool
+
+/-- Empty regime: all tags return none (regime-agnostic typing) -/
+def emptyRegime : Regime := {
+  bound := 0
+  lookup? := fun _ => none
+}
+
 /-- Type checking context containing all environments -/
 structure TypeContext where
   pc : Poison            -- Poison context
+  regime : Regime        -- R (regime for FR reasoning)
   memEnv : MemoryTypeEnv -- Γ
   varEnv : VarTypeEnv    -- σ
   tagEnv : TagEnv        -- ℒ
@@ -1521,89 +1535,129 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
 termination_by fuel
 
 
-/-- Rule: if_depoison and if_std (Ott rules: if_depoison when matchGuard succeeds, if_std when it fails)
--- First tries predicate-based de-poisoning, falls back to standard conditional typing
+/-- Rule: if_depoison_* and if_std_* (Ott rules with regime awareness)
+-- When matchGuard succeeds: consult R(k) for regime-aware typing
+-- When matchGuard fails: use standard conservative typing
+-- Implements all if_* rules from poison-lang.ott faithfully
 --/
 def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-    -- Step 1: Try matchGuard first (before typechecking e1)
+    -- Step 1: Try matchGuard first
     match matchGuard e1 ctx.memEnv ctx.varEnv with
     | .ok (k, deps) => do
-      -- Predicate-based case (if_depoison)
+      -- Predicate-based case: consult R(k)
 
-      -- Step 2: Typecheck e1 in pure mode
+      -- Typecheck e1 in pure mode (all if_depoison_* rules require this)
       let pureCtx := { ctx with pureCtx := true }
       let result1 ← typecheckExpr pureCtx e1 fuel
-      let ⟨etyp1, p', _  ⟩ := result1.qualType
+      let ⟨etyp1, p1, _⟩ := result1.qualType
       if etyp1 != ETyp.bool then throw "Condition of if must be bool"
 
-      -- Step 3: Use original memEnv and tagEnv for both branches, with tagEnv modified by guard
+      -- Setup branch contexts with tag knowledge
       let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
       let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
 
-      let result2 ← typecheckExpr ctxTrue e2 fuel
-      let ⟨etyp2, p'', _  ⟩ := result2.qualType
-      --dbg_trace s!" Poison val for {e2} is {p''}"
+      -- Consult R(k) for branch selection
+      match ctx.regime.lookup? k with
+      | some true => do
+        -- R(k) = true: then-branch effective (if_depoison_*_R_true rules)
+        let result2 ← typecheckExpr ctxTrue e2 fuel
+        let ⟨etyp2, p2, _pred2⟩ := result2.qualType
 
-      -- Ensure disjoint fresh supplies across branches by advancing the false-branch supply
-      let ctxFalse' := { ctxFalse with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
-      let result3 ← typecheckExpr ctxFalse' e3 fuel
-      let ⟨etyp3, p''', _  ⟩ := result3.qualType
-      --dbg_trace s!" Poison val for {e3} is {p'''}"
+        -- Still typecheck else-branch for well-formedness
+        let ctxFalse' := { ctxFalse with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+        let result3 ← typecheckExpr ctxFalse' e3 fuel
+        let ⟨etyp3, _p3, _pred3⟩ := result3.qualType
 
-      -- Use signature-based equality for type checking (not structural equality of closures)
-      -- Structural equality compares closures including their bodies, which is too strict for type checking
-      -- We only need to check that function signatures match (parameter type, return type)
-      if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
+        -- Check type compatibility
+        if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
 
-      -- Join the branch types, merging closures for arrow types
-      let joinedEtyp := joinETyps etyp2 etyp3 p'' p'''
-      let poison := joinPoison ctx.pc (joinPoison p'' p''')
-     -- dbg_trace s!" Result Poison val for if is {poison}"
-      let qt : QTyp := ⟨joinedEtyp, poison, Predicate.noPred⟩
-      let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
-      let nextLoc' := max result2.nextLoc' result3.nextLoc'
-      let nextTag' := max result2.nextTag' result3.nextTag'
-      -- Step 4: Return original tag environment (k becomes unknown after conditional)
-      return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx.tagEnv, nextLoc' := nextLoc', nextTag' := nextTag' }
+        -- Then-branch effective: use result2's outputs (type, memEnv, tagEnv)
+        let poison := joinPoison ctx.pc p2
+        let qt : QTyp := ⟨etyp2, poison, Predicate.noPred⟩
+        return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+                 nextLoc' := max result2.nextLoc' result3.nextLoc', nextTag' := max result2.nextTag' result3.nextTag' }
+
+      | some false => do
+        -- R(k) = false: else-branch effective (if_depoison_*_R_false rules)
+        let result2 ← typecheckExpr ctxTrue e2 fuel
+        let ⟨etyp2, _p2, _pred2⟩ := result2.qualType
+
+        let ctxFalse' := { ctxFalse with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+        let result3 ← typecheckExpr ctxFalse' e3 fuel
+        let ⟨etyp3, p3, _pred3⟩ := result3.qualType
+
+        -- Check type compatibility
+        if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
+
+        -- Else-branch effective: use result3's outputs (type, memEnv, tagEnv)
+        let poison := joinPoison ctx.pc p3
+        let qt : QTyp := ⟨etyp3, poison, Predicate.noPred⟩
+        return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv',
+                 nextLoc' := max result2.nextLoc' result3.nextLoc', nextTag' := max result2.nextTag' result3.nextTag' }
+
+      | none => do
+        -- R(k) = none: conservative fallback (if_depoison_*_R_unknown rules)
+        -- Branch pc is poisoned by guard poison
+        let branchPc := joinPoison ctx.pc p1
+        let ctxTruePoisoned := { ctxTrue with pc := branchPc }
+        let ctxFalsePoisoned := { ctxFalse with pc := branchPc }
+
+        let result2 ← typecheckExpr ctxTruePoisoned e2 fuel
+        let ⟨etyp2, p2, _pred2⟩ := result2.qualType
+
+        let ctxFalse' := { ctxFalsePoisoned with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+        let result3 ← typecheckExpr ctxFalse' e3 fuel
+        let ⟨etyp3, p3, _pred3⟩ := result3.qualType
+
+        -- Check type compatibility
+        if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
+
+        -- Join both branches (conservative)
+        let joinedEtyp := joinETyps etyp2 etyp3 p2 p3
+        let poison := joinPoison ctx.pc (joinPoison p1 (joinPoison p2 p3))
+        let qt : QTyp := ⟨joinedEtyp, poison, Predicate.noPred⟩
+        let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
+        let tagEnv' := joinTagEnvs result2.tagEnv' result3.tagEnv'
+        let nextLoc' := max result2.nextLoc' result3.nextLoc'
+        let nextTag' := max result2.nextTag' result3.nextTag'
+        return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := nextLoc', nextTag' := nextTag' }
 
     | .error _ => do
-      -- Standard case (if_std) - no matching predicate found
-      -- Typecheck e1 first
+      -- Standard case (if_std_*) - no matching predicate found
       let result1 ← typecheckExpr ctx e1 fuel
-      let ⟨etyp1, p', _  ⟩ := result1.qualType
+      let ⟨etyp1, p1, _⟩ := result1.qualType
       if etyp1 != ETyp.bool then throw "Condition of if must be bool"
 
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                             nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
 
-      --dbg_trace "No tag found"
-      let branchPc := joinPoison ctx.pc p'
-      --dbg_trace s!" Branch pc for Typecheck if with condition {e1} is {branchPc}"
+      -- Branch pc is poisoned by guard poison
+      let branchPc := joinPoison ctx.pc p1
       let ctx'' := { ctx' with pc := branchPc }
 
       let result2 ← typecheckExpr ctx'' e2 fuel
-      let ⟨etyp2, p'', _  ⟩ := result2.qualType
+      let ⟨etyp2, p2, _⟩ := result2.qualType
 
-      -- Ensure disjoint fresh supplies across branches by advancing the second branch supply
+      -- Ensure disjoint fresh supplies across branches
       let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
       let result3 ← typecheckExpr ctxForE3 e3 fuel
-      let ⟨etyp3, p''', _  ⟩ := result3.qualType
+      let ⟨etyp3, p3, _⟩ := result3.qualType
 
-      -- Use signature-based equality for type checking (not structural equality of closures)
-      -- Structural equality compares closures including their bodies, which is too strict for type checking
-      -- We only need to check that function signatures match (parameter type, return type)
-      if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
+      -- Check type compatibility
+      if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type"
 
-      -- Join the branch types, merging closures for arrow types
-      let joinedEtyp := joinETyps etyp2 etyp3 p'' p'''
-      let poison := joinPoison ctx.pc (joinPoison p' (joinPoison p'' p'''))
+      -- Join both branches (if_std_* rules)
+      let joinedEtyp := joinETyps etyp2 etyp3 p2 p3
+      let poison := joinPoison ctx.pc (joinPoison p1 (joinPoison p2 p3))
       let qt : QTyp := ⟨joinedEtyp, poison, Predicate.noPred⟩
       let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
+      let tagEnv' := joinTagEnvs result2.tagEnv' result3.tagEnv'
       let nextLoc' := max result2.nextLoc' result3.nextLoc'
       let nextTag' := max result2.nextTag' result3.nextTag'
-      return { qualType := qt, memEnv' := memEnv', tagEnv' := ctx'.tagEnv, nextLoc' := nextLoc', nextTag' := nextTag' }
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := nextLoc', nextTag' := nextTag' }
 termination_by fuel
 
 
@@ -1662,6 +1716,7 @@ def typecheck (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResul
 def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
   let initialCtx : TypeContext := {
     pc := false  -- clean
+    regime := emptyRegime
     memEnv := {}
     varEnv := ({} : VarTypeEnv)
     tagEnv := {}
@@ -1675,6 +1730,7 @@ def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
 def typecheckExprVerbose (e : Expr) : TypecheckM TypeResult := do
   let initialCtx : TypeContext := {
     pc := false  -- clean
+    regime := emptyRegime
     memEnv := {}
     varEnv := ({} : VarTypeEnv)
     tagEnv := {}

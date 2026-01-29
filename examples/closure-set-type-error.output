@@ -1,4 +1,4 @@
 Evaluating file: examples/closure-set-type-error.poison (verbose mode)
 
-Type checking error:  Branches of if must have same type (etyp2: ETyp.arrow Typ.int Typ.int false [FnTClosure.regular "x" <expr>], etyp3: ETyp.arrow Typ.int Typ.bool false [FnTClosure.regular "x" <expr>])
+Type checking error:  Branches of if must have same type
 

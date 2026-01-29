@@ -64,13 +64,6 @@ def inputKeysUnique (vars : VarTypeEnv) : Prop :=
   vars.keys.Nodup
   -- `vars` is an ExtTreeMap, so keys are already unique
 
--- Regime: bounded partial mapping from guard tags to their truth values.
--- The `bound` field ensures regimes only interpret input/spec tags (tags < bound),
--- excluding fresh internal tags introduced during typing (tags ≥ bound).
-structure Regime where
-  bound : Tag
-  lookup? : Tag → Option Bool
-
 -- Regime boundedness: tags at or above the bound are outside the regime's domain.
 -- Intended reading: `R` models fault injection choices for *input tags only*.
 def regimeBounded (R : Regime) : Prop :=
