@@ -1164,7 +1164,7 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
     return { qualType := qt, memEnv' := memEnv', tagEnv' := result'.tagEnv', nextLoc' := result'.nextLoc', nextTag' := result'.nextTag' }
 termination_by fuel
 
-/-- Rule: assign (Ott rule: assign_singleton, assign_locset) -/
+/-- Rule: assign (Ott rules: assign_singleton, assign_locset, assign_singleton_poisoned_ref, assign_locset_poisoned_ref) -/
 def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
@@ -1186,14 +1186,16 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
         throw s!"Type error: can only assign int values, but got {repr etyp2}"
 
       let storedPoison := joinPoison ctx.pc (joinPoison p1 p2)
+      -- If reference is poisoned, erase predicates (store no_pred), mirroring deref_poisoned
+      let storedPred := if p1 then Predicate.noPred else pred2
       let memEnv' := match ExtTreeSet.toList ls with
         | [l] =>
-          -- Singleton: strong update (assign_singleton rule)
-          let storedQt : QTyp := ⟨ETyp.int, storedPoison, pred2⟩
+          -- Singleton: strong update (assign_singleton / assign_singleton_poisoned_ref)
+          let storedQt : QTyp := ⟨ETyp.int, storedPoison, storedPred⟩
           updateMemEnv result2.memEnv' l storedQt
         | _ =>
-          -- Non-singleton: weak update (assign_locset rule)
-          updateLocsetWeak result2.memEnv' ls storedPoison pred2
+          -- Non-singleton: weak update (assign_locset / assign_locset_poisoned_ref)
+          updateLocsetWeak result2.memEnv' ls storedPoison storedPred
 
       let resultPoison := joinPoison ctx.pc p1
       let qt : QTyp := ⟨ETyp.unit, resultPoison, Predicate.noPred⟩

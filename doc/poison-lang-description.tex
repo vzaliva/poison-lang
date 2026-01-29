@@ -441,7 +441,11 @@ reference is poisoned and cannot be de-poisoned further via predicate-based
 de-poisoning. To implement this, there is a special typing rule
 \texttt{deref\_poisoned} for dereferencing a poisoned reference, which not only
 returns a poisoned result but also strips the predicate from its type so it can
-no longer be de-poisoned later.
+no longer be de-poisoned later. Symmetrically, assignment through a poisoned
+reference (rules \texttt{assign\_singleton\_poisoned\_ref} and
+\texttt{assign\_locset\_poisoned\_ref}) stores \texttt{no\_pred} rather than
+preserving the right-hand side's predicate, preventing untrusted writes from
+introducing guard tags that could spuriously make locations clean under a regime.
 
 \textbf{Example:}
 
@@ -541,7 +545,7 @@ applied, the result inherits this poison.
     \item \textbf{Conditionals}: Both branches get $\text{pc} \sqcup \text{poison}(\text{condition})$, but predicate-based rules can enable de-poisoning
     \item \textbf{Predicate conditionals}: When $\text{match\_guard}(e_1, \Gamma, \sigma) = k \text{ with } LS$ (returning a tag and a dependency locset), the guard is typed in pure mode, branches use $\mathcal{L}[k \mapsto \text{true using } LS]$ and $\mathcal{L}[k \mapsto \text{false using } LS]$, and guard poison does not flow to the branches
     \item \textbf{Variable access}: De-poisoning when guard evaluates to true, definite poisoning when false, standard propagation when guard unknown
-    \item \textbf{Assignment}: Operation reliability = $\text{pc} \sqcup \text{poison}(\text{ref})$, Data = $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{value})$, invalidates $\mathcal{L}$ entries whose dependency locsets intersect the written reference's locset; for non-singleton locsets, updates are weak (the stored poison/predicate is joined with the pre-existing cell information).
+    \item \textbf{Assignment}: Operation reliability = $\text{pc} \sqcup \text{poison}(\text{ref})$, Data = $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{value})$, invalidates $\mathcal{L}$ entries whose dependency locsets intersect the written reference's locset; for non-singleton locsets, updates are weak (the stored poison/predicate is joined with the pre-existing cell information). When the reference itself is poisoned, the stored predicate is \texttt{no\_pred} regardless of the value's predicate, mirroring \texttt{deref\_poisoned}.
     \item \textbf{Dereference}: For a clean reference, the result poison is $\text{pc} \sqcup \text{poison}(\text{data\_at\_LS})$ where $\text{data\_at\_LS}$ conservatively joins over all logical locations in the reference's locset and predicates are merged similarly; if the merged guard is known true/false in $\mathcal{L}$, the result is de-poisoned/poisoned accordingly.
     \item \textbf{Let bindings}: The bound variable preserves the qualified type (including predicate) of the bound value; the overall result poison joins the current $\text{pc}$ with the body's poison.
     \item \textbf{Functions}: Abstraction captures body and context and records
@@ -649,31 +653,64 @@ where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{
 \]
 
 \subsubsection*{Assignment:}
-The Ott specification distinguishes two assignment rules: a strong update for singleton
-location sets, and a conservative weak update for non-singleton location sets.
+The Ott specification provides four assignment rules, distinguishing both by location
+set cardinality and by reference poison status:
 
-\paragraph{Singleton (strong update).}
+\begin{itemize}
+    \item \textbf{Clean reference, singleton locset} (\texttt{assign\_singleton}): Strong update that preserves the right-hand side's predicate.
+    \item \textbf{Clean reference, non-singleton locset} (\texttt{assign\_locset}): Weak update that merges the right-hand side's predicate with existing cell predicates.
+    \item \textbf{Poisoned reference, singleton locset} (\texttt{assign\_singleton\_poisoned\_ref}): Strong update that stores \texttt{no\_pred}, erasing predicates.
+    \item \textbf{Poisoned reference, non-singleton locset} (\texttt{assign\_locset\_poisoned\_ref}): Weak update that stores \texttt{no\_pred}, preventing predicate propagation through untrusted references.
+\end{itemize}
+
+The poisoned-reference variants mirror \texttt{deref\_poisoned}: just as reading through
+a poisoned reference erases predicates to prevent later de-poisoning, writing through
+a poisoned reference erases predicates to prevent introducing guard tags that could
+spuriously make locations clean under a regime.
+
+\paragraph{Singleton, clean reference (strong update).}
 \[
 \frac{\begin{array}{c}
-\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ \{l\} \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ \{l\} \triangleright \text{clean} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
 \text{invalidate\_deps}(\mathcal{L}_2, \{l\}) = \mathcal{L}_3
 \end{array}}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup p_1 \{ \text{no\_pred} \} \dashv \Gamma_2[l \mapsto \text{int} \triangleright (\text{pc} \sqcup p_1 \sqcup p_2) \{ P_2 \}] \; ;\; \mathcal{L}_3}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_2[l \mapsto \text{int} \triangleright (\text{pc} \sqcup p_2) \{ P_2 \}] \; ;\; \mathcal{L}_3}
 \]
 
-\paragraph{Non-singleton (weak update).}
+\paragraph{Non-singleton, clean reference (weak update).}
 When the reference has a non-singleton location set, the update joins the stored poison and predicate
 with the existing heap-cell information for that set:
 \[
 \frac{\begin{array}{c}
-\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ LS \triangleright p_1 \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ LS \triangleright \text{clean} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
 \text{invalidate\_deps}(\mathcal{L}_2, LS) = \mathcal{L}_3 \\
 \text{JoinPoisons}(\Gamma_2, LS) = p_3 \qquad \text{MergePreds}(\Gamma_2, LS) = P_3 \qquad \text{JoinP}(P_2, P_3) = P_4
 \end{array}}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup p_1 \{ \text{no\_pred} \} \dashv \Gamma_2[LS \mapsto \text{int} \triangleright (p_3 \sqcup \text{pc} \sqcup p_1 \sqcup p_2) \{ P_4 \}] \; ;\; \mathcal{L}_3}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_2[LS \mapsto \text{int} \triangleright (p_3 \sqcup \text{pc} \sqcup p_2) \{ P_4 \}] \; ;\; \mathcal{L}_3}
 \]
+
+\paragraph{Singleton, poisoned reference (strong update with predicate erasure).}
+\[
+\frac{\begin{array}{c}
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ \{l\} \triangleright \text{poisoned} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
+\text{invalidate\_deps}(\mathcal{L}_2, \{l\}) = \mathcal{L}_3
+\end{array}}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma_2[l \mapsto \text{int} \triangleright \text{poisoned} \{ \text{no\_pred} \}] \; ;\; \mathcal{L}_3}
+\]
+
+\paragraph{Non-singleton, poisoned reference (weak update with predicate erasure).}
+\[
+\frac{\begin{array}{c}
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ LS \triangleright \text{poisoned} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
+\text{invalidate\_deps}(\mathcal{L}_2, LS) = \mathcal{L}_3 \qquad \text{JoinPoisons}(\Gamma_2, LS) = p_3
+\end{array}}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma_2[LS \mapsto \text{int} \triangleright \text{poisoned} \{ \text{no\_pred} \}] \; ;\; \mathcal{L}_3}
+\]
+
 Here $\Gamma[LS \mapsto Q]$ updates $\Gamma$ at every $l \in LS$.
 
 \subsubsection*{Dereference:}

@@ -649,30 +649,52 @@ pm ; R ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1
 ----------------------- :: ref
 pm ; R ; pc ; G ; S ; L |- ref e : ref int @ { l } :> pc { no_pred } -| G1[l |-> int :> join pc p { P }] ; L1
 
-% Assignment (singleton locset): strong update
-% The result (unit) is poisoned if the reference is poisoned. The stored value
-% is poisoned if the assignment is poisoned, or reference is poisoned, or the
-% value is poisoned. Predicate from e2 is preserved in the memory location.
+% Assignment (singleton locset): strong update through clean reference
+% The result (unit) is poisoned if the pc is poisoned. The stored value
+% is poisoned if the assignment is poisoned, or the value is poisoned.
+% Predicate from e2 is preserved in the memory location.
 % NOTE: Memory can only store integers (matching runtime semantics)
-pm ; R ; pc ; G ; S ; L |- e1 : ref int @ { l } :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e1 : ref int @ { l } :> clean { P1 } -| G1 ; L1
 pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 invalidate_deps L2 { l } = L3
 ----------------------- :: assign_singleton
-pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[l |-> int :> join pc join p1 p2 { P2 }] ; L3
+pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc clean { no_pred } -| G2[l |-> int :> join pc p2 { P2 }] ; L3
 
-% Assignment (non-singleton locset): weak update
+% Assignment (non-singleton locset): weak update through clean reference
 % Joins stored type with existing types via JoinPoisons and MergePreds.
 % This ensures soundness when the typechecker cannot determine which location
 % in the locset will be updated at runtime.
 % NOTE: Memory can only store integers (matching runtime semantics)
-pm ; R ; pc ; G ; S ; L |- e1 : ref int @ LS0 :> p1 { P1 } -| G1 ; L1
+pm ; R ; pc ; G ; S ; L |- e1 : ref int @ LS0 :> clean { P1 } -| G1 ; L1
 pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
 invalidate_deps L2 LS0 = L3
 JoinPoisons G2 LS0 = p3
 MergePreds G2 LS0 = P3
 JoinP P2 P3 = P4
 ----------------------- :: assign_locset
-pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc p1 { no_pred } -| G2[LS0 |-> int :> join p3 join pc join p1 p2 { P4 }] ; L3
+pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc clean { no_pred } -| G2[LS0 |-> int :> join p3 join pc p2 { P4 }] ; L3
+
+% Assignment (singleton locset): strong update through poisoned reference
+% Writing through a poisoned reference erases predicates (stores no_pred),
+% mirroring deref_poisoned behaviour. This prevents untrusted writes from
+% introducing guard tags that could spuriously make locations clean-under-R.
+% NOTE: Memory can only store integers (matching runtime semantics)
+pm ; R ; pc ; G ; S ; L |- e1 : ref int @ { l } :> poisoned { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+invalidate_deps L2 { l } = L3
+----------------------- :: assign_singleton_poisoned_ref
+pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc poisoned { no_pred } -| G2[l |-> int :> poisoned { no_pred }] ; L3
+
+% Assignment (non-singleton locset): weak update through poisoned reference
+% Writing through a poisoned reference erases predicates (stores no_pred).
+% Poison is still joined with existing cells, but predicates are not merged.
+% NOTE: Memory can only store integers (matching runtime semantics)
+pm ; R ; pc ; G ; S ; L |- e1 : ref int @ LS0 :> poisoned { P1 } -| G1 ; L1
+pm ; R ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2
+invalidate_deps L2 LS0 = L3
+JoinPoisons G2 LS0 = p3
+----------------------- :: assign_locset_poisoned_ref
+pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc poisoned { no_pred } -| G2[LS0 |-> int :> poisoned { no_pred }] ; L3
 
 % Dereference with logical location sets.
 % A poisoned reference yields a poisoned result (predicate erased).
