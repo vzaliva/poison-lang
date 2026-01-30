@@ -1,0 +1,22 @@
+-- lp55xx_read example with shared guard tag between return value and status
+let status = extern val : (ref int :> clean {}) in
+let eng = extern val : (ref int :> clean {}) in
+let ENG_STATUS_MASK = extern val : (int :> clean {}) in
+let NOT_READY = extern val : (int :> clean {}) in
+let READY = extern val : (int :> clean {}) in
+
+let lp55xx_read =
+  extern fn r : (ref int) -> ( (int :> poisoned { 100, x => (x >= 0) }) ) ,
+    effects: { !r :> (int :> poisoned { 100 }) }
+in
+
+let ret = lp55xx_read status in
+if ret >= 0 then
+  (status := !status & ENG_STATUS_MASK;
+   if !status != ENG_STATUS_MASK then
+     eng := NOT_READY
+   else
+     eng := READY;
+   ret)
+else
+  ret
