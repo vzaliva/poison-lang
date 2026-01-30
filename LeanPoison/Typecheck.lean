@@ -755,7 +755,9 @@ def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
           throw s!"Type error: extern val can only use ref int, but got ref {repr t} (memory stores only integers)"
         let (l, ctx') := freshTLoc ctx
         let (innerQt, ctx'') ← surfaceSpecToQTyp t false SyntaxPredicate.noPred varEnv ctx'
-        return (ETyp.ref innerQt.etyp (LocSet.singleton l), ctx'')
+        let memEnv' := updateMemEnv ctx''.memEnv l innerQt
+        let ctx''' := { ctx'' with memEnv := memEnv' }
+        return (ETyp.ref innerQt.etyp (LocSet.singleton l), ctx''')
     | Typ.arrow _ _ => throw "Arrow types not expected in extern specs" : TypecheckM (ETyp × TypeContext))
 
   let pred' ← attachVarEnvToPredicate pred varEnv
@@ -809,7 +811,7 @@ def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : S
   let (qt, ctx') ← surfaceSpecToQTyp typ poison pred ctx.varEnv ctx
 
   -- Return the qualified type
-  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
+  return { qualType := qt, memEnv' := ctx'.memEnv, tagEnv' := ctx.tagEnv,
            nextLoc' := ctx'.nextLoc, nextTag' := ctx.nextTag }
 
 def parseReturnType (retType : ExternReturn):Typ :=
