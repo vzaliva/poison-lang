@@ -77,6 +77,10 @@ run_single_test() {
   local exit_code
   local diff_match
   local pass
+  local directive_line
+  local directive
+  local -a extra_args
+  local -a directive_args
 
   base_name=$(basename "$poison_file" .poison)
   result_file="$TEMP_DIR/$base_name.result"
@@ -98,7 +102,21 @@ run_single_test() {
     return 0
   fi
 
-  lake exe poison-interpreter --verbose "$poison_file" > "$result_file" 2>&1
+  extra_args=()
+  directive_line=$(head -n1 "$poison_file")
+  if [[ "$directive_line" == --!\ * ]]; then
+    directive="${directive_line#--!}"
+    directive="${directive# }"
+    if [[ -n "$directive" ]]; then
+      mapfile -t directive_args < <(printf '%s\n' "$directive" | xargs -n1)
+      if [[ ${#directive_args[@]} -gt 0 && "${directive_args[0]}" == "poison-interpreter" ]]; then
+        directive_args=("${directive_args[@]:1}")
+      fi
+      extra_args=("${directive_args[@]}")
+    fi
+  fi
+
+  lake exe poison-interpreter --verbose "${extra_args[@]}" "$poison_file" > "$result_file" 2>&1
   exit_code=$?
 
   if diff -q "$result_file" "$expected" >/dev/null; then

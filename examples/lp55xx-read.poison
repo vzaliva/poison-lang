@@ -1,3 +1,4 @@
+--! poison-interpreter --regime "100=true"
 -- lp55xx_read example with shared guard tag between return value and status
 let status = extern val : (ref int :> clean {}) in
 let eng = extern val : (ref int :> clean {}) in
@@ -6,7 +7,7 @@ let NOT_READY = extern val : (int :> clean {}) in
 let READY = extern val : (int :> clean {}) in
 
 let lp55xx_read =
-  extern fn r : (ref int) -> ( (int :> poisoned { 100, x => (x >= 0) }) ) ,
+  extern fn r : (ref int) -> ( (int :> poisoned { 100, ret => (ret >= 0) }) ) ,
     effects: { !r :> (int :> poisoned { 100 }) }
 in
 

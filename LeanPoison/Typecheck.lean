@@ -1715,10 +1715,10 @@ def typecheck (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResul
 
 
 /-- Type check an expression in an initial empty context -/
-def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
+def typecheckExprSimple (e : Expr) (regime : Regime := emptyRegime) : TypecheckM QTyp := do
   let initialCtx : TypeContext := {
     pc := false  -- clean
-    regime := emptyRegime
+    regime := regime
     memEnv := {}
     varEnv := ({} : VarTypeEnv)
     tagEnv := {}
@@ -1729,10 +1729,10 @@ def typecheckExprSimple (e : Expr) : TypecheckM QTyp := do
   let result ← typecheck initialCtx e defaultFuel
   return result.qualType
 
-def typecheckExprVerbose (e : Expr) : TypecheckM TypeResult := do
+def typecheckExprVerbose (e : Expr) (regime : Regime := emptyRegime) : TypecheckM TypeResult := do
   let initialCtx : TypeContext := {
     pc := false  -- clean
-    regime := emptyRegime
+    regime := regime
     memEnv := {}
     varEnv := ({} : VarTypeEnv)
     tagEnv := {}
@@ -1744,12 +1744,12 @@ def typecheckExprVerbose (e : Expr) : TypecheckM TypeResult := do
 
 
 /-- Type check a program (expression) and return a human-readable result -/
-def typecheckProgram (e : Expr) (verbose : Bool) : String :=
+def typecheckProgram (e : Expr) (verbose : Bool) (regime : Regime := emptyRegime) : String :=
   if verbose then
-    match typecheckExprVerbose e with
+    match typecheckExprVerbose e regime with
     | .ok result => s!"Type: {repr result.qualType} , MemoryTypeEnv : {repr result.memEnv'} , tagEnv : {repr result.tagEnv'} , nextLoc : {repr result.nextLoc'} "
     | .error msg => s!"Type error: {msg}"
   else
-    match typecheckExprSimple e   with
+    match typecheckExprSimple e regime with
     | .ok qualType  => s!"Type: {repr qualType}"
     | .error msg => s!"Type error: {msg}"
