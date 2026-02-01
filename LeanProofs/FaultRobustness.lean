@@ -91,6 +91,13 @@ def wfRegime (R : Regime) (s : InputSpec) : Prop :=
   (∀ k, k ∈ tags → (R.lookup? k).isSome) ∧
   (∀ k, (R.lookup? k).isSome → k ∈ tags)
 
+-- Weaker regime well-formedness that holds after invalidation
+-- (drops the "R defined for all spec tags" conjunct)
+def wfRegimePartial (R : Regime) (s : InputSpec) : Prop :=
+  let tags := inputSpecTags s
+  (∀ k, k ∈ tags → k < R.bound) ∧
+  (∀ k, (R.lookup? k).isSome → k ∈ tags)
+
 inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
   | noPred (retType : QTyp)
       (hpred : retType.pred = Predicate.noPred) :
@@ -361,6 +368,18 @@ inductive varsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (ρ : VarEnv
 def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
   List.Forall (locsRegime predSat R μ θ) s.locs.toList ∧
   List.Forall (varsRegime predSat R μ ρ) s.vars.toList
+
+-- Context-indexed runtime-regime consistency: constrains only tags the regime interprets
+def consistentWithRegime (predSat : PredSat) (R : Regime) (ctx : TypeContext)
+    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
+  (∀ l qt k, ctx.memEnv.lookup l = some qt →
+     qtypGuardTag qt = some k →
+     R.lookup? k ≠ none →
+     locsRegime predSat R μ θ (l, qt)) ∧
+  (∀ x qt k, ctx.varEnv.lookup x = some qt →
+     qtypGuardTag qt = some k →
+     R.lookup? k ≠ none →
+     varsRegime predSat R μ ρ (x, qt))
 
 -- A qualified type is considered clean under regime R if it is clean outright
 -- or if its guard tag is true under R (de-poisoned).

@@ -463,7 +463,7 @@ def wfTypeResult (res : TypeResult) : Prop :=
 
 /-- Post-context derived from typing result. -/
 def ctxAfter (ctx : TypeContext) (res : TypeResult) : TypeContext :=
-  { ctx with memEnv := res.memEnv', tagEnv := res.tagEnv', nextLoc := res.nextLoc', nextTag := res.nextTag' }
+  { ctx with memEnv := res.memEnv', tagEnv := res.tagEnv', nextLoc := res.nextLoc', nextTag := res.nextTag', regime := res.regime' }
 
 /-- wfTypeResult implies wfTypeContext for the post-context. -/
 lemma wfTypeContext_of_wfTypeResult (ctx : TypeContext) (res : TypeResult) :
@@ -542,7 +542,7 @@ lemma typecheckPrintInt_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (
                   have h_res :
                       { qualType := { etyp := ETyp.unit, poison := joinPoison ctx.pc poison, pred := Predicate.noPred },
                         memEnv' := result1.memEnv', tagEnv' := result1.tagEnv', nextLoc' := result1.nextLoc',
-                        nextTag' := result1.nextTag' } = res := by
+                        nextTag' := result1.nextTag', regime' := result1.regime' } = res := by
                     cases h_typecheck'
                     rfl
                   refine ⟨result1, h_tc1, ?_⟩
@@ -600,7 +600,7 @@ lemma typecheckPrintString_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat
                   have h_res :
                       { qualType := { etyp := ETyp.unit, poison := joinPoison ctx.pc poison, pred := Predicate.noPred },
                         memEnv' := result1.memEnv', tagEnv' := result1.tagEnv', nextLoc' := result1.nextLoc',
-                        nextTag' := result1.nextTag' } = res := by
+                        nextTag' := result1.nextTag', regime' := result1.regime' } = res := by
                     cases h_typecheck'
                     rfl
                   refine ⟨result1, h_tc1, ?_⟩
@@ -1600,7 +1600,7 @@ lemma typecheckRand_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res 
                   have h_res :
                       { qualType := { etyp := ETyp.int, poison := joinPoison ctx.pc poison, pred := Predicate.noPred },
                         memEnv' := result1.memEnv', tagEnv' := result1.tagEnv', nextLoc' := result1.nextLoc',
-                        nextTag' := result1.nextTag' } = res := by
+                        nextTag' := result1.nextTag', regime' := result1.regime' } = res := by
                     cases htc'
                     rfl
                   refine ⟨result1, ?_, ?_⟩
@@ -1670,7 +1670,7 @@ lemma typecheckFrand_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res
                                 pred := Predicate.guardClosure result1.nextTag' (generateFreshVar ctx "limit" 0 fuel') predBody
                                   (VarTypeEnv.toCaptured ctx.varEnv) },
                             memEnv' := result1.memEnv', tagEnv' := result1.tagEnv', nextLoc' := result1.nextLoc',
-                            nextTag' := result1.nextTag' + 1 } = res := by
+                            nextTag' := result1.nextTag' + 1, regime' := result1.regime' } = res := by
                         cases htc'
                         rfl
                       refine ⟨result1, ?_, ?_⟩
@@ -2096,11 +2096,11 @@ end typecheck_structure_lemmas
 -- Typechecker monotonicity lemmas
 -- ================================================================
 
--- Regime immutability: The regime parameter R is never modified during typechecking.
--- The output context (ctxAfter) preserves the input context's regime.
--- This is trivially true because ctxAfter uses { ctx with ... } which doesn't modify regime.
-lemma regime_immutability (ctx : TypeContext) (res : TypeResult) :
-    (ctxAfter ctx res).regime = ctx.regime := rfl
+-- Regime monotonicity: Typechecking can only drop regime entries (never change values or add new entries)
+-- Replaces regime_immutability which becomes false once typing invalidates R
+lemma regime_monotone (ctx : TypeContext) (res : TypeResult) :
+    Regime.monotoneStep ctx.regime (ctxAfter ctx res).regime := by
+  sorry
 
 section typecheck_nextTag_mono_proof
 
@@ -2375,9 +2375,9 @@ private lemma joinTypeResults_nextTag_eq_max
   intro hjoin
   -- Helper: the join fold computes the max of nextTag' across the list.
   let joinStep :
-      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) →
-        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) :=
-    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) (result : TypeResult) =>
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
       match result.qualType with
       | ⟨resEtyp, resPoison, resPred⟩ =>
           Except.ok
@@ -2386,13 +2386,14 @@ private lemma joinTypeResults_nextTag_eq_max
               joinPoison acc.2.2.1 resPoison,
               joinPredicates acc.2.2.2.1 resPred,
               joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
-              max acc.2.2.2.2.2.1 result.nextLoc',
-              max acc.2.2.2.2.2.2 result.nextTag')
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
   have h_fold_nextTag :
       ∀ (rs : List TypeResult)
-        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag),
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
         List.foldlM joinStep acc rs = Except.ok acc' →
-        acc'.2.2.2.2.2.2 = List.foldl max acc.2.2.2.2.2.2 (rs.map TypeResult.nextTag') := by
+        acc'.2.2.2.2.2.2.2 = List.foldl max acc.2.2.2.2.2.2.2 (rs.map TypeResult.nextTag') := by
     intro rs acc acc' h
     induction rs generalizing acc with
     | nil =>
@@ -2431,7 +2432,7 @@ private lemma joinTypeResults_nextTag_eq_max
           simp at hjoin
           cases hfold :
               List.foldlM joinStep
-                (etyp, r.memEnv', poison, pred, r.tagEnv', r.nextLoc', r.nextTag') rs with
+                (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') rs with
           | error err =>
               erw [hfold] at hjoin
               simp at hjoin
@@ -2485,9 +2486,9 @@ private lemma joinTypeResults_preserves_arrow_structure
           simp at hjoin
           -- Extract the join fold
           let joinStep :
-              (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) →
-                TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) :=
-            fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) (result : TypeResult) =>
+              (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+                TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+            fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
               match result.qualType with
               | ⟨resEtyp, resPoison, resPred⟩ =>
                   Except.ok
@@ -2496,13 +2497,14 @@ private lemma joinTypeResults_preserves_arrow_structure
                       joinPoison acc.2.2.1 resPoison,
                       joinPredicates acc.2.2.2.1 resPred,
                       joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
-                      max acc.2.2.2.2.2.1 result.nextLoc',
-                      max acc.2.2.2.2.2.2 result.nextTag')
+                      joinRegimes acc.2.2.2.2.2.1 result.regime',
+                      max acc.2.2.2.2.2.2.1 result.nextLoc',
+                      max acc.2.2.2.2.2.2.2 result.nextTag')
           -- Helper: the join fold preserves arrow structure
           -- Generalized to work with any p' tcls' that have signature st1 st2
           have h_fold_arrow :
               ∀ (rs : List TypeResult)
-                (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag)
+                (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag)
                 (p_acc : Poison) (tcls_acc : List FnTClosure),
                 acc.1 = ETyp.arrow st1 st2 p_acc tcls_acc →
                 (∀ r' ∈ rs, beqETypSignature (ETyp.arrow st1 st2 p_acc tcls_acc) r'.qualType.etyp = true) →
@@ -2576,39 +2578,11 @@ private lemma joinTypeResults_preserves_arrow_structure
                     | Except.error err =>
                         simp [h_step_val] at h_fold
                     | Except.ok acc_new_val =>
-                        simp [h_step_val] at h_fold
-                        -- h_step_val shows: joinStep acc x = Except.ok acc_new_val
-                        -- Simplify joinStep to extract tuple
-                        simp [joinStep, h_x_qt] at h_step_val
-                        -- Now h_step_val is: Except.ok (tuple) = Except.ok acc_new_val
-                        -- Extract tuple equality from Except.ok equality
-                        have h_step_eq : (joinETyps acc.1 resEtyp acc.2.2.1 resPoison, joinMemEnvs acc.2.1 x.memEnv', joinPoison acc.2.2.1 resPoison,
-                            joinPredicates acc.2.2.2.1 resPred, joinTagEnvs acc.2.2.2.2.1 x.tagEnv', max acc.2.2.2.2.2.1 x.nextLoc',
-                            max acc.2.2.2.2.2.2 x.nextTag') = acc_new_val := by
-                          sorry -- TODO: Extract from Except.ok equality
-                        -- Extract first component
-                        have h_acc_new_1 : acc_new_val.1 = joinETyps acc.1 resEtyp acc.2.2.1 resPoison := by
-                          sorry -- TODO: Extract from tuple equality h_step_eq
-                        have h_acc_new_arrow_joined : acc_new_val.1 = ETyp.arrow st1 st2 p_joined tcls_joined := by
-                          rw [h_acc_new_1, h_acc_arrow, h_join_eq]
-                        -- Apply IH on tail with acc_new_val
-                        have h_compat_tail : ∀ r' ∈ xs, beqETypSignature (ETyp.arrow st1 st2 p_joined tcls_joined) r'.qualType.etyp = true := by
-                          intro r' h_mem
-                          -- Original compatibility with arrow st1 st2 p_acc tcls_acc
-                          have h_orig : beqETypSignature (ETyp.arrow st1 st2 p_acc tcls_acc) r'.qualType.etyp = true := by
-                            have h_mem' : r' ∈ x :: xs := by simp [h_mem]
-                            exact h_compat r' h_mem'
-                          -- beqETypSignature only checks st1 == st1' && st2 == st2', so compatibility is preserved
-                          sorry -- TODO: Show compatibility preserved when changing p_acc/tcls_acc to p_joined/tcls_joined
-                        -- Apply generalized IH with p_joined and tcls_joined
-                        -- The IH signature is: ∀ acc, acc.1 = arrow st1 st2 p_acc tcls_acc → ...
-                        -- We need to use p_joined and tcls_joined as p_acc and tcls_acc
-                        -- But the IH is quantified over p_acc and tcls_acc, so we can instantiate it
-                        sorry -- TODO: Apply IH with p_joined and tcls_joined - need to fix IH signature
+                        sorry -- TODO: Complex arrow type joining - needs updating for regime threading
           -- Apply the helper
           cases hfold :
               List.foldlM joinStep
-                (etyp, r.memEnv', poison, pred, r.tagEnv', r.nextLoc', r.nextTag') rs with
+                (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') rs with
           | error err =>
               erw [hfold] at hjoin
               simp at hjoin
@@ -2629,7 +2603,7 @@ private lemma joinTypeResults_preserves_arrow_structure
                 -- Extract from hcheck that beqETypSignature etyp r'.qualType.etyp = true
                 -- This requires unfolding the fold in hcheck
                 sorry -- TODO: Extract from hcheck - need to show foldlM check implies compatibility
-              have h_fold_arrow_result := h_fold_arrow rs (etyp, r.memEnv', poison, pred, r.tagEnv', r.nextLoc', r.nextTag') a p tcls h_etyp_eq h_compat_all hfold
+              have h_fold_arrow_result := h_fold_arrow rs (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') a p tcls h_etyp_eq h_compat_all hfold
               obtain ⟨p', tcls', h_a1_arrow⟩ := h_fold_arrow_result
               -- Now show res.qualType.etyp = arrow st1 st2 p' tcls'
               use p', tcls'
@@ -2671,10 +2645,10 @@ private lemma joinTypeResults_pred_noPred_for_function_types
           simp at hjoin
           -- The join fold must have succeeded too.
           let joinStep :
-              (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) →
+              (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
                 TypeResult →
-                  Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag) :=
-            fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Loc × Tag)
+                  Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+            fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag)
               (result : TypeResult) =>
               match result.qualType with
               | ⟨resEtyp, resPoison, resPred⟩ =>
@@ -2684,11 +2658,12 @@ private lemma joinTypeResults_pred_noPred_for_function_types
                       joinPoison acc.2.2.1 resPoison,
                       joinPredicates acc.2.2.2.1 resPred,
                       joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
-                      max acc.2.2.2.2.2.1 result.nextLoc',
-                      max acc.2.2.2.2.2.2 result.nextTag')
+                      joinRegimes acc.2.2.2.2.2.1 result.regime',
+                      max acc.2.2.2.2.2.2.1 result.nextLoc',
+                      max acc.2.2.2.2.2.2.2 result.nextTag')
           cases hfold :
               List.foldlM joinStep
-                (etyp, r.memEnv', poison, pred, r.tagEnv', r.nextLoc', r.nextTag') rs with
+                (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') rs with
           | error err =>
               erw [hfold] at hjoin
               simp at hjoin
@@ -3027,10 +3002,10 @@ private lemma runWhileFixpoint_nextTag_mono
   (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
     typecheck ctx' e m = .ok res' →
     ctx'.nextTag ≤ res'.nextTag') :
-  runWhileFixpoint ctx e1 e2 fuel pureGuard guardOpt = .ok (pc, mem, tag, nextLoc, nextTag) →
+  runWhileFixpoint ctx e1 e2 fuel pureGuard guardOpt = .ok (pc, mem, tag, regime, nextLoc, nextTag) →
   ctx.nextTag ≤ nextTag := by
   intro hfix
-  induction fuel generalizing ctx pureGuard guardOpt pc mem tag nextLoc nextTag with
+  induction fuel generalizing ctx pureGuard guardOpt pc mem tag regime nextLoc nextTag with
   | zero => simp [runWhileFixpoint] at hfix
   | succ fuel' ih =>
     simp [runWhileFixpoint, bind, Except.bind] at hfix
@@ -3086,17 +3061,18 @@ private lemma runWhileFixpoint_nextTag_mono
             set restrictedBodyEnv : MemoryTypeEnv := restrictMemEnv bodyRes.memEnv' ctx.memEnv with hrestrictedBodyEnv
             set newMemEnv : MemoryTypeEnv := joinMemEnvs ctx.memEnv restrictedBodyEnv with hnewMemEnv
             set newTagEnv : TagEnv := joinTagEnvs ctx.tagEnv bodyRes.tagEnv' with hnewTagEnv
-            by_cases hfixpoint : newMemEnv == ctx.memEnv && newPc == ctx.pc && newTagEnv == ctx.tagEnv
+            set newRegime : Regime := joinRegimes ctx.regime bodyRes.regime' with hnewRegime
+            by_cases hfixpoint : newMemEnv == ctx.memEnv && newPc == ctx.pc && newTagEnv == ctx.tagEnv && newRegime.bound == ctx.regime.bound
             · simp at hfixpoint
               simp [if_pos hfixpoint] at hfix
               simp [pure, Except.pure] at hfix
-              rcases hfix with ⟨_, _, _, _, hfix⟩
+              rcases hfix with ⟨_, _, _, _, _, hfix⟩
               subst nextTag
               apply hctx_body_nextTag
             · simp [pure, Except.pure] at hfix
               rw [if_neg (by simpa using hfixpoint)] at hfix
               set nextCtx : TypeContext :=
-                { ctx with pc := newPc, memEnv := newMemEnv, tagEnv := newTagEnv, nextLoc := bodyRes.nextLoc', nextTag := bodyRes.nextTag' } with hnextCtx
+                { ctx with pc := newPc, memEnv := newMemEnv, tagEnv := newTagEnv, regime := newRegime, nextLoc := bodyRes.nextLoc', nextTag := bodyRes.nextTag' } with hnextCtx
               have hnextCtx_nextTag : nextCtx.nextTag = bodyRes.nextTag' := by
                 simp [hnextCtx]
               have ih' : nextCtx.nextTag ≤ nextTag := by
@@ -3132,7 +3108,7 @@ private lemma typecheckWhile_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fu
               | error err =>
                   simp [hfix] at htc
               | ok r =>
-                  rcases r with ⟨finalPc, finalMemEnv, finalTagEnv, finalNextLoc, finalNextTag⟩
+                  rcases r with ⟨finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag⟩
                   simp [hfix] at htc
                   cases htc
                   dsimp
@@ -3149,7 +3125,7 @@ private lemma typecheckWhile_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fu
               cases hfix : runWhileFixpoint ctx e1 e2 fuel'' false none with
               | error err => simp [hfix] at htc
               | ok r =>
-                  rcases r with ⟨finalPc, finalMemEnv, finalTagEnv, finalNextLoc, finalNextTag⟩
+                  rcases r with ⟨finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag⟩
                   simp [hfix] at htc
                   cases htc
                   dsimp

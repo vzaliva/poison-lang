@@ -43,6 +43,93 @@ def tagEnvConsistentWithRegime (tagEnv : TagEnv) (regime : Regime) : Prop :=
 def regimeConsistentWithCtx (ctx : TypeContext) (R : Regime) : Prop :=
   tagEnvConsistentWithRegime ctx.tagEnv R ∧ R.bound ≤ ctx.nextTag
 
+-- Bridge lemma: connect spec-indexed consistency to context-indexed consistency
+lemma consistentRegimeSpec_implies_consistentWithRegime
+    (predSat : PredSat) (R : Regime) (s : InputSpec) (ctx : TypeContext)
+    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+    (h_spec : consistentRegimeSpec predSat R s μ ρ θ)
+    (h_match : ctxMatchesInputSpec s ctx)
+    (h_wf : wfRegime R s)
+    (h_bounded : regimeBounded R) :
+    consistentWithRegime predSat R ctx μ ρ θ := by
+  simp only [consistentWithRegime]
+  constructor
+  -- Locations part: for entries in ctx.memEnv with guard tag k defined in R
+  · intro l qt k hlookup hguard hRdef
+    -- Case split on the predicate shape
+    cases hpred : qt.pred with
+    | noPred =>
+        -- If noPred, then qtypGuardTag qt = none, contradiction
+        simp [qtypGuardTag, hpred] at hguard
+    | guardOnly k' =>
+        -- For guardOnly, we can directly use locsRegime.guardOnly_ok
+        exact locsRegime.guardOnly_ok (l, qt) k' hpred
+    | guardClosure k' arg_name pred_body var_env =>
+        -- For guardClosure, we need to find the entry in the spec
+        have hk_eq : k' = k := by simp [qtypGuardTag, hpred] at hguard; exact hguard
+        -- By wfRegime, since R.lookup? k is defined, k ∈ inputSpecTags s
+        have hR_isSome : (R.lookup? k).isSome := by
+          cases hdef : R.lookup? k with
+          | none => exact absurd hdef hRdef
+          | some b => simp
+        have hk_in_tags : k ∈ inputSpecTags s := h_wf.2.2 k hR_isSome
+        -- inputSpecTags s = locTags ++ varTags
+        simp only [inputSpecTags] at hk_in_tags
+        cases hk_mem : List.mem_append.mp hk_in_tags with
+        | inl hk_in_locs =>
+            -- k comes from a location entry in the spec
+            simp only [List.mem_filterMap] at hk_in_locs
+            obtain ⟨⟨l', qt'⟩, hl'_in_spec, hguard'⟩ := hk_in_locs
+            -- The spec entry (l', qt') has guard tag k
+            -- By consistentRegimeSpec, locsRegime holds for (l', qt')
+            have h_locs_forall := h_spec.1
+            have h_loc_regime : locsRegime predSat R μ θ (l', qt') :=
+              List.forall_iff_forall_mem.mp h_locs_forall (l', qt') hl'_in_spec
+            -- We have locsRegime for (l', qt') from the spec, need it for (l, qt) in ctx
+            -- This requires showing (l, qt) = (l', qt'), which holds if:
+            -- 1. Guard tags uniquely identify entries (no two entries share a tag), AND
+            -- 2. Entries in ctx with spec tags come from the spec
+            -- These are reasonable system invariants but not provided as premises
+            -- TODO: Add premise about spec-ctx correspondence for guarded entries
+            sorry
+        | inr hk_in_vars =>
+            -- k comes from a variable entry, but we're proving for a location
+            -- This case requires guard tags to be disjoint between locs and vars
+            -- TODO: Add premise about loc/var tag disjointness
+            sorry
+  -- Variables part: similar structure
+  · intro x qt k hlookup hguard hRdef
+    cases hpred : qt.pred with
+    | noPred =>
+        simp [qtypGuardTag, hpred] at hguard
+    | guardOnly k' =>
+        -- For guardOnly, we can directly use varsRegime.guardOnly_ok
+        exact varsRegime.guardOnly_ok (x, qt) k' hpred
+    | guardClosure k' arg_name pred_body var_env =>
+        have hk_eq : k' = k := by simp [qtypGuardTag, hpred] at hguard; exact hguard
+        have hR_isSome : (R.lookup? k).isSome := by
+          cases hdef : R.lookup? k with
+          | none => exact absurd hdef hRdef
+          | some b => simp
+        have hk_in_tags : k ∈ inputSpecTags s := h_wf.2.2 k hR_isSome
+        simp only [inputSpecTags] at hk_in_tags
+        cases hk_mem : List.mem_append.mp hk_in_tags with
+        | inl hk_in_locs =>
+            -- k comes from a location entry, but we're proving for a variable
+            -- This case requires guard tags to be disjoint between locs and vars
+            -- TODO: Add premise about loc/var tag disjointness
+            sorry
+        | inr hk_in_vars =>
+            simp only [List.mem_filterMap] at hk_in_vars
+            obtain ⟨⟨x', qt'⟩, hx'_in_spec, hguard'⟩ := hk_in_vars
+            have h_vars_forall := h_spec.2
+            have h_var_regime : varsRegime predSat R μ ρ (x', qt') :=
+              List.forall_iff_forall_mem.mp h_vars_forall (x', qt') hx'_in_spec
+            -- We have varsRegime for (x', qt') from the spec, need it for (x, qt) in ctx
+            -- Same reasoning as locations case - requires uniqueness of guard tags
+            -- TODO: Add premise about spec-ctx correspondence for guarded entries
+            sorry
+
 -- Regime boundedness (imported from `FaultRobustness.lean`): tags at or above the initial
 -- `nextTag` supply are outside the regime's domain (model faulty inputs only).
 -- We restate it locally for convenience in this file.
@@ -56,6 +143,7 @@ def StepFR
   (e : Expr)
   (res : TypeResult)
   (predSat : PredSat) : Prop :=
+    PredSatLaws predSat →
     ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
       (cf₀ cf₁ : Config) (o₀ o₁ : Value),
       wfRealizationMap θ₀ → wfRealizationMap θ₁ →
@@ -63,6 +151,8 @@ def StepFR
       runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
       regimeConsistentWithCtx ctx ctx.regime →
       regimeBounded ctx.regime →
+      consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀ →
+      consistentWithRegime predSat ctx.regime ctx μ₁ ρ₁ θ₁ →
       agreeOnClean predSat ctx.regime ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
       ∀ (a₀ a₁ : Address) (pm : Bool),
         wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } →  -- initial config₀ well-formed
@@ -77,6 +167,8 @@ def StepFR
           runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧  -- preservation
           runtimeInstantiatesCtx (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧  -- preservation
           regimeConsistentWithCtx (ctxAfter ctx res) ctx.regime ∧  -- regime consistency preserved
+          consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
+          consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
           agreeOnClean predSat ctx.regime (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
           resultAgreesIfClean predSat ctx.regime cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
 
@@ -881,6 +973,11 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
   have hstep' := hstep' fuel res htc
   intro cf₁ cf₂ o₁ o₂ hR hRbound hregBounded hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
   set R := ctx.regime with hRdef
+  -- Use bridge lemma to derive consistentWithRegime from consistentRegimeSpec
+  have hcwr₁ : consistentWithRegime predSat R ctx μ₁ ρ₁ θ₁ := by
+    sorry -- TODO: Apply bridge lemma consistentRegimeSpec_implies_consistentWithRegime
+  have hcwr₂ : consistentWithRegime predSat R ctx μ₂ ρ₂ θ₂ := by
+    sorry -- TODO: Apply bridge lemma consistentRegimeSpec_implies_consistentWithRegime
   have hagree_clean :
       agreeOnClean predSat R ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ :=
     agreeOnCriticalAndTrusted_implies_agreeOnClean
@@ -897,10 +994,10 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
     -- At the top level, `R.bound = ctx.nextTag`.
     exact Nat.le_of_eq hR
   have hstepFR :=
-    hstep' μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂
-      hθ₁ hθ₂ _hwf hric₁ hric₂ hreg hregBounded hagree_clean
+    hstep' _hps μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂
+      hθ₁ hθ₂ _hwf hric₁ hric₂ hreg hregBounded hcwr₁ hcwr₂ hagree_clean
       a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
-  rcases hstepFR with ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, _hwf', _hwfcf₁', _hwfcf₂', _hric₁', _hric₂', _hreg', hagree_clean', hret_agree⟩
+  rcases hstepFR with ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, _hwf', _hwfcf₁', _hwfcf₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', hret_agree⟩
   refine ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, ?_⟩
   -- Bridge from post-state agreement to observables.
   simp [observablesEqual]
@@ -1782,6 +1879,15 @@ private lemma typecheckVar_preserves_nextTag (ctx : TypeContext) (x : Name) (res
   · repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
   · simp at h_typecheck
 
+private lemma typecheckVar_preserves_regime (ctx : TypeContext) (x : Name) (res : TypeResult) :
+  typecheckVar ctx x = .ok res →
+  res.regime' = ctx.regime := by
+  intro h_typecheck
+  simp [typecheckVar] at h_typecheck
+  split at h_typecheck
+  · repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
+  · simp at h_typecheck
+
 private lemma typecheckExpr_op_succ (ctx : TypeContext) (e1 e2 : Expr) (op : Op) (fuel : Nat) :
   typecheckExpr ctx (Expr.op e1 op e2) (fuel + 1) = typecheckOp ctx e1 e2 fuel op := by
   simp [typecheckExpr]
@@ -1860,7 +1966,7 @@ private lemma stepFR_literal
   (hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls)
   (hctxAfter : ctxAfter ctx res = ctx) :
   StepFR mode ctx e res predSat := by
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for literals
   have ⟨hcf₀, ho₀⟩ := terminatesTo_literal_inv' mode e v hval
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -1871,8 +1977,9 @@ private lemma stepFR_literal
   -- ∃ θ₀' θ₁', wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
   --   wfTypeContext (ctxAfter ctx res) ∧ wfConfig cf₀ ∧ wfConfig cf₁ ∧
   --   runtimeInstantiatesCtx ... ∧ runtimeInstantiatesCtx ... ∧
-  --   regimeConsistentWithCtx ... ∧ agreeOnClean ... ∧ resultAgreesIfClean ...
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_⟩
+  --   regimeConsistentWithCtx ... ∧ consistentWithRegime ... ∧ consistentWithRegime ... ∧
+  --   agreeOnClean ... ∧ resultAgreesIfClean ...
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup
@@ -1889,6 +1996,10 @@ private lemma stepFR_literal
     simpa [hctxAfter] using hric₁
   · -- regimeConsistentWithCtx (literal doesn't change context)
     simpa [hctxAfter] using hreg
+  · -- consistentWithRegime for run 0
+    simpa [hctxAfter] using hcwr₀
+  · -- consistentWithRegime for run 1
+    simpa [hctxAfter] using hcwr₁
   · -- agreeOnClean for updated context (literal doesn't change context)
     simpa [hctxAfter] using hagree
   · -- resultAgreesIfClean
@@ -1903,7 +2014,7 @@ private lemma stepFR_var
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
   StepFR mode ctxᵢ (Expr.var name) res predSat := by
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv ctxᵢ.regime := hreg.1
   -- Use inversion lemma to extract config and value
   have hinv₀ := terminatesTo_var_inv' mode name
@@ -1932,7 +2043,9 @@ private lemma stepFR_var
     typecheckVar_preserves_nextLoc ctxᵢ name res htc'
   have hnextTag : res.nextTag' = ctxᵢ.nextTag :=
     typecheckVar_preserves_nextTag ctxᵢ name res htc'
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  have hregime' : res.regime' = ctxᵢ.regime :=
+    typecheckVar_preserves_regime ctxᵢ name res htc'
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup
@@ -1953,6 +2066,10 @@ private lemma stepFR_var
     simpa [ctxAfter, hmem] using hric₁
   · -- regimeConsistentWithCtx (var doesn't change tagEnv or nextTag)
     simpa [ctxAfter, regimeConsistentWithCtx, htag, hnextTag] using hreg
+  · -- consistentWithRegime for run 0 (var doesn't change context)
+    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using hcwr₀
+  · -- consistentWithRegime for run 1 (var doesn't change context)
+    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using hcwr₁
   · -- agreeOnClean for ctxAfter: typecheckVar doesn't change the context
     simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag] using hagree
   · -- Result agreement for clean outputs (requires predicate/tagEnv analysis).
@@ -2489,7 +2606,7 @@ private lemma stepFR_op
     e1 ctxᵢ res1 htc1'
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' res2 htc2'
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for binary op
   have hstruct₀ := terminatesTo_op_inv' e1 op e2
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -2499,9 +2616,9 @@ private lemma stepFR_op
   rcases hstruct₁ with ⟨cfg₁1, v₁1, v₁2, ht₁_e1, ht₁_e2, h_evalop₁, hpm₁1, hpm₁2⟩
   -- Apply IH for e1
   have hstep_e1 :=
-    hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
-  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
+    hIH1 hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, hres_agree1⟩
   -- Prepare for IH2: need wf maps and agreement for ctx'
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
@@ -2517,6 +2634,13 @@ private lemma stepFR_op
   have hagree_clean1' :
       agreeOnClean predSat ctxᵢ.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctx', ctxAfter] using hagree_clean1
+  -- Transfer consistentWithRegime to ctx' for IH2
+  -- Note: hcwr₀1/hcwr₁1 are about (ctxAfter ctxᵢ res1).regime = res1.regime', but ctx'.regime = ctxᵢ.regime
+  -- Need to prove that for binary ops, regime doesn't change: res1.regime' = ctxᵢ.regime
+  have hcwr₀1' : consistentWithRegime predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+    sorry -- TODO: Need res1.regime' = ctxᵢ.regime (typecheckOp preserves regime)
+  have hcwr₁1' : consistentWithRegime predSat ctx'.regime ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    sorry -- TODO: Need res1.regime' = ctxᵢ.regime (typecheckOp preserves regime)
   -- Apply IH for e2
   -- Note: cfg₀1.pureMode = cfg₁1.pureMode = pm (from inversion lemmas)
   have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
@@ -2535,17 +2659,18 @@ private lemma stepFR_op
     rw [← hcfg₁1_eq]
     exact hwfcf₁1
   have hstep_e2 :=
-    hIH2 cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
+    hIH2 hpredlaws cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ v₀2 v₁2
-      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR1' hRbound hagree_clean1'
+      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR1' hRbound hcwr₀1' hcwr₁1' hagree_clean1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
       ht₀_e2 ht₁_e2'
-  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree_clean2, hres_agree2⟩
   -- Combine extension maps
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctx' res2 := by
-    simp [ctxAfter, ctx', h_mem, h_tag, h_loc, h_ntag]
+    -- Note: Need res.regime' = res2.regime' which isn't extracted from typecheckOp_structure
+    sorry -- TODO: Add h_regime to typecheckOp_structure
   have hagree_clean :
       agreeOnClean predSat ctxᵢ.regime (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
@@ -2557,9 +2682,13 @@ private lemma stepFR_op
     simpa [hctxAfter] using hric₁2
   have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) ctxᵢ.regime := by
     have : ctx'.regime = ctxᵢ.regime := rfl
-    have : (ctxAfter ctx' res2).regime = ctx'.regime := regime_immutability ctx' res2
+    have hrmono := regime_monotone ctx' res2
     simpa [hctxAfter, this] using htagR2
-  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hagree_clean, ?_⟩
+  have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
+    simpa [hctxAfter] using hcwr₀2
+  have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
+    simpa [hctxAfter] using hcwr₁2
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_⟩
   · simpa [hctxAfter] using hwf2
   intro hclean
   have hpoison_res : res.qualType.poison = false := by
@@ -2623,7 +2752,7 @@ private lemma stepFR_op
 -- World-free version of stepFRW_unaryop
 private lemma stepFR_unaryop
   (ctxᵢ : TypeContext) (predSat : PredSat)
-  (op : UnaryOp) (e : Expr) (fuel' : Nat) (res : TypeResult)
+  (e : Expr) (op : UnaryOp) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ (Expr.unaryop op e) res predSat := by
@@ -2636,7 +2765,7 @@ private lemma stepFR_unaryop
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ res1 htc1'
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for unaryop
   have hstruct₀ := terminatesTo_unaryop_inv' .ioFree op e
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ rfl ht₀
@@ -2646,11 +2775,12 @@ private lemma stepFR_unaryop
   rcases hstruct₁ with ⟨cfg₁', v₁', ht₁_e, h_evalop₁, hmem₁, hvar₁, _hnext₁, _hpure₁⟩
   -- Apply IH for sub-expression
   have hstep_e :=
-    hIH μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' v₀' v₁'
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
-  rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', hreg', hagree_clean_e, hres_agree_e⟩
+    hIH hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' v₀' v₁'
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
+  rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', hreg', hcwr₀', hcwr₁', hagree_clean_e, hres_agree_e⟩
+  -- Note: Need res.regime' = res1.regime' for this equality
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
-    simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag]
+    sorry -- TODO: Add h_regime to typecheckUnaryOp_structure
   have hagree_clean :
       agreeOnClean predSat ctxᵢ.regime (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
@@ -2661,10 +2791,14 @@ private lemma stepFR_unaryop
     simpa [hctxAfter, hmem₁, hvar₁] using hric₁'
   have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) ctxᵢ.regime := by
     simpa [hctxAfter] using hreg'
+  have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
+    simpa [hctxAfter, hmem₀, hvar₀] using hcwr₀'
+  have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
+    simpa [hctxAfter, hmem₁, hvar₁] using hcwr₁'
   -- Derive wfConfig for final configs using wfConfig_preserved
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.unaryop op e) _ cf₀ o₀ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved .ioFree (Expr.unaryop op e) _ cf₁ o₁ ht₁ hwfcfg₁).1
-  refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hagree_clean, ?_⟩
+  refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_⟩
   · simpa [hctxAfter] using hwf'
   intro hclean
   have hpoison_res : res.qualType.poison = false := by
@@ -2737,7 +2871,7 @@ private lemma stepFR_newRef
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ res1 htc1'
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for newRef
   have hstruct₀ := terminatesTo_newRef_inv' .ioFree e
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ rfl ht₀
@@ -2747,9 +2881,9 @@ private lemma stepFR_newRef
   rcases hstruct₁ with ⟨cfg₁', n₁, ht₁_e, ho₁, hmem₁, hnext₁, hvar₁, hpm₁⟩
   -- Apply IH for e
   have hstep_e :=
-    hIH μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
-  rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean_e, hres_agree_e⟩
+    hIH hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
+  rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean_e, hres_agree_e⟩
   -- Fresh logical location l = res1.nextLoc' is not realized after evaluating e
   have h_fresh₀ : θ₀1.lookup l = none := by
     have hge : l ≥ (ctxAfter ctxᵢ res1).nextLoc := by simp [ctxAfter, hl]
@@ -2943,7 +3077,13 @@ private lemma stepFR_newRef
   -- Derive wfConfig for final configs
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.newRef e) _ cf₀ o₀ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved .ioFree (Expr.newRef e) _ cf₁ o₁ ht₁ hwfcfg₁).1
-  refine ⟨θ₀', θ₁', ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hagree_clean, ?_⟩
+  -- consistentWithRegime for extended realization maps
+  -- Fresh location l gets a fresh address, regime doesn't constrain it (tag for l comes from res1, not in regime)
+  have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
+    sorry -- TODO: Prove consistentWithRegime preserved for newRef (fresh loc outside regime)
+  have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
+    sorry -- TODO: Prove consistentWithRegime preserved for newRef (fresh loc outside regime)
+  refine ⟨θ₀', θ₁', ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hcwr₀_final, hcwr₁_final, hagree_clean, ?_⟩
   · -- wfExtendsMap θ₀ θ₀'
     exact wfExtendsMap_trans hθext₀1 hθext₀'
   · -- wfExtendsMap θ₁ θ₁'
@@ -2986,7 +3126,7 @@ private lemma stepFR_seq
     e1 ctxᵢ res1 htc1'
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' res htc2'
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for seq
   have hstruct₀ := terminatesTo_seq_inv' e1 e2
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -2996,9 +3136,9 @@ private lemma stepFR_seq
   rcases hstruct₁ with ⟨cfg₁1, v₁1, ht₁_e1, ht₁_e2, hpm₁1, hpm₁2⟩
   -- Apply IH for e1
   have hstep_e1 :=
-    hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
-  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
+    hIH1 hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, hres_agree1⟩
   -- Prepare for IH2
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
@@ -3010,12 +3150,14 @@ private lemma stepFR_seq
   have hric₁1' : runtimeInstantiatesCtx ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [hctx', ctxAfter] using hric₁1
   have htagR1' : regimeConsistentWithCtx ctx' ctx'.regime := by
-    have : ctx'.regime = ctxᵢ.regime := by simp [hctx', updateCtxFromResult]
-    simpa [hctx', ctxAfter, this] using htagR1
+    sorry -- TODO: Update for regime threading
+  have hcwr₀1' : consistentWithRegime predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+    sorry -- TODO: Prove consistentWithRegime for intermediate context
+  have hcwr₁1' : consistentWithRegime predSat ctx'.regime ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    sorry -- TODO: Prove consistentWithRegime for intermediate context
   have hagree_clean1' :
       agreeOnClean predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    have : ctx'.regime = ctxᵢ.regime := by simp [hctx', updateCtxFromResult]
-    simpa [hctx', ctxAfter, this] using hagree_clean1
+    sorry -- TODO: Update for regime threading
   -- Handle pureMode for IH2
   have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
   have hcfg₁1_eq : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
@@ -3027,33 +3169,39 @@ private lemma stepFR_seq
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
     rw [← hcfg₁1_eq]; exact hwfcf₁1
   -- Apply IH for e2
-  have hregime_eq : ctx'.regime = ctxᵢ.regime := by simp [hctx', updateCtxFromResult]
+  -- Note: ctx'.regime = res1.regime' which may differ from ctxᵢ.regime
+  -- For now, we need regime monotonicity to relate them
+  have hregime_eq : ctx'.regime = ctxᵢ.regime := by
+    simp only [hctx', updateCtxFromResult]
+    sorry -- TODO: Requires regime monotonicity - res1.regime' = ctxᵢ.regime
   have hRbound' : regimeBounded ctx'.regime := by simpa [hregime_eq] using hRbound
   have hstep_e2 :=
-    hIH2 cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
+    hIH2 hpredlaws cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ o₀ o₁
-      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR1' hRbound' hagree_clean1'
+      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR1' hRbound' hcwr₀1' hcwr₁1' hagree_clean1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
       ht₀_e2 ht₁_e2'
-  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree_clean2, hres_agree2⟩
   -- Combine extension maps
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctx' res := by
-    simp [ctxAfter, hctx', updateCtxFromResult]
+    simp only [ctxAfter, hctx', updateCtxFromResult]
   have hagree_clean :
       agreeOnClean predSat ctxᵢ.regime (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
-    have : ctx'.regime = ctxᵢ.regime := by simp [hctx', updateCtxFromResult]
-    simpa [hctxAfter, this] using hagree_clean2
+    simpa [hctxAfter, hregime_eq] using hagree_clean2
   have hric₀_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     simpa [hctxAfter] using hric₀2
   have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
     simpa [hctxAfter] using hric₁2
   have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) ctxᵢ.regime := by
-    have : (ctxAfter ctx' res).regime = ctx'.regime := regime_immutability ctx' res
-    simpa [hctxAfter, hregime_eq, this] using htagR2
-  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hagree_clean, ?_⟩
+    sorry -- TODO: Update for regime monotonicity
+  have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
+    sorry -- TODO: Prove consistentWithRegime preservation
+  have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
+    sorry -- TODO: Prove consistentWithRegime preservation
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_⟩
   · simpa [hctxAfter] using hwf2
   -- Since res is directly the result of e2, hres_agree2 gives us the result directly
   simpa [hregime_eq] using hres_agree2
@@ -3080,7 +3228,7 @@ private lemma stepFR_vlet
     e1 ctxᵢ res1 htc1'
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' res2 htc2'
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for vlet
   have hstruct₀ := terminatesTo_vlet_inv' vname e1 e2
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -3093,9 +3241,9 @@ private lemma stepFR_vlet
   let cfg₁2 : Config := { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 }
   -- Apply IH for e1
   have hstep_e1 :=
-    hIH1 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
-  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hagree_clean1, hres_agree1⟩
+    hIH1 hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, hres_agree1⟩
   -- Prepare for IH2
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
@@ -3276,15 +3424,21 @@ private lemma stepFR_vlet
       simp [cfg₁2, hpm_eq]
     rw [← hcfg_eq]; exact hwfcfg₁2
   -- Apply IH for e2
-  have hregime_eq_vlet : ctx'.regime = ctxᵢ.regime := by simp [hctx']
+  have hregime_eq_vlet : ctx'.regime = ctxᵢ.regime := by
+    simp only [hctx']
   have hRbound_ctx' : regimeBounded ctx'.regime := by simpa [hregime_eq_vlet] using hRbound
+  -- Transfer consistentWithRegime from IH1 result to ctx'
+  have hcwr₀1' : consistentWithRegime predSat ctx'.regime ctx' cfg₀2.memory cfg₀2.varEnv θ₀1 := by
+    sorry -- TODO: Transfer from hcwr₀1 using regime equality and ctx' structure
+  have hcwr₁1' : consistentWithRegime predSat ctx'.regime ctx' cfg₁2.memory cfg₁2.varEnv θ₁1 := by
+    sorry -- TODO: Transfer from hcwr₁1 using regime equality and ctx' structure
   have hstep_e2 :=
-    hIH2 cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀1 θ₁1
+    hIH2 hpredlaws cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀1 θ₁1
       cfg₀3 cfg₁3 o₀ o₁
-      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' hreg_ctx' hRbound_ctx' hagree_clean1'
+      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' hreg_ctx' hRbound_ctx' hcwr₀1' hcwr₁1' hagree_clean1'
       cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode hwfcfg₀2 hwfcfg₁2'
       ht₀_e2 ht₁_e2'
-  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀3, hwfcf₁3, hric₀2, hric₁2, htagR2, hagree_clean2, hres_agree2⟩
+  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀3, hwfcf₁3, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree_clean2, hres_agree2⟩
   -- Combine map extensions
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
@@ -3413,7 +3567,12 @@ private lemma stepFR_vlet
     (wfConfig_preserved .ioFree (Expr.vlet vname e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ :=
     (wfConfig_preserved .ioFree (Expr.vlet vname e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
-  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hagree_clean, ?_⟩
+  -- Need consistentWithRegime for both runs
+  have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
+    sorry -- TODO: Derive from hcwr₀2 with context/regime equality
+  have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
+    sorry -- TODO: Derive from hcwr₁2 with context/regime equality
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hcwr₀_final, hcwr₁_final, hagree_clean, ?_⟩
   -- wfTypeContext
   · intro l hcontains
     simp only [ctxAfter, h_mem, h_loc] at hcontains ⊢
@@ -3463,6 +3622,7 @@ private lemma stepFR_fn
     tagEnv' := ctxᵢ.tagEnv
     nextLoc' := ctxᵢ.nextLoc
     nextTag' := ctxᵢ.nextTag
+    regime' := ctxᵢ.regime
   }
   have hres : res = res_expected := by
     have htc' := htcFn
@@ -3471,7 +3631,7 @@ private lemma stepFR_fn
     rfl
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma
   have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' mode x paramType body returnType
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -3481,7 +3641,7 @@ private lemma stepFR_fn
   have hcap :
       agreeCapturedEnv predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ :=
     agreeCapturedEnv_of_agreeOnClean predSat ctxᵢ.regime ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
   · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
@@ -3494,6 +3654,10 @@ private lemma stepFR_fn
     simpa [hctxAfter] using hric₁
   · -- regimeConsistentWithCtx (fn doesn't change context)
     simpa [hctxAfter] using hreg
+  · -- consistentWithRegime for run 0 (fn doesn't change context)
+    simpa [hctxAfter] using hcwr₀
+  · -- consistentWithRegime for run 1 (fn doesn't change context)
+    simpa [hctxAfter] using hcwr₁
   · -- agreeOnClean for updated context (fn doesn't change context)
     simpa [hctxAfter] using hagree
   · -- resultAgreesIfClean
@@ -3554,6 +3718,7 @@ private lemma stepFR_pfn
         tagEnv' := ctxᵢ.tagEnv
         nextLoc' := ctxᵢ.nextLoc
         nextTag' := ctxᵢ.nextTag
+        regime' := ctxᵢ.regime
       }
       have hres : res = res_expected := by
         have htc' := htcPfn
@@ -3562,7 +3727,7 @@ private lemma stepFR_pfn
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+      intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
       -- Use world-free inversion lemma
       have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -3574,7 +3739,7 @@ private lemma stepFR_pfn
         agreeCapturedEnv_of_agreeOnClean predSat ctxᵢ.regime ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
       have hto : Expr.toPExpr? body = some pbody :=
         Expr_toPExpr?_eq_some_of_toPExpr_ok body pbody hbody
-      refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_⟩
+      refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
       · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
@@ -3587,6 +3752,10 @@ private lemma stepFR_pfn
         simpa [hctxAfter] using hric₁
       · -- regimeConsistentWithCtx (pfn doesn't change context)
         simpa [hctxAfter] using hreg
+      · -- consistentWithRegime for run 0 (pfn doesn't change context)
+        simpa [hctxAfter] using hcwr₀
+      · -- consistentWithRegime for run 1 (pfn doesn't change context)
+        simpa [hctxAfter] using hcwr₁
       · -- agreeOnClean for updated context (pfn doesn't change context)
         simpa [hctxAfter] using hagree
       · -- resultAgreesIfClean
@@ -3668,7 +3837,7 @@ private lemma stepFR_deref
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ res1 htc1'
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Invert deref evaluation (world-free)
   have hstruct₀ := terminatesTo_deref_inv' e
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -3678,12 +3847,14 @@ private lemma stepFR_deref
   rcases hstruct₁ with ⟨cfg₁', a₁', n₁, ht₁_e, hlookup₁, hv₁, hmem₁, hvar₁, hnext₁, hpm₁, hpm_e₁⟩
   -- Apply IH for sub-expression
   have hstep_e :=
-    hIH μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.loc a₀') (Value.loc a₁')
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
-  rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hwf', hwfcfg₀', hwfcfg₁', hric₀', hric₁', hreg', hagree_clean_e, hres_agree_e⟩
+    hIH hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.loc a₀') (Value.loc a₁')
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
+  rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hwf', hwfcfg₀', hwfcfg₁', hric₀', hric₁', hreg', hcwr₀', hcwr₁', hagree_clean_e_and_res⟩
+  have hagree_clean_e := hagree_clean_e_and_res.1
+  have hres_agree_e := hagree_clean_e_and_res.2
   -- Post-context is unchanged by deref (only result type changes)
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
-    simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag]
+    sorry -- TODO: Prove context equality including regime'
   have hagree_clean :
       agreeOnClean predSat ctxᵢ.regime (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
@@ -3697,7 +3868,11 @@ private lemma stepFR_deref
   -- Derive wfConfig for final configs using wfConfig_preserved
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.deref e) _ cf₀ o₀ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved .ioFree (Expr.deref e) _ cf₁ o₁ ht₁ hwfcfg₁).1
-  refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hagree_clean, ?_⟩
+  have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
+    sorry -- TODO: Prove consistentWithRegime preservation
+  have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
+    sorry -- TODO: Prove consistentWithRegime preservation
+  refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_⟩
   · simpa [hctxAfter] using hwf'
   -- Result agreement when clean: deref reads from a clean location
   intro hclean
@@ -4259,7 +4434,7 @@ private lemma stepFR_app_closure_closure_arrow_remaining
     IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel')) e2 ctxᵢ res2 htc2
   have hIH1 :=
     IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel')) e1 (ctxAfter ctxᵢ res2) res1 htc1
-  intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hstruct₀ :=
     terminatesTo_app_inv' e1 e2
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -4276,15 +4451,17 @@ private lemma stepFR_app_closure_closure_arrow_remaining
         ⟨cfg₁2, v₁2, cfg₁1, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm₁1, ht₁_body, hcf₁_eq, hpm₁2, hpm₁_final⟩
       -- Step `e2` using IH.
       have hstep_e2 :=
-        hIH2 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀2 cfg₁2 v₀2 v₁2
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        hIH2 hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀2 cfg₁2 v₀2 v₁2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
       rcases hstep_e2 with
         ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcfg₀2, hwfcfg₁2,
-          hric₀2, hric₁2, htagR2, hagree2, harg_agree⟩
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, harg_agree⟩
       -- Step `e1` using IH in the post-`e2` context.
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       have hwf_ctxAfter : wfTypeContext (ctxAfter ctxᵢ res2) := hwf2
+      have htagR2' : regimeConsistentWithCtx (ctxAfter ctxᵢ res2) (ctxAfter ctxᵢ res2).regime := by
+        sorry -- TODO: Update for regime threading
       have hpm_cfg2 : cfg₀2.pureMode = cfg₁2.pureMode := by
         rw [hpm₀2, hpm₁2]
       have hcfg₁2_eq :
@@ -4302,15 +4479,20 @@ private lemma stepFR_app_closure_closure_arrow_remaining
           wfConfig { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode } := by
         rw [← hcfg₁2_eq]
         exact hwfcfg₁2
+      have hRbound' : regimeBounded (ctxAfter ctxᵢ res2).regime := by
+        sorry -- TODO: Derive from hRbound with regime monotonicity
+      have hagree2' : agreeOnClean predSat (ctxAfter ctxᵢ res2).regime (ctxAfter ctxᵢ res2)
+          cfg₀2.memory cfg₀2.varEnv θ₀2 cfg₁2.memory cfg₁2.varEnv θ₁2 := by
+        sorry -- TODO: Derive from hagree2 with regime equality
       have hstep_e1 :=
-        hIH1 cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀2 θ₁2
+        hIH1 hpredlaws cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀2 θ₁2
           cfg₀1 cfg₁1 (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf_ctxAfter hric₀2 hric₁2 htagR2 hRbound hagree2
+          hθ₀2wf hθ₁2wf hwf_ctxAfter hric₀2 hric₁2 htagR2' hRbound' hcwr₀2 hcwr₁2 hagree2'
           cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode hwfcfg₀2 hwfcfg₁2'
           ht₀_e1 ht₁_e1'
       rcases hstep_e1 with
         ⟨θ₀3, θ₁3, hθext₀3, hθext₁3, hwf3, hwfcfg₀3, hwfcfg₁3,
-          hric₀3, hric₁3, htagR3, hagree3, hfun_agree⟩
+          hric₀3, hric₁3, htagR3, hcwr₀3_, hcwr₁3_, hagree3, hfun_agree⟩
       -- Remaining work: relate `ht₀_body`/`ht₁_body` and the `.arrow` typing spine `harr`,
       -- then lift agreement to `ctxAfter ctxᵢ res`.
       -- (This is the hard core of `stepFR_app` and will be filled next.)
@@ -4332,13 +4514,17 @@ private lemma stepFR_app_closure_closure_arrow_remaining
         ⟨cfg₁2, v₁2, cfg₁1, x₁, body₁, env₁, _evalCfg₁, ht₁_e2, ht₁_e1, _htoP₁, _ht₁_body, _hcf₁_eq, hpm₁2, _hpm₁_final⟩
       -- Step `e2` using IH (to obtain post-`e2` context instantiation for both runs).
       have hstep_e2 :=
-        hIH2 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀2 cfg₁2 v₀2 v₁2
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        hIH2 hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀2 cfg₁2 v₀2 v₁2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
       rcases hstep_e2 with
         ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcfg₀2, hwfcfg₁2,
-          hric₀2, hric₁2, htagR2, hagree2, _harg_agree⟩
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _harg_agree⟩
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+      have htagR2' : regimeConsistentWithCtx (ctxAfter ctxᵢ res2) (ctxAfter ctxᵢ res2).regime := by
+        sorry -- TODO: Update for regime threading
+      have hRbound' : regimeBounded (ctxAfter ctxᵢ res2).regime := by
+        sorry -- TODO: Prove regime boundedness preserved
       -- Align pureMode for the StepFR call on `e1`.
       have hpm_cfg2 : cfg₀2.pureMode = cfg₁2.pureMode := by
         rw [hpm₀2, hpm₁2]
@@ -4358,15 +4544,20 @@ private lemma stepFR_app_closure_closure_arrow_remaining
         rw [← hcfg₁2_eq]
         exact hwfcfg₁2
       -- Step `e1` using IH (closure vs peClosure).
+      have hRbound' : regimeBounded (ctxAfter ctxᵢ res2).regime := by
+        sorry -- TODO: Derive from hRbound with regime monotonicity
+      have hagree2' : agreeOnClean predSat (ctxAfter ctxᵢ res2).regime (ctxAfter ctxᵢ res2)
+          cfg₀2.memory cfg₀2.varEnv θ₀2 cfg₁2.memory cfg₁2.varEnv θ₁2 := by
+        sorry -- TODO: Derive from hagree2 with regime equality
       have hstep_e1 :=
-        hIH1 cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀2 θ₁2
+        hIH1 hpredlaws cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀2 θ₁2
           cfg₀1 cfg₁1 (Value.closure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound hagree2
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2' hRbound' hcwr₀2 hcwr₁2 hagree2'
           cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode hwfcfg₀2 hwfcfg₁2'
           ht₀_e1 ht₁_e1'
       rcases hstep_e1 with
         ⟨θ₀3, θ₁3, _hθext₀3, hθext₁3, _hwf3, _hwfcfg₀3, _hwfcfg₁3,
-          _hric₀3, hric₁3, _htagR3, _hagree3, _hfun_agree⟩
+          _hric₀3, hric₁3, _htagR3, _hcwr₀3, _hcwr₁3, _hagree3, _hfun_agree⟩
       have hθ₁3wf : wfRealizationMap θ₁3 := hθext₁3.2 hθ₁2wf
       -- Convert world-free termination to world-indexed, then apply preservation to type the peClosure.
       let w_default := LeanProofs.defaultWorld
@@ -4399,13 +4590,17 @@ private lemma stepFR_app_closure_closure_arrow_remaining
         ⟨cfg₁2, v₁2, cfg₁1, x₁, body₁, env₁, _evalCfg₁, ht₁_e2, ht₁_e1, _hpm₁1, _ht₁_body, _hcf₁_eq, hpm₁2, _hpm₁_final⟩
       -- Step `e2` to obtain post-`e2` instantiation.
       have hstep_e2 :=
-        hIH2 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀2 cfg₁2 v₀2 v₁2
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        hIH2 hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀2 cfg₁2 v₀2 v₁2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
       rcases hstep_e2 with
         ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcfg₀2, hwfcfg₁2,
-          hric₀2, hric₁2, htagR2, hagree2, _harg_agree⟩
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _harg_agree⟩
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+      have htagR2' : regimeConsistentWithCtx (ctxAfter ctxᵢ res2) (ctxAfter ctxᵢ res2).regime := by
+        sorry -- TODO: Update for regime threading
+      have hRbound' : regimeBounded (ctxAfter ctxᵢ res2).regime := by
+        sorry -- TODO: Prove regime boundedness preserved
       -- Align pureMode for the StepFR call on `e1`.
       have hpm_cfg2 : cfg₀2.pureMode = cfg₁2.pureMode := by
         rw [hpm₀2, hpm₁2]
@@ -4425,15 +4620,18 @@ private lemma stepFR_app_closure_closure_arrow_remaining
         rw [← hcfg₁2_eq]
         exact hwfcfg₁2
       -- Step `e1` using IH (peClosure vs closure).
+      have hagree2' : agreeOnClean predSat (ctxAfter ctxᵢ res2).regime (ctxAfter ctxᵢ res2)
+          cfg₀2.memory cfg₀2.varEnv θ₀2 cfg₁2.memory cfg₁2.varEnv θ₁2 := by
+        sorry -- TODO: Derive from hagree2 with regime equality
       have hstep_e1 :=
-        hIH1 cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀2 θ₁2
+        hIH1 hpredlaws cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀2 θ₁2
           cfg₀1 cfg₁1 (Value.peClosure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound hagree2
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2' hRbound' hcwr₀2 hcwr₁2 hagree2'
           cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode hwfcfg₀2 hwfcfg₁2'
           ht₀_e1 ht₁_e1'
       rcases hstep_e1 with
         ⟨θ₀3, _θ₁3, hθext₀3, _hθext₁3, _hwf3, _hwfcfg₀3, _hwfcfg₁3,
-          hric₀3, _hric₁3, _htagR3, _hagree3, _hfun_agree⟩
+          hric₀3, _hric₁3, _htagR3, _hcwr₀3, _hcwr₁3, _hagree3, _hfun_agree⟩
       have hθ₀3wf : wfRealizationMap θ₀3 := hθext₀3.2 hθ₀2wf
       -- Convert world-free termination to world-indexed, then apply preservation to type the peClosure.
       let w_default := LeanProofs.defaultWorld
@@ -4462,13 +4660,17 @@ private lemma stepFR_app_closure_closure_arrow_remaining
         ⟨cfg₁2, v₁2, cfg₁1, x₁, body₁, env₁, _evalCfg₁, ht₁_e2, ht₁_e1, _htoP₁, _ht₁_body, _hcf₁_eq, hpm₁2, _hpm₁_final⟩
       -- Step `e2` to obtain post-`e2` instantiation.
       have hstep_e2 :=
-        hIH2 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀2 cfg₁2 v₀2 v₁2
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        hIH2 hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀2 cfg₁2 v₀2 v₁2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
       rcases hstep_e2 with
         ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcfg₀2, hwfcfg₁2,
-          hric₀2, hric₁2, htagR2, hagree2, _harg_agree⟩
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _harg_agree⟩
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+      have htagR2' : regimeConsistentWithCtx (ctxAfter ctxᵢ res2) (ctxAfter ctxᵢ res2).regime := by
+        sorry -- TODO: Update for regime threading
+      have hRbound' : regimeBounded (ctxAfter ctxᵢ res2).regime := by
+        sorry -- TODO: Prove regime boundedness preserved
       -- Align pureMode for the StepFR call on `e1`.
       have hpm_cfg2 : cfg₀2.pureMode = cfg₁2.pureMode := by
         rw [hpm₀2, hpm₁2]
@@ -4488,15 +4690,18 @@ private lemma stepFR_app_closure_closure_arrow_remaining
         rw [← hcfg₁2_eq]
         exact hwfcfg₁2
       -- Step `e1` using IH (peClosure vs peClosure) just to obtain θ₀3 for preservation.
+      have hagree2' : agreeOnClean predSat (ctxAfter ctxᵢ res2).regime (ctxAfter ctxᵢ res2)
+          cfg₀2.memory cfg₀2.varEnv θ₀2 cfg₁2.memory cfg₁2.varEnv θ₁2 := by
+        sorry -- TODO: Derive from hagree2 with regime equality
       have hstep_e1 :=
-        hIH1 cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀2 θ₁2
+        hIH1 hpredlaws cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀2 θ₁2
           cfg₀1 cfg₁1 (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound hagree2
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2' hRbound' hcwr₀2 hcwr₁2 hagree2'
           cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode hwfcfg₀2 hwfcfg₁2'
           ht₀_e1 ht₁_e1'
       rcases hstep_e1 with
         ⟨θ₀3, _θ₁3, hθext₀3, _hθext₁3, _hwf3, _hwfcfg₀3, _hwfcfg₁3,
-          hric₀3, _hric₁3, _htagR3, _hagree3, _hfun_agree⟩
+          hric₀3, _hric₁3, _htagR3, _hcwr₀3, _hcwr₁3, _hagree3, _hfun_agree⟩
       have hθ₀3wf : wfRealizationMap θ₀3 := hθext₀3.2 hθ₀2wf
       let w_default := LeanProofs.defaultWorld
       have ht₀_e1_w : terminatesToW .ioFree w_default w_default e1
@@ -4559,9 +4764,12 @@ private lemma stepFR_app
   have htc2' : typecheck ctxᵢ e2 fuel' = .ok res2 := by
     simpa [typecheck] using htc2
   let ctx' : TypeContext :=
-    { ctxᵢ with memEnv := res2.memEnv', tagEnv := res2.tagEnv', nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+    { ctxᵢ with memEnv := res2.memEnv', tagEnv := res2.tagEnv', nextLoc := res2.nextLoc', nextTag := res2.nextTag', regime := res2.regime' }
   have htc1' : typecheck ctx' e1 fuel' = .ok res1 := by
-    simpa [ctx', typecheck] using htc1
+    -- Note: htc1 uses ctxᵢ.regime but ctx' uses res2.regime'
+    -- This requires showing regime equality, which needs regime monotonicity
+    simp only [ctx', typecheck]
+    sorry -- TODO: Requires regime monotonicity - res2.regime' = ctxᵢ.regime
   have htc1_after : typecheck (ctxAfter ctxᵢ res2) e1 fuel' = .ok res1 := by
     simpa [ctx', ctxAfter] using htc1'
   cases happ_cases with
@@ -4604,6 +4812,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               tagEnv' := ctxᵢ.tagEnv
               nextLoc' := ctxᵢ.nextLoc
               nextTag' := ctxᵢ.nextTag
+              regime' := ctxᵢ.regime
             }
             have hres : res = res_expected := by
               cases htc
@@ -4627,6 +4836,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               tagEnv' := ctxᵢ.tagEnv
               nextLoc' := ctxᵢ.nextLoc
               nextTag' := ctxᵢ.nextTag
+              regime' := ctxᵢ.regime
             }
             have hres : res = res_expected := by
               cases htc
@@ -4650,6 +4860,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               tagEnv' := ctxᵢ.tagEnv
               nextLoc' := ctxᵢ.nextLoc
               nextTag' := ctxᵢ.nextTag
+              regime' := ctxᵢ.regime
             }
             have hres : res = res_expected := by
               cases htc
@@ -4673,6 +4884,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               tagEnv' := ctxᵢ.tagEnv
               nextLoc' := ctxᵢ.nextLoc
               nextTag' := ctxᵢ.nextTag
+              regime' := ctxᵢ.regime
             }
             have hres : res = res_expected := by
               cases htc
@@ -4701,7 +4913,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
             | zero =>
                 simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
             | succ fuel' =>
-                exact stepFR_unaryop ctxᵢ predSat uop e fuel' res IH htc
+                exact stepFR_unaryop ctxᵢ predSat e uop fuel' res IH htc
         | ite e1 e2 e3 =>
             cases fuel with
             | zero =>
@@ -4757,7 +4969,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 exact stepFR_app ctxᵢ predSat e1 e2 fuel' res IH htc
         | rand _ | frand _ | printString _ | printInt _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
             -- In `.ioFree` mode, I/O constructs cannot terminate, so StepFR is vacuous.
-            intro μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+            intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
             have : False := by
               rcases ht₀ with ⟨fuelT, verboseT, hpureT⟩
               -- In `.ioFree` mode, evaluation yields `ioForbidden`, never `.success`.
@@ -4832,7 +5044,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
   (∀ e ctxᵢ predSat, TypeSystemEnforcesFaultRobustness_step_spec .ioFree e ctxᵢ predSat) →
   (∀ e s obs, TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs) := by
   intro hstep e s obs
-  rintro his _hos ctx hctx hwf _hpc hte predSat _hps ⟨fuel, res, htc, hobs⟩
+  rintro his _hos ctx hctx hwf _hpc hte predSat hps ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
   intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm
   have hstep' := hstep e ctx predSat
@@ -4854,10 +5066,15 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
     constructor
     · exact htagR
     · exact Nat.le_of_eq hR
-  have hstep_fr := hstep' μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂ hθ₁ hθ₂ hwf hric₁ hric₂ hreg hregBounded hagree_clean a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
+  -- Need consistentWithRegime for both runs (derived from bridge lemma)
+  have hcwr₁ : consistentWithRegime predSat R ctx μ₁ ρ₁ θ₁ := by
+    sorry -- TODO: Apply bridge lemma from consistentRegimeSpec
+  have hcwr₂ : consistentWithRegime predSat R ctx μ₂ ρ₂ θ₂ := by
+    sorry -- TODO: Apply bridge lemma from consistentRegimeSpec
+  have hstep_fr := hstep' hps μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂ hθ₁ hθ₂ hwf hric₁ hric₂ hreg hregBounded hcwr₁ hcwr₂ hagree_clean a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
   -- StepFR result structure: ∃ θ₁' θ₂', wfExtendsMap ∧ wfExtendsMap ∧ wfTypeContext ∧
   --   wfConfig ∧ wfConfig ∧ agreeOnClean ∧ resultAgreesIfClean
-  rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, _hwfctx', _hwfcfg₁', _hwfcfg₂', _hric₁', _hric₂', _hreg', hagree_clean', hret_agree⟩
+  rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, _hwfctx', _hwfcfg₁', _hwfcfg₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', hret_agree⟩
   refine ⟨θ₁', θ₂', hwfext₁, hwfext₂, ?_⟩
   -- Bridge from post-state agreement to observables.
   simp [observablesEqual]
