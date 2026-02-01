@@ -73,7 +73,9 @@ ENV NPM_CONFIG_PREFIX=/usr/local
 # Tree-sitter CLI (pin version; Parser.lean relies on flags like --config-path and -x)
 RUN npm i -g tree-sitter-cli@0.25.10
 
-# OpenAI Codex CLI
+# OpenAI Codex CLI. To force reinstall from npm when the package is updated, pass a new
+# value to bust the cache, e.g.: --build-arg CODEX_UPDATE=2 or CODEX_UPDATE=$(date +%s)
+ARG CODEX_UPDATE=1
 RUN npm i -g @openai/codex
 
 # Install uv (provides uvx for running Python tools)
@@ -109,6 +111,8 @@ ENV PATH=/home/user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 WORKDIR /work
 
 # --- ENTRYPOINT: add host UID/GID to passwd, drop privs, exec ---
+# Bump CONFIG_SEED to force this layer to re-run (e.g. after editing seeded config.toml).
+ARG CONFIG_SEED=1
 RUN printf '%s\n' \
 '#!/usr/bin/env bash' \
 'set -euo pipefail' \
@@ -224,8 +228,7 @@ RUN printf '%s\n' \
 'LEAN_PROJECT_PATH = "/work"' \
 'LEAN_LOG_LEVEL = "NONE"' \
 '' \
-'[features]' \
-'web_search_request = true' \
+'web_search = "live"' \
 'EOF' \
 '  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CODEX_HOME}/config.toml" 2>/dev/null || true; fi' \
 'fi' \
