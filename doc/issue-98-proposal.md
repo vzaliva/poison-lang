@@ -5,7 +5,9 @@ Original issue: `https://github.com/vzaliva/poison-lang/issues/98`
 This note proposes a proof-level fix: **add a context-indexed, per-run
 runtime–regime consistency premise (`consistentWithRegime`)** to `StepFR` and
 `FaultRobustnessSpec`. This makes regime-guided branch selection sound with
-respect to runtime execution.
+respect to runtime execution. It also proposes a necessary follow-up for
+mutation: make regime facts **monotone** by invalidating them during typechecking
+when heap writes occur.
 
 ---
 
@@ -89,28 +91,143 @@ Notes:
 - Under `wfRegime R s`, every spec tag has `R.lookup? k = some b`, so spec
   entries are constrained as intended.
 
-### What changes in `FaultRobustnessSpec`
-Today, the top-level spec assumes *spec-indexed* regime consistency:
-`consistentRegimeSpec predSat R s μ ρ θ` (i.e. `List.Forall ... s.vars.toList` and
-`s.locs.toList`).
+### Additional issue: regime facts can become stale under mutation
+`wfRegime R s` + `consistentWithRegime ... R ...` only justify that `R(k)=b`
+matches runtime predicate truth **at the time the tag is validated** (i.e. when
+the tag's owning value and its dependencies have not changed since the regime was
+seeded).
 
-Under this proposal, we instead assume *context-indexed* runtime–regime
-consistency:
+In an imperative language, that is not automatically preserved:
+- guard predicates may depend on heap locations (`Deps`), and
+- assignments can update those locations (or other locations the predicate reads).
+
+If a dependency changes, the predicate's truth can flip, and treating `R(k)=b`
+as a permanent oracle becomes unsound even if the initial state was consistent.
+
+#### Required follow-up: make the regime mutable and monotone (invalidate to `none`)
+To keep regime-aware branch commitment sound in the presence of writes, treat the
+regime `R` as a cache of predicate outcomes that can be invalidated:
+
+> When the program writes to a location that may affect a predicate tagged `k`,
+> drop the regime entry (`R.lookup? k := none`), forcing later uses to fall back
+> to conservative typing.
+
+This is already the intended policy for tag knowledge in `tagEnv` (via
+`invalidateTagDeps`). The key difference is that `typecheckIf`/`typecheckWhile`
+consult `R` directly, so `R` must be invalidated too (or guarded by the same
+invalidity information), otherwise stale `R(k)` can still drive branch commitment.
+
+This change is not just proof-level: **typechecking must be allowed to update
+`ctx.regime`**, and the typing rules that write to memory must invalidate it
+(similar to how they already invalidate `tagEnv`).
+
+Implementation sketch (high level):
+- Extend the typechecker infrastructure so a typing step can return an updated
+  regime (e.g. add `regime' : Regime` to `TypeResult` and update `ctxAfter` to
+  copy it, or compute the invalidated regime directly in each rule and thread it
+  through the context).
+- Add an invalidation operation for regimes. The conservative sound choice is:
+  **on any heap write, drop all regime entries for tags `< R.bound`** (set them
+  to `none`). A more precise dependency-based invalidation is possible, but it
+  requires a sound and proven connection between predicate truth and extracted
+  dependencies; we are not assuming that here.
+- Update all typing rules with heap effects (at least `assign`, and any
+  extern/primitive that may write) to apply this regime invalidation in lockstep
+  with `invalidateTagDeps` (maybe make it par of it).
+
+Effect on this proposal:
+- The definition of `consistentWithRegime` can stay the same.
+- **`wfRegime` is an initial-only property.** The current definition requires R
+  to be defined for *all* spec tags (`∀ k, k ∈ tags → (R.lookup? k).isSome`).
+  After invalidation, some entries become `none`, breaking this conjunct.
+  Therefore, `wfRegime R s` holds only for the *initial* seeded regime and is
+  not a step invariant.
+- **Weaker step invariant: `wfRegimePartial`.** For step proofs, introduce:
+
+  ```lean
+  def wfRegimePartial (R : Regime) (s : InputSpec) : Prop :=
+    let tags := inputSpecTags s
+    (∀ k, k ∈ tags → k < R.bound) ∧           -- spec tags below bound (preserved)
+    (∀ k, (R.lookup? k).isSome → k ∈ tags)    -- R only defined for spec tags (preserved)
+  ```
+
+  This drops the "R defined for all spec tags" conjunct. Invalidation preserves
+  `wfRegimePartial`: setting `R.lookup? k := none` maintains both conjuncts.
+
+- **Proof flow:**
+  1. Top-level starts with `wfRegime R₀ s` (initial, full coverage)
+  2. `wfRegime` implies `wfRegimePartial` (trivially)
+  3. Step proofs assume/preserve `wfRegimePartial` + `Regime.monotoneStep R₀ R`
+  4. `consistentWithRegime` only needs `wfRegimePartial` (for the "R only knows
+     spec tags" direction) and doesn't require full coverage
+
+- Preservation obligations become more realistic: when a write may break a
+  predicate, the corresponding `R(k)` is removed, so subsequent reasoning never
+  relies on a possibly-stale regime fact.
+- The existing proof lemma `regime_immutability` must be replaced by a
+  **monotonicity** lemma, e.g. `regime_monotone`, stating that typechecking can
+  only *drop* regime entries (never change a `some b` to `some b'` or introduce a
+  new `some`).
+
+Lean sketch:
 
 ```lean
-consistentWithRegime predSat ctx.regime ctx μ₁ ρ₁ θ₁ →
-consistentWithRegime predSat ctx.regime ctx μ₂ ρ₂ θ₂ →
+def Regime.monotoneStep (R R' : Regime) : Prop :=
+  R'.bound = R.bound ∧
+  ∀ k b, R.lookup? k = some b → (R'.lookup? k = some b ∨ R'.lookup? k = none)
+
+-- Replaces `regime_immutability` (which becomes false once typing invalidates `R`).
+lemma regime_monotone (ctx : TypeContext) (res : TypeResult) :
+  Regime.monotoneStep ctx.regime (ctxAfter ctx res).regime := by
+  ...
 ```
 
-This is a deliberate strengthening:
-- `StepFR` is context-indexed, and `matchGuard` may pick an "owner" entry that is
-  present in `ctx` but not listed in the input spec `s`. The step proof needs
-  regime consistency for whichever owner entry `matchGuard` identifies.
-- With `wfRegime ctx.regime s`, any tag where `ctx.regime.lookup? k = some b`
-  is a spec tag, so the new premise still only constrains the regime's intended
-  domain. It just enforces it for *all occurrences* of those tags in `ctx`
-  (including trusted/unlisted entries), which is exactly what makes regime-aware
-  branch commitment sound.
+### What changes in `FaultRobustnessSpec` and `StepFR`
+
+**Top-level (`FaultRobustnessSpec`):** The top-level spec *keeps* the existing
+spec-indexed regime consistency premise:
+
+```lean
+consistentRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ →
+consistentRegimeSpec predSat ctx.regime s μ₂ ρ₂ θ₂ →
+```
+
+This is user-facing and intuitive: it says the runtime values of spec entries
+must match the regime's predicate-truth assignments.
+
+**Step-level (`StepFR`):** The step theorem uses the new context-indexed
+predicate:
+
+```lean
+consistentWithRegime predSat ctx.regime ctx μ ρ θ →
+```
+
+This is what the step proofs actually need: `matchGuard` may pick an "owner"
+entry that is present in `ctx` but not listed in the input spec `s`.
+
+**Bridge lemma:** A lemma connects the two formulations at the initial context:
+
+```lean
+lemma consistentRegimeSpec_implies_consistentWithRegime
+    (h_spec : consistentRegimeSpec predSat R s μ ρ θ)
+    (h_match : ctxMatchesInputSpec s ctx)
+    (h_wf : wfRegime R s)
+    (h_bounded : regimeBounded R) :
+    consistentWithRegime predSat R ctx μ ρ θ
+```
+
+This works because:
+- At program start, `ctxMatchesInputSpec s ctx` ensures spec entries are in `ctx`
+- By `wfRegime R s`, tags in R come from spec entries
+- Non-spec entries in `ctx` have fresh tags (not in R), so they're vacuously
+  handled by `consistentWithRegime`
+
+**Proof flow:**
+1. Top-level assumes `consistentRegimeSpec` (intuitive for users)
+2. Bridge lemma derives initial `consistentWithRegime`
+3. Step proofs assume and preserve `consistentWithRegime` (with regime
+   invalidation on writes)
+4. Final result follows from the step theorem chain
 
 ### How this fixes `stepFR_ite`
 In the regime-known case:
@@ -138,12 +255,15 @@ To adopt this fix cleanly, the following proof-layer changes are expected:
 - Strengthen `StepFR` (or just `stepFR_ite`/`stepFR_while`) to assume:
   - `PredSatLaws predSat`, and
   - per-run `consistentWithRegime predSat ctx.regime ctx μ ρ θ`.
-- Update `FaultRobustnessSpec` to assume (per run) `consistentWithRegime ...`;
-  this replaces the current `consistentRegimeSpec` premises and aligns the
-  top-level statement with the step theorem's premises.
-- Show `consistentWithRegime` is preserved across `ctxAfter`.
-- Use `consistentWithRegime` everywhere (step and top-level), and delete
-  `consistentRegimeSpec` once no longer referenced.
+- `FaultRobustnessSpec` keeps its existing `consistentRegimeSpec` premises.
+- Add the bridge lemma `consistentRegimeSpec_implies_consistentWithRegime` to
+  derive the initial `consistentWithRegime` from `consistentRegimeSpec`.
+- Show `consistentWithRegime` is preserved across `ctxAfter`. With mutation,
+  this requires allowing typechecking to update `ctx.regime` and proving a
+  `regime_monotone` property (regime entries can only be dropped to `none`).
+- Update any proof steps that currently use `regime_immutability` to use
+  `regime_monotone` instead, and thread the updated regime through `ctxAfter`
+  (post-context should use the post-regime, not the pre-regime).
 
 ---
 
@@ -167,52 +287,12 @@ reasoning appears.
 
 ### Entries with tags in R and memory changes
 
-The more challenging case involves entries whose tags ARE in `R`'s domain.
-For these entries, `locsRegime`/`varsRegime` require:
+The challenging case is heap mutation: after a write, previously-true regime
+facts (`R.lookup? k = some b`) may no longer reflect the current predicate truth.
 
-```lean
-hconsist : (b = true → qtypPredHolds predSat qt μ v) ∧
-           (b = false → ¬qtypPredHolds predSat qt μ v)
-```
-
-When memory changes (e.g., via `assign`), this condition must be shown to
-persist. This requires reasoning about **predicate satisfaction stability**:
-if `qtypPredHolds predSat qt μ v` held before a memory change, does it still
-hold after?
-
-Key observations that may simplify this:
-
-1. **Variable bindings are immutable**: Once bound, a variable's value does not
-   change. If `matchGuard` identifies a variable as the "owner", its consistency
-   is preserved trivially.
-
-2. **Memory locations with tags in R are input spec locations**: Tags in R come
-   from the input specification (by `wfRegime R s`). These locations are
-   initially poisoned (`poison = true`). Assignment to a poisoned location
-   requires prior de-poisoning via an `if` guard check. By the time assignment
-   is permitted, the `stepFR_ite` for that guard has already established the
-   regime commitment.
-
-3. **Predicates read existing memory**: The `qtypPredHolds` relation depends on
-   memory through `predSat`, which evaluates the predicate body. If predicates
-   only read memory locations that existed before the change and whose values
-   are unchanged, satisfaction is preserved. This "frame property" may need to
-   be formalised as a law in `PredSatLaws` if not already implied.
-
-### Potential `PredSatLaws` extension
-
-If predicate satisfaction stability under memory extension is needed, consider
-adding:
-
-```lean
-structure PredSatLaws (predSat : PredSat) : Prop where
-  match_iff : ...  -- existing
-  -- Predicate satisfaction is stable under memory extension:
-  -- if μ ⊆ μ' (existing values preserved), satisfaction is unchanged
-  frame_stable : ∀ k μ μ' v,
-    (∀ a n, μ.lookup a = some n → μ'.lookup a = some n) →
-    predSat k μ v ↔ predSat k μ' v
-```
-
-This formalises that predicates depend only on memory values that exist (not on
-newly allocated addresses), which is semantically sound for the Poison language.
+The proposal addresses this by making regime entries *monotone* and invalidating
+them on writes. In the conservative variant (invalidate all spec-tag regime
+entries on any heap write), `R.lookup? k ≠ none` will be false for all spec tags
+after the first heap update. That makes `consistentWithRegime` trivially
+preserved after heap writes, and ensures later regime-aware branch commitment is
+never driven by stale information.
