@@ -118,29 +118,37 @@ def invalidateTagDeps (env : TagEnv) (ls : LocSet) : TagEnv :=
     excluding fresh internal tags introduced during typing (tags ≥ bound). -/
 structure Regime where
   bound : Tag
-  lookup? : Tag → Option Bool
+  map : ExtTreeMap Tag Bool
+
+namespace Regime
+
+/-- Lookup a tag in the regime map, respecting the bound. -/
+def lookup? (R : Regime) (k : Tag) : Option Bool :=
+  if k < R.bound then R.map.get? k else none
+
+end Regime
 
 /-- Empty regime: all tags return none (regime-agnostic typing) -/
 def emptyRegime : Regime := {
   bound := 0
-  lookup? := fun _ => none
+  map := {}
 }
 
 /-- Invalidate regime entries for tags whose dependencies intersect written locations
     (mirrors invalidateTagDeps behaviour) -/
 def invalidateRegimeDeps (R : Regime) (env : TagEnv) (ls : LocSet) : Regime :=
   let invalidated := env.filter (fun _ tv => not <| tv.deps.any ls.contains)
-  let invalidatedLookup := fun k =>
-    if invalidated.contains k then R.lookup? k else none
-  { bound := R.bound, lookup? := invalidatedLookup }
+  let invalidatedMap := R.map.filter (fun k _ => invalidated.contains k)
+  { bound := R.bound, map := invalidatedMap }
 
 /-- Join two regimes (conservative intersection: keep only entries that agree) -/
 def joinRegimes (R1 R2 : Regime) : Regime :=
-  let joinedLookup := fun k =>
-    match R1.lookup? k, R2.lookup? k with
-    | some b1, some b2 => if b1 == b2 then some b1 else none
-    | _, _ => none
-  { bound := min R1.bound R2.bound, lookup? := joinedLookup }
+  let joinedMap :=
+    combineExtTreeMaps R1.map R2.map (fun _ ob1 ob2 =>
+      match ob1, ob2 with
+      | some b1, some b2 => if b1 == b2 then some b1 else none
+      | _, _ => none)
+  { bound := min R1.bound R2.bound, map := joinedMap }
 
 namespace Regime
 

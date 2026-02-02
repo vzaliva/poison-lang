@@ -78,8 +78,7 @@ def parseRegimeSpec (spec : String) : Except String Regime := do
   if not hasEntry then
     throw "Invalid --regime: no assignments provided"
   let bound := maxTag + 1
-  let lookup := fun k => if k < bound then map.get? k else none
-  return { bound := bound, lookup? := lookup }
+  return { bound := bound, map := map }
 
 partial def parseArgs (args : List String) (opts : CliOptions := {}) : Except String CliOptions :=
   match args with
