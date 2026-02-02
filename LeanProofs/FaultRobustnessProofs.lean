@@ -43,6 +43,21 @@ def tagEnvConsistentWithRegime (tagEnv : TagEnv) (regime : Regime) : Prop :=
 def regimeConsistentWithCtx (ctx : TypeContext) (R : Regime) : Prop :=
   tagEnvConsistentWithRegime ctx.tagEnv R ∧ R.bound ≤ ctx.nextTag
 
+-- Helper lemma: regimeBounded transfers under monotonicity (bounds are equal)
+lemma regimeBounded_of_monotoneStep (R R' : Regime)
+    (h_bounded : regimeBounded R)
+    (h_mono : Regime.monotoneStep R R') :
+    regimeBounded R' := by
+  intro k hk
+  have hbound_eq : R'.bound = R.bound := h_mono.1
+  rw [hbound_eq] at hk
+  have hR_none := h_bounded k hk
+  -- Use contrapositive of h_mono.2.2: R.lookup? k = none → R'.lookup? k = none
+  by_contra h_not_none
+  have h_R_not_none := h_mono.2.2 k h_not_none
+  exact h_R_not_none hR_none
+
+
 -- Helper lemma: regimeConsistentWithCtx transfers from input regime to output regime
 -- when we have monotonicity and a typecheck result.
 -- The key insight is that the typechecker maintains the invariant that tags that are
@@ -70,20 +85,6 @@ lemma regimeConsistentWithCtx_of_typecheckResult (ctx : TypeContext) (e : Expr) 
     rw [hbound_eq]
     have h_nextTag_mono : ctx.nextTag ≤ res.nextTag' := typecheck_nextTag_mono ctx e fuel res htc
     exact Nat.le_trans h_input.2 h_nextTag_mono
-
--- Helper lemma: regimeBounded transfers under monotonicity (bounds are equal)
-lemma regimeBounded_of_monotoneStep (R R' : Regime)
-    (h_bounded : regimeBounded R)
-    (h_mono : Regime.monotoneStep R R') :
-    regimeBounded R' := by
-  intro k hk
-  have hbound_eq : R'.bound = R.bound := h_mono.1
-  rw [hbound_eq] at hk
-  have hR_none := h_bounded k hk
-  -- Use contrapositive of h_mono.2.2: R.lookup? k = none → R'.lookup? k = none
-  by_contra h_not_none
-  have h_R_not_none := h_mono.2.2 k h_not_none
-  exact h_R_not_none hR_none
 
 -- Bridge lemma: connect spec-indexed consistency to context-indexed consistency
 lemma consistentRegimeSpec_implies_consistentWithRegime
@@ -228,11 +229,11 @@ def StepFR
           wfConfig cf₁ ∧  -- final config₁ well-formed
           runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧  -- preservation
           runtimeInstantiatesCtx (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧  -- preservation
-          regimeConsistentWithCtx (ctxAfter ctx res) ctx.regime ∧  -- regime consistency preserved
+          regimeConsistentWithCtx (ctxAfter ctx res) (ctxAfter ctx res).regime ∧  -- regime consistency preserved (output regime)
           consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
           consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
-          agreeOnClean predSat ctx.regime (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
-          resultAgreesIfClean predSat ctx.regime cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
+          agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
+          resultAgreesIfClean predSat (ctxAfter ctx res).regime cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
 
 -- Step theorem spec derived from typing (context-driven).
 -- No input/output specs here; they are handled by the top-level FR statement
@@ -1084,9 +1085,10 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
     obtain ⟨qt, hlookup_mem, _het_eq, hpoison⟩ := hobs_mem l et hobs_lookup
     have hctx_lookup : (ctxAfter ctx res).memEnv.lookup l = some qt := by
       simpa [ctxAfter] using hlookup_mem
-    have hclean : qtypCleanUnder R qt := by
+    -- Use output regime since hagree_clean' now uses (ctxAfter ctx res).regime
+    have hclean : qtypCleanUnder (ctxAfter ctx res).regime qt := by
       exact qtypCleanUnder.clean hpoison
-    have hlocEntry : agreeLocUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' (l, qt) :=
+    have hlocEntry : agreeLocUnder predSat (ctxAfter ctx res).regime cf₁.memory cf₂.memory θ₁' θ₂' (l, qt) :=
       (hagree_clean'.1 l qt hctx_lookup hclean)
     cases hlocEntry with
     | agree_values _l _qt a₁' a₂' n₁ n₂ hreal₁ hreal₂ hlookup₁ hlookup₂ hagree =>
@@ -1136,10 +1138,11 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
         rcases hobs_ret _ hretOpt with ⟨hret_et, hret_poison⟩
         have hret_notfun_obs : et.isFunctionType = false := by
           simpa [wfObsSpec, hretOpt] using _hos
-        have hret_clean : qtypCleanUnder R res.qualType := by
+        -- Use output regime since hret_agree now uses (ctxAfter ctx res).regime
+        have hret_clean : qtypCleanUnder (ctxAfter ctx res).regime res.qualType := by
           exact qtypCleanUnder.clean hret_poison
         have hret_agree' :
-            agreeValueUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' res.qualType o₁ o₂ :=
+            agreeValueUnder predSat (ctxAfter ctx res).regime cf₁.memory cf₂.memory θ₁' θ₂' res.qualType o₁ o₂ :=
           hret_agree hret_clean
         cases et with
         | ref t ls =>
@@ -2201,15 +2204,20 @@ private lemma stepFR_var
     simpa [ctxAfter, hmem] using hric₀
   · -- runtimeInstantiatesCtx for θ₁'
     simpa [ctxAfter, hmem] using hric₁
-  · -- regimeConsistentWithCtx (var doesn't change tagEnv or nextTag)
-    simpa [ctxAfter, regimeConsistentWithCtx, htag, hnextTag] using hreg
+  · -- regimeConsistentWithCtx (var doesn't change tagEnv or nextTag or regime)
+    -- (ctxAfter ctxᵢ res).regime = res.regime' = ctxᵢ.regime
+    simpa [ctxAfter, regimeConsistentWithCtx, htag, hnextTag, hregime'] using hreg
   · -- consistentWithRegime for run 0 (var doesn't change context)
     simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using hcwr₀
   · -- consistentWithRegime for run 1 (var doesn't change context)
     simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using hcwr₁
-  · -- agreeOnClean for ctxAfter: typecheckVar doesn't change the context
-    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag] using hagree
+  · -- agreeOnClean for ctxAfter: typecheckVar doesn't change the context (including regime)
+    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using hagree
   · -- Result agreement for clean outputs (requires predicate/tagEnv analysis).
+    -- Key: (ctxAfter ctxᵢ res).regime = res.regime' = ctxᵢ.regime
+    have hregime_after : (ctxAfter ctxᵢ res).regime = ctxᵢ.regime := by simp [ctxAfter, hregime']
+    -- Rewrite the goal to use ctxᵢ.regime so the rest of the proof works
+    simp only [hregime_after]
     intro hclean
     have htc' : typecheckVar ctxᵢ name = .ok res := by
       simpa [typecheck, typecheckExpr] using htc
@@ -2819,22 +2827,20 @@ private lemma stepFR_op
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctx' res2 := by
     simp [ctxAfter, ctx', h_mem, h_tag, h_loc, h_ntag, h_regime]
+  -- IH2 gives agreeOnClean predSat (ctxAfter ctx' res2).regime ...
+  -- Since ctxAfter ctxᵢ res = ctxAfter ctx' res2, the regimes are equal
   have hagree_clean :
-      agreeOnClean predSat ctxᵢ.regime (ctxAfter ctxᵢ res)
+      agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
-    -- IH2 gives agreeOnClean predSat ctx'.regime ..., need to transfer to ctxᵢ.regime
-    -- Since ctx'.regime = res1.regime' ⊆ ctxᵢ.regime (monotone), and agreeOnClean checks
-    -- fewer tags for smaller regime, we need monotonicity lemma.
-    sorry
+    simpa [hctxAfter] using hagree_clean2
   have hric₀_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     simpa [hctxAfter] using hric₀2
   have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
     simpa [hctxAfter] using hric₁2
-  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) ctxᵢ.regime := by
-    -- Need to show regimeConsistentWithCtx for input regime ctxᵢ.regime
-    -- htagR2 gives regimeConsistentWithCtx (ctxAfter ctx' res2) ctx'.regime
-    -- Use monotonicity: ctx'.regime ⊆ ctxᵢ.regime
-    sorry
+  -- IH2 gives regimeConsistentWithCtx (ctxAfter ctx' res2) (ctxAfter ctx' res2).regime
+  -- Since ctxAfter ctxᵢ res = ctxAfter ctx' res2, this directly gives what we need
+  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
+    simpa [hctxAfter] using htagR2
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     simpa [hctxAfter] using hcwr₀2
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
@@ -2856,15 +2862,15 @@ private lemma stepFR_op
       _ = false := by exact hpoison_res
   have hjoin_pc := joinPoison_eq_false hjoin
   have hjoin_12 := joinPoison_eq_false hjoin_pc.2
-  -- hres_agree1 uses ctxᵢ.regime (from IH1)
-  have hclean1 : qtypCleanUnder ctxᵢ.regime res1.qualType := qtypCleanUnder.clean hjoin_12.1
-  -- hres_agree2 uses ctx'.regime (from IH2) - but since poison = false, regime doesn't matter
-  have hclean2 : qtypCleanUnder ctx'.regime res2.qualType := qtypCleanUnder.clean hjoin_12.2
+  -- hres_agree1 expects qtypCleanUnder (ctxAfter ctxᵢ res1).regime from IH1
+  have hclean1 : qtypCleanUnder (ctxAfter ctxᵢ res1).regime res1.qualType := qtypCleanUnder.clean hjoin_12.1
+  -- hres_agree2 expects qtypCleanUnder (ctxAfter ctx' res2).regime from IH2
+  have hclean2 : qtypCleanUnder (ctxAfter ctx' res2).regime res2.qualType := qtypCleanUnder.clean hjoin_12.2
   have hagree_v1 :
-      agreeValueUnder predSat ctxᵢ.regime cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 res1.qualType v₀1 v₁1 :=
+      agreeValueUnder predSat (ctxAfter ctxᵢ res1).regime cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 res1.qualType v₀1 v₁1 :=
     hres_agree1 hclean1
   have hagree_v2 :
-      agreeValueUnder predSat ctx'.regime cf₀.memory cf₁.memory θ₀2 θ₁2 res2.qualType v₀2 v₁2 :=
+      agreeValueUnder predSat (ctxAfter ctx' res2).regime cf₀.memory cf₁.memory θ₀2 θ₁2 res2.qualType v₀2 v₁2 :=
     hres_agree2 hclean2
   have hnotref1 : ¬ ∃ t ls, res1.qualType.etyp = ETyp.ref t ls := by
     intro ⟨t, ls, h_etyp⟩
@@ -2933,15 +2939,18 @@ private lemma stepFR_unaryop
   rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', hreg', hcwr₀', hcwr₁', hagree_clean_e, hres_agree_e⟩
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
     simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime]
+  -- IH gives agreeOnClean with output regime (ctxAfter ctxᵢ res1).regime = res1.regime'
+  -- Since ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 (for unaryop), regimes are equal
   have hagree_clean :
-      agreeOnClean predSat ctxᵢ.regime (ctxAfter ctxᵢ res)
+      agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
     simpa [hctxAfter, hmem₀, hvar₀, hmem₁, hvar₁] using hagree_clean_e
   have hric₀_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
     simpa [hctxAfter, hmem₀, hvar₀] using hric₀'
   have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
     simpa [hctxAfter, hmem₁, hvar₁] using hric₁'
-  have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) ctxᵢ.regime := by
+  -- IH gives regimeConsistentWithCtx with output regime
+  have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
     simpa [hctxAfter] using hreg'
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
     simpa [hctxAfter, hmem₀, hvar₀] using hcwr₀'
@@ -2967,10 +2976,11 @@ private lemma stepFR_unaryop
       _ = false := by exact hpoison_res
   have hres1_poison : res1.qualType.poison = false :=
     (joinPoison_eq_false hjoin).2
-  have hclean1 : qtypCleanUnder ctxᵢ.regime res1.qualType := by
+  -- hres_agree_e expects qtypCleanUnder (ctxAfter ctxᵢ res1).regime res1.qualType
+  have hclean1 : qtypCleanUnder (ctxAfter ctxᵢ res1).regime res1.qualType := by
     exact qtypCleanUnder.clean hres1_poison
   have hagree_v :
-      agreeValueUnder predSat ctxᵢ.regime cfg₀'.memory cfg₁'.memory θ₀' θ₁' res1.qualType v₀' v₁' :=
+      agreeValueUnder predSat (ctxAfter ctxᵢ res1).regime cfg₀'.memory cfg₁'.memory θ₀' θ₁' res1.qualType v₀' v₁' :=
     hres_agree_e hclean1
   have hnotref1 : ¬ ∃ t ls, res1.qualType.etyp = ETyp.ref t ls := by
     intro hcontra
@@ -3036,6 +3046,14 @@ private lemma stepFR_newRef
     hIH hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
       hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
   rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean_e, hres_agree_e⟩
+  -- Derive regime equality: newRef preserves regime (res.regime' = res1.regime')
+  -- From typecheckNewRef: res.regime' = result'.regime' = result.regime' = res1.regime'
+  -- where result = res1 and result' = freshTLocRes result which only changes nextLoc'
+  have h_regime : res.regime' = res1.regime' := by
+    sorry -- TODO: Extract from typecheckNewRef structure
+  -- This gives us (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime
+  have hregime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime := by
+    simp [ctxAfter, h_regime]
   -- Fresh logical location l = res1.nextLoc' is not realized after evaluating e
   have h_fresh₀ : θ₀1.lookup l = none := by
     have hge : l ≥ (ctxAfter ctxᵢ res1).nextLoc := by simp [ctxAfter, hl]
@@ -3215,14 +3233,18 @@ private lemma stepFR_newRef
       refine ⟨v, ?_, ?_⟩
       · simpa [hvar₁] using hvlookup
       · exact valueHasETyp_extends hθext₁'.1 hvtyp
-  -- Prove regimeConsistentWithCtx
-  have hreg' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) ctxᵢ.regime := by
-    simpa [regimeConsistentWithCtx, ctxAfter, h_tag, h_ntag] using htagR1
-  -- Prove agreeOnClean
+  -- Prove regimeConsistentWithCtx (IH gives with output regime)
+  have hreg' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
+    -- htagR1 gives regimeConsistentWithCtx (ctxAfter ctxᵢ res1) (ctxAfter ctxᵢ res1).regime
+    -- Use hregime_eq to transfer
+    rw [hregime_eq]
+    simpa [ctxAfter, h_tag, h_ntag] using htagR1
+  -- Prove agreeOnClean (using output regime from IH)
   have hagree_clean :
-      agreeOnClean predSat ctxᵢ.regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' :=
-    agreeOnClean_newRef_extend
-      predSat ctxᵢ.regime ctxᵢ res1 res l ETyp.int
+      agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
+    rw [hregime_eq]
+    exact agreeOnClean_newRef_extend
+      predSat (ctxAfter ctxᵢ res1).regime ctxᵢ res1 res l ETyp.int
       cfg₀' cfg₁' cf₀ cf₁ n₀ n₁ cfg₀'.nextAddr cfg₁'.nextAddr θ₀1 θ₁1 θ₀' θ₁'
       h_mem h_etyp1 rfl rfl hmem₀ hmem₁ hvar₀ hvar₁ rfl rfl
       hθext₀' hθext₁' hwfcf₀1 hwfcf₁1 hagree_clean_e hres_agree_e
@@ -3230,11 +3252,17 @@ private lemma stepFR_newRef
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.newRef e) _ cf₀ o₀ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved .ioFree (Expr.newRef e) _ cf₁ o₁ ht₁ hwfcfg₁).1
   -- consistentWithRegime for extended realization maps
-  -- Fresh location l gets a fresh address, regime doesn't constrain it (tag for l comes from res1, not in regime)
+  -- Key insight: res.regime' = res1.regime' (newRef doesn't change regime)
+  -- For newRef:
+  -- 1. New location l has a fresh address with storedQt whose pred comes from res1.qualType.pred
+  -- 2. Old locations transfer from hcwr₀1/hcwr₁1
+  -- 3. VarEnv is unchanged
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
-    sorry -- TODO: Prove consistentWithRegime preserved for newRef (fresh loc outside regime)
+    -- Transfer from hcwr₀1 with extended memory/map
+    -- New location l's predicate (if guard tag is in regime) satisfies consistency from hres_agree_e
+    sorry -- TODO: Prove consistentWithRegime preserved for newRef
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
-    sorry -- TODO: Prove consistentWithRegime preserved for newRef (fresh loc outside regime)
+    sorry -- TODO: Prove consistentWithRegime preserved for newRef
   refine ⟨θ₀', θ₁', ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hcwr₀_final, hcwr₁_final, hagree_clean, ?_⟩
   · -- wfExtendsMap θ₀ θ₀'
     exact wfExtendsMap_trans hθext₀1 hθext₀'
@@ -3339,16 +3367,19 @@ private lemma stepFR_seq
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctx' res := by
     simp only [ctxAfter, hctx', updateCtxFromResult]
+  -- IH2 gives agreeOnClean with (ctxAfter ctx' res).regime
+  -- Since ctxAfter ctxᵢ res = ctxAfter ctx' res, their regimes are equal
   have hagree_clean :
-      agreeOnClean predSat ctxᵢ.regime (ctxAfter ctxᵢ res)
+      agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
-    simpa [hctxAfter, hregime_eq] using hagree_clean2
+    simpa [hctxAfter] using hagree_clean2
   have hric₀_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     simpa [hctxAfter] using hric₀2
   have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
     simpa [hctxAfter] using hric₁2
-  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) ctxᵢ.regime := by
-    sorry -- TODO: Update for regime monotonicity
+  -- IH2 gives regimeConsistentWithCtx with output regime, transfer via hctxAfter
+  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
+    simpa [hctxAfter] using htagR2
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     sorry -- TODO: Prove consistentWithRegime preservation
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
@@ -3356,7 +3387,8 @@ private lemma stepFR_seq
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_⟩
   · simpa [hctxAfter] using hwf2
   -- Since res is directly the result of e2, hres_agree2 gives us the result directly
-  simpa [hregime_eq] using hres_agree2
+  -- IH2 gives resultAgreesIfClean with (ctxAfter ctx' res).regime = (ctxAfter ctxᵢ res).regime
+  simpa [hctxAfter] using hres_agree2
 
 -- World-free version of stepFRW_vlet
 private lemma stepFR_vlet
@@ -3443,8 +3475,14 @@ private lemma stepFR_vlet
       simp only [hctx']
       have hbound_eq : res1.regime'.bound = ctxᵢ.regime.bound := (regime_monotone ctxᵢ res1).1
       have hctxAfter_nextTag : (ctxAfter ctxᵢ res1).nextTag = res1.nextTag' := by simp [ctxAfter]
-      rw [hbound_eq, ← hctxAfter_nextTag]
-      exact htagR1.2
+      -- htagR1.2 : (ctxAfter ctxᵢ res1).regime.bound ≤ (ctxAfter ctxᵢ res1).nextTag
+      -- Since (ctxAfter ctxᵢ res1).regime = res1.regime', and res1.regime'.bound = ctxᵢ.regime.bound
+      have h_regime_eq : (ctxAfter ctxᵢ res1).regime = res1.regime' := by simp [ctxAfter]
+      rw [hbound_eq]
+      calc ctxᵢ.regime.bound = res1.regime'.bound := hbound_eq.symm
+           _ = (ctxAfter ctxᵢ res1).regime.bound := by rw [h_regime_eq]
+           _ ≤ (ctxAfter ctxᵢ res1).nextTag := htagR1.2
+           _ = res1.nextTag' := hctxAfter_nextTag
   -- runtimeInstantiatesCtx for extended configs
   have hric₀1' : runtimeInstantiatesCtx ctx' cfg₀2.memory cfg₀2.varEnv θ₀1 := by
     unfold runtimeInstantiatesCtx at hric₀1 ⊢
@@ -3620,15 +3658,16 @@ private lemma stepFR_vlet
       have hvtyp' : valueHasETyp θ₁2 v qt.etyp := valueHasETyp_extends hθext₁2.1 hvtyp
       exact ⟨v, hvlookup', hvtyp'⟩
   -- ctx'.regime = res1.regime' (not ctxᵢ.regime)
-  have hreg'' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) ctxᵢ.regime := by
-    -- IH2 gives regimeConsistentWithCtx (ctxAfter ctx' res2) ctx'.regime
-    -- Need to transfer to ctxᵢ.regime using monotonicity
-    sorry -- TODO: Use regime monotonicity
-  -- Final agreeOnClean
+  -- With new StepFR using output regime, we need (ctxAfter ctxᵢ res).regime
+  have hreg'' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
+    -- IH2 gives regimeConsistentWithCtx (ctxAfter ctx' res2) (ctxAfter ctx' res2).regime
+    -- Since ctxAfter ctx' res2 = ctxAfter ctxᵢ res (by context threading), transfer directly
+    sorry -- TODO: Show context equality and transfer htagR2
+  -- Final agreeOnClean (using output regime)
   have hagree_clean :
-      agreeOnClean predSat ctxᵢ.regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
-    -- IH2 gives agreeOnClean predSat ctx'.regime ..., need to transfer to ctxᵢ.regime
-    sorry -- TODO: Use regime monotonicity to transfer from smaller to larger regime
+      agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
+    -- IH2 gives agreeOnClean predSat (ctxAfter ctx' res2).regime ... which equals (ctxAfter ctxᵢ res).regime
+    sorry -- TODO: Show context equality and transfer hagree_clean2
   -- Final wfConfig
   have hwfcf₀_final : wfConfig cf₀ :=
     (wfConfig_preserved .ioFree (Expr.vlet vname e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
@@ -3652,7 +3691,16 @@ private lemma stepFR_vlet
         calc joinPoison ctxᵢ.pc res2.qualType.poison = res.qualType.poison := by symm; exact h_ret_poison
              _ = false := by exact hpoison_res
       exact (joinPoison_eq_false hjoin).2
-    have hclean2 : qtypCleanUnder ctxᵢ.regime res2.qualType := by
+    -- hclean uses (ctxAfter ctxᵢ res).regime = res.regime' = res2.regime'
+    -- We need hclean2' : qtypCleanUnder (ctxAfter ctx' res2).regime res2.qualType for IH2
+    -- Since (ctxAfter ctx' res2).regime = res2.regime' = res.regime' = (ctxAfter ctxᵢ res).regime
+    -- First, prove regime equality from typechecker structure lemma
+    have h_res_regime_eq : res.regime' = res2.regime' := by
+      -- This comes from typecheckVlet_structure: res just passes through res2's regime
+      sorry -- TODO: Extract from typecheckVlet_structure
+    have h_regime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctx' res2).regime := by
+      simp only [ctxAfter, h_res_regime_eq]
+    have hclean2' : qtypCleanUnder (ctxAfter ctx' res2).regime res2.qualType := by
       cases hclean with
       | clean hpoison_res => exact qtypCleanUnder.clean (hpoison_imp hpoison_res)
       | guard k htag hreg hnotfun =>
@@ -3660,20 +3708,18 @@ private lemma stepFR_vlet
             simpa [qtypGuardTag, h_ret_pred] using htag
           have hnotfun' : res2.qualType.etyp.isFunctionType = false := by
             simpa [h_ret_etyp] using hnotfun
-          exact qtypCleanUnder.guard k htag' hreg hnotfun'
-    have hagree2 : agreeValueUnder predSat ctxᵢ.regime cf₀.memory cf₁.memory θ₀2 θ₁2 res2.qualType o₀ o₁ := by
-      -- ctx'.regime = res1.regime' (not ctxᵢ.regime), need to handle regime mismatch
-      -- hres_agree2 expects qtypCleanUnder ctx'.regime, but hclean2 uses ctxᵢ.regime
-      -- For clean case (poison = false), regime doesn't matter
-      have hclean2' : qtypCleanUnder ctx'.regime res2.qualType := by
-        cases hclean2 with
-        | clean hp => exact qtypCleanUnder.clean hp
-        | guard k htag hreg _ =>
-            -- For guard case, need to check if k is in ctx'.regime
-            sorry -- TODO: Handle regime transfer for guard case
-      have hagree2_ctx' := hres_agree2 hclean2'
-      -- Transfer from ctx'.regime to ctxᵢ.regime
-      sorry -- TODO: Transfer agreeValueUnder between regimes
+          -- hreg : (ctxAfter ctxᵢ res).regime.lookup? k = some true
+          -- Need: (ctxAfter ctx' res2).regime.lookup? k = some true
+          exact qtypCleanUnder.guard k htag' (h_regime_eq ▸ hreg) hnotfun'
+    have hagree2_ctx' := hres_agree2 hclean2'
+    -- hagree2_ctx' : agreeValueUnder predSat (ctxAfter ctx' res2).regime cfg₀3.memory cfg₁3.memory ... res2.qualType o₀ o₁
+    -- Need: agreeValueUnder predSat (ctxAfter ctxᵢ res).regime cf₀.memory cf₁.memory ... res2.qualType o₀ o₁
+    -- Note: cf₀.memory = cfg₀3.memory (from hcf₀_eq) and cf₁.memory = cfg₁3.memory
+    have hagree2 : agreeValueUnder predSat (ctxAfter ctxᵢ res).regime cf₀.memory cf₁.memory θ₀2 θ₁2 res2.qualType o₀ o₁ := by
+      have hmem₀_eq : cf₀.memory = cfg₀3.memory := by simp [hcf₀_eq]
+      have hmem₁_eq : cf₁.memory = cfg₁3.memory := by simp [hcf₁_eq]
+      rw [hmem₀_eq, hmem₁_eq, h_regime_eq]
+      exact hagree2_ctx'
     exact agreeValueUnder_transport_clean hclean h_ret_etyp h_ret_pred hpoison_imp hagree2
 
 -- World-free version of stepFRW_fn
@@ -3714,9 +3760,14 @@ private lemma stepFR_fn
   have ⟨hcf₁, ho₁⟩ := terminatesTo_fn_inv' mode x paramType body returnType
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   subst hcf₀ hcf₁
-  have hcap :
+  have hcap' :
       agreeCapturedEnv predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ :=
     agreeCapturedEnv_of_agreeOnClean predSat ctxᵢ.regime ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
+  -- Convert to use output regime (which equals input regime for fn)
+  have h_regime_eq : (ctxAfter ctxᵢ res).regime = ctxᵢ.regime := by simp [hctxAfter]
+  have hcap :
+      agreeCapturedEnv predSat (ctxAfter ctxᵢ res).regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ := by
+    rw [h_regime_eq]; exact hcap'
   refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
@@ -3810,9 +3861,14 @@ private lemma stepFR_pfn
       have ⟨hcf₁, ho₁⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
         { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
       subst hcf₀ hcf₁
-      have hcap :
+      have hcap' :
           agreeCapturedEnv predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ :=
         agreeCapturedEnv_of_agreeOnClean predSat ctxᵢ.regime ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
+      -- Convert to use output regime (which equals input regime for pfn)
+      have h_regime_eq : (ctxAfter ctxᵢ res).regime = ctxᵢ.regime := by simp [hctxAfter]
+      have hcap :
+          agreeCapturedEnv predSat (ctxAfter ctxᵢ res).regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ := by
+        rw [h_regime_eq]; exact hcap'
       have hto : Expr.toPExpr? body = some pbody :=
         Expr_toPExpr?_eq_some_of_toPExpr_ok body pbody hbody
       refine ⟨θ₀, θ₁, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -3931,15 +3987,17 @@ private lemma stepFR_deref
   -- Post-context is unchanged by deref (only result type changes)
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
     sorry -- TODO: Prove context equality including regime'
+  -- IH gives agreeOnClean with (ctxAfter ctxᵢ res1).regime; transfer via hctxAfter
   have hagree_clean :
-      agreeOnClean predSat ctxᵢ.regime (ctxAfter ctxᵢ res)
+      agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
     simpa [hctxAfter, hmem₀, hvar₀, hmem₁, hvar₁] using hagree_clean_e
   have hric₀_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
     simpa [hctxAfter, hmem₀, hvar₀] using hric₀'
   have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
     simpa [hctxAfter, hmem₁, hvar₁] using hric₁'
-  have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) ctxᵢ.regime := by
+  -- IH gives regimeConsistentWithCtx with output regime; transfer via hctxAfter
+  have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
     simpa [hctxAfter] using hreg'
   -- Derive wfConfig for final configs using wfConfig_preserved
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.deref e) _ cf₀ o₀ ht₀ hwfcfg₀).1
@@ -3999,10 +4057,11 @@ private lemma stepFR_deref
             | guard k htag _ _ =>
                 -- contradiction: guard tag absent when pred = noPred
                 simp [qtypGuardTag] at htag
-  have hres1_clean : qtypCleanUnder ctxᵢ.regime res1.qualType :=
+  -- Use output regime for IH result
+  have hres1_clean : qtypCleanUnder (ctxAfter ctxᵢ res1).regime res1.qualType :=
     qtypCleanUnder.clean hres1_poison_false
   have hagree_ref :
-      agreeValueUnder predSat ctxᵢ.regime cfg₀'.memory cfg₁'.memory θ₀' θ₁' res1.qualType (Value.loc a₀') (Value.loc a₁') :=
+      agreeValueUnder predSat (ctxAfter ctxᵢ res1).regime cfg₀'.memory cfg₁'.memory θ₀' θ₁' res1.qualType (Value.loc a₀') (Value.loc a₁') :=
     hres_agree_e hres1_clean
   -- Extract the logical location l from reference agreement
   rcases hres1_etyp with ⟨ls0, hres1_etyp0⟩
@@ -4194,12 +4253,16 @@ private lemma stepFR_deref
                                 cases htc''
                                 have hpc : ctxᵢ.pc = false := by
                                   simpa [hpoison]
-                                -- regime consistency yields ctxᵢ.regime.lookup? k = some true
+                                -- regime consistency yields regime lookup = some true
                                 have htagEnv' :
                                     (ctxAfter ctxᵢ res1).tagEnv.get? k = some ⟨true, deps⟩ := by
                                   simpa [ctxAfter] using htagEnv
-                                have hreg_k : ctxᵢ.regime.lookup? k = some true :=
+                                -- hreg' uses output regime (ctxAfter ctxᵢ res1).regime
+                                have hreg_k' : (ctxAfter ctxᵢ res1).regime.lookup? k = some true :=
                                   (hreg'.1 k deps htagEnv')
+                                -- Transfer to input regime using monotonicity
+                                have hreg_k : ctxᵢ.regime.lookup? k = some true := by
+                                  sorry -- TODO: Use regime monotonicity
                                 have hguard : predGuardTag (v_3.2.getD Predicate.noPred) = some k := by
                                   simp [hpred]
                                   simp [predGuardTag]
@@ -4263,8 +4326,12 @@ private lemma stepFR_deref
                                 have htagEnv' :
                                     (ctxAfter ctxᵢ res1).tagEnv.get? k = some ⟨true, deps⟩ := by
                                   simpa [ctxAfter] using htagEnv
-                                have hreg_k : ctxᵢ.regime.lookup? k = some true :=
+                                -- hreg' uses output regime (ctxAfter ctxᵢ res1).regime
+                                have hreg_k' : (ctxAfter ctxᵢ res1).regime.lookup? k = some true :=
                                   (hreg'.1 k deps htagEnv')
+                                -- Transfer to input regime using monotonicity
+                                have hreg_k : ctxᵢ.regime.lookup? k = some true := by
+                                  sorry -- TODO: Use regime monotonicity (guardClosure case)
                                 have hguard : predGuardTag (v_3.2.getD Predicate.noPred) = some k := by
                                   simp [hpred, predGuardTag]
                                 obtain ⟨qt', hlookup', htagqt⟩ :=
@@ -4340,7 +4407,11 @@ private lemma stepFR_deref
                           simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
                           rw [← hqt'']
                           simp [het]
-                        exact qtypCleanUnder.guard k htagqt' hreg hnotfun'
+                        -- hreg : (ctxAfter ctxᵢ res).regime.lookup? k = some true
+                        -- Need to transfer to ctxᵢ.regime
+                        have hreg' : ctxᵢ.regime.lookup? k = some true := by
+                          sorry -- TODO: Use regime monotonicity (guardOnly result case)
+                        exact qtypCleanUnder.guard k htagqt' hreg' hnotfun'
                     | some val =>
                         simp [hpred, htagEnv, pure, Except.pure] at htc''
                         rcases hval : val with ⟨b, deps⟩; rcases hb : b
@@ -4379,14 +4450,22 @@ private lemma stepFR_deref
                           simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
                           rw [← hqt'']
                           simp [het]
-                        exact qtypCleanUnder.guard k htagqt' hreg hnotfun'
+                        -- hreg : (ctxAfter ctxᵢ res).regime.lookup? k = some true
+                        -- Need to transfer to ctxᵢ.regime
+                        have hreg'' : ctxᵢ.regime.lookup? k = some true := by
+                          sorry -- TODO: Use regime monotonicity (guardClosure result case)
+                        exact qtypCleanUnder.guard k htagqt' hreg'' hnotfun'
                     | some val =>
                         simp [hpred, htagEnv, pure, Except.pure] at htc''
                         rcases hval : val with ⟨b, deps⟩; rcases hb : b
                           <;> simp [hval, hb] at htc''
                           <;> rw [← htc''] at htag
                           <;> simp [qtypGuardTag] at htag
-  have hagree_loc := (hagree_clean_e.1 l qt hlookup_ctx hclean_loc)
+  -- hclean_loc : qtypCleanUnder ctxᵢ.regime qt, but hagree_clean_e uses output regime
+  -- Transfer hclean_loc to use output regime
+  have hclean_loc' : qtypCleanUnder (ctxAfter ctxᵢ res1).regime qt := by
+    sorry -- TODO: Use regime monotonicity to transfer qtypCleanUnder
+  have hagree_loc := (hagree_clean_e.1 l qt hlookup_ctx hclean_loc')
   have hEq : o₀ = o₁ := by
     -- Use the agreement on the location to show equality of stored ints.
     cases hagree_loc with
@@ -5176,9 +5255,10 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
     obtain ⟨qt, hlookup_mem, _het_eq, hpoison⟩ := hobs_mem l et hobs_lookup
     have hctx_lookup : (ctxAfter ctx res).memEnv.lookup l = some qt := by
       simpa [ctxAfter] using hlookup_mem
-    have hclean : qtypCleanUnder R qt := by
+    -- Use output regime since hagree_clean' now uses (ctxAfter ctx res).regime
+    have hclean : qtypCleanUnder (ctxAfter ctx res).regime qt := by
       exact qtypCleanUnder.clean hpoison
-    have hlocEntry : agreeLocUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' (l, qt) :=
+    have hlocEntry : agreeLocUnder predSat (ctxAfter ctx res).regime cf₁.memory cf₂.memory θ₁' θ₂' (l, qt) :=
       (hagree_clean'.1 l qt hctx_lookup hclean)
     cases hlocEntry with
     | agree_values _l _qt a₁' a₂' n₁ n₂ hreal₁ hreal₂ hlookup₁ hlookup₂ hagree =>
@@ -5229,10 +5309,11 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
         rcases hobs_ret _ hretOpt with ⟨hret_et, hret_poison⟩
         have hret_notfun_obs : et.isFunctionType = false := by
           simpa [wfObsSpec, hretOpt] using _hos
-        have hret_clean : qtypCleanUnder R res.qualType := by
+        -- Use output regime since hret_agree now uses (ctxAfter ctx res).regime
+        have hret_clean : qtypCleanUnder (ctxAfter ctx res).regime res.qualType := by
           exact qtypCleanUnder.clean hret_poison
         have hret_agree' :
-            agreeValueUnder predSat R cf₁.memory cf₂.memory θ₁' θ₂' res.qualType o₁ o₂ :=
+            agreeValueUnder predSat (ctxAfter ctx res).regime cf₁.memory cf₂.memory θ₁' θ₂' res.qualType o₁ o₂ :=
           hret_agree hret_clean
         cases et with
         | ref t ls =>
