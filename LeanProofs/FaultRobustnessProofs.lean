@@ -50,85 +50,105 @@ lemma consistentRegimeSpec_implies_consistentWithRegime
     (h_spec : consistentRegimeSpec predSat R s μ ρ θ)
     (h_match : ctxMatchesInputSpec s ctx)
     (h_wf : wfRegime R s)
-    (h_bounded : regimeBounded R) :
+    (_h_bounded : regimeBounded R) :
     consistentWithRegime predSat R ctx μ ρ θ := by
+  rcases h_match with ⟨hctx_mem, hctx_vars, hctx_mem_hyg, hctx_vars_hyg_deep⟩
+  have hctx_vars_hyg :
+      ∀ x qt k, ctx.varEnv.lookup x = some qt → qtypGuardTag qt = some k →
+        ¬ s.vars.hasKey x → k ∉ inputSpecTags s := by
+    exact
+      (deep_implies_shallow (P := fun env =>
+        ∀ x qt k, env.lookup x = some qt → qtypGuardTag qt = some k →
+          ¬ s.vars.hasKey x → k ∉ inputSpecTags s) (env := ctx.varEnv) hctx_vars_hyg_deep)
   simp only [consistentWithRegime]
   constructor
-  -- Locations part: for entries in ctx.memEnv with guard tag k defined in R
   · intro l qt k hlookup hguard hRdef
-    -- Case split on the predicate shape
-    cases hpred : qt.pred with
-    | noPred =>
-        -- If noPred, then qtypGuardTag qt = none, contradiction
-        simp [qtypGuardTag, hpred] at hguard
-    | guardOnly k' =>
-        -- For guardOnly, we can directly use locsRegime.guardOnly_ok
-        exact locsRegime.guardOnly_ok (l, qt) k' hpred
-    | guardClosure k' arg_name pred_body var_env =>
-        -- For guardClosure, we need to find the entry in the spec
-        have hk_eq : k' = k := by simp [qtypGuardTag, hpred] at hguard; exact hguard
-        -- By wfRegime, since R.lookup? k is defined, k ∈ inputSpecTags s
-        have hR_isSome : (R.lookup? k).isSome := by
-          cases hdef : R.lookup? k with
-          | none => exact absurd hdef hRdef
-          | some b => simp
-        have hk_in_tags : k ∈ inputSpecTags s := h_wf.2.2 k hR_isSome
-        -- inputSpecTags s = locTags ++ varTags
-        simp only [inputSpecTags] at hk_in_tags
-        cases hk_mem : List.mem_append.mp hk_in_tags with
-        | inl hk_in_locs =>
-            -- k comes from a location entry in the spec
-            simp only [List.mem_filterMap] at hk_in_locs
-            obtain ⟨⟨l', qt'⟩, hl'_in_spec, hguard'⟩ := hk_in_locs
-            -- The spec entry (l', qt') has guard tag k
-            -- By consistentRegimeSpec, locsRegime holds for (l', qt')
-            have h_locs_forall := h_spec.1
-            have h_loc_regime : locsRegime predSat R μ θ (l', qt') :=
-              List.forall_iff_forall_mem.mp h_locs_forall (l', qt') hl'_in_spec
-            -- We have locsRegime for (l', qt') from the spec, need it for (l, qt) in ctx
-            -- This requires showing (l, qt) = (l', qt'), which holds if:
-            -- 1. Guard tags uniquely identify entries (no two entries share a tag), AND
-            -- 2. Entries in ctx with spec tags come from the spec
-            -- These are reasonable system invariants but not provided as premises
-            -- TODO: Add premise about spec-ctx correspondence for guarded entries
-            sorry
-        | inr hk_in_vars =>
-            -- k comes from a variable entry, but we're proving for a location
-            -- This case requires guard tags to be disjoint between locs and vars
-            -- TODO: Add premise about loc/var tag disjointness
-            sorry
-  -- Variables part: similar structure
+    -- From wfRegime: any tag interpreted by R must be a spec tag.
+    have hk_in_tags : k ∈ inputSpecTags s := by
+      have h_isSome : (R.lookup? k).isSome := by
+        cases h : R.lookup? k with
+        | none => exact False.elim (hRdef h)
+        | some _b => simp
+      exact h_wf.2.2 k h_isSome
+    -- Tag hygiene in ctx forbids non-spec entries from reusing spec tags, so l must be a spec key.
+    have hkey : s.locs.hasKey l := by
+      by_contra hnot
+      have : k ∉ inputSpecTags s := hctx_mem_hyg l qt k hlookup hguard hnot
+      exact this hk_in_tags
+    -- Recover the spec-qualified type at l and use the spec-indexed regime consistency.
+    have hcontains : s.locs.contains l = true := by
+      simpa [MemoryTypeEnv.hasKey] using hkey
+    have hmem : l ∈ s.locs :=
+      (Std.ExtTreeMap.contains_iff_mem).1 hcontains
+    have hlookup_isSome : (s.locs[l]?).isSome = true :=
+      (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
+    cases hlookup_s : s.locs[l]? with
+    | none =>
+        simp [hlookup_s] at hlookup_isSome
+    | some qt_s =>
+        have hlookup_s' : s.locs.lookup l = some qt_s := by
+          simpa [MemoryTypeEnv.lookup] using hlookup_s
+        have hctx_lookup' : ctx.memEnv.lookup l = some qt_s := hctx_mem hlookup_s'
+        have hqt : qt_s = qt := by
+          have : some qt_s = some qt := by
+            calc
+              some qt_s = ctx.memEnv.lookup l := by
+                symm
+                exact hctx_lookup'
+              _ = some qt := by
+                exact hlookup
+          exact Option.some.inj this
+        have h_locs_forall := h_spec.1
+        rw [List.forall_iff_forall_mem] at h_locs_forall
+        have hmem' : (l, qt_s) ∈ s.locs.toList := by
+          rw [Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some]
+          dsimp [MemoryTypeEnv.lookup] at hlookup_s'
+          simpa using hlookup_s'
+        have h_loc_regime : locsRegime predSat R μ θ (l, qt_s) :=
+          h_locs_forall (l, qt_s) hmem'
+        simpa [hqt] using h_loc_regime
   · intro x qt k hlookup hguard hRdef
-    cases hpred : qt.pred with
-    | noPred =>
-        simp [qtypGuardTag, hpred] at hguard
-    | guardOnly k' =>
-        -- For guardOnly, we can directly use varsRegime.guardOnly_ok
-        exact varsRegime.guardOnly_ok (x, qt) k' hpred
-    | guardClosure k' arg_name pred_body var_env =>
-        have hk_eq : k' = k := by simp [qtypGuardTag, hpred] at hguard; exact hguard
-        have hR_isSome : (R.lookup? k).isSome := by
-          cases hdef : R.lookup? k with
-          | none => exact absurd hdef hRdef
-          | some b => simp
-        have hk_in_tags : k ∈ inputSpecTags s := h_wf.2.2 k hR_isSome
-        simp only [inputSpecTags] at hk_in_tags
-        cases hk_mem : List.mem_append.mp hk_in_tags with
-        | inl hk_in_locs =>
-            -- k comes from a location entry, but we're proving for a variable
-            -- This case requires guard tags to be disjoint between locs and vars
-            -- TODO: Add premise about loc/var tag disjointness
-            sorry
-        | inr hk_in_vars =>
-            simp only [List.mem_filterMap] at hk_in_vars
-            obtain ⟨⟨x', qt'⟩, hx'_in_spec, hguard'⟩ := hk_in_vars
-            have h_vars_forall := h_spec.2
-            have h_var_regime : varsRegime predSat R μ ρ (x', qt') :=
-              List.forall_iff_forall_mem.mp h_vars_forall (x', qt') hx'_in_spec
-            -- We have varsRegime for (x', qt') from the spec, need it for (x, qt) in ctx
-            -- Same reasoning as locations case - requires uniqueness of guard tags
-            -- TODO: Add premise about spec-ctx correspondence for guarded entries
-            sorry
+    have hk_in_tags : k ∈ inputSpecTags s := by
+      have h_isSome : (R.lookup? k).isSome := by
+        cases h : R.lookup? k with
+        | none => exact False.elim (hRdef h)
+        | some _b => simp
+      exact h_wf.2.2 k h_isSome
+    have hkey : s.vars.hasKey x := by
+      by_contra hnot
+      have : k ∉ inputSpecTags s := hctx_vars_hyg x qt k hlookup hguard hnot
+      exact this hk_in_tags
+    have hcontains : s.vars.contains x = true := by
+      simpa [VarTypeEnv.hasKey] using hkey
+    have hmem : x ∈ s.vars :=
+      (Std.ExtTreeMap.contains_iff_mem).1 hcontains
+    have hlookup_isSome : (s.vars[x]?).isSome = true :=
+      (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
+    cases hlookup_s : s.vars[x]? with
+    | none =>
+        simp [hlookup_s] at hlookup_isSome
+    | some qt_s =>
+        have hlookup_s' : s.vars.lookup x = some qt_s := by
+          simpa [VarTypeEnv.lookup] using hlookup_s
+        have hctx_lookup' : ctx.varEnv.lookup x = some qt_s := hctx_vars hlookup_s'
+        have hqt : qt_s = qt := by
+          have : some qt_s = some qt := by
+            calc
+              some qt_s = ctx.varEnv.lookup x := by
+                symm
+                exact hctx_lookup'
+              _ = some qt := by
+                exact hlookup
+          exact Option.some.inj this
+        have h_vars_forall := h_spec.2
+        rw [List.forall_iff_forall_mem] at h_vars_forall
+        have hmem' : (x, qt_s) ∈ s.vars.toList := by
+          rw [Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some]
+          dsimp [VarTypeEnv.lookup] at hlookup_s'
+          simpa using hlookup_s'
+        have h_var_regime : varsRegime predSat R μ ρ (x, qt_s) :=
+          h_vars_forall (x, qt_s) hmem'
+        simpa [hqt] using h_var_regime
 
 -- Regime boundedness (imported from `FaultRobustness.lean`): tags at or above the initial
 -- `nextTag` supply are outside the regime's domain (model faulty inputs only).
@@ -883,7 +903,7 @@ private lemma agreeOnCriticalAndTrusted_implies_agreeOnClean
   agreeOnTrustedInputs predSat R s ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
   agreeOnClean predSat R ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ := by
   intro hctx hcrit htrusted
-  rcases hctx with ⟨hctx_mem, hctx_vars⟩
+  rcases hctx with ⟨hctx_mem, hctx_vars, _, _⟩
   rcases hcrit with ⟨hcrit_locs, hcrit_vars⟩
   rcases htrusted with ⟨htrusted_locs, htrusted_vars⟩
   constructor
@@ -975,9 +995,25 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
   set R := ctx.regime with hRdef
   -- Use bridge lemma to derive consistentWithRegime from consistentRegimeSpec
   have hcwr₁ : consistentWithRegime predSat R ctx μ₁ ρ₁ θ₁ := by
-    sorry -- TODO: Apply bridge lemma consistentRegimeSpec_implies_consistentWithRegime
+    have hcrs₁' : consistentRegimeSpec predSat R s μ₁ ρ₁ θ₁ := by
+      simpa [hRdef] using hcrs₁
+    have hRbound' : wfRegime R s := by
+      simpa [hRdef] using hRbound
+    have hregBounded' : regimeBounded R := by
+      simpa [hRdef] using hregBounded
+    exact
+      consistentRegimeSpec_implies_consistentWithRegime
+        predSat R s ctx μ₁ ρ₁ θ₁ hcrs₁' hctx hRbound' hregBounded'
   have hcwr₂ : consistentWithRegime predSat R ctx μ₂ ρ₂ θ₂ := by
-    sorry -- TODO: Apply bridge lemma consistentRegimeSpec_implies_consistentWithRegime
+    have hcrs₂' : consistentRegimeSpec predSat R s μ₂ ρ₂ θ₂ := by
+      simpa [hRdef] using hcrs₂
+    have hRbound' : wfRegime R s := by
+      simpa [hRdef] using hRbound
+    have hregBounded' : regimeBounded R := by
+      simpa [hRdef] using hregBounded
+    exact
+      consistentRegimeSpec_implies_consistentWithRegime
+        predSat R s ctx μ₂ ρ₂ θ₂ hcrs₂' hctx hRbound' hregBounded'
   have hagree_clean :
       agreeOnClean predSat R ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ :=
     agreeOnCriticalAndTrusted_implies_agreeOnClean
@@ -5068,9 +5104,25 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
     · exact Nat.le_of_eq hR
   -- Need consistentWithRegime for both runs (derived from bridge lemma)
   have hcwr₁ : consistentWithRegime predSat R ctx μ₁ ρ₁ θ₁ := by
-    sorry -- TODO: Apply bridge lemma from consistentRegimeSpec
+    have hcrs₁' : consistentRegimeSpec predSat R s μ₁ ρ₁ θ₁ := by
+      simpa [hRdef] using hcrs₁
+    have hRbound' : wfRegime R s := by
+      simpa [hRdef] using hRbound
+    have hregBounded' : regimeBounded R := by
+      simpa [hRdef] using hregBounded
+    exact
+      consistentRegimeSpec_implies_consistentWithRegime
+        predSat R s ctx μ₁ ρ₁ θ₁ hcrs₁' hctx hRbound' hregBounded'
   have hcwr₂ : consistentWithRegime predSat R ctx μ₂ ρ₂ θ₂ := by
-    sorry -- TODO: Apply bridge lemma from consistentRegimeSpec
+    have hcrs₂' : consistentRegimeSpec predSat R s μ₂ ρ₂ θ₂ := by
+      simpa [hRdef] using hcrs₂
+    have hRbound' : wfRegime R s := by
+      simpa [hRdef] using hRbound
+    have hregBounded' : regimeBounded R := by
+      simpa [hRdef] using hregBounded
+    exact
+      consistentRegimeSpec_implies_consistentWithRegime
+        predSat R s ctx μ₂ ρ₂ θ₂ hcrs₂' hctx hRbound' hregBounded'
   have hstep_fr := hstep' hps μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂ hθ₁ hθ₂ hwf hric₁ hric₂ hreg hregBounded hcwr₁ hcwr₂ hagree_clean a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
   -- StepFR result structure: ∃ θ₁' θ₂', wfExtendsMap ∧ wfExtendsMap ∧ wfTypeContext ∧
   --   wfConfig ∧ wfConfig ∧ agreeOnClean ∧ resultAgreesIfClean

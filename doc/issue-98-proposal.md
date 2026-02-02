@@ -217,7 +217,8 @@ lemma consistentRegimeSpec_implies_consistentWithRegime
 ```
 
 This works because:
-- At program start, `ctxMatchesInputSpec s ctx` ensures spec entries are in `ctx`
+- At program start, `ctxMatchesInputSpec s ctx` ensures spec entries are in `ctx`, and enforces
+  **tag hygiene**: non-spec entries in `ctx` do not reuse spec guard tags.
 - By `wfRegime R s`, tags in R come from spec entries
 - Non-spec entries in `ctx` have fresh tags (not in R), so they're vacuously
   handled by `consistentWithRegime`

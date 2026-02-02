@@ -313,12 +313,20 @@ def retQTypFromObs (obs : ObservableSpec) : QTyp :=
 
 -- Context compliance with the input spec: all listed critical entries
 -- must be present with exactly the specified qualified types. Any unlisted
--- entry that appears in the context is permitted without restriction.
--- This is deliberately weaker than NI: trusted (non-S) entries may be clean.
+-- entry that appears in the context is permitted without restriction, *except*
+-- that non-spec entries must not reuse guard tags that appear in the spec.
+-- This tag-hygiene condition is needed to bridge from the spec-indexed
+-- regime-consistency predicate (`consistentRegimeSpec`) to the context-indexed
+-- one (`consistentWithRegime`) at the initial context.
 
 def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
   (∀ {l qt}, s.locs.lookup l = some qt → ctx.memEnv.lookup l = some qt) ∧
-  (∀ {x qt}, s.vars.lookup x = some qt → ctx.varEnv.lookup x = some qt)
+  (∀ {x qt}, s.vars.lookup x = some qt → ctx.varEnv.lookup x = some qt) ∧
+  (∀ l qt k, ctx.memEnv.lookup l = some qt → qtypGuardTag qt = some k →
+    ¬ s.locs.hasKey l → k ∉ inputSpecTags s) ∧
+  deepVarEnvProperty (fun env =>
+    ∀ x qt k, env.lookup x = some qt → qtypGuardTag qt = some k →
+      ¬ s.vars.hasKey x → k ∉ inputSpecTags s) ctx.varEnv
 
 def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
   (∀ {l a}, s.locs.contains l → θ.lookup l = some a → μ.contains a) ∧
