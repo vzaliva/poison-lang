@@ -153,9 +153,14 @@ def joinRegimes (R1 R2 : Regime) : Regime :=
 namespace Regime
 
 -- Regime monotonicity: R' can only drop entries (never change values or add new entries)
+-- Three constraints:
+--   1. bounds are equal
+--   2. preserved entries keep their values
+--   3. R' can't have entries that R doesn't have (no new entries)
 def monotoneStep (R R' : Regime) : Prop :=
   R'.bound = R.bound ∧
-  ∀ k b, R.lookup? k = some b → (R'.lookup? k = some b ∨ R'.lookup? k = none)
+  (∀ k b, R.lookup? k = some b → (R'.lookup? k = some b ∨ R'.lookup? k = none)) ∧
+  (∀ k, R'.lookup? k ≠ none → R.lookup? k ≠ none)
 
 end Regime
 
@@ -994,7 +999,8 @@ def runWhileFixpoint (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (pureGuard 
     -- strictly speaking this is not necessary because pure expressions do not modify envs,
     -- but we add it as extra precasion and to exactly match the Ott spec.
     let bodyTagEnv := if pureGuard then ctx.tagEnv else guardRes.tagEnv'
-    let bodyEnvCtx : TypeContext := { bodyPcCtx with memEnv := guardRes.memEnv', tagEnv := bodyTagEnv }
+    let bodyRegime := if pureGuard then ctx.regime else guardRes.regime'
+    let bodyEnvCtx : TypeContext := { bodyPcCtx with memEnv := guardRes.memEnv', tagEnv := bodyTagEnv, regime := bodyRegime }
     -- Body is typed in mode pm from outer context (per Ott spec)
     -- In practice, while loops can't appear in pure contexts, but we preserve ctx.pureCtx for correctness
     let bodyCtxBase : TypeContext := { bodyEnvCtx with nextLoc := guardRes.nextLoc', nextTag := guardRes.nextTag', pureCtx := ctx.pureCtx }
@@ -1161,8 +1167,8 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
     let result1 ← typecheckExpr ctx e1 fuel
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
 
-    -- Propagate fresh-name supplies from the condition into branch contexts
-    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+    -- Propagate fresh-name supplies and regime from first operand into second operand context
+    let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
     let result2 ← typecheckExpr ctx' e2 fuel
     let ⟨etyp2, p2, _  ⟩ := result2.qualType
 
@@ -1215,7 +1221,7 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
       if t != ETyp.int then
         throw s!"Type error: can only assign to ref int, but got ref {repr t}"
 
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
       let result2 ← typecheckExpr ctx' e2 fuel
       let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
 
@@ -1339,7 +1345,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         let env' := VarTypeEnv.update envMap x argQt
         let ctx'' := { ctx with pc := joinPoison p (joinPoison p1 ctx.pc),
                                 memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv',
-                                nextTag := result2.nextTag', nextLoc := result2.nextLoc' }
+                                nextTag := result2.nextTag', nextLoc := result2.nextLoc', regime := result2.regime' }
         let result3 ← typecheckExpr ctx'' body fuel
         let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
 
@@ -1433,7 +1439,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
         let env' := VarTypeEnv.update envMap x argQt
         let ctx'' := { ctx with pc := joinPoison p (joinPoison ctx.pc p1),
                                 memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv',
-                                pureCtx := true, nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+                                pureCtx := true, nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' }
         let result3 ← typecheckExpr ctx'' (PExpr.toExpr body) fuel
         let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
 
@@ -1506,7 +1512,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     let ⟨etyp2, p2, pred2⟩ := result2.qualType
 
     -- Premise 2 (re-ordered): pc ; G' ; S ; L' |- e1 : ST1 -> ST2 # p typing_closure (...) :> p1 { P1 } -| G'' ; L''
-    let ctx' := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+    let ctx' := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' }
     let result1 ← typecheckExpr ctx' e1 fuel
     let ⟨etyp1, p1, _pred1⟩ := result1.qualType
     match etyp1 with
@@ -1563,7 +1569,7 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
   | fuel + 1 => do
     let result1 ← typecheckExpr ctx e1 fuel
     let varEnv' := ctx.varEnv.update x result1.qualType
-    let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+    let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
 
     let result2 ← typecheckExpr ctx' e2 fuel
     let ⟨etyp2, p2, pred2⟩ := result2.qualType
@@ -1674,7 +1680,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       if etyp1 != ETyp.bool then throw "Condition of if must be bool"
 
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-                             nextLoc := result1.nextLoc', nextTag := result1.nextTag' }
+                             nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
 
       -- Branch pc is poisoned by guard poison
       let branchPc := joinPoison ctx.pc p1
@@ -1684,6 +1690,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let ⟨etyp2, p2, _⟩ := result2.qualType
 
       -- Ensure disjoint fresh supplies across branches
+      -- Note: regime stays as ctx''.regime (= result1.regime') since branches are parallel, not sequential
       let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
       let result3 ← typecheckExpr ctxForE3 e3 fuel
       let ⟨etyp3, p3, _⟩ := result3.qualType
