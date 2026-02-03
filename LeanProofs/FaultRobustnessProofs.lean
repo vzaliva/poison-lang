@@ -3295,10 +3295,7 @@ private lemma stepFR_newRef
       hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
   rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean_e, hres_agree_e⟩
   -- Derive regime equality: newRef preserves regime (res.regime' = res1.regime')
-  -- From typecheckNewRef: res.regime' = result'.regime' = result.regime' = res1.regime'
-  -- where result = res1 and result' = freshTLocRes result which only changes nextLoc'
-  have h_regime : res.regime' = res1.regime' := by
-    sorry -- TODO: Extract from typecheckNewRef structure
+  -- From typecheckNewRef_structure, we already have h_regime
   -- This gives us (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime
   have hregime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime := by
     simp [ctxAfter, h_regime]
