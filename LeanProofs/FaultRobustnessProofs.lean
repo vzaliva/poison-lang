@@ -501,6 +501,95 @@ def TypeSystemEnforcesFaultRobustness_step_spec
 
 section TypeSystemEnforcesFaultRobustness_impl_proof
 
+-- Helper lemmas: transport predicate-based properties across qualified types
+-- that differ only in irrelevant fields (e.g. poison), but share the same predicate.
+
+private lemma qtypGuardTag_of_pred_eq {qt qt' : QTyp}
+  (hpred : qt.pred = qt'.pred) :
+  qtypGuardTag qt = qtypGuardTag qt' := by
+  cases qt with
+  | mk et p pred =>
+    cases qt' with
+    | mk et' p' pred' =>
+      -- qtypGuardTag depends only on the predicate field
+      simp [qtypGuardTag] at hpred ⊢
+      cases hpred
+      rfl
+
+private lemma qtypPredHolds_transport_pred
+  {predSat : PredSat} {qt qt' : QTyp} {μ : Memory} {v : Value}
+  (hpred : qt.pred = qt'.pred) :
+  qtypPredHolds predSat qt μ v → qtypPredHolds predSat qt' μ v := by
+  intro h
+  cases h with
+  | noPred_ok hnp =>
+      refine qtypPredHolds.noPred_ok (qt := qt') ?_
+      calc
+        qt'.pred = qt.pred := by simp [hpred]
+        _ = Predicate.noPred := by exact hnp
+  | guardClosure_ok hclos hsat =>
+      rename_i k arg_name pred_body var_env
+      refine qtypPredHolds.guardClosure_ok (qt := qt') (k := k) (arg_name := arg_name)
+        (pred_body := pred_body) (var_env := var_env) ?_ hsat
+      calc
+        qt'.pred = qt.pred := by simp [hpred]
+        _ = Predicate.guardClosure k arg_name pred_body var_env := by exact hclos
+  | guardOnly_ok hgo hsat =>
+      rename_i k
+      refine qtypPredHolds.guardOnly_ok (qt := qt') (k := k) ?_ hsat
+      calc
+        qt'.pred = qt.pred := by simp [hpred]
+        _ = Predicate.guardOnly k := by exact hgo
+
+private lemma qtypPredHolds_transport_pred_not
+  {predSat : PredSat} {qt qt' : QTyp} {μ : Memory} {v : Value}
+  (hpred : qt.pred = qt'.pred) :
+  (¬ qtypPredHolds predSat qt μ v) → (¬ qtypPredHolds predSat qt' μ v) := by
+  intro hnot hholds
+  -- Transport back to `qt` and contradict.
+  have hback : qtypPredHolds predSat qt μ v :=
+    qtypPredHolds_transport_pred (predSat := predSat) (qt := qt') (qt' := qt) (μ := μ) (v := v) (by simp [hpred]) hholds
+  exact hnot hback
+
+private lemma valueConsistentWithRegime_transport_pred
+  {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {v : Value}
+  (hpred : qt.pred = qt'.pred) :
+  valueConsistentWithRegime predSat R qt μ v →
+  valueConsistentWithRegime predSat R qt' μ v := by
+  intro h
+  cases h with
+  | noTag htag =>
+      refine valueConsistentWithRegime.noTag (predSat := predSat) (R := R) (qt := qt') ?_
+      -- qtypGuardTag depends only on predicate
+      have hEq : qtypGuardTag qt = qtypGuardTag qt' :=
+        qtypGuardTag_of_pred_eq (qt := qt) (qt' := qt') hpred
+      have hEq' : qtypGuardTag qt' = qtypGuardTag qt := by
+        symm; exact hEq
+      simpa [hEq'] using htag
+  | notInRegime k htag hknone =>
+      refine valueConsistentWithRegime.notInRegime (predSat := predSat) (R := R) (qt := qt') (μ := μ) (v := v) k ?_ hknone
+      have hEq : qtypGuardTag qt = qtypGuardTag qt' :=
+        qtypGuardTag_of_pred_eq (qt := qt) (qt' := qt') hpred
+      have hEq' : qtypGuardTag qt' = qtypGuardTag qt := by
+        symm; exact hEq
+      simpa [hEq'] using htag
+  | inRegimeTrue k htag hktrue hholds =>
+      refine valueConsistentWithRegime.inRegimeTrue (predSat := predSat) (R := R) (qt := qt') (μ := μ) (v := v) k ?_ hktrue ?_
+      · have hEq : qtypGuardTag qt = qtypGuardTag qt' :=
+          qtypGuardTag_of_pred_eq (qt := qt) (qt' := qt') hpred
+        have hEq' : qtypGuardTag qt' = qtypGuardTag qt := by
+          symm; exact hEq
+        simpa [hEq'] using htag
+      · exact qtypPredHolds_transport_pred (predSat := predSat) (qt := qt) (qt' := qt') (μ := μ) (v := v) hpred hholds
+  | inRegimeFalse k htag hkfalse hnot =>
+      refine valueConsistentWithRegime.inRegimeFalse (predSat := predSat) (R := R) (qt := qt') (μ := μ) (v := v) k ?_ hkfalse ?_
+      · have hEq : qtypGuardTag qt = qtypGuardTag qt' :=
+          qtypGuardTag_of_pred_eq (qt := qt) (qt' := qt') hpred
+        have hEq' : qtypGuardTag qt' = qtypGuardTag qt := by
+          symm; exact hEq
+        simpa [hEq'] using htag
+      · exact qtypPredHolds_transport_pred_not (predSat := predSat) (qt := qt) (qt' := qt') (μ := μ) (v := v) hpred hnot
+
 private lemma ret_eq_of_agreeValueUnder_nonref
   {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
   {qt : QTyp} {o₀ o₁ : Value} :
@@ -3106,9 +3195,14 @@ private lemma stepFR_op
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · simpa [hctxAfter] using hwf2
   · -- valueConsistentWithRegime for cf₀
-    sorry -- TODO: prove valueConsistentWithRegime
+    -- `typecheckOp` always returns `no_pred`.
+    refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := cf₀.memory) (v := o₀) ?_
+    simp [qtypGuardTag, h_ret_pred]
   · -- valueConsistentWithRegime for cf₁
-    sorry -- TODO: prove valueConsistentWithRegime
+    refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := cf₁.memory) (v := o₁) ?_
+    simp [qtypGuardTag, h_ret_pred]
   intro hclean
   have hpoison_res : res.qualType.poison = false := by
     cases hclean with
@@ -3224,9 +3318,14 @@ private lemma stepFR_unaryop
   refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · simpa [hctxAfter] using hwf'
   · -- valueConsistentWithRegime for cf₀
-    sorry -- TODO: prove valueConsistentWithRegime
+    -- `typecheckUnaryOp` always returns `no_pred`.
+    refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := cf₀.memory) (v := o₀) ?_
+    simp [qtypGuardTag, h_ret_pred]
   · -- valueConsistentWithRegime for cf₁
-    sorry -- TODO: prove valueConsistentWithRegime
+    refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := cf₁.memory) (v := o₁) ?_
+    simp [qtypGuardTag, h_ret_pred]
   intro hclean
   have hpoison_res : res.qualType.poison = false := by
     cases hclean with
@@ -3534,9 +3633,14 @@ private lemma stepFR_newRef
   · -- wfTypeContext (ctxAfter ctxᵢ res)
     exact hwf_result
   · -- valueConsistentWithRegime for cf₀
-    sorry -- TODO: prove valueConsistentWithRegime
+    -- `typecheckNewRef` returns `no_pred` for the reference itself.
+    refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := cf₀.memory) (v := o₀) ?_
+    simp [qtypGuardTag, h_pred]
   · -- valueConsistentWithRegime for cf₁
-    sorry -- TODO: prove valueConsistentWithRegime
+    refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := cf₁.memory) (v := o₁) ?_
+    simp [qtypGuardTag, h_pred]
   · -- resultAgreesIfClean
     intro hclean
     have hpoison_res : res.qualType.poison = false := by
@@ -3655,9 +3759,10 @@ private lemma stepFR_seq
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · simpa [hctxAfter] using hwf2
   · -- valueConsistentWithRegime for cf₀
-    sorry -- TODO: prove valueConsistentWithRegime
+    -- The result of `seq` is exactly the result of `e2`; reuse IH2.
+    simpa [hctxAfter] using _hval_consist₀2
   · -- valueConsistentWithRegime for cf₁
-    sorry -- TODO: prove valueConsistentWithRegime
+    simpa [hctxAfter] using _hval_consist₁2
   -- Since res is directly the result of e2, hres_agree2 gives us the result directly
   -- IH2 gives resultAgreesIfClean with (ctxAfter ctx' res).regime = (ctxAfter ctxᵢ res).regime
   simpa [hctxAfter] using hres_agree2
@@ -4661,9 +4766,35 @@ private lemma stepFR_vlet
     simp only [ctxAfter, h_mem, h_loc] at hcontains ⊢
     exact hwf2 l hcontains
   · -- valueConsistentWithRegime for cf₀
-    sorry -- TODO: prove valueConsistentWithRegime
+    -- Reuse IH2's value consistency for `res2.qualType`, then transport across
+    -- the vlet result's predicate threading and varEnv restoration.
+    have hR_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctx' res2).regime := by
+      simp [ctxAfter, h_ret_regime]
+    have hpred_eq : res2.qualType.pred = res.qualType.pred := by
+      simpa using h_ret_pred.symm
+    have hmem_eq : cf₀.memory = cfg₀3.memory := by
+      simp [hcf₀_eq]
+    have hv2 : valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res2.qualType cfg₀3.memory o₀ :=
+      _hval_consist₀2
+    have hv' :
+        valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res.qualType cfg₀3.memory o₀ :=
+      valueConsistentWithRegime_transport_pred (predSat := predSat) (R := (ctxAfter ctx' res2).regime)
+        (qt := res2.qualType) (qt' := res.qualType) (μ := cfg₀3.memory) (v := o₀) hpred_eq hv2
+    simpa [hR_eq, hmem_eq] using hv'
   · -- valueConsistentWithRegime for cf₁
-    sorry -- TODO: prove valueConsistentWithRegime
+    have hR_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctx' res2).regime := by
+      simp [ctxAfter, h_ret_regime]
+    have hpred_eq : res2.qualType.pred = res.qualType.pred := by
+      simpa using h_ret_pred.symm
+    have hmem_eq : cf₁.memory = cfg₁3.memory := by
+      simp [hcf₁_eq]
+    have hv2 : valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res2.qualType cfg₁3.memory o₁ :=
+      _hval_consist₁2
+    have hv' :
+        valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res.qualType cfg₁3.memory o₁ :=
+      valueConsistentWithRegime_transport_pred (predSat := predSat) (R := (ctxAfter ctx' res2).regime)
+        (qt := res2.qualType) (qt' := res.qualType) (μ := cfg₁3.memory) (v := o₁) hpred_eq hv2
+    simpa [hR_eq, hmem_eq] using hv'
   -- resultAgreesIfClean
   · intro hclean
     have hpoison_imp : res.qualType.poison = false → res2.qualType.poison = false := by
@@ -4767,9 +4898,13 @@ private lemma stepFR_fn
   · -- agreeOnClean for updated context (fn doesn't change context)
     simpa [hctxAfter] using hagree
   · -- valueConsistentWithRegime for cf₀
-    sorry -- TODO: prove valueConsistentWithRegime
+    refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := μ₀) (v := o₀) ?_
+    simp [qtypGuardTag, hres, res_expected]
   · -- valueConsistentWithRegime for cf₁
-    sorry -- TODO: prove valueConsistentWithRegime
+    refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := μ₁) (v := o₁) ?_
+    simp [qtypGuardTag, hres, res_expected]
   · -- resultAgreesIfClean
     intro hclean
     cases hclean with
@@ -4874,9 +5009,13 @@ private lemma stepFR_pfn
       · -- agreeOnClean for updated context (pfn doesn't change context)
         simpa [hctxAfter] using hagree
       · -- valueConsistentWithRegime for cf₀
-        sorry -- TODO: prove valueConsistentWithRegime
+        refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+          (qt := res.qualType) (μ := μ₀) (v := o₀) ?_
+        simp [qtypGuardTag, hres, res_expected]
       · -- valueConsistentWithRegime for cf₁
-        sorry -- TODO: prove valueConsistentWithRegime
+        refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+          (qt := res.qualType) (μ := μ₁) (v := o₁) ?_
+        simp [qtypGuardTag, hres, res_expected]
       · -- resultAgreesIfClean
         intro hclean
         cases hclean with
