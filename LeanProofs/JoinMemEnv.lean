@@ -26,6 +26,13 @@ set_option linter.unusedSimpArgs false
 -- TODO: review these warnings
 set_option linter.unnecessarySeqFocus false
 
+
+-- Helper lemma: eraseDups preserves membership
+lemma List.mem_eraseDups_of_mem {α : Type*} [BEq α] {x : α} {l : List α}
+    (h : x ∈ l) : x ∈ l.eraseDups := by
+  sorry
+
+
 private lemma joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
   cases p <;> rfl
 
