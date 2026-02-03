@@ -3575,14 +3575,14 @@ private lemma stepFR_seq
   have hric₁1' : runtimeInstantiatesCtx ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [hctx', ctxAfter] using hric₁1
   have htagR1' : regimeConsistentWithCtx ctx' ctx'.regime := by
-    sorry -- TODO: Update for regime threading
+    simpa [hctx', updateCtxFromResult, ctxAfter] using htagR1
   have hcwr₀1' : consistentWithRegime predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
-    sorry -- TODO: Prove consistentWithRegime for intermediate context
+    simpa [hctx', updateCtxFromResult, ctxAfter] using hcwr₀1
   have hcwr₁1' : consistentWithRegime predSat ctx'.regime ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    sorry -- TODO: Prove consistentWithRegime for intermediate context
+    simpa [hctx', updateCtxFromResult, ctxAfter] using hcwr₁1
   have hagree_clean1' :
       agreeOnClean predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    sorry -- TODO: Update for regime threading
+    simpa [hctx', updateCtxFromResult, ctxAfter] using hagree_clean1
   -- Handle pureMode for IH2
   have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
   have hcfg₁1_eq : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
@@ -3595,11 +3595,12 @@ private lemma stepFR_seq
     rw [← hcfg₁1_eq]; exact hwfcf₁1
   -- Apply IH for e2
   -- Note: ctx'.regime = res1.regime' which may differ from ctxᵢ.regime
-  -- For now, we need regime monotonicity to relate them
-  have hregime_eq : ctx'.regime = ctxᵢ.regime := by
-    simp only [hctx', updateCtxFromResult]
-    sorry -- TODO: Requires regime monotonicity - res1.regime' = ctxᵢ.regime
-  have hRbound' : regimeBounded ctx'.regime := by simpa [hregime_eq] using hRbound
+  -- Use regime monotonicity to relate them
+  have h_mono : Regime.monotoneStep ctxᵢ.regime res1.regime' := regime_monotone ctxᵢ res1
+  have hRbound' : regimeBounded ctx'.regime := by
+    have hctx'_regime : ctx'.regime = res1.regime' := by simp [hctx', updateCtxFromResult]
+    rw [hctx'_regime]
+    exact regimeBounded_of_monotoneStep ctxᵢ.regime res1.regime' hRbound h_mono
   have hstep_e2 :=
     hIH2 hpredlaws cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ o₀ o₁
@@ -3626,9 +3627,9 @@ private lemma stepFR_seq
   have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
     simpa [hctxAfter] using htagR2
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
-    sorry -- TODO: Prove consistentWithRegime preservation
+    simpa [hctxAfter] using hcwr₀2
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
-    sorry -- TODO: Prove consistentWithRegime preservation
+    simpa [hctxAfter] using hcwr₁2
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_⟩
   · simpa [hctxAfter] using hwf2
   -- Since res is directly the result of e2, hres_agree2 gives us the result directly
