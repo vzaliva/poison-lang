@@ -3918,6 +3918,12 @@ private lemma stepFR_vlet
       by_cases hx : x = vname
       · -- Case: x = vname (new binding)
         subst hx
+        -- TODO(vlet/valueConsistentWithRegime): `vlet` introduces a new binding whose predicate/tag is
+        -- copied from `e1`'s result type. If that tag is in the regime domain, we need a return-value
+        -- regime-consistency fact for the runtime result `v₀1`. This will be provided once StepFR
+        -- concludes `valueConsistentWithRegime` (see `doc/vlet_issue.md`).
+        sorry
+        /-
         -- After subst, vname is replaced by x everywhere
         have hlookup_res1 : (ctxᵢ.varEnv.update x res1.qualType).lookup x = some qt := by
           simpa [hctx'] using hlookup
@@ -3939,8 +3945,191 @@ private lemma stepFR_vlet
         | guardOnly k' =>
             exact varsRegime.guardOnly_ok (x, res1.qualType) k' hpred_case
         | guardClosure k' arg_name pred_body var_env =>
-            -- This case requires predicate consistency for a fresh value
-            sorry
+            -- Guard-closure: use the existing regime-consistency from IH1 by relating this
+            -- let-bound value back to an existing guarded source.
+            --
+            -- In ioFree mode, guardClosure tags are not introduced by evaluation; they must
+            -- originate from a context entry whose runtime value is exactly v₀1.
+            have hk : k' = k := by
+              -- From hguard : qtypGuardTag res1.qualType = some k and hpred_case.
+              simp [qtypGuardTag, hpred_case] at hguard
+              exact Option.some.inj hguard
+            have hkR : ctx'.regime.lookup? k' ≠ none := by
+              simpa [hk] using hregime_k
+            -- Extract the regime bit for k'.
+            cases hlookupR : ctx'.regime.lookup? k' with
+            | none =>
+                cases hkR (by simpa [hlookupR])
+            | some b =>
+                -- We need predicate satisfaction to match b.
+                -- Use consistency for an existing source carrying tag k'.
+                -- NOTE: The full origin argument (showing v₀1 comes from an existing guarded
+                -- source) is currently not available in the library; we assume it via
+                -- existing context consistency on the original guarded entry.
+                have hconsist : (b = true → qtypPredHolds predSat res1.qualType cfg₀2.memory v₀1) ∧
+                               (b = false → ¬ qtypPredHolds predSat res1.qualType cfg₀2.memory v₀1) := by
+                  -- Since `b` is fixed by the regime, the predicate must align with it.
+                  -- This follows from the StepFR IH for `e1` together with the fact that
+                  -- `res1.qualType`'s guardClosure tag is inherited (not freshly generated).
+                  --
+                  -- We dispatch the two cases by using classical reasoning and the existing
+                  -- consistentWithRegime invariant for the post-context of `e1`.
+                  classical
+                  -- Obtain the corresponding vars/locs regime constraint from IH1, then
+                  -- transport it to the let-bound value (which is exactly v₀1).
+                  --
+                  -- Concretely, we use `hcwr₀1` on an arbitrary existing guarded entry with
+                  -- tag k'. Such an entry must exist whenever the regime interprets k'.
+                  --
+                  -- This repository does not yet include the required origin lemma, so we
+                  -- record the obligation as a classical choice over the non-empty set of
+                  -- such guarded entries.
+                  have hex :
+                      (∃ x0 qt0 arg0 body0 env0,
+                        (ctxAfter ctxᵢ res1).varEnv.lookup x0 = some qt0 ∧
+                        qt0.pred = Predicate.guardClosure k' arg0 body0 env0 ∧
+                        cfg₀1.varEnv.lookup x0 = some v₀1)
+                      ∨
+                      (∃ l0 qt0 arg0 body0 env0 a n,
+                        (ctxAfter ctxᵢ res1).memEnv.lookup l0 = some qt0 ∧
+                        qt0.pred = Predicate.guardClosure k' arg0 body0 env0 ∧
+                        θ₀1.lookup l0 = some a ∧
+                        cfg₀1.memory.lookup a = some n ∧
+                        v₀1 = Value.num n) := by
+                    -- TODO: Provenance lemma for guardClosure values (ioFree).
+                    -- For now, we assume existence using classical choice.
+                    admit
+                  -- Now use the chosen entry to derive predSat consistency.
+                  cases hex with
+                  | inl hvars =>
+                      rcases hvars with ⟨x0, qt0, arg0, body0, env0, hlookup0, hpred0, hv0⟩
+                      have hguard0 : qtypGuardTag qt0 = some k' := by
+                        simp [qtypGuardTag, hpred0]
+                      have hreg0 : (ctxAfter ctxᵢ res1).regime.lookup? k' ≠ none := by
+                        -- Regime is the same as ctx'.regime and lookupR is some.
+                        have : (ctxAfter ctxᵢ res1).regime.lookup? k' = some b := by
+                          simpa [hctx', ctxAfter] using hlookupR
+                        exact by
+                          intro hnone
+                          simp [hnone] at this
+                      have hvr := hcwr₀1.2 x0 qt0 k' hlookup0 hguard0 hreg0
+                      cases hvr with
+                      | withPred_ok _ _ _ _ v0 b0 _ hreg0' hvlookup hcons0 =>
+                          -- b0 = b from hlookupR; transport and rewrite value.
+                          have hb0 : b0 = b := by
+                            have : (ctxAfter ctxᵢ res1).regime.lookup? k' = some b0 := hreg0'
+                            have : some b0 = some b := by
+                              simpa [hctx', ctxAfter] using congrArg id (by symm; exact this.trans (by simpa [hctx', ctxAfter] using hlookupR))
+                            exact Option.some.inj this
+                          subst hb0
+                          have hv0' : v0 = v₀1 := by
+                            -- Both lookups yield the same v₀1.
+                            have : cfg₀1.varEnv.lookup x0 = some v0 := hvlookup
+                            -- Use hv0 from hvars.
+                            have : some v0 = some v₀1 := by
+                              calc
+                                some v0 = cfg₀1.varEnv.lookup x0 := by symm; exact this
+                                _ = some v₀1 := hv0
+                            exact Option.some.inj this
+                          subst hv0'
+                          -- Finally, lift qtypPredHolds from qt0 to res1.qualType using predSat.
+                          constructor
+                          · intro hbtrue
+                            have hph : qtypPredHolds predSat qt0 cfg₀1.memory v₀1 := (hcons0.1 (by simpa using hbtrue))
+                            cases hph with
+                            | guardClosure_ok _ hs =>
+                                -- res1.qualType also has the same tag k'.
+                                exact qtypPredHolds.guardClosure_ok (by simpa [hpred_case] using hpred_case) hs
+                            | _ =>
+                                cases hpred0
+                          · intro hbfalse
+                            intro hph
+                            -- Reduce to predSat, contradict the original consistency.
+                            have : predSat k' cfg₀1.memory v₀1 := by
+                              cases hph with
+                              | guardClosure_ok _ hs =>
+                                  -- res1.qualType pred is guardClosure k'.
+                                  exact hs
+                              | _ =>
+                                  cases hpred_case
+                            have hnh : ¬ qtypPredHolds predSat qt0 cfg₀1.memory v₀1 := hcons0.2 (by simpa using hbfalse)
+                            -- But qt0.guardClosure_ok would hold from the same predSat.
+                            apply hnh
+                            exact qtypPredHolds.guardClosure_ok hpred0 this
+                      | noPred_ok hnp =>
+                          cases hpred0 ▸ hnp
+                      | guardOnly_ok _ hgo =>
+                          cases hpred0 ▸ hgo
+                  | inr hlocs =>
+                      rcases hlocs with ⟨l0, qt0, arg0, body0, env0, a, n, hlookup0, hpred0, hreal0, hmem0, hv0⟩
+                      subst hv0
+                      have hguard0 : qtypGuardTag qt0 = some k' := by
+                        simp [qtypGuardTag, hpred0]
+                      have hreg0 : (ctxAfter ctxᵢ res1).regime.lookup? k' ≠ none := by
+                        have : (ctxAfter ctxᵢ res1).regime.lookup? k' = some b := by
+                          simpa [hctx', ctxAfter] using hlookupR
+                        intro hnone
+                        simp [hnone] at this
+                      have hlr := hcwr₀1.1 l0 qt0 k' hlookup0 hguard0 hreg0
+                      cases hlr with
+                      | withPred_ok _ _ _ _ a0 n0 b0 _ hreg0' hreal1 hmem1 hcons0 =>
+                          have hb0 : b0 = b := by
+                            have : (ctxAfter ctxᵢ res1).regime.lookup? k' = some b0 := hreg0'
+                            have : some b0 = some b := by
+                              -- compare with hlookupR
+                              have hb' : (ctxAfter ctxᵢ res1).regime.lookup? k' = some b := by
+                                simpa [hctx', ctxAfter] using hlookupR
+                              exact congrArg id (by rw [this, hb'])
+                            exact Option.some.inj this
+                          subst hb0
+                          -- show a0=a and n0=n
+                          have ha0 : a0 = a := by
+                            have : θ₀1.lookup l0 = some a0 := hreal1
+                            have : some a0 = some a := by
+                              calc
+                                some a0 = θ₀1.lookup l0 := by symm; exact this
+                                _ = some a := hreal0
+                            exact Option.some.inj this
+                          subst ha0
+                          have hn0 : n0 = n := by
+                            have : cfg₀1.memory.lookup a = some n0 := hmem1
+                            have : some n0 = some n := by
+                              calc
+                                some n0 = cfg₀1.memory.lookup a := by symm; exact this
+                                _ = some n := hmem0
+                            exact Option.some.inj this
+                          subst hn0
+                          -- Now lift consistency to res1.qualType.
+                          constructor
+                          · intro hbtrue
+                            have hph : qtypPredHolds predSat qt0 cfg₀1.memory (Value.num n) := hcons0.1 (by simpa using hbtrue)
+                            cases hph with
+                            | guardClosure_ok _ hs =>
+                                exact qtypPredHolds.guardClosure_ok hpred_case hs
+                            | _ => cases hpred0
+                          · intro hbfalse
+                            intro hph
+                            have : predSat k' cfg₀1.memory (Value.num n) := by
+                              cases hph with
+                              | guardClosure_ok _ hs => exact hs
+                              | _ => cases hpred_case
+                            have hnh : ¬ qtypPredHolds predSat qt0 cfg₀1.memory (Value.num n) := hcons0.2 (by simpa using hbfalse)
+                            apply hnh
+                            exact qtypPredHolds.guardClosure_ok hpred0 this
+                      | noPred_ok hnp =>
+                          cases hpred0 ▸ hnp
+                      | guardOnly_ok _ hgo =>
+                          cases hpred0 ▸ hgo
+                -- Finish varsRegime using this consistency.
+                have hmem_eq : cfg₀2.memory = cfg₀1.memory := by simp [cfg₀2]
+                have hlookupR' : ctx'.regime.lookup? k' = some b := by
+                  -- ctx'.regime and lookupR are exactly this.
+                  simpa using hlookupR
+                have hconsist' : (b = true → qtypPredHolds predSat res1.qualType cfg₀2.memory v₀1) ∧
+                                (b = false → ¬ qtypPredHolds predSat res1.qualType cfg₀2.memory v₀1) := by
+                  simpa [hmem_eq] using hconsist
+                exact varsRegime.withPred_ok (x, res1.qualType) k' arg_name pred_body var_env v₀1 b hpred_case hlookupR' hlookup_v hconsist'
+        -/
       · -- Case: x ≠ vname (old variable)
         have hlookup_old : (ctxᵢ.varEnv.update vname res1.qualType).lookup x = some qt := by
           simpa [hctx'] using hlookup
@@ -4015,6 +4204,9 @@ private lemma stepFR_vlet
         | guardOnly k' =>
             exact varsRegime.guardOnly_ok (x, res1.qualType) k' hpred_case
         | guardClosure k' arg_name pred_body var_env =>
+            -- TODO(vlet/valueConsistentWithRegime): symmetric to the cfg₀2 case above.
+            -- We need return-value regime-consistency for `v₁1` to discharge the new-binding
+            -- `varsRegime` obligation when the guard tag is in the regime domain.
             sorry
       · -- Case: x ≠ vname (old variable)
         have hlookup_old : (ctxᵢ.varEnv.update vname res1.qualType).lookup x = some qt := by
@@ -4329,7 +4521,112 @@ private lemma stepFR_vlet
     (wfConfig_preserved .ioFree (Expr.vlet vname e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
   -- Need consistentWithRegime for both runs
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
-    sorry -- TODO: Derive from hcwr₀2 with context/regime equality
+    -- TODO(vlet/valueConsistentWithRegime): `vlet` restores the outer varEnv in the final state, so
+    -- `consistentWithRegime` for the post-context must be transported across this restoration. The
+    -- hard case is again when the let-bound predicate/tag is in the regime domain: we need a
+    -- return-value regime-consistency property for `e1`'s result to re-establish `varsRegime` for the
+    -- new binding. Once StepFR concludes `valueConsistentWithRegime`, we can derive this from IH2.
+    sorry
+    /-
+    have h_mem₀_eq : cf₀.memory = cfg₀3.memory := by simp [hcf₀_eq]
+    have h_var₀_eq : cf₀.varEnv = cfg₀1.varEnv := by simp [hcf₀_eq]
+    have h_ctx_mem_eq : (ctxAfter ctxᵢ res).memEnv = (ctxAfter ctx' res2).memEnv := by
+      simp [ctxAfter, h_mem]
+    have h_ctx_regime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctx' res2).regime := by
+      simp [ctxAfter, h_ret_regime]
+    -- Regime monotonicity from after-e1 to after-e2: typing can only drop regime entries.
+    have h_mono_e2 : Regime.monotoneStep (ctxAfter ctxᵢ res1).regime (ctxAfter ctx' res2).regime := by
+      have h := regime_monotone ctx' res2
+      have hR1 : ctx'.regime = (ctxAfter ctxᵢ res1).regime := by simp [hctx', ctxAfter]
+      simpa [hR1] using h
+    constructor
+    · -- locs: derive from IH2's consistentWithRegime, transporting memEnv/regime and memory equality
+      intro l qt k hlookup hguard hkR
+      have hlookup' : (ctxAfter ctx' res2).memEnv.lookup l = some qt := by
+        simpa [h_ctx_mem_eq] using hlookup
+      have hkR' : (ctxAfter ctx' res2).regime.lookup? k ≠ none := by
+        simpa [h_ctx_regime_eq] using hkR
+      have hloc := hcwr₀2.1 l qt k hlookup' hguard hkR'
+      simpa [h_ctx_regime_eq, h_mem₀_eq] using hloc
+    · -- vars: split on shadowing at `vname`
+      intro x qt k hlookup hguard hkR
+      by_cases hx : x = vname
+      · subst hx
+        -- vname in the final context refers to the *original* binding (varEnv is restored),
+        -- so use IH1's consistentWithRegime and transfer along regime monotonicity.
+        have hlookup₁ : (ctxAfter ctxᵢ res1).varEnv.lookup vname = some qt := by
+          simpa [ctxAfter] using hlookup
+        have hkR_final : (ctxAfter ctx' res2).regime.lookup? k ≠ none := by
+          -- (ctxAfter ctx' res2).regime = (ctxAfter ctxᵢ res).regime
+          simpa [h_ctx_regime_eq] using hkR
+        have hkR₁ : (ctxAfter ctxᵢ res1).regime.lookup? k ≠ none :=
+          h_mono_e2.2.2 k hkR_final
+        have hvars₁ := hcwr₀1.2 vname qt k hlookup₁ hguard hkR₁
+        -- Transport varsRegime from the after-e1 regime to the final regime.
+        cases hkb : (ctxAfter ctx' res2).regime.lookup? k with
+        | none =>
+            cases hkR_final (by simpa [hkb])
+        | some b =>
+            have hkR₂ : (ctxAfter ctx' res2).regime.lookup? k = some b := hkb
+            -- Determine the corresponding lookup in the after-e1 regime; it must match `b`.
+            cases hk1 : (ctxAfter ctxᵢ res1).regime.lookup? k with
+            | none =>
+                cases hkR₁ (by simpa [hk1])
+            | some b1 =>
+                have hk1' : (ctxAfter ctxᵢ res1).regime.lookup? k = some b1 := hk1
+                have h_cases := h_mono_e2.2.1 k b1 hk1'
+                cases h_cases with
+                | inl hk2 =>
+                    have hb : b1 = b := by
+                      have : some b1 = some b := by
+                        calc some b1 = (ctxAfter ctx' res2).regime.lookup? k := by symm; exact hk2
+                             _ = some b := hkR₂
+                      exact Option.some.inj this
+                    subst hb
+                    have hvars₂ :
+                        varsRegime predSat (ctxAfter ctx' res2).regime cfg₀1.memory cfg₀1.varEnv (vname, qt) :=
+                      varsRegime_monotone h_mono_e2 hguard hk1' hkR₂ hvars₁
+                    simpa [h_var₀_eq, h_mem₀_eq, cfg₀2] using hvars₂
+                | inr hk2_none =>
+                    -- Contradiction: hkR₂ says the entry survives in the final regime.
+                    cases hkR₂ ▸ hk2_none
+      · -- x ≠ vname: use IH2 on the extended context, then transport varEnv back (restored after let).
+        have hlookup' : (ctxAfter ctx' res2).varEnv.lookup x = some qt := by
+          -- ctxAfter does not update varEnv, so reduce to ctx'.varEnv lookup.
+          have hx' : (ctxᵢ.varEnv.update vname res1.qualType).lookup x = some qt := by
+            simpa [ctxAfter, hctx'] using hlookup
+          -- Drop the update since x ≠ vname.
+          have : ctxᵢ.varEnv.lookup x = some qt := by
+            simpa [VarTypeEnv_lookup_update_ne ctxᵢ.varEnv vname x res1.qualType hx] using hx'
+          -- Rebuild lookup in ctx'.varEnv.
+          simpa [ctxAfter, hctx', VarTypeEnv_lookup_update_ne ctxᵢ.varEnv vname x res1.qualType hx] using hx'
+        have hkR' : (ctxAfter ctx' res2).regime.lookup? k ≠ none := by
+          simpa [h_ctx_regime_eq] using hkR
+        have hvars₂ := hcwr₀2.2 x qt k hlookup' hguard hkR'
+        -- Transport the runtime lookup across varEnv restoration (x ≠ vname).
+        -- cf₀.varEnv = cfg₀1.varEnv and cfg₀3.varEnv = cfg₀2.varEnv = cfg₀1.varEnv.update vname v₀1.
+        cases hvars₂ with
+        | noPred_ok hnp =>
+            exact varsRegime.noPred_ok (x, qt) hnp
+        | guardOnly_ok k' hgo =>
+            exact varsRegime.guardOnly_ok (x, qt) k' hgo
+        | withPred_ok k' arg_name pred_body var_env v b hclos hreg hblookup hcons =>
+            have hblookup' : cf₀.varEnv.lookup x = some v := by
+              -- use that lookup at x is unaffected by the let-bound update
+              have hblookup3 : cfg₀3.varEnv.lookup x = some v := hblookup
+              have hblookup2 : cfg₀2.varEnv.lookup x = some v := by simpa [hvar_pres₀] using hblookup3
+              have hblookup1 : cfg₀1.varEnv.lookup x = some v := by
+                -- cfg₀2.varEnv = cfg₀1.varEnv.update vname v₀1
+                simpa [cfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname x v₀1 hx] using hblookup2
+              simpa [h_var₀_eq] using hblookup1
+            have hreg' : (ctxAfter ctxᵢ res).regime.lookup? k' = some b := by
+              simpa [h_ctx_regime_eq, ctxAfter, hctx'] using hreg
+            have hcons' : (b = true → qtypPredHolds predSat qt (cf₀.memory) v) ∧
+                           (b = false → ¬ qtypPredHolds predSat qt (cf₀.memory) v) := by
+              have h_mem_eq : cf₀.memory = cfg₀3.memory := h_mem₀_eq
+              simpa [h_mem_eq] using hcons
+            exact varsRegime.withPred_ok (x, qt) k' arg_name pred_body var_env v b hclos hreg' hblookup' hcons'
+    -/
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
     sorry -- TODO: Derive from hcwr₁2 with context/regime equality
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hcwr₀_final, hcwr₁_final, hagree_clean, ?_⟩
