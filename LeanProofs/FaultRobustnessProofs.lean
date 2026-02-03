@@ -4136,7 +4136,192 @@ private lemma stepFR_vlet
         simpa [h_regime_eq] using hagree_loc
       simpa [h_mem₀_eq, h_mem₁_eq] using hagree_loc'
     · -- vars: Complex - varEnv is restored, needs careful reasoning about variable shadowing
-      sorry
+      intro x qt hlookup hclean
+      -- Helper: clean-under is preserved backwards along a regime monotone step (entries can only be dropped).
+      have cleanUnder_of_monotone {R R' : Regime} {qt : QTyp} :
+          Regime.monotoneStep R R' → qtypCleanUnder R' qt → qtypCleanUnder R qt := by
+        intro h_mono h_clean
+        cases h_clean with
+        | clean hpoison =>
+            exact qtypCleanUnder.clean hpoison
+        | guard k htag hkR' hnotfun =>
+            -- Since R'.lookup? k = some true, monotonicity implies R.lookup? k = some true as well.
+            have hRdef : R.lookup? k ≠ none := h_mono.2.2 k (by simp [hkR'])
+            cases hkR : R.lookup? k with
+            | none => exact (hRdef hkR).elim
+            | some b =>
+                have h_cases := h_mono.2.1 k b hkR
+                cases h_cases with
+                | inl hkR'_preserved =>
+                    have hb : b = true := by
+                      have : some b = some true := hkR'_preserved.symm.trans hkR'
+                      exact Option.some.inj this
+                    subst hb
+                    exact qtypCleanUnder.guard k htag hkR hnotfun
+                | inr hkR'_none =>
+                    -- Contradiction: hkR' says R'.lookup? k = some true.
+                    simp [hkR'_none] at hkR'
+      -- Helper: transfer agreeValueUnder across a monotone regime step, assuming the type is clean under the target.
+      -- We prove this by induction on agreement; the recursor provides the needed IH for captured environments.
+      have agreeValueUnder_clean_monotoneRegime
+          {R R' : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap} {qt : QTyp} {v₀ v₁ : Value} :
+          Regime.monotoneStep R R' →
+            qtypCleanUnder R' qt →
+              agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
+                agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
+        intro h_mono hclean hagree
+        -- Strengthen the induction hypothesis so the captured-env case is available in arrow/parrow branches.
+        have hrec :
+            (qtypCleanUnder R' qt → agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁) :=
+          agreeValueUnder.rec (predSat := predSat) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
+            (motive_1 := fun qt v₀ v₁ _ =>
+              qtypCleanUnder R' qt → agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁)
+            (motive_2 := fun σcap ρcap₀ ρcap₁ _ =>
+              agreeCapturedEnv predSat R' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁)
+            (clean_eq_nonref_nonarrow := by
+              intro qt v₀ v₁ hpoison hnotfun hnotref heq _hclean
+              exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq)
+            (clean_internal_arrow := by
+              intro st1 st2 p tcls qt tcl x body σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap hv₀ hv₁ ihcap
+                _hclean
+              exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch ihcap hv₀ hv₁)
+            (dirty_internal_arrow := by
+              intro qt v₀ v₁ hdirty_internal hisArrow htyp1 htyp2 _hclean
+              exact agreeValueUnder.dirty_internal_arrow hdirty_internal hisArrow htyp1 htyp2)
+            (clean_internal_parrow := by
+              intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap hv₀ hv₁ ihcap
+                _hclean
+              exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch ihcap hv₀ hv₁)
+            (dirty_internal_parrow := by
+              intro qt v₀ v₁ hdirty_internal hisParrow htyp1 htyp2 _hclean
+              exact agreeValueUnder.dirty_internal_parrow hdirty_internal hisParrow htyp1 htyp2)
+            (clean_ref := by
+              intro t ls l a₀ a₁ qt v₀ v₁ hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁ _hclean
+              exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁)
+            (withPred_true_eq := by
+              intro k qt v₀ v₁ htag _hreg hnotfun hnotref heq hclean
+              cases hclean with
+              | clean hpoison =>
+                  exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq
+              | guard k' htag' hk'R' _hnotfun' =>
+                  have hk : k' = k := by
+                    have : some k' = some k := by
+                      calc
+                        some k' = qtypGuardTag qt := by symm; exact htag'
+                        _ = some k := htag
+                    exact Option.some.inj this
+                  have hreg : R'.lookup? k = some true := by
+                    simpa [hk] using hk'R'
+                  exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun hnotref heq)
+            (withPred_true_ref := by
+              intro k t ls l a₀ a₁ qt v₀ v₁ htag _hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁ hclean
+              cases hclean with
+              | clean hpoison =>
+                  exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁
+              | guard k' htag' hk'R' _hnotfun' =>
+                  have hk : k' = k := by
+                    have : some k' = some k := by
+                      calc
+                        some k' = qtypGuardTag qt := by symm; exact htag'
+                        _ = some k := htag
+                    exact Option.some.inj this
+                  have hreg : R'.lookup? k = some true := by
+                    simpa [hk] using hk'R'
+                  exact agreeValueUnder.withPred_true_ref k htag hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁)
+            (nil := by
+              intro ρcap₀ ρcap₁
+              exact agreeCapturedEnv.nil)
+            (cons_clean := by
+              intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ _hcleanR hlookup1 hlookup2 hagree htail ihagree ihtail
+              by_cases hcleanR' : qtypCleanUnder R' qt
+              · exact agreeCapturedEnv.cons_clean hcleanR' hlookup1 hlookup2 (ihagree hcleanR') ihtail
+              · exact agreeCapturedEnv.cons_dirty hcleanR' ihtail)
+            (cons_dirty := by
+              intro x qt σcap ρcap₀ ρcap₁ hdirty htail ihtail
+              have hdirty' : ¬ qtypCleanUnder R' qt := by
+                intro hcleanR'
+                exact hdirty (cleanUnder_of_monotone (R := R) (R' := R') h_mono hcleanR')
+              exact agreeCapturedEnv.cons_dirty hdirty' ihtail)
+            hagree
+        exact hrec hclean
+      -- Establish the regime monotone step from after-e1 to after-e2 (typechecking can only drop regime entries).
+      have h_mono_e2 : Regime.monotoneStep (ctxAfter ctxᵢ res1).regime (ctxAfter ctx' res2).regime := by
+        have h := regime_monotone ctx' res2
+        have hR1 : ctx'.regime = (ctxAfter ctxᵢ res1).regime := by simp [hctx', ctxAfter]
+        simpa [hR1] using h
+      -- Split on shadowing: the only variable affected by the let-binding is `vname`.
+      by_cases hx : x = vname
+      · subst x
+        -- Use IH1 agreement for the original variable binding (since the runtime varEnv is restored).
+        have hlookup1 : (ctxAfter ctxᵢ res1).varEnv.lookup vname = some qt := by
+          simpa [ctxAfter] using hlookup
+        have hclean_final : qtypCleanUnder (ctxAfter ctx' res2).regime qt := by
+          -- Final regime is the e2 output regime.
+          simpa [h_regime_eq] using hclean
+        have hclean1 : qtypCleanUnder (ctxAfter ctxᵢ res1).regime qt :=
+          cleanUnder_of_monotone h_mono_e2 hclean_final
+        have hagree_var1 := hagree_clean1.2 vname qt hlookup1 hclean1
+        cases hagree_var1 with
+        | both_none _ _ hnone₀ hnone₁ =>
+            refine agreeVarUnder.both_none vname qt ?_ ?_
+            · simpa [h_var₀_eq] using hnone₀
+            · simpa [h_var₁_eq] using hnone₁
+        | agree_values _ _ v₀ v₁ hv₀ hv₁ hagree_val =>
+            -- Transfer value agreement to the final regime, extended realisation maps, and final memories.
+            have hagree_val' : agreeValueUnder predSat (ctxAfter ctx' res2).regime cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 qt v₀ v₁ :=
+              agreeValueUnder_clean_monotoneRegime h_mono_e2 hclean_final hagree_val
+            have hagree_val'' :
+                agreeValueUnder predSat (ctxAfter ctx' res2).regime cf₀.memory cf₁.memory θ₀2 θ₁2 qt v₀ v₁ :=
+              agreeValueUnder_clean_extends hclean_final hθext₀2.1 hθext₁2.1 hagree_val'
+            refine agreeVarUnder.agree_values vname qt v₀ v₁ ?_ ?_ ?_
+            · simpa [h_var₀_eq] using hv₀
+            · simpa [h_var₁_eq] using hv₁
+            · simpa [h_mem₀_eq, h_mem₁_eq, h_regime_eq] using hagree_val''
+      · -- x ≠ vname: use IH2 agreement in the extended context, then transport lookups back to the restored varEnvs.
+        have hlookup_ctx' : (ctxAfter ctx' res2).varEnv.lookup x = some qt := by
+          -- ctx'.varEnv is ctxᵢ.varEnv updated at vname; lookup at x is unchanged.
+          have hlookup_ctx : ctxᵢ.varEnv.lookup x = some qt := by
+            simpa [ctxAfter] using hlookup
+          have : (ctxᵢ.varEnv.update vname res1.qualType).lookup x = some qt := by
+            simpa [VarTypeEnv_lookup_update_ne ctxᵢ.varEnv vname x res1.qualType hx] using hlookup_ctx
+          simpa [ctxAfter, hctx'] using this
+        have hclean_ctx' : qtypCleanUnder (ctxAfter ctx' res2).regime qt := by
+          simpa [h_regime_eq] using hclean
+        have hagree_var := hagree_clean2.2 x qt hlookup_ctx' hclean_ctx'
+        cases hagree_var with
+        | both_none _ _ hnone₀ hnone₁ =>
+            refine agreeVarUnder.both_none x qt ?_ ?_
+            · -- Transport the `none` lookup across the let-bound update and varEnv restoration.
+              have : cfg₀3.varEnv.lookup x = none := hnone₀
+              have : cfg₀1.varEnv.lookup x = none := by
+                -- cfg₀3.varEnv = cfg₀2.varEnv = cfg₀1.varEnv.update vname v₀1
+                have hx' : cfg₀2.varEnv.lookup x = none := by
+                  simpa [hvar_pres₀] using this
+                simpa [cfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname x v₀1 hx] using hx'
+              simpa [h_var₀_eq] using this
+            · have : cfg₁3.varEnv.lookup x = none := hnone₁
+              have : cfg₁1.varEnv.lookup x = none := by
+                have hx' : cfg₁2.varEnv.lookup x = none := by
+                  simpa [hvar_pres₁] using this
+                simpa [cfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname x v₁1 hx] using hx'
+              simpa [h_var₁_eq] using this
+        | agree_values _ _ v₀ v₁ hv₀ hv₁ hagree_val =>
+            refine agreeVarUnder.agree_values x qt v₀ v₁ ?_ ?_ ?_
+            · -- lookup in restored env equals lookup in extended env for x ≠ vname
+              have : cfg₀3.varEnv.lookup x = some v₀ := hv₀
+              have : cfg₀1.varEnv.lookup x = some v₀ := by
+                have hx' : cfg₀2.varEnv.lookup x = some v₀ := by
+                  simpa [hvar_pres₀] using this
+                simpa [cfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname x v₀1 hx] using hx'
+              simpa [h_var₀_eq] using this
+            · have : cfg₁3.varEnv.lookup x = some v₁ := hv₁
+              have : cfg₁1.varEnv.lookup x = some v₁ := by
+                have hx' : cfg₁2.varEnv.lookup x = some v₁ := by
+                  simpa [hvar_pres₁] using this
+                simpa [cfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname x v₁1 hx] using hx'
+              simpa [h_var₁_eq] using this
+            · -- agreeValueUnder is insensitive to varEnvs; just rewrite memories/regime to match the goal.
+              simpa [h_mem₀_eq, h_mem₁_eq, h_regime_eq] using hagree_val
   -- Final wfConfig
   have hwfcf₀_final : wfConfig cf₀ :=
     (wfConfig_preserved .ioFree (Expr.vlet vname e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
