@@ -3806,7 +3806,66 @@ private lemma stepFR_vlet
   -- ctx'.regime = res1.regime' (not ctxᵢ.regime), need monotonicity transfer
   have hagree_clean1' :
       agreeOnClean predSat ctx'.regime ctx' cfg₀2.memory cfg₀2.varEnv θ₀1 cfg₁2.memory cfg₁2.varEnv θ₁1 := by
-    sorry
+    constructor
+    · -- locs: unchanged memories, and ctx'.memEnv matches ctxAfter ctxᵢ res1
+      intro l qt hlookup hclean
+      have hlookup' : (ctxAfter ctxᵢ res1).memEnv.lookup l = some qt := by
+        simpa [hctx', ctxAfter] using hlookup
+      have hclean' : qtypCleanUnder (ctxAfter ctxᵢ res1).regime qt := by
+        simpa [hctx', ctxAfter] using hclean
+      have hagree_loc := hagree_clean1.1 l qt hlookup' hclean'
+      simpa [cfg₀2, cfg₁2, hctx', ctxAfter] using hagree_loc
+    · -- vars: old variables come from hagree_clean1; new binding uses result agreement
+      intro x qt hlookup hclean
+      by_cases hx : x = vname
+      · subst x
+        have hlookup' : (ctxᵢ.varEnv.update vname res1.qualType).lookup vname = some qt := by
+          simpa [hctx'] using hlookup
+        have hqt : qt = res1.qualType := by
+          have h := VarTypeEnv_lookup_update_eq ctxᵢ.varEnv vname res1.qualType
+          have : some qt = some res1.qualType := by
+            calc
+              some qt = (ctxᵢ.varEnv.update vname res1.qualType).lookup vname := by
+                symm; exact hlookup'
+              _ = some res1.qualType := by
+                exact h
+          exact Option.some.inj this
+        subst hqt
+        have hclean' : qtypCleanUnder (ctxAfter ctxᵢ res1).regime res1.qualType := by
+          simpa [hctx', ctxAfter] using hclean
+        have hagree_val :=
+          hres_agree1 hclean'
+        have hlookup_v₀ : cfg₀2.varEnv.lookup vname = some v₀1 := by
+          simp [cfg₀2, VarEnv.update, VarEnv.lookup]
+        have hlookup_v₁ : cfg₁2.varEnv.lookup vname = some v₁1 := by
+          simp [cfg₁2, VarEnv.update, VarEnv.lookup]
+        refine agreeVarUnder.agree_values vname res1.qualType v₀1 v₁1 hlookup_v₀ hlookup_v₁ ?_
+        simpa [cfg₀2, cfg₁2, hctx', ctxAfter] using hagree_val
+      · -- x ≠ vname: transport agreeVarUnder through varEnv.update
+        have hlookup_update : (ctxᵢ.varEnv.update vname res1.qualType).lookup x = some qt := by
+          simpa [hctx'] using hlookup
+        have hlookup_ctx : ctxᵢ.varEnv.lookup x = some qt := by
+          simpa [VarTypeEnv_lookup_update_ne ctxᵢ.varEnv vname x res1.qualType hx] using hlookup_update
+        have hlookup_ctxAfter : (ctxAfter ctxᵢ res1).varEnv.lookup x = some qt := by
+          simpa [ctxAfter] using hlookup_ctx
+        have hclean' : qtypCleanUnder (ctxAfter ctxᵢ res1).regime qt := by
+          simpa [hctx', ctxAfter] using hclean
+        have hagree_var := hagree_clean1.2 x qt hlookup_ctxAfter hclean'
+        cases hagree_var with
+        | agree_values x qt v₀ v₁ h₀ h₁ hagree_val =>
+            have h₀' : cfg₀2.varEnv.lookup x = some v₀ := by
+              simpa [cfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname x v₀1 hx] using h₀
+            have h₁' : cfg₁2.varEnv.lookup x = some v₁ := by
+              simpa [cfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname x v₁1 hx] using h₁
+            exact
+              agreeVarUnder.agree_values x qt v₀ v₁ h₀' h₁'
+                (by simpa [cfg₀2, cfg₁2, hctx', ctxAfter] using hagree_val)
+        | both_none x qt h₀ h₁ =>
+            have h₀' : cfg₀2.varEnv.lookup x = none := by
+              simpa [cfg₀2, VarEnv_lookup_update_ne cfg₀1.varEnv vname x v₀1 hx] using h₀
+            have h₁' : cfg₁2.varEnv.lookup x = none := by
+              simpa [cfg₁2, VarEnv_lookup_update_ne cfg₁1.varEnv vname x v₁1 hx] using h₁
+            exact agreeVarUnder.both_none x qt h₀' h₁'
   -- Handle pureMode for IH2
   have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
   have hcfg₀2_eq : cfg₀2 = { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 } := rfl
