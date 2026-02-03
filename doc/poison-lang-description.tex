@@ -1206,10 +1206,16 @@ typing context and agree on every context entry that is clean under the chosen
 guard regime, it shows that evaluation preserves this agreement in the
 post-typing context and that clean (or de-poisoned) results agree. This
 formulation supports chaining through compound expressions (sequencing, let,
-conditionals, \emph{etc.}). A short bridge argument then shows that the
-spec-level premises (agreement on critical inputs and on trusted clean inputs)
-imply the initial hypothesis required by \texttt{StepFR}, yielding the desired
-observable equality.
+conditionals, \emph{etc.}). The conclusion of \texttt{StepFR} is strengthened
+to ensure each run's return value is regime-consistent via the predicate
+$\text{valueConsistentWithRegime}$: if the result type carries a guard tag in
+the regime's domain, predicate satisfaction on the return value agrees with
+the regime's truth value. This enables the proof to establish regime
+consistency for newly introduced bindings (e.g.\ in the \texttt{let} rule)
+without changing the top-level specification. A short bridge
+argument then shows that the spec-level premises (agreement on critical inputs
+and on trusted clean inputs) imply the initial hypothesis required by
+\texttt{StepFR}, yielding the desired observable equality.
 
 The specification is stated for arbitrary evaluation modes, but the proof
 establishes the property only for the I/O-free fragment.
