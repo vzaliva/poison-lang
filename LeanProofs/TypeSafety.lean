@@ -502,6 +502,7 @@ lemma typecheckPrintInt_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (
     res.tagEnv' = result1.tagEnv' ∧
     res.nextLoc' = result1.nextLoc' ∧
     res.nextTag' = result1.nextTag' ∧
+    res.regime' = result1.regime' ∧
     res.qualType.etyp = ETyp.unit := by
   intro h_typecheck
   cases fuel with
@@ -560,6 +561,7 @@ lemma typecheckPrintString_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat
     res.tagEnv' = result1.tagEnv' ∧
     res.nextLoc' = result1.nextLoc' ∧
     res.nextTag' = result1.nextTag' ∧
+    res.regime' = result1.regime' ∧
     res.qualType.etyp = ETyp.unit := by
   intro h_typecheck
   cases fuel with
@@ -759,6 +761,7 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
     res.tagEnv' = result2.tagEnv' ∧
     res.nextLoc' = result2.nextLoc' ∧
     res.nextTag' = result2.nextTag' ∧
+    res.regime' = result2.regime' ∧
     res.qualType.poison = joinPoison ctx.pc result2.qualType.poison ∧
     res.qualType.pred = result2.qualType.pred := by
   intro h_typecheck
@@ -807,7 +810,8 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
     res.memEnv' = updateMemEnv result1.memEnv' l ⟨ETyp.int, joinPoison ctx.pc result1.qualType.poison, result1.qualType.pred⟩ ∧
     res.tagEnv' = result1.tagEnv' ∧
     res.nextLoc' = result1.nextLoc' + 1 ∧
-    res.nextTag' = result1.nextTag' := by
+    res.nextTag' = result1.nextTag' ∧
+    res.regime' = result1.regime' := by
   intro h_typecheck
   cases fuel with
   | zero =>
@@ -858,6 +862,10 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
             have := congrArg TypeResult.nextTag' h_typecheck
             simp at this
             exact this.symm
+          have h_regime : res.regime' = result1.regime' := by
+            have := congrArg TypeResult.regime' h_typecheck
+            simp at this
+            exact this.symm
           have h_etyp : res.qualType.etyp = ETyp.ref ETyp.int (LocSet.singleton result1.nextLoc') := by
             have := congrArg QTyp.etyp h_qualType
             simp at this
@@ -874,7 +882,7 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
           -- Construct the existential with the new signature (no etyp, it's always ETyp.int)
           simp only [Nat.add_sub_cancel]
           use result1, result1.nextLoc'
-          refine ⟨h_tc1, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+          refine ⟨h_tc1, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
           · -- result1.qualType.etyp = ETyp.int
             rw [h_qt1]
             simp
@@ -893,6 +901,8 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
             exact h_nextLoc
           · -- res.nextTag' = result1.nextTag'
             exact h_nextTag
+          · -- res.regime' = result1.regime'
+            exact h_regime
         · -- Case: etyp ≠ ETyp.int (error case - contradiction)
           -- Contradiction: mapping over `throw` cannot yield `Except.ok`.
           have h_typecheck' := h_typecheck
@@ -1083,12 +1093,13 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
              let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
              let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
              typecheckExpr ctxFalse' e3 (fuel - 1) = .ok res3 ∧
-             res.memEnv' = res2.memEnv' ∧
-             res.tagEnv' = res2.tagEnv' ∧
-             res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
-             res.nextTag' = max res2.nextTag' res3.nextTag' ∧
-             res.qualType.poison = joinPoison ctx.pc res2.qualType.poison ∧
-             res.qualType.etyp = res2.qualType.etyp)
+            res.memEnv' = res2.memEnv' ∧
+            res.tagEnv' = res2.tagEnv' ∧
+            res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
+            res.nextTag' = max res2.nextTag' res3.nextTag' ∧
+            res.regime' = res2.regime' ∧
+            res.qualType.poison = joinPoison ctx.pc res2.qualType.poison ∧
+            res.qualType.etyp = res2.qualType.etyp)
     ∨
     (-- Mode 2: Predicate-based with R(k) = some false (else-branch effective)
      ∃ (k : Tag) (deps : Deps),
@@ -1104,12 +1115,13 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
              let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
              let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
              typecheckExpr ctxFalse' e3 (fuel - 1) = .ok res3 ∧
-             res.memEnv' = res3.memEnv' ∧
-             res.tagEnv' = res3.tagEnv' ∧
-             res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
-             res.nextTag' = max res2.nextTag' res3.nextTag' ∧
-             res.qualType.poison = joinPoison ctx.pc res3.qualType.poison ∧
-             res.qualType.etyp = res3.qualType.etyp)
+            res.memEnv' = res3.memEnv' ∧
+            res.tagEnv' = res3.tagEnv' ∧
+            res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
+            res.nextTag' = max res2.nextTag' res3.nextTag' ∧
+            res.regime' = res3.regime' ∧
+            res.qualType.poison = joinPoison ctx.pc res3.qualType.poison ∧
+            res.qualType.etyp = res3.qualType.etyp)
     ∨
     (-- Mode 3: Predicate-based with R(k) = none (conservative)
      ∃ (k : Tag) (deps : Deps),
@@ -1126,14 +1138,15 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
              let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
              let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
              typecheckExpr ctxFalse' e3 (fuel - 1) = .ok res3 ∧
-             res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv' ∧
-             res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv' ∧
-             res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
-             res.nextTag' = max res2.nextTag' res3.nextTag' ∧
-             res.qualType.poison = joinPoison ctx.pc (joinPoison res1.qualType.poison
-                                     (joinPoison res2.qualType.poison res3.qualType.poison)))
-    ∨
-    (-- Mode 4: Standard (matchGuard fails)
+            res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv' ∧
+            res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv' ∧
+            res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
+            res.nextTag' = max res2.nextTag' res3.nextTag' ∧
+            res.regime' = joinRegimes res2.regime' res3.regime' ∧
+            res.qualType.poison = joinPoison ctx.pc (joinPoison res1.qualType.poison
+                                    (joinPoison res2.qualType.poison res3.qualType.poison)))
+   ∨
+   (-- Mode 4: Standard (matchGuard fails)
      (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv = .error err) ∧
      ∃ res1 : TypeResult,
        typecheckExpr ctx e1 (fuel - 1) = .ok res1 ∧
@@ -1147,12 +1160,13 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
          ∃ res3 : TypeResult,
            let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
            typecheckExpr ctxForE3 e3 (fuel - 1) = .ok res3 ∧
-           res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv' ∧
-           res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv' ∧
-           res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
-           res.nextTag' = max res2.nextTag' res3.nextTag' ∧
-           res.qualType.poison = joinPoison ctx.pc (joinPoison res1.qualType.poison
-                                   (joinPoison res2.qualType.poison res3.qualType.poison))) := by
+          res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv' ∧
+          res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv' ∧
+          res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
+          res.nextTag' = max res2.nextTag' res3.nextTag' ∧
+          res.regime' = joinRegimes res2.regime' res3.regime' ∧
+          res.qualType.poison = joinPoison ctx.pc (joinPoison res1.qualType.poison
+                                  (joinPoison res2.qualType.poison res3.qualType.poison))) := by
   intro htc
   cases fuel with
   | zero =>
@@ -1565,6 +1579,7 @@ lemma typecheckRand_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res 
     res.tagEnv' = result1.tagEnv' ∧
     res.nextLoc' = result1.nextLoc' ∧
     res.nextTag' = result1.nextTag' ∧
+    res.regime' = result1.regime' ∧
     res.qualType.etyp = ETyp.int ∧
     res.qualType.poison = joinPoison ctx.pc result1.qualType.poison ∧
     res.qualType.pred = Predicate.noPred := by
@@ -1630,6 +1645,7 @@ lemma typecheckFrand_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res
     res.tagEnv' = result1.tagEnv' ∧
     res.nextLoc' = result1.nextLoc' ∧
     res.nextTag' = result1.nextTag' + 1 ∧
+    res.regime' = result1.regime' ∧
     res.qualType.etyp = ETyp.int ∧
     res.qualType.poison = true ∧
     qtypGuardTag res.qualType = some result1.nextTag' := by
@@ -1681,7 +1697,7 @@ lemma typecheckFrand_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res
                       · simpa [Nat.succ_sub_one] using htc1
                       · -- remaining field equalities
                         cases h_res
-                        refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, ?_⟩
+                        refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_⟩
                         simp [qtypGuardTag]
                   | error msg =>
                       -- If `Expr.toPExpr` failed, `typecheckFrand` would fail.
@@ -1701,6 +1717,7 @@ lemma typecheckAssign_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) 
     result2.qualType.etyp = ETyp.int ∧
     res.nextLoc' = result2.nextLoc' ∧
     res.nextTag' = result2.nextTag' ∧
+    res.regime' = invalidateRegimeDeps ctx.regime result2.tagEnv' ls ∧
     res.qualType.etyp = ETyp.unit ∧
     res.qualType.poison = joinPoison ctx.pc result1.qualType.poison ∧
     res.qualType.pred = Predicate.noPred := by
@@ -1761,6 +1778,8 @@ lemma typecheckAssign_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) 
                               constructor
                               · trivial  -- res.nextTag' = result2.nextTag' (proven by cases h_typecheck)
                               constructor
+                              · trivial  -- res.regime' = invalidateRegimeDeps ctx.regime result2.tagEnv' ls (proven by cases h_typecheck)
+                              constructor
                               · trivial  -- res.qualType.etyp = ETyp.unit (proven by cases h_typecheck)
                               constructor
                               · -- res.qualType.poison = joinPoison ctx.pc p1
@@ -1788,7 +1807,8 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
     res.memEnv' = result1.memEnv' ∧
     res.tagEnv' = result1.tagEnv' ∧
     res.nextLoc' = result1.nextLoc' ∧
-    res.nextTag' = result1.nextTag' := by
+    res.nextTag' = result1.nextTag' ∧
+    res.regime' = result1.regime' := by
   intro h_typecheck
   cases fuel with
   | zero =>
@@ -1803,9 +1823,9 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
           simp [h_tc1] at h_typecheck
           -- All return branches have the form:
           -- return { qualType := qt, memEnv' := result1.memEnv', tagEnv' := result1.tagEnv',
-          --          nextLoc' := result1.nextLoc', nextTag' := result1.nextTag' }
+          --          nextLoc' := result1.nextLoc', nextTag' := result1.nextTag', regime' := result1.regime' }
           -- So we can conclude the result regardless of which branch was taken
-          refine ⟨result1, ?_, ?_, ?_, ?_, ?_⟩
+          refine ⟨result1, ?_, ?_, ?_, ?_, ?_, ?_⟩
           · -- typecheckExpr ctx e (fuel - 1) = .ok result1
             simp only [Nat.add_sub_cancel]
             exact h_tc1
@@ -1892,6 +1912,29 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
                 · -- Case: t ≠ ETyp.int (error - contradiction)
                   cases h_typecheck
           · -- res.nextTag' = result1.nextTag'
+            cases h_qt : result1.qualType with
+            | mk etyp poisonRef predRef =>
+                rw [h_qt] at h_typecheck
+                simp at h_typecheck
+                cases etyp <;> simp at h_typecheck
+                rename_i t ls
+                -- if t != ETyp.int then throw
+                split at h_typecheck
+                · -- Case: t = ETyp.int
+                  split at h_typecheck
+                  · contradiction
+                  · split at h_typecheck
+                    · -- foldM error case - contradiction
+                      contradiction
+                    · split at h_typecheck
+                      · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                      · split at h_typecheck
+                        · simp [pure, Except.pure] at h_typecheck; cases h_typecheck; rfl
+                        · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                        · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                · -- Case: t ≠ ETyp.int (error - contradiction)
+                  cases h_typecheck
+          · -- res.regime' = result1.regime'
             cases h_qt : result1.qualType with
             | mk etyp poisonRef predRef =>
                 rw [h_qt] at h_typecheck
@@ -2211,7 +2254,7 @@ private lemma typecheckNewRef_nextTag_mono (ctx : TypeContext) (e : Expr) (fuel 
   ctx.nextTag ≤ res.nextTag' := by
   intro htc
   have hstruct := typecheckNewRef_structure ctx e fuel res htc
-  rcases hstruct with ⟨result1, _l, htc1, _hl, _hetyp, _hqtetyp, _hqtpoison, _hqtpred, _hmem, _htag, _hloc, hnexttag⟩
+  rcases hstruct with ⟨result1, _l, htc1, _hl, _hetyp, _hqtetyp, _hqtpoison, _hqtpred, _hmem, _htag, _hloc, hnexttag, _hregime⟩
   cases fuel with
   | zero => unfold typecheckNewRef at htc; simp at htc
   | succ fuel' =>
@@ -2269,7 +2312,7 @@ lemma typecheckDeref_preserves_nextTag (ctx : TypeContext) (e : Expr) (fuel : Na
     res.nextTag' = result1.nextTag' := by
   intro htc
   have hstruct := typecheckDeref_structure ctx e fuel res htc
-  rcases hstruct with ⟨result1, htc1, _hmem, _htag, _hloc, hnexttag⟩
+  rcases hstruct with ⟨result1, htc1, _hmem, _htag, _hloc, hnexttag, _hregime⟩
   exact ⟨result1, htc1, hnexttag⟩
 
 private lemma typecheckDeref_nextTag_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)

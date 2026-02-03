@@ -3276,7 +3276,7 @@ private lemma stepFR_newRef
   have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
-  obtain ⟨res1, l, htc1, hl, h_etyp1, h_etyp, h_poison, h_pred, h_mem, h_tag, h_loc, h_ntag⟩ :=
+  obtain ⟨res1, l, htc1, hl, h_etyp1, h_etyp, h_poison, h_pred, h_mem, h_tag, h_loc, h_ntag, h_regime⟩ :=
     typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
@@ -3651,7 +3651,7 @@ private lemma stepFR_vlet
     simp [typecheck, typecheckExpr_vlet_succ] at htc
     exact htc
   obtain ⟨res1, res2, ctx', htc1, hctx', htc2, h_ret_etyp, h_mem, h_tag, h_loc, h_ntag,
-          h_ret_poison, h_ret_pred⟩ :=
+          h_ret_regime, h_ret_poison, h_ret_pred⟩ :=
     typecheckVlet_structure ctxᵢ vname e1 e2 (Nat.succ fuel') res htc'
   have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
@@ -3944,9 +3944,7 @@ private lemma stepFR_vlet
     -- We need hclean2' : qtypCleanUnder (ctxAfter ctx' res2).regime res2.qualType for IH2
     -- Since (ctxAfter ctx' res2).regime = res2.regime' = res.regime' = (ctxAfter ctxᵢ res).regime
     -- First, prove regime equality from typechecker structure lemma
-    have h_res_regime_eq : res.regime' = res2.regime' := by
-      -- This comes from typecheckVlet_structure: res just passes through res2's regime
-      sorry -- TODO: Extract from typecheckVlet_structure
+    have h_res_regime_eq : res.regime' = res2.regime' := h_ret_regime
     have h_regime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctx' res2).regime := by
       simp only [ctxAfter, h_res_regime_eq]
     have hclean2' : qtypCleanUnder (ctxAfter ctx' res2).regime res2.qualType := by
@@ -4210,7 +4208,7 @@ private lemma stepFR_deref
   have htc' : typecheckDeref ctxᵢ e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr] at htc
     exact htc
-  obtain ⟨res1, htc1, h_mem, h_tag, h_loc, h_ntag⟩ :=
+  obtain ⟨res1, htc1, h_mem, h_tag, h_loc, h_ntag, h_regime⟩ :=
     typecheckDeref_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1_expr : typecheckExpr ctxᵢ e fuel' = .ok res1 := by
     simpa [Nat.succ_sub_one] using htc1
