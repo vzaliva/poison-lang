@@ -3029,13 +3029,12 @@ private lemma stepFR_op
   have htagR1' : regimeConsistentWithCtx ctx' ctx'.regime := by
     have h := regimeConsistentWithCtx_of_typecheckResult ctxᵢ e1 fuel' res1 htagR_input h_mono htc1'
     simpa [ctx', ctxAfter] using h
-  -- agreeOnClean from IH1 uses ctxᵢ.regime (input), need to transfer to ctx'.regime
-  -- For now, use monotonicity-based transfer (smaller regime is more permissive)
+  -- agreeOnClean from IH1 directly applies since ctx' = ctxAfter ctxᵢ res1
+  have hctx'_eq : ctx' = ctxAfter ctxᵢ res1 := by simp [ctx', ctxAfter]
   have hagree_clean1' :
       agreeOnClean predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    -- agreeOnClean for smaller regime (ctx'.regime = res1.regime') follows from larger regime (ctxᵢ.regime)
-    -- via monotonicity: fewer tags to check means fewer constraints
-    sorry
+    simp only [hctx'_eq]
+    exact hagree_clean1
   -- consistentWithRegime from IH1 uses (ctxAfter ctxᵢ res1).regime = res1.regime' = ctx'.regime
   -- So hcwr₀1 and hcwr₁1 directly give what we need
   have hcwr₀1' : consistentWithRegime predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
