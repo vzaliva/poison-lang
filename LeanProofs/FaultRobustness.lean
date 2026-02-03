@@ -371,6 +371,28 @@ inductive varsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (ρ : VarEnv
                   (b = false → ¬qtypPredHolds predSat entry.snd μ v)) :
       varsRegime predSat R μ ρ entry
 
+-- Regime consistency for a single (QTyp, Value) pair
+-- This tracks whether a value's predicate is consistent with the regime
+inductive valueConsistentWithRegime (predSat : PredSat) (R : Regime)
+    (qt : QTyp) (μ : Memory) (v : Value) : Prop where
+  | noTag :
+      qtypGuardTag qt = none →
+      valueConsistentWithRegime predSat R qt μ v
+  | notInRegime (k : Tag) :
+      qtypGuardTag qt = some k →
+      R.lookup? k = none →
+      valueConsistentWithRegime predSat R qt μ v
+  | inRegimeTrue (k : Tag) :
+      qtypGuardTag qt = some k →
+      R.lookup? k = some true →
+      qtypPredHolds predSat qt μ v →
+      valueConsistentWithRegime predSat R qt μ v
+  | inRegimeFalse (k : Tag) :
+      qtypGuardTag qt = some k →
+      R.lookup? k = some false →
+      ¬qtypPredHolds predSat qt μ v →
+      valueConsistentWithRegime predSat R qt μ v
+
 -- Monotonicity lemmas for regime predicates
 -- When Regime.monotoneStep R R' and the lookup values match, we can transfer locsRegime/varsRegime
 
