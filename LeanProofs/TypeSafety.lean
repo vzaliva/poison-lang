@@ -9,6 +9,7 @@ import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.Properties
+import Init.Data.List.Lemmas
 import Std.Data.ExtTreeSet.Lemmas
 import Std.Data.ExtTreeMap
 
@@ -3858,38 +3859,60 @@ lemma joinETyps_ref_structure {inner : ETyp} {ls1 : LocSet} {t2 : ETyp} {p1' p2'
 -- joinMemEnvs Properties
 -- ================================================================
 
-/-- joinMemEnvs contains all locations from the left input. -/
-lemma joinMemEnvs_contains_left (env1 env2 : MemoryTypeEnv) (l : Loc) :
-  env1.contains l → (joinMemEnvs env1 env2).contains l := by
-  -- joinMemEnvs combines env1 and env2, keeping all locations from both
-  -- When l is in env1:
-  -- - If l is also in env2, the join uses the merge function which produces some value
-  -- - If l is only in env1, the join keeps env1's value
-  -- In both cases, l is in the result
-  -- The proof requires going through combineExtTreeMaps machinery
-  sorry
-
-/-- joinMemEnvs contains all locations from the right input. -/
-lemma joinMemEnvs_contains_right (env1 env2 : MemoryTypeEnv) (l : Loc) :
-  env2.contains l → (joinMemEnvs env1 env2).contains l := by
-  sorry
-
 /-- If a location is in joinMemEnvs, it was in at least one of the inputs. -/
 lemma joinMemEnvs_contains_implies_or (env1 env2 : MemoryTypeEnv) (l : Loc) :
   (joinMemEnvs env1 env2).contains l → env1.contains l ∨ env2.contains l := by
   intro hcontains
-  have hmem : l ∈ (joinMemEnvs env1 env2) := (Std.ExtTreeMap.contains_iff_mem).1 hcontains
-  simp only [joinMemEnvs, Std.ExtTreeMap.mem_iff_isSome_getElem?] at hmem
-  by_cases h1 : env1.contains l
+  by_cases h1 : env1.contains l = true
   · left; exact h1
-  · by_cases h2 : env2.contains l
+  · by_cases h2 : env2.contains l = true
     · right; exact h2
     · exfalso
-      have h1' : env1[l]? = none := Std.ExtTreeMap.getElem?_eq_none ((Std.ExtTreeMap.contains_iff_mem).not.1 h1)
-      have h2' : env2[l]? = none := Std.ExtTreeMap.getElem?_eq_none ((Std.ExtTreeMap.contains_iff_mem).not.1 h2)
-      simp only [joinMemEnvs] at hcontains
-      -- The combining function produces none when both inputs are none
-      sorry
+      have h1not : l ∉ env1 := (Std.ExtTreeMap.contains_iff_mem).not.1 h1
+      have h2not : l ∉ env2 := (Std.ExtTreeMap.contains_iff_mem).not.1 h2
+      have h1_none : env1[l]? = none := Std.ExtTreeMap.getElem?_eq_none h1not
+      have h2_none : env2[l]? = none := Std.ExtTreeMap.getElem?_eq_none h2not
+      have hjoin_none : (joinMemEnvs env1 env2)[l]? = none := by
+        classical
+        let f : Loc → Option QTyp → Option QTyp → Option QTyp := fun _ oq1 oq2 =>
+          match oq1, oq2 with
+          | some qt1, none => some qt1
+          | none, some qt2 => some qt2
+          | some qt1, some qt2 =>
+            let ⟨t1, p1, pred1⟩ := qt1
+            let ⟨t2, p2, pred2⟩ := qt2
+            if t1 == t2 then
+              let p := joinPoison p1 p2
+              let pred := joinPredicates pred1 pred2
+              some ⟨t1, p, pred⟩
+            else
+              none
+          | none, none => none
+        -- unfold joinMemEnvs/ combineExtTreeMaps and reason on membership in `ks`
+        dsimp [joinMemEnvs, f, combineExtTreeMaps]
+        change
+          (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
+              ({} : MemoryTypeEnv))[l]? = none
+        by_cases h_in : l ∈ (env1.keys ++ env2.keys).eraseDups
+        · have hgo :=
+            combineExtTreeMaps_go_get_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+              ({} : MemoryTypeEnv) l h_in
+          have hfun : f l (env1.get? l) (env2.get? l) = none := by
+            simp [ExtTreeMap.get?_eq_getElem?, h1_none, h2_none, f]
+          -- rewrite the RHS to `none` and close
+          rw [hfun] at hgo
+          exact hgo
+        · have hgo :=
+            combineExtTreeMaps_go_get_not_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+              ({} : MemoryTypeEnv) l h_in
+          have hempty : (({} : MemoryTypeEnv)[l]?) = none := by
+            rfl
+          rw [hempty] at hgo
+          exact hgo
+      have hmem : l ∈ joinMemEnvs env1 env2 := (Std.ExtTreeMap.contains_iff_mem).1 hcontains
+      have hsome : Option.isSome (joinMemEnvs env1 env2)[l]? :=
+        (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
+      simp [hjoin_none] at hsome
 
 /-- If a clean type is in joinMemEnvs and the left input has something at that location,
     then the left input's type is also clean (since joinPoison false = requires both false). -/
@@ -3901,7 +3924,103 @@ lemma joinMemEnvs_lookup_clean_left (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : 
   -- From joinMemEnvs definition: if result has qt with poison=false,
   -- and env1 has something at l, the input from env1 must also have poison=false
   -- (since joinPoison p1 p2 = false implies p1 = false)
-  sorry
+  intro hjoin hclean henv1
+  classical
+  cases h1 : env1.lookup l with
+  | none =>
+      exact (henv1 h1).elim
+  | some qt1 =>
+      -- Unfold the join at `l` and analyze the branch on env2.
+      let f : Loc → Option QTyp → Option QTyp → Option QTyp := fun _ oq1 oq2 =>
+        match oq1, oq2 with
+        | some qt1, none => some qt1
+        | none, some qt2 => some qt2
+        | some qt1, some qt2 =>
+          let ⟨t1, p1, pred1⟩ := qt1
+          let ⟨t2, p2, pred2⟩ := qt2
+          if t1 == t2 then
+            let p := joinPoison p1 p2
+            let pred := joinPredicates pred1 pred2
+            some ⟨t1, p, pred⟩
+          else
+            none
+        | none, none => none
+      have hjoin' :
+          (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
+              ({} : MemoryTypeEnv))[l]? = some qt := by
+        simpa [joinMemEnvs, MemoryTypeEnv.lookup, f, combineExtTreeMaps] using hjoin
+      by_cases h_in : l ∈ (env1.keys ++ env2.keys).eraseDups
+      · have hgo :=
+          combineExtTreeMaps_go_get_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+            ({} : MemoryTypeEnv) l h_in
+        have hgo' :
+            (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
+                ({} : MemoryTypeEnv))[l]? =
+              f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) := by
+          -- eliminate the wrapper `match` in `hgo` by case splitting on the option
+          cases hopt : f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) with
+          | none =>
+              have hgo' := hgo
+              rw [hopt] at hgo'
+              exact hgo'
+          | some v =>
+              have hgo' := hgo
+              rw [hopt] at hgo'
+              exact hgo'
+        have hmatch :
+            f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) = some qt := by
+          exact Eq.trans hgo'.symm hjoin'
+        have h1' : ExtTreeMap.get? env1 l = some qt1 := by
+          simpa [MemoryTypeEnv.lookup] using h1
+        have htp : qt1.etyp = qt.etyp ∧ qt1.poison = false := by
+          cases h2 : env2.lookup l with
+          | none =>
+              have h2' : ExtTreeMap.get? env2 l = none := by
+                simpa [MemoryTypeEnv.lookup] using h2
+              have hqt : qt1 = qt := by
+                have hmatch' := hmatch
+                rw [h1', h2'] at hmatch'
+                simp [f] at hmatch'
+                simp [hmatch']
+              exact ⟨by simp [hqt], by simpa [hqt] using hclean⟩
+          | some qt2 =>
+              have h2' : ExtTreeMap.get? env2 l = some qt2 := by
+                simpa [MemoryTypeEnv.lookup] using h2
+              cases qt1 with
+              | mk t1 p1 pred1 =>
+                  cases qt2 with
+                  | mk t2 p2 pred2 =>
+                      have hmatch' := hmatch
+                      rw [h1', h2'] at hmatch'
+                      simp [f] at hmatch'
+                      by_cases hteq : t1 = t2
+                      · have hqt :
+                          qt =
+                            ⟨t1, joinPoison p1 p2, joinPredicates pred1 pred2⟩ := by
+                          have hmatch'' := hmatch'
+                          simp [hteq] at hmatch''
+                          have hqt' :
+                              qt =
+                                ⟨t2, joinPoison p1 p2, joinPredicates pred1 pred2⟩ := by
+                            simpa using hmatch''.symm
+                          simpa [hteq] using hqt'
+                        have hclean' : joinPoison p1 p2 = false := by
+                          simpa [hqt] using hclean
+                        have hpo' : p1 = false ∧ p2 = false :=
+                          (Bool.or_eq_false_iff).1 (by simpa [joinPoison] using hclean')
+                        exact ⟨by simp [hqt], by simpa using hpo'.1⟩
+                      · -- if types disagree, joinMemEnvs would return none
+                        simp [hteq] at hmatch'
+        exact ⟨qt1, ⟨rfl, ⟨htp.1, htp.2⟩⟩⟩
+      · -- key not in domain list -> join result is none, contradicting hjoin
+        have hgo :=
+          combineExtTreeMaps_go_get_not_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+            ({} : MemoryTypeEnv) l h_in
+        have hempty : (({} : MemoryTypeEnv)[l]?) = none := by
+          rfl
+        rw [hempty] at hgo
+        -- contradiction with `hjoin' : ... = some qt`
+        simp [hjoin'] at hgo
 
 /-- wfTypeContext property is preserved under joinMemEnvs with max nextLoc. -/
 lemma wfTypeContext_joinMemEnvs_max
