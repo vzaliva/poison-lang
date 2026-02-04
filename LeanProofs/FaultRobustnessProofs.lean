@@ -3929,11 +3929,604 @@ private lemma stepFR_newRef
   -- 2. Old locations transfer from hcwr₀1/hcwr₁1
   -- 3. VarEnv is unchanged
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
-    -- Transfer from hcwr₀1 with extended memory/map
-    -- New location l's predicate (if guard tag is in regime) satisfies consistency from hres_agree_e
-    sorry -- TODO: Prove consistentWithRegime preserved for newRef
+    classical
+    let storedQt : QTyp :=
+      ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩
+    have hPredSat_mem :
+        ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
+      intro k μ μ' v
+      -- With `pred := noPred`, dependencies are empty, so the memory-agreement premise is trivial.
+      have h :=
+        hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) (μ := μ) (μ' := μ') (v := v)
+          (deps := LocSet.empty) (θ := θ₀1) (by simp [extractDepsFromPred]; rfl) (by intro l hl; cases hl)
+      exact h
+    have hqtypPredHolds_mem :
+        ∀ (qt : QTyp) (v : Value),
+          qtypPredHolds predSat qt cfg₀'.memory v ↔ qtypPredHolds predSat qt cf₀.memory v := by
+      intro qt v
+      constructor
+      · intro h
+        cases h with
+        | noPred_ok hpred =>
+            exact qtypPredHolds.noPred_ok hpred
+        | guardClosure_ok hpred hSat =>
+            have hSat' : predSat _ cf₀.memory v :=
+              (hPredSat_mem _ cfg₀'.memory cf₀.memory v).1 hSat
+            exact qtypPredHolds.guardClosure_ok hpred hSat'
+        | guardOnly_ok hpred hSat =>
+            have hSat' : predSat _ cf₀.memory v :=
+              (hPredSat_mem _ cfg₀'.memory cf₀.memory v).1 hSat
+            exact qtypPredHolds.guardOnly_ok hpred hSat'
+      · intro h
+        cases h with
+        | noPred_ok hpred =>
+            exact qtypPredHolds.noPred_ok hpred
+        | guardClosure_ok hpred hSat =>
+            have hSat' : predSat _ cfg₀'.memory v :=
+              (hPredSat_mem _ cfg₀'.memory cf₀.memory v).2 hSat
+            exact qtypPredHolds.guardClosure_ok hpred hSat'
+        | guardOnly_ok hpred hSat =>
+            have hSat' : predSat _ cfg₀'.memory v :=
+              (hPredSat_mem _ cfg₀'.memory cf₀.memory v).2 hSat
+            exact qtypPredHolds.guardOnly_ok hpred hSat'
+    constructor
+    · intro l0 qt k hlookup hguard hkR
+      by_cases h_eq : l0 = l
+      · subst l0
+        have hqt : qt = storedQt := by
+          have hlookup' : res.memEnv'.lookup l = some qt := by
+            simpa [ctxAfter] using hlookup
+          rw [h_mem] at hlookup'
+          have hself : (updateMemEnv res1.memEnv' l storedQt).lookup l = some storedQt := by
+            simp [updateMemEnv, storedQt, MemoryTypeEnv.lookup]
+          have : (some qt : Option QTyp) = some storedQt := by
+            calc
+              some qt = (updateMemEnv res1.memEnv' l storedQt).lookup l := by symm; exact hlookup'
+              _ = some storedQt := by exact hself
+          exact Option.some.inj this
+        subst hqt
+        -- New logical location: realized at the freshly allocated address.
+        have hreal : θ₀'.lookup l = some cfg₀'.nextAddr := by
+          simp [θ₀', RealizationMap.update, RealizationMap.lookup]
+        have hmem_new : cf₀.memory.lookup cfg₀'.nextAddr = some n₀ := by
+          rw [hmem₀]
+          simp [Memory.update, Memory.lookup]
+        cases hpred_case : storedQt.pred with
+        | noPred =>
+            -- Contradiction: no guard tag.
+            have hnone : qtypGuardTag storedQt = none := by
+              simp [qtypGuardTag, hpred_case]
+            have hne : (none : Option Tag) ≠ some k := by simp
+            exact (hne (hnone.symm.trans hguard)).elim
+        | guardOnly k0 =>
+            have hk0 : k0 = k := by
+              have htag : qtypGuardTag storedQt = some k := by simpa using hguard
+              have : some k0 = some k := by simpa [qtypGuardTag, hpred_case] using htag
+              exact Option.some.inj this
+            subst k0
+            exact locsRegime.guardOnly_ok (l, storedQt) k (by simpa [storedQt, hpred_case])
+        | guardClosure k0 arg_name pred_body var_env =>
+            have hk0 : k0 = k := by
+              have htag : qtypGuardTag storedQt = some k := by simpa using hguard
+              have : some k0 = some k := by simpa [qtypGuardTag, hpred_case] using htag
+              exact Option.some.inj this
+            subst k0
+            -- Determine the regime's boolean for k.
+            cases hk : (ctxAfter ctxᵢ res).regime.lookup? k with
+            | none =>
+                exact (hkR hk).elim
+            | some b =>
+                have hval0 :
+                    valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
+                      res1.qualType cfg₀'.memory (Value.num n₀) := by
+                  simpa [hregime_eq] using _hval_consist₀
+                have hpred_res1 :
+                    res1.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+                  simpa [storedQt] using hpred_case
+                have htag_res1 : qtypGuardTag res1.qualType = some k := by
+                  simp [qtypGuardTag, hpred_res1]
+                have hpredEq : res1.qualType.pred = storedQt.pred := by
+                  simp [storedQt]
+                have hconsist_old :
+                      (b = true → qtypPredHolds predSat storedQt cfg₀'.memory (Value.num n₀)) ∧
+                      (b = false → ¬ qtypPredHolds predSat storedQt cfg₀'.memory (Value.num n₀)) := by
+                    cases hb : b with
+                    | true =>
+                        have hktrue : (ctxAfter ctxᵢ res).regime.lookup? k = some true := by
+                          simpa [hb] using hk
+                        have hholds_res1 :
+                            qtypPredHolds predSat res1.qualType cfg₀'.memory (Value.num n₀) := by
+                          cases hval0 with
+                          | noTag hnotag =>
+                              have : (none : Option Tag) ≠ some k := by simp
+                              exact (this (hnotag.symm.trans htag_res1)).elim
+                          | guardOnly_ok _k hgo =>
+                              cases (hpred_res1.symm.trans hgo)
+                          | notInRegime k' htag hnone =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              exact (hkR (by simpa using hnone)).elim
+                          | inRegimeTrue k' htag hkR' hholds =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              -- hkR' must match hktrue
+                              have : some true = some true := by
+                                calc
+                                  some true = (ctxAfter ctxᵢ res).regime.lookup? k := by symm; exact hkR'
+                                  _ = some true := hktrue
+                              exact hholds
+                          | inRegimeFalse k' htag hkR' _ =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              -- Contradiction with hktrue
+                              have : (ctxAfter ctxᵢ res).regime.lookup? k = some false := by simpa using hkR'
+                              simp [this] at hktrue
+                        have hholds_stored_old :
+                            qtypPredHolds predSat storedQt cfg₀'.memory (Value.num n₀) :=
+                          qtypPredHolds_transport_pred (predSat := predSat) (qt := res1.qualType) (qt' := storedQt)
+                            (μ := cfg₀'.memory) (v := Value.num n₀) hpredEq hholds_res1
+                        refine ⟨?_, ?_⟩
+                        · intro _; exact hholds_stored_old
+                        · intro hbfalse; cases hbfalse
+                    | false =>
+                        have hkfalse : (ctxAfter ctxᵢ res).regime.lookup? k = some false := by
+                          simpa [hb] using hk
+                        have hnot_res1 :
+                            ¬ qtypPredHolds predSat res1.qualType cfg₀'.memory (Value.num n₀) := by
+                          cases hval0 with
+                          | noTag hnotag =>
+                              intro _
+                              have : (none : Option Tag) ≠ some k := by simp
+                              exact (this (hnotag.symm.trans htag_res1)).elim
+                          | guardOnly_ok _k hgo =>
+                              cases (hpred_res1.symm.trans hgo)
+                          | notInRegime k' htag hnone =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              exact (hkR (by simpa using hnone)).elim
+                          | inRegimeFalse k' htag hkR' hnot =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              have : some false = some false := by
+                                calc
+                                  some false = (ctxAfter ctxᵢ res).regime.lookup? k := by symm; exact hkR'
+                                  _ = some false := hkfalse
+                              exact hnot
+                          | inRegimeTrue k' htag hkR' _ =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              have : (ctxAfter ctxᵢ res).regime.lookup? k = some true := by simpa using hkR'
+                              simp [this] at hkfalse
+                        have hnot_stored_old :
+                            ¬ qtypPredHolds predSat storedQt cfg₀'.memory (Value.num n₀) := by
+                          intro hholds_stored
+                          have hholds_res1 :
+                              qtypPredHolds predSat res1.qualType cfg₀'.memory (Value.num n₀) :=
+                            qtypPredHolds_transport_pred (predSat := predSat) (qt := storedQt) (qt' := res1.qualType)
+                              (μ := cfg₀'.memory) (v := Value.num n₀) (by simp [hpredEq]) hholds_stored
+                          exact hnot_res1 hholds_res1
+                        refine ⟨?_, ?_⟩
+                        · intro hbtrue; cases hbtrue
+                        · intro _; exact hnot_stored_old
+                have hconsist :
+                    (b = true → qtypPredHolds predSat storedQt cf₀.memory (Value.num n₀)) ∧
+                    (b = false → ¬ qtypPredHolds predSat storedQt cf₀.memory (Value.num n₀)) := by
+                  constructor
+                  · intro hbtrue
+                    have hholds_old := hconsist_old.1 hbtrue
+                    exact (hqtypPredHolds_mem storedQt (Value.num n₀)).1 hholds_old
+                  · intro hbfalse
+                    intro hholds_new
+                    have hholds_old := (hqtypPredHolds_mem storedQt (Value.num n₀)).2 hholds_new
+                    exact (hconsist_old.2 hbfalse) hholds_old
+                exact
+                  locsRegime.withPred_ok (l, storedQt) k arg_name pred_body var_env cfg₀'.nextAddr n₀ b
+                    (by simpa [storedQt, hpred_case]) hk hreal hmem_new hconsist
+      · -- Old location: use IH and transport across the realization-map/memory updates.
+        have hlookup_old : (ctxAfter ctxᵢ res1).memEnv.lookup l0 = some qt := by
+          have hlookup' : res.memEnv'.lookup l0 = some qt := by
+            simpa [ctxAfter] using hlookup
+          rw [h_mem] at hlookup'
+          have hEq :
+              (updateMemEnv res1.memEnv' l storedQt).lookup l0 = res1.memEnv'.lookup l0 :=
+            MemoryTypeEnv_lookup_updateMemEnv_ne (Γ := res1.memEnv') (l := l) (l' := l0) (qt := storedQt) h_eq
+          have hlookup_old' : res1.memEnv'.lookup l0 = some qt := by
+            have htmp := hlookup'
+            rw [hEq] at htmp
+            exact htmp
+          simpa [ctxAfter] using hlookup_old'
+        have hkR_old : (ctxAfter ctxᵢ res1).regime.lookup? k ≠ none := by
+          simpa [hregime_eq] using hkR
+        have hloc := hcwr₀1.1 l0 qt k hlookup_old hguard hkR_old
+        -- Rebuild locsRegime for the updated θ/memory.
+        cases hloc with
+        | noPred_ok hnp =>
+            exact locsRegime.noPred_ok (l0, qt) hnp
+        | guardOnly_ok k' hgo =>
+            exact locsRegime.guardOnly_ok (l0, qt) k' hgo
+        | withPred_ok k' arg_name pred_body var_env a n b hclos hreg hreal hmem hcons =>
+            have hreal' : θ₀'.lookup l0 = some a := by
+              -- θ₀' differs from θ₀1 only at l.
+              have := RealizationMap_lookup_update_ne (θ := θ₀1) (l := l) (l' := l0) (addr := cfg₀'.nextAddr) h_eq
+              simpa [θ₀', this] using hreal
+            have hne : a ≠ cfg₀'.nextAddr := by
+              intro hcontra
+              have hcontains : cfg₀'.memory.contains cfg₀'.nextAddr := by
+                have : cfg₀'.memory.contains a := Memory_contains_of_lookup hmem
+                simpa [hcontra] using this
+              exact (nextAddr_not_in_memory cfg₀' hwfcf₀1) hcontains
+            have hmem' : cf₀.memory.lookup a = some n := by
+              have hmem₀' : cf₀.memory = Memory.update cfg₀'.memory cfg₀'.nextAddr n₀ := by
+                simpa [Memory.update] using hmem₀
+              rw [hmem₀']
+              rw [Memory_lookup_update_ne (μ := cfg₀'.memory) (a := a) (a' := cfg₀'.nextAddr) (v := n₀) hne]
+              exact hmem
+            have hcons' :
+                (b = true → qtypPredHolds predSat qt cf₀.memory (Value.num n)) ∧
+                (b = false → ¬ qtypPredHolds predSat qt cf₀.memory (Value.num n)) := by
+              constructor
+              · intro hbtrue
+                have hholds_old := hcons.1 hbtrue
+                exact (hqtypPredHolds_mem qt (Value.num n)).1 hholds_old
+              · intro hbfalse
+                intro hholds_new
+                have hholds_old := (hqtypPredHolds_mem qt (Value.num n)).2 hholds_new
+                exact (hcons.2 hbfalse) hholds_old
+            have hregR : (ctxAfter ctxᵢ res).regime.lookup? k' = some b := by
+              simpa [hregime_eq.symm] using hreg
+            exact locsRegime.withPred_ok (l0, qt) k' arg_name pred_body var_env a n b hclos hregR hreal' hmem' hcons'
+    · intro x qt k hlookup hguard hkR
+      have hkR_old : (ctxAfter ctxᵢ res1).regime.lookup? k ≠ none := by
+        simpa [hregime_eq] using hkR
+      have hvars := hcwr₀1.2 x qt k (by simpa [ctxAfter] using hlookup) hguard hkR_old
+      cases hvars with
+      | noPred_ok hnp =>
+          exact varsRegime.noPred_ok (x, qt) hnp
+      | guardOnly_ok k' hgo =>
+          exact varsRegime.guardOnly_ok (x, qt) k' hgo
+      | withPred_ok k' arg_name pred_body var_env v b hclos hreg hvar hcons =>
+          have hcons' :
+              (b = true → qtypPredHolds predSat qt cf₀.memory v) ∧
+              (b = false → ¬ qtypPredHolds predSat qt cf₀.memory v) := by
+            constructor
+            · intro hbtrue
+              have hholds_old := hcons.1 hbtrue
+              exact (hqtypPredHolds_mem qt v).1 hholds_old
+            · intro hbfalse
+              intro hholds_new
+              have hholds_old := (hqtypPredHolds_mem qt v).2 hholds_new
+              exact (hcons.2 hbfalse) hholds_old
+          have hregR : (ctxAfter ctxᵢ res).regime.lookup? k' = some b := by
+            simpa [hregime_eq.symm] using hreg
+          have hvar' : cf₀.varEnv.lookup (x, qt).1 = some v := by
+            simpa [hvar₀] using hvar
+          exact varsRegime.withPred_ok (x, qt) k' arg_name pred_body var_env v b hclos hregR hvar' hcons'
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
-    sorry -- TODO: Prove consistentWithRegime preserved for newRef
+    classical
+    let storedQt : QTyp :=
+      ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩
+    have hPredSat_mem :
+        ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
+      intro k μ μ' v
+      have h :=
+        hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) (μ := μ) (μ' := μ') (v := v)
+          (deps := LocSet.empty) (θ := θ₁1) (by simp [extractDepsFromPred]; rfl) (by intro l hl; cases hl)
+      exact h
+    have hqtypPredHolds_mem :
+        ∀ (qt : QTyp) (v : Value),
+          qtypPredHolds predSat qt cfg₁'.memory v ↔ qtypPredHolds predSat qt cf₁.memory v := by
+      intro qt v
+      constructor
+      · intro h
+        cases h with
+        | noPred_ok hpred =>
+            exact qtypPredHolds.noPred_ok hpred
+        | guardClosure_ok hpred hSat =>
+            have hSat' : predSat _ cf₁.memory v :=
+              (hPredSat_mem _ cfg₁'.memory cf₁.memory v).1 hSat
+            exact qtypPredHolds.guardClosure_ok hpred hSat'
+        | guardOnly_ok hpred hSat =>
+            have hSat' : predSat _ cf₁.memory v :=
+              (hPredSat_mem _ cfg₁'.memory cf₁.memory v).1 hSat
+            exact qtypPredHolds.guardOnly_ok hpred hSat'
+      · intro h
+        cases h with
+        | noPred_ok hpred =>
+            exact qtypPredHolds.noPred_ok hpred
+        | guardClosure_ok hpred hSat =>
+            have hSat' : predSat _ cfg₁'.memory v :=
+              (hPredSat_mem _ cfg₁'.memory cf₁.memory v).2 hSat
+            exact qtypPredHolds.guardClosure_ok hpred hSat'
+        | guardOnly_ok hpred hSat =>
+            have hSat' : predSat _ cfg₁'.memory v :=
+              (hPredSat_mem _ cfg₁'.memory cf₁.memory v).2 hSat
+            exact qtypPredHolds.guardOnly_ok hpred hSat'
+    constructor
+    · intro l0 qt k hlookup hguard hkR
+      by_cases h_eq : l0 = l
+      · subst l0
+        have hqt : qt = storedQt := by
+          have hlookup' : res.memEnv'.lookup l = some qt := by
+            simpa [ctxAfter] using hlookup
+          rw [h_mem] at hlookup'
+          have hself : (updateMemEnv res1.memEnv' l storedQt).lookup l = some storedQt := by
+            simp [updateMemEnv, storedQt, MemoryTypeEnv.lookup]
+          have : (some qt : Option QTyp) = some storedQt := by
+            calc
+              some qt = (updateMemEnv res1.memEnv' l storedQt).lookup l := by symm; exact hlookup'
+              _ = some storedQt := by exact hself
+          exact Option.some.inj this
+        subst hqt
+        have hreal : θ₁'.lookup l = some cfg₁'.nextAddr := by
+          simp [θ₁', RealizationMap.update, RealizationMap.lookup]
+        have hmem_new : cf₁.memory.lookup cfg₁'.nextAddr = some n₁ := by
+          rw [hmem₁]
+          simp [Memory.update, Memory.lookup]
+        cases hpred_case : storedQt.pred with
+        | noPred =>
+            have hnone : qtypGuardTag storedQt = none := by
+              simp [qtypGuardTag, hpred_case]
+            have hne : (none : Option Tag) ≠ some k := by simp
+            exact (hne (hnone.symm.trans hguard)).elim
+        | guardOnly k0 =>
+            have hk0 : k0 = k := by
+              have htag : qtypGuardTag storedQt = some k := by simpa using hguard
+              have : some k0 = some k := by simpa [qtypGuardTag, hpred_case] using htag
+              exact Option.some.inj this
+            subst k0
+            exact locsRegime.guardOnly_ok (l, storedQt) k (by simpa [storedQt, hpred_case])
+        | guardClosure k0 arg_name pred_body var_env =>
+            have hk0 : k0 = k := by
+              have htag : qtypGuardTag storedQt = some k := by simpa using hguard
+              have : some k0 = some k := by simpa [qtypGuardTag, hpred_case] using htag
+              exact Option.some.inj this
+            subst k0
+            cases hk : (ctxAfter ctxᵢ res).regime.lookup? k with
+            | none =>
+                exact (hkR hk).elim
+              | some b =>
+                  have hval1 :
+                      valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
+                        res1.qualType cfg₁'.memory (Value.num n₁) := by
+                    simpa [hregime_eq] using _hval_consist₁
+                  have hpred_res1 :
+                      res1.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+                    simpa [storedQt] using hpred_case
+                  have htag_res1 : qtypGuardTag res1.qualType = some k := by
+                    simp [qtypGuardTag, hpred_res1]
+                  have hpredEq : res1.qualType.pred = storedQt.pred := by
+                    simp [storedQt]
+                  have hconsist_old :
+                      (b = true → qtypPredHolds predSat storedQt cfg₁'.memory (Value.num n₁)) ∧
+                      (b = false → ¬ qtypPredHolds predSat storedQt cfg₁'.memory (Value.num n₁)) := by
+                    cases hb : b with
+                    | true =>
+                        have hktrue : (ctxAfter ctxᵢ res).regime.lookup? k = some true := by
+                          simpa [hb] using hk
+                        have hholds_res1 :
+                            qtypPredHolds predSat res1.qualType cfg₁'.memory (Value.num n₁) := by
+                          cases hval1 with
+                          | noTag hnotag =>
+                              have : (none : Option Tag) ≠ some k := by simp
+                              exact (this (hnotag.symm.trans htag_res1)).elim
+                          | guardOnly_ok _k hgo =>
+                              cases (hpred_res1.symm.trans hgo)
+                          | notInRegime k' htag hnone =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              exact (hkR (by simpa using hnone)).elim
+                          | inRegimeTrue k' htag hkR' hholds =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              have : some true = some true := by
+                                calc
+                                  some true = (ctxAfter ctxᵢ res).regime.lookup? k := by symm; exact hkR'
+                                  _ = some true := hktrue
+                              exact hholds
+                          | inRegimeFalse k' htag hkR' _ =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              have : (ctxAfter ctxᵢ res).regime.lookup? k = some false := by simpa using hkR'
+                              simp [this] at hktrue
+                        have hholds_stored_old :
+                            qtypPredHolds predSat storedQt cfg₁'.memory (Value.num n₁) :=
+                          qtypPredHolds_transport_pred (predSat := predSat) (qt := res1.qualType) (qt' := storedQt)
+                            (μ := cfg₁'.memory) (v := Value.num n₁) hpredEq hholds_res1
+                        refine ⟨?_, ?_⟩
+                        · intro _; exact hholds_stored_old
+                        · intro hbfalse; cases hbfalse
+                    | false =>
+                        have hkfalse : (ctxAfter ctxᵢ res).regime.lookup? k = some false := by
+                          simpa [hb] using hk
+                        have hnot_res1 :
+                            ¬ qtypPredHolds predSat res1.qualType cfg₁'.memory (Value.num n₁) := by
+                          cases hval1 with
+                          | noTag hnotag =>
+                              intro _
+                              have : (none : Option Tag) ≠ some k := by simp
+                              exact (this (hnotag.symm.trans htag_res1)).elim
+                          | guardOnly_ok _k hgo =>
+                              cases (hpred_res1.symm.trans hgo)
+                          | notInRegime k' htag hnone =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              exact (hkR (by simpa using hnone)).elim
+                          | inRegimeFalse k' htag hkR' hnot =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              have : some false = some false := by
+                                calc
+                                  some false = (ctxAfter ctxᵢ res).regime.lookup? k := by symm; exact hkR'
+                                  _ = some false := hkfalse
+                              exact hnot
+                          | inRegimeTrue k' htag hkR' _ =>
+                              have hk' : k' = k := by
+                                have : some k' = some k := by
+                                  calc
+                                    some k' = qtypGuardTag res1.qualType := by symm; exact htag
+                                    _ = some k := htag_res1
+                                exact Option.some.inj this
+                              subst k'
+                              have : (ctxAfter ctxᵢ res).regime.lookup? k = some true := by simpa using hkR'
+                              simp [this] at hkfalse
+                        have hnot_stored_old :
+                            ¬ qtypPredHolds predSat storedQt cfg₁'.memory (Value.num n₁) := by
+                          intro hholds_stored
+                          have hholds_res1 :
+                              qtypPredHolds predSat res1.qualType cfg₁'.memory (Value.num n₁) :=
+                            qtypPredHolds_transport_pred (predSat := predSat) (qt := storedQt) (qt' := res1.qualType)
+                              (μ := cfg₁'.memory) (v := Value.num n₁) (by simp [hpredEq]) hholds_stored
+                          exact hnot_res1 hholds_res1
+                        refine ⟨?_, ?_⟩
+                        · intro hbtrue; cases hbtrue
+                        · intro _; exact hnot_stored_old
+                  have hconsist :
+                      (b = true → qtypPredHolds predSat storedQt cf₁.memory (Value.num n₁)) ∧
+                      (b = false → ¬ qtypPredHolds predSat storedQt cf₁.memory (Value.num n₁)) := by
+                    constructor
+                    · intro hbtrue
+                      have hholds_old := hconsist_old.1 hbtrue
+                      exact (hqtypPredHolds_mem storedQt (Value.num n₁)).1 hholds_old
+                    · intro hbfalse
+                      intro hholds_new
+                      have hholds_old := (hqtypPredHolds_mem storedQt (Value.num n₁)).2 hholds_new
+                      exact (hconsist_old.2 hbfalse) hholds_old
+                  exact
+                    locsRegime.withPred_ok (l, storedQt) k arg_name pred_body var_env cfg₁'.nextAddr n₁ b
+                      (by simpa [storedQt, hpred_case]) hk hreal hmem_new hconsist
+      · have hlookup_old : (ctxAfter ctxᵢ res1).memEnv.lookup l0 = some qt := by
+          have hlookup' : res.memEnv'.lookup l0 = some qt := by
+            simpa [ctxAfter] using hlookup
+          rw [h_mem] at hlookup'
+          have hEq :
+              (updateMemEnv res1.memEnv' l storedQt).lookup l0 = res1.memEnv'.lookup l0 :=
+            MemoryTypeEnv_lookup_updateMemEnv_ne (Γ := res1.memEnv') (l := l) (l' := l0) (qt := storedQt) h_eq
+          have hlookup_old' : res1.memEnv'.lookup l0 = some qt := by
+            have htmp := hlookup'
+            rw [hEq] at htmp
+            exact htmp
+          simpa [ctxAfter] using hlookup_old'
+        have hkR_old : (ctxAfter ctxᵢ res1).regime.lookup? k ≠ none := by
+          simpa [hregime_eq] using hkR
+        have hloc := hcwr₁1.1 l0 qt k hlookup_old hguard hkR_old
+        cases hloc with
+        | noPred_ok hnp =>
+            exact locsRegime.noPred_ok (l0, qt) hnp
+        | guardOnly_ok k' hgo =>
+            exact locsRegime.guardOnly_ok (l0, qt) k' hgo
+        | withPred_ok k' arg_name pred_body var_env a n b hclos hreg hreal hmem hcons =>
+            have hregR : (ctxAfter ctxᵢ res).regime.lookup? k' = some b := by
+              simpa [hregime_eq.symm] using hreg
+            have hreal' : θ₁'.lookup l0 = some a := by
+              have :=
+                RealizationMap_lookup_update_ne
+                  (θ := θ₁1) (l := l) (l' := l0) (addr := cfg₁'.nextAddr) h_eq
+              simpa [θ₁', this] using hreal
+            have hne : a ≠ cfg₁'.nextAddr := by
+              intro hcontra
+              have hcontains : cfg₁'.memory.contains cfg₁'.nextAddr := by
+                have : cfg₁'.memory.contains a := Memory_contains_of_lookup hmem
+                simpa [hcontra] using this
+              exact (nextAddr_not_in_memory cfg₁' hwfcf₁1) hcontains
+            have hmem' : cf₁.memory.lookup a = some n := by
+              have hmem₁' : cf₁.memory = Memory.update cfg₁'.memory cfg₁'.nextAddr n₁ := by
+                simpa [Memory.update] using hmem₁
+              rw [hmem₁']
+              rw [Memory_lookup_update_ne (μ := cfg₁'.memory) (a := a) (a' := cfg₁'.nextAddr) (v := n₁) hne]
+              exact hmem
+            have hcons' :
+                (b = true → qtypPredHolds predSat qt cf₁.memory (Value.num n)) ∧
+                (b = false → ¬ qtypPredHolds predSat qt cf₁.memory (Value.num n)) := by
+              constructor
+              · intro hbtrue
+                have hholds_old := hcons.1 hbtrue
+                exact (hqtypPredHolds_mem qt (Value.num n)).1 hholds_old
+              · intro hbfalse
+                intro hholds_new
+                have hholds_old := (hqtypPredHolds_mem qt (Value.num n)).2 hholds_new
+                exact (hcons.2 hbfalse) hholds_old
+            exact locsRegime.withPred_ok (l0, qt) k' arg_name pred_body var_env a n b hclos hregR hreal' hmem' hcons'
+    · intro x qt k hlookup hguard hkR
+      have hkR_old : (ctxAfter ctxᵢ res1).regime.lookup? k ≠ none := by
+        simpa [hregime_eq] using hkR
+      have hvars := hcwr₁1.2 x qt k (by simpa [ctxAfter] using hlookup) hguard hkR_old
+      cases hvars with
+      | noPred_ok hnp =>
+          exact varsRegime.noPred_ok (x, qt) hnp
+      | guardOnly_ok k' hgo =>
+          exact varsRegime.guardOnly_ok (x, qt) k' hgo
+      | withPred_ok k' arg_name pred_body var_env v b hclos hreg hvar hcons =>
+          have hregR : (ctxAfter ctxᵢ res).regime.lookup? k' = some b := by
+            simpa [hregime_eq.symm] using hreg
+          have hcons' :
+              (b = true → qtypPredHolds predSat qt cf₁.memory v) ∧
+              (b = false → ¬ qtypPredHolds predSat qt cf₁.memory v) := by
+            constructor
+            · intro hbtrue
+              have hholds_old := hcons.1 hbtrue
+              exact (hqtypPredHolds_mem qt v).1 hholds_old
+            · intro hbfalse
+              intro hholds_new
+              have hholds_old := (hqtypPredHolds_mem qt v).2 hholds_new
+              exact (hcons.2 hbfalse) hholds_old
+          have hvar' : cf₁.varEnv.lookup x = some v := by
+            simpa [hvar₁] using hvar
+          exact varsRegime.withPred_ok (x, qt) k' arg_name pred_body var_env v b hclos hregR hvar' hcons'
   refine ⟨θ₀', θ₁', ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀'
     exact wfExtendsMap_trans hθext₀1 hθext₀'
