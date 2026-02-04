@@ -2449,6 +2449,7 @@ private lemma stepFR_literal
   (hpoison : res.qualType.poison = false)
   (hnotfun : res.qualType.etyp.isFunctionType = false)
   (hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls)
+  (hpredNo : res.qualType.pred = Predicate.noPred)
   (hctxAfter : ctxAfter ctx res = ctx) :
   StepFR mode ctx e res predSat := by
   intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
@@ -2488,9 +2489,13 @@ private lemma stepFR_literal
   · -- agreeOnClean for updated context (literal doesn't change context)
     simpa [hctxAfter] using hagree
   · -- valueConsistentWithRegime for cf₀
-    sorry -- TODO: prove valueConsistentWithRegime
+    refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctx res).regime)
+      (qt := res.qualType) (μ := μ₀) (v := o₀) ?_
+    simp [qtypGuardTag, hpredNo]
   · -- valueConsistentWithRegime for cf₁
-    sorry -- TODO: prove valueConsistentWithRegime
+    refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctx res).regime)
+      (qt := res.qualType) (μ := μ₁) (v := o₁) ?_
+    simp [qtypGuardTag, hpredNo]
   · -- resultAgreesIfClean
     intro _hclean
     have hval' : o₀ = o₁ := by
@@ -6294,9 +6299,11 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
             have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
               simp [hres, res_expected]
+            have hpredNo : res.qualType.pred = Predicate.noPred := by
+              simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal .ioFree ctxᵢ predSat Expr.unit res Value.unit hval hpoison hnotfun hnotref hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat Expr.unit res Value.unit hval hpoison hnotfun hnotref hpredNo hctxAfter
         | num n =>
             simp [typecheck, typecheckExpr, typecheckInt] at htc
             let res_expected : TypeResult := {
@@ -6318,9 +6325,11 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
             have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
               simp [hres, res_expected]
+            have hpredNo : res.qualType.pred = Predicate.noPred := by
+              simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal .ioFree ctxᵢ predSat (Expr.num n) res (Value.num n) hval hpoison hnotfun hnotref hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat (Expr.num n) res (Value.num n) hval hpoison hnotfun hnotref hpredNo hctxAfter
         | bool b =>
             simp [typecheck, typecheckExpr, typecheckBool] at htc
             let res_expected : TypeResult := {
@@ -6342,9 +6351,11 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
             have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
               simp [hres, res_expected]
+            have hpredNo : res.qualType.pred = Predicate.noPred := by
+              simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal .ioFree ctxᵢ predSat (Expr.bool b) res (Value.bool b) hval hpoison hnotfun hnotref hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat (Expr.bool b) res (Value.bool b) hval hpoison hnotfun hnotref hpredNo hctxAfter
         | str s =>
             simp [typecheck, typecheckExpr, typecheckString] at htc
             let res_expected : TypeResult := {
@@ -6366,9 +6377,11 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
             have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
               simp [hres, res_expected]
+            have hpredNo : res.qualType.pred = Predicate.noPred := by
+              simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal .ioFree ctxᵢ predSat (Expr.str s) res (Value.str s) hval hpoison hnotfun hnotref hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat (Expr.str s) res (Value.str s) hval hpoison hnotfun hnotref hpredNo hctxAfter
         | var name =>
             exact stepFR_var .ioFree ctxᵢ predSat name res fuel htc
         | op e1 op e2 =>
