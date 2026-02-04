@@ -282,15 +282,6 @@ private lemma tagEnvConsistentWithRegime_join
       rw [← Std.ExtTreeMap.get?_eq_getElem?]
       exact hkjoined
 
--- Typechecking preserves TagEnv/Regime consistency.
-private lemma tagEnvConsistentWithRegime_of_typecheck
-    (ctx : TypeContext) (e : Expr) :
-    ∀ fuel res,
-      tagEnvConsistentWithRegime ctx.tagEnv ctx.regime →
-      typecheck ctx e fuel = .ok res →
-      tagEnvConsistentWithRegime res.tagEnv' res.regime' := by
- sorry
-
 
 -- Helper lemma: regimeBounded transfers under monotonicity (bounds are equal)
 lemma regimeBounded_of_monotoneStep (R R' : Regime)
@@ -306,34 +297,6 @@ lemma regimeBounded_of_monotoneStep (R R' : Regime)
   have h_R_not_none := h_mono.2.2 k h_not_none
   exact h_R_not_none hR_none
 
-
--- Helper lemma: regimeConsistentWithCtx transfers from input regime to output regime
--- when we have monotonicity and a typecheck result.
--- The key insight is that the typechecker maintains the invariant that tags that are
--- still `true` in the output tagEnv are also present in the output regime.
-lemma regimeConsistentWithCtx_of_typecheckResult (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
-    (h_input : regimeConsistentWithCtx ctx ctx.regime)
-    (h_mono : Regime.monotoneStep ctx.regime res.regime')
-    (htc : typecheck ctx e fuel = .ok res) :
-    regimeConsistentWithCtx (ctxAfter ctx res) res.regime' := by
-  unfold regimeConsistentWithCtx at h_input ⊢
-  constructor
-  · -- tagEnvConsistentWithRegime res.tagEnv' res.regime'
-    -- This requires proving: if res.tagEnv'.get? k = some (true, deps), then res.regime'.lookup? k = some true
-    -- The typechecker maintains this invariant through invalidateRegimeDeps which syncs tagEnv and regime.
-    -- Key insight: if k is true in res.tagEnv', either:
-    -- (a) k was true in ctx.tagEnv and survived invalidation → ctx.regime.lookup? k = some true by h_input.1,
-    --     and since invalidation syncs tagEnv and regime, res.regime'.lookup? k = some true
-    -- (b) k is fresh (>= ctx.nextTag) → but fresh tags can't be true with regime entry (contradiction)
-    -- This is a complex typechecker invariant; sorry for now.
-    intro k deps hget
-    sorry
-  · -- res.regime'.bound ≤ (ctxAfter ctx res).nextTag
-    simp only [ctxAfter]
-    have hbound_eq : res.regime'.bound = ctx.regime.bound := h_mono.1
-    rw [hbound_eq]
-    have h_nextTag_mono : ctx.nextTag ≤ res.nextTag' := typecheck_nextTag_mono ctx e fuel res htc
-    exact Nat.le_trans h_input.2 h_nextTag_mono
 
 -- Bridge lemma: connect spec-indexed consistency to context-indexed consistency
 lemma consistentRegimeSpec_implies_consistentWithRegime
@@ -3468,12 +3431,12 @@ private lemma stepFR_op
     simpa [ctx', ctxAfter] using hric₀1
   have hric₁1' : runtimeInstantiatesCtx ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctx', ctxAfter] using hric₁1
-  -- Use regime_monotone to establish consistency with ctx'.regime = res1.regime'
-  have h_mono := regime_monotone ctxᵢ res1
-  have htagR_input : regimeConsistentWithCtx ctxᵢ ctxᵢ.regime := htagR
   have htagR1' : regimeConsistentWithCtx ctx' ctx'.regime := by
-    have h := regimeConsistentWithCtx_of_typecheckResult ctxᵢ e1 fuel' res1 htagR_input h_mono htc1'
-    simpa [ctx', ctxAfter] using h
+    -- Comes directly from IH1; `ctx'` is exactly `ctxAfter ctxᵢ res1`.
+    simpa [ctx', ctxAfter] using htagR1
+  -- Regime monotonicity (typing can only drop entries).
+  have h_mono : Regime.monotoneStep ctxᵢ.regime res1.regime' :=
+    regime_monotone ctxᵢ res1
   -- agreeOnClean from IH1 directly applies since ctx' = ctxAfter ctxᵢ res1
   have hctx'_eq : ctx' = ctxAfter ctxᵢ res1 := by simp [ctx', ctxAfter]
   have hagree_clean1' :
