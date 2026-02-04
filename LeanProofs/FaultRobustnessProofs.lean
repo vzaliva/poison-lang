@@ -6051,15 +6051,391 @@ section TypeSystemEnforcesFaultRobustness_IOFree_proof
 
 
 -- World-free version of ite fault-robustness
--- Key insight: if condition is clean, both runs take same branch
--- TODO: This proof needs to be updated to handle the regime-aware typecheckIf structure
+-- Proof structure follows typecheckIf's 4 modes:
+-- Mode 1: R(k) = some true - commits to then-branch (e2)
+--   Key: uses consistentWithRegime + PredSatLaws.match_iff to show both runs take then-branch
+-- Mode 2: R(k) = some false - commits to else-branch (e3)
+--   Key: symmetric to mode 1
+-- Mode 3: R(k) = none - conservative join of both branches
+--   Requires case analysis on which branch each run actually takes
+-- Mode 4: matchGuard fails - standard conservative join
+--   Similar to mode 3
+-- This proof was previously blocked by issue #98, now resolved by adding consistentWithRegime
+
+-- Mode 1: R(k) = some true (then-branch effective)
+private lemma stepFR_ite_mode1
+  (ctxᵢ : TypeContext) (predSat : PredSat)
+  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
+  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv = .ok (k, deps))
+  (hregime_true : ctxᵢ.regime.lookup? k = some true)
+  (res1 res2 res3 : TypeResult)
+  (htc1 : typecheckExpr { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
+  (hbool : res1.qualType.etyp = ETyp.bool)
+  (htc2 : let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
+          typecheckExpr ctxTrue e2 fuel' = .ok res2)
+  (htc3 : let ctxFalse := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩ }
+          let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+          typecheckExpr ctxFalse' e3 fuel' = .ok res3)
+  (hmemEnv : res.memEnv' = res2.memEnv')
+  (htagEnv : res.tagEnv' = res2.tagEnv')
+  (hnextLoc : res.nextLoc' = max res2.nextLoc' res3.nextLoc')
+  (hnextTag : res.nextTag' = max res2.nextTag' res3.nextTag')
+  (hregime' : res.regime' = res2.regime')
+  (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc res2.qualType.poison)
+  (hetyp : res.qualType.etyp = res2.qualType.etyp) :
+  StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat := by
+  classical
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Invert ite evaluation (world-free)
+  have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+  rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
+  have hstruct₁ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+  rcases hstruct₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁_final⟩
+  -- Prepare IH for e1
+  have htc1' : typecheck { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 { ctxᵢ with pureCtx := true } res1 htc1'
+  -- Apply IH to e1 evaluation
+  -- wfTypeContext is preserved when setting pureCtx (only affects memEnv bounds, not pureCtx field)
+  have hwf_pure : wfTypeContext { ctxᵢ with pureCtx := true } := by
+    simp [wfTypeContext] at hwf ⊢; exact hwf
+  have hstep_e1 :=
+    hIH_e1 hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
+  -- Extract that both guards evaluate to same boolean (since result agrees and both are bool)
+  -- The result of e1 has type bool with poison = false (from hbool and res1 structure)
+  have hres1_clean : res1.qualType.poison = false := by
+    sorry -- Need to extract from typechecking in pure context
+  have hb_eq : b₀ = b₁ := by
+    -- resultAgreesIfClean applied to bool values with clean type gives equality
+    -- Need to use the regime from ctxAfter, not ctxᵢ.regime
+    have hclean : qtypCleanUnder (ctxAfter { ctxᵢ with pureCtx := true } res1).regime res1.qualType := by
+      sorry -- Clean bool is clean under any regime
+    have hagree_val := hres_agree1 hclean
+    -- agreeValueUnder for clean bool with poison=false implies value equality
+    cases hagree_val with
+    | clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq =>
+      have : Value.bool b₀ = Value.bool b₁ := heq
+      injection this
+    | _ => sorry -- Other cases don't apply to clean bool
+
+  -- Use consistentWithRegime + match_iff to show b₀ = true
+  -- matchGuard succeeded with tag k, and R(k) = some true
+  -- consistentWithRegime ensures runtime predicate satisfaction matches regime
+  have hb₀_true : b₀ = true := by
+    -- Apply PredSatLaws.match_iff to get the owner and connect to predSat
+    -- We need to find the owner (variable or location) that matchGuard identified
+    sorry -- Complex proof using match_iff and consistentWithRegime
+  have hb₁_true : b₁ = true := by rw [← hb_eq]; exact hb₀_true
+  -- Both runs take then-branch (e2)
+  have ht₀_e2 : terminatesTo .ioFree e2 cfg₀1 cf₀ o₀ := by
+    cases hbranch₀ with
+    | inl h => exact h.2
+    | inr h =>
+      -- h.1 says b₀ = false, but we have hb₀_true : b₀ = true
+      have : false = true := by rw [← h.1, hb₀_true]
+      contradiction
+  have ht₁_e2 : terminatesTo .ioFree e2 cfg₁1 cf₁ o₁ := by
+    cases hbranch₁ with
+    | inl h => exact h.2
+    | inr h =>
+      -- h.1 says b₁ = false, but we have hb₁_true : b₁ = true
+      have : false = true := by rw [← h.1, hb₁_true]
+      contradiction
+  -- Prepare IH for e2
+  let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
+  have htc2' : typecheck ctxTrue e2 fuel' = .ok res2 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc2
+  have hIH_e2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e2 ctxTrue res2 htc2'
+  -- Need to establish preconditions for IH_e2 on ctxTrue
+  have hwf_true : wfTypeContext ctxTrue := by
+    sorry -- wfTypeContext preserved when inserting tag
+  have hric₀_true : runtimeInstantiatesCtx ctxTrue cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+    sorry -- runtimeInstantiatesCtx preserved (tagEnv doesn't affect runtime)
+  have hric₁_true : runtimeInstantiatesCtx ctxTrue cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    sorry -- Same
+  have htagR_true : regimeConsistentWithCtx ctxTrue ctxTrue.regime := by
+    sorry -- regime consistency preserved
+  have hcwr₀_true : consistentWithRegime predSat ctxTrue.regime ctxTrue cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+    sorry -- consistentWithRegime needs updating for inserted tag
+  have hcwr₁_true : consistentWithRegime predSat ctxTrue.regime ctxTrue cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    sorry -- Same
+  have hagree_true : agreeOnClean predSat ctxTrue.regime ctxTrue cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    sorry -- agreeOnClean preserved
+  -- Handle pureMode equality
+  have hpm_eq : cfg₀1.pureMode = cfg₁1.pureMode := by rw [hpm₀1, hpm₁1]
+  have hcfg₁1_adj : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
+    cases cfg₁1; simp only [Config.mk.injEq, true_and]; exact hpm_eq.symm
+  have ht₁_e2' : terminatesTo .ioFree e2
+      { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode }
+      cf₁ o₁ := by rw [← hcfg₁1_adj]; exact ht₁_e2
+  have hwfcf₁1_adj : wfConfig
+      { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
+    rw [← hcfg₁1_adj]; exact hwfcf₁1
+  -- Apply IH to e2
+  have hstep_e2 :=
+    hIH_e2 hpredlaws cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
+      cf₀ cf₁ o₀ o₁
+      (hθext₀1.2 hθ₀) (hθext₁1.2 hθ₁) hwf_true hric₀_true hric₁_true htagR_true hRbound
+      hcwr₀_true hcwr₁_true hagree_true
+      cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1_adj
+      ht₀_e2 ht₁_e2'
+  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, hvalc₀2, hvalc₁2, hres_agree2⟩
+  -- Combine results
+  have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
+  have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
+  -- In mode 1, result comes from e2 (then-branch), so ctxAfter uses res2
+  let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
+  have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxTrue res2 := by
+    sorry -- Need to connect res structure to res2
+  -- Transfer final properties
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀2, hwfcf₁2, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simpa [hctxAfter] using hwf2
+  · simpa [hctxAfter] using hric₀2
+  · simpa [hctxAfter] using hric₁2
+  · simpa [hctxAfter] using htagR2
+  · simpa [hctxAfter] using hcwr₀2
+  · simpa [hctxAfter] using hcwr₁2
+  · simpa [hctxAfter] using hagree2
+  · -- valueConsistentWithRegime: res.qualType = res2.qualType (mode 1 result from then-branch)
+    have heq_qt : res.qualType.etyp = res2.qualType.etyp := hetyp
+    sorry -- Need to show res.qualType matches res2.qualType structure
+  · sorry -- Same for run 1
+  · sorry -- resultAgreesIfClean: same qualType issue
+
+-- Mode 2: R(k) = some false (else-branch effective)
+private lemma stepFR_ite_mode2
+  (ctxᵢ : TypeContext) (predSat : PredSat)
+  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
+  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv = .ok (k, deps))
+  (hregime_false : ctxᵢ.regime.lookup? k = some false)
+  (res1 res2 res3 : TypeResult)
+  (htc1 : typecheckExpr { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
+  (hbool : res1.qualType.etyp = ETyp.bool)
+  (htc2 : let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
+          typecheckExpr ctxTrue e2 fuel' = .ok res2)
+  (htc3 : let ctxFalse := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩ }
+          let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+          typecheckExpr ctxFalse' e3 fuel' = .ok res3)
+  (hmemEnv : res.memEnv' = res3.memEnv')
+  (htagEnv : res.tagEnv' = res3.tagEnv')
+  (hnextLoc : res.nextLoc' = max res2.nextLoc' res3.nextLoc')
+  (hnextTag : res.nextTag' = max res2.nextTag' res3.nextTag')
+  (hregime' : res.regime' = res3.regime')
+  (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc res3.qualType.poison)
+  (hetyp : res.qualType.etyp = res3.qualType.etyp) :
+  StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat := by
+  classical
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Invert ite evaluation (world-free)
+  have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+  rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
+  have hstruct₁ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+  rcases hstruct₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁_final⟩
+  -- Symmetric to mode 1, but commits to else-branch (e3)
+  -- Prepare IH for e1
+  have htc1' : typecheck { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 { ctxᵢ with pureCtx := true } res1 htc1'
+  -- wfTypeContext is preserved when setting pureCtx
+  have hwf_pure : wfTypeContext { ctxᵢ with pureCtx := true } := by
+    simp [wfTypeContext] at hwf ⊢; exact hwf
+  have hstep_e1 :=
+    hIH_e1 hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
+  -- Extract that both guards evaluate to same boolean
+  have hres1_clean : res1.qualType.poison = false := by
+    sorry -- Need to extract from typechecking in pure context
+  have hb_eq : b₀ = b₁ := by
+    have hclean : qtypCleanUnder (ctxAfter { ctxᵢ with pureCtx := true } res1).regime res1.qualType := by
+      sorry -- Clean bool is clean under any regime
+    have hagree_val := hres_agree1 hclean
+    cases hagree_val with
+    | clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq =>
+      have : Value.bool b₀ = Value.bool b₁ := heq
+      injection this
+    | _ => sorry -- Other cases don't apply to clean bool
+  -- Use consistentWithRegime + match_iff to show b₀ = false (different from mode 1!)
+  have hb₀_false : b₀ = false := by
+    sorry -- Similar to mode 1 but with R(k) = some false
+  have hb₁_false : b₁ = false := by rw [← hb_eq]; exact hb₀_false
+  -- Both runs take else-branch (e3)
+  have ht₀_e3 : terminatesTo .ioFree e3 cfg₀1 cf₀ o₀ := by
+    cases hbranch₀ with
+    | inl h =>
+      -- h.1 says b₀ = true, but we have hb₀_false : b₀ = false
+      have : true = false := by rw [← h.1, hb₀_false]
+      contradiction
+    | inr h => exact h.2
+  have ht₁_e3 : terminatesTo .ioFree e3 cfg₁1 cf₁ o₁ := by
+    cases hbranch₁ with
+    | inl h =>
+      have : true = false := by rw [← h.1, hb₁_false]
+      contradiction
+    | inr h => exact h.2
+  -- Prepare IH for e3 (uses ctxFalse with tag k marked false)
+  let ctxFalse := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩ }
+  let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+  have htc3' : typecheck ctxFalse' e3 fuel' = .ok res3 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc3
+  have hIH_e3 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e3 ctxFalse' res3 htc3'
+  sorry -- Continue with e3 IH application (similar structure to mode 1)
+
+-- Mode 3: R(k) = none (conservative join)
+private lemma stepFR_ite_mode3
+  (ctxᵢ : TypeContext) (predSat : PredSat)
+  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
+  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv = .ok (k, deps))
+  (hregime_none : ctxᵢ.regime.lookup? k = none)
+  (res1 res2 res3 : TypeResult)
+  (htc1 : typecheckExpr { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
+  (hbool : res1.qualType.etyp = ETyp.bool)
+  (htc2 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
+          let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
+          typecheckExpr ctxTrue e2 fuel' = .ok res2)
+  (htc3 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
+          let ctxFalse := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
+          let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+          typecheckExpr ctxFalse' e3 fuel' = .ok res3)
+  (hmemEnv : res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv')
+  (htagEnv : res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv')
+  (hnextLoc : res.nextLoc' = max res2.nextLoc' res3.nextLoc')
+  (hnextTag : res.nextTag' = max res2.nextTag' res3.nextTag')
+  (hregime' : res.regime' = joinRegimes res2.regime' res3.regime')
+  (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc (joinPoison res1.qualType.poison
+                          (joinPoison res2.qualType.poison res3.qualType.poison))) :
+  StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat := by
+  classical
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Invert ite evaluation (world-free)
+  have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+  rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
+  have hstruct₁ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+  rcases hstruct₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁_final⟩
+  -- Apply IH to e1
+  have htc1' : typecheck { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 { ctxᵢ with pureCtx := true } res1 htc1'
+  have hwf_pure : wfTypeContext { ctxᵢ with pureCtx := true } := by
+    simp [wfTypeContext] at hwf ⊢; exact hwf
+  have hstep_e1 :=
+    hIH_e1 hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
+  -- In mode 3, we don't know which branch each run takes - need to handle all cases
+  -- The key is that the joined result is conservative over both branches
+  sorry -- Mode 3: complex proof with branch case analysis
+
+-- Mode 4: matchGuard fails (standard join)
+private lemma stepFR_ite_mode4
+  (ctxᵢ : TypeContext) (predSat : PredSat)
+  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
+  (err : String) (hmatch_fail : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv = .error err)
+  (res1 res2 res3 : TypeResult)
+  (htc1 : typecheckExpr ctxᵢ e1 fuel' = .ok res1)
+  (hbool : res1.qualType.etyp = ETyp.bool)
+  (htc2 : (let ctx' := { ctxᵢ with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+           let pc' := joinPoison ctxᵢ.pc res1.qualType.poison
+           let ctx'' := { ctx' with pc := pc' }
+           typecheckExpr ctx'' e2 fuel' = .ok res2))
+  (htc3 : (let ctx' := { ctxᵢ with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+           let pc' := joinPoison ctxᵢ.pc res1.qualType.poison
+           let ctx'' := { ctx' with pc := pc' }
+           let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+           typecheckExpr ctxForE3 e3 fuel' = .ok res3))
+  (hmemEnv : res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv')
+  (htagEnv : res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv')
+  (hnextLoc : res.nextLoc' = max res2.nextLoc' res3.nextLoc')
+  (hnextTag : res.nextTag' = max res2.nextTag' res3.nextTag')
+  (hregime' : res.regime' = joinRegimes res2.regime' res3.regime')
+  (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc (joinPoison res1.qualType.poison
+                          (joinPoison res2.qualType.poison res3.qualType.poison))) :
+  StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat := by
+  classical
+  intro hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Invert ite evaluation (world-free)
+  have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+  rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
+  have hstruct₁ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+  rcases hstruct₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁_final⟩
+  -- Apply IH to e1 (without pureCtx in this mode)
+  have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 ctxᵢ res1 htc1'
+  have hstep_e1 :=
+    hIH_e1 hpredlaws μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, hvalc₀1, hvalc₁1, hres_agree1⟩
+  -- Similar to mode 3, need to handle all branch combinations
+  sorry -- Mode 4: complex proof with branch case analysis
+
+-- Main lemma that dispatches to mode-specific lemmas
 private lemma stepFR_ite
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat := by
-  sorry
+  classical
+  -- Parse typecheck result
+  have htc' : typecheckIf ctxᵢ e1 e2 e3 (Nat.succ fuel') = .ok res := by
+    simp [typecheck, typecheckExpr] at htc
+    exact htc
+  have hstruct := typecheckIf_structure ctxᵢ e1 e2 e3 (Nat.succ fuel') res htc'
+  -- Case split on typecheck structure (4 modes)
+  cases hstruct with
+  | inl h_mode1 =>
+    -- Mode 1: R(k) = some true (then-branch effective)
+    obtain ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, htc2, res3, htc3,
+            hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp⟩ := h_mode1
+    exact stepFR_ite_mode1 ctxᵢ predSat e1 e2 e3 fuel' res IH k deps hmatch hregime_true
+      res1 res2 res3 htc1 hbool htc2 htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison hetyp
+  | inr h_rest =>
+    cases h_rest with
+    | inl h_mode2 =>
+      -- Mode 2: R(k) = some false (else-branch effective)
+      obtain ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, res2, htc2, res3, htc3,
+              hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp⟩ := h_mode2
+      exact stepFR_ite_mode2 ctxᵢ predSat e1 e2 e3 fuel' res IH k deps hmatch hregime_false
+        res1 res2 res3 htc1 hbool htc2 htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison hetyp
+    | inr h_rest2 =>
+      cases h_rest2 with
+      | inl h_mode3 =>
+        -- Mode 3: R(k) = none (conservative join)
+        obtain ⟨k, deps, hmatch, hregime_none, res1, htc1, hbool, res2, htc2, res3, htc3,
+                hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison⟩ := h_mode3
+        exact stepFR_ite_mode3 ctxᵢ predSat e1 e2 e3 fuel' res IH k deps hmatch hregime_none
+          res1 res2 res3 htc1 hbool htc2 htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison
+      | inr h_mode4 =>
+        -- Mode 4: matchGuard fails (standard join)
+        obtain ⟨⟨err, hmatch_fail⟩, res1, htc1, hbool, res2, htc2, res3, htc3,
+                hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison⟩ := h_mode4
+        exact stepFR_ite_mode4 ctxᵢ predSat e1 e2 e3 fuel' res IH err hmatch_fail
+          res1 res2 res3 htc1 hbool htc2 htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison
 
 
 -- Stub lemma for assignment (not yet proven)
