@@ -4395,11 +4395,95 @@ private lemma stepFR_vlet
       by_cases hx : x = vname
       · -- Case: x = vname (new binding)
         subst hx
-        -- TODO(vlet/valueConsistentWithRegime): `vlet` introduces a new binding whose predicate/tag is
-        -- copied from `e1`'s result type. If that tag is in the regime domain, we need a return-value
-        -- regime-consistency fact for the runtime result `v₀1`. This will be provided once StepFR
-        -- concludes `valueConsistentWithRegime` (see `doc/vlet_issue.md`).
-        sorry
+        have hlookup_res1 : (ctxᵢ.varEnv.update x res1.qualType).lookup x = some qt := by
+          simpa [hctx'] using hlookup
+        have hqt : qt = res1.qualType := by
+          have h := VarTypeEnv_lookup_update_eq ctxᵢ.varEnv x res1.qualType
+          have : some qt = some res1.qualType := by
+            calc
+              some qt = (ctxᵢ.varEnv.update x res1.qualType).lookup x := by
+                symm; exact hlookup_res1
+              _ = some res1.qualType := by
+                exact h
+          exact Option.some.inj this
+        subst hqt
+        have hlookup_v : cfg₀2.varEnv.lookup x = some v₀1 := by
+          simp [cfg₀2, VarEnv.update, VarEnv.lookup]
+        have hval_consist :
+            valueConsistentWithRegime predSat ctx'.regime res1.qualType cfg₀2.memory v₀1 := by
+          simpa [hctx', ctxAfter, cfg₀2] using _hval_consist₀1
+        cases hpred_case : res1.qualType.pred with
+        | noPred =>
+            have hguard' : qtypGuardTag res1.qualType = none := by
+              simp [qtypGuardTag, hpred_case]
+            rw [hguard'] at hguard
+            cases hguard
+        | guardOnly k' =>
+            exact varsRegime.guardOnly_ok (x, res1.qualType) k' hpred_case
+        | guardClosure k' arg_name pred_body var_env =>
+            have htag_k' : qtypGuardTag res1.qualType = some k' := by
+              simp [qtypGuardTag, hpred_case]
+            have hk : k' = k := by
+              have : some k' = some k := by
+                calc
+                  some k' = qtypGuardTag res1.qualType := by symm; exact htag_k'
+                  _ = some k := hguard
+              exact Option.some.inj this
+            have hkR : ctx'.regime.lookup? k' ≠ none := by
+              simpa [hk] using hregime_k
+            cases hval_consist with
+            | noTag hnone =>
+                have : some k' = (none : Option Tag) := by
+                  calc
+                    some k' = qtypGuardTag res1.qualType := by symm; exact htag_k'
+                    _ = none := hnone
+                cases this
+            | guardOnly_ok k0 hgo =>
+                have : Predicate.guardClosure k' arg_name pred_body var_env = Predicate.guardOnly k0 := by
+                  calc
+                    Predicate.guardClosure k' arg_name pred_body var_env = res1.qualType.pred := by
+                      symm; exact hpred_case
+                    _ = Predicate.guardOnly k0 := hgo
+                cases this
+            | notInRegime k0 htag0 hnone =>
+                have hk0 : k0 = k' := by
+                  have : some k0 = some k' := by
+                    calc
+                      some k0 = qtypGuardTag res1.qualType := by symm; exact htag0
+                      _ = some k' := htag_k'
+                  exact Option.some.inj this
+                have : False := hkR (by simpa [hk0] using hnone)
+                cases this
+            | inRegimeTrue k0 htag0 hRtrue hholds =>
+                have hk0 : k0 = k' := by
+                  have : some k0 = some k' := by
+                    calc
+                      some k0 = qtypGuardTag res1.qualType := by symm; exact htag0
+                      _ = some k' := htag_k'
+                  exact Option.some.inj this
+                have hRtrue' : ctx'.regime.lookup? k' = some true := by
+                  simpa [hk0] using hRtrue
+                refine
+                  varsRegime.withPred_ok (x, res1.qualType) k' arg_name pred_body var_env v₀1 true
+                    hpred_case hRtrue' hlookup_v ?_
+                constructor
+                · intro _; exact hholds
+                · intro hb; cases hb
+            | inRegimeFalse k0 htag0 hRfalse hnholds =>
+                have hk0 : k0 = k' := by
+                  have : some k0 = some k' := by
+                    calc
+                      some k0 = qtypGuardTag res1.qualType := by symm; exact htag0
+                      _ = some k' := htag_k'
+                  exact Option.some.inj this
+                have hRfalse' : ctx'.regime.lookup? k' = some false := by
+                  simpa [hk0] using hRfalse
+                refine
+                  varsRegime.withPred_ok (x, res1.qualType) k' arg_name pred_body var_env v₀1 false
+                    hpred_case hRfalse' hlookup_v ?_
+                constructor
+                · intro hb; cases hb
+                · intro _; exact hnholds
         /-
         -- After subst, vname is replaced by x everywhere
         have hlookup_res1 : (ctxᵢ.varEnv.update x res1.qualType).lookup x = some qt := by
@@ -4684,7 +4768,69 @@ private lemma stepFR_vlet
             -- TODO(vlet/valueConsistentWithRegime): symmetric to the cfg₀2 case above.
             -- We need return-value regime-consistency for `v₁1` to discharge the new-binding
             -- `varsRegime` obligation when the guard tag is in the regime domain.
-            sorry
+            have hval_consist :
+                valueConsistentWithRegime predSat ctx'.regime res1.qualType cfg₁2.memory v₁1 := by
+              simpa [hctx', ctxAfter, cfg₁2] using _hval_consist₁1
+            have htag_k' : qtypGuardTag res1.qualType = some k' := by
+              simp [qtypGuardTag, hpred_case]
+            have hk : k' = k := by
+              have : some k' = some k := by
+                calc
+                  some k' = qtypGuardTag res1.qualType := by symm; exact htag_k'
+                  _ = some k := hguard
+              exact Option.some.inj this
+            have hkR : ctx'.regime.lookup? k' ≠ none := by
+              simpa [hk] using hregime_k
+            cases hval_consist with
+            | noTag hnone =>
+                have : some k' = (none : Option Tag) := by
+                  calc
+                    some k' = qtypGuardTag res1.qualType := by symm; exact htag_k'
+                    _ = none := hnone
+                cases this
+            | guardOnly_ok k0 hgo =>
+                have : Predicate.guardClosure k' arg_name pred_body var_env = Predicate.guardOnly k0 := by
+                  calc
+                    Predicate.guardClosure k' arg_name pred_body var_env = res1.qualType.pred := by
+                      symm; exact hpred_case
+                    _ = Predicate.guardOnly k0 := by
+                      exact hgo
+                cases this
+            | notInRegime k0 htag0 hnone =>
+                have hk0 : k0 = k' := by
+                  have : some k0 = some k' := by
+                    calc
+                      some k0 = qtypGuardTag res1.qualType := by symm; exact htag0
+                      _ = some k' := htag_k'
+                  exact Option.some.inj this
+                have : False := hkR (by simpa [hk0] using hnone)
+                cases this
+            | inRegimeTrue k0 htag0 hRtrue hholds =>
+                have hk0 : k0 = k' := by
+                  have : some k0 = some k' := by
+                    calc
+                      some k0 = qtypGuardTag res1.qualType := by symm; exact htag0
+                      _ = some k' := htag_k'
+                  exact Option.some.inj this
+                have hRtrue' : ctx'.regime.lookup? k' = some true := by
+                  simpa [hk0] using hRtrue
+                exact
+                  varsRegime.withPred_ok (x, res1.qualType) k' arg_name pred_body var_env v₁1 true
+                    hpred_case hRtrue' hlookup_v
+                    ⟨(by intro _; exact hholds), (by intro hb; cases hb)⟩
+            | inRegimeFalse k0 htag0 hRfalse hnholds =>
+                have hk0 : k0 = k' := by
+                  have : some k0 = some k' := by
+                    calc
+                      some k0 = qtypGuardTag res1.qualType := by symm; exact htag0
+                      _ = some k' := htag_k'
+                  exact Option.some.inj this
+                have hRfalse' : ctx'.regime.lookup? k' = some false := by
+                  simpa [hk0] using hRfalse
+                exact
+                  varsRegime.withPred_ok (x, res1.qualType) k' arg_name pred_body var_env v₁1 false
+                    hpred_case hRfalse' hlookup_v
+                    ⟨(by intro hb; cases hb), (by intro _; exact hnholds)⟩
       · -- Case: x ≠ vname (old variable)
         have hlookup_old : (ctxᵢ.varEnv.update vname res1.qualType).lookup x = some qt := by
           simpa [hctx'] using hlookup
