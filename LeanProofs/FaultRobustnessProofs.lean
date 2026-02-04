@@ -3990,7 +3990,7 @@ private lemma stepFR_newRef
           simp [θ₀', RealizationMap.update, RealizationMap.lookup]
         have hmem_new : cf₀.memory.lookup cfg₀'.nextAddr = some n₀ := by
           rw [hmem₀]
-          simp [Memory.update, Memory.lookup]
+          simp [Memory.lookup]
         cases hpred_case : storedQt.pred with
         | noPred =>
             -- Contradiction: no guard tag.
@@ -4291,7 +4291,7 @@ private lemma stepFR_newRef
           simp [θ₁', RealizationMap.update, RealizationMap.lookup]
         have hmem_new : cf₁.memory.lookup cfg₁'.nextAddr = some n₁ := by
           rw [hmem₁]
-          simp [Memory.update, Memory.lookup]
+          simp [Memory.lookup]
         cases hpred_case : storedQt.pred with
         | noPred =>
             have hnone : qtypGuardTag storedQt = none := by
@@ -7076,8 +7076,8 @@ private lemma stepFR_deref
           simpa [MemoryTypeEnv.lookup] using hlookup_l
         exact ⟨qt, hlookup_l'⟩
   obtain ⟨qt, hlookup_ctx⟩ := hlookup_ctx
-  -- Get agreement on the location from agreeOnClean (location is clean under ctxᵢ.regime)
-  have hclean_loc : qtypCleanUnder ctxᵢ.regime qt := by
+  -- Get agreement on the location from agreeOnClean (need cleanliness under the *post-e* regime).
+  have hclean_loc : qtypCleanUnder (ctxAfter ctxᵢ res1).regime qt := by
     -- Analyze typecheckDeref to obtain the fold result, then use hclean.
     cases hq : res1.qualType with
     | mk etyp poison pred =>
@@ -7201,9 +7201,7 @@ private lemma stepFR_deref
                                 -- hreg' uses output regime (ctxAfter ctxᵢ res1).regime
                                 have hreg_k' : (ctxAfter ctxᵢ res1).regime.lookup? k = some true :=
                                   (hreg'.1 k deps htagEnv')
-                                -- Transfer to input regime using monotonicity
-                                have hreg_k : ctxᵢ.regime.lookup? k = some true := by
-                                  sorry -- TODO: Use regime monotonicity
+                                have hreg_k : (ctxAfter ctxᵢ res1).regime.lookup? k = some true := hreg_k'
                                 have hguard : predGuardTag (v_3.2.getD Predicate.noPred) = some k := by
                                   simp [hpred]
                                   simp [predGuardTag]
@@ -7270,9 +7268,7 @@ private lemma stepFR_deref
                                 -- hreg' uses output regime (ctxAfter ctxᵢ res1).regime
                                 have hreg_k' : (ctxAfter ctxᵢ res1).regime.lookup? k = some true :=
                                   (hreg'.1 k deps htagEnv')
-                                -- Transfer to input regime using monotonicity
-                                have hreg_k : ctxᵢ.regime.lookup? k = some true := by
-                                  sorry -- TODO: Use regime monotonicity (guardClosure case)
+                                have hreg_k : (ctxAfter ctxᵢ res1).regime.lookup? k = some true := hreg_k'
                                 have hguard : predGuardTag (v_3.2.getD Predicate.noPred) = some k := by
                                   simp [hpred, predGuardTag]
                                 obtain ⟨qt', hlookup', htagqt⟩ :=
@@ -7348,10 +7344,8 @@ private lemma stepFR_deref
                           simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
                           rw [← hqt'']
                           simp [het]
-                        -- hreg : (ctxAfter ctxᵢ res).regime.lookup? k = some true
-                        -- Need to transfer to ctxᵢ.regime
-                        have hreg' : ctxᵢ.regime.lookup? k = some true := by
-                          sorry -- TODO: Use regime monotonicity (guardOnly result case)
+                        have hreg' : (ctxAfter ctxᵢ res1).regime.lookup? k = some true := by
+                          simpa [ctxAfter, h_regime] using hreg
                         exact qtypCleanUnder.guard k htagqt' hreg' hnotfun'
                     | some val =>
                         simp [hpred, htagEnv, pure, Except.pure] at htc''
@@ -7391,10 +7385,8 @@ private lemma stepFR_deref
                           simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
                           rw [← hqt'']
                           simp [het]
-                        -- hreg : (ctxAfter ctxᵢ res).regime.lookup? k = some true
-                        -- Need to transfer to ctxᵢ.regime
-                        have hreg'' : ctxᵢ.regime.lookup? k = some true := by
-                          sorry -- TODO: Use regime monotonicity (guardClosure result case)
+                        have hreg'' : (ctxAfter ctxᵢ res1).regime.lookup? k = some true := by
+                          simpa [ctxAfter, h_regime] using hreg
                         exact qtypCleanUnder.guard k htagqt' hreg'' hnotfun'
                     | some val =>
                         simp [hpred, htagEnv, pure, Except.pure] at htc''
@@ -7402,11 +7394,7 @@ private lemma stepFR_deref
                           <;> simp [hval, hb] at htc''
                           <;> rw [← htc''] at htag
                           <;> simp [qtypGuardTag] at htag
-  -- hclean_loc : qtypCleanUnder ctxᵢ.regime qt, but hagree_clean_e uses output regime
-  -- Transfer hclean_loc to use output regime
-  have hclean_loc' : qtypCleanUnder (ctxAfter ctxᵢ res1).regime qt := by
-    sorry -- TODO: Use regime monotonicity to transfer qtypCleanUnder
-  have hagree_loc := (hagree_clean_e.1 l qt hlookup_ctx hclean_loc')
+  have hagree_loc := (hagree_clean_e.1 l qt hlookup_ctx hclean_loc)
   have hEq : o₀ = o₁ := by
     -- Use the agreement on the location to show equality of stored ints.
     cases hagree_loc with
