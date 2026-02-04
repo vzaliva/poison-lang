@@ -2270,7 +2270,7 @@ private lemma typecheckVar_nextTag_mono (ctx : TypeContext) (x : Name) (res : Ty
               cases hft : etyp.isFunctionType with
               | true =>
                   -- Function types throw error, contradicts htc : throw ... = Except.ok res
-                  simp [hft, throw, Except.error] at htc
+                  simp [hft, throw] at htc
                   -- htc is now: Except.error ... = Except.ok res, which is a contradiction
                   cases htc
               | false =>
@@ -2302,7 +2302,7 @@ private lemma typecheckVar_nextTag_mono (ctx : TypeContext) (x : Name) (res : Ty
               cases hft : etyp.isFunctionType with
               | true =>
                   -- Function types throw error, contradicts htc : throw ... = Except.ok res
-                  simp [hft, throw, Except.error] at htc
+                  simp [hft, throw] at htc
                   -- htc is now: Except.error ... = Except.ok res, which is a contradiction
                   cases htc
               | false =>

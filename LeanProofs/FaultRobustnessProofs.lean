@@ -2392,45 +2392,40 @@ private lemma typecheckVar_preserves_memEnv (ctx : TypeContext) (x : Name) (res 
   res.memEnv' = ctx.memEnv := by
   intro h_typecheck
   simp [typecheckVar] at h_typecheck
-  split at h_typecheck
-  · repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
-  · simp at h_typecheck
+  split at h_typecheck <;>
+    (repeat (first | split at h_typecheck | simp [pure, Except.pure, throw] at h_typecheck | cases h_typecheck | rfl))
 
 private lemma typecheckVar_preserves_tagEnv (ctx : TypeContext) (x : Name) (res : TypeResult) :
   typecheckVar ctx x = .ok res →
   res.tagEnv' = ctx.tagEnv := by
   intro h_typecheck
   simp [typecheckVar] at h_typecheck
-  split at h_typecheck
-  · repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
-  · simp at h_typecheck
+  split at h_typecheck <;>
+    (repeat (first | split at h_typecheck | simp [pure, Except.pure, throw] at h_typecheck | cases h_typecheck | rfl))
 
 private lemma typecheckVar_preserves_nextLoc (ctx : TypeContext) (x : Name) (res : TypeResult) :
   typecheckVar ctx x = .ok res →
   res.nextLoc' = ctx.nextLoc := by
   intro h_typecheck
   simp [typecheckVar] at h_typecheck
-  split at h_typecheck
-  · repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
-  · simp at h_typecheck
+  split at h_typecheck <;>
+    (repeat (first | split at h_typecheck | simp [pure, Except.pure, throw] at h_typecheck | cases h_typecheck | rfl))
 
 private lemma typecheckVar_preserves_nextTag (ctx : TypeContext) (x : Name) (res : TypeResult) :
   typecheckVar ctx x = .ok res →
   res.nextTag' = ctx.nextTag := by
   intro h_typecheck
   simp [typecheckVar] at h_typecheck
-  split at h_typecheck
-  · repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
-  · simp at h_typecheck
+  split at h_typecheck <;>
+    (repeat (first | split at h_typecheck | simp [pure, Except.pure, throw] at h_typecheck | cases h_typecheck | rfl))
 
 private lemma typecheckVar_preserves_regime (ctx : TypeContext) (x : Name) (res : TypeResult) :
   typecheckVar ctx x = .ok res →
   res.regime' = ctx.regime := by
   intro h_typecheck
   simp [typecheckVar] at h_typecheck
-  split at h_typecheck
-  · repeat (first | split at h_typecheck | (simp [pure, Except.pure] at h_typecheck; rw [← h_typecheck]))
-  · simp at h_typecheck
+  split at h_typecheck <;>
+    (repeat (first | split at h_typecheck | simp [pure, Except.pure, throw] at h_typecheck | cases h_typecheck | rfl))
 
 -- Transfer consistentWithRegime using monotoneStep
 -- When Regime.monotoneStep R R', if consistentWithRegime holds for R, it holds for R'
@@ -2697,9 +2692,15 @@ private lemma stepFR_var
                         simpa [hqt] using hpred
                       have htag' : ctxᵢ.tagEnv[k]? = none := by
                         simpa [Std.ExtTreeMap.get?_eq_getElem?] using htag
-                      simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                      cases htc''
-                      simp [hpred']
+                      cases hft : etyp.isFunctionType with
+                      | true =>
+                          -- Function types throw error, contradicts htc''
+                          simp [typecheckVar, hlookup_ctx, hpred', hqt, hft, throw] at htc''
+                          cases htc''
+                      | false =>
+                          simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                          cases htc''
+                          simp [hpred']
                 refine valueConsistentWithRegime.guardOnly_ok (predSat := predSat) (R := ctxᵢ.regime)
                   (qt := res.qualType) (μ := μ) (v := v) k ?_
                 simp [hres, hpred]
@@ -2717,9 +2718,16 @@ private lemma stepFR_var
                           | mk etyp poison pred =>
                               have hpred' : pred = Predicate.guardOnly k := by
                                 simpa [hqt] using hpred
-                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                              cases htc''
-                              rfl
+                              have htag' : ctxᵢ.tagEnv[k]? = some ⟨true, deps⟩ := by
+                                simpa using htag
+                              cases hft : etyp.isFunctionType with
+                              | true =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, throw] at htc''
+                                  cases htc''
+                              | false =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                                  cases htc''
+                                  rfl
                         refine valueConsistentWithRegime.noTag (predSat := predSat) (R := ctxᵢ.regime)
                           (qt := res.qualType) (μ := μ) (v := v) ?_
                         simp [qtypGuardTag, hres]
@@ -2731,9 +2739,16 @@ private lemma stepFR_var
                           | mk etyp poison pred =>
                               have hpred' : pred = Predicate.guardOnly k := by
                                 simpa [hqt] using hpred
-                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                              cases htc''
-                              rfl
+                              have htag' : ctxᵢ.tagEnv[k]? = some ⟨false, deps⟩ := by
+                                simpa using htag
+                              cases hft : etyp.isFunctionType with
+                              | true =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, throw] at htc''
+                                  cases htc''
+                              | false =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                                  cases htc''
+                                  rfl
                         refine valueConsistentWithRegime.noTag (predSat := predSat) (R := ctxᵢ.regime)
                           (qt := res.qualType) (μ := μ) (v := v) ?_
                         simp [qtypGuardTag, hres]
@@ -2749,9 +2764,14 @@ private lemma stepFR_var
                         simpa [hqt] using hpred
                       have htag' : ctxᵢ.tagEnv[k]? = none := by
                         simpa [Std.ExtTreeMap.get?_eq_getElem?] using htag
-                      simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                      cases htc''
-                      simp [hpred']
+                      cases hft : etyp.isFunctionType with
+                      | true =>
+                          simp [typecheckVar, hlookup_ctx, hpred', hqt, hft, throw] at htc''
+                          cases htc''
+                      | false =>
+                          simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                          cases htc''
+                          simp [hpred']
                 cases hk : ctxᵢ.regime.lookup? k with
                 | none =>
                     refine valueConsistentWithRegime.notInRegime (predSat := predSat) (R := ctxᵢ.regime)
@@ -2818,9 +2838,16 @@ private lemma stepFR_var
                           | mk etyp poison pred =>
                               have hpred' : pred = Predicate.guardClosure k arg_name pred_body var_env := by
                                 simpa [hqt] using hpred
-                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                              cases htc''
-                              rfl
+                              have htag' : ctxᵢ.tagEnv[k]? = some ⟨true, deps⟩ := by
+                                simpa using htag'
+                              cases hft : etyp.isFunctionType with
+                              | true =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, throw] at htc''
+                                  cases htc''
+                              | false =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                                  cases htc''
+                                  rfl
                         refine valueConsistentWithRegime.noTag (predSat := predSat) (R := ctxᵢ.regime)
                           (qt := res.qualType) (μ := μ) (v := v) ?_
                         simp [qtypGuardTag, hres]
@@ -2832,9 +2859,16 @@ private lemma stepFR_var
                           | mk etyp poison pred =>
                               have hpred' : pred = Predicate.guardClosure k arg_name pred_body var_env := by
                                 simpa [hqt] using hpred
-                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                              cases htc''
-                              rfl
+                              have htag' : ctxᵢ.tagEnv[k]? = some ⟨false, deps⟩ := by
+                                simpa using htag'
+                              cases hft : etyp.isFunctionType with
+                              | true =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, throw] at htc''
+                                  cases htc''
+                              | false =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                                  cases htc''
+                                  rfl
                         refine valueConsistentWithRegime.noTag (predSat := predSat) (R := ctxᵢ.regime)
                           (qt := res.qualType) (μ := μ) (v := v) ?_
                         simp [qtypGuardTag, hres]
@@ -2938,9 +2972,14 @@ private lemma stepFR_var
                         simpa [hqt] using hpred
                       have htag' : ctxᵢ.tagEnv[k]? = none := by
                         simpa using htag
-                      simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                      cases htc''
-                      simp [hpred']
+                      cases hft : etyp.isFunctionType with
+                      | true =>
+                          simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, throw] at htc''
+                          cases htc''
+                      | false =>
+                          simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                          cases htc''
+                          simp [hpred']
                 cases hclean with
                 | clean hpoison_res =>
                     have hjoin : joinPoison ctxᵢ.pc qt.poison = false := by
@@ -2970,11 +3009,11 @@ private lemma stepFR_var
                         simpa [qtypGuardTag, hres, hpred] using htag'
                       exact Option.some.inj this
                     subst hk
+                    have hnotfun_qt : qt.etyp.isFunctionType = false := by
+                      simpa [hres] using hnotfun_res
                     have hclean_qt : qtypCleanUnder ctxᵢ.regime qt := by
                       have htag_qt : qtypGuardTag qt = some k := by
                         simp [qtypGuardTag, hpred]
-                      have hnotfun_qt : qt.etyp.isFunctionType = false := by
-                        simpa [hres] using hnotfun_res
                       exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                     have hvar := hvar_agree_of_clean hclean_qt
                     have hval : agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
@@ -3052,9 +3091,14 @@ private lemma stepFR_var
                                 simpa [hqt] using hpred
                               have htag' : ctxᵢ.tagEnv[k]? = some ⟨true, deps⟩ := by
                                 simpa using htag
-                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                              cases htc''
-                              rfl
+                              cases hft : etyp.isFunctionType with
+                              | true =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, throw] at htc''
+                                  cases htc''
+                              | false =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                                  cases htc''
+                                  rfl
                         have hpc : ctxᵢ.pc = false := by
                           -- clean result requires pc = false
                           cases hclean with
@@ -3065,11 +3109,21 @@ private lemma stepFR_var
                               simp [qtypGuardTag, hres] at htag_guard
                         have hregime : ctxᵢ.regime.lookup? k = some true := by
                           exact htagR k deps (by simpa [htag] using htag)
+                        have hnotfun_qt : qt.etyp.isFunctionType = false := by
+                          -- If qt.etyp were a function type, typecheckVar would have thrown an error
+                          by_contra h
+                          simp at h
+                          -- From htc', typecheckVar succeeded
+                          have htc'' := htc'
+                          cases qt with
+                          | mk etyp poison pred =>
+                              have : pred = Predicate.guardOnly k := by simpa using hpred
+                              have htag' : ctxᵢ.tagEnv[k]? = some ⟨true, deps⟩ := by simpa using htag
+                              simp [this, h, typecheckVar, hlookup_ctx, htag', throw] at htc''
+                              cases htc''
                         have hclean_qt : qtypCleanUnder ctxᵢ.regime qt := by
                           have htag_qt : qtypGuardTag qt = some k := by
                             simp [qtypGuardTag, hpred]
-                          have hnotfun_qt : qt.etyp.isFunctionType = false := by
-                            sorry  -- TODO: derive from context or add constraint
                           exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                         have hvar := hvar_agree_of_clean hclean_qt
                         have hval : agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
@@ -3086,27 +3140,29 @@ private lemma stepFR_var
                                 simpa [hres] using hnotfun
                               exact agreeValueUnder.clean_eq_nonref_nonarrow (by simp [hres, hpc]) hnotfun' hnotref' hEq
                           | clean_internal_arrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
-                              have hetyp' : res.qualType.etyp = qt.etyp := by
-                                simp [hres]
-                              have hclean' : internalPoisonClean res.qualType := by
-                                simp only [internalPoisonClean] at hclean ⊢
-                                simp only [getInternalPoison, hetyp'] at hclean ⊢
-                                exact hclean
-                              exact agreeValueUnder.clean_internal_arrow hclean' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
-                          | dirty_internal_arrow _ _ =>
-                              -- Dirty arrow: transport to result type
-                              sorry
+                              -- Arrow types are function types, contradicts hnotfun_qt
+                              exfalso
+                              simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                                Bool.true_or] at hnotfun_qt
+                              cases hnotfun_qt
+                          | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
+                              -- Dirty arrow: qt.etyp is arrow but hnotfun_qt says it's not a function type
+                              exfalso
+                              simp only [ETyp.isFunctionType] at hnotfun_qt
+                              rw [hisArrow, Bool.true_or] at hnotfun_qt
+                              cases hnotfun_qt
                           | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
-                              have hetyp' : res.qualType.etyp = qt.etyp := by
-                                simp [hres]
-                              have hclean' : internalPoisonClean res.qualType := by
-                                simp only [internalPoisonClean] at hclean ⊢
-                                simp only [getInternalPoison, hetyp'] at hclean ⊢
-                                exact hclean
-                              exact agreeValueUnder.clean_internal_parrow hclean' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
-                          | dirty_internal_parrow _ _ =>
-                              -- Dirty parrow: transport to result type
-                              sorry
+                              -- Parrow types are function types, contradicts hnotfun_qt
+                              exfalso
+                              simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                                Bool.or_true] at hnotfun_qt
+                              cases hnotfun_qt
+                          | dirty_internal_parrow hdirty hisParrow htyp1 htyp2 =>
+                              -- Dirty parrow: qt.etyp is parrow but hnotfun_qt says it's not a function type
+                              exfalso
+                              simp only [ETyp.isFunctionType] at hnotfun_qt
+                              rw [hisParrow, Bool.or_true] at hnotfun_qt
+                              cases hnotfun_qt
                           | clean_ref _ hetyp hlookup1 hin hv1 hlookup2 hv2 =>
                               have hetyp' : res.qualType.etyp = qt.etyp := by
                                 simp [hres]
@@ -3143,9 +3199,14 @@ private lemma stepFR_var
                                 simpa [hqt] using hpred
                               have htag' : ctxᵢ.tagEnv[k]? = some ⟨false, deps⟩ := by
                                 simpa using htag
-                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                              cases htc''
-                              rfl
+                              cases hft : etyp.isFunctionType with
+                              | true =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, throw] at htc''
+                                  cases htc''
+                              | false =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                                  cases htc''
+                                  rfl
                         -- poisoned result is not clean
                         exfalso
                         cases hclean with
@@ -3170,9 +3231,14 @@ private lemma stepFR_var
                         simpa [hqt] using hpred
                       have htag' : ctxᵢ.tagEnv[k]? = none := by
                         simpa using htag
-                      simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                      cases htc''
-                      simp [hpred']
+                      cases hft : etyp.isFunctionType with
+                      | true =>
+                          simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, throw] at htc''
+                          cases htc''
+                      | false =>
+                          simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                          cases htc''
+                          simp [hpred']
                 cases hclean with
                 | clean hpoison_res =>
                     have hjoin : joinPoison ctxᵢ.pc qt.poison = false := by
@@ -3205,11 +3271,11 @@ private lemma stepFR_var
                         simpa [qtypGuardTag, hres, hpred] using htag'
                       exact Option.some.inj this
                     subst hk
+                    have hnotfun_qt : qt.etyp.isFunctionType = false := by
+                      simpa [hres] using hnotfun_res
                     have hclean_qt : qtypCleanUnder ctxᵢ.regime qt := by
                       have htag_qt : qtypGuardTag qt = some k := by
                         simp [qtypGuardTag, hpred]
-                      have hnotfun_qt : qt.etyp.isFunctionType = false := by
-                        simpa [hres] using hnotfun_res
                       exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                     have hvar := hvar_agree_of_clean hclean_qt
                     have hval : agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
@@ -3228,15 +3294,27 @@ private lemma stepFR_var
                             simp [qtypGuardTag, hres, hpred]
                           exact agreeValueUnder.withPred_true_eq k htagRes hregime hnotfun' hnotref' hEq
                         | clean_internal_arrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
-                            -- Guard predicate + arrow type combination
-                            sorry
-                        | dirty_internal_arrow _ _ =>
-                            sorry
+                            -- Arrow types are function types, contradicts hnotfun_qt
+                            exfalso
+                            simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                              Bool.true_or] at hnotfun_qt
+                            cases hnotfun_qt
+                        | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
+                            exfalso
+                            simp only [ETyp.isFunctionType] at hnotfun_qt
+                            rw [hisArrow, Bool.true_or] at hnotfun_qt
+                            cases hnotfun_qt
                         | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
-                            -- Guard predicate + parrow type combination
-                            sorry
-                        | dirty_internal_parrow _ _ =>
-                            sorry
+                            -- Parrow types are function types, contradicts hnotfun_qt
+                            exfalso
+                            simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                              Bool.or_true] at hnotfun_qt
+                            cases hnotfun_qt
+                        | dirty_internal_parrow hdirty hisParrow htyp1 htyp2 =>
+                            exfalso
+                            simp only [ETyp.isFunctionType] at hnotfun_qt
+                            rw [hisParrow, Bool.or_true] at hnotfun_qt
+                            cases hnotfun_qt
                       | clean_ref _ hetyp hlookup1 hin hv1 hlookup2 hv2 =>
                           have htagRes : qtypGuardTag res.qualType = some k := by
                             simp [qtypGuardTag, hres, hpred]
@@ -3277,9 +3355,14 @@ private lemma stepFR_var
                                 simpa [hqt] using hpred
                               have htag' : ctxᵢ.tagEnv[k]? = some ⟨true, deps⟩ := by
                                 simpa using htag
-                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                              cases htc''
-                              rfl
+                              cases hft : etyp.isFunctionType with
+                              | true =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, throw] at htc''
+                                  cases htc''
+                              | false =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                                  cases htc''
+                                  rfl
                         have hpc : ctxᵢ.pc = false := by
                           cases hclean with
                           | clean hpoison => simpa [hres] using hpoison
@@ -3288,11 +3371,21 @@ private lemma stepFR_var
                               simp [qtypGuardTag, hres] at htag_guard
                         have hregime : ctxᵢ.regime.lookup? k = some true := by
                           exact htagR k deps (by simpa [htag] using htag)
+                        have hnotfun_qt : qt.etyp.isFunctionType = false := by
+                          -- If qt.etyp were a function type, typecheckVar would have thrown an error
+                          by_contra h
+                          simp at h
+                          -- From htc', typecheckVar succeeded
+                          have htc'' := htc'
+                          cases qt with
+                          | mk etyp poison pred =>
+                              have : pred = Predicate.guardClosure k arg_name pred_body var_env := by simpa using hpred
+                              have htag' : ctxᵢ.tagEnv[k]? = some ⟨true, deps⟩ := by simpa using htag
+                              simp [this, h, typecheckVar, hlookup_ctx, htag', throw] at htc''
+                              cases htc''
                         have hclean_qt : qtypCleanUnder ctxᵢ.regime qt := by
                           have htag_qt : qtypGuardTag qt = some k := by
                             simp [qtypGuardTag, hpred]
-                          have hnotfun_qt : qt.etyp.isFunctionType = false := by
-                            sorry  -- TODO: derive from context or add constraint
                           exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                         have hvar := hvar_agree_of_clean hclean_qt
                         have hval : agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
@@ -3311,27 +3404,27 @@ private lemma stepFR_var
                                 simpa [hres] using hnotfun
                               exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison' hnotfun' hnotref' hEq
                           | clean_internal_arrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
-                              have hetyp' : res.qualType.etyp = qt.etyp := by
-                                simp [hres]
-                              have hclean' : internalPoisonClean res.qualType := by
-                                simp only [internalPoisonClean] at hclean ⊢
-                                simp only [getInternalPoison, hetyp'] at hclean ⊢
-                                exact hclean
-                              exact agreeValueUnder.clean_internal_arrow hclean' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
-                          | dirty_internal_arrow _ _ =>
-                              -- Dirty arrow: transport to result type
-                              sorry
+                              -- Arrow types are function types, contradicts hnotfun_qt
+                              exfalso
+                              simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                                Bool.true_or] at hnotfun_qt
+                              cases hnotfun_qt
+                          | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
+                              exfalso
+                              simp only [ETyp.isFunctionType] at hnotfun_qt
+                              rw [hisArrow, Bool.true_or] at hnotfun_qt
+                              cases hnotfun_qt
                           | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
-                              have hetyp' : res.qualType.etyp = qt.etyp := by
-                                simp [hres]
-                              have hclean' : internalPoisonClean res.qualType := by
-                                simp only [internalPoisonClean] at hclean ⊢
-                                simp only [getInternalPoison, hetyp'] at hclean ⊢
-                                exact hclean
-                              exact agreeValueUnder.clean_internal_parrow hclean' (hetyp'.trans hetyp) htcl hmatch hcap hv₁ hv₂
-                          | dirty_internal_parrow _ _ =>
-                              -- Dirty parrow: transport to result type
-                              sorry
+                              -- Parrow types are function types, contradicts hnotfun_qt
+                              exfalso
+                              simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                                Bool.or_true] at hnotfun_qt
+                              cases hnotfun_qt
+                          | dirty_internal_parrow hdirty hisParrow htyp1 htyp2 =>
+                              exfalso
+                              simp only [ETyp.isFunctionType] at hnotfun_qt
+                              rw [hisParrow, Bool.or_true] at hnotfun_qt
+                              cases hnotfun_qt
                           | clean_ref _ hetyp hlookup1 hin hv1 hlookup2 hv2 =>
                               have hetyp' : res.qualType.etyp = qt.etyp := by
                                 simp [hres]
@@ -3368,9 +3461,14 @@ private lemma stepFR_var
                                 simpa [hqt] using hpred
                               have htag' : ctxᵢ.tagEnv[k]? = some ⟨false, deps⟩ := by
                                 simpa using htag
-                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
-                              cases htc''
-                              rfl
+                              cases hft : etyp.isFunctionType with
+                              | true =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, throw] at htc''
+                                  cases htc''
+                              | false =>
+                                  simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
+                                  cases htc''
+                                  rfl
                         -- poisoned result is not clean
                         exfalso
                         cases hclean with
