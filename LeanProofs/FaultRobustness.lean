@@ -378,6 +378,10 @@ inductive valueConsistentWithRegime (predSat : PredSat) (R : Regime)
   | noTag :
       qtypGuardTag qt = none →
       valueConsistentWithRegime predSat R qt μ v
+  -- Guard-only predicates impose no regime consistency beyond tag presence in S
+  | guardOnly_ok (k : Tag) :
+      qt.pred = Predicate.guardOnly k →
+      valueConsistentWithRegime predSat R qt μ v
   | notInRegime (k : Tag) :
       qtypGuardTag qt = some k →
       R.lookup? k = none →

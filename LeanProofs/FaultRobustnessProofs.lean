@@ -566,6 +566,11 @@ private lemma valueConsistentWithRegime_transport_pred
       have hEq' : qtypGuardTag qt' = qtypGuardTag qt := by
         symm; exact hEq
       simpa [hEq'] using htag
+  | guardOnly_ok k hgo =>
+      refine valueConsistentWithRegime.guardOnly_ok (predSat := predSat) (R := R) (qt := qt') (μ := μ) (v := v) k ?_
+      calc
+        qt'.pred = qt.pred := by simp [hpred]
+        _ = Predicate.guardOnly k := by exact hgo
   | notInRegime k htag hknone =>
       refine valueConsistentWithRegime.notInRegime (predSat := predSat) (R := R) (qt := qt') (μ := μ) (v := v) k ?_ hknone
       have hEq : qtypGuardTag qt = qtypGuardTag qt' :=
@@ -2529,6 +2534,187 @@ private lemma stepFR_var
     typecheckVar_preserves_nextTag ctxᵢ name res htc'
   have hregime' : res.regime' = ctxᵢ.regime :=
     typecheckVar_preserves_regime ctxᵢ name res htc'
+  have hreg_after : (ctxAfter ctxᵢ res).regime = ctxᵢ.regime := by
+    simp [ctxAfter, hregime']
+  have hvcons
+      (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (v : Value)
+      (hρ : ρ.lookup name = some v)
+      (hcwr : consistentWithRegime predSat ctxᵢ.regime ctxᵢ μ ρ θ) :
+      valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime res.qualType μ v := by
+    -- Rewrite the regime to the input one.
+    simp [hreg_after]
+    cases hlookup_ctx : ctxᵢ.varEnv.lookup name with
+    | none =>
+        -- `typecheckVar` cannot succeed if the variable is missing.
+        simp [typecheckVar, hlookup_ctx] at htc'
+    | some qt =>
+        cases hpred : qt.pred with
+        | noPred =>
+            have hres :
+                res.qualType = ⟨qt.etyp, joinPoison ctxᵢ.pc qt.poison, Predicate.noPred⟩ := by
+              have htc'' := htc'
+              cases hqt : qt with
+              | mk etyp poison pred =>
+                  have hpred' : pred = Predicate.noPred := by
+                    simpa [hqt] using hpred
+                  simp [typecheckVar, hlookup_ctx, hpred', hqt, pure, Except.pure] at htc''
+                  cases htc''
+                  rfl
+            refine valueConsistentWithRegime.noTag (predSat := predSat) (R := ctxᵢ.regime) (qt := res.qualType) (μ := μ) (v := v) ?_
+            simp [qtypGuardTag, hres]
+        | guardOnly k =>
+            cases htag : ctxᵢ.tagEnv.get? k with
+            | none =>
+                have hres :
+                    res.qualType = ⟨qt.etyp, joinPoison ctxᵢ.pc qt.poison, qt.pred⟩ := by
+                  have htc'' := htc'
+                  cases hqt : qt with
+                  | mk etyp poison pred =>
+                      have hpred' : pred = Predicate.guardOnly k := by
+                        simpa [hqt] using hpred
+                      have htag' : ctxᵢ.tagEnv[k]? = none := by
+                        simpa [Std.ExtTreeMap.get?_eq_getElem?] using htag
+                      simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                      cases htc''
+                      simp [hpred']
+                refine valueConsistentWithRegime.guardOnly_ok (predSat := predSat) (R := ctxᵢ.regime)
+                  (qt := res.qualType) (μ := μ) (v := v) k ?_
+                simp [hres, hpred]
+            | some tv =>
+                cases tv with
+                | mk b deps =>
+                    have htag' : ctxᵢ.tagEnv[k]? = some (TagVal.mk b deps) := by
+                      simpa [Std.ExtTreeMap.get?_eq_getElem?] using htag
+                    cases b with
+                    | true =>
+                        have hres :
+                            res.qualType = ⟨qt.etyp, ctxᵢ.pc, Predicate.noPred⟩ := by
+                          have htc'' := htc'
+                          cases hqt : qt with
+                          | mk etyp poison pred =>
+                              have hpred' : pred = Predicate.guardOnly k := by
+                                simpa [hqt] using hpred
+                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                              cases htc''
+                              rfl
+                        refine valueConsistentWithRegime.noTag (predSat := predSat) (R := ctxᵢ.regime)
+                          (qt := res.qualType) (μ := μ) (v := v) ?_
+                        simp [qtypGuardTag, hres]
+                    | false =>
+                        have hres :
+                            res.qualType = ⟨qt.etyp, true, Predicate.noPred⟩ := by
+                          have htc'' := htc'
+                          cases hqt : qt with
+                          | mk etyp poison pred =>
+                              have hpred' : pred = Predicate.guardOnly k := by
+                                simpa [hqt] using hpred
+                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                              cases htc''
+                              rfl
+                        refine valueConsistentWithRegime.noTag (predSat := predSat) (R := ctxᵢ.regime)
+                          (qt := res.qualType) (μ := μ) (v := v) ?_
+                        simp [qtypGuardTag, hres]
+        | guardClosure k arg_name pred_body var_env =>
+            cases htag : ctxᵢ.tagEnv.get? k with
+            | none =>
+                have hres :
+                    res.qualType = ⟨qt.etyp, joinPoison ctxᵢ.pc qt.poison, qt.pred⟩ := by
+                  have htc'' := htc'
+                  cases hqt : qt with
+                  | mk etyp poison pred =>
+                      have hpred' : pred = Predicate.guardClosure k arg_name pred_body var_env := by
+                        simpa [hqt] using hpred
+                      have htag' : ctxᵢ.tagEnv[k]? = none := by
+                        simpa [Std.ExtTreeMap.get?_eq_getElem?] using htag
+                      simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                      cases htc''
+                      simp [hpred']
+                cases hk : ctxᵢ.regime.lookup? k with
+                | none =>
+                    refine valueConsistentWithRegime.notInRegime (predSat := predSat) (R := ctxᵢ.regime)
+                      (qt := res.qualType) (μ := μ) (v := v) k ?_ hk
+                    simp [qtypGuardTag, hres, hpred]
+                | some b =>
+                    have htag_qt : qtypGuardTag qt = some k := by
+                      simp [qtypGuardTag, hpred]
+                    have hvr : varsRegime predSat ctxᵢ.regime μ ρ (name, qt) :=
+                      hcwr.2 name qt k hlookup_ctx htag_qt (by simp [hk])
+                    cases hvr with
+                    | noPred_ok hnp =>
+                        exfalso
+                        simp [hnp] at htag_qt
+                    | guardOnly_ok _k hgo =>
+                        exfalso
+                        simp [hpred] at hgo
+                    | withPred_ok k' arg_name' pred_body' var_env' v' b' hclos hregime hvar hconsist =>
+                        have hk' : k' = k := by
+                          have hclos' : qt.pred = Predicate.guardClosure k' arg_name' pred_body' var_env' := by
+                            simpa using hclos
+                          have : some k' = some k := by
+                            simpa [qtypGuardTag, hclos'] using htag_qt
+                          exact Option.some.inj this
+                        cases hk'
+                        have hb' : b' = b := by
+                          have : some b' = some b := by simpa [hregime] using hk
+                          exact Option.some.inj this
+                        cases hb'
+                        have hv' : v' = v := by
+                          have : some v' = some v := by simpa [hvar] using hρ
+                          exact Option.some.inj this
+                        cases hv'
+                        cases b with
+                        | false =>
+                            have hnot_qt : ¬ qtypPredHolds predSat qt μ v := (hconsist.2 rfl)
+                            have hnot_res : ¬ qtypPredHolds predSat res.qualType μ v :=
+                              qtypPredHolds_transport_pred_not (predSat := predSat) (qt := qt) (qt' := res.qualType)
+                                (by simp [hres]) hnot_qt
+                            refine valueConsistentWithRegime.inRegimeFalse (predSat := predSat) (R := ctxᵢ.regime)
+                              (qt := res.qualType) (μ := μ) (v := v) k ?_ hk ?_
+                            · simp [qtypGuardTag, hres, hpred]
+                            · exact hnot_res
+                        | true =>
+                            have hholds_qt : qtypPredHolds predSat qt μ v := (hconsist.1 rfl)
+                            have hholds_res : qtypPredHolds predSat res.qualType μ v :=
+                              qtypPredHolds_transport_pred (predSat := predSat) (qt := qt) (qt' := res.qualType)
+                                (by simp [hres]) hholds_qt
+                            refine valueConsistentWithRegime.inRegimeTrue (predSat := predSat) (R := ctxᵢ.regime)
+                              (qt := res.qualType) (μ := μ) (v := v) k ?_ hk ?_
+                            · simp [qtypGuardTag, hres, hpred]
+                            · exact hholds_res
+            | some tv =>
+                cases tv with
+                | mk b deps =>
+                    have htag' : ctxᵢ.tagEnv[k]? = some (TagVal.mk b deps) := by
+                      simpa [Std.ExtTreeMap.get?_eq_getElem?] using htag
+                    cases b with
+                    | true =>
+                        have hres :
+                            res.qualType = ⟨qt.etyp, ctxᵢ.pc, Predicate.noPred⟩ := by
+                          have htc'' := htc'
+                          cases hqt : qt with
+                          | mk etyp poison pred =>
+                              have hpred' : pred = Predicate.guardClosure k arg_name pred_body var_env := by
+                                simpa [hqt] using hpred
+                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                              cases htc''
+                              rfl
+                        refine valueConsistentWithRegime.noTag (predSat := predSat) (R := ctxᵢ.regime)
+                          (qt := res.qualType) (μ := μ) (v := v) ?_
+                        simp [qtypGuardTag, hres]
+                    | false =>
+                        have hres :
+                            res.qualType = ⟨qt.etyp, true, Predicate.noPred⟩ := by
+                          have htc'' := htc'
+                          cases hqt : qt with
+                          | mk etyp poison pred =>
+                              have hpred' : pred = Predicate.guardClosure k arg_name pred_body var_env := by
+                                simpa [hqt] using hpred
+                              simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', pure, Except.pure] at htc''
+                              cases htc''
+                              rfl
+                        refine valueConsistentWithRegime.noTag (predSat := predSat) (R := ctxᵢ.regime)
+                          (qt := res.qualType) (μ := μ) (v := v) ?_
+                        simp [qtypGuardTag, hres]
   refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
@@ -2558,9 +2744,9 @@ private lemma stepFR_var
   · -- agreeOnClean for ctxAfter: typecheckVar doesn't change the context (including regime)
     simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using hagree
   · -- valueConsistentWithRegime for cf₀
-    sorry -- TODO: prove valueConsistentWithRegime
+    exact hvcons μ₀ ρ₀ θ₀ o₀ hlookup₀ hcwr₀
   · -- valueConsistentWithRegime for cf₁
-    sorry -- TODO: prove valueConsistentWithRegime
+    exact hvcons μ₁ ρ₁ θ₁ o₁ hlookup₁ hcwr₁
   · -- Result agreement for clean outputs (requires predicate/tagEnv analysis).
     -- Key: (ctxAfter ctxᵢ res).regime = res.regime' = ctxᵢ.regime
     have hregime_after : (ctxAfter ctxᵢ res).regime = ctxᵢ.regime := by simp [ctxAfter, hregime']
