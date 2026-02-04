@@ -5752,7 +5752,8 @@ private lemma stepFR_deref
   rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, hwf', hwfcfg₀', hwfcfg₁', hric₀', hric₁', hreg', hcwr₀', hcwr₁', hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩
   -- Post-context is unchanged by deref (only result type changes)
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
-    sorry -- TODO: Prove context equality including regime'
+    cases ctxᵢ
+    simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime]
   -- IH gives agreeOnClean with (ctxAfter ctxᵢ res1).regime; transfer via hctxAfter
   have hagree_clean :
       agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
@@ -5769,9 +5770,9 @@ private lemma stepFR_deref
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.deref e) _ cf₀ o₀ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved .ioFree (Expr.deref e) _ cf₁ o₁ ht₁ hwfcfg₁).1
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
-    sorry -- TODO: Prove consistentWithRegime preservation
+    simpa [hctxAfter, hmem₀, hvar₀] using hcwr₀'
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
-    sorry -- TODO: Prove consistentWithRegime preservation
+    simpa [hctxAfter, hmem₁, hvar₁] using hcwr₁'
   refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · simpa [hctxAfter] using hwf'
   · -- valueConsistentWithRegime for cf₀
