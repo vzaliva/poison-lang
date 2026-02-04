@@ -1567,6 +1567,16 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
+    -- Check for harmful shadowing (Option B): reject if outer binding has guardClosure with interpreted tag
+    match ctx.varEnv.lookup x with
+    | none => pure ()
+    | some qt_outer =>
+      match qt_outer.pred with
+      | Predicate.guardClosure k _ _ _ =>
+        if ctx.regime.lookup? k |>.isSome then
+          throw s!"Cannot shadow variable '{x}': outer binding has an active guard predicate"
+      | _ => pure ()
+
     let result1 ← typecheckExpr ctx e1 fuel
     let varEnv' := ctx.varEnv.update x result1.qualType
     let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }

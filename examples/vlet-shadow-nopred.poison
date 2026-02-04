@@ -1,0 +1,4 @@
+-- Test: shadowing a variable with noPred predicate (should be allowed)
+let x = 5 in
+let x = 10 in  -- Shadowing x (should pass - noPred doesn't require regime check)
+x

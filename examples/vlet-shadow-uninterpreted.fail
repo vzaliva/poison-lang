@@ -1,0 +1,5 @@
+Evaluating file: examples/vlet-shadow-uninterpreted.poison (verbose mode)
+
+Type checking passed: Type: QTyp.mk ETyp.int false Predicate.noPred , MemoryTypeEnv : ofList [] , tagEnv : ofList [] , nextLoc : 0 
+
+Runtime error: Cannot execute extern value – no implementation provided

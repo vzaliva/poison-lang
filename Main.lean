@@ -154,7 +154,10 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime) : IO UInt32 
 
     match xmlToExpr xmlElement with
     | Except.ok expr =>
-      let resultType := typecheckProgram expr false regime
+      let resultType := typecheckProgram expr verbose regime
+      -- Debug: check what resultType looks like
+      -- IO.eprintln s!"DEBUG: resultType = '{resultType}'"
+      -- IO.eprintln s!"DEBUG: starts with 'Type error:' = {resultType.startsWith "Type error:"}"
       if resultType.startsWith "Type error:" then
         let errorMsg := resultType.drop 11
         IO.println s!"Type checking error: {errorMsg}"

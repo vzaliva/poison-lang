@@ -770,31 +770,124 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
       simp [typecheckVlet] at h_typecheck
   | succ fuel' =>
       unfold typecheckVlet at h_typecheck
-      simp at h_typecheck
-      simp [bind, Except.bind] at h_typecheck
-      cases h_tc1 : typecheckExpr ctx e1 fuel' with
-      | ok result1 =>
-          simp [h_tc1] at h_typecheck
-          cases h_tc2 :
-            typecheckExpr
-                { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
-                           tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
-                e2 fuel' with
-          | ok result2 =>
-              simp [h_tc2] at h_typecheck
-              cases h_qt2 : result2.qualType with
-              | mk _etyp2 p2 pred2 =>
-                  rw [h_qt2] at h_typecheck
-                  simp at h_typecheck
-                  simp [pure, Except.pure] at h_typecheck
-                  let ctx' := { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
-                  cases h_typecheck
-                  refine ⟨result1, result2, ctx', ?_⟩
-                  simp [ctx', h_tc1, h_tc2, h_qt2]
+      -- Handle the shadowing check match expression
+      cases h_shadow : ctx.varEnv.lookup x with
+      | none =>
+          simp [h_shadow] at h_typecheck
+          simp [bind, Except.bind] at h_typecheck
+          cases h_tc1 : typecheckExpr ctx e1 fuel' with
+          | ok result1 =>
+              simp [h_tc1] at h_typecheck
+              cases h_tc2 :
+                typecheckExpr
+                    { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
+                               tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                    e2 fuel' with
+              | ok result2 =>
+                  simp [h_tc2] at h_typecheck
+                  cases h_qt2 : result2.qualType with
+                  | mk _etyp2 p2 pred2 =>
+                      rw [h_qt2] at h_typecheck
+                      simp at h_typecheck
+                      simp [pure, Except.pure] at h_typecheck
+                      let ctx' := { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                      cases h_typecheck
+                      refine ⟨result1, result2, ctx', ?_⟩
+                      simp [ctx', h_tc1, h_tc2, h_qt2]
+              | error _err =>
+                  simp [h_tc2] at h_typecheck
           | error _err =>
-              simp [h_tc2] at h_typecheck
-      | error _err =>
-          simp [h_tc1] at h_typecheck
+              simp [h_tc1] at h_typecheck
+      | some qt_outer =>
+          simp [h_shadow] at h_typecheck
+          -- Handle the predicate match
+          cases h_pred : qt_outer.pred with
+          | guardClosure k _ _ _ =>
+              simp [h_pred] at h_typecheck
+              -- Handle the regime lookup check
+              cases h_regime : (ctx.regime.lookup? k).isSome with
+              | true =>
+                  -- If regime interprets k, shadowing check would have failed, contradiction
+                  simp [h_regime] at h_typecheck
+                  contradiction
+              | false =>
+                  simp [h_regime] at h_typecheck
+                  simp [bind, Except.bind] at h_typecheck
+                  cases h_tc1 : typecheckExpr ctx e1 fuel' with
+                  | ok result1 =>
+                      simp [h_tc1] at h_typecheck
+                      cases h_tc2 :
+                        typecheckExpr
+                            { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
+                                       tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                            e2 fuel' with
+                      | ok result2 =>
+                          simp [h_tc2] at h_typecheck
+                          cases h_qt2 : result2.qualType with
+                          | mk _etyp2 p2 pred2 =>
+                              rw [h_qt2] at h_typecheck
+                              simp at h_typecheck
+                              simp [pure, Except.pure] at h_typecheck
+                              let ctx' := { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                              cases h_typecheck
+                              refine ⟨result1, result2, ctx', ?_⟩
+                              simp [ctx', h_tc1, h_tc2, h_qt2]
+                      | error _err =>
+                          simp [h_tc2] at h_typecheck
+                  | error _err =>
+                      simp [h_tc1] at h_typecheck
+          | guardOnly _ =>
+              simp [h_pred] at h_typecheck
+              simp [bind, Except.bind] at h_typecheck
+              cases h_tc1 : typecheckExpr ctx e1 fuel' with
+              | ok result1 =>
+                  simp [h_tc1] at h_typecheck
+                  cases h_tc2 :
+                    typecheckExpr
+                        { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
+                                   tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                        e2 fuel' with
+                  | ok result2 =>
+                      simp [h_tc2] at h_typecheck
+                      cases h_qt2 : result2.qualType with
+                      | mk _etyp2 p2 pred2 =>
+                          rw [h_qt2] at h_typecheck
+                          simp at h_typecheck
+                          simp [pure, Except.pure] at h_typecheck
+                          let ctx' := { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                          cases h_typecheck
+                          refine ⟨result1, result2, ctx', ?_⟩
+                          simp [ctx', h_tc1, h_tc2, h_qt2]
+                  | error _err =>
+                      simp [h_tc2] at h_typecheck
+              | error _err =>
+                  simp [h_tc1] at h_typecheck
+          | noPred =>
+              simp [h_pred] at h_typecheck
+              simp [bind, Except.bind] at h_typecheck
+              cases h_tc1 : typecheckExpr ctx e1 fuel' with
+              | ok result1 =>
+                  simp [h_tc1] at h_typecheck
+                  cases h_tc2 :
+                    typecheckExpr
+                        { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
+                                   tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                        e2 fuel' with
+                  | ok result2 =>
+                      simp [h_tc2] at h_typecheck
+                      cases h_qt2 : result2.qualType with
+                      | mk _etyp2 p2 pred2 =>
+                          rw [h_qt2] at h_typecheck
+                          simp at h_typecheck
+                          simp [pure, Except.pure] at h_typecheck
+                          let ctx' := { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                          cases h_typecheck
+                          refine ⟨result1, result2, ctx', ?_⟩
+                          simp [ctx', h_tc1, h_tc2, h_qt2]
+                  | error _err =>
+                      simp [h_tc2] at h_typecheck
+              | error _err =>
+                  simp [h_tc1] at h_typecheck
 
 -- Helper lemma: extract structure from typecheckNewRef
 -- NOTE: Now requires etyp = ETyp.int (heap stores only integers)

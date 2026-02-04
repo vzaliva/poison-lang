@@ -240,7 +240,9 @@ the scenes.
     \item \textbf{Pure functions}: \texttt{pfn x : ST1 => pe : ST2} creates pure functions with explicit parameter and return type annotations that cannot have side effects (no nested pure functions)
     \item \textbf{Strings}: literals of type \texttt{string}
     \item \textbf{Built-in primitives}: \texttt{rand}, \texttt{frand}, \texttt{printInt}, \texttt{printString} are impure
-    \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings
+    \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings.
+      Shadowing a variable that carries an active guard predicate (a \texttt{guardClosure}
+      whose tag is interpreted by the current regime) is rejected by the typechecker.
     \item \textbf{Memory access only through references}: You need a valid
     reference to access memory location. There is no pointer arithmetic (but
     there is aliasing).

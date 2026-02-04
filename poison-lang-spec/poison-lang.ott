@@ -317,6 +317,7 @@ formula :: formula_ ::=
   | JoinP P1 P2 = P3       :: :: join_pred {{ com tag-aware, conservative pred join }} {{ tex [[P1]] \sqcup [[P2]] = [[P3]] }}
   | MergePreds G LS = P     :: :: merge_preds {{ com merges predicates for all logical locations in LS using conservative pred join. Uses the predicate projection of qualified types. }} {{ tex \bigsqcup_{\,l \in [[LS]]} \mathrm{pred}([[G]](l)) = [[P]] }}
   | JoinPoisons G LS = p    :: :: join_poisons {{ com join of poison flags for all logical locations in LS (projection of qualified types). }} {{ tex [[p]] = \bigsqcup_{\,l \in [[LS]]} \mathrm{poison}([[G]](l)) }}
+  | not_harmful_shadow x S R :: :: not_harmful_shadow {{ com x is not in dom(S), or S(x) does not have guardClosure k with R(k) != none }} {{ tex \neg\mathrm{harmful\_shadow}([[x]], [[S]], [[R]]) }}
 
 
 defns
@@ -1025,6 +1026,7 @@ pm ; R ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G1 ;
 % Predicates are propagated from e1 to x, and the result gets predicate from e2
 % Note: Lexical scoping - the final variable environment S excludes the let-bound variable x
 % The logical environment L1' from evaluating e2 is preserved (knowledge about predicates persists)
+not_harmful_shadow x S R
 pm ; R ; pc ; G ; S ; L |- e1 : T :> p1 { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; pc ; G1 ; S[x |-> T :> p1  { P1 }] ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
 ----------------------------------------------------------------------  :: let
