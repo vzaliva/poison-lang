@@ -318,6 +318,7 @@ formula :: formula_ ::=
   | MergePreds G LS = P     :: :: merge_preds {{ com merges predicates for all logical locations in LS using conservative pred join. Uses the predicate projection of qualified types. }} {{ tex \bigsqcup_{\,l \in [[LS]]} \mathrm{pred}([[G]](l)) = [[P]] }}
   | JoinPoisons G LS = p    :: :: join_poisons {{ com join of poison flags for all logical locations in LS (projection of qualified types). }} {{ tex [[p]] = \bigsqcup_{\,l \in [[LS]]} \mathrm{poison}([[G]](l)) }}
   | not_harmful_shadow x S R :: :: not_harmful_shadow {{ com x is not in dom(S), or S(x) does not have guardClosure k with R(k) != none }} {{ tex \neg\mathrm{harmful\_shadow}([[x]], [[S]], [[R]]) }}
+  | not_fun T :: :: not_fun {{ com T is not function type }} {{ tex [[T]] \neq \_ \rightarrow \_}}
 
 
 defns
@@ -539,35 +540,41 @@ pm ; R ; pc ; G ; S ; L |- s : string :> clean { no_pred } -| G ; L ; R
 
 % Variable typing - with guarded predicate that evaluates to true triggering de-poisoning.
 S(x) = T :> p { guard k pred_closure pcl }
+not_fun T
 L(k) = true using LS
 ------------------  :: var_guard_true
 pm ; R ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L ; R
 
 % Variable typing - with guard only that evaluates to true triggering de-poisoning.
 S(x) = T :> p { guard k }
+not_fun T
 L(k) = true using LS
 ------------------  :: var_guard_only_true
 pm ; R ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L ; R
 
 % Variable typing - with guarded predicate that evaluates to false, triggering poisoning.
 S(x) = T :> p { guard k pred_closure pcl }
+not_fun T
 L(k) = false using LS
 ------------------  :: var_guard_false
 pm ; R ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L ; R
 
 % Variable typing - with guard only that evaluates to false, triggering poisoning.
 S(x) = T :> p { guard k }
+not_fun T
 L(k) = false using LS
 ------------------  :: var_guard_only_false
 pm ; R ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L ; R
 
 % Variable typing - with guarded predicate but tag not in L
 S(x) = T :> p { guard k pred_closure pcl }
+not_fun T
 ------------------  :: var_guard_unknown
 pm ; R ; pc ; G ; S ; L |- x : T :> join pc p { guard k pred_closure pcl } -| G ; L ; R
 
 % Variable typing - with guard only but tag not in L
 S(x) = T :> p { guard k }
+not_fun T
 ------------------  :: var_guard_only_unknown
 pm ; R ; pc ; G ; S ; L |- x : T :> join pc p { guard k } -| G ; L ; R
 

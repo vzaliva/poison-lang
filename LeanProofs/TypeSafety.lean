@@ -2267,28 +2267,68 @@ private lemma typecheckVar_nextTag_mono (ctx : TypeContext) (x : Name) (res : Ty
               exact le_rfl
           | guardOnly k =>
               simp at htc
-              split at htc
-              · injection htc with h_eq
-                subst h_eq
-                exact le_rfl
-              · injection htc with h_eq
-                subst h_eq
-                exact le_rfl
-              · injection htc with h_eq
-                subst h_eq
-                exact le_rfl
+              cases hft : etyp.isFunctionType with
+              | true =>
+                  -- Function types throw error, contradicts htc : throw ... = Except.ok res
+                  simp [hft, throw, Except.error] at htc
+                  -- htc is now: Except.error ... = Except.ok res, which is a contradiction
+                  cases htc
+              | false =>
+                  simp [hft] at htc
+                  cases htagopt : ctx.tagEnv.get? k with
+                  | none =>
+                      have htagopt' : ctx.tagEnv[k]? = none := by
+                        simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                      simp [htagopt', pure, Except.pure] at htc
+                      cases htc
+                      exact le_rfl
+                  | some tv =>
+                      cases tv with
+                      | mk b deps =>
+                          have htagopt' : ctx.tagEnv[k]? = some ⟨b, deps⟩ := by
+                            simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                          simp [htagopt'] at htc
+                          cases b with
+                          | true =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              exact le_rfl
+                          | false =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              exact le_rfl
           | guardClosure k _ _ _ =>
               simp at htc
-              split at htc
-              · injection htc with h_eq
-                subst h_eq
-                exact le_rfl
-              · injection htc with h_eq
-                subst h_eq
-                exact le_rfl
-              · injection htc with h_eq
-                subst h_eq
-                exact le_rfl
+              cases hft : etyp.isFunctionType with
+              | true =>
+                  -- Function types throw error, contradicts htc : throw ... = Except.ok res
+                  simp [hft, throw, Except.error] at htc
+                  -- htc is now: Except.error ... = Except.ok res, which is a contradiction
+                  cases htc
+              | false =>
+                  simp [hft] at htc
+                  cases htagopt : ctx.tagEnv.get? k with
+                  | none =>
+                      have htagopt' : ctx.tagEnv[k]? = none := by
+                        simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                      simp [htagopt', pure, Except.pure] at htc
+                      cases htc
+                      exact le_rfl
+                  | some tv =>
+                      cases tv with
+                      | mk b deps =>
+                          have htagopt' : ctx.tagEnv[k]? = some ⟨b, deps⟩ := by
+                            simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                          simp [htagopt'] at htc
+                          cases b with
+                          | true =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              exact le_rfl
+                          | false =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              exact le_rfl
 
 private lemma typecheckOp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),

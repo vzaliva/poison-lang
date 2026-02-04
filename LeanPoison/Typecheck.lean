@@ -655,16 +655,6 @@ def typecheckBool (ctx : TypeContext) (_b : Bool) : TypecheckM TypeResult := do
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag, regime' := ctx.regime }
 
 
-/-- Rules: var_guard_true, var_guard_false, var_guard_unknown, var_no_pred (Ott rules)
--- Variable typing with predicate handling:
--- - var_guard_true: S(x) = T :> p { guard k pred_closure pcl }, L(k) = true
--- - var_guard_only_true: S(x) = T :> p { guard k }, L(k) = true
--- - var_guard_false: S(x) = T :> p { guard k pred_closure pcl }, L(k) = false
--- - var_guard_only_false: S(x) = T :> p { guard k }, L(k) = false
--- - var_guard_unknown: S(x) = T :> p { guard k pred_closure pcl }, k not in L
--- - var_guard_only_unknown: S(x) = T :> p { guard k }, k not in L
--- - var_no_pred: S(x) = T :> p { no_pred }
---/
 def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
   --dbg_trace ("Typechecking var " ++ x)
   --dbg_trace s!"ctx.pc is {ctx.pc}"
@@ -679,6 +669,8 @@ def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
     | Predicate.guardOnly k | Predicate.guardClosure k _ _ _ =>
       -- Both guard types behave the same: check tag in L and de-poison/poison/preserve accordingly
       --dbg_trace s!"Guard predicate found with tag {k}"
+      if etyp.isFunctionType then
+        throw s!"Function types cannot carry guard predicates (variable {x})"
       match ctx.tagEnv.get? k with
       | some ⟨true, _deps⟩ =>  -- guard_true / guard_only_true case
         -- dbg_trace "Guard True case"
