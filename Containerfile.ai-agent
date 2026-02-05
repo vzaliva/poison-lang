@@ -3,7 +3,6 @@
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    TZ=UTC \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
@@ -116,6 +115,8 @@ ARG CONFIG_SEED=1
 RUN printf '%s\n' \
 '#!/usr/bin/env bash' \
 'set -euo pipefail' \
+'# Preserve TZ from Podman -e so exec'\''d process sees host timezone.' \
+'SAVED_TZ="${TZ:-}"' \
 ': "${HOST_UID:=1000}"' \
 ': "${HOST_GID:=1000}"' \
 ': "${HOST_USER:=user}"' \
@@ -260,6 +261,7 @@ RUN printf '%s\n' \
 '' \
 '# If we are already running unprivileged, we cannot (and do not need to) drop privileges.' \
 'if [ "$(id -u)" -ne 0 ]; then' \
+'  [ -n "${SAVED_TZ:-}" ] && export TZ="${SAVED_TZ}"' \
 '  exec "$@"' \
 'fi' \
 '' \
@@ -267,11 +269,13 @@ RUN printf '%s\n' \
 '# HOST_UID (e.g. 1000) can make /work bind mounts unreadable. Detect this mapping and' \
 '# keep running as uid 0 when it maps directly to HOST_UID.' \
 'if [ "$(id -u)" -eq 0 ] && awk '\''NR==1{print $1, $2, $3; exit}'\'' /proc/self/uid_map | grep -qx "0 ${HOST_UID} 1"; then' \
+'  [ -n "${SAVED_TZ:-}" ] && export TZ="${SAVED_TZ}"' \
 '  exec "$@"' \
 'fi' \
 '' \
 '# Otherwise, drop to mapped user and exec. Avoid --clear-groups because setgroups is commonly' \
 '# denied in rootless user namespaces (which would break startup even when uid/gid changes are OK).' \
+'[ -n "${SAVED_TZ:-}" ] && export TZ="${SAVED_TZ}"' \
 'exec setpriv --reuid="${HOST_UID}" --regid="${HOST_GID}" --keep-groups -- "$@"' \
 > /usr/local/bin/ai-agent-entrypoint.sh \
  && chmod +x /usr/local/bin/ai-agent-entrypoint.sh

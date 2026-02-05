@@ -128,6 +128,25 @@ HOST_GID="$(id -g)"
 HOST_USER="$(id -un)"
 HOST_GROUP="$(id -gn)"
 
+# Use host timezone in the container (for logs, dates, etc.)
+HOST_TZ=""
+if [ -n "${TZ:-}" ]; then
+  HOST_TZ="$TZ"
+fi
+if [ -z "$HOST_TZ" ] && command -v timedatectl >/dev/null 2>&1; then
+  HOST_TZ="$(timedatectl show -p Timezone --value 2>/dev/null)"
+fi
+if [ -z "$HOST_TZ" ] && [ -f /etc/timezone ]; then
+  HOST_TZ="$(cat /etc/timezone 2>/dev/null | tr -d '\n\r')"
+fi
+# Linux: /etc/localtime is often a symlink into /usr/share/zoneinfo
+if [ -z "$HOST_TZ" ] && [ -L /etc/localtime ]; then
+  TZFILE="$(readlink -f /etc/localtime 2>/dev/null)"
+  if [ -n "$TZFILE" ] && [ "${TZFILE#/usr/share/zoneinfo/}" != "$TZFILE" ]; then
+    HOST_TZ="${TZFILE#/usr/share/zoneinfo/}"
+  fi
+fi
+
 # Rootless Podman userns mapping: keep container UID/GID aligned with the invoking user.
 # This avoids "Permission denied" on /work and ensures tools (e.g. Claude Code) run unprivileged.
 PODMAN_USERNS_ARGS=()
@@ -156,6 +175,12 @@ PODMAN_ARGS=(
   -e ELAN_HOME=/home/user/.elan
   -e XDG_CACHE_HOME=/home/user/.cache
   -e UV_CACHE_DIR=/home/user/.cache/uv
+)
+# Pass host timezone into the container when available
+if [ -n "${HOST_TZ:-}" ]; then
+  PODMAN_ARGS+=(-e TZ="$HOST_TZ")
+fi
+PODMAN_ARGS+=(
   -v "$PROJ_DIR:/work:Z"
   -v ai_agent_ssh:/home/user/.ssh:rw,U
   -v ai_agent_cache_elan:/home/user/.cache/elan:rw,U
