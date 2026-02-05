@@ -6110,28 +6110,78 @@ private lemma stepFR_ite_mode1
   rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
   -- Extract that both guards evaluate to same boolean (since result agrees and both are bool)
   -- The result of e1 has type bool with poison = false (from hbool and res1 structure)
+  -- In pure context, typecheckExpr ensures poison = false for boolean expressions
   have hres1_clean : res1.qualType.poison = false := by
-    sorry -- Need to extract from typechecking in pure context
+    -- When pureCtx = true, typecheckExpr in pure mode ensures poison = false
+    -- This is a property of the typechecker: pure expressions have no poison
+    sorry -- TODO: Need lemma: typecheckExpr with pureCtx = true implies poison = false
   have hb_eq : b₀ = b₁ := by
     -- resultAgreesIfClean applied to bool values with clean type gives equality
     -- Need to use the regime from ctxAfter, not ctxᵢ.regime
     have hclean : qtypCleanUnder (ctxAfter { ctxᵢ with pureCtx := true } res1).regime res1.qualType := by
-      sorry -- Clean bool is clean under any regime
+      exact qtypCleanUnder.clean hres1_clean
     have hagree_val := hres_agree1 hclean
     -- agreeValueUnder for clean bool with poison=false implies value equality
+    -- For ETyp.bool, it must be clean_eq_nonref_nonarrow (not a function, not a ref)
     cases hagree_val with
     | clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq =>
       have : Value.bool b₀ = Value.bool b₁ := heq
       injection this
-    | _ => sorry -- Other cases don't apply to clean bool
+    | clean_internal_arrow hclean_internal hetyp htcl hmatch hcap hv₁ hv₂ =>
+      -- ETyp.bool is not an arrow type
+      have : res1.qualType.etyp = ETyp.bool := hbool
+      rw [this] at hetyp
+      cases hetyp
+    | dirty_internal_arrow hdirty_internal hisArrow htyp1 htyp2 =>
+      -- ETyp.bool is not an arrow type
+      have : res1.qualType.etyp = ETyp.bool := hbool
+      rw [this] at hisArrow
+      simp [ETyp.isArrow] at hisArrow
+    | clean_internal_parrow hclean_internal hetyp htcl hmatch hcap hv₁ hv₂ =>
+      -- ETyp.bool is not a parrow type
+      have : res1.qualType.etyp = ETyp.bool := hbool
+      rw [this] at hetyp
+      cases hetyp
+    | dirty_internal_parrow hdirty_internal hisParrow htyp1 htyp2 =>
+      -- ETyp.bool is not a parrow type
+      have : res1.qualType.etyp = ETyp.bool := hbool
+      rw [this] at hisParrow
+      simp [ETyp.isParrow] at hisParrow
+    | clean_ref hpoison hetyp hlookup1 hin hv1 hlookup2 hv2 =>
+      -- ETyp.bool is not a ref type
+      have : res1.qualType.etyp = ETyp.bool := hbool
+      rw [this] at hetyp
+      cases hetyp
+    | withPred_true_eq k htag hregime hnotfun hnotref hagree =>
+      -- For bool with poison=false, this case shouldn't apply (no guard tag)
+      -- But if it does, we still get value equality
+      have : Value.bool b₀ = Value.bool b₁ := hagree
+      injection this
+    | withPred_true_ref k htag hregime hetyp hlookup1 hin hv1 hlookup2 hv2 =>
+      -- ETyp.bool is not a ref type
+      have : res1.qualType.etyp = ETyp.bool := hbool
+      rw [this] at hetyp
+      cases hetyp
 
   -- Use consistentWithRegime + match_iff to show b₀ = true
   -- matchGuard succeeded with tag k, and R(k) = some true
   -- consistentWithRegime ensures runtime predicate satisfaction matches regime
   have hb₀_true : b₀ = true := by
-    -- Apply PredSatLaws.match_iff to get the owner and connect to predSat
-    -- We need to find the owner (variable or location) that matchGuard identified
-    sorry -- Complex proof using match_iff and consistentWithRegime
+    -- Strategy:
+    -- 1. matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv = .ok (k, deps) (from hmatch)
+    -- 2. terminatesTo .ioFree e1 ... (Value.bool b₀) (from ht₀_e1)
+    -- 3. Apply PredSatLaws.match_iff to get the owner (variable or location) with tag k
+    -- 4. Use consistentWithRegime to connect regime R(k) = some true to runtime predicate satisfaction
+    -- 5. Since consistentWithRegime ensures runtime matches regime, and R(k) = true, we get b₀ = true
+    --
+    -- The key insight: match_iff gives us that there exists an owner (x or l) with tag k,
+    -- and consistentWithRegime ensures that if R(k) = some true, then the runtime predicate
+    -- on that owner is satisfied, which means the guard evaluates to true.
+    have hmatch_iff := hpredlaws.match_iff .ioFree e1 ctxᵢ.memEnv ctxᵢ.varEnv k deps
+      μ₀ ρ₀ θ₀ a₀ pm cfg₀1 (Value.bool b₀) b₀ hmatch ht₀_e1
+    -- hmatch_iff gives us the premise that there's an owner with tag k
+    -- Now we need to use consistentWithRegime to connect R(k) = some true to b₀ = true
+    sorry -- TODO: Complete proof using match_iff premise and consistentWithRegime
   have hb₁_true : b₁ = true := by rw [← hb_eq]; exact hb₀_true
   -- Both runs take then-branch (e2)
   have ht₀_e2 : terminatesTo .ioFree e2 cfg₀1 cf₀ o₀ := by
@@ -6156,19 +6206,68 @@ private lemma stepFR_ite_mode1
     e2 ctxTrue res2 htc2'
   -- Need to establish preconditions for IH_e2 on ctxTrue
   have hwf_true : wfTypeContext ctxTrue := by
-    sorry -- wfTypeContext preserved when inserting tag
+    -- wfTypeContext only checks memEnv bounds, not tagEnv contents
+    -- Inserting into tagEnv doesn't affect well-formedness
+    simp [wfTypeContext] at hwf ⊢
+    exact hwf
   have hric₀_true : runtimeInstantiatesCtx ctxTrue cfg₀1.memory cfg₀1.varEnv θ₀1 := by
-    sorry -- runtimeInstantiatesCtx preserved (tagEnv doesn't affect runtime)
+    -- runtimeInstantiatesCtx only checks memEnv and varEnv, not tagEnv
+    -- ctxTrue differs from ctxᵢ only in tagEnv (inserting k=true)
+    -- The IH gives us: runtimeInstantiatesCtx (ctxAfter { ctxᵢ with pureCtx := true } res1) cfg₀1.memory cfg₀1.varEnv θ₀1
+    -- Since typechecking only adds to memEnv/varEnv (monotonicity), we have:
+    -- ctxᵢ.memEnv ⊆ res1.memEnv' and ctxᵢ.varEnv ⊆ res1.tagEnv' (wait, that's tagEnv)
+    -- Actually ctxAfter sets varEnv := res.tagEnv'? No, it sets tagEnv := res.tagEnv'
+    -- Let me check: ctxAfter sets memEnv := res.memEnv', tagEnv := res.tagEnv', but varEnv stays the same?
+    -- Actually, varEnv is part of TypeContext and doesn't change during typechecking
+    -- So ctxTrue.varEnv = ctxᵢ.varEnv = (ctxAfter ...).varEnv
+    -- For memEnv, ctxTrue.memEnv = ctxᵢ.memEnv, and (ctxAfter ...).memEnv = res1.memEnv'
+    -- Since typechecking is monotonic, ctxᵢ.memEnv ⊆ res1.memEnv'
+    -- So if runtimeInstantiatesCtx holds for the larger memEnv, it holds for the subset
+    -- But wait, runtimeInstantiatesCtx checks: ∀ l a, θ.lookup l = some a → ctx.memEnv.contains l ∧ μ.contains a
+    -- If ctx.memEnv is smaller, the condition is stronger (fewer l's to check), so if it holds for larger, it holds for smaller
+    -- Actually no: if ctx.memEnv is smaller, we check fewer locations, so it's easier to satisfy
+    -- So if runtimeInstantiatesCtx holds for ctxAfter with larger memEnv, it should hold for ctxTrue with smaller memEnv
+    -- But we need to be careful: the check is ctx.memEnv.contains l, so if memEnv is smaller, fewer l's are in it
+    -- So if θ.lookup l = some a and l is in the smaller memEnv, then l is also in the larger memEnv
+    -- So the property is preserved when going from larger to smaller memEnv
+    -- Similarly for varEnv
+    -- So we can derive runtimeInstantiatesCtx ctxTrue from runtimeInstantiatesCtx (ctxAfter ...)
+    -- But we need a lemma for this
+    sorry -- TODO: Need lemma: runtimeInstantiatesCtx preserved when memEnv/varEnv are subsets (monotonicity)
   have hric₁_true : runtimeInstantiatesCtx ctxTrue cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    sorry -- Same
+    sorry -- Same as hric₀_true
   have htagR_true : regimeConsistentWithCtx ctxTrue ctxTrue.regime := by
-    sorry -- regime consistency preserved
+    -- regimeConsistentWithCtx checks that regime matches tagEnv
+    -- Since we're inserting k with value true, and ctxᵢ.regime.lookup? k = some true,
+    -- the regime consistency is preserved
+    simp [regimeConsistentWithCtx, ctxTrue]
+    constructor
+    · -- tagEnvConsistentWithRegime preserved when inserting k=true
+      -- ctxTrue.regime = ctxᵢ.regime (regime doesn't change when inserting tag)
+      have hregime_eq : ctxTrue.regime = ctxᵢ.regime := rfl
+      rw [hregime_eq]
+      -- Use existing lemma tagEnvConsistentWithRegime_insert_true
+      exact tagEnvConsistentWithRegime_insert_true ctxᵢ.tagEnv ctxᵢ.regime k deps
+        (htagR.1) hregime_true
+    · -- R.bound ≤ ctx.nextTag preserved
+      -- ctxTrue.nextTag = ctxᵢ.nextTag (nextTag doesn't change when inserting tag)
+      exact htagR.2
   have hcwr₀_true : consistentWithRegime predSat ctxTrue.regime ctxTrue cfg₀1.memory cfg₀1.varEnv θ₀1 := by
-    sorry -- consistentWithRegime needs updating for inserted tag
+    -- consistentWithRegime needs to account for the inserted tag k=true
+    -- Since ctxᵢ.regime.lookup? k = some true, and we're inserting k=true,
+    -- the consistency should be preserved
+    simp [consistentWithRegime, ctxTrue] at hcwr₀ ⊢
+    -- The inserted tag k=true matches the regime, so consistency is preserved
+    sorry -- TODO: Need lemma: consistentWithRegime preserved when inserting tag matching regime
   have hcwr₁_true : consistentWithRegime predSat ctxTrue.regime ctxTrue cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    sorry -- Same
+    simp [consistentWithRegime, ctxTrue] at hcwr₁ ⊢
+    sorry -- Same as hcwr₀_true
   have hagree_true : agreeOnClean predSat ctxTrue.regime ctxTrue cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    sorry -- agreeOnClean preserved
+    -- agreeOnClean checks agreement on clean locations/variables
+    -- Inserting tag k doesn't affect which things are clean (that depends on poison, not tags)
+    simp [agreeOnClean, ctxTrue] at hagree ⊢
+    -- The tagEnv insertion doesn't affect the clean set, so agreement is preserved
+    sorry -- TODO: Need lemma: agreeOnClean preserved when inserting tag
   -- Handle pureMode equality
   have hpm_eq : cfg₀1.pureMode = cfg₁1.pureMode := by rw [hpm₀1, hpm₁1]
   have hcfg₁1_adj : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
@@ -6194,7 +6293,20 @@ private lemma stepFR_ite_mode1
   -- In mode 1, result comes from e2 (then-branch), so ctxAfter uses res2
   let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxTrue res2 := by
-    sorry -- Need to connect res structure to res2
+    -- In mode 1, res structure comes from res2 (then-branch effective)
+    -- res.memEnv' = res2.memEnv', res.tagEnv' = res2.tagEnv', res.regime' = res2.regime'
+    -- res.nextLoc' = max res2.nextLoc' res3.nextLoc', res.nextTag' = max res2.nextTag' res3.nextTag'
+    simp [ctxAfter, ctxTrue, hmemEnv, htagEnv, hregime']
+    -- For nextLoc and nextTag, we have max but ctxAfter ctxTrue res2 uses res2.nextLoc' directly
+    -- We need to show max res2.nextLoc' res3.nextLoc' = res2.nextLoc'
+    -- This requires res2.nextLoc' >= res3.nextLoc' and res2.nextTag' >= res3.nextTag'
+    -- In mode 1, since then-branch is effective and typechecked first, we might have this property
+    -- But it's not guaranteed - the else-branch might allocate more locations
+    -- However, for the properties we need (wfTypeContext, runtimeInstantiatesCtx, etc.),
+    -- nextLoc and nextTag are only used for bounds checking, so using max is conservative
+    -- Actually, we might need a different approach: show that the properties hold regardless of nextLoc/nextTag
+    -- Or show that in mode 1, res2.nextLoc' >= res3.nextLoc' (which might be a property of typechecking order)
+    sorry -- TODO: Need to show max res2.nextLoc' res3.nextLoc' = res2.nextLoc' (or handle nextLoc/nextTag differently)
   -- Transfer final properties
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, hwfcf₀2, hwfcf₁2, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · simpa [hctxAfter] using hwf2
@@ -6205,10 +6317,21 @@ private lemma stepFR_ite_mode1
   · simpa [hctxAfter] using hcwr₁2
   · simpa [hctxAfter] using hagree2
   · -- valueConsistentWithRegime: res.qualType = res2.qualType (mode 1 result from then-branch)
-    have heq_qt : res.qualType.etyp = res2.qualType.etyp := hetyp
-    sorry -- Need to show res.qualType matches res2.qualType structure
-  · sorry -- Same for run 1
-  · sorry -- resultAgreesIfClean: same qualType issue
+    -- In mode 1, res.qualType.etyp = res2.qualType.etyp (from hetyp)
+    -- res.qualType.poison = joinPoison ctxᵢ.pc res2.qualType.poison (from hpoison)
+    -- We need to show valueConsistentWithRegime for res.qualType
+    -- This should follow from valueConsistentWithRegime for res2.qualType
+    have heq_etyp : res.qualType.etyp = res2.qualType.etyp := hetyp
+    have hpoison_eq : res.qualType.poison = joinPoison ctxᵢ.pc res2.qualType.poison := hpoison
+    -- Since res2.qualType is consistent, and res.qualType has same etyp and joined poison,
+    -- res.qualType should also be consistent
+    sorry -- TODO: Need lemma: valueConsistentWithRegime preserved under joinPoison
+  · -- Same for run 1
+    sorry -- TODO: Same as above
+  · -- resultAgreesIfClean: need to show resultAgreesIfClean for res.qualType
+    -- This should follow from resultAgreesIfClean for res2.qualType
+    -- Since res.qualType.etyp = res2.qualType.etyp and res.qualType.poison = joinPoison ctxᵢ.pc res2.qualType.poison
+    sorry -- TODO: Need lemma: resultAgreesIfClean preserved when poison is joined
 
 -- Mode 2: R(k) = some false (else-branch effective)
 private lemma stepFR_ite_mode2
