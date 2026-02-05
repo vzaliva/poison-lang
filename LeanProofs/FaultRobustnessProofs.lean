@@ -3534,7 +3534,7 @@ private lemma stepFR_op
     simpa [ctx', ctxAfter] using htagR1
   -- Regime monotonicity (typing can only drop entries).
   have h_mono : Regime.monotoneStep ctxᵢ.regime res1.regime' :=
-    regime_monotone ctxᵢ res1
+    regime_monotone ctxᵢ e1 fuel' res1 htc1'
   -- agreeOnClean from IH1 directly applies since ctx' = ctxAfter ctxᵢ res1
   have hctx'_eq : ctx' = ctxAfter ctxᵢ res1 := by simp [ctx', ctxAfter]
   have hagree_clean1' :
@@ -4722,7 +4722,7 @@ private lemma stepFR_seq
   -- Apply IH for e2
   -- Note: ctx'.regime = res1.regime' which may differ from ctxᵢ.regime
   -- Use regime monotonicity to relate them
-  have h_mono : Regime.monotoneStep ctxᵢ.regime res1.regime' := regime_monotone ctxᵢ res1
+  have h_mono : Regime.monotoneStep ctxᵢ.regime res1.regime' := regime_monotone ctxᵢ e1 fuel' res1 htc1'
   have hRbound' : regimeBounded ctx'.regime := by
     have hctx'_regime : ctx'.regime = res1.regime' := by simp [hctx', updateCtxFromResult]
     rw [hctx'_regime]
@@ -4847,7 +4847,7 @@ private lemma stepFR_vlet
       exact htagR1.1
     · -- res1.regime'.bound ≤ ctx'.nextTag
       simp only [hctx']
-      have hbound_eq : res1.regime'.bound = ctxᵢ.regime.bound := (regime_monotone ctxᵢ res1).1
+      have hbound_eq : res1.regime'.bound = ctxᵢ.regime.bound := (regime_monotone ctxᵢ e1 fuel' res1 htc1').1
       have hctxAfter_nextTag : (ctxAfter ctxᵢ res1).nextTag = res1.nextTag' := by simp [ctxAfter]
       -- htagR1.2 : (ctxAfter ctxᵢ res1).regime.bound ≤ (ctxAfter ctxᵢ res1).nextTag
       -- Since (ctxAfter ctxᵢ res1).regime = res1.regime', and res1.regime'.bound = ctxᵢ.regime.bound
@@ -5014,7 +5014,7 @@ private lemma stepFR_vlet
     rw [← hcfg_eq]; exact hwfcfg₁2
   -- Apply IH for e2
   -- ctx'.regime = res1.regime' (from hctx'), use regime_monotone for properties
-  have h_mono_vlet := regime_monotone ctxᵢ res1
+  have h_mono_vlet := regime_monotone ctxᵢ e1 fuel' res1 htc1'
   have hRbound_ctx' : regimeBounded ctx'.regime := by
     have h : ctx'.regime = res1.regime' := by simp [hctx']
     rw [h]
@@ -5508,7 +5508,7 @@ private lemma stepFR_vlet
         exact hrec hclean
       -- Establish the regime monotone step from after-e1 to after-e2 (typechecking can only drop regime entries).
       have h_mono_e2 : Regime.monotoneStep (ctxAfter ctxᵢ res1).regime (ctxAfter ctx' res2).regime := by
-        have h := regime_monotone ctx' res2
+        have h := regime_monotone ctx' e2 fuel' res2 htc2'
         have hR1 : ctx'.regime = (ctxAfter ctxᵢ res1).regime := by simp [hctx', ctxAfter]
         simpa [hR1] using h
       -- Split on shadowing: the only variable affected by the let-binding is `vname`.
@@ -5622,9 +5622,9 @@ private lemma stepFR_vlet
             have hkR_e2 : (ctxAfter ctx' res2).regime.lookup? k0 ≠ none := by
               simpa [hk0, hR_eq] using hkR
             have h_mono1 : Regime.monotoneStep ctxᵢ.regime (ctxAfter ctxᵢ res1).regime := by
-              simpa [ctxAfter] using (regime_monotone ctxᵢ res1)
+              simpa [ctxAfter] using (regime_monotone ctxᵢ e1 fuel' res1 htc1')
             have h_mono2 : Regime.monotoneStep (ctxAfter ctxᵢ res1).regime (ctxAfter ctx' res2).regime := by
-              have h := regime_monotone ctx' res2
+              have h := regime_monotone ctx' e2 fuel' res2 htc2'
               have hR1 : ctx'.regime = (ctxAfter ctxᵢ res1).regime := by simp [hctx', ctxAfter]
               simpa [hR1, ctxAfter] using h
             have hkR_after1 : (ctxAfter ctxᵢ res1).regime.lookup? k0 ≠ none :=
@@ -5701,9 +5701,9 @@ private lemma stepFR_vlet
             have hkR_e2 : (ctxAfter ctx' res2).regime.lookup? k0 ≠ none := by
               simpa [hk0, hR_eq] using hkR
             have h_mono1 : Regime.monotoneStep ctxᵢ.regime (ctxAfter ctxᵢ res1).regime := by
-              simpa [ctxAfter] using (regime_monotone ctxᵢ res1)
+              simpa [ctxAfter] using (regime_monotone ctxᵢ e1 fuel' res1 htc1')
             have h_mono2 : Regime.monotoneStep (ctxAfter ctxᵢ res1).regime (ctxAfter ctx' res2).regime := by
-              have h := regime_monotone ctx' res2
+              have h := regime_monotone ctx' e2 fuel' res2 htc2'
               have hR1 : ctx'.regime = (ctxAfter ctxᵢ res1).regime := by simp [hctx', ctxAfter]
               simpa [hR1, ctxAfter] using h
             have hkR_after1 : (ctxAfter ctxᵢ res1).regime.lookup? k0 ≠ none :=
