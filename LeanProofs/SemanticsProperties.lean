@@ -1288,7 +1288,398 @@ lemma beval_ioFree_mode_preserves_world (fuel : Nat) (cfg : Config) (e : Expr) (
     (r : LeanPoison.EvalResult) (w₀ w₁ : Void IO.RealWorld) :
     LeanPoison.beval .ioFree fuel cfg e verbose w₀ = EST.Out.ok r w₁ →
     w₁ = w₀ := by
-    sorry
+  intro h
+  -- Strong induction on fuel.
+  revert cfg e verbose r w₀ w₁ h
+  refine Nat.strong_induction_on fuel ?_
+  intro fuel IH cfg e verbose r w₀ w₁ h
+  cases fuel with
+  | zero =>
+      unfold LeanPoison.beval at h
+      simp [pure, EST.pure] at h
+      -- outOfFuel is returned at the same world
+      exact h.2.symm
+  | succ fuel =>
+      -- Specialization of the strong IH for the predecessor fuel.
+      have ih_fuel :
+          ∀ (cfg : Config) (e : Expr) (verbose : Bool) (r : LeanPoison.EvalResult)
+            (w₀ w₁ : Void IO.RealWorld),
+            LeanPoison.beval .ioFree fuel cfg e verbose w₀ = EST.Out.ok r w₁ →
+            w₁ = w₀ :=
+        IH fuel (Nat.lt_succ_self fuel)
+      -- Helper: bevalFunctionBody world preservation in ioFree mode.
+      have bevalFunctionBody_preserves_world :
+          ∀ (verbose : Bool) (currentConfig : Config) (closureEnv : VarEnv)
+            (paramName : Name) (argValue : Value) (body : Expr) (isPure : Bool)
+            (r : LeanPoison.EvalResult) (w₀ w₁ : Void IO.RealWorld),
+            LeanPoison.bevalFunctionBody .ioFree fuel verbose currentConfig closureEnv paramName argValue
+                body isPure w₀ = EST.Out.ok r w₁ →
+            w₁ = w₀ := by
+        intro verbose currentConfig closureEnv paramName argValue body isPure r w₀ w₁ hb
+        cases fuel with
+        | zero =>
+            unfold LeanPoison.bevalFunctionBody at hb
+            simp [pure, EST.pure] at hb
+            exact hb.2.symm
+        | succ fuel' =>
+            unfold LeanPoison.bevalFunctionBody at hb
+            let bodyCfg :=
+              { currentConfig with varEnv := VarEnv.update closureEnv paramName argValue, pureMode := isPure }
+            simp [bind, Bind.bind, EST.bind] at hb
+            cases h1 : LeanPoison.beval .ioFree fuel' bodyCfg body verbose w₀ with
+            | error err1 w1a =>
+                have h1' := (by simpa [bodyCfg] using h1)
+                have hcontr : EST.Out.error err1 w1a = EST.Out.ok r w₁ := by
+                  simp [h1'] at hb
+                cases hcontr
+            | ok r1 w1a =>
+                have h1' := (by simpa [bodyCfg] using h1)
+                have ih_fuel' :
+                    ∀ (cfg : Config) (e : Expr) (verbose : Bool) (r : LeanPoison.EvalResult)
+                      (w₀ w₁ : Void IO.RealWorld),
+                      LeanPoison.beval .ioFree fuel' cfg e verbose w₀ = EST.Out.ok r w₁ →
+                      w₁ = w₀ :=
+                  IH fuel' (by simp [Nat.add_assoc])
+                have hw1a : w1a = w₀ := ih_fuel' _ _ _ _ _ _ h1
+                simp [h1'] at hb
+                cases r1 with
+                | success evalConfig v =>
+                    cases h_isPure : isPure <;>
+                      simp [h_isPure, pure, EST.pure] at hb <;>
+                      (rcases hb with ⟨_, hw⟩; simpa [hw1a] using hw.symm)
+                | outOfFuel | runtimeError _ | ioForbidden =>
+                    simp [pure, EST.pure] at hb
+                    rcases hb with ⟨_, hw⟩
+                    simpa [hw1a] using hw.symm
+      -- Most constructors are immediate `pure` returns.
+      cases e <;>
+        try
+          (unfold LeanPoison.beval at h
+           simp [pure, EST.pure] at h
+           exact h.2.symm)
+      case kwhile e1 e2 =>
+        unfold LeanPoison.beval at h
+        simp at h
+        exact ih_fuel _ _ _ _ _ _ h
+      case var x =>
+        unfold LeanPoison.beval at h
+        cases h_lookup : cfg.varEnv.lookup x <;>
+          simp [h_lookup, pure] at h <;>
+          (cases h; rfl)
+      case op e1 op e2 =>
+        unfold LeanPoison.beval at h
+        simp [bind, Bind.bind, EST.bind] at h
+        cases h1 : LeanPoison.beval .ioFree fuel cfg e1 verbose w₀ with
+        | error err1 w1a =>
+            have hfalse : False := by
+              simp [h1] at h
+            cases hfalse
+        | ok r1 w1a =>
+            have hw1a : w1a = w₀ := ih_fuel _ _ _ _ _ _ h1
+            simp [h1] at h
+            cases r1 with
+            | success cfg1 v1 =>
+                cases h2 : LeanPoison.beval .ioFree fuel cfg1 e2 verbose w1a with
+                | error err2 w2a =>
+                    have hfalse : False := by
+                      simp [EST.bind, h2] at h
+                    cases hfalse
+                | ok r2 w2a =>
+                    have hw2a : w2a = w1a := ih_fuel _ _ _ _ _ _ h2
+                    simp [EST.bind, h2] at h
+                    cases r2 with
+                    | success cfg2 v2 =>
+                        cases h_op : LeanPoison.evalOp op v1 v2 <;>
+                          simp [h_op, pure, EST.pure] at h <;>
+                          (rcases h with ⟨_, hw⟩; simpa [hw1a, hw2a] using hw.symm)
+                    | outOfFuel | runtimeError _ | ioForbidden =>
+                        simp [pure, EST.pure] at h
+                        rcases h with ⟨_, hw⟩
+                        simpa [hw1a, hw2a] using hw.symm
+            | outOfFuel | runtimeError _ | ioForbidden =>
+                simp [pure] at h
+                rcases h with ⟨_, hw⟩
+                simp [hw1a]
+      case unaryop op e1 =>
+        unfold LeanPoison.beval at h
+        simp [bind, Bind.bind, EST.bind] at h
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₀ with
+        | error err1 w1a =>
+            have hfalse : False := by
+              simp [h1] at h
+            cases hfalse
+        | ok r1 w1a =>
+            have hw1a : w1a = w₀ := ih_fuel _ _ _ _ _ _ h1
+            simp [h1] at h
+            cases r1 with
+            | success cfg1 v1 =>
+                cases h_un : LeanPoison.evalUnaryOp op v1 <;>
+                  simp [h_un, pure] at h <;>
+                  (rcases h with ⟨_, hw⟩; simp [hw1a])
+            | outOfFuel | runtimeError _ | ioForbidden =>
+                simp [pure] at h
+                rcases h with ⟨_, hw⟩
+                simp [hw1a]
+      case newRef e1 =>
+        unfold LeanPoison.beval at h
+        simp [bind, Bind.bind, EST.bind] at h
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₀ with
+        | error err1 w1a =>
+            have hfalse : False := by
+              simp [h1] at h
+            cases hfalse
+        | ok r1 w1a =>
+            have hw1a : w1a = w₀ := ih_fuel _ _ _ _ _ _ h1
+            simp [h1] at h
+            cases r1 with
+            | success cfg1 v1 =>
+                cases v1 <;>
+                  simp [pure] at h <;>
+                  (rcases h with ⟨_, hw⟩; simp [hw1a])
+            | outOfFuel | runtimeError _ | ioForbidden =>
+                simp [pure] at h
+                rcases h with ⟨_, hw⟩
+                simp [hw1a]
+      case deref e1 =>
+        unfold LeanPoison.beval at h
+        simp [bind, Bind.bind, EST.bind] at h
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₀ with
+        | error err1 w1a =>
+            have hfalse : False := by
+              simp [h1] at h
+            cases hfalse
+        | ok r1 w1a =>
+            have hw1a : w1a = w₀ := ih_fuel _ _ _ _ _ _ h1
+            simp [h1] at h
+            cases r1 with
+            | success cfg1 v1 =>
+                cases v1 with
+                | loc l =>
+                    cases h_mem : cfg1.memory[l]? <;>
+                      simp [h_mem, pure, EST.pure] at h <;>
+                      (rcases h with ⟨_, hw⟩; simpa [hw1a] using hw.symm)
+                | _ =>
+                    simp [pure] at h
+                    rcases h with ⟨_, hw⟩
+                    simp [hw1a]
+            | outOfFuel | runtimeError _ | ioForbidden =>
+                simp [pure] at h
+                rcases h with ⟨_, hw⟩
+                simp [hw1a]
+      case assign e1 e2 =>
+        unfold LeanPoison.beval at h
+        simp [bind, Bind.bind, EST.bind] at h
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₀ with
+        | error err1 w1a =>
+            have hfalse : False := by
+              simp [h1] at h
+            cases hfalse
+        | ok r1 w1a =>
+            have hw1a : w1a = w₀ := ih_fuel _ _ _ _ _ _ h1
+            simp [h1] at h
+            cases r1 with
+            | success cfg1 v1 =>
+                cases v1 with
+                | loc l =>
+                    cases h2 : LeanPoison.beval .ioFree fuel cfg1 e2 verbose w1a with
+                    | error err2 w2a =>
+                        have hfalse : False := by
+                          simp [EST.bind, h2] at h
+                        cases hfalse
+                    | ok r2 w2a =>
+                        have hw2a : w2a = w1a := ih_fuel _ _ _ _ _ _ h2
+                        simp [EST.bind, h2] at h
+                        cases r2 with
+                        | success cfg2 v2 =>
+                            cases v2 <;>
+                              simp [pure] at h <;>
+                              (rcases h with ⟨_, hw⟩; simp [hw1a, hw2a])
+                        | outOfFuel | runtimeError _ | ioForbidden =>
+                            simp [pure] at h
+                            rcases h with ⟨_, hw⟩
+                            simp [hw1a, hw2a]
+                | _ =>
+                    simp [pure] at h
+                    rcases h with ⟨_, hw⟩
+                    simp [hw1a]
+            | outOfFuel | runtimeError _ | ioForbidden =>
+                simp [pure] at h
+                rcases h with ⟨_, hw⟩
+                simp [hw1a]
+      case seq e1 e2 =>
+        unfold LeanPoison.beval at h
+        simp [bind, Bind.bind, EST.bind] at h
+        cases h1 : LeanPoison.beval .ioFree fuel cfg e1 verbose w₀ with
+        | error err1 w1a =>
+            have hfalse : False := by
+              simp [h1] at h
+            cases hfalse
+        | ok r1 w1a =>
+            have hw1a : w1a = w₀ := ih_fuel _ _ _ _ _ _ h1
+            simp [h1] at h
+            cases r1 with
+            | success cfg1 v1 =>
+                cases h2 : LeanPoison.beval .ioFree fuel cfg1 e2 verbose w1a with
+                | error err2 w2a =>
+                    have hfalse : False := by
+                      simp [EST.bind, h2] at h
+                    cases hfalse
+                | ok r2 w2a =>
+                    have hw2a : w2a = w1a := ih_fuel _ _ _ _ _ _ h2
+                    simp [EST.bind, h2, pure] at h
+                    cases r2 <;>
+                      (simp [EST.pure] at h
+                       rcases h with ⟨_, hw⟩
+                       simpa [hw1a, hw2a] using hw.symm)
+            | outOfFuel | runtimeError _ | ioForbidden =>
+                simp [pure] at h
+                rcases h with ⟨_, hw⟩
+                simp [hw1a]
+      case ite e1 e2 e3 =>
+        unfold LeanPoison.beval at h
+        simp [bind, Bind.bind, EST.bind] at h
+        cases h1 : LeanPoison.beval .ioFree fuel cfg e1 verbose w₀ with
+        | error err1 w1a =>
+            have hfalse : False := by
+              simp [h1] at h
+            cases hfalse
+        | ok r1 w1a =>
+            have hw1a : w1a = w₀ := ih_fuel _ _ _ _ _ _ h1
+            simp [h1] at h
+            cases r1 with
+            | success cfg1 v1 =>
+                cases v1 with
+                | bool b =>
+                    cases b with
+                    | true =>
+                        cases h2 : LeanPoison.beval .ioFree fuel cfg1 e2 verbose w1a with
+                        | error err2 w2a =>
+                            have hfalse : False := by
+                              simp [EST.bind, h2] at h
+                            cases hfalse
+                        | ok r2 w2a =>
+                            have hw2a : w2a = w1a := ih_fuel _ _ _ _ _ _ h2
+                            simp [EST.bind, h2, pure] at h
+                            cases r2 <;>
+                              (simp [EST.pure] at h
+                               rcases h with ⟨_, hw⟩
+                               simpa [hw1a, hw2a] using hw.symm)
+                    | false =>
+                        cases h2 : LeanPoison.beval .ioFree fuel cfg1 e3 verbose w1a with
+                        | error err2 w2a =>
+                            have hfalse : False := by
+                              simp [EST.bind, h2] at h
+                            cases hfalse
+                        | ok r2 w2a =>
+                            have hw2a : w2a = w1a := ih_fuel _ _ _ _ _ _ h2
+                            simp [EST.bind, h2, pure] at h
+                            cases r2 <;>
+                              (simp [EST.pure] at h
+                               rcases h with ⟨_, hw⟩
+                               simpa [hw1a, hw2a] using hw.symm)
+                | _ =>
+                    simp [pure] at h
+                    rcases h with ⟨_, hw⟩
+                    simp [hw1a]
+            | outOfFuel | runtimeError _ | ioForbidden =>
+                simp [pure] at h
+                rcases h with ⟨_, hw⟩
+                simp [hw1a]
+      case vlet x e1 e2 =>
+        unfold LeanPoison.beval at h
+        simp [bind, Bind.bind, EST.bind] at h
+        cases h1 : LeanPoison.beval .ioFree fuel cfg e1 verbose w₀ with
+        | error err1 w1a =>
+            have hfalse : False := by
+              simp [h1] at h
+            cases hfalse
+        | ok r1 w1a =>
+            have hw1a : w1a = w₀ := ih_fuel _ _ _ _ _ _ h1
+            simp [h1] at h
+            cases r1 with
+            | success cfg1 v1 =>
+                cases h2 :
+                    LeanPoison.beval .ioFree fuel
+                      { cfg1 with varEnv := cfg1.varEnv.update x v1 }
+                      e2 verbose w1a with
+                | error err2 w2a =>
+                    have hfalse : False := by
+                      simp [EST.bind, h2] at h
+                    cases hfalse
+                | ok r2 w2a =>
+                    have hw2a : w2a = w1a := ih_fuel _ _ _ _ _ _ h2
+                    simp [EST.bind, h2, pure] at h
+                    cases r2 <;>
+                      (simp [EST.pure] at h
+                       rcases h with ⟨_, hw⟩
+                       simpa [hw1a, hw2a] using hw.symm)
+            | outOfFuel | runtimeError _ | ioForbidden =>
+                simp [pure] at h
+                rcases h with ⟨_, hw⟩
+                simp [hw1a]
+      case app e1 e2 =>
+        unfold LeanPoison.beval at h
+        simp [bind, Bind.bind, EST.bind] at h
+        cases h1 : LeanPoison.beval .ioFree fuel cfg e2 verbose w₀ with
+        | error err1 w1a =>
+            have hfalse : False := by
+              simp [h1] at h
+            cases hfalse
+        | ok r1 w1a =>
+            have hw1a : w1a = w₀ := ih_fuel _ _ _ _ _ _ h1
+            simp [h1] at h
+            cases r1 with
+            | success cfg1 v2 =>
+                cases h2 : LeanPoison.beval .ioFree fuel cfg1 e1 verbose w1a with
+                | error err2 w2a =>
+                    have hfalse : False := by
+                      simp [EST.bind, h2] at h
+                    cases hfalse
+                | ok r2 w2a =>
+                    have hw2a : w2a = w1a := ih_fuel _ _ _ _ _ _ h2
+                    simp [EST.bind, h2] at h
+                    cases r2 with
+                    | success cfg2 v1 =>
+                        cases v1 with
+                        | closure x body env =>
+                            cases h_pm : cfg2.pureMode with
+                            | true =>
+                                simp [h_pm, pure] at h
+                                rcases h with ⟨_, hw⟩
+                                simp [hw1a, hw2a]
+                            | false =>
+                                simp [h_pm] at h
+                                have hw_body : w₁ = w2a :=
+                                  bevalFunctionBody_preserves_world verbose cfg2 env x v2 body false r w2a w₁ h
+                                -- Combine worlds
+                                simpa [hw1a, hw2a] using hw_body
+                        | peClosure x body env =>
+                            cases h_pure : Expr.toPExpr? body with
+                            | none =>
+                                simp [h_pure, pure] at h
+                                rcases h with ⟨_, hw⟩
+                                simp [hw1a, hw2a]
+                            | some _ =>
+                                simp [h_pure] at h
+                                have hw_body : w₁ = w2a :=
+                                  bevalFunctionBody_preserves_world verbose cfg2 env x v2 body true r w2a w₁ h
+                                simpa [hw1a, hw2a] using hw_body
+                        | _ =>
+                            simp [pure] at h
+                            rcases h with ⟨_, hw⟩
+                            simp [hw1a, hw2a]
+                    | outOfFuel | runtimeError _ | ioForbidden =>
+                        simp [pure] at h
+                        rcases h with ⟨_, hw⟩
+                        simp [hw1a, hw2a]
+            | outOfFuel | runtimeError _ | ioForbidden =>
+                simp [pure] at h
+                rcases h with ⟨_, hw⟩
+                simp [hw1a]
 
 /-- For IOFree expressions, beval at any world produces the same result.
     Combined with world preservation, this allows us to convert world-indexed
