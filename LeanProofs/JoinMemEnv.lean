@@ -28,10 +28,50 @@ set_option linter.unnecessarySeqFocus false
 
 
 -- Helper lemma: eraseDups preserves membership
-lemma List.mem_eraseDups_of_mem {α : Type*} [BEq α] {x : α} {l : List α}
+lemma List.mem_eraseDups_of_mem {α : Type*} [BEq α] [LawfulBEq α] {x : α} {l : List α}
     (h : x ∈ l) : x ∈ l.eraseDups := by
-  sorry
-
+  let P : Nat → Prop := fun n =>
+    ∀ l : List α, l.length = n → ∀ x : α, x ∈ l → x ∈ l.eraseDups
+  have hP : P l.length := by
+    induction l.length using Nat.strong_induction_on with
+    | _ n ih =>
+        intro l hlen x hmem
+        cases l with
+        | nil =>
+            cases hmem
+        | cons a as =>
+            -- From length, get strict bound for the filtered tail.
+            have hlen_as : as.length < n := by
+              have hlen' : as.length + 1 = n := by simpa using hlen
+              have : as.length < as.length + 1 := Nat.lt_succ_self as.length
+              simpa [hlen'] using this
+            cases hmem with
+            | head =>
+                -- x = a
+                simp [List.eraseDups_cons]
+            | tail _ hmem_as =>
+                by_cases hxa : x = a
+                · subst hxa
+                  simp [List.eraseDups_cons]
+                · -- x ≠ a, so it survives the filter
+                  have hxfilter : x ∈ as.filter (fun b => !b == a) := by
+                    apply (List.mem_filter).2
+                    refine ⟨hmem_as, ?_⟩
+                    by_cases hbeq : x == a
+                    · have : x = a := LawfulBEq.eq_of_beq (a := x) (b := a) (by simpa using hbeq)
+                      exact (hxa this).elim
+                    · simp [hbeq]
+                  have hlen_filter : (as.filter (fun b => !b == a)).length < n := by
+                    have hle : (as.filter (fun b => !b == a)).length ≤ as.length :=
+                      List.length_filter_le _ _
+                    exact _root_.lt_of_le_of_lt hle hlen_as
+                  have hx' :
+                      x ∈ (as.filter (fun b => !b == a)).eraseDups := by
+                    have hIH := ih (as.filter (fun b => !b == a)).length hlen_filter
+                    exact hIH (as.filter (fun b => !b == a)) rfl x hxfilter
+                  rw [List.eraseDups_cons]
+                  exact List.Mem.tail a hx'
+  exact hP l rfl x h
 
 private lemma joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
   cases p <;> rfl
