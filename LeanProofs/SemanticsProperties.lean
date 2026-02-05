@@ -1298,8 +1298,552 @@ lemma beval_ioFree_mode_result_eq (fuel : Nat) (cfg : Config) (e : Expr) (verbos
     LeanPoison.beval .ioFree fuel cfg e verbose w₁ = EST.Out.ok r₁ w₁' →
     LeanPoison.beval .ioFree fuel cfg e verbose w₂ = EST.Out.ok r₂ w₂' →
     r₁ = r₂ := by
-  intros h
-  sorry
+  intro h₁ h₂
+  -- Strong induction on fuel.
+  revert cfg e verbose r₁ r₂ w₁ w₂ w₁' w₂' h₁ h₂
+  refine Nat.strong_induction_on fuel ?_
+  intro fuel IH cfg e verbose r₁ r₂ w₁ w₂ w₁' w₂' h₁ h₂
+  cases fuel with
+  | zero =>
+      unfold LeanPoison.beval at h₁ h₂
+      simp at h₁ h₂
+      cases h₁
+      cases h₂
+      rfl
+  | succ fuel =>
+      -- Specialization of the strong IH for the predecessor fuel.
+      have ih_fuel :
+          ∀ (cfg : Config) (e : Expr) (verbose : Bool)
+            (r₁ r₂ : LeanPoison.EvalResult) (w₁ w₂ w₁' w₂' : Void IO.RealWorld),
+            LeanPoison.beval .ioFree fuel cfg e verbose w₁ = EST.Out.ok r₁ w₁' →
+            LeanPoison.beval .ioFree fuel cfg e verbose w₂ = EST.Out.ok r₂ w₂' →
+            r₁ = r₂ :=
+        IH fuel (Nat.lt_succ_self fuel)
+      -- Helper: bevalFunctionBody result equality in ioFree mode.
+      have bevalFunctionBody_result_eq :
+          ∀ (verbose : Bool) (currentConfig : Config) (closureEnv : VarEnv)
+            (paramName : Name) (argValue : Value) (body : Expr) (isPure : Bool)
+            (r₁ r₂ : LeanPoison.EvalResult) (w₁ w₂ w₁' w₂' : Void IO.RealWorld),
+            LeanPoison.bevalFunctionBody .ioFree fuel verbose currentConfig closureEnv paramName argValue
+                body isPure w₁ = EST.Out.ok r₁ w₁' →
+            LeanPoison.bevalFunctionBody .ioFree fuel verbose currentConfig closureEnv paramName argValue
+                body isPure w₂ = EST.Out.ok r₂ w₂' →
+            r₁ = r₂ := by
+        intro verbose currentConfig closureEnv paramName argValue body isPure r₁ r₂ w₁ w₂ w₁' w₂' hb₁ hb₂
+        cases fuel with
+        | zero =>
+            unfold LeanPoison.bevalFunctionBody at hb₁ hb₂
+            simp [pure] at hb₁ hb₂
+            cases hb₁
+            cases hb₂
+            rfl
+        | succ fuel' =>
+            unfold LeanPoison.bevalFunctionBody at hb₁ hb₂
+            let bodyCfg :=
+              { currentConfig with varEnv := VarEnv.update closureEnv paramName argValue, pureMode := isPure }
+            simp [bind, Bind.bind, EST.bind] at hb₁ hb₂
+            cases h1 :
+                LeanPoison.beval .ioFree fuel' bodyCfg body verbose w₁ with
+            | error err1 w1a =>
+                have h1' :
+                    LeanPoison.beval .ioFree fuel'
+                        { currentConfig with varEnv := VarEnv.update closureEnv paramName argValue, pureMode := isPure }
+                        body verbose w₁ =
+                      EST.Out.error err1 w1a := by
+                  simpa [bodyCfg] using h1
+                simp [h1'] at hb₁
+            | ok r1' w1a =>
+                have h1' :
+                    LeanPoison.beval .ioFree fuel'
+                        { currentConfig with varEnv := VarEnv.update closureEnv paramName argValue, pureMode := isPure }
+                        body verbose w₁ =
+                      EST.Out.ok r1' w1a := by
+                  simpa [bodyCfg] using h1
+                simp [h1'] at hb₁
+                cases h2 :
+                    LeanPoison.beval .ioFree fuel' bodyCfg body verbose w₂ with
+                | error err2 w2a =>
+                    have h2' :
+                        LeanPoison.beval .ioFree fuel'
+                            { currentConfig with varEnv := VarEnv.update closureEnv paramName argValue, pureMode := isPure }
+                            body verbose w₂ =
+                          EST.Out.error err2 w2a := by
+                      simpa [bodyCfg] using h2
+                    simp [h2'] at hb₂
+                | ok r2' w2a =>
+                    have h2' :
+                        LeanPoison.beval .ioFree fuel'
+                            { currentConfig with varEnv := VarEnv.update closureEnv paramName argValue, pureMode := isPure }
+                            body verbose w₂ =
+                          EST.Out.ok r2' w2a := by
+                      simpa [bodyCfg] using h2
+                    simp [h2'] at hb₂
+                    have hr' :
+                        r1' = r2' :=
+                      (IH fuel' (by simp [Nat.add_assoc]))
+                        _ _ _ _ _ _ _ _ _ h1 h2
+                    subst hr'
+                    cases r1' with
+                    | success evalConfig v =>
+                        cases h_isPure : isPure <;>
+                          simp [h_isPure, pure] at hb₁ hb₂ <;>
+                          cases hb₁ <;> cases hb₂ <;> rfl
+                    | outOfFuel | runtimeError _ | ioForbidden =>
+                        simp [pure] at hb₁ hb₂
+                        cases hb₁
+                        cases hb₂
+                        rfl
+      -- Most constructors are immediate `pure` returns.
+      cases e <;>
+        try
+          (unfold LeanPoison.beval at h₁ h₂
+           simp [pure] at h₁ h₂
+           cases h₁
+           cases h₂
+           rfl)
+      case kwhile e1 e2 =>
+        unfold LeanPoison.beval at h₁ h₂
+        simp at h₁ h₂
+        exact ih_fuel _ _ _ _ _ _ _ _ _ h₁ h₂
+      case var x =>
+        unfold LeanPoison.beval at h₁ h₂
+        simp at h₁ h₂
+        cases h_lookup : cfg.varEnv.lookup x <;>
+          simp [h_lookup, pure] at h₁ h₂ <;>
+          cases h₁ <;> cases h₂ <;> rfl
+      case op e1 op e2 =>
+        unfold LeanPoison.beval at h₁ h₂
+        simp [bind, Bind.bind, EST.bind] at h₁ h₂
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₁ with
+        | error err1 w1a =>
+            simp [h1] at h₁
+        | ok r1 w1a =>
+            cases h2 :
+                LeanPoison.beval .ioFree fuel cfg e1 verbose w₂ with
+            | error err2 w2a =>
+                simp [h2] at h₂
+            | ok r2 w2a =>
+                have hr : r1 = r2 :=
+                  ih_fuel _ _ _ _ _ _ _ _ _ h1 h2
+                subst hr
+                simp [h1] at h₁
+                simp [h2] at h₂
+                cases r1 with
+                | success cfg1 v1 =>
+                    cases h1' :
+                        LeanPoison.beval .ioFree fuel cfg1 e2 verbose w1a with
+                    | error err1 w1b =>
+                        simp [EST.bind, h1'] at h₁
+                    | ok r1' w1b =>
+                        cases h2' :
+                            LeanPoison.beval .ioFree fuel cfg1 e2 verbose w2a with
+                        | error err2 w2b =>
+                            simp [EST.bind, h2'] at h₂
+                        | ok r2' w2b =>
+                            have hr' : r1' = r2' :=
+                              ih_fuel _ _ _ _ _ _ _ _ _ h1' h2'
+                            subst hr'
+                            simp [EST.bind, h1'] at h₁
+                            simp [EST.bind, h2'] at h₂
+                            cases r1' with
+                            | success cfg2 v2 =>
+                                cases h_op : LeanPoison.evalOp op v1 v2 <;>
+                                  simp [h_op, pure] at h₁ h₂ <;>
+                                  cases h₁ <;> cases h₂ <;> rfl
+                            | outOfFuel | runtimeError _ | ioForbidden =>
+                                simp [pure] at h₁ h₂
+                                cases h₁
+                                cases h₂
+                                rfl
+                | outOfFuel | runtimeError _ | ioForbidden =>
+                    simp [pure] at h₁ h₂
+                    cases h₁
+                    cases h₂
+                    rfl
+      case unaryop op e1 =>
+        unfold LeanPoison.beval at h₁ h₂
+        simp [bind, Bind.bind, EST.bind] at h₁ h₂
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₁ with
+        | error err1 w1a =>
+            simp [h1] at h₁
+        | ok r1 w1a =>
+            cases h2 :
+                LeanPoison.beval .ioFree fuel cfg e1 verbose w₂ with
+            | error err2 w2a =>
+                simp [h2] at h₂
+            | ok r2 w2a =>
+                have hr : r1 = r2 :=
+                  ih_fuel _ _ _ _ _ _ _ _ _ h1 h2
+                subst hr
+                simp [h1] at h₁
+                simp [h2] at h₂
+                cases r1 with
+                | success cfg1 v1 =>
+                    cases h_un : LeanPoison.evalUnaryOp op v1 <;>
+                      simp [h_un, pure] at h₁ h₂ <;>
+                      cases h₁ <;> cases h₂ <;> rfl
+                | outOfFuel | runtimeError _ | ioForbidden =>
+                    simp [pure] at h₁ h₂
+                    cases h₁
+                    cases h₂
+                    rfl
+      case newRef e1 =>
+        unfold LeanPoison.beval at h₁ h₂
+        simp [bind, Bind.bind, EST.bind] at h₁ h₂
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₁ with
+        | error err1 w1a =>
+            simp [h1] at h₁
+        | ok r1 w1a =>
+            cases h2 :
+                LeanPoison.beval .ioFree fuel cfg e1 verbose w₂ with
+            | error err2 w2a =>
+                simp [h2] at h₂
+            | ok r2 w2a =>
+                have hr : r1 = r2 :=
+                  ih_fuel _ _ _ _ _ _ _ _ _ h1 h2
+                subst hr
+                simp [h1] at h₁
+                simp [h2] at h₂
+                cases r1 with
+                | success cfg1 v1 =>
+                    cases v1 <;>
+                      simp [pure] at h₁ h₂ <;>
+                      cases h₁ <;> cases h₂ <;> rfl
+                | outOfFuel | runtimeError _ | ioForbidden =>
+                    simp [pure] at h₁ h₂
+                    cases h₁
+                    cases h₂
+                    rfl
+      case deref e1 =>
+        unfold LeanPoison.beval at h₁ h₂
+        simp [bind, Bind.bind, EST.bind] at h₁ h₂
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₁ with
+        | error err1 w1a =>
+            simp [h1] at h₁
+        | ok r1 w1a =>
+            cases h2 :
+                LeanPoison.beval .ioFree fuel cfg e1 verbose w₂ with
+            | error err2 w2a =>
+                simp [h2] at h₂
+            | ok r2 w2a =>
+                have hr : r1 = r2 :=
+                  ih_fuel _ _ _ _ _ _ _ _ _ h1 h2
+                subst hr
+                simp [h1] at h₁
+                simp [h2] at h₂
+                cases r1 with
+                | success cfg1 v1 =>
+                    cases v1 with
+                    | loc l =>
+                        cases h_mem : cfg1.memory[l]? <;>
+                          simp [h_mem, pure, EST.pure] at h₁ h₂ <;>
+                          (rcases h₁ with ⟨hr1, _⟩; rcases h₂ with ⟨hr2, _⟩;
+                           simp [hr1.symm, hr2.symm])
+                    | _ =>
+                        simp [pure] at h₁ h₂
+                        cases h₁
+                        cases h₂
+                        rfl
+                | outOfFuel | runtimeError _ | ioForbidden =>
+                    simp [pure] at h₁ h₂
+                    cases h₁
+                    cases h₂
+                    rfl
+      case assign e1 e2 =>
+        unfold LeanPoison.beval at h₁ h₂
+        simp [bind, Bind.bind, EST.bind] at h₁ h₂
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₁ with
+        | error err1 w1a =>
+            simp [h1] at h₁
+        | ok r1 w1a =>
+            cases h2 :
+                LeanPoison.beval .ioFree fuel cfg e1 verbose w₂ with
+            | error err2 w2a =>
+                simp [h2] at h₂
+            | ok r2 w2a =>
+                have hr : r1 = r2 :=
+                  ih_fuel _ _ _ _ _ _ _ _ _ h1 h2
+                subst hr
+                simp [h1] at h₁
+                simp [h2] at h₂
+                cases r1 with
+                | success cfg1 v1 =>
+                    cases v1 with
+                    | loc l =>
+                        cases h1' :
+                            LeanPoison.beval .ioFree fuel cfg1 e2 verbose w1a with
+                        | error err1 w1b =>
+                            simp [EST.bind, h1'] at h₁
+                        | ok r1' w1b =>
+                            cases h2' :
+                                LeanPoison.beval .ioFree fuel cfg1 e2 verbose w2a with
+                            | error err2 w2b =>
+                                simp [EST.bind, h2'] at h₂
+                            | ok r2' w2b =>
+                                have hr' : r1' = r2' :=
+                                  ih_fuel _ _ _ _ _ _ _ _ _ h1' h2'
+                                subst hr'
+                                simp [EST.bind, h1'] at h₁
+                                simp [EST.bind, h2'] at h₂
+                                cases r1' with
+                                | success cfg2 v2 =>
+                                    cases v2 <;>
+                                      simp [pure] at h₁ h₂ <;>
+                                      cases h₁ <;> cases h₂ <;> rfl
+                                | outOfFuel | runtimeError _ | ioForbidden =>
+                                    simp [pure] at h₁ h₂
+                                    cases h₁
+                                    cases h₂
+                                    rfl
+                    | _ =>
+                        simp [pure] at h₁ h₂
+                        cases h₁
+                        cases h₂
+                        rfl
+                | outOfFuel | runtimeError _ | ioForbidden =>
+                    simp [pure] at h₁ h₂
+                    cases h₁
+                    cases h₂
+                    rfl
+      case seq e1 e2 =>
+        unfold LeanPoison.beval at h₁ h₂
+        simp [bind, Bind.bind, EST.bind] at h₁ h₂
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₁ with
+        | error err1 w1a =>
+            simp [h1] at h₁
+        | ok r1 w1a =>
+            cases h2 :
+                LeanPoison.beval .ioFree fuel cfg e1 verbose w₂ with
+            | error err2 w2a =>
+                simp [h2] at h₂
+            | ok r2 w2a =>
+                have hr : r1 = r2 :=
+                  ih_fuel _ _ _ _ _ _ _ _ _ h1 h2
+                subst hr
+                simp [h1] at h₁
+                simp [h2] at h₂
+                cases r1 with
+                | success cfg1 v1 =>
+                    cases h1' :
+                        LeanPoison.beval .ioFree fuel cfg1 e2 verbose w1a with
+                    | error err1 w1b =>
+                        simp [EST.bind, h1'] at h₁
+                    | ok r1' w1b =>
+                        cases h2' :
+                            LeanPoison.beval .ioFree fuel cfg1 e2 verbose w2a with
+                        | error err2 w2b =>
+                            simp [EST.bind, h2'] at h₂
+                        | ok r2' w2b =>
+                            have hr' : r1' = r2' :=
+                              ih_fuel _ _ _ _ _ _ _ _ _ h1' h2'
+                            subst hr'
+                            simp [EST.bind, h1', pure] at h₁
+                            simp [EST.bind, h2', pure] at h₂
+                            cases r1' <;> simp at h₁ h₂ <;> cases h₁ <;> cases h₂ <;> rfl
+                | outOfFuel | runtimeError _ | ioForbidden =>
+                    simp [pure] at h₁ h₂
+                    cases h₁
+                    cases h₂
+                    rfl
+      case ite e1 e2 e3 =>
+        unfold LeanPoison.beval at h₁ h₂
+        simp [bind, Bind.bind, EST.bind] at h₁ h₂
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₁ with
+        | error err1 w1a =>
+            simp [h1] at h₁
+        | ok r1 w1a =>
+            cases h2 :
+                LeanPoison.beval .ioFree fuel cfg e1 verbose w₂ with
+            | error err2 w2a =>
+                simp [h2] at h₂
+            | ok r2 w2a =>
+                have hr : r1 = r2 :=
+                  ih_fuel _ _ _ _ _ _ _ _ _ h1 h2
+                subst hr
+                simp [h1] at h₁
+                simp [h2] at h₂
+                cases r1 with
+                | success cfg1 v1 =>
+                    cases v1 with
+                    | bool b =>
+                        cases b with
+                        | true =>
+                            cases h1' :
+                                LeanPoison.beval .ioFree fuel cfg1 e2 verbose w1a with
+                            | error err1 w1b =>
+                                simp [EST.bind, h1'] at h₁
+                            | ok r1' w1b =>
+                                cases h2' :
+                                    LeanPoison.beval .ioFree fuel cfg1 e2 verbose w2a with
+                                | error err2 w2b =>
+                                    simp [EST.bind, h2'] at h₂
+                                | ok r2' w2b =>
+                                    have hr' : r1' = r2' :=
+                                      ih_fuel _ _ _ _ _ _ _ _ _ h1' h2'
+                                    subst hr'
+                                    simp [EST.bind, h1', pure] at h₁
+                                    simp [EST.bind, h2', pure] at h₂
+                                    cases r1' <;> simp at h₁ h₂ <;> cases h₁ <;> cases h₂ <;> rfl
+                        | false =>
+                            cases h1' :
+                                LeanPoison.beval .ioFree fuel cfg1 e3 verbose w1a with
+                            | error err1 w1b =>
+                                simp [EST.bind, h1'] at h₁
+                            | ok r1' w1b =>
+                                cases h2' :
+                                    LeanPoison.beval .ioFree fuel cfg1 e3 verbose w2a with
+                                | error err2 w2b =>
+                                    simp [EST.bind, h2'] at h₂
+                                | ok r2' w2b =>
+                                    have hr' : r1' = r2' :=
+                                      ih_fuel _ _ _ _ _ _ _ _ _ h1' h2'
+                                    subst hr'
+                                    simp [EST.bind, h1', pure] at h₁
+                                    simp [EST.bind, h2', pure] at h₂
+                                    cases r1' <;> simp at h₁ h₂ <;> cases h₁ <;> cases h₂ <;> rfl
+                    | _ =>
+                        simp [pure] at h₁ h₂
+                        cases h₁
+                        cases h₂
+                        rfl
+                | outOfFuel | runtimeError _ | ioForbidden =>
+                    simp [pure] at h₁ h₂
+                    cases h₁
+                    cases h₂
+                    rfl
+      case vlet x e1 e2 =>
+        unfold LeanPoison.beval at h₁ h₂
+        simp [bind, Bind.bind, EST.bind] at h₁ h₂
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e1 verbose w₁ with
+        | error err1 w1a =>
+            simp [h1] at h₁
+        | ok r1 w1a =>
+            cases h2 :
+                LeanPoison.beval .ioFree fuel cfg e1 verbose w₂ with
+            | error err2 w2a =>
+                simp [h2] at h₂
+            | ok r2 w2a =>
+                have hr : r1 = r2 :=
+                  ih_fuel _ _ _ _ _ _ _ _ _ h1 h2
+                subst hr
+                simp [h1] at h₁
+                simp [h2] at h₂
+                cases r1 with
+                | success cfg1 v1 =>
+                    cases h1' :
+                        LeanPoison.beval .ioFree fuel
+                          { cfg1 with varEnv := cfg1.varEnv.update x v1 }
+                          e2 verbose w1a with
+                    | error err1 w1b =>
+                        simp [EST.bind, h1'] at h₁
+                    | ok r1' w1b =>
+                        cases h2' :
+                            LeanPoison.beval .ioFree fuel
+                              { cfg1 with varEnv := cfg1.varEnv.update x v1 }
+                              e2 verbose w2a with
+                        | error err2 w2b =>
+                            simp [EST.bind, h2'] at h₂
+                        | ok r2' w2b =>
+                            have hr' : r1' = r2' :=
+                              ih_fuel _ _ _ _ _ _ _ _ _ h1' h2'
+                            subst hr'
+                            simp [EST.bind, h1', pure] at h₁
+                            simp [EST.bind, h2', pure] at h₂
+                            cases r1' <;> simp at h₁ h₂ <;> cases h₁ <;> cases h₂ <;> rfl
+                | outOfFuel | runtimeError _ | ioForbidden =>
+                    simp [pure] at h₁ h₂
+                    cases h₁
+                    cases h₂
+                    rfl
+      case app e1 e2 =>
+        unfold LeanPoison.beval at h₁ h₂
+        simp [bind, Bind.bind, EST.bind] at h₁ h₂
+        cases h1 :
+            LeanPoison.beval .ioFree fuel cfg e2 verbose w₁ with
+        | error err1 w1a =>
+            simp [h1] at h₁
+        | ok r1 w1a =>
+            cases h2 :
+                LeanPoison.beval .ioFree fuel cfg e2 verbose w₂ with
+            | error err2 w2a =>
+                simp [h2] at h₂
+            | ok r2 w2a =>
+                have hr : r1 = r2 :=
+                  ih_fuel _ _ _ _ _ _ _ _ _ h1 h2
+                subst hr
+                simp [h1] at h₁
+                simp [h2] at h₂
+                cases r1 with
+                | success cfg1 v2 =>
+                    cases h1' :
+                        LeanPoison.beval .ioFree fuel cfg1 e1 verbose w1a with
+                    | error err1 w1b =>
+                        simp [EST.bind, h1'] at h₁
+                    | ok r1' w1b =>
+                        cases h2' :
+                            LeanPoison.beval .ioFree fuel cfg1 e1 verbose w2a with
+                        | error err2 w2b =>
+                            simp [EST.bind, h2'] at h₂
+                        | ok r2' w2b =>
+                            have hr' : r1' = r2' :=
+                              ih_fuel _ _ _ _ _ _ _ _ _ h1' h2'
+                            subst hr'
+                            simp [EST.bind, h1'] at h₁
+                            simp [EST.bind, h2'] at h₂
+                            cases r1' with
+                            | success cfg2 v1 =>
+                                cases v1 with
+                                | closure x body env =>
+                                    cases h_pm : cfg2.pureMode with
+                                    | true =>
+                                        simp [h_pm, pure] at h₁ h₂
+                                        cases h₁
+                                        cases h₂
+                                        rfl
+                                    | false =>
+                                        simp [h_pm] at h₁ h₂
+                                        have hres :
+                                            r₁ = r₂ :=
+                                          bevalFunctionBody_result_eq verbose cfg2 env x v2 body false
+                                            r₁ r₂ w1b w2b w₁' w₂' h₁ h₂
+                                        exact hres
+                                | peClosure x body env =>
+                                    cases h_pure : Expr.toPExpr? body with
+                                    | none =>
+                                        simp [h_pure, pure] at h₁ h₂
+                                        cases h₁
+                                        cases h₂
+                                        rfl
+                                    | some _ =>
+                                        simp [h_pure] at h₁ h₂
+                                        have hres :
+                                            r₁ = r₂ :=
+                                          bevalFunctionBody_result_eq verbose cfg2 env x v2 body true
+                                            r₁ r₂ w1b w2b w₁' w₂' h₁ h₂
+                                        exact hres
+                                | _ =>
+                                    simp [pure] at h₁ h₂
+                                    cases h₁
+                                    cases h₂
+                                    rfl
+                            | outOfFuel | runtimeError _ | ioForbidden =>
+                                simp [pure] at h₁ h₂
+                                cases h₁
+                                cases h₂
+                                rfl
+                | outOfFuel | runtimeError _ | ioForbidden =>
+                    simp [pure] at h₁ h₂
+                    cases h₁
+                    cases h₂
+                    rfl
 
 /-- In ioFree mode, if evaluation succeeds at one world, it cannot error at another.
     This captures the determinism of ioFree mode evaluation across worlds. -/
