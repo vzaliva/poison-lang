@@ -2689,78 +2689,47 @@ private lemma joinTypeResults_preserves_arrow_structure
                 (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag)
                 (p_acc : Poison) (tcls_acc : List FnTClosure),
                 acc.1 = ETyp.arrow st1 st2 p_acc tcls_acc →
-                (∀ r' ∈ rs, beqETypSignature (ETyp.arrow st1 st2 p_acc tcls_acc) r'.qualType.etyp = true) →
                 List.foldlM joinStep acc rs = Except.ok acc' →
                 ∃ (p' : Poison) (tcls' : List FnTClosure),
                   acc'.1 = ETyp.arrow st1 st2 p' tcls' := by
-            intro rs acc acc' p_acc tcls_acc h_acc_arrow h_compat h_fold
-            induction rs generalizing acc with
+            intro rs acc acc' p_acc tcls_acc h_acc_arrow h_fold
+            induction rs generalizing acc p_acc tcls_acc with
             | nil =>
                 simp [List.foldlM_nil, pure, Except.pure] at h_fold
                 cases h_fold
                 exact ⟨p_acc, tcls_acc, h_acc_arrow⟩
             | cons x xs ih =>
-                -- x has compatible signature
-                have h_x_compat : beqETypSignature (ETyp.arrow st1 st2 p_acc tcls_acc) x.qualType.etyp = true := by
-                  have h_mem : x ∈ x :: xs := by simp
-                  exact h_compat x h_mem
-                -- x.qualType.etyp.isArrow (since compatible with arrow)
-                have h_x_arrow : x.qualType.etyp.isArrow := by
-                  -- beqETypSignature returns true only when both are arrows with same st1, st2
-                  cases h_x_etyp : x.qualType.etyp with
-                  | arrow _ _ _ _ =>
-                      simp [ETyp.isArrow]
-                  | parrow _ _ _ _ =>
-                      -- parrow is not compatible with arrow (beqETypSignature returns false)
-                      simp [beqETypSignature, h_x_etyp] at h_x_compat
-                  | int | bool | unit | string =>
-                      -- Non-function types are not compatible with arrow
-                      simp [beqETypSignature, h_x_etyp] at h_x_compat
-                  | ref _ _ =>
-                      -- ref types are not compatible with arrow
-                      simp [beqETypSignature, h_x_etyp] at h_x_compat
-                -- Extract resEtyp from x.qualType
                 cases h_x_qt : x.qualType with
                 | mk resEtyp resPoison resPred =>
-                    have h_resEtyp_eq : x.qualType.etyp = resEtyp := by
-                      rw [h_x_qt]
-                    have h_resEtyp_arrow : resEtyp.isArrow := by
-                      rw [← h_resEtyp_eq]
-                      exact h_x_arrow
-                    have h_resEtyp_compat : beqETypSignature (ETyp.arrow st1 st2 p_acc tcls_acc) resEtyp = true := by
-                      rw [← h_resEtyp_eq]
-                      exact h_x_compat
-                    -- resEtyp must be arrow with same st1, st2 (from compatibility)
-                    have h_resEtyp_arrow_form : ∃ (st1' st2' : Typ) (p2 : Poison) (tcls2 : List FnTClosure),
-                        resEtyp = ETyp.arrow st1' st2' p2 tcls2 := by
-                      cases resEtyp with
+                    have h_fold' := h_fold
+                    simp [List.foldlM_cons, joinStep, h_x_qt, bind, Except.bind] at h_fold'
+                    set acc_new :
+                        (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+                      (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+                        joinMemEnvs acc.2.1 x.memEnv',
+                        joinPoison acc.2.2.1 resPoison,
+                        joinPredicates acc.2.2.2.1 resPred,
+                        joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
+                        joinRegimes acc.2.2.2.2.2.1 x.regime',
+                        max acc.2.2.2.2.2.2.1 x.nextLoc',
+                        max acc.2.2.2.2.2.2.2 x.nextTag') with h_acc_new_def
+                    have h_fold_tail : List.foldlM joinStep acc_new xs = Except.ok acc' := by
+                      simpa [h_acc_new_def] using h_fold'
+                    have h_acc_new_arrow :
+                        ∃ (p' : Poison) (tcls' : List FnTClosure),
+                          acc_new.1 = ETyp.arrow st1 st2 p' tcls' := by
+                      cases h_resEtyp : resEtyp with
                       | arrow st1' st2' p2 tcls2 =>
-                          exact ⟨st1', st2', p2, tcls2, rfl⟩
-                      | _ => simp [ETyp.isArrow] at h_resEtyp_arrow
-                    obtain ⟨st1', st2', p2, tcls2, h_resEtyp_form⟩ := h_resEtyp_arrow_form
-                    -- Compatibility means (st1 == st1' && st2 == st2') = true
-                    have h_sig_eq : (st1 == st1' && st2 == st2') = true := by
-                      rw [h_resEtyp_form] at h_resEtyp_compat
-                      simp only [beqETypSignature] at h_resEtyp_compat
-                      assumption
-                    -- Now show joinETyps preserves arrow structure
-                    have h_join_arrow : ∃ (p' : Poison) (tcls' : List FnTClosure),
-                        joinETyps (ETyp.arrow st1 st2 p_acc tcls_acc) resEtyp acc.2.2.1 resPoison = ETyp.arrow st1 st2 p' tcls' := by
-                      rw [h_resEtyp_form]
-                      simp only [joinETyps]
-                      simp [h_sig_eq, ↓reduceIte]
-                    obtain ⟨p_joined, tcls_joined, h_join_eq⟩ := h_join_arrow
-                    -- Now apply IH on the tail
-                    -- h_fold shows: List.foldlM joinStep acc (x :: xs) = Except.ok acc'
-                    -- Extract the new accumulator from h_fold
-                    simp [List.foldlM_cons, bind, Except.bind] at h_fold
-                    -- h_fold now shows: (joinStep acc x >>= fun acc_new => fold on tail) = Except.ok acc'
-                    -- Extract joinStep result
-                    match h_step_val : joinStep acc x with
-                    | Except.error err =>
-                        simp [h_step_val] at h_fold
-                    | Except.ok acc_new_val =>
-                        sorry -- TODO: Complex arrow type joining - needs updating for regime threading
+                          by_cases hsig : (st1 == st1' && st2 == st2')
+                          · refine ⟨joinPoison p_acc p2, mergeFnTClosures tcls_acc tcls2, ?_⟩
+                            simp [h_acc_new_def, h_acc_arrow, h_resEtyp, joinETyps, hsig]
+                          · refine ⟨p_acc, tcls_acc, ?_⟩
+                            simp [h_acc_new_def, h_acc_arrow, h_resEtyp, joinETyps, hsig]
+                      | _ =>
+                          refine ⟨p_acc, tcls_acc, ?_⟩
+                          simp [h_acc_new_def, h_acc_arrow, h_resEtyp, joinETyps]
+                    obtain ⟨p_new, tcls_new, h_acc_new_arrow_eq⟩ := h_acc_new_arrow
+                    exact ih acc_new p_new tcls_new h_acc_new_arrow_eq h_fold_tail
           -- Apply the helper
           cases hfold :
               List.foldlM joinStep
@@ -2775,17 +2744,11 @@ private lemma joinTypeResults_preserves_arrow_structure
               -- hjoin shows: { qualType := { etyp := a.1, ... }, ... } = res
               -- Extract etyp equality
               have h_res_etyp : res.qualType.etyp = a.1 := by
-                sorry -- TODO: Extract etyp from record equality hjoin
+                cases hjoin
+                rfl
               -- Use h_fold_arrow to show a.1 is arrow
-              have h_compat_all : ∀ r' ∈ rs, beqETypSignature (ETyp.arrow st1 st2 p tcls) r'.qualType.etyp = true := by
-                -- This follows from the signature check passing in hcheck
-                -- hcheck shows that all r' in rs have beqETypSignature etyp r'.qualType.etyp = true
-                -- and etyp = arrow st1 st2 p tcls, so the result follows
-                intro r' h_mem
-                -- Extract from hcheck that beqETypSignature etyp r'.qualType.etyp = true
-                -- This requires unfolding the fold in hcheck
-                sorry -- TODO: Extract from hcheck - need to show foldlM check implies compatibility
-              have h_fold_arrow_result := h_fold_arrow rs (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') a p tcls h_etyp_eq h_compat_all hfold
+              have h_fold_arrow_result :=
+                h_fold_arrow rs (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') a p tcls h_etyp_eq hfold
               obtain ⟨p', tcls', h_a1_arrow⟩ := h_fold_arrow_result
               -- Now show res.qualType.etyp = arrow st1 st2 p' tcls'
               use p', tcls'
