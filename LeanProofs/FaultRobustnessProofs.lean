@@ -4243,8 +4243,7 @@ private lemma stepFR_newRef
                   · intro hbtrue
                     have hholds_old := hconsist_old.1 hbtrue
                     exact (hqtypPredHolds_mem storedQt (Value.num n₀)).1 hholds_old
-                  · intro hbfalse
-                    intro hholds_new
+                  · intro hbfalse hholds_new
                     have hholds_old := (hqtypPredHolds_mem storedQt (Value.num n₀)).2 hholds_new
                     exact (hconsist_old.2 hbfalse) hholds_old
                 exact
@@ -4296,8 +4295,7 @@ private lemma stepFR_newRef
               · intro hbtrue
                 have hholds_old := hcons.1 hbtrue
                 exact (hqtypPredHolds_mem qt (Value.num n)).1 hholds_old
-              · intro hbfalse
-                intro hholds_new
+              · intro hbfalse hholds_new
                 have hholds_old := (hqtypPredHolds_mem qt (Value.num n)).2 hholds_new
                 exact (hcons.2 hbfalse) hholds_old
             have hregR : (ctxAfter ctxᵢ res).regime.lookup? k' = some b := by
@@ -4320,8 +4318,7 @@ private lemma stepFR_newRef
             · intro hbtrue
               have hholds_old := hcons.1 hbtrue
               exact (hqtypPredHolds_mem qt v).1 hholds_old
-            · intro hbfalse
-              intro hholds_new
+            · intro hbfalse hholds_new
               have hholds_old := (hqtypPredHolds_mem qt v).2 hholds_new
               exact (hcons.2 hbfalse) hholds_old
           have hregR : (ctxAfter ctxᵢ res).regime.lookup? k' = some b := by
@@ -4540,8 +4537,7 @@ private lemma stepFR_newRef
                     · intro hbtrue
                       have hholds_old := hconsist_old.1 hbtrue
                       exact (hqtypPredHolds_mem storedQt (Value.num n₁)).1 hholds_old
-                    · intro hbfalse
-                      intro hholds_new
+                    · intro hbfalse hholds_new
                       have hholds_old := (hqtypPredHolds_mem storedQt (Value.num n₁)).2 hholds_new
                       exact (hconsist_old.2 hbfalse) hholds_old
                   exact
@@ -4594,8 +4590,7 @@ private lemma stepFR_newRef
               · intro hbtrue
                 have hholds_old := hcons.1 hbtrue
                 exact (hqtypPredHolds_mem qt (Value.num n)).1 hholds_old
-              · intro hbfalse
-                intro hholds_new
+              · intro hbfalse hholds_new
                 have hholds_old := (hqtypPredHolds_mem qt (Value.num n)).2 hholds_new
                 exact (hcons.2 hbfalse) hholds_old
             exact locsRegime.withPred_ok (l0, qt) k' arg_name pred_body var_env a n b hclos hregR hreal' hmem' hcons'
@@ -4618,8 +4613,7 @@ private lemma stepFR_newRef
             · intro hbtrue
               have hholds_old := hcons.1 hbtrue
               exact (hqtypPredHolds_mem qt v).1 hholds_old
-            · intro hbfalse
-              intro hholds_new
+            · intro hbfalse hholds_new
               have hholds_old := (hqtypPredHolds_mem qt v).2 hholds_new
               exact (hcons.2 hbfalse) hholds_old
           have hvar' : cf₁.varEnv.lookup x = some v := by
