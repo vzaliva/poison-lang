@@ -1122,37 +1122,37 @@ Outputs consist of a final memory $\mu_f$ and a program return value $v$. Observ
 Let $K_S$ be the finite set of guard tags that occur in predicates attached to
 entries of $S$.
 
-A \emph{guard regime} is a bounded partial mapping $R : \text{Tag} \rightharpoonup
+A \emph{guard regime} is a bounded partial mapping $\mathcal{R} : \text{Tag} \rightharpoonup
 \{\text{true},\text{false}\}$ with an associated bound $b \in \text{Tag}$. The regime
 is defined exactly on $K_S$ (assigning a truth value to each tag in $K_S$) and satisfies
-\emph{boundedness}: for all tags $k \geq b$, $R(k)$ is undefined. The bound $b$ is set
+\emph{boundedness}: for all tags $k \geq b$, $\mathcal{R}(k)$ is undefined. The bound $b$ is set
 to the initial tag supply of the typing context, ensuring that regimes classify only
 input/spec tags whilst excluding fresh internal tags introduced during typing (which
 are allocated from the tag supply and thus have tags $\geq b$).
 
-For a single run, we say that $R$ is \emph{consistent} with the critical inputs when:
+For a single run, we say that $\mathcal{R}$ is \emph{consistent} with the critical inputs when:
 \begin{itemize}
   \item if a critical entry has a \emph{guard-only} tag $k$, there is no consistency requirement.
   \item if a critical entry has a predicate \emph{with closure} tagged $k$, the predicate
   is satisfied according to the abstract predicate satisfaction relation iff
-  $R(k)=\text{true}$ (and is not satisfied iff $R(k)=\text{false}$).
+  $\mathcal{R}(k)=\text{true}$ (and is not satisfied iff $\mathcal{R}(k)=\text{false}$).
 \end{itemize}
 \end{definition}
 
 \subsubsection{Regime-Aware Typing}
 
-The type system is parametrised by the guard regime $R$ to enable precise reasoning about fault robustness. The typing judgment has the form:
+The type system is parametrised by the guard regime $\mathcal{R}$ to enable precise reasoning about fault robustness. The typing judgment has the form:
 \[
-  \text{pm} ; R ; \text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
+  \text{pm} ; \mathcal{R} ; \text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
 \]
-where $R$ is the immutable regime parameter threaded unchanged through all typing premises. During normal program execution, the regime is empty ($R = \emptyset$), allowing the type system to conservatively account for all possible runtime guard outcomes. During fault-robustness reasoning, $R$ is instantiated with the fixed guard regime for the two-run scenario, enabling the type system to exploit regime-deterministic guard outcomes.
+where $\mathcal{R}$ is the immutable regime parameter threaded unchanged through all typing premises. During normal program execution, the regime is empty ($\mathcal{R} = \emptyset$), allowing the type system to conservatively account for all possible runtime guard outcomes. During fault-robustness reasoning, $\mathcal{R}$ is instantiated with the fixed guard regime for the two-run scenario, enabling the type system to exploit regime-deterministic guard outcomes.
 
 \paragraph{Regime-aware conditional typing.}
-When typechecking a conditional \texttt{if e1 then e2 else e3} where \texttt{match\_guard} recognises a guard tag $k$, the type system consults $R(k)$:
+When typechecking a conditional \texttt{if e1 then e2 else e3} where \texttt{match\_guard} recognises a guard tag $k$, the type system consults $\mathcal{R}(k)$:
 \begin{itemize}
-  \item \textbf{$R(k) = \text{true}$} (regime-deterministic true): The conditional is treated as effectively selecting the then-branch. The result type and output environments come from the then-branch, and the program counter is not poisoned by the condition. This reflects that in the fault-robustness scenario, both runs are guaranteed to take the then-branch.
-  \item \textbf{$R(k) = \text{false}$} (regime-deterministic false): Symmetrically, the conditional effectively selects the else-branch, with the result type and environments from the else-branch.
-  \item \textbf{$R(k) = \text{none}$} (regime-unknown): The regime does not fix the guard outcome, so both branches may be taken in different fault-robustness runs. The type system conservatively poisons the branch program counter with the condition's poison (as in standard conditionals) and joins the branch results. This ensures that any writes in divergent branches are typed poisoned, preventing violations of the fault-robustness agreement invariant.
+  \item \textbf{$\mathcal{R}(k) = \text{true}$} (regime-deterministic true): The conditional is treated as effectively selecting the then-branch. The result type and output environments come from the then-branch, and the program counter is not poisoned by the condition. This reflects that in the fault-robustness scenario, both runs are guaranteed to take the then-branch.
+  \item \textbf{$\mathcal{R}(k) = \text{false}$} (regime-deterministic false): Symmetrically, the conditional effectively selects the else-branch, with the result type and environments from the else-branch.
+  \item \textbf{$\mathcal{R}(k) = \text{none}$} (regime-unknown): The regime does not fix the guard outcome, so both branches may be taken in different fault-robustness runs. The type system conservatively poisons the branch program counter with the condition's poison (as in standard conditionals) and joins the branch results. This ensures that any writes in divergent branches are typed poisoned, preventing violations of the fault-robustness agreement invariant.
 \end{itemize}
 
 For standard conditionals (where \texttt{match\_guard} fails), the regime is not consulted: both branches are typechecked with a program counter poisoned by the condition, and results are joined.
@@ -1160,15 +1160,15 @@ For standard conditionals (where \texttt{match\_guard} fails), the regime is not
 This regime-aware approach resolves the mismatch between flow-insensitive typing and regime-specific fault-robustness reasoning, enabling the type system to be both validation-friendly (when $R$ is empty) and proof-friendly (when $R$ is instantiated).
 
 \begin{definition}[Fault Robustness Property]
-A program $e$ satisfies fault robustness with respect to the critical-input specification $S$, an observable specification $\text{obs}$, and an abstract predicate satisfaction relation, if for each guard regime $R$ and any two runs with initial states $(\mu_1,\rho_1,\theta_1)$ and $(\mu_2,\rho_2,\theta_2)$:
+A program $e$ satisfies fault robustness with respect to the critical-input specification $S$, an observable specification $\text{obs}$, and an abstract predicate satisfaction relation, if for each guard regime $\mathcal{R}$ and any two runs with initial states $(\mu_1,\rho_1,\theta_1)$ and $(\mu_2,\rho_2,\theta_2)$:
 \begin{itemize}
-    \item \textbf{Well-formedness of the regime:} $R$ is well-formed for $S$ and bounded by the initial tag supply, so it classifies only tags that occur in $S$.
+    \item \textbf{Well-formedness of the regime:} $\mathcal{R}$ is well-formed for $S$ and bounded by the initial tag supply, so it classifies only tags that occur in $S$.
     \item \textbf{Well-formed realisations and configurations:} Both realisation maps are well-formed, and both initial runtime configurations are well-formed.
     \item \textbf{Input conformance:} The two initial states conform to the specification $S$ (critical variables match the specified types, and any critical logical location realised in a run is backed by memory).
     \item \textbf{Context instantiation:} The initial runtime states instantiate the typing context used to check $e$.
     \item \textbf{Regime consistency:} For each critical input, the regime is consistent with predicate satisfaction on that input (for guard-only tags there is no additional consistency requirement; for guarded predicates, satisfaction agrees with the regime's truth value).
-    \item \textbf{Agreement on critical inputs under $R$:} The two runs agree on each critical entry in the manner dictated by the regime and predicate satisfaction.
-    \item \textbf{Agreement on trusted inputs:} The two runs agree on context entries not in $S$ whenever those entries are typed clean under $R$.
+    \item \textbf{Agreement on critical inputs under $\mathcal{R}$:} The two runs agree on each critical entry in the manner dictated by the regime and predicate satisfaction.
+    \item \textbf{Agreement on trusted inputs:} The two runs agree on context entries not in $S$ whenever those entries are typed clean under $\mathcal{R}$.
     \item \textbf{Termination under the chosen evaluation mode:} Both runs terminate under the same evaluation mode, producing final configurations and return values.
 \end{itemize}
 Then there exist final realisation maps $\theta_1'$ and $\theta_2'$ extending $\theta_1$ and $\theta_2$ such that the observable outputs coincide:
@@ -1344,7 +1344,7 @@ configuration for brevity), then the predicate is satisfied for the
 This bidirectional axiom connects the type system's syntactic predicate matching (which
 returns a tag and dependencies) with the abstract satisfaction relation, while
 keeping the semantics \emph{value--sensitive}: the conclusion relates the
-concrete boolean result to predicate satisfaction for the runtime value observed at check time. The bidirectional form is essential for regime-aware typing: when a regime fixes $R(k) = \text{false}$, the type system must conclude that the predicate is \emph{not} satisfied, which requires both directions of the equivalence.
+concrete boolean result to predicate satisfaction for the runtime value observed at check time. The bidirectional form is essential for regime-aware typing: when a regime fixes $\mathcal{R}(k) = \text{false}$, the type system must conclude that the predicate is \emph{not} satisfied, which requires both directions of the equivalence.
 
 \emph{Captured vs. check--time environments.} The predicate closure stores a captured typing environment \(r\), which \texttt{matchGuard} uses on the \emph{syntactic} side of the comparison. The proof layer never evaluates predicate bodies with captured runtime values. Instead, the captured lexical context is encoded in the tag \(k\). The runtime triple \((\mu, \rho, \theta)\) used above is the \emph{check--time} state: it evaluates the condition and determines the concrete value \(v\) (either \(\rho(x)\) or the memory value at the concrete address \(\theta(l)\) for the realised logical location \(l\) selected by the reference). This separation avoids the environment--capture problem whilst preserving value sensitivity.
 
@@ -1366,16 +1366,16 @@ function used by the type checker.
 
 \subsubsection{Relationship to Regimes}
 
-The guard regime $R$ and abstract satisfaction \texttt{PredSat} serve complementary but independent roles:
+The guard regime $\mathcal{R}$ and abstract satisfaction \texttt{PredSat} serve complementary but independent roles:
 
 \begin{itemize}
     \item \textbf{PredSat} (abstract satisfaction): Universally quantified parameter specifying what predicates mean abstractly. Fixed throughout the proof for all regime choices.
-    \item \textbf{Regime $R$} (execution path): Existentially chosen mapping recording which predicates were satisfied for specific runtime values in a particular execution. Different regimes represent different program runs.
+    \item \textbf{Regime $\mathcal{R}$} (execution path): Existentially chosen mapping recording which predicates were satisfied for specific runtime values in a particular execution. Different regimes represent different program runs.
 \end{itemize}
 
 The regime \emph{witnesses} facts about concrete runtime values under the
 abstract \texttt{PredSat}, rather than defining what \texttt{PredSat} means.
-Regime consistency requires that for guard closures, $R(k) = \text{true}$ iff
+Regime consistency requires that for guard closures, $\mathcal{R}(k) = \text{true}$ iff
 \texttt{PredSat} holds for the runtime value, ensuring the regime correctly
 records predicate satisfaction.
 
