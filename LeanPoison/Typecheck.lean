@@ -263,6 +263,23 @@ def generateFreshTag (ctx : TypeContext) : (Tag × TypeContext) :=
 def generateFreshTagRes (result : TypeResult): (Tag × TypeResult) :=
   (result.nextTag', { result with nextTag' := result.nextTag' + 1 })
 
+/-- Advance nextTag past any tag introduced by a Predicate. -/
+def advanceNextTagForPred (pred : Predicate) (nextTag : Tag) : Tag :=
+  match pred with
+  | Predicate.guardClosure k _ _ _ => max nextTag (k + 1)
+  | Predicate.guardOnly k          => max nextTag (k + 1)
+  | Predicate.noPred               => nextTag
+
+/-- Advance nextTag past any tag introduced by a SyntaxPredicate. -/
+def advanceNextTagForSyntaxPred (pred : SyntaxPredicate) (nextTag : Tag) : Tag :=
+  match pred with
+  | SyntaxPredicate.guardClosure k _ _ => max nextTag (k + 1)
+  | SyntaxPredicate.guardOnly k        => max nextTag (k + 1)
+  | SyntaxPredicate.noPred             => nextTag
+
+/-- Advance nextTag past all tags introduced by an effects list. -/
+def advanceNextTagForEffects (effects : List Effect) (nextTag : Tag) : Tag :=
+  effects.foldl (fun acc eff => advanceNextTagForSyntaxPred eff.pred acc) nextTag
 
 -- Helper functions
 
@@ -843,7 +860,7 @@ def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : S
 
   -- Return the qualified type
   return { qualType := qt, memEnv' := ctx'.memEnv, tagEnv' := ctx.tagEnv,
-           nextLoc' := ctx'.nextLoc, nextTag' := ctx.nextTag, regime' := ctx.regime }
+           nextLoc' := ctx'.nextLoc, nextTag' := advanceNextTagForPred qt.pred ctx.nextTag, regime' := ctx.regime }
 
 def parseReturnType (retType : ExternReturn):Typ :=
  match retType with
@@ -1397,21 +1414,21 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             let poison' := joinPoison ctx.pc retQt.poison
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc', nextTag' := result2.nextTag', regime' := result2.regime' }
+                     nextLoc' := nextLoc', nextTag' := advanceNextTagForSyntaxPred pred (advanceNextTagForEffects effects result2.nextTag'), regime' := result2.regime' }
 
         | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
             return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
+                     nextLoc' := nextLoc, nextTag' := advanceNextTagForEffects effects result2.nextTag', regime' := result2.regime' }
 
         | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
             let innerTcl := PFnTClosure.extern innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
             return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
+                     nextLoc' := nextLoc, nextTag' := advanceNextTagForEffects effects result2.nextTag', regime' := result2.regime' }
 termination_by fuel
 
 /-- Helper: Apply a single PFnTClosure and return the result type and updated environments.
@@ -1456,7 +1473,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             let poison' := joinPoison ctx.pc retQt.poison
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc', nextTag' := result2.nextTag', regime' := result2.regime' }
+                     nextLoc' := nextLoc', nextTag' := advanceNextTagForSyntaxPred pred result2.nextTag', regime' := result2.regime' }
 
         | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)

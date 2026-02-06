@@ -3610,6 +3610,32 @@ lemma regime_monotone (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeRes
 
 end regime_monotone_proof
 
+section advanceNextTag_monotone_proof
+
+-- Helper lemmas for advanceNextTag functions monotonicity
+
+lemma advanceNextTagForPred_ge (pred : Predicate) (t : Tag) :
+  t ≤ advanceNextTagForPred pred t := by
+  cases pred with
+  | guardClosure k _ _ _ => simp [advanceNextTagForPred]
+  | guardOnly k => simp [advanceNextTagForPred]
+  | noPred => simp [advanceNextTagForPred]
+
+lemma advanceNextTagForSyntaxPred_ge (pred : SyntaxPredicate) (t : Tag) :
+  t ≤ advanceNextTagForSyntaxPred pred t := by
+  cases pred with
+  | guardClosure k _ _ => simp [advanceNextTagForSyntaxPred]
+  | guardOnly k => simp [advanceNextTagForSyntaxPred]
+  | noPred => simp [advanceNextTagForSyntaxPred]
+
+lemma advanceNextTagForEffects_ge (effects : List Effect) (t : Tag) :
+  t ≤ advanceNextTagForEffects effects t := by
+  induction effects generalizing t with
+  | nil => simp [advanceNextTagForEffects, List.foldl]
+  | cons hd tl ih => exact Nat.le_trans (advanceNextTagForSyntaxPred_ge hd.pred t) (ih _)
+
+end advanceNextTag_monotone_proof
+
 section typecheck_nextTag_mono_proof
 
 -- Helper lemmas for typecheck_nextTag_mono proof
@@ -4229,11 +4255,11 @@ private lemma applyFnTClosure_nextTag_mono
       | nestedFn innerArg innerArgTyp innerRet innerEffects =>
           simp [pure, Except.pure] at happly
           cases happly
-          exact le_rfl
+          exact advanceNextTagForEffects_ge effects r1.nextTag'
       | nestedPfn innerArg innerArgTyp innerRet =>
           simp [pure, Except.pure] at happly
           cases happly
-          exact le_rfl
+          exact advanceNextTagForEffects_ge effects r1.nextTag'
       | simple typ poison pred =>
           simp at happly
           split at happly
@@ -4247,52 +4273,52 @@ private lemma applyFnTClosure_nextTag_mono
                   split at happly
                   · cases happly
                   · cases happly
-                    exact le_rfl
+                    exact Nat.le_trans (advanceNextTagForEffects_ge effects r1.nextTag') (advanceNextTagForSyntaxPred_ge pred (advanceNextTagForEffects effects r1.nextTag'))
                 · simp [pure, Except.pure] at happly
                   cases happly
-                  exact le_rfl
+                  exact Nat.le_trans (advanceNextTagForEffects_ge effects r1.nextTag') (advanceNextTagForSyntaxPred_ge pred (advanceNextTagForEffects effects r1.nextTag'))
             | int =>
                 simp [hret_etyp] at happly
                 split at happly
                 · simp [Functor.map, Except.map] at happly
                 · simp [pure, Except.pure] at happly
                   cases happly
-                  exact le_rfl
+                  exact Nat.le_trans (advanceNextTagForEffects_ge effects r1.nextTag') (advanceNextTagForSyntaxPred_ge pred (advanceNextTagForEffects effects r1.nextTag'))
             | bool =>
                 simp [hret_etyp] at happly
                 split at happly
                 · simp [Functor.map, Except.map] at happly
                 · simp [pure, Except.pure] at happly
                   cases happly
-                  exact le_rfl
+                  exact Nat.le_trans (advanceNextTagForEffects_ge effects r1.nextTag') (advanceNextTagForSyntaxPred_ge pred (advanceNextTagForEffects effects r1.nextTag'))
             | unit =>
                 simp [hret_etyp] at happly
                 split at happly
                 · simp [Functor.map, Except.map] at happly
                 · simp [pure, Except.pure] at happly
                   cases happly
-                  exact le_rfl
+                  exact Nat.le_trans (advanceNextTagForEffects_ge effects r1.nextTag') (advanceNextTagForSyntaxPred_ge pred (advanceNextTagForEffects effects r1.nextTag'))
             | string =>
                 simp [hret_etyp] at happly
                 split at happly
                 · simp [Functor.map, Except.map] at happly
                 · simp [pure, Except.pure] at happly
                   cases happly
-                  exact le_rfl
+                  exact Nat.le_trans (advanceNextTagForEffects_ge effects r1.nextTag') (advanceNextTagForSyntaxPred_ge pred (advanceNextTagForEffects effects r1.nextTag'))
             | arrow arg retTy poison tcls =>
                 simp [hret_etyp] at happly
                 split at happly
                 · simp [Functor.map, Except.map] at happly
                 · simp [pure, Except.pure] at happly
                   cases happly
-                  exact le_rfl
+                  exact Nat.le_trans (advanceNextTagForEffects_ge effects r1.nextTag') (advanceNextTagForSyntaxPred_ge pred (advanceNextTagForEffects effects r1.nextTag'))
             | parrow arg retTy poison tcls =>
                 simp [hret_etyp] at happly
                 split at happly
                 · simp [Functor.map, Except.map] at happly
                 · simp [pure, Except.pure] at happly
                   cases happly
-                  exact le_rfl
+                  exact Nat.le_trans (advanceNextTagForEffects_ge effects r1.nextTag') (advanceNextTagForSyntaxPred_ge pred (advanceNextTagForEffects effects r1.nextTag'))
 
 private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
@@ -4479,7 +4505,7 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                       rw [hret] at happly
                       simp [pure, Except.pure] at happly
                       cases happly
-                      exact le_rfl
+                      exact advanceNextTagForSyntaxPred_ge pred res2.nextTag'
               | nestedFn innerArg innerArgTyp innerRet innerEffects =>
                   simp [pure, Except.pure] at happly
                   cases happly
@@ -4750,10 +4776,10 @@ private lemma typecheckUnaryOp_nextTag_mono (ctx : TypeContext) (op : UnaryOp) (
         _ ≤ result1.nextTag' := IH1
         _ = res.nextTag' := hnexttag.symm
 
--- Helper lemma for typecheckExternVal: always preserves nextTag
-lemma typecheckExternVal_preserves_nextTag (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) (res : TypeResult) :
+-- Helper lemma for typecheckExternVal: nextTag monotonicity
+lemma typecheckExternVal_nextTag_mono (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) (res : TypeResult) :
   typecheckExternVal ctx typ poison pred = .ok res →
-  res.nextTag' = ctx.nextTag := by
+  ctx.nextTag ≤ res.nextTag' := by
   intro htc
   unfold typecheckExternVal at htc
   split at htc
@@ -4768,7 +4794,7 @@ lemma typecheckExternVal_preserves_nextTag (ctx : TypeContext) (typ : Typ) (pois
     | ok result =>
         simp [h, pure, Except.pure] at htc
         cases htc
-        rfl
+        exact advanceNextTagForPred_ge result.1.pred ctx.nextTag
 
 -- Helper lemma for typecheckExternFn: always preserves nextTag
 lemma typecheckExternFn_preserves_nextTag (ctx : TypeContext) (arg : Name) (argTyp : Typ)
@@ -4864,10 +4890,9 @@ private lemma typecheck_nextTag_mono_main : ∀ (ctx : TypeContext) (e : Expr) (
                 subst h_eq
                 exact le_rfl
         | externVal typ poison pred =>
-            -- typecheckExternVal returns nextTag' := ctx.nextTag
+            -- typecheckExternVal advances nextTag past predicate tag
             simp at htc
-            have h_preserve := typecheckExternVal_preserves_nextTag ctx typ poison pred res htc
-            rw [h_preserve]
+            exact typecheckExternVal_nextTag_mono ctx typ poison pred res htc
         | externFn arg argTyp retSpec effects =>
             -- typecheckExternFn returns nextTag' := ctx.nextTag
             simp at htc
