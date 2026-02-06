@@ -1255,7 +1255,10 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
       -- Invalidate dependencies on write (Ott rule: assign)
       let tagEnv' := invalidateTagDeps result2.tagEnv' ls
       let regime' := invalidateRegimeDeps ctx.regime result2.tagEnv' ls
-      return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag', regime' := regime' }
+      -- Bump nextLoc' past all locations in ls to ensure wfTypeResult holds
+      -- (locations may not be in memEnv due to conservative if/while typing)
+      let nextLoc' := LocSet.fold ls result2.nextLoc' (fun acc l => max acc (l + 1))
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := nextLoc', nextTag' := result2.nextTag', regime' := regime' }
     | _ => throw "Left operand of assignment must be a reference"
 termination_by fuel
 
