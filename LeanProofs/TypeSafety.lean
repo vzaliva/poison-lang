@@ -6290,15 +6290,6 @@ lemma typecheck_nextLoc_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : 
   intro htc
   exact typecheck_nextLoc_mono_main ctx e fuel res htc
 
--- Typecheck produces well-formed results if input context is well-formed.
--- This is a key property: typing never introduces locations beyond nextLoc.
--- The proof requires induction over typecheck, showing each rule either:
--- (1) preserves locations from the input context (which are < ctx.nextLoc ≤ res.nextLoc')
--- (2) allocates new locations using nextLoc values (which are < res.nextLoc' by construction)
-lemma typecheck_wfTypeResult (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
-  wfTypeContext ctx → typecheck ctx e fuel = .ok res → wfTypeResult res := by
-  -- TODO: Prove by induction on typecheck, similar pattern to typecheck_nextLoc_mono
-  sorry
 
 -- ================================================================
 -- joinPoison Properties
