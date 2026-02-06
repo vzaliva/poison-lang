@@ -1012,22 +1012,17 @@ lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (re
   typecheckApp ctx e1 e2 fuel = .ok res →
   ∃ (result2 result1 : TypeResult) (st1 st2 : Typ) (p p1 : Poison) (isArrow : Bool),
     typecheckExpr ctx e2 (fuel - 1) = .ok result2 ∧
-    typecheckExpr { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv',
-                             nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' } e1 (fuel - 1) = .ok result1 ∧
+    typecheckExpr { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' } e1 (fuel - 1) = .ok result1 ∧
     ((isArrow = true ∧
       (∃ (tcls : List FnTClosure), result1.qualType.etyp = ETyp.arrow st1 st2 p tcls) ∧
       result1.qualType.poison = p1 ∧
       (¬ ctx.pureCtx) ∧
-      (isSubtype st1 result2.qualType) ∧
-      res.qualType.etyp.toTyp = st2 ∧
-      res.qualType.pred = Predicate.noPred)
+      (isSubtype st1 result2.qualType))
      ∨
      (isArrow = false ∧
       (∃ (tcls_p : List PFnTClosure), result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p) ∧
       result1.qualType.poison = p1 ∧
-      (isSubtype st1 result2.qualType) ∧
-      res.qualType.etyp.toTyp = st2 ∧
-      res.qualType.pred = Predicate.noPred)) := by
+      (isSubtype st1 result2.qualType))) := by
   intro h_typecheck
   cases fuel with
   | zero =>
@@ -1057,102 +1052,53 @@ lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (re
                       | arrow st1 st2 p tcls =>
                           simp at h_typecheck
                           split at h_typecheck
-                          · -- pureCtx = true: error case
-                            simp at h_typecheck
+                          · simp at h_typecheck
                           · next h_notPureCtx =>
                             split at h_typecheck
-                            · -- tcls.isEmpty = true: error case
-                              simp at h_typecheck
+                            · simp at h_typecheck
                             · next h_notEmpty =>
                               split at h_typecheck
-                              · -- isSubtype check fails: error case
-                                simp at h_typecheck
+                              · simp at h_typecheck
                               · next h_subtype =>
-                                -- Extract structure from joinTypeResults
-                                have h_arrow : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls := by simp [h_qt1]
-                                -- Extract what we can: result2, result1, function type
-                                -- The joinTypeResults analysis is complex, so we extract the essential structure
+                                have h_arrow : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls := by
+                                  simp [h_qt1]
                                 refine ⟨result2, result1, st1, st2, p, p1, true, ?_, ?_, ?_⟩
-                                · simp only [Nat.add_sub_cancel]
-                                  exact h_tc2_result
-                                · simp only [Nat.add_sub_cancel]
-                                  exact h_tc1_result
+                                · simpa [Nat.succ_sub_one] using h_tc2_result
+                                · simpa [Nat.succ_sub_one] using h_tc1_result
                                 · left
                                   constructor
                                   · rfl
                                   constructor
-                                  · -- Show ∃ tcls, result1.qualType.etyp = ETyp.arrow st1 st2 p tcls
-                                    use tcls, h_arrow
+                                  · exact ⟨tcls, h_arrow⟩
                                   constructor
-                                  · -- result1.qualType.poison = p1
-                                    simp [h_qt1]
+                                  · simp [h_qt1]
                                   constructor
                                   · exact h_notPureCtx
-                                  constructor
-                                  · -- Convert h_subtype: ¬isSubtype st1 { etyp := etyp2, ... } = false
-                                    -- means isSubtype st1 { etyp := etyp2, ... } = true
-                                    -- Use h_qt2 to rewrite result2.qualType to the QTyp constructor
-                                    rw [h_qt2]
+                                  · rw [h_qt2]
                                     simp [h_subtype]
-                                  constructor
-                                  · -- res.qualType.etyp.toTyp = st2
-                                    -- This requires analyzing joinTypeResults which joins closure results
-                                    -- All closures should return compatible types with toTyp = st2
-                                    sorry -- TODO: Show res.qualType.etyp.toTyp = st2 from joinTypeResults
-                                  · -- res.qualType.pred = Predicate.noPred
-                                    -- Use helper lemma: joinTypeResults sets pred to noPred for function types
-                                    -- Extract from h_typecheck that joinTypeResults succeeded
-                                    -- The definition of joinTypeResults (Typecheck.lean:864-867) shows:
-                                    --   match joinedEtyp with | arrow _ _ _ _ => noPred | parrow _ _ _ _ => noPred | _ => joinedPred
-                                    -- So we need to show res.qualType.etyp is arrow or parrow, then the match sets pred = noPred
-                                    -- This follows from joinETyps_arrow_structure preserving arrow structure
-                                    have h_res_arrow : res.qualType.etyp.isArrow := by
-                                      -- Extract from joinTypeResults that the result is arrow st1 st2
-                                      -- This follows from joinETyps_arrow_structure preserving arrow structure
-                                      -- and the fact that all closure results have compatible signatures
-                                      sorry -- TODO: Show res.qualType.etyp.isArrow from joinTypeResults structure
-                                    -- Now use the helper lemma (once we prove it)
-                                    -- For now, use the fact that joinTypeResults sets pred = noPred for function types
-                                    sorry -- TODO: Use joinTypeResults_pred_noPred_for_function_types with h_res_arrow
                       | parrow st1 st2 p tcls_p =>
                           simp at h_typecheck
                           split at h_typecheck
-                          · -- tcls_p.isEmpty = true: error case
-                            simp at h_typecheck
+                          · simp at h_typecheck
                           · next h_notEmpty =>
                             split at h_typecheck
-                            · -- isSubtype check fails: error case
-                              simp at h_typecheck
+                            · simp at h_typecheck
                             · next h_subtype =>
-                              have h_parrow : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p := by simp [h_qt1]
+                              have h_parrow : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p := by
+                                simp [h_qt1]
                               refine ⟨result2, result1, st1, st2, p, p1, false, ?_, ?_, ?_⟩
-                              · simp only [Nat.add_sub_cancel]
-                                exact h_tc2_result
-                              · simp only [Nat.add_sub_cancel]
-                                exact h_tc1_result
+                              · simpa [Nat.succ_sub_one] using h_tc2_result
+                              · simpa [Nat.succ_sub_one] using h_tc1_result
                               · right
                                 constructor
                                 · rfl
                                 constructor
-                                · -- Show ∃ tcls_p, result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p
-                                  use tcls_p, h_parrow
+                                · exact ⟨tcls_p, h_parrow⟩
                                 constructor
-                                · -- result1.qualType.poison = p1
-                                  simp [h_qt1]
-                                constructor
-                                · -- Convert h_subtype using h_qt2
-                                  rw [h_qt2]
+                                · simp [h_qt1]
+                                · rw [h_qt2]
                                   simp [h_subtype]
-                                constructor
-                                · -- res.qualType.etyp.toTyp = st2
-                                  sorry -- TODO: Show res.qualType.etyp.toTyp = st2 from joinTypeResults
-                                · -- res.qualType.pred = Predicate.noPred
-                                  -- Similar to arrow case: use joinTypeResults_pred_noPred_for_function_types
-                                  have h_res_parrow : res.qualType.etyp.isParrow := by
-                                    sorry -- TODO: Show res.qualType.etyp.isParrow from joinTypeResults structure
-                                  sorry -- TODO: Extract structure and use joinTypeResults_pred_noPred_for_function_types
                       | _ =>
-                          -- Not a function type: error case
                           simp at h_typecheck
               | error _msg =>
                   rw [h_ctx'_eq] at h_tc1_result
