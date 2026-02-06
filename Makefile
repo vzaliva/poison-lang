@@ -1,4 +1,4 @@
-.PHONY: all clean test poison-lang-spec lean-build lean-clean parser parser-clean cache cache-refresh distclean
+.PHONY: all clean test poison-lang-spec lean-build lean-build-file lean-clean run run-verbose parser parser-clean cache cache-refresh distclean
 
 all: poison-lang-spec lean-build parser 
 
@@ -44,6 +44,24 @@ cache-refresh:
 
 lean-build: cache config.json
 	lake build
+
+# Build a single Lean file. FILE = module name (e.g. LeanProofs.FaultRobustness) or path (e.g. LeanProofs/FaultRobustness.lean)
+# Example: make lean-build-file FILE=LeanProofs/FaultRobustness.lean
+# Example: make lean-build-file FILE=LeanProofs.FaultRobustness
+lean-build-file: cache config.json
+	@if [ -z "$(FILE)" ]; then echo "Usage: make lean-build-file FILE=LeanProofs/FaultRobustness.lean"; exit 1; fi
+	@MODULE=$$(echo "$(FILE)" | sed 's|/|.|g' | sed 's|\.lean$$||'); lake build $$MODULE
+
+# Run a .poison file. POISON = path to .poison file.
+# Example: make run POISON=examples/foo.poison
+run: cache
+	@if [ -z "$(POISON)" ]; then echo "Usage: make run POISON=path/to/file.poison"; exit 1; fi
+	lake build poison-interpreter && lake exe poison-interpreter "$(POISON)"
+
+# Run a .poison file with verbose output.
+run-verbose: cache
+	@if [ -z "$(POISON)" ]; then echo "Usage: make run-verbose POISON=path/to/file.poison"; exit 1; fi
+	lake build poison-interpreter && lake exe poison-interpreter --verbose "$(POISON)"
 
 lean-clean:
 	lake clean
