@@ -5061,6 +5061,17 @@ private lemma typecheckNewRef_nextLoc_mono (ctx : TypeContext) (e : Expr) (fuel 
         _ ≤ result1.nextLoc' + 1 := Nat.le_succ result1.nextLoc'
         _ = res.nextLoc' := hnextloc.symm
 
+-- Helper lemma: List.foldl preserves initial value as lower bound when step function is monotone
+private lemma List.foldl_ge_init_of_step_ge {α β : Type*} [Preorder α] {f : α → β → α}
+    (h : ∀ acc x, acc ≤ f acc x) (init : α) (l : List β) :
+    init ≤ List.foldl f init l := by
+  induction l generalizing init with
+  | nil => rfl
+  | cons x xs ih =>
+      calc init
+        _ ≤ f init x := h init x
+        _ ≤ List.foldl f (f init x) xs := ih (f init x)
+
 -- Helper lemma for typecheckAssign: nextLoc' is at least result2.nextLoc'
 lemma typecheckAssign_preserves_nextLoc (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckAssign ctx e1 e2 fuel = .ok res →
@@ -5074,19 +5085,12 @@ lemma typecheckAssign_preserves_nextLoc (ctx : TypeContext) (e1 e2 : Expr) (fuel
   rcases hstruct with ⟨result1, result2, ls, htc1, _hetyp1, htc2, _hetyp2, hnextloc, _hnexttag, _⟩
   let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
   have h_ineq : result2.nextLoc' ≤ LocSet.fold ls result2.nextLoc' (fun acc l => max acc (l + 1)) := by
-    -- The fold function (fun acc l => max acc (l + 1)) satisfies: max acc (l + 1) >= acc
-    -- Since LocSet.fold is ExtTreeSet.foldl, and each step preserves >=, the result is >= init
-    -- This follows from: if f acc >= acc for all acc, then foldl f init s >= init
-    -- We prove this by induction on the structure of the set
     have h_mono : ∀ acc l, acc ≤ max acc (l + 1) := by
       intro acc l
       exact Nat.le_max_left acc (l + 1)
-    -- For ExtTreeSet.foldl, we need to show that applying a monotone function preserves >=
-    -- This is a standard property of fold operations
     unfold LocSet.fold
-    -- The proof requires showing that foldl with a monotone function is monotone
-    -- This can be proven by induction, but we use sorry for now
-    sorry  -- TODO: prove ExtTreeSet.foldl monotonicity: if ∀ acc, f acc >= acc, then foldl f init s >= init
+    rw [ExtTreeSet.foldl_eq_foldl_toList]
+    exact List.foldl_ge_init_of_step_ge h_mono result2.nextLoc' ls.toList
   -- Rewrite res.nextLoc' using hnextloc to match h_ineq
   rw [hnextloc]
   exact ⟨result1, result2, ctx', htc1, rfl, htc2, h_ineq⟩
