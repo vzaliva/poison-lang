@@ -1788,6 +1788,7 @@ theorem preservation_valueW (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeC
     wfExtendsMap θ₀ θ₁ →
     runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ →
     runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁ θ₁ →
+    wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ } →
     terminatesToW mode w₀ w₁ e
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ }
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm₁ } v →

@@ -4821,11 +4821,11 @@ private lemma stepFR_vlet
   have hv₀1_typed : valueHasETyp θ₀1 v₀1 res1.qualType.etyp :=
     (preservation_valueW .ioFree e1 ctxᵢ fuel' res1 μ₀ cfg₀1.memory ρ₀ cfg₀1.varEnv θ₀ θ₀1
       a₀ cfg₀1.nextAddr pm cfg₀1.pureMode v₀1 w_default w_default
-      hwf htc1' hθ₀ hθ₀1wf hθext₀1 hric₀ hric₀1_mem ht₀_e1_w).1
+      hwf htc1' hθ₀ hθ₀1wf hθext₀1 hric₀ hric₀1_mem hwfcfg₀ ht₀_e1_w).1
   have hv₁1_typed : valueHasETyp θ₁1 v₁1 res1.qualType.etyp :=
     (preservation_valueW .ioFree e1 ctxᵢ fuel' res1 μ₁ cfg₁1.memory ρ₁ cfg₁1.varEnv θ₁ θ₁1
       a₁ cfg₁1.nextAddr pm cfg₁1.pureMode v₁1 w_default w_default
-      hwf htc1' hθ₁ hθ₁1wf hθext₁1 hric₁ hric₁1_mem ht₁_e1_w).1
+      hwf htc1' hθ₁ hθ₁1wf hθext₁1 hric₁ hric₁1_mem hwfcfg₁ ht₁_e1_w).1
   have hv₀1_wf : wfValue cfg₀1.nextAddr v₀1 :=
     (wfConfig_preservedW .ioFree w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1_w hwfcfg₀).2
   have hv₁1_wf : wfValue cfg₁1.nextAddr v₁1 :=

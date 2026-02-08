@@ -27,6 +27,7 @@ def Preservation (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : P
     typecheck ctx e fuel_tc = .ok res →
     wfRealizationMap θ₀ →
     runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ →
+    wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ } →
     terminatesTo mode e { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
                    { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ } v →
     -- Post-conditions:
@@ -38,4 +39,5 @@ def Preservation (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : P
       wfExtendsMap θ₀ θ₁ ∧
       valueHasETyp θ₁ v res.qualType.etyp ∧
       wfTypeResult res ∧
-      runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁ θ₁
+      runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁ θ₁ ∧
+      wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := l₁, pureMode := pm₁ }
