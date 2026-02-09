@@ -1945,17 +1945,25 @@ private lemma valueHasETyp_extends
   valueHasETyp θ₀ v t →
   valueHasETyp θ₁ v t := by
   intro hExt hval
-  cases hval with
-  | num n => exact valueHasETyp.num n
-  | bool b => exact valueHasETyp.bool b
-  | unit => exact valueHasETyp.unit
-  | str s => exact valueHasETyp.str s
+  induction hval generalizing θ₁ with
+  | num n =>
+      exact valueHasETyp.num n
+  | bool b =>
+      exact valueHasETyp.bool b
+  | unit =>
+      exact valueHasETyp.unit
+  | str s =>
+      exact valueHasETyp.str s
   | loc hlookup hin =>
       exact valueHasETyp.loc (hExt _ _ hlookup) hin
-  | closure x e env st1 st2 p tcl =>
-      exact valueHasETyp.closure x e env st1 st2 p tcl
-  | peClosure x pe env st1 st2 p tcl =>
-      exact valueHasETyp.peClosure x pe env st1 st2 p tcl
+  | closure htcl henv ih =>
+      refine valueHasETyp.closure (htcl := htcl) ?_
+      intro y qt v hlookupT hlookupV
+      exact ih y qt v hlookupT hlookupV hExt
+  | peClosure hpure htcl henv ih =>
+      refine valueHasETyp.peClosure (hpure := hpure) (htcl := htcl) ?_
+      intro y qt v hlookupT hlookupV
+      exact ih y qt v hlookupT hlookupV hExt
 
 private lemma agreeValueUnder_clean_extends
   {predSat : PredSat} {R : Regime} {μ₀ μ₁ μ₀' μ₁' : Memory}

@@ -304,10 +304,17 @@ inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
       (hlookup : θ.lookup l = some a)
       (hin : l ∈ ls) :
       valueHasETyp θ (Value.loc a) (ETyp.ref t ls)
-  | closure (x e env st1 st2 p tcl):
+  | closure {x e env st1 st2 p tcl} {tenv : CapturedVarEnv}
+      (htcl : FnTClosure.regular x e tenv ∈ tcl)
+      (henv : ∀ y qt v, tenv.lookup y = some qt →
+        env.lookup y = some v → valueHasETyp θ v qt.etyp) :
       valueHasETyp θ (Value.closure x e env) (ETyp.arrow st1 st2 p tcl)
-  | peClosure (x pe env st1 st2 p tcl):
-      valueHasETyp θ (Value.peClosure x pe env) (ETyp.parrow st1 st2 p tcl)
+  | peClosure {x body env st1 st2 p tcl} {pbody : PExpr} {tenv : CapturedVarEnv}
+      (hpure : Expr.toPExpr? body = some pbody)
+      (htcl : PFnTClosure.regular x pbody tenv ∈ tcl)
+      (henv : ∀ y qt v, tenv.lookup y = some qt →
+        env.lookup y = some v → valueHasETyp θ v qt.etyp) :
+      valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcl)
 
 -- ================================================================
 -- Runtime Context Instantiation
@@ -327,6 +334,31 @@ def runtimeInstantiatesCtx (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ :
   (∀ l a, θ.lookup l = some a → ctx.memEnv.contains l ∧ μ.contains a) ∧
   (∀ {x qt}, ctx.varEnv.lookup x = some qt →
      ∃ v, ρ.lookup x = some v ∧ valueHasETyp θ v qt.etyp)
+
+/-- Future-use lemma for preservation proofs:
+    when typing joins function closure sets (e.g. branch joins / merged alternatives),
+    transport a concrete closure-typing witness to the larger closure list. -/
+lemma valueHasETyp_closure_weaken_tcl
+    {θ : RealizationMap} {x : Name} {e : Expr} {env : VarEnv}
+    {st1 st2 : Typ} {p₁ p₂ : Poison} {tcls₁ tcls₂ : List FnTClosure}
+    (h : valueHasETyp θ (Value.closure x e env) (ETyp.arrow st1 st2 p₁ tcls₁))
+    (hsub : ∀ tc, tc ∈ tcls₁ → tc ∈ tcls₂) :
+    valueHasETyp θ (Value.closure x e env) (ETyp.arrow st1 st2 p₂ tcls₂) := by
+  cases h with
+  | closure htcl henv =>
+      exact valueHasETyp.closure (htcl := hsub _ htcl) (henv := henv)
+
+/-- Future-use lemma for preservation proofs:
+    pure analogue of `valueHasETyp_closure_weaken_tcl` for joined parrow closure sets. -/
+lemma valueHasETyp_peClosure_weaken_tcl
+    {θ : RealizationMap} {x : Name} {body : Expr} {env : VarEnv}
+    {st1 st2 : Typ} {p₁ p₂ : Poison} {tcls₁ tcls₂ : List PFnTClosure}
+    (h : valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p₁ tcls₁))
+    (hsub : ∀ tc, tc ∈ tcls₁ → tc ∈ tcls₂) :
+    valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p₂ tcls₂) := by
+  cases h with
+  | peClosure hpure htcl henv =>
+      exact valueHasETyp.peClosure (hpure := hpure) (htcl := hsub _ htcl) (henv := henv)
 
 -- ================================================================
 -- Helper Lemmas
