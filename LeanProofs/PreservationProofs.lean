@@ -10,6 +10,7 @@ import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.Preservation
+import LeanProofs.RegimeConsistency
 import LeanProofs.TypeSafety
 import LeanProofs.SemanticsProperties
 import LeanProofs.Properties
@@ -1769,6 +1770,25 @@ theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx :=
 
 -/
 
+/-- OPTIONAL proof helper (private): suggested way to avoid repeating the same
+    branch-alignment argument in each `if` proof case.
+    Derived from existing FR assumptions: `PredSatLaws.match_iff` + `consistentWithRegime`. -/
+private lemma guard_branch_alignment
+    (predSat : PredSat) (mode : LeanPoison.EvalMode)
+    (ctx : TypeContext) (μ₀ : Memory) (ρ₀ : VarEnv) (θ₀ : RealizationMap)
+    (l₀ : Address) (pm₀ : Bool)
+    (hric : runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀)
+    (hpred : PredSatLaws predSat)
+    (hcwr : consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀)
+    (cond : Expr) (k : Tag) (deps : Deps) (b b' : Bool) (cfg' : Config) :
+    matchGuard cond ctx.memEnv ctx.varEnv = .ok (k, deps) →
+    ctx.regime.lookup? k = some b →
+    terminatesTo mode cond
+      { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+      cfg' (Value.bool b') →
+    b' = b := by
+  sorry
+
 -- Placeholder for the main preservation theorem (to be completed later).
 theorem preservation (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : Preservation mode e ctx := by
   sorry
@@ -1780,13 +1800,16 @@ theorem preservation (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext)
 theorem preservation_valueW (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) :
   ∀ (fuel_tc : Nat) (res : TypeResult)
     (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
-    (a₀ a₁ : Address) (pm₀ pm₁ : Bool) (v : Value) (w₀ w₁ : Void IO.RealWorld),
+    (a₀ a₁ : Address) (pm₀ pm₁ : Bool) (v : Value) (w₀ w₁ : Void IO.RealWorld)
+    (predSat : PredSat),
     wfTypeContext ctx →
     typecheck ctx e fuel_tc = .ok res →
     wfRealizationMap θ₀ →
     wfRealizationMap θ₁ →
     wfExtendsMap θ₀ θ₁ →
     runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ →
+    PredSatLaws predSat →
+    consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀ →
     runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁ θ₁ →
     wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ } →
     terminatesToW mode w₀ w₁ e
