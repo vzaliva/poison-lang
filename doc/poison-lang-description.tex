@@ -767,7 +767,7 @@ Key aspects of function application:
     \item The function body is typed using the captured context extended with the actual argument's qualified type
     \item The argument's qualified type includes predicates, enabling de-poisoning in the function body
     \item The current logical environment is used, allowing guard-based de-poisoning
-    \item The result poison reflects any de-poisoning that occurred in the function body
+    \item The result poison includes the caller's \(pc\), the function's internal poison \(p\), the function expression's outer poison \(p_1\), and the body result poison; it reflects any de-poisoning that occurred in the function body
     \item For function results, the outer predicate is reset to \texttt{no\_pred}; for non-function results, predicates are preserved or joined
 \end{itemize}
 

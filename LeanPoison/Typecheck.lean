@@ -1365,7 +1365,10 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         if not (isSubtype st2 result3.qualType) then
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
-        return result3
+        -- Issue #111: taint app result by function poison (p, p1)
+        let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
+        let taintedQt := { result3.qualType with poison := taintedPoison }
+        return { result3 with qualType := taintedQt }
 
     | FnTClosure.extern x retSpec effects capturedEnv =>
         -- Extern function application (simplified - returns immediately)
@@ -1414,7 +1417,8 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
                 if hasReturnEffect then
                   throw "Effect on 'return' is only valid when return type is a reference"
 
-            let poison' := joinPoison ctx.pc retQt.poison
+            -- Issue #111: taint app result by function poison (p, p1)
+            let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := advanceNextTagForSyntaxPred pred (advanceNextTagForEffects effects result2.nextTag'), regime' := result2.regime' }
@@ -1422,14 +1426,18 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
-            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            -- Issue #111: taint app result by function poison (p, p1)
+            let poison' := joinPoison p1 (joinPoison p ctx.pc)
+            let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := advanceNextTagForEffects effects result2.nextTag', regime' := result2.regime' }
 
         | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
             let innerTcl := PFnTClosure.extern innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
-            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            -- Issue #111: taint app result by function poison (p, p1)
+            let poison' := joinPoison p1 (joinPoison p ctx.pc)
+            let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := advanceNextTagForEffects effects result2.nextTag', regime' := result2.regime' }
 termination_by fuel
@@ -1459,7 +1467,10 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
         if not (isSubtype st2 result3.qualType) then
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
-        return result3
+        -- Issue #111: taint app result by function poison (p, p1)
+        let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
+        let taintedQt := { result3.qualType with poison := taintedPoison }
+        return { result3 with qualType := taintedQt }
 
     | PFnTClosure.extern x retSpec capturedEnv =>
         -- Extern pure function application (no effects)
@@ -1473,7 +1484,8 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
         | ExternReturn.simple typ poison pred =>
             let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
 
-            let poison' := joinPoison ctx.pc retQt.poison
+            -- Issue #111: taint app result by function poison (p, p1)
+            let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := advanceNextTagForSyntaxPred pred result2.nextTag', regime' := result2.regime' }
@@ -1481,14 +1493,18 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
         | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
-            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            -- Issue #111: taint app result by function poison (p, p1)
+            let poison' := joinPoison p1 (joinPoison p ctx.pc)
+            let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
 
         | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
             let innerTcl := PFnTClosure.extern innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
-            let qt := ⟨innerArrowTyp, ctx.pc, Predicate.noPred⟩
+            -- Issue #111: taint app result by function poison (p, p1)
+            let poison' := joinPoison p1 (joinPoison p ctx.pc)
+            let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
 termination_by fuel
