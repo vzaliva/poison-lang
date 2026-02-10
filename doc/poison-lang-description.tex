@@ -768,8 +768,11 @@ Key aspects of function application:
     \item The argument's qualified type includes predicates, enabling de-poisoning in the function body
     \item The current logical environment is used, allowing guard-based de-poisoning
     \item The result poison includes the caller's \(pc\), the function's internal poison \(p\), the function expression's outer poison \(p_1\), and the body result poison; it reflects any de-poisoning that occurred in the function body
-    \item For function results, the outer predicate is reset to \texttt{no\_pred}; for non-function results, predicates are preserved or joined
+    \item For function results, the outer predicate is reset to \texttt{no\_pred}; for non-function results, predicates are preserved or joined, unless the function expression's outer poison \(p_1\) is set (provenance gate)
+    \item When \(p_1\) is set, the application result is irrecoverably poisoned with no predicate: neither predicates nor tag/regime-based de-poisoning may be applied to such a result
 \end{itemize}
+
+Provenance normalization ensures that a value obtained by applying a corrupted function (one whose outer poison \(p_1\) is set) is irrecoverably tainted, regardless of what predicates the function body produces. This prevents backdoor de-poisoning of provenance-tainted results via predicate satisfaction.
 
 For general merged closure sets, the type system applies the same scheme to
 every closure alternative in the set, requires all result types to be

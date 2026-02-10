@@ -1339,6 +1339,11 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
 termination_by fuel
 
 
+/-- Issue #113: when p1 (function outer poison) is true, the application result
+    is irrecoverably poisoned with no predicate. -/
+def normalizeAppResultByProvenance (p1 : Poison) (qt : QTyp) : QTyp :=
+  if p1 then { qt with poison := true, pred := Predicate.noPred } else qt
+
 /-- Helper: Apply a single FnTClosure and return the result type and updated environments.
     This encapsulates the body typing logic for a single closure alternative.
 -/
@@ -1366,9 +1371,10 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Issue #111: taint app result by function poison (p, p1)
+        -- Issue #113: provenance gate - if p1, force irrecoverable poison and no_pred
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
-        return { result3 with qualType := taintedQt }
+        return { result3 with qualType := normalizeAppResultByProvenance p1 taintedQt }
 
     | FnTClosure.extern x retSpec effects capturedEnv =>
         -- Extern function application (simplified - returns immediately)
@@ -1418,27 +1424,33 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
                   throw "Effect on 'return' is only valid when return type is a reference"
 
             -- Issue #111: taint app result by function poison (p, p1)
+            -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
-            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := advanceNextTagForSyntaxPred pred (advanceNextTagForEffects effects result2.nextTag'), regime' := result2.regime' }
 
         | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             -- Issue #111: taint app result by function poison (p, p1)
+            -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
-            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := advanceNextTagForEffects effects result2.nextTag', regime' := result2.regime' }
 
         | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
             let innerTcl := PFnTClosure.extern innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             -- Issue #111: taint app result by function poison (p, p1)
+            -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
-            return { qualType := qt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := advanceNextTagForEffects effects result2.nextTag', regime' := result2.regime' }
 termination_by fuel
 
@@ -1468,9 +1480,10 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Issue #111: taint app result by function poison (p, p1)
+        -- Issue #113: provenance gate - if p1, force irrecoverable poison and no_pred
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
-        return { result3 with qualType := taintedQt }
+        return { result3 with qualType := normalizeAppResultByProvenance p1 taintedQt }
 
     | PFnTClosure.extern x retSpec capturedEnv =>
         -- Extern pure function application (no effects)
@@ -1485,27 +1498,33 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             let (retQt, nextLoc') ← returnSpecToQTyp typ poison pred unifiedEnv nextLoc
 
             -- Issue #111: taint app result by function poison (p, p1)
+            -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
-            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := advanceNextTagForSyntaxPred pred result2.nextTag', regime' := result2.regime' }
 
         | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             -- Issue #111: taint app result by function poison (p, p1)
+            -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
-            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
 
         | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
             let innerTcl := PFnTClosure.extern innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             -- Issue #111: taint app result by function poison (p, p1)
+            -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
-            return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
 termination_by fuel
 

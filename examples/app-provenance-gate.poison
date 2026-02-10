@@ -1,0 +1,11 @@
+-- Issue #113: provenance-poisoned function clears predicate in result.
+-- The function body returns frand 0 (guarded), but since the function
+-- itself is poisoned (via if-on-poisoned-condition), the guard predicate
+-- must be stripped from the application result.
+let sensor = frand 0 in
+let f = if sensor > 0 then
+  fn x : int => frand 0 : int
+else
+  fn x : int => frand 0 : int
+in
+f 42
