@@ -1770,25 +1770,6 @@ theorem preservation (e : Expr) (ctx : TypeContext) : Preservation e ctx :=
 
 -/
 
-/-- OPTIONAL proof helper (private): suggested way to avoid repeating the same
-    branch-alignment argument in each `if` proof case.
-    Derived from existing FR assumptions: `PredSatLaws.match_iff` + `consistentWithRegime`. -/
-private lemma guard_branch_alignment
-    (predSat : PredSat) (mode : LeanPoison.EvalMode)
-    (ctx : TypeContext) (μ₀ : Memory) (ρ₀ : VarEnv) (θ₀ : RealizationMap)
-    (l₀ : Address) (pm₀ : Bool)
-    (hric : runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀)
-    (hpred : PredSatLaws predSat)
-    (hcwr : consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀)
-    (cond : Expr) (k : Tag) (deps : Deps) (b b' : Bool) (cfg' : Config) :
-    matchGuard cond ctx.memEnv ctx.varEnv = .ok (k, deps) →
-    ctx.regime.lookup? k = some b →
-    terminatesTo mode cond
-      { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
-      cfg' (Value.bool b') →
-    b' = b := by
-  sorry
-
 -- Placeholder for the main preservation theorem (to be completed later).
 theorem preservation (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : Preservation mode e ctx := by
   sorry

@@ -6051,6 +6051,306 @@ private lemma stepFR_pfn
 
 section TypeSystemEnforcesFaultRobustness_IOFree_proof
 
+/-- Optional local helper for the `ite` FR modes.
+    Shows the guard evaluation boolean is aligned with the regime value once
+    `matchGuard` succeeds and an owner witness is available.
+
+    NOTE: `howner` is the runtime owner-witness needed by `PredSatLaws.match_iff`
+    (premise (iii)). At intended call sites, derive it via bridge lemmas:
+    `matchGuard_ok_owner_in_ctx` then `owner_in_ctx_to_runtime`.
+    Sketch:
+    `matchGuard_ok_owner_in_ctx`:
+      `matchGuard cond ctx.memEnv ctx.varEnv = .ok (k,deps) →`
+      `∃ owner, ownerHasGuardTagInCtx ctx cond k owner`
+    `owner_in_ctx_to_runtime`:
+      `runtimeInstantiatesCtx ctx μ ρ θ → ownerHasGuardTagInCtx ctx cond k owner →`
+      `∃ v, ownerWitnessAtRuntime owner μ ρ θ v`
+    This helper itself does not need `runtimeInstantiatesCtx`; that premise
+    is expected while constructing `howner` via the bridge lemmas. -/
+private lemma guard_branch_alignment
+    (predSat : PredSat) (mode : LeanPoison.EvalMode)
+    (ctx : TypeContext) (μ₀ : Memory) (ρ₀ : VarEnv) (θ₀ : RealizationMap)
+    (l₀ : Address) (pm₀ : Bool)
+    (hpred : PredSatLaws predSat)
+    (hcwr : consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀)
+    (cond : Expr) (k : Tag) (deps : Deps) (b b' : Bool) (cfg' : Config)
+    (howner :
+      ∃ v,
+        ( (∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+            ctx.varEnv.lookup x = some qt ∧
+            qt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
+            ρ₀.lookup x = some v)
+          ∨
+          (∃ (x : Name) (qt memQt : QTyp) (t : ETyp) (ls : LocSet) (l0 : Loc) (a : Address) (n : Int)
+              (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+            ctx.varEnv.lookup x = some qt ∧
+            qt.etyp = ETyp.ref t ls ∧
+            l0 ∈ ls ∧
+            ctx.memEnv.lookup l0 = some memQt ∧
+            memQt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
+            θ₀.lookup l0 = some a ∧
+            μ₀.lookup a = some n ∧
+            v = Value.num n) ) ) :
+    matchGuard cond ctx.memEnv ctx.varEnv = .ok (k, deps) →
+    ctx.regime.lookup? k = some b →
+    terminatesTo mode cond
+      { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+      cfg' (Value.bool b') →
+    b' = b := by
+  intro hmatch hregime hterm
+  rcases howner with ⟨v, hv_owner⟩
+  have hmatch_iff_v : (b' = true ↔ predSat k μ₀ v) := by
+    apply hpred.match_iff mode cond ctx.memEnv ctx.varEnv k deps
+      μ₀ ρ₀ θ₀ l₀ pm₀ cfg' v b'
+    · exact hmatch
+    · exact hterm
+    · cases hv_owner with
+      | inl hvar =>
+          rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred_qt, hvar⟩
+          left
+          refine ⟨x, qt, hlookup, ?_, hvar⟩
+          simp [qtypGuardTag, hpred_qt]
+      | inr href =>
+          rcases href with
+            ⟨x, qt, memQt, t, ls, l0, a, n, arg_name, pred_body, var_env,
+              hlookup, hetyp, hIn, hlookupMem, hpred_memQt, hθ, hμ, hv⟩
+          right
+          refine ⟨x, qt, memQt, t, ls, l0, a, n, hlookup, hetyp, hIn, hlookupMem, ?_, hθ, hμ, hv⟩
+          simp [qtypGuardTag, hpred_memQt]
+  have hRdef : ctx.regime.lookup? k ≠ none := by
+    simp [hregime]
+  have hpred_implies_lookup_true : predSat k μ₀ v → ctx.regime.lookup? k = some true := by
+    intro hsat
+    cases hv_owner with
+    | inl hvar =>
+        rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred_qt, hvar⟩
+        have htag_qt : qtypGuardTag qt = some k := by
+          simp [qtypGuardTag, hpred_qt]
+        have hvr : varsRegime predSat ctx.regime μ₀ ρ₀ (x, qt) :=
+          hcwr.2 x qt k hlookup htag_qt hRdef
+        cases hvr with
+        | noPred_ok hnp =>
+            exfalso
+            simp [qtypGuardTag, hpred_qt] at hnp
+        | guardOnly_ok _k hgo =>
+            exfalso
+            simp [hpred_qt] at hgo
+        | withPred_ok k1 arg_name1 pred_body1 var_env1 v1 b1 hclos hregime1 hvar1 hconsist =>
+            have hk : k1 = k := by
+              have hEq :
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 =
+                  Predicate.guardClosure k arg_name pred_body var_env := by
+                calc
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 = qt.pred := by
+                    symm; exact hclos
+                  _ = Predicate.guardClosure k arg_name pred_body var_env := hpred_qt
+              cases hEq
+              rfl
+            have hv1 : v1 = v := by
+              have : some v1 = some v := by simpa [hvar1] using hvar
+              exact Option.some.inj this
+            by_cases hb1t : b1 = true
+            ·
+              have hlookup_k_b1 : ctx.regime.lookup? k = some b1 := by
+                simpa [hk] using hregime1
+              simpa [hb1t] using hlookup_k_b1
+            · have hb1f : b1 = false := by
+                cases b1 <;> simp at hb1t ⊢
+              have hnot : ¬ qtypPredHolds predSat qt μ₀ v1 := hconsist.2 hb1f
+              have hsat1 : predSat k1 μ₀ v1 := by
+                simpa [hk, hv1] using hsat
+              have hholds : qtypPredHolds predSat qt μ₀ v1 :=
+                qtypPredHolds.guardClosure_ok hclos hsat1
+              exact False.elim (hnot hholds)
+    | inr href =>
+        rcases href with
+          ⟨x, qt, memQt, t, ls, l0, a, n, arg_name, pred_body, var_env,
+            hlookup, hetyp, hIn, hlookupMem, hpred_memQt, hθ, hμ, hv⟩
+        have htag_memQt : qtypGuardTag memQt = some k := by
+          simp [qtypGuardTag, hpred_memQt]
+        have hlr : locsRegime predSat ctx.regime μ₀ θ₀ (l0, memQt) :=
+          hcwr.1 l0 memQt k hlookupMem htag_memQt hRdef
+        cases hlr with
+        | noPred_ok hnp =>
+            exfalso
+            simp [qtypGuardTag, hpred_memQt] at hnp
+        | guardOnly_ok _k hgo =>
+            exfalso
+            simp [hpred_memQt] at hgo
+        | withPred_ok k1 arg_name1 pred_body1 var_env1 a1 n1 b1 hclos hregime1 hreal hmem hconsist =>
+            have hk : k1 = k := by
+              have hEq :
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 =
+                  Predicate.guardClosure k arg_name pred_body var_env := by
+                calc
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 = memQt.pred := by
+                    symm; exact hclos
+                  _ = Predicate.guardClosure k arg_name pred_body var_env := hpred_memQt
+              cases hEq
+              rfl
+            have ha : a1 = a := by
+              have : some a1 = some a := by simpa [hreal] using hθ
+              exact Option.some.inj this
+            have hmemA : μ₀.lookup a = some n1 := by
+              simpa [ha] using hmem
+            have hn : n1 = n := by
+              have : some n1 = some n := by simpa [hmemA] using hμ
+              exact Option.some.inj this
+            have hv_num : v = Value.num n1 := by
+              calc
+                v = Value.num n := hv
+                _ = Value.num n1 := by simp [hn]
+            by_cases hb1t : b1 = true
+            ·
+              have hlookup_k_b1 : ctx.regime.lookup? k = some b1 := by
+                simpa [hk] using hregime1
+              simpa [hb1t] using hlookup_k_b1
+            · have hb1f : b1 = false := by
+                cases b1 <;> simp at hb1t ⊢
+              have hnot : ¬ qtypPredHolds predSat memQt μ₀ (Value.num n1) := hconsist.2 hb1f
+              have hsat_num : predSat k1 μ₀ (Value.num n1) := by
+                simpa [hk, hv_num] using hsat
+              have hholds : qtypPredHolds predSat memQt μ₀ (Value.num n1) :=
+                qtypPredHolds.guardClosure_ok hclos hsat_num
+              exact False.elim (hnot hholds)
+  have hlookup_true_implies_pred : ctx.regime.lookup? k = some true → predSat k μ₀ v := by
+    intro hktrue
+    cases hv_owner with
+    | inl hvar =>
+        rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred_qt, hvar⟩
+        have htag_qt : qtypGuardTag qt = some k := by
+          simp [qtypGuardTag, hpred_qt]
+        have hvr : varsRegime predSat ctx.regime μ₀ ρ₀ (x, qt) :=
+          hcwr.2 x qt k hlookup htag_qt hRdef
+        cases hvr with
+        | noPred_ok hnp =>
+            exfalso
+            simp [qtypGuardTag, hpred_qt] at hnp
+        | guardOnly_ok _k hgo =>
+            exfalso
+            simp [hpred_qt] at hgo
+        | withPred_ok k1 arg_name1 pred_body1 var_env1 v1 b1 hclos hregime1 hvar1 hconsist =>
+            have hk : k1 = k := by
+              have hEq :
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 =
+                  Predicate.guardClosure k arg_name pred_body var_env := by
+                calc
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 = qt.pred := by
+                    symm; exact hclos
+                  _ = Predicate.guardClosure k arg_name pred_body var_env := hpred_qt
+              cases hEq
+              rfl
+            have hv1 : v1 = v := by
+              have : some v1 = some v := by simpa [hvar1] using hvar
+              exact Option.some.inj this
+            have hb1t : b1 = true := by
+              have hlookup_k1_true : ctx.regime.lookup? k1 = some true := by
+                simpa [hk] using hktrue
+              have : some b1 = some true := by simpa [hregime1] using hlookup_k1_true
+              exact Option.some.inj this
+            have hholds : qtypPredHolds predSat qt μ₀ v1 := hconsist.1 hb1t
+            cases hholds with
+            | noPred_ok hnp =>
+                exfalso
+                simp [hpred_qt] at hnp
+            | guardOnly_ok hgo _ =>
+                exfalso
+                simp [hpred_qt] at hgo
+            | guardClosure_ok hclos' hsat' =>
+                rename_i k2 arg2 body2 env2
+                have hk2 : k2 = k1 := by
+                  have hEq :
+                      Predicate.guardClosure k2 arg2 body2 env2 =
+                      Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 := by
+                    calc
+                      Predicate.guardClosure k2 arg2 body2 env2 = qt.pred := by
+                        symm; exact hclos'
+                      _ = Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 := hclos
+                  cases hEq
+                  rfl
+                subst hk2
+                simpa [hk, hv1] using hsat'
+    | inr href =>
+        rcases href with
+          ⟨x, qt, memQt, t, ls, l0, a, n, arg_name, pred_body, var_env,
+            hlookup, hetyp, hIn, hlookupMem, hpred_memQt, hθ, hμ, hv⟩
+        have htag_memQt : qtypGuardTag memQt = some k := by
+          simp [qtypGuardTag, hpred_memQt]
+        have hlr : locsRegime predSat ctx.regime μ₀ θ₀ (l0, memQt) :=
+          hcwr.1 l0 memQt k hlookupMem htag_memQt hRdef
+        cases hlr with
+        | noPred_ok hnp =>
+            exfalso
+            simp [qtypGuardTag, hpred_memQt] at hnp
+        | guardOnly_ok _k hgo =>
+            exfalso
+            simp [hpred_memQt] at hgo
+        | withPred_ok k1 arg_name1 pred_body1 var_env1 a1 n1 b1 hclos hregime1 hreal hmem hconsist =>
+            have hk : k1 = k := by
+              have hEq :
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 =
+                  Predicate.guardClosure k arg_name pred_body var_env := by
+                calc
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 = memQt.pred := by
+                    symm; exact hclos
+                  _ = Predicate.guardClosure k arg_name pred_body var_env := hpred_memQt
+              cases hEq
+              rfl
+            have ha : a1 = a := by
+              have : some a1 = some a := by simpa [hreal] using hθ
+              exact Option.some.inj this
+            have hmemA : μ₀.lookup a = some n1 := by
+              simpa [ha] using hmem
+            have hn : n1 = n := by
+              have : some n1 = some n := by simpa [hmemA] using hμ
+              exact Option.some.inj this
+            have hv_num : v = Value.num n1 := by
+              calc
+                v = Value.num n := hv
+                _ = Value.num n1 := by simp [hn]
+            have hb1t : b1 = true := by
+              have hlookup_k1_true : ctx.regime.lookup? k1 = some true := by
+                simpa [hk] using hktrue
+              have : some b1 = some true := by simpa [hregime1] using hlookup_k1_true
+              exact Option.some.inj this
+            have hholds : qtypPredHolds predSat memQt μ₀ (Value.num n1) := hconsist.1 hb1t
+            have hsat_num : predSat k1 μ₀ (Value.num n1) := by
+              cases hholds with
+              | noPred_ok hnp =>
+                  exfalso
+                  simp [hpred_memQt] at hnp
+              | guardOnly_ok hgo _ =>
+                  exfalso
+                  simp [hpred_memQt] at hgo
+              | guardClosure_ok hclos' hsat' =>
+                  rename_i k2 arg2 body2 env2
+                  have hk2 : k2 = k1 := by
+                    have hEq :
+                        Predicate.guardClosure k2 arg2 body2 env2 =
+                        Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 := by
+                      calc
+                        Predicate.guardClosure k2 arg2 body2 env2 = memQt.pred := by
+                          symm; exact hclos'
+                        _ = Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 := hclos
+                    cases hEq
+                    rfl
+                  subst hk2
+                  exact hsat'
+            simpa [hk, hv_num] using hsat_num
+  have hb'_iff : (b' = true ↔ b = true) := by
+    constructor
+    · intro hb'true
+      have hsat : predSat k μ₀ v := hmatch_iff_v.mp hb'true
+      have hktrue : ctx.regime.lookup? k = some true := hpred_implies_lookup_true hsat
+      have : some b = some true := by simpa [hregime] using hktrue
+      exact Option.some.inj this
+    · intro hbtrue
+      have hktrue : ctx.regime.lookup? k = some true := by
+        simp [hregime, hbtrue]
+      have hsat : predSat k μ₀ v := hlookup_true_implies_pred hktrue
+      exact hmatch_iff_v.mpr hsat
+  cases b <;> cases b' <;> simp at hb'_iff ⊢
+
 
 -- World-free version of ite fault-robustness
 -- Proof structure follows typecheckIf's 4 modes:
