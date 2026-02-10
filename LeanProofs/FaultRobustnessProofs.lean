@@ -8524,16 +8524,21 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
             | dirty_internal_arrow _ hisArrow =>
                 -- qt.etyp is an arrow but hret_et says it's et (from observable spec).
                 -- This would contradict if observable types are not function types.
-                sorry
+                have : False := by
+                  have hisArrow_ref : (t.ref ls).isArrow = true := by
+                    simpa [hret_et] using hisArrow
+                  simp [ETyp.isArrow] at hisArrow_ref
+                exact False.elim this
             | clean_internal_parrow _ hetyp _ _ _ _ _ =>
                 cases (Eq.trans (Eq.symm hetyp) hret_et)
             | dirty_internal_parrow _ hisParrow =>
                 -- qt.etyp is a parrow but hret_et says it's et (from observable spec).
                 -- This would contradict if observable types are not function types.
-                sorry
-
-
-
+                have : False := by
+                  have hisParrow_ref : (t.ref ls).isParrow = true := by
+                    simpa [hret_et] using hisParrow
+                  simp [ETyp.isParrow] at hisParrow_ref
+                exact False.elim this
         | int =>
             have hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls := by
               simp [hret_et]
