@@ -1065,34 +1065,17 @@ because the typing environments $\Gamma$ and $\mathcal{L}$ evolve during
 typechecking. The property ensures that the predicted final state ($\Gamma'$,
 $\mathcal{L}'$) accurately reflects the actual runtime state after evaluation.
 
-\paragraph{Formal definition in Lean.} The preservation property is formally
-defined in \texttt{LeanProofs/Preservation.lean}:
-
-\begin{lstlisting}[language=caml,mathescape=true]
-def Preservation (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : Prop :=
-  $\forall$ (fuel_tc : Nat) (res : TypeResult) ($\mu_0$ $\mu_1$ : Memory) ($\rho_0$ $\rho_1$ : VarEnv) ($\theta_0$ : RealizationMap)
-    ($a_0$ $a_1$ : Address) (pm0 pm1 : Bool) (v : Value),
-    wfTypeContext ctx $\rightarrow$
-    typecheck ctx e fuel_tc = .ok res $\rightarrow$
-    wfRealizationMap $\theta_0$ $\rightarrow$
-    runtimeInstantiatesCtx ctx $\mu_0$ $\rho_0$ $\theta_0$ $\rightarrow$
-    terminatesTo mode e { memory := $\mu_0$, varEnv := $\rho_0$, nextAddr := $a_0$, pureMode := pm0 }
-                   { memory := $\mu_1$, varEnv := $\rho_1$, nextAddr := $a_1$, pureMode := pm1 } v $\rightarrow$
-    $\exists$ ($\theta_1$ : RealizationMap),
-      wfExtendsMap $\theta_0$ $\theta_1$ $\land$
-      valueHasETyp $\theta_1$ v res.qualType.etyp $\land$
-      wfTypeResult res $\land$
-      runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } $\mu_1$ $\rho_1$ $\theta_1$
-\end{lstlisting}
-
-This states that for a well-formed typing context, if typechecking succeeds and
-evaluation terminates, then the result value has the expected enriched type, the
-typing result is well-formed, and the final runtime state instantiates the output
-typing context. Note that \texttt{nextAddr} and \texttt{pureMode} may differ
-between input and output configurations, as they are implementation details not
-tracked by the type system.
+\paragraph{Preservation as a corollary of StepFR.} The preservation property is
+subsumed into the fault-robustness step theorem \texttt{StepFR} (see
+Section~\ref{sec:fr}). The \texttt{StepFR} conclusion includes
+\texttt{valueHasETyp} and \texttt{runtimeInstantiatesCtx} for each run's output,
+so preservation follows as a corollary by instantiating both runs to identical
+inputs and projecting the relevant conjuncts. The standalone \texttt{Preservation}
+definition and its proof files have been removed in favour of this unified
+formulation.
 
 \subsection{Fault Robustness}
+\label{sec:fr}
 
 We define the \emph{Fault Robustness} property for the Poison language, which refines the traditional non-interference property. While non-interference typically requires outputs to be independent of all inputs not explicitly classified as low-integrity, fault robustness allows outputs to depend on \emph{trusted} inputs while ensuring independence from \emph{faults} in critical inputs. Fault robustness is strictly weaker: non-interference implies fault robustness for the same specification, but not conversely. Equivalently, fault robustness is non-interference restricted to pairs of runs that agree on trusted inputs.
 
@@ -1211,9 +1194,10 @@ typing context and agree on every context entry that is clean under the chosen
 guard regime, it shows that evaluation preserves this agreement in the
 post-typing context and that clean (or de-poisoned) results agree. This
 formulation supports chaining through compound expressions (sequencing, let,
-conditionals, \emph{etc.}). The conclusion of \texttt{StepFR} is strengthened
-to ensure each run's return value is regime-consistent via the predicate
-$\text{valueConsistentWithRegime}$: if the result type carries a guard tag in
+conditionals, \emph{etc.}). The conclusion of \texttt{StepFR} includes
+\texttt{valueHasETyp} for each run's return value (thereby subsuming the
+preservation property) and is strengthened to ensure each run's return value is
+regime-consistent via the predicate $\text{valueConsistentWithRegime}$: if the result type carries a guard tag in
 the regime's domain, predicate satisfaction on the return value agrees with
 the regime's truth value. This enables the proof to establish regime
 consistency for newly introduced bindings (e.g.\ in the \texttt{let} rule)

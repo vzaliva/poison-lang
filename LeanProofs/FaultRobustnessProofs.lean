@@ -14,7 +14,6 @@ import LeanProofs.LookupUpdate
 import LeanProofs.Equality
 import LeanProofs.JoinMemEnv
 import LeanProofs.RegimeConsistency
-import LeanProofs.PreservationProofs
 import LeanProofs.VarEnvPreservation
 import LeanProofs.MemoryMonotonicity
 import Std.Data.ExtTreeMap.Lemmas
@@ -440,6 +439,8 @@ def StepFR
         QTypRespectsTagMeaning tm res.qualType ∧
         ∃ (θ₀' θ₁' : RealizationMap),
           wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
+          valueHasETyp θ₀' o₀ res.qualType.etyp ∧
+          valueHasETyp θ₁' o₁ res.qualType.etyp ∧
           wfTagMeaningCtx tm (ctxAfter ctx res) ∧
           wfTypeContext (ctxAfter ctx res) ∧
           wfConfig cf₀ ∧  -- final config₀ well-formed
@@ -797,6 +798,35 @@ private lemma valueHasETyp_num_etyp {θ : RealizationMap} {n : Int} {t : ETyp} :
   intro h
   cases h
   rfl
+
+private lemma List_lookup_some_mem
+    {α β : Type} [BEq α] [LawfulBEq α]
+    (x : α) (y : β) (l : List (α × β)) :
+    List.lookup x l = some y → (x, y) ∈ l := by
+  intro hlookup
+  induction l with
+  | nil =>
+      simp [List.lookup] at hlookup
+  | cons hd tl ih =>
+      cases hd with
+      | mk x' y' =>
+          by_cases hEq : x == x'
+          · simp [List.lookup, hEq] at hlookup
+            have hx : x = x' := LawfulBEq.eq_of_beq hEq
+            subst hx
+            subst hlookup
+            simp
+          · simp [List.lookup, hEq] at hlookup
+            exact List.mem_cons_of_mem _ (ih hlookup)
+
+private lemma VarTypeEnv_lookup_of_toCaptured_lookup
+    (σ : VarTypeEnv) (x : Name) (qt : QTyp) :
+    (VarTypeEnv.toCaptured σ).lookup x = some qt →
+    σ.lookup x = some qt := by
+  intro hlookup
+  have hmem : (x, qt) ∈ VarTypeEnv.toCaptured σ :=
+    List_lookup_some_mem x qt (VarTypeEnv.toCaptured σ) (by simpa [CapturedVarEnv.lookup_eq] using hlookup)
+  exact VarTypeEnv_lookup_of_toCaptured_mem σ x qt hmem
 
 private lemma typecheckDeref_etyp_int
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
@@ -1742,7 +1772,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
       hθ₁ hθ₂ _hwf hric₁ hric₂ hreg hregBounded hcwr₁ hcwr₂ hagree_clean
       a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
   rcases hstepFR with ⟨_hresTm, hstepFR⟩
-  rcases hstepFR with ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, _hTm', _hwf', _hwfcf₁', _hwfcf₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂, hret_agree⟩
+  rcases hstepFR with ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, _hvtyp₁, _hvtyp₂, _hTm', _hwf', _hwfcf₁', _hwfcf₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂, hret_agree⟩
   refine ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, ?_⟩
   -- Bridge from post-state agreement to observables.
   simp [observablesEqual]
@@ -2638,6 +2668,26 @@ private lemma typecheckVar_preserves_regime (ctx : TypeContext) (x : Name) (res 
   split at h_typecheck <;>
     (repeat (first | split at h_typecheck | simp [pure, Except.pure, throw] at h_typecheck | cases h_typecheck | rfl))
 
+-- When typecheckVar succeeds, the variable is in the context and its value has the result's etyp
+private lemma var_valueHasETyp_of_typecheck
+  (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (x : Name) (res : TypeResult) (o : Value)
+  (htc : typecheckVar ctx x = .ok res)
+  (hwfθ : wfRealizationMap θ)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+  (hlookup : ρ.lookup x = some o) :
+  valueHasETyp θ o res.qualType.etyp := by
+  cases hlookup_ctx : ctx.varEnv.lookup x with
+  | none =>
+      simp [typecheckVar, hlookup_ctx] at htc
+  | some qt =>
+      obtain ⟨v, hv, htyp⟩ := var_has_correct_type ctx μ ρ θ x qt hwfθ hric hlookup_ctx
+      have heq : v = o := Option.some.inj (hv.symm.trans hlookup)
+      have hetyp : res.qualType.etyp = qt.etyp := by
+        simp only [typecheckVar, hlookup_ctx] at htc
+        (split at htc; try split at htc);
+          repeat (first | split at htc | simp [pure, Except.pure] at htc | cases htc | rfl)
+      rw [← heq, hetyp]; exact htyp
+
 -- Transfer consistentWithRegime using monotoneStep
 -- When Regime.monotoneStep R R', if consistentWithRegime holds for R, it holds for R'
 -- (R' has fewer entries, so fewer constraints need to be checked)
@@ -2760,7 +2810,41 @@ private lemma opUnaryEType_implies_nonfun (op : UnaryOp) (et1 result : ETyp) :
       | parrow st1 st2 p tcls =>
           cases h
 
--- IOFree-restricted induction hypothesis type for stepFR_* lemmas
+-- When evalOp succeeds and OpEType fixes the result type, the value has that type
+private lemma valueHasETyp_of_evalOp
+  (op : Op) (v1 v2 v : Value) (θ : RealizationMap) (t1 t2 result_etyp : ETyp)
+  (hop : OpEType op t1 t2 result_etyp)
+  (heval : LeanPoison.evalOp op v1 v2 = some v) :
+  valueHasETyp θ v result_etyp := by
+  cases hop <;> simp only [LeanPoison.evalOp] at heval <;> cases v1 <;> cases v2 <;> simp at heval <;> cases heval
+  · exact valueHasETyp.num _
+  · exact valueHasETyp.num _
+  · exact valueHasETyp.num _
+  · exact valueHasETyp.num _
+  · exact valueHasETyp.bool _
+  · exact valueHasETyp.bool _
+  · exact valueHasETyp.bool _
+  · exact valueHasETyp.bool _
+  · exact valueHasETyp.bool _
+  · exact valueHasETyp.bool _
+  · exact valueHasETyp.bool _
+  · exact valueHasETyp.bool _
+  · exact valueHasETyp.num _
+
+-- When evalUnaryOp succeeds and opUnaryEType? fixes the result type, the value has that type
+private lemma valueHasETyp_of_evalUnaryOp
+  (op : UnaryOp) (v1 v : Value) (θ : RealizationMap) (t1 result_etyp : ETyp)
+  (hop : opUnaryEType? op t1 = some result_etyp)
+  (heval : LeanPoison.evalUnaryOp op v1 = some v) :
+  valueHasETyp θ v result_etyp := by
+  (cases op; simp [opUnaryEType?] at hop)
+  cases t1 <;> simp at hop
+  cases hop
+  simp only [LeanPoison.evalUnaryOp] at heval
+  cases v1 <;> simp at heval
+  cases heval
+  exact valueHasETyp.bool _
+
 abbrev StepFR_IH (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext),
     wfTagMeaningCtx tm ctxᵢ →
@@ -2779,6 +2863,7 @@ private lemma stepFR_literal
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (res : TypeResult) (v : Value)
   (hval : Expr.toValue? e = some v)
+  (hvtyp : ∀ θ, valueHasETyp θ v res.qualType.etyp)
   (hpoison : res.qualType.poison = false)
   (hnotfun : res.qualType.etyp.isFunctionType = false)
   (hnotref : ¬ ∃ t ls, res.qualType.etyp = ETyp.ref t ls)
@@ -2800,11 +2885,12 @@ private lemma stepFR_literal
   refine ⟨hresTm, ?_⟩
   -- StepFR existential has structure:
   -- ∃ θ₀' θ₁', wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
-  --   wfTypeContext (ctxAfter ctx res) ∧ wfConfig cf₀ ∧ wfConfig cf₁ ∧
+  --   valueHasETyp θ₀' o₀ res.qualType.etyp ∧ valueHasETyp θ₁' o₁ res.qualType.etyp ∧
+  --   wfTagMeaningCtx ... ∧ wfTypeContext (ctxAfter ctx res) ∧ wfConfig cf₀ ∧ wfConfig cf₁ ∧
   --   runtimeInstantiatesCtx ... ∧ runtimeInstantiatesCtx ... ∧
   --   regimeConsistentWithCtx ... ∧ consistentWithRegime ... ∧ consistentWithRegime ... ∧
   --   agreeOnClean ... ∧ valueConsistentWithRegime ... ∧ valueConsistentWithRegime ... ∧ resultAgreesIfClean ...
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup
@@ -2813,6 +2899,10 @@ private lemma stepFR_literal
     refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup
     · intro hwf'; exact hwf'
+  · -- valueHasETyp θ₀ o₀ res.qualType.etyp
+    simp [ho₀]; exact hvtyp θ₀
+  · -- valueHasETyp θ₁ o₁ res.qualType.etyp
+    simp [ho₁]; exact hvtyp θ₁
   · -- wfTagMeaningCtx tm (ctxAfter ctx res)
     simpa [hctxAfter] using hwfTm
   · -- wfTypeContext (ctxAfter ctx res)
@@ -3275,7 +3365,7 @@ private lemma stepFR_var
                           (qt := res.qualType) (μ := μ) (v := v) ?_
                         simp [qtypGuardTag, hres]
   refine ⟨hresTm, ?_⟩
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup
@@ -3284,6 +3374,10 @@ private lemma stepFR_var
     refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup
     · intro hwf'; exact hwf'
+  · -- valueHasETyp θ₀ o₀ res.qualType.etyp
+    exact var_valueHasETyp_of_typecheck ctxᵢ μ₀ ρ₀ θ₀ name res o₀ htc' hθ₀ hric₀ hlookup₀
+  · -- valueHasETyp θ₁ o₁ res.qualType.etyp
+    exact var_valueHasETyp_of_typecheck ctxᵢ μ₁ ρ₁ θ₁ name res o₁ htc' hθ₁ hric₁ hlookup₁
   · -- wfTagMeaningCtx tm (ctxAfter ctxᵢ res): typecheckVar does not change varEnv/memEnv
     simpa [ctxAfter, hmem] using hwfTm
   · -- wfTypeContext (ctxAfter ctxᵢ res): typecheckVar does not change the context
@@ -3922,7 +4016,7 @@ private lemma stepFR_op
     hIH1 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
       hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
-  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, _hval_consist₀1, _hval_consist₁1, hres_agree1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, _hval_consist₀1, _hval_consist₁1, hres_agree1⟩
   have hwfTm' : wfTagMeaningCtx tm ctx' := by
     simpa [ctx', ctxAfter] using _hTm1
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
@@ -3984,7 +4078,7 @@ private lemma stepFR_op
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
       ht₀_e2 ht₁_e2'
   rcases hstep_e2 with ⟨hresTm2, hstep_e2⟩
-  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hTm2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree_clean2, _hval_consist₀2, _hval_consist₁2, hres_agree2⟩
+  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hvtyp₀2, _hvtyp₁2, _hTm2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree_clean2, _hval_consist₀2, _hval_consist₁2, hres_agree2⟩
   -- Combine extension maps
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
@@ -4021,7 +4115,13 @@ private lemma stepFR_op
     intro qt' k d hinq hqd
     exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun_res hguard) hinq hqd
   refine ⟨hresTm, ?_⟩
-  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, ?_, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  · -- valueHasETyp θ₀2 o₀ res.qualType.etyp
+    rw [h_ret_etyp]
+    exact valueHasETyp_of_evalOp op v₀1 v₀2 o₀ θ₀2 res1.qualType.etyp res2.qualType.etyp result_etyp (OpEType.complete h_op) h_evalop₀
+  · -- valueHasETyp θ₁2 o₁ res.qualType.etyp
+    rw [h_ret_etyp]
+    exact valueHasETyp_of_evalOp op v₁1 v₁2 o₁ θ₁2 res1.qualType.etyp res2.qualType.etyp result_etyp (OpEType.complete h_op) h_evalop₁
   · simpa [hctxAfter] using _hTm2
   · simpa [hctxAfter] using hwf2
   · -- valueConsistentWithRegime for cf₀
@@ -4123,7 +4223,7 @@ private lemma stepFR_unaryop
     hIH hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' v₀' v₁'
       hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
   rcases hstep_e with ⟨hresTm_e, hstep_e⟩
-  rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, _hTm, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', hreg', hcwr₀', hcwr₁', hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩
+  rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, _hvtyp₀, _hvtyp₁, _hTm, hwf', _hwfcf₀', _hwfcf₁', hric₀', hric₁', hreg', hcwr₀', hcwr₁', hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
     simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime]
   -- IH gives agreeOnClean with output regime (ctxAfter ctxᵢ res1).regime = res1.regime'
@@ -4158,7 +4258,13 @@ private lemma stepFR_unaryop
     intro qt' k d hinq hqd
     exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun_res hguard) hinq hqd
   refine ⟨hresTm, ?_⟩
-  refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  · -- valueHasETyp θ₀' o₀ res.qualType.etyp
+    rw [h_ret_etyp]
+    exact valueHasETyp_of_evalUnaryOp op v₀' o₀ θ₀' res1.qualType.etyp result_etyp h_op h_evalop₀
+  · -- valueHasETyp θ₁' o₁ res.qualType.etyp
+    rw [h_ret_etyp]
+    exact valueHasETyp_of_evalUnaryOp op v₁' o₁ θ₁' res1.qualType.etyp result_etyp h_op h_evalop₁
   · simpa [hctxAfter] using _hTm
   · simpa [hctxAfter] using hwf'
   · -- valueConsistentWithRegime for cf₀
@@ -4255,7 +4361,7 @@ private lemma stepFR_newRef
     hIH hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
       hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
   rcases hstep_e with ⟨hresTm1, hstep_e⟩
-  rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩
+  rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩
   -- Derive regime equality: newRef preserves regime (res.regime' = res1.regime')
   -- From typecheckNewRef_structure, we already have h_regime
   -- This gives us (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime
@@ -5090,11 +5196,27 @@ private lemma stepFR_newRef
     intro qt' k d hinq hqd
     exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun_res hguard) hinq hqd
   refine ⟨hresTm, ?_⟩
-  refine ⟨θ₀', θ₁', ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  refine ⟨θ₀', θ₁', ?_, ?_, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀'
     exact wfExtendsMap_trans hθext₀1 hθext₀'
   · -- wfExtendsMap θ₁ θ₁'
     exact wfExtendsMap_trans hθext₁1 hθext₁'
+  · -- valueHasETyp for run 0
+    subst ho₀
+    rw [h_etyp]
+    have hlookup : θ₀'.lookup l = some cfg₀'.nextAddr := by
+      simp [RealizationMap.lookup]
+      rw [← ExtTreeMap.get?_eq_getElem?]
+      exact ExtTreeMap.getElem?_insert_self
+    exact valueHasETyp.loc (l := l) hlookup (by simp [LocSet.singleton])
+  · -- valueHasETyp for run 1
+    subst ho₁
+    rw [h_etyp]
+    have hlookup : θ₁'.lookup l = some cfg₁'.nextAddr := by
+      simp [RealizationMap.lookup]
+      rw [← ExtTreeMap.get?_eq_getElem?]
+      exact ExtTreeMap.getElem?_insert_self
+    exact valueHasETyp.loc (l := l) hlookup (by simp [LocSet.singleton])
   · -- wfTagMeaningCtx tm (ctxAfter ctxᵢ res)
     exact wfTagMeaningCtx_ctxAfter tm ctxᵢ res hEnvTm_res
   · -- wfTypeContext (ctxAfter ctxᵢ res)
@@ -5155,7 +5277,7 @@ private lemma stepFR_seq
     hIH1 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
       hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
-  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, _hval_consist₀1, _hval_consist₁1, hres_agree1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, _hval_consist₀1, _hval_consist₁1, hres_agree1⟩
   have hwfTm' : wfTagMeaningCtx tm ctx' := by simpa [hctx', ctxAfter] using _hTm1
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' res htc2'
@@ -5203,7 +5325,7 @@ private lemma stepFR_seq
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
       ht₀_e2 ht₁_e2'
   rcases hstep_e2 with ⟨hresTm2, hstep_e2⟩
-  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hTm2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree_clean2, _hval_consist₀2, _hval_consist₁2, hres_agree2⟩
+  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hvtyp₀2, _hvtyp₁2, _hTm2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree_clean2, _hval_consist₀2, _hval_consist₁2, hres_agree2⟩
   -- Combine extension maps
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
@@ -5227,7 +5349,9 @@ private lemma stepFR_seq
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
     simpa [hctxAfter] using hcwr₁2
   refine ⟨hresTm2, ?_⟩
-  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, ?_, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  · exact _hvtyp₀2
+  · exact _hvtyp₁2
   · simpa [hctxAfter] using _hTm2
   · simpa [hctxAfter] using hwf2
   · -- valueConsistentWithRegime for cf₀
@@ -5275,7 +5399,7 @@ private lemma stepFR_vlet
     hIH1 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
       hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
-  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, _hval_consist₀1, _hval_consist₁1, hres_agree1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, _hval_consist₀1, _hval_consist₁1, hres_agree1⟩
   have hres1_desc :
       ∀ {qt k d}, QTypInQTyp qt res1.qualType →
         qtypGuardDesc? qt = some (k, d) →
@@ -5295,9 +5419,9 @@ private lemma stepFR_vlet
     simpa [ctxAfter] using hric₀1
   have hric₁1_mem : runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctxAfter] using hric₁1
-  -- Get value types using preservation with defaultWorld
+  -- hv₀1_typed, hv₁1_typed come from IH1 (StepFR now includes valueHasETyp)
+  -- wfValue from wfConfig_preservedW (needs terminatesToW)
   let w_default := LeanProofs.defaultWorld
-  -- TODO: check why we using w_default here
   have ht₀_e1_w : terminatesToW .ioFree w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 := by
     rcases ht₀_e1 with ⟨fuel₀, verbose₀, hpure₀⟩
     have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₀
@@ -5306,14 +5430,6 @@ private lemma stepFR_vlet
     rcases ht₁_e1 with ⟨fuel₁, verbose₁, hpure₁⟩
     have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₁
     exact ⟨fuel₁, verbose₁, by simpa [pure] using h_eq⟩
-  have hv₀1_typed : valueHasETyp θ₀1 v₀1 res1.qualType.etyp :=
-    (preservation_valueW .ioFree e1 ctxᵢ fuel' res1 μ₀ cfg₀1.memory ρ₀ cfg₀1.varEnv θ₀ θ₀1
-      a₀ cfg₀1.nextAddr pm cfg₀1.pureMode v₀1 w_default w_default predSat tm
-      hwf htc1' hθ₀ hθ₀1wf hθext₀1 hric₀ hwfTm hpredlaws hcwr₀ hric₀1_mem hwfcfg₀ ht₀_e1_w).1
-  have hv₁1_typed : valueHasETyp θ₁1 v₁1 res1.qualType.etyp :=
-    (preservation_valueW .ioFree e1 ctxᵢ fuel' res1 μ₁ cfg₁1.memory ρ₁ cfg₁1.varEnv θ₁ θ₁1
-      a₁ cfg₁1.nextAddr pm cfg₁1.pureMode v₁1 w_default w_default predSat tm
-      hwf htc1' hθ₁ hθ₁1wf hθext₁1 hric₁ hwfTm hpredlaws hcwr₁ hric₁1_mem hwfcfg₁ ht₁_e1_w).1
   have hv₀1_wf : wfValue cfg₀1.nextAddr v₀1 :=
     (wfConfig_preservedW .ioFree w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1_w hwfcfg₀).2
   have hv₁1_wf : wfValue cfg₁1.nextAddr v₁1 :=
@@ -5792,7 +5908,7 @@ private lemma stepFR_vlet
       cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode hwfcfg₀2 hwfcfg₁2'
       ht₀_e2 ht₁_e2'
   rcases hstep_e2 with ⟨hresTm2, hstep_e2⟩
-  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hTm2, hwf2, hwfcf₀3, hwfcf₁3, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree_clean2, _hval_consist₀2, _hval_consist₁2, hres_agree2⟩
+  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hvtyp₀2, _hvtyp₁2, _hTm2, hwf2, hwfcf₀3, hwfcf₁3, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree_clean2, _hval_consist₀2, _hval_consist₁2, hres_agree2⟩
   -- Combine map extensions
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
@@ -6241,7 +6357,11 @@ private lemma stepFR_vlet
       (QTypRespectsTagMeaning_transport_etyp_pred
         (tm := tm) (qt := res2.qualType) (qt' := res.qualType) hresTm2 hetyp hpredEq) hinq hqd
   refine ⟨hresTm, ?_⟩
-  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀'', hric₁'', hreg'', hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  · rw [h_ret_etyp]
+    exact _hvtyp₀2
+  · rw [h_ret_etyp]
+    exact _hvtyp₁2
   · -- wfTagMeaningCtx tm (ctxAfter ctxᵢ res): remove the temporary vlet binding.
     unfold wfTagMeaningCtx at _hTm2 ⊢
     simp only [ctxAfter, h_mem, h_tag, h_loc, h_ntag]
@@ -6379,11 +6499,51 @@ private lemma stepFR_fn
     intro qt' k d hinq hqd
     exact hresTm_expected (by simpa [hres] using hinq) (by simpa [hres] using hqd)
   refine ⟨hresTm, ?_⟩
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
   · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
+  · subst ho₀
+    have hetyp_res :
+        res.qualType.etyp =
+          ETyp.arrow paramType returnType ctxᵢ.pc
+            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+      simp [hres, res_expected]
+    rw [hetyp_res]
+    refine valueHasETyp.closure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (htcl := by simp) ?_
+    intro y qt v hlookupT hlookupV
+    have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
+      VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+    obtain ⟨v', hvlookup, hvtyp⟩ := hric₀.2 hlookup_ctx
+    have hvEq : v' = v := by
+      have : some v' = some v := by
+        calc
+          some v' = ρ₀.lookup y := by symm; exact hvlookup
+          _ = some v := by exact hlookupV
+      exact Option.some.inj this
+    subst hvEq
+    exact hvtyp
+  · subst ho₁
+    have hetyp_res :
+        res.qualType.etyp =
+          ETyp.arrow paramType returnType ctxᵢ.pc
+            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+      simp [hres, res_expected]
+    rw [hetyp_res]
+    refine valueHasETyp.closure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (htcl := by simp) ?_
+    intro y qt v hlookupT hlookupV
+    have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
+      VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+    obtain ⟨v', hvlookup, hvtyp⟩ := hric₁.2 hlookup_ctx
+    have hvEq : v' = v := by
+      have : some v' = some v := by
+        calc
+          some v' = ρ₁.lookup y := by symm; exact hvlookup
+          _ = some v := by exact hlookupV
+      exact Option.some.inj this
+    subst hvEq
+    exact hvtyp
   · -- wfTagMeaningCtx tm (ctxAfter ctxᵢ res)
     simpa [hctxAfter] using hwfTm
   · -- wfTypeContext (ctxAfter ctxᵢ res)
@@ -6504,11 +6664,51 @@ private lemma stepFR_pfn
         intro qt' k d hinq hqd
         exact hresTm_expected (by simpa [hres] using hinq) (by simpa [hres] using hqd)
       refine ⟨hresTm, ?_⟩
-      refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
       · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
+      · subst ho₀
+        have hetyp_res :
+            res.qualType.etyp =
+              ETyp.parrow paramType returnType ctxᵢ.pc
+                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+          simp [hres, res_expected]
+        rw [hetyp_res]
+        refine valueHasETyp.peClosure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (hpure := hto) (htcl := by simp) ?_
+        intro y qt v hlookupT hlookupV
+        have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
+          VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+        obtain ⟨v', hvlookup, hvtyp⟩ := hric₀.2 hlookup_ctx
+        have hvEq : v' = v := by
+          have : some v' = some v := by
+            calc
+              some v' = ρ₀.lookup y := by symm; exact hvlookup
+              _ = some v := by exact hlookupV
+          exact Option.some.inj this
+        subst hvEq
+        exact hvtyp
+      · subst ho₁
+        have hetyp_res :
+            res.qualType.etyp =
+              ETyp.parrow paramType returnType ctxᵢ.pc
+                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+          simp [hres, res_expected]
+        rw [hetyp_res]
+        refine valueHasETyp.peClosure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (hpure := hto) (htcl := by simp) ?_
+        intro y qt v hlookupT hlookupV
+        have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
+          VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+        obtain ⟨v', hvlookup, hvtyp⟩ := hric₁.2 hlookup_ctx
+        have hvEq : v' = v := by
+          have : some v' = some v := by
+            calc
+              some v' = ρ₁.lookup y := by symm; exact hvlookup
+              _ = some v := by exact hlookupV
+          exact Option.some.inj this
+        subst hvEq
+        exact hvtyp
       · -- wfTagMeaningCtx tm (ctxAfter ctxᵢ res)
         simpa [hctxAfter] using hwfTm
       · -- wfTypeContext (ctxAfter ctxᵢ res)
@@ -6939,7 +7139,7 @@ private lemma stepFR_ite_mode1
       hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
-  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hTm1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hTm1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
   -- Extract that both guards evaluate to same boolean (since result agrees and both are bool)
   -- The result of e1 has type bool with poison = false (from hbool and res1 structure)
   -- In pure context, typecheckExpr ensures poison = false for boolean expressions
@@ -7121,7 +7321,7 @@ private lemma stepFR_ite_mode1
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1_adj
       ht₀_e2 ht₁_e2'
   rcases hstep_e2 with ⟨hresTm2, hstep_e2⟩
-  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hTm2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, hvalc₀2, hvalc₁2, hres_agree2⟩
+  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hvtyp₀2, _hvtyp₁2, _hTm2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, hvalc₀2, hvalc₁2, hres_agree2⟩
   -- Combine results
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
@@ -7148,7 +7348,11 @@ private lemma stepFR_ite_mode1
   have hresTm : QTypRespectsTagMeaning tm res.qualType := hctxAfter_hresTm.2
   -- Transfer final properties (StepFR: θ₀' θ₁' wfExtends wfExtends wfTagMeaningCtx wfTypeContext wfConfig wfConfig rtc rtc reg cwr cwr agree vc vc resultAgrees)
   refine ⟨hresTm, ?_⟩
-  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, hwfcf₀2, hwfcf₁2, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, ?_, ?_, hwfcf₀2, hwfcf₁2, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hetyp]
+    exact _hvtyp₀2
+  · rw [hetyp]
+    exact _hvtyp₁2
   · simpa [hctxAfter] using _hTm2
   · simpa [hctxAfter] using hwf2
   · simpa [hctxAfter] using hric₀2
@@ -7222,7 +7426,7 @@ private lemma stepFR_ite_mode2
       hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
-  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
   -- Extract that both guards evaluate to same boolean
   have hres1_clean : res1.qualType.poison = false := by
     sorry -- Need to extract from typechecking in pure context
@@ -7311,7 +7515,7 @@ private lemma stepFR_ite_mode3
       hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
-  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
   -- In mode 3, we don't know which branch each run takes - need to handle all cases
   -- The key is that the joined result is conservative over both branches
   sorry -- Mode 3: complex proof with branch case analysis
@@ -7361,7 +7565,7 @@ private lemma stepFR_ite_mode4
       hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
-  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, hvalc₀1, hvalc₁1, hres_agree1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, hvalc₀1, hvalc₁1, hres_agree1⟩
   -- Similar to mode 3, need to handle all branch combinations
   sorry -- Mode 4: complex proof with branch case analysis
 
@@ -7452,7 +7656,7 @@ private lemma stepFR_deref
     hIH hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.loc a₀') (Value.loc a₁')
       hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
   rcases hstep_e with ⟨hresTm_e, hstep_e⟩
-  rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, _hTm', hwf', hwfcfg₀', hwfcfg₁', hric₀', hric₁', hreg', hcwr₀', hcwr₁', hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩
+  rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, _hvtyp₀, _hvtyp₁, _hTm', hwf', hwfcfg₀', hwfcfg₁', hric₀', hric₁', hreg', hcwr₀', hcwr₁', hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩
   -- Post-context is unchanged by deref (only result type changes)
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
     cases ctxᵢ
@@ -7479,7 +7683,17 @@ private lemma stepFR_deref
   have hresTm : QTypRespectsTagMeaning tm res.qualType :=
     typecheckDeref_qtypRespects tm ctxᵢ e fuel' res res1 _hTm' htc1_expr htc'
   refine ⟨hresTm, ?_⟩
-  refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  · subst hv₀
+    have hres_etyp_int : res.qualType.etyp = ETyp.int :=
+      typecheckDeref_etyp_int ctxᵢ e (Nat.succ fuel') res htc'
+    rw [hres_etyp_int]
+    exact valueHasETyp.num n₀
+  · subst hv₁
+    have hres_etyp_int : res.qualType.etyp = ETyp.int :=
+      typecheckDeref_etyp_int ctxᵢ e (Nat.succ fuel') res htc'
+    rw [hres_etyp_int]
+    exact valueHasETyp.num n₁
   · simpa [hctxAfter] using _hTm'
   · simpa [hctxAfter] using hwf'
   · -- valueConsistentWithRegime for cf₀
@@ -8695,7 +8909,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal .ioFree ctxᵢ predSat tm Expr.unit res Value.unit hval hpoison hnotfun hnotref hpredNo hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat tm Expr.unit res Value.unit hval (fun _ => by simp [hres, res_expected]; exact valueHasETyp.unit) hpoison hnotfun hnotref hpredNo hctxAfter
         | num n =>
             simp [typecheck, typecheckExpr, typecheckInt] at htc
             let res_expected : TypeResult := {
@@ -8721,7 +8935,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal .ioFree ctxᵢ predSat tm (Expr.num n) res (Value.num n) hval hpoison hnotfun hnotref hpredNo hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat tm (Expr.num n) res (Value.num n) hval (fun _ => by simp [hres, res_expected]; exact valueHasETyp.num n) hpoison hnotfun hnotref hpredNo hctxAfter
         | bool b =>
             simp [typecheck, typecheckExpr, typecheckBool] at htc
             let res_expected : TypeResult := {
@@ -8747,7 +8961,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal .ioFree ctxᵢ predSat tm (Expr.bool b) res (Value.bool b) hval hpoison hnotfun hnotref hpredNo hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat tm (Expr.bool b) res (Value.bool b) hval (fun _ => by simp [hres, res_expected]; exact valueHasETyp.bool b) hpoison hnotfun hnotref hpredNo hctxAfter
         | str s =>
             simp [typecheck, typecheckExpr, typecheckString] at htc
             let res_expected : TypeResult := {
@@ -8773,7 +8987,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
               simp [hres, res_expected]
             have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
               simp [ctxAfter, hres, res_expected]
-            exact stepFR_literal .ioFree ctxᵢ predSat tm (Expr.str s) res (Value.str s) hval hpoison hnotfun hnotref hpredNo hctxAfter
+            exact stepFR_literal .ioFree ctxᵢ predSat tm (Expr.str s) res (Value.str s) hval (fun _ => by simp [hres, res_expected]; exact valueHasETyp.str s) hpoison hnotfun hnotref hpredNo hctxAfter
         | var name =>
             exact stepFR_var .ioFree ctxᵢ predSat tm name res fuel htc
         | op e1 op e2 =>
@@ -8967,10 +9181,10 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
     hstep' hps hwfTm μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂
       hθ₁ hθ₂ hwf hric₁ hric₂ hreg hregBounded hcwr₁ hcwr₂ hagree_clean
       a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
-  -- StepFR result structure: ∃ θ₁' θ₂', wfExtendsMap ∧ wfExtendsMap ∧ wfTypeContext ∧
-  --   wfConfig ∧ wfConfig ∧ agreeOnClean ∧ resultAgreesIfClean
+  -- StepFR result structure: ∃ θ₁' θ₂', wfExtendsMap ∧ wfExtendsMap ∧ valueHasETyp ∧ valueHasETyp ∧
+  --   wfTagMeaningCtx ∧ wfTypeContext ∧ wfConfig ∧ wfConfig ∧ ... ∧ agreeOnClean ∧ resultAgreesIfClean
   rcases hstep_fr with ⟨_hresTm, hstep_fr⟩
-  rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, _hTm', _hwfctx', _hwfcfg₁', _hwfcfg₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂, hret_agree⟩
+  rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, _hvtyp₁, _hvtyp₂, _hTm', _hwfctx', _hwfcfg₁', _hwfcfg₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂, hret_agree⟩
   refine ⟨θ₁', θ₂', hwfext₁, hwfext₂, ?_⟩
   -- Bridge from post-state agreement to observables.
   simp [observablesEqual]
