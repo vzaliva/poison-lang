@@ -22,13 +22,14 @@ import LeanProofs.SemanticsProperties
 -- the output typing context
 def Preservation (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : Prop :=
   ∀ (fuel_tc : Nat) (res : TypeResult) (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ : RealizationMap)
-    (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value) (predSat : PredSat),
+    (l₀ l₁ : Address) (pm₀ pm₁ : Bool) (v : Value) (predSat : PredSat) (tm : TagMeaning),
     -- Pre-conditions:
     wfTypeContext ctx →
     typecheck ctx e fuel_tc = .ok res →
     wfRealizationMap θ₀ →
     runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ →
-    PredSatLaws predSat →
+    wfTagMeaningCtx tm ctx →
+    PredSatLaws predSat tm →
     consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀ →
     wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ } →
     terminatesTo mode e { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }

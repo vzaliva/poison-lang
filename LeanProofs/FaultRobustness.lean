@@ -634,7 +634,7 @@ def agreeOnTrustedInputs (predSat : PredSat) (R : Regime) (s : InputSpec) (ctx :
 
 -- Fault-Robustness property (top-level, spec-driven).
 -- Same shape as NI but with an extra premise requiring agreement on trusted inputs.
-def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) : Prop :=
+def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) : Prop :=
   ∀ (mode : LeanPoison.EvalMode) (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool),
     ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
     ctx.regime.bound = ctx.nextTag →  -- regime bounded by initial tag supply
@@ -665,9 +665,10 @@ def TypeSystemEnforcesFaultRobustness_spec
       wfTypeContext ctx → -- all locations in memEnv are below nextLoc
       ctx.pc = false → -- we start from clean program counter
       ctx.tagEnv = {} → -- we start with empty tag environment
-      ∀ (predSat : PredSat),
-        PredSatLaws predSat →
+      ∀ (predSat : PredSat) (tm : TagMeaning),
+        wfTagMeaningCtx tm ctx →
+        PredSatLaws predSat tm →
         ((∃ (fuel : Nat) (res : TypeResult),
           typecheck ctx e fuel = .ok res ∧
           ObsConstraints obs res) →
-          FaultRobustnessSpec e s obs ctx predSat)
+          FaultRobustnessSpec e s obs ctx predSat tm)

@@ -1315,6 +1315,9 @@ design aspects:
 
 The abstract \texttt{PredSat} relation is constrained by universal axioms that
 capture the type system's mechanisms without specifying predicate meanings.
+These axioms are parameterised by a \texttt{TagMeaning} map that fixes the
+interpretation of each tag (guard descriptor) across the derivation, ensuring
+consistent tag meaning and blocking contradictory instantiations.
 These axioms apply to all tags, including those in the initial specification and
 those generated during execution (e.g., by \texttt{frand} or extern functions).
 

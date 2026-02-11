@@ -1782,14 +1782,15 @@ theorem preservation_valueW (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeC
   ∀ (fuel_tc : Nat) (res : TypeResult)
     (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
     (a₀ a₁ : Address) (pm₀ pm₁ : Bool) (v : Value) (w₀ w₁ : Void IO.RealWorld)
-    (predSat : PredSat),
+    (predSat : PredSat) (tm : TagMeaning),
     wfTypeContext ctx →
     typecheck ctx e fuel_tc = .ok res →
     wfRealizationMap θ₀ →
     wfRealizationMap θ₁ →
     wfExtendsMap θ₀ θ₁ →
     runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ →
-    PredSatLaws predSat →
+    wfTagMeaningCtx tm ctx →
+    PredSatLaws predSat tm →
     consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀ →
     runtimeInstantiatesCtx { ctx with memEnv := res.memEnv' } μ₁ ρ₁ θ₁ →
     wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm₀ } →
