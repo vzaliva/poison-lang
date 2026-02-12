@@ -2060,7 +2060,7 @@ lemma typecheckApp_arrow_structure_full
         ¬ ctx.pureCtx ∧
         tcls ≠ [] ∧
         isSubtype st1 result2.qualType = true ∧
-        List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls =
+        List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel') tcls =
           .ok results ∧
         results = first :: rest ∧
         joinTypeResults ctx first rest = .ok res)
@@ -2071,7 +2071,7 @@ lemma typecheckApp_arrow_structure_full
         result1.qualType.poison = p1 ∧
         tcls ≠ [] ∧
         isSubtype st1 result2.qualType = true ∧
-        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls =
+        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel') tcls =
           .ok results ∧
         results = first :: rest ∧
         joinTypeResults ctx first rest = .ok res)
@@ -2121,7 +2121,7 @@ lemma typecheckApp_arrow_structure_full
                         cases h_map :
                             List.mapM
                               (fun tcl =>
-                                applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls with
+                                applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel') tcls with
                         | error _err =>
                             simp [h_map] at htc
                             simp [h_empty] at htc
@@ -2173,7 +2173,7 @@ lemma typecheckApp_arrow_structure_full
                     cases h_map :
                         List.mapM
                           (fun tcl =>
-                            applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result2 fuel') tcls with
+                            applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel') tcls with
                     | error _err =>
                         simp [h_map] at htc
                         simp [h_empty] at htc
@@ -2912,6 +2912,7 @@ private lemma typecheckApp_regime_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel 
   | succ fuel' =>
       have hstruct := typecheckApp_arrow_structure_full ctx e1 e2 fuel' res htc
       rcases hstruct with ⟨res2, res1, etyp2, p2, pred2, hq2, hte2, hte1, hcases⟩
+      set ctx' : TypeContext := { ctx with memEnv := res2.memEnv', tagEnv := res2.tagEnv', nextLoc := res2.nextLoc', nextTag := res2.nextTag', regime := res2.regime' }
       have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
       have hte2' : typecheck ctx e2 fuel' = .ok res2 := by
         simpa [typecheck] using hte2
@@ -2928,43 +2929,49 @@ private lemma typecheckApp_regime_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel 
             ⟨st1, st2, p, p1, tcls, results, first, rest,
               hetyp1, hpoison1, _hnotPure, _hnonempty, _hsub, hmap, hresults, hjoin⟩
           subst results
+          have hmono1 : Regime.monotoneStep res2.regime' res1.regime' := by
+            have htce1' : typecheck ctx' e1 fuel' = .ok res1 := by simpa [typecheck] using hte1
+            exact IH fuel' h_fuel e1 ctx' res1 htce1'
           have hmap_prop :
-              ∀ x ∈ (first :: rest), Regime.monotoneStep res2.regime' x.regime' := by
+              ∀ x ∈ (first :: rest), Regime.monotoneStep res1.regime' x.regime' := by
             apply List.mapM_Except_preserves_property
-              (f := fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx res2 fuel')
-              (P := fun x => Regime.monotoneStep res2.regime' x.regime')
+              (f := fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx res1 fuel')
+              (P := fun x => Regime.monotoneStep res1.regime' x.regime')
             · intro tcl result htcl
-              exact applyFnTClosure_regime_mono tcl ctx st1 st2 p p1 etyp2 p2 pred2 res2 result fuel' IH' htcl
+              exact applyFnTClosure_regime_mono tcl ctx st1 st2 p p1 etyp2 p2 pred2 res1 result fuel' IH' htcl
             · simpa using hmap
-          have hfirst : Regime.monotoneStep res2.regime' first.regime' := by
+          have hfirst : Regime.monotoneStep res1.regime' first.regime' := by
             exact hmap_prop first (by simp)
-          have hrest : ∀ x ∈ rest, Regime.monotoneStep res2.regime' x.regime' := by
+          have hrest : ∀ x ∈ rest, Regime.monotoneStep res1.regime' x.regime' := by
             intro x hx
             exact hmap_prop x (by simp [hx])
-          have hjoin_mono : Regime.monotoneStep res2.regime' res.regime' :=
-            joinTypeResults_regime_monotone ctx first rest res res2.regime' hfirst hrest hjoin
-          exact regimeMonotone_trans hmono2 hjoin_mono
+          have hjoin_mono : Regime.monotoneStep res1.regime' res.regime' :=
+            joinTypeResults_regime_monotone ctx first rest res res1.regime' hfirst hrest hjoin
+          exact regimeMonotone_trans (regimeMonotone_trans hmono2 hmono1) hjoin_mono
       | inr hparr =>
           rcases hparr with
             ⟨st1, st2, p, p1, tcls, results, first, rest,
               hetyp1, hpoison1, _hnonempty, _hsub, hmap, hresults, hjoin⟩
           subst results
+          have hmono1 : Regime.monotoneStep res2.regime' res1.regime' := by
+            have htce1' : typecheck ctx' e1 fuel' = .ok res1 := by simpa [typecheck] using hte1
+            exact IH fuel' h_fuel e1 ctx' res1 htce1'
           have hmap_prop :
-              ∀ x ∈ (first :: rest), Regime.monotoneStep res2.regime' x.regime' := by
+              ∀ x ∈ (first :: rest), Regime.monotoneStep res1.regime' x.regime' := by
             apply List.mapM_Except_preserves_property
-              (f := fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx res2 fuel')
-              (P := fun x => Regime.monotoneStep res2.regime' x.regime')
+              (f := fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx res1 fuel')
+              (P := fun x => Regime.monotoneStep res1.regime' x.regime')
             · intro tcl result htcl
-              exact applyPFnTClosure_regime_mono tcl ctx st1 st2 p p1 etyp2 p2 pred2 res2 result fuel' IH' htcl
+              exact applyPFnTClosure_regime_mono tcl ctx st1 st2 p p1 etyp2 p2 pred2 res1 result fuel' IH' htcl
             · simpa using hmap
-          have hfirst : Regime.monotoneStep res2.regime' first.regime' := by
+          have hfirst : Regime.monotoneStep res1.regime' first.regime' := by
             exact hmap_prop first (by simp)
-          have hrest : ∀ x ∈ rest, Regime.monotoneStep res2.regime' x.regime' := by
+          have hrest : ∀ x ∈ rest, Regime.monotoneStep res1.regime' x.regime' := by
             intro x hx
             exact hmap_prop x (by simp [hx])
-          have hjoin_mono : Regime.monotoneStep res2.regime' res.regime' :=
-            joinTypeResults_regime_monotone ctx first rest res res2.regime' hfirst hrest hjoin
-          exact regimeMonotone_trans hmono2 hjoin_mono
+          have hjoin_mono : Regime.monotoneStep res1.regime' res.regime' :=
+            joinTypeResults_regime_monotone ctx first rest res res1.regime' hfirst hrest hjoin
+          exact regimeMonotone_trans (regimeMonotone_trans hmono2 hmono1) hjoin_mono
 
 private lemma runWhileFixpoint_regime_mono
     (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (pureGuard : Bool) (guardOpt : Option (Tag × Deps))
@@ -4338,10 +4345,10 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
       <;> rw [hsub1] at htc
       <;> simp at htc
     simp [bind, Except.bind] at htc
-    rcases happly : applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res2 _ with _ | ⟨r⟩
+    rcases happly : applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
       <;> rw [happly] at htc
       <;> simp at htc
-    rcases hcons : List.cons r <$> List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs' with _ | ⟨rs⟩
+    rcases hcons : List.cons r <$> List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs' with _ | ⟨rs⟩
       <;> rw [hcons] at htc
       <;> simp at htc
     rcases hrs : rs with _ | ⟨r1, rs'⟩
@@ -4349,33 +4356,33 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
       <;> simp at htc
     subst rs
     simp [Functor.map, Except.map] at hcons
-    rcases hmap : List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs' with _ | ⟨rs''⟩
+    rcases hmap : List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs' with _ | ⟨rs''⟩
       <;> rw [hmap] at hcons
       <;> simp at hcons
     rcases hcons with ⟨heq1, heq2⟩
     subst r1
     subst rs''
-    -- ctx.nextTag <= res1.nextTag (by IH on htce1)
-    -- res1.nextTag = ctx'.nextTag
-    -- ctx'.nextTag <= res2.nextTag (by IH on hcte2)
-    -- res2.nextTag <= r.nextTag (by applyFnTClosure_nextTag_mono)
-    -- forall r in rs', res2.nextTag <= r.nextTag (by applyFnTClosure_nextTag_mono)
-    -- res2.nextTag <= max (r.nextTag, map rs' .nextTag) (follows from above)
-    -- max (res2.nextTag, map rs' .nextTag) = res.nextTag (by joinTypeResults_nextTag_eq_max)
+    -- ctx.nextTag <= res2.nextTag (by IH on hcte2)
+    -- res2.nextTag = ctx'.nextTag
+    -- ctx'.nextTag <= res1.nextTag (by IH on htce1)
+    -- res1.nextTag <= r.nextTag (by applyFnTClosure_nextTag_mono with res1)
+    -- forall r in rs', res1.nextTag <= r.nextTag (by applyFnTClosure_nextTag_mono)
+    -- res1.nextTag <= max (r.nextTag, map rs' .nextTag) (follows from above)
+    -- max (r.nextTag, map rs' .nextTag) = res.nextTag (by joinTypeResults_nextTag_eq_max)
     have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
     have hcte2' : typecheck ctx e2 fuel' = .ok res2 := by
       simpa [typecheck] using hcte2
     have IH2 := IH fuel' h_fuel e2 ctx res2 hcte2'
     have htce1' : typecheck ctx' e1 fuel' = .ok res1 := by
       simpa [typecheck] using htce1
-    have _IH1 := IH fuel' h_fuel e1 ctx' res1 htce1'
+    have IH1 := IH fuel' h_fuel e1 ctx' res1 htce1'
     have IH' :
         ∀ m < fuel', ∀ (e : Expr) (ctx'' : TypeContext) (res' : TypeResult),
           typecheck ctx'' e m = .ok res' → ctx''.nextTag ≤ res'.nextTag' := by
       intro m hm e ctx'' res' htc'
       exact IH m (Nat.lt_trans hm h_fuel) e ctx'' res' htc'
-    have h_r : res2.nextTag' ≤ r.nextTag' := by
-      exact applyFnTClosure_nextTag_mono f ctx t1 t2 p poison1 etyp2 poison2 pred2 res2 r fuel' IH' happly
+    have h_r : res1.nextTag' ≤ r.nextTag' := by
+      exact applyFnTClosure_nextTag_mono f ctx t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' happly
     have h_join :
         res.nextTag' =
           List.max (r.nextTag' :: rs'.map TypeResult.nextTag') (by intro h; cases h) :=
@@ -4390,6 +4397,7 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     calc
       ctx.nextTag ≤ res2.nextTag' := IH2
       _ = ctx'.nextTag := by simp [hctx']
+      _ ≤ res1.nextTag' := IH1
       _ ≤ r.nextTag' := h_r
       _ ≤ res.nextTag' := h_r_le_res
   · rename_i st1 st2 p tcls
@@ -4398,12 +4406,12 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
       <;> rw [hsub1] at htc
       <;> simp at htc
     simp [bind, Except.bind] at htc
-    rcases happly : applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res2 _ with _ | ⟨r⟩
+    rcases happly : applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
       <;> rw [happly] at htc
       <;> simp at htc
     rcases hcons :
         List.cons r <$>
-          List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs'
+          List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
         with _ | ⟨rs⟩
       <;> rw [hcons] at htc
       <;> simp at htc
@@ -4413,7 +4421,7 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     subst rs
     simp [Functor.map, Except.map] at hcons
     rcases hmap :
-        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs'
+        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
         with _ | ⟨rs''⟩
       <;> rw [hmap] at hcons
       <;> simp at hcons
@@ -4426,13 +4434,13 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     have IH2 := IH fuel' h_fuel e2 ctx res2 hcte2'
     have htce1' : typecheck ctx' e1 fuel' = .ok res1 := by
       simpa [typecheck] using htce1
-    have _IH1 := IH fuel' h_fuel e1 ctx' res1 htce1'
+    have IH1 := IH fuel' h_fuel e1 ctx' res1 htce1'
     have IH' :
         ∀ m < fuel', ∀ (e : Expr) (ctx'' : TypeContext) (res' : TypeResult),
           typecheck ctx'' e m = .ok res' → ctx''.nextTag ≤ res'.nextTag' := by
       intro m hm e ctx'' res' htc'
       exact IH m (Nat.lt_trans hm h_fuel) e ctx'' res' htc'
-    have h_r : res2.nextTag' ≤ r.nextTag' := by
+    have h_r : res1.nextTag' ≤ r.nextTag' := by
       unfold applyPFnTClosure at happly
       cases fuel' with
       | zero =>
@@ -4459,14 +4467,14 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                       simp [pure, Except.pure] at happly
                       set ctx'' : TypeContext :=
                         { pc := joinPoison p (joinPoison ctx.pc poison1),
-                          regime := res2.regime',
-                          memEnv := res2.memEnv',
+                          regime := res1.regime',
+                          memEnv := res1.memEnv',
                           varEnv :=
                             (VarTypeEnv.ofCaptured env).update x
                               { etyp := etyp2, poison := joinPoison ctx.pc poison2, pred := pred2 },
-                          tagEnv := res2.tagEnv',
-                          nextLoc := res2.nextLoc',
-                          nextTag := res2.nextTag',
+                          tagEnv := res1.tagEnv',
+                          nextLoc := res1.nextLoc',
+                          nextTag := res1.nextTag',
                           pureCtx := true } with hctx''
                       have htc_body' : typecheck ctx'' body.toExpr fuel'' = .ok r3 := by
                         simpa [typecheck, hctx''] using htc_body
@@ -4485,7 +4493,7 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                       rw [hret] at happly
                       simp [pure, Except.pure] at happly
                       cases happly
-                      exact advanceNextTagForSyntaxPred_ge pred res2.nextTag'
+                      exact advanceNextTagForSyntaxPred_ge pred res1.nextTag'
               | nestedFn innerArg innerArgTyp innerRet innerEffects =>
                   simp [pure, Except.pure] at happly
                   cases happly
@@ -4508,6 +4516,7 @@ private lemma typecheckApp_nextTag_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     calc
       ctx.nextTag ≤ res2.nextTag' := IH2
       _ = ctx'.nextTag := by simp [hctx']
+      _ ≤ res1.nextTag' := IH1
       _ ≤ r.nextTag' := h_r
       _ ≤ res.nextTag' := h_r_le_res
 
@@ -5707,10 +5716,10 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
       <;> rw [hsub1] at htc
       <;> simp at htc
     simp [bind, Except.bind] at htc
-    rcases happly : applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res2 _ with _ | ⟨r⟩
+    rcases happly : applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
       <;> rw [happly] at htc
       <;> simp at htc
-    rcases hcons : List.cons r <$> List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs' with _ | ⟨rs⟩
+    rcases hcons : List.cons r <$> List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs' with _ | ⟨rs⟩
       <;> rw [hcons] at htc
       <;> simp at htc
     rcases hrs : rs with _ | ⟨r1, rs'⟩
@@ -5718,7 +5727,7 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
       <;> simp at htc
     subst rs
     simp [Functor.map, Except.map] at hcons
-    rcases hmap : List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs' with _ | ⟨rs''⟩
+    rcases hmap : List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs' with _ | ⟨rs''⟩
       <;> rw [hmap] at hcons
       <;> simp at hcons
     rcases hcons with ⟨heq1, heq2⟩
@@ -5737,14 +5746,14 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     have IH2 := IH fuel' h_fuel e2 ctx res2 hcte2'
     have htce1' : typecheck ctx' e1 fuel' = .ok res1 := by
       simpa [typecheck] using htce1
-    have _IH1 := IH fuel' h_fuel e1 ctx' res1 htce1'
+    have IH1 := IH fuel' h_fuel e1 ctx' res1 htce1'
     have IH' :
         ∀ m < fuel', ∀ (e : Expr) (ctx'' : TypeContext) (res' : TypeResult),
           typecheck ctx'' e m = .ok res' → ctx''.nextLoc ≤ res'.nextLoc' := by
       intro m hm e ctx'' res' htc'
       exact IH m (Nat.lt_trans hm h_fuel) e ctx'' res' htc'
-    have h_r : res2.nextLoc' ≤ r.nextLoc' := by
-      exact applyFnTClosure_nextLoc_mono f ctx t1 t2 p poison1 etyp2 poison2 pred2 res2 r fuel' IH' happly
+    have h_r : res1.nextLoc' ≤ r.nextLoc' := by
+      exact applyFnTClosure_nextLoc_mono f ctx t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' happly
     have h_join :
         res.nextLoc' =
           List.max (r.nextLoc' :: rs'.map TypeResult.nextLoc') (by intro h; cases h) :=
@@ -5759,6 +5768,7 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     calc
       ctx.nextLoc ≤ res2.nextLoc' := IH2
       _ = ctx'.nextLoc := by simp [hctx']
+      _ ≤ res1.nextLoc' := IH1
       _ ≤ r.nextLoc' := h_r
       _ ≤ res.nextLoc' := h_r_le_res
   · rename_i st1 st2 p tcls
@@ -5767,12 +5777,12 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
       <;> rw [hsub1] at htc
       <;> simp at htc
     simp [bind, Except.bind] at htc
-    rcases happly : applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res2 _ with _ | ⟨r⟩
+    rcases happly : applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
       <;> rw [happly] at htc
       <;> simp at htc
     rcases hcons :
         List.cons r <$>
-          List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs'
+          List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
         with _ | ⟨rs⟩
       <;> rw [hcons] at htc
       <;> simp at htc
@@ -5782,7 +5792,7 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     subst rs
     simp [Functor.map, Except.map] at hcons
     rcases hmap :
-        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res2 _) fs'
+        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
         with _ | ⟨rs''⟩
       <;> rw [hmap] at hcons
       <;> simp at hcons
@@ -5795,13 +5805,13 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     have IH2 := IH fuel' h_fuel e2 ctx res2 hcte2'
     have htce1' : typecheck ctx' e1 fuel' = .ok res1 := by
       simpa [typecheck] using htce1
-    have _IH1 := IH fuel' h_fuel e1 ctx' res1 htce1'
+    have IH1 := IH fuel' h_fuel e1 ctx' res1 htce1'
     have IH' :
         ∀ m < fuel', ∀ (e : Expr) (ctx'' : TypeContext) (res' : TypeResult),
           typecheck ctx'' e m = .ok res' → ctx''.nextLoc ≤ res'.nextLoc' := by
       intro m hm e ctx'' res' htc'
       exact IH m (Nat.lt_trans hm h_fuel) e ctx'' res' htc'
-    have h_r : res2.nextLoc' ≤ r.nextLoc' := by
+    have h_r : res1.nextLoc' ≤ r.nextLoc' := by
       unfold applyPFnTClosure at happly
       cases fuel' with
       | zero =>
@@ -5828,14 +5838,14 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                       simp [pure, Except.pure] at happly
                       set ctx'' : TypeContext :=
                         { pc := joinPoison p (joinPoison ctx.pc poison1),
-                          regime := res2.regime',
-                          memEnv := res2.memEnv',
+                          regime := res1.regime',
+                          memEnv := res1.memEnv',
                           varEnv :=
                             (VarTypeEnv.ofCaptured env).update x
                               { etyp := etyp2, poison := joinPoison ctx.pc poison2, pred := pred2 },
-                          tagEnv := res2.tagEnv',
-                          nextLoc := res2.nextLoc',
-                          nextTag := res2.nextTag',
+                          tagEnv := res1.tagEnv',
+                          nextLoc := res1.nextLoc',
+                          nextTag := res1.nextTag',
                           pureCtx := true } with hctx''
                       have htc_body' : typecheck ctx'' body.toExpr fuel'' = .ok r3 := by
                         simpa [typecheck, hctx''] using htc_body
@@ -5854,7 +5864,7 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                       rw [hret] at happly
                       simp [pure, Except.pure] at happly
                       cases happly
-                      have hret_nextLoc : ret.2 = res2.nextLoc' := by
+                      have hret_nextLoc : ret.2 = res1.nextLoc' := by
                         exact returnSpecToQTyp_preserves_nextLoc _ _ _ _ _ _ hret
                       simp [hret_nextLoc]
               | nestedFn innerArg innerArgTyp innerRet innerEffects =>
@@ -5879,6 +5889,7 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     calc
       ctx.nextLoc ≤ res2.nextLoc' := IH2
       _ = ctx'.nextLoc := by simp [hctx']
+      _ ≤ res1.nextLoc' := IH1
       _ ≤ r.nextLoc' := h_r
       _ ≤ res.nextLoc' := h_r_le_res
 

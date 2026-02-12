@@ -751,7 +751,10 @@ unchanged. We enter programs with \(\pi = \textit{impure}\).
 
 \subsubsection*{Function application:}
 The function application typing rules extract typing closures from the function
-type and type the body at application time. The body is checked in the captured
+type and type the body at application time. To match call-by-value semantics,
+the argument is typed first, then the function is typed in the updated typing
+context, and finally the closure body is typed using the post-function
+environments. The body is checked in the captured
 context extended with the actual argument's qualified type (including its
 predicate) and under the current logical environment $\mathcal{L}$, enabling
 predicate-based de-poisoning inside function bodies. The arrow-internal poison,

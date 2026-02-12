@@ -9178,27 +9178,27 @@ private lemma applyFnTClosure_ok_of_mem_mapM
 private lemma applyFnTClosure_regular_inv_of_mapM_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
+  (bodyState : TypeResult) (fuel : Nat)
   (tcls : List FnTClosure) (results : List TypeResult)
   (x : Name) (body : Expr) (tenv : CapturedVarEnv)
   (hmap : List.mapM
-      (fun tcl' => applyFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
+      (fun tcl' => applyFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx bodyState fuel)
       tcls = .ok results)
   (hmem : FnTClosure.regular x body tenv ∈ tcls) :
   ∃ fuelBody first result3,
     applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1
-      argEtyp argPoison argPred ctx result2 fuel = .ok first ∧
+      argEtyp argPoison argPred ctx bodyState fuel = .ok first ∧
     fuel = Nat.succ fuelBody ∧
     typecheckExpr
       { ctx with
         pc := joinPoison p (joinPoison p1 ctx.pc)
-        memEnv := result2.memEnv'
+        memEnv := bodyState.memEnv'
         varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
           ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-        tagEnv := result2.tagEnv'
-        nextTag := result2.nextTag'
-        nextLoc := result2.nextLoc'
-        regime := result2.regime' } body fuelBody = .ok result3 ∧
+        tagEnv := bodyState.tagEnv'
+        nextTag := bodyState.nextTag'
+        nextLoc := bodyState.nextLoc'
+        regime := bodyState.regime' } body fuelBody = .ok result3 ∧
     isSubtype st2 result3.qualType = true ∧
     first =
       { result3 with
@@ -9206,18 +9206,18 @@ private lemma applyFnTClosure_regular_inv_of_mapM_mem
           normalizeAppResultByProvenance p1
             { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
   rcases applyFnTClosure_ok_of_mem_mapM
-      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel tcls results
+      ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel tcls results
       (FnTClosure.regular x body tenv) hmap hmem with
     ⟨first, _hfirst_mem, happly⟩
   rcases applyFnTClosure_regular_structure
-      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel x body tenv first happly with
+      ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel x body tenv first happly with
     ⟨fuelBody, hfuel⟩
   have happly_succ :
       applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1
-        argEtyp argPoison argPred ctx result2 (Nat.succ fuelBody) = .ok first := by
+        argEtyp argPoison argPred ctx bodyState (Nat.succ fuelBody) = .ok first := by
     simpa [hfuel] using happly
   rcases applyFnTClosure_regular_inv
-      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuelBody x body tenv first happly_succ with
+      ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuelBody x body tenv first happly_succ with
     ⟨result3, htc_body, hsub, hfirst_eq⟩
   exact ⟨fuelBody, first, result3, happly, hfuel, htc_body, hsub, hfirst_eq⟩
 
@@ -9336,28 +9336,28 @@ private lemma applyPFnTClosure_ok_of_mem_mapM
 private lemma applyPFnTClosure_regular_inv_of_mapM_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
+  (bodyState : TypeResult) (fuel : Nat)
   (tcls : List PFnTClosure) (results : List TypeResult)
   (x : Name) (pbody : PExpr) (tenv : CapturedVarEnv)
   (hmap : List.mapM
-      (fun tcl' => applyPFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
+      (fun tcl' => applyPFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx bodyState fuel)
       tcls = .ok results)
   (hmem : PFnTClosure.regular x pbody tenv ∈ tcls) :
   ∃ fuelBody first result3,
     applyPFnTClosure (PFnTClosure.regular x pbody tenv) st1 st2 p p1
-      argEtyp argPoison argPred ctx result2 fuel = .ok first ∧
+      argEtyp argPoison argPred ctx bodyState fuel = .ok first ∧
     fuel = Nat.succ fuelBody ∧
     typecheckExpr
       { ctx with
         pc := joinPoison p (joinPoison ctx.pc p1)
-        memEnv := result2.memEnv'
+        memEnv := bodyState.memEnv'
         varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
           ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-        tagEnv := result2.tagEnv'
+        tagEnv := bodyState.tagEnv'
         pureCtx := true
-        nextTag := result2.nextTag'
-        nextLoc := result2.nextLoc'
-        regime := result2.regime' } (PExpr.toExpr pbody) fuelBody = .ok result3 ∧
+        nextTag := bodyState.nextTag'
+        nextLoc := bodyState.nextLoc'
+        regime := bodyState.regime' } (PExpr.toExpr pbody) fuelBody = .ok result3 ∧
     isSubtype st2 result3.qualType = true ∧
     first =
       { result3 with
@@ -9365,18 +9365,18 @@ private lemma applyPFnTClosure_regular_inv_of_mapM_mem
           normalizeAppResultByProvenance p1
             { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
   rcases applyPFnTClosure_ok_of_mem_mapM
-      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel tcls results
+      ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel tcls results
       (PFnTClosure.regular x pbody tenv) hmap hmem with
     ⟨first, _hfirst_mem, happly⟩
   rcases applyPFnTClosure_regular_structure
-      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel x pbody tenv first happly with
+      ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel x pbody tenv first happly with
     ⟨fuelBody, hfuel⟩
   have happly_succ :
       applyPFnTClosure (PFnTClosure.regular x pbody tenv) st1 st2 p p1
-        argEtyp argPoison argPred ctx result2 (Nat.succ fuelBody) = .ok first := by
+        argEtyp argPoison argPred ctx bodyState (Nat.succ fuelBody) = .ok first := by
     simpa [hfuel] using happly
   rcases applyPFnTClosure_regular_inv
-      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuelBody x pbody tenv first happly_succ with
+      ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuelBody x pbody tenv first happly_succ with
     ⟨result3, htc_body, hsub, hfirst_eq⟩
   exact ⟨fuelBody, first, result3, happly, hfuel, htc_body, hsub, hfirst_eq⟩
 
@@ -9664,7 +9664,7 @@ private lemma stepFR_app
         | closure htcl₁ henv₁_typing hcover₁ =>
         -- Phase D: Extract body typing from applyFnTClosure via mapM membership
         rcases applyFnTClosure_regular_inv_of_mapM_mem
-          ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result2 fuel' tcls results
+          ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel' tcls results
           x₀ body₀ _ hmap htcl₀
           with ⟨fuelBody₀, first₀, result3₀, _happly₀, hfuel₀, htc_body₀, _hsub₀, hfirst₀_eq⟩
         -- htc_body₀ : typecheckExpr bodyCtx body₀ fuelBody₀ = .ok result3₀
@@ -9919,7 +9919,7 @@ private lemma stepFR_app
         | peClosure hpure₁ htcl₁ henv₁_typing hcover₁ =>
         -- Phase D: Extract body typing from applyPFnTClosure via mapM membership
         rcases applyPFnTClosure_regular_inv_of_mapM_mem
-          ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result2 fuel' tcls results
+          ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel' tcls results
           x₀ _ _ hmap htcl₀
           with ⟨fuelBody₀, first₀, result3₀, _happly₀, hfuel₀, htc_body₀, _hsub₀, hfirst₀_eq⟩
         -- htc_body₀ : typecheckExpr bodyCtx (PExpr.toExpr pbody₀) fuelBody₀ = .ok result3₀

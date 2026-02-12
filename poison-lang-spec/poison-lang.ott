@@ -799,14 +799,15 @@ pm ; R ; pc ; G ; S ; L |- fn x : ST1 => e : ST2 : ST1 -> ST2 # pc tclosures ( x
 pm ; R ; pc ; G ; S ; L |- pfn x : ST1 => pe : ST2 : ST1 -> ST2 # pc tpclosures ( x , pe , S ) :> pc { no_pred } -| G ; L ; R
 
 % Function application typing - singleton closure case - result is arrow type
+% Premises follow argument-first call-by-value order: type e2, then type e1.
 % When the closure list contains a single closure (x, e, S1) and the result is an arrow type:
 % Type-check the body e in the captured context S1 extended with the actual argument.
 % The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that impure function application is disallowed in pure context.
-impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
-impure ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-impure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T2 :> p3 { P3 } -| G3 ; L3 ; R3
+impure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- e : T2 :> p3 { P3 } -| G3 ; L3 ; R3
 ST2 <: T2
 T2 = ST3 -> ST4 # p4 tclosures tcls2
 ----------------------------------------------------------------------  :: app_fn_singleton_arrow
@@ -817,10 +818,10 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { no_pred
 % Type-check the body e in the captured context S1 extended with the actual argument.
 % The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that impure function application is disallowed in pure context.
-impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
-impure ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-impure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T2 :> p3 { P3 } -| G3 ; L3 ; R3
+impure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- e : T2 :> p3 { P3 } -| G3 ; L3 ; R3
 ST2 <: T2
 T2 = ST3 -> ST4 # p4 tpclosures ptcls2
 ----------------------------------------------------------------------  :: app_fn_singleton_parrow
@@ -830,10 +831,10 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { no_pred
 % When the closure list contains a single closure (x, e, S1) and the result is not a function type:
 % Type-check the body e in the captured context S1 extended with the actual argument.
 % Please note that impure function application is disallowed in pure context.
-impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
-impure ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-impure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T2 :> p3 { P3 } -| G3 ; L3 ; R3
+impure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- e : T2 :> p3 { P3 } -| G3 ; L3 ; R3
 ST2 <: T2
 ----------------------------------------------------------------------  :: app_fn_singleton
 impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { AppPred p1 P3 } -| G3 ; L3 ; R3
@@ -849,12 +850,12 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { AppPred
 % 4. Merge the closure sets from both results via union
 % 5. Join all outputs: poisons, memory environments, tag environments, regimes
 % Please note that impure function application is disallowed in pure context.
-impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1 ; R1
-impure ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-impure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T' :> p' { P' } -| G' ; L' ; R'
-impure ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1 ; R1
-impure ; R1 ; pc ; G1 ; S ; L1 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
+impure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- e : T' :> p' { P' } -| G' ; L' ; R'
+impure ; R2 ; pc ; G2 ; S ; L2 |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
 ST2 <: T'
 T' = ST3 -> ST4 # p3 tclosures tcls3
 T'' = ST3 -> ST4 # p4 tclosures tcls4
@@ -865,12 +866,12 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tclosures tcls5 :> join p
 
 % Function application typing - multiple closures case - result is non-arrow type (reference result)
 % When both head and tail applications return references with the same inner type, join locsets.
-impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1 ; R1
-impure ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-impure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T' :> p' { P' } -| G' ; L' ; R'
-impure ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1 ; R1
-impure ; R1 ; pc ; G1 ; S ; L1 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
+impure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- e : T' :> p' { P' } -| G' ; L' ; R'
+impure ; R2 ; pc ; G2 ; S ; L2 |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
 ST2 <: T'
 T' = ref T2 @ LS1
 T'' = ref T2 @ LS2
@@ -881,12 +882,12 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : ref T2 @ LS :> join pc join p1 join p joi
 
 % Function application typing - multiple closures case - result is non-arrow type (base result)
 % When results are non-reference, non-arrow types, signature compatibility forces equality; the result type is that base type.
-impure ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1 ; R1
-impure ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-impure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- e : T' :> p' { P' } -| G' ; L' ; R'
-impure ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1 ; R1
-impure ; R1 ; pc ; G1 ; S ; L1 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
+impure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- e : T' :> p' { P' } -| G' ; L' ; R'
+impure ; R2 ; pc ; G2 ; S ; L2 |- e0 : ST1 -> ST2 # p tclosures tcls' :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
 ST2 <: T'
 T' ≈ T''
 JoinP P' P'' = P3
@@ -894,15 +895,16 @@ JoinP P' P'' = P3
 impure ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinG G' G'' ; JoinL L' L'' ; JoinR R' R''
 
 % Pure function application typing - singleton closure case - result is arrow type
+% Premises follow argument-first call-by-value order: type e2, then type e1.
 % When the closure list contains a single closure (x, pe, S1) and the result is an arrow type:
 % Type-check the body pe in the captured context S1 extended with the actual argument.
 % The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
-pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
-pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-pure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T2 :> p3 { P3 } -| G3 ; L3 ; R3
+pure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- pe : T2 :> p3 { P3 } -| G3 ; L3 ; R3
 ST2 <: T2
 T2 = ST3 -> ST4 # p4 tclosures tcls2
 ----------------------------------------------------------------------  :: app_pfn_singleton_arrow
@@ -914,10 +916,10 @@ pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { no_pred } -
 % The predicate is no_pred (predicates are only meaningful for basic types.
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
-pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
-pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-pure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T2 :> p3 { P3 } -| G3 ; L3 ; R3
+pure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- pe : T2 :> p3 { P3 } -| G3 ; L3 ; R3
 ST2 <: T2
 T2 = ST3 -> ST4 # p4 tpclosures ptcls2
 ----------------------------------------------------------------------  :: app_pfn_singleton_parrow
@@ -928,10 +930,10 @@ pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { no_pred } -
 % Type-check the body pe in the captured context S1 extended with the actual argument.
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
-pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
-pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-pure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T2 :> p3 { P3 } -| G3 ; L3 ; R3
+pure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- pe : T2 :> p3 { P3 } -| G3 ; L3 ; R3
 ST2 <: T2
 ----------------------------------------------------------------------  :: app_pfn_singleton
 pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { AppPred p1 P3 } -| G3 ; L3 ; R3
@@ -948,12 +950,12 @@ pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { AppPred p1 
 % 5. Join all outputs: poisons, memory environments, tag environments, regimes
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
-pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
-pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-pure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T' :> p' { P' } -| G' ; L' ; R'
-pm ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
-pm ; R1 ; pc ; G1 ; S ; L1 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
+pure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- pe : T' :> p' { P' } -| G' ; L' ; R'
+pm ; R2 ; pc ; G2 ; S ; L2 |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
+pm ; R2 ; pc ; G2 ; S ; L2 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
 ST2 <: T'
 T' = ST3 -> ST4 # p3 tpclosures ptcls3
 T'' = ST3 -> ST4 # p4 tpclosures ptcls4
@@ -964,12 +966,12 @@ pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tpclosures ptcls5 :> join pc 
 
 % Pure function application typing - multiple closures case - result is non-arrow type (reference result)
 % When both head and tail applications return references with the same inner type, join locsets.
-pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
-pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-pure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T' :> p' { P' } -| G' ; L' ; R'
-pm ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
-pm ; R1 ; pc ; G1 ; S ; L1 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
+pure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- pe : T' :> p' { P' } -| G' ; L' ; R'
+pm ; R2 ; pc ; G2 ; S ; L2 |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
+pm ; R2 ; pc ; G2 ; S ; L2 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
 ST2 <: T'
 T' = ref T2 @ LS1
 T'' = ref T2 @ LS2
@@ -980,12 +982,12 @@ pm ; R ; pc ; G ; S ; L |- e1 e2 : ref T2 @ LS :> join pc join p1 join p join p'
 
 % Pure function application typing - multiple closures case - result is non-arrow type (base result)
 % When results are non-reference, non-arrow types, signature compatibility forces equality; the result type is that base type.
-pm ; R ; pc ; G ; S ; L |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
-pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) , ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
-pure ; R2 ; join p join p1 pc ; G2 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L2 |- pe : T' :> p' { P' } -| G' ; L' ; R'
-pm ; R ; pc ; G ; S ; L |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
-pm ; R1 ; pc ; G1 ; S ; L1 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
+pure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- pe : T' :> p' { P' } -| G' ; L' ; R'
+pm ; R2 ; pc ; G2 ; S ; L2 |- e0 : ST1 -> ST2 # p tpclosures ptcls' :> p1 { P1 } -| G1 ; L1 ; R1
+pm ; R2 ; pc ; G2 ; S ; L2 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
 ST2 <: T'
 T' ≈ T''
 JoinP P' P'' = P3
