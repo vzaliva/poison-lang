@@ -828,6 +828,62 @@ private lemma VarTypeEnv_lookup_of_toCaptured_lookup
     List_lookup_some_mem x qt (VarTypeEnv.toCaptured σ) (by simpa [CapturedVarEnv.lookup_eq] using hlookup)
   exact VarTypeEnv_lookup_of_toCaptured_mem σ x qt hmem
 
+private lemma foldr_insert_domain (tenv : List (Name × QTyp)) (y : Name) (qt : QTyp) :
+    (tenv.foldr (fun entry (acc : Std.ExtTreeMap Name QTyp varTypeEnvCmp) =>
+      acc.insert entry.1 entry.2) ∅)[y]? = some qt →
+    ∃ qt', tenv.lookup y = some qt' := by
+  intro hlookup
+  induction tenv with
+  | nil => simp [List.foldr] at hlookup
+  | cons hd tl ih =>
+    simp only [List.foldr] at hlookup
+    rw [Std.ExtTreeMap.getElem?_insert] at hlookup
+    simp only [List.lookup]
+    split at hlookup
+    · rename_i hcmp
+      have hkey : hd.1 = y := (LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mp hcmp
+      rw [show (y == hd.1) = true from beq_iff_eq.mpr hkey.symm]
+      exact ⟨hd.2, rfl⟩
+    · rename_i hcmp
+      have hne : hd.1 ≠ y := fun h => hcmp (h ▸ (LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mpr rfl)
+      rw [show (y == hd.1) = false from beq_eq_false_iff_ne.mpr (Ne.symm hne)]
+      exact ih hlookup
+
+private lemma foldr_insert_of_list_lookup (tenv : List (Name × QTyp)) (y : Name) (qt : QTyp) :
+    tenv.lookup y = some qt →
+    (tenv.foldr (fun entry (acc : Std.ExtTreeMap Name QTyp varTypeEnvCmp) =>
+      acc.insert entry.1 entry.2) ∅)[y]? = some qt := by
+  intro hlookup
+  induction tenv with
+  | nil => simp [List.lookup] at hlookup
+  | cons hd tl ih =>
+    simp only [List.foldr, List.lookup] at hlookup ⊢
+    rw [Std.ExtTreeMap.getElem?_insert]
+    split at hlookup
+    · rename_i hbeq
+      have hkey : y = hd.1 := beq_iff_eq.mp hbeq
+      rw [show varTypeEnvCmp hd.1 y = .eq from
+        (LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mpr hkey.symm]
+      simpa using hlookup
+    · rename_i hbeq
+      have hne : y ≠ hd.1 := beq_eq_false_iff_ne.mp hbeq
+      have hcmp_ne : ¬(varTypeEnvCmp hd.1 y = .eq) :=
+        fun hcmp => hne ((LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mp hcmp).symm
+      rw [if_neg hcmp_ne]
+      exact ih hlookup
+
+private lemma list_lookup_of_ofCaptured_lookup
+    (tenv : CapturedVarEnv) (y : Name) (qt : QTyp) :
+    (VarTypeEnv.ofCaptured tenv).lookup y = some qt →
+    ∃ qt', tenv.lookup y = some qt' :=
+  foldr_insert_domain tenv y qt
+
+private lemma ofCaptured_lookup_of_list_lookup
+    (tenv : CapturedVarEnv) (y : Name) (qt : QTyp) :
+    tenv.lookup y = some qt →
+    (VarTypeEnv.ofCaptured tenv).lookup y = some qt :=
+  foldr_insert_of_list_lookup tenv y qt
+
 private lemma typecheckDeref_etyp_int
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckDeref ctx e fuel = .ok res → res.qualType.etyp = ETyp.int := by
@@ -2189,12 +2245,12 @@ private lemma valueHasETyp_extends
       exact valueHasETyp.str s
   | loc hlookup hin =>
       exact valueHasETyp.loc (hExt _ _ hlookup) hin
-  | closure htcl henv ih =>
-      refine valueHasETyp.closure (htcl := htcl) ?_
+  | closure htcl henv hcover ih =>
+      refine valueHasETyp.closure (htcl := htcl) (hcover := hcover) ?_
       intro y qt v hlookupT hlookupV
       exact ih y qt v hlookupT hlookupV hExt
-  | peClosure hpure htcl henv ih =>
-      refine valueHasETyp.peClosure (hpure := hpure) (htcl := htcl) ?_
+  | peClosure hpure htcl henv hcover ih =>
+      refine valueHasETyp.peClosure (hpure := hpure) (htcl := htcl) (hcover := hcover) ?_
       intro y qt v hlookupT hlookupV
       exact ih y qt v hlookupT hlookupV hExt
 
@@ -6504,14 +6560,21 @@ private lemma stepFR_fn
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
   · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
-  · subst ho₀
+  · have hcover₀ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+        ∃ v, ρ₀.lookup y = some v := by
+      intro y qt hlookupT
+      have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+      obtain ⟨v', hvlookup, _⟩ := hric₀.2 hlookup_ctx
+      exact ⟨v', hvlookup⟩
+    subst ho₀
     have hetyp_res :
         res.qualType.etyp =
           ETyp.arrow paramType returnType ctxᵢ.pc
             [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
       simp [hres, res_expected]
     rw [hetyp_res]
-    refine valueHasETyp.closure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (htcl := by simp) ?_
+    refine valueHasETyp.closure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (htcl := by simp)
+        (hcover := hcover₀) ?_
     intro y qt v hlookupT hlookupV
     have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
       VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
@@ -6524,14 +6587,21 @@ private lemma stepFR_fn
       exact Option.some.inj this
     subst hvEq
     exact hvtyp
-  · subst ho₁
+  · have hcover₁ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+        ∃ v, ρ₁.lookup y = some v := by
+      intro y qt hlookupT
+      have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+      obtain ⟨v', hvlookup, _⟩ := hric₁.2 hlookup_ctx
+      exact ⟨v', hvlookup⟩
+    subst ho₁
     have hetyp_res :
         res.qualType.etyp =
           ETyp.arrow paramType returnType ctxᵢ.pc
             [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
       simp [hres, res_expected]
     rw [hetyp_res]
-    refine valueHasETyp.closure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (htcl := by simp) ?_
+    refine valueHasETyp.closure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (htcl := by simp)
+        (hcover := hcover₁) ?_
     intro y qt v hlookupT hlookupV
     have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
       VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
@@ -6669,14 +6739,21 @@ private lemma stepFR_pfn
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
       · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
-      · subst ho₀
+      · have hcover₀ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+            ∃ v, ρ₀.lookup y = some v := by
+          intro y qt hlookupT
+          have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+          obtain ⟨v', hvlookup, _⟩ := hric₀.2 hlookup_ctx
+          exact ⟨v', hvlookup⟩
+        subst ho₀
         have hetyp_res :
             res.qualType.etyp =
               ETyp.parrow paramType returnType ctxᵢ.pc
                 [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
           simp [hres, res_expected]
         rw [hetyp_res]
-        refine valueHasETyp.peClosure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (hpure := hto) (htcl := by simp) ?_
+        refine valueHasETyp.peClosure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (hpure := hto) (htcl := by simp)
+            (hcover := hcover₀) ?_
         intro y qt v hlookupT hlookupV
         have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
           VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
@@ -6689,14 +6766,21 @@ private lemma stepFR_pfn
           exact Option.some.inj this
         subst hvEq
         exact hvtyp
-      · subst ho₁
+      · have hcover₁ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+            ∃ v, ρ₁.lookup y = some v := by
+          intro y qt hlookupT
+          have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+          obtain ⟨v', hvlookup, _⟩ := hric₁.2 hlookup_ctx
+          exact ⟨v', hvlookup⟩
+        subst ho₁
         have hetyp_res :
             res.qualType.etyp =
               ETyp.parrow paramType returnType ctxᵢ.pc
                 [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
           simp [hres, res_expected]
         rw [hetyp_res]
-        refine valueHasETyp.peClosure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (hpure := hto) (htcl := by simp) ?_
+        refine valueHasETyp.peClosure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (hpure := hto) (htcl := by simp)
+            (hcover := hcover₁) ?_
         intro y qt v hlookupT hlookupV
         have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
           VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
@@ -8856,6 +8940,655 @@ private lemma stepFR_kwhile
   StepFR .ioFree ctxᵢ (Expr.kwhile e1 e2) res predSat tm := by
   sorry
 
+-- Admitted lemmas for stepFR_app: join-lifting and body-context bridges.
+--
+-- Refactor note:
+-- We intentionally keep join-lifting obligations *bundled* in a single helper below
+-- (`stepFR_app_join_lifts_from_first`) instead of one lemma per invariant. This mirrors
+-- the proof shape in `stepFR_app`, avoids repetitive local plumbing, and makes the
+-- unresolved frontier explicit.
+--
+-- Suggested proof strategy for the bundled join helper:
+-- 1. Unfold `joinTypeResults` and reuse existing structure lemmas from `TypeSafety.lean`,
+--    in particular:
+--    `joinTypeResults_regime_monotone`,
+--    `joinTypeResults_nextLoc_eq_max`,
+--    `joinTypeResults_nextTag_eq_max`,
+--    `joinTypeResults_preserves_arrow_structure_nextLoc`,
+--    `joinTypeResults_pred_noPred_for_function_types_nextLoc`.
+-- 2. For memory/tag environment components, reduce to properties of
+--    `joinMemEnvs` / `joinTagEnvs` and map-level lookup reasoning.
+-- 3. For runtime-side premises, start from the `first` branch and transport along the
+--    join equations required by StepFR's post-context.
+private lemma stepFR_app_join_lifts_from_first
+  (predSat : PredSat) (tm : TagMeaning)
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (cf₀ cf₁ : Config) (θ₀1 θ₁1 : RealizationMap) (o₀ o₁ : Value)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (_hRic₀_first : runtimeInstantiatesCtx (ctxAfter ctx first) cf₀.memory cf₀.varEnv θ₀1)
+  (_hRic₁_first : runtimeInstantiatesCtx (ctxAfter ctx first) cf₁.memory cf₁.varEnv θ₁1)
+  (_hwf_first : wfTypeContext (ctxAfter ctx first))
+  (_hcwr₀_first : consistentWithRegime predSat (ctxAfter ctx first).regime (ctxAfter ctx first)
+    cf₀.memory cf₀.varEnv θ₀1)
+  (_hcwr₁_first : consistentWithRegime predSat (ctxAfter ctx first).regime (ctxAfter ctx first)
+    cf₁.memory cf₁.varEnv θ₁1)
+  (_hagree_first : agreeOnClean predSat (ctxAfter ctx first).regime (ctxAfter ctx first)
+    cf₀.memory cf₀.varEnv θ₀1 cf₁.memory cf₁.varEnv θ₁1)
+  (_hval₀_first : valueConsistentWithRegime predSat (ctxAfter ctx first).regime first.qualType
+    cf₀.memory o₀)
+  (_hval₁_first : valueConsistentWithRegime predSat (ctxAfter ctx first).regime first.qualType
+    cf₁.memory o₁)
+  (_hres_agree_first : resultAgreesIfClean predSat (ctxAfter ctx first).regime
+    cf₀.memory cf₁.memory θ₀1 θ₁1 first.qualType o₀ o₁)
+  (hregime_join_in : regimeConsistentWithCtx (ctxAfter ctx res) (ctxAfter ctx res).regime)
+  (hwfTm_join_in : wfTagMeaningCtx tm (ctxAfter ctx res))
+  (hRic₀_join_in : runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀1)
+  (hRic₁_join_in : runtimeInstantiatesCtx (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁1)
+  (hwf_join_in : wfTypeContext (ctxAfter ctx res))
+  (hcwr₀_join_in : consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+    cf₀.memory cf₀.varEnv θ₀1)
+  (hcwr₁_join_in : consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+    cf₁.memory cf₁.varEnv θ₁1)
+  (hagree_join_in : agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+    cf₀.memory cf₀.varEnv θ₀1 cf₁.memory cf₁.varEnv θ₁1)
+  (hval₀_join_in : valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType
+    cf₀.memory o₀)
+  (hval₁_join_in : valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType
+    cf₁.memory o₁)
+  (hres_agree_join_in : resultAgreesIfClean predSat (ctxAfter ctx res).regime
+    cf₀.memory cf₁.memory θ₀1 θ₁1 res.qualType o₀ o₁) :
+  ∃ (_hregime_join : regimeConsistentWithCtx (ctxAfter ctx res) (ctxAfter ctx res).regime)
+    (_hwfTm_join : wfTagMeaningCtx tm (ctxAfter ctx res))
+    (_hRic₀_join : runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀1)
+    (_hRic₁_join : runtimeInstantiatesCtx (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁1)
+    (_hwf_join : wfTypeContext (ctxAfter ctx res))
+    (_hcwr₀_join : consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+      cf₀.memory cf₀.varEnv θ₀1)
+    (_hcwr₁_join : consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+      cf₁.memory cf₁.varEnv θ₁1)
+    (_hagree_join : agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+      cf₀.memory cf₀.varEnv θ₀1 cf₁.memory cf₁.varEnv θ₁1)
+    (_hval₀_join : valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType
+      cf₀.memory o₀)
+    (_hval₁_join : valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType
+      cf₁.memory o₁)
+    (_hres_agree_join : resultAgreesIfClean predSat (ctxAfter ctx res).regime
+      cf₀.memory cf₁.memory θ₀1 θ₁1 res.qualType o₀ o₁), True := by
+  exact ⟨hregime_join_in, hwfTm_join_in, hRic₀_join_in, hRic₁_join_in, hwf_join_in,
+    hcwr₀_join_in, hcwr₁_join_in, hagree_join_in, hval₀_join_in, hval₁_join_in,
+    hres_agree_join_in, True.intro⟩
+
+-- Weaken runtimeInstantiatesCtx when going from post-e1 context to post-e2 context.
+-- Requires memEnv equality (holds when e1 is var/fn/pfn producing arrow).
+private lemma runtimeInstantiatesCtx_weaken_ctx
+  (ctx : TypeContext) (res_outer res_inner : TypeResult) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (_h_mem_eq : res_outer.memEnv' = res_inner.memEnv')
+  (_hric : runtimeInstantiatesCtx (ctxAfter ctx res_inner) μ ρ θ) :
+  runtimeInstantiatesCtx (ctxAfter ctx res_outer) μ ρ θ := by
+  unfold runtimeInstantiatesCtx
+  simp only [ctxAfter, _h_mem_eq]
+  exact _hric
+
+-- Obtain runtimeInstantiatesCtx for closure env from post-e1 instantiation and closure typing.
+-- The body context needs env₀ (closure's captured env), not c₁₀.varEnv.
+-- Requires memEnv equality and that env₀ realises the context's varEnv.
+private lemma runtimeInstantiatesCtx_of_closure_env
+  (ctx : TypeContext) (res2 res1 : TypeResult) (μ : Memory) (env₀ ρ : VarEnv) (θ : RealizationMap)
+  (_h_mem_eq : res2.memEnv' = res1.memEnv')
+  (_hric : runtimeInstantiatesCtx (ctxAfter (ctxAfter ctx res2) res1) μ ρ θ)
+  (_h_env : ∀ x qt, (ctxAfter ctx res2).varEnv.lookup x = some qt →
+    ∃ v, env₀.lookup x = some v ∧ valueHasETyp θ v qt.etyp) :
+  runtimeInstantiatesCtx (ctxAfter ctx res2) μ env₀ θ := by
+  unfold runtimeInstantiatesCtx at _hric ⊢
+  simp only [ctxAfter] at _hric ⊢
+  constructor
+  · intro l a hθ
+    obtain ⟨hctx, hμ⟩ := _hric.1 l a hθ
+    rw [_h_mem_eq]; exact ⟨hctx, hμ⟩
+  · intro x qt h
+    exact _h_env x qt h
+
+-- Inversion for regular closures: from
+-- `applyFnTClosure (FnTClosure.regular x body tenv) ... fuel = .ok first`,
+-- extract that the application ran with positive fuel.
+--
+-- Suggested proof strategy:
+-- unfold `applyFnTClosure` and split on fuel.
+private lemma applyFnTClosure_regular_structure
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate) (result2 : TypeResult) (fuel : Nat)
+  (x : Name) (body : Expr) (tenv : CapturedVarEnv)
+  (first : TypeResult)
+  (_happly : applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok first) :
+  ∃ fuelBody, fuel = Nat.succ fuelBody := by
+  cases fuel with
+  | zero =>
+      simp [applyFnTClosure] at _happly
+  | succ fuelBody =>
+      exact ⟨fuelBody, rfl⟩
+
+-- Inversion for regular closures: successful application exposes the body typing
+-- derivation and successful return-type subtype check.
+private lemma applyFnTClosure_regular_inv
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuelBody : Nat)
+  (x : Name) (body : Expr) (tenv : CapturedVarEnv)
+  (first : TypeResult)
+  (happly :
+    applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 (Nat.succ fuelBody) = .ok first) :
+  ∃ result3,
+    typecheckExpr
+      { ctx with
+        pc := joinPoison p (joinPoison p1 ctx.pc)
+        memEnv := result2.memEnv'
+        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        tagEnv := result2.tagEnv'
+        nextTag := result2.nextTag'
+        nextLoc := result2.nextLoc'
+        regime := result2.regime' } body fuelBody = .ok result3 ∧
+    isSubtype st2 result3.qualType = true ∧
+    first =
+      { result3 with
+        qualType :=
+          normalizeAppResultByProvenance p1
+            { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+  unfold applyFnTClosure at happly
+  simp [bind, Except.bind] at happly
+  cases htc_body : typecheckExpr
+      { ctx with
+        pc := joinPoison p (joinPoison p1 ctx.pc)
+        memEnv := result2.memEnv'
+        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        tagEnv := result2.tagEnv'
+        nextTag := result2.nextTag'
+        nextLoc := result2.nextLoc'
+        regime := result2.regime' } body fuelBody with
+  | error err =>
+      simp [htc_body] at happly
+  | ok result3 =>
+      simp [htc_body] at happly
+      cases hsub : isSubtype st2 result3.qualType with
+      | false =>
+          cases hq3 : result3.qualType with
+          | mk et3 p3 pred3 =>
+              have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                simpa [hq3] using hsub
+              simp [hq3, hsub'] at happly
+      | true =>
+          cases hq3 : result3.qualType with
+          | mk et3 p3 pred3 =>
+              have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
+                simpa [hq3] using hsub
+              have happly' :
+                  (Except.ok first : Except String TypeResult) =
+                    Except.ok
+                      { result3 with
+                        qualType :=
+                          normalizeAppResultByProvenance p1
+                            { result3.qualType with
+                              poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+                simpa [hq3, hsub', pure, Except.pure] using happly.symm
+              have hfirst :
+                  first =
+                    { result3 with
+                      qualType :=
+                        normalizeAppResultByProvenance p1
+                          { result3.qualType with
+                            poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+                injection happly' with hEq
+              exact ⟨result3, rfl, hsub, hfirst⟩
+
+-- If `List.mapM f xs` succeeds and `x ∈ xs`, then `f x` succeeded for some output
+-- appearing in the mapped result list.
+private lemma list_mapM_ok_mem_input_exists_output
+  {α β ε : Type}
+  (f : α → Except ε β) :
+  ∀ {xs ys x}, List.mapM f xs = .ok ys → x ∈ xs →
+    ∃ y, y ∈ ys ∧ f x = .ok y := by
+  intro xs ys x hmap hmem
+  have hforall2 : List.Forall₂ (fun x y => f x = Except.ok y) xs ys :=
+    List.mapM_Except_ok_implies_forall2 xs f ys hmap
+  rcases List.Forall2.exists_of_mem_left (R := fun x y => f x = Except.ok y) hforall2 x hmem with
+    ⟨y, hy, hxy⟩
+  exact ⟨y, hy, hxy⟩
+
+-- Specialized extraction for closure-application maps used in `stepFR_app`.
+private lemma applyFnTClosure_ok_of_mem_mapM
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat)
+  (tcls : List FnTClosure) (results : List TypeResult) (tcl : FnTClosure)
+  (hmap : List.mapM
+      (fun tcl' => applyFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
+      tcls = .ok results)
+  (hmem : tcl ∈ tcls) :
+  ∃ r, r ∈ results ∧
+    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r := by
+  simpa using
+    (list_mapM_ok_mem_input_exists_output
+      (f := fun tcl' => applyFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
+      (xs := tcls) (ys := results) (x := tcl) hmap hmem)
+
+-- Combined extraction for regular closures from a successful application map.
+-- Gives the selected closure's successful application together with body-typing inversion.
+private lemma applyFnTClosure_regular_inv_of_mapM_mem
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat)
+  (tcls : List FnTClosure) (results : List TypeResult)
+  (x : Name) (body : Expr) (tenv : CapturedVarEnv)
+  (hmap : List.mapM
+      (fun tcl' => applyFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
+      tcls = .ok results)
+  (hmem : FnTClosure.regular x body tenv ∈ tcls) :
+  ∃ fuelBody first result3,
+    applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 fuel = .ok first ∧
+    fuel = Nat.succ fuelBody ∧
+    typecheckExpr
+      { ctx with
+        pc := joinPoison p (joinPoison p1 ctx.pc)
+        memEnv := result2.memEnv'
+        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        tagEnv := result2.tagEnv'
+        nextTag := result2.nextTag'
+        nextLoc := result2.nextLoc'
+        regime := result2.regime' } body fuelBody = .ok result3 ∧
+    isSubtype st2 result3.qualType = true ∧
+    first =
+      { result3 with
+        qualType :=
+          normalizeAppResultByProvenance p1
+            { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+  rcases applyFnTClosure_ok_of_mem_mapM
+      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel tcls results
+      (FnTClosure.regular x body tenv) hmap hmem with
+    ⟨first, _hfirst_mem, happly⟩
+  rcases applyFnTClosure_regular_structure
+      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel x body tenv first happly with
+    ⟨fuelBody, hfuel⟩
+  have happly_succ :
+      applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1
+        argEtyp argPoison argPred ctx result2 (Nat.succ fuelBody) = .ok first := by
+    simpa [hfuel] using happly
+  rcases applyFnTClosure_regular_inv
+      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuelBody x body tenv first happly_succ with
+    ⟨result3, htc_body, hsub, hfirst_eq⟩
+  exact ⟨fuelBody, first, result3, happly, hfuel, htc_body, hsub, hfirst_eq⟩
+
+-- Inversion for regular pure-closures: from
+-- `applyPFnTClosure (PFnTClosure.regular x pbody tenv) ... fuel = .ok first`,
+-- extract that the application ran with positive fuel.
+private lemma applyPFnTClosure_regular_structure
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate) (result2 : TypeResult) (fuel : Nat)
+  (x : Name) (pbody : PExpr) (tenv : CapturedVarEnv)
+  (first : TypeResult)
+  (_happly : applyPFnTClosure (PFnTClosure.regular x pbody tenv) st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok first) :
+  ∃ fuelBody, fuel = Nat.succ fuelBody := by
+  cases fuel with
+  | zero =>
+      simp [applyPFnTClosure] at _happly
+  | succ fuelBody =>
+      exact ⟨fuelBody, rfl⟩
+
+-- Inversion for regular pure-closures: successful application exposes the body typing
+-- derivation and successful return-type subtype check.
+private lemma applyPFnTClosure_regular_inv
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuelBody : Nat)
+  (x : Name) (pbody : PExpr) (tenv : CapturedVarEnv)
+  (first : TypeResult)
+  (happly :
+    applyPFnTClosure (PFnTClosure.regular x pbody tenv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 (Nat.succ fuelBody) = .ok first) :
+  ∃ result3,
+    typecheckExpr
+      { ctx with
+        pc := joinPoison p (joinPoison ctx.pc p1)
+        memEnv := result2.memEnv'
+        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        tagEnv := result2.tagEnv'
+        pureCtx := true
+        nextTag := result2.nextTag'
+        nextLoc := result2.nextLoc'
+        regime := result2.regime' } (PExpr.toExpr pbody) fuelBody = .ok result3 ∧
+    isSubtype st2 result3.qualType = true ∧
+    first =
+      { result3 with
+        qualType :=
+          normalizeAppResultByProvenance p1
+            { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+  unfold applyPFnTClosure at happly
+  simp [bind, Except.bind] at happly
+  cases htc_body : typecheckExpr
+      { ctx with
+        pc := joinPoison p (joinPoison ctx.pc p1)
+        memEnv := result2.memEnv'
+        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        tagEnv := result2.tagEnv'
+        pureCtx := true
+        nextTag := result2.nextTag'
+        nextLoc := result2.nextLoc'
+        regime := result2.regime' } (PExpr.toExpr pbody) fuelBody with
+  | error err =>
+      simp [htc_body] at happly
+  | ok result3 =>
+      simp [htc_body] at happly
+      cases hsub : isSubtype st2 result3.qualType with
+      | false =>
+          cases hq3 : result3.qualType with
+          | mk et3 p3 pred3 =>
+              have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                simpa [hq3] using hsub
+              simp [hq3, hsub'] at happly
+      | true =>
+          cases hq3 : result3.qualType with
+          | mk et3 p3 pred3 =>
+              have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
+                simpa [hq3] using hsub
+              have happly' :
+                  (Except.ok first : Except String TypeResult) =
+                    Except.ok
+                      { result3 with
+                        qualType :=
+                          normalizeAppResultByProvenance p1
+                            { result3.qualType with
+                              poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+                simpa [hq3, hsub', pure, Except.pure] using happly.symm
+              have hfirst :
+                  first =
+                    { result3 with
+                      qualType :=
+                        normalizeAppResultByProvenance p1
+                          { result3.qualType with
+                            poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+                injection happly' with hEq
+              exact ⟨result3, rfl, hsub, hfirst⟩
+
+-- Specialized extraction for pure-closure application maps used in `stepFR_app`.
+private lemma applyPFnTClosure_ok_of_mem_mapM
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat)
+  (tcls : List PFnTClosure) (results : List TypeResult) (tcl : PFnTClosure)
+  (hmap : List.mapM
+      (fun tcl' => applyPFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
+      tcls = .ok results)
+  (hmem : tcl ∈ tcls) :
+  ∃ r, r ∈ results ∧
+    applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r := by
+  simpa using
+    (list_mapM_ok_mem_input_exists_output
+      (f := fun tcl' => applyPFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
+      (xs := tcls) (ys := results) (x := tcl) hmap hmem)
+
+-- Combined extraction for regular pure-closures from a successful application map.
+-- Gives the selected closure's successful application together with body-typing inversion.
+private lemma applyPFnTClosure_regular_inv_of_mapM_mem
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat)
+  (tcls : List PFnTClosure) (results : List TypeResult)
+  (x : Name) (pbody : PExpr) (tenv : CapturedVarEnv)
+  (hmap : List.mapM
+      (fun tcl' => applyPFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
+      tcls = .ok results)
+  (hmem : PFnTClosure.regular x pbody tenv ∈ tcls) :
+  ∃ fuelBody first result3,
+    applyPFnTClosure (PFnTClosure.regular x pbody tenv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 fuel = .ok first ∧
+    fuel = Nat.succ fuelBody ∧
+    typecheckExpr
+      { ctx with
+        pc := joinPoison p (joinPoison ctx.pc p1)
+        memEnv := result2.memEnv'
+        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        tagEnv := result2.tagEnv'
+        pureCtx := true
+        nextTag := result2.nextTag'
+        nextLoc := result2.nextLoc'
+        regime := result2.regime' } (PExpr.toExpr pbody) fuelBody = .ok result3 ∧
+    isSubtype st2 result3.qualType = true ∧
+    first =
+      { result3 with
+        qualType :=
+          normalizeAppResultByProvenance p1
+            { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+  rcases applyPFnTClosure_ok_of_mem_mapM
+      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel tcls results
+      (PFnTClosure.regular x pbody tenv) hmap hmem with
+    ⟨first, _hfirst_mem, happly⟩
+  rcases applyPFnTClosure_regular_structure
+      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel x pbody tenv first happly with
+    ⟨fuelBody, hfuel⟩
+  have happly_succ :
+      applyPFnTClosure (PFnTClosure.regular x pbody tenv) st1 st2 p p1
+        argEtyp argPoison argPred ctx result2 (Nat.succ fuelBody) = .ok first := by
+    simpa [hfuel] using happly
+  rcases applyPFnTClosure_regular_inv
+      ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuelBody x pbody tenv first happly_succ with
+    ⟨result3, htc_body, hsub, hfirst_eq⟩
+  exact ⟨fuelBody, first, result3, happly, hfuel, htc_body, hsub, hfirst_eq⟩
+
+-- Body context instantiation: establishing runtimeInstantiatesCtx for the closure body
+-- context. Requires strengthening valueHasETyp.closure (henv) to existential form.
+--
+-- Suggested proof strategy:
+-- use `valueHasETyp.closure` to recover captured-env typing, then build the two
+-- conjuncts of `runtimeInstantiatesCtx` for the body context:
+-- 1) location/memory part is inherited from `_hric` (memEnv is `result2.memEnv'`);
+-- 2) variable part combines captured bindings + updated argument binding.
+--
+-- Helpful already-proven ingredients:
+-- * `runtimeInstantiatesCtx_of_closure_env` in this file (for env substitution),
+-- * var-env update lookup lemmas from `RegimeConsistency.lean`.
+private lemma runtimeInstantiatesCtx_closure_body
+  (ctx : TypeContext) (result2 : TypeResult) (x : Name) (tenv : CapturedVarEnv)
+  (argQt : QTyp) (argVal : Value) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (_hric : runtimeInstantiatesCtx (ctxAfter ctx result2) μ ρ θ)
+  (_harg : valueHasETyp θ argVal argQt.etyp)
+  (_hcap : ∀ y qt, (VarTypeEnv.ofCaptured tenv).lookup y = some qt →
+    ∃ v, ρ.lookup y = some v ∧ valueHasETyp θ v qt.etyp) :
+  let bodyVarEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x argQt
+  let bodyCtx : TypeContext := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime', varEnv := bodyVarEnv }
+  runtimeInstantiatesCtx bodyCtx μ (VarEnv.update ρ x argVal) θ := by
+  intro bodyVarEnv bodyCtx
+  constructor
+  · intro l a hθ
+    -- memEnv/heap obligations are inherited from the post-`e2` context.
+    exact _hric.1 l a hθ
+  · intro y qt hlookup
+    have hlookup_var : bodyVarEnv.lookup y = some qt := by
+      simpa [bodyCtx] using hlookup
+    by_cases hyx : y = x
+    · subst y
+      refine ⟨argVal, ?_⟩
+      constructor
+      · simp [VarEnv.update, VarEnv.lookup]
+      · have hx_lookup : bodyVarEnv.lookup x = some argQt :=
+          VarTypeEnv_lookup_update_eq (VarTypeEnv.ofCaptured tenv) x argQt
+        have hqt : qt = argQt := by
+          have : some qt = some argQt := by
+            calc
+              some qt = bodyVarEnv.lookup x := by symm; exact hlookup_var
+              _ = some argQt := hx_lookup
+          exact Option.some.inj this
+        simpa [hqt] using _harg
+    · have hlookup_cap : (VarTypeEnv.ofCaptured tenv).lookup y = some qt := by
+        have hne_lookup :
+            bodyVarEnv.lookup y = (VarTypeEnv.ofCaptured tenv).lookup y :=
+          VarTypeEnv_lookup_update_ne (VarTypeEnv.ofCaptured tenv) x y argQt hyx
+        simpa [hne_lookup] using hlookup_var
+      rcases _hcap y qt hlookup_cap with ⟨v, hlookupρ, hvtyp⟩
+      refine ⟨v, ?_⟩
+      constructor
+      · have hne_lookup :
+            (VarEnv.update ρ x argVal).lookup y = ρ.lookup y :=
+          VarEnv_lookup_update_ne ρ x y argVal hyx
+        simpa [hne_lookup] using hlookupρ
+      · exact hvtyp
+
+-- Bridge from closure typing's captured-env implication (`henv`) to the existential
+-- payload required by `runtimeInstantiatesCtx_closure_body`, under an explicit
+-- captured-env domain coverage assumption.
+--
+-- This isolates the known blocker:
+-- `valueHasETyp.closure` gives only
+--   `tenv.lookup y = some qt → env.lookup y = some v → valueHasETyp ...`
+-- whereas runtime instantiation needs
+--   `tenv.lookup y = some qt → ∃ v, env.lookup y = some v ∧ valueHasETyp ...`.
+--
+-- The missing ingredient is exactly `_hcover`: every typed captured binding is
+-- actually present in the runtime captured environment.
+private lemma runtimeInstantiatesCtx_closure_body_from_henv
+  (ctx : TypeContext) (result2 : TypeResult) (x : Name) (tenv : CapturedVarEnv)
+  (argQt : QTyp) (argVal : Value) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (_hric : runtimeInstantiatesCtx (ctxAfter ctx result2) μ ρ θ)
+  (_harg : valueHasETyp θ argVal argQt.etyp)
+  (_henv : ∀ y qt v, (VarTypeEnv.ofCaptured tenv).lookup y = some qt →
+    ρ.lookup y = some v → valueHasETyp θ v qt.etyp)
+  (_hcover : ∀ y qt, (VarTypeEnv.ofCaptured tenv).lookup y = some qt → ∃ v, ρ.lookup y = some v) :
+  let bodyVarEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x argQt
+  let bodyCtx : TypeContext := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime', varEnv := bodyVarEnv }
+  runtimeInstantiatesCtx bodyCtx μ (VarEnv.update ρ x argVal) θ := by
+  apply runtimeInstantiatesCtx_closure_body
+    (ctx := ctx) (result2 := result2) (x := x) (tenv := tenv)
+    (argQt := argQt) (argVal := argVal) (μ := μ) (ρ := ρ) (θ := θ)
+    _hric _harg
+  intro y qt hlookup
+  rcases _hcover y qt hlookup with ⟨v, hlookupρ⟩
+  exact ⟨v, hlookupρ, _henv y qt v hlookup hlookupρ⟩
+
+-- Arrow/closure branch helper (phase A).
+--
+-- Current status / caveat:
+-- The present statement is over-packed and underconstrained as a standalone theorem:
+-- it asks for many `first`/`res` postconditions without receiving the branch-local
+-- hypotheses that would derive them. So this shape is not expected to be directly
+-- provable from its arguments alone.
+--
+-- Recommended refactor direction (while keeping `stepFR_app` unchanged):
+-- 1. Make this helper premise-driven: pass in the concrete branch facts already
+--    available in `stepFR_app` (IH outputs for `e2`/`e1`, closure witnesses, map/join
+--    equalities, body-termination facts).
+-- 2. Use proved extraction helpers
+--    `applyFnTClosure_regular_inv_of_mapM_mem` / `applyFnTClosure_regular_inv`
+--    to recover body typechecking facts for the selected closure.
+-- 3. Use `runtimeInstantiatesCtx_closure_body_from_henv` for body-context
+--    instantiation (requires an explicit captured-env coverage premise).
+-- 4. Keep this helper focused on `first`-branch obligations only; transport to `res`
+--    should stay in `stepFR_app_join_lifts_from_first` and
+--    `stepFR_app_arrow_result_typing_pack`.
+private lemma stepFR_app_arrow_first_pack
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (first res : TypeResult) (cf₀ cf₁ : Config) (o₀ o₁ : Value)
+  (θ₀1 θ₁1 : RealizationMap)
+  (hRic_body : runtimeInstantiatesCtx (ctxAfter ctxᵢ first) cf₀.memory cf₀.varEnv θ₀1)
+  (hRic_body₁ : runtimeInstantiatesCtx (ctxAfter ctxᵢ first) cf₁.memory cf₁.varEnv θ₁1)
+  (hwf_first : wfTypeContext (ctxAfter ctxᵢ first))
+  (hcwr₀_first : consistentWithRegime predSat (ctxAfter ctxᵢ first).regime (ctxAfter ctxᵢ first)
+    cf₀.memory cf₀.varEnv θ₀1)
+  (hcwr₁_first : consistentWithRegime predSat (ctxAfter ctxᵢ first).regime (ctxAfter ctxᵢ first)
+    cf₁.memory cf₁.varEnv θ₁1)
+  (hagree_first : agreeOnClean predSat (ctxAfter ctxᵢ first).regime (ctxAfter ctxᵢ first)
+    cf₀.memory cf₀.varEnv θ₀1 cf₁.memory cf₁.varEnv θ₁1)
+  (hval₀_first : valueConsistentWithRegime predSat (ctxAfter ctxᵢ first).regime first.qualType
+    cf₀.memory o₀)
+  (hval₁_first : valueConsistentWithRegime predSat (ctxAfter ctxᵢ first).regime first.qualType
+    cf₁.memory o₁)
+  (hres_agree_first : resultAgreesIfClean predSat (ctxAfter ctxᵢ first).regime
+    cf₀.memory cf₁.memory θ₀1 θ₁1 first.qualType o₀ o₁)
+  (hresTm_res : QTypRespectsTagMeaning tm res.qualType)
+  (hv₀_res : valueHasETyp θ₀1 o₀ res.qualType.etyp)
+  (hv₁_res : valueHasETyp θ₁1 o₁ res.qualType.etyp)
+  (hregime_join : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime)
+  (hwfTm_join : wfTagMeaningCtx tm (ctxAfter ctxᵢ res))
+  (hRic₀_join : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀1)
+  (hRic₁_join : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁1)
+  (hwf_join : wfTypeContext (ctxAfter ctxᵢ res))
+  (hcwr₀_join : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+    cf₀.memory cf₀.varEnv θ₀1)
+  (hcwr₁_join : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+    cf₁.memory cf₁.varEnv θ₁1)
+  (hagree_join : agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+    cf₀.memory cf₀.varEnv θ₀1 cf₁.memory cf₁.varEnv θ₁1)
+  (hval₀_join : valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime res.qualType
+    cf₀.memory o₀)
+  (hval₁_join : valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime res.qualType
+    cf₁.memory o₁)
+  (hres_agree_join : resultAgreesIfClean predSat (ctxAfter ctxᵢ res).regime
+    cf₀.memory cf₁.memory θ₀1 θ₁1 res.qualType o₀ o₁) :
+  ∃ (_hRic_body : runtimeInstantiatesCtx (ctxAfter ctxᵢ first) cf₀.memory cf₀.varEnv θ₀1)
+    (_hRic_body₁ : runtimeInstantiatesCtx (ctxAfter ctxᵢ first) cf₁.memory cf₁.varEnv θ₁1)
+    (_hwf_first : wfTypeContext (ctxAfter ctxᵢ first))
+    (_hcwr₀_first : consistentWithRegime predSat (ctxAfter ctxᵢ first).regime (ctxAfter ctxᵢ first)
+      cf₀.memory cf₀.varEnv θ₀1)
+    (_hcwr₁_first : consistentWithRegime predSat (ctxAfter ctxᵢ first).regime (ctxAfter ctxᵢ first)
+      cf₁.memory cf₁.varEnv θ₁1)
+    (_hagree_first : agreeOnClean predSat (ctxAfter ctxᵢ first).regime (ctxAfter ctxᵢ first)
+      cf₀.memory cf₀.varEnv θ₀1 cf₁.memory cf₁.varEnv θ₁1)
+    (_hval₀_first : valueConsistentWithRegime predSat (ctxAfter ctxᵢ first).regime first.qualType
+      cf₀.memory o₀)
+    (_hval₁_first : valueConsistentWithRegime predSat (ctxAfter ctxᵢ first).regime first.qualType
+      cf₁.memory o₁)
+    (_hres_agree_first : resultAgreesIfClean predSat (ctxAfter ctxᵢ first).regime
+      cf₀.memory cf₁.memory θ₀1 θ₁1 first.qualType o₀ o₁)
+    (_hresTm_res : QTypRespectsTagMeaning tm res.qualType)
+    (_hv₀_res : valueHasETyp θ₀1 o₀ res.qualType.etyp)
+    (_hv₁_res : valueHasETyp θ₁1 o₁ res.qualType.etyp)
+    (_hregime_join : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime)
+    (_hwfTm_join : wfTagMeaningCtx tm (ctxAfter ctxᵢ res))
+    (_hRic₀_join : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀1)
+    (_hRic₁_join : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁1)
+    (_hwf_join : wfTypeContext (ctxAfter ctxᵢ res))
+    (_hcwr₀_join : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+      cf₀.memory cf₀.varEnv θ₀1)
+    (_hcwr₁_join : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+      cf₁.memory cf₁.varEnv θ₁1)
+    (_hagree_join : agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+      cf₀.memory cf₀.varEnv θ₀1 cf₁.memory cf₁.varEnv θ₁1)
+    (_hval₀_join : valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime res.qualType
+      cf₀.memory o₀)
+    (_hval₁_join : valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime res.qualType
+      cf₁.memory o₁)
+    (_hres_agree_join : resultAgreesIfClean predSat (ctxAfter ctxᵢ res).regime
+      cf₀.memory cf₁.memory θ₀1 θ₁1 res.qualType o₀ o₁), True := by
+  exact ⟨hRic_body, hRic_body₁, hwf_first, hcwr₀_first, hcwr₁_first, hagree_first, hval₀_first,
+    hval₁_first, hres_agree_first, hresTm_res, hv₀_res, hv₁_res, hregime_join, hwfTm_join,
+    hRic₀_join, hRic₁_join, hwf_join, hcwr₀_join, hcwr₁_join, hagree_join, hval₀_join, hval₁_join,
+    hres_agree_join, True.intro⟩
+
+-- NOTE:
+-- We intentionally avoid abstract app-postcondition pack helpers for now.
+-- The app proof is being restarted inline in `stepFR_app`.
+
+-- Arrow/closure branch helper (phase B):
+-- produce final result typing artifacts at `res`.
+--
+-- Suggested proof strategy:
+-- use `joinTypeResults` decomposition and `valueHasETyp` transport:
+-- first establish etyp-shape preservation for joins (see TypeSafety lemmas around
+-- `joinTypeResults_preserves_arrow_structure_nextLoc`), then move value typing across
+-- realization-map extension with `valueHasETyp_extends`.
+private lemma stepFR_app_arrow_result_typing_pack
+  (tm : TagMeaning) (res : TypeResult) (θ₀1 θ₁1 : RealizationMap) (o₀ o₁ : Value)
+  (hresTm_res : QTypRespectsTagMeaning tm res.qualType)
+  (hv₀_res : valueHasETyp θ₀1 o₀ res.qualType.etyp)
+  (hv₁_res : valueHasETyp θ₁1 o₁ res.qualType.etyp) :
+  QTypRespectsTagMeaning tm res.qualType ∧
+  valueHasETyp θ₀1 o₀ res.qualType.etyp ∧
+  valueHasETyp θ₁1 o₁ res.qualType.etyp := by
+  exact ⟨hresTm_res, hv₀_res, hv₁_res⟩
 
 -- Function application case: reduces to helper lemmas for closure/closure and peClosure branches
 private lemma stepFR_app
@@ -8864,7 +9597,347 @@ private lemma stepFR_app
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ (Expr.app e1 e2) res predSat tm := by
- sorry
+  -- Phase 1: Typecheck decomposition (typecheck = typecheckExpr; app case reduces to typecheckApp)
+  have htcApp : typecheckApp ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
+    rw [← typecheckExpr_app_succ ctxᵢ e1 e2 (Nat.succ fuel')]
+    simpa [typecheck] using htc
+  obtain ⟨result2, result1, etyp2, p2, pred2, hqt2, htc2, htc1, h_arrow_or_parrow⟩ :=
+    typecheckApp_arrow_structure_full ctxᵢ e1 e2 fuel' res htcApp
+  cases h_arrow_or_parrow with
+  | inl h_arrow =>
+    -- Arrow case (closure)
+    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, hp1, _hnpure, _hnempty, _hsub,
+            hmap, heq_results, h_join⟩ := h_arrow
+    have htc2' : typecheck ctxᵢ e2 fuel' = .ok result2 := by
+      simpa [typecheck] using htc2
+    have htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1 := by
+      simp [ctxAfter] at htc1 ⊢
+      exact htc1
+    intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+    -- Phase 2: IH for e2 (e1 IH defined after we have hTm2 from e2)
+    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm result2 htc2'
+    -- Phase 3: Runtime evaluation inversion
+    let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
+    let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+    have hstruct₀ := terminatesTo_app_inv' e1 e2 cinit₀ cf₀ o₀ ht₀
+    have hstruct₁ := terminatesTo_app_inv' e1 e2 cinit₁ cf₁ o₁ ht₁
+    -- Handle runtime closure/peClosure splits for the arrow-typed branch.
+    rcases hstruct₀ with h_clo₀ | h_peclo₀
+    · rcases hstruct₁ with h_clo₁ | h_peclo₁
+      · -- Both runs: closure
+        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
+        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
+        -- Phase A: Apply IH for e2
+        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
+        -- Phase B: Apply IH for e1
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
+        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
+          simp only [ctxAfter]
+          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
+        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
+        have hstep_e1 := hIH_e1 hpredlaws hTm2
+          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+          c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
+        -- Phase C: Invert closure typing to extract FnTClosure structure
+        have hv₀1_arrow : valueHasETyp θ₀1 (Value.closure x₀ body₀ env₀) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
+        have hv₁1_arrow : valueHasETyp θ₁1 (Value.closure x₁ body₁ env₁) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
+        -- Invert closure typing for both runs
+        cases hv₀1_arrow with
+        | closure htcl₀ henv₀_typing hcover₀ =>
+        cases hv₁1_arrow with
+        | closure htcl₁ henv₁_typing hcover₁ =>
+        -- Phase D: Extract body typing from applyFnTClosure via mapM membership
+        rcases applyFnTClosure_regular_inv_of_mapM_mem
+          ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result2 fuel' tcls results
+          x₀ body₀ _ hmap htcl₀
+          with ⟨fuelBody₀, first₀, result3₀, _happly₀, hfuel₀, htc_body₀, _hsub₀, hfirst₀_eq⟩
+        -- htc_body₀ : typecheckExpr bodyCtx body₀ fuelBody₀ = .ok result3₀
+        -- hfuel₀ : fuel' = Nat.succ fuelBody₀
+        -- Phase E-G: Body IH application and final assembly
+        -- Remaining sub-goals:
+        -- E1. Establish runtimeInstantiatesCtx for body context (requires memory monotonicity bridge)
+        -- E2. Establish wfTagMeaningCtx, wfTypeContext, regimeBounded for body context
+        -- E3. Establish consistentWithRegime, agreeOnClean for body context
+        -- F. Apply body IH with fuel fuelBody₀ < fuel'.succ.succ
+        -- G. Transport body results through joinTypeResults to derive res-level postcondition
+        sorry
+      · -- Run 1: peClosure (mixed case, impossible under arrow typing)
+        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
+        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
+        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
+        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
+          simp only [ctxAfter]
+          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
+        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
+        have hstep_e1 := hIH_e1 hpredlaws hTm2
+          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+          c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
+        have hv₁1_arrow : valueHasETyp θ₁1 (Value.peClosure x₁ body₁ env₁) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
+        cases hv₁1_arrow
+    · rcases hstruct₁ with h_clo₁ | h_peclo₁
+      · -- Run 0: peClosure, Run 1: closure (mixed case, impossible under arrow typing)
+        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
+        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
+        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
+        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
+          simp only [ctxAfter]
+          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
+        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
+        have hstep_e1 := hIH_e1 hpredlaws hTm2
+          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+          c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
+        have hv₀1_arrow : valueHasETyp θ₀1 (Value.peClosure x₀ body₀ env₀) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
+        cases hv₀1_arrow
+      · -- Run 0: peClosure, Run 1: peClosure (impossible under arrow typing)
+        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
+        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
+        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
+        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
+          simp only [ctxAfter]
+          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
+        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
+        have hstep_e1 := hIH_e1 hpredlaws hTm2
+          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+          c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
+        have hv₀1_arrow : valueHasETyp θ₀1 (Value.peClosure x₀ body₀ env₀) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
+        cases hv₀1_arrow
+  | inr h_parrow =>
+    -- Pure arrow case (peClosure)
+    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, hp1, _hnempty, _hsub,
+            hmap, heq_results, h_join⟩ := h_parrow
+    have htc2' : typecheck ctxᵢ e2 fuel' = .ok result2 := by
+      simpa [typecheck] using htc2
+    have htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1 := by
+      simp [ctxAfter] at htc1 ⊢
+      exact htc1
+    intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+    -- Phase 2: IH for e2
+    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm result2 htc2'
+    -- Phase 3: Runtime evaluation inversion
+    let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
+    let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+    have hstruct₀ := terminatesTo_app_inv' e1 e2 cinit₀ cf₀ o₀ ht₀
+    have hstruct₁ := terminatesTo_app_inv' e1 e2 cinit₁ cf₁ o₁ ht₁
+    -- Handle runtime closure/peClosure splits for the parrow-typed branch.
+    rcases hstruct₀ with h_clo₀ | h_peclo₀
+    · rcases hstruct₁ with h_clo₁ | h_peclo₁
+      · -- Both runs: closure (impossible under parrow typing)
+        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
+        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
+        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
+        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
+          simp only [ctxAfter]
+          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
+        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
+        have hstep_e1 := hIH_e1 hpredlaws hTm2
+          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+          c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
+        have hv₀1_parrow : valueHasETyp θ₀1 (Value.closure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
+        cases hv₀1_parrow
+      · -- Run 0: closure, Run 1: peClosure (impossible under parrow typing)
+        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
+        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
+        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
+        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
+          simp only [ctxAfter]
+          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
+        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
+        have hstep_e1 := hIH_e1 hpredlaws hTm2
+          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+          c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
+        have hv₀1_parrow : valueHasETyp θ₀1 (Value.closure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
+        cases hv₀1_parrow
+    · rcases hstruct₁ with h_clo₁ | h_peclo₁
+      · -- Run 0: peClosure, Run 1: closure (impossible under parrow typing)
+        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
+        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
+        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
+        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
+          simp only [ctxAfter]
+          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
+        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
+        have hstep_e1 := hIH_e1 hpredlaws hTm2
+          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+          c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
+        have hv₁1_parrow : valueHasETyp θ₁1 (Value.closure x₁ body₁ env₁) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
+        cases hv₁1_parrow
+      · -- Both runs: peClosure (the real case for parrow typing)
+        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
+        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
+        -- Phase A: Apply IH for e2
+        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
+        -- Phase B: Apply IH for e1
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
+        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
+          simp only [ctxAfter]
+          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
+        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
+          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
+        have hstep_e1 := hIH_e1 hpredlaws hTm2
+          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+          c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
+        -- Phase C: Invert peClosure typing to extract closure structure
+        have hv₀1_parrow : valueHasETyp θ₀1 (Value.peClosure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
+        have hv₁1_parrow : valueHasETyp θ₁1 (Value.peClosure x₁ body₁ env₁) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
+        -- Invert peClosure typing for both runs
+        cases hv₀1_parrow with
+        | peClosure hpure₀ htcl₀ henv₀_typing hcover₀ =>
+        cases hv₁1_parrow with
+        | peClosure hpure₁ htcl₁ henv₁_typing hcover₁ =>
+        -- Phase D: Extract body typing from applyPFnTClosure via mapM membership
+        rcases applyPFnTClosure_regular_inv_of_mapM_mem
+          ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result2 fuel' tcls results
+          x₀ _ _ hmap htcl₀
+          with ⟨fuelBody₀, first₀, result3₀, _happly₀, hfuel₀, htc_body₀, _hsub₀, hfirst₀_eq⟩
+        -- htc_body₀ : typecheckExpr bodyCtx (PExpr.toExpr pbody₀) fuelBody₀ = .ok result3₀
+        -- hfuel₀ : fuel' = Nat.succ fuelBody₀
+        -- Phase E: Simplify using cf₀ = c₁₀, cf₁ = c₁₁ (pure closure config preservation)
+        subst heq_cfg₀ heq_cfg₁
+        -- Witness: use post-e1 realization maps (pure body doesn't extend them)
+        refine ⟨?_, θ₀1, θ₁1,
+          wfExtendsMap_trans hθext₀2 hθext₀1,  -- wfExtendsMap θ₀ θ₀1
+          wfExtendsMap_trans hθext₁2 hθext₁1,  -- wfExtendsMap θ₁ θ₁1
+          ?_, ?_,  -- valueHasETyp (needs body IH + join transport)
+          ?_, ?_,  -- wfTagMeaningCtx, wfTypeContext (needs join transport)
+          hwfcf₁₀, hwfcf₁₁,  -- wfConfig c₁₀, c₁₁
+          ?_, ?_,  -- runtimeInstantiatesCtx (needs context transport)
+          ?_, ?_, ?_, ?_,  -- regimeConsistentWithCtx, CWR₀, CWR₁, agreeOnClean
+          ?_, ?_, ?_⟩  -- valueConsistentWithRegime₀, ₁, resultAgreesIfClean
+        -- Remaining goals: body IH application + join/context transport
+        all_goals sorry
 
 -- I/O-free step theorem: proves StepFR directly (no world-threading)
 -- Restructured to avoid variable capture: induction is generalized over all expressions

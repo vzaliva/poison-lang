@@ -1528,25 +1528,6 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
                      nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
 termination_by fuel
 
-/-- Rule: app_fn (Ott rules: app_fn, app_pfn)
-  pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , e , S' ) :> p1 { P1 } -| G' ; L'
-  pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
-  ST1 <: T1
-  pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- e : T2 :> p3 { P3 } -| G''' ; L'''
-  ST2 <: T2
-----------------------------------------------------------------------  :: app_fn
-  pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
-
-
-  pc ; G ; S ; L |- e1 : ST1 -> ST2 # p typing_closure ( x , pe , S' ) :> p1 { P1 } -| G' ; L'
-  pc ; G' ; S ; L' |- e2 : T1 :> p2 { P2 } -| G'' ; L''
-  ST1 <: T1
-  pc ; G'' ; S'[x |-> T1 :> join pc p2 { P2 }] ; L'' |- pe : T2 :> p3 { P3 } -| G''' ; L'''
-  ST2 <: T2
-----------------------------------------------------------------------  :: app_pfn
-  pc ; G ; S ; L |- e1 e2 : T2 :> join pc p3 { P3 } -| G''' ; L'''
-
--/
 def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
@@ -1554,11 +1535,9 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     -- NOTE: The operational semantics evaluates application argument-first (see `beval`),
     -- so we typecheck the argument before the function to mirror the evaluation order.
     --
-    -- Premise 1 (re-ordered): pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G' ; L'
     let result2 ← typecheckExpr ctx e2 fuel
     let ⟨etyp2, p2, pred2⟩ := result2.qualType
 
-    -- Premise 2 (re-ordered): pc ; G' ; S ; L' |- e1 : ST1 -> ST2 # p typing_closure (...) :> p1 { P1 } -| G'' ; L''
     let ctx' := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' }
     let result1 ← typecheckExpr ctx' e1 fuel
     let ⟨etyp1, p1, _pred1⟩ := result1.qualType

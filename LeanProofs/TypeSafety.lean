@@ -307,13 +307,15 @@ inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
   | closure {x e env st1 st2 p tcl} {tenv : CapturedVarEnv}
       (htcl : FnTClosure.regular x e tenv ∈ tcl)
       (henv : ∀ y qt v, tenv.lookup y = some qt →
-        env.lookup y = some v → valueHasETyp θ v qt.etyp) :
+        env.lookup y = some v → valueHasETyp θ v qt.etyp)
+      (hcover : ∀ y qt, tenv.lookup y = some qt → ∃ v, env.lookup y = some v) :
       valueHasETyp θ (Value.closure x e env) (ETyp.arrow st1 st2 p tcl)
   | peClosure {x body env st1 st2 p tcl} {pbody : PExpr} {tenv : CapturedVarEnv}
       (hpure : Expr.toPExpr? body = some pbody)
       (htcl : PFnTClosure.regular x pbody tenv ∈ tcl)
       (henv : ∀ y qt v, tenv.lookup y = some qt →
-        env.lookup y = some v → valueHasETyp θ v qt.etyp) :
+        env.lookup y = some v → valueHasETyp θ v qt.etyp)
+      (hcover : ∀ y qt, tenv.lookup y = some qt → ∃ v, env.lookup y = some v) :
       valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcl)
 
 -- ================================================================
@@ -345,8 +347,8 @@ lemma valueHasETyp_closure_weaken_tcl
     (hsub : ∀ tc, tc ∈ tcls₁ → tc ∈ tcls₂) :
     valueHasETyp θ (Value.closure x e env) (ETyp.arrow st1 st2 p₂ tcls₂) := by
   cases h with
-  | closure htcl henv =>
-      exact valueHasETyp.closure (htcl := hsub _ htcl) (henv := henv)
+  | closure htcl henv hcover =>
+      exact valueHasETyp.closure (htcl := hsub _ htcl) (henv := henv) (hcover := hcover)
 
 /-- Future-use lemma for preservation proofs:
     pure analogue of `valueHasETyp_closure_weaken_tcl` for joined parrow closure sets. -/
@@ -357,8 +359,8 @@ lemma valueHasETyp_peClosure_weaken_tcl
     (hsub : ∀ tc, tc ∈ tcls₁ → tc ∈ tcls₂) :
     valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p₂ tcls₂) := by
   cases h with
-  | peClosure hpure htcl henv =>
-      exact valueHasETyp.peClosure (hpure := hpure) (htcl := hsub _ htcl) (henv := henv)
+  | peClosure hpure htcl henv hcover =>
+      exact valueHasETyp.peClosure (hpure := hpure) (htcl := hsub _ htcl) (henv := henv) (hcover := hcover)
 
 -- ================================================================
 -- Helper Lemmas
