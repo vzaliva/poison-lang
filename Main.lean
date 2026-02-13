@@ -41,6 +41,7 @@ def versionNo := "1.0"
 structure CliOptions where
   verbose : Bool := false
   regime : Option Regime := none
+  ioFree : Bool := false
   filename : Option String := none
   repl : Bool := false
   help : Bool := false
@@ -91,6 +92,8 @@ partial def parseArgs (args : List String) (opts : CliOptions := {}) : Except St
       | .error msg => throw msg
   | "--regime" :: [] =>
       throw "Missing value for --regime"
+  | "--io-free" :: rest =>
+      parseArgs rest { opts with ioFree := true }
   | "--repl" :: rest =>
       if rest.isEmpty then
         return { opts with repl := true }
@@ -148,13 +151,13 @@ def handleEvalResult (result : LeanPoison.EvalResult) (verbose : Bool) : IO UInt
       IO.println "Error: IO operation attempted in ioFree mode"
       return (6 : UInt32)  -- Exit code 6: Runtime error (IO forbidden)
 
-def evalProgram (input : String) (verbose : Bool) (regime : Regime) : IO UInt32 := do
+def evalProgram (input : String) (verbose : Bool) (regime : Regime) (mode : LeanPoison.EvalMode) : IO UInt32 := do
   match parse input with
   | Except.ok xmlElement =>
 
     match xmlToExpr xmlElement with
     | Except.ok expr =>
-      let resultType := typecheckProgram expr verbose regime
+      let resultType := typecheckProgram expr verbose regime mode
       -- Debug: check what resultType looks like
       -- IO.eprintln s!"DEBUG: resultType = '{resultType}'"
       -- IO.eprintln s!"DEBUG: starts with 'Type error:' = {resultType.startsWith "Type error:"}"
@@ -170,7 +173,7 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime) : IO UInt32 
       else
         IO.println s!"Type checking passed: {resultType}"
         let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
-        let result <- LeanPoison.beval .normal defaultFuel initialConfig expr verbose
+        let result <- LeanPoison.beval mode defaultFuel initialConfig expr verbose
         handleEvalResult result verbose
 
     | Except.error err =>
@@ -181,12 +184,12 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime) : IO UInt32 
                       return (2 : UInt32)  -- Exit code 2: Parse error
 
 -- Read and evaluate a file
-def runFile (filename : String) (verbose : Bool) (regime : Regime) : IO UInt32 := do
+def runFile (filename : String) (verbose : Bool) (regime : Regime) (mode : LeanPoison.EvalMode) : IO UInt32 := do
   try
     let xmlStr ← runTreeSitterXml filename
     IO.println s!"Evaluating file: {filename}"
     IO.println ""
-    evalProgram xmlStr verbose regime
+    evalProgram xmlStr verbose regime mode
   catch e =>
     IO.println s!"Error reading file {filename}: {e}"
     return (5 : UInt32)  -- Exit code 5: File I/O error
@@ -236,7 +239,7 @@ partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
 def printUsage : IO Unit := do
   IO.println "Usage:"
   IO.println "  poison-interpreter --repl"
-  IO.println "  poison-interpreter [--verbose] [--regime \"100=true,101=false\"] <file>"
+  IO.println "  poison-interpreter [--verbose] [--regime \"100=true,101=false\"] [--io-free] <file>"
   IO.println "  poison-interpreter --help"
   IO.println ""
   IO.println "Exit Codes:"
@@ -265,8 +268,8 @@ def main (args : List String) : IO UInt32 := do
         printUsage
         return (0 : UInt32)
       else if opts.repl then
-        if opts.filename.isSome || opts.regime.isSome || opts.verbose then
-          IO.println "Error: --repl does not accept --verbose, --regime, or a filename"
+        if opts.filename.isSome || opts.regime.isSome || opts.verbose || opts.ioFree then
+          IO.println "Error: --repl does not accept --verbose, --regime, --io-free, or a filename"
           printUsage
           return (1 : UInt32)
         IO.println s!"Poison {versionNo} - Tufts University."
@@ -284,6 +287,7 @@ def main (args : List String) : IO UInt32 := do
             printUsage
             return (1 : UInt32)
         | some filename =>
+            let mode := if opts.ioFree then LeanPoison.EvalMode.ioFree else LeanPoison.EvalMode.normal
             if opts.verbose then
               try
                 let ExprTree ← parsePoisonFile filename
@@ -291,7 +295,7 @@ def main (args : List String) : IO UInt32 := do
                 IO.println ""
                 match ExprTree with
                 | expr =>
-                  let resultType := typecheckProgram expr true regime
+                  let resultType := typecheckProgram expr true regime mode
                   if resultType.startsWith "Type error:" then
                     let errorMsg := resultType.drop 11
                     IO.println s!"Type checking error: {errorMsg}"
@@ -304,10 +308,10 @@ def main (args : List String) : IO UInt32 := do
                     IO.println s!"Type checking passed: {resultType}"
                     IO.println ""
                     let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
-                    let result <-  LeanPoison.beval .normal defaultFuel initialConfig expr true
+                    let result <- LeanPoison.beval mode defaultFuel initialConfig expr true
                     handleEvalResult result true
               catch e =>
                 IO.println s!"Error reading file {filename}: {e}"
                 return (5 : UInt32)
             else
-              runFile filename false regime
+              runFile filename false regime mode

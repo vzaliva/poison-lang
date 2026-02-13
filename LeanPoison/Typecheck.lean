@@ -3,6 +3,7 @@ import LeanPoison.Misc
 
 import Std.Data.ExtTreeMap
 open Std
+open LeanPoison
 
 -- Type checking environment definitions
 
@@ -847,20 +848,19 @@ def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
 -- Type checking functions for extern expressions
 
 /-- Typecheck extern value: let x = extern val : (T :> p { P }) -/
-def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
-    : TypecheckM TypeResult :=
+def typecheckExternVal (mode : EvalMode) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
+    : TypecheckM TypeResult := do
+    if mode == .ioFree then throw "IO operation (externVal) forbidden in ioFree mode"
     match (poison,pred) with
     | (false, SyntaxPredicate.guardOnly _)
     | (false, SyntaxPredicate.guardClosure _ _ _) =>
         throw "Clean types cannot have predicates"
     | _ => do
-
-  -- Convert to QTyp with current varEnv
-  let (qt, ctx') ← surfaceSpecToQTyp typ poison pred ctx.varEnv ctx
-
-  -- Return the qualified type
-  return { qualType := qt, memEnv' := ctx'.memEnv, tagEnv' := ctx.tagEnv,
-           nextLoc' := ctx'.nextLoc, nextTag' := advanceNextTagForPred qt.pred ctx.nextTag, regime' := ctx.regime }
+      -- Convert to QTyp with current varEnv
+      let (qt, ctx') ← surfaceSpecToQTyp typ poison pred ctx.varEnv ctx
+      -- Return the qualified type
+      return { qualType := qt, memEnv' := ctx'.memEnv, tagEnv' := ctx.tagEnv,
+               nextLoc' := ctx'.nextLoc, nextTag' := advanceNextTagForPred qt.pred ctx.nextTag, regime' := ctx.regime }
 
 def parseReturnType (retType : ExternReturn):Typ :=
  match retType with
@@ -869,8 +869,9 @@ def parseReturnType (retType : ExternReturn):Typ :=
  | ExternReturn.nestedPfn _ typ extReturn => Typ.arrow typ (parseReturnType extReturn)
 
 /-- Typecheck extern impure function -/
-def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
+def typecheckExternFn (mode : EvalMode) (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (effects : List Effect) : TypecheckM TypeResult := do
+  if mode == .ioFree then throw "IO operation (externFn) forbidden in ioFree mode"
   -- Create extern closure with captured varEnv (singleton list)
   let tcl := FnTClosure.extern arg retSpec effects (VarTypeEnv.toCaptured ctx.varEnv)
 
@@ -884,8 +885,9 @@ def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
            nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag, regime' := ctx.regime }
 
 /-- Typecheck extern pure function -/
-def typecheckExternPfn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
+def typecheckExternPfn (mode : EvalMode) (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) : TypecheckM TypeResult := do
+  if mode == .ioFree then throw "IO operation (externPfn) forbidden in ioFree mode"
   -- Create extern closure with captured varEnv (singleton list)
   let tcl := PFnTClosure.extern arg retSpec (VarTypeEnv.toCaptured ctx.varEnv)
 
@@ -955,7 +957,7 @@ def joinTypeResults (ctx : TypeContext) (firstResult : TypeResult) (restResults 
 mutual
 
 -- Helper function to type check an expression with context
-def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckExpr (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
 
   match fuel with
   | 0 => throw "Out of fuel"
@@ -966,38 +968,38 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.unit => typecheckUnit ctx
     | Expr.str s => typecheckString ctx s
     | Expr.var x => typecheckVar ctx x
-    | Expr.op e1 op e2 => typecheckOp ctx e1 e2 fuel op
-    | Expr.newRef e => typecheckNewRef ctx e fuel
-    | Expr.assign e1 e2 => typecheckAssign ctx e1 e2 fuel
-    | Expr.deref e1 => typecheckDeref ctx e1 fuel
-    | Expr.seq e1 e2 => typecheckSeq ctx e1 e2 fuel
-    | Expr.kwhile e1 e2 => typecheckWhile ctx e1 e2 fuel
-    | Expr.vlet x e1 e2 => typecheckVlet ctx x e1 e2 fuel
+    | Expr.op e1 op e2 => typecheckOp mode ctx e1 e2 fuel op
+    | Expr.newRef e => typecheckNewRef mode ctx e fuel
+    | Expr.assign e1 e2 => typecheckAssign mode ctx e1 e2 fuel
+    | Expr.deref e1 => typecheckDeref mode ctx e1 fuel
+    | Expr.seq e1 e2 => typecheckSeq mode ctx e1 e2 fuel
+    | Expr.kwhile e1 e2 => typecheckWhile mode ctx e1 e2 fuel
+    | Expr.vlet x e1 e2 => typecheckVlet mode ctx x e1 e2 fuel
     | Expr.fn x paramType body returnType => typecheckFn ctx x paramType body returnType
     | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType
-    | Expr.app e1 e2 => typecheckApp ctx e1 e2 fuel
-    | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
-    | Expr.rand e => typecheckRand ctx  e fuel
-    | Expr.frand e => typecheckFrand ctx e fuel
-    | Expr.printString e => typecheckPrintString ctx e fuel
-    | Expr.printInt e => typecheckPrintInt ctx e fuel
-    | Expr.unaryop op e => typecheckUnaryOp ctx op e fuel
-    | Expr.externVal typ poison pred => typecheckExternVal ctx typ poison pred
-    | Expr.externFn arg argTyp retSpec effects => typecheckExternFn ctx arg argTyp retSpec effects
-    | Expr.externPfn arg argTyp retSpec => typecheckExternPfn ctx arg argTyp retSpec
+    | Expr.app e1 e2 => typecheckApp mode ctx e1 e2 fuel
+    | Expr.ite e1 e2 e3 => typecheckIf mode ctx e1 e2 e3 fuel
+    | Expr.rand e => typecheckRand mode ctx e fuel
+    | Expr.frand e => typecheckFrand mode ctx e fuel
+    | Expr.printString e => typecheckPrintString mode ctx e fuel
+    | Expr.printInt e => typecheckPrintInt mode ctx e fuel
+    | Expr.unaryop op e => typecheckUnaryOp mode ctx op e fuel
+    | Expr.externVal typ poison pred => typecheckExternVal mode ctx typ poison pred
+    | Expr.externFn arg argTyp retSpec effects => typecheckExternFn mode ctx arg argTyp retSpec effects
+    | Expr.externPfn arg argTyp retSpec => typecheckExternPfn mode ctx arg argTyp retSpec
 termination_by fuel
 
 /-- Helper function to run proper fixpoint computation for while loops.
     Re-types the guard each iteration, threads pc := pc ⊔ poison(guard),
     and joins Γ/ℒ from the body as in the Ott recurrences.
     Also tracks fresh location and tag counters through the fixpoint. -/
-def runWhileFixpoint (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (pureGuard : Bool) (guardOpt : Option (Tag × Deps)) : TypecheckM (Poison × MemoryTypeEnv × TagEnv × Regime × Loc × Tag) :=
+def runWhileFixpoint (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (pureGuard : Bool) (guardOpt : Option (Tag × Deps)) : TypecheckM (Poison × MemoryTypeEnv × TagEnv × Regime × Loc × Tag) :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
     -- (1) Typecheck the guard for this iteration
     let ctxForGuard := if pureGuard then { ctx with pureCtx := true } else ctx
-    let guardRes ← typecheckExpr ctxForGuard e1 fuel
+    let guardRes ← typecheckExpr mode ctxForGuard e1 fuel
     let ⟨etyp1, p1, _⟩ := guardRes.qualType
     if etyp1 != ETyp.bool then throw "Condition of while must be bool"
 
@@ -1018,7 +1020,7 @@ def runWhileFixpoint (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (pureGuard 
       | none => bodyCtxBase
 
     -- (3) Typecheck the body
-    let bodyRes ← typecheckExpr bodyCtx e2 fuel
+    let bodyRes ← typecheckExpr mode bodyCtx e2 fuel
     let ⟨etyp2, p2, _⟩ := bodyRes.qualType
     if etyp2 != ETyp.unit then throw "Body of while must have unit type"
 
@@ -1034,20 +1036,20 @@ def runWhileFixpoint (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (pureGuard 
       return (newPc, newMemEnv, newTagEnv, newRegime, bodyRes.nextLoc', bodyRes.nextTag')
     else
       let nextCtx := { ctx with pc := newPc, memEnv := newMemEnv, tagEnv := newTagEnv, regime := newRegime, nextLoc := bodyRes.nextLoc', nextTag := bodyRes.nextTag' }
-      runWhileFixpoint nextCtx e1 e2 fuel pureGuard guardOpt
+      runWhileFixpoint mode nextCtx e1 e2 fuel pureGuard guardOpt
 termination_by fuel
 
 /-- Rule: while_depoison (Ott rule: while_depoison when matchGuard succeeds)
 -- Implements flow-sensitive analysis with predicate-based de-poisoning
 -- Condition e1 is pure (doesn't modify G or L)
 --/
-def typecheckWhileDepoison (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (k : Tag) (deps : Deps) : TypecheckM TypeResult :=
+def typecheckWhileDepoison (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (k : Tag) (deps : Deps) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
     -- Run fixpoint computation with predicate-based de-poisoning (pure guard).
     -- Guard is typed under L (without k); body under L[k↦true] handled inside runWhileFixpoint.
-    let (finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag) ← runWhileFixpoint ctx e1 e2 fuel true (some (k, deps))
+    let (finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag) ← runWhileFixpoint mode ctx e1 e2 fuel true (some (k, deps))
 
     -- After loop termination, set k to false in the output environment
     let tagEnv' := finalTagEnv.insert k ⟨false, deps⟩
@@ -1060,12 +1062,12 @@ termination_by fuel
 -- Implements flow-sensitive analysis without predicate-based de-poisoning
 -- Unlike while_depoison, e1 is not pure and can modify G and L
 --/
-def typecheckWhileStd (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckWhileStd (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
     -- Run fixpoint computation (impure guard; re-types guard each iteration)
-    let (finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag) ← runWhileFixpoint ctx e1 e2 fuel false none
+    let (finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag) ← runWhileFixpoint mode ctx e1 e2 fuel false none
 
     let qt : QTyp := ⟨ETyp.unit, finalPc, Predicate.noPred⟩
     return { qualType := qt, memEnv' := finalMemEnv, tagEnv' := finalTagEnv, nextLoc' := finalNextLoc, nextTag' := finalNextTag, regime' := finalRegime }
@@ -1078,12 +1080,13 @@ termination_by fuel
                 ---------------------------------------------------
                 pc; Γ; σ; L ⊢ rand e : int ▷ pc ⊔ p {} ⊣ Γ′; L′
 -/
-def typecheckRand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+def typecheckRand (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
     | 0        => throw "Out of fuel"
     | fuel + 1 =>
             do
-              let result ← typecheckExpr ctx e fuel
+              if mode == .ioFree then throw "IO operation (rand) forbidden in ioFree mode"
+              let result ← typecheckExpr mode ctx e fuel
               let ⟨etyp, poison, _  ⟩ := result.qualType
               if etyp != ETyp.int then throw ("Argument Expression to rand must have type int")
               else
@@ -1100,12 +1103,13 @@ termination_by fuel
                   pc; Γ; σ; L ⊢ frand pe : int ▷ poisoned {guard k pred closure pcl} ⊣ Γ; L
 
 -/
-def typecheckFrand (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+def typecheckFrand (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
   | 0        => throw "Out of fuel"
   | fuel + 1 =>
     do
-      let result ← typecheckExpr ctx e fuel
+      if mode == .ioFree then throw "IO operation (frand) forbidden in ioFree mode"
+      let result ← typecheckExpr mode ctx e fuel
       let ⟨etyp, _, _  ⟩ := result.qualType
       if etyp != ETyp.int then throw ("Argument Expression to frand must have type int")
       else
@@ -1126,13 +1130,13 @@ termination_by fuel
     ----------------------------------------------------------------------  :: printString_typing
       pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G' ; L'
  -/
-def typecheckPrintString (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+def typecheckPrintString (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
     | 0        => throw "Out of fuel"
     | fuel + 1 =>
             do
-
-              let result ← typecheckExpr ctx e fuel
+              if mode == .ioFree then throw "IO operation (printString) forbidden in ioFree mode"
+              let result ← typecheckExpr mode ctx e fuel
               let ⟨etyp, poison, _  ⟩ := result.qualType
               if etyp != ETyp.string then throw ("Argument Expression to printString must have type string")
               else
@@ -1146,12 +1150,13 @@ termination_by fuel
       pc ; G ; S ; L |- printInt e : unit :> join pc p { no_pred } -| G' ; L'
 
  -/
-def typecheckPrintInt (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+def typecheckPrintInt (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
     | 0        => throw "Out of fuel"
     | fuel + 1 =>
             do
-              let result ← typecheckExpr ctx e fuel
+              if mode == .ioFree then throw "IO operation (printInt) forbidden in ioFree mode"
+              let result ← typecheckExpr mode ctx e fuel
               let ⟨etyp, poison, _  ⟩ := result.qualType
               if etyp != ETyp.int then throw ("Argument Expression to printInt must have type int")
               else
@@ -1169,16 +1174,16 @@ termination_by fuel
 -- --------------------------------
 -- pc ; G ; S ; L |- e1 op e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
 -/
-def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : TypecheckM TypeResult :=
+def typecheckOp (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-    let result1 ← typecheckExpr ctx e1 fuel
+    let result1 ← typecheckExpr mode ctx e1 fuel
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
 
     -- Propagate fresh-name supplies and regime from first operand into second operand context
     let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
-    let result2 ← typecheckExpr ctx' e2 fuel
+    let result2 ← typecheckExpr mode ctx' e2 fuel
     let ⟨etyp2, p2, _  ⟩ := result2.qualType
 
     match opEType? op etyp1 etyp2 with
@@ -1196,11 +1201,11 @@ termination_by fuel
 -- pc ; G ; S ; L |- ref e : ref int @ l :> pc { no_pred } -| G'[l |-> int :> join pc p { P }] ; L'
 -- NOTE: Memory can only store integers (matching runtime semantics)
 -/
-def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckNewRef (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-    let result ← typecheckExpr ctx e fuel
+    let result ← typecheckExpr mode ctx e fuel
     let ⟨etyp, poison, pred ⟩ := result.qualType
 
     -- Require that the allocated value has type int (heap stores only integers)
@@ -1218,11 +1223,11 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
 termination_by fuel
 
 /-- Rule: assign (Ott rules: assign_singleton, assign_locset, assign_singleton_poisoned_ref, assign_locset_poisoned_ref) -/
-def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckAssign (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-    let result1 ← typecheckExpr ctx e1 fuel
+    let result1 ← typecheckExpr mode ctx e1 fuel
     let ⟨etyp1, p1, _  ⟩ := result1.qualType
     match etyp1 with
     | ETyp.ref t ls =>
@@ -1231,7 +1236,7 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
         throw s!"Type error: can only assign to ref int, but got ref {repr t}"
 
       let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
-      let result2 ← typecheckExpr ctx' e2 fuel
+      let result2 ← typecheckExpr mode ctx' e2 fuel
       let ⟨etyp2, p2, pred2  ⟩ := result2.qualType
 
       -- Require that the RHS has type int
@@ -1265,11 +1270,11 @@ termination_by fuel
 /-- Rules: deref_* (Ott rules: deref_poisoned, deref_no_pred, deref_guard_true, deref_guard_false, deref_guard_unknown)
 -- NOTE: Memory can only store integers (matching runtime semantics)
 --/
-def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckDeref (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-    let result ← typecheckExpr ctx e fuel
+    let result ← typecheckExpr mode ctx e fuel
     let ⟨etyp, poisonRef, _predRef ⟩ := result.qualType
     match etyp with
     | ETyp.ref t ls =>
@@ -1328,13 +1333,13 @@ termination_by fuel
 -- --------------------------------
 -- pc ; G ; S ; L |- e1 ; e2 : T2 :> join p' p'' { P'' } -| G'' ; L''
 -/
-def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckSeq (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-    let result1 ← typecheckExpr ctx e1 fuel
+    let result1 ← typecheckExpr mode ctx e1 fuel
     let ctx' := updateCtxFromResult ctx result1
-    let result2 ← typecheckExpr ctx' e2 fuel
+    let result2 ← typecheckExpr mode ctx' e2 fuel
     return result2
 termination_by fuel
 
@@ -1347,7 +1352,7 @@ def normalizeAppResultByProvenance (p1 : Poison) (qt : QTyp) : QTyp :=
 /-- Helper: Apply a single FnTClosure and return the result type and updated environments.
     This encapsulates the body typing logic for a single closure alternative.
 -/
-def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
+def applyFnTClosure (mode : EvalMode) (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
     (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
@@ -1363,7 +1368,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         let ctx'' := { ctx with pc := joinPoison p (joinPoison p1 ctx.pc),
                                 memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv',
                                 nextTag := result2.nextTag', nextLoc := result2.nextLoc', regime := result2.regime' }
-        let result3 ← typecheckExpr ctx'' body fuel
+        let result3 ← typecheckExpr mode ctx'' body fuel
         let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
 
         -- Check subtyping
@@ -1377,6 +1382,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         return { result3 with qualType := normalizeAppResultByProvenance p1 taintedQt }
 
     | FnTClosure.extern x retSpec effects capturedEnv =>
+        if mode == .ioFree then throw "Extern function application forbidden in ioFree mode"
         -- Extern function application (simplified - returns immediately)
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
@@ -1457,7 +1463,7 @@ termination_by fuel
 /-- Helper: Apply a single PFnTClosure and return the result type and updated environments.
     This encapsulates the body typing logic for a single pure closure alternative.
 -/
-def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
+def applyPFnTClosure (mode : EvalMode) (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
     (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
@@ -1472,7 +1478,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
         let ctx'' := { ctx with pc := joinPoison p (joinPoison ctx.pc p1),
                                 memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv',
                                 pureCtx := true, nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' }
-        let result3 ← typecheckExpr ctx'' (PExpr.toExpr body) fuel
+        let result3 ← typecheckExpr mode ctx'' (PExpr.toExpr body) fuel
         let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
 
         -- Check subtyping
@@ -1486,6 +1492,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
         return { result3 with qualType := normalizeAppResultByProvenance p1 taintedQt }
 
     | PFnTClosure.extern x retSpec capturedEnv =>
+        if mode == .ioFree then throw "Extern function application forbidden in ioFree mode"
         -- Extern pure function application (no effects)
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
@@ -1528,18 +1535,18 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
                      nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
 termination_by fuel
 
-def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckApp (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
     -- NOTE: The operational semantics evaluates application argument-first (see `beval`),
     -- so we typecheck the argument before the function to mirror the evaluation order.
     --
-    let result2 ← typecheckExpr ctx e2 fuel
+    let result2 ← typecheckExpr mode ctx e2 fuel
     let ⟨etyp2, p2, pred2⟩ := result2.qualType
 
     let ctx' := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' }
-    let result1 ← typecheckExpr ctx' e1 fuel
+    let result1 ← typecheckExpr mode ctx' e1 fuel
     let ⟨etyp1, p1, _pred1⟩ := result1.qualType
     match etyp1 with
     | ETyp.arrow st1 st2 p tcls =>
@@ -1556,7 +1563,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
       -- Apply each closure in the list using List.mapM
-      let results ← List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel) tcls
+      let results ← List.mapM (fun tcl => applyFnTClosure mode tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel) tcls
 
       -- Check that we have at least one result and join them
       match results with
@@ -1572,7 +1579,7 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
       -- Apply each closure in the list using List.mapM
-      let results ← List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel) tcls
+      let results ← List.mapM (fun tcl => applyPFnTClosure mode tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel) tcls
 
       -- Check that we have at least one result and join them
       match results with
@@ -1589,7 +1596,7 @@ termination_by fuel
           ----------------------------------------------------------------------  :: let
       --  pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G'' ; L''
   -/
-def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckVlet (mode : EvalMode) (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
@@ -1603,11 +1610,11 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
           throw s!"Cannot shadow variable '{x}': outer binding has an active guard predicate"
       | _ => pure ()
 
-    let result1 ← typecheckExpr ctx e1 fuel
+    let result1 ← typecheckExpr mode ctx e1 fuel
     let varEnv' := ctx.varEnv.update x result1.qualType
     let ctx' := { ctx with memEnv := result1.memEnv', varEnv := varEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
 
-    let result2 ← typecheckExpr ctx' e2 fuel
+    let result2 ← typecheckExpr mode ctx' e2 fuel
     let ⟨etyp2, p2, pred2⟩ := result2.qualType
    --dbg_trace s!" In typecheck Let ,Poison val for exp {e1} is {p1}"
    -- dbg_trace s!"In typecheck Let ,Poison val for exp {e2} is {p2}"
@@ -1621,9 +1628,10 @@ termination_by fuel
 /-- Rule: if_depoison_* and if_std_* (Ott rules with regime awareness)
 -- When matchGuard succeeds: consult R(k) for regime-aware typing
 -- When matchGuard fails: use standard conservative typing
+-- In ioFree mode with known regime, skip typechecking the untaken branch
 -- Implements all if_* rules from poison-lang.ott faithfully
 --/
-def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckIf (mode : EvalMode) (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
@@ -1634,7 +1642,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
 
       -- Typecheck e1 in pure mode (all if_depoison_* rules require this)
       let pureCtx := { ctx with pureCtx := true }
-      let result1 ← typecheckExpr pureCtx e1 fuel
+      let result1 ← typecheckExpr mode pureCtx e1 fuel
       let ⟨etyp1, p1, _⟩ := result1.qualType
       if etyp1 != ETyp.bool then throw "Condition of if must be bool"
 
@@ -1646,18 +1654,20 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       match ctx.regime.lookup? k with
       | some true => do
         -- R(k) = true: then-branch effective (if_depoison_*_R_true rules)
-        let result2 ← typecheckExpr ctxTrue e2 fuel
+        let result2 ← typecheckExpr mode ctxTrue e2 fuel
         let ⟨etyp2, p2, _pred2⟩ := result2.qualType
 
-        -- Still typecheck else-branch for well-formedness
+        -- In ioFree mode, skip else-branch (untaken at runtime)
+        if mode == .ioFree then
+          let poison := joinPoison ctx.pc p2
+          let qt : QTyp := ⟨etyp2, poison, Predicate.noPred⟩
+          return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+                   nextLoc' := result2.nextLoc', nextTag' := result2.nextTag', regime' := result2.regime' }
+        -- Normal mode: typecheck else-branch for well-formedness
         let ctxFalse' := { ctxFalse with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
-        let result3 ← typecheckExpr ctxFalse' e3 fuel
+        let result3 ← typecheckExpr mode ctxFalse' e3 fuel
         let ⟨etyp3, _p3, _pred3⟩ := result3.qualType
-
-        -- Check type compatibility
         if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
-
-        -- Then-branch effective: use result2's outputs (type, memEnv, tagEnv, regime)
         let poison := joinPoison ctx.pc p2
         let qt : QTyp := ⟨etyp2, poison, Predicate.noPred⟩
         return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
@@ -1665,17 +1675,22 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
 
       | some false => do
         -- R(k) = false: else-branch effective (if_depoison_*_R_false rules)
-        let result2 ← typecheckExpr ctxTrue e2 fuel
+        -- In ioFree mode, skip then-branch (untaken at runtime)
+        if mode == .ioFree then do
+          let ctxFalse' := ctxFalse
+          let result3 ← typecheckExpr mode ctxFalse' e3 fuel
+          let ⟨etyp3, p3, _pred3⟩ := result3.qualType
+          let poison := joinPoison ctx.pc p3
+          let qt : QTyp := ⟨etyp3, poison, Predicate.noPred⟩
+          return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv',
+                   nextLoc' := result3.nextLoc', nextTag' := result3.nextTag', regime' := result3.regime' }
+        -- Normal mode: typecheck both branches
+        let result2 ← typecheckExpr mode ctxTrue e2 fuel
         let ⟨etyp2, _p2, _pred2⟩ := result2.qualType
-
         let ctxFalse' := { ctxFalse with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
-        let result3 ← typecheckExpr ctxFalse' e3 fuel
+        let result3 ← typecheckExpr mode ctxFalse' e3 fuel
         let ⟨etyp3, p3, _pred3⟩ := result3.qualType
-
-        -- Check type compatibility
         if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
-
-        -- Else-branch effective: use result3's outputs (type, memEnv, tagEnv, regime)
         let poison := joinPoison ctx.pc p3
         let qt : QTyp := ⟨etyp3, poison, Predicate.noPred⟩
         return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv',
@@ -1688,11 +1703,11 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
         let ctxTruePoisoned := { ctxTrue with pc := branchPc }
         let ctxFalsePoisoned := { ctxFalse with pc := branchPc }
 
-        let result2 ← typecheckExpr ctxTruePoisoned e2 fuel
+        let result2 ← typecheckExpr mode ctxTruePoisoned e2 fuel
         let ⟨etyp2, p2, _pred2⟩ := result2.qualType
 
         let ctxFalse' := { ctxFalsePoisoned with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
-        let result3 ← typecheckExpr ctxFalse' e3 fuel
+        let result3 ← typecheckExpr mode ctxFalse' e3 fuel
         let ⟨etyp3, p3, _pred3⟩ := result3.qualType
 
         -- Check type compatibility
@@ -1711,7 +1726,7 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
 
     | .error _ => do
       -- Standard case (if_std_*) - no matching predicate found
-      let result1 ← typecheckExpr ctx e1 fuel
+      let result1 ← typecheckExpr mode ctx e1 fuel
       let ⟨etyp1, p1, _⟩ := result1.qualType
       if etyp1 != ETyp.bool then throw "Condition of if must be bool"
 
@@ -1722,13 +1737,13 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let branchPc := joinPoison ctx.pc p1
       let ctx'' := { ctx' with pc := branchPc }
 
-      let result2 ← typecheckExpr ctx'' e2 fuel
+      let result2 ← typecheckExpr mode ctx'' e2 fuel
       let ⟨etyp2, p2, _⟩ := result2.qualType
 
       -- Ensure disjoint fresh supplies across branches
       -- Note: regime stays as ctx''.regime (= result1.regime') since branches are parallel, not sequential
       let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
-      let result3 ← typecheckExpr ctxForE3 e3 fuel
+      let result3 ← typecheckExpr mode ctxForE3 e3 fuel
       let ⟨etyp3, p3, _⟩ := result3.qualType
 
       -- Check type compatibility
@@ -1756,11 +1771,11 @@ pm ; pc ; G ; S ; L |- not_expr e : bool :> join pc p { no_pred } -| G' ; L'
 
 -/
 
-def typecheckUnaryOp (ctx : TypeContext) (op : UnaryOp) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
+def typecheckUnaryOp (mode : EvalMode) (ctx : TypeContext) (op : UnaryOp) (e : Expr) (fuel : Nat):TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-    let result ← typecheckExpr ctx e fuel
+    let result ← typecheckExpr mode ctx e fuel
     let ⟨etyp, p, _  ⟩ := result.qualType
 
     match opUnaryEType? op etyp with
@@ -1776,7 +1791,7 @@ termination_by fuel
 /-- Rule: while_depoison and while_std (Ott rules: while_depoison when matchGuard succeeds, while_std when it fails)
 -- Implements flow-sensitive analysis based on Hunt & Sands 2006
 --/
-def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+def typecheckWhile (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
@@ -1784,22 +1799,22 @@ def typecheckWhile (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM 
     match matchGuard e1 ctx.memEnv ctx.varEnv with
     | .ok (k, deps) => do
       -- Predicate-based case (while_depoison) - condition is pure
-      typecheckWhileDepoison ctx e1 e2 fuel k deps
+      typecheckWhileDepoison mode ctx e1 e2 fuel k deps
     | .error _ => do
       -- Standard case (while_std) - condition can modify G and L
-      typecheckWhileStd ctx e1 e2 fuel
+      typecheckWhileStd mode ctx e1 e2 fuel
 termination_by fuel
 
 end
 
 -- Main type checking function
-def typecheck (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  typecheckExpr ctx e fuel
+def typecheck (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
+  typecheckExpr mode ctx e fuel
 
 
 
 /-- Type check an expression in an initial empty context -/
-def typecheckExprSimple (e : Expr) (regime : Regime := emptyRegime) : TypecheckM QTyp := do
+def typecheckExprSimple (e : Expr) (regime : Regime := emptyRegime) (mode : EvalMode := .normal) : TypecheckM QTyp := do
   let initialCtx : TypeContext := {
     pc := false  -- clean
     regime := regime
@@ -1810,10 +1825,10 @@ def typecheckExprSimple (e : Expr) (regime : Regime := emptyRegime) : TypecheckM
     nextTag := 1
     pureCtx := false
   }
-  let result ← typecheck initialCtx e defaultFuel
+  let result ← typecheck mode initialCtx e defaultFuel
   return result.qualType
 
-def typecheckExprVerbose (e : Expr) (regime : Regime := emptyRegime) : TypecheckM TypeResult := do
+def typecheckExprVerbose (e : Expr) (regime : Regime := emptyRegime) (mode : EvalMode := .normal) : TypecheckM TypeResult := do
   let initialCtx : TypeContext := {
     pc := false  -- clean
     regime := regime
@@ -1824,16 +1839,16 @@ def typecheckExprVerbose (e : Expr) (regime : Regime := emptyRegime) : Typecheck
     nextTag := 1
     pureCtx := false
   }
-  typecheck initialCtx e defaultFuel
+  typecheck mode initialCtx e defaultFuel
 
 
 /-- Type check a program (expression) and return a human-readable result -/
-def typecheckProgram (e : Expr) (verbose : Bool) (regime : Regime := emptyRegime) : String :=
+def typecheckProgram (e : Expr) (verbose : Bool) (regime : Regime := emptyRegime) (mode : EvalMode := .normal) : String :=
   if verbose then
-    match typecheckExprVerbose e regime with
+    match typecheckExprVerbose e regime mode with
     | .ok result => s!"Type: {repr result.qualType} , MemoryTypeEnv : {repr result.memEnv'} , tagEnv : {repr result.tagEnv'} , nextLoc : {repr result.nextLoc'} "
     | .error msg => s!"Type error: {msg}"
   else
-    match typecheckExprSimple e regime with
+    match typecheckExprSimple e regime mode with
     | .ok qualType  => s!"Type: {repr qualType}"
     | .error msg => s!"Type error: {msg}"

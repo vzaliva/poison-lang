@@ -8,12 +8,6 @@ open Std
 
 namespace LeanPoison
 
--- Evaluation mode: controls whether IO operations are permitted
-inductive EvalMode where
-  | normal  : EvalMode  -- IO operations allowed (default)
-  | ioFree  : EvalMode  -- IO operations forbidden (return ioForbidden)
-  deriving Repr, BEq, DecidableEq
-
 -- Result type for big-step evaluation to distinguish termination, divergence, and stuck states
 inductive EvalResult : Type where
   | success : Config → Value → EvalResult      -- Termination: successful evaluation

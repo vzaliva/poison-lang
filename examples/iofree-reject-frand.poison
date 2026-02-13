@@ -1,0 +1,2 @@
+--! poison-interpreter --io-free
+frand 0

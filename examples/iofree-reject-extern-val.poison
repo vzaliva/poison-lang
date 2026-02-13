@@ -1,0 +1,2 @@
+--! poison-interpreter --io-free
+let x = extern val : (bool :> poisoned { 3, a => a >= 0 }) in x

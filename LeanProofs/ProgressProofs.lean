@@ -68,7 +68,7 @@ lemma var_has_value_if_typed (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (x 
   exact ⟨v, h_v⟩
 
 -- Private lemma for num case
-private lemma progress_num (n : Int) (ctx : TypeContext) : Progress (Expr.num n) ctx := by
+private lemma progress_num (n : Int) (ctx : TypeContext) : Progress .normal (Expr.num n) ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
   rintro ⟨fuel_eval, verbose, msg, h_contra⟩
@@ -83,7 +83,7 @@ private lemma progress_num (n : Int) (ctx : TypeContext) : Progress (Expr.num n)
     cases h
 
 -- Private lemma for bool case
-private lemma progress_bool (b : Bool) (ctx : TypeContext) : Progress (Expr.bool b) ctx := by
+private lemma progress_bool (b : Bool) (ctx : TypeContext) : Progress .normal (Expr.bool b) ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
   rintro ⟨fuel_eval, verbose, msg, h_contra⟩
@@ -98,7 +98,7 @@ private lemma progress_bool (b : Bool) (ctx : TypeContext) : Progress (Expr.bool
     cases h
 
 -- Private lemma for unit case
-private lemma progress_unit (ctx : TypeContext) : Progress Expr.unit ctx := by
+private lemma progress_unit (ctx : TypeContext) : Progress .normal Expr.unit ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
   rintro ⟨fuel_eval, verbose, msg, h_contra⟩
@@ -113,7 +113,7 @@ private lemma progress_unit (ctx : TypeContext) : Progress Expr.unit ctx := by
     cases h
 
 -- Private lemma for str case
-private lemma progress_str (s : String) (ctx : TypeContext) : Progress (Expr.str s) ctx := by
+private lemma progress_str (s : String) (ctx : TypeContext) : Progress .normal (Expr.str s) ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
   rintro ⟨fuel_eval, verbose, msg, h_contra⟩
@@ -128,7 +128,7 @@ private lemma progress_str (s : String) (ctx : TypeContext) : Progress (Expr.str
     cases h
 
 -- Private lemma for var case
-private lemma progress_var (x : Name) (ctx : TypeContext) : Progress (Expr.var x) ctx := by
+private lemma progress_var (x : Name) (ctx : TypeContext) : Progress .normal (Expr.var x) ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
   rintro ⟨fuel_eval, verbose, msg, h_contra⟩
@@ -166,7 +166,7 @@ private lemma progress_var (x : Name) (ctx : TypeContext) : Progress (Expr.var x
 -- Progress theorem: well-typed programs don't get stuck
 -- This proof uses strong induction on fuel_eval
 -- TODO: for induction we need to switch to world-indexed format with fuel, as we did in Preservation.lean
-theorem progress (e : Expr) (ctx : TypeContext) : Progress e ctx := by
+theorem progress (e : Expr) (ctx : TypeContext) : Progress .normal e ctx := by
   unfold Progress stuck
   intro ⟨fuel_tc, res, h_typecheck⟩ μ ρ l pm h_instantiate
   push_neg

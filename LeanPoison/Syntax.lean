@@ -48,6 +48,16 @@ instance : Repr LocSet where
     reprPrec (ExtTreeSet.toList s) prec
 abbrev Name := String
 
+namespace LeanPoison
+
+/-- Evaluation mode: controls whether IO operations are permitted (shared with typechecker). -/
+inductive EvalMode where
+  | normal : EvalMode   -- IO operations allowed (default)
+  | ioFree : EvalMode   -- IO operations forbidden (return ioForbidden in beval)
+  deriving Repr, BEq, DecidableEq
+
+end LeanPoison
+
 -- Surface types (corresponds to typ, ST in Ott)
 inductive Typ : Type where
   | int : Typ

@@ -1,0 +1,2 @@
+--! poison-interpreter --io-free
+let frand_ext = extern fn n : (int) -> ((int :> poisoned { 3, y => (y >= 0 && y <= n) })) in frand_ext 2

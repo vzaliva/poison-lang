@@ -1,0 +1,8 @@
+Evaluating file: examples/iofree-pure-ok.poison (verbose mode)
+
+Type checking passed: Type: QTyp.mk ETyp.bool false Predicate.noPred , MemoryTypeEnv : ofList [] , tagEnv : ofList [] , nextLoc : 0 
+
+Result: true
+Final state:
+Variable environment: []
+  Memory: []

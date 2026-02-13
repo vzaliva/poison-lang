@@ -669,6 +669,6 @@ def TypeSystemEnforcesFaultRobustness_spec
         wfTagMeaningCtx tm ctx →
         PredSatLaws predSat tm →
         ((∃ (fuel : Nat) (res : TypeResult),
-          typecheck ctx e fuel = .ok res ∧
+          typecheck .ioFree ctx e fuel = .ok res ∧
           ObsConstraints obs res) →
           FaultRobustnessSpec e s obs ctx predSat tm)

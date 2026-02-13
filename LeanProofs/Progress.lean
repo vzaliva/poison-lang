@@ -20,7 +20,7 @@ import LeanProofs.SemanticsProperties
 -- - .outOfFuel (divergence)
 -- but never .runtimeError (stuck state)
 def Progress (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : Prop :=
-  (∃ (fuel : Nat) (res : TypeResult), typecheck ctx e fuel = .ok res) →
+  (∃ (fuel : Nat) (res : TypeResult), typecheck mode ctx e fuel = .ok res) →
   ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (a : Address) (pm : Bool),
     wfRealizationMap θ →
     runtimeInstantiatesCtx ctx μ ρ θ →
