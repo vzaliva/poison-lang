@@ -4,6 +4,7 @@
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanProofs.TypeSafety
+import LeanProofs.JoinMemEnv
 import LeanProofs.SemanticsProperties
 import Std.Data.ExtTreeMap
 open Std
@@ -39,6 +40,23 @@ def qtypGuardDesc? (qt : QTyp) : Option (Tag × GuardDesc) :=
   | Predicate.guardClosure k arg body cap =>
       some (k, { argName := arg, body := body, capEnv := cap })
   | _ => none
+
+/-- When `qtypGuardDesc?` returns `some (k, d)`, the predicate is that guard closure. -/
+lemma qtypGuardDesc?_eq_some_pred_guardClosure
+    {qt : QTyp} {k : Tag} {d : GuardDesc}
+    (h : qtypGuardDesc? qt = some (k, d)) :
+    qt.pred = Predicate.guardClosure k d.argName d.body d.capEnv := by
+  cases qt with
+  | mk _ _ pred =>
+      cases pred with
+      | noPred => simp [qtypGuardDesc?] at h
+      | guardOnly _ => simp [qtypGuardDesc?] at h
+      | guardClosure k' arg body cap =>
+        have heq := Option.some.inj h
+        have hk : k' = k := (Prod.mk.inj heq).1
+        have hd : { argName := arg, body := body, capEnv := cap } = d := (Prod.mk.inj heq).2
+        subst hk hd
+        rfl
 
 /-- Extract captured typing env from closures. -/
 def fnCapturedEnv : FnTClosure → CapturedVarEnv
@@ -264,7 +282,7 @@ lemma wfTagMeaningCtx_varEnv_ext (tm : TagMeaning) (ctx : TypeContext) (x : Name
           (QTypInEnvs.inMem ctx.varEnv ctx.memEnv l0 _qt qtRoot hlookup hinq) hm)
 
 /-- All deep guard descriptors reachable from `qt` are mapped by `tm`. -/
-def QTypRespectsTagMeaning (tm : TagMeaning) (qt : QTyp) : Prop :=
+@[reducible] def QTypRespectsTagMeaning (tm : TagMeaning) (qt : QTyp) : Prop :=
   ∀ {qt' k d}, QTypInQTyp qt' qt → qtypGuardDesc? qt' = some (k, d) → tm.lookup k = some d
 
 /-- Transport `QTypRespectsTagMeaning` across qualified types with the same
@@ -297,6 +315,17 @@ lemma wfTagMeaningCtx_var_lookup_qtyp
   exact h.1 (GuardDescInEnvsDeep.intro qt' k d
     (QTypInEnvs.inVar ctx.varEnv ctx.memEnv x qt' qt hlookup hinq) hqd)
 
+/-- Any top-level memory type in an environment that respects tag meaning
+    also respects tag meaning for all of its deep descendants. -/
+lemma EnvRespectsTagMeaning_mem_lookup_qtyp
+    (tm : TagMeaning) (σ : VarTypeEnv) (Γ : MemoryTypeEnv) (l : Loc) (qt : QTyp)
+    (h : EnvRespectsTagMeaning tm σ Γ)
+    (hlookup : Γ.lookup l = some qt) :
+    QTypRespectsTagMeaning tm qt := by
+  intro qt' k d hinq hqd
+  exact h.1 (GuardDescInEnvsDeep.intro qt' k d
+    (QTypInEnvs.inMem σ Γ l qt' qt hlookup hinq) hqd)
+
 /-- Any top-level memory type in a tag-meaning-respecting context also
     respects tag meaning for all of its deep descendants. -/
 lemma wfTagMeaningCtx_mem_lookup_qtyp
@@ -325,6 +354,144 @@ lemma QTypRespectsTagMeaning_transport_etyp_noGuard
       cases hqd
   | inr hinq' =>
       exact hqt hinq' hqd
+
+/-- When both envs have something at `l`, the joined root at `l` respects tag meaning. -/
+lemma QTypRespectsTagMeaning_joinMem_lookup
+    (tm : TagMeaning) (σ : VarTypeEnv) (Γ1 Γ2 : MemoryTypeEnv) (l : Loc) (qtRoot : QTyp)
+    (h1 : EnvRespectsTagMeaning tm σ Γ1)
+    (_h2 : EnvRespectsTagMeaning tm σ Γ2)
+    (hlookup : (joinMemEnvs Γ1 Γ2).lookup l = some qtRoot)
+    (h1_some : Γ1[l]? ≠ none)
+    (h2_some : Γ2[l]? ≠ none) :
+    QTypRespectsTagMeaning tm qtRoot := by
+  cases h1_val : Γ1[l]? with
+  | none => exact (h1_some h1_val).elim
+  | some qt1 =>
+  cases h2_val : Γ2[l]? with
+  | none => exact (h2_some h2_val).elim
+  | some qt2 =>
+  have hqt1 : Γ1[l]? = some qt1 := h1_val
+  have hqt2 : Γ2[l]? = some qt2 := h2_val
+  have hqt1' : Γ1.lookup l = some qt1 := by
+    rw [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hqt1
+  have hqt2' : Γ2.lookup l = some qt2 := by
+    rw [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hqt2
+  have h1_tm : QTypRespectsTagMeaning tm qt1 :=
+    EnvRespectsTagMeaning_mem_lookup_qtyp tm σ Γ1 l qt1 h1 hqt1'
+  have h_in : l ∈ (Γ1.keys ++ Γ2.keys).eraseDups := by
+    have hmem : l ∈ Γ1 := (Std.ExtTreeMap.mem_iff_isSome_getElem?).2 (by simp [hqt1])
+    have hkeys : l ∈ Γ1.keys := (ExtTreeMap.mem_keys).2 hmem
+    exact List.mem_eraseDups_of_mem (List.mem_append_left _ hkeys)
+  have hgo := combineExtTreeMaps_go_get_mem Γ1 Γ2
+    (fun _ oq1 oq2 => match oq1, oq2 with
+      | some qt1, none => some qt1
+      | none, some qt2 => some qt2
+      | some qt1, some qt2 =>
+        let ⟨t1, p1, pred1⟩ := qt1
+        let ⟨t2, p2, pred2⟩ := qt2
+        if t1 == t2 then some ⟨t1, joinPoison p1 p2, joinPredicates pred1 pred2⟩ else none
+      | none, none => none)
+    (Γ1.keys ++ Γ2.keys).eraseDups ({} : MemoryTypeEnv) l h_in
+  have hjoin' : (combineExtTreeMaps.go Γ1 Γ2 (fun _ oq1 oq2 => match oq1, oq2 with
+      | some qt1, none => some qt1
+      | none, some qt2 => some qt2
+      | some qt1, some qt2 =>
+        let ⟨t1, p1, pred1⟩ := qt1
+        let ⟨t2, p2, pred2⟩ := qt2
+        if t1 == t2 then some ⟨t1, joinPoison p1 p2, joinPredicates pred1 pred2⟩ else none
+      | none, none => none) (Γ1.keys ++ Γ2.keys).eraseDups ({} : MemoryTypeEnv))[l]? = some qtRoot := by
+    simpa [joinMemEnvs, combineExtTreeMaps, MemoryTypeEnv.lookup] using hlookup
+  rw [hgo] at hjoin'
+  have h1'' : ExtTreeMap.get? Γ1 l = some qt1 := by simpa [MemoryTypeEnv.lookup] using hqt1'
+  have h2'' : ExtTreeMap.get? Γ2 l = some qt2 := by simpa [MemoryTypeEnv.lookup] using hqt2'
+  simp only [h1'', h2''] at hjoin'
+  cases qt1 with
+  | mk t1 p1 pred1 =>
+      cases qt2 with
+      | mk t2 p2 pred2 =>
+          unfold QTypRespectsTagMeaning
+          intro qt' k d hinq hqd
+          by_cases ht_eq : (t1 == t2) = true
+          · -- Both maps had the value; types matched; joined value at root
+            have heq_inner : QTyp.mk t1 (joinPoison p1 p2) (joinPredicates pred1 pred2) = qtRoot := by
+              have hmatch := hjoin'
+              simp only [ht_eq] at hmatch
+              exact Option.some.inj hmatch
+            have hetyp : qtRoot.etyp = t1 := congr_arg QTyp.etyp heq_inner.symm
+            have hpred_eq : qtRoot.pred = joinPredicates pred1 pred2 := congr_arg QTyp.pred heq_inner.symm
+            have hetyp' : qtRoot.etyp = (QTyp.mk t1 p1 pred1).etyp := hetyp.trans (by rfl)
+            by_cases hguard : qtypGuardDesc? qtRoot = none
+            · exact (QTypRespectsTagMeaning_transport_etyp_noGuard tm (QTyp.mk t1 p1 pred1) qtRoot h1_tm hetyp' hguard) hinq hqd
+            · obtain ⟨⟨k0, d0⟩, hqd_root⟩ := Option.ne_none_iff_exists'.1 hguard
+              have hpred_gc : qtRoot.pred = Predicate.guardClosure k0 d0.argName d0.body d0.capEnv :=
+                qtypGuardDesc?_eq_some_pred_guardClosure hqd_root
+              have hjoin_gc :
+                  joinPredicates pred1 pred2 =
+                    Predicate.guardClosure k0 d0.argName d0.body d0.capEnv := by
+                calc
+                  joinPredicates pred1 pred2 = qtRoot.pred := hpred_eq.symm
+                  _ = Predicate.guardClosure k0 d0.argName d0.body d0.capEnv := hpred_gc
+              have ⟨hp1, _hp2⟩ := joinPredicates_eq_guardClosure hjoin_gc
+              have hpred_root_eq_pred1 : qtRoot.pred = pred1 := by
+                calc
+                  qtRoot.pred = Predicate.guardClosure k0 d0.argName d0.body d0.capEnv := hpred_gc
+                  _ = pred1 := by simp [hp1]
+              exact
+                (QTypRespectsTagMeaning_transport_etyp_pred tm (QTyp.mk t1 p1 pred1) qtRoot h1_tm
+                  hetyp' hpred_root_eq_pred1) hinq hqd
+          · -- t1 ≠ t2: join returns none, but hjoin' says we got some
+            exfalso
+            simp only [ht_eq] at hjoin'
+            exact absurd hjoin'.symm (Option.some_ne_none qtRoot)
+
+/-- EnvRespectsTagMeaning is preserved under joinMemEnvs: if both memory envs
+    respect tag meaning (with the same var env), so does their join. -/
+lemma EnvRespectsTagMeaning_joinMemEnvs
+    (tm : TagMeaning) (σ : VarTypeEnv) (Γ1 Γ2 : MemoryTypeEnv)
+    (h1 : EnvRespectsTagMeaning tm σ Γ1)
+    (h2 : EnvRespectsTagMeaning tm σ Γ2) :
+    EnvRespectsTagMeaning tm σ (joinMemEnvs Γ1 Γ2) := by
+  exact EnvRespectsTagMeaning.intro fun gd =>
+    match gd with
+    | .intro qt k d hin hm =>
+      match hin with
+      | .inVar _ _ x qt qtRoot hlookup hinq =>
+        h1.1 (GuardDescInEnvsDeep.intro qt k d
+          (QTypInEnvs.inVar σ Γ1 x qt qtRoot hlookup hinq) hm)
+      | .inMem _ _ l qt qtRoot hlookup hinq =>
+        by
+          have hcontains : (joinMemEnvs Γ1 Γ2).contains l := by
+            rw [Std.ExtTreeMap.contains_iff_mem]
+            exact (Std.ExtTreeMap.mem_iff_isSome_getElem?).2
+              (by rw [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] at hlookup; simp [hlookup])
+          have hor := joinMemEnvs_contains_implies_or Γ1 Γ2 l hcontains
+          cases hor with
+          | inl hleft =>
+            by_cases h2_none : Γ2[l]? = none
+            · have heq := joinMemEnvs_lookup_eq_left_of_right_none Γ1 Γ2 l hleft h2_none
+              rw [heq] at hlookup
+              exact h1.1 (GuardDescInEnvsDeep.intro qt k d
+                (QTypInEnvs.inMem σ Γ1 l qt qtRoot hlookup hinq) hm)
+            · have h1_some : Γ1[l]? ≠ none := by
+                intro heq
+                have hnot_some : ¬Option.isSome (Γ1[l]?) := by simp [heq]
+                have hmem : l ∈ Γ1 := (Std.ExtTreeMap.contains_iff_mem).mp hleft
+                exact hnot_some ((Std.ExtTreeMap.mem_iff_isSome_getElem?).mp hmem)
+              exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 h2
+                hlookup h1_some h2_none) hinq hm
+          | inr hright =>
+            by_cases h1_none : Γ1[l]? = none
+            · have heq := joinMemEnvs_lookup_eq_right_of_left_none Γ1 Γ2 l h1_none hright
+              rw [heq] at hlookup
+              exact h2.1 (GuardDescInEnvsDeep.intro qt k d
+                (QTypInEnvs.inMem σ Γ2 l qt qtRoot hlookup hinq) hm)
+            · have h2_some : Γ2[l]? ≠ none := by
+                intro heq
+                have hnot_some : ¬Option.isSome (Γ2[l]?) := by simp [heq]
+                have hmem : l ∈ Γ2 := (Std.ExtTreeMap.contains_iff_mem).mp hright
+                exact hnot_some ((Std.ExtTreeMap.mem_iff_isSome_getElem?).mp hmem)
+              exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 h2 hlookup
+                h1_none h2_some) hinq hm
 
 /-- Membership in a captured environment produced from `VarTypeEnv.toCaptured`
     gives the corresponding map lookup. -/

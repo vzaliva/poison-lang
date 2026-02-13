@@ -521,6 +521,38 @@ private lemma qtypPredHolds_transport_pred_not
     qtypPredHolds_transport_pred (predSat := predSat) (qt := qt') (qt' := qt) (μ := μ) (v := v) (by simp [hpred]) hholds
   exact hnot hback
 
+-- When Regime.monotoneStep R R', valueConsistentWithRegime for R implies for R'
+-- (R' has fewer entries, so fewer constraints).
+private lemma valueConsistentWithRegime_monotone
+  {predSat : PredSat} {R R' : Regime} {qt : QTyp} {μ : Memory} {v : Value}
+  (h_mono : Regime.monotoneStep R R')
+  (h : valueConsistentWithRegime predSat R qt μ v) :
+  valueConsistentWithRegime predSat R' qt μ v := by
+  cases h with
+  | noTag htag =>
+      exact valueConsistentWithRegime.noTag (predSat := predSat) (R := R') (qt := qt) (μ := μ) (v := v) htag
+  | guardOnly_ok k hgo =>
+      exact valueConsistentWithRegime.guardOnly_ok (predSat := predSat) (R := R') (qt := qt) (μ := μ) (v := v) k hgo
+  | notInRegime k htag hknone =>
+      have h' : R'.lookup? k = none := by
+        by_contra hneq
+        exact h_mono.2.2 k hneq hknone
+      exact valueConsistentWithRegime.notInRegime (predSat := predSat) (R := R') (qt := qt) (μ := μ) (v := v) k htag h'
+  | inRegimeTrue k htag hktrue hholds =>
+      have hR' := h_mono.2.1 k true hktrue
+      cases hR' with
+      | inl hk' =>
+          exact valueConsistentWithRegime.inRegimeTrue (predSat := predSat) (R := R') (qt := qt) (μ := μ) (v := v) k htag hk' hholds
+      | inr hk'none =>
+          exact valueConsistentWithRegime.notInRegime (predSat := predSat) (R := R') (qt := qt) (μ := μ) (v := v) k htag hk'none
+  | inRegimeFalse k htag hkfalse hnot =>
+      have hR' := h_mono.2.1 k false hkfalse
+      cases hR' with
+      | inl hk' =>
+          exact valueConsistentWithRegime.inRegimeFalse (predSat := predSat) (R := R') (qt := qt) (μ := μ) (v := v) k htag hk' hnot
+      | inr hk'none =>
+          exact valueConsistentWithRegime.notInRegime (predSat := predSat) (R := R') (qt := qt) (μ := μ) (v := v) k htag hk'none
+
 private lemma valueConsistentWithRegime_transport_pred
   {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {v : Value}
   (hpred : qt.pred = qt'.pred) :
@@ -1057,41 +1089,6 @@ private lemma predGuardTag_joinPredicates {p q : Predicate} {k : Tag} :
       | noPred =>
           intro h
           simp [joinPredicates, predGuardTag, beqPredicate] at h
-
-private lemma joinPredicates_eq_guardClosure
-  {p q : Predicate} {k : Tag} {arg_name : Name} {pred_body : PExpr} {var_env : CapturedVarEnv} :
-    joinPredicates p q = Predicate.guardClosure k arg_name pred_body var_env →
-    p = Predicate.guardClosure k arg_name pred_body var_env ∧
-    q = Predicate.guardClosure k arg_name pred_body var_env := by
-  intro h
-  by_cases hbeq : beqPredicate p q = true
-  · have hpq : p = q := eq_of_beq (a := p) (b := q) hbeq
-    have hp : p = Predicate.guardClosure k arg_name pred_body var_env := by
-      simpa [joinPredicates, hbeq] using h
-    refine ⟨hp, ?_⟩
-    simpa [hpq] using hp
-  · -- If predicates are not equal, joinPredicates can only return guardOnly or noPred.
-    have : False := by
-      cases p with
-      | noPred =>
-          cases q <;> simp [joinPredicates, hbeq] at h
-      | guardOnly k1 =>
-          cases q with
-          | noPred =>
-              simp [joinPredicates, hbeq] at h
-          | guardOnly k2 =>
-              cases htag : (k1 == k2) <;> simp [joinPredicates, hbeq, htag] at h
-          | guardClosure k2 a2 b2 env2 =>
-              cases htag : (k1 == k2) <;> simp [joinPredicates, hbeq, htag] at h
-      | guardClosure k1 a1 b1 env1 =>
-          cases q with
-          | noPred =>
-              simp [joinPredicates, hbeq] at h
-          | guardOnly k2 =>
-              cases htag : (k1 == k2) <;> simp [joinPredicates, hbeq, htag] at h
-          | guardClosure k2 a2 b2 env2 =>
-              cases htag : (k1 == k2) <;> simp [joinPredicates, hbeq, htag] at h
-    exact False.elim this
 
 private lemma list_foldlM_derefFoldF_pred_eq_guardClosure_from_some
   (mem : MemoryTypeEnv) :
@@ -8940,26 +8937,94 @@ private lemma stepFR_kwhile
   StepFR .ioFree ctxᵢ (Expr.kwhile e1 e2) res predSat tm := by
   sorry
 
--- Admitted lemmas for stepFR_app: join-lifting and body-context bridges.
+-- Helper lemmas for stepFR_app: join-lifting and body-context bridges.
 --
--- Refactor note:
--- We intentionally keep join-lifting obligations *bundled* in a single helper below
--- (`stepFR_app_join_lifts_from_first`) instead of one lemma per invariant. This mirrors
--- the proof shape in `stepFR_app`, avoids repetitive local plumbing, and makes the
--- unresolved frontier explicit.
---
--- Suggested proof strategy for the bundled join helper:
--- 1. Unfold `joinTypeResults` and reuse existing structure lemmas from `TypeSafety.lean`,
---    in particular:
---    `joinTypeResults_regime_monotone`,
---    `joinTypeResults_nextLoc_eq_max`,
---    `joinTypeResults_nextTag_eq_max`,
---    `joinTypeResults_preserves_arrow_structure_nextLoc`,
---    `joinTypeResults_pred_noPred_for_function_types_nextLoc`.
--- 2. For memory/tag environment components, reduce to properties of
---    `joinMemEnvs` / `joinTagEnvs` and map-level lookup reasoning.
--- 3. For runtime-side premises, start from the `first` branch and transport along the
---    join equations required by StepFR's post-context.
+-- Join-transport lemmas: when `joinTypeResults ctx first rest = .ok res`, transport
+-- properties from `(ctxAfter ctx first)` to `(ctxAfter ctx res)`. Used by both peClosure
+-- and closure branches.
+
+private lemma join_transport_runtimeInstantiatesCtx
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (h_mem : ∀ l, first.memEnv'.contains l → res.memEnv'.contains l)
+  (h_first : runtimeInstantiatesCtx (ctxAfter ctx first) μ ρ θ) :
+  runtimeInstantiatesCtx (ctxAfter ctx res) μ ρ θ := by
+  unfold runtimeInstantiatesCtx at h_first ⊢
+  simp only [ctxAfter]
+  constructor
+  · intro l a hθ
+    have ⟨hcontains, hμ⟩ := h_first.1 l a hθ
+    exact ⟨h_mem l hcontains, hμ⟩
+  · exact h_first.2
+
+private lemma join_transport_wfTypeContext
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (h_mem : ∀ l, res.memEnv'.contains l → first.memEnv'.contains l ∨ ∃ r ∈ rest, r.memEnv'.contains l)
+  (h_first : wfTypeContext (ctxAfter ctx first))
+  (h_rest_wf : ∀ r ∈ rest, wfTypeResult r) :
+  wfTypeContext (ctxAfter ctx res) := by
+  intro l hcontains
+  simp only [ctxAfter]
+  rcases h_mem l hcontains with hfirst | ⟨r, hr_mem, h_in⟩
+  · -- l in first
+    have hlt := h_first l (by simp only [ctxAfter]; exact hfirst)
+    rw [joinTypeResults_nextLoc_eq_max _ _ _ _ _h_join]
+    have hle : first.nextLoc' ≤ List.max (first.nextLoc' :: rest.map TypeResult.nextLoc') (by intro h; cases h) := by
+      apply List.le_max_of_mem
+      simp
+    exact Nat.lt_of_lt_of_le hlt hle
+  · -- l in some r ∈ rest
+    have hwf := h_rest_wf r hr_mem
+    have hlt := hwf l h_in
+    rw [joinTypeResults_nextLoc_eq_max _ _ _ _ _h_join]
+    have hle : r.nextLoc' ≤ List.max (first.nextLoc' :: rest.map TypeResult.nextLoc') (by intro h; cases h) := by
+      apply List.le_max_of_mem
+      simp only [List.mem_cons, List.mem_map]
+      right
+      exact ⟨r, hr_mem, rfl⟩
+    exact Nat.lt_of_lt_of_le hlt hle
+
+private lemma join_transport_regimeConsistentWithCtx
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (h_regime_mono : Regime.monotoneStep first.regime' res.regime')
+  (h_tag_join : tagEnvConsistentWithRegime (ctxAfter ctx res).tagEnv (ctxAfter ctx res).regime)
+  (h_first : regimeConsistentWithCtx (ctxAfter ctx first) (ctxAfter ctx first).regime) :
+  regimeConsistentWithCtx (ctxAfter ctx res) (ctxAfter ctx res).regime := by
+  simp only [regimeConsistentWithCtx, ctxAfter]
+  constructor
+  · exact h_tag_join
+  · rw [h_regime_mono.1]
+    have h_first_bound := h_first.2
+    rw [joinTypeResults_nextTag_eq_max _ _ _ _ _h_join]
+    have hle : first.nextTag' ≤ List.max (first.nextTag' :: rest.map TypeResult.nextTag') (by intro h; cases h) := by
+      apply List.le_max_of_mem
+      simp
+    exact Nat.le_trans h_first_bound hle
+
+private lemma join_transport_valueConsistentWithRegime
+  (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (qt : QTyp) (μ : Memory) (v : Value)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (h_regime_mono : Regime.monotoneStep first.regime' res.regime')
+  (h_first : valueConsistentWithRegime predSat (ctxAfter ctx first).regime qt μ v) :
+  valueConsistentWithRegime predSat (ctxAfter ctx res).regime qt μ v :=
+  valueConsistentWithRegime_monotone h_regime_mono h_first
+
+-- Transport valueConsistentWithRegime when qualType changes from first to res (via pred transport).
+private lemma join_transport_valueConsistentWithRegime_resQual
+  (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (μ : Memory) (v : Value)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (_hpred : res.qualType.pred = first.qualType.pred)
+  (h_regime_mono : Regime.monotoneStep first.regime' res.regime')
+  (h_first : valueConsistentWithRegime predSat (ctxAfter ctx first).regime first.qualType μ v) :
+  valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType μ v :=
+  valueConsistentWithRegime_monotone h_regime_mono
+    (valueConsistentWithRegime_transport_pred (_hpred.symm : first.qualType.pred = res.qualType.pred) h_first)
+
 private lemma stepFR_app_join_lifts_from_first
   (predSat : PredSat) (tm : TagMeaning)
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -9590,6 +9655,298 @@ private lemma stepFR_app_arrow_result_typing_pack
   valueHasETyp θ₁1 o₁ res.qualType.etyp := by
   exact ⟨hresTm_res, hv₀_res, hv₁_res⟩
 
+
+private lemma join_transport_wfTagMeaningCtx
+  (tm : TagMeaning) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (_h_mem : ∀ l, res.memEnv'.contains l → first.memEnv'.contains l ∨ ∃ r ∈ rest, r.memEnv'.contains l)
+  (h_first : wfTagMeaningCtx tm (ctxAfter ctx first))
+  (h_rest_tm : ∀ r ∈ rest, wfTagMeaningCtx tm (ctxAfter ctx r)) :
+  wfTagMeaningCtx tm (ctxAfter ctx res) := by
+  unfold wfTagMeaningCtx
+  rw [ctxAfter]
+  have h_first_env : EnvRespectsTagMeaning tm ctx.varEnv first.memEnv' := by
+    simpa [wfTagMeaningCtx, ctxAfter] using h_first
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvs acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
+  have h_fold_tm :
+      ∀ (rs' : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
+        List.foldlM joinStep acc rs' = .ok acc' →
+        EnvRespectsTagMeaning tm ctx.varEnv acc.2.1 →
+        (∀ r ∈ rs', wfTagMeaningCtx tm (ctxAfter ctx r)) →
+        EnvRespectsTagMeaning tm ctx.varEnv acc'.2.1 := by
+    intro rs' acc acc' hfold hacc hrest
+    induction rs' generalizing acc with
+    | nil =>
+        simp [List.foldlM_nil, pure, Except.pure] at hfold
+        cases hfold
+        exact hacc
+    | cons x xs ih =>
+        cases hqx : x.qualType with
+        | mk resEtyp resPoison resPred =>
+            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
+            have hx_tm : wfTagMeaningCtx tm (ctxAfter ctx x) := hrest x (by simp)
+            have hx_env : EnvRespectsTagMeaning tm ctx.varEnv x.memEnv' := by
+              simpa [wfTagMeaningCtx, ctxAfter] using hx_tm
+            have hacc1 : EnvRespectsTagMeaning tm ctx.varEnv (joinMemEnvs acc.2.1 x.memEnv') :=
+              EnvRespectsTagMeaning_joinMemEnvs tm ctx.varEnv acc.2.1 x.memEnv' hacc hx_env
+            have hrest_tail : ∀ r ∈ xs, wfTagMeaningCtx tm (ctxAfter ctx r) := by
+              intro r hr
+              exact hrest r (by simp [hr])
+            exact ih _ hfold hacc1 hrest_tail
+  cases hqt : first.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw, TypecheckM] at _h_join
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++ toString (repr etyp) ++
+                        toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+      | ok _ =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at _h_join
+              simp at _h_join
+          | ok a =>
+              erw [hfold] at _h_join
+              simp at _h_join
+              subst res
+              exact h_fold_tm rest
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag') a
+                hfold h_first_env h_rest_tm
+
+
+private lemma join_transport_consistentWithRegime
+  (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (h_regime_mono : Regime.monotoneStep first.regime' res.regime')
+  (h_mem_guarded_from_first :
+    ∀ l qt k,
+      (ctxAfter ctx res).memEnv.lookup l = some qt →
+      qtypGuardTag qt = some k →
+      (ctxAfter ctx res).regime.lookup? k ≠ none →
+      (ctxAfter ctx first).memEnv.lookup l = some qt)
+  (h_first : consistentWithRegime predSat (ctxAfter ctx first).regime (ctxAfter ctx first) μ ρ θ) :
+  consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) μ ρ θ := by
+  simp only [consistentWithRegime, ctxAfter]
+  constructor
+  · intro l qt k hlookup hguard hR'def
+    have hlookup_first := h_mem_guarded_from_first l qt k hlookup hguard hR'def
+    have hRdef : first.regime'.lookup? k ≠ none := h_regime_mono.2.2 k hR'def
+    cases hk' : res.regime'.lookup? k with
+    | none => exact absurd hk' hR'def
+    | some b =>
+        cases hk : first.regime'.lookup? k with
+        | none => exact absurd hk hRdef
+        | some b' =>
+            have h_eq := h_regime_mono.2.1 k b' hk
+            cases h_eq with
+            | inl heq =>
+                have hb : b' = b := Option.some.inj (heq.symm.trans hk')
+                have h_locsR := h_first.1 l qt k hlookup_first hguard hRdef
+                exact locsRegime_monotone h_regime_mono hguard (by rw [← hb]; exact hk) hk' h_locsR
+            | inr h_none => simp [h_none] at hk'
+  · intro x qt k hlookup hguard hR'def
+    have hRdef : first.regime'.lookup? k ≠ none := h_regime_mono.2.2 k hR'def
+    cases hk' : res.regime'.lookup? k with
+    | none => exact absurd hk' hR'def
+    | some b =>
+        cases hk : first.regime'.lookup? k with
+        | none => exact absurd hk hRdef
+        | some b' =>
+            have h_eq := h_regime_mono.2.1 k b' hk
+            cases h_eq with
+            | inl heq =>
+                have hb : b' = b := Option.some.inj (heq.symm.trans hk')
+                have h_varsR := h_first.2 x qt k hlookup hguard hRdef
+                exact varsRegime_monotone h_regime_mono hguard (by rw [← hb]; exact hk) hk' h_varsR
+            | inr h_none => simp [h_none] at hk'
+
+private lemma cleanUnder_of_monotone {R R' : Regime} {qt : QTyp} :
+    Regime.monotoneStep R R' → qtypCleanUnder R' qt → qtypCleanUnder R qt := by
+  intro h_mono h_clean
+  cases h_clean with
+  | clean hpoison =>
+      exact qtypCleanUnder.clean hpoison
+  | guard k htag hkR' hnotfun =>
+      have hRdef : R.lookup? k ≠ none := h_mono.2.2 k (by simp [hkR'])
+      cases hkR : R.lookup? k with
+      | none => exact (hRdef hkR).elim
+      | some b =>
+          have h_cases := h_mono.2.1 k b hkR
+          cases h_cases with
+          | inl hkR'_preserved =>
+              have hb : b = true := by
+                have : some b = some true := hkR'_preserved.symm.trans hkR'
+                exact Option.some.inj this
+              subst hb
+              exact qtypCleanUnder.guard k htag hkR hnotfun
+          | inr hkR'_none =>
+              simp [hkR'_none] at hkR'
+
+private lemma agreeValueUnder_clean_monotoneRegime
+    {predSat : PredSat} {R R' : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap} {qt : QTyp} {v₀ v₁ : Value} :
+    Regime.monotoneStep R R' →
+      qtypCleanUnder R' qt →
+        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
+          agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
+  intro h_mono hclean hagree
+  have hrec :
+      (qtypCleanUnder R' qt → agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁) :=
+    agreeValueUnder.rec (predSat := predSat) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
+      (motive_1 := fun qt v₀ v₁ _ =>
+        qtypCleanUnder R' qt → agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁)
+      (motive_2 := fun σcap ρcap₀ ρcap₁ _ =>
+        agreeCapturedEnv predSat R' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁)
+      (clean_eq_nonref_nonarrow := by
+        intro qt v₀ v₁ hpoison hnotfun hnotref heq _hclean
+        exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq)
+      (clean_internal_arrow := by
+        intro st1 st2 p tcls qt tcl x body σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap hv₀ hv₁ ihcap
+          _hclean
+        exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch ihcap hv₀ hv₁)
+      (dirty_internal_arrow := by
+        intro qt v₀ v₁ hdirty_internal hisArrow htyp1 htyp2 _hclean
+        exact agreeValueUnder.dirty_internal_arrow hdirty_internal hisArrow htyp1 htyp2)
+      (clean_internal_parrow := by
+        intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap hv₀ hv₁ ihcap
+          _hclean
+        exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch ihcap hv₀ hv₁)
+      (dirty_internal_parrow := by
+        intro qt v₀ v₁ hdirty_internal hisParrow htyp1 htyp2 _hclean
+        exact agreeValueUnder.dirty_internal_parrow hdirty_internal hisParrow htyp1 htyp2)
+      (clean_ref := by
+        intro t ls l a₀ a₁ qt v₀ v₁ hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁ _hclean
+        exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁)
+      (withPred_true_eq := by
+        intro k qt v₀ v₁ htag _hreg hnotfun hnotref heq hclean
+        cases hclean with
+        | clean hpoison =>
+            exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq
+        | guard k' htag' hk'R' _hnotfun' =>
+            have hk : k' = k := by
+              have : some k' = some k := by
+                calc
+                  some k' = qtypGuardTag qt := by symm; exact htag'
+                  _ = some k := htag
+              exact Option.some.inj this
+            have hreg : R'.lookup? k = some true := by
+              simpa [hk] using hk'R'
+            exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun hnotref heq)
+      (withPred_true_ref := by
+        intro k t ls l a₀ a₁ qt v₀ v₁ htag _hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁ hclean
+        cases hclean with
+        | clean hpoison =>
+            exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁
+        | guard k' htag' hk'R' _hnotfun' =>
+            have hk : k' = k := by
+              have : some k' = some k := by
+                calc
+                  some k' = qtypGuardTag qt := by symm; exact htag'
+                  _ = some k := htag
+              exact Option.some.inj this
+            have hreg : R'.lookup? k = some true := by
+              simpa [hk] using hk'R'
+            exact agreeValueUnder.withPred_true_ref k htag hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁)
+      (nil := by
+        intro ρcap₀ ρcap₁
+        exact agreeCapturedEnv.nil)
+      (cons_clean := by
+        intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ _hcleanR hlookup1 hlookup2 hagree htail ihagree ihtail
+        by_cases hcleanR' : qtypCleanUnder R' qt
+        · exact agreeCapturedEnv.cons_clean hcleanR' hlookup1 hlookup2 (ihagree hcleanR') ihtail
+        · exact agreeCapturedEnv.cons_dirty hcleanR' ihtail)
+      (cons_dirty := by
+        intro x qt σcap ρcap₀ ρcap₁ hdirty htail ihtail
+        have hdirty' : ¬ qtypCleanUnder R' qt := by
+          intro hcleanR'
+          exact hdirty (cleanUnder_of_monotone (R := R) (R' := R') h_mono hcleanR')
+        exact agreeCapturedEnv.cons_dirty hdirty' ihtail)
+      hagree
+  exact hrec hclean
+
+private lemma join_transport_agreeOnClean
+  (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (h_regime_mono : Regime.monotoneStep first.regime' res.regime')
+  (h_clean_res_to_first :
+    ∀ qt,
+      qtypCleanUnder (ctxAfter ctx res).regime qt →
+      qtypCleanUnder (ctxAfter ctx first).regime qt)
+  (h_mem_clean_from_first :
+    ∀ l qt,
+      (ctxAfter ctx res).memEnv.lookup l = some qt →
+      qtypCleanUnder (ctxAfter ctx res).regime qt →
+      (ctxAfter ctx first).memEnv.lookup l = some qt)
+  (h_first : agreeOnClean predSat (ctxAfter ctx first).regime (ctxAfter ctx first) μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁) :
+  agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res) μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ := by
+  simp only [agreeOnClean, ctxAfter]
+  constructor
+  · intro l qt hlookup hclean
+    have hlookup_first := h_mem_clean_from_first l qt hlookup hclean
+    have hclean_first := h_clean_res_to_first qt hclean
+    have hagree_first := h_first.1 l qt hlookup_first hclean_first
+    cases hagree_first with
+    | both_unrealized _ _ hnone₀ hnone₁ =>
+        exact agreeLocUnder.both_unrealized l qt hnone₀ hnone₁
+    | agree_values _ _ a₀ a₁ n₀ n₁ hreal₀ hreal₁ hlookup₀ hlookup₁ hagree =>
+        have hagree' := agreeValueUnder_clean_monotoneRegime h_regime_mono hclean hagree
+        exact agreeLocUnder.agree_values l qt a₀ a₁ n₀ n₁ hreal₀ hreal₁ hlookup₀ hlookup₁ hagree'
+  · intro x qt hlookup hclean
+    have hclean_first := h_clean_res_to_first qt hclean
+    have hagree_first := h_first.2 x qt hlookup hclean_first
+    cases hagree_first with
+    | both_none _ _ hnone₀ hnone₁ =>
+        exact agreeVarUnder.both_none x qt hnone₀ hnone₁
+    | agree_values _ _ v₀ v₁ hlookup₀ hlookup₁ hagree =>
+        have hagree' := agreeValueUnder_clean_monotoneRegime h_regime_mono hclean hagree
+        exact agreeVarUnder.agree_values x qt v₀ v₁ hlookup₀ hlookup₁ hagree'
+
+
+private lemma join_transport_resultAgreesIfClean
+  (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (qt : QTyp) (μ₀ μ₁ : Memory) (θ₀ θ₁ : RealizationMap) (o₀ o₁ : Value)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (h_regime_mono : Regime.monotoneStep first.regime' res.regime')
+  (h_clean_res_to_first :
+    qtypCleanUnder (ctxAfter ctx res).regime qt →
+    qtypCleanUnder (ctxAfter ctx first).regime qt)
+  (h_first : resultAgreesIfClean predSat (ctxAfter ctx first).regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁) :
+  resultAgreesIfClean predSat (ctxAfter ctx res).regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ := by
+  intro hclean_res
+  have hclean_first := h_clean_res_to_first hclean_res
+  have hagree_first := h_first hclean_first
+  exact agreeValueUnder_clean_monotoneRegime h_regime_mono hclean_res hagree_first
+
 -- Function application case: reduces to helper lemmas for closure/closure and peClosure branches
 private lemma stepFR_app
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
@@ -9937,6 +10294,9 @@ private lemma stepFR_app
           ?_, ?_, ?_, ?_,  -- regimeConsistentWithCtx, CWR₀, CWR₁, agreeOnClean
           ?_, ?_, ?_⟩  -- valueConsistentWithRegime₀, ₁, resultAgreesIfClean
         -- Remaining goals: body IH application + join/context transport
+        -- Use join_transport_* lemmas once first-facts are established:
+        --   first, rest, h_join from h_parrow; need runtimeInstantiatesCtx (ctxAfter ctxᵢ first), etc.
+        --   then e.g. join_transport_runtimeInstantiatesCtx, join_transport_wfTypeContext, ...
         all_goals sorry
 
 -- I/O-free step theorem: proves StepFR directly (no world-threading)
