@@ -1,5 +1,14 @@
 # Containerfile.ai-agent
 # Isolated AI coding agent environment (Claude Code, Codex, etc.) with Lean toolchain
+#
+# Stage 1: build gh-sub-issue extension (no GitHub auth required; gh extension install would require auth).
+FROM ubuntu:24.04 AS gh-sub-issue-builder
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git golang-go \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 https://github.com/yahsan2/gh-sub-issue.git /tmp/gh-sub-issue \
+    && cd /tmp/gh-sub-issue && go build -o gh-sub-issue .
+
+# Stage 2: main image
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -48,6 +57,12 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
+
+# Seed gh-sub-issue extension from builder; entrypoint copies to ~/.local/share/gh/extensions on first run so it persists with the home volume.
+ENV GH_EXTENSIONS_SEED=/opt/gh-extensions-seed
+RUN mkdir -p "${GH_EXTENSIONS_SEED}/.local/share/gh/extensions/gh-sub-issue"
+COPY --from=gh-sub-issue-builder /tmp/gh-sub-issue/gh-sub-issue "${GH_EXTENSIONS_SEED}/.local/share/gh/extensions/gh-sub-issue/gh-sub-issue"
+RUN chmod 0755 "${GH_EXTENSIONS_SEED}/.local/share/gh/extensions/gh-sub-issue/gh-sub-issue"
 
 # Install Node.js (LTS)
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
@@ -157,6 +172,17 @@ RUN printf '%s\n' \
 'mkdir -p "/home/user/.local/bin"' \
 'if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "/home/user/.local" 2>/dev/null || true; fi' \
 'export PATH="/home/user/.local/bin:${PATH}"' \
+'' \
+'# First-run seed: gh extensions live under ~/.local/share/gh/extensions; copy from image seed so they persist with the home volume.' \
+'GH_EXT_DIR="${XDG_DATA_HOME:-/home/user/.local/share}/gh/extensions"' \
+'mkdir -p "${GH_EXT_DIR}"' \
+'if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "${GH_EXT_DIR}" 2>/dev/null || true; fi' \
+'if [ -w "${GH_EXT_DIR}" ] && [ ! -d "${GH_EXT_DIR}/gh-sub-issue" ]; then' \
+'  if [ -d "${GH_EXTENSIONS_SEED:-/opt/gh-extensions-seed}/.local/share/gh/extensions" ]; then' \
+'    cp -a "${GH_EXTENSIONS_SEED}/.local/share/gh/extensions/." "${GH_EXT_DIR}/"' \
+'    if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "${GH_EXT_DIR}"; fi' \
+'  fi' \
+'fi' \
 '' \
 '# Claude Code (native installer) expects a shim at ~/.local/bin/claude.' \
 '# We install the binary in /usr/local/bin/claude and keep a symlink for compatibility.' \
