@@ -1113,7 +1113,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
              let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
              let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
              typecheckExpr .ioFree ctxFalse' e3 (fuel - 1) = .ok res3 ∧
-            res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv' ∧
+            res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv' ∧
             res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv' ∧
             res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
             res.nextTag' = max res2.nextTag' res3.nextTag' ∧
@@ -1135,7 +1135,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
          ∃ res3 : TypeResult,
            let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
            typecheckExpr .ioFree ctxForE3 e3 (fuel - 1) = .ok res3 ∧
-          res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv' ∧
+          res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv' ∧
           res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv' ∧
           res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
           res.nextTag' = max res2.nextTag' res3.nextTag' ∧

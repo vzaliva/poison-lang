@@ -7559,7 +7559,7 @@ private lemma stepFR_ite_mode3
           let ctxFalse := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
           let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
           typecheckExpr .ioFree ctxFalse' e3 fuel' = .ok res3)
-  (hmemEnv : res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv')
+  (hmemEnv : res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv')
   (htagEnv : res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv')
   (hnextLoc : res.nextLoc' = max res2.nextLoc' res3.nextLoc')
   (hnextTag : res.nextTag' = max res2.nextTag' res3.nextTag')
@@ -7612,7 +7612,7 @@ private lemma stepFR_ite_mode4
            let ctx'' := { ctx' with pc := pc' }
            let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
            typecheckExpr .ioFree ctxForE3 e3 fuel' = .ok res3))
-  (hmemEnv : res.memEnv' = joinMemEnvs res2.memEnv' res3.memEnv')
+  (hmemEnv : res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv')
   (htagEnv : res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv')
   (hnextLoc : res.nextLoc' = max res2.nextLoc' res3.nextLoc')
   (hnextTag : res.nextTag' = max res2.nextTag' res3.nextTag')

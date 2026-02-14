@@ -363,6 +363,30 @@ def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
         none
     | none, none => none)
 
+/-- Strong join: like joinMemEnvs but drops predicates for single-sided entries.
+    Used for unknown-branch if joins (if_std, if_depoison_*_R_unknown) so that
+    guardClosure from an untaken branch does not survive into the post-context. -/
+def joinMemEnvsStrong (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
+  combineExtTreeMaps env1 env2 (fun _ oq1 oq2 =>
+    match oq1, oq2 with
+    | some qt1, none =>
+      -- Single-sided: keep type and poison, drop predicate
+      some ⟨qt1.etyp, qt1.poison, Predicate.noPred⟩
+    | none, some qt2 =>
+      -- Single-sided: keep type and poison, drop predicate
+      some ⟨qt2.etyp, qt2.poison, Predicate.noPred⟩
+    | some qt1, some qt2 =>
+      -- Both-sided: same as joinMemEnvs
+      let ⟨t1, p1, pred1⟩ := qt1
+      let ⟨t2, p2, pred2⟩ := qt2
+      if t1 == t2 then
+        let p := joinPoison p1 p2
+        let pred := joinPredicates pred1 pred2
+        some ⟨t1, p, pred⟩
+      else
+        none
+    | none, none => none)
+
 /-- Restrict `envToRestrict` to the domain of `base`. -/
 def restrictMemEnv (envToRestrict base : MemoryTypeEnv) : MemoryTypeEnv :=
   envToRestrict.filter (fun k _ => base.contains k)
@@ -1717,7 +1741,7 @@ def typecheckIf (mode : EvalMode) (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : 
         let joinedEtyp := joinETyps etyp2 etyp3 p2 p3
         let poison := joinPoison ctx.pc (joinPoison p1 (joinPoison p2 p3))
         let qt : QTyp := ⟨joinedEtyp, poison, Predicate.noPred⟩
-        let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
+        let memEnv' := joinMemEnvsStrong result2.memEnv' result3.memEnv'
         let tagEnv' := joinTagEnvs result2.tagEnv' result3.tagEnv'
         let regime' := joinRegimes result2.regime' result3.regime'
         let nextLoc' := max result2.nextLoc' result3.nextLoc'
@@ -1753,7 +1777,7 @@ def typecheckIf (mode : EvalMode) (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : 
       let joinedEtyp := joinETyps etyp2 etyp3 p2 p3
       let poison := joinPoison ctx.pc (joinPoison p1 (joinPoison p2 p3))
       let qt : QTyp := ⟨joinedEtyp, poison, Predicate.noPred⟩
-      let memEnv' := joinMemEnvs result2.memEnv' result3.memEnv'
+      let memEnv' := joinMemEnvsStrong result2.memEnv' result3.memEnv'
       let tagEnv' := joinTagEnvs result2.tagEnv' result3.tagEnv'
       let regime' := joinRegimes result2.regime' result3.regime'
       let nextLoc' := max result2.nextLoc' result3.nextLoc'

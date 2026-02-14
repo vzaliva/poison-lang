@@ -1,0 +1,9 @@
+-- Test: if_std path - joinMemEnvsStrong drops single-sided predicates
+-- rand (not frand) produces clean value, so matchGuard fails => if_std path
+-- Then-branch allocates a ref; else-branch does not.
+let x = rand 0 in
+if x >= 0 then
+  let r = ref 42 in
+  !r
+else
+  0

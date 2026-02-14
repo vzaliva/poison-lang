@@ -1,0 +1,9 @@
+Evaluating file: examples/if-unknown-shared-pred.poison (verbose mode)
+
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardClosure 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [] , MemoryTypeEnv : ofList [(0,
+  QTyp.mk ETyp.int true Predicate.guardClosure 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [])] , tagEnv : ofList [] , nextLoc : 1 
+
+Result: 0
+Final state:
+Variable environment: []
+  Memory: [(0, 0)]

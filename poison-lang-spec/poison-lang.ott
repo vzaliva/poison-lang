@@ -180,6 +180,7 @@ G {{ tex \Gamma }} :: G_ ::=     {{ com memory typing environments }} {{ phantom
   | empty                   ::   :: empty {{ coq [] }}
   | G , ta                  ::   :: extend {{ coq ([[ta]]::[[G]]) }}
   | JoinG G1 G2             ::   :: JoinG {{ com flow-insensitive join of memory type environments: unions the environments, taking the join of poisons for any location present in both }} {{ tex [[G1]] \sqcup [[G2]] }}
+  | JoinGStrong G1 G2       ::   :: JoinGStrong {{ com like JoinG but drops predicates for single-sided entries; used for unknown-branch if joins }} {{ tex [[G1]] \sqcup^{\!*} [[G2]] }}
   | JoinRestrict G1 G2      ::   :: JoinRestrict {{ com JoinG where the second operand is first restricted to dom(G1) }} {{ tex [[G1]] \sqcup \bigl([[G2]] \mathbin{\restriction} \mathrm{dom}([[G1]])\bigr) }}
   | G [ l |-> Q ]           ::   :: UpdateG {{ tex [[G]] [ l \mapsto [[Q]] ] }}
   | G [ LS |-> Q ]           ::   :: UpdateGSet {{ com update all logical locations in LS with Q }} {{ tex [[G]] [ [[LS]] \mapsto [[Q]] ] }}
@@ -1055,7 +1056,7 @@ T3 = ST1 -> ST2 # p'' tclosures tcls3
 p = join p' p''
 tcls = tcls2 U tcls3
 ----------------------------------  :: if_depoison_fn_R_unknown
-pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
 % Conditional typing with predicate-based de-poisoning - impure function result - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
@@ -1093,7 +1094,7 @@ T3 = ST1 -> ST2 # p'' tpclosures ptcls3
 p = join p' p''
 ptcls = ptcls2 U ptcls3
 ----------------------------------  :: if_depoison_pfn_R_unknown
-pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
 % Conditional typing with predicate-based de-poisoning - pure function result - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
@@ -1128,7 +1129,7 @@ pm ; R ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : ref T @ LS1 :> p2 {
 pm ; R ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : ref T @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
 LS = LS1 U LS2
 ----------------------------------  :: if_depoison_ref_R_unknown
-pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
 % Conditional typing with predicate-based de-poisoning - reference result - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
@@ -1158,7 +1159,7 @@ pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
 pm ; R ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
 ----------------------------------  :: if_depoison_R_unknown
-pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
 % Conditional typing with predicate-based de-poisoning - general non-reference case - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
@@ -1197,7 +1198,7 @@ T3 = ST1 -> ST2 # p'' tclosures tcls3
 p = join p' p''
 tcls = tcls2 U tcls3
 ----------------------------------  :: if_std_fn
-pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
 % Standard conditional typing rule - pure function result
 % (used when no matching predicate found)
@@ -1216,7 +1217,7 @@ T3 = ST1 -> ST2 # p'' tpclosures ptcls3
 p = join p' p''
 ptcls = ptcls2 U ptcls3
 ----------------------------------  :: if_std_pfn
-pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
 % Standard conditional typing rule - reference result (no predicate match)
 pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1 ; R1
@@ -1224,14 +1225,14 @@ pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e2 : ref T @ LS1 :> p2 { P2 } -| G2 ; L2 ;
 pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e3 : ref T @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
 LS = LS1 U LS2
 ----------------------------------  :: if_std_ref
-pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref T @ LS :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
 % Standard conditional typing rule - general non-reference case (no predicate match)
 pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
 ----------------------------------  :: if_std
-pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinG G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
 
 %  Flow‑sensitive WHILE à la Hunt & Sands 2006 https://doi.org/10.1145/1111037.1111045

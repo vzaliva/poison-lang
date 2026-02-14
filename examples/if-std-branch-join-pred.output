@@ -1,0 +1,8 @@
+Evaluating file: examples/if-std-branch-join-pred.poison (verbose mode)
+
+Type checking passed: Type: QTyp.mk ETyp.int false Predicate.noPred , MemoryTypeEnv : ofList [(0, QTyp.mk ETyp.int false Predicate.noPred)] , tagEnv : ofList [] , nextLoc : 1 
+
+Result: 42
+Final state:
+Variable environment: []
+  Memory: [(0, 42)]
