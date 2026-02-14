@@ -1,0 +1,8 @@
+Evaluating file: examples/pred-parameterised-var.poison (verbose mode)
+
+Type checking passed: Type: QTyp.mk ETyp.int true Predicate.noPred , MemoryTypeEnv : ofList [] , tagEnv : ofList [] , nextLoc : 0 
+
+Result: 1
+Final state:
+Variable environment: []
+  Memory: []

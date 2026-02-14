@@ -618,11 +618,15 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
     | Predicate.noPred => return none
     | Predicate.guardOnly _tag => return none  -- Guard-only cannot be matched syntactically
     | Predicate.guardClosure tag arg_name pred_body var_env =>
-        -- Compare the predicate body with the condition using environment-aware equality
-        if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) defaultFuel then do
-          let deps ← extractDepsFromPred qt.pred
-          return some (tag, deps)
-        else return none
+        if PExpr.usesArg arg_name pred_body then
+          -- Parameterised: proceed with substitution + equality as today
+          if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) defaultFuel then do
+            let deps ← extractDepsFromPred qt.pred
+            return some (tag, deps)
+          else return none
+        else
+          -- Argument-ignoring: skip, not eligible for matching
+          return none
 
   -- Collect all matching tags from variable environment
   let varMatches := VarTypeEnv.foldl [] (fun acc name qt =>
@@ -664,8 +668,11 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
           let merged := merged?.getD Predicate.noPred
           match merged with
           | Predicate.guardClosure tag arg_name pred_body var_env =>
-              if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) defaultFuel then
-                pure ((tag, depsMerged) :: acc) else pure acc
+              if PExpr.usesArg arg_name pred_body then
+                if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) defaultFuel then
+                  pure ((tag, depsMerged) :: acc)
+                else pure acc
+              else pure acc
           | Predicate.guardOnly _tag => pure acc
           | Predicate.noPred => pure acc
     | _ => pure acc

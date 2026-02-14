@@ -1,0 +1,6 @@
+-- Test: parameterised reference predicate still matches uniquely (regression)
+-- Ref to frand value; condition on !r matches the memory-level predicate
+-- matchGuard succeeds with location in deps
+let val = frand 0 in
+let r = ref val in
+if (!r >= 0) && (!r <= 0) then 1 else 0

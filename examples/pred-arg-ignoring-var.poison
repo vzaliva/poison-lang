@@ -1,0 +1,7 @@
+-- Test: argument-ignoring predicate closure does not match in matchGuard
+-- Variable x has predicate (a => true) - body does not mention formal a
+-- matchGuard with condition true would have matched before the fix;
+-- with usesArg check, the closure is skipped (not eligible for matching)
+-- Standard path is used; program type-checks but fails at runtime (extern)
+let x = extern val : (int :> poisoned { 3, a => true }) in
+if true then x else 0

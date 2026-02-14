@@ -1,0 +1,8 @@
+-- Test: argument-ignoring predicate closure on Γ(l) does not match in matchGuard
+-- Build r via ref (extern val ...), so the closure is attached to the memory cell
+-- and not to the ref value itself.
+-- matchGuard with condition true would have matched before the fix;
+-- with usesArg check, the ref-level closure is skipped (not eligible).
+-- Standard path is used; program type-checks but fails at runtime (extern)
+let r = ref (extern val : (int :> poisoned { 3, a => true })) in
+if true then !r else 0

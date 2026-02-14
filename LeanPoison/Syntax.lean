@@ -463,6 +463,16 @@ inductive PExpr : Type where
   | vlet : Name → PExpr → PExpr → PExpr            -- let x : T = e1 in e2
   | app : PExpr → PExpr → PExpr                    -- e1 e2
 
+def PExpr.usesArg (x : Name) : PExpr → Bool
+  | .var y        => x == y
+  | .op p _ q     => usesArg x p || usesArg x q
+  | .unaryop _ p  => usesArg x p
+  | .ite p q r    => usesArg x p || usesArg x q || usesArg x r
+  | .deref p      => usesArg x p
+  | .vlet y p q   => usesArg x p || (if y == x then false else usesArg x q)
+  | .app p q      => usesArg x p || usesArg x q
+  | _             => false
+
 -- Pure conversion: returns none if the expression is not a pure expression.
 def Expr.toPExpr? : Expr → Option PExpr
   | Expr.unit => some .unit
