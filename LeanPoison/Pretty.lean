@@ -83,8 +83,28 @@ partial def reprValue : Value → Nat → Std.Format
   | Value.unit, _ => "unit"
   | Value.str s, _ => repr s
   | Value.loc l, _ => s!"loc {repr l}"
-  | Value.closure x _ _, _ => s!"closure {x} <expr> <env>"
-  | Value.peClosure x _ _, _ => s!"peClosure {x} <expr> <env>"
+  | Value.closure x body env, _ =>
+      Std.Format.text "closure " ++
+      Std.Format.text x ++
+      Std.Format.text " (" ++ reprExpr body 0 ++ Std.Format.text ")" ++
+      Std.Format.text " " ++ reprRuntimeVarEnv env 0
+  | Value.peClosure x body env, _ =>
+      Std.Format.text "peClosure " ++
+      Std.Format.text x ++
+      Std.Format.text " (" ++ reprExpr body 0 ++ Std.Format.text ")" ++
+      Std.Format.text " " ++ reprRuntimeVarEnv env 0
+
+partial def reprRuntimeVarEnv (env : VarEnv) (_ : Nat) : Std.Format :=
+  let entries : List Std.Format := env.map (fun (x, v) => Std.Format.text s!"{x} := " ++ reprValue v 0)
+  match entries with
+  | [] => Std.Format.text "[]"
+  | _ =>
+      let sep := Std.Format.text "," ++ Std.Format.line
+      Std.Format.group (
+        Std.Format.text "[" ++
+        Std.Format.nest 2 (Std.Format.joinSep entries sep) ++
+        Std.Format.text "]"
+      )
 
 partial def reprExpr : Expr → Nat → Std.Format
   | e, _ =>
@@ -229,18 +249,30 @@ partial def reprPExpr : PExpr → Nat → Std.Format
         atom e1 ++ Std.Format.text " " ++ atom e2
 
 partial def reprFnTClosure : FnTClosure → Nat → Std.Format
-  | FnTClosure.regular x _ _, _ => s!"regular {x} <expr>"
-  | FnTClosure.extern x ret eff _, _ =>
+  | FnTClosure.regular x body env, _ =>
+      Std.Format.text "regular " ++
+      Std.Format.text x ++
+      Std.Format.text " (" ++ reprExpr body 0 ++ Std.Format.text ")" ++
+      Std.Format.text " " ++ reprVarEnv env 0
+  | FnTClosure.extern x ret eff env, _ =>
       Std.Format.text s!"extern {x} (" ++
       Std.Format.text (externReturnInline ret) ++
       Std.Format.text ") effects: {" ++
       Std.Format.text (String.intercalate ", " (eff.map effectInline)) ++
-      Std.Format.text "}"
+      Std.Format.text "}, deps: " ++
+      reprVarEnv env 0
 
 partial def reprPFnTClosure : PFnTClosure → Nat → Std.Format
-  | PFnTClosure.regular x _ _, _ => s!"regular {x} <pexpr>"
-  | PFnTClosure.extern x ret _, _ =>
-      Std.Format.text s!"extern {x} (" ++ Std.Format.text (externReturnInline ret) ++ Std.Format.text ")"
+  | PFnTClosure.regular x body env, _ =>
+      Std.Format.text "regular " ++
+      Std.Format.text x ++
+      Std.Format.text " (" ++ reprPExpr body 0 ++ Std.Format.text ")" ++
+      Std.Format.text " " ++ reprVarEnv env 0
+  | PFnTClosure.extern x ret env, _ =>
+      Std.Format.text s!"extern {x} (" ++
+      Std.Format.text (externReturnInline ret) ++
+      Std.Format.text "), deps: " ++
+      reprVarEnv env 0
 
 partial def reprETyp : ETyp → Nat → Std.Format
   | ETyp.int, _ => "int"
@@ -321,8 +353,7 @@ instance : ToString QTyp where
 namespace Memory
 
 private def formatEntries (m : Memory) : Std.Format :=
-  let sorted := (ExtTreeMap.toList m : List (Address × Int)).mergeSort (fun a b => a.fst < b.fst)
-  let entries : List Std.Format := sorted.map (fun (addr, value) => s!"({repr addr}, {repr value})")
+  let entries : List Std.Format := (ExtTreeMap.toList m).map (fun (addr, value) => s!"({repr addr}, {repr value})")
   match entries with
   | [] => Std.Format.text "[]"
   | _ =>

@@ -1,6 +1,8 @@
 Evaluating file: examples/extern_fn3.poison (verbose mode)
 
-Type checking passed: Type: {type=arrow int int false [extern s ((int :> poisoned {1, pfn v -> (v >= 0) && (v <= 255)})) effects: {!s :> (int :> poisoned {2, pfn u -> (u >= 0) && (u <= 255)}), !a :> (int :> clean {})}], poison=false, pred={}}, MemoryTypeEnv: {
+Type checking passed: Type: {type=arrow int int false [extern s ((int :> poisoned {1, pfn v -> (v >= 0) && (v <= 255)})) effects: {!s :> (int :> poisoned {2, pfn u -> (u >= 0) && (u <= 255)}), !a :> (int :> clean {})}, deps: [cap : {type=ref int [1], poison=false, pred={}},
+  i : {type=int, poison=false, pred={}},
+  r : {type=ref int [0], poison=false, pred={}}]], poison=false, pred={}}, MemoryTypeEnv: {
   0 := {type=int, poison=true, pred={4, pfn u -> (u >= 0) && (u <= i), deps: [cap : {type=ref int [1], poison=false, pred={}},
     i : {type=int, poison=false, pred={}},
     r : {type=ref int [0], poison=false, pred={}}]}},
