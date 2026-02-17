@@ -12,6 +12,7 @@ import LeanProofs.Properties
 import Init.Data.List.Lemmas
 import Std.Data.ExtTreeSet.Lemmas
 import Std.Data.ExtTreeMap
+import Std.Data.ExtTreeMap.Lemmas
 
 open Std
 
@@ -169,6 +170,277 @@ theorem combineExtTreeMaps_go_get_mem
               rw [hstep]
               exact ih'
 
+-- ================================================================
+-- Lookup/Update and ExtTreeMap lemmas (type envs and CapturedVarEnv)
+-- ================================================================
+
+@[simp] lemma CapturedVarEnv.lookup_eq (env : CapturedVarEnv) (x : Name) :
+  CapturedVarEnv.lookup env x = List.lookup x env := rfl
+
+@[simp] lemma CapturedVarEnv.update_eq (env : CapturedVarEnv) (x : Name) (qt : QTyp) :
+  CapturedVarEnv.update env x qt = (x, qt) :: env := rfl
+
+@[simp] lemma CapturedVarEnv.hasKey_iff (env : CapturedVarEnv) (x : Name) :
+  CapturedVarEnv.hasKey env x ↔ List.lookup x env ≠ none := by
+  rfl
+
+lemma VarTypeEnv_lookup_update_eq (env : VarTypeEnv) (x : Name) (qt : QTyp) :
+  (env.update x qt).lookup x = some qt := by
+  simp [VarTypeEnv.update, VarTypeEnv.lookup]
+
+lemma VarTypeEnv_lookup_update_ne (env : VarTypeEnv) (x y : Name) (qt : QTyp) (h_ne : y ≠ x) :
+  (env.update x qt).lookup y = env.lookup y := by
+  by_cases h_eq : varTypeEnvCmp x y = .eq
+  · have h_xy : x = y := LawfulEqCmp.eq_of_compare h_eq
+    exact (h_ne h_xy.symm).elim
+  · simp [VarTypeEnv.update, VarTypeEnv.lookup, ExtTreeMap.getElem?_insert, h_eq]
+
+lemma ExtTreeMap_insert_preserves_injectivity
+    {α : Type} {compare : α → α → Ordering} [TransCmp compare] [LawfulEqCmp compare]
+    {β : Type} (m : ExtTreeMap α β compare) (k : α) (v : β)
+    (h_fresh_value : ∀ k', m.get? k' ≠ some v)
+    (h_inj : ∀ k₁ k₂ a, m.get? k₁ = some a → m.get? k₂ = some a → k₁ = k₂) :
+  ∀ k₁ k₂ a, (m.insert k v).get? k₁ = some a → (m.insert k v).get? k₂ = some a → k₁ = k₂ := by
+  intro k₁ k₂ a hlookup1 hlookup2
+  rw [ExtTreeMap.get?_eq_getElem?] at hlookup1 hlookup2
+  simp only [ExtTreeMap.getElem?_insert] at hlookup1 hlookup2
+  by_cases h_eq1 : compare k k₁ = Ordering.eq
+  · have h_k_eq : k = k₁ := LawfulEqCmp.eq_of_compare h_eq1
+    have h_k1_eq : k₁ = k := h_k_eq.symm
+    simp [h_eq1] at hlookup1
+    subst hlookup1
+    by_cases h_eq2 : compare k k₂ = Ordering.eq
+    · have h_k_eq2 : k = k₂ := LawfulEqCmp.eq_of_compare h_eq2
+      have h_k2_eq : k₂ = k := h_k_eq2.symm
+      simp [h_eq2] at hlookup2
+      rw [h_k1_eq, h_k2_eq]
+    · simp [h_eq2] at hlookup2
+      have h_contra : m.get? k₂ ≠ some v := h_fresh_value k₂
+      contradiction
+  · simp [h_eq1] at hlookup1
+    by_cases h_eq2 : compare k k₂ = Ordering.eq
+    · have h_k_eq2 : k = k₂ := LawfulEqCmp.eq_of_compare h_eq2
+      have h_k2_eq : k₂ = k := h_k_eq2.symm
+      simp [h_eq2] at hlookup2
+      subst hlookup2
+      have h_contra : m.get? k₁ ≠ some v := h_fresh_value k₁
+      contradiction
+    · simp [h_eq2] at hlookup2
+      rw [← ExtTreeMap.get?_eq_getElem?] at hlookup1 hlookup2
+      exact h_inj k₁ k₂ a hlookup1 hlookup2
+
+-- ================================================================
+-- MemoryTypeEnv equiv and joinMemEnv idempotency
+-- ================================================================
+
+lemma List.mem_eraseDups_of_mem {α : Type*} [BEq α] [LawfulBEq α] {x : α} {l : List α}
+    (h : x ∈ l) : x ∈ l.eraseDups := by
+  let P : Nat → Prop := fun n =>
+    ∀ l : List α, l.length = n → ∀ x : α, x ∈ l → x ∈ l.eraseDups
+  have hP : P l.length := by
+    induction l.length using Nat.strong_induction_on with
+    | _ n ih =>
+        intro l hlen x hmem
+        cases l with
+        | nil =>
+            cases hmem
+        | cons a as =>
+            have hlen_as : as.length < n := by
+              have hlen' : as.length + 1 = n := by simpa using hlen
+              have : as.length < as.length + 1 := Nat.lt_succ_self as.length
+              simpa [hlen'] using this
+            cases hmem with
+            | head =>
+                simp [List.eraseDups_cons]
+            | tail _ hmem_as =>
+                by_cases hxa : x = a
+                · subst hxa
+                  simp [List.eraseDups_cons]
+                · have hxfilter : x ∈ as.filter (fun b => !b == a) := by
+                    apply (List.mem_filter).2
+                    refine ⟨hmem_as, ?_⟩
+                    by_cases hbeq : x == a
+                    · have : x = a := LawfulBEq.eq_of_beq (a := x) (b := a) (by simpa using hbeq)
+                      exact (hxa this).elim
+                    · simp [hbeq]
+                  have hlen_filter : (as.filter (fun b => !b == a)).length < n := by
+                    have hle : (as.filter (fun b => !b == a)).length ≤ as.length :=
+                      List.length_filter_le _ _
+                    exact _root_.lt_of_le_of_lt hle hlen_as
+                  have hx' :
+                      x ∈ (as.filter (fun b => !b == a)).eraseDups := by
+                    have hIH := ih (as.filter (fun b => !b == a)).length hlen_filter
+                    exact hIH (as.filter (fun b => !b == a)) rfl x hxfilter
+                  rw [List.eraseDups_cons]
+                  exact List.Mem.tail a hx'
+  exact hP l rfl x h
+
+private lemma joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
+  cases p <;> rfl
+
+private lemma joinPredicates_idempotent (pred : Predicate) : joinPredicates pred pred = pred := by
+  simp [joinPredicates]
+  have h_refl : beqPredicate pred pred = true := by
+    have : LawfulBEq Predicate := inferInstance
+    have h_eq : (pred == pred) = true := this.rfl
+    simp [BEq.beq] at h_eq
+    exact h_eq
+  simp [h_refl]
+
+private lemma joinMemEnvs_func_some_idempotent :
+  ∀ (k : Address) (qt : QTyp),
+    (fun _ oq1 oq2 =>
+      match oq1, oq2 with
+      | some qt1, none => some qt1
+      | none, some qt2 => some qt2
+      | some qt1, some qt2 =>
+        let ⟨t1, p1, pred1⟩ := qt1
+        let ⟨t2, p2, pred2⟩ := qt2
+        if t1 == t2 then
+          let p := joinPoison p1 p2
+          let pred := joinPredicates pred1 pred2
+          some ⟨t1, p, pred⟩
+        else none
+      | none, none => none) k (some qt) (some qt) = some qt := by
+  intros k qt
+  cases qt with
+  | mk t p pred =>
+    have h_pred_idem : joinPredicates pred pred = pred := joinPredicates_idempotent pred
+    simp [joinPoison_idempotent, h_pred_idem]
+
+private lemma joinMemEnvs_func_none_idempotent :
+  ∀ (k : Address),
+    (fun (_ : Address) (oq1 oq2 : Option QTyp) =>
+      match oq1, oq2 with
+      | some qt1, none => some qt1
+      | none, some qt2 => some qt2
+      | some qt1, some qt2 =>
+        let ⟨t1, p1, pred1⟩ := qt1
+        let ⟨t2, p2, pred2⟩ := qt2
+        if t1 == t2 then
+          let p := joinPoison p1 p2
+          let pred :=
+            match pred1, pred2 with
+            | Predicate.guardClosure k1 an1 pb1 ve1, Predicate.guardClosure k2 _ _ _ =>
+                if k1 == k2 then Predicate.guardClosure k1 an1 pb1 ve1 else Predicate.noPred
+            | Predicate.guardOnly k1, Predicate.guardOnly k2 =>
+                if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+            | Predicate.guardClosure k1 _ _ _, Predicate.guardOnly k2 =>
+                if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+            | Predicate.guardOnly k1, Predicate.guardClosure k2 _ _ _ =>
+                if k1 == k2 then Predicate.guardOnly k1 else Predicate.noPred
+            | Predicate.noPred, _ => Predicate.noPred
+            | _, Predicate.noPred => Predicate.noPred
+          some ⟨t1, p, pred⟩
+        else none
+      | none, none => none) k none none = none := by
+  intro _k
+  rfl
+
+private lemma joinMemEnvs_func_self :
+  ∀ (k : Address) (oq : Option QTyp),
+    (fun _ oq1 oq2 =>
+      match oq1, oq2 with
+      | some qt1, none => some qt1
+      | none, some qt2 => some qt2
+      | some qt1, some qt2 =>
+        let ⟨t1, p1, pred1⟩ := qt1
+        let ⟨t2, p2, pred2⟩ := qt2
+        if t1 == t2 then
+          let p := joinPoison p1 p2
+          let pred := joinPredicates pred1 pred2
+          some ⟨t1, p, pred⟩
+        else none
+      | none, none => none) k oq oq = oq := by
+  intro k oq
+  cases oq with
+  | none =>
+      exact joinMemEnvs_func_none_idempotent k
+  | some qt =>
+      exact joinMemEnvs_func_some_idempotent k qt
+
+namespace MemoryTypeEnv
+
+theorem equiv.refl (m : MemoryTypeEnv) : m.equiv m := by
+  simp only [equiv]
+  have : LawfulBEq (List (Loc × QTyp)) := inferInstance
+  exact this.rfl
+
+theorem equiv.trans (m₁ m₂ m₃ : MemoryTypeEnv) : m₁.equiv m₂ → m₂.equiv m₃ → m₁.equiv m₃ := by
+  simp only [equiv]
+  intro h1 h2
+  have : LawfulBEq (List (Loc × QTyp)) := inferInstance
+  have h_list_eq : ExtTreeMap.toList m₁ = ExtTreeMap.toList m₂ := this.eq_of_beq h1
+  have h_list_eq2 : ExtTreeMap.toList m₂ = ExtTreeMap.toList m₃ := this.eq_of_beq h2
+  have h_list_eq3 : ExtTreeMap.toList m₁ = ExtTreeMap.toList m₃ := by
+    rw [h_list_eq, h_list_eq2]
+  have h_beq_eq : (ExtTreeMap.toList m₁ == ExtTreeMap.toList m₃) = true := by
+    rw [h_list_eq3]
+    exact this.rfl
+  exact h_beq_eq
+
+end MemoryTypeEnv
+
+theorem joinMemEnv_idempotent : ∀ (m m1 m2 : MemoryTypeEnv),
+  m.equiv m1 → m.equiv m2 → m.equiv (joinMemEnvs m1 m2) := by
+  intros m m1 m2 h1 h2
+  simp only [MemoryTypeEnv.equiv]
+  have h_list_eq1 : ExtTreeMap.toList m = ExtTreeMap.toList m1 := by
+    have : LawfulBEq (List (Loc × QTyp)) := inferInstance
+    exact this.eq_of_beq h1
+  have h_list_eq2 : ExtTreeMap.toList m = ExtTreeMap.toList m2 := by
+    have : LawfulBEq (List (Loc × QTyp)) := inferInstance
+    exact this.eq_of_beq h2
+  have h_list_eq12 : ExtTreeMap.toList m1 = ExtTreeMap.toList m2 := by
+    rw [← h_list_eq1, h_list_eq2]
+  have hm1m2 : m1 = m2 := (ExtTreeMap.toList_inj).1 h_list_eq12
+  let f : Loc → Option QTyp → Option QTyp → Option QTyp := fun _ oq1 oq2 =>
+    match oq1, oq2 with
+    | some qt1, none => some qt1
+    | none, some qt2 => some qt2
+    | some qt1, some qt2 =>
+      let ⟨t1, p1, pred1⟩ := qt1
+      let ⟨t2, p2, pred2⟩ := qt2
+      if t1 == t2 then
+        let p := joinPoison p1 p2
+        let pred := joinPredicates pred1 pred2
+        some ⟨t1, p, pred⟩
+      else none
+    | none, none => none
+  rw [h_list_eq1]
+  have hcombine : combineExtTreeMaps m1 m1 f = m1 := by
+    have hkeys_nodup : m1.keys.Nodup := ExtTreeMap.nodup_keys (t := m1)
+    have hkeys_erase : m1.keys.eraseDups = m1.keys :=
+      list_eraseDups_eq_self_of_nodup (h := hkeys_nodup)
+    have hks : (m1.keys ++ m1.keys).eraseDups = m1.keys := by
+      simp [List.eraseDups_append, list_removeAll_self, hkeys_erase]
+    apply ExtTreeMap.ext_getElem?
+    intro k
+    dsimp [combineExtTreeMaps]
+    rw [hks]
+    by_cases hmem : k ∈ m1.keys
+    · have hgo := combineExtTreeMaps_go_get_mem m1 m1 f m1.keys ({} : MemoryTypeEnv) k hmem
+      have hfun : f k (m1[k]?) (m1[k]?) = m1[k]? := by
+        simpa [f] using (joinMemEnvs_func_self k (m1[k]?))
+      rw [ExtTreeMap.get?_eq_getElem?] at hgo
+      simp [hfun] at hgo
+      convert hgo using 1
+      cases m1[k]? <;> rfl
+    · have hgo := combineExtTreeMaps_go_get_not_mem m1 m1 f m1.keys ({} : MemoryTypeEnv) k hmem
+      have hnot_mem : k ∉ m1 := by
+        intro hk
+        have hk' : k ∈ m1.keys := (ExtTreeMap.mem_keys).2 hk
+        exact hmem hk'
+      have hm1_none : m1[k]? = none := ExtTreeMap.getElem?_eq_none hnot_mem
+      simpa [hm1_none] using hgo
+  have h_toList : ExtTreeMap.toList m1 = ExtTreeMap.toList (joinMemEnvs m1 m2) := by
+    rw [← hm1m2]
+    change ExtTreeMap.toList m1 = ExtTreeMap.toList (combineExtTreeMaps m1 m1 f)
+    simp [hcombine]
+  have : LawfulBEq (List (Loc × QTyp)) := inferInstance
+  rw [h_toList]
+  exact this.rfl
+
 theorem locSet_union_idempotent (s : LocSet) : LocSet.union s s = s := by
   classical
   ext k
@@ -244,6 +516,32 @@ theorem Except.bind_eq_ok {ε α β : Type} (x : Except ε α) (f : α → Excep
   | ok a =>
     refine ⟨a, rfl, ?_⟩
     simpa [Except.bind] using h
+
+-- ================================================================
+-- PExpr / Expr round-trip
+-- ================================================================
+
+theorem toExpr_toPExpr? (pe : PExpr) :
+  pe.toExpr.toPExpr? = some pe := by
+  induction pe with
+  | unit | num _ | bool _ | str _ | var _ =>
+    simp [PExpr.toExpr, Expr.toPExpr?]
+  | vlet x e1 e2 IH1 IH2 =>
+    simp [PExpr.toExpr, Expr.toPExpr?, IH1, IH2]
+  | app e1 e2 IH1 IH2 =>
+    simp [PExpr.toExpr, Expr.toPExpr?, IH1, IH2]
+  | op e1 o e2 IH1 IH2 =>
+    simp [PExpr.toExpr, Expr.toPExpr?, IH1, IH2]
+  | unaryop opname e IH =>
+    simp [PExpr.toExpr, Expr.toPExpr?, IH]
+  | ite e1 e2 e3 IH1 IH2 IH3 =>
+    simp [PExpr.toExpr, Expr.toPExpr?, IH1, IH2, IH3]
+  | deref e IH =>
+    simp [PExpr.toExpr, Expr.toPExpr?, IH]
+
+theorem toExpr_toPExpr (pe : PExpr) :
+  pe.toExpr.toPExpr = Except.ok pe := by
+  simp [Expr.toPExpr, toExpr_toPExpr?, pure, Except.pure]
 
 -- ================================================================
 -- Realisation Maps and Value Typing

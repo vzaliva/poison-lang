@@ -7,6 +7,8 @@ import LeanPoison.Syntax
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.IOHelpers
+import Mathlib.Tactic
+import Batteries.Data.List.Lemmas
 
 open Std
 
@@ -75,6 +77,29 @@ lemma nextAddr_not_in_memory (cfg : Config) :
   intro hwf hcontains
   have h := hwf.1 cfg.nextAddr hcontains
   exact Nat.lt_irrefl cfg.nextAddr h
+
+-- ================================================================
+-- Runtime VarEnv Lookup/Update Lemmas
+-- ================================================================
+
+-- If y ≠ x, then List.lookup y ((x, v) :: l) = List.lookup y l
+lemma List_lookup_cons_ne {α β : Type} [BEq α] [LawfulBEq α] (l : List (α × β)) (x y : α) (v : β) (h_ne : y ≠ x) :
+  List.lookup y ((x, v) :: l) = List.lookup y l := by
+  simp [List.lookup]
+  by_cases h_beq : (y == x) = true
+  · have h_eq : y = x := LawfulBEq.eq_of_beq h_beq
+    contradiction
+  · have h_false : (y == x) = false := by
+      cases h : y == x
+      · rfl
+      · contradiction
+    simp [h_false]
+
+-- If y ≠ x, then updating runtime VarEnv with x does not affect lookup y
+lemma VarEnv_lookup_update_ne (env : VarEnv) (x y : Name) (v : Value) (h_ne : y ≠ x) :
+  (env.update x v).lookup y = env.lookup y := by
+  simp [VarEnv.update, VarEnv.lookup]
+  exact List_lookup_cons_ne env x y v h_ne
 
 -- ================================================================
 -- Evaluation Structure Lemmas

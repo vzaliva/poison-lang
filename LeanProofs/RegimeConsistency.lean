@@ -4,7 +4,6 @@
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanProofs.TypeSafety
-import LeanProofs.JoinMemEnv
 import LeanProofs.SemanticsProperties
 import Std.Data.ExtTreeMap
 open Std
@@ -119,19 +118,6 @@ inductive EnvRespectsTagMeaning (tm : TagMeaning) (σ : VarTypeEnv) (Γ : Memory
 /-- Context respects tag meaning: all guard descriptors in ctx are in tm. -/
 def wfTagMeaningCtx (tm : TagMeaning) (ctx : TypeContext) : Prop :=
   EnvRespectsTagMeaning tm ctx.varEnv ctx.memEnv
-
-/-- Lookup after var-env update at the same key. -/
-lemma VarTypeEnv_lookup_update_eq (env : VarTypeEnv) (x : Name) (qt : QTyp) :
-  (env.update x qt).lookup x = some qt := by
-  simp [VarTypeEnv.update, VarTypeEnv.lookup]
-
-/-- Lookup after var-env update at a different key. -/
-lemma VarTypeEnv_lookup_update_ne (env : VarTypeEnv) (x y : Name) (qt : QTyp) (h_ne : y ≠ x) :
-  (env.update x qt).lookup y = env.lookup y := by
-  by_cases h_eq : varTypeEnvCmp x y = .eq
-  · have hxy : x = y := LawfulEqCmp.eq_of_compare h_eq
-    exact (h_ne hxy.symm).elim
-  · simp [VarTypeEnv.update, VarTypeEnv.lookup, ExtTreeMap.getElem?_insert, h_eq]
 
 /-- Lookup after mem-env update at the same location. -/
 lemma MemoryTypeEnv_lookup_update_eq (Γ : MemoryTypeEnv) (l : Loc) (qt : QTyp) :

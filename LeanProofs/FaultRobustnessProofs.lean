@@ -10,9 +10,7 @@ import LeanProofs.FaultRobustness
 import LeanProofs.TypeSafety
 import LeanProofs.SemanticsProperties
 import LeanProofs.IOHelpers
-import LeanProofs.LookupUpdate
 import LeanProofs.Equality
-import LeanProofs.JoinMemEnv
 import LeanProofs.RegimeConsistency
 import LeanProofs.VarEnvPreservation
 import LeanProofs.MemoryMonotonicity
