@@ -1,10 +1,14 @@
 Evaluating file: examples/extern_fn1.poison (verbose mode)
 
-Type checking passed: Type: {type=int, poison=true, pred={100, pfn v -> (v >= 0) && (v <= 255), deps: [s : {type=ref int [0], poison=false, pred={}},
-  x : {type=int, poison=false, pred={}},
-  y : {type=ref int [1], poison=false, pred={}}]}}, MemoryTypeEnv: {
-  0 := {type=int, poison=true, pred={200, pfn u -> (u >= 0) && (u <= 255), deps: [s : {type=ref int [0], poison=false, pred={}},
-    x : {type=int, poison=false, pred={}},
-    y : {type=ref int [1], poison=false, pred={}}]}}, 1 := {type=int, poison=false, pred={}} }, tagEnv: {}, nextLoc: 2
+Type checking passed: Type: {type=int,
+ poison=true,
+ pred={100, pfn v -> (v >= 0) && (v <= 255), deps: [s : {type=ref int [0], poison=false, pred={}},
+   x : {type=int, poison=false, pred={}},
+   y : {type=ref int [1], poison=false, pred={}}]}}, MemoryTypeEnv: {
+  0 := {type=int,
+   poison=true,
+   pred={200, pfn u -> (u >= 0) && (u <= 255), deps: [s : {type=ref int [0], poison=false, pred={}},
+     x : {type=int, poison=false, pred={}},
+     y : {type=ref int [1], poison=false, pred={}}]}}, 1 := {type=int, poison=false, pred={}} }, tagEnv: {}, nextLoc: 2
 
 Runtime error: Cannot execute extern function – no implementation provided

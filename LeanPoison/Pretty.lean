@@ -3,6 +3,23 @@ import LeanPoison.Runtime
 
 open Std
 
+private def commaLine : Std.Format := Std.Format.text "," ++ Std.Format.line
+
+private def formatDelimited (l : String) (entries : List Std.Format) (r : String) : Std.Format :=
+  Std.Format.bracket l (Std.Format.joinSep entries commaLine) r
+
+private def formatBracketedList (entries : List Std.Format) : Std.Format :=
+  formatDelimited "[" entries "]"
+
+private def formatBracedEntries (entries : List Std.Format) : Std.Format :=
+  formatDelimited "{" entries "}"
+
+private def formatKV (k v : Std.Format) : Std.Format :=
+  k ++ Std.Format.text " := " ++ v
+
+private def formatKVMap (entries : List (Std.Format × Std.Format)) : Std.Format :=
+  formatBracedEntries (entries.map (fun (k, v) => formatKV k v))
+
 instance : Repr LocSet where
   reprPrec s prec :=
     reprPrec (ExtTreeSet.toList s) prec
@@ -40,49 +57,66 @@ private def formatOpSymbol : Op → String
 
 mutual
 
-private partial def exprInline (e : Expr) : String :=
-  Std.Format.pretty (reprExpr e 0)
+private partial def syntaxPredCore : SyntaxPredicate → Std.Format
+  | .guardClosure tag arg body =>
+      repr tag ++
+      Std.Format.text ", pfn " ++
+      Std.Format.text arg ++
+      Std.Format.text " -> " ++
+      reprExpr body 0
+  | .guardOnly tag => repr tag
+  | .noPred => Std.Format.nil
 
-private partial def syntaxPredCore : SyntaxPredicate → String
-  | .guardClosure tag arg body => s!"{tag}, pfn {arg} -> {exprInline body}"
-  | .guardOnly tag => s!"{tag}"
-  | .noPred => ""
+private partial def syntaxPredInline (pred : SyntaxPredicate) : Std.Format :=
+  Std.Format.bracket "{" (syntaxPredCore pred) "}"
 
-private partial def syntaxPredInline (pred : SyntaxPredicate) : String :=
-  "{" ++ syntaxPredCore pred ++ "}"
-
-private partial def effectInline : Effect → String
+private partial def effectInline : Effect → Std.Format
   | ⟨target, poison, pred⟩ =>
       let targetFmt :=
         match target with
-        | .namedVar x => s!"!{x}"
-        | .returnValue => "return"
+        | .namedVar x => Std.Format.text "!" ++ Std.Format.text x
+        | .returnValue => Std.Format.text "return"
       targetFmt ++
-      " :> (int :> " ++
-      (if poison then "poisoned" else "clean") ++
-      " " ++ syntaxPredInline pred ++ ")"
+      Std.Format.text " :> " ++
+      Std.Format.paren (
+        Std.Format.text "int :> " ++
+        Std.Format.text (if poison then "poisoned" else "clean") ++
+        Std.Format.text " " ++
+        syntaxPredInline pred
+      )
 
-private partial def externReturnInline : ExternReturn → String
+private partial def externReturnInline : ExternReturn → Std.Format
   | .simple typ poison pred =>
-      "(" ++ Std.Format.pretty (reprTyp typ 0) ++
-      " :> " ++ (if poison then "poisoned" else "clean") ++
-      " " ++ syntaxPredInline pred ++ ")"
+      Std.Format.paren (
+        reprTyp typ 0 ++
+        Std.Format.text " :> " ++
+        Std.Format.text (if poison then "poisoned" else "clean") ++
+        Std.Format.text " " ++
+        syntaxPredInline pred
+      )
   | .nestedFn x typ ret eff =>
-      "extern fn " ++ x ++
-      " : (" ++ Std.Format.pretty (reprTyp typ 0) ++
-      ") -> (" ++ externReturnInline ret ++
-      "), effects: {" ++ String.intercalate ", " (eff.map effectInline) ++ "}"
+      Std.Format.text "extern fn " ++
+      Std.Format.text x ++
+      Std.Format.text " : " ++
+      Std.Format.paren (reprTyp typ 0) ++
+      Std.Format.text " -> " ++
+      Std.Format.paren (externReturnInline ret) ++
+      Std.Format.text ", effects: " ++
+      formatBracedEntries (eff.map effectInline)
   | .nestedPfn x typ ret =>
-      "extern pfn " ++ x ++
-      " : (" ++ Std.Format.pretty (reprTyp typ 0) ++
-      ") -> (" ++ externReturnInline ret ++ ")"
+      Std.Format.text "extern pfn " ++
+      Std.Format.text x ++
+      Std.Format.text " : " ++
+      Std.Format.paren (reprTyp typ 0) ++
+      Std.Format.text " -> " ++
+      Std.Format.paren (externReturnInline ret)
 
 partial def reprValue : Value → Nat → Std.Format
   | Value.num n, _ => repr n
   | Value.bool b, _ => repr b
   | Value.unit, _ => "unit"
   | Value.str s, _ => repr s
-  | Value.loc l, _ => s!"loc {repr l}"
+  | Value.loc l, _ => Std.Format.text "loc " ++ repr l
   | Value.closure x body env, _ =>
       Std.Format.text "closure " ++
       Std.Format.text x ++
@@ -95,16 +129,8 @@ partial def reprValue : Value → Nat → Std.Format
       Std.Format.text " " ++ reprRuntimeVarEnv env 0
 
 partial def reprRuntimeVarEnv (env : VarEnv) (_ : Nat) : Std.Format :=
-  let entries : List Std.Format := env.map (fun (x, v) => Std.Format.text s!"{x} := " ++ reprValue v 0)
-  match entries with
-  | [] => Std.Format.text "[]"
-  | _ =>
-      let sep := Std.Format.text "," ++ Std.Format.line
-      Std.Format.group (
-        Std.Format.text "[" ++
-        Std.Format.nest 2 (Std.Format.joinSep entries sep) ++
-        Std.Format.text "]"
-      )
+  let entries : List Std.Format := env.map (fun (x, v) => Std.Format.text x ++ Std.Format.text " := " ++ reprValue v 0)
+  formatBracketedList entries
 
 partial def reprExpr : Expr → Nat → Std.Format
   | e, _ =>
@@ -149,42 +175,40 @@ partial def reprExpr : Expr → Nat → Std.Format
     | Expr.printString e => Std.Format.text "printString " ++ atom e
     | Expr.printInt e => Std.Format.text "printInt " ++ atom e
     | Expr.externVal t p pred =>
-        Std.Format.text "extern val (" ++
-        reprTyp t 0 ++
-        Std.Format.text " :> " ++
-        Std.Format.text (if p then "poisoned" else "clean") ++
-        Std.Format.text " " ++
-        Std.Format.text (syntaxPredInline pred) ++
-        Std.Format.text ")"
+      Std.Format.text "extern val (" ++
+      reprTyp t 0 ++
+      Std.Format.text " :> " ++
+      Std.Format.text (if p then "poisoned" else "clean") ++
+      Std.Format.text " " ++
+      syntaxPredInline pred ++
+      Std.Format.text ")"
     | Expr.externFn x t ret eff =>
-        Std.Format.text "extern fn " ++
-        Std.Format.text x ++
-        Std.Format.text " : (" ++
-        reprTyp t 0 ++
-        Std.Format.text ") -> (" ++
-        Std.Format.text (externReturnInline ret) ++
-        Std.Format.text "), effects: {" ++
-        Std.Format.text (String.intercalate ", " (eff.map effectInline)) ++
-        Std.Format.text "}"
+      Std.Format.text "extern fn " ++
+      Std.Format.text x ++
+      Std.Format.text " : " ++
+      Std.Format.paren (reprTyp t 0) ++
+      Std.Format.text " -> " ++
+      Std.Format.paren (externReturnInline ret) ++
+      Std.Format.text ", effects: " ++
+      formatBracedEntries (eff.map effectInline)
     | Expr.externPfn x t ret =>
-        Std.Format.text "extern pfn " ++
-        Std.Format.text x ++
-        Std.Format.text " : (" ++
-        reprTyp t 0 ++
-        Std.Format.text ") -> (" ++
-        Std.Format.text (externReturnInline ret) ++
-        Std.Format.text ")"
+      Std.Format.text "extern pfn " ++
+      Std.Format.text x ++
+      Std.Format.text " : " ++
+      Std.Format.paren (reprTyp t 0) ++
+      Std.Format.text " -> " ++
+      Std.Format.paren (externReturnInline ret)
 
 end
 
 partial def reprSyntaxPredicate : SyntaxPredicate → Nat → Std.Format
-  | pred, _ => Std.Format.text (syntaxPredInline pred)
+  | pred, _ => syntaxPredInline pred
 
 partial def reprEffect : Effect → Nat → Std.Format
-  | eff, _ => Std.Format.text (effectInline eff)
+  | eff, _ => effectInline eff
 
 partial def reprExternReturn : ExternReturn → Nat → Std.Format
-  | ret, _ => Std.Format.text (externReturnInline ret)
+  | ret, _ => externReturnInline ret
 
 instance : Repr Value where
   reprPrec := reprValue
@@ -252,26 +276,32 @@ partial def reprFnTClosure : FnTClosure → Nat → Std.Format
   | FnTClosure.regular x body env, _ =>
       Std.Format.text "regular " ++
       Std.Format.text x ++
-      Std.Format.text " (" ++ reprExpr body 0 ++ Std.Format.text ")" ++
+      Std.Format.text " " ++
+      Std.Format.paren (reprExpr body 0) ++
       Std.Format.text " " ++ reprVarEnv env 0
   | FnTClosure.extern x ret eff env, _ =>
-      Std.Format.text s!"extern {x} (" ++
-      Std.Format.text (externReturnInline ret) ++
-      Std.Format.text ") effects: {" ++
-      Std.Format.text (String.intercalate ", " (eff.map effectInline)) ++
-      Std.Format.text "}, deps: " ++
+      Std.Format.text "extern " ++
+      Std.Format.text x ++
+      Std.Format.text " " ++
+      Std.Format.paren (externReturnInline ret) ++
+      Std.Format.text " effects: " ++
+      formatBracedEntries (eff.map effectInline) ++
+      Std.Format.text ", deps: " ++
       reprVarEnv env 0
 
 partial def reprPFnTClosure : PFnTClosure → Nat → Std.Format
   | PFnTClosure.regular x body env, _ =>
       Std.Format.text "regular " ++
       Std.Format.text x ++
-      Std.Format.text " (" ++ reprPExpr body 0 ++ Std.Format.text ")" ++
+      Std.Format.text " " ++
+      Std.Format.paren (reprPExpr body 0) ++
       Std.Format.text " " ++ reprVarEnv env 0
   | PFnTClosure.extern x ret env, _ =>
-      Std.Format.text s!"extern {x} (" ++
-      Std.Format.text (externReturnInline ret) ++
-      Std.Format.text "), deps: " ++
+      Std.Format.text "extern " ++
+      Std.Format.text x ++
+      Std.Format.text " " ++
+      Std.Format.paren (externReturnInline ret) ++
+      Std.Format.text ", deps: " ++
       reprVarEnv env 0
 
 partial def reprETyp : ETyp → Nat → Std.Format
@@ -279,50 +309,61 @@ partial def reprETyp : ETyp → Nat → Std.Format
   | ETyp.bool, _ => "bool"
   | ETyp.unit, _ => "unit"
   | ETyp.string, _ => "string"
-  | ETyp.ref t ls, _ => s!"ref {reprETyp t 0} {repr ls}"
+  | ETyp.ref t ls, _ =>
+      Std.Format.text "ref " ++
+      reprETyp t 0 ++
+      Std.Format.text " " ++
+      repr ls
   | ETyp.arrow st1 st2 p tcls, _ =>
       let closureReprs := tcls.map (fun tcl => reprFnTClosure tcl 0)
-      s!"arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} [{Std.Format.joinSep closureReprs (Std.Format.text ", ")}]"
+      Std.Format.text "arrow " ++
+      reprTyp st1 0 ++
+      Std.Format.text " " ++
+      reprTyp st2 0 ++
+      Std.Format.text " " ++
+      repr p ++
+      Std.Format.text " " ++
+      formatBracketedList closureReprs
   | ETyp.parrow st1 st2 p tcls, _ =>
       let closureReprs := tcls.map (fun tcl => reprPFnTClosure tcl 0)
-      s!"parrow {reprTyp st1 0} {reprTyp st2 0} {repr p} [{Std.Format.joinSep closureReprs (Std.Format.text ", ")}]"
+      Std.Format.text "parrow " ++
+      reprTyp st1 0 ++
+      Std.Format.text " " ++
+      reprTyp st2 0 ++
+      Std.Format.text " " ++
+      repr p ++
+      Std.Format.text " " ++
+      formatBracketedList closureReprs
 
 partial def reprVarEnv (env : CapturedVarEnv) (_ : Nat) : Std.Format :=
-  let entries : List Std.Format := env.map (fun (x, qt) => s!"{x} : {reprQTyp qt 0}")
-  match entries with
-  | [] => Std.Format.text "[]"
-  | _ =>
-      let sep := Std.Format.text "," ++ Std.Format.line
-      Std.Format.group (
-        Std.Format.text "[" ++
-        Std.Format.nest 2 (Std.Format.joinSep entries sep) ++
-        Std.Format.text "]"
-      )
+  let entries : List Std.Format := env.map (fun (x, qt) => Std.Format.text x ++ Std.Format.text " : " ++ reprQTyp qt 0)
+  formatBracketedList entries
 
 partial def reprPredicate : Predicate → Nat → Std.Format
   | Predicate.guardClosure tag arg_name pred_body var_env, _ =>
       let base :=
-        Std.Format.text s!"{tag}, pfn {arg_name} -> " ++
+        repr tag ++
+        Std.Format.text ", pfn " ++
+        Std.Format.text arg_name ++
+        Std.Format.text " -> " ++
         reprPExpr pred_body 0
       let withDeps :=
         match var_env with
         | [] => base
         | _ => base ++ Std.Format.text ", deps: " ++ reprVarEnv var_env 0
-      Std.Format.text "{" ++ withDeps ++ Std.Format.text "}"
+      Std.Format.bracket "{" withDeps "}"
   | Predicate.guardOnly tag, _ =>
-      Std.Format.text "{" ++ repr tag ++ Std.Format.text "}"
+      Std.Format.bracket "{" (repr tag) "}"
   | Predicate.noPred, _ =>
-      "{}"
+      Std.Format.bracket "{" Std.Format.nil "}"
 
 partial def reprQTyp : QTyp → Nat → Std.Format
   | QTyp.mk etyp poison pred, _ =>
-      Std.Format.text "{type=" ++
-      reprETyp etyp 0 ++
-      Std.Format.text ", poison=" ++
-      repr poison ++
-      Std.Format.text ", pred=" ++
-      reprPredicate pred 0 ++
-      Std.Format.text "}"
+      formatBracedEntries [
+        Std.Format.text "type=" ++ reprETyp etyp 0,
+        Std.Format.text "poison=" ++ repr poison,
+        Std.Format.text "pred=" ++ reprPredicate pred 0
+      ]
 
 end
 
@@ -353,16 +394,10 @@ instance : ToString QTyp where
 namespace Memory
 
 private def formatEntries (m : Memory) : Std.Format :=
-  let entries : List Std.Format := (ExtTreeMap.toList m).map (fun (addr, value) => s!"({repr addr}, {repr value})")
-  match entries with
-  | [] => Std.Format.text "[]"
-  | _ =>
-      let sep := Std.Format.text "," ++ Std.Format.line
-      Std.Format.group (
-        Std.Format.text "[" ++
-        Std.Format.nest 2 (Std.Format.joinSep entries sep) ++
-        Std.Format.text "]"
-      )
+  let entries : List Std.Format :=
+    (ExtTreeMap.toList m).map (fun (addr, value) =>
+      Std.Format.text "(" ++ repr addr ++ Std.Format.text ", " ++ repr value ++ Std.Format.text ")")
+  formatBracketedList entries
 
 instance : Repr Memory where
   reprPrec m _ := formatEntries m
@@ -371,15 +406,7 @@ end Memory
 
 private def formatVarEnvEntries (venv : VarEnv) : Std.Format :=
   let entries : List Std.Format := venv.map (fun (name, value) => Std.Format.text name ++ Std.Format.text " := " ++ repr value)
-  match entries with
-  | [] => Std.Format.text "[]"
-  | _ =>
-      let sep := Std.Format.text "," ++ Std.Format.line
-      Std.Format.group (
-        Std.Format.text "[" ++
-        Std.Format.nest 2 (Std.Format.joinSep entries sep) ++
-        Std.Format.text "]"
-      )
+  formatBracketedList entries
 
 instance : Repr VarEnv where
   reprPrec venv _ := formatVarEnvEntries venv
@@ -389,17 +416,13 @@ instance : ToString VarEnv where
 
 instance : Repr Config where
   reprPrec c _ :=
-    Std.Format.group (
-      Std.Format.text "Config {" ++
-      Std.Format.nest 2 (
-        Std.Format.line ++ Std.Format.text "memory := " ++ repr c.memory ++ Std.Format.text "," ++
-        Std.Format.line ++ Std.Format.text "varEnv := " ++ repr c.varEnv ++ Std.Format.text "," ++
-        Std.Format.line ++ Std.Format.text "nextAddr := " ++ repr c.nextAddr ++ Std.Format.text "," ++
-        Std.Format.line ++ Std.Format.text "pureMode := " ++ repr c.pureMode
-      ) ++
-      Std.Format.line ++
-      Std.Format.text "}"
-    )
+    Std.Format.text "Config " ++
+    formatKVMap [
+      (Std.Format.text "memory", repr c.memory),
+      (Std.Format.text "varEnv", repr c.varEnv),
+      (Std.Format.text "nextAddr", repr c.nextAddr),
+      (Std.Format.text "pureMode", repr c.pureMode)
+    ]
 
 instance : ToString Memory where
   toString m := Std.Format.pretty (repr m)
