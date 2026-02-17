@@ -20,11 +20,6 @@ namespace Memory
   instance : BEq Memory where
     beq m₁ m₂ := (ExtTreeMap.toList m₁) == (ExtTreeMap.toList m₂)
 
-  instance : Repr Memory where
-    reprPrec m _ :=
-      let sorted := (ExtTreeMap.toList m : List (Address × Int)).mergeSort (fun a b => a.fst < b.fst)
-      repr sorted
-
 end Memory
 
 -- Empty environments
@@ -61,26 +56,3 @@ structure Config where
 -- Allocate a fresh address and return it along with updated config
 def freshAddr (config : Config) : Address × Config :=
   (config.nextAddr, { config with nextAddr := config.nextAddr + 1 })
-
--- Manual Repr instance for Config
-instance : Repr Config where
-  reprPrec c _ := s!"(Config {repr c.memory} <varEnv> {repr c.varEnv} pure={c.pureMode})"
-
-instance : Repr Memory where
-  reprPrec m _ :=
-    let sorted := (m.toList : List (Address × Int)).mergeSort (fun a b => a.fst < b.fst)
-    repr sorted
-
--- Repr instance for varEnv
-instance : Repr VarEnv where
-  reprPrec venv _ := repr (venv)
-
--- ToString instance for Memory
-instance : ToString Memory where
-  toString m :=
-    let sorted := (m.toList : List (Address × Int)).mergeSort (fun a b => a.fst < b.fst)
-    s!"{sorted}"
-
--- ToString instance for config
-instance : ToString Config where
-  toString config := toString config.memory ++ toString config.varEnv ++ toString config.nextAddr ++ s!" pure={config.pureMode}"

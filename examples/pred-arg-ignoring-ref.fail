@@ -1,5 +1,5 @@
 Evaluating file: examples/pred-arg-ignoring-ref.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int true Predicate.noPred , MemoryTypeEnv : ofList [(0, QTyp.mk ETyp.int true Predicate.guardClosure 3 "a" PExpr.bool true [])] , tagEnv : ofList [] , nextLoc : 1 
+Type checking passed: Type: {type=int, poison=true, pred={}}, MemoryTypeEnv: { 0 := {type=int, poison=true, pred={3, pfn a -> true}} }, tagEnv: {}, nextLoc: 1
 
 Runtime error: Cannot execute extern value – no implementation provided

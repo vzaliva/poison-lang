@@ -1,5 +1,6 @@
 import LeanPoison.Syntax
 import LeanPoison.Misc
+import LeanPoison.Pretty
 
 import Std.Data.ExtTreeMap
 open Std
@@ -83,7 +84,18 @@ namespace MemoryTypeEnv
     beq m₁ m₂ := (ExtTreeMap.toList m₁) == (ExtTreeMap.toList m₂)
 
   instance : Repr MemoryTypeEnv where
-    reprPrec m _ := s!"ofList {repr (ExtTreeMap.toList m)}"
+    reprPrec m _ :=
+      let entries := ExtTreeMap.toList m
+      match entries with
+      | [] => "{}"
+      | _ =>
+          let docs : List Std.Format := entries.map (fun (l, qt) => Std.Format.text s!"{l} := {repr qt}")
+          Std.Format.group (
+            Std.Format.text "{" ++
+            Std.Format.nest 2 (Std.Format.line ++ Std.Format.joinSep docs (Std.Format.text "," ++ Std.Format.line)) ++
+            Std.Format.line ++
+            Std.Format.text "}"
+          )
 
 end MemoryTypeEnv
 
@@ -105,7 +117,18 @@ instance : BEq TagEnv where
   beq m₁ m₂ := (ExtTreeMap.toList m₁) == (ExtTreeMap.toList m₂)
 
 instance : Repr TagEnv where
-  reprPrec m _ := s!"ofList {repr (ExtTreeMap.toList m)}"
+  reprPrec m _ :=
+    let entries := ExtTreeMap.toList m
+    match entries with
+    | [] => "{}"
+    | _ =>
+        let docs : List Std.Format := entries.map (fun (k, tv) => Std.Format.text s!"{k} := {repr tv}")
+        Std.Format.group (
+          Std.Format.text "{" ++
+          Std.Format.nest 2 (Std.Format.line ++ Std.Format.joinSep docs (Std.Format.text "," ++ Std.Format.line)) ++
+          Std.Format.line ++
+          Std.Format.text "}"
+        )
 
 end TagEnv
 
@@ -1872,12 +1895,12 @@ def typecheckExprVerbose (e : Expr) (regime : Regime := emptyRegime) (mode : Eva
   }
   typecheck mode initialCtx e defaultFuel
 
-
 /-- Type check a program (expression) and return a human-readable result -/
 def typecheckProgram (e : Expr) (verbose : Bool) (regime : Regime := emptyRegime) (mode : EvalMode := .normal) : String :=
   if verbose then
     match typecheckExprVerbose e regime mode with
-    | .ok result => s!"Type: {repr result.qualType} , MemoryTypeEnv : {repr result.memEnv'} , tagEnv : {repr result.tagEnv'} , nextLoc : {repr result.nextLoc'} "
+    | .ok result =>
+        s!"Type: {repr result.qualType}, MemoryTypeEnv: {repr result.memEnv'}, tagEnv: {repr result.tagEnv'}, nextLoc: {result.nextLoc'}"
     | .error msg => s!"Type error: {msg}"
   else
     match typecheckExprSimple e regime mode with

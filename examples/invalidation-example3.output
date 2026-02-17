@@ -1,6 +1,6 @@
 Evaluating file: examples/invalidation-example3.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int false Predicate.noPred , MemoryTypeEnv : ofList [(0, QTyp.mk ETyp.int false Predicate.noPred)] , tagEnv : ofList [] , nextLoc : 1 
+Type checking passed: Type: {type=int, poison=false, pred={}}, MemoryTypeEnv: { 0 := {type=int, poison=false, pred={}} }, tagEnv: {}, nextLoc: 1
 
 Result: 10
 Final state:

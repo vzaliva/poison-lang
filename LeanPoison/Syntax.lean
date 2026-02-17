@@ -43,9 +43,6 @@ end LocSet
 instance : BEq LocSet where
   beq s t := (ExtTreeSet.toList s) == (ExtTreeSet.toList t)
 
-instance : Repr LocSet where
-  reprPrec s prec :=
-    reprPrec (ExtTreeSet.toList s) prec
 abbrev Name := String
 
 namespace LeanPoison
@@ -308,97 +305,6 @@ instance : BEq Effect where
 instance : BEq ExternReturn where
   beq := beqExternReturn
 
--- Repr instances
-
-def reprTyp : Typ → Nat → Std.Format
-  | Typ.int, _ => "Typ.int"
-  | Typ.bool, _ => "Typ.bool"
-  | Typ.unit, _ => "Typ.unit"
-  | Typ.ref t, _ => s!"Typ.ref {reprTyp t 0}"
-  | Typ.arrow t1 t2, _ => s!"Typ.arrow {reprTyp t1 0} {reprTyp t2 0}"
-  | Typ.string , _ => s!"Typ.string"
-
--- Manual Repr instances (mutual recursion needed)
-mutual
-
-def reprValue : Value → Nat → Std.Format
-  | Value.num n, _ => s!"Value.num {repr n}"
-  | Value.bool b, _ => s!"Value.bool {repr b}"
-  | Value.unit, _ => "Value.unit"
-  | Value.str s , _ => s!"Value.str " ++ s
-  | Value.loc l, _ => s!"Value.loc {repr l}"
-  | Value.closure x _ _, _ => s!"Value.closure {repr x} <expr> <env>"
-  | Value.peClosure x _ _, _ => s!"Value.peClosure {repr x} <expr> <env>"
-
-def reprExpr : Expr → Nat → Std.Format
-  | Expr.unit, _ => "Expr.unit"
-  | Expr.str s , _ => s!"Expr.string {s} "
-  | Expr.num n, _ => s!"Expr.num {repr n}"
-  | Expr.bool b, _ => s!"Expr.bool {repr b}"
-  | Expr.var x, _ => s!"Expr.var {repr x}"
-  | Expr.op e1 op e2, _ => s!"Expr.op ({reprExpr e1 0}) {repr op} ({reprExpr e2 0})"
-  | Expr.unaryop opname e, _ => s!"Expr.unaryop {repr opname} ({reprExpr e 0})"
-  | Expr.ite e1 e2 e3, _ => s!"Expr.ite ({reprExpr e1 0}) ({reprExpr e2 0}) ({reprExpr e3 0})"
-  | Expr.newRef e, _ => s!"Expr.newRef ({reprExpr e 0})"
-  | Expr.assign e1 e2, _ => s!"Expr.assign ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.deref e, _ => s!"Expr.deref ({reprExpr e 0})"
-  | Expr.seq e1 e2, _ => s!"Expr.seq ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.kwhile e1 e2, _ => s!"Expr.kwhile ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.vlet x e1 e2, _ => s!"Expr.vlet {repr x} ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.fn x t1 e t2, _ => s!"Expr.fn {repr x} : {repr t1} => ({reprExpr e 0}) : {repr t2}"
-  | Expr.pfn x t1 e t2, _ => s!"Expr.pfn {repr x} : {repr t1} => ({reprExpr e 0}) : {repr t2}"
-  | Expr.app e1 e2, _ => s!"Expr.app ({reprExpr e1 0}) ({reprExpr e2 0})"
-  | Expr.rand e, _ => s!"Expr.rand ({reprExpr e 0})"
-  | Expr.frand e, _ => s!"Expr.frand ({reprExpr e 0})"
-  | Expr.printString e, _ => s!"Expr.printString ({reprExpr e 0})"
-  | Expr.printInt e, _  => s!"Expr.printInt ({reprExpr e 0})"
-  | Expr.externVal t p _pred, _ => s!"Expr.externVal {repr t} {repr p} <pred>"
-  | Expr.externFn x t _ret _eff, _ => s!"Expr.externFn {repr x} : {repr t} <retspec> <effects>"
-  | Expr.externPfn x t _ret, _ => s!"Expr.externPfn {repr x} : {repr t} <retspec>"
-
-end
-
--- Repr functions for extern types (defined separately after reprExpr)
-def reprSyntaxPredicate : SyntaxPredicate → Nat → Std.Format
-  | SyntaxPredicate.guardClosure tag arg _body, _ =>
-      s!"SyntaxPredicate.guardClosure {repr tag} {repr arg} <body>"
-  | SyntaxPredicate.guardOnly tag, _ =>
-      s!"SyntaxPredicate.guardOnly {repr tag}"
-  | SyntaxPredicate.noPred, _ =>
-      "SyntaxPredicate.noPred"
-
-def reprEffect : Effect → Nat → Std.Format
-  | ⟨target, poison, pred⟩, _ =>
-      s!"Effect {repr target} {repr poison} {reprSyntaxPredicate pred 0}"
-
-def reprExternReturn : ExternReturn → Nat → Std.Format
-  | ExternReturn.simple typ poison pred, _ =>
-      s!"ExternReturn.simple {repr typ} {repr poison} {reprSyntaxPredicate pred 0}"
-  | ExternReturn.nestedFn x typ ret _eff, _ =>
-      s!"ExternReturn.nestedFn {repr x} {repr typ} {reprExternReturn ret 0} <effects>"
-  | ExternReturn.nestedPfn x typ ret, _ =>
-      s!"ExternReturn.nestedPfn {repr x} {repr typ} {reprExternReturn ret 0}"
-
-@[instance]
-instance : Repr Value where
-  reprPrec := reprValue
-
-@[instance]
-instance : Repr Expr where
-  reprPrec := reprExpr
-
-@[instance]
-instance : Repr SyntaxPredicate where
-  reprPrec := reprSyntaxPredicate
-
-@[instance]
-instance : Repr Effect where
-  reprPrec := reprEffect
-
-@[instance]
-instance : Repr ExternReturn where
-  reprPrec := reprExternReturn
-
 -- Note: We cannot convert arbitrary values to expressions
 -- Only literals (num, bool, unit) can appear in both
 -- Locations and closures are runtime-only
@@ -411,29 +317,6 @@ def strToBasicType (str : String) : Except String Typ :=
  | "unit" => .ok Typ.unit
  | "string" => .ok Typ.string
  | _ => .error ("Invalid type annotation : " ++ str)
-
-
-@[instance]
-instance : ToString Typ where
-  toString t := Std.Format.pretty (repr t)
-
-@[instance]
-instance : ToString Value where
-  toString v := Std.Format.pretty (repr v)
-
-
-@[instance]
-instance : ToString Op where
-  toString op := Std.Format.pretty (repr op)
-
-@[instance]
-instance : ToString UnaryOp where
-  toString opname := Std.Format.pretty (repr opname)
-
-@[instance]
-instance : ToString Expr where
-  toString e := Std.Format.pretty (repr e)
-
 
  -- Helper function to print the type of Value
 def ValueToTypeString (val : Value) : String :=
@@ -584,82 +467,6 @@ def hasKey (env : CapturedVarEnv) (x : Name) : Prop :=
 
 end CapturedVarEnv
 
--- Manual Repr instances for mutual types
-
-mutual
-
-partial def reprPExpr : PExpr → Nat → Std.Format
-  | PExpr.unit, _ => "PExpr.unit"
-  | PExpr.num n, _ => s!"PExpr.num {repr n}"
-  | PExpr.bool b, _ => s!"PExpr.bool {repr b}"
-  | PExpr.str s, _ => s!"PExpr.str " ++ s
-  | PExpr.var x, _ => s!"PExpr.var {repr x}"
-  | PExpr.op e1 op e2, _ => s!"PExpr.op ({reprPExpr e1 0}) {repr op} ({reprPExpr e2 0})"
-  | PExpr.unaryop opname e, _ => s!"PExpr.unaryop {repr opname} ({reprPExpr e 0})"
-  | PExpr.ite e1 e2 e3, _ => s!"PExpr.ite ({reprPExpr e1 0}) ({reprPExpr e2 0}) ({reprPExpr e3 0})"
-  | PExpr.deref e, _ => s!"PExpr.deref ({reprPExpr e 0})"
-  | PExpr.vlet x e1 e2, _ => s!"PExpr.vlet {repr x} ({reprPExpr e1 0}) ({reprPExpr e2 0})"
-  | PExpr.app e1 e2, _ => s!"PExpr.app ({reprPExpr e1 0}) ({reprPExpr e2 0})"
-
-partial def reprFnTClosure : FnTClosure → Nat → Std.Format
-  | FnTClosure.regular x _ _ , _ => s!"FnTClosure.regular {repr x} <expr>"
-  | FnTClosure.extern x _ _ _, _ => s!"FnTClosure.extern {repr x} <retspec> <effects>"
-
-partial def reprPFnTClosure : PFnTClosure → Nat → Std.Format
-  | PFnTClosure.regular x _ _ , _ => s!"PFnTClosure.regular {repr x} <pexpr>"
-  | PFnTClosure.extern x _ _, _ => s!"PFnTClosure.extern {repr x} <retspec>"
-
-partial def reprETyp : ETyp → Nat → Std.Format
-  | ETyp.int, _ => "ETyp.int"
-  | ETyp.bool, _ => "ETyp.bool"
-  | ETyp.unit, _ => "ETyp.unit"
-  | ETyp.string , _ => "ETyp.string"
-  | ETyp.ref t ls, _ => s!"ETyp.ref {reprETyp t 0} {repr ls}"
-  | ETyp.arrow st1 st2 p tcls, _ =>
-      let closureReprs := tcls.map (fun tcl => reprFnTClosure tcl 0)
-      s!"ETyp.arrow {reprTyp st1 0} {reprTyp st2 0} {repr p} [{Std.Format.joinSep closureReprs (Std.Format.text ", ")}]"
-  | ETyp.parrow st1 st2 p tcls, _ =>
-      let closureReprs := tcls.map (fun tcl => reprPFnTClosure tcl 0)
-      s!"ETyp.parrow {reprTyp st1 0} {reprTyp st2 0} {repr p} [{Std.Format.joinSep closureReprs (Std.Format.text ", ")}]"
-
-partial def reprVarEnv (env: CapturedVarEnv) (_:Nat): Std.Format :=
-    Std.Format.text "[" ++
-    Std.Format.joinSep (env.map (fun (x, qt) => s!"({repr x}, {reprQTyp qt 0})")) (Std.Format.text ", ") ++
-    Std.Format.text "]"
-
-partial def reprPredicate : Predicate → Nat → Std.Format
-  | Predicate.guardClosure tag arg_name pred_body var_env, _ =>
-    s!"Predicate.guardClosure {repr tag} {repr arg_name} {reprPExpr pred_body 0} {reprVarEnv var_env 0}"
-  | Predicate.guardOnly tag, _ =>
-    s!"Predicate.guardOnly {repr tag}"
-  | Predicate.noPred, _ =>
-    "Predicate.noPred"
-
-partial def reprQTyp : QTyp → Nat → Std.Format
-  | QTyp.mk etyp poison pred, _ =>
-    s!"QTyp.mk {reprETyp etyp 0} {repr poison} {reprPredicate pred 0}"
-
-end
-
-instance : Repr PExpr where
-  reprPrec := reprPExpr
-
-instance : Repr FnTClosure where
-  reprPrec := reprFnTClosure
-
-instance : Repr PFnTClosure where
-  reprPrec := reprPFnTClosure
-
-instance : Repr ETyp where
-  reprPrec := reprETyp
-
-instance : Repr QTyp where
-  reprPrec := reprQTyp
-
-instance : Repr Predicate where
-  reprPrec := reprPredicate
-
-
 -- Manual BEq instance for PExpr (must be defined first as it's used in the mutual block)
 def beqPExpr : PExpr → PExpr → Bool
   | .unit, .unit => true
@@ -785,15 +592,6 @@ def beqETypSignature : ETyp → ETyp → Bool
   | ETyp.parrow st1 st2 _ _, ETyp.parrow st1' st2' _ _ =>
     st1 == st1' && st2 == st2'
   | _, _ => false
-
-@[instance]
-instance : ToString ETyp where
-  toString e := Std.Format.pretty (repr e)
-
-
-@[instance]
-instance : ToString QTyp where
-  toString e := Std.Format.pretty (repr e)
 
 -- Helper functions for merged typing closures
 -- Closure lists semantically represent SETS: order-independent, no duplicates

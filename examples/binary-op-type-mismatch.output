@@ -1,7 +1,7 @@
 Evaluating file: examples/binary-op-type-mismatch.poison (verbose mode)
 
 Type checking error:  Operation argument types do not match.
-  Left: ETyp.string
+  Left: string
   Op:   Op.gte
-  Right: ETyp.bool
+  Right: bool
 

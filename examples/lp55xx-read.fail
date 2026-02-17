@@ -1,5 +1,5 @@
 Evaluating file: examples/lp55xx-read.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int false Predicate.noPred , MemoryTypeEnv : ofList [(0, QTyp.mk ETyp.int false Predicate.noPred), (1, QTyp.mk ETyp.int false Predicate.noPred)] , tagEnv : ofList [(100, { value := true, deps := [] })] , nextLoc : 2 
+Type checking passed: Type: {type=int, poison=false, pred={}}, MemoryTypeEnv: { 0 := {type=int, poison=false, pred={}}, 1 := {type=int, poison=false, pred={}} }, tagEnv: { 100 := { value := true, deps := [] } }, nextLoc: 2
 
 Runtime error: Cannot execute extern value – no implementation provided

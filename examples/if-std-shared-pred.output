@@ -1,7 +1,6 @@
 Evaluating file: examples/if-std-shared-pred.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int true Predicate.guardClosure 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [] , MemoryTypeEnv : ofList [(0,
-  QTyp.mk ETyp.int true Predicate.guardClosure 1 "limit" PExpr.op (PExpr.op (PExpr.var "limit") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "limit") Op.lte (PExpr.num 0)) [])] , tagEnv : ofList [] , nextLoc : 1 
+Type checking passed: Type: {type=int, poison=true, pred={1, pfn limit -> (limit >= 0) && (limit <= 0)}}, MemoryTypeEnv: { 0 := {type=int, poison=true, pred={1, pfn limit -> (limit >= 0) && (limit <= 0)}} }, tagEnv: {}, nextLoc: 1
 
 Result: 0
 Final state:

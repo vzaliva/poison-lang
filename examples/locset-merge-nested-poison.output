@@ -1,8 +1,6 @@
 Evaluating file: examples/locset-merge-nested-poison.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.int true Predicate.noPred , MemoryTypeEnv : ofList [(0, QTyp.mk ETyp.int true Predicate.noPred),
- (1, QTyp.mk ETyp.int true Predicate.noPred),
- (2, QTyp.mk ETyp.int true Predicate.noPred)] , tagEnv : ofList [] , nextLoc : 3 
+Type checking passed: Type: {type=int, poison=true, pred={}}, MemoryTypeEnv: { 0 := {type=int, poison=true, pred={}}, 1 := {type=int, poison=true, pred={}}, 2 := {type=int, poison=true, pred={}} }, tagEnv: {}, nextLoc: 3
 
 Result: 0
 Final state:

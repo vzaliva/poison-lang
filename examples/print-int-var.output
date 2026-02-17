@@ -1,6 +1,6 @@
 Evaluating file: examples/print-int-var.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.unit false Predicate.noPred , MemoryTypeEnv : ofList [] , tagEnv : ofList [] , nextLoc : 0 
+Type checking passed: Type: {type=unit, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
 
 -5
 Result: unit

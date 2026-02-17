@@ -1,8 +1,11 @@
 Evaluating file: examples/extern_fn3.poison (verbose mode)
 
-Type checking passed: Type: QTyp.mk ETyp.arrow Typ.int Typ.int false [FnTClosure.extern "s" <retspec> <effects>] false Predicate.noPred , MemoryTypeEnv : ofList [(0,
-  QTyp.mk ETyp.int true Predicate.guardClosure 4 "u" PExpr.op (PExpr.op (PExpr.var "u") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "u") Op.lte (PExpr.var "i")) [("cap", QTyp.mk ETyp.ref ETyp.int [1] false Predicate.noPred), ("i", QTyp.mk ETyp.int false Predicate.noPred), ("r", QTyp.mk ETyp.ref ETyp.int [0] false Predicate.noPred)]),
- (1,
-  QTyp.mk ETyp.int true Predicate.guardClosure 5 "u" PExpr.op (PExpr.op (PExpr.var "u") Op.gte (PExpr.num 0)) Op.and (PExpr.op (PExpr.var "u") Op.lte (PExpr.var "i")) [("cap", QTyp.mk ETyp.ref ETyp.int [1] false Predicate.noPred), ("i", QTyp.mk ETyp.int false Predicate.noPred), ("r", QTyp.mk ETyp.ref ETyp.int [0] false Predicate.noPred)])] , tagEnv : ofList [] , nextLoc : 2 
+Type checking passed: Type: {type=arrow int int false [extern s ((int :> poisoned {1, pfn v -> (v >= 0) && (v <= 255)})) effects: {!s :> (int :> poisoned {2, pfn u -> (u >= 0) && (u <= 255)}), !a :> (int :> clean {})}], poison=false, pred={}}, MemoryTypeEnv: {
+  0 := {type=int, poison=true, pred={4, pfn u -> (u >= 0) && (u <= i), deps: [cap : {type=ref int [1], poison=false, pred={}},
+    i : {type=int, poison=false, pred={}},
+    r : {type=ref int [0], poison=false, pred={}}]}},
+  1 := {type=int, poison=true, pred={5, pfn u -> (u >= 0) && (u <= i), deps: [cap : {type=ref int [1], poison=false, pred={}},
+    i : {type=int, poison=false, pred={}},
+    r : {type=ref int [0], poison=false, pred={}}]}} }, tagEnv: {}, nextLoc: 2
 
 Runtime error: Cannot execute extern function – no implementation provided
