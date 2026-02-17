@@ -1894,15 +1894,3 @@ def typecheckExprVerbose (e : Expr) (regime : Regime := emptyRegime) (mode : Eva
     pureCtx := false
   }
   typecheck mode initialCtx e defaultFuel
-
-/-- Type check a program (expression) and return a human-readable result -/
-def typecheckProgram (e : Expr) (verbose : Bool) (regime : Regime := emptyRegime) (mode : EvalMode := .normal) : String :=
-  if verbose then
-    match typecheckExprVerbose e regime mode with
-    | .ok result =>
-        s!"Type: {repr result.qualType}, MemoryTypeEnv: {repr result.memEnv'}, tagEnv: {repr result.tagEnv'}, nextLoc: {result.nextLoc'}"
-    | .error msg => s!"Type error: {msg}"
-  else
-    match typecheckExprSimple e regime mode with
-    | .ok qualType  => s!"Type: {repr qualType}"
-    | .error msg => s!"Type error: {msg}"

@@ -1,4 +1,4 @@
 Evaluating file: examples/iofree-reject-print-int.poison (verbose mode)
 
-Type checking error:  IO operation (printInt) forbidden in ioFree mode
+Type checking error: IO operation (printInt) forbidden in ioFree mode
 

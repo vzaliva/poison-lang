@@ -46,6 +46,39 @@ structure CliOptions where
   repl : Bool := false
   help : Bool := false
 
+private def stringDoc (s : String) : Std.Format :=
+  Std.Format.joinSep (s.splitOn "\n") Std.Format.line
+
+private def printDoc (doc : Std.Format) : IO Unit :=
+  IO.println (Std.Format.pretty doc)
+
+private def formatTypecheckPassedSimple (qualType : QTyp) : Std.Format :=
+  Std.Format.group (
+    Std.Format.text "Type checking passed:" ++
+    Std.Format.nest 2 (
+      Std.Format.line ++
+      Std.Format.text "Type: " ++
+      repr qualType
+    )
+  )
+
+private def formatTypecheckPassedVerbose (result : TypeResult) : Std.Format :=
+  Std.Format.group (
+    Std.Format.text "Type checking passed:" ++
+    Std.Format.nest 2 (
+      Std.Format.line ++ Std.Format.text "Type: " ++ repr result.qualType ++ Std.Format.text "," ++
+      Std.Format.line ++ Std.Format.text "MemoryTypeEnv: " ++ repr result.memEnv' ++ Std.Format.text "," ++
+      Std.Format.line ++ Std.Format.text "tagEnv: " ++ repr result.tagEnv' ++ Std.Format.text "," ++
+      Std.Format.line ++ Std.Format.text "nextLoc: " ++ repr result.nextLoc'
+    )
+  )
+
+private def formatTypecheckError (msg : String) : Std.Format :=
+  Std.Format.group (
+    Std.Format.text "Type checking error:" ++
+    Std.Format.nest 2 (Std.Format.line ++ stringDoc msg)
+  )
+
 def parseRegimeSpec (spec : String) : Except String Regime := do
   let parts := spec.splitOn ","
   let mut map : ExtTreeMap Nat Bool := {}
@@ -157,24 +190,32 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime) (mode : Lean
 
     match xmlToExpr xmlElement with
     | Except.ok expr =>
-      let resultType := typecheckProgram expr verbose regime mode
-      -- Debug: check what resultType looks like
-      -- IO.eprintln s!"DEBUG: resultType = '{resultType}'"
-      -- IO.eprintln s!"DEBUG: starts with 'Type error:' = {resultType.startsWith "Type error:"}"
-      if resultType.startsWith "Type error:" then
-        let errorMsg := resultType.drop 11
-        IO.println s!"Type checking error: {errorMsg}"
-        -- "Out of fuel" means analysis couldn't complete (exit 4)
-        -- Other type errors mean analysis succeeded in finding errors (exit 0)
-        if errorMsg.trim == "Out of fuel" then
-          return (4 : UInt32)  -- Exit code 4: Type checker out of fuel
-        else
-          return (0 : UInt32)  -- Exit code 0: Type error successfully found
+      if verbose then
+        match typecheckExprVerbose expr regime mode with
+        | .ok resultType =>
+            printDoc (formatTypecheckPassedVerbose resultType)
+            let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
+            let result <- LeanPoison.beval mode defaultFuel initialConfig expr verbose
+            handleEvalResult result verbose
+        | .error errorMsg =>
+            printDoc (formatTypecheckError errorMsg)
+            if errorMsg.trim == "Out of fuel" then
+              return (4 : UInt32)  -- Exit code 4: Type checker out of fuel
+            else
+              return (0 : UInt32)  -- Exit code 0: Type error successfully found
       else
-        IO.println s!"Type checking passed: {resultType}"
-        let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
-        let result <- LeanPoison.beval mode defaultFuel initialConfig expr verbose
-        handleEvalResult result verbose
+        match typecheckExprSimple expr regime mode with
+        | .ok qualType =>
+            printDoc (formatTypecheckPassedSimple qualType)
+            let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
+            let result <- LeanPoison.beval mode defaultFuel initialConfig expr verbose
+            handleEvalResult result verbose
+        | .error errorMsg =>
+            printDoc (formatTypecheckError errorMsg)
+            if errorMsg.trim == "Out of fuel" then
+              return (4 : UInt32)
+            else
+              return (0 : UInt32)
 
     | Except.error err =>
       IO.println s!"Error while building expression tree: {err}"
@@ -295,21 +336,20 @@ def main (args : List String) : IO UInt32 := do
                 IO.println ""
                 match ExprTree with
                 | expr =>
-                  let resultType := typecheckProgram expr true regime mode
-                  if resultType.startsWith "Type error:" then
-                    let errorMsg := resultType.drop 11
-                    IO.println s!"Type checking error: {errorMsg}"
-                    IO.println ""
-                    if errorMsg.trim == "Out of fuel" then
-                      return (4 : UInt32)
-                    else
-                      return (0 : UInt32)
-                  else
-                    IO.println s!"Type checking passed: {resultType}"
-                    IO.println ""
-                    let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
-                    let result <- LeanPoison.beval mode defaultFuel initialConfig expr true
-                    handleEvalResult result true
+                  match typecheckExprVerbose expr regime mode with
+                  | .ok resultType =>
+                      printDoc (formatTypecheckPassedVerbose resultType)
+                      IO.println ""
+                      let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
+                      let result <- LeanPoison.beval mode defaultFuel initialConfig expr true
+                      handleEvalResult result true
+                  | .error errorMsg =>
+                      printDoc (formatTypecheckError errorMsg)
+                      IO.println ""
+                      if errorMsg.trim == "Out of fuel" then
+                        return (4 : UInt32)
+                      else
+                        return (0 : UInt32)
               catch e =>
                 IO.println s!"Error reading file {filename}: {e}"
                 return (5 : UInt32)

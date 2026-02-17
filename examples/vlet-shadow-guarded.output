@@ -1,4 +1,4 @@
 Evaluating file: examples/vlet-shadow-guarded.poison (verbose mode)
 
-Type checking error:  Cannot shadow variable 'x': outer binding has an active guard predicate
+Type checking error: Cannot shadow variable 'x': outer binding has an active guard predicate
 

@@ -1,5 +1,9 @@
 Evaluating file: examples/extern_fn2.poison (verbose mode)
 
-Type checking passed: Type: {type=int, poison=true, pred={3, pfn y -> (y >= 0) && (y <= n), deps: [n : {type=int, poison=false, pred={}}]}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
+Type checking passed:
+  Type: {type=int, poison=true, pred={3, pfn y -> (y >= 0) && (y <= n), deps: [n : {type=int, poison=false, pred={}}]}},
+  MemoryTypeEnv: {},
+  tagEnv: {},
+  nextLoc: 0
 
 Runtime error: Cannot execute extern function – no implementation provided

@@ -1,6 +1,10 @@
 Evaluating file: examples/while1.poison (verbose mode)
 
-Type checking passed: Type: {type=unit, poison=false, pred={}}, MemoryTypeEnv: { 0 := {type=int, poison=false, pred={}}, 1 := {type=int, poison=false, pred={}} }, tagEnv: {}, nextLoc: 2
+Type checking passed:
+  Type: {type=unit, poison=false, pred={}},
+  MemoryTypeEnv: { 0 := {type=int, poison=false, pred={}}, 1 := {type=int, poison=false, pred={}} },
+  tagEnv: {},
+  nextLoc: 2
 
 Result: unit
 Final state:

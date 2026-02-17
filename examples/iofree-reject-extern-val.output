@@ -1,4 +1,4 @@
 Evaluating file: examples/iofree-reject-extern-val.poison (verbose mode)
 
-Type checking error:  IO operation (externVal) forbidden in ioFree mode
+Type checking error: IO operation (externVal) forbidden in ioFree mode
 

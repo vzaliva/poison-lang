@@ -1,6 +1,10 @@
 Evaluating file: examples/assign-nonsingleton-weak.poison (verbose mode)
 
-Type checking passed: Type: {type=int, poison=true, pred={}}, MemoryTypeEnv: { 0 := {type=int, poison=true, pred={}}, 1 := {type=int, poison=true, pred={}} }, tagEnv: {}, nextLoc: 2
+Type checking passed:
+  Type: {type=int, poison=true, pred={}},
+  MemoryTypeEnv: { 0 := {type=int, poison=true, pred={}}, 1 := {type=int, poison=true, pred={}} },
+  tagEnv: {},
+  nextLoc: 2
 
 Result: 42
 Final state:

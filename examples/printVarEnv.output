@@ -1,6 +1,10 @@
 Evaluating file: examples/printVarEnv.poison (verbose mode)
 
-Type checking passed: Type: {type=unit, poison=false, pred={}}, MemoryTypeEnv: { 0 := {type=int, poison=false, pred={}} }, tagEnv: {}, nextLoc: 1
+Type checking passed:
+  Type: {type=unit, poison=false, pred={}},
+  MemoryTypeEnv: { 0 := {type=int, poison=false, pred={}} },
+  tagEnv: {},
+  nextLoc: 1
 
 "Hello"
 Result: unit

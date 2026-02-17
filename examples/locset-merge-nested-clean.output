@@ -1,10 +1,14 @@
 Evaluating file: examples/locset-merge-nested-clean.poison (verbose mode)
 
-Type checking passed: Type: {type=int, poison=false, pred={}}, MemoryTypeEnv: {
-  0 := {type=int, poison=false, pred={}},
-  1 := {type=int, poison=false, pred={}},
-  2 := {type=int, poison=false, pred={}}
-}, tagEnv: {}, nextLoc: 3
+Type checking passed:
+  Type: {type=int, poison=false, pred={}},
+  MemoryTypeEnv: {
+    0 := {type=int, poison=false, pred={}},
+    1 := {type=int, poison=false, pred={}},
+    2 := {type=int, poison=false, pred={}}
+  },
+  tagEnv: {},
+  nextLoc: 3
 
 Result: 3
 Final state:

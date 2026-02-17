@@ -1,7 +1,4 @@
 Evaluating file: examples/binary-op-type-mismatch.poison (verbose mode)
 
-Type checking error:  Operation argument types do not match.
-  Left: string
-  Op:   Op.gte
-  Right: bool
+Type checking error: Operation argument types do not match.   Left: string   Op:   Op.gte   Right: bool
 

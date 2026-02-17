@@ -1,4 +1,4 @@
 Evaluating file: examples/iofree-reject-extern-fn.poison (verbose mode)
 
-Type checking error:  IO operation (externFn) forbidden in ioFree mode
+Type checking error: IO operation (externFn) forbidden in ioFree mode
 

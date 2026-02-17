@@ -1,4 +1,4 @@
 Evaluating file: examples/closure-set-type-error.poison (verbose mode)
 
-Type checking error:  Branches of if must have same type
+Type checking error: Branches of if must have same type
 
