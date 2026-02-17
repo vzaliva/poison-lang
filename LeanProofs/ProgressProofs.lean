@@ -20,7 +20,7 @@ import LeanProofs.IOHelpers
 -- Proof Strategy:
 -- ---------------
 -- The proof uses strong induction on evaluation fuel (fuel_eval), following
--- the pattern from typecheck_PExpr_preserves_typestate in Properties.lean.
+-- the pattern from typecheck structure lemmas in TypeSafety.lean.
 --
 -- For each fuel value n and expression e, we show that if:
 --   1. The expression typechecks successfully

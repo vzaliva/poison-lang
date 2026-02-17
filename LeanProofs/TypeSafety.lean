@@ -8,7 +8,7 @@ import LeanProofs.Equality
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
-import LeanProofs.Properties
+import LeanProofs.Aux
 import Init.Data.List.Lemmas
 import Std.Data.ExtTreeSet.Lemmas
 import Std.Data.ExtTreeMap
@@ -17,28 +17,34 @@ import Std.Data.ExtTreeMap.Lemmas
 open Std
 
 -- ================================================================
--- combineExtTreeMaps helpers
+-- OpEType / opEType? (moved from Properties for type-safety use)
 -- ================================================================
 
-theorem list_removeAll_self [BEq α] [LawfulBEq α] (l : List α) : l.removeAll l = [] := by
-  simp [List.removeAll, List.filter_eq_nil_iff]
+theorem OpEType.sound {o t₁ t₂ r}
+  (h : OpEType o t₁ t₂ r) : opEType? o t₁ t₂ = some r := by
+  cases h <;> simp [opEType?]
 
-theorem list_eraseDups_eq_self_of_nodup [BEq α] [LawfulBEq α] {l : List α} (h : l.Nodup) :
-  l.eraseDups = l := by
-  induction l with
-  | nil => simp
-  | cons a as ih =>
-      have h' : as.Nodup := (List.nodup_cons.mp h).2
-      have ha_not : a ∉ as := (List.nodup_cons.mp h).1
-      have hfilter : as.filter (fun b => !b == a) = as := by
-        apply (List.filter_eq_self).2
-        intro b hb
-        have hbne : b ≠ a := by
-          intro hba
-          apply ha_not
-          simpa [hba] using hb
-        simp [hbne]
-      simp [List.eraseDups_cons, hfilter, ih h']
+theorem OpEType.complete {o t₁ t₂ r}
+  (h : opEType? o t₁ t₂ = some r) : OpEType o t₁ t₂ r := by
+  cases o <;> cases t₁ <;> cases t₂
+   <;> simp [opEType?] at h <;> rw [<-h] <;> constructor
+
+theorem opEType?_iff (o t₁ t₂ r) :
+  opEType? o t₁ t₂ = some r ↔ OpEType o t₁ t₂ r :=
+  ⟨OpEType.complete, OpEType.sound⟩
+
+-- ================================================================
+-- MemoryTypeEnv (moved from Properties)
+-- ================================================================
+
+theorem MemoryTypeEnv_eq_equiv {m₁ m₂ : MemoryTypeEnv} (h : m₁ = m₂) : m₁.equiv m₂ :=
+  by
+  rw [h]
+  simp [MemoryTypeEnv.equiv]
+
+-- ================================================================
+-- combineExtTreeMaps helpers
+-- ================================================================
 
 theorem combineExtTreeMaps_go_get_not_mem
   (m1 m2 : ExtTreeMap Nat β)
@@ -195,85 +201,9 @@ lemma VarTypeEnv_lookup_update_ne (env : VarTypeEnv) (x y : Name) (qt : QTyp) (h
     exact (h_ne h_xy.symm).elim
   · simp [VarTypeEnv.update, VarTypeEnv.lookup, ExtTreeMap.getElem?_insert, h_eq]
 
-lemma ExtTreeMap_insert_preserves_injectivity
-    {α : Type} {compare : α → α → Ordering} [TransCmp compare] [LawfulEqCmp compare]
-    {β : Type} (m : ExtTreeMap α β compare) (k : α) (v : β)
-    (h_fresh_value : ∀ k', m.get? k' ≠ some v)
-    (h_inj : ∀ k₁ k₂ a, m.get? k₁ = some a → m.get? k₂ = some a → k₁ = k₂) :
-  ∀ k₁ k₂ a, (m.insert k v).get? k₁ = some a → (m.insert k v).get? k₂ = some a → k₁ = k₂ := by
-  intro k₁ k₂ a hlookup1 hlookup2
-  rw [ExtTreeMap.get?_eq_getElem?] at hlookup1 hlookup2
-  simp only [ExtTreeMap.getElem?_insert] at hlookup1 hlookup2
-  by_cases h_eq1 : compare k k₁ = Ordering.eq
-  · have h_k_eq : k = k₁ := LawfulEqCmp.eq_of_compare h_eq1
-    have h_k1_eq : k₁ = k := h_k_eq.symm
-    simp [h_eq1] at hlookup1
-    subst hlookup1
-    by_cases h_eq2 : compare k k₂ = Ordering.eq
-    · have h_k_eq2 : k = k₂ := LawfulEqCmp.eq_of_compare h_eq2
-      have h_k2_eq : k₂ = k := h_k_eq2.symm
-      simp [h_eq2] at hlookup2
-      rw [h_k1_eq, h_k2_eq]
-    · simp [h_eq2] at hlookup2
-      have h_contra : m.get? k₂ ≠ some v := h_fresh_value k₂
-      contradiction
-  · simp [h_eq1] at hlookup1
-    by_cases h_eq2 : compare k k₂ = Ordering.eq
-    · have h_k_eq2 : k = k₂ := LawfulEqCmp.eq_of_compare h_eq2
-      have h_k2_eq : k₂ = k := h_k_eq2.symm
-      simp [h_eq2] at hlookup2
-      subst hlookup2
-      have h_contra : m.get? k₁ ≠ some v := h_fresh_value k₁
-      contradiction
-    · simp [h_eq2] at hlookup2
-      rw [← ExtTreeMap.get?_eq_getElem?] at hlookup1 hlookup2
-      exact h_inj k₁ k₂ a hlookup1 hlookup2
-
 -- ================================================================
 -- MemoryTypeEnv equiv and joinMemEnv idempotency
 -- ================================================================
-
-lemma List.mem_eraseDups_of_mem {α : Type*} [BEq α] [LawfulBEq α] {x : α} {l : List α}
-    (h : x ∈ l) : x ∈ l.eraseDups := by
-  let P : Nat → Prop := fun n =>
-    ∀ l : List α, l.length = n → ∀ x : α, x ∈ l → x ∈ l.eraseDups
-  have hP : P l.length := by
-    induction l.length using Nat.strong_induction_on with
-    | _ n ih =>
-        intro l hlen x hmem
-        cases l with
-        | nil =>
-            cases hmem
-        | cons a as =>
-            have hlen_as : as.length < n := by
-              have hlen' : as.length + 1 = n := by simpa using hlen
-              have : as.length < as.length + 1 := Nat.lt_succ_self as.length
-              simpa [hlen'] using this
-            cases hmem with
-            | head =>
-                simp [List.eraseDups_cons]
-            | tail _ hmem_as =>
-                by_cases hxa : x = a
-                · subst hxa
-                  simp [List.eraseDups_cons]
-                · have hxfilter : x ∈ as.filter (fun b => !b == a) := by
-                    apply (List.mem_filter).2
-                    refine ⟨hmem_as, ?_⟩
-                    by_cases hbeq : x == a
-                    · have : x = a := LawfulBEq.eq_of_beq (a := x) (b := a) (by simpa using hbeq)
-                      exact (hxa this).elim
-                    · simp [hbeq]
-                  have hlen_filter : (as.filter (fun b => !b == a)).length < n := by
-                    have hle : (as.filter (fun b => !b == a)).length ≤ as.length :=
-                      List.length_filter_le _ _
-                    exact _root_.lt_of_le_of_lt hle hlen_as
-                  have hx' :
-                      x ∈ (as.filter (fun b => !b == a)).eraseDups := by
-                    have hIH := ih (as.filter (fun b => !b == a)).length hlen_filter
-                    exact hIH (as.filter (fun b => !b == a)) rfl x hxfilter
-                  rw [List.eraseDups_cons]
-                  exact List.Mem.tail a hx'
-  exact hP l rfl x h
 
 private lemma joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
   cases p <;> rfl
@@ -504,19 +434,6 @@ theorem joinTagEnvs_idempotent (t : TagEnv) : joinTagEnvs t t = t := by
       simpa [hm_none] using hgo
   simpa [joinTagEnvs, f] using hcombine
 
-theorem Except.error_ne_ok {ε α : Type} (err : ε) (a : α) : Except.error err ≠ Except.ok a :=
-  fun h => nomatch h
-
-theorem Except.bind_eq_ok {ε α β : Type} (x : Except ε α) (f : α → Except ε β) (b : β)
-    (h : Except.bind x f = Except.ok b) :
-    ∃ a, x = Except.ok a ∧ f a = Except.ok b := by
-  cases x with
-  | error e =>
-    simp [Except.bind] at h
-  | ok a =>
-    refine ⟨a, rfl, ?_⟩
-    simpa [Except.bind] using h
-
 -- ================================================================
 -- PExpr / Expr round-trip
 -- ================================================================
@@ -682,52 +599,8 @@ lemma var_has_correct_type (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ :
 -- LocSet foldM Helper Lemmas
 -- ================================================================
 
--- Helper lemma: LocSet.foldM preserves a property P on the accumulator
--- when the fold function preserves P and only reads from environments
--- This is useful for proving that foldM doesn't modify environments
---
--- The lemma states: if foldM succeeds and the function preserves P,
--- then the result satisfies P
--- Helper lemma: List.foldlM over Except preserves P when all list elements satisfy a side condition Q
-theorem List.foldlM_Except_preserves_property_of_forall_mem
-    (xs : List α) (init : β) (f : β → α → Except ε β)
-    (P : β → Prop) (Q : α → Prop)
-    (h_init : P init)
-    (h_all : ∀ x ∈ xs, Q x)
-    (h_step : ∀ (acc : β) (x : α), P acc → Q x → (∀ (acc' : β), f acc x = Except.ok acc' → P acc')) :
-    ∀ (result : β), List.foldlM f init xs = Except.ok result → P result := by
-  induction xs generalizing init with
-  | nil =>
-    intro result h_fold
-    simp [List.foldlM_nil, pure, Except.pure] at h_fold
-    subst h_fold
-    exact h_init
-  | cons x xs ih =>
-    intro result h_fold
-    simp [List.foldlM_cons, bind, Except.bind] at h_fold
-    cases h_fx : f init x with
-    | error e =>
-      simp [h_fx] at h_fold
-    | ok acc' =>
-      simp [h_fx] at h_fold
-      have hQx : Q x := h_all x (by simp)
-      have hPacc' : P acc' := h_step init x h_init hQx acc' h_fx
-      have h_all_tail : ∀ y ∈ xs, Q y := by
-        intro y hy
-        exact h_all y (by simp [hy])
-      exact ih acc' hPacc' h_all_tail result h_fold
-
--- Helper lemma: List.foldlM over Except preserves property P
-theorem List.foldlM_Except_preserves_property
-    (xs : List α) (init : β) (f : β → α → Except ε β)
-    (P : β → Prop)
-    (h_init : P init)
-    (h_preserve : ∀ (acc : β) (x : α), P acc → (∀ (acc' : β), f acc x = Except.ok acc' → P acc')) :
-    ∀ (result : β), List.foldlM f init xs = Except.ok result → P result := by
-  intro result h_fold
-  refine List.foldlM_Except_preserves_property_of_forall_mem xs init f P (fun _ => True)
-    h_init (fun x _ => trivial) (fun acc x hP _ => h_preserve acc x hP) result h_fold
-
+-- LocSet.foldM preserves a property P when the fold function preserves P
+-- (uses List.foldlM_Except_preserves_property from Properties)
 theorem LocSet.foldM_Except_preserves_property
     (s : LocSet) (init : β) (f : β → Loc → Except ε β)
     (P : β → Prop)
@@ -739,50 +612,7 @@ theorem LocSet.foldM_Except_preserves_property
   unfold LocSet.foldM at h_fold
   -- Use foldlM_eq_foldlM_toList to convert to list fold
   rw [ExtTreeSet.foldlM_eq_foldlM_toList] at h_fold
-  -- Apply the list lemma
   exact List.foldlM_Except_preserves_property s.toList init f P h_init h_preserve result h_fold
-
--- Helper lemma: List.mapM preserves a property on all elements
-theorem List.mapM_Except_preserves_property
-    (xs : List α) (f : α → Except ε β)
-    (P : β → Prop)
-    (h_preserve : ∀ (x : α) (y : β), f x = Except.ok y → P y) :
-    ∀ (results : List β), List.mapM f xs = Except.ok results → ∀ y ∈ results, P y := by
-  induction xs with
-  | nil =>
-    intro results h_map
-    simp [List.mapM_nil, pure, Except.pure] at h_map
-    cases h_map
-    intro y h_mem
-    cases h_mem
-  | cons x xs ih =>
-    intro results h_map
-    simp [List.mapM_cons, bind, Except.bind] at h_map
-    cases h_fx : f x with
-    | error e =>
-      simp [h_fx] at h_map
-    | ok y_val =>
-      simp [h_fx] at h_map
-      cases h_map_results : List.mapM f xs with
-      | error e =>
-        simp [h_map_results] at h_map
-      | ok rest_results =>
-        simp [h_map_results] at h_map
-        -- h_map : Except.ok (y_val :: rest_results) = Except.ok results
-        injection h_map with h_list_eq
-        -- h_list_eq : y_val :: rest_results = results
-        subst h_list_eq
-        intro z h_mem
-        simp [List.mem_cons] at h_mem
-        cases h_mem with
-        | inl h_eq =>
-          -- h_eq : z = y_val
-          subst h_eq
-          -- Now z = y_val, so h_fx : f x = Except.ok y_val becomes f x = Except.ok z
-          have h_fx_z : f x = Except.ok z := h_fx
-          exact h_preserve x z h_fx_z
-        | inr h_mem_rest =>
-          exact ih rest_results h_map_results z h_mem_rest
 
 -- ================================================================
 -- TypeContext Well-formedness
