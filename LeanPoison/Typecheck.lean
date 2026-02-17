@@ -1313,7 +1313,7 @@ def typecheckAssign (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel :
       let qt : QTyp := ⟨ETyp.unit, resultPoison, Predicate.noPred⟩
       -- Invalidate dependencies on write (Ott rule: assign)
       let tagEnv' := invalidateTagDeps result2.tagEnv' ls
-      let regime' := invalidateRegimeDeps ctx.regime result2.tagEnv' ls
+      let regime' := invalidateRegimeDeps result2.regime' result2.tagEnv' ls
       -- Bump nextLoc' past all locations in ls to ensure wfTypeResult holds
       -- (locations may not be in memEnv due to conservative if/while typing)
       let nextLoc' := LocSet.fold ls result2.nextLoc' (fun acc l => max acc (l + 1))

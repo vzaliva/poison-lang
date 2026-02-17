@@ -673,7 +673,7 @@ pm ; R ; pc ; G ; S ; L |- ref e : ref int @ { l } :> pc { no_pred } -| G1[l |->
 pm ; R ; pc ; G ; S ; L |- e1 : ref int @ { l } :> clean { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2 ; R2
 invalidate_deps L2 { l } = L3
-invalidate_regime_deps R L2 { l } = R3
+invalidate_regime_deps R2 L2 { l } = R3
 ----------------------- :: assign_singleton
 pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc clean { no_pred } -| G2[l |-> int :> join pc p2 { P2 }] ; L3 ; R3
 
@@ -685,7 +685,7 @@ pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc clean { no_pred } -| G2[l 
 pm ; R ; pc ; G ; S ; L |- e1 : ref int @ LS0 :> clean { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2 ; R2
 invalidate_deps L2 LS0 = L3
-invalidate_regime_deps R L2 LS0 = R3
+invalidate_regime_deps R2 L2 LS0 = R3
 JoinPoisons G2 LS0 = p3
 MergePreds G2 LS0 = P3
 JoinP P2 P3 = P4
@@ -700,7 +700,7 @@ pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc clean { no_pred } -| G2[LS
 pm ; R ; pc ; G ; S ; L |- e1 : ref int @ { l } :> poisoned { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2 ; R2
 invalidate_deps L2 { l } = L3
-invalidate_regime_deps R L2 { l } = R3
+invalidate_regime_deps R2 L2 { l } = R3
 ----------------------- :: assign_singleton_poisoned_ref
 pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc poisoned { no_pred } -| G2[l |-> int :> poisoned { no_pred }] ; L3 ; R3
 
@@ -711,7 +711,7 @@ pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc poisoned { no_pred } -| G2
 pm ; R ; pc ; G ; S ; L |- e1 : ref int @ LS0 :> poisoned { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2 ; R2
 invalidate_deps L2 LS0 = L3
-invalidate_regime_deps R L2 LS0 = R3
+invalidate_regime_deps R2 L2 LS0 = R3
 JoinPoisons G2 LS0 = p3
 ----------------------- :: assign_locset_poisoned_ref
 pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc poisoned { no_pred } -| G2[LS0 |-> int :> poisoned { no_pred }] ; L3 ; R3
@@ -1279,4 +1279,3 @@ indexL L n+1 = indexL L n
 indexR R n+1 = indexR R n
 ---------------------------------------------------------------------------  :: while_std
 pm ; R ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n ; indexR R n
-

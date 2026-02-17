@@ -1134,7 +1134,7 @@ The type system is parametrised by the guard regime $\mathcal{R}$ to enable prec
 \[
   \text{pm} ; \mathcal{R} ; \text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
 \]
-where $\mathcal{R}$ is the immutable regime parameter threaded unchanged through all typing premises. During normal program execution, the regime is empty ($\mathcal{R} = \emptyset$), allowing the type system to conservatively account for all possible runtime guard outcomes. During fault-robustness reasoning, $\mathcal{R}$ is instantiated with the fixed guard regime for the two-run scenario, enabling the type system to exploit regime-deterministic guard outcomes.
+where $\mathcal{R}$ is a flow-sensitive typing component threaded through premises and updated conservatively by typing rules (e.g.\ assignment invalidation and agreement-only joins at merges). During normal program execution, the regime is empty ($\mathcal{R} = \emptyset$), allowing the type system to conservatively account for all possible runtime guard outcomes. During fault-robustness reasoning, $\mathcal{R}$ is instantiated with the fixed guard regime for the two-run scenario, enabling the type system to exploit regime-deterministic guard outcomes.
 
 \paragraph{Regime-aware conditional typing.}
 When typechecking a conditional \texttt{if e1 then e2 else e3} where \texttt{match\_guard} recognises a guard tag $k$, the type system consults $\mathcal{R}(k)$:

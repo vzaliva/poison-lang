@@ -1675,7 +1675,7 @@ lemma typecheckAssign_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) 
     result2.qualType.etyp = ETyp.int ∧
     res.nextLoc' = LocSet.fold ls result2.nextLoc' (fun acc l => max acc (l + 1)) ∧
     res.nextTag' = result2.nextTag' ∧
-    res.regime' = invalidateRegimeDeps ctx.regime result2.tagEnv' ls ∧
+    res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls ∧
     res.qualType.etyp = ETyp.unit ∧
     res.qualType.poison = joinPoison ctx.pc result1.qualType.poison ∧
     res.qualType.pred = Predicate.noPred := by
@@ -1736,7 +1736,7 @@ lemma typecheckAssign_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) 
                               constructor
                               · trivial  -- res.nextTag' = result2.nextTag' (proven by cases h_typecheck)
                               constructor
-                              · trivial  -- res.regime' = invalidateRegimeDeps ctx.regime result2.tagEnv' ls (proven by cases h_typecheck)
+                              · trivial  -- res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls (proven by cases h_typecheck)
                               constructor
                               · trivial  -- res.qualType.etyp = ETyp.unit (proven by cases h_typecheck)
                               constructor
@@ -3002,15 +3002,36 @@ private lemma typecheckNewRef_regime_mono (ctx : TypeContext) (e : Expr) (fuel :
       simpa [hregime] using hm1
 
 private lemma typecheckAssign_regime_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
-    (_IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+    (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
       typecheck .ioFree ctx' e m = .ok res' →
       Regime.monotoneStep ctx'.regime res'.regime') :
     typecheckAssign .ioFree ctx e1 e2 fuel = .ok res →
     Regime.monotoneStep ctx.regime res.regime' := by
   intro htc
   have hstruct := typecheckAssign_structure ctx e1 e2 fuel res htc
-  rcases hstruct with ⟨_result1, result2, ls, _htc1, _hetyp1, _htc2, _hetyp2, _hloc, _hnexttag, hregime, _hqtetyp, _hqtpoison, _hqtpred⟩
-  simpa [hregime] using invalidateRegimeDeps_monotone ctx.regime result2.tagEnv' ls
+  rcases hstruct with ⟨result1, result2, ls, htc1, _hetyp1, htc2, _hetyp2, _hloc, _hnexttag, hregime, _hqtetyp, _hqtpoison, _hqtpred⟩
+  cases fuel with
+  | zero =>
+      unfold typecheckAssign at htc
+      simp at htc
+  | succ fuel' =>
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+      have htc1_simp : typecheckExpr .ioFree ctx e1 fuel' = .ok result1 := by
+        simpa using htc1
+      have hm1 := IH fuel' h_fuel e1 ctx result1 htc1_simp
+      let ctx' := updateCtxFromResult ctx result1
+      have htc2_simp : typecheckExpr .ioFree ctx' e2 fuel' = .ok result2 := by
+        simpa [ctx', updateCtxFromResult] using htc2
+      have hm2 := IH fuel' h_fuel e2 ctx' result2 htc2_simp
+      have hm2' : Regime.monotoneStep result1.regime' result2.regime' := by
+        simpa [ctx', updateCtxFromResult] using hm2
+      have hm12 : Regime.monotoneStep ctx.regime result2.regime' :=
+        regimeMonotone_trans hm1 hm2'
+      have hmInv : Regime.monotoneStep result2.regime' (invalidateRegimeDeps result2.regime' result2.tagEnv' ls) :=
+        invalidateRegimeDeps_monotone result2.regime' result2.tagEnv' ls
+      have hmFinal : Regime.monotoneStep ctx.regime (invalidateRegimeDeps result2.regime' result2.tagEnv' ls) :=
+        regimeMonotone_trans hm12 hmInv
+      simpa [hregime] using hmFinal
 
 private lemma typecheckDeref_regime_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
