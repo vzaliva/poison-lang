@@ -1,212 +1,161 @@
-# `stepFR_app` proof notes
+# `stepFR_app` Handoff Notes
 
-## Goal
+## 1) Scope
 
-Eliminate the remaining `sorry` in `stepFR_app` (both arrow and parrow branches) in
-`LeanProofs/FaultRobustnessProofs.lean` without introducing semantic-equality
-infrastructure.
+This document tracks only what is needed to finish `stepFR_app` in
+`LeanProofs/FaultRobustnessProofs.lean`, with focus on:
 
-## Checkpoint (2026-02-18)
+- blocker analysis
+- design decisions already made
+- current proof status and next actions
 
-### Completed
+Non-goal: historical timeline of attempts.
 
-- Proved helper synchronization lemmas:
-  - `stepFR_app_arrow_sync_from_clean`
-  - `stepFR_app_parrow_sync_from_clean`
-- Proved helper extraction lemmas:
-  - `stepFR_app_arrow_extract_shared_member`
-  - `stepFR_app_parrow_extract_shared_member`
-- Wired helper usage into both `stepFR_app` branches (arrow and parrow):
-  - deferred clean-gated sync wrapper `_hsync1_of_clean`
-  - extraction wrapper `_hextract_shared_of_sync`
-  - combined wrapper `_sync_extract_of_clean`
-- Replaced branch-level monolithic placeholders with explicit structured subgoals:
-  - arrow branch now has explicit subgoals and a dedicated `resultAgreesIfClean`
-    path that calls `_sync_extract_of_clean`
-  - parrow branch now has the same structure
-- Build status: `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean`
-  succeeds with expected `sorry` warnings only.
+## 2) Blocker Analysis
 
-### Additional progress (risk-first `agreeOnClean` transport)
+### A. Core structural mismatch
 
-- Refactored the local `agreeOnClean` transport path in the arrow branch to avoid
-  requiring exact head lookup equality (`first.lookup l = some qt`) for joined clean
-  locations.
-- Updated `agreeValueUnder_transport_clean` to drop an unnecessary predicate-equality
-  premise; current proof only needs:
-  - clean-under regime for target type,
-  - `etyp` equality,
-  - poison implication (`qt.poison = false -> qt2.poison = false`).
-- Strengthened the local bridge shape to a witness-oriented form:
-  - for joined clean `(l, qt)`, either both unrealized, or
-  - there exists `qt_first` in `first` with enough structure for clean transport
-    (`lookup`, clean-under-first, `etyp` equality, poison implication).
-- Isolated the remaining risky obligation as a single local subgoal
-  `_hfirst_witness_of_clean_lookup` in `stepFR_app` (arrow branch), which now
-  explicitly states the exact join-compatibility facts still needed.
-- In that subgoal, the structural part is now proved: from
-  `first.memEnv.contains l`, we extract concrete `qt_first` with
-  `first.memEnv.lookup l = some qt_first`; remaining open pieces are exactly:
-  - `qtypCleanUnder first.regime qt_first`
-  - `qt.etyp = qt_first.etyp`
-  - `qt.poison = false -> qt_first.poison = false`
-- Build status after refactor remains green:
-  `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean`.
+`typecheckApp_arrow_structure_full` produces:
 
-### Additional progress (temporary `#70` unblock)
+- `results = first :: rest`
+- `joinTypeResults ctx first rest = .ok res`
 
-- Added a temporary global axiom in `LeanProofs/TypeSafety.lean`:
-  - `memEnv_lookup_etyp_int`
-  - explicitly marked as a temporary workaround tied to issue `#70`.
-- Used that axiom to eliminate one local blocker `sorry`:
-  - `joinTypeResults_lookup_head_etyp_compat` is now proved.
-- Kept scope tight: no new axioms were introduced for predicate/poison compatibility.
-- Current status of the join-compatibility trio:
-  - `joinTypeResults_lookup_head_etyp_compat`: proved
-  - `joinTypeResults_lookup_head_poison_imp`: still open
-  - `joinTypeResults_lookup_head_clean_compat`: still open
-- Build status remains green after this step:
-  `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean`
-  (with existing expected `sorry` warnings).
+Runtime inversion on executed closure gives an arbitrary selected member `src ∈ results`.
+Most existing transport lemmas are head-seed oriented (use `first`), not arbitrary-member oriented.
 
-### Saved-state blocker shape
+### B. Why this is tricky (not a naming issue)
 
-- The proof now fails only at explicit, local `sorry` subgoals in `stepFR_app`.
-- Highest-priority open bridge in both branches:
-  - derive `hclean1_e1` (clean at `result1`) from `hclean_res` (clean at joined `res`)
-    so `_sync_extract_of_clean` can be used.
-- After that bridge, the clean branch has a concrete shared witness package
-  (`σcap` / `x,pbody,σcap`, `fuelBody`, `firstShared`, `result3Shared`) and needs:
-  - body IH application on the shared body
-  - transport from shared member facts to final joined `res` facts
-- Dirty fallback (`¬ internalPoisonClean result1.qualType`) remains explicit and isolated.
+`joinTypeResults` fields are not uniformly monotone by membership:
 
-## Current blocker
+- `joinRegimes` is meet-like (can drop entries)
+- `joinMemEnvs` may drop bindings on conflict
 
-The main mismatch is structural:
+So “member facts -> joined facts” cannot be done by simple monotonicity everywhere.
 
-- `typecheckApp_arrow_structure_full` gives a decomposition
-  `results = first :: rest` and a join equation
-  `joinTypeResults ctx first rest = .ok res`.
-- In the app proof, runtime inversion (`apply*Closure*_inv_of_mapM_mem`) gives an
-  arbitrary selected source result `src` with `src ∈ results`.
-- Existing transport lemmas (`join_transport_*`) are parameterized by the join seed
-  argument named `first` (the actual seed passed to `joinTypeResults`), not by an
-  arbitrary member `src`.
+### C. Main risk area
 
-So we know many premises for `src`, but the lemmas we want to use expect them for
-the seed element from the typechecker decomposition.
+`agreeOnClean` transport is the highest-risk subproblem.
+The hard part is proving that clean lookups in joined `res` can be justified from the
+head-seed context (`first`) strongly enough for agreement transport.
 
-## Why this is not just naming
+### D. Secondary blocker
 
-This is not a trivial rename issue. In this context, `first` is fixed by
-`results = first :: rest`. The runtime-chosen `src` may be different.
+Both arrow/parrow branches still need clean-back propagation:
 
-This matters most for clean-agreement transport: joined result facts can depend on
-other members of `results`, not just on `src`.
+- from clean-at-joined-result (`hclean_res`)
+- to clean-at-`result1` (`hclean1_e1`)
 
-## Constraints we want to keep
+This gate is required before using synchronized shared-member extraction and body IH.
 
-- Avoid semantic/setoid equality framework ("setoid hell").
-- Avoid broad list-reordering infrastructure unless strictly necessary.
-- Reuse existing `join_transport_*` lemmas where possible.
-- Use `ioFree` monotonicity intuition (`typecheck_nextTag_mono`): subexpressions do
-  not introduce new tags.
+### E. Temporary assumption in use
 
-## Review-based corrections
+There is one temporary axiom in `LeanProofs/TypeSafety.lean:52`:
 
-### 1) Member-to-join "monotonicity" is not uniform
+- `memEnv_lookup_etyp_int` (workaround tied to issue `#70`)
 
-Some growth facts are easy (`nextLoc`, `nextTag` via `max`), but not all fields are
-plainly monotone:
+Current join-compat lemmas depend on it for `etyp` compatibility.
 
-- `joinRegimes` is a meet/intersection-style operation, not a union.
-- `joinMemEnvs` can drop bindings on type conflict (intended unreachable under
-  well-typedness, but still present in the definition).
+## 3) Design Decisions (Committed)
 
-So transport from an arbitrary member to final `res` must carry explicit side
-conditions; it cannot be treated as unconditional monotonicity.
+1. No semantic/setoid equality framework.
+2. No list permutation / reorder infrastructure for `joinTypeResults`.
+3. Keep head-based decomposition (`first :: rest`) and bridge to needed facts locally.
+4. Use clean-branch closure synchronization first, then transport.
+5. Build narrow, purpose-specific join-compat lemmas (not generic reordering theory).
+6. Tackle risky `agreeOnClean` path before lower-risk goals.
 
-### 2) `agreeOnClean` is the true hard edge
+## 4) Current Status
 
-`join_transport_agreeOnClean` needs a premise of the form "clean lookup in joined
-`res` can be viewed from source context". For an arbitrary selected member `src`,
-this is generally false unless extra assumptions are provided.
+### A. Implemented and proved helpers
 
-### 3) Two runs can select different closures
+Synchronization and shared-member extraction:
 
-The proof must explicitly address synchronization:
+- `stepFR_app_arrow_sync_from_clean` (`LeanProofs/FaultRobustnessProofs.lean:10650`)
+- `stepFR_app_parrow_sync_from_clean` (`LeanProofs/FaultRobustnessProofs.lean:10718`)
+- `stepFR_app_arrow_extract_shared_member` (`LeanProofs/FaultRobustnessProofs.lean:10789`)
+- `stepFR_app_parrow_extract_shared_member` (`LeanProofs/FaultRobustnessProofs.lean:10835`)
 
-- run 0 may select one closure from `tcls`,
-- run 1 may select another.
+Join-compatibility helpers (head vs joined):
 
-To apply body IH in the clean branch, we need to derive same-body alignment (or an
-equivalent bridge) from the agreement facts on the function value.
+- `joinTypeResults_lookup_head_etyp_compat` (`LeanProofs/FaultRobustnessProofs.lean:10025`)
+- `joinTypeResults_lookup_head_poison_imp` (`LeanProofs/FaultRobustnessProofs.lean:10489`)
+- `joinTypeResults_lookup_head_clean_compat` (`LeanProofs/FaultRobustnessProofs.lean:10616`)
+- plus supporting guard/regime helpers around the same region.
+- `applyFnTClosure_ok_poison_pred_of_p1_true` (used to force `poison=true`, `pred=noPred` when `p1=true`)
+- `applyPFnTClosure_ok_poison_pred_of_p1_true` (same role for pure closure application)
+- `joinTypeResults_poison_pred_of_head_true_noPred` (propagates that head fact to joined `res`)
 
-## Revised suggested approach
+Risk-path transport helper:
 
-### 1) Keep `typecheckApp_arrow_structure_full` as-is initially
+- `agreeValueUnder_clean_transport_by_cleanBack`
+  (`LeanProofs/FaultRobustnessProofs.lean:9886`)
 
-Do not start with list split/reseed machinery. Keep the head-based decomposition and
-work on local bridges first.
+### B. Arrow branch status (`stepFR_app`)
 
-### 2) Add closure-synchronization lemma
+In `LeanProofs/FaultRobustnessProofs.lean` under `stepFR_app` (`:10887`):
 
-From `hres_agree1` (for `e1` result) plus closure typing inversion, prove that in the
-clean internal function case both runs select a compatible regular closure witness
-that gives the same body expression needed by body IH.
+- local risky transport is now isolated in `_hagree_res_from_first_pack` (`:11265`)
+- this pack reduces remaining need to:
+  - `runtimeInstantiatesCtx (ctxAfter ctxᵢ first)` for both runs
+  - `agreeOnClean ... (ctxAfter ctxᵢ first) ...`
 
-Make the expected output explicit:
+The previous dependency on proving a standalone
+`Regime.monotoneStep first.regime' res.regime'` at this spot was removed.
 
-- shared `x` and shared `body` (so body IH is applicable to one expression),
-- shared closure witness `tcl ∈ tcls`,
-- therefore a single pinned member of `results` associated with that `tcl`.
+`hclean1_e1` in the arrow branch is now proved:
 
-This can collapse part of the `first` vs `src` mismatch in the clean branch: both
-runs are forced to use the same selected source result. If that selected result is
-the head seed, existing `join_transport_*` lemmas can be reused directly; otherwise
-only a single-member bridge is needed.
+- prove `p1 = false` by contradiction from `hclean_res`
+- contradiction route uses the two new helpers above
+- conclude `result1.qualType.poison = false` via `hp1`, then `qtypCleanUnder.clean`
 
-### 3) Add only targeted join-to-res bridges
+Parrow branch now has the same clean-back bridge proved (`hclean1_e1`) using the
+new `applyPFnTClosure_ok_poison_pred_of_p1_true` helper plus the same join propagation lemma.
 
-Introduce narrow lemmas for exactly the transported facts needed in `stepFR_app`:
+### C. Remaining open subgoals (in `stepFR_app`)
 
-- regime relation (existing monotone lemma path),
-- `nextLoc`/`nextTag` bounds (existing max lemmas),
-- memory/lookup transport only with explicit assumptions that make it valid.
+Arrow branch open region is around lines `11075` and `11279+`:
 
-Avoid broad reorder/commutativity proofs unless a concrete subgoal forces it.
+- structured postconditions still `sorry` (typing/wf/instantiation/CWR/value consistency)
+- risky `agreeOnClean` pack at `_hagree_res_from_first_pack` is still `sorry`
+- body-IH application and final `resultAgreesIfClean` transport still `sorry`
 
-### 4) Isolate `agreeOnClean` requirements explicitly
+Parrow branch has symmetric open obligations around `11670+` and `11700+`.
+Its clean-back bridge (`hclean1_e1`) is no longer `sorry`; remaining work is body-IH + transport.
 
-For `agreeOnClean`, require and prove a dedicated premise describing when clean
-lookups in `res` are justified by available source facts. If this premise needs
-all-members coverage, state it directly instead of forcing single-member transport.
+Current highest-risk unresolved point remains:
 
-## Red flag for fundamental formulation issue
+- deriving first-context premises needed by `_hagree_res_from_first_pack`
+  (`runtimeInstantiatesCtx ... first` for both runs and `agreeOnClean ... first ...`)
+- this is where additional infrastructure/assumptions may still be required.
 
-If the proof requires deriving a property of the final joined result from a single
-member `src` but that property can be changed by other members, the current theorem
-shape is too weak. In that case, fix assumptions/statement rather than forcing the
-proof.
+Latest checkpoint:
 
-## What to avoid
+- `_hagree_res_from_first_pack` itself is set up and usable as an implication.
+- blocker is upstream: no direct derivation yet of
+  `runtimeInstantiatesCtx (ctxAfter ctxᵢ first) ...` (both runs) and
+  `agreeOnClean ... (ctxAfter ctxᵢ first) ...`
+  from the currently available branch hypotheses.
+- this appears to require non-trivial strategy change or new helper infrastructure,
+  so it is paused for decision.
 
-- Introducing semantic equality / setoid-style equivalence.
-- Proving full permutation invariance of `joinTypeResults` up front.
-- Planning to apply body IH to all alternatives in `results` without runtime
-  termination evidence for those alternatives.
+### D. Build status
 
-## Immediate next implementation steps
+`make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean` succeeds
+with existing `sorry` warnings.
 
-1. Prove the clean-backprop bridge used in both branches:
-   `qtypCleanUnder (ctxAfter ctxᵢ res).regime res.qualType -> qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType`
-   (or a variant specialized to `resultAgreesIfClean` needs).
-2. In the clean branch of `resultAgreesIfClean`, use `_sync_extract_of_clean` output
-   to run body IH with the shared closure witness and shared body, producing first/member-level postconditions.
-3. Lift those first/member-level postconditions to `res` using existing `join_transport_*`
-   lemmas and only minimal new side-condition lemmas where currently missing.
-4. Close dirty fallback branch explicitly (show vacuous/typed agreement path without
-   requiring clean synchronization).
-5. Fill the remaining non-`resultAgreesIfClean` structured subgoals (typing, wf, instantiation,
-   CWR, agreeOnClean, value consistency) using the same transport pipeline.
+## 5) Recommended Next Steps
+
+1. Prove derivation of first-context pack used by `_hagree_res_from_first_pack` (highest risk):
+   - both runtime-instantiation goals at `(ctxAfter ctxᵢ first)`
+   - `agreeOnClean` at `(ctxAfter ctxᵢ first)`
+2. Use `_sync_extract_of_clean` output to run body IH and produce member-level postconditions.
+3. Lift member-level postconditions to joined `res` with existing join-transport lemmas.
+4. After risky path is closed, finish remaining structured obligations (wf/typing/CWR/value consistency).
+
+## 6) Practical Check Command
+
+Use this at each checkpoint:
+
+```bash
+make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean
+```
