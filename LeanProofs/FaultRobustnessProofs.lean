@@ -9939,6 +9939,245 @@ private lemma join_transport_resultAgreesIfClean
   have hagree_first := h_first hclean_first
   exact agreeValueUnder_clean_monotoneRegime h_regime_mono hclean_res hagree_first
 
+-- Synchronization helper for app/arrow clean branch.
+-- Shape only for now: from clean output agreement on closure values, recover either
+-- a shared regular-closure witness (with shared x/body) or explicit dirty-internal fallback.
+private lemma stepFR_app_arrow_sync_from_clean
+  (predSat : PredSat) (ctx : TypeContext) (res1 : TypeResult)
+  (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
+  (μ₀ μ₁ : Memory) (θ₀ θ₁ : RealizationMap)
+  (x₀ x₁ : Name) (body₀ body₁ : Expr) (env₀ env₁ : VarEnv)
+  (hetyp : res1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
+  (hclean : qtypCleanUnder (ctxAfter ctx res1).regime res1.qualType)
+  (hagree :
+    resultAgreesIfClean predSat (ctxAfter ctx res1).regime
+      μ₀ μ₁ θ₀ θ₁ res1.qualType
+      (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)) :
+  (∃ σcap,
+      FnTClosure.regular x₀ body₀ σcap ∈ tcls ∧
+      x₀ = x₁ ∧
+      body₀ = body₁ ∧
+      agreeCapturedEnv predSat (ctxAfter ctx res1).regime μ₀ μ₁ θ₀ θ₁ σcap env₀ env₁)
+  ∨ (¬ internalPoisonClean res1.qualType) := by
+  -- Unfold resultAgreesIfClean and apply hclean to get agreeValueUnder
+  have h := hagree hclean
+  -- Case-split on the agreeValueUnder evidence
+  cases h with
+  | clean_internal_arrow hci hetyp' htcl hmatch hcap hv₁ hv₂ =>
+    -- hetyp'  : res1.qualType.etyp = ETyp.arrow st1✝ st2✝ p✝ tcls✝  (fresh case vars)
+    -- hetyp   : res1.qualType.etyp = ETyp.arrow st1  st2  p  tcls
+    -- Combine to equate the two arrow types, then extract tcls✝ = tcls
+    have hetyp_combined := hetyp'.symm.trans hetyp
+    simp only [ETyp.arrow.injEq] at hetyp_combined
+    obtain ⟨-, -, -, rfl⟩ := hetyp_combined   -- tcls✝ := tcls
+    -- hv₁ : Value.closure x₀ body₀ env₀ = Value.closure x✝ body✝ ρcap₁✝
+    -- hv₂ : Value.closure x₁ body₁ env₁ = Value.closure x✝ body✝ ρcap₂✝
+    simp only [Value.closure.injEq] at hv₁ hv₂
+    obtain ⟨rfl, rfl, rfl⟩ := hv₁   -- x✝ := x₀, body✝ := body₀, ρcap₁✝ := env₀
+    obtain ⟨hx₁₀, hbody₁₀, rfl⟩ := hv₂   -- hx₁₀ : x₁ = x₀, hbody₁₀ : body₁ = body₀, ρcap₂✝ := env₁
+    -- hmatch : tcl✝ = FnTClosure.regular x₀ body₀ σcap✝
+    subst hmatch
+    -- htcl : FnTClosure.regular x₀ body₀ σcap✝ ∈ tcls
+    left
+    exact ⟨_, htcl, hx₁₀.symm, hbody₁₀.symm, hcap⟩
+  | dirty_internal_arrow hdirty _ _ _ =>
+    -- Internal poison is dirty: the right disjunct holds
+    right; exact hdirty
+  | clean_eq_nonref_nonarrow _ hnotfun _ _ =>
+    -- Impossible: arrow is a function type, contradicts hnotfun
+    exfalso; simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow, hetyp] at hnotfun
+  | clean_internal_parrow _ hetyp' _ _ _ _ _ =>
+    -- Impossible: parrow ≠ arrow
+    exfalso
+    have : ETyp.parrow _ _ _ _ = ETyp.arrow st1 st2 p tcls := hetyp'.symm.trans hetyp
+    simp at this
+  | dirty_internal_parrow _ hisParrow _ _ =>
+    -- Impossible: arrow type is not isParrow; hisParrow reduces to false = true
+    exfalso; simp [ETyp.isParrow, hetyp] at hisParrow
+  | clean_ref _ hetyp' _ _ _ _ _ =>
+    -- Impossible: ref ≠ arrow
+    exfalso
+    have : ETyp.ref _ _ = ETyp.arrow st1 st2 p tcls := hetyp'.symm.trans hetyp
+    simp at this
+  | withPred_true_eq _ _ _ hnotfun _ _ =>
+    -- Impossible: arrow is a function type
+    exfalso; simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow, hetyp] at hnotfun
+  | withPred_true_ref _ _ _ hetyp' _ _ _ _ _ =>
+    -- Impossible: ref ≠ arrow
+    exfalso
+    have : ETyp.ref _ _ = ETyp.arrow st1 st2 p tcls := hetyp'.symm.trans hetyp
+    simp at this
+
+-- Synchronization helper for app/parrow clean branch.
+-- Same intent as the arrow helper, but for pe-closures.
+private lemma stepFR_app_parrow_sync_from_clean
+  (predSat : PredSat) (ctx : TypeContext) (res1 : TypeResult)
+  (st1 st2 : Typ) (p : Poison) (tcls : List PFnTClosure)
+  (μ₀ μ₁ : Memory) (θ₀ θ₁ : RealizationMap)
+  (x₀ x₁ : Name) (body₀ body₁ : Expr) (env₀ env₁ : VarEnv)
+  (hetyp : res1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+  (hclean : qtypCleanUnder (ctxAfter ctx res1).regime res1.qualType)
+  (hagree :
+    resultAgreesIfClean predSat (ctxAfter ctx res1).regime
+      μ₀ μ₁ θ₀ θ₁ res1.qualType
+      (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)) :
+  (∃ x pbody σcap,
+      Expr.toPExpr? body₀ = some pbody ∧
+      PFnTClosure.regular x pbody σcap ∈ tcls ∧
+      x₀ = x ∧
+      x₁ = x ∧
+      body₀ = body₁ ∧
+      agreeCapturedEnv predSat (ctxAfter ctx res1).regime μ₀ μ₁ θ₀ θ₁ σcap env₀ env₁)
+  ∨ (¬ internalPoisonClean res1.qualType) := by
+  -- Unfold resultAgreesIfClean and apply hclean to get agreeValueUnder
+  have h := hagree hclean
+  -- Case-split on the agreeValueUnder evidence
+  cases h with
+  | clean_internal_parrow hci hetyp' htcl hmatch hcap hv₁ hv₂ =>
+    -- hetyp'  : res1.qualType.etyp = ETyp.parrow st1✝ st2✝ p✝ tcls✝  (fresh case vars)
+    -- hetyp   : res1.qualType.etyp = ETyp.parrow st1  st2  p  tcls
+    -- Combine to equate the two parrow types, then extract tcls✝ = tcls
+    have hetyp_combined := hetyp'.symm.trans hetyp
+    simp only [ETyp.parrow.injEq] at hetyp_combined
+    obtain ⟨-, -, -, rfl⟩ := hetyp_combined   -- tcls✝ := tcls
+    -- hv₁ : Value.peClosure x₀ body₀ env₀ = Value.peClosure x✝ body✝ ρcap₁✝
+    -- hv₂ : Value.peClosure x₁ body₁ env₁ = Value.peClosure x✝ body✝ ρcap₂✝
+    simp only [Value.peClosure.injEq] at hv₁ hv₂
+    obtain ⟨rfl, rfl, rfl⟩ := hv₁   -- x✝ := x₀, body✝ := body₀, ρcap₁✝ := env₀
+    obtain ⟨hx₁₀, hbody₁₀, rfl⟩ := hv₂   -- hx₁₀ : x₁ = x₀, hbody₁₀ : body₁ = body₀, ρcap₂✝ := env₁
+    -- hmatch : Expr.toPExpr? body₀ = some pbody✝ ∧ tcl✝ = PFnTClosure.regular x₀ pbody✝ σcap✝
+    obtain ⟨htoPExpr, rfl⟩ := hmatch   -- tcl✝ := PFnTClosure.regular x₀ pbody✝ σcap✝
+    -- htcl : PFnTClosure.regular x₀ pbody✝ σcap✝ ∈ tcls
+    left
+    exact ⟨x₀, _, _, htoPExpr, htcl, rfl, hx₁₀, hbody₁₀.symm, hcap⟩
+  | dirty_internal_parrow hdirty _ _ _ =>
+    -- Internal poison is dirty: the right disjunct holds
+    right; exact hdirty
+  | clean_eq_nonref_nonarrow _ hnotfun _ _ =>
+    -- Impossible: parrow is a function type, contradicts hnotfun
+    -- After simp, hnotfun reduces to true = false
+    exfalso; simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow, hetyp] at hnotfun
+  | clean_internal_arrow _ hetyp' _ _ _ _ _ =>
+    -- Impossible: arrow ≠ parrow
+    exfalso
+    have : ETyp.arrow _ _ _ _ = ETyp.parrow st1 st2 p tcls := hetyp'.symm.trans hetyp
+    simp at this
+  | dirty_internal_arrow _ hisArrow _ _ =>
+    -- Impossible: parrow type is not isArrow; hisArrow reduces to false = true
+    exfalso; simp [ETyp.isArrow, hetyp] at hisArrow
+  | clean_ref _ hetyp' _ _ _ _ _ =>
+    -- Impossible: ref ≠ parrow
+    exfalso
+    have : ETyp.ref _ _ = ETyp.parrow st1 st2 p tcls := hetyp'.symm.trans hetyp
+    simp at this
+  | withPred_true_eq _ _ _ hnotfun _ _ =>
+    -- Impossible: parrow is a function type
+    exfalso; simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow, hetyp] at hnotfun
+  | withPred_true_ref _ _ _ hetyp' _ _ _ _ _ =>
+    -- Impossible: ref ≠ parrow
+    exfalso
+    have : ETyp.ref _ _ = ETyp.parrow st1 st2 p tcls := hetyp'.symm.trans hetyp
+    simp at this
+
+-- Given a synchronized regular-closure witness and successful application map, extract
+-- the shared selected member/body typing package for arrow branch.
+private lemma stepFR_app_arrow_extract_shared_member
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (tcls : List FnTClosure) (results : List TypeResult)
+  (x₀ x₁ : Name) (body₀ body₁ : Expr)
+  (hmap :
+    List.mapM
+      (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      tcls = .ok results)
+  (hsync :
+    ∃ σcap,
+      FnTClosure.regular x₀ body₀ σcap ∈ tcls ∧
+      x₀ = x₁ ∧
+      body₀ = body₁) :
+  ∃ σcap fuelBody first result3,
+    FnTClosure.regular x₀ body₀ σcap ∈ tcls ∧
+    x₀ = x₁ ∧
+    body₀ = body₁ ∧
+    applyFnTClosure .ioFree (FnTClosure.regular x₀ body₀ σcap) st1 st2 p p1
+      argEtyp argPoison argPred ctx result1 fuel = .ok first ∧
+    fuel = Nat.succ fuelBody ∧
+    typecheckExpr .ioFree
+      { ctx with
+        pc := joinPoison p (joinPoison p1 ctx.pc)
+        memEnv := result1.memEnv'
+        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x₀
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        tagEnv := result1.tagEnv'
+        nextTag := result1.nextTag'
+        nextLoc := result1.nextLoc'
+        regime := result1.regime' } body₀ fuelBody = .ok result3 ∧
+    isSubtype st2 result3.qualType = true ∧
+    first =
+      { result3 with
+        qualType :=
+          normalizeAppResultByProvenance p1
+            { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+  rcases hsync with ⟨σcap, hmem, hx, hbody⟩
+  rcases applyFnTClosure_regular_inv_of_mapM_mem
+      ctx st1 st2 p p1 argEtyp argPoison argPred result1 fuel tcls results x₀ body₀ σcap
+      hmap hmem with
+    ⟨fuelBody, first, result3, happly, hfuel, htc, hsub, hfirst⟩
+  exact ⟨σcap, fuelBody, first, result3, hmem, hx, hbody, happly, hfuel, htc, hsub, hfirst⟩
+
+-- Pure-arrow analog of shared-member extraction.
+private lemma stepFR_app_parrow_extract_shared_member
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (tcls : List PFnTClosure) (results : List TypeResult)
+  (x₀ x₁ : Name) (body₀ body₁ : Expr)
+  (hmap :
+    List.mapM
+      (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      tcls = .ok results)
+  (hsync :
+    ∃ x pbody σcap,
+      Expr.toPExpr? body₀ = some pbody ∧
+      PFnTClosure.regular x pbody σcap ∈ tcls ∧
+      x₀ = x ∧
+      x₁ = x ∧
+      body₀ = body₁) :
+  ∃ x pbody σcap fuelBody first result3,
+    Expr.toPExpr? body₀ = some pbody ∧
+    PFnTClosure.regular x pbody σcap ∈ tcls ∧
+    x₀ = x ∧
+    x₁ = x ∧
+    body₀ = body₁ ∧
+    applyPFnTClosure .ioFree (PFnTClosure.regular x pbody σcap) st1 st2 p p1
+      argEtyp argPoison argPred ctx result1 fuel = .ok first ∧
+    fuel = Nat.succ fuelBody ∧
+    typecheckExpr .ioFree
+      { ctx with
+        pc := joinPoison p (joinPoison ctx.pc p1)
+        memEnv := result1.memEnv'
+        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        tagEnv := result1.tagEnv'
+        pureCtx := true
+        nextTag := result1.nextTag'
+        nextLoc := result1.nextLoc'
+        regime := result1.regime' } (PExpr.toExpr pbody) fuelBody = .ok result3 ∧
+    isSubtype st2 result3.qualType = true ∧
+    first =
+      { result3 with
+        qualType :=
+          normalizeAppResultByProvenance p1
+            { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+  rcases hsync with ⟨x, pbody, σcap, htoPExpr, hmem, hx₀, hx₁, hbody⟩
+  rcases applyPFnTClosure_regular_inv_of_mapM_mem
+      ctx st1 st2 p p1 argEtyp argPoison argPred result1 fuel tcls results x pbody σcap
+      hmap hmem with
+    ⟨fuelBody, first, result3, happly, hfuel, htc, hsub, hfirst⟩
+  exact ⟨x, pbody, σcap, fuelBody, first, result3, htoPExpr, hmem, hx₀, hx₁, hbody,
+         happly, hfuel, htc, hsub, hfirst⟩
+
 -- Function application case: reduces to helper lemmas for closure/closure and peClosure branches
 private lemma stepFR_app
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
@@ -10016,16 +10255,161 @@ private lemma stepFR_app
           ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel' tcls results
           x₀ body₀ _ hmap htcl₀
           with ⟨fuelBody₀, first₀, result3₀, _happly₀, hfuel₀, htc_body₀, _hsub₀, hfirst₀_eq⟩
+        -- Synchronization is used only under a clean-result assumption for `result1`.
+        -- Keep it deferred to avoid requiring a global clean fact at this point.
+        have _hsync1_of_clean :
+            ∀ hclean1_e1 :
+                qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType,
+              (∃ σcap,
+                  FnTClosure.regular x₀ body₀ σcap ∈ tcls ∧
+                  x₀ = x₁ ∧
+                  body₀ = body₁ ∧
+                  agreeCapturedEnv predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                    c₁₀.memory c₁₁.memory θ₀1 θ₁1 σcap env₀ env₁)
+              ∨ (¬ internalPoisonClean result1.qualType) := by
+          intro hclean1_e1
+          exact
+            stepFR_app_arrow_sync_from_clean
+              (predSat := predSat)
+              (ctx := (ctxAfter ctxᵢ result2))
+              (res1 := result1)
+              (st1 := st1) (st2 := st2) (p := p) (tcls := tcls)
+              (μ₀ := c₁₀.memory) (μ₁ := c₁₁.memory)
+              (θ₀ := θ₀1) (θ₁ := θ₁1)
+              (x₀ := x₀) (x₁ := x₁)
+              (body₀ := body₀) (body₁ := body₁)
+              (env₀ := env₀) (env₁ := env₁)
+              hetyp1 hclean1_e1 hres_agree1
+        have _hextract_shared_of_sync :
+            (∃ σcap,
+                FnTClosure.regular x₀ body₀ σcap ∈ tcls ∧
+                x₀ = x₁ ∧
+                body₀ = body₁) →
+              ∃ σcap fuelBody first result3,
+                FnTClosure.regular x₀ body₀ σcap ∈ tcls ∧
+                x₀ = x₁ ∧
+                body₀ = body₁ ∧
+                applyFnTClosure .ioFree (FnTClosure.regular x₀ body₀ σcap) st1 st2 p p1
+                  etyp2 p2 pred2 ctxᵢ result1 fuel' = .ok first ∧
+                fuel' = Nat.succ fuelBody ∧
+                typecheckExpr .ioFree
+                  { ctxᵢ with
+                    pc := joinPoison p (joinPoison p1 ctxᵢ.pc)
+                    memEnv := result1.memEnv'
+                    varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x₀
+                      ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩
+                    tagEnv := result1.tagEnv'
+                    nextTag := result1.nextTag'
+                    nextLoc := result1.nextLoc'
+                    regime := result1.regime' } body₀ fuelBody = .ok result3 ∧
+                isSubtype st2 result3.qualType = true ∧
+                first =
+                  { result3 with
+                    qualType :=
+                      normalizeAppResultByProvenance p1
+                        { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+          intro hsync
+          exact
+            stepFR_app_arrow_extract_shared_member
+              (ctx := ctxᵢ)
+              (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+              (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+              (result1 := result1) (fuel := fuel')
+              (tcls := tcls) (results := results)
+              (x₀ := x₀) (x₁ := x₁)
+              (body₀ := body₀) (body₁ := body₁)
+              hmap hsync
+        have _sync_extract_of_clean :
+            ∀ hclean1_e1 :
+                qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType,
+              (∃ σcap fuelBody firstShared result3Shared,
+                  FnTClosure.regular x₀ body₀ σcap ∈ tcls ∧
+                  x₀ = x₁ ∧
+                  body₀ = body₁ ∧
+                  applyFnTClosure .ioFree (FnTClosure.regular x₀ body₀ σcap) st1 st2 p p1
+                    etyp2 p2 pred2 ctxᵢ result1 fuel' = .ok firstShared ∧
+                  fuel' = Nat.succ fuelBody ∧
+                  typecheckExpr .ioFree
+                    { ctxᵢ with
+                      pc := joinPoison p (joinPoison p1 ctxᵢ.pc)
+                      memEnv := result1.memEnv'
+                      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x₀
+                        ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩
+                      tagEnv := result1.tagEnv'
+                      nextTag := result1.nextTag'
+                      nextLoc := result1.nextLoc'
+                      regime := result1.regime' } body₀ fuelBody = .ok result3Shared ∧
+                  isSubtype st2 result3Shared.qualType = true ∧
+                  firstShared =
+                    { result3Shared with
+                      qualType :=
+                        normalizeAppResultByProvenance p1
+                          { result3Shared.qualType with poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) } })
+              ∨ (¬ internalPoisonClean result1.qualType) := by
+          intro hclean1_e1
+          rcases _hsync1_of_clean hclean1_e1 with hsync | hdirty
+          · left
+            rcases hsync with ⟨σcap, hmem, hx, hbody, _hcap⟩
+            rcases _hextract_shared_of_sync ⟨σcap, hmem, hx, hbody⟩ with
+              ⟨σcap', fuelBody, firstShared, result3Shared, hmem', hx', hbody',
+                happly', hfuel', htc', hsub', hfirst'⟩
+            exact ⟨σcap', fuelBody, firstShared, result3Shared, hmem', hx', hbody',
+              happly', hfuel', htc', hsub', hfirst'⟩
+          · right
+            exact hdirty
         -- htc_body₀ : typecheckExpr bodyCtx body₀ fuelBody₀ = .ok result3₀
         -- hfuel₀ : fuel' = Nat.succ fuelBody₀
-        -- Phase E-G: Body IH application and final assembly
-        -- Remaining sub-goals:
-        -- E1. Establish runtimeInstantiatesCtx for body context (requires memory monotonicity bridge)
-        -- E2. Establish wfTagMeaningCtx, wfTypeContext, regimeBounded for body context
-        -- E3. Establish consistentWithRegime, agreeOnClean for body context
-        -- F. Apply body IH with fuel fuelBody₀ < fuel'.succ.succ
-        -- G. Transport body results through joinTypeResults to derive res-level postcondition
-        sorry
+        -- Phase E-G: Body IH application and final assembly.
+        -- Use post-e1 realization maps as final witnesses, and defer infrastructure-heavy
+        -- transport obligations to focused subgoals below.
+        refine ⟨?_, θ₀1, θ₁1,
+          wfExtendsMap_trans hθext₀2 hθext₀1,
+          wfExtendsMap_trans hθext₁2 hθext₁1,
+          ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+        · -- QTypRespectsTagMeaning tm res.qualType
+          sorry
+        · -- valueHasETyp θ₀1 o₀ res.qualType.etyp
+          sorry
+        · -- valueHasETyp θ₁1 o₁ res.qualType.etyp
+          sorry
+        · -- wfTagMeaningCtx tm (ctxAfter ctxᵢ res)
+          sorry
+        · -- wfTypeContext (ctxAfter ctxᵢ res)
+          sorry
+        · -- wfConfig cf₀
+          sorry
+        · -- wfConfig cf₁
+          sorry
+        · -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀1
+          sorry
+        · -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁1
+          sorry
+        · -- regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime
+          sorry
+        · -- consistentWithRegime ... cf₀
+          sorry
+        · -- consistentWithRegime ... cf₁
+          sorry
+        · -- agreeOnClean ...
+          sorry
+        · -- valueConsistentWithRegime ... cf₀.memory o₀
+          sorry
+        · -- valueConsistentWithRegime ... cf₁.memory o₁
+          sorry
+        · -- resultAgreesIfClean ...
+          intro hclean_res
+          have hclean1_e1 :
+              qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType := by
+            -- TODO: clean-at-res must be bridged back to clean-at-result1 (via join/typing shape).
+            sorry
+          rcases _sync_extract_of_clean hclean1_e1 with hshared | hdirty
+          · rcases hshared with
+              ⟨σcap, fuelBody, firstShared, result3Shared, hmem, hx, hbody,
+                happly, hfuel, htcBody, hsubBody, hfirstShared⟩
+            -- TODO: apply body IH at shared closure body, then transport from member to joined `res`.
+            sorry
+          · -- TODO: dirty-internal fallback branch.
+            sorry
       · -- Run 1: peClosure (mixed case, impossible under arrow typing)
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
@@ -10271,6 +10655,118 @@ private lemma stepFR_app
           ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel' tcls results
           x₀ _ _ hmap htcl₀
           with ⟨fuelBody₀, first₀, result3₀, _happly₀, hfuel₀, htc_body₀, _hsub₀, hfirst₀_eq⟩
+        -- Synchronization is used only under a clean-result assumption for `result1`.
+        -- Keep it deferred to avoid requiring a global clean fact at this point.
+        have _hsync1_of_clean :
+            ∀ hclean1_e1 :
+                qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType,
+              (∃ x pbody σcap,
+                  Expr.toPExpr? body₀ = some pbody ∧
+                  PFnTClosure.regular x pbody σcap ∈ tcls ∧
+                  x₀ = x ∧
+                  x₁ = x ∧
+                  body₀ = body₁ ∧
+                  agreeCapturedEnv predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                    c₁₀.memory c₁₁.memory θ₀1 θ₁1 σcap env₀ env₁)
+              ∨ (¬ internalPoisonClean result1.qualType) := by
+          intro hclean1_e1
+          exact
+            stepFR_app_parrow_sync_from_clean
+              (predSat := predSat)
+              (ctx := (ctxAfter ctxᵢ result2))
+              (res1 := result1)
+              (st1 := st1) (st2 := st2) (p := p) (tcls := tcls)
+              (μ₀ := c₁₀.memory) (μ₁ := c₁₁.memory)
+              (θ₀ := θ₀1) (θ₁ := θ₁1)
+              (x₀ := x₀) (x₁ := x₁)
+              (body₀ := body₀) (body₁ := body₁)
+              (env₀ := env₀) (env₁ := env₁)
+              hetyp1 hclean1_e1 hres_agree1
+        have _hextract_shared_of_sync :
+            (∃ x pbody σcap,
+                Expr.toPExpr? body₀ = some pbody ∧
+                PFnTClosure.regular x pbody σcap ∈ tcls ∧
+                x₀ = x ∧
+                x₁ = x ∧
+                body₀ = body₁) →
+              ∃ x pbody σcap fuelBody first result3,
+                Expr.toPExpr? body₀ = some pbody ∧
+                PFnTClosure.regular x pbody σcap ∈ tcls ∧
+                x₀ = x ∧
+                x₁ = x ∧
+                body₀ = body₁ ∧
+                applyPFnTClosure .ioFree (PFnTClosure.regular x pbody σcap) st1 st2 p p1
+                  etyp2 p2 pred2 ctxᵢ result1 fuel' = .ok first ∧
+                fuel' = Nat.succ fuelBody ∧
+                typecheckExpr .ioFree
+                  { ctxᵢ with
+                    pc := joinPoison p (joinPoison ctxᵢ.pc p1)
+                    memEnv := result1.memEnv'
+                    varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+                      ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩
+                    tagEnv := result1.tagEnv'
+                    pureCtx := true
+                    nextTag := result1.nextTag'
+                    nextLoc := result1.nextLoc'
+                    regime := result1.regime' } (PExpr.toExpr pbody) fuelBody = .ok result3 ∧
+                isSubtype st2 result3.qualType = true ∧
+                first =
+                  { result3 with
+                    qualType :=
+                      normalizeAppResultByProvenance p1
+                        { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+          intro hsync
+          exact
+            stepFR_app_parrow_extract_shared_member
+              (ctx := ctxᵢ)
+              (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+              (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+              (result1 := result1) (fuel := fuel')
+              (tcls := tcls) (results := results)
+              (x₀ := x₀) (x₁ := x₁)
+              (body₀ := body₀) (body₁ := body₁)
+              hmap hsync
+        have _sync_extract_of_clean :
+            ∀ hclean1_e1 :
+                qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType,
+              (∃ x pbody σcap fuelBody firstShared result3Shared,
+                  Expr.toPExpr? body₀ = some pbody ∧
+                  PFnTClosure.regular x pbody σcap ∈ tcls ∧
+                  x₀ = x ∧
+                  x₁ = x ∧
+                  body₀ = body₁ ∧
+                  applyPFnTClosure .ioFree (PFnTClosure.regular x pbody σcap) st1 st2 p p1
+                    etyp2 p2 pred2 ctxᵢ result1 fuel' = .ok firstShared ∧
+                  fuel' = Nat.succ fuelBody ∧
+                  typecheckExpr .ioFree
+                    { ctxᵢ with
+                      pc := joinPoison p (joinPoison ctxᵢ.pc p1)
+                      memEnv := result1.memEnv'
+                      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+                        ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩
+                      tagEnv := result1.tagEnv'
+                      pureCtx := true
+                      nextTag := result1.nextTag'
+                      nextLoc := result1.nextLoc'
+                      regime := result1.regime' } (PExpr.toExpr pbody) fuelBody = .ok result3Shared ∧
+                  isSubtype st2 result3Shared.qualType = true ∧
+                  firstShared =
+                    { result3Shared with
+                      qualType :=
+                        normalizeAppResultByProvenance p1
+                          { result3Shared.qualType with poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) } })
+              ∨ (¬ internalPoisonClean result1.qualType) := by
+          intro hclean1_e1
+          rcases _hsync1_of_clean hclean1_e1 with hsync | hdirty
+          · left
+            rcases hsync with ⟨x, pbody, σcap, htoPExpr, hmem, hx₀, hx₁, hbody, _hcap⟩
+            rcases _hextract_shared_of_sync ⟨x, pbody, σcap, htoPExpr, hmem, hx₀, hx₁, hbody⟩ with
+              ⟨x', pbody', σcap', fuelBody, firstShared, result3Shared, htoPExpr',
+                hmem', hx₀', hx₁', hbody', happly', hfuel', htc', hsub', hfirst'⟩
+            exact ⟨x', pbody', σcap', fuelBody, firstShared, result3Shared, htoPExpr',
+              hmem', hx₀', hx₁', hbody', happly', hfuel', htc', hsub', hfirst'⟩
+          · right
+            exact hdirty
         -- htc_body₀ : typecheckExpr bodyCtx (PExpr.toExpr pbody₀) fuelBody₀ = .ok result3₀
         -- hfuel₀ : fuel' = Nat.succ fuelBody₀
         -- Phase E: Simplify using cf₀ = c₁₀, cf₁ = c₁₁ (pure closure config preservation)
@@ -10285,11 +10781,47 @@ private lemma stepFR_app
           ?_, ?_,  -- runtimeInstantiatesCtx (needs context transport)
           ?_, ?_, ?_, ?_,  -- regimeConsistentWithCtx, CWR₀, CWR₁, agreeOnClean
           ?_, ?_, ?_⟩  -- valueConsistentWithRegime₀, ₁, resultAgreesIfClean
-        -- Remaining goals: body IH application + join/context transport
-        -- Use join_transport_* lemmas once first-facts are established:
-        --   first, rest, h_join from h_parrow; need runtimeInstantiatesCtx (ctxAfter ctxᵢ first), etc.
-        --   then e.g. join_transport_runtimeInstantiatesCtx, join_transport_wfTypeContext, ...
-        all_goals sorry
+        · -- QTypRespectsTagMeaning tm res.qualType
+          sorry
+        · -- valueHasETyp θ₀1 o₀ res.qualType.etyp
+          sorry
+        · -- valueHasETyp θ₁1 o₁ res.qualType.etyp
+          sorry
+        · -- wfTagMeaningCtx tm (ctxAfter ctxᵢ res)
+          sorry
+        · -- wfTypeContext (ctxAfter ctxᵢ res)
+          sorry
+        · -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) c₁₀.memory c₁₀.varEnv θ₀1
+          sorry
+        · -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) c₁₁.memory c₁₁.varEnv θ₁1
+          sorry
+        · -- regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime
+          sorry
+        · -- consistentWithRegime ... c₁₀
+          sorry
+        · -- consistentWithRegime ... c₁₁
+          sorry
+        · -- agreeOnClean ...
+          sorry
+        · -- valueConsistentWithRegime ... c₁₀.memory o₀
+          sorry
+        · -- valueConsistentWithRegime ... c₁₁.memory o₁
+          sorry
+        · -- resultAgreesIfClean ...
+          intro hclean_res
+          have hclean1_e1 :
+              qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType := by
+            -- TODO: clean-at-res must be bridged back to clean-at-result1 (via join/typing shape).
+            sorry
+          rcases _sync_extract_of_clean hclean1_e1 with hshared | hdirty
+          · rcases hshared with
+              ⟨x, pbody, σcap, fuelBody, firstShared, result3Shared,
+                htoPExpr, hmem, hx₀, hx₁, hbody,
+                happly, hfuel, htcBody, hsubBody, hfirstShared⟩
+            -- TODO: apply body IH at shared pure-body and transport to joined `res`.
+            sorry
+          · -- TODO: dirty-internal fallback branch.
+            sorry
 
 -- I/O-free step theorem: proves StepFR directly (no world-threading)
 -- Restructured to avoid variable capture: induction is generalized over all expressions
