@@ -53,6 +53,22 @@ infrastructure.
 - Build status after refactor remains green:
   `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean`.
 
+### Additional progress (temporary `#70` unblock)
+
+- Added a temporary global axiom in `LeanProofs/TypeSafety.lean`:
+  - `memEnv_lookup_etyp_int`
+  - explicitly marked as a temporary workaround tied to issue `#70`.
+- Used that axiom to eliminate one local blocker `sorry`:
+  - `joinTypeResults_lookup_head_etyp_compat` is now proved.
+- Kept scope tight: no new axioms were introduced for predicate/poison compatibility.
+- Current status of the join-compatibility trio:
+  - `joinTypeResults_lookup_head_etyp_compat`: proved
+  - `joinTypeResults_lookup_head_poison_imp`: still open
+  - `joinTypeResults_lookup_head_clean_compat`: still open
+- Build status remains green after this step:
+  `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean`
+  (with existing expected `sorry` warnings).
+
 ### Saved-state blocker shape
 
 - The proof now fails only at explicit, local `sorry` subgoals in `stepFR_app`.

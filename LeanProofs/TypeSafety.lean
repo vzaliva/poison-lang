@@ -42,6 +42,17 @@ theorem MemoryTypeEnv_eq_equiv {m₁ m₂ : MemoryTypeEnv} (h : m₁ = m₂) : m
   rw [h]
   simp [MemoryTypeEnv.equiv]
 
+/--
+Temporary axiom for issue #70.
+
+Current implementation intent is that memory locations are always typed as `int`.
+This assumption should be removed once #70 eliminates/reworks redundant memory `etyp`
+tracking and the invariant is proved from typing rules instead.
+-/
+axiom memEnv_lookup_etyp_int
+  (env : MemoryTypeEnv) (l : Loc) (qt : QTyp) :
+  env.lookup l = some qt → qt.etyp = ETyp.int
+
 -- ================================================================
 -- combineExtTreeMaps helpers
 -- ================================================================

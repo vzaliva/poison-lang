@@ -9946,7 +9946,13 @@ private lemma joinTypeResults_lookup_head_etyp_compat
   (hlookup_res : (ctxAfter ctx res).memEnv.lookup l = some qt)
   (hlookup_first : (ctxAfter ctx first).memEnv.lookup l = some qt_first) :
   qt.etyp = qt_first.etyp := by
-  sorry
+  have hres_int : qt.etyp = ETyp.int :=
+    memEnv_lookup_etyp_int (env := (ctxAfter ctx res).memEnv) l qt hlookup_res
+  have hfirst_int : qt_first.etyp = ETyp.int :=
+    memEnv_lookup_etyp_int (env := (ctxAfter ctx first).memEnv) l qt_first hlookup_first
+  calc
+    qt.etyp = ETyp.int := hres_int
+    _ = qt_first.etyp := hfirst_int.symm
 
 private lemma joinTypeResults_lookup_head_poison_imp
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
