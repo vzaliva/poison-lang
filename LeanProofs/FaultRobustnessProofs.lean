@@ -683,11 +683,10 @@ private lemma agreeValueUnder_transport_clean
   {qt qt2 : QTyp} {o₀ o₁ : Value} :
   qtypCleanUnder R qt →
   qt.etyp = qt2.etyp →
-  qt.pred = qt2.pred →
   (qt.poison = false → qt2.poison = false) →
   agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt2 o₀ o₁ →
   agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ := by
-  intro hclean hetyp hpred hpoison_imp hagree
+  intro hclean hetyp hpoison_imp hagree
   cases hclean with
   | clean hpoison =>
       have hpoison2 : qt2.poison = false := hpoison_imp hpoison
@@ -2593,9 +2592,8 @@ private lemma agreeOnClean_newRef_extend
         hres_agree_e hclean_res1
       have hagree_stored_old :
           agreeValueUnder predSat R cfg₀'.memory cfg₁'.memory θ₀1 θ₁1 storedQt (Value.num n₀) (Value.num n₁) := by
-        refine agreeValueUnder_transport_clean hclean ?_ ?_ ?_ hagree_res1
+        refine agreeValueUnder_transport_clean hclean ?_ ?_ hagree_res1
         · simp [storedQt, h_etyp1]
-        · simp [storedQt]
         · intro hpoison
           have hjoin : joinPoison ctxᵢ.pc res1.qualType.poison = false := by
             simpa [storedQt] using hpoison
@@ -6491,7 +6489,7 @@ private lemma stepFR_vlet
       have hmem₁_eq : cf₁.memory = cfg₁3.memory := by simp [hcf₁_eq]
       rw [hmem₀_eq, hmem₁_eq, h_regime_eq]
       exact hagree2_ctx'
-    exact agreeValueUnder_transport_clean hclean h_ret_etyp h_ret_pred hpoison_imp hagree2
+    exact agreeValueUnder_transport_clean hclean h_ret_etyp hpoison_imp hagree2
 
 -- World-free version of stepFRW_fn
 private lemma stepFR_fn
@@ -9939,6 +9937,36 @@ private lemma join_transport_resultAgreesIfClean
   have hagree_first := h_first hclean_first
   exact agreeValueUnder_clean_monotoneRegime h_regime_mono hclean_res hagree_first
 
+-- Join-compatibility helpers for transporting clean location agreement from the
+-- join result back to the head seed `first` in app-closure proofs.
+private lemma joinTypeResults_lookup_head_etyp_compat
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (l : Loc) (qt qt_first : QTyp)
+  (hlookup_res : (ctxAfter ctx res).memEnv.lookup l = some qt)
+  (hlookup_first : (ctxAfter ctx first).memEnv.lookup l = some qt_first) :
+  qt.etyp = qt_first.etyp := by
+  sorry
+
+private lemma joinTypeResults_lookup_head_poison_imp
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (l : Loc) (qt qt_first : QTyp)
+  (hlookup_res : (ctxAfter ctx res).memEnv.lookup l = some qt)
+  (hlookup_first : (ctxAfter ctx first).memEnv.lookup l = some qt_first) :
+  qt.poison = false → qt_first.poison = false := by
+  sorry
+
+private lemma joinTypeResults_lookup_head_clean_compat
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (l : Loc) (qt qt_first : QTyp)
+  (hlookup_res : (ctxAfter ctx res).memEnv.lookup l = some qt)
+  (hclean_res : qtypCleanUnder (ctxAfter ctx res).regime qt)
+  (hlookup_first : (ctxAfter ctx first).memEnv.lookup l = some qt_first) :
+  qtypCleanUnder (ctxAfter ctx first).regime qt_first := by
+  sorry
+
 -- Synchronization helper for app/arrow clean branch.
 -- Shape only for now: from clean output agreement on closure values, recover either
 -- a shared regular-closure witness (with shared x/body) or explicit dirty-internal fallback.
@@ -10391,6 +10419,169 @@ private lemma stepFR_app
         · -- consistentWithRegime ... cf₁
           sorry
         · -- agreeOnClean ...
+          -- Risk-first isolation: keep the transport shape explicit and local.
+          have _hagree_transport_from_first :
+              ∀ (h_regime_mono_first_res : Regime.monotoneStep first.regime' res.regime')
+                (h_clean_res_to_first :
+                  ∀ qt,
+                    qtypCleanUnder (ctxAfter ctxᵢ res).regime qt →
+                    qtypCleanUnder (ctxAfter ctxᵢ first).regime qt)
+                (h_loc_agree_from_first :
+                  ∀ l qt,
+                    (ctxAfter ctxᵢ res).memEnv.lookup l = some qt →
+                    qtypCleanUnder (ctxAfter ctxᵢ res).regime qt →
+                    agreeLocUnder predSat (ctxAfter ctxᵢ first).regime
+                      cf₀.memory cf₁.memory θ₀1 θ₁1 (l, qt))
+                (hagree_first :
+                  agreeOnClean predSat (ctxAfter ctxᵢ first).regime (ctxAfter ctxᵢ first)
+                    cf₀.memory cf₀.varEnv θ₀1 cf₁.memory cf₁.varEnv θ₁1),
+                agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+                  cf₀.memory cf₀.varEnv θ₀1 cf₁.memory cf₁.varEnv θ₁1 := by
+            intro h_regime_mono_first_res h_clean_res_to_first h_loc_agree_from_first hagree_first
+            constructor
+            · intro l qt hlookup hclean
+              have hagree_first_loc := h_loc_agree_from_first l qt hlookup hclean
+              cases hagree_first_loc with
+              | both_unrealized _ _ hnone₀ hnone₁ =>
+                  exact agreeLocUnder.both_unrealized l qt hnone₀ hnone₁
+              | agree_values _ _ a₀ a₁ n₀ n₁ hreal₀ hreal₁ hlookup₀ hlookup₁ hagree =>
+                  have hagree' :=
+                    agreeValueUnder_clean_monotoneRegime
+                      (predSat := predSat)
+                      (R := (ctxAfter ctxᵢ first).regime)
+                      (R' := (ctxAfter ctxᵢ res).regime)
+                      h_regime_mono_first_res hclean hagree
+                  exact agreeLocUnder.agree_values l qt a₀ a₁ n₀ n₁ hreal₀ hreal₁ hlookup₀ hlookup₁ hagree'
+            · intro x qt hlookup hclean
+              have hclean_first := h_clean_res_to_first qt hclean
+              have hagree_first_var := hagree_first.2 x qt hlookup hclean_first
+              cases hagree_first_var with
+              | both_none _ _ hnone₀ hnone₁ =>
+                  exact agreeVarUnder.both_none x qt hnone₀ hnone₁
+              | agree_values _ _ v₀ v₁ hlookup₀ hlookup₁ hagree =>
+                  have hagree' :=
+                    agreeValueUnder_clean_monotoneRegime
+                      (predSat := predSat)
+                      (R := (ctxAfter ctxᵢ first).regime)
+                      (R' := (ctxAfter ctxᵢ res).regime)
+                      h_regime_mono_first_res hclean hagree
+                  exact agreeVarUnder.agree_values x qt v₀ v₁ hlookup₀ hlookup₁ hagree'
+          have _hclean_res_to_first_of_mono :
+              ∀ (h_regime_mono_first_res : Regime.monotoneStep first.regime' res.regime')
+                (qt : QTyp),
+                  qtypCleanUnder (ctxAfter ctxᵢ res).regime qt →
+                  qtypCleanUnder (ctxAfter ctxᵢ first).regime qt := by
+            intro h_regime_mono_first_res qt hcleanqt
+            exact
+              cleanUnder_of_monotone
+                (R := (ctxAfter ctxᵢ first).regime)
+                (R' := (ctxAfter ctxᵢ res).regime)
+                h_regime_mono_first_res hcleanqt
+          have _hloc_agree_from_first_of_lookup_or_unrealized :
+              ∀ (h_regime_mono_first_res : Regime.monotoneStep first.regime' res.regime')
+                (h_lookup_or_unrealized :
+                  ∀ l qt,
+                    (ctxAfter ctxᵢ res).memEnv.lookup l = some qt →
+                    qtypCleanUnder (ctxAfter ctxᵢ res).regime qt →
+                      (∃ qt_first,
+                        (ctxAfter ctxᵢ first).memEnv.lookup l = some qt_first ∧
+                        qtypCleanUnder (ctxAfter ctxᵢ first).regime qt_first ∧
+                        qt.etyp = qt_first.etyp ∧
+                        (qt.poison = false → qt_first.poison = false))
+                      ∨ (θ₀1.lookup l = none ∧ θ₁1.lookup l = none))
+                (hagree_first :
+                  agreeOnClean predSat (ctxAfter ctxᵢ first).regime (ctxAfter ctxᵢ first)
+                    cf₀.memory cf₀.varEnv θ₀1 cf₁.memory cf₁.varEnv θ₁1)
+                (l : Loc) (qt : QTyp),
+                  (ctxAfter ctxᵢ res).memEnv.lookup l = some qt →
+                  qtypCleanUnder (ctxAfter ctxᵢ res).regime qt →
+                  agreeLocUnder predSat (ctxAfter ctxᵢ first).regime
+                    cf₀.memory cf₁.memory θ₀1 θ₁1 (l, qt) := by
+            intro h_regime_mono_first_res h_lookup_or_unrealized hagree_first l qt hlookup hclean
+            rcases h_lookup_or_unrealized l qt hlookup hclean with
+              ⟨qt_first, hlookup_first, hclean_first, hetyp_eq, hpoison_imp⟩ | ⟨hnone₀, hnone₁⟩
+            · have hagree_first_loc := hagree_first.1 l qt_first hlookup_first hclean_first
+              cases hagree_first_loc with
+              | both_unrealized _ _ hnone₀ hnone₁ =>
+                  exact agreeLocUnder.both_unrealized l qt hnone₀ hnone₁
+              | agree_values _ _ a₀ a₁ n₀' n₁' hreal₀ hreal₁ hlookup₀ hlookup₁ hagree =>
+                  have hclean_first_qt :=
+                    _hclean_res_to_first_of_mono h_regime_mono_first_res qt hclean
+                  have hagree' :
+                      agreeValueUnder predSat (ctxAfter ctxᵢ first).regime
+                        cf₀.memory cf₁.memory θ₀1 θ₁1 qt (Value.num n₀') (Value.num n₁') :=
+                    agreeValueUnder_transport_clean
+                      (predSat := predSat)
+                      (R := (ctxAfter ctxᵢ first).regime)
+                      (qt := qt)
+                      (qt2 := qt_first)
+                      (μ₀ := cf₀.memory) (μ₁ := cf₁.memory)
+                      (θ₀ := θ₀1) (θ₁ := θ₁1)
+                      hclean_first_qt hetyp_eq hpoison_imp hagree
+                  exact agreeLocUnder.agree_values l qt a₀ a₁ n₀' n₁' hreal₀ hreal₁ hlookup₀ hlookup₁ hagree'
+            · exact agreeLocUnder.both_unrealized l qt hnone₀ hnone₁
+          -- Concrete risky premise to target next:
+          -- clean joined lookup should either be visible in `first` or unrealized in both runs.
+          have _hlookup_or_unrealized :
+              ∀ (hRic₀_first : runtimeInstantiatesCtx (ctxAfter ctxᵢ first) cf₀.memory cf₀.varEnv θ₀1)
+                (hRic₁_first : runtimeInstantiatesCtx (ctxAfter ctxᵢ first) cf₁.memory cf₁.varEnv θ₁1)
+                (l : Loc) (qt : QTyp),
+                (ctxAfter ctxᵢ res).memEnv.lookup l = some qt →
+                qtypCleanUnder (ctxAfter ctxᵢ res).regime qt →
+                  (∃ qt_first,
+                    (ctxAfter ctxᵢ first).memEnv.lookup l = some qt_first ∧
+                    qtypCleanUnder (ctxAfter ctxᵢ first).regime qt_first ∧
+                    qt.etyp = qt_first.etyp ∧
+                    (qt.poison = false → qt_first.poison = false))
+                  ∨ (θ₀1.lookup l = none ∧ θ₁1.lookup l = none) := by
+            intro hRic₀_first hRic₁_first l qt hlookup hclean
+            by_cases hcontains_first : (ctxAfter ctxᵢ first).memEnv.contains l
+            · left
+              have _hfirst_witness_of_clean_lookup :
+                  ∃ qt_first,
+                    (ctxAfter ctxᵢ first).memEnv.lookup l = some qt_first ∧
+                    qtypCleanUnder (ctxAfter ctxᵢ first).regime qt_first ∧
+                    qt.etyp = qt_first.etyp ∧
+                    (qt.poison = false → qt_first.poison = false) := by
+                have hmem_first : l ∈ (ctxAfter ctxᵢ first).memEnv :=
+                  (Std.ExtTreeMap.contains_iff_mem).1 hcontains_first
+                have hisSome_first : Option.isSome ((ctxAfter ctxᵢ first).memEnv[l]?) :=
+                  (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem_first
+                rcases Option.isSome_iff_exists.1 hisSome_first with ⟨qt_first, hlookup_first_get⟩
+                have hlookup_first : (ctxAfter ctxᵢ first).memEnv.lookup l = some qt_first := by
+                  simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hlookup_first_get
+                have hclean_first :
+                    qtypCleanUnder (ctxAfter ctxᵢ first).regime qt_first :=
+                  joinTypeResults_lookup_head_clean_compat
+                    (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+                    h_join l qt qt_first hlookup hclean hlookup_first
+                have hetyp_eq : qt.etyp = qt_first.etyp :=
+                  joinTypeResults_lookup_head_etyp_compat
+                    (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+                    h_join l qt qt_first hlookup hlookup_first
+                have hpoison_imp : qt.poison = false → qt_first.poison = false :=
+                  joinTypeResults_lookup_head_poison_imp
+                    (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+                    h_join l qt qt_first hlookup hlookup_first
+                exact ⟨qt_first, hlookup_first, hclean_first, hetyp_eq, hpoison_imp⟩
+              exact _hfirst_witness_of_clean_lookup
+            · right
+              constructor
+              · exact
+                  theta_not_contains_if_not_in_memEnv
+                    (ctx := (ctxAfter ctxᵢ first))
+                    (μ := cf₀.memory) (ρ := cf₀.varEnv) (θ := θ₀1) (l := l)
+                    hRic₀_first hcontains_first
+              · exact
+                  theta_not_contains_if_not_in_memEnv
+                    (ctx := (ctxAfter ctxᵢ first))
+                    (μ := cf₁.memory) (ρ := cf₁.varEnv) (θ := θ₁1) (l := l)
+                    hRic₁_first hcontains_first
+          -- Remaining obligations for this transport path:
+          --   1) derive `Regime.monotoneStep first.regime' res.regime'`
+          --   2) derive `agreeOnClean ... (ctxAfter ctxᵢ first) ...`
+          -- Then close by instantiating `_hloc_agree_from_first_of_lookup_or_unrealized`
+          -- and feeding it to `_hagree_transport_from_first`.
           sorry
         · -- valueConsistentWithRegime ... cf₀.memory o₀
           sorry

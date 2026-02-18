@@ -27,6 +27,32 @@ infrastructure.
 - Build status: `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean`
   succeeds with expected `sorry` warnings only.
 
+### Additional progress (risk-first `agreeOnClean` transport)
+
+- Refactored the local `agreeOnClean` transport path in the arrow branch to avoid
+  requiring exact head lookup equality (`first.lookup l = some qt`) for joined clean
+  locations.
+- Updated `agreeValueUnder_transport_clean` to drop an unnecessary predicate-equality
+  premise; current proof only needs:
+  - clean-under regime for target type,
+  - `etyp` equality,
+  - poison implication (`qt.poison = false -> qt2.poison = false`).
+- Strengthened the local bridge shape to a witness-oriented form:
+  - for joined clean `(l, qt)`, either both unrealized, or
+  - there exists `qt_first` in `first` with enough structure for clean transport
+    (`lookup`, clean-under-first, `etyp` equality, poison implication).
+- Isolated the remaining risky obligation as a single local subgoal
+  `_hfirst_witness_of_clean_lookup` in `stepFR_app` (arrow branch), which now
+  explicitly states the exact join-compatibility facts still needed.
+- In that subgoal, the structural part is now proved: from
+  `first.memEnv.contains l`, we extract concrete `qt_first` with
+  `first.memEnv.lookup l = some qt_first`; remaining open pieces are exactly:
+  - `qtypCleanUnder first.regime qt_first`
+  - `qt.etyp = qt_first.etyp`
+  - `qt.poison = false -> qt_first.poison = false`
+- Build status after refactor remains green:
+  `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean`.
+
 ### Saved-state blocker shape
 
 - The proof now fails only at explicit, local `sorry` subgoals in `stepFR_app`.
