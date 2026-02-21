@@ -2123,7 +2123,7 @@ private lemma regimeMonotone_refl (R : Regime) :
   · intro k hk
     exact hk
 
-private lemma regimeMonotone_trans {R R' R'' : Regime}
+lemma regimeMonotone_trans {R R' R'' : Regime}
     (h₁ : Regime.monotoneStep R R')
     (h₂ : Regime.monotoneStep R' R'') :
     Regime.monotoneStep R R'' := by
@@ -2426,7 +2426,7 @@ private lemma joinRegimes_monotone_of_monotone
     have hk1 : R1.lookup? k ≠ none := joinRegimes_no_new_left R1 R2 k hkjoin
     exact h1.2.2 k hk1
 
-private lemma invalidateRegimeDeps_monotone
+lemma invalidateRegimeDeps_monotone
     (R : Regime) (env : TagEnv) (ls : LocSet) :
     Regime.monotoneStep R (invalidateRegimeDeps R env ls) := by
   refine ⟨rfl, ?_, ?_⟩
