@@ -29,6 +29,7 @@ ReplInput.poison
 .vscode/
 .cursor/
 .claude/
+.agents/
 CLAUDE.md
 AGENTS.md
 
