@@ -7758,3 +7758,1223 @@ lemma wfTypeContext_joinMemEnvs_max
   | inr h2 =>
     have hlt2 : l < nl2 := hwf2 l h2
     exact Nat.lt_of_lt_of_le hlt2 (Nat.le_max_right nl1 nl2)
+
+section typecheck_preserves_memEnv_only_ints_proof
+
+private def memEnvOnlyInts (env : MemoryTypeEnv) : Prop :=
+  ∀ l qt, env.lookup l = some qt → qt.etyp = ETyp.int
+
+private lemma memEnvOnlyInts_update
+  (env : MemoryTypeEnv) (l0 : Loc) (qt0 : QTyp)
+  (henv : memEnvOnlyInts env)
+  (hqt0 : qt0.etyp = ETyp.int) :
+  memEnvOnlyInts (updateMemEnv env l0 qt0) := by
+  intro l qt hlookup
+  by_cases hcmp : compare l0 l = Ordering.eq
+  · have hqt : qt = qt0 := by
+      have hl : l0 = l := (Nat.compare_eq_eq).1 hcmp
+      subst hl
+      simpa [updateMemEnv, MemoryTypeEnv.lookup, ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert] using hlookup.symm
+    subst hqt
+    exact hqt0
+  · have hlookup_env : env.lookup l = some qt := by
+      simpa [updateMemEnv, MemoryTypeEnv.lookup, ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert, hcmp]
+        using hlookup
+    exact henv l qt hlookup_env
+
+private lemma memEnvOnlyInts_fold_update_int
+  (ls : List Loc) (env : MemoryTypeEnv) (qt0 : QTyp)
+  (henv : memEnvOnlyInts env)
+  (hqt0 : qt0.etyp = ETyp.int) :
+  memEnvOnlyInts (List.foldl (fun acc l => updateMemEnv acc l qt0) env ls) := by
+  induction ls generalizing env with
+  | nil => simpa using henv
+  | cons l ls ih =>
+      simp [List.foldl]
+      apply ih
+      exact memEnvOnlyInts_update env l qt0 henv hqt0
+
+private lemma memEnvOnlyInts_updateLocsetWeak
+  (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate)
+  (henv : memEnvOnlyInts env) :
+  memEnvOnlyInts (updateLocsetWeak env ls storedPoison storedPred) := by
+  unfold updateLocsetWeak
+  set joined : Poison × Predicate :=
+    LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l =>
+      match env.get? l with
+      | some qt => (joinPoison accP qt.poison, joinPredicates accPred qt.pred)
+      | none => (accP, accPred))
+  let finalQt : QTyp := ⟨ETyp.int, joined.1, joined.2⟩
+  have hfinalQt : finalQt.etyp = ETyp.int := rfl
+  change memEnvOnlyInts (LocSet.fold ls env (fun acc l => updateMemEnv acc l finalQt))
+  simpa [LocSet.fold, ExtTreeSet.foldl_eq_foldl_toList] using
+    (memEnvOnlyInts_fold_update_int ls.toList env finalQt henv hfinalQt)
+
+private lemma memEnvOnlyInts_restrictMemEnv
+  (env base : MemoryTypeEnv) (henv : memEnvOnlyInts env) :
+  memEnvOnlyInts (restrictMemEnv env base) := by
+  intro l qt hlookup
+  have hpair : env.lookup l = some qt ∧ base.contains l := by
+    simpa [restrictMemEnv, MemoryTypeEnv.lookup, ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_filter] using hlookup
+  exact henv l qt hpair.1
+
+private lemma memEnvOnlyInts_joinMemEnvs
+  (env1 env2 : MemoryTypeEnv)
+  (h1 : memEnvOnlyInts env1)
+  (h2 : memEnvOnlyInts env2) :
+  memEnvOnlyInts (joinMemEnvs env1 env2) := by
+  intro l qt hlookup
+  classical
+  let f : Loc → Option QTyp → Option QTyp → Option QTyp := fun _ oq1 oq2 =>
+    match oq1, oq2 with
+    | some qt1, none => some qt1
+    | none, some qt2 => some qt2
+    | some qt1, some qt2 =>
+      let ⟨t1, p1, pred1⟩ := qt1
+      let ⟨t2, p2, pred2⟩ := qt2
+      if t1 == t2 then
+        let p := joinPoison p1 p2
+        let pred := joinPredicates pred1 pred2
+        some ⟨t1, p, pred⟩
+      else
+        none
+    | none, none => none
+  have hjoin_lookup :
+      (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups ({} : MemoryTypeEnv))[l]? = some qt := by
+    simpa [joinMemEnvs, MemoryTypeEnv.lookup, f, combineExtTreeMaps] using hlookup
+  have h_in : l ∈ (env1.keys ++ env2.keys).eraseDups := by
+    by_contra hnot_in
+    have hgo :=
+      combineExtTreeMaps_go_get_not_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+        ({} : MemoryTypeEnv) l hnot_in
+    have hnone :
+        (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups ({} : MemoryTypeEnv))[l]? = none := by
+      simpa using hgo
+    simp [hjoin_lookup] at hnone
+  have hgo :=
+    combineExtTreeMaps_go_get_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+      ({} : MemoryTypeEnv) l h_in
+  set oq1 : Option QTyp := ExtTreeMap.get? env1 l
+  set oq2 : Option QTyp := ExtTreeMap.get? env2 l
+  have hgo' :
+      (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups ({} : MemoryTypeEnv))[l]? =
+        (match f l oq1 oq2 with | some v => some v | none => none) := by
+    erw [hgo]
+    cases f l oq1 oq2 <;> rfl
+  have hrhs :
+      (match f l oq1 oq2 with | some v => some v | none => none) = some qt :=
+    Eq.trans hgo'.symm hjoin_lookup
+  have hmatch : f l oq1 oq2 = some qt := by
+    cases hf : f l oq1 oq2 with
+    | none =>
+        have : (none : Option QTyp) = some qt := by simp [hf] at hrhs
+        cases this
+    | some v =>
+        have : (some v : Option QTyp) = some qt := by simpa [hf] using hrhs
+        simpa [hf] using this
+  cases hq1 : oq1 with
+  | none =>
+      cases hq2 : oq2 with
+      | none =>
+          have : (none : Option QTyp) = some qt := by simp [f, hq1, hq2] at hmatch
+          cases this
+      | some qt2 =>
+          have hget2 : ExtTreeMap.get? env2 l = some qt2 := by simpa [oq2] using hq2
+          have hlookup2 : env2.lookup l = some qt2 := by
+            simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hget2
+          have hqt : qt = qt2 := by
+            have : (some qt2 : Option QTyp) = some qt := by simpa [f, hq1, hq2] using hmatch
+            exact Option.some.inj this |>.symm
+          have h2int : qt2.etyp = ETyp.int := h2 l qt2 hlookup2
+          simpa [hqt] using h2int
+  | some qt1 =>
+      have hget1 : ExtTreeMap.get? env1 l = some qt1 := by simpa [oq1] using hq1
+      have hlookup1 : env1.lookup l = some qt1 := by
+        simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hget1
+      cases hq2 : oq2 with
+      | none =>
+          have hqt : qt = qt1 := by
+            have : (some qt1 : Option QTyp) = some qt := by simpa [f, hq1, hq2] using hmatch
+            exact Option.some.inj this |>.symm
+          have h1int : qt1.etyp = ETyp.int := h1 l qt1 hlookup1
+          simpa [hqt] using h1int
+      | some qt2 =>
+          have hget2 : ExtTreeMap.get? env2 l = some qt2 := by simpa [oq2] using hq2
+          have hlookup2 : env2.lookup l = some qt2 := by
+            simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hget2
+          have h1int : qt1.etyp = ETyp.int := h1 l qt1 hlookup1
+          have h2int : qt2.etyp = ETyp.int := h2 l qt2 hlookup2
+          cases qt1 with
+          | mk t1 p1 pred1 =>
+              have h1int' : t1 = ETyp.int := h1int
+              cases qt2 with
+              | mk t2 p2 pred2 =>
+                  have h2int' : t2 = ETyp.int := h2int
+                  have ht : t1 = t2 := by simp [h1int', h2int']
+                  have hteq : t1 == t2 := by simp [ht]
+                  have hpair :
+                      t1 = t2 ∧
+                      ⟨t1, joinPoison p1 p2, joinPredicates pred1 pred2⟩ = qt := by
+                    simpa [f, hq1, hq2, hteq] using hmatch
+                  have hqt : ⟨t1, joinPoison p1 p2, joinPredicates pred1 pred2⟩ = qt := hpair.2
+                  have hqt_etyp : qt.etyp = t1 := by
+                    cases hqt
+                    simp
+                  simpa [h1int'] using hqt_etyp
+
+private lemma memEnvOnlyInts_joinMemEnvsStrong
+  (env1 env2 : MemoryTypeEnv)
+  (h1 : memEnvOnlyInts env1)
+  (h2 : memEnvOnlyInts env2) :
+  memEnvOnlyInts (joinMemEnvsStrong env1 env2) := by
+  intro l qt hlookup
+  classical
+  let f : Loc → Option QTyp → Option QTyp → Option QTyp := fun _ oq1 oq2 =>
+    match oq1, oq2 with
+    | some qt1, none => some ⟨qt1.etyp, qt1.poison, Predicate.noPred⟩
+    | none, some qt2 => some ⟨qt2.etyp, qt2.poison, Predicate.noPred⟩
+    | some qt1, some qt2 =>
+      let ⟨t1, p1, pred1⟩ := qt1
+      let ⟨t2, p2, pred2⟩ := qt2
+      if t1 == t2 then
+        let p := joinPoison p1 p2
+        let pred := joinPredicates pred1 pred2
+        some ⟨t1, p, pred⟩
+      else
+        none
+    | none, none => none
+  have hjoin_lookup :
+      (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups ({} : MemoryTypeEnv))[l]? = some qt := by
+    simpa [joinMemEnvsStrong, MemoryTypeEnv.lookup, f, combineExtTreeMaps] using hlookup
+  have h_in : l ∈ (env1.keys ++ env2.keys).eraseDups := by
+    by_contra hnot_in
+    have hgo :=
+      combineExtTreeMaps_go_get_not_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+        ({} : MemoryTypeEnv) l hnot_in
+    have hnone :
+        (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups ({} : MemoryTypeEnv))[l]? = none := by
+      simpa using hgo
+    simp [hjoin_lookup] at hnone
+  have hgo :=
+    combineExtTreeMaps_go_get_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+      ({} : MemoryTypeEnv) l h_in
+  set oq1 : Option QTyp := ExtTreeMap.get? env1 l
+  set oq2 : Option QTyp := ExtTreeMap.get? env2 l
+  have hgo' :
+      (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups ({} : MemoryTypeEnv))[l]? =
+        (match f l oq1 oq2 with | some v => some v | none => none) := by
+    erw [hgo]
+    cases f l oq1 oq2 <;> rfl
+  have hrhs :
+      (match f l oq1 oq2 with | some v => some v | none => none) = some qt :=
+    Eq.trans hgo'.symm hjoin_lookup
+  have hmatch : f l oq1 oq2 = some qt := by
+    cases hf : f l oq1 oq2 with
+    | none =>
+        have : (none : Option QTyp) = some qt := by simp [hf] at hrhs
+        cases this
+    | some v =>
+        have : (some v : Option QTyp) = some qt := by simpa [hf] using hrhs
+        simpa [hf] using this
+  cases hq1 : oq1 with
+  | none =>
+      cases hq2 : oq2 with
+      | none =>
+          have : (none : Option QTyp) = some qt := by simp [f, hq1, hq2] at hmatch
+          cases this
+      | some qt2 =>
+          have hget2 : ExtTreeMap.get? env2 l = some qt2 := by simpa [oq2] using hq2
+          have hlookup2 : env2.lookup l = some qt2 := by
+            simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hget2
+          have hqt : ⟨qt2.etyp, qt2.poison, Predicate.noPred⟩ = qt := by
+            have : (some ⟨qt2.etyp, qt2.poison, Predicate.noPred⟩ : Option QTyp) = some qt := by
+              simpa [f, hq1, hq2] using hmatch
+            exact Option.some.inj this
+          have hqt_etyp : qt.etyp = qt2.etyp := by
+            cases hqt
+            simp
+          have h2int : qt2.etyp = ETyp.int := h2 l qt2 hlookup2
+          exact Eq.trans hqt_etyp h2int
+  | some qt1 =>
+      have hget1 : ExtTreeMap.get? env1 l = some qt1 := by simpa [oq1] using hq1
+      have hlookup1 : env1.lookup l = some qt1 := by
+        simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hget1
+      cases hq2 : oq2 with
+      | none =>
+          have hqt : ⟨qt1.etyp, qt1.poison, Predicate.noPred⟩ = qt := by
+            have : (some ⟨qt1.etyp, qt1.poison, Predicate.noPred⟩ : Option QTyp) = some qt := by
+              simpa [f, hq1, hq2] using hmatch
+            exact Option.some.inj this
+          have hqt_etyp : qt.etyp = qt1.etyp := by
+            cases hqt
+            simp
+          have h1int : qt1.etyp = ETyp.int := h1 l qt1 hlookup1
+          exact Eq.trans hqt_etyp h1int
+      | some qt2 =>
+          have hget2 : ExtTreeMap.get? env2 l = some qt2 := by simpa [oq2] using hq2
+          have hlookup2 : env2.lookup l = some qt2 := by
+            simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hget2
+          have h1int : qt1.etyp = ETyp.int := h1 l qt1 hlookup1
+          have h2int : qt2.etyp = ETyp.int := h2 l qt2 hlookup2
+          cases qt1 with
+          | mk t1 p1 pred1 =>
+              have h1int' : t1 = ETyp.int := h1int
+              cases qt2 with
+              | mk t2 p2 pred2 =>
+                  have h2int' : t2 = ETyp.int := h2int
+                  have ht : t1 = t2 := by simp [h1int', h2int']
+                  have hteq : t1 == t2 := by simp [ht]
+                  have hpair :
+                      t1 = t2 ∧
+                      ⟨t1, joinPoison p1 p2, joinPredicates pred1 pred2⟩ = qt := by
+                    simpa [f, hq1, hq2, hteq] using hmatch
+                  have hqt : ⟨t1, joinPoison p1 p2, joinPredicates pred1 pred2⟩ = qt := hpair.2
+                  have hqt_etyp : qt.etyp = t1 := by
+                    cases hqt
+                    simp
+                  simpa [h1int'] using hqt_etyp
+
+private lemma joinTypeResults_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (hfirst : memEnvOnlyInts first.memEnv')
+  (hrest : ∀ r ∈ rest, memEnvOnlyInts r.memEnv')
+  (hjoin : joinTypeResults ctx first rest = .ok res) :
+  memEnvOnlyInts res.memEnv' := by
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+      TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun acc r =>
+      match r.qualType with
+      | ⟨resEtyp, resPoison, resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvs acc.2.1 r.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 resPred,
+              joinTagEnvs acc.2.2.2.2.1 r.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 r.regime',
+              max acc.2.2.2.2.2.2.1 r.nextLoc',
+              max acc.2.2.2.2.2.2.2 r.nextTag')
+  have h_fold :
+      ∀ (rs' : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
+        (∀ r ∈ rs', memEnvOnlyInts r.memEnv') →
+        List.foldlM joinStep acc rs' = Except.ok acc' →
+        memEnvOnlyInts acc.2.1 →
+        memEnvOnlyInts acc'.2.1 := by
+    intro rs'
+    induction rs' with
+    | nil =>
+        intro acc acc' _ hfold hacc
+        simp [List.foldlM_nil, pure, Except.pure] at hfold
+        subst hfold
+        simpa using hacc
+    | cons x xs ih =>
+        intro acc acc' hmem_all hfold hacc
+        simp [List.foldlM_cons, bind, Except.bind, joinStep] at hfold
+        cases hxqt : x.qualType with
+        | mk et p pred =>
+            simp [hxqt] at hfold
+            have hx_mem : memEnvOnlyInts x.memEnv' := hmem_all x (by simp)
+            have hxs_mem_all : ∀ r ∈ xs, memEnvOnlyInts r.memEnv' := by
+              intro r hr
+              exact hmem_all r (by simp [hr])
+            have hacc' : memEnvOnlyInts (joinMemEnvs acc.2.1 x.memEnv') :=
+              memEnvOnlyInts_joinMemEnvs acc.2.1 x.memEnv' hacc hx_mem
+            exact ih _ _ hxs_mem_all hfold hacc'
+  cases hfirstqt : first.qualType with
+  | mk firstEtyp firstP firstPred =>
+      simp [joinTypeResults, hfirstqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw, TypecheckM] at hjoin
+      cases hcheck :
+        (List.foldlM
+          (fun x result =>
+            match result.qualType with
+            | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature firstEtyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++ toString (repr firstEtyp) ++
+                      toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+          () rest : Except String Unit) with
+      | error _ =>
+          erw [hcheck] at hjoin
+          simp at hjoin
+      | ok _ =>
+          erw [hcheck] at hjoin
+          simp at hjoin
+          cases hfold :
+            List.foldlM joinStep
+              (firstEtyp, first.memEnv', firstP, firstPred, first.tagEnv', first.regime', first.nextLoc', first.nextTag')
+              rest with
+          | error _ =>
+              erw [hfold] at hjoin
+              simp at hjoin
+          | ok _ =>
+              erw [hfold] at hjoin
+              simp at hjoin
+              cases hjoin
+              exact h_fold rest _ _ hrest hfold hfirst
+
+private lemma applyFnTClosure_preserves_memEnvOnlyInts
+  (tcl : FnTClosure) (ctx : TypeContext)
+  (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (r1 r2 : TypeResult) (fuel : Nat)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        typecheck .ioFree ctx' e m = .ok res' →
+        memEnvOnlyInts ctx'.memEnv →
+        memEnvOnlyInts res'.memEnv')
+  (hmem : memEnvOnlyInts r1.memEnv') :
+  applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
+  memEnvOnlyInts r2.memEnv' := by
+  intro happly
+  unfold applyFnTClosure at happly
+  cases fuel with
+  | zero =>
+      simp at happly
+  | succ fuel' =>
+      cases tcl with
+      | regular x body env =>
+          simp [bind, Except.bind] at happly
+          rcases htc : typecheckExpr .ioFree _ _ _ with _ | ⟨r3⟩
+          · rw [htc] at happly
+            simp at happly
+          · rw [htc] at happly
+            simp at happly
+            rcases hsub : isSubtype st2 _ with _ | _
+            · rw [hsub] at happly
+              simp at happly
+              exfalso
+              cases hq3 : r3.qualType
+              · simp [hq3] at happly
+            · rw [hsub] at happly
+              simp [pure, Except.pure] at happly
+              set ctx' : TypeContext := {
+                pc := joinPoison p (joinPoison p1 ctx.pc), regime := r1.regime', memEnv := r1.memEnv',
+                varEnv := (VarTypeEnv.ofCaptured env).update x
+                  { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred },
+                tagEnv := r1.tagEnv', nextLoc := r1.nextLoc', nextTag := r1.nextTag', pureCtx := ctx.pureCtx } with hctx'
+              have htc' : typecheck .ioFree ctx' body fuel' = .ok r3 := by
+                simpa [typecheck, hctx'] using htc
+              have hmem3 := IH fuel' (Nat.lt_succ_self fuel') body ctx' r3 htc' (by simpa [hctx'] using hmem)
+              have hmemEq : r2.memEnv' = r3.memEnv' := by
+                cases hq3 : r3.qualType
+                · simp [hq3] at happly
+                  cases happly
+                  rfl
+              simpa [hmemEq] using hmem3
+      | extern _ _ _ =>
+          simp [bind, Except.bind] at happly
+          exact absurd happly (Except.error_ne_ok "Extern function application forbidden in ioFree mode" r2)
+
+private lemma applyPFnTClosure_preserves_memEnvOnlyInts
+  (tcl : PFnTClosure) (ctx : TypeContext)
+  (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (r1 r2 : TypeResult) (fuel : Nat)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        typecheck .ioFree ctx' e m = .ok res' →
+        memEnvOnlyInts ctx'.memEnv →
+        memEnvOnlyInts res'.memEnv')
+  (hmem : memEnvOnlyInts r1.memEnv') :
+  applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
+  memEnvOnlyInts r2.memEnv' := by
+  intro happly
+  unfold applyPFnTClosure at happly
+  cases fuel with
+  | zero =>
+      simp at happly
+  | succ fuel' =>
+      cases tcl with
+      | regular x body env =>
+          simp [bind, Except.bind] at happly
+          rcases htc : typecheckExpr .ioFree _ _ _ with _ | ⟨r3⟩
+          · rw [htc] at happly
+            simp at happly
+          · rw [htc] at happly
+            simp at happly
+            rcases hsub : isSubtype st2 _ with _ | _
+            · rw [hsub] at happly
+              simp at happly
+              exfalso
+              cases hq3 : r3.qualType
+              · simp [hq3] at happly
+            · rw [hsub] at happly
+              simp [pure, Except.pure] at happly
+              set ctx' : TypeContext := {
+                pc := joinPoison p (joinPoison ctx.pc p1), regime := r1.regime', memEnv := r1.memEnv',
+                varEnv := (VarTypeEnv.ofCaptured env).update x
+                  { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred },
+                tagEnv := r1.tagEnv', nextLoc := r1.nextLoc', nextTag := r1.nextTag', pureCtx := true } with hctx'
+              have htc' : typecheck .ioFree ctx' body.toExpr fuel' = .ok r3 := by
+                simpa [typecheck, hctx'] using htc
+              have hmem3 := IH fuel' (Nat.lt_succ_self fuel') body.toExpr ctx' r3 htc' (by simpa [hctx'] using hmem)
+              have hmemEq : r2.memEnv' = r3.memEnv' := by
+                cases hq3 : r3.qualType
+                · simp [hq3] at happly
+                  cases happly
+                  rfl
+              simpa [hmemEq] using hmem3
+      | extern _ _ _ =>
+          simp [bind, Except.bind] at happly
+          exact absurd happly (Except.error_ne_ok "Extern function application forbidden in ioFree mode" r2)
+
+private lemma runWhileFixpoint_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (pureGuard : Bool) (guardOpt : Option (Tag × Deps))
+  (pc : Poison) (mem : MemoryTypeEnv) (tag : TagEnv) (regime : Regime) (nextLoc : Loc) (nextTag : Tag)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+    typecheck .ioFree ctx' e m = .ok res' →
+    memEnvOnlyInts ctx'.memEnv →
+    memEnvOnlyInts res'.memEnv') :
+  runWhileFixpoint .ioFree ctx e1 e2 fuel pureGuard guardOpt = .ok (pc, mem, tag, regime, nextLoc, nextTag) →
+  memEnvOnlyInts ctx.memEnv →
+  memEnvOnlyInts mem := by
+  intro hfix hctx
+  induction fuel generalizing ctx pureGuard guardOpt pc mem tag regime nextLoc nextTag with
+  | zero => simp [runWhileFixpoint] at hfix
+  | succ fuel' ih =>
+      simp [runWhileFixpoint, bind, Except.bind] at hfix
+      set ctxForGuard : TypeContext := if pureGuard then { ctx with pureCtx := true } else ctx with hctxForGuard
+      rcases hguard : typecheckExpr .ioFree ctxForGuard e1 fuel' with _ | ⟨guardRes⟩
+      · simp [hguard] at hfix
+      · simp [hguard] at hfix
+        rcases hq1 : guardRes.qualType with ⟨etyp1, p1, pred1⟩
+        simp [hq1] at hfix
+        by_cases hbool : etyp1 != ETyp.bool
+        · simp at hbool
+          simp [hbool] at hfix
+        · simp at hbool
+          simp [hbool] at hfix
+          rcases hbody : typecheckExpr .ioFree _ e2 fuel' with _ | ⟨bodyRes⟩
+          · simp [pure, Except.pure] at hfix
+            rw [hbody] at hfix
+            simp at hfix
+          · simp [hbody] at hfix
+            rcases hq2 : bodyRes.qualType with ⟨etyp2, p2, pred2⟩
+            simp [hq2] at hfix
+            by_cases hunit : etyp2 != ETyp.unit
+            · simp at hunit
+              simp [hunit] at hfix
+              simp [pure, Except.pure] at hfix
+            · simp at hunit
+              simp [hunit] at hfix
+              have htc_guard : typecheck .ioFree ctxForGuard e1 fuel' = .ok guardRes := by
+                simpa [typecheck] using hguard
+              have hctx_guard_mem : memEnvOnlyInts ctxForGuard.memEnv := by
+                cases pureGuard <;> simpa [hctxForGuard] using hctx
+              have hguard_mem : memEnvOnlyInts guardRes.memEnv' :=
+                IH fuel' (lt_add_one fuel') e1 ctxForGuard guardRes htc_guard hctx_guard_mem
+              set bodyPcCtx : TypeContext := { ctx with pc := joinPoison ctx.pc p1 } with hbodyPcCtx
+              set bodyTagEnv : TagEnv := if pureGuard then ctx.tagEnv else guardRes.tagEnv' with hbodyTagEnv
+              set bodyRegime : Regime := if pureGuard then ctx.regime else guardRes.regime' with hbodyRegime
+              set bodyEnvCtx : TypeContext := { bodyPcCtx with memEnv := guardRes.memEnv', tagEnv := bodyTagEnv, regime := bodyRegime } with hbodyEnvCtx
+              set bodyCtxBase : TypeContext := { bodyEnvCtx with nextLoc := guardRes.nextLoc', nextTag := guardRes.nextTag', pureCtx := ctx.pureCtx } with hbodyCtxBase
+              set bodyCtx : TypeContext :=
+                match guardOpt with
+                | some (k, deps) => { bodyCtxBase with tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps) }
+                | none => bodyCtxBase with hbodyCtx
+              have htc_body : typecheck .ioFree bodyCtx e2 fuel' = .ok bodyRes := by
+                simp [typecheck, bodyCtx]
+                cases guardOpt <;> simp at hbody <;> simp <;> apply hbody
+              have hbodyCtx_mem : memEnvOnlyInts bodyCtx.memEnv := by
+                cases guardOpt <;> simpa [hbodyCtx, hbodyCtxBase, hbodyEnvCtx] using hguard_mem
+              have hbody_mem : memEnvOnlyInts bodyRes.memEnv' :=
+                IH fuel' (lt_add_one fuel') e2 bodyCtx bodyRes htc_body hbodyCtx_mem
+              set restrictedBodyEnv : MemoryTypeEnv := restrictMemEnv bodyRes.memEnv' ctx.memEnv with hrestrictedBodyEnv
+              have hrestricted_mem : memEnvOnlyInts restrictedBodyEnv :=
+                memEnvOnlyInts_restrictMemEnv bodyRes.memEnv' ctx.memEnv hbody_mem
+              set newMemEnv : MemoryTypeEnv := joinMemEnvs ctx.memEnv restrictedBodyEnv with hnewMemEnv
+              have hnew_mem : memEnvOnlyInts newMemEnv :=
+                memEnvOnlyInts_joinMemEnvs ctx.memEnv restrictedBodyEnv hctx hrestricted_mem
+              set newPc : Poison := joinPoison ctx.pc p2 with hnewPc
+              set newTagEnv : TagEnv := joinTagEnvs ctx.tagEnv bodyRes.tagEnv' with hnewTagEnv
+              set newRegime : Regime := joinRegimes ctx.regime bodyRes.regime' with hnewRegime
+              by_cases hfixpoint : newMemEnv == ctx.memEnv && newPc == ctx.pc && newTagEnv == ctx.tagEnv && newRegime.bound == ctx.regime.bound
+              · simp at hfixpoint
+                simp [if_pos hfixpoint] at hfix
+                simp [pure, Except.pure] at hfix
+                rcases hfix with ⟨_, hmem_eq, _, _, _, _⟩
+                subst mem
+                simpa [hnewMemEnv] using hnew_mem
+              · simp [pure, Except.pure] at hfix
+                rw [if_neg (by simpa using hfixpoint)] at hfix
+                set nextCtx : TypeContext :=
+                  { ctx with
+                      pc := newPc,
+                      memEnv := newMemEnv,
+                      tagEnv := newTagEnv,
+                      regime := newRegime,
+                      nextLoc := bodyRes.nextLoc',
+                      nextTag := bodyRes.nextTag'
+                  } with hnextCtx
+                have hnextCtx_mem : memEnvOnlyInts nextCtx.memEnv := by simpa [hnextCtx] using hnew_mem
+                have ih' : memEnvOnlyInts mem := by
+                  apply ih _ _ _ _ _ _ _ _ _ _ hfix hnextCtx_mem
+                  intro fuel'' hfuel'' expr tc r htc' htc_mem
+                  exact IH fuel'' (by linarith) expr tc r htc' htc_mem
+                exact ih'
+
+private lemma typecheckWhile_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+    typecheck .ioFree ctx' e m = .ok res' →
+    memEnvOnlyInts ctx'.memEnv →
+    memEnvOnlyInts res'.memEnv')
+  (hctx : memEnvOnlyInts ctx.memEnv) :
+  typecheckWhile .ioFree ctx e1 e2 fuel = .ok res →
+  memEnvOnlyInts res.memEnv' := by
+  intro htc
+  cases fuel with
+  | zero =>
+      unfold typecheckWhile at htc
+      simp at htc
+  | succ fuel' =>
+      unfold typecheckWhile at htc
+      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv with
+      | ok g =>
+          rcases g with ⟨k, deps⟩
+          simp [hguard] at htc
+          cases fuel' with
+          | zero => simp [typecheckWhileDepoison] at htc
+          | succ fuel'' =>
+              simp [typecheckWhileDepoison, bind, Except.bind] at htc
+              cases hfix : runWhileFixpoint .ioFree ctx e1 e2 fuel'' true (some (k, deps)) with
+              | error _ => simp [hfix] at htc
+              | ok r =>
+                  rcases r with ⟨finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag⟩
+                  simp [hfix] at htc
+                  cases htc
+                  dsimp
+                  exact runWhileFixpoint_preserves_memEnvOnlyInts ctx e1 e2 fuel'' true (some (k, deps))
+                    finalPc finalMemEnv finalTagEnv finalRegime finalNextLoc finalNextTag
+                    (by
+                      intro fuel hfuel expr ctx' r' htc' hctx'
+                      exact IH fuel (by linarith) expr ctx' r' htc' hctx')
+                    hfix hctx
+      | error _ =>
+          simp [hguard] at htc
+          cases fuel' with
+          | zero => simp [typecheckWhileStd] at htc
+          | succ fuel'' =>
+              simp [typecheckWhileStd, bind, Except.bind] at htc
+              cases hfix : runWhileFixpoint .ioFree ctx e1 e2 fuel'' false none with
+              | error _ => simp [hfix] at htc
+              | ok r =>
+                  rcases r with ⟨finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag⟩
+                  simp [hfix] at htc
+                  cases htc
+                  dsimp
+                  exact runWhileFixpoint_preserves_memEnvOnlyInts ctx e1 e2 fuel'' false none
+                    finalPc finalMemEnv finalTagEnv finalRegime finalNextLoc finalNextTag
+                    (by
+                      intro fuel hfuel expr ctx' r' htc' hctx'
+                      exact IH fuel (by linarith) expr ctx' r' htc' hctx')
+                    hfix hctx
+
+private lemma typecheckVar_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (x : Name) (res : TypeResult)
+  (hctx : memEnvOnlyInts ctx.memEnv) :
+  typecheckVar ctx x = .ok res →
+  memEnvOnlyInts res.memEnv' := by
+  intro htc
+  unfold typecheckVar at htc
+  cases h_lookup : ctx.varEnv.lookup x with
+  | none =>
+      simp [h_lookup] at htc
+  | some qt =>
+      simp [h_lookup] at htc
+      cases qt with
+      | mk etyp poison pred =>
+          cases pred with
+          | noPred =>
+              simp at htc
+              cases htc
+              simpa using hctx
+          | guardOnly k =>
+              simp at htc
+              cases hft : etyp.isFunctionType with
+              | true =>
+                  simp [hft, throw] at htc
+                  cases htc
+              | false =>
+                  simp [hft] at htc
+                  cases htagopt : ctx.tagEnv.get? k with
+                  | none =>
+                      have htagopt' : ctx.tagEnv[k]? = none := by
+                        simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                      simp [htagopt', pure, Except.pure] at htc
+                      cases htc
+                      simpa using hctx
+                  | some tv =>
+                      cases tv with
+                      | mk b deps =>
+                          have htagopt' : ctx.tagEnv[k]? = some ⟨b, deps⟩ := by
+                            simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                          simp [htagopt'] at htc
+                          cases b with
+                          | true =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              simpa using hctx
+                          | false =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              simpa using hctx
+          | guardClosure k _ _ _ =>
+              simp at htc
+              cases hft : etyp.isFunctionType with
+              | true =>
+                  simp [hft, throw] at htc
+                  cases htc
+              | false =>
+                  simp [hft] at htc
+                  cases htagopt : ctx.tagEnv.get? k with
+                  | none =>
+                      have htagopt' : ctx.tagEnv[k]? = none := by
+                        simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                      simp [htagopt', pure, Except.pure] at htc
+                      cases htc
+                      simpa using hctx
+                  | some tv =>
+                      cases tv with
+                      | mk b deps =>
+                          have htagopt' : ctx.tagEnv[k]? = some ⟨b, deps⟩ := by
+                            simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                          simp [htagopt'] at htc
+                          cases b with
+                          | true =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              simpa using hctx
+                          | false =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              simpa using hctx
+
+private lemma typecheckOp_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) (res : TypeResult)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck .ioFree ctx' e m = .ok res' →
+      memEnvOnlyInts ctx'.memEnv →
+      memEnvOnlyInts res'.memEnv')
+  (hctx : memEnvOnlyInts ctx.memEnv) :
+  typecheckOp .ioFree ctx e1 e2 fuel op = .ok res →
+  memEnvOnlyInts res.memEnv' := by
+  intro htc
+  have hstruct := typecheckOp_structure ctx e1 e2 op fuel res htc
+  rcases hstruct with ⟨result1, result2, _result_etyp, htc1, htc2, _hop, hmem, _htag, _hloc, _hnexttag, _hregime, _hetyp, _hpoison, _hpred⟩
+  cases fuel with
+  | zero => unfold typecheckOp at htc; simp at htc
+  | succ fuel' =>
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+      have htc1' : typecheck .ioFree ctx e1 fuel' = .ok result1 := by
+        simpa [typecheck] using htc1
+      have h1 := IH fuel' h_fuel e1 ctx result1 htc1' hctx
+      let ctx' := updateCtxFromResult ctx result1
+      have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok result2 := by
+        simpa [typecheck, ctx', updateCtxFromResult] using htc2
+      have h2 := IH fuel' h_fuel e2 ctx' result2 htc2' (by simpa [ctx', updateCtxFromResult] using h1)
+      simpa [ctx', updateCtxFromResult, hmem] using h2
+
+private lemma typecheckSeq_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck .ioFree ctx' e m = .ok res' →
+      memEnvOnlyInts ctx'.memEnv →
+      memEnvOnlyInts res'.memEnv')
+  (hctx : memEnvOnlyInts ctx.memEnv) :
+  typecheckSeq .ioFree ctx e1 e2 fuel = .ok res →
+  memEnvOnlyInts res.memEnv' := by
+  intro htc
+  have hstruct := typecheckSeq_structure ctx e1 e2 fuel res htc
+  rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
+  cases fuel with
+  | zero => unfold typecheckSeq at htc; simp at htc
+  | succ fuel' =>
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+      have htc1' : typecheck .ioFree ctx e1 fuel' = .ok result1 := by simpa [typecheck] using htc1
+      have h1 := IH fuel' h_fuel e1 ctx result1 htc1' hctx
+      have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res := by simpa [typecheck] using htc2
+      have h2 := IH fuel' h_fuel e2 ctx' res htc2' (by simpa [hctx', updateCtxFromResult] using h1)
+      simpa using h2
+
+private lemma typecheckNewRef_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck .ioFree ctx' e m = .ok res' →
+      memEnvOnlyInts ctx'.memEnv →
+      memEnvOnlyInts res'.memEnv')
+  (hctx : memEnvOnlyInts ctx.memEnv) :
+  typecheckNewRef .ioFree ctx e fuel = .ok res →
+  memEnvOnlyInts res.memEnv' := by
+  intro htc
+  have hstruct := typecheckNewRef_structure ctx e fuel res htc
+  rcases hstruct with ⟨result1, l, htc1, _hl, _hetyp1, _hetyp, _hpoison, _hpred, hmem, _htag, _hloc, _hnexttag, _hregime⟩
+  cases fuel with
+  | zero => unfold typecheckNewRef at htc; simp at htc
+  | succ fuel' =>
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+      have htc1' : typecheck .ioFree ctx e fuel' = .ok result1 := by simpa [typecheck] using htc1
+      have hmem1 := IH fuel' h_fuel e ctx result1 htc1' hctx
+      have hmem2 :=
+        memEnvOnlyInts_update result1.memEnv' l
+          ⟨ETyp.int, joinPoison ctx.pc result1.qualType.poison, result1.qualType.pred⟩
+          hmem1 rfl
+      simpa [hmem] using hmem2
+
+private lemma typecheckAssign_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck .ioFree ctx' e m = .ok res' →
+      memEnvOnlyInts ctx'.memEnv →
+      memEnvOnlyInts res'.memEnv')
+  (hctx : memEnvOnlyInts ctx.memEnv) :
+  typecheckAssign .ioFree ctx e1 e2 fuel = .ok res →
+  memEnvOnlyInts res.memEnv' := by
+  intro htc
+  cases fuel with
+  | zero =>
+      unfold typecheckAssign at htc
+      simp at htc
+  | succ fuel' =>
+      unfold typecheckAssign at htc
+      simp [bind, Except.bind] at htc
+      cases htc1 : typecheckExpr .ioFree ctx e1 fuel' with
+      | error _ => simp [htc1] at htc
+      | ok result1 =>
+          simp [htc1] at htc
+          cases hq1 : result1.qualType with
+          | mk etyp1 p1 pred1 =>
+              rw [hq1] at htc
+              simp at htc
+              cases etyp1 with
+              | ref t ls =>
+                  simp at htc
+                  split at htc
+                  ·
+                    let ctx' := updateCtxFromResult ctx result1
+                    cases htc2 : typecheckExpr .ioFree { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' } e2 fuel' with
+                    | error _ =>
+                        rw [htc2] at htc
+                        simp [pure, Except.pure] at htc
+                    | ok result2 =>
+                        rw [htc2] at htc
+                        simp at htc
+                        have htc1' : typecheck .ioFree ctx e1 fuel' = .ok result1 := by simpa [typecheck] using htc1
+                        have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
+                        have hmem1 := IH fuel' h_fuel e1 ctx result1 htc1' hctx
+                        have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok result2 := by
+                          simpa [typecheck, ctx', updateCtxFromResult] using htc2
+                        have hmem2 := IH fuel' h_fuel e2 ctx' result2 htc2' (by simpa [ctx', updateCtxFromResult] using hmem1)
+                        cases hq2 : result2.qualType with
+                        | mk etyp2 p2 pred2 =>
+                            rw [hq2] at htc
+                            simp at htc
+                            by_cases hti : etyp2 = ETyp.int
+                            · simp [hti, pure, Except.pure] at htc
+                              cases htc
+                              cases hls : ExtTreeSet.toList ls with
+                              | nil =>
+                                  exact memEnvOnlyInts_updateLocsetWeak result2.memEnv' ls (joinPoison ctx.pc (joinPoison p1 p2)) (ite p1 Predicate.noPred pred2) hmem2
+                              | cons l rest =>
+                                  cases rest with
+                                  | nil =>
+                                      exact memEnvOnlyInts_update result2.memEnv' l ⟨ETyp.int, joinPoison ctx.pc (joinPoison p1 p2), ite p1 Predicate.noPred pred2⟩ hmem2 rfl
+                                  | cons _ _ =>
+                                      exact memEnvOnlyInts_updateLocsetWeak result2.memEnv' ls (joinPoison ctx.pc (joinPoison p1 p2)) (ite p1 Predicate.noPred pred2) hmem2
+                            · simp [hti, pure, Except.pure] at htc
+                  ·
+                    exfalso
+                    simp at htc
+              | _ => simp at htc
+
+private lemma typecheckDeref_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck .ioFree ctx' e m = .ok res' →
+      memEnvOnlyInts ctx'.memEnv →
+      memEnvOnlyInts res'.memEnv')
+  (hctx : memEnvOnlyInts ctx.memEnv) :
+  typecheckDeref .ioFree ctx e fuel = .ok res →
+  memEnvOnlyInts res.memEnv' := by
+  intro htc
+  have hstruct := typecheckDeref_structure ctx e fuel res htc
+  rcases hstruct with ⟨result1, htc1, hmem, _htag, _hloc, _hnexttag, _hregime⟩
+  cases fuel with
+  | zero => unfold typecheckDeref at htc; simp at htc
+  | succ fuel' =>
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+      have htc1' : typecheck .ioFree ctx e fuel' = .ok result1 := by simpa [typecheck] using htc1
+      have hmem1 := IH fuel' h_fuel e ctx result1 htc1' hctx
+      simpa [hmem] using hmem1
+
+private lemma typecheckVlet_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck .ioFree ctx' e m = .ok res' →
+      memEnvOnlyInts ctx'.memEnv →
+      memEnvOnlyInts res'.memEnv')
+  (hctx : memEnvOnlyInts ctx.memEnv) :
+  typecheckVlet .ioFree ctx x e1 e2 fuel = .ok res →
+  memEnvOnlyInts res.memEnv' := by
+  intro htc
+  have hstruct := typecheckVlet_structure ctx x e1 e2 fuel res htc
+  rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, _hetyp, hmem, _htag, _hloc, _hnexttag, _hregime, _hqtpred⟩
+  cases fuel with
+  | zero => unfold typecheckVlet at htc; simp at htc
+  | succ fuel' =>
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+      have htc1' : typecheck .ioFree ctx e1 fuel' = .ok result1 := by simpa [typecheck] using htc1
+      have hmem1 := IH fuel' h_fuel e1 ctx result1 htc1' hctx
+      have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok result2 := by simpa [typecheck] using htc2
+      have hmem2 := IH fuel' h_fuel e2 ctx' result2 htc2' (by simpa [hctx'] using hmem1)
+      simpa [hmem] using hmem2
+
+private lemma typecheckIf_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck .ioFree ctx' e m = .ok res' →
+      memEnvOnlyInts ctx'.memEnv →
+      memEnvOnlyInts res'.memEnv')
+  (hctx : memEnvOnlyInts ctx.memEnv) :
+  typecheckIf .ioFree ctx e1 e2 e3 fuel = .ok res →
+  memEnvOnlyInts res.memEnv' := by
+  intro htc
+  cases fuel with
+  | zero => unfold typecheckIf at htc; simp at htc
+  | succ fuel' =>
+      have hstruct := typecheckIf_structure ctx e1 e2 e3 (fuel' + 1) res htc
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+      cases hstruct with
+      | inl h1 =>
+          rcases h1 with ⟨k, deps, _hmatch, _hr, _res1, _htc1, _hbool, res2, htc2, hmem, _htag, _hloc, _hnext, _hreg, _hpoison, _hetyp⟩
+          let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+          have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by simpa [typecheck, ctxTrue] using htc2
+          have hmem2 := IH fuel' h_fuel e2 ctxTrue res2 htc2' (by simpa [ctxTrue] using hctx)
+          simpa [hmem] using hmem2
+      | inr hrest =>
+          cases hrest with
+          | inl h2 =>
+              rcases h2 with ⟨k, deps, _hmatch, _hr, _res1, _htc1, _hbool, res3, htc3, hmem, _htag, _hloc, _hnext, _hreg, _hpoison, _hetyp⟩
+              let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
+              have htc3' : typecheck .ioFree ctxFalse e3 fuel' = .ok res3 := by simpa [typecheck, ctxFalse] using htc3
+              have hmem3 := IH fuel' h_fuel e3 ctxFalse res3 htc3' (by simpa [ctxFalse] using hctx)
+              simpa [hmem] using hmem3
+          | inr hrest2 =>
+              cases hrest2 with
+              | inl h3 =>
+                  rcases h3 with ⟨k, deps, _hmatch, _hr, res1, _htc1, _hbool, res2, htc2, res3, htc3, hmem, _htag, _hloc, _hnext, _hreg, _hpoison⟩
+                  let branchPc := joinPoison ctx.pc res1.qualType.poison
+                  let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
+                  let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
+                  let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                  have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by simpa [typecheck, ctxTrue, branchPc] using htc2
+                  have htc3' : typecheck .ioFree ctxFalse' e3 fuel' = .ok res3 := by simpa [typecheck, ctxFalse', ctxFalse, branchPc] using htc3
+                  have hmem2 := IH fuel' h_fuel e2 ctxTrue res2 htc2' (by simpa [ctxTrue] using hctx)
+                  have hmem3 := IH fuel' h_fuel e3 ctxFalse' res3 htc3' (by simpa [ctxFalse', ctxFalse] using hctx)
+                  have hjoin := memEnvOnlyInts_joinMemEnvsStrong res2.memEnv' res3.memEnv' hmem2 hmem3
+                  simpa [hmem] using hjoin
+              | inr h4 =>
+                  obtain ⟨⟨_err, _hmatch_fail⟩, res1, htc1, _hbool, res2, htc2, res3, htc3, hmem, _htag, _hloc, _hnext, _hreg, _hpoison⟩ := h4
+                  let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+                  let pc' := joinPoison ctx.pc res1.qualType.poison
+                  let ctx'' := { ctx1 with pc := pc' }
+                  let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                  have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by simpa [typecheck] using htc1
+                  have hmem1 := IH fuel' h_fuel e1 ctx res1 htc1' hctx
+                  have htc2' : typecheck .ioFree ctx'' e2 fuel' = .ok res2 := by simpa [typecheck, ctx'', ctx1, pc'] using htc2
+                  have hmem2 := IH fuel' h_fuel e2 ctx'' res2 htc2' (by simpa [ctx'', ctx1] using hmem1)
+                  have htc3' : typecheck .ioFree ctxForE3 e3 fuel' = .ok res3 := by simpa [typecheck, ctxForE3, ctx'', ctx1, pc'] using htc3
+                  have hmem3 := IH fuel' h_fuel e3 ctxForE3 res3 htc3' (by simpa [ctxForE3, ctx'', ctx1] using hmem1)
+                  have hjoin := memEnvOnlyInts_joinMemEnvsStrong res2.memEnv' res3.memEnv' hmem2 hmem3
+                  simpa [hmem] using hjoin
+
+private lemma typecheckUnaryOp_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (op : UnaryOp) (e : Expr) (fuel : Nat) (res : TypeResult)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck .ioFree ctx' e m = .ok res' →
+      memEnvOnlyInts ctx'.memEnv →
+      memEnvOnlyInts res'.memEnv')
+  (hctx : memEnvOnlyInts ctx.memEnv) :
+  typecheckUnaryOp .ioFree ctx op e fuel = .ok res →
+  memEnvOnlyInts res.memEnv' := by
+  intro htc
+  have hstruct := typecheckUnaryOp_structure ctx op e fuel res htc
+  rcases hstruct with ⟨result1, _result_etyp, htc1, _hop, hmem, _htag, _hloc, _hnexttag, _hregime, _hetyp, _hpoison, _hpred⟩
+  cases fuel with
+  | zero => unfold typecheckUnaryOp at htc; simp at htc
+  | succ fuel' =>
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+      have htc1' : typecheck .ioFree ctx e fuel' = .ok result1 := by simpa [typecheck] using htc1
+      have hmem1 := IH fuel' h_fuel e ctx result1 htc1' hctx
+      simpa [hmem] using hmem1
+
+private lemma typecheckApp_preserves_memEnvOnlyInts
+  (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck .ioFree ctx' e m = .ok res' →
+      memEnvOnlyInts ctx'.memEnv →
+      memEnvOnlyInts res'.memEnv')
+  (hctx : memEnvOnlyInts ctx.memEnv) :
+  typecheckApp .ioFree ctx e1 e2 fuel = .ok res →
+  memEnvOnlyInts res.memEnv' := by
+  intro htc
+  unfold typecheckApp at htc
+  cases fuel <;> simp at htc
+  rename_i fuel'
+  simp [bind, Except.bind] at htc
+  rcases hcte2 : typecheckExpr .ioFree ctx e2 _ with _ | ⟨res2⟩
+    <;> rw [hcte2] at htc
+    <;> simp at htc
+  rcases hq2 : res2.qualType with ⟨etyp2, poison2, pred2⟩
+  simp [hq2] at htc
+  set ctx' : TypeContext := {
+    pc := ctx.pc,
+    regime := res2.regime',
+    memEnv := res2.memEnv',
+    varEnv := ctx.varEnv,
+    tagEnv := res2.tagEnv',
+    nextLoc := res2.nextLoc',
+    nextTag := res2.nextTag',
+    pureCtx := ctx.pureCtx } with hctx'
+  rcases htce1 : typecheckExpr .ioFree ctx' e1 _ with _ | ⟨res1⟩
+    <;> rw [htce1] at htc
+    <;> simp at htc
+  rcases hq1 : res1.qualType with ⟨etyp1, poison1, pred1⟩
+  simp [hq1] at htc
+  have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
+  have hcte2' : typecheck .ioFree ctx e2 fuel' = .ok res2 := by
+    simpa [typecheck] using hcte2
+  have hmem2 := IH fuel' h_fuel e2 ctx res2 hcte2' hctx
+  have htce1' : typecheck .ioFree ctx' e1 fuel' = .ok res1 := by
+    simpa [typecheck] using htce1
+  have hmem1 := IH fuel' h_fuel e1 ctx' res1 htce1' (by simpa [hctx'] using hmem2)
+  have IH' :
+      ∀ m < fuel', ∀ (e : Expr) (ctx'' : TypeContext) (res' : TypeResult),
+        typecheck .ioFree ctx'' e m = .ok res' →
+        memEnvOnlyInts ctx''.memEnv →
+        memEnvOnlyInts res'.memEnv' := by
+    intro m hm e ctx'' res' htc' hmem
+    exact IH m (Nat.lt_trans hm h_fuel) e ctx'' res' htc' hmem
+  rcases etyp1 with _ | _ | _ | _ | _ | ⟨t1, t2, p, fs⟩ | _
+    <;> simp at htc
+  · rcases hctxPure : ctx.pureCtx <;> simp [hctxPure] at htc
+    rcases fs with _ | ⟨f, fs'⟩ <;> simp at htc
+    rcases hsub1 : isSubtype t1 _
+      <;> rw [hsub1] at htc
+      <;> simp at htc
+    simp [bind, Except.bind] at htc
+    rcases happly : applyFnTClosure .ioFree f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
+      <;> rw [happly] at htc
+      <;> simp at htc
+    rcases hcons : List.cons r <$> List.mapM (fun tcl => applyFnTClosure .ioFree tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs' with _ | ⟨rs⟩
+      <;> rw [hcons] at htc
+      <;> simp at htc
+    rcases hrs : rs with _ | ⟨r1, rs'⟩
+      <;> rw [hrs] at htc
+      <;> simp at htc
+    subst rs
+    simp [Functor.map, Except.map] at hcons
+    rcases hmap : List.mapM (fun tcl => applyFnTClosure .ioFree tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs' with _ | ⟨rs''⟩
+      <;> rw [hmap] at hcons
+      <;> simp at hcons
+    rcases hcons with ⟨_, heq2⟩
+    subst r1
+    subst rs''
+    have hmem_r : memEnvOnlyInts r.memEnv' :=
+      applyFnTClosure_preserves_memEnvOnlyInts f ctx t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' (by simpa [hctx'] using hmem1) happly
+    have h_rs_all : ∀ rr ∈ rs', memEnvOnlyInts rr.memEnv' := by
+      have hprop := List.mapM_Except_preserves_property
+        (xs := fs')
+        (f := fun tcl => applyFnTClosure .ioFree tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 fuel')
+        (P := fun rr => memEnvOnlyInts rr.memEnv')
+        (h_preserve := by
+          intro tcl rr hrr
+          exact applyFnTClosure_preserves_memEnvOnlyInts tcl ctx t1 t2 p poison1 etyp2 poison2 pred2 res1 rr fuel' IH' (by simpa [hctx'] using hmem1) hrr)
+      exact hprop rs' hmap
+    exact joinTypeResults_preserves_memEnvOnlyInts ctx r rs' res hmem_r h_rs_all htc
+  · rename_i st1 st2 p tcls
+    rcases tcls with _ | ⟨f, fs'⟩ <;> simp at htc
+    rcases hsub1 : isSubtype st1 _
+      <;> rw [hsub1] at htc
+      <;> simp at htc
+    simp [bind, Except.bind] at htc
+    rcases happly : applyPFnTClosure .ioFree f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
+      <;> rw [happly] at htc
+      <;> simp at htc
+    rcases hcons : List.cons r <$> List.mapM (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs' with _ | ⟨rs⟩
+      <;> rw [hcons] at htc
+      <;> simp at htc
+    rcases hrs : rs with _ | ⟨r1, rs'⟩
+      <;> rw [hrs] at htc
+      <;> simp at htc
+    subst rs
+    simp [Functor.map, Except.map] at hcons
+    rcases hmap : List.mapM (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs' with _ | ⟨rs''⟩
+      <;> rw [hmap] at hcons
+      <;> simp at hcons
+    rcases hcons with ⟨_, heq2⟩
+    subst r1
+    subst rs''
+    have hmem_r : memEnvOnlyInts r.memEnv' :=
+      applyPFnTClosure_preserves_memEnvOnlyInts f ctx st1 st2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' (by simpa [hctx'] using hmem1) happly
+    have h_rs_all : ∀ rr ∈ rs', memEnvOnlyInts rr.memEnv' := by
+      have hprop := List.mapM_Except_preserves_property
+        (xs := fs')
+        (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 fuel')
+        (P := fun rr => memEnvOnlyInts rr.memEnv')
+        (h_preserve := by
+          intro tcl rr hrr
+          exact applyPFnTClosure_preserves_memEnvOnlyInts tcl ctx st1 st2 p poison1 etyp2 poison2 pred2 res1 rr fuel' IH' (by simpa [hctx'] using hmem1) hrr)
+      exact hprop rs' hmap
+    exact joinTypeResults_preserves_memEnvOnlyInts ctx r rs' res hmem_r h_rs_all htc
+
+private lemma typecheck_memEnvOnlyInts_main :
+  ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
+    typecheck .ioFree ctx e fuel = .ok res →
+    memEnvOnlyInts ctx.memEnv →
+    memEnvOnlyInts res.memEnv' := by
+  intro ctx e fuel res htc
+  revert ctx e res htc
+  induction fuel using Nat.strong_induction_on with
+  | _ fuel IH =>
+      intro ctx e res htc
+      have IH_converted : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        typecheck .ioFree ctx' e m = .ok res' →
+        memEnvOnlyInts ctx'.memEnv →
+        memEnvOnlyInts res'.memEnv' := by
+        intro m h_lt e' ctx' res' htc' hmem
+        exact IH m h_lt ctx' e' res' htc' hmem
+      unfold typecheck at htc
+      cases fuel with
+      | zero =>
+          unfold typecheckExpr at htc
+          simp at htc
+      | succ fuel' =>
+          unfold typecheckExpr at htc
+          have IH_fuel' : ∀ m < fuel', ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+            typecheck .ioFree ctx' e m = .ok res' →
+            memEnvOnlyInts ctx'.memEnv →
+            memEnvOnlyInts res'.memEnv' := by
+            intro m h_lt e' ctx' res' htc' hmem
+            have h_lt' : m < fuel' + 1 := Nat.lt_of_lt_of_le h_lt (Nat.le_succ fuel')
+            exact IH_converted m h_lt' e' ctx' res' htc' hmem
+          intro hctx
+          cases e with
+          | num _n =>
+              unfold typecheckInt at htc
+              simp at htc
+              injection htc with h_eq
+              subst h_eq
+              simpa using hctx
+          | bool _b =>
+              unfold typecheckBool at htc
+              simp at htc
+              injection htc with h_eq
+              subst h_eq
+              simpa using hctx
+          | unit =>
+              unfold typecheckUnit at htc
+              simp at htc
+              injection htc with h_eq
+              subst h_eq
+              simpa using hctx
+          | str _s =>
+              unfold typecheckString at htc
+              simp at htc
+              injection htc with h_eq
+              subst h_eq
+              simpa using hctx
+          | var x =>
+              simp at htc
+              exact typecheckVar_preserves_memEnvOnlyInts ctx x res hctx htc
+          | fn _x _st1 _body _st2 =>
+              unfold typecheckFn at htc
+              simp at htc
+              injection htc with h_eq
+              subst h_eq
+              simpa using hctx
+          | pfn _x _st1 body _st2 =>
+              unfold typecheckPfn at htc
+              simp [Bind.bind, Except.bind] at htc
+              cases h_topexpr : body.toPExpr with
+              | error _ => simp [h_topexpr] at htc
+              | ok _ =>
+                  simp [h_topexpr] at htc
+                  injection htc with h_eq
+                  subst h_eq
+                  simpa using hctx
+          | externVal _typ _poison _pred =>
+              exfalso
+              simp at htc
+              unfold typecheckExternVal at htc
+              have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+              simp only [heq, ite_true, bind, Except.bind] at htc
+              exact absurd htc (Except.error_ne_ok "IO operation (externVal) forbidden in ioFree mode" res)
+          | externFn _arg _argTyp _retSpec _effects =>
+              exfalso
+              simp at htc
+              unfold typecheckExternFn at htc
+              have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+              simp only [heq, ite_true, bind, Except.bind] at htc
+              exact absurd htc (Except.error_ne_ok "IO operation (externFn) forbidden in ioFree mode" res)
+          | externPfn _arg _argTyp _retSpec =>
+              exfalso
+              simp at htc
+              unfold typecheckExternPfn at htc
+              have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+              simp only [heq, ite_true, bind, Except.bind] at htc
+              exact absurd htc (Except.error_ne_ok "IO operation (externPfn) forbidden in ioFree mode" res)
+          | op e1 op e2 =>
+              simp at htc
+              exact typecheckOp_preserves_memEnvOnlyInts ctx e1 e2 fuel' op res IH_fuel' hctx htc
+          | unaryop op e1 =>
+              simp at htc
+              exact typecheckUnaryOp_preserves_memEnvOnlyInts ctx op e1 fuel' res IH_fuel' hctx htc
+          | ite e1 e2 e3 =>
+              simp at htc
+              exact typecheckIf_preserves_memEnvOnlyInts ctx e1 e2 e3 fuel' res IH_fuel' hctx htc
+          | newRef e1 =>
+              simp at htc
+              exact typecheckNewRef_preserves_memEnvOnlyInts ctx e1 fuel' res IH_fuel' hctx htc
+          | assign e1 e2 =>
+              simp at htc
+              exact typecheckAssign_preserves_memEnvOnlyInts ctx e1 e2 fuel' res IH_fuel' hctx htc
+          | deref e1 =>
+              simp at htc
+              exact typecheckDeref_preserves_memEnvOnlyInts ctx e1 fuel' res IH_fuel' hctx htc
+          | seq e1 e2 =>
+              simp at htc
+              exact typecheckSeq_preserves_memEnvOnlyInts ctx e1 e2 fuel' res IH_fuel' hctx htc
+          | vlet x e1 e2 =>
+              simp at htc
+              exact typecheckVlet_preserves_memEnvOnlyInts ctx x e1 e2 fuel' res IH_fuel' hctx htc
+          | app e1 e2 =>
+              simp at htc
+              exact typecheckApp_preserves_memEnvOnlyInts ctx e1 e2 fuel' res IH_fuel' hctx htc
+          | kwhile e1 e2 =>
+              simp at htc
+              exact typecheckWhile_preserves_memEnvOnlyInts ctx e1 e2 fuel' res IH_fuel' hctx htc
+          | rand e1 =>
+              simp at htc
+              exact absurd htc (typecheckRand_ioFree_impossible ctx e1 fuel' res)
+          | frand e1 =>
+              simp at htc
+              exact absurd htc (typecheckFrand_ioFree_impossible ctx e1 fuel' res)
+          | printInt e1 =>
+              simp at htc
+              exact absurd htc (typecheckPrintInt_ioFree_impossible ctx e1 fuel' res)
+          | printString e1 =>
+              simp at htc
+              exact absurd htc (typecheckPrintString_ioFree_impossible ctx e1 fuel' res)
+
+end typecheck_preserves_memEnv_only_ints_proof
+
+lemma typecheck_preserves_memEnv_only_ints
+  (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+  (hctx_ints : ∀ l qt, ctx.memEnv.lookup l = some qt → qt.etyp = ETyp.int)
+  (htc : typecheck .ioFree ctx e fuel = .ok res) :
+  ∀ l qt, res.memEnv'.lookup l = some qt → qt.etyp = ETyp.int := by
+  have hres := typecheck_memEnvOnlyInts_main ctx e fuel res htc hctx_ints
+  exact hres
