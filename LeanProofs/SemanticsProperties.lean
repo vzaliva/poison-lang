@@ -6134,6 +6134,160 @@ private lemma pure_eq_pure_imp {α : Type} (a b : α) :
   have heq := congrArg (fun f => f LeanProofs.defaultWorld) h
   injection heq
 
+-- ================================================================
+-- terminatesToW inversion lemmas (world-indexed; used by FaultRobustness)
+-- ================================================================
+
+private def isExternExpr : Expr → Prop
+  | Expr.externVal _ _ _ => True
+  | Expr.externFn _ _ _ _ => True
+  | Expr.externPfn _ _ _ => True
+  | _ => False
+
+lemma terminatesTo_extern_false (mode : LeanPoison.EvalMode) {e : Expr} {c₀ c₁ : Config} {o : Value} :
+  isExternExpr e →
+  ∀ (w₀ w₁ : Void IO.RealWorld), terminatesToW mode w₀ w₁ e c₀ c₁ o → False := by
+  intro hex w₀ w₁ ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases e with
+  | externVal _ _ _ =>
+      cases mode with
+      | ioFree => cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+      | normal => cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+  | externFn _ _ _ _ =>
+      cases mode with
+      | ioFree => cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+      | normal => cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+  | externPfn _ _ _ =>
+      cases mode with
+      | ioFree => cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+      | normal => cases fuel <;> simp [LeanPoison.beval] at hbeval <;> cases hbeval
+  | _ => cases hex
+
+lemma terminatesTo_num_inv (mode : LeanPoison.EvalMode) (n : Int)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  ∀ (w₀ w₁ : Void IO.RealWorld),
+    terminatesToW mode w₀ w₁ (Expr.num n) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.num n := by
+  intro w₀ w₁ ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero => simp [LeanPoison.beval] at hbeval; cases hbeval
+  | succ fuel =>
+      simp [LeanPoison.beval] at hbeval
+      injection hbeval with hcfg hval
+      cases hcfg; cases hval; constructor <;> rfl
+
+lemma terminatesTo_bool_inv (mode : LeanPoison.EvalMode) (b : Bool)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  ∀ (w₀ w₁ : Void IO.RealWorld),
+    terminatesToW mode w₀ w₁ (Expr.bool b) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.bool b := by
+  intro w₀ w₁ ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero => simp [LeanPoison.beval] at hbeval; cases hbeval
+  | succ fuel =>
+      simp [LeanPoison.beval] at hbeval
+      injection hbeval with hcfg hval
+      cases hcfg; cases hval; constructor <;> rfl
+
+lemma terminatesTo_unit_inv (mode : LeanPoison.EvalMode)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  ∀ (w₀ w₁ : Void IO.RealWorld),
+    terminatesToW mode w₀ w₁ Expr.unit { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.unit := by
+  intro w₀ w₁ ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero => simp [LeanPoison.beval] at hbeval; cases hbeval
+  | succ fuel =>
+      simp [LeanPoison.beval] at hbeval
+      injection hbeval with hcfg hval
+      cases hcfg; cases hval; constructor <;> rfl
+
+lemma terminatesTo_str_inv (mode : LeanPoison.EvalMode) (s : String)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  ∀ (w₀ w₁ : Void IO.RealWorld),
+    terminatesToW mode w₀ w₁ (Expr.str s) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.str s := by
+  intro w₀ w₁ ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero => simp [LeanPoison.beval] at hbeval; cases hbeval
+  | succ fuel =>
+      simp [LeanPoison.beval] at hbeval
+      injection hbeval with hcfg hval
+      cases hcfg; cases hval; constructor <;> rfl
+
+lemma terminatesTo_literal_inv (mode : LeanPoison.EvalMode) (e : Expr) (v : Value)
+  (hval : Expr.toValue? e = some v) (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  ∀ (w₀ w₁ : Void IO.RealWorld),
+    terminatesToW mode w₀ w₁ e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = v := by
+  intro w₀ w₁ ht
+  cases e with
+  | unit => simp [Expr.toValue?] at hval; cases hval; exact terminatesTo_unit_inv mode μ ρ a pm cf o w₀ w₁ ht
+  | num n => simp [Expr.toValue?] at hval; cases hval; exact terminatesTo_num_inv mode n μ ρ a pm cf o w₀ w₁ ht
+  | bool b => simp [Expr.toValue?] at hval; cases hval; exact terminatesTo_bool_inv mode b μ ρ a pm cf o w₀ w₁ ht
+  | str s => simp [Expr.toValue?] at hval; cases hval; exact terminatesTo_str_inv mode s μ ρ a pm cf o w₀ w₁ ht
+  | _ => simp [Expr.toValue?] at hval
+
+lemma terminatesTo_var_inv (mode : LeanPoison.EvalMode) (x : Name)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  ∀ (w₀ w₁ : Void IO.RealWorld),
+    terminatesToW mode w₀ w₁ (Expr.var x) { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  ∃ v, ρ.lookup x = some v ∧ cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = v := by
+  intro w₀ w₁ ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero => simp [LeanPoison.beval] at hbeval; cases hbeval
+  | succ fuel =>
+      simp [LeanPoison.beval] at hbeval
+      cases hlookup : ρ.lookup x with
+      | none => simp [hlookup] at hbeval; cases hbeval
+      | some v' =>
+          simp [hlookup] at hbeval
+          injection hbeval with hcfg hval
+          cases hcfg; cases hval
+          refine ⟨o, ?_, ?_⟩
+          · rfl
+          · exact And.intro rfl rfl
+
+lemma terminatesTo_fn_inv (mode : LeanPoison.EvalMode) (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  ∀ (w₀ w₁ : Void IO.RealWorld),
+    terminatesToW mode w₀ w₁ (Expr.fn x paramType body returnType)
+      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.closure x body ρ := by
+  intro w₀ w₁ ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero => simp [LeanPoison.beval] at hbeval; cases hbeval
+  | succ fuel =>
+      simp [LeanPoison.beval] at hbeval
+      injection hbeval with hcfg hval
+      cases hcfg; cases hval; constructor <;> rfl
+
+lemma terminatesTo_pfn_inv (mode : LeanPoison.EvalMode) (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+  (μ : Memory) (ρ : VarEnv) (a : Address) (pm : Bool) (cf : Config) (o : Value) :
+  ∀ (w₀ w₁ : Void IO.RealWorld),
+    terminatesToW mode w₀ w₁ (Expr.pfn x paramType body returnType)
+      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+  cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } ∧ o = Value.peClosure x body ρ := by
+  intro w₀ w₁ ht
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero => simp [LeanPoison.beval] at hbeval; cases hbeval
+  | succ fuel =>
+      simp [LeanPoison.beval] at hbeval
+      injection hbeval with hcfg hval
+      cases hcfg; cases hval; constructor <;> rfl
+
+-- ================================================================
+-- terminatesTo inversion lemmas (world-free; for non-FR proofs)
+-- ================================================================
+
 /-- Inversion lemma for terminatesTo on number literals. -/
 lemma terminatesTo_num_inv' (mode : LeanPoison.EvalMode) (n : Int) (c₀ c₁ : Config) (v : Value) :
     terminatesTo mode (Expr.num n) c₀ c₁ v → c₁ = c₀ ∧ v = Value.num n := by
