@@ -1202,7 +1202,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
     (-- Mode 1: Predicate-based with R(k) = some true (then-branch effective)
      -- In ioFree mode, else-branch is skipped; res comes from res2 only
      ∃ (k : Tag) (deps : Deps),
-       matchGuard e1 ctx.memEnv ctx.varEnv = .ok (k, deps) ∧
+       matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .ok (k, deps) ∧
        ctx.regime.lookup? k = some true ∧
        ∃ res1 : TypeResult,
          typecheckExpr .ioFree { ctx with pureCtx := true } e1 (fuel - 1) = .ok res1 ∧
@@ -1221,7 +1221,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
     (-- Mode 2: Predicate-based with R(k) = some false (else-branch effective)
      -- In ioFree mode, then-branch is skipped; res comes from res3 only
      ∃ (k : Tag) (deps : Deps),
-       matchGuard e1 ctx.memEnv ctx.varEnv = .ok (k, deps) ∧
+       matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .ok (k, deps) ∧
        ctx.regime.lookup? k = some false ∧
        ∃ res1 : TypeResult,
          typecheckExpr .ioFree { ctx with pureCtx := true } e1 (fuel - 1) = .ok res1 ∧
@@ -1239,7 +1239,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
     ∨
     (-- Mode 3: Predicate-based with R(k) = none (conservative)
      ∃ (k : Tag) (deps : Deps),
-       matchGuard e1 ctx.memEnv ctx.varEnv = .ok (k, deps) ∧
+       matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .ok (k, deps) ∧
        ctx.regime.lookup? k = none ∧
        ∃ res1 : TypeResult,
          typecheckExpr .ioFree { ctx with pureCtx := true } e1 (fuel - 1) = .ok res1 ∧
@@ -1261,7 +1261,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
                                     (joinPoison res2.qualType.poison res3.qualType.poison)))
    ∨
    (-- Mode 4: Standard (matchGuard fails)
-     (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv = .error err) ∧
+    (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .error err) ∧
      ∃ res1 : TypeResult,
        typecheckExpr .ioFree ctx e1 (fuel - 1) = .ok res1 ∧
        res1.qualType.etyp = ETyp.bool ∧
@@ -1290,7 +1290,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
     unfold typecheckIf at htc
     simp only [bind, Except.bind] at htc
     -- Case split on matchGuard
-    cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv with
+    cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
     | ok kd =>
       -- Predicate-based: case split on regime.lookup? k
       obtain ⟨k, deps⟩ := kd
@@ -1452,7 +1452,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
 /-- In standard mode (when matchGuard fails), typecheckIf produces a result with noPred. -/
 lemma typecheckIf_standard_pred_noPred (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult) :
     typecheckIf .ioFree ctx e1 e2 e3 fuel = .ok res →
-    (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv = .error err) →
+    (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .error err) →
     res.qualType.pred = Predicate.noPred := by
   intro htc hmatch_fail
   obtain ⟨err, hmatch_err⟩ := hmatch_fail
@@ -1460,8 +1460,10 @@ lemma typecheckIf_standard_pred_noPred (ctx : TypeContext) (e1 e2 e3 : Expr) (fu
   | zero =>
     simp [typecheckIf] at htc
   | succ fuel' =>
+    have hmatch_err' : matchGuard e1 ctx.memEnv ctx.varEnv fuel' = .error err := by
+      simpa [Nat.succ_sub_one] using hmatch_err
     unfold typecheckIf at htc
-    simp only [bind, Except.bind, hmatch_err] at htc
+    simp only [bind, Except.bind, hmatch_err'] at htc
     -- Now we're in the standard mode path
     cases htc1 : typecheckExpr .ioFree ctx e1 fuel' with
     | error e =>
@@ -1512,7 +1514,7 @@ lemma typecheckIf_standard_pred_noPred (ctx : TypeContext) (e1 e2 e3 : Expr) (fu
 /-- In standard mode, typecheckIf produces etyp = joinETyps res2.etyp res3.etyp. -/
 lemma typecheckIf_standard_etyp (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult) :
     typecheckIf .ioFree ctx e1 e2 e3 fuel = .ok res →
-    (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv = .error err) →
+    (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .error err) →
     ∃ (res1 res2 res3 : TypeResult),
       typecheckExpr .ioFree ctx e1 (fuel - 1) = .ok res1 ∧
       res.qualType.etyp = joinETyps res2.qualType.etyp res3.qualType.etyp
@@ -1523,8 +1525,10 @@ lemma typecheckIf_standard_etyp (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Na
   | zero =>
     simp [typecheckIf] at htc
   | succ fuel' =>
+    have hmatch_err' : matchGuard e1 ctx.memEnv ctx.varEnv fuel' = .error err := by
+      simpa [Nat.succ_sub_one] using hmatch_err
     unfold typecheckIf at htc
-    simp only [bind, Except.bind, hmatch_err] at htc
+    simp only [bind, Except.bind, hmatch_err'] at htc
     cases htc1 : typecheckExpr .ioFree ctx e1 fuel' with
     | error e =>
       simp only [htc1] at htc
@@ -1576,7 +1580,7 @@ lemma typecheckIf_standard_etyp (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Na
 lemma typecheckIf_standard_etyp' (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat)
     (res res1 res2 res3 : TypeResult)
     (htc : typecheckIf .ioFree ctx e1 e2 e3 fuel = .ok res)
-    (hmatch_fail : ∃ err, matchGuard e1 ctx.memEnv ctx.varEnv = .error err)
+    (hmatch_fail : ∃ err, matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .error err)
     (htc1 : typecheckExpr .ioFree ctx e1 (fuel - 1) = .ok res1)
     (hbool1 : res1.qualType.etyp = ETyp.bool)
     (htc2 : typecheckExpr .ioFree ({ ctx with pc := joinPoison ctx.pc res1.qualType.poison, memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }) e2 (fuel - 1) = .ok res2)
@@ -1588,8 +1592,10 @@ lemma typecheckIf_standard_etyp' (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : N
   | zero =>
     simp [typecheckIf] at htc
   | succ fuel' =>
+    have hmatch_err' : matchGuard e1 ctx.memEnv ctx.varEnv fuel' = .error err := by
+      simpa [Nat.succ_sub_one] using hmatch_err
     unfold typecheckIf at htc
-    simp only [bind, Except.bind, hmatch_err] at htc
+    simp only [bind, Except.bind, hmatch_err'] at htc
     simp only [Nat.succ_sub_one] at htc1 htc2 htc3
     cases htc1' : typecheckExpr .ioFree ctx e1 fuel' with
     | error e =>
@@ -2903,7 +2909,7 @@ private lemma typecheckWhile_regime_mono (ctx : TypeContext) (e1 e2 : Expr) (fue
       simp at htc
   | succ fuel' =>
       unfold typecheckWhile at htc
-      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv with
+      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
       | ok g =>
           rcases g with ⟨k, deps⟩
           simp [hguard] at htc
@@ -3890,7 +3896,7 @@ private lemma typecheckWhile_preserves_nextTag (ctx : TypeContext) (e1 e2 : Expr
       simp at htc
   | succ fuel' =>
       unfold typecheckWhile at htc
-      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv with
+      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
       | ok g =>
           rcases g with ⟨k, deps⟩
           simp [hguard] at htc
@@ -5086,7 +5092,7 @@ private lemma typecheckWhile_nextTag_mono_normal (ctx : TypeContext) (e1 e2 : Ex
       simp at htc
   | succ fuel' =>
       unfold typecheckWhile at htc
-      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv with
+      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
       | ok g =>
           rcases g with ⟨k, deps⟩
           simp [hguard] at htc
@@ -5608,7 +5614,7 @@ private lemma typecheckIf_nextTag_mono_normal (ctx : TypeContext) (e1 e2 e3 : Ex
       simp at htc
   | succ fuel' =>
       simp [bind, Except.bind] at htc
-      cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv with
+      cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
       | error err =>
           simp [hmatch] at htc
           cases hte1 : typecheckExpr .normal ctx e1 fuel' with
@@ -6878,7 +6884,7 @@ private lemma typecheckWhile_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fu
   | zero => unfold typecheckWhile at htc; simp at htc
   | succ fuel' =>
       unfold typecheckWhile at htc
-      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv with
+      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
       | ok g =>
           rcases g with ⟨k, deps⟩
           simp [hguard] at htc
@@ -8331,7 +8337,7 @@ private lemma typecheckWhile_preserves_memEnvOnlyInts
       simp at htc
   | succ fuel' =>
       unfold typecheckWhile at htc
-      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv with
+      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
       | ok g =>
           rcases g with ⟨k, deps⟩
           simp [hguard] at htc

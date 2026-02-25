@@ -33,10 +33,31 @@ return 0 even when reporting type errors, since successfully finding errors is a
 for the tool.
 -/
 
--- Default fuel amount for evaluation
+-- Default fuel amount for evaluation and typechecking
 def defaultFuel : Nat := 1000
 -- Language Version No
 def versionNo := "1.0"
+
+private def initialTypeContext (regime : Regime) : TypeContext :=
+  {
+    pc := false
+    regime := regime
+    memEnv := {}
+    varEnv := ({} : VarTypeEnv)
+    tagEnv := {}
+    nextLoc := 0
+    nextTag := 1
+    pureCtx := false
+  }
+
+def typecheckExprSimple (e : _root_.Expr) (regime : Regime := emptyRegime)
+    (mode : LeanPoison.EvalMode := .normal) : TypecheckM QTyp := do
+  let result ← typecheck mode (initialTypeContext regime) e defaultFuel
+  return result.qualType
+
+def typecheckExprVerbose (e : _root_.Expr) (regime : Regime := emptyRegime)
+    (mode : LeanPoison.EvalMode := .normal) : TypecheckM TypeResult := do
+  typecheck mode (initialTypeContext regime) e defaultFuel
 
 structure CliOptions where
   verbose : Bool := false

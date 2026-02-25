@@ -688,11 +688,12 @@ structure PredSatLaws (predSat : PredSat) (tm : TagMeaning) : Prop where
   -- Bidirectional match law: if match_guard recognizes the condition as tag k,
   -- then the condition's boolean result matches predSat on the owning value.
   match_iff : ∀ (mode : LeanPoison.EvalMode) (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
+                  (fuel : Nat)
                   (k : Tag) (deps : Deps)
                   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (addr : Address) (pm : Bool) (cfg : Config)
                   (v : Value) (b : Bool),
     EnvRespectsTagMeaning tm σ Γ →
-    matchGuard condition Γ σ = .ok (k, deps) →
+    matchGuard condition Γ σ fuel = .ok (k, deps) →
     terminatesTo mode condition { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm } cfg (Value.bool b) →
     ( (∃ (x : Name) (qt : QTyp),
           σ.lookup x = some qt ∧
@@ -710,8 +711,9 @@ structure PredSatLaws (predSat : PredSat) (tm : TagMeaning) : Prop where
           v = Value.num n) ) →
     (b = true ↔ predSat k μ v)
 
-  mem_monotone : ∀ (k : Tag) (pred : Predicate) (μ μ' : Memory) (v : Value) (deps : Deps) (θ : RealizationMap),
-    extractDepsFromPred pred = .ok deps →
+  mem_monotone : ∀ (k : Tag) (pred : Predicate) (fuel : Nat)
+      (μ μ' : Memory) (v : Value) (deps : Deps) (θ : RealizationMap),
+    extractDepsFromPred pred fuel = .ok deps →
     (∀ l, l ∈ deps → ∀ a, θ.lookup l = some a → μ.lookup a = μ'.lookup a) →
     (predSat k μ v ↔ predSat k μ' v)
 

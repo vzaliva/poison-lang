@@ -4629,7 +4629,7 @@ private lemma stepFR_newRef
       intro k μ μ' v
       -- With `pred := noPred`, dependencies are empty, so the memory-agreement premise is trivial.
       have h :=
-        hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) (μ := μ) (μ' := μ') (v := v)
+        hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) 0 (μ := μ) (μ' := μ') (v := v)
           (deps := LocSet.empty) (θ := θ₀1) (by simp [extractDepsFromPred]; rfl) (by intro l hl; cases hl)
       exact h
     have hqtypPredHolds_mem :
@@ -4928,7 +4928,7 @@ private lemma stepFR_newRef
         ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
       intro k μ μ' v
       have h :=
-        hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) (μ := μ) (μ' := μ') (v := v)
+        hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) 0 (μ := μ) (μ' := μ') (v := v)
           (deps := LocSet.empty) (θ := θ₁1) (by simp [extractDepsFromPred]; rfl) (by intro l hl; cases hl)
       exact h
     have hqtypPredHolds_mem :
@@ -6878,6 +6878,7 @@ private lemma guard_branch_alignment
     (hwfTm : wfTagMeaningCtx tm ctx) (hpred : PredSatLaws predSat tm)
     (hcwr : consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀)
     (cond : Expr) (k : Tag) (deps : Deps) (b b' : Bool) (cfg' : Config)
+    {fuel : Nat}
     (howner :
       ∃ v,
         ( (∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
@@ -6895,7 +6896,7 @@ private lemma guard_branch_alignment
             θ₀.lookup l0 = some a ∧
             μ₀.lookup a = some n ∧
             v = Value.num n) ) ) :
-    matchGuard cond ctx.memEnv ctx.varEnv = .ok (k, deps) →
+    matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps) →
     ctx.regime.lookup? k = some b →
     terminatesTo mode cond
       { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
@@ -6904,7 +6905,7 @@ private lemma guard_branch_alignment
   intro hmatch hregime hterm
   rcases howner with ⟨v, hv_owner⟩
   have hmatch_iff_v : (b' = true ↔ predSat k μ₀ v) := by
-    apply hpred.match_iff mode cond ctx.memEnv ctx.varEnv k deps
+    apply hpred.match_iff mode cond ctx.memEnv ctx.varEnv fuel k deps
       μ₀ ρ₀ θ₀ l₀ pm₀ cfg' v b'
     · exact hwfTm
     · exact hmatch
@@ -7175,7 +7176,7 @@ private lemma stepFR_ite_mode1
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
   (htc : typecheck .ioFree ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res)
-  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv = .ok (k, deps))
+  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
   (hregime_true : ctxᵢ.regime.lookup? k = some true)
   (res1 res2 : TypeResult)
   (htc1 : typecheckExpr .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
@@ -7285,7 +7286,7 @@ private lemma stepFR_ite_mode1
     -- and consistentWithRegime ensures that if R(k) = some true, then the runtime predicate
     -- on that owner is satisfied, which means the guard evaluates to true.
     have hentm : EnvRespectsTagMeaning tm ctxᵢ.varEnv ctxᵢ.memEnv := by simpa [wfTagMeaningCtx] using hwfTm
-    have hmatch_iff := hpredlaws.match_iff .ioFree e1 ctxᵢ.memEnv ctxᵢ.varEnv k deps
+    have hmatch_iff := hpredlaws.match_iff .ioFree e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' k deps
       μ₀ ρ₀ θ₀ a₀ pm cfg₀1 (Value.bool b₀) b₀ hentm hmatch ht₀_e1
     -- hmatch_iff gives us the premise that there's an owner with tag k
     -- Now we need to use consistentWithRegime to connect R(k) = some true to b₀ = true
@@ -7459,7 +7460,7 @@ private lemma stepFR_ite_mode2
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
   (htc : typecheck .ioFree ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res)
-  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv = .ok (k, deps))
+  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
   (hregime_false : ctxᵢ.regime.lookup? k = some false)
   (res1 res3 : TypeResult)
   (htc1 : typecheckExpr .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
@@ -7544,7 +7545,7 @@ private lemma stepFR_ite_mode3
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv = .ok (k, deps))
+  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
   (hregime_none : ctxᵢ.regime.lookup? k = none)
   (res1 res2 res3 : TypeResult)
   (htc1 : typecheckExpr .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
@@ -7596,7 +7597,7 @@ private lemma stepFR_ite_mode4
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (err : String) (hmatch_fail : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv = .error err)
+  (err : String) (hmatch_fail : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .error err)
   (res1 res2 res3 : TypeResult)
   (htc1 : typecheckExpr .ioFree ctxᵢ e1 fuel' = .ok res1)
   (hbool : res1.qualType.etyp = ETyp.bool)
@@ -8737,7 +8738,7 @@ lemma typecheckIf_ioFree_ok_pred_noPred
       have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by
         native_decide
       unfold typecheckIf at htc
-      cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv with
+      cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
       | error err =>
           exact typecheckIf_standard_pred_noPred ctx e1 e2 e3 (Nat.succ fuel') res htc0 ⟨err, hmatch⟩
       | ok kd =>
@@ -9842,7 +9843,7 @@ lemma ioFree_guardClosure_pred_implies_tag_absent
                 simp [typecheckWhile] at htc'
             | succ fuel' =>
                 unfold typecheckWhile at htc'
-                cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv with
+                cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
                 | ok kd =>
                     rcases kd with ⟨k', deps⟩
                     simp [hmatch] at htc'
@@ -10785,7 +10786,7 @@ private lemma stepFR_assign
                       ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
                     intro k μ μ' v
                     have h :=
-                      hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) (μ := μ) (μ' := μ') (v := v)
+                      hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) 0 (μ := μ) (μ' := μ') (v := v)
                         (deps := LocSet.empty) (θ := θ₀2) (by simp [extractDepsFromPred]; rfl) (by intro l hl; cases hl)
                     exact h
                   have hqtypPredHolds_mem :
@@ -10890,7 +10891,7 @@ private lemma stepFR_assign
             ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
           intro k μ μ' v
           have h :=
-            hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) (μ := μ) (μ' := μ') (v := v)
+            hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) 0 (μ := μ) (μ' := μ') (v := v)
               (deps := LocSet.empty) (θ := θ₀2) (by simp [extractDepsFromPred]; rfl) (by intro l hl; cases hl)
           exact h
         have hqtypPredHolds_mem :
@@ -11173,7 +11174,7 @@ private lemma stepFR_assign
                       ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
                     intro k μ μ' v
                     have h :=
-                      hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) (μ := μ) (μ' := μ') (v := v)
+                      hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) 0 (μ := μ) (μ' := μ') (v := v)
                         (deps := LocSet.empty) (θ := θ₁2) (by simp [extractDepsFromPred]; rfl) (by intro l hl; cases hl)
                     exact h
                   have hqtypPredHolds_mem :
@@ -11279,7 +11280,7 @@ private lemma stepFR_assign
             ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
           intro k μ μ' v
           have h :=
-            hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) (μ := μ) (μ' := μ') (v := v)
+            hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) 0 (μ := μ) (μ' := μ') (v := v)
               (deps := LocSet.empty) (θ := θ₁2) (by simp [extractDepsFromPred]; rfl) (by intro l hl; cases hl)
           exact h
         have hqtypPredHolds_mem :
