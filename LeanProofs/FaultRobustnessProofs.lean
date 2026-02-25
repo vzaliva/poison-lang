@@ -7979,96 +7979,6 @@ private lemma stepFR_vlet
       exact hagree2_ctx'
     exact agreeValueUnder_transport_clean hclean h_ret_etyp hpoison_imp hagree2
 
-private lemma arrowMemberCvcrSelector_singleton
-  (predSat : PredSat)
-  (st1 st2 : Typ) (p : Poison)
-  (x : Name) (body : Expr) (σcap : CapturedVarEnv) (ρcap : VarEnv) :
-  ArrowMemberCvcrSelector predSat st1 st2 p [FnTClosure.regular x body σcap] x body σcap ρcap := by
-  refine .intro ?_ ?_
-  · intro R μ qtFun hetypFun hcvcr y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR
-    cases hcvcr with
-    | intro hdeep =>
-        cases hdeep with
-        | nonClosure hnotClosure _ =>
-            exfalso
-            exact hnotClosure x body ρcap rfl
-        | closure x' body' ρcap' σcap' st1' st2' p' tcls' hv hetyp' hmem' hcapProp _hrec =>
-            cases hv
-            have heqArrow : ETyp.arrow st1' st2' p' tcls' = ETyp.arrow st1 st2 p [FnTClosure.regular x body σcap] := by
-              exact hetyp'.symm.trans hetypFun
-            simp only [ETyp.arrow.injEq] at heqArrow
-            obtain ⟨rfl, rfl, rfl, rfl⟩ := heqArrow
-            have htclEq : FnTClosure.regular x body σcap' = FnTClosure.regular x body σcap := by
-              simpa using hmem'
-            cases htclEq
-            exact hcapProp y qt_y k_y (list_lookup_of_ofCaptured_lookup σcap y qt_y hlookup_σ) hguard hkR
-        | peClosure _ _ _ _ _ _ _ _ _ hv _ _ _ _ =>
-            cases hv
-  · intro R μ qtFun hetypFun hcvcr y qt_y v_y hlookup_σ hlookup_ρ
-    cases hcvcr with
-    | intro hdeep =>
-        cases hdeep with
-        | nonClosure hnotClosure _ =>
-            exfalso
-            exact hnotClosure x body ρcap rfl
-        | closure x' body' ρcap' σcap' st1' st2' p' tcls' hv hetyp' hmem' _hcapProp hrec =>
-            cases hv
-            have heqArrow : ETyp.arrow st1' st2' p' tcls' = ETyp.arrow st1 st2 p [FnTClosure.regular x body σcap] := by
-              exact hetyp'.symm.trans hetypFun
-            simp only [ETyp.arrow.injEq] at heqArrow
-            obtain ⟨rfl, rfl, rfl, rfl⟩ := heqArrow
-            have htclEq : FnTClosure.regular x body σcap' = FnTClosure.regular x body σcap := by
-              simpa using hmem'
-            cases htclEq
-            exact .intro (hrec y qt_y v_y (list_lookup_of_ofCaptured_lookup σcap y qt_y hlookup_σ) hlookup_ρ)
-        | peClosure _ _ _ _ _ _ _ _ _ hv _ _ _ _ =>
-            cases hv
-
-private lemma pArrowMemberCvcrSelector_singleton
-  (predSat : PredSat)
-  (st1 st2 : Typ) (p : Poison)
-  (x : Name) (body : Expr) (pbody : PExpr) (σcap : CapturedVarEnv) (ρcap : VarEnv) :
-  PArrowMemberCvcrSelector predSat st1 st2 p [PFnTClosure.regular x pbody σcap] x body pbody σcap ρcap := by
-  refine .intro ?_ ?_
-  · intro R μ qtFun hetypFun hcvcr y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR
-    cases hcvcr with
-    | intro hdeep =>
-        cases hdeep with
-        | nonClosure _ hnotPeClosure =>
-            exfalso
-            exact hnotPeClosure x body ρcap rfl
-        | closure _ _ _ _ _ _ _ _ hv _ _ _ _ =>
-            cases hv
-        | peClosure x' body' pbody' ρcap' σcap' st1' st2' p' tcls' hv hetyp' hmem' hcapProp _hrec =>
-            cases hv
-            have heqPArrow : ETyp.parrow st1' st2' p' tcls' = ETyp.parrow st1 st2 p [PFnTClosure.regular x pbody σcap] := by
-              exact hetyp'.symm.trans hetypFun
-            simp only [ETyp.parrow.injEq] at heqPArrow
-            obtain ⟨rfl, rfl, rfl, rfl⟩ := heqPArrow
-            have htclEq : PFnTClosure.regular x pbody' σcap' = PFnTClosure.regular x pbody σcap := by
-              simpa using hmem'
-            cases htclEq
-            exact hcapProp y qt_y k_y (list_lookup_of_ofCaptured_lookup σcap y qt_y hlookup_σ) hguard hkR
-  · intro R μ qtFun hetypFun hcvcr y qt_y v_y hlookup_σ hlookup_ρ
-    cases hcvcr with
-    | intro hdeep =>
-        cases hdeep with
-        | nonClosure _ hnotPeClosure =>
-            exfalso
-            exact hnotPeClosure x body ρcap rfl
-        | closure _ _ _ _ _ _ _ _ hv _ _ _ _ =>
-            cases hv
-        | peClosure x' body' pbody' ρcap' σcap' st1' st2' p' tcls' hv hetyp' hmem' _hcapProp hrec =>
-            cases hv
-            have heqPArrow : ETyp.parrow st1' st2' p' tcls' = ETyp.parrow st1 st2 p [PFnTClosure.regular x pbody σcap] := by
-              exact hetyp'.symm.trans hetypFun
-            simp only [ETyp.parrow.injEq] at heqPArrow
-            obtain ⟨rfl, rfl, rfl, rfl⟩ := heqPArrow
-            have htclEq : PFnTClosure.regular x pbody' σcap' = PFnTClosure.regular x pbody σcap := by
-              simpa using hmem'
-            cases htclEq
-            exact .intro (hrec y qt_y v_y (list_lookup_of_ofCaptured_lookup σcap y qt_y hlookup_σ) hlookup_ρ)
-
 /-- Path D helper: build direct member `varsRegime` facts for the singleton closure captured env
 created at lambda typing sites, from the enclosing `consistentWithRegime`. -/
 private lemma memberVarsRegimeEvidence_of_toCaptured
@@ -8318,28 +8228,6 @@ private lemma stepFR_fn
             (memberCvcrEvidence_of_toCaptured
               (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
               (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁)
-        have hcvcrSel₀ :
-            ArrowMemberCvcrSelector predSat
-              paramType returnType ctxᵢ.pc
-              [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
-              x body (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ := by
-          exact
-            arrowMemberCvcrSelector_singleton
-              (predSat := predSat)
-              (st1 := paramType) (st2 := returnType) (p := ctxᵢ.pc)
-              (x := x) (body := body)
-              (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap := ρ₀)
-        have hcvcrSel₁ :
-            ArrowMemberCvcrSelector predSat
-              paramType returnType ctxᵢ.pc
-              [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
-              x body (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ := by
-          exact
-            arrowMemberCvcrSelector_singleton
-              (predSat := predSat)
-              (st1 := paramType) (st2 := returnType) (p := ctxᵢ.pc)
-              (x := x) (body := body)
-              (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap := ρ₁)
         exact
           agreeValueUnder.clean_internal_arrow
             (tcl := FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv))
@@ -8584,28 +8472,6 @@ private lemma stepFR_pfn
                 (memberCvcrEvidence_of_toCaptured
                   (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
                   (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁)
-            have hcvcrSel₀ :
-                PArrowMemberCvcrSelector predSat
-                  paramType returnType ctxᵢ.pc
-                  [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
-                  x body pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ := by
-              exact
-                pArrowMemberCvcrSelector_singleton
-                  (predSat := predSat)
-                  (st1 := paramType) (st2 := returnType) (p := ctxᵢ.pc)
-                  (x := x) (body := body) (pbody := pbody)
-                  (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap := ρ₀)
-            have hcvcrSel₁ :
-                PArrowMemberCvcrSelector predSat
-                  paramType returnType ctxᵢ.pc
-                  [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
-                  x body pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ := by
-              exact
-                pArrowMemberCvcrSelector_singleton
-                  (predSat := predSat)
-                  (st1 := paramType) (st2 := returnType) (p := ctxᵢ.pc)
-                  (x := x) (body := body) (pbody := pbody)
-                  (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap := ρ₁)
             exact
               agreeValueUnder.clean_internal_parrow
                 (pbody := pbody)
@@ -24371,55 +24237,6 @@ private lemma stepFR_app_parrow_sync_from_clean
     exfalso
     have : ETyp.ref _ _ = ETyp.parrow st1 st2 p tcls := hetyp'.symm.trans hetyp
     simp at this
-
--- Given a synchronized regular-closure witness and successful application map, extract
--- the shared selected member/body typing package for arrow branch.
-private lemma stepFR_app_arrow_member_varsRegime_extract
-  (predSat : PredSat) (R : Regime) (μ : Memory)
-  (qtFun : QTyp)
-  (xFun : Name) (body : Expr) (ρcap : VarEnv)
-  (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
-  (σcap : CapturedVarEnv)
-  (hvalc :
-    valueConsistentWithRegime predSat R qtFun μ (Value.closure xFun body ρcap))
-  (hcvcrSel : ArrowMemberCvcrSelector predSat st1 st2 p tcls xFun body σcap ρcap)
-  (hetyp : qtFun.etyp = ETyp.arrow st1 st2 p tcls) :
-  ∀ x qt k v,
-    (VarTypeEnv.ofCaptured σcap).lookup x = some qt →
-    ρcap.lookup x = some v →
-    qtypGuardTag qt = some k →
-    R.lookup? k ≠ none →
-    varsRegime predSat R μ ρcap (x, qt) := by
-  have hcvcr_fun :
-      closureCapturedVarsRegime predSat R qtFun μ (Value.closure xFun body ρcap) :=
-    valueConsistentWithRegime_closureCapturedVarsRegime hvalc
-  intro x qt k v hlookup hlookup_v hguard hRdef
-  cases hcvcrSel with
-  | intro hselVars _hselCvcr =>
-      exact hselVars (R := R) (μ := μ) (qtFun := qtFun) hetyp hcvcr_fun
-        x qt k v hlookup hlookup_v hguard hRdef
-
-private lemma stepFR_app_arrow_member_cvcr_extract
-  (predSat : PredSat) (R : Regime) (μ : Memory)
-  (qtFun : QTyp)
-  (xFun : Name) (body : Expr) (ρcap : VarEnv)
-  (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
-  (σcap : CapturedVarEnv)
-  (hvalc :
-    valueConsistentWithRegime predSat R qtFun μ (Value.closure xFun body ρcap))
-  (hcvcrSel : ArrowMemberCvcrSelector predSat st1 st2 p tcls xFun body σcap ρcap)
-  (hetyp : qtFun.etyp = ETyp.arrow st1 st2 p tcls) :
-  ∀ x qt v,
-    (VarTypeEnv.ofCaptured σcap).lookup x = some qt →
-    ρcap.lookup x = some v →
-    closureCapturedVarsRegime predSat R qt μ v := by
-  have hcvcr_fun :
-      closureCapturedVarsRegime predSat R qtFun μ (Value.closure xFun body ρcap) :=
-    valueConsistentWithRegime_closureCapturedVarsRegime hvalc
-  intro x qt v hlookup hlookup_v
-  cases hcvcrSel with
-  | intro _hselVars hselCvcr =>
-      exact hselCvcr (R := R) (μ := μ) (qtFun := qtFun) hetyp hcvcr_fun x qt v hlookup hlookup_v
 
 private lemma stepFR_app_arrow_extract_shared_member
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)

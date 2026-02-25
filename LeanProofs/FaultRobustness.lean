@@ -461,86 +461,7 @@ lemma joinETyps_preserves_dirty_parrow
 
 -- Two values agree under a given regime and memory environments.
 -- Clean values must agree; poisoned values may agree vacuously depending on regime.
-/-- A proof-producing selector for deep closure-captured-vars regime evidence,
-aligned to a specific synchronized arrow closure member `(x, body, σcap)`.
-
-Intuition:
-- In the FR logic, clean function application reasoning is about a *specific* closure alternative:
-  the two runs synchronize on the same function body and a concrete captured typing/environment pair.
-- `closureCapturedVarsRegime` is a value-level invariant: it says the closure value is recursively
-  well-behaved with respect to the current regime, but it is not itself indexed by the particular
-  closure member that application reasoning has selected.
-- This selector is the logical bridge from the value-level invariant to the selected member-level
-  view needed at application body entry.  Once a run is focused on `(x, body, σcap, ρcap)`, the
-  selector recovers recursive `closureCapturedVarsRegime` facts for the captured bindings named by
-  `σcap` and realized in `ρcap`.
-
-Why it is polymorphic in `R` and `μ`:
-- FR proofs transport agreement facts across steps that can change the current regime/memory while
-  preserving the same synchronized closure member.
-- Regime/memory polymorphism lets the selector remain attached to that member across such transports,
-  so the application-body reasoning can use it at the point where the body is actually entered.
-
-This is a logical/proof payload only (wrapped as an inductive `Prop`), not executable data.
-It exposes two member-coupled views for the same synchronized member:
-- active-guard `varsRegime` facts for captured bindings at the selected closure root, and
-- recursive `closureCapturedVarsRegime` facts for captured values (used for deeper closure descent). -/
-inductive ArrowMemberCvcrSelector
-    (predSat : PredSat)
-    (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
-    (x : Name) (body : Expr) (σcap : CapturedVarEnv) (ρcap : VarEnv) : Prop where
-  | intro :
-      (∀ {R : Regime} {μ : Memory} {qtFun : QTyp},
-        qtFun.etyp = ETyp.arrow st1 st2 p tcls →
-        closureCapturedVarsRegime predSat R qtFun μ (Value.closure x body ρcap) →
-        ∀ (y : Name) (qt_y : QTyp) (k_y : Tag) (v_y : Value),
-          (VarTypeEnv.ofCaptured σcap).lookup y = some qt_y →
-          ρcap.lookup y = some v_y →
-          qtypGuardTag qt_y = some k_y →
-          R.lookup? k_y ≠ none →
-          varsRegime predSat R μ ρcap (y, qt_y)) →
-      (∀ {R : Regime} {μ : Memory} {qtFun : QTyp},
-        qtFun.etyp = ETyp.arrow st1 st2 p tcls →
-        closureCapturedVarsRegime predSat R qtFun μ (Value.closure x body ρcap) →
-        ∀ (y : Name) (qt_y : QTyp) (v_y : Value),
-          (VarTypeEnv.ofCaptured σcap).lookup y = some qt_y →
-          ρcap.lookup y = some v_y →
-          closureCapturedVarsRegime predSat R qt_y μ v_y) →
-      ArrowMemberCvcrSelector predSat st1 st2 p tcls x body σcap ρcap
-
-/-- Pure-arrow analogue of `ArrowMemberCvcrSelector`.
-
-Same FR role as the arrow selector, but for synchronized `parrow` members used in clean pure
-application reasoning.  The extra `pbody` parameter is carried only to align the selector with the
-`PFnTClosure.regular x pbody σcap` member witness shape used in
-`agreeValueUnder.clean_internal_parrow`.
-
-As with the arrow selector, this carries both the member-root active-guard `varsRegime` view
-and the recursive `closureCapturedVarsRegime` view for the same synchronized captured member. -/
-inductive PArrowMemberCvcrSelector
-    (predSat : PredSat)
-    (st1 st2 : Typ) (p : Poison) (tcls : List PFnTClosure)
-    (x : Name) (body : Expr) (_pbody : PExpr) (σcap : CapturedVarEnv) (ρcap : VarEnv) : Prop where
-  | intro :
-      (∀ {R : Regime} {μ : Memory} {qtFun : QTyp},
-        qtFun.etyp = ETyp.parrow st1 st2 p tcls →
-        closureCapturedVarsRegime predSat R qtFun μ (Value.peClosure x body ρcap) →
-        ∀ (y : Name) (qt_y : QTyp) (k_y : Tag) (v_y : Value),
-          (VarTypeEnv.ofCaptured σcap).lookup y = some qt_y →
-          ρcap.lookup y = some v_y →
-          qtypGuardTag qt_y = some k_y →
-          R.lookup? k_y ≠ none →
-          varsRegime predSat R μ ρcap (y, qt_y)) →
-      (∀ {R : Regime} {μ : Memory} {qtFun : QTyp},
-        qtFun.etyp = ETyp.parrow st1 st2 p tcls →
-        closureCapturedVarsRegime predSat R qtFun μ (Value.peClosure x body ρcap) →
-        ∀ (y : Name) (qt_y : QTyp) (v_y : Value),
-          (VarTypeEnv.ofCaptured σcap).lookup y = some qt_y →
-          ρcap.lookup y = some v_y →
-          closureCapturedVarsRegime predSat R qt_y μ v_y) →
-      PArrowMemberCvcrSelector predSat st1 st2 p tcls x body _pbody σcap ρcap
-
-/-- Path D payload (not yet wired into `agreeValueUnder`): direct member-level active-guard facts
+/-- Path D payload: direct member-level active-guard facts
 for a fixed captured member `(σcap, ρcap)` at the current regime/memory. -/
 def MemberVarsRegimeEvidence
     (predSat : PredSat) (R : Regime) (μ : Memory)
@@ -552,7 +473,7 @@ def MemberVarsRegimeEvidence
     R.lookup? k_y ≠ none →
     varsRegime predSat R μ ρcap (y, qt_y)
 
-/-- Path D payload (not yet wired into `agreeValueUnder`): direct recursive captured-value
+/-- Path D payload: direct recursive captured-value
 closure-regime facts for a fixed captured member `(σcap, ρcap)` at the current regime/memory. -/
 def MemberCvcrEvidence
     (predSat : PredSat) (R : Regime) (μ : Memory)
