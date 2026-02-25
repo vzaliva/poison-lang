@@ -216,10 +216,10 @@ lemma VarTypeEnv_lookup_update_ne (env : VarTypeEnv) (x y : Name) (qt : QTyp) (h
 -- MemoryTypeEnv equiv and joinMemEnv idempotency
 -- ================================================================
 
-private lemma joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
+lemma joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
   cases p <;> rfl
 
-private lemma joinPredicates_idempotent (pred : Predicate) : joinPredicates pred pred = pred := by
+lemma joinPredicates_idempotent (pred : Predicate) : joinPredicates pred pred = pred := by
   simp [joinPredicates]
   have h_refl : beqPredicate pred pred = true := by
     have : LawfulBEq Predicate := inferInstance
@@ -2244,7 +2244,7 @@ private lemma joinRegimes_combine_fun_eq :
   funext k ob1 ob2
   cases ob1 <;> cases ob2 <;> simp
 
-private lemma joinRegimes_lookup_of_some_some
+lemma joinRegimes_lookup_of_some_some
     (R1 R2 : Regime) (k : Tag) (b : Bool)
     (h1 : R1.lookup? k = some b)
     (h2 : R2.lookup? k = some b) :
