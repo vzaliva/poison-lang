@@ -98,6 +98,7 @@ This happens once and takes a few seconds. After that, startup is instant.
 - All agents share the same Lean toolchain
 - Independent configurations per agent
 - Both agents can use lean-lsp-mcp MCP server via uvx
+- **Parallel runs**: You can run `codex-jailed` and `claude-jailed` at the same time; each uses a different container name (`poison-ai-agent-codex`, `poison-ai-agent-claude`). Override with `AI_AGENT_CONTAINER_NAME` if needed.
 
 **Git Integration**
 - SSH agent forwarding enabled (if ssh-agent running on host)

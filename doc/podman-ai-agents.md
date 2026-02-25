@@ -52,7 +52,7 @@ The wrapper script `ai-agent-jailed` supports multiple AI coding agents:
 | `claude` | `ai-agent-jailed claude` | Anthropic Claude Code |
 | `codex` | `ai-agent-jailed codex` | OpenAI Codex |
 
-All agents share the same Lean toolchain and volumes but have independent configurations.
+All agents share the same Lean toolchain and volumes but have independent configurations. Each agent uses a distinct container name (`poison-ai-agent-claude`, `poison-ai-agent-codex`, etc.), so you can run multiple agents in parallel (e.g. `codex-jailed` in one terminal and `claude-jailed` in another). Override the container name with `AI_AGENT_CONTAINER_NAME` if needed.
 
 ---
 
@@ -205,6 +205,9 @@ ssh -T git@github.com
 - Check `$SSH_AUTH_SOCK` is set on the host
 - The wrapper only forwards the agent if the socket exists and is valid
 
+**"container name ... is already in use":**
+- The script uses per-agent container names; ensure you have the latest `ai-agent-jailed`. To override: `AI_AGENT_CONTAINER_NAME=my-container claude-jailed`
+
 ### MCP Tool Support
 
 Both Claude and Codex can use the `lean-lsp-mcp` MCP server via `uvx`:
@@ -281,6 +284,31 @@ npm update -g @openai/codex
 ```
 
 (Changes persist within the container image until next rebuild.)
+
+---
+
+## Migration to per-agent container names
+
+If you used an older `ai-agent-jailed` that gave every run the same container name (`poison-ai-agent`), you can switch to the new per-agent names without re-creating image or volumes.
+
+**You do not need to re-create anything.** The image (`localhost/poison-ai-agent:latest`) and all volumes (`ai_agent_*`) are unchanged. Containers are ephemeral (`--rm`): they are removed when they exit, and only the *name* used at start time has changed. All persistent state (Elan, caches, agent config) lives in volumes and is shared as before.
+
+**Steps:**
+
+1. **Update the script**  
+   Replace your `ai-agent-jailed` (in `~/bin` or wherever you use it) with the version that uses per-agent container names (`poison-ai-agent-claude`, `poison-ai-agent-codex`, etc.).
+
+2. **Remove the old container name if it still exists**  
+   If a container named `poison-ai-agent` is still present (e.g. from a run that did not exit cleanly), remove it so the name is free:
+   ```bash
+   podman rm -f poison-ai-agent
+   ```
+   This removes only the **container** (the named run instance), not the image. Your built image `localhost/poison-ai-agent:latest` is unchanged; no rebuild is triggered. If you get "no such container", you can ignore this.
+
+3. **Run as usual**  
+   Use `claude-jailed` or `codex-jailed` as before. They now use distinct container names and can run in parallel.
+
+**There is no "fork" or copy of the container.** Podman does not clone containers. The new runs simply start a new container from the same image, with the same volume mounts, under a new name. Your existing volumes and image are reused as-is.
 
 ---
 

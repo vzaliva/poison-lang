@@ -24,11 +24,13 @@ set -euo pipefail
 #   codex-jailed --help     # If symlinked
 #
 # Environment variables:
-#   POISON_PROJECT_DIR  - Override default project directory (default: ~/src/poison-lang or git root)
-#   AI_AGENT_IMAGE      - Override container image (default: localhost/poison-ai-agent:latest)
-#   AI_AGENT_HOST_ELAN  - If set to "off", use a dedicated Elan volume instead of the host.
-#                         By default, host ~/.elan is bind-mounted read-only at /home/user/.elan
-#                         (reuses your existing toolchains without exposing other host state).
+#   POISON_PROJECT_DIR       - Override default project directory (default: ~/src/poison-lang or git root)
+#   AI_AGENT_IMAGE           - Override container image (default: localhost/poison-ai-agent:latest)
+#   AI_AGENT_CONTAINER_NAME  - Override container name (default: poison-ai-agent-<agent>, e.g. poison-ai-agent-claude).
+#                              Per-agent names allow running codex-jailed and claude-jailed in parallel.
+#   AI_AGENT_HOST_ELAN       - If set to "off", use a dedicated Elan volume instead of the host.
+#                              By default, host ~/.elan is bind-mounted read-only at /home/user/.elan
+#                              (reuses your existing toolchains without exposing other host state).
 
 # Detect agent from script name (for symlinks like claude-jailed, codex-jailed)
 SCRIPT_NAME="$(basename "$0")"
@@ -123,6 +125,7 @@ if [ -z "$PROJ_DIR" ] || [ ! -d "$PROJ_DIR" ]; then
 fi
 
 IMAGE="${AI_AGENT_IMAGE:-localhost/poison-ai-agent:latest}"
+CONTAINER_NAME="${AI_AGENT_CONTAINER_NAME:-poison-ai-agent-${AGENT}}"
 HOST_UID="$(id -u)"
 HOST_GID="$(id -g)"
 HOST_USER="$(id -un)"
@@ -160,7 +163,7 @@ fi
 # Build podman run command with SSH agent forwarding if available
 PODMAN_ARGS=(
   run --rm -it
-  --name poison-ai-agent
+  --name "$CONTAINER_NAME"
   --network host
   "${PODMAN_USERNS_ARGS[@]}"
   -e HOST_UID="$HOST_UID"

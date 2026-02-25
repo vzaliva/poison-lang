@@ -74,9 +74,12 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
 #
 # Install into a read-only seed location and expose `claude` on PATH.
 # Disable auto-updater in-container: updates should happen by rebuilding the image.
+# To force reinstall when Claude Code is updated, pass --build-arg CLAUDE_UPDATE=<new value>.
+ARG CLAUDE_UPDATE=1
 ENV DISABLE_AUTOUPDATER=1 \
     CLAUDE_SEED=/opt/claude-seed
-RUN mkdir -p "${CLAUDE_SEED}" \
+RUN : "${CLAUDE_UPDATE}" \
+    && mkdir -p "${CLAUDE_SEED}" \
     && HOME="${CLAUDE_SEED}" bash -lc 'curl -fsSL https://claude.ai/install.sh | bash'
 # Do not install claude to /usr/local/bin: the CLI treats that as a leftover npm install and warns.
 # Entrypoint symlinks ~/.local/bin/claude to the seed binary so PATH finds it.
