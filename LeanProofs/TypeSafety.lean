@@ -7594,6 +7594,54 @@ lemma joinPredicates_eq_guardClosure
               cases htag : (k1 == k2) <;> simp [joinPredicates, hbeq, htag] at h
     exact False.elim this
 
+/-- If a left fold that only updates the predicate component via `joinPredicates`
+ends at a `guardClosure`, then the initial predicate was already that `guardClosure`. -/
+lemma fold_joinPred_guardClosure_init
+    (env : MemoryTypeEnv) (xs : List Loc) (storedPoison : Poison) (storedPred : Predicate)
+    {k : Tag} {arg_name : Name} {pred_body : PExpr} {var_env : CapturedVarEnv}
+    (hfold :
+      ((xs.foldl
+          (fun acc l =>
+            match env.get? l with
+            | some qt => (joinPoison acc.1 qt.poison, joinPredicates acc.2 qt.pred)
+            | none => acc)
+          (storedPoison, storedPred)).2) =
+        Predicate.guardClosure k arg_name pred_body var_env) :
+    storedPred = Predicate.guardClosure k arg_name pred_body var_env := by
+  induction xs generalizing storedPoison storedPred with
+  | nil =>
+      simpa using hfold
+  | cons x xs ih =>
+      simp [List.foldl] at hfold
+      cases hget : env.get? x with
+      | none =>
+          have hget' : env[x]? = none := by
+            simpa using hget
+          have htail :
+              ((xs.foldl
+                  (fun acc l =>
+                    match env.get? l with
+                    | some qt => (joinPoison acc.1 qt.poison, joinPredicates acc.2 qt.pred)
+                    | none => acc)
+                  (storedPoison, storedPred)).2) =
+                Predicate.guardClosure k arg_name pred_body var_env := by
+            simpa [hget'] using hfold
+          exact ih (storedPoison := storedPoison) (storedPred := storedPred) htail
+      | some qt =>
+          have hget' : env[x]? = some qt := by
+            simpa using hget
+          have hjoin :
+              joinPredicates storedPred qt.pred =
+                Predicate.guardClosure k arg_name pred_body var_env :=
+            ih
+              (storedPoison := joinPoison storedPoison qt.poison)
+              (storedPred := joinPredicates storedPred qt.pred)
+              (by simpa [hget'] using hfold)
+          exact
+            (joinPredicates_eq_guardClosure
+              (p := storedPred) (q := qt.pred)
+              (k := k) (arg_name := arg_name) (pred_body := pred_body) (var_env := var_env) hjoin).1
+
 /-- When the right env has nothing at l, the join returns the left env's value. -/
 lemma joinMemEnvs_lookup_eq_left_of_right_none (env1 env2 : MemoryTypeEnv) (l : Loc) :
   env1.contains l → env2[l]? = none → (joinMemEnvs env1 env2).lookup l = env1.lookup l := by
