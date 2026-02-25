@@ -2496,7 +2496,7 @@ private lemma joinTypeResults_regime_monotone
       | ⟨resEtyp, resPoison, resPred⟩ =>
           Except.ok
             (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-              joinMemEnvs acc.2.1 result.memEnv',
+              joinMemEnvsStrong acc.2.1 result.memEnv',
               joinPoison acc.2.2.1 resPoison,
               joinPredicates acc.2.2.2.1 resPred,
               joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
@@ -3395,7 +3395,7 @@ lemma joinTypeResults_nextTag_eq_max
       | ⟨resEtyp, resPoison, resPred⟩ =>
           Except.ok
             (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-              joinMemEnvs acc.2.1 result.memEnv',
+              joinMemEnvsStrong acc.2.1 result.memEnv',
               joinPoison acc.2.2.1 resPoison,
               joinPredicates acc.2.2.2.1 resPred,
               joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
@@ -6272,7 +6272,7 @@ lemma joinTypeResults_nextLoc_eq_max
       | ⟨resEtyp, resPoison, resPred⟩ =>
           Except.ok
             (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-              joinMemEnvs acc.2.1 result.memEnv',
+              joinMemEnvsStrong acc.2.1 result.memEnv',
               joinPoison acc.2.2.1 resPoison,
               joinPredicates acc.2.2.2.1 resPred,
               joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
@@ -6383,7 +6383,7 @@ private lemma joinTypeResults_preserves_arrow_structure_nextLoc
               | ⟨resEtyp, resPoison, resPred⟩ =>
                   Except.ok
                     (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-                      joinMemEnvs acc.2.1 result.memEnv',
+                      joinMemEnvsStrong acc.2.1 result.memEnv',
                       joinPoison acc.2.2.1 resPoison,
                       joinPredicates acc.2.2.2.1 resPred,
                       joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
@@ -6414,7 +6414,7 @@ private lemma joinTypeResults_preserves_arrow_structure_nextLoc
                     set acc_new :
                         (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
                       (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-                        joinMemEnvs acc.2.1 x.memEnv',
+                        joinMemEnvsStrong acc.2.1 x.memEnv',
                         joinPoison acc.2.2.1 resPoison,
                         joinPredicates acc.2.2.2.1 resPred,
                         joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
@@ -6507,7 +6507,7 @@ private lemma joinTypeResults_pred_noPred_for_function_types_nextLoc
               | ⟨resEtyp, resPoison, resPred⟩ =>
                   Except.ok
                     (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-                      joinMemEnvs acc.2.1 result.memEnv',
+                      joinMemEnvsStrong acc.2.1 result.memEnv',
                       joinPoison acc.2.2.1 resPoison,
                       joinPredicates acc.2.2.2.1 resPred,
                       joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
@@ -7395,6 +7395,44 @@ lemma joinETyps_parrow_structure {st1 st2 : Typ} {p1 : Poison} {tcls1 : List PFn
       intro _ h; exact h
   | _ => simp [ETyp.isParrow] at hisParrow
 
+/-- joinETyps preserves beqETypSignature with the left operand: when t1 and t2 are compatible,
+    joinETyps t1 t2 has the same signature as t1 for any third type. -/
+lemma beqETypSignature_joinETyps_left {t1 t2 t3 : ETyp} {p1 p2 : Poison}
+    (h : beqETypSignature t1 t2 = true) :
+    beqETypSignature t1 t3 = beqETypSignature (joinETyps t1 t2 p1 p2) t3 := by
+  cases t1 with
+  | int => cases t2 <;> simp [joinETyps, beqETypSignature] at h ⊢
+  | bool => cases t2 <;> simp [joinETyps, beqETypSignature] at h ⊢
+  | unit => cases t2 <;> simp [joinETyps, beqETypSignature] at h ⊢
+  | string => cases t2 <;> simp [joinETyps, beqETypSignature] at h ⊢
+  | ref inner1 ls1 =>
+      cases t2 with
+      | ref inner2 ls2 =>
+          simp only [beqETypSignature] at h
+          by_cases heq : beqETypSignature inner1 inner2
+          · simp only [heq, joinETyps]
+            cases t3 <;> rfl
+          · simp [heq] at h
+      | _ => simp [beqETypSignature] at h
+  | arrow st1 st2 p tcls =>
+      cases t2 with
+      | arrow st1' st2' _ _ =>
+          simp only [beqETypSignature] at h
+          by_cases heq : st1 == st1' && st2 == st2'
+          · simp only [heq, joinETyps]
+            cases t3 <;> rfl
+          · simp [heq] at h
+      | _ => simp [beqETypSignature] at h
+  | parrow st1 st2 p tcls =>
+      cases t2 with
+      | parrow st1' st2' _ _ =>
+          simp only [beqETypSignature] at h
+          by_cases heq : st1 == st1' && st2 == st2'
+          · simp only [heq, joinETyps]
+            cases t3 <;> rfl
+          · simp [heq] at h
+      | _ => simp [beqETypSignature] at h
+
 /-- joinETyps for ref types with compatible signatures produces a ref type. -/
 lemma joinETyps_ref_structure {inner : ETyp} {ls1 : LocSet} {t2 : ETyp} {p1' p2' : Poison} :
     (∃ inner2 ls2, t2 = ETyp.ref inner2 ls2) →
@@ -7747,6 +7785,101 @@ lemma joinMemEnvs_lookup_clean_left (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : 
           rfl
         rw [hempty] at hgo
         -- contradiction with `hjoin' : ... = some qt`
+        simp [hjoin'] at hgo
+
+/-- Symmetric companion of `joinMemEnvs_lookup_clean_left` for the right input. -/
+lemma joinMemEnvs_lookup_clean_right (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : QTyp) :
+  (joinMemEnvs env1 env2).lookup l = some qt →
+  qt.poison = false →
+  env2.lookup l ≠ none →
+  ∃ qt2, env2.lookup l = some qt2 ∧ qt2.etyp = qt.etyp ∧ qt2.poison = false := by
+  intro hjoin hclean henv2
+  classical
+  cases h2 : env2.lookup l with
+  | none =>
+      exact (henv2 h2).elim
+  | some qt2 =>
+      let f : Loc → Option QTyp → Option QTyp → Option QTyp := fun _ oq1 oq2 =>
+        match oq1, oq2 with
+        | some qt1, none => some qt1
+        | none, some qt2 => some qt2
+        | some qt1, some qt2 =>
+          let ⟨t1, p1, pred1⟩ := qt1
+          let ⟨t2, p2, pred2⟩ := qt2
+          if t1 == t2 then
+            let p := joinPoison p1 p2
+            let pred := joinPredicates pred1 pred2
+            some ⟨t1, p, pred⟩
+          else
+            none
+        | none, none => none
+      have hjoin' :
+          (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
+              ({} : MemoryTypeEnv))[l]? = some qt := by
+        simpa [joinMemEnvs, MemoryTypeEnv.lookup, f, combineExtTreeMaps] using hjoin
+      by_cases h_in : l ∈ (env1.keys ++ env2.keys).eraseDups
+      · have hgo :=
+          combineExtTreeMaps_go_get_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+            ({} : MemoryTypeEnv) l h_in
+        have hgo' :
+            (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
+                ({} : MemoryTypeEnv))[l]? =
+              f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) := by
+          cases hopt : f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) with
+          | none =>
+              have hgo' := hgo
+              rw [hopt] at hgo'
+              exact hgo'
+          | some v =>
+              have hgo' := hgo
+              rw [hopt] at hgo'
+              exact hgo'
+        have hmatch :
+            f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) = some qt := by
+          exact Eq.trans hgo'.symm hjoin'
+        have h2' : ExtTreeMap.get? env2 l = some qt2 := by
+          simpa [MemoryTypeEnv.lookup] using h2
+        have htp : qt2.etyp = qt.etyp ∧ qt2.poison = false := by
+          cases h1 : env1.lookup l with
+          | none =>
+              have h1' : ExtTreeMap.get? env1 l = none := by
+                simpa [MemoryTypeEnv.lookup] using h1
+              have hqt : qt2 = qt := by
+                have hmatch' := hmatch
+                rw [h1', h2'] at hmatch'
+                simp [f] at hmatch'
+                simp [hmatch']
+              exact ⟨by simp [hqt], by simpa [hqt] using hclean⟩
+          | some qt1 =>
+              have h1' : ExtTreeMap.get? env1 l = some qt1 := by
+                simpa [MemoryTypeEnv.lookup] using h1
+              cases qt1 with
+              | mk t1 p1 pred1 =>
+                  cases qt2 with
+                  | mk t2 p2 pred2 =>
+                      have hmatch' := hmatch
+                      rw [h1', h2'] at hmatch'
+                      simp [f] at hmatch'
+                      by_cases hteq : t1 = t2
+                      · have hqt :
+                          qt =
+                            ⟨t2, joinPoison p1 p2, joinPredicates pred1 pred2⟩ := by
+                          have hmatch'' := hmatch'
+                          simp [hteq] at hmatch''
+                          simpa using hmatch''.symm
+                        have hclean' : joinPoison p1 p2 = false := by
+                          simpa [hqt] using hclean
+                        have hpo' : p1 = false ∧ p2 = false :=
+                          (Bool.or_eq_false_iff).1 (by simpa [joinPoison] using hclean')
+                        exact ⟨by simp [hqt], by simpa using hpo'.2⟩
+                      · simp [hteq] at hmatch'
+        exact ⟨qt2, ⟨rfl, ⟨htp.1, htp.2⟩⟩⟩
+      · have hgo :=
+          combineExtTreeMaps_go_get_not_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+            ({} : MemoryTypeEnv) l h_in
+        have hempty : (({} : MemoryTypeEnv)[l]?) = none := by
+          rfl
+        rw [hempty] at hgo
         simp [hjoin'] at hgo
 
 /-- wfTypeContext property is preserved under joinMemEnvs with max nextLoc. -/

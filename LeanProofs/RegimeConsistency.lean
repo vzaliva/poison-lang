@@ -770,7 +770,71 @@ inductive varsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (ρ : VarEnv
                   (b = false → ¬qtypPredHolds predSat entry.snd μ v)) :
       varsRegime predSat R μ ρ entry
 
--- Context-indexed runtime-regime consistency: constrains only tags the regime interprets
+-- Generic combinator: recurse through closure/peClosure values, checking
+-- property P on (σcap, ρcap) at each nesting level. The recursive descent
+-- checks that captured variables which are themselves closures also satisfy P.
+-- Mirrors the structure of valueHasETyp for recursive closure traversal.
+-- Strict positivity is satisfied: the recursive occurrence appears only
+-- as the conclusion of ∀ → → → → chain (universally quantified implication).
+inductive deepValueQTypProperty (P : CapturedVarEnv → VarEnv → Prop) :
+    QTyp → Value → Prop where
+  | nonClosure {qt : QTyp} {v : Value} :
+      (∀ x_param body ρcap, v ≠ Value.closure x_param body ρcap) →
+      (∀ x_param body ρcap, v ≠ Value.peClosure x_param body ρcap) →
+      deepValueQTypProperty P qt v
+  | closure {qt : QTyp} {v : Value}
+      (x_param : Name) (body : Expr) (ρcap : VarEnv)
+      (σcap : CapturedVarEnv) (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure) :
+      v = Value.closure x_param body ρcap →
+      qt.etyp = ETyp.arrow st1 st2 p tcls →
+      FnTClosure.regular x_param body σcap ∈ tcls →
+      P σcap ρcap →
+      (∀ (x : Name) (qt_x : QTyp) (v_x : Value),
+        σcap.lookup x = some qt_x →
+        ρcap.lookup x = some v_x →
+        deepValueQTypProperty P qt_x v_x) →
+      deepValueQTypProperty P qt v
+  | peClosure {qt : QTyp} {v : Value}
+      (x_param : Name) (body : Expr) (pbody : PExpr) (ρcap : VarEnv)
+      (σcap : CapturedVarEnv) (st1 st2 : Typ) (p : Poison) (tcls : List PFnTClosure) :
+      v = Value.peClosure x_param body ρcap →
+      qt.etyp = ETyp.parrow st1 st2 p tcls →
+      PFnTClosure.regular x_param pbody σcap ∈ tcls →
+      P σcap ρcap →
+      (∀ (x : Name) (qt_x : QTyp) (v_x : Value),
+        σcap.lookup x = some qt_x →
+        ρcap.lookup x = some v_x →
+        deepValueQTypProperty P qt_x v_x) →
+      deepValueQTypProperty P qt v
+
+-- Property checked at each closure nesting level: all captured variables
+-- whose type has an active guard tag satisfy varsRegime.
+def capturedVarsRegimeProperty (predSat : PredSat) (R : Regime) (μ : Memory)
+    (σcap : CapturedVarEnv) (ρcap : VarEnv) : Prop :=
+  ∀ (x : Name) (qt_x : QTyp) (k_x : Tag),
+    σcap.lookup x = some qt_x →
+    qtypGuardTag qt_x = some k_x →
+    R.lookup? k_x ≠ none →
+    varsRegime predSat R μ ρcap (x, qt_x)
+
+-- Tracks varsRegime for captured variables inside closure values, recursively
+-- across all nesting levels.  Uses qt.etyp (not qt.pred) to find the σcap,
+-- so it fires for ioFree closures which always have Predicate.noPred.
+--
+-- Checked against the CURRENT regime R rather than the regime at capture time.
+-- This is sound because Regime.monotoneStep only removes entries, so any
+-- obligation that held under a larger regime still holds under the current
+-- (smaller) one; memory growth is handled by PredSatLaws.mem_monotone.
+inductive closureCapturedVarsRegime (predSat : PredSat) (R : Regime)
+    (qt : QTyp) (μ : Memory) (v : Value) : Prop where
+  | intro :
+      deepValueQTypProperty (capturedVarsRegimeProperty predSat R μ) qt v →
+      closureCapturedVarsRegime predSat R qt μ v
+
+-- Context-indexed runtime-regime consistency: constrains only tags the regime
+-- interprets.  The third conjunct carries closureCapturedVarsRegime for every
+-- variable-value pair, enabling evidence to persist through variable storage
+-- (stepFR_vlet) and retrieval (stepFR_var).
 def consistentWithRegime (predSat : PredSat) (R : Regime) (ctx : TypeContext)
     (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
   (∀ l qt k, ctx.memEnv.lookup l = some qt →
@@ -780,4 +844,7 @@ def consistentWithRegime (predSat : PredSat) (R : Regime) (ctx : TypeContext)
   (∀ x qt k, ctx.varEnv.lookup x = some qt →
      qtypGuardTag qt = some k →
      R.lookup? k ≠ none →
-     varsRegime predSat R μ ρ (x, qt))
+     varsRegime predSat R μ ρ (x, qt)) ∧
+  (∀ x qt v, ctx.varEnv.lookup x = some qt →
+     ρ.lookup x = some v →
+     closureCapturedVarsRegime predSat R qt μ v)

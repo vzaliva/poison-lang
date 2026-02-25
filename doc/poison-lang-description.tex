@@ -1104,6 +1104,16 @@ We fix a \emph{critical-input specification} $S$ comprising finite maps of criti
 \]
 Context entries not listed in $S$ are considered \emph{trusted inputs}.
 
+\paragraph{Current mechanized proof restriction.}
+In the current Lean development, well-formed critical-variable specifications are
+restricted to \emph{first-order} qualified types: entries in $S.\mathrm{vars}$ may
+not have function types (\texttt{arrow} / \texttt{parrow}). Intuitively, critical
+inputs are required to be explicit data, not closures carrying hidden captured
+runtime environments. Function-valued initial inputs are still allowed as trusted
+context entries (i.e.\ outside $S$), subject to the typing-context assumptions and
+an additional top-level initialization premise requiring trusted variables to
+already satisfy the deep closure-captured-vars regime invariant.
+
 Outputs consist of a final memory $\mu_f$ and a program return value $v$. Observable outputs are specified by an \emph{observable specification} $\text{obs}$ comprising a finite map of logical locations to expected enriched types, together with an optional return type. When the return type is absent, the return value is unobservable.
 \end{definition}
 
@@ -1155,6 +1165,7 @@ A program $e$ satisfies fault robustness with respect to the critical-input spec
     \item \textbf{Well-formed realisations and configurations:} Both realisation maps are well-formed, and both initial runtime configurations are well-formed.
     \item \textbf{Input conformance:} The two initial states conform to the specification $S$ (critical variables match the specified types, and any critical logical location realised in a run is backed by memory).
     \item \textbf{Context instantiation:} The initial runtime states instantiate the typing context used to check $e$.
+    \item \textbf{Trusted-closure initialization (mechanized proof assumption):} Any trusted top-level variable value (i.e.\ a context variable not listed in $S.\mathrm{vars}$) already satisfies the deep closure-captured-vars regime invariant under $\mathcal{R}$.
     \item \textbf{Regime consistency:} For each critical input, the regime is consistent with predicate satisfaction on that input (for guard-only tags there is no additional consistency requirement; for guarded predicates, satisfaction agrees with the regime's truth value).
     \item \textbf{Agreement on critical inputs under $\mathcal{R}$:} The two runs agree on each critical entry in the manner dictated by the regime and predicate satisfaction.
     \item \textbf{Agreement on trusted inputs:} The two runs agree on context entries not in $S$ whenever those entries are typed clean under $\mathcal{R}$.

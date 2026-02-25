@@ -161,6 +161,7 @@ fi
 PODMAN_ARGS=(
   run --rm -it
   --name poison-ai-agent
+  --network host
   "${PODMAN_USERNS_ARGS[@]}"
   -e HOST_UID="$HOST_UID"
   -e HOST_GID="$HOST_GID"

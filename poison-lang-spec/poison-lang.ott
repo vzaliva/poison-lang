@@ -850,6 +850,9 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { AppPred
 % 3. Both results must be impure arrow types with the same surface types
 % 4. Merge the closure sets from both results via union
 % 5. Join all outputs: poisons, memory environments, tag environments, regimes
+%    For closure-alternative joins, memory uses JoinGStrong so single-sided
+%    entries do not carry branch/alternative-local predicates into the merged
+%    post-context.
 % Please note that impure function application is disallowed in pure context.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
 impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) , tcls' :> p1 { P1 } -| G1 ; L1 ; R1
@@ -863,7 +866,7 @@ T'' = ST3 -> ST4 # p4 tclosures tcls4
 p5 = join p3 p4
 tcls5 = tcls3 U tcls4
 ----------------------------------------------------------------------  :: app_fn_cons_arrow
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tclosures tcls5 :> join pc join p1 join p join p' p'' { no_pred } -| JoinG G' G'' ; JoinL L' L'' ; JoinR R' R''
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tclosures tcls5 :> join pc join p1 join p join p' p'' { no_pred } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
 
 % Function application typing - multiple closures case - result is non-arrow type (reference result)
 % When both head and tail applications return references with the same inner type, join locsets.
@@ -879,7 +882,7 @@ T'' = ref T2 @ LS2
 LS = LS1 U LS2
 JoinP P' P'' = P3
 ----------------------------------------------------------------------  :: app_fn_cons_ref
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ref T2 @ LS :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinG G' G'' ; JoinL L' L'' ; JoinR R' R''
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ref T2 @ LS :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
 
 % Function application typing - multiple closures case - result is non-arrow type (base result)
 % When results are non-reference, non-arrow types, signature compatibility forces equality; the result type is that base type.
@@ -893,7 +896,7 @@ ST2 <: T'
 T' ≈ T''
 JoinP P' P'' = P3
 ----------------------------------------------------------------------  :: app_fn_cons
-impure ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinG G' G'' ; JoinL L' L'' ; JoinR R' R''
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
 
 % Pure function application typing - singleton closure case - result is arrow type
 % Premises follow argument-first call-by-value order: type e2, then type e1.
@@ -949,6 +952,9 @@ pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { AppPred p1 
 % 3. Both results must be pure arrow types with the same surface types
 % 4. Merge the closure sets from both results via union
 % 5. Join all outputs: poisons, memory environments, tag environments, regimes
+%    For closure-alternative joins, memory uses JoinGStrong so single-sided
+%    entries do not carry branch/alternative-local predicates into the merged
+%    post-context.
 % Please note that pure function application is allowed in either impure or pure context, but
 % the body is always typed in pure context (to prevent use of impure forms).
 pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
@@ -963,7 +969,7 @@ T'' = ST3 -> ST4 # p4 tpclosures ptcls4
 p5 = join p3 p4
 ptcls5 = ptcls3 U ptcls4
 ----------------------------------------------------------------------  :: app_pfn_cons_arrow
-pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tpclosures ptcls5 :> join pc join p1 join p join p' p'' { no_pred } -| JoinG G' G'' ; JoinL L' L'' ; JoinR R' R''
+pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # p5 tpclosures ptcls5 :> join pc join p1 join p join p' p'' { no_pred } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
 
 % Pure function application typing - multiple closures case - result is non-arrow type (reference result)
 % When both head and tail applications return references with the same inner type, join locsets.
@@ -979,7 +985,7 @@ T'' = ref T2 @ LS2
 LS = LS1 U LS2
 JoinP P' P'' = P3
 ----------------------------------------------------------------------  :: app_pfn_cons_ref
-pm ; R ; pc ; G ; S ; L |- e1 e2 : ref T2 @ LS :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinG G' G'' ; JoinL L' L'' ; JoinR R' R''
+pm ; R ; pc ; G ; S ; L |- e1 e2 : ref T2 @ LS :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
 
 % Pure function application typing - multiple closures case - result is non-arrow type (base result)
 % When results are non-reference, non-arrow types, signature compatibility forces equality; the result type is that base type.
@@ -993,7 +999,7 @@ ST2 <: T'
 T' ≈ T''
 JoinP P' P'' = P3
 ----------------------------------------------------------------------  :: app_pfn_cons
-pm ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinG G' G'' ; JoinL L' L'' ; JoinR R' R''
+pm ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
 
 % Typing for rand - takes integer argument, returns random integer
 pm ; R ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1 ; R1
@@ -1252,6 +1258,9 @@ match_guard e1 G S = k with LS
 pure ; R ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexL L i ; indexR R i
 pm ; indexR R i ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexL L i[k |-> true using LS] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i ; indexedR R 2 i
 indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
+% NOTE(join-policy-while): the memory fixpoint currently uses JoinRestrict
+% (implemented via restrict + JoinG / joinMemEnvs). We may later switch this
+% to a stronger predicate-dropping join, but we defer that semantic decision.
 indexG G 0 = G AND indexG G i+1 = JoinRestrict indexG G i indexedG G 2 i
 indexL L 0 = L AND indexL L i+1 = JoinL indexL L i indexedL L 2 i
 indexR R 0 = R AND indexR R i+1 = JoinR indexR R i indexedR R 2 i
@@ -1269,6 +1278,9 @@ pm ; R ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| 
 pm ; indexR R i ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexedL L 1 i ; indexedR R 1 i
 pm ; indexedR R 1 i ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexedL L 1 i |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i ; indexedR R 2 i
 indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
+% NOTE(join-policy-while): the memory fixpoint currently uses JoinRestrict
+% (implemented via restrict + JoinG / joinMemEnvs). We may later switch this
+% to a stronger predicate-dropping join, but we defer that semantic decision.
 indexG G 0 = G AND indexG G i+1 = JoinRestrict indexG G i indexedG G 2 i
 indexL L 0 = L AND indexL L i+1 = JoinL indexL L i indexedL L 2 i
 indexR R 0 = R AND indexR R i+1 = JoinR indexR R i indexedR R 2 i

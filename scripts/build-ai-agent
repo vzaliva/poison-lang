@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build the AI agent container image with cache-busting CODEX_UPDATE.
+# Run from the directory where Containerfile.ai-agent is located.
+
+if [ ! -f Containerfile.ai-agent ]; then
+  echo "Error: Containerfile.ai-agent not found in $(pwd)" >&2
+  exit 1
+fi
+
+CODEX_UPDATE="$(date +%s)"
+exec podman build \
+  --build-arg CODEX_UPDATE="$CODEX_UPDATE" \
+  -t localhost/poison-ai-agent:latest \
+  -f Containerfile.ai-agent \
+  .

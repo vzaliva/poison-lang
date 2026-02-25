@@ -77,8 +77,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
 ENV DISABLE_AUTOUPDATER=1 \
     CLAUDE_SEED=/opt/claude-seed
 RUN mkdir -p "${CLAUDE_SEED}" \
-    && HOME="${CLAUDE_SEED}" bash -lc 'curl -fsSL https://claude.ai/install.sh | bash' \
-    && install -m 0755 "${CLAUDE_SEED}/.local/bin/claude" /usr/local/bin/claude
+    && HOME="${CLAUDE_SEED}" bash -lc 'curl -fsSL https://claude.ai/install.sh | bash'
+# Do not install claude to /usr/local/bin: the CLI treats that as a leftover npm install and warns.
+# Entrypoint symlinks ~/.local/bin/claude to the seed binary so PATH finds it.
 
 # Ensure global npm installs land in /usr/local (not /usr).
 # This avoids accidentally picking up an older distro-provided /usr/bin/tree-sitter.
@@ -184,10 +185,10 @@ RUN printf '%s\n' \
 '  fi' \
 'fi' \
 '' \
-'# Claude Code (native installer) expects a shim at ~/.local/bin/claude.' \
-'# We install the binary in /usr/local/bin/claude and keep a symlink for compatibility.' \
-'if [ ! -e "/home/user/.local/bin/claude" ] && [ -x "/usr/local/bin/claude" ]; then' \
-'  ln -sf "/usr/local/bin/claude" "/home/user/.local/bin/claude" 2>/dev/null || true' \
+'# Claude Code: expose the seed binary via ~/.local/bin/claude (on PATH) so the CLI is found' \
+'# without putting it in /usr/local/bin (which the CLI treats as a leftover npm install).' \
+'if [ ! -e "/home/user/.local/bin/claude" ] && [ -x "${CLAUDE_SEED:-/opt/claude-seed}/.local/bin/claude" ]; then' \
+'  ln -sf "${CLAUDE_SEED:-/opt/claude-seed}/.local/bin/claude" "/home/user/.local/bin/claude" 2>/dev/null || true' \
 'fi' \
 '' \
 '# Persist SSH known_hosts (agent keys stay on host; we only keep host fingerprints).' \
@@ -213,6 +214,12 @@ RUN printf '%s\n' \
 '# Ensure Claude Code config dir exists (for persistent auth).' \
 'mkdir -p "${CLAUDE_CONFIG_DIR}"' \
 'if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_CONFIG_DIR}" 2>/dev/null || true; fi' \
+'' \
+'# Seed installMethod so the CLI does not warn "config install method is unknown" (we run the native binary).' \
+'if [ ! -f "${CLAUDE_CONFIG_DIR}/.config.json" ]; then' \
+'  echo '\''{"installMethod":"native"}'\'' > "${CLAUDE_CONFIG_DIR}/.config.json"' \
+'  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_CONFIG_DIR}/.config.json" 2>/dev/null || true; fi' \
+'fi' \
 '' \
 '# Seed a minimal Claude MCP config (first run only) to enable lean-lsp via uvx.' \
 'if [ ! -f "${CLAUDE_CONFIG_DIR}/mcp.json" ]; then' \

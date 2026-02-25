@@ -975,7 +975,11 @@ def joinTypeResults (ctx : TypeContext) (firstResult : TypeResult) (restResults 
     else
       pure ()) () restResults
 
-  -- Join all results (Section 5.4) using foldlM
+  -- Join all results (Section 5.4) using foldlM.
+  -- For closure-alternative joins (app/papp), use the *strong* memory join:
+  -- single-sided memory entries keep type/poison but drop predicates. This
+  -- ensures the post-join context retains only predicate facts stable across
+  -- hidden closure alternatives.
     let joinAccumulator := (firstEtyp, firstResult.memEnv', firstResult.qualType.poison,
                             firstResult.qualType.pred, firstResult.tagEnv', firstResult.regime',
                             firstResult.nextLoc', firstResult.nextTag')
@@ -984,7 +988,7 @@ def joinTypeResults (ctx : TypeContext) (firstResult : TypeResult) (restResults 
       let ⟨resEtyp, resPoison, resPred⟩ := result.qualType
       let (joinedEtyp, joinedMemEnv, joinedPoison, joinedPred, joinedTagEnv, joinedRegime, maxNextLoc, maxNextTag) := acc
       pure (joinETyps joinedEtyp resEtyp joinedPoison resPoison,
-            joinMemEnvs joinedMemEnv result.memEnv',
+            joinMemEnvsStrong joinedMemEnv result.memEnv',
             joinPoison joinedPoison resPoison,
             joinPredicates joinedPred resPred,
             joinTagEnvs joinedTagEnv result.tagEnv',
@@ -1078,6 +1082,9 @@ def runWhileFixpoint (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel 
     -- (4) Recurrences: pc_{i+1} = pc_i ⊔ p_{2,i}; Γ/ℒ/R joins with the body results
     let newPc := joinPoison ctx.pc p2
     let restrictedBodyEnv := restrictMemEnv bodyRes.memEnv' ctx.memEnv
+    -- TODO(join-policy-while): reconsider whether while-fixpoint memory joins
+    -- should also use `joinMemEnvsStrong`. We defer that semantic change for
+    -- now and keep the current `JoinRestrict`/`joinMemEnvs` behavior.
     let newMemEnv := joinMemEnvs ctx.memEnv restrictedBodyEnv
     let newTagEnv := joinTagEnvs ctx.tagEnv bodyRes.tagEnv'
     let newRegime := joinRegimes ctx.regime bodyRes.regime'
