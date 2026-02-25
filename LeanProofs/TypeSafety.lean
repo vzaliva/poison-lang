@@ -8187,7 +8187,7 @@ private lemma joinTypeResults_preserves_memEnvOnlyInts
       | ⟨resEtyp, resPoison, resPred⟩ =>
           Except.ok
             (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-              joinMemEnvs acc.2.1 r.memEnv',
+              joinMemEnvsStrong acc.2.1 r.memEnv',
               joinPoison acc.2.2.1 resPoison,
               joinPredicates acc.2.2.2.1 resPred,
               joinTagEnvs acc.2.2.2.2.1 r.tagEnv',
@@ -8218,8 +8218,8 @@ private lemma joinTypeResults_preserves_memEnvOnlyInts
             have hxs_mem_all : ∀ r ∈ xs, memEnvOnlyInts r.memEnv' := by
               intro r hr
               exact hmem_all r (by simp [hr])
-            have hacc' : memEnvOnlyInts (joinMemEnvs acc.2.1 x.memEnv') :=
-              memEnvOnlyInts_joinMemEnvs acc.2.1 x.memEnv' hacc hx_mem
+            have hacc' : memEnvOnlyInts (joinMemEnvsStrong acc.2.1 x.memEnv') :=
+              memEnvOnlyInts_joinMemEnvsStrong acc.2.1 x.memEnv' hacc hx_mem
             exact ih _ _ hxs_mem_all hfold hacc'
   cases hfirstqt : first.qualType with
   | mk firstEtyp firstP firstPred =>
@@ -9221,7 +9221,7 @@ lemma joinTypeResults_mem_subset
       | ⟨resEtyp, resPoison, resPred⟩ =>
           Except.ok
             (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-              joinMemEnvs acc.2.1 result.memEnv',
+              joinMemEnvsStrong acc.2.1 result.memEnv',
               joinPoison acc.2.2.1 resPoison,
               joinPredicates acc.2.2.2.1 resPred,
               joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
@@ -9247,7 +9247,7 @@ lemma joinTypeResults_mem_subset
             simp [List.foldlM_cons, joinStep, hqr, bind, Except.bind] at hfold
             let acc1 : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
               (joinETyps acc.1 etyp_r acc.2.2.1 poison_r,
-                joinMemEnvs acc.2.1 r.memEnv',
+                joinMemEnvsStrong acc.2.1 r.memEnv',
                 joinPoison acc.2.2.1 poison_r,
                 joinPredicates acc.2.2.2.1 pred_r,
                 joinTagEnvs acc.2.2.2.2.1 r.tagEnv',
@@ -9256,7 +9256,7 @@ lemma joinTypeResults_mem_subset
                 max acc.2.2.2.2.2.2.2 r.nextTag')
             have hacc1 : ∀ l, acc1.2.1.contains l → ctx.memEnv.contains l := by
               intro l hl
-              have hor := joinMemEnvs_contains_implies_or acc.2.1 r.memEnv' l hl
+              have hor := joinMemEnvsStrong_contains_implies_or acc.2.1 r.memEnv' l hl
               cases hor with
               | inl hleft =>
                   exact hacc l hleft
@@ -9409,7 +9409,7 @@ lemma joinTypeResults_mem_lookup_of_all
       | ⟨resEtyp, resPoison, resPred⟩ =>
           Except.ok
             (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-              joinMemEnvs acc.2.1 result.memEnv',
+              joinMemEnvsStrong acc.2.1 result.memEnv',
               joinPoison acc.2.2.1 resPoison,
               joinPredicates acc.2.2.2.1 resPred,
               joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
@@ -9435,7 +9435,7 @@ lemma joinTypeResults_mem_lookup_of_all
             simp [List.foldlM_cons, joinStep, hqr, bind, Except.bind] at hfold
             let acc1 : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
               (joinETyps acc.1 etyp_r acc.2.2.1 poison_r,
-                joinMemEnvs acc.2.1 r.memEnv',
+                joinMemEnvsStrong acc.2.1 r.memEnv',
                 joinPoison acc.2.2.1 poison_r,
                 joinPredicates acc.2.2.2.1 pred_r,
                 joinTagEnvs acc.2.2.2.2.1 r.tagEnv',
@@ -9443,7 +9443,7 @@ lemma joinTypeResults_mem_lookup_of_all
                 max acc.2.2.2.2.2.2.1 r.nextLoc',
                 max acc.2.2.2.2.2.2.2 r.nextTag')
             have hacc1 : acc1.2.1.lookup l = some qt := by
-              exact joinMemEnvs_lookup_of_some_some acc.2.1 r.memEnv' l qt hacc (hsubs r (by simp))
+              exact joinMemEnvsStrong_lookup_of_some_some acc.2.1 r.memEnv' l qt hacc (hsubs r (by simp))
             have hsubs_tail : ∀ r' ∈ rs, r'.memEnv'.lookup l = some qt := by
               intro r' hr'
               exact hsubs r' (by simp [hr'])
@@ -9498,7 +9498,7 @@ lemma joinTypeResults_regime_lookup_of_all
       | ⟨resEtyp, resPoison, resPred⟩ =>
           Except.ok
             (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-              joinMemEnvs acc.2.1 result.memEnv',
+              joinMemEnvsStrong acc.2.1 result.memEnv',
               joinPoison acc.2.2.1 resPoison,
               joinPredicates acc.2.2.2.1 resPred,
               joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
@@ -9524,7 +9524,7 @@ lemma joinTypeResults_regime_lookup_of_all
             simp [List.foldlM_cons, joinStep, hqr, bind, Except.bind] at hfold
             let acc1 : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
               (joinETyps acc.1 etyp_r acc.2.2.1 poison_r,
-                joinMemEnvs acc.2.1 r.memEnv',
+                joinMemEnvsStrong acc.2.1 r.memEnv',
                 joinPoison acc.2.2.1 poison_r,
                 joinPredicates acc.2.2.2.1 pred_r,
                 joinTagEnvs acc.2.2.2.2.1 r.tagEnv',
