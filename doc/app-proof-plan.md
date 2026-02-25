@@ -61,11 +61,13 @@ the clean-internal function result case transportable.  Both transport theorems 
 This is not app-specific: `stepFR_ite` modes 3/4 face the same structural issue and should
 reuse the same helper pattern.
 
-### E. `VARSREGIME_GAP` (active)
+### E. `VARSREGIME_GAP` (resolved)
 
 Shared-member final `consistentWithRegime` to joined output `consistentWithRegime` transport.
-No longer blocked by mem-env semantics (strong join resolved that).  This is the next
-proof-infrastructure target now that the qtype transport pair is closed.
+Resolved by adding member-to-joined transport infrastructure for `consistentWithRegime`
+plus guard-closure lookup-back helpers for `joinMemEnvsStrong` memory entries:
+- `joinTypeResults_transport_consistentWithRegime_from_member`
+- `joinTypeResults_lookup_member_guardClosure_lookup_compat`
 
 ## 3. Current Status and Plan
 
@@ -76,6 +78,7 @@ proof-infrastructure target now that the qtype transport pair is closed.
 - Strong mem-join for app/papp: implemented and spec-aligned.
 - Member-to-joined transport for `joinTypeResults`: all three proved
   (`valueHasETyp`, `valueConsistentWithRegime`, `resultAgreesIfClean`).
+- `VARSREGIME_GAP`: resolved (shared-member `consistentWithRegime` -> joined output transport).
 - Path D constructor refactor: complete, transport cascade repaired, selectors removed from code.
 
 Build status: `lake build` succeeds.  `sorry` count: 28 in `FaultRobustnessProofs.lean`, 49 total
@@ -83,18 +86,16 @@ in `LeanProofs/` (use `rg -n -w sorry` to refresh).
 
 ### What remains
 
-- `VARSREGIME_GAP`: shared-member final `consistentWithRegime` to joined output
 - Remaining app plumbing: fallback `hOutMapChoice` branches, outer join/static obligations
 - Parrow mirror
 - Propagation of the Path D transport pattern to `stepFR_ite` modes 3/4
 
 ### Plan (risk-first)
 
-**Step 1: `VARSREGIME_GAP` (highest remaining risk)**
+**Step 1: `VARSREGIME_GAP` (completed)**
 
-This is the next proof-infrastructure obligation that could expose a design gap.  Use the
-strong mem-join helper layer for memory-side cases and the proved member-to-joined qtype
-transport lemmas for value-level obligations.
+Completed: shared-member final `consistentWithRegime` now transports to the joined output
+in the app arrow clean/shared-closure path.
 
 **Step 2: Remaining app proof plumbing (medium risk)**
 
@@ -114,8 +115,6 @@ This serves as independent validation that Path D generalises beyond app.
 ### Stop / reassess conditions
 
 Stop and discuss if any of the following happens:
-- `VARSREGIME_GAP` requires strengthening `StepFR`-level statements or changing the proof
-  boundary (instead of using the qtype transport layer as-is).
 - Reusing the Path D helper pattern at `stepFR_ite` modes 3/4 requires a materially different
   theorem interface (not just local specialisation).
 - Helper generalisation causes churn across many callers before a second reuse site is closed.
@@ -165,6 +164,7 @@ chronological evolution with commit references.
 - `join_transport_agreeOnClean_from_member`
 - `joinTypeResults_transport_valueHasETyp_from_member`
 - `joinTypeResults_transport_valueConsistentWithRegime_from_member`
+- `joinTypeResults_transport_consistentWithRegime_from_member`
 - `joinTypeResults_qualType_arrow_member_from_member`
 - `joinTypeResults_qualType_parrow_member_from_member`
 - `joinTypeResults_transport_resultAgreesIfClean_from_member`
@@ -173,7 +173,7 @@ chronological evolution with commit references.
 ### Related join points
 - `stepFR_ite_mode3`, `stepFR_ite_mode4`
 
-### Active issue tags
-- `VARSREGIME_GAP` (active)
+### Issue tags
+- `VARSREGIME_GAP` (resolved)
 - `APP-SIGMA-WITNESS-MISMATCH` (resolved)
 - `APP-BODYSTART-VARSREGIME` (legacy; may no longer appear)
