@@ -23,9 +23,6 @@ instance : OrientedCmp varTypeEnvCmp := by
 instance : TransCmp varTypeEnvCmp := by
   infer_instance
 
-/-- Default fuel for type checking -/
-private def defaultFuel : Nat := 1000
-
 /-- Memory typing environment (Γ in the Ott spec), keyed by logical locations. -/
 abbrev MemoryTypeEnv := ExtTreeMap Loc QTyp
 
@@ -216,7 +213,7 @@ def updateCtxFromResult (ctx : TypeContext) (result : TypeResult) : TypeContext 
   { ctx with memEnv := result.memEnv', tagEnv := result.tagEnv', nextLoc := result.nextLoc', nextTag := result.nextTag', regime := result.regime' }
 
 /-- Extract dependencies from a predicate by analyzing free variables in the predicate body -/
-def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
+def extractDepsFromPred (pred : Predicate) (fuel : Nat) : TypecheckM Deps :=
   match pred with
   | Predicate.guardClosure _tag arg_name pred_body var_env =>
     let varEnvMap := VarTypeEnv.ofCaptured var_env
@@ -263,7 +260,7 @@ def extractDepsFromPred (pred : Predicate) : TypecheckM Deps :=
         | _ => return LocSet.empty  -- literals, unit, etc. don't read from heap
 
     -- Start with the bound parameter in the bound variables list
-    extractDepsFromPExpr pred_body [arg_name] varEnvMap defaultFuel
+    extractDepsFromPExpr pred_body [arg_name] varEnvMap fuel
   | Predicate.guardOnly _tag =>
     -- Guard-only predicate with no body, no dependencies
     return LocSet.empty
@@ -621,7 +618,7 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : CapturedVarEnv) (pe2 : PExpr) (env
   the condition using PExpr.equalWithEnvs for proper environment-aware
   comparison.
 --/
-def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag × Deps) := do
+def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) (fuel : Nat) : TypecheckM (Tag × Deps) := do
   -- Try to convert the condition e to a PExpr
   let conditionPExpr ← e.toPExpr
   let sCaptured := VarTypeEnv.toCaptured S
@@ -643,8 +640,8 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
     | Predicate.guardClosure tag arg_name pred_body var_env =>
         if PExpr.usesArg arg_name pred_body then
           -- Parameterised: proceed with substitution + equality as today
-          if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) defaultFuel then do
-            let deps ← extractDepsFromPred qt.pred
+          if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) fuel then do
+            let deps ← extractDepsFromPred qt.pred fuel
             return some (tag, deps)
           else return none
         else
@@ -685,14 +682,14 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) : TypecheckM (Tag
             match G.get? l with
             | some memQt =>
                 checkNoPredOnArrow memQt
-                let deps ← extractDepsFromPred memQt.pred
+                let deps ← extractDepsFromPred memQt.pred fuel
                 pure (LocSet.union dacc (LocSet.union (LocSet.singleton l) deps))
             | none => throw s!"Location {l} not found in memory environment during matchGuard")
           let merged := merged?.getD Predicate.noPred
           match merged with
           | Predicate.guardClosure tag arg_name pred_body var_env =>
               if PExpr.usesArg arg_name pred_body then
-                if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) defaultFuel then
+                if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) fuel then
                   pure ((tag, depsMerged) :: acc)
                 else pure acc
               else pure acc
@@ -1690,7 +1687,7 @@ def typecheckIf (mode : EvalMode) (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : 
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
     -- Step 1: Try matchGuard first
-    match matchGuard e1 ctx.memEnv ctx.varEnv with
+    match matchGuard e1 ctx.memEnv ctx.varEnv fuel with
     | .ok (k, deps) => do
       -- Predicate-based case: consult R(k)
 
@@ -1850,7 +1847,7 @@ def typecheckWhile (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : 
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
     -- Step 1: Try matchGuard first (as in typecheckIf)
-    match matchGuard e1 ctx.memEnv ctx.varEnv with
+    match matchGuard e1 ctx.memEnv ctx.varEnv fuel with
     | .ok (k, deps) => do
       -- Predicate-based case (while_depoison) - condition is pure
       typecheckWhileDepoison mode ctx e1 e2 fuel k deps
@@ -1864,33 +1861,3 @@ end
 -- Main type checking function
 def typecheck (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   typecheckExpr mode ctx e fuel
-
-
-
-/-- Type check an expression in an initial empty context -/
-def typecheckExprSimple (e : Expr) (regime : Regime := emptyRegime) (mode : EvalMode := .normal) : TypecheckM QTyp := do
-  let initialCtx : TypeContext := {
-    pc := false  -- clean
-    regime := regime
-    memEnv := {}
-    varEnv := ({} : VarTypeEnv)
-    tagEnv := {}
-    nextLoc := 0
-    nextTag := 1
-    pureCtx := false
-  }
-  let result ← typecheck mode initialCtx e defaultFuel
-  return result.qualType
-
-def typecheckExprVerbose (e : Expr) (regime : Regime := emptyRegime) (mode : EvalMode := .normal) : TypecheckM TypeResult := do
-  let initialCtx : TypeContext := {
-    pc := false  -- clean
-    regime := regime
-    memEnv := {}
-    varEnv := ({} : VarTypeEnv)
-    tagEnv := {}
-    nextLoc := 0
-    nextTag := 1
-    pureCtx := false
-  }
-  typecheck mode initialCtx e defaultFuel
