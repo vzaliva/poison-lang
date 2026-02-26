@@ -61,46 +61,79 @@ the clean-internal function result case transportable.  Both transport theorems 
 This is not app-specific: `stepFR_ite` modes 3/4 face the same structural issue and should
 reuse the same helper pattern.
 
-### E. `VARSREGIME_GAP` (resolved)
+### E. Shared-member → joined `consistentWithRegime` (resolved)
 
-Shared-member final `consistentWithRegime` to joined output `consistentWithRegime` transport.
-Resolved by adding member-to-joined transport infrastructure for `consistentWithRegime`
-plus guard-closure lookup-back helpers for `joinMemEnvsStrong` memory entries:
-- `joinTypeResults_transport_consistentWithRegime_from_member`
-- `joinTypeResults_lookup_member_guardClosure_lookup_compat`
+Resolved by `joinTypeResults_transport_consistentWithRegime_from_member` and
+`joinTypeResults_lookup_member_guardClosure_lookup_compat`.
 
 ## 3. Current Status and Plan
 
 ### What is done
 
 - Phase 0 (invariant initialization): closed with explicit top-level premises.
-- `APP-SIGMA-WITNESS-MISMATCH`: resolved via Path D direct member-evidence on `agreeValueUnder`.
+- Path D / APP-SIGMA-WITNESS-MISMATCH: resolved via direct member-evidence on `agreeValueUnder`.
 - Strong mem-join for app/papp: implemented and spec-aligned.
-- Member-to-joined transport for `joinTypeResults`: all three proved
-  (`valueHasETyp`, `valueConsistentWithRegime`, `resultAgreesIfClean`).
-- `VARSREGIME_GAP`: resolved (shared-member `consistentWithRegime` -> joined output transport).
-- Path D constructor refactor: complete, transport cascade repaired, selectors removed from code.
+- Member-to-joined transport for `joinTypeResults`: valueHasETyp, valueConsistentWithRegime,
+  resultAgreesIfClean, and consistentWithRegime all proved.
+- Path D constructor refactor: complete, transport cascade repaired.
+- **Step 2 – wfTypeResult from stepFR (no typecheck lemma):** Properties are threaded through
+  stepFR instead of a global typecheck-preserves-wf lemma. `applyFnTClosure_ok_wfTypeResult`
+  now takes `tcls`, `tcl`, `hetyp1`, `hresTm1`, `hmem_tcl`, `hargTm`; body `wfTypeResult` comes
+  from the stepFR IH (`StepFR_implies_wfTypeResult`). `mapM_applyFnTClosure_forall_wfTypeResult`
+  and the stepFR_app call site pass these through; `hargTm` is derived from `hresTm2` and `hqt2`.
 
-Build status: `lake build` succeeds.  `sorry` count: 28 in `FaultRobustnessProofs.lean`, 49 total
-in `LeanProofs/` (use `rg -n -w sorry` to refresh).
+Build status: `lake build` succeeds.  `sorry` count: use `rg -n -w sorry` in `LeanProofs/` to refresh.
 
 ### What remains
 
-- Remaining app plumbing: fallback `hOutMapChoice` branches, outer join/static obligations
-- Parrow mirror
-- Propagation of the Path D transport pattern to `stepFR_ite` modes 3/4
+- **One sorry in the wfTypeResult chain:** In `applyFnTClosure_ok_wfTypeResult` (regular branch),
+  `hTm_ctx''` (wfTagMeaningCtx for the body context `ctx''`) is sorry. The intended proof is
+  the same as `wfTagMeaningCtx_closure_body` (defined later in the file); either move that
+  lemma earlier or inline its proof.
+- Remaining app plumbing: fallback `hOutMapChoice` branches, outer join/static obligations.
+- **agreeValueUnder_same:** Four sorries when `internalPoisonClean qt` (closure/peClosure,
+  clean and guard) need agreeCapturedEnv_same plus member evidence.
+- Parrow mirror.
+- Propagation of the Path D transport pattern to `stepFR_ite` modes 3/4.
 
 ### Plan (risk-first)
 
-**Step 1: `VARSREGIME_GAP` (completed)**
+**Step 1: Shared-member → joined transport (completed)**
 
-Completed: shared-member final `consistentWithRegime` now transports to the joined output
-in the app arrow clean/shared-closure path.
+`joinTypeResults_transport_consistentWithRegime_from_member` and related helpers close the
+shared-member final `consistentWithRegime` → joined output transport in the app arrow path.
 
 **Step 2: Remaining app proof plumbing (medium risk)**
 
 Close fallback `hOutMapChoice` branches and outer join/static obligations on top of the
 completed Path D transport baseline.  Complete the arrow path end-to-end.
+
+- **Progress (for handover):**
+  - **wfTypeResult from stepFR:** No standalone typecheck-preserves-wf lemma. StepFR premises
+    and IH are threaded through `applyFnTClosure_ok_wfTypeResult` /
+    `mapM_applyFnTClosure_forall_wfTypeResult`; body `wfTypeResult` is obtained via
+    `StepFR_implies_wfTypeResult` from the body StepFR (from IH). One sorry remains:
+    `hTm_ctx''` (body context wfTagMeaningCtx; proof = `wfTagMeaningCtx_closure_body` once in scope).
+  - **StepFR_single_run** still derives one θ' with full pack when both runs are the same.
+  - **agreeOnClean_same_config:** Var case closed. Location case: `qt.etyp = ETyp.int` subcase closed;
+    `qt.etyp ≠ ETyp.int` (ref) subcase closed by contradiction via `memEnv_lookup_etyp_int`.
+  - **agreeValueUnder_same:** **valueHasETyp_loc_inv** and **valueHasETyp_closure_etyp_arrow** /
+    **valueHasETyp_peClosure_etyp_parrow** used; loc cases and `¬internalPoisonClean` closure/peClosure
+    branches closed. **Sorry (4):** `internalPoisonClean qt` closure/peClosure (clean and guard)
+    need agreeCapturedEnv_same plus MemberVarsRegimeEvidence/MemberCvcrEvidence.
+  - **agreeCapturedEnv_same:** hcover y=x and hhenv y=x branches closed (with `List.Nodup` premise
+    and **CapturedVarEnv_nodup_head_notin_tail**).
+
+- **Next steps to close Step 2:**
+  1. Replace the **hTm_ctx''** sorry: move `wfTagMeaningCtx_closure_body` (and dependencies if needed)
+     before `applyFnTClosure_ok_wfTypeResult`, or inline its proof there.
+  2. **agreeValueUnder_same:** Close the four closure/peClosure sorries (internalPoisonClean;
+     clean and guard), e.g. via agreeCapturedEnv_same with `List.Nodup (tenv.map Prod.fst)` and
+     member evidence from `consistentWithRegime` or type checker.
+  3. In the ¬ qtypCleanUnder fallback: bodyCtx₀/bodyCtx₁, `runtimeInstantiatesCtx` via
+     `runtimeInstantiatesCtx_closure_body_from_henv`, `wfTagMeaningCtx` and `consistentWithRegime`
+     for body context, then `hIH_body` + **StepFR_single_run** for θ₀_body/θ₁_body and transport
+     for the 10 conjuncts.
 
 **Step 3: Parrow mirror (low risk, mechanical)**
 
@@ -143,6 +176,13 @@ chronological evolution with commit references.
 - `memberVarsRegimeEvidence_of_toCaptured`, `memberCvcrEvidence_of_toCaptured`
 - `consistentWithRegime_closure_body_start`
 - `stepFR_app`
+- **wfTypeResult from stepFR (Step 2):** `applyFnTClosure_ok_wfTypeResult`,
+  `mapM_applyFnTClosure_forall_wfTypeResult`, `StepFR_implies_wfTypeResult`,
+  `applyFnTClosure_regular_body_wfTypeResult`; `wfTagMeaningCtx_closure_body` (used for body context; one sorry at `hTm_ctx''`)
+
+### Same-config agreement (Step 2 dependencies)
+- `agreeOnClean_same_config`, `agreeCapturedEnv_same`, `agreeValueUnder_same`
+- `valueHasETyp_loc_inv` (inversion for `valueHasETyp θ (Value.loc a) e`; used to avoid dependent elimination in `agreeValueUnder_same` loc cases)
 
 ### Member-evidence transport
 - `memberVarsRegimeEvidence_monotone`, `memberVarsRegimeEvidence_transport_μ`
@@ -174,6 +214,4 @@ chronological evolution with commit references.
 - `stepFR_ite_mode3`, `stepFR_ite_mode4`
 
 ### Issue tags
-- `VARSREGIME_GAP` (resolved)
-- `APP-SIGMA-WITNESS-MISMATCH` (resolved)
 - `APP-BODYSTART-VARSREGIME` (legacy; may no longer appear)

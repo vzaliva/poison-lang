@@ -529,6 +529,386 @@ def TypeSystemEnforcesFaultRobustness_step_spec
     typecheck .ioFree ctxᵢ e fuel = .ok res →
       StepFR mode ctxᵢ e res predSat tm
 
+-- Local inversion lemmas for valueHasETyp (used before valueHasETyp_num_etyp is defined).
+private lemma valueHasETyp_etyp_num {θ : RealizationMap} {n : Int} {t : ETyp} (h : valueHasETyp θ (Value.num n) t) : t = ETyp.int := by cases h; rfl
+private lemma valueHasETyp_etyp_bool {θ : RealizationMap} {b : Bool} {t : ETyp} (h : valueHasETyp θ (Value.bool b) t) : t = ETyp.bool := by cases h; rfl
+private lemma valueHasETyp_etyp_unit {θ : RealizationMap} {t : ETyp} (h : valueHasETyp θ Value.unit t) : t = ETyp.unit := by cases h; rfl
+private lemma valueHasETyp_etyp_str {θ : RealizationMap} {s : String} {t : ETyp} (h : valueHasETyp θ (Value.str s) t) : t = ETyp.string := by cases h; rfl
+
+-- Inversion for loc: avoids dependent elimination on qt.etyp in agreeValueUnder_same.
+private lemma valueHasETyp_loc_inv {θ : RealizationMap} {a : Address} {e : ETyp}
+  (h : valueHasETyp θ (Value.loc a) e) : ∃ t ls l, e = ETyp.ref t ls ∧ θ.lookup l = some a ∧ l ∈ ls := by
+  cases h with
+  | loc hlookup hin => exact ⟨_, _, _, rfl, hlookup, hin⟩
+
+-- Inversion for closure/parrow: etype is arrow/parrow (avoids dependent elimination in agreeValueUnder_same).
+private lemma valueHasETyp_closure_etyp_arrow {θ : RealizationMap} {x : Name} {e : Expr} {env : VarEnv} {et : ETyp}
+  (h : valueHasETyp θ (Value.closure x e env) et) : et.isArrow = true := by
+  cases h with
+  | closure => simp [ETyp.isArrow]
+
+private lemma valueHasETyp_peClosure_etyp_parrow {θ : RealizationMap} {x : Name} {body : Expr} {env : VarEnv} {et : ETyp}
+  (h : valueHasETyp θ (Value.peClosure x body env) et) : et.isParrow = true := by
+  cases h with
+  | peClosure => simp [ETyp.isParrow]
+
+private lemma List_lookup_some_mem
+    {α β : Type} [BEq α] [LawfulBEq α]
+    (x : α) (y : β) (l : List (α × β)) :
+    List.lookup x l = some y → (x, y) ∈ l := by
+  intro hlookup
+  induction l with
+  | nil =>
+      simp [List.lookup] at hlookup
+  | cons hd tl ih =>
+      cases hd with
+      | mk x' y' =>
+          by_cases hEq : x == x'
+          · simp [List.lookup, hEq] at hlookup
+            have hx : x = x' := LawfulBEq.eq_of_beq hEq
+            subst hx
+            subst hlookup
+            simp
+          · simp [List.lookup, hEq] at hlookup
+            exact List.mem_cons_of_mem _ (ih hlookup)
+
+-- When σcap has no duplicate keys, (x,qt)::tail and tail.lookup x = some qt' is impossible.
+private lemma CapturedVarEnv_nodup_head_notin_tail
+  (x : Name) (qt : QTyp) (tail : CapturedVarEnv) (qt' : QTyp)
+  (hnd : List.Nodup (((x, qt) :: tail).map Prod.fst))
+  (hσ : tail.lookup x = some qt') :
+  False := by
+  have hmem := List_lookup_some_mem x qt' tail (by simpa [CapturedVarEnv.lookup_eq] using hσ)
+  have hx_in : x ∈ tail.map Prod.fst := List.mem_map.mpr ⟨(x, qt'), hmem, rfl⟩
+  have hnd_cons := List.nodup_cons.mp hnd
+  exact absurd hx_in hnd_cons.1
+
+private lemma VarTypeEnv_lookup_of_toCaptured_lookup
+    (σ : VarTypeEnv) (x : Name) (qt : QTyp) :
+    (VarTypeEnv.toCaptured σ).lookup x = some qt →
+    σ.lookup x = some qt := by
+  intro hlookup
+  have hmem : (x, qt) ∈ VarTypeEnv.toCaptured σ :=
+    List_lookup_some_mem x qt (VarTypeEnv.toCaptured σ) (by simpa [CapturedVarEnv.lookup_eq] using hlookup)
+  exact VarTypeEnv_lookup_of_toCaptured_mem σ x qt hmem
+
+private lemma foldr_insert_domain (tenv : List (Name × QTyp)) (y : Name) (qt : QTyp) :
+    (tenv.foldr (fun entry (acc : Std.ExtTreeMap Name QTyp varTypeEnvCmp) =>
+      acc.insert entry.1 entry.2) ∅)[y]? = some qt →
+    ∃ qt', tenv.lookup y = some qt' := by
+  intro hlookup
+  induction tenv with
+  | nil => simp [List.foldr] at hlookup
+  | cons hd tl ih =>
+    simp only [List.foldr] at hlookup
+    rw [Std.ExtTreeMap.getElem?_insert] at hlookup
+    simp only [List.lookup]
+    split at hlookup
+    · rename_i hcmp
+      have hkey : hd.1 = y := (LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mp hcmp
+      rw [show (y == hd.1) = true from beq_iff_eq.mpr hkey.symm]
+      exact ⟨hd.2, rfl⟩
+    · rename_i hcmp
+      have hne : hd.1 ≠ y := fun h => hcmp (h ▸ (LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mpr rfl)
+      rw [show (y == hd.1) = false from beq_eq_false_iff_ne.mpr (Ne.symm hne)]
+      exact ih hlookup
+
+private lemma foldr_insert_of_list_lookup (tenv : List (Name × QTyp)) (y : Name) (qt : QTyp) :
+    tenv.lookup y = some qt →
+    (tenv.foldr (fun entry (acc : Std.ExtTreeMap Name QTyp varTypeEnvCmp) =>
+      acc.insert entry.1 entry.2) ∅)[y]? = some qt := by
+  intro hlookup
+  induction tenv with
+  | nil => simp [List.lookup] at hlookup
+  | cons hd tl ih =>
+    simp only [List.foldr, List.lookup] at hlookup ⊢
+    rw [Std.ExtTreeMap.getElem?_insert]
+    split at hlookup
+    · rename_i hbeq
+      have hkey : y = hd.1 := beq_iff_eq.mp hbeq
+      rw [show varTypeEnvCmp hd.1 y = .eq from
+        (LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mpr hkey.symm]
+      simpa using hlookup
+    · rename_i hbeq
+      have hne : y ≠ hd.1 := beq_eq_false_iff_ne.mp hbeq
+      have hcmp_ne : ¬(varTypeEnvCmp hd.1 y = .eq) :=
+        fun hcmp => hne ((LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mp hcmp).symm
+      rw [if_neg hcmp_ne]
+      exact ih hlookup
+
+private lemma list_lookup_exists_of_ofCaptured_lookup
+    (tenv : CapturedVarEnv) (y : Name) (qt : QTyp) :
+    (VarTypeEnv.ofCaptured tenv).lookup y = some qt →
+    ∃ qt', tenv.lookup y = some qt' :=
+  foldr_insert_domain tenv y qt
+
+private lemma ofCaptured_lookup_of_list_lookup
+    (tenv : CapturedVarEnv) (y : Name) (qt : QTyp) :
+    tenv.lookup y = some qt →
+    (VarTypeEnv.ofCaptured tenv).lookup y = some qt :=
+  foldr_insert_of_list_lookup tenv y qt
+
+private lemma list_lookup_of_ofCaptured_lookup
+    (tenv : CapturedVarEnv) (y : Name) (qt : QTyp) :
+    (VarTypeEnv.ofCaptured tenv).lookup y = some qt →
+    tenv.lookup y = some qt := by
+  intro hlookup
+  rcases list_lookup_exists_of_ofCaptured_lookup tenv y qt hlookup with ⟨qt', hlist⟩
+  have hlookup' : (VarTypeEnv.ofCaptured tenv).lookup y = some qt' :=
+    ofCaptured_lookup_of_list_lookup tenv y qt' hlist
+  have hqt : qt' = qt := by
+    have : some qt' = some qt := by simpa [hlookup'] using hlookup
+    exact Option.some.inj this
+  simpa [hqt] using hlist
+
+/-- Path D helper: build direct member `varsRegime` facts for the singleton closure captured env
+created at lambda typing sites, from the enclosing `consistentWithRegime`. -/
+private lemma memberVarsRegimeEvidence_of_toCaptured
+  (predSat : PredSat) (R : Regime) (ctx : TypeContext)
+  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hcwr : consistentWithRegime predSat R ctx μ ρ θ) :
+  MemberVarsRegimeEvidence predSat R μ (VarTypeEnv.toCaptured ctx.varEnv) ρ := by
+  intro y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR
+  have hlookup_list :
+      (VarTypeEnv.toCaptured ctx.varEnv).lookup y = some qt_y :=
+    list_lookup_of_ofCaptured_lookup (VarTypeEnv.toCaptured ctx.varEnv) y qt_y hlookup_σ
+  exact hcwr.2.1 y qt_y k_y
+    (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookup_list)
+    hguard hkR
+
+/-- Path D helper: build direct member `closureCapturedVarsRegime` facts for the singleton closure
+captured env created at lambda typing sites, from the enclosing `consistentWithRegime`. -/
+private lemma memberCvcrEvidence_of_toCaptured
+  (predSat : PredSat) (R : Regime) (ctx : TypeContext)
+  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hcwr : consistentWithRegime predSat R ctx μ ρ θ) :
+  MemberCvcrEvidence predSat R μ (VarTypeEnv.toCaptured ctx.varEnv) ρ := by
+  intro y qt_y v_y hlookup_σ hlookup_ρ
+  have hlookup_list :
+      (VarTypeEnv.toCaptured ctx.varEnv).lookup y = some qt_y :=
+    list_lookup_of_ofCaptured_lookup (VarTypeEnv.toCaptured ctx.varEnv) y qt_y hlookup_σ
+  exact hcwr.2.2 y qt_y v_y
+    (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookup_list)
+    hlookup_ρ
+
+private lemma agreeCapturedEnv_same
+  (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap)
+  (σcap : CapturedVarEnv) (ρcap : VarEnv)
+  (hnd : List.Nodup (σcap.map Prod.fst))
+  (hcover : ∀ y qt, σcap.lookup y = some qt → ∃ v, ρcap.lookup y = some v)
+  (hhenv : ∀ y qt v, σcap.lookup y = some qt → ρcap.lookup y = some v → valueHasETyp θ v qt.etyp)
+  (hagree : ∀ y qt v, σcap.lookup y = some qt → ρcap.lookup y = some v → qtypCleanUnder R qt →
+    valueHasETyp θ v qt.etyp → agreeValueUnder predSat R μ μ θ θ qt v v) :
+  agreeCapturedEnv predSat R μ μ θ θ σcap ρcap ρcap := by
+  induction σcap with
+  | nil => exact agreeCapturedEnv.nil
+  | cons entry tail ih =>
+    rcases entry with ⟨x, qt⟩
+    have hnd_tail : List.Nodup (tail.map Prod.fst) := (List.nodup_cons.mp hnd).2
+    rcases hcover x qt (by simp [CapturedVarEnv.lookup_eq, List.lookup]) with ⟨v, hlookup⟩
+    have htyp : valueHasETyp θ v qt.etyp := hhenv x qt v (by simp [CapturedVarEnv.lookup_eq, List.lookup]) hlookup
+    by_cases hclean : qtypCleanUnder R qt
+    · refine agreeCapturedEnv.cons_clean hclean hlookup hlookup htyp htyp ?_ (ih hnd_tail ?_ ?_ (fun y qt' v' hσ_tail hρ hclean' htyp' =>
+        hagree y qt' v' (by
+          simp only [CapturedVarEnv.lookup_eq, List.lookup] at hσ_tail ⊢
+          split at ⊢
+          · have heq : y = x := beq_iff_eq.mp (by assumption)
+            exfalso; rw [heq] at hσ_tail
+            have hmem : (x, qt') ∈ tail := List_lookup_some_mem x qt' tail hσ_tail
+            exact (List.nodup_cons.mp hnd).1 (List.mem_map.mpr ⟨(x, qt'), hmem, rfl⟩)
+          · exact hσ_tail) hρ hclean' htyp'))
+      · exact hagree x qt v (by simp [CapturedVarEnv.lookup_eq, List.lookup]) hlookup hclean htyp
+      · intro y qt' h
+        by_cases heq : (y == x) = true
+        · obtain ⟨v', hv'⟩ := hcover x qt (by simp only [CapturedVarEnv.lookup_eq, List.lookup, beq_self_eq_true])
+          exact ⟨v', by rw [beq_iff_eq.mp heq]; exact hv'⟩
+        · obtain ⟨v', hv'⟩ := hcover y qt' (by simp only [heq, CapturedVarEnv.lookup_eq, List.lookup]; exact h)
+          exact ⟨v', hv'⟩
+      · intro y qt' v' hσ hρ
+        by_cases heq : (y == x) = true
+        · exact False.elim (CapturedVarEnv_nodup_head_notin_tail x qt tail qt' hnd (by simpa [CapturedVarEnv.lookup_eq, beq_iff_eq.mp heq] using hσ))
+        · exact hhenv y qt' v' (by simp only [heq, CapturedVarEnv.lookup_eq, List.lookup]; exact hσ) hρ
+    · refine agreeCapturedEnv.cons_dirty hclean hlookup hlookup htyp htyp (ih hnd_tail ?_ ?_ (fun y qt' v' hσ_tail hρ hclean' htyp' =>
+        hagree y qt' v' (by
+          simp only [CapturedVarEnv.lookup_eq, List.lookup] at hσ_tail ⊢
+          split at ⊢
+          · have heq : y = x := beq_iff_eq.mp (by assumption)
+            exfalso; rw [heq] at hσ_tail
+            have hmem : (x, qt') ∈ tail := List_lookup_some_mem x qt' tail hσ_tail
+            exact (List.nodup_cons.mp hnd).1 (List.mem_map.mpr ⟨(x, qt'), hmem, rfl⟩)
+          · exact hσ_tail) hρ hclean' htyp'))
+      · intro y qt' hy
+        by_cases heq : (y == x) = true
+        · obtain ⟨v', hv'⟩ := hcover x qt (by simp only [CapturedVarEnv.lookup_eq, List.lookup, beq_self_eq_true])
+          exact ⟨v', by rw [beq_iff_eq.mp heq]; exact hv'⟩
+        · exact hcover y qt' (by simp only [heq, CapturedVarEnv.lookup_eq, List.lookup]; exact hy)
+      · intro y qt' v' hσ hρ
+        by_cases heq : (y == x) = true
+        · exact False.elim (CapturedVarEnv_nodup_head_notin_tail x qt tail qt' hnd (by simpa [CapturedVarEnv.lookup_eq, beq_iff_eq.mp heq] using hσ))
+        · exact hhenv y qt' v' (by simp only [heq, CapturedVarEnv.lookup_eq, List.lookup]; exact hσ) hρ
+
+-- Admitted to break mutual recursion (agreeValueUnder_same ⇄ agreeCapturedEnv_same_toCaptured).
+-- TODO: prove without sorry (e.g. by resolving mutual recursion or well-founded measure).
+private lemma agreeCapturedEnv_same_toCaptured
+  (predSat : PredSat) (R : Regime) (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ) (hcwr : consistentWithRegime predSat R ctx μ ρ θ) (hR : R = ctx.regime) :
+  agreeCapturedEnv predSat R μ μ θ θ (VarTypeEnv.toCaptured ctx.varEnv) ρ ρ := sorry
+
+-- Reflexive agreement when both sides are the same config (used by StepFR_single_run).
+private lemma agreeValueUnder_same
+  (predSat : PredSat) (R : Regime) (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ) (hcwr : consistentWithRegime predSat R ctx μ ρ θ)
+  (hR : R = ctx.regime) (qt : QTyp) (v : Value) (hclean : qtypCleanUnder R qt) (htyp : valueHasETyp θ v qt.etyp) :
+  agreeValueUnder predSat R μ μ θ θ qt v v := by
+  cases hclean with
+  | clean hpoison =>
+    cases v with
+    | num n =>
+      have hetyp := valueHasETyp_etyp_num htyp
+      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+    | bool _ =>
+      have hetyp := valueHasETyp_etyp_bool htyp
+      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+    | unit =>
+      have hetyp := valueHasETyp_etyp_unit htyp
+      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+    | str _ =>
+      have hetyp := valueHasETyp_etyp_str htyp
+      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+    | loc a =>
+      rcases valueHasETyp_loc_inv htyp with ⟨_t, _ls, l, hetyp, hlookup, hin⟩
+      exact agreeValueUnder.clean_ref hpoison hetyp hlookup hin rfl hlookup rfl
+    | closure x body env =>
+      by_cases hdirty : ¬internalPoisonClean qt
+      · exact agreeValueUnder.dirty_internal_arrow hdirty (valueHasETyp_closure_etyp_arrow htyp) htyp htyp
+      · have h_clean_int : internalPoisonClean qt := by by_contra h; exact hdirty h
+        obtain ⟨st1, st2, p, tcl, hetyp⟩ := valueHasETyp_closure_etyp_arrow_inv htyp
+        have htyp_arrow : valueHasETyp θ (Value.closure x body env) (ETyp.arrow st1 st2 p tcl) := by rw [← hetyp]; exact htyp
+        obtain ⟨tenv, htcl⟩ := valueHasETyp_closure_mem_inv htyp_arrow
+        obtain ⟨heq_tenv, heq_env⟩ := closure_same_config_tenv_env ctx μ ρ θ hric x body env st1 st2 p tcl htyp_arrow tenv htcl
+        have hcap := heq_tenv ▸ agreeCapturedEnv_same_toCaptured predSat R ctx μ ρ θ hric hcwr hR
+        have hVars := heq_tenv ▸ memberVarsRegimeEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
+        have hCvcr := heq_tenv ▸ memberCvcrEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
+        have heq_v := congr_arg (Value.closure x body) heq_env
+        exact agreeValueUnder.clean_internal_arrow h_clean_int hetyp htcl rfl hcap hVars hCvcr hVars hCvcr heq_v heq_v
+    | peClosure x body env =>
+      by_cases hdirty : ¬internalPoisonClean qt
+      · exact agreeValueUnder.dirty_internal_parrow hdirty (valueHasETyp_peClosure_etyp_parrow htyp) htyp htyp
+      · have h_clean_int : internalPoisonClean qt := by by_contra h; exact hdirty h
+        obtain ⟨st1, st2, p, tcl, hetyp⟩ := valueHasETyp_peClosure_etyp_parrow_inv htyp
+        have htyp_parrow : valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcl) := by rw [← hetyp]; exact htyp
+        obtain ⟨pbody, tenv, hpure, htcl⟩ := valueHasETyp_peClosure_mem_inv htyp_parrow
+        obtain ⟨heq_tenv, heq_env⟩ := peClosure_same_config_tenv_env ctx μ ρ θ hric x body pbody env st1 st2 p tcl htyp_parrow tenv htcl
+        have hcap := heq_tenv ▸ agreeCapturedEnv_same_toCaptured predSat R ctx μ ρ θ hric hcwr hR
+        have hVars := heq_tenv ▸ memberVarsRegimeEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
+        have hCvcr := heq_tenv ▸ memberCvcrEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
+        have heq_v := congr_arg (Value.peClosure x body) heq_env
+        exact agreeValueUnder.clean_internal_parrow h_clean_int hetyp htcl ⟨hpure, rfl⟩ hcap hVars hCvcr hVars hCvcr heq_v heq_v
+  | guard k htag hregime _hnotfun =>
+    cases v with
+    | num n =>
+      have hetyp := valueHasETyp_etyp_num htyp
+      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+    | bool _ =>
+      have hetyp := valueHasETyp_etyp_bool htyp
+      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+    | unit =>
+      have hetyp := valueHasETyp_etyp_unit htyp
+      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+    | str _ =>
+      have hetyp := valueHasETyp_etyp_str htyp
+      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+    | loc a =>
+      rcases valueHasETyp_loc_inv htyp with ⟨_t, _ls, l, hetyp, hlookup, hin⟩
+      exact agreeValueUnder.withPred_true_ref k htag hregime hetyp hlookup hin rfl hlookup rfl
+    | closure x body env =>
+      by_cases hdirty : ¬internalPoisonClean qt
+      · exact agreeValueUnder.dirty_internal_arrow hdirty (valueHasETyp_closure_etyp_arrow htyp) htyp htyp
+      · have h_clean_int : internalPoisonClean qt := by by_contra h; exact hdirty h
+        obtain ⟨st1, st2, p, tcl, hetyp⟩ := valueHasETyp_closure_etyp_arrow_inv htyp
+        have htyp_arrow : valueHasETyp θ (Value.closure x body env) (ETyp.arrow st1 st2 p tcl) := by rw [← hetyp]; exact htyp
+        obtain ⟨tenv, htcl⟩ := valueHasETyp_closure_mem_inv htyp_arrow
+        obtain ⟨heq_tenv, heq_env⟩ := closure_same_config_tenv_env ctx μ ρ θ hric x body env st1 st2 p tcl htyp_arrow tenv htcl
+        have hcap := heq_tenv ▸ agreeCapturedEnv_same_toCaptured predSat R ctx μ ρ θ hric hcwr hR
+        have hVars := heq_tenv ▸ memberVarsRegimeEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
+        have hCvcr := heq_tenv ▸ memberCvcrEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
+        have heq_v := congr_arg (Value.closure x body) heq_env
+        exact agreeValueUnder.clean_internal_arrow h_clean_int hetyp htcl rfl hcap hVars hCvcr hVars hCvcr heq_v heq_v
+    | peClosure x body env =>
+      by_cases hdirty : ¬internalPoisonClean qt
+      · exact agreeValueUnder.dirty_internal_parrow hdirty (valueHasETyp_peClosure_etyp_parrow htyp) htyp htyp
+      · have h_clean_int : internalPoisonClean qt := by by_contra h; exact hdirty h
+        obtain ⟨st1, st2, p, tcl, hetyp⟩ := valueHasETyp_peClosure_etyp_parrow_inv htyp
+        have htyp_parrow : valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcl) := by rw [← hetyp]; exact htyp
+        obtain ⟨pbody, tenv, hpure, htcl⟩ := valueHasETyp_peClosure_mem_inv htyp_parrow
+        obtain ⟨heq_tenv, heq_env⟩ := peClosure_same_config_tenv_env ctx μ ρ θ hric x body pbody env st1 st2 p tcl htyp_parrow tenv htcl
+        have hcap := heq_tenv ▸ agreeCapturedEnv_same_toCaptured predSat R ctx μ ρ θ hric hcwr hR
+        have hVars := heq_tenv ▸ memberVarsRegimeEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
+        have hCvcr := heq_tenv ▸ memberCvcrEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
+        have heq_v := congr_arg (Value.peClosure x body) heq_env
+        exact agreeValueUnder.clean_internal_parrow h_clean_int hetyp htcl ⟨hpure, rfl⟩ hcap hVars hCvcr hVars hCvcr heq_v heq_v
+
+-- agreeOnClean when both sides are the same (μ, ρ, θ).
+private lemma agreeOnClean_same_config
+  (predSat : PredSat) (R : Regime) (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ) (hcwr : consistentWithRegime predSat R ctx μ ρ θ)
+  (hR : R = ctx.regime) :
+  agreeOnClean predSat R ctx μ ρ θ μ ρ θ := by
+  constructor
+  · intro l qt hlookup hclean
+    cases hθ : θ.lookup l with
+    | none => exact agreeLocUnder.both_unrealized l qt hθ hθ
+    | some a =>
+      have hcontains := (hric.1 l a hθ).2
+      have hmem : a ∈ μ := (ExtTreeMap.contains_iff_mem).1 hcontains
+      have hisSome : μ[a]?.isSome = true := (ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
+      cases hμan : μ[a]? with
+      | none => simp only [hμan] at hisSome; exact False.elim (Bool.false_ne_true hisSome)
+      | some n =>
+        by_cases hetyp : qt.etyp = ETyp.int
+        · have hμ : Memory.lookup μ a = some n := by simp [Memory.lookup, ExtTreeMap.get?_eq_getElem?, hμan]
+          have htyp : valueHasETyp θ (Value.num n) qt.etyp := by rw [hetyp]; exact valueHasETyp.num n
+          exact agreeLocUnder.agree_values l qt a a n n hθ hθ hμ hμ
+            (agreeValueUnder_same predSat R ctx μ ρ θ hric hcwr hR qt (Value.num n) hclean htyp)
+        · exact False.elim (hetyp (memEnv_lookup_etyp_int ctx.memEnv l qt hlookup))
+  · intro x qt hlookup hclean
+    rcases hric.2 hlookup with ⟨v, hρ, htyp⟩
+    refine agreeVarUnder.agree_values x qt v v hρ hρ
+      (agreeValueUnder_same predSat R ctx μ ρ θ hric hcwr hR qt v hclean htyp)
+
+-- Single-run consequence of StepFR: when both runs are the same (μ, ρ, θ, cf, o),
+-- we get one extension θ' satisfying the full pack (used in app fallback branches).
+private lemma StepFR_single_run
+  (mode : LeanPoison.EvalMode) (ctx : TypeContext) (e : Expr) (res : TypeResult)
+  (predSat : PredSat) (tm : TagMeaning) (h : StepFR mode ctx e res predSat tm)
+  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (cf : Config) (o : Value)
+  (hpredlaws : PredSatLaws predSat tm) (hwfTm : wfTagMeaningCtx tm ctx)
+  (hθwf : wfRealizationMap θ) (hwf : wfTypeContext ctx)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+  (htagR : regimeConsistentWithCtx ctx ctx.regime) (hRbound : regimeBounded ctx.regime)
+  (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ)
+  (a : Address) (pm : Bool)
+  (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+  (ht : terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o)
+  (_hresTm : QTypRespectsTagMeaning tm res.qualType) :
+  ∃ θ', wfExtendsMap θ θ' ∧ valueHasETyp θ' o res.qualType.etyp ∧
+    wfTagMeaningCtx tm (ctxAfter ctx res) ∧ wfTypeContext (ctxAfter ctx res) ∧
+    wfConfig cf ∧
+    runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+    regimeConsistentWithCtx (ctxAfter ctx res) (ctxAfter ctx res).regime ∧
+    consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+    agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ' cf.memory cf.varEnv θ' ∧
+    valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory o ∧
+    resultAgreesIfClean predSat (ctxAfter ctx res).regime cf.memory cf.memory θ' θ' res.qualType o o := by
+  have hagree_same : agreeOnClean predSat ctx.regime ctx μ ρ θ μ ρ θ :=
+    agreeOnClean_same_config predSat ctx.regime ctx μ ρ θ hric hcwr rfl
+  rcases h hpredlaws hwfTm μ μ ρ ρ θ θ cf cf o o hθwf hθwf hwf hric hric htagR hRbound hcwr hcwr hagree_same
+    a a pm hwfcfg hwfcfg ht ht with
+    ⟨_hresTm, ⟨θ₀', θ₁', hθext₀, _hθext₁, hv₀, _hv₁, hTm, hwfOut, hwfcfg₀, _hwfcfg₁,
+      hric₀, _hric₁, _htagR, hcwr₀, _hcwr₁, hagree, hvalc, _hvalc₁, hres_agree⟩⟩
+  refine ⟨θ₀', hθext₀, hv₀, hTm, hwfOut, hwfcfg₀, hric₀, _htagR, hcwr₀, ?_, hvalc, ?_⟩
+  · exact agreeOnClean_same_config predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ₀' hric₀ hcwr₀ rfl
+  · intro hclean; exact agreeValueUnder_same predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ₀' hric₀ hcwr₀ rfl res.qualType o hclean hv₀
 
 section TypeSystemEnforcesFaultRobustness_impl_proof
 
@@ -1497,104 +1877,6 @@ private lemma valueHasETyp_num_etyp {θ : RealizationMap} {n : Int} {t : ETyp} :
   intro h
   cases h
   rfl
-
-private lemma List_lookup_some_mem
-    {α β : Type} [BEq α] [LawfulBEq α]
-    (x : α) (y : β) (l : List (α × β)) :
-    List.lookup x l = some y → (x, y) ∈ l := by
-  intro hlookup
-  induction l with
-  | nil =>
-      simp [List.lookup] at hlookup
-  | cons hd tl ih =>
-      cases hd with
-      | mk x' y' =>
-          by_cases hEq : x == x'
-          · simp [List.lookup, hEq] at hlookup
-            have hx : x = x' := LawfulBEq.eq_of_beq hEq
-            subst hx
-            subst hlookup
-            simp
-          · simp [List.lookup, hEq] at hlookup
-            exact List.mem_cons_of_mem _ (ih hlookup)
-
-private lemma VarTypeEnv_lookup_of_toCaptured_lookup
-    (σ : VarTypeEnv) (x : Name) (qt : QTyp) :
-    (VarTypeEnv.toCaptured σ).lookup x = some qt →
-    σ.lookup x = some qt := by
-  intro hlookup
-  have hmem : (x, qt) ∈ VarTypeEnv.toCaptured σ :=
-    List_lookup_some_mem x qt (VarTypeEnv.toCaptured σ) (by simpa [CapturedVarEnv.lookup_eq] using hlookup)
-  exact VarTypeEnv_lookup_of_toCaptured_mem σ x qt hmem
-
-private lemma foldr_insert_domain (tenv : List (Name × QTyp)) (y : Name) (qt : QTyp) :
-    (tenv.foldr (fun entry (acc : Std.ExtTreeMap Name QTyp varTypeEnvCmp) =>
-      acc.insert entry.1 entry.2) ∅)[y]? = some qt →
-    ∃ qt', tenv.lookup y = some qt' := by
-  intro hlookup
-  induction tenv with
-  | nil => simp [List.foldr] at hlookup
-  | cons hd tl ih =>
-    simp only [List.foldr] at hlookup
-    rw [Std.ExtTreeMap.getElem?_insert] at hlookup
-    simp only [List.lookup]
-    split at hlookup
-    · rename_i hcmp
-      have hkey : hd.1 = y := (LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mp hcmp
-      rw [show (y == hd.1) = true from beq_iff_eq.mpr hkey.symm]
-      exact ⟨hd.2, rfl⟩
-    · rename_i hcmp
-      have hne : hd.1 ≠ y := fun h => hcmp (h ▸ (LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mpr rfl)
-      rw [show (y == hd.1) = false from beq_eq_false_iff_ne.mpr (Ne.symm hne)]
-      exact ih hlookup
-
-private lemma foldr_insert_of_list_lookup (tenv : List (Name × QTyp)) (y : Name) (qt : QTyp) :
-    tenv.lookup y = some qt →
-    (tenv.foldr (fun entry (acc : Std.ExtTreeMap Name QTyp varTypeEnvCmp) =>
-      acc.insert entry.1 entry.2) ∅)[y]? = some qt := by
-  intro hlookup
-  induction tenv with
-  | nil => simp [List.lookup] at hlookup
-  | cons hd tl ih =>
-    simp only [List.foldr, List.lookup] at hlookup ⊢
-    rw [Std.ExtTreeMap.getElem?_insert]
-    split at hlookup
-    · rename_i hbeq
-      have hkey : y = hd.1 := beq_iff_eq.mp hbeq
-      rw [show varTypeEnvCmp hd.1 y = .eq from
-        (LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mpr hkey.symm]
-      simpa using hlookup
-    · rename_i hbeq
-      have hne : y ≠ hd.1 := beq_eq_false_iff_ne.mp hbeq
-      have hcmp_ne : ¬(varTypeEnvCmp hd.1 y = .eq) :=
-        fun hcmp => hne ((LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mp hcmp).symm
-      rw [if_neg hcmp_ne]
-      exact ih hlookup
-
-private lemma list_lookup_exists_of_ofCaptured_lookup
-    (tenv : CapturedVarEnv) (y : Name) (qt : QTyp) :
-    (VarTypeEnv.ofCaptured tenv).lookup y = some qt →
-    ∃ qt', tenv.lookup y = some qt' :=
-  foldr_insert_domain tenv y qt
-
-private lemma ofCaptured_lookup_of_list_lookup
-    (tenv : CapturedVarEnv) (y : Name) (qt : QTyp) :
-    tenv.lookup y = some qt →
-    (VarTypeEnv.ofCaptured tenv).lookup y = some qt :=
-  foldr_insert_of_list_lookup tenv y qt
-
-private lemma list_lookup_of_ofCaptured_lookup
-    (tenv : CapturedVarEnv) (y : Name) (qt : QTyp) :
-    (VarTypeEnv.ofCaptured tenv).lookup y = some qt →
-    tenv.lookup y = some qt := by
-  intro hlookup
-  rcases list_lookup_exists_of_ofCaptured_lookup tenv y qt hlookup with ⟨qt', hlist⟩
-  have hlookup' : (VarTypeEnv.ofCaptured tenv).lookup y = some qt' :=
-    ofCaptured_lookup_of_list_lookup tenv y qt' hlist
-  have hqt : qt' = qt := by
-    have : some qt' = some qt := by simpa [hlookup'] using hlookup
-    exact Option.some.inj this
-  simpa [hqt] using hlist
 
 private lemma typecheckDeref_etyp_int
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
@@ -7520,36 +7802,6 @@ private lemma stepFR_vlet
       rw [hmem₀_eq, hmem₁_eq, h_regime_eq]
       exact hagree2_ctx'
     exact agreeValueUnder_transport_clean hclean h_ret_etyp hpoison_imp hagree2
-
-/-- Path D helper: build direct member `varsRegime` facts for the singleton closure captured env
-created at lambda typing sites, from the enclosing `consistentWithRegime`. -/
-private lemma memberVarsRegimeEvidence_of_toCaptured
-  (predSat : PredSat) (R : Regime) (ctx : TypeContext)
-  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (hcwr : consistentWithRegime predSat R ctx μ ρ θ) :
-  MemberVarsRegimeEvidence predSat R μ (VarTypeEnv.toCaptured ctx.varEnv) ρ := by
-  intro y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR
-  have hlookup_list :
-      (VarTypeEnv.toCaptured ctx.varEnv).lookup y = some qt_y :=
-    list_lookup_of_ofCaptured_lookup (VarTypeEnv.toCaptured ctx.varEnv) y qt_y hlookup_σ
-  exact hcwr.2.1 y qt_y k_y
-    (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookup_list)
-    hguard hkR
-
-/-- Path D helper: build direct member `closureCapturedVarsRegime` facts for the singleton closure
-captured env created at lambda typing sites, from the enclosing `consistentWithRegime`. -/
-private lemma memberCvcrEvidence_of_toCaptured
-  (predSat : PredSat) (R : Regime) (ctx : TypeContext)
-  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (hcwr : consistentWithRegime predSat R ctx μ ρ θ) :
-  MemberCvcrEvidence predSat R μ (VarTypeEnv.toCaptured ctx.varEnv) ρ := by
-  intro y qt_y v_y hlookup_σ hlookup_ρ
-  have hlookup_list :
-      (VarTypeEnv.toCaptured ctx.varEnv).lookup y = some qt_y :=
-    list_lookup_of_ofCaptured_lookup (VarTypeEnv.toCaptured ctx.varEnv) y qt_y hlookup_σ
-  exact hcwr.2.2 y qt_y v_y
-    (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookup_list)
-    hlookup_ρ
 
 -- World-free version of stepFRW_fn
 private lemma stepFR_fn
@@ -16205,6 +16457,26 @@ private lemma applyFnTClosure_regular_structure
   | succ fuelBody =>
       exact ⟨fuelBody, rfl⟩
 
+-- In ioFree mode, extern closure application always throws (so cannot occur in stepFR_app).
+private lemma applyFnTClosure_ioFree_extern_fails
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+  (r : TypeResult) :
+  applyFnTClosure .ioFree (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx result2 fuel ≠ .ok r := by
+  intro h
+  cases fuel with
+  | zero =>
+    unfold applyFnTClosure at h
+    simp at h
+  | succ _ =>
+    unfold applyFnTClosure at h
+    have hcond : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := rfl
+    simp only [hcond, ite_true, bind, Except.bind] at h
+    exact absurd h (Except.error_ne_ok "Extern function application forbidden in ioFree mode" r)
+
 -- Inversion for regular closures: successful application exposes the body typing
 -- derivation and successful return-type subtype check.
 private lemma applyFnTClosure_regular_inv
@@ -16395,18 +16667,102 @@ private lemma list_mapM_ok_mem_output_exists_input
     ⟨x, hxmem, hxy⟩
   exact ⟨x, hxmem, hxy⟩
 
+-- StepFR for a sub-expression gives wfTypeResult for its typecheck result (conclusion of StepFR).
+private lemma StepFR_implies_wfTypeResult
+  (predSat : PredSat) (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (res : TypeResult)
+  (hpred : PredSatLaws predSat tm) (hwfTm : wfTagMeaningCtx tm ctx)
+  (hwf_ctx : wfTypeContext ctx)
+  (h : StepFR .ioFree ctx e res predSat tm) :
+  wfTypeResult res := by
+  -- StepFR gives ∀ (μ₀ μ₁ ...), premises → ∃ θ₀' θ₁', ... ∧ wfTypeContext (ctxAfter ctx res) ∧ ...
+  -- We need one instantiation; premises are satisfiable (e.g. empty configs when ctx is wf).
+  sorry
+
+-- Body typecheck in app context: wfTypeResult for result3 comes from IH (StepFR for body).
+private lemma applyFnTClosure_regular_body_wfTypeResult
+  (predSat : PredSat) (tm : TagMeaning)
+  (ctx : TypeContext) (_st1 _st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuelBody : Nat) (fuel_app : Nat)
+  (x : Name) (body : Expr) (tenv : CapturedVarEnv)
+  (hwf1 : wfTypeResult result1)
+  (IH : StepFR_IH predSat tm fuel_app)
+  (h_lt : fuelBody < fuel_app)
+  (hpred : PredSatLaws predSat tm)
+  (ctx'' : TypeContext)
+  (hctx'' : ctx'' = { ctx with
+      pc := joinPoison p (joinPoison p1 ctx.pc)
+      memEnv := result1.memEnv'
+      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+        ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+      tagEnv := result1.tagEnv'
+      nextTag := result1.nextTag'
+      nextLoc := result1.nextLoc'
+      regime := result1.regime' })
+  (hTm_ctx'' : wfTagMeaningCtx tm ctx'')
+  (result3 : TypeResult)
+  (htc : typecheckExpr .ioFree ctx'' body fuelBody = .ok result3) :
+  wfTypeResult result3 := by
+  have hStep := IH fuelBody h_lt body ctx'' hTm_ctx'' result3 (by simpa [typecheck] using htc)
+  have hwf_ctx'' : wfTypeContext ctx'' := by
+    rw [hctx'']
+    simp only [wfTypeContext]
+    exact hwf1
+  exact StepFR_implies_wfTypeResult predSat tm ctx'' body result3 hpred hTm_ctx'' hwf_ctx'' hStep
+
 -- Layer A (per-member): static facts for successful closure-application typing.
+-- wfTypeResult for the body result comes from stepFR IH (StepFR for body → wfTypeResult).
 -- These are intentionally isolated so `stepFR_app` can consume them now and we
 -- can prove them incrementally.
 private lemma applyFnTClosure_ok_wfTypeResult
+  (predSat : PredSat) (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (tcl : FnTClosure) (r : TypeResult)
+  (result1 : TypeResult) (fuel : Nat) (fuel_app : Nat)
+  (h_fuel : fuel ≤ fuel_app)
+  (hwf1 : wfTypeResult result1)
+  (IH : StepFR_IH predSat tm fuel_app)
+  (hpred : PredSatLaws predSat tm)
+  (hTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (tcls : List FnTClosure) (tcl : FnTClosure)
+  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hmem_tcl : tcl ∈ tcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+  (r : TypeResult)
   (happly :
     applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
   wfTypeResult r := by
-  sorry
+  cases fuel with
+  | zero =>
+    unfold applyFnTClosure at happly
+    simp at happly
+  | succ fuelBody =>
+    cases tcl with
+    | regular x body tenv =>
+      rcases applyFnTClosure_regular_inv ctx st1 st2 p p1 argEtyp argPoison argPred result1 fuelBody
+          x body tenv r (by simpa using happly) with
+        ⟨result3, htc_body, _hsub, hfirst⟩
+      let ctx'' := { ctx with
+          pc := joinPoison p (joinPoison p1 ctx.pc)
+          memEnv := result1.memEnv'
+          varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+          tagEnv := result1.tagEnv'
+          nextTag := result1.nextTag'
+          nextLoc := result1.nextLoc'
+          regime := result1.regime' }
+      -- wfTagMeaningCtx for body context: same reasoning as wfTagMeaningCtx_closure_body (ctx'' differs from ctxAfter ctx result1 only by pc/varEnv; varEnv update is covered by hargTm and ofCaptured-from-arrow).
+      have hTm_ctx'' : wfTagMeaningCtx tm ctx'' := by sorry
+      have h_lt : fuelBody < fuel_app := Nat.lt_of_lt_of_le (Nat.lt_succ_self fuelBody) h_fuel
+      have hwf3 := applyFnTClosure_regular_body_wfTypeResult predSat tm ctx st1 st2 p p1 argEtyp argPoison argPred
+        result1 fuelBody fuel_app x body tenv hwf1 IH h_lt hpred ctx'' rfl hTm_ctx'' result3 htc_body
+      rw [hfirst]
+      exact hwf3
+    | extern x retSpec effects capturedEnv =>
+      exfalso
+      exact applyFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 argEtyp argPoison argPred result1
+        (Nat.succ fuelBody) x retSpec effects capturedEnv r happly
 
 private lemma applyFnTClosure_ok_wfTagMeaningCtx
   (tm : TagMeaning)
@@ -16451,10 +16807,19 @@ private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
   sorry
 
 private lemma mapM_applyFnTClosure_forall_wfTypeResult
+  (predSat : PredSat) (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
+  (result1 : TypeResult) (fuel : Nat) (fuel_app : Nat)
+  (h_fuel : fuel ≤ fuel_app)
+  (hwf_result1 : wfTypeResult result1)
+  (IH : StepFR_IH predSat tm fuel_app)
+  (hpred : PredSatLaws predSat tm)
+  (hTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
   (tcls : List FnTClosure) (results : List TypeResult)
+  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
   (hmap :
     List.mapM
       (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
@@ -16464,12 +16829,13 @@ private lemma mapM_applyFnTClosure_forall_wfTypeResult
   rcases list_mapM_ok_mem_output_exists_input
       (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
-    ⟨tcl, _htcl_mem, happly⟩
+    ⟨tcl, htcl_mem, happly⟩
   exact
     applyFnTClosure_ok_wfTypeResult
-      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+      predSat tm (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
       (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r) happly
+      (result1 := result1) (fuel := fuel) (fuel_app := fuel_app) h_fuel
+      hwf_result1 IH hpred hTm1 (tcls := tcls) (tcl := tcl) hetyp1 hresTm1 htcl_mem hargTm (r := r) happly
 
 private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx
   (tm : TagMeaning)
@@ -22411,6 +22777,24 @@ private lemma stepFR_app
           ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel' tcls results
           x₀ body₀ _ hmap htcl₀
           with ⟨fuelBody₀, first₀, result3₀, _happly₀, hfuel₀, htc_body₀, _hsub₀, hfirst₀_eq⟩
+        rcases applyFnTClosure_regular_inv_of_mapM_mem
+          ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel' tcls results
+          x₁ body₁ _ hmap htcl₁
+          with ⟨fuelBody₁, first₁, result3₁, _happly₁, hfuel₁, htc_body₁, _hsub₁, hfirst₁_eq⟩
+        have hfirst₀_mem : first₀ ∈ results := by
+          rcases applyFnTClosure_ok_of_mem_mapM
+            ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel' tcls results
+            (FnTClosure.regular x₀ body₀ _) hmap htcl₀ with ⟨r, hr_mem, happly_r⟩
+          have heq : r = first₀ := @Except.ok.inj String TypeResult r first₀ (by simpa [happly_r] using _happly₀)
+          subst heq
+          exact hr_mem
+        have hfirst₁_mem : first₁ ∈ results := by
+          rcases applyFnTClosure_ok_of_mem_mapM
+            ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel' tcls results
+            (FnTClosure.regular x₁ body₁ _) hmap htcl₁ with ⟨r, hr_mem, happly_r⟩
+          have heq : r = first₁ := @Except.ok.inj String TypeResult r first₁ (by simpa [happly_r] using _happly₁)
+          subst heq
+          exact hr_mem
         -- Synchronization is used only under a clean-result assumption for `result1`.
         -- Keep it deferred to avoid requiring a global clean fact at this point.
         have _hsync1_of_clean :
@@ -23814,19 +24198,72 @@ private lemma stepFR_app
                 wfExtendsMap_trans hθext₀2 (wfExtendsMap_trans hθext₀1 _hθext₀_body),
                 wfExtendsMap_trans hθext₁2 (wfExtendsMap_trans hθext₁1 _hθext₁_body),
                 hOutPack_body⟩
-            · exact ⟨θ₀1, θ₁1, wfExtendsMap_trans hθext₀2 hθext₀1, wfExtendsMap_trans hθext₁2 hθext₁1, by sorry⟩
-          · exact ⟨θ₀1, θ₁1, wfExtendsMap_trans hθext₀2 hθext₀1, wfExtendsMap_trans hθext₁2 hθext₁1, by sorry⟩
+            · -- Fallback: no shared closure (¬ internalPoisonClean). Unary member-evidence helper still needed for full pack.
+              exact ⟨θ₀1, θ₁1, wfExtendsMap_trans hθext₀2 hθext₀1, wfExtendsMap_trans hθext₁2 hθext₁1, by sorry⟩
+          · -- Fallback: ¬ qtypCleanUnder result1.qualType. resultAgreesIfClean is vacuous (arrow ⇒ p1=true ⇒ res poison/noPred); rest needs unary member-evidence helper.
+            have hpoison1_true : result1.qualType.poison = true := by
+              by_contra hfalse
+              have hpoison_false : result1.qualType.poison = false := Bool.eq_false_iff.mpr hfalse
+              have hclean : qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType :=
+                qtypCleanUnder.clean hpoison_false
+              exact hclean1_e1 hclean
+            have hp1_true : p1 = true := by
+              rw [← hp1]
+              exact hpoison1_true
+            rcases list_mapM_ok_mem_output_exists_input
+                (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctxᵢ result1 fuel')
+                (xs := tcls) (ys := results) (y := first) hmap (by simp [heq_results])
+              with ⟨tcl, _htcl_mem, happly_first⟩
+            have hfirst_pack :
+                first.qualType.poison = true ∧ first.qualType.pred = Predicate.noPred :=
+              applyFnTClosure_ok_poison_pred_of_p1_true
+                (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                (result2 := result1) (fuel := fuel') (tcl := tcl) (r := first)
+                hp1_true happly_first
+            have hres_pack :
+                res.qualType.poison = true ∧ res.qualType.pred = Predicate.noPred :=
+              joinTypeResults_poison_pred_of_head_true_noPred
+                (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+                h_join hfirst_pack.1 hfirst_pack.2
+            refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · -- valueHasETyp θ₀_out o₀: use body IH (StepFR_single_run) for run 0 → θ₀_body, then
+              -- joinTypeResults_transport_valueHasETyp_from_member ctxᵢ first rest res first₀ h_join hfirst₀_mem
+              sorry
+            · -- valueHasETyp θ₁_out o₁: same with run 1, first₁, θ₁_body
+              sorry
+            · sorry  -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀1
+            · sorry  -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁1
+            · sorry  -- consistentWithRegime ... θ₀1
+            · sorry  -- consistentWithRegime ... θ₁1
+            · sorry  -- agreeOnClean ... θ₀1 θ₁1
+            · sorry  -- valueConsistentWithRegime ... res.qualType cf₀.memory o₀
+            · sorry  -- valueConsistentWithRegime ... res.qualType cf₁.memory o₁
+            · -- resultAgreesIfClean: when res.qualType.poison = true and pred = noPred, .clean is impossible; .guard case needs agreeValueUnder or is impossible when etyp is function
+              sorry
         rcases hOutMapChoice with ⟨θ₀_out, θ₁_out, hθext_out₀, hθext_out₁, hOutPack⟩
         rcases hOutPack with
           ⟨hv_out₀, hv_out₁, hric_out₀, hric_out₁,
             hcwr_out₀, hcwr_out₁, hAgree_out, hvalc_out₀, hvalc_out₁, hres_agree_out⟩
+        have hwf_result1 : wfTypeResult result1 := by
+          simp only [ctxAfter, wfTypeContext, wfTypeResult] at hwf1 ⊢
+          exact hwf1
+        have hresTm2_arg : QTypRespectsTagMeaning tm ⟨etyp2, p2, pred2⟩ := hqt2 ▸ hresTm2
+        have hargTm : QTypRespectsTagMeaning tm ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ :=
+          QTypRespectsTagMeaning_transport_etyp_pred
+            (tm := tm) (qt := ⟨etyp2, p2, pred2⟩)
+            (qt' := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
+            hresTm2_arg rfl rfl
         have hresults_wf :
             ∀ r, r ∈ results → wfTypeResult r :=
           mapM_applyFnTClosure_forall_wfTypeResult
-            (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+            predSat tm (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
             (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
-            (result1 := result1) (fuel := fuel')
-            (tcls := tcls) (results := results) hmap
+            (result1 := result1) (fuel := fuel') (fuel_app := Nat.succ (Nat.succ fuel'))
+            (Nat.le_succ_of_le (Nat.le_succ fuel'))
+            hwf_result1 IH hpredlaws
+            (by simpa [ctxAfter] using hTm1)
+            (tcls := tcls) (results := results) hetyp1 hresTm1 hargTm hmap
         have hresults_tm :
             ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctxᵢ r) := by
           have hTm1_ctx : wfTagMeaningCtx tm (ctxAfter ctxᵢ result1) := by

@@ -99,6 +99,12 @@ lemma memEnv_get_eq_of_lookup (env : MemoryTypeEnv) (l : Loc) (qt : QTyp) (h : e
     have hpred : e.pred = qt.pred := congr_arg QTyp.pred heq
     rw [← hp, ← hpred]
 
+/-- Captured variable env from the type context has no duplicate names.
+    Should follow from ExtTreeMap key uniqueness; admitted for now. -/
+lemma VarTypeEnv_toCaptured_nodup_fst (σ : VarTypeEnv) :
+  List.Nodup ((VarTypeEnv.toCaptured σ).map Prod.fst) := by
+  sorry
+
 -- ================================================================
 -- combineExtTreeMaps helpers
 -- ================================================================
@@ -1031,6 +1037,64 @@ def runtimeInstantiatesCtx (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ :
   (∀ l a, θ.lookup l = some a → ctx.memEnv.contains l ∧ μ.contains a) ∧
   (∀ {x qt}, ctx.varEnv.lookup x = some qt →
      ∃ v, ρ.lookup x = some v ∧ valueHasETyp θ v qt.etyp)
+
+/-- In the "same config" setting, a closure's captured env and runtime env coincide with the
+    type context: when the realisation map instantiates the context and the value is typed as
+    that closure, the closure's σcap is ctx.varEnv.toCaptured and env = ρ. -/
+lemma closure_same_config_tenv_env
+  (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+  (x : Name) (body : Expr) (env : VarEnv) (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
+  (htyp : valueHasETyp θ (Value.closure x body env) (ETyp.arrow st1 st2 p tcls))
+  (σcap : CapturedVarEnv) (htcl : FnTClosure.regular x body σcap ∈ tcls) :
+  σcap = VarTypeEnv.toCaptured ctx.varEnv ∧ env = ρ := by
+  sorry
+
+/-- Typing is deterministic in the type: same value, same etyp. -/
+lemma valueHasETyp_det
+  {θ : RealizationMap} {v : Value} {e1 e2 : ETyp}
+  (h1 : valueHasETyp θ v e1) (h2 : valueHasETyp θ v e2) : e1 = e2 := by
+  sorry
+
+/-- Inversion: closure typed at et has et = arrow for some arrow type. -/
+lemma valueHasETyp_closure_etyp_arrow_inv
+  {θ : RealizationMap} {x : Name} {e : Expr} {env : VarEnv} {et : ETyp}
+  (h : valueHasETyp θ (Value.closure x e env) et) :
+  ∃ st1 st2 p tcl, et = ETyp.arrow st1 st2 p tcl := by
+  sorry
+
+/-- Inversion: closure typed at arrow gives a member of the closure list. -/
+lemma valueHasETyp_closure_mem_inv
+  {θ : RealizationMap} {x : Name} {e : Expr} {env : VarEnv}
+  {st1 st2 : Typ} {p : Poison} {tcl : List FnTClosure}
+  (h : valueHasETyp θ (Value.closure x e env) (ETyp.arrow st1 st2 p tcl)) :
+  ∃ tenv, FnTClosure.regular x e tenv ∈ tcl := by
+  sorry
+
+/-- Inversion: peClosure typed at et has et = parrow for some parrow type. -/
+lemma valueHasETyp_peClosure_etyp_parrow_inv
+  {θ : RealizationMap} {x : Name} {body : Expr} {env : VarEnv} {et : ETyp}
+  (h : valueHasETyp θ (Value.peClosure x body env) et) :
+  ∃ st1 st2 p tcl, et = ETyp.parrow st1 st2 p tcl := by
+  sorry
+
+/-- Inversion: peClosure typed at parrow gives a member of the closure list. -/
+lemma valueHasETyp_peClosure_mem_inv
+  {θ : RealizationMap} {x : Name} {body : Expr} {env : VarEnv}
+  {st1 st2 : Typ} {p : Poison} {tcl : List PFnTClosure}
+  (h : valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcl)) :
+  ∃ pbody tenv, Expr.toPExpr? body = some pbody ∧ PFnTClosure.regular x pbody tenv ∈ tcl := by
+  sorry
+
+/-- Same for peClosure / parrow. -/
+lemma peClosure_same_config_tenv_env
+  (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+  (x : Name) (body : Expr) (pbody : PExpr) (env : VarEnv) (st1 st2 : Typ) (p : Poison) (tcls : List PFnTClosure)
+  (htyp : valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcls))
+  (σcap : CapturedVarEnv) (htcl : PFnTClosure.regular x pbody σcap ∈ tcls) :
+  σcap = VarTypeEnv.toCaptured ctx.varEnv ∧ env = ρ := by
+  sorry
 
 /-- Future-use lemma for preservation proofs:
     when typing joins function closure sets (e.g. branch joins / merged alternatives),
@@ -7698,7 +7762,6 @@ lemma typecheck_nextLoc_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : 
   ctx.nextLoc ≤ res.nextLoc' := by
   intro htc
   exact typecheck_nextLoc_mono_main ctx e fuel res htc
-
 
 -- ================================================================
 -- joinPoison Properties
