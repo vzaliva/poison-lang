@@ -103,7 +103,11 @@ lemma memEnv_get_eq_of_lookup (env : MemoryTypeEnv) (l : Loc) (qt : QTyp) (h : e
     Should follow from ExtTreeMap key uniqueness; admitted for now. -/
 lemma VarTypeEnv_toCaptured_nodup_fst (σ : VarTypeEnv) :
   List.Nodup ((VarTypeEnv.toCaptured σ).map Prod.fst) := by
-  sorry
+  unfold VarTypeEnv.toCaptured
+  have h : (Std.ExtTreeMap.toList σ).map Prod.fst = σ.keys :=
+    Std.ExtTreeMap.map_fst_toList_eq_keys
+  rw [h]
+  exact Std.ExtTreeMap.nodup_keys
 
 -- ================================================================
 -- combineExtTreeMaps helpers
@@ -1061,7 +1065,8 @@ lemma valueHasETyp_closure_etyp_arrow_inv
   {θ : RealizationMap} {x : Name} {e : Expr} {env : VarEnv} {et : ETyp}
   (h : valueHasETyp θ (Value.closure x e env) et) :
   ∃ st1 st2 p tcl, et = ETyp.arrow st1 st2 p tcl := by
-  sorry
+  cases h with
+  | closure => exact ⟨_, _, _, _, rfl⟩
 
 /-- Inversion: closure typed at arrow gives a member of the closure list. -/
 lemma valueHasETyp_closure_mem_inv
@@ -1069,14 +1074,16 @@ lemma valueHasETyp_closure_mem_inv
   {st1 st2 : Typ} {p : Poison} {tcl : List FnTClosure}
   (h : valueHasETyp θ (Value.closure x e env) (ETyp.arrow st1 st2 p tcl)) :
   ∃ tenv, FnTClosure.regular x e tenv ∈ tcl := by
-  sorry
+  cases h with
+  | closure htcl => exact ⟨_, htcl⟩
 
 /-- Inversion: peClosure typed at et has et = parrow for some parrow type. -/
 lemma valueHasETyp_peClosure_etyp_parrow_inv
   {θ : RealizationMap} {x : Name} {body : Expr} {env : VarEnv} {et : ETyp}
   (h : valueHasETyp θ (Value.peClosure x body env) et) :
   ∃ st1 st2 p tcl, et = ETyp.parrow st1 st2 p tcl := by
-  sorry
+  cases h with
+  | peClosure => exact ⟨_, _, _, _, rfl⟩
 
 /-- Inversion: peClosure typed at parrow gives a member of the closure list. -/
 lemma valueHasETyp_peClosure_mem_inv
@@ -1084,7 +1091,8 @@ lemma valueHasETyp_peClosure_mem_inv
   {st1 st2 : Typ} {p : Poison} {tcl : List PFnTClosure}
   (h : valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcl)) :
   ∃ pbody tenv, Expr.toPExpr? body = some pbody ∧ PFnTClosure.regular x pbody tenv ∈ tcl := by
-  sorry
+  cases h with
+  | peClosure hpure htcl => exact ⟨_, _, hpure, htcl⟩
 
 /-- Same for peClosure / parrow. -/
 lemma peClosure_same_config_tenv_env
@@ -7932,6 +7940,59 @@ lemma mem_mergePFnTClosures_right (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTCl
   intro hmem
   simp only [mergePFnTClosures]
   exact foldl_addUnique_mem_of_input tcls2 _ tcl hmem
+
+/-- Helper: membership in the result of foldl-addUnique implies membership in acc or xs. -/
+private lemma foldl_addUnique_mem_inv {α : Type} [BEq α] [LawfulBEq α]
+    (xs : List α) (acc : List α) (x : α) :
+    x ∈ xs.foldl (fun acc' y => if acc'.contains y then acc' else acc' ++ [y]) acc →
+    x ∈ acc ∨ x ∈ xs := by
+  intro hmem
+  induction xs generalizing acc with
+  | nil =>
+      simp at hmem
+      exact Or.inl hmem
+  | cons hd tl ih =>
+      simp only [List.foldl_cons] at hmem
+      by_cases hc : acc.contains hd
+      · simp only [hc, ↓reduceIte] at hmem
+        cases ih acc hmem with
+        | inl h => exact Or.inl h
+        | inr h => exact Or.inr (List.mem_cons_of_mem _ h)
+      · simp only [hc, Bool.false_eq_true, ↓reduceIte] at hmem
+        cases ih (acc ++ [hd]) hmem with
+        | inl h =>
+            cases List.mem_append.mp h with
+            | inl h => exact Or.inl h
+            | inr h =>
+                have := List.mem_singleton.mp h
+                subst this
+                exact Or.inr List.mem_cons_self
+        | inr h =>
+            exact Or.inr (List.mem_cons_of_mem _ h)
+
+/-- Reverse direction: membership in mergeFnTClosures implies membership in one of the inputs. -/
+lemma mem_mergeFnTClosures_inv (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
+    tcl ∈ mergeFnTClosures tcls1 tcls2 → tcl ∈ tcls1 ∨ tcl ∈ tcls2 := by
+  intro hmem
+  simp only [mergeFnTClosures] at hmem
+  cases foldl_addUnique_mem_inv tcls2 _ tcl hmem with
+  | inl h =>
+      cases foldl_addUnique_mem_inv tcls1 [] tcl h with
+      | inl h => exact absurd h List.not_mem_nil
+      | inr h => exact Or.inl h
+  | inr h => exact Or.inr h
+
+/-- Reverse direction: membership in mergePFnTClosures implies membership in one of the inputs. -/
+lemma mem_mergePFnTClosures_inv (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
+    tcl ∈ mergePFnTClosures tcls1 tcls2 → tcl ∈ tcls1 ∨ tcl ∈ tcls2 := by
+  intro hmem
+  simp only [mergePFnTClosures] at hmem
+  cases foldl_addUnique_mem_inv tcls2 _ tcl hmem with
+  | inl h =>
+      cases foldl_addUnique_mem_inv tcls1 [] tcl h with
+      | inl h => exact absurd h List.not_mem_nil
+      | inr h => exact Or.inl h
+  | inr h => exact Or.inr h
 
 lemma valueHasETyp_joinETyps_left
   {θ : RealizationMap} {v : Value} {t1 t2 : ETyp} {p1 p2 : Poison}

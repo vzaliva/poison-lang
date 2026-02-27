@@ -71,59 +71,59 @@ the body context `ctx''` has captured variables.
 `wfTypeResult res` is purely `∀ l, res.memEnv'.contains l → l < res.nextLoc'` — a
 location-bookkeeping property with no runtime content.  If the StepFR instantiation approach
 fails, the fix is a targeted `typecheckExpr_preserves_wfTypeResult` lemma (induction on the
-typechecker) rather than routing through runtime semantics.
-
-**Verify this before spending time on surrounding plumbing.**
+typechecker) rather than routing through runtime semantics.  `typecheck_nextLoc_mono` already
+exists in `TypeSafety.lean` and could serve as a template.
 
 ## 3. Current Status and Plan
 
-### What is done
+### Checkpoint: 2026-02-27 — Build clean, 38 sorrys total
 
-- Phase 0 (invariant initialization): closed with explicit top-level premises.
-- Path D / APP-SIGMA-WITNESS-MISMATCH: resolved via direct member-evidence on `agreeValueUnder`.
-- Strong mem-join for app/papp: implemented and spec-aligned.
-- Member-to-joined transport for `joinTypeResults`: valueHasETyp, valueConsistentWithRegime,
-  resultAgreesIfClean, and consistentWithRegime all proved.
-- Path D constructor refactor: complete, transport cascade repaired.
-- wfTypeResult chain: threaded through `applyFnTClosure_ok_wfTypeResult` /
-  `mapM_applyFnTClosure_forall_wfTypeResult` via StepFR IH; `agreeOnClean_same_config` closed;
-  `agreeValueUnder_same` closed for num/bool/unit/str/loc and `¬internalPoisonClean` closure
-  branches; `agreeCapturedEnv_same` proved (with `List.Nodup` and
-  `CapturedVarEnv_nodup_head_notin_tail`).
+Build: **clean** (no errors; sorry-only warnings).
 
-### What remains (38 sorrys as of last count)
+**FaultRobustnessProofs.lean** — 34 actual sorry statements:
 
 | Group | Lemma(s) | Count | Risk |
 |---|---|---|---|
 | Mutual recursion | `agreeCapturedEnv_same_toCaptured` | 1 | Low — logic sound, need `mutual`/`termination_by` |
-| **wfTypeResult instantiation** | `StepFR_implies_wfTypeResult` | 1 | **Medium — verify satisfiability first** |
-| Body context wfTagMeaning | `hTm_ctx''` in `applyFnTClosure_ok_wfTypeResult` | 1 | Low — same proof as `wfTagMeaningCtx_closure_body` |
+| `stepFR_ite` modes | `stepFR_ite_mode3`, `stepFR_ite_mode4` | 2 | Medium — branch case analysis on guard-lookup |
+| `stepFR_kwhile` | `stepFR_kwhile` | 1 | Low — deferred; while-loop fixpoint reasoning |
+| **wfTypeResult** | `StepFR_implies_wfTypeResult` | 1 | **Medium** — see Issue F above |
 | Preservation lemmas | `applyFnTClosure_ok_wfTagMeaningCtx`, `_regimeConsistentWithCtx`, `_QTypRespectsTagMeaning` | 3 | Low — standard preservation |
-| Join tag-meaning | `joinTypeResults_QTypRespectsTagMeaning` | 1 | Low — structural induction on join |
-| Arrow fallback (¬ qtypCleanUnder) | `hOutMapChoice` fallback branch | 10 | Low — poison=true makes most obligations trivial |
-| Parrow mirror | All arrow-path properties, parrow branch | 13 | Low — mechanical mirror; infrastructure exists |
-| Pure-body transport (parrow) | `resultAgreesIfClean` shared/dirty placeholders | 2 | Low — infrastructure exists, just uninstantiated |
-| deref / kwhile | `stepFR_deref`, `stepFR_kwhile` | 2 | Low — deferred scope |
-| `agreeValueUnder_same` closures | `internalPoisonClean` closure/peClosure (clean + guard) | 4 | Low — blocked only by `agreeCapturedEnv_same_toCaptured` |
+| Arrow fallback (¬ qtypCleanUnder) | 11 sorrys in `stepFR_app` fallback branch | 11 | Low — poison=true makes most obligations trivial |
+| Parrow mirror | 15 sorrys in `stepFR_app` parrow branch | 15 | Low — mechanical mirror of arrow path |
+
+**TypeSafety.lean** — 4 actual sorry statements:
+
+| Lemma | Risk | Notes |
+|---|---|---|
+| `memEnv_lookup_etyp_int` | Low (deferred) | Placeholder for issue #70; all mem etypes are int |
+| `closure_same_config_tenv_env` | Medium | Required by `agreeValueUnder_same`; needs RIC inversion |
+| `valueHasETyp_det` | Medium | May be false for loc (multiple refs); check carefully |
+| `peClosure_same_config_tenv_env` | Medium | Mirror of `closure_same_config_tenv_env` |
+
+### What was done (recent)
+
+- `stepFR_deref`: **proved** (no sorry).
+- `joinTypeResults_QTypRespectsTagMeaning` + `QTypRespectsTagMeaning_joinStep`: **proved** (last session).
+- `hTm_ctx''` in `applyFnTClosure_ok_wfTypeResult`: **proved**.
+- `agreeValueUnder_same` closure/peClosure branches: closed in FaultRobustnessProofs (now call
+  `closure_same_config_tenv_env` / `peClosure_same_config_tenv_env` in TypeSafety).
+- `agreeOnClean_same_config`, `agreeCapturedEnv_same`: proved.
+- Phase 0 (invariant initialization), Path D / APP-SIGMA-WITNESS-MISMATCH, strong mem-join,
+  member-to-joined transport cascade: all proved.
 
 ### Plan (risk-first)
 
-**Step 1 (immediate): Verify Issue F**
+**Step 1 (immediate): Verify and close Issue F**
 
 Check whether `StepFR_implies_wfTypeResult` can be proved by empty-config instantiation.
-Concretely: what does `runtimeInstantiatesCtx ctx'' μ ρ θ` require when `ctx''` has a
-non-trivial `varEnv`?  If empty configs suffice, fill the sorry.  If not, add a focused
-`typecheckExpr_preserves_wfTypeResult` lemma (induction on fuel / typecheckExpr) and replace
-the StepFR route; this has no downstream signature impact.
+If `runtimeInstantiatesCtx ctx'' μ ρ θ` requires non-trivial varEnv coverage, add a focused
+`typecheckExpr_preserves_wfTypeResult` lemma (induction on fuel; template: `typecheck_nextLoc_mono`).
+No downstream signature impact.
 
-**Step 2: Close same-config agreement**
+**Step 2: Preservation lemmas**
 
-1. Resolve the `agreeCapturedEnv_same_toCaptured` mutual recursion: either use a `mutual` block
-   with `agreeValueUnder_same` or make `agreeValueUnder_same` a recursive function with
-   `termination_by Value.size v`.  Once done, the four `agreeValueUnder_same` closure/peClosure
-   sorrys close immediately.
-2. Move `wfTagMeaningCtx_closure_body` (or its proof) before `applyFnTClosure_ok_wfTypeResult`
-   and replace the `hTm_ctx''` sorry.
+Fill the three `applyFnTClosure_ok_*` preservation sorrys.  Independent of the runtime proof.
 
 **Step 3: Arrow fallback branch**
 
@@ -132,21 +132,32 @@ because `res.qualType.poison = true` and `pred = noPred` (propagated from `apply
 when `p1 = true`).  The one non-trivial item is `resultAgreesIfClean`: the `.clean` case is
 impossible (poison=true) and the `.guard` case needs inspection of `res.qualType.pred`.
 
-**Step 4: Preservation lemmas and join tag-meaning**
+**Step 4: Parrow mirror**
 
-Fill the three `applyFnTClosure_ok_*` preservation sorrys and
-`joinTypeResults_QTypRespectsTagMeaning` (structural induction on the join fold).  These are
-independent of the runtime proof and can be done in any order.
+Mirror the completed arrow path into the parrow branch.  15 sorrys, mechanical.
 
-**Step 5: Parrow mirror**
+**Step 5: Same-config agreement infrastructure (TypeSafety.lean)**
 
-Mirror the completed arrow path into the parrow branch.  13 sorrys, mechanical.
-The pure-body shared/dirty transport placeholders (2 sorrys) belong here.
+Prove `closure_same_config_tenv_env` and `peClosure_same_config_tenv_env` by inverting
+`runtimeInstantiatesCtx` at the closure value.  Once done, `agreeValueUnder_same`'s closure
+cases are fully closed without TypeSafety sorry dependence.
+
+**Step 6: Mutual recursion and ite modes**
+
+Resolve `agreeCapturedEnv_same_toCaptured` (mutual / `termination_by`).
+Tackle `stepFR_ite_mode3` and `stepFR_ite_mode4` (branch case analysis).
+
+**Step 7: kwhile (deferred)**
+
+`stepFR_kwhile` — while-loop fixpoint proof.  Lower priority; depends on fixpoint reasoning infra.
 
 ### Stop / reassess conditions
 
-- If Issue F turns out to require a `typecheckExpr_preserves_wfTypeResult` lemma, assess whether
-  it's cleanly provable by induction on the typechecker before committing.
+- If Issue F requires a `typecheckExpr_preserves_wfTypeResult` lemma, assess whether it's
+  cleanly provable by induction before committing.
+- If `closure_same_config_tenv_env` turns out to be false (e.g. σcap can differ from
+  ctx.varEnv.toCaptured for multi-alternative closures), the `agreeValueUnder_same` closure
+  proof strategy needs revision.
 - If the `mutual` block for `agreeCapturedEnv_same_toCaptured` / `agreeValueUnder_same` requires
   a different recursion structure than expected, stop and discuss before large refactors.
 
@@ -176,7 +187,7 @@ chronological evolution with commit references.
 - `stepFR_app`
 - `applyFnTClosure_ok_wfTypeResult`, `mapM_applyFnTClosure_forall_wfTypeResult`,
   `StepFR_implies_wfTypeResult`, `applyFnTClosure_regular_body_wfTypeResult`
-- `wfTagMeaningCtx_closure_body` (body context wfTagMeaning; one sorry at `hTm_ctx''`)
+- `wfTagMeaningCtx_closure_body` (body context wfTagMeaning)
 
 ### Same-config agreement
 - `agreeOnClean_same_config`, `agreeCapturedEnv_same`, `agreeCapturedEnv_same_toCaptured`,
@@ -208,7 +219,7 @@ chronological evolution with commit references.
 - `joinTypeResults_qualType_arrow_member_from_member`
 - `joinTypeResults_qualType_parrow_member_from_member`
 - `joinTypeResults_transport_resultAgreesIfClean_from_member`
-- `joinTypeResults_QTypRespectsTagMeaning`
+- `joinTypeResults_QTypRespectsTagMeaning` (proved)
 - `joinPredicates_eq_guardClosure`, `fold_joinPred_guardClosure_init` (in `TypeSafety.lean`)
 
 ### Issue tags
