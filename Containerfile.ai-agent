@@ -95,7 +95,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
 # To force reinstall when Claude Code is updated, pass --build-arg CLAUDE_UPDATE=<new value>.
 ARG CLAUDE_UPDATE=1
 ENV DISABLE_AUTOUPDATER=1 \
-    CLAUDE_SEED=/opt/claude-seed
+    CLAUDE_SEED=/opt/claude-seed \
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
 RUN : "${CLAUDE_UPDATE}" \
     && mkdir -p "${CLAUDE_SEED}" \
     && HOME="${CLAUDE_SEED}" PATH="${CLAUDE_SEED}/.local/bin:${PATH}" bash -lc 'curl -fsSL https://claude.ai/install.sh | bash'
