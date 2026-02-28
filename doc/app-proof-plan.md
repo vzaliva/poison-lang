@@ -107,17 +107,27 @@ to `ctx.varEnv.toCaptured`.
 
 ## 3. Current Status and Plan
 
-### Checkpoint: 2026-02-27 — Build clean, 33 in-scope sorrys
+### Checkpoint: 2026-02-27b — Step 1 complete, build clean, 33 in-scope sorrys
 
 Build: **clean** (no errors; sorry-only warnings).
 
+Step 1 completed:
+- `typecheckExpr_preserves_wfTypeResult` proved in TypeSafety.lean (fuel induction, ~800 lines).
+- `StepFR_implies_wfTypeResult` deleted from FaultRobustnessProofs.lean.
+- `applyFnTClosure_regular_body_wfTypeResult` rewritten to call
+  `typecheckExpr_preserves_wfTypeResult` directly (no longer needs StepFR IH).
+- `applyFnTClosure_ok_wfTypeResult` and `mapM_applyFnTClosure_forall_wfTypeResult` simplified:
+  dropped `predSat`, `tm`, `fuel_app`, `h_fuel`, `IH`, `hpred`, `hTm1`, `tcls`, `hetyp1`,
+  `hresTm1`, `hmem_tcl`/`hargTm` parameters (no longer needed for purely static wfTypeResult).
+- One planned sorry remains in `typecheckApp_wfTypeResult` (arrow/parrow mapM + joinTypeResults
+  inline unfolding — mechanical but tedious).
+
 #### In-scope sorrys (stepFR_app dependency chain)
 
-**`FaultRobustnessProofs.lean`** — 31 sorrys:
+**`FaultRobustnessProofs.lean`** — 30 sorrys:
 
 | Group | Lemma(s) | Count | Risk | Step |
 |---|---|---|---|---|
-| **wfTypeResult** | `StepFR_implies_wfTypeResult` (to be replaced) | 1 | Low — new approach via `typecheckExpr_preserves_wfTypeResult` | 1 |
 | Mutual recursion | `agreeCapturedEnv_same_toCaptured` | 1 | Low — logic sound, need `mutual`/`termination_by` | 3 |
 | Preservation | `applyFnTClosure_ok_wfTagMeaningCtx` | 1 | Low — standard preservation | 4 |
 | Preservation | `applyFnTClosure_ok_regimeConsistentWithCtx` | 1 | Low — standard preservation | 4 |
@@ -125,12 +135,13 @@ Build: **clean** (no errors; sorry-only warnings).
 | Arrow fallback | 11 sorrys in `stepFR_app` `¬ qtypCleanUnder` branch | 11 | Low — `poison=true`, `pred=noPred` | 5 |
 | Parrow branch | 15 sorrys in `stepFR_app` parrow path | 15 | Low — mechanical mirror of arrow | 6 |
 
-**`TypeSafety.lean`** — 2 sorrys:
+**`TypeSafety.lean`** — 3 sorrys:
 
 | Lemma | Risk | Step |
 |---|---|---|
 | `closure_same_config_tenv_env` | Medium — see Issue G | 2 |
 | `peClosure_same_config_tenv_env` | Medium — mirror of above | 2 |
+| `typecheckApp_wfTypeResult` | Low — mechanical mapM/joinTypeResults unfolding | 1 (residual) |
 
 #### Out-of-scope sorrys (not targeted here)
 
@@ -151,36 +162,23 @@ Build: **clean** (no errors; sorry-only warnings).
 - `agreeOnClean_same_config`, `agreeCapturedEnv_same`: proved.
 - Phase 0 (invariant initialization), Path D / APP-SIGMA-WITNESS-MISMATCH, strong mem-join,
   member-to-joined transport cascade: all proved.
+- **Step 1 (Issue F)**: `typecheckExpr_preserves_wfTypeResult` proved (TypeSafety.lean);
+  `StepFR_implies_wfTypeResult` deleted; `applyFnTClosure_regular_body_wfTypeResult` rewritten;
+  `applyFnTClosure_ok_wfTypeResult` / `mapM_applyFnTClosure_forall_wfTypeResult` signatures
+  simplified (dropped StepFR/PredSat/TagMeaning parameters).
 
 ### Plan (risk-first)
 
-**Step 1: Prove `typecheckExpr_preserves_wfTypeResult` — Issue F**
+**Step 1: Prove `typecheckExpr_preserves_wfTypeResult` — Issue F** ✓ DONE
 
-Add a new lemma in TypeSafety.lean (or FaultRobustnessProofs.lean):
-```
-typecheckExpr_preserves_wfTypeResult :
-  wfTypeContext ctx →
-  typecheckExpr mode ctx e fuel = .ok res →
-  wfTypeResult res
-```
-Proof by induction on `fuel` matching `typecheckExpr`'s structure.  Key cases:
-- **Base** (literals, var, closure): `memEnv' = ctx.memEnv`, `nextLoc' = ctx.nextLoc` — trivial
-  from `wfTypeContext ctx`.
-- **newRef**: adds location at `nextLoc`, sets `nextLoc' = nextLoc + 1` — trivial.
-- **Sequential** (let, seq, app, assign): chain via IH — body starts with `wfTypeContext
-  (ctxAfter ctx res₁)` (= `wfTypeResult res₁` from IH₁), then IH₂ gives `wfTypeResult res₂`.
-- **Control flow** (if, while): `joinMemEnvs`/`joinMemEnvsStrong` take union of locations;
-  `nextLoc' = max(...)`.  Each member's locations are bounded by its `nextLoc'` (IH), hence
-  bounded by the max.  Assignment case has explicit `nextLoc'` bump (Typecheck.lean line 1321).
-
-Then:
-1. Rewrite `applyFnTClosure_regular_body_wfTypeResult` to use
-   `typecheckExpr_preserves_wfTypeResult` directly (it has `wfTypeResult result1` →
-   `wfTypeContext ctx''` → call the new lemma on `typecheckExpr ctx'' body`).
-2. Delete `StepFR_implies_wfTypeResult`.
-3. The `applyFnTClosure_ok_wfTypeResult` / `mapM_applyFnTClosure_forall_wfTypeResult` chain
-   no longer needs StepFR IH or PredSat/TagMeaning parameters for the wfTypeResult path —
-   simplify their signatures.
+Proved `typecheckExpr_preserves_wfTypeResult` in TypeSafety.lean (~800 lines, fuel induction).
+All sub-tasks completed:
+1. ✓ `applyFnTClosure_regular_body_wfTypeResult` rewritten to use the new lemma directly.
+2. ✓ `StepFR_implies_wfTypeResult` deleted.
+3. ✓ Signatures of `applyFnTClosure_ok_wfTypeResult` / `mapM_applyFnTClosure_forall_wfTypeResult`
+   simplified (dropped StepFR IH, PredSat, TagMeaning parameters).
+One planned sorry remains: `typecheckApp_wfTypeResult` (arrow/parrow mapM + joinTypeResults
+inline unfolding — the same pattern as `typecheckExpr` app case but fully inlined).
 
 **Step 2: Close same-config agreement — Issue G**
 

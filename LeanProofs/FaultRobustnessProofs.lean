@@ -11202,54 +11202,8 @@ lemma assign_memEnv_formula_contains_of_contains
           simp
           exact updateLocsetWeak_contains_of_contains env ls storedPoison storedPred l h
 
-lemma updateLocsetWeak_contains_eq_or_mem
-    (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate) (l : Loc)
-    (h : (updateLocsetWeak env ls storedPoison storedPred).contains l = true) :
-    env.contains l = true ∨ l ∈ ls := by
-  unfold updateLocsetWeak at h
-  set joined :=
-    LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l =>
-      match env.get? l with
-      | some qt => (joinPoison accP qt.poison, joinPredicates accPred qt.pred)
-      | none => (accP, accPred))
-  set finalQt : QTyp := ⟨ETyp.int, joined.1, joined.2⟩
-  dsimp at h
-  unfold LocSet.fold at h
-  rw [Std.ExtTreeSet.foldl_eq_foldl_toList] at h
-  have hList := list_fold_updateMemEnv_contains_eq_or_mem ls.toList env l finalQt h
-  cases hList with
-  | inl hOld =>
-      exact Or.inl hOld
-  | inr hMem =>
-      exact Or.inr (by simpa using hMem)
-
-lemma assign_memEnv_formula_contains_eq_or_mem
-    (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate) (l : Loc)
-    (h :
-      (match Std.ExtTreeSet.toList ls with
-      | [l0] => updateMemEnv env l0 { etyp := ETyp.int, poison := storedPoison, pred := storedPred }
-      | _ => updateLocsetWeak env ls storedPoison storedPred).contains l = true) :
-    env.contains l = true ∨ l ∈ ls := by
-  cases hls : Std.ExtTreeSet.toList ls with
-  | nil =>
-      simp [hls] at h
-      exact updateLocsetWeak_contains_eq_or_mem env ls storedPoison storedPred l h
-  | cons x xs =>
-      cases xs with
-      | nil =>
-          simp [hls] at h
-          have hstep := updateMemEnv_contains_eq_or_old env x l { etyp := ETyp.int, poison := storedPoison, pred := storedPred } h
-          cases hstep with
-          | inl hEq =>
-              right
-              have hxInList : x ∈ ls.toList := by simp [hls]
-              have hxIn : x ∈ ls := (Std.ExtTreeSet.mem_toList).1 hxInList
-              simpa [hEq] using hxIn
-          | inr hOld =>
-              exact Or.inl hOld
-      | cons y ys =>
-          simp [hls] at h
-          exact updateLocsetWeak_contains_eq_or_mem env ls storedPoison storedPred l h
+-- updateLocsetWeak_contains_eq_or_mem: moved to TypeSafety.lean
+-- assign_memEnv_formula_contains_eq_or_mem: moved to TypeSafety.lean
 
 lemma updateLocsetWeak_lookup_eq_of_not_mem
     (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate)
@@ -12675,14 +12629,7 @@ lemma assign_mem_formula_guardClosure_lookup_implies_rhs_pred
           | true =>
               simp [hp] at hstored
 
-lemma locset_fold_max_succ_ge_of_mem
-    (ls : LocSet) (init l : Nat)
-    (h : l ∈ ls) :
-    l + 1 ≤ LocSet.fold ls init (fun acc x => max acc (x + 1)) := by
-  unfold LocSet.fold
-  rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-  have hList : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 h
-  exact list_fold_max_succ_ge_of_mem ls.toList init l hList
+-- locset_fold_max_succ_ge_of_mem: moved to TypeSafety.lean
 
 def PredRespectsTagMeaning (tm : TagMeaning) (pred : Predicate) : Prop :=
   ∀ (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
@@ -16633,28 +16580,13 @@ private lemma list_mapM_ok_mem_output_exists_input
     ⟨x, hxmem, hxy⟩
   exact ⟨x, hxmem, hxy⟩
 
--- StepFR for a sub-expression gives wfTypeResult for its typecheck result (conclusion of StepFR).
-private lemma StepFR_implies_wfTypeResult
-  (predSat : PredSat) (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (res : TypeResult)
-  (hpred : PredSatLaws predSat tm) (hwfTm : wfTagMeaningCtx tm ctx)
-  (hwf_ctx : wfTypeContext ctx)
-  (h : StepFR .ioFree ctx e res predSat tm) :
-  wfTypeResult res := by
-  -- StepFR gives ∀ (μ₀ μ₁ ...), premises → ∃ θ₀' θ₁', ... ∧ wfTypeContext (ctxAfter ctx res) ∧ ...
-  -- We need one instantiation; premises are satisfiable (e.g. empty configs when ctx is wf).
-  sorry
-
--- Body typecheck in app context: wfTypeResult for result3 comes from IH (StepFR for body).
+-- Body typecheck in app context: wfTypeResult for result3 from typecheckExpr_preserves_wfTypeResult.
 private lemma applyFnTClosure_regular_body_wfTypeResult
-  (predSat : PredSat) (tm : TagMeaning)
-  (ctx : TypeContext) (_st1 _st2 : Typ) (p p1 : Poison)
+  (ctx : TypeContext) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuelBody : Nat) (fuel_app : Nat)
+  (result1 : TypeResult) (fuelBody : Nat)
   (x : Name) (body : Expr) (tenv : CapturedVarEnv)
   (hwf1 : wfTypeResult result1)
-  (IH : StepFR_IH predSat tm fuel_app)
-  (h_lt : fuelBody < fuel_app)
-  (hpred : PredSatLaws predSat tm)
   (ctx'' : TypeContext)
   (hctx'' : ctx'' = { ctx with
       pc := joinPoison p (joinPoison p1 ctx.pc)
@@ -16665,16 +16597,15 @@ private lemma applyFnTClosure_regular_body_wfTypeResult
       nextTag := result1.nextTag'
       nextLoc := result1.nextLoc'
       regime := result1.regime' })
-  (hTm_ctx'' : wfTagMeaningCtx tm ctx'')
   (result3 : TypeResult)
   (htc : typecheckExpr .ioFree ctx'' body fuelBody = .ok result3) :
   wfTypeResult result3 := by
-  have hStep := IH fuelBody h_lt body ctx'' hTm_ctx'' result3 (by simpa [typecheck] using htc)
   have hwf_ctx'' : wfTypeContext ctx'' := by
     rw [hctx'']
     simp only [wfTypeContext]
     exact hwf1
-  exact StepFR_implies_wfTypeResult predSat tm ctx'' body result3 hpred hTm_ctx'' hwf_ctx'' hStep
+  exact typecheckExpr_preserves_wfTypeResult ctx'' body fuelBody result3 hwf_ctx''
+    (by simpa [typecheck] using htc)
 
 -- Helper lemmas for wfTagMeaningCtx in closure body contexts.
 -- These need to be before applyFnTClosure_ok_wfTypeResult.
@@ -16767,20 +16698,11 @@ private lemma wfTagMeaningCtx_closure_body
 -- These are intentionally isolated so `stepFR_app` can consume them now and we
 -- can prove them incrementally.
 private lemma applyFnTClosure_ok_wfTypeResult
-  (predSat : PredSat) (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat) (fuel_app : Nat)
-  (h_fuel : fuel ≤ fuel_app)
+  (result1 : TypeResult) (fuel : Nat)
   (hwf1 : wfTypeResult result1)
-  (IH : StepFR_IH predSat tm fuel_app)
-  (hpred : PredSatLaws predSat tm)
-  (hTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (tcls : List FnTClosure) (tcl : FnTClosure)
-  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hmem_tcl : tcl ∈ tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+  (tcl : FnTClosure)
   (r : TypeResult)
   (happly :
     applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
@@ -16795,7 +16717,9 @@ private lemma applyFnTClosure_ok_wfTypeResult
       rcases applyFnTClosure_regular_inv ctx st1 st2 p p1 argEtyp argPoison argPred result1 fuelBody
           x body tenv r (by simpa using happly) with
         ⟨result3, htc_body, _hsub, hfirst⟩
-      let ctx'' := { ctx with
+      have hwf3 := applyFnTClosure_regular_body_wfTypeResult ctx p p1 argEtyp argPoison argPred
+        result1 fuelBody x body tenv hwf1
+        { ctx with
           pc := joinPoison p (joinPoison p1 ctx.pc)
           memEnv := result1.memEnv'
           varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
@@ -16804,17 +16728,7 @@ private lemma applyFnTClosure_ok_wfTypeResult
           nextTag := result1.nextTag'
           nextLoc := result1.nextLoc'
           regime := result1.regime' }
-      -- wfTagMeaningCtx for body context: use wfTagMeaningCtx_closure_body.
-      -- ctx'' has same varEnv and memEnv as the closure body context; pc differs but wfTagMeaningCtx
-      -- only depends on varEnv and memEnv.
-      have hTm_ctx'' : wfTagMeaningCtx tm ctx'' := by
-        have h := wfTagMeaningCtx_closure_body tm ctx result1 result1.qualType st1 st2 p tcls
-          x body tenv x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-          hTm1 hresTm1 hetyp1 hmem_tcl hargTm
-        simpa [wfTagMeaningCtx, ctx'', ctxAfter] using h
-      have h_lt : fuelBody < fuel_app := Nat.lt_of_lt_of_le (Nat.lt_succ_self fuelBody) h_fuel
-      have hwf3 := applyFnTClosure_regular_body_wfTypeResult predSat tm ctx st1 st2 p p1 argEtyp argPoison argPred
-        result1 fuelBody fuel_app x body tenv hwf1 IH h_lt hpred ctx'' rfl hTm_ctx'' result3 htc_body
+        rfl result3 htc_body
       rw [hfirst]
       exact hwf3
     | extern x retSpec effects capturedEnv =>
@@ -16865,19 +16779,11 @@ private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
   sorry
 
 private lemma mapM_applyFnTClosure_forall_wfTypeResult
-  (predSat : PredSat) (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat) (fuel_app : Nat)
-  (h_fuel : fuel ≤ fuel_app)
+  (result1 : TypeResult) (fuel : Nat)
   (hwf_result1 : wfTypeResult result1)
-  (IH : StepFR_IH predSat tm fuel_app)
-  (hpred : PredSatLaws predSat tm)
-  (hTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
   (tcls : List FnTClosure) (results : List TypeResult)
-  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
   (hmap :
     List.mapM
       (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
@@ -16887,13 +16793,13 @@ private lemma mapM_applyFnTClosure_forall_wfTypeResult
   rcases list_mapM_ok_mem_output_exists_input
       (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
-    ⟨tcl, htcl_mem, happly⟩
+    ⟨tcl, _htcl_mem, happly⟩
   exact
     applyFnTClosure_ok_wfTypeResult
-      predSat tm (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
       (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-      (result1 := result1) (fuel := fuel) (fuel_app := fuel_app) h_fuel
-      hwf_result1 IH hpred hTm1 (tcls := tcls) (tcl := tcl) hetyp1 hresTm1 htcl_mem hargTm (r := r) happly
+      (result1 := result1) (fuel := fuel)
+      hwf_result1 (tcl := tcl) (r := r) happly
 
 private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx
   (tm : TagMeaning)
@@ -24496,13 +24402,11 @@ private lemma stepFR_app
         have hresults_wf :
             ∀ r, r ∈ results → wfTypeResult r :=
           mapM_applyFnTClosure_forall_wfTypeResult
-            predSat tm (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+            (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
             (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
-            (result1 := result1) (fuel := fuel') (fuel_app := Nat.succ (Nat.succ fuel'))
-            (Nat.le_succ_of_le (Nat.le_succ fuel'))
-            hwf_result1 IH hpredlaws
-            (by simpa [ctxAfter] using hTm1)
-            (tcls := tcls) (results := results) hetyp1 hresTm1 hargTm hmap
+            (result1 := result1) (fuel := fuel')
+            hwf_result1
+            (tcls := tcls) (results := results) hmap
         have hresults_tm :
             ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctxᵢ r) := by
           have hTm1_ctx : wfTagMeaningCtx tm (ctxAfter ctxᵢ result1) := by
