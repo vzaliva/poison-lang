@@ -6,9 +6,9 @@ set -euo pipefail
 #
 # Uses dedicated volumes (ai_agent_*) that are independent from the poison-dev environment.
 #
-# Usage: ai-agent-jailed <agent> [agent-args...]
-#        claude-jailed [claude-args...]    (via symlink)
-#        codex-jailed [codex-args...]      (via symlink)
+# Usage: ai-agent-jailed <agent> [workspace-dir] [agent-args...]
+#        claude-jailed [workspace-dir] [claude-args...]    (via symlink)
+#        codex-jailed [workspace-dir] [codex-args...]      (via symlink)
 #
 # Agents:
 #   claude   - Anthropic Claude Code
@@ -17,17 +17,20 @@ set -euo pipefail
 #
 # Examples:
 #   ai-agent-jailed claude
+#   ai-agent-jailed claude ~/src/poison-lang-worktree
 #   ai-agent-jailed claude --help
+#   ai-agent-jailed claude ~/src/poison-lang-worktree --help
 #   ai-agent-jailed codex
 #   ai-agent-jailed bash
 #   claude-jailed           # If symlinked
+#   claude-jailed ~/src/poison-lang-worktree
 #   codex-jailed --help     # If symlinked
 #
 # Environment variables:
 #   POISON_PROJECT_DIR       - Override default project directory (default: ~/src/poison-lang or git root)
 #   AI_AGENT_IMAGE           - Override container image (default: localhost/poison-ai-agent:latest)
-#   AI_AGENT_CONTAINER_NAME  - Override container name (default: poison-ai-agent-<agent>, e.g. poison-ai-agent-claude).
-#                              Per-agent names allow running codex-jailed and claude-jailed in parallel.
+#   AI_AGENT_CONTAINER_NAME  - Override container name (default: poison-ai-agent-<agent>-<workspace-tag>).
+#                              Workspace-tagged names allow running the same agent in multiple workspaces.
 #   AI_AGENT_HOST_ELAN       - If set to "off", use a dedicated Elan volume instead of the host.
 #                              By default, host ~/.elan is bind-mounted read-only at /home/user/.elan
 #                              (reuses your existing toolchains without exposing other host state).
@@ -46,7 +49,7 @@ case "$SCRIPT_NAME" in
   *)
     # Not a recognized symlink name, expect agent as first argument
     if [ $# -eq 0 ]; then
-      echo "Usage: ai-agent-jailed <agent> [agent-args...]" >&2
+      echo "Usage: ai-agent-jailed <agent> [workspace-dir] [agent-args...]" >&2
       echo "" >&2
       echo "Available agents:" >&2
       echo "  claude   - Anthropic Claude Code" >&2
@@ -62,6 +65,14 @@ case "$SCRIPT_NAME" in
     shift
     ;;
 esac
+
+# Optional first arg: workspace/project checkout directory to mount at /work.
+# This is accepted when it points to an existing directory.
+WORKSPACE_DIR=""
+if [ $# -gt 0 ] && [ -d "$1" ]; then
+  WORKSPACE_DIR="$(cd "$1" && pwd -P)"
+  shift
+fi
 
 # Map agent name to actual command and arguments
 case "$AGENT" in
@@ -100,11 +111,16 @@ esac
 
 # Determine project root
 # Priority:
-# 1) POISON_PROJECT_DIR (explicit)
-# 2) git root of current working directory (if inside a git repo)
-# 3) default ~/src/poison-lang (if it exists)
-# 4) git root containing this script (for installed copies/symlinks)
-PROJ_DIR="${POISON_PROJECT_DIR:-}"
+# 1) workspace-dir positional arg
+# 2) POISON_PROJECT_DIR (explicit)
+# 3) git root of current working directory (if inside a git repo)
+# 4) default ~/src/poison-lang (if it exists)
+# 5) git root containing this script (for installed copies/symlinks)
+PROJ_DIR="$WORKSPACE_DIR"
+
+if [ -z "$PROJ_DIR" ]; then
+  PROJ_DIR="${POISON_PROJECT_DIR:-}"
+fi
 
 if [ -z "$PROJ_DIR" ] && command -v git >/dev/null 2>&1; then
   PROJ_DIR="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -126,7 +142,19 @@ if [ -z "$PROJ_DIR" ] || [ ! -d "$PROJ_DIR" ]; then
 fi
 
 IMAGE="${AI_AGENT_IMAGE:-localhost/poison-ai-agent:latest}"
-CONTAINER_NAME="${AI_AGENT_CONTAINER_NAME:-poison-ai-agent-${AGENT}}"
+
+# Include workspace identity in default container name so the same agent can run
+# in parallel across different checkouts/worktrees.
+PROJ_BASENAME="$(basename "$PROJ_DIR")"
+if command -v sha1sum >/dev/null 2>&1; then
+  PROJ_HASH="$(printf '%s' "$PROJ_DIR" | sha1sum | awk '{print substr($1,1,8)}')"
+elif command -v shasum >/dev/null 2>&1; then
+  PROJ_HASH="$(printf '%s' "$PROJ_DIR" | shasum -a 1 | awk '{print substr($1,1,8)}')"
+else
+  PROJ_HASH="$(printf '%s' "$PROJ_DIR" | cksum | awk '{print $1}')"
+fi
+PROJ_TAG="$(printf '%s-%s' "$PROJ_BASENAME" "$PROJ_HASH" | tr -cs 'a-zA-Z0-9_.-' '-')"
+CONTAINER_NAME="${AI_AGENT_CONTAINER_NAME:-poison-ai-agent-${AGENT}-${PROJ_TAG}}"
 HOST_UID="$(id -u)"
 HOST_GID="$(id -g)"
 HOST_USER="$(id -un)"

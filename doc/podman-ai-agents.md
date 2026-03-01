@@ -12,7 +12,7 @@ Running AI coding assistants with unrestricted host access carries risks:
 This containerised setup provides:
 * **Filesystem isolation** — Agents only see mounted directories
 * **Independent Lean toolchain** — Pre-installed Elan with persistent volumes
-* **Project-scoped access** — Read-write access limited to `~/src/poison-lang`
+* **Project-scoped access** — Read-write access limited to one mounted checkout (`~/src/poison-lang` by default)
 * **Configuration persistence** — Agent settings stored in dedicated volumes
 * **Rootless operation** — Full compatibility with rootless Podman and SELinux
 * **Multi-agent support** — Single container image supports multiple AI assistants
@@ -52,7 +52,7 @@ The wrapper script `ai-agent-jailed` supports multiple AI coding agents:
 | `claude` | `ai-agent-jailed claude` | Anthropic Claude Code |
 | `codex` | `ai-agent-jailed codex` | OpenAI Codex |
 
-All agents share the same Lean toolchain and volumes but have independent configurations. Each agent uses a distinct container name (`poison-ai-agent-claude`, `poison-ai-agent-codex`, etc.), so you can run multiple agents in parallel (e.g. `codex-jailed` in one terminal and `claude-jailed` in another). Override the container name with `AI_AGENT_CONTAINER_NAME` if needed.
+All agents share the same Lean toolchain and volumes but have independent configurations. By default, each run uses a container name derived from both agent and workspace path (`poison-ai-agent-<agent>-<workspace-tag>`), so you can run multiple agents in parallel and also run the same agent in different workspaces at the same time. Override the container name with `AI_AGENT_CONTAINER_NAME` if needed.
 
 ---
 
@@ -115,6 +115,10 @@ ai-agent-jailed claude
 
 codex-jailed          # Automatically detects "codex" from script name
 ai-agent-jailed codex
+
+# Optional first argument after agent is the workspace/checkout to mount at /work
+claude-jailed ~/src/poison-lang-issue-70
+ai-agent-jailed codex ~/src/poison-lang-issue-70 --help
 ```
 
 ---
@@ -150,7 +154,19 @@ ai-agent-jailed claude --version
 ai-agent-jailed codex --help
 ```
 
-### Running with custom project directory
+### Running against a specific workspace/checkout
+
+The first positional argument after the agent can be a checkout directory to mount at `/work`:
+
+```bash
+# Same script, different git worktree checkout
+ai-agent-jailed claude ~/src/poison-lang-issue-70
+
+# Symlink form works too
+codex-jailed ~/src/poison-lang-issue-70 --help
+```
+
+### Running with custom project directory via environment variable
 
 ```bash
 POISON_PROJECT_DIR=/path/to/other/project ai-agent-jailed claude
@@ -206,7 +222,7 @@ ssh -T git@github.com
 - The wrapper only forwards the agent if the socket exists and is valid
 
 **"container name ... is already in use":**
-- The script uses per-agent container names; ensure you have the latest `ai-agent-jailed`. To override: `AI_AGENT_CONTAINER_NAME=my-container claude-jailed`
+- By default the name includes agent + workspace, but collisions can still happen if you override `AI_AGENT_CONTAINER_NAME` with a fixed value. Either remove the old container or choose a unique name: `AI_AGENT_CONTAINER_NAME=my-container claude-jailed`
 
 ### MCP Tool Support
 
@@ -225,7 +241,7 @@ After the first download, subsequent invocations are fast (cached).
 
 ### What agents can access
 
-* **Project directory** (`~/src/poison-lang` by default) — read-write
+* **Project directory** (selected workspace, `~/src/poison-lang` by default) — read-write
 * **Elan toolchain** (dedicated volumes) — read-write
 * **Agent configs** (dedicated volume) — read-write
 
@@ -287,16 +303,16 @@ npm update -g @openai/codex
 
 ---
 
-## Migration to per-agent container names
+## Migration to workspace-aware container names
 
-If you used an older `ai-agent-jailed` that gave every run the same container name (`poison-ai-agent`), you can switch to the new per-agent names without re-creating image or volumes.
+If you used an older `ai-agent-jailed` that gave every run the same container name (`poison-ai-agent`) or per-agent names only (`poison-ai-agent-claude`, `poison-ai-agent-codex`), you can switch to workspace-aware names without re-creating image or volumes.
 
 **You do not need to re-create anything.** The image (`localhost/poison-ai-agent:latest`) and all volumes (`ai_agent_*`) are unchanged. Containers are ephemeral (`--rm`): they are removed when they exit, and only the *name* used at start time has changed. All persistent state (Elan, caches, agent config) lives in volumes and is shared as before.
 
 **Steps:**
 
 1. **Update the script**  
-   Replace your `ai-agent-jailed` (in `~/bin` or wherever you use it) with the version that uses per-agent container names (`poison-ai-agent-claude`, `poison-ai-agent-codex`, etc.).
+   Replace your `ai-agent-jailed` (in `~/bin` or wherever you use it) with the version that uses workspace-aware names (`poison-ai-agent-<agent>-<workspace-tag>`).
 
 2. **Remove the old container name if it still exists**  
    If a container named `poison-ai-agent` is still present (e.g. from a run that did not exit cleanly), remove it so the name is free:
@@ -306,7 +322,7 @@ If you used an older `ai-agent-jailed` that gave every run the same container na
    This removes only the **container** (the named run instance), not the image. Your built image `localhost/poison-ai-agent:latest` is unchanged; no rebuild is triggered. If you get "no such container", you can ignore this.
 
 3. **Run as usual**  
-   Use `claude-jailed` or `codex-jailed` as before. They now use distinct container names and can run in parallel.
+   Use `claude-jailed` or `codex-jailed` as before. You can optionally pass a workspace checkout path as first argument, and same-agent runs in different workspaces can execute in parallel.
 
 **There is no "fork" or copy of the container.** Podman does not clone containers. The new runs simply start a new container from the same image, with the same volume mounts, under a new name. Your existing volumes and image are reused as-is.
 
