@@ -537,9 +537,9 @@ private lemma valueHasETyp_etyp_str {θ : RealizationMap} {s : String} {t : ETyp
 
 -- Inversion for loc: avoids dependent elimination on qt.etyp in agreeValueUnder_same.
 private lemma valueHasETyp_loc_inv {θ : RealizationMap} {a : Address} {e : ETyp}
-  (h : valueHasETyp θ (Value.loc a) e) : ∃ t ls l, e = ETyp.ref t ls ∧ θ.lookup l = some a ∧ l ∈ ls := by
+  (h : valueHasETyp θ (Value.loc a) e) : ∃ ls l, e = ETyp.ref ls ∧ θ.lookup l = some a ∧ l ∈ ls := by
   cases h with
-  | loc hlookup hin => exact ⟨_, _, _, rfl, hlookup, hin⟩
+  | loc hlookup hin => exact ⟨_, _, rfl, hlookup, hin⟩
 
 -- Inversion for closure/parrow: etype is arrow/parrow (avoids dependent elimination in agreeValueUnder_same).
 private lemma valueHasETyp_closure_etyp_arrow {θ : RealizationMap} {x : Name} {e : Expr} {env : VarEnv} {et : ETyp}
@@ -765,18 +765,18 @@ private lemma agreeValueUnder_same
     cases v with
     | num n =>
       have hetyp := valueHasETyp_etyp_num htyp
-      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
     | bool _ =>
       have hetyp := valueHasETyp_etyp_bool htyp
-      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
     | unit =>
       have hetyp := valueHasETyp_etyp_unit htyp
-      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
     | str _ =>
       have hetyp := valueHasETyp_etyp_str htyp
-      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
     | loc a =>
-      rcases valueHasETyp_loc_inv htyp with ⟨_t, _ls, l, hetyp, hlookup, hin⟩
+      rcases valueHasETyp_loc_inv htyp with ⟨_ls, l, hetyp, hlookup, hin⟩
       exact agreeValueUnder.clean_ref hpoison hetyp hlookup hin rfl hlookup rfl
     | closure x body env =>
       by_cases hdirty : ¬internalPoisonClean qt
@@ -808,18 +808,18 @@ private lemma agreeValueUnder_same
     cases v with
     | num n =>
       have hetyp := valueHasETyp_etyp_num htyp
-      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
     | bool _ =>
       have hetyp := valueHasETyp_etyp_bool htyp
-      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
     | unit =>
       have hetyp := valueHasETyp_etyp_unit htyp
-      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
     | str _ =>
       have hetyp := valueHasETyp_etyp_str htyp
-      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, _, h⟩ => by rw [hetyp] at h; injection h) rfl
+      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
     | loc a =>
-      rcases valueHasETyp_loc_inv htyp with ⟨_t, _ls, l, hetyp, hlookup, hin⟩
+      rcases valueHasETyp_loc_inv htyp with ⟨_ls, l, hetyp, hlookup, hin⟩
       exact agreeValueUnder.withPred_true_ref k htag hregime hetyp hlookup hin rfl hlookup rfl
     | closure x body env =>
       by_cases hdirty : ¬internalPoisonClean qt
@@ -17045,11 +17045,10 @@ private lemma QTypRespectsTagMeaning_joinStep
                   exact Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩
                     st1a st2a pa1 tcls1 tcl x rfl htcl hcap)
           | int | bool | unit | string => simp [joinETyps] at hetyp
-          | ref inner ls =>
+          | ref ls =>
               cases e2 with
-              | ref inner2 ls2 =>
-                  simp only [joinETyps] at hetyp
-                  split_ifs at hetyp
+              | ref ls2 =>
+                  simp [joinETyps] at hetyp
               | _ => simp [joinETyps] at hetyp
           | parrow st1a st2a pa1 ptcls1 =>
               cases e2 with
@@ -17085,11 +17084,10 @@ private lemma QTypRespectsTagMeaning_joinStep
                   exact Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩
                     st1a st2a pa1 ptcls1 tcl x rfl htcl hcap)
           | int | bool | unit | string => simp [joinETyps] at hetyp
-          | ref inner ls =>
+          | ref ls =>
               cases e2 with
-              | ref inner2 ls2 =>
-                  simp only [joinETyps] at hetyp
-                  split_ifs at hetyp
+              | ref ls2 =>
+                  simp [joinETyps] at hetyp
               | _ => simp [joinETyps] at hetyp
           | arrow st1a st2a pa1 tcls1 =>
               cases e2 with
@@ -17237,10 +17235,10 @@ private lemma joinTypeResults_QTypRespectsTagMeaning
                   exact QTypRespectsTagMeaning_transport_etyp_pred tm
                     ⟨ETyp.string, p, pred'⟩ ⟨ETyp.string, joinPoison ctx.pc p, pred'⟩
                     h_fold_result rfl rfl
-              | ref inner ls =>
-                  show QTypRespectsTagMeaning tm ⟨ETyp.ref inner ls, joinPoison ctx.pc p, pred'⟩
+              | ref ls =>
+                  show QTypRespectsTagMeaning tm ⟨ETyp.ref ls, joinPoison ctx.pc p, pred'⟩
                   exact QTypRespectsTagMeaning_transport_etyp_pred tm
-                    ⟨ETyp.ref inner ls, p, pred'⟩ ⟨ETyp.ref inner ls, joinPoison ctx.pc p, pred'⟩
+                    ⟨ETyp.ref ls, p, pred'⟩ ⟨ETyp.ref ls, joinPoison ctx.pc p, pred'⟩
                     h_fold_result rfl rfl
               | arrow st1 st2 pa tcls =>
                   -- finalPred = noPred for arrow types; use noGuard transport

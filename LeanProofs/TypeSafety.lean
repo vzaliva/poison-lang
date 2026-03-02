@@ -9502,34 +9502,31 @@ private lemma typecheckAssign_wfTypeResult
       | mk etyp1 p1 pred1 =>
         rw [h_qt1] at htc; simp at htc
         cases etyp1 with
-        | ref t ls =>
+        | ref ls =>
           simp at htc
-          split at htc
-          · rename_i h_t_int
-            set ctx2 : TypeContext := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
-            have hwf2_ctx : wfTypeContext ctx2 := wfTypeContext_of_wfTypeResult ctx result1 hwf1
-            cases h_tc2 : typecheckExpr .ioFree ctx2 e2 fuel' with
-            | error _ => simp [h_tc2, pure, Except.pure] at htc
-            | ok result2 =>
-              simp only [h_tc2] at htc
-              have htc2' : typecheck .ioFree ctx2 e2 fuel' = .ok result2 := by simpa using h_tc2
-              have hwf2 : wfTypeResult result2 := IH fuel' h_fuel e2 ctx2 result2 hwf2_ctx htc2'
-              cases h_qt2 : result2.qualType with
-              | mk etyp2 p2 pred2 =>
-                rw [h_qt2] at htc; simp at htc
-                by_cases h_etyp2_int : etyp2 = ETyp.int
-                · subst h_etyp2_int; simp at htc; cases htc
-                  intro l' hcontains
-                  have hor := assign_memEnv_formula_contains_eq_or_mem result2.memEnv' ls
-                    (joinPoison ctx.pc (joinPoison p1 p2)) (if p1 then Predicate.noPred else pred2) l' hcontains
-                  cases hor with
-                  | inl hOld =>
-                    exact Nat.lt_of_lt_of_le (hwf2 l' hOld) (locset_fold_max_ge_init ls result2.nextLoc')
-                  | inr hMem =>
-                    exact Nat.lt_of_lt_of_le (Nat.lt_succ_self l')
-                      (locset_fold_max_succ_ge_of_mem ls result2.nextLoc' l' hMem)
-                · simp [h_etyp2_int, pure, Except.pure] at htc
-          · simp at htc
+          set ctx2 : TypeContext := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+          have hwf2_ctx : wfTypeContext ctx2 := wfTypeContext_of_wfTypeResult ctx result1 hwf1
+          cases h_tc2 : typecheckExpr .ioFree ctx2 e2 fuel' with
+          | error _ => simp [h_tc2] at htc
+          | ok result2 =>
+            simp only [h_tc2] at htc
+            have htc2' : typecheck .ioFree ctx2 e2 fuel' = .ok result2 := by simpa using h_tc2
+            have hwf2 : wfTypeResult result2 := IH fuel' h_fuel e2 ctx2 result2 hwf2_ctx htc2'
+            cases h_qt2 : result2.qualType with
+            | mk etyp2 p2 pred2 =>
+              rw [h_qt2] at htc; simp at htc
+              by_cases h_etyp2_int : etyp2 = ETyp.int
+              · subst h_etyp2_int; simp at htc; cases htc
+                intro l' hcontains
+                have hor := assign_memEnv_formula_contains_eq_or_mem result2.memEnv' ls
+                  (joinPoison ctx.pc (joinPoison p1 p2)) (if p1 then Predicate.noPred else pred2) l' hcontains
+                cases hor with
+                | inl hOld =>
+                  exact Nat.lt_of_lt_of_le (hwf2 l' hOld) (locset_fold_max_ge_init ls result2.nextLoc')
+                | inr hMem =>
+                  exact Nat.lt_of_lt_of_le (Nat.lt_succ_self l')
+                    (locset_fold_max_succ_ge_of_mem ls result2.nextLoc' l' hMem)
+              · simp [h_etyp2_int] at htc
         | _ => simp at htc
 
 /-- typecheckDeref preserves wfTypeResult -/
