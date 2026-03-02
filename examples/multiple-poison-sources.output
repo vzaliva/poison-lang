@@ -3,12 +3,10 @@ Evaluating file: examples/multiple-poison-sources.poison (verbose mode)
 Type checking passed:
   Type: {type=int, poison=true, pred={}},
   MemoryTypeEnv: {
-    0 := {type=int,
-     poison=true,
-     pred={2, pfn limit -> (limit >= 0) && (limit <= 0), deps: [get_sensor : {type=arrow unit int false [regular x (frand 0) []],
-        poison=false,
-        pred={}},
-       x_unit : {type=unit, poison=false, pred={}}]}} },
+    0 := (true, {2, pfn limit -> (limit >= 0) && (limit <= 0), deps: [get_sensor : {type=arrow unit int false [regular x (frand 0) []],
+       poison=false,
+       pred={}},
+      x_unit : {type=unit, poison=false, pred={}}]}) },
   tagEnv: {},
   nextLoc: 1
 

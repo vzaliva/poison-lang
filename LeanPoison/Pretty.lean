@@ -309,10 +309,8 @@ partial def reprETyp : ETyp → Nat → Std.Format
   | ETyp.bool, _ => "bool"
   | ETyp.unit, _ => "unit"
   | ETyp.string, _ => "string"
-  | ETyp.ref t ls, _ =>
-      Std.Format.text "ref " ++
-      reprETyp t 0 ++
-      Std.Format.text " " ++
+  | ETyp.ref ls, _ =>
+      Std.Format.text "ref @ " ++
       repr ls
   | ETyp.arrow st1 st2 p tcls, _ =>
       let closureReprs := tcls.map (fun tcl => reprFnTClosure tcl 0)

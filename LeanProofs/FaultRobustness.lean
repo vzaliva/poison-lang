@@ -72,7 +72,7 @@ def regimeBounded (R : Regime) : Prop :=
 
 -- Extract all guard tags from the input specification (functional version for wfRegime)
 def inputSpecTags (s : InputSpec) : List Tag :=
-  let locTags := s.locs.toList.filterMap (qtypGuardTag ·.2)
+  let locTags := s.locs.toList.filterMap (fun (_, e) => qtypGuardTag ⟨ETyp.int, e.poison, e.pred⟩)
   let varTags := s.vars.toList.filterMap (qtypGuardTag ·.2)
   locTags ++ varTags
 
@@ -128,7 +128,7 @@ def observablesEqual (obs : ObservableSpec)
   let sameRet : Prop :=
     match obs.retEtyp? with
     | none => True
-    | some (ETyp.ref _ ls) =>
+    | some (ETyp.ref ls) =>
         (∃ l₁ a₁, l₁ ∈ ls ∧ θ₁.lookup l₁ = some a₁ ∧ o₁ = Value.loc a₁) ∧
         (∃ l₂ a₂, l₂ ∈ ls ∧ θ₂.lookup l₂ = some a₂ ∧ o₂ = Value.loc a₂)
     | some _ => o₁ = o₂
@@ -384,8 +384,11 @@ lemma varsRegime_monotone {predSat : PredSat} {R R' : Regime} {μ : Memory} {ρ 
 
 -- Regime consistency (via Forall over lists).
 -- The regime must be defined for all critical inputs in the spec.
+def memEnvToLocQTypList (m : MemoryTypeEnv) : List (Loc × QTyp) :=
+  m.toList.map (fun (l, e) => (l, ⟨ETyp.int, e.poison, e.pred⟩))
+
 def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
-  List.Forall (locsRegime predSat R μ θ) s.locs.toList ∧
+  List.Forall (locsRegime predSat R μ θ) (memEnvToLocQTypList s.locs) ∧
   List.Forall (varsRegime predSat R μ ρ) s.vars.toList
 
 -- A qualified type is considered clean under regime R if it is clean outright
@@ -437,7 +440,7 @@ lemma joinETyps_preserves_dirty_arrow
         simp [getInternalPoison, hDirty, joinPoison]
       · -- Incompatible: result is original arrow with p1
         simp [getInternalPoison, hDirty]
-  | parrow _ _ _ _ | int | bool | unit | string | ref _ _ =>
+  | parrow _ _ _ _ | int | bool | unit | string | ref _ =>
       -- t2 is not arrow: joinETyps returns left operand unchanged
       simp [joinETyps, getInternalPoison, hDirty]
 
@@ -455,7 +458,7 @@ lemma joinETyps_preserves_dirty_parrow
         simp [getInternalPoison, hDirty, joinPoison]
       · -- Incompatible: result is original parrow with p1
         simp [getInternalPoison, hDirty]
-  | arrow _ _ _ _ | int | bool | unit | string | ref _ _ =>
+  | arrow _ _ _ _ | int | bool | unit | string | ref _ =>
       -- t2 is not parrow: joinETyps returns left operand unchanged
       simp [joinETyps, getInternalPoison, hDirty]
 
@@ -492,7 +495,7 @@ mutual
         {qt : QTyp} {v₁ v₂ : Value}
         (hpoison : qt.poison = false)
         (hnotfun : qt.etyp.isFunctionType = false)
-        (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
+        (hnotref : ¬ (∃ (ls : LocSet), qt.etyp = ETyp.ref ls))
         (hagree : v₁ = v₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     -- Arrow cases:
@@ -544,10 +547,10 @@ mutual
         (htyp2 : valueHasETyp θ₂ v₂ qt.etyp) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     -- Ref cases:
-    | clean_ref {t : ETyp} {ls : LocSet} {l : Loc} {a₁ a₂ : Address}
+    | clean_ref {ls : LocSet} {l : Loc} {a₁ a₂ : Address}
         {qt : QTyp} {v₁ v₂ : Value}
         (hpoison : qt.poison = false)
-        (hetyp : qt.etyp = ETyp.ref t ls)
+        (hetyp : qt.etyp = ETyp.ref ls)
         (hlookup1 : θ₁.lookup l = some a₁)
         (hin : l ∈ ls)
         (hv1 : v₁ = Value.loc a₁)
@@ -560,14 +563,14 @@ mutual
         (htag : qtypGuardTag qt = some k)
         (hregime : R.lookup? k = some true)
         (hnotfun : qt.etyp.isFunctionType = false)
-        (hnotref : ¬ (∃ (t : ETyp) (ls : LocSet), qt.etyp = ETyp.ref t ls))
+        (hnotref : ¬ (∃ (ls : LocSet), qt.etyp = ETyp.ref ls))
         (hagree : v₁ = v₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
-    | withPred_true_ref (k : Tag) {t : ETyp} {ls : LocSet} {l : Loc} {a₁ a₂ : Address}
+    | withPred_true_ref (k : Tag) {ls : LocSet} {l : Loc} {a₁ a₂ : Address}
         {qt : QTyp} {v₁ v₂ : Value}
         (htag : qtypGuardTag qt = some k)
         (hregime : R.lookup? k = some true)
-        (hetyp : qt.etyp = ETyp.ref t ls)
+        (hetyp : qt.etyp = ETyp.ref ls)
         (hlookup1 : θ₁.lookup l = some a₁)
         (hin : l ∈ ls)
         (hv1 : v₁ = Value.loc a₁)
@@ -649,7 +652,7 @@ def agreeOnCriticalInputsUnderRegimeSpec
   (predSat : PredSat) (R : Regime) (s : InputSpec)
   (μ₁ : Memory) (ρ₁ : VarEnv) (θ₁ : RealizationMap)
   (μ₂ : Memory) (ρ₂ : VarEnv) (θ₂ : RealizationMap) : Prop :=
-  List.Forall (agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂) s.locs.toList ∧
+  List.Forall (agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂) (memEnvToLocQTypList s.locs) ∧
   List.Forall (agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂) s.vars.toList
 
 -- Typing results must satisfy the observable constraints.

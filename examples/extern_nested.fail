@@ -3,20 +3,16 @@ Evaluating file: examples/extern_nested.poison (verbose mode)
 Type checking passed:
   Type: {type=int,
    poison=true,
-   pred={3, pfn v -> (v >= 0) && (v <= i), deps: [cap : {type=ref int [0], poison=false, pred={}},
+   pred={3, pfn v -> (v >= 0) && (v <= i), deps: [cap : {type=ref @ [0], poison=false, pred={}},
      i : {type=int, poison=false, pred={}},
-     r : {type=ref int [1], poison=false, pred={}}]}},
+     r : {type=ref @ [1], poison=false, pred={}}]}},
   MemoryTypeEnv: {
-    0 := {type=int,
-     poison=true,
-     pred={5, pfn u -> (u >= 0) && (u <= i), deps: [cap : {type=ref int [0], poison=false, pred={}},
-       i : {type=int, poison=false, pred={}},
-       r : {type=ref int [1], poison=false, pred={}}]}},
-    1 := {type=int,
-     poison=true,
-     pred={4, pfn u -> (u >= 0) && (u <= i), deps: [cap : {type=ref int [0], poison=false, pred={}},
-       i : {type=int, poison=false, pred={}},
-       r : {type=ref int [1], poison=false, pred={}}]}} },
+    0 := (true, {5, pfn u -> (u >= 0) && (u <= i), deps: [cap : {type=ref @ [0], poison=false, pred={}},
+      i : {type=int, poison=false, pred={}},
+      r : {type=ref @ [1], poison=false, pred={}}]}),
+    1 := (true, {4, pfn u -> (u >= 0) && (u <= i), deps: [cap : {type=ref @ [0], poison=false, pred={}},
+      i : {type=int, poison=false, pred={}},
+      r : {type=ref @ [1], poison=false, pred={}}]}) },
   tagEnv: {},
   nextLoc: 2
 

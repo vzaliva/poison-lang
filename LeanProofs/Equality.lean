@@ -1318,8 +1318,8 @@ private theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
   | bool => simp [beqETyp]
   | unit => simp [beqETyp]
   | string => simp [beqETyp]
-  | ref t' l =>
-      simp [beqETyp, beqETyp_refl t']
+  | ref l =>
+      simp [beqETyp]
   | arrow t1 t2 p tcl =>
       simp [beqETyp, beqFnTClosureList_refl tcl]
   | parrow t1 t2 p tcl =>
@@ -1397,11 +1397,9 @@ private theorem beqETyp_sound (a b : ETyp) : (a == b) = true → a = b := by
   intro h
   cases a <;> cases b <;> try (simp only [BEq.beq, beqETyp] at h; contradiction)
   case int.int | bool.bool | unit.unit | string.string => rfl
-  case ref t1 l1 t2 l2 =>
-    simp only [BEq.beq, beqETyp, Bool.and_eq_true] at h
-    obtain ⟨h_t, h_l⟩ := h
-    have : t1 = t2 := beqETyp_sound t1 t2 h_t
-    have : l1 = l2 := LocSet.sound l1 l2 h_l
+  case ref l1 l2 =>
+    simp only [BEq.beq, beqETyp] at h
+    have : l1 = l2 := LocSet.sound l1 l2 h
     subst_vars
     rfl
   case arrow st1 st2 p1 tcl1 st1' st2' p2 tcl2 =>
@@ -1611,9 +1609,8 @@ instance : DecidableEq QTyp := fun a b =>
 theorem beqETypSignature_refl (t : ETyp) : beqETypSignature t t = true := by
   cases t with
   | int | bool | unit | string => simp [beqETypSignature]
-  | ref t' l =>
+  | ref l =>
       simp [beqETypSignature]
-      exact beqETypSignature_refl t'
   | arrow st1 st2 p _ =>
       simp [beqETypSignature]
   | parrow st1 st2 p _ =>

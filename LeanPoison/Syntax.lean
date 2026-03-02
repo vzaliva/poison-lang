@@ -424,7 +424,7 @@ inductive ETyp : Type where
   | bool : ETyp
   | unit : ETyp
   | string : ETyp
-  | ref : ETyp → LocSet → ETyp
+  | ref : LocSet → ETyp
   | arrow : Typ → Typ → Poison → List FnTClosure → ETyp
   | parrow : Typ → Typ → Poison → List PFnTClosure → ETyp
 
@@ -520,7 +520,7 @@ def beqETyp : ETyp → ETyp → Bool
   | ETyp.bool, ETyp.bool => true
   | ETyp.unit, ETyp.unit => true
   | ETyp.string , ETyp.string => true
-  | ETyp.ref t1 ls1, ETyp.ref t2 ls2 => beqETyp t1 t2 && ls1 == ls2
+  | ETyp.ref ls1, ETyp.ref ls2 => ls1 == ls2
   | ETyp.arrow st1 st2 p1 tcls1, ETyp.arrow st1' st2' p2 tcls2 =>
     st1 == st1' && st2 == st2' && p1 == p2 && beqFnTClosureList tcls1 tcls2
   | ETyp.parrow st1 st2 p1 tcls1, ETyp.parrow st1' st2' p2 tcls2 =>
@@ -586,7 +586,7 @@ def beqETypSignature : ETyp → ETyp → Bool
   | ETyp.bool, ETyp.bool => true
   | ETyp.unit, ETyp.unit => true
   | ETyp.string, ETyp.string => true
-  | ETyp.ref t1 _, ETyp.ref t2 _ => beqETypSignature t1 t2
+  | ETyp.ref _, ETyp.ref _ => true
   | ETyp.arrow st1 st2 _ _, ETyp.arrow st1' st2' _ _ =>
     st1 == st1' && st2 == st2'
   | ETyp.parrow st1 st2 _ _, ETyp.parrow st1' st2' _ _ =>

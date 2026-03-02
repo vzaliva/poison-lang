@@ -2,7 +2,7 @@ Evaluating file: examples/pred-arg-ignoring-ref.poison (verbose mode)
 
 Type checking passed:
   Type: {type=int, poison=true, pred={}},
-  MemoryTypeEnv: { 0 := {type=int, poison=true, pred={3, pfn a -> true}} },
+  MemoryTypeEnv: { 0 := (true, {3, pfn a -> true}) },
   tagEnv: {},
   nextLoc: 1
 

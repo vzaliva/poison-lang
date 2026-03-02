@@ -2,8 +2,19 @@
 # Pre-commit summary: build, count sorry declarations, and report diff of sorry/axiom changes.
 # Tracks footprint of unproven lemmas. Adding internal sorries within a lemma that already
 # has sorry is OK (splitting goals); this script focuses on declaration-level counts.
+#
+# Options:
+#   -b branchname  Compare current branch to branchname (instead of uncommitted changes)
 
 set -euo pipefail
+
+COMPARE_BRANCH=""
+while getopts "b:" opt; do
+  case "$opt" in
+    b) COMPARE_BRANCH="$OPTARG" ;;
+    *) echo "Usage: $0 [-b branchname]"; exit 1 ;;
+  esac
+done
 
 # Colours (only when stdout is a TTY)
 if [[ -t 1 ]]; then
@@ -19,6 +30,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$ROOT"
 
+if [[ -n "$COMPARE_BRANCH" ]] && ! git rev-parse "$COMPARE_BRANCH" &>/dev/null; then
+  echo -e "${RED}Branch '$COMPARE_BRANCH' not found.${NC}"
+  exit 1
+fi
+
 echo "== Pre-commit summary =="
 echo
 
@@ -27,7 +43,7 @@ echo "--- Build ---"
 BUILD_LOG=$(mktemp)
 trap 'rm -f "$BUILD_LOG"' EXIT
 
-if ! lake build 2>&1 > "$BUILD_LOG"; then
+if ! lake build > "$BUILD_LOG" 2>&1; then
   echo -e "${RED}Build failed:${NC}"
   cat "$BUILD_LOG"
   exit 1
@@ -59,13 +75,29 @@ fi
 echo
 
 # --- 2. Git diff: added/removed sorry and axiom ---
-echo "--- Git diff: sorry/axiom changes (vs HEAD) ---"
-DIFF=$(git diff HEAD --no-color 2>/dev/null || true)
-if [[ -z "$DIFF" ]]; then
-  echo "  No uncommitted changes."
-  echo "  Added sorry: 0, Removed sorry: 0"
-  echo "  Added axiom: 0, Removed axiom: 0"
+if [[ -n "$COMPARE_BRANCH" ]]; then
+  echo "--- Git diff: sorry/axiom changes (HEAD vs $COMPARE_BRANCH) ---"
+  DIFF=$(git diff "$COMPARE_BRANCH"..HEAD --no-color 2>/dev/null || true)
+  if [[ -z "$DIFF" ]]; then
+    echo "  No changes since $COMPARE_BRANCH."
+    echo "  Added sorry: 0, Removed sorry: 0"
+    echo "  Added axiom: 0, Removed axiom: 0"
+  else
+    DO_DIFF_PARSE=1
+  fi
 else
+  echo "--- Git diff: sorry/axiom changes (vs HEAD) ---"
+  DIFF=$(git diff HEAD --no-color 2>/dev/null || true)
+  if [[ -z "$DIFF" ]]; then
+    echo "  No uncommitted changes."
+    echo "  Added sorry: 0, Removed sorry: 0"
+    echo "  Added axiom: 0, Removed axiom: 0"
+  else
+    DO_DIFF_PARSE=1
+  fi
+fi
+
+if [[ "${DO_DIFF_PARSE:-0}" -eq 1 ]]; then
   # Parse diff: track current file, count +/- lines containing sorry or axiom
   declare -A ADDED_SORRY
   declare -A REMOVED_SORRY

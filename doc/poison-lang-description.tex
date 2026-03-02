@@ -123,7 +123,7 @@ LS ::= { } | { l } | LS1 U LS2
 
 (* enriched types *)
 T ::= int | bool | unit | string
-    | ref T @ LS
+    | ref @ LS
     | ST1 -> ST2 # p tclosures tcls   (* impure function types with merged typing closures *)
     | ST1 -> ST2 # p tpclosures ptcls (* pure function types with merged pure typing closures *)
 
@@ -161,11 +161,11 @@ in their code but never see the more complex internal representations.
 \begin{itemize}
     \item \textbf{Ott notation:} \texttt{typ, T}
     \item \textbf{Lean implementation:} \texttt{ETyp} (Enriched Type)
-    \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | string | ref T @ LS | ST1 -> ST2 \# p tclosures tcls | ST1 -> ST2 \# p tpclosures ptcls}
+    \item \textbf{Grammar:} \texttt{T ::= int | bool | unit | string | ref @ LS | ST1 -> ST2 \# p tclosures tcls | ST1 -> ST2 \# p tpclosures ptcls}
     \item \textbf{Usage:} Used internally by the type checker for sound reasoning about references and functions
     \item \textbf{Key additions:}
     \begin{itemize}
-        \item \textbf{Location sets} (\texttt{@LS}): Track a set of possible \emph{logical} locations each reference may point to. The typing rules restrict references to integers, so well-typed reference types have the form \texttt{ref int @ LS}
+        \item \textbf{Location sets} (\texttt{@LS}): Track a set of possible \emph{logical} locations each reference may point to. Memory stores only integers, so reference types have the form \texttt{ref @ LS} (no inner type)
         \item \textbf{Typing closure sets} (\texttt{tclosures tcls} / \texttt{tpclosures ptcls}): Non-empty sets of closures that capture function bodies and variable contexts for re-typechecking at application time
         \item \textbf{Function poison} (\texttt{\#p}): Track the poison status of the function itself (from the program counter at definition time)
     \end{itemize}
@@ -174,7 +174,7 @@ in their code but never see the more complex internal representations.
 Enriched types extend surface types with the machinery needed for sound type
 checking. \emph{Once assigned, an enriched type is \emph{immutable} during
 analysis -- only the environments grow around it.} The region annotation
-\texttt{ref int @ LS} records a \emph{set of logical locations} that the reference
+\texttt{ref @ LS} records a \emph{set of logical locations} that the reference
 may target; joins union these sets, preserving aliasing information in a
 flow-insensitive analysis. Logical locations are typechecker-generated names
 that are related to concrete runtime addresses by a per-run realisation map
@@ -204,7 +204,7 @@ definition-time control poison from call-site provenance in the type system.
         \item \textbf{Poison status} (\texttt{p}): Whether the value is \texttt{clean} or \texttt{poisoned}
         \item \textbf{Predicate} (\texttt{P}): Optional guard for conditional de-poisoning
     \end{itemize}
-    \item \textbf{Usage:} All values in typing environments (\texttt{$\Gamma$}, \texttt{$\sigma$}) have qualified types
+    \item \textbf{Usage:} Values in the variable typing environment (\texttt{$\sigma$}) have qualified types; memory entries in \texttt{$\Gamma$} store poison and predicate components
 \end{itemize}
 
 Qualified types are the \emph{working currency} of our typestate system. Every
@@ -578,14 +578,14 @@ Addresses and closures are runtime-only and do not appear in the surface syntax.
 
 \begin{itemize}
     \item $\pi$: Pure-mode flag (\textit{pure} or \textit{impure})
-    \item $\Gamma$: Memory typing environment $l : Q$ (logical location qualified types)
+    \item $\Gamma$: Memory typing environment $l : p \{ P \}$ (logical location $\mapsto$ poison and predicate; stored type is always int)
     \item $\sigma$: Variable typing environment $x : Q$ (variable qualified types)
     \item $\mathcal{L}$: Logical environment $k : bool \text{ using } LS$ (predicate guard evaluations with dependency tracking)
     \item $\text{pc}$: Program counter poison (current context reliability)
 \end{itemize}
 
-Note that both $\Gamma$ and $\sigma$ store \emph{qualified types} $Q$ rather
-than simple types, and can include predicates that enable conditional
+Note that $\sigma$ stores \emph{qualified types} $Q$; $\Gamma$ stores poison and
+predicate per location. Both can include predicates that enable conditional
 de-poisoning.
 
 \subsection{Dependency Tracking and Invalidation}
@@ -651,7 +651,7 @@ where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{
 \subsubsection*{Reference creation:}
 \[
 \frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e : \text{int} \triangleright p \{ P \} \dashv \Gamma_1 ; \mathcal{L}_1 \quad \text{fresh } l}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash \text{ref } e : \text{ref int} @ \{l\} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_1[l \mapsto \text{int} \triangleright (\text{pc} \sqcup p) \{ P \}] \; ;\; \mathcal{L}_1}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash \text{ref } e : \text{ref} @ \{l\} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_1[l \mapsto (\text{pc} \sqcup p) \{ P \}] \; ;\; \mathcal{L}_1}
 \]
 
 \subsubsection*{Assignment:}
@@ -673,11 +673,11 @@ spuriously make locations clean under a regime.
 \paragraph{Singleton, clean reference (strong update).}
 \[
 \frac{\begin{array}{c}
-\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ \{l\} \triangleright \text{clean} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref} @ \{l\} \triangleright \text{clean} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
 \text{invalidate\_deps}(\mathcal{L}_2, \{l\}) = \mathcal{L}_3
 \end{array}}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_2[l \mapsto \text{int} \triangleright (\text{pc} \sqcup p_2) \{ P_2 \}] \; ;\; \mathcal{L}_3}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_2[l \mapsto (\text{pc} \sqcup p_2) \{ P_2 \}] \; ;\; \mathcal{L}_3}
 \]
 
 \paragraph{Non-singleton, clean reference (weak update).}
@@ -685,35 +685,35 @@ When the reference has a non-singleton location set, the update joins the stored
 with the existing heap-cell information for that set:
 \[
 \frac{\begin{array}{c}
-\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ LS \triangleright \text{clean} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref} @ LS \triangleright \text{clean} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
 \text{invalidate\_deps}(\mathcal{L}_2, LS) = \mathcal{L}_3 \\
 \text{JoinPoisons}(\Gamma_2, LS) = p_3 \qquad \text{MergePreds}(\Gamma_2, LS) = P_3 \qquad \text{JoinP}(P_2, P_3) = P_4
 \end{array}}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_2[LS \mapsto \text{int} \triangleright (p_3 \sqcup \text{pc} \sqcup p_2) \{ P_4 \}] \; ;\; \mathcal{L}_3}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_2[LS \mapsto (p_3 \sqcup \text{pc} \sqcup p_2) \{ P_4 \}] \; ;\; \mathcal{L}_3}
 \]
 
 \paragraph{Singleton, poisoned reference (strong update with predicate erasure).}
 \[
 \frac{\begin{array}{c}
-\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ \{l\} \triangleright \text{poisoned} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref} @ \{l\} \triangleright \text{poisoned} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
 \text{invalidate\_deps}(\mathcal{L}_2, \{l\}) = \mathcal{L}_3
 \end{array}}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma_2[l \mapsto \text{int} \triangleright \text{poisoned} \{ \text{no\_pred} \}] \; ;\; \mathcal{L}_3}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma_2[l \mapsto \text{poisoned} \{ \text{no\_pred} \}] \; ;\; \mathcal{L}_3}
 \]
 
 \paragraph{Non-singleton, poisoned reference (weak update with predicate erasure).}
 \[
 \frac{\begin{array}{c}
-\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref int} @ LS \triangleright \text{poisoned} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
+\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref} @ LS \triangleright \text{poisoned} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
 \text{invalidate\_deps}(\mathcal{L}_2, LS) = \mathcal{L}_3 \qquad \text{JoinPoisons}(\Gamma_2, LS) = p_3
 \end{array}}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma_2[LS \mapsto \text{int} \triangleright \text{poisoned} \{ \text{no\_pred} \}] \; ;\; \mathcal{L}_3}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \sqcup \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma_2[LS \mapsto \text{poisoned} \{ \text{no\_pred} \}] \; ;\; \mathcal{L}_3}
 \]
 
-Here $\Gamma[LS \mapsto Q]$ updates $\Gamma$ at every $l \in LS$.
+Here $\Gamma[LS \mapsto me]$ updates $\Gamma$ at every $l \in LS$ with the same memory entry $me = p\{P\}$.
 
 \subsubsection*{Dereference:}
 Dereference merges poisons and predicates across the locset. The Ott rules use
@@ -928,12 +928,12 @@ This provides precise fault tracking both during and after loop execution.
 
 \subsection{Location-Set Types}
 
-Reference types $\text{ref int} @ LS$ track aliasing through logical location sets:
+Reference types $\text{ref} @ LS$ track aliasing through logical location sets:
 \begin{itemize}
-    \item $\text{ref int} @ LS$ explicitly records a set of possible \emph{logical} target locations
+    \item $\text{ref} @ LS$ explicitly records a set of possible \emph{logical} target locations
     \item Joins union location sets; dereference joins poison/predicates over all $l \in LS$
     \item Preserves aliasing information without requiring concrete runtime addresses to appear in types; locations that arise only on untaken paths may remain unrealised (ghost) at runtime
-    \item Memory stores only integers, so all reference types have the form $\text{ref int} @ LS$
+    \item Memory stores only integers; the element type is implicit in $\Gamma$, so enriched reference types are $\text{ref} @ LS$
 \end{itemize}
 
 \subsubsection{Strong and Weak Updates for Assignment}
@@ -941,9 +941,9 @@ Reference types $\text{ref int} @ LS$ track aliasing through logical location se
 Assignment through references uses different update strategies depending on whether the location set is a singleton:
 
 \begin{itemize}
-    \item \textbf{Singleton locsets} ($\text{ref int} @ \{l\}$): The typechecker uses \emph{strong update}, completely replacing the qualified type at location $l$. This is sound because the reference statically identifies exactly which location will be updated at runtime.
+    \item \textbf{Singleton locsets} ($\text{ref} @ \{l\}$): The typechecker uses \emph{strong update}, completely replacing the memory entry at location $l$. This is sound because the reference statically identifies exactly which location will be updated at runtime.
     
-    \item \textbf{Non-singleton locsets} ($\text{ref int} @ LS$ where $|LS| > 1$): The typechecker uses \emph{weak update}, joining the stored type with the existing types at all locations in $LS$. This conservative approach is necessary because the typechecker cannot statically determine which single location will be updated at runtime.
+    \item \textbf{Non-singleton locsets} ($\text{ref} @ LS$ where $|LS| > 1$): The typechecker uses \emph{weak update}, joining poison/predicate information with existing entries at all locations in $LS$. This conservative approach is necessary because the typechecker cannot statically determine which single location will be updated at runtime.
 \end{itemize}
 
 The weak update computes joined poison and predicate using the existing $\mathsf{JoinPoisons}$ and $\mathsf{MergePreds}$ operations over all locations in $LS$, then updates all locations uniformly with this conservative approximation. This ensures soundness: the post-typing environment correctly approximates all possible runtime outcomes, avoiding spurious agreement obligations on locations that may not have been modified.
@@ -952,7 +952,7 @@ The weak update computes joined poison and predicate using the existing $\mathsf
 
 Memory typing environment $\Gamma$ evolves through:
 \begin{itemize}
-    \item \textbf{Reference creation}: Extends $\Gamma$ with both type and poison status
+    \item \textbf{Reference creation}: Extends $\Gamma$ with a new memory entry $(p, P)$ for the fresh location
     \item \textbf{Assignment}: Updates poison status of data in $\Gamma$
     \item \textbf{Control flow}: Joins environments from different branches (\texttt{if})
     \item \textbf{Sequencing/bindings}: Threads the updated $\Gamma$ through subexpressions (\texttt{;}, \texttt{let})

@@ -2,7 +2,7 @@ Evaluating file: examples/invalidation-example2.poison (verbose mode)
 
 Type checking passed:
   Type: {type=int, poison=false, pred={}},
-  MemoryTypeEnv: { 0 := {type=int, poison=false, pred={}} },
+  MemoryTypeEnv: { 0 := (false, {}) },
   tagEnv: {},
   nextLoc: 1
 

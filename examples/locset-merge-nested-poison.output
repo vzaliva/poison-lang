@@ -2,11 +2,7 @@ Evaluating file: examples/locset-merge-nested-poison.poison (verbose mode)
 
 Type checking passed:
   Type: {type=int, poison=true, pred={}},
-  MemoryTypeEnv: {
-    0 := {type=int, poison=true, pred={}},
-    1 := {type=int, poison=true, pred={}},
-    2 := {type=int, poison=true, pred={}}
-  },
+  MemoryTypeEnv: { 0 := (true, {}), 1 := (true, {}), 2 := (true, {}) },
   tagEnv: {},
   nextLoc: 3
 

@@ -2,7 +2,7 @@ Evaluating file: examples/while1.poison (verbose mode)
 
 Type checking passed:
   Type: {type=unit, poison=false, pred={}},
-  MemoryTypeEnv: { 0 := {type=int, poison=false, pred={}}, 1 := {type=int, poison=false, pred={}} },
+  MemoryTypeEnv: { 0 := (false, {}), 1 := (false, {}) },
   tagEnv: {},
   nextLoc: 2
 

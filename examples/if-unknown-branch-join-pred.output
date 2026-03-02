@@ -1,10 +1,6 @@
 Evaluating file: examples/if-unknown-branch-join-pred.poison (verbose mode)
 
-Type checking passed:
-  Type: {type=int, poison=true, pred={}},
-  MemoryTypeEnv: { 0 := {type=int, poison=true, pred={}} },
-  tagEnv: {},
-  nextLoc: 1
+Type checking passed: Type: {type=int, poison=true, pred={}}, MemoryTypeEnv: { 0 := (true, {}) }, tagEnv: {}, nextLoc: 1
 
 Result: 42
 Final state:
