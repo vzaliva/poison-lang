@@ -73,12 +73,12 @@ parser-clean:
 	$(MAKE) -C parser clean
 	rm -f config.json
 
-test: cache parser   
+test: cache parser
 	lake build poison-interpreter
-	chmod +x run_tests.sh
+	chmod +x scripts/run_tests.sh
 	echo "Running tests"
 	rm -rf testResults
-	./run_tests.sh 
+	./scripts/run_tests.sh 
 
 clean: lean-clean parser-clean 
 	 $(MAKE) -C poison-lang-spec clean
