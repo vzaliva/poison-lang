@@ -38,10 +38,11 @@ def tagEnvConsistentWithRegime (tagEnv : TagEnv) (regime : Regime) : Prop :=
 -- Regime consistency with a typing context: (i) tags known true in the context must be true in the
 -- regime interpretation, and (ii) the regime's bound is below the context's fresh-tag supply.
 --
--- Intended reading: `R` only interprets *input/spec* tags (< R.bound). The context's `nextTag`
--- tracks the current supply for fresh internal tags, and it should stay above `R.bound`.
-def regimeConsistentWithCtx (ctx : TypeContext) (R : Regime) : Prop :=
-  tagEnvConsistentWithRegime ctx.tagEnv R ∧ R.bound ≤ ctx.nextTag
+-- Intended reading: the context's regime only interprets *input/spec* tags (< regime.bound). The
+-- context's `nextTag` tracks the current supply for fresh internal tags, and it should stay above
+-- `regime.bound`.
+def regimeConsistentWithCtx (ctx : TypeContext) : Prop :=
+  tagEnvConsistentWithRegime ctx.tagEnv ctx.regime ∧ ctx.regime.bound ≤ ctx.nextTag
 
 -- ------------------------
 -- TagEnv/Regime consistency preservation lemmas
@@ -486,7 +487,7 @@ def StepFR
       wfRealizationMap θ₀ → wfRealizationMap θ₁ →
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
-      regimeConsistentWithCtx ctx ctx.regime →
+      regimeConsistentWithCtx ctx →
       regimeBounded ctx.regime →
       consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀ →
       consistentWithRegime predSat ctx.regime ctx μ₁ ρ₁ θ₁ →
@@ -507,7 +508,7 @@ def StepFR
           wfConfig cf₁ ∧  -- final config₁ well-formed
           runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧  -- preservation
           runtimeInstantiatesCtx (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧  -- preservation
-          regimeConsistentWithCtx (ctxAfter ctx res) (ctxAfter ctx res).regime ∧  -- regime consistency preserved (output regime)
+          regimeConsistentWithCtx (ctxAfter ctx res) ∧  -- regime consistency preserved (output regime)
           consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
           consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
           agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
@@ -2486,7 +2487,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
       simp [_hte]
     rw [this] at hlookup
     cases hlookup
-  have hreg : regimeConsistentWithCtx ctx R := by
+  have hreg : regimeConsistentWithCtx ctx := by
     refine ⟨htagR, ?_⟩
     -- At the top level, `R.bound = ctx.nextTag`.
     exact Nat.le_of_eq hR
@@ -4867,7 +4868,7 @@ private lemma stepFR_op
     simpa [ctx', ctxAfter] using hric₀1
   have hric₁1' : runtimeInstantiatesCtx ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctx', ctxAfter] using hric₁1
-  have htagR1' : regimeConsistentWithCtx ctx' ctx'.regime := by
+  have htagR1' : regimeConsistentWithCtx ctx' := by
     -- Comes directly from IH1; `ctx'` is exactly `ctxAfter ctxᵢ res1`.
     simpa [ctx', ctxAfter] using htagR1
   -- Regime monotonicity (typing can only drop entries).
@@ -4932,7 +4933,7 @@ private lemma stepFR_op
     simpa [hctxAfter] using hric₁2
   -- IH2 gives regimeConsistentWithCtx (ctxAfter ctx' res2) (ctxAfter ctx' res2).regime
   -- Since ctxAfter ctxᵢ res = ctxAfter ctx' res2, this directly gives what we need
-  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
+  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
     simpa [hctxAfter] using htagR2
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     simpa [hctxAfter] using hcwr₀2
@@ -5082,7 +5083,7 @@ private lemma stepFR_unaryop
   have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
     simpa [hctxAfter, hmem₁, hvar₁] using hric₁'
   -- IH gives regimeConsistentWithCtx with output regime
-  have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
+  have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
     simpa [hctxAfter] using hreg'
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
     simpa [hctxAfter, hmem₀, hvar₀] using hcwr₀'
@@ -5399,9 +5400,9 @@ private lemma stepFR_newRef
       · simpa [hvar₁] using hvlookup
       · exact valueHasETyp_extends hθext₁'.1 hvtyp
   -- Prove regimeConsistentWithCtx (IH gives with output regime)
-  have hreg' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
-    -- htagR1 gives regimeConsistentWithCtx (ctxAfter ctxᵢ res1) (ctxAfter ctxᵢ res1).regime
-    -- Use hregime_eq to transfer
+  have hreg' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
+    -- htagR1 gives regimeConsistentWithCtx (ctxAfter ctxᵢ res1); use hregime_eq to transfer
+    unfold regimeConsistentWithCtx
     rw [hregime_eq]
     simpa [ctxAfter, h_tag, h_ntag] using htagR1
   -- Prove agreeOnClean (using output regime from IH)
@@ -6164,7 +6165,7 @@ private lemma stepFR_seq
     simpa [hctx', ctxAfter] using hric₀1
   have hric₁1' : runtimeInstantiatesCtx ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [hctx', ctxAfter] using hric₁1
-  have htagR1' : regimeConsistentWithCtx ctx' ctx'.regime := by
+  have htagR1' : regimeConsistentWithCtx ctx' := by
     simpa [hctx', updateCtxFromResult, ctxAfter] using htagR1
   have hcwr₀1' : consistentWithRegime predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
     simpa [hctx', updateCtxFromResult, ctxAfter] using hcwr₀1
@@ -6215,7 +6216,7 @@ private lemma stepFR_seq
   have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
     simpa [hctxAfter] using hric₁2
   -- IH2 gives regimeConsistentWithCtx with output regime, transfer via hctxAfter
-  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
+  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
     simpa [hctxAfter] using htagR2
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     simpa [hctxAfter] using hcwr₀2
@@ -6307,7 +6308,7 @@ private lemma stepFR_vlet
     (wfConfig_preservedW .ioFree w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1_w hwfcfg₀).2
   have hv₁1_wf : wfValue cfg₁1.nextAddr v₁1 :=
     (wfConfig_preservedW .ioFree w_default w_default e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1_w hwfcfg₁).2
-  have hreg_ctx' : regimeConsistentWithCtx ctx' ctx'.regime := by
+  have hreg_ctx' : regimeConsistentWithCtx ctx' := by
     -- ctx'.regime = res1.regime', need to derive from htagR1 and regime_monotone
     unfold regimeConsistentWithCtx at htagR1 ⊢
     constructor
@@ -6905,7 +6906,7 @@ private lemma stepFR_vlet
       exact ⟨v, hvlookup', hvtyp'⟩
   -- ctx'.regime = res1.regime' (not ctxᵢ.regime)
   -- With new StepFR using output regime, we need (ctxAfter ctxᵢ res).regime
-  have hreg'' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
+  have hreg'' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
     -- IH2 gives regimeConsistentWithCtx (ctxAfter ctx' res2) (ctxAfter ctx' res2).regime
     -- The relevant fields match by structure lemma
     have h_tagEnv_eq : (ctxAfter ctxᵢ res).tagEnv = (ctxAfter ctx' res2).tagEnv := by simp [ctxAfter, h_tag]
@@ -9697,7 +9698,7 @@ private lemma stepFR_ite_mode1
         (ctx := ctxᵢ) (res := res1) (μ := cfg₁1.memory) (ρ := cfg₁1.varEnv) (θ := θ₁1)
         (k := k) (deps := deps)
         hsub₁ hric₁1
-  have htagR_true : regimeConsistentWithCtx ctxTrue ctxTrue.regime := by
+  have htagR_true : regimeConsistentWithCtx ctxTrue := by
     unfold regimeConsistentWithCtx at htagR ⊢
     constructor
     · exact tagEnvConsistentWithRegime_insert_true
@@ -9890,7 +9891,7 @@ private lemma stepFR_ite_mode1
     simpa [hctxAfter] using hric₀2
   have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
     simpa [hctxAfter] using hric₁2
-  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
+  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
     simpa [hctxAfter] using htagR2
   have hcwr₀_final :
       consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
@@ -10102,7 +10103,7 @@ private lemma stepFR_ite_mode2
           (k := k) (deps := deps)
           hsub₁ hric₁1
     simpa [runtimeInstantiatesCtx, ctxFalse] using hric₁1_true
-  have htagR_false : regimeConsistentWithCtx ctxFalse ctxFalse.regime := by
+  have htagR_false : regimeConsistentWithCtx ctxFalse := by
     unfold regimeConsistentWithCtx at htagR ⊢
     constructor
     · exact tagEnvConsistentWithRegime_insert_false
@@ -10307,7 +10308,7 @@ private lemma stepFR_ite_mode2
     simpa [hctxAfter] using hric₀3
   have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
     simpa [hctxAfter] using hric₁3
-  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
+  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
     simpa [hctxAfter] using htagR3
   have hcwr₀_final :
       consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
@@ -12652,7 +12653,7 @@ private lemma stepFR_assign
     simpa [ctx', ctxAfter] using hric₀1
   have hric₁1' : runtimeInstantiatesCtx ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctx', ctxAfter] using hric₁1
-  have hregCtx1' : regimeConsistentWithCtx ctx' ctx'.regime := by
+  have hregCtx1' : regimeConsistentWithCtx ctx' := by
     simpa [ctx', ctxAfter] using hregCtx1
   have hcwr₀1' : consistentWithRegime predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
     simpa [ctx', ctxAfter] using hcwr₀1
@@ -12760,7 +12761,7 @@ private lemma stepFR_assign
       wfTypeContext (ctxAfter ctxᵢ res) ∧
       runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 ∧
       runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 ∧
-      regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime ∧
+      regimeConsistentWithCtx (ctxAfter ctxᵢ res) ∧
       consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 ∧
       consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 ∧
       agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
@@ -14796,7 +14797,7 @@ private lemma stepFR_deref
   have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
     simpa [hctxAfter, hmem₁, hvar₁] using hric₁'
   -- IH gives regimeConsistentWithCtx with output regime; transfer via hctxAfter
-  have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime := by
+  have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
     simpa [hctxAfter] using hreg'
   -- Derive wfConfig for final configs using wfConfig_preserved
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.deref e) _ cf₀ o₀ ht₀ hwfcfg₀).1
@@ -15992,8 +15993,8 @@ private lemma join_transport_regimeConsistentWithCtx
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (h_regime_bound_le : res.regime'.bound ≤ first.regime'.bound)
   (h_tag_join : tagEnvConsistentWithRegime (ctxAfter ctx res).tagEnv (ctxAfter ctx res).regime)
-  (h_first : regimeConsistentWithCtx (ctxAfter ctx first) (ctxAfter ctx first).regime) :
-  regimeConsistentWithCtx (ctxAfter ctx res) (ctxAfter ctx res).regime := by
+  (h_first : regimeConsistentWithCtx (ctxAfter ctx first)) :
+  regimeConsistentWithCtx (ctxAfter ctx res) := by
   simp only [regimeConsistentWithCtx, ctxAfter]
   constructor
   · exact h_tag_join
@@ -16428,10 +16429,10 @@ private lemma applyFnTClosure_ok_regimeConsistentWithCtx
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result1 : TypeResult) (fuel : Nat)
   (tcl : FnTClosure) (r : TypeResult)
-  (hreg1 : regimeConsistentWithCtx (ctxAfter ctx result1) (ctxAfter ctx result1).regime)
+  (hreg1 : regimeConsistentWithCtx (ctxAfter ctx result1))
   (happly :
     applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
-  regimeConsistentWithCtx (ctxAfter ctx r) (ctxAfter ctx r).regime := by
+  regimeConsistentWithCtx (ctxAfter ctx r) := by
   sorry
 
 private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
@@ -16504,12 +16505,12 @@ private lemma mapM_applyFnTClosure_forall_regimeConsistentWithCtx
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result1 : TypeResult) (fuel : Nat)
   (tcls : List FnTClosure) (results : List TypeResult)
-  (hreg1 : regimeConsistentWithCtx (ctxAfter ctx result1) (ctxAfter ctx result1).regime)
+  (hreg1 : regimeConsistentWithCtx (ctxAfter ctx result1))
   (hmap :
     List.mapM
       (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       tcls = .ok results) :
-  ∀ r, r ∈ results → regimeConsistentWithCtx (ctxAfter ctx r) (ctxAfter ctx r).regime := by
+  ∀ r, r ∈ results → regimeConsistentWithCtx (ctxAfter ctx r) := by
   intro r hr
   rcases list_mapM_ok_mem_output_exists_input
       (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
@@ -16553,8 +16554,8 @@ private lemma mapM_applyFnTClosure_forall_QTypRespectsTagMeaning
 private lemma joinTypeResults_tagEnvConsistentWithRegime
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (h_join : joinTypeResults ctx first rest = .ok res)
-  (h_first : regimeConsistentWithCtx (ctxAfter ctx first) (ctxAfter ctx first).regime)
-  (h_rest : ∀ r ∈ rest, regimeConsistentWithCtx (ctxAfter ctx r) (ctxAfter ctx r).regime) :
+  (h_first : regimeConsistentWithCtx (ctxAfter ctx first))
+  (h_rest : ∀ r ∈ rest, regimeConsistentWithCtx (ctxAfter ctx r)) :
   tagEnvConsistentWithRegime (ctxAfter ctx res).tagEnv (ctxAfter ctx res).regime := by
   let joinStep :
       (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
@@ -16576,7 +16577,7 @@ private lemma joinTypeResults_tagEnvConsistentWithRegime
         (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
         List.foldlM joinStep acc rs' = .ok acc' →
         tagEnvConsistentWithRegime acc.2.2.2.2.1 acc.2.2.2.2.2.1 →
-        (∀ r ∈ rs', regimeConsistentWithCtx (ctxAfter ctx r) (ctxAfter ctx r).regime) →
+        (∀ r ∈ rs', regimeConsistentWithCtx (ctxAfter ctx r)) →
         tagEnvConsistentWithRegime acc'.2.2.2.2.1 acc'.2.2.2.2.2.1 := by
     intro rs' acc acc' hfold hacc hrs
     induction rs' generalizing acc with
@@ -16601,7 +16602,7 @@ private lemma joinTypeResults_tagEnvConsistentWithRegime
             have hfold_tail : List.foldlM joinStep acc1 xs = .ok acc' := by
               simpa [acc1] using hfold
             have hx :
-                regimeConsistentWithCtx (ctxAfter ctx x) (ctxAfter ctx x).regime :=
+                regimeConsistentWithCtx (ctxAfter ctx x) :=
               hrs x (by simp)
             have hx_tag : tagEnvConsistentWithRegime x.tagEnv' x.regime' := by
               simpa [regimeConsistentWithCtx, ctxAfter] using hx.1
@@ -16612,7 +16613,7 @@ private lemma joinTypeResults_tagEnvConsistentWithRegime
                   acc.2.2.2.2.1 x.tagEnv' acc.2.2.2.2.2.1 x.regime'
                   hacc hx_tag)
             have hrs_tail :
-                ∀ r ∈ xs, regimeConsistentWithCtx (ctxAfter ctx r) (ctxAfter ctx r).regime := by
+                ∀ r ∈ xs, regimeConsistentWithCtx (ctxAfter ctx r) := by
               intro r hr
               exact hrs r (by simp [hr])
             exact ih (acc := acc1) hfold_tail hacc1 hrs_tail
@@ -22700,7 +22701,7 @@ private lemma stepFR_app
               have h_mono1 :
                   Regime.monotoneStep (ctxAfter ctxᵢ result2).regime result1.regime' :=
                 regime_monotone (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
-              have htagR_body : regimeConsistentWithCtx bodyCtx bodyCtx.regime := by
+              have htagR_body : regimeConsistentWithCtx bodyCtx := by
                 simpa [bodyCtx, ctxAfter, regimeConsistentWithCtx] using htagR1
               have hRbound_body : regimeBounded bodyCtx.regime := by
                 exact
@@ -23841,9 +23842,9 @@ private lemma stepFR_app
               hTm1_ctx hresTm1 hetyp1 hmap
         have hresults_regime :
             ∀ r, r ∈ results →
-              regimeConsistentWithCtx (ctxAfter ctxᵢ r) (ctxAfter ctxᵢ r).regime := by
+              regimeConsistentWithCtx (ctxAfter ctxᵢ r) := by
           have htagR1_ctx :
-              regimeConsistentWithCtx (ctxAfter ctxᵢ result1) (ctxAfter ctxᵢ result1).regime := by
+              regimeConsistentWithCtx (ctxAfter ctxᵢ result1) := by
             simpa [ctxAfter] using htagR1
           exact
             mapM_applyFnTClosure_forall_regimeConsistentWithCtx
@@ -23867,7 +23868,7 @@ private lemma stepFR_app
         have h_first_wf : wfTypeResult first := hresults_wf first hfirst_in_results
         have h_first_tm : wfTagMeaningCtx tm (ctxAfter ctxᵢ first) := hresults_tm first hfirst_in_results
         have h_first_regime :
-            regimeConsistentWithCtx (ctxAfter ctxᵢ first) (ctxAfter ctxᵢ first).regime :=
+            regimeConsistentWithCtx (ctxAfter ctxᵢ first) :=
           hresults_regime first hfirst_in_results
         have h_first_qtm : QTypRespectsTagMeaning tm first.qualType :=
           by
@@ -23887,7 +23888,7 @@ private lemma stepFR_app
           exact hresults_tm r hmem_results
         have h_rest_regime :
             ∀ r ∈ rest,
-              regimeConsistentWithCtx (ctxAfter ctxᵢ r) (ctxAfter ctxᵢ r).regime := by
+              regimeConsistentWithCtx (ctxAfter ctxᵢ r) := by
           intro r hr
           have hmem_results : r ∈ results := by
             have : r ∈ first :: rest := by simp [hr]
@@ -23950,7 +23951,7 @@ private lemma stepFR_app
           exact hric_out₀
         · -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁1
           exact hric_out₁
-        · -- regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime
+        · -- regimeConsistentWithCtx (ctxAfter ctxᵢ res)
           exact
             join_transport_regimeConsistentWithCtx
               (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
@@ -24355,7 +24356,7 @@ private lemma stepFR_app
           sorry
         · -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) c₁₁.memory c₁₁.varEnv θ₁1
           sorry
-        · -- regimeConsistentWithCtx (ctxAfter ctxᵢ res) (ctxAfter ctxᵢ res).regime
+        · -- regimeConsistentWithCtx (ctxAfter ctxᵢ res)
           sorry
         · -- consistentWithRegime ... c₁₀
           sorry
@@ -24728,7 +24729,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
     rw [hempty] at hlookup
     cases hlookup
   -- regimeConsistentWithCtx is now a conjunction: tagEnvConsistentWithRegime ∧ R.bound ≤ nextTag
-  have hreg : regimeConsistentWithCtx ctx R := by
+  have hreg : regimeConsistentWithCtx ctx := by
     constructor
     · exact htagR
     · exact Nat.le_of_eq hR
