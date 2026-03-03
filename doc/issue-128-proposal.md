@@ -433,52 +433,184 @@ The derivation chain for the true-branch IH (mode 3 if / while body):
    `consistentWithRegime` already provides witnesses that can be
    transferred.
 
-### Tag Reuse Caveat (Biggest Remaining Semantic Risk)
+### Tag Reuse Caveat — Investigation Findings
 
-Step 5 above covers the **owning** entry — the one `matchGuard`
-identified.  `consistentWithRegime` requires witnesses for **all**
-entries with guard tag `k`.  This is only straightforward if the
-owning entry is the only one (or all entries with tag `k` share the
-same runtime value).
+**Status**: Investigation complete.  The tag reuse problem is real and
+has two distinct sub-problems that affect different conjuncts of
+`consistentWithRegime`.  This section summarizes the findings and
+options.
 
-**This is the biggest remaining semantic risk** for the proposal.
-If it cannot be resolved, the `consistentWithRegime_insert_regime_true`
-transfer lemma (critical path step 3) will remain sorry'd on its
-closure conjunct, and `stepFR_ite_mode3` cannot be fully closed.
+#### Background: `consistentWithRegime` Structure
 
-The project documentation (`doc/poison-lang-description.tex`,
-"Tag Uniqueness" paragraph and "No variable environment parameter")
-establishes two related properties:
+`consistentWithRegime` (`RegimeConsistency.lean:818`) has three
+conjuncts:
 
-1. **`matchGuard` returns at most one match** per condition — each
-   tag uniquely identifies a predicate body and captured context, so
-   syntactic matching is unambiguous.
-2. **Each tag identifies a unique predicate semantics** — "each tag
-   uniquely identifies both the predicate body and its captured
-   lexical context."
+1. **locsRegime** (gated by `R.lookup? k ≠ none`): obligations for
+   memory entries with active guard tag.
+2. **varsRegime** (gated by `R.lookup? k ≠ none`): obligations for
+   variable entries with active guard tag.
+3. **closureCapturedVarsRegime** (ungated): for every `(x, qt, v)` in
+   varEnv/ρ, recurses into the value `v` and checks
+   `capturedVarsRegimeProperty` at each closure nesting level.
 
-However, neither property prevents **multiple entries** in
-`memEnv`/`varEnv` from sharing the same guard tag `k` (e.g., via
-assignment or let-binding that propagates a qualified type).  All such
-entries have the same predicate body (by property 2), but they may
-bind different runtime values.  Since `predSat k μ v` depends on `v`,
-satisfaction at the owning value does not automatically transfer to
-other entries with the same tag but different values.
+Inside conjunct 3, `capturedVarsRegimeProperty`
+(`RegimeConsistency.lean:792`) IS gated by `R.lookup? k_x ≠ none` —
+but the outer iteration over all variables is not.  When R grows
+(adding `k ↦ true`), previously closed gates inside closures open,
+requiring evidence that wasn't needed under the smaller R.
 
-**Resolution options** (to be decided during implementation):
+#### Sub-problem A: Top-Level Tag Reuse (Conjuncts 1 & 2)
 
-- **(a) Prove a single-owner invariant**: show that `matchGuard`'s
-  owning entry is the *only* entry with guard tag `k` in the current
-  `memEnv`/`varEnv` (or that all entries with tag `k` alias the
-  same underlying runtime value via shared location).  The proof
-  would use `runtimeInstantiatesCtx` to show the values coincide.
-- **(b) Avoid interpreting `k` via `R` when reuse is possible**: if
-  we cannot establish single-owner, skip the R.map insertion for
-  that `k` and rely on mode 3 staying fully conservative for that
-  `k`.
-- **(c) Hybrid**: insert `k` in R.map only when a single-owner
-  check succeeds (statically decidable from the typing context);
-  fall back to the conservative path otherwise.
+`PredSatLaws.match_iff` gives `predSat k μ v₀` only for the
+**owning** entry — the specific variable or ref that `matchGuard`
+matched.  `consistentWithRegime` conjuncts 1 and 2 require witnesses
+for **all** entries with guard tag `k` whose gate opens under R'.
+
+If multiple entries share guard tag `k` but bind different runtime
+values, satisfaction at the owning value does not transfer.  The
+project documentation ("Tag Uniqueness") establishes that each tag
+uniquely identifies a predicate body and captured context, but does
+not prevent multiple `memEnv`/`varEnv` entries from sharing the same
+guard tag `k` (via let-binding or assignment that propagates a
+qualified type).
+
+**Key finding — `predSat` is memory-independent**:
+`predSat_mem_noPred_compat` (`FaultRobustnessProofs.lean:659`) proves:
+
+```lean
+∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v
+```
+
+So `predSat k μ v` depends only on `v`, not on memory state.  This
+simplifies the semantic question to: do all entries with guard tag `k`
+bind the same runtime value?
+
+#### Sub-problem B: Closure Captured Vars (Conjunct 3 — the Sorry'd Gap)
+
+This is the harder sub-problem and the actual sorry in
+`consistentWithRegime_insert_regime_true` (line 9324).
+
+**The design assumption that breaks:**  The comment on
+`closureCapturedVarsRegime` (`RegimeConsistency.lean:804–806`) says:
+
+> Checked against the CURRENT regime R rather than the regime at
+> capture time.  This is sound because Regime.monotoneStep only
+> removes entries, so any obligation that held under a larger regime
+> still holds under the current (smaller) one.
+
+`closureCapturedVarsRegime_monotone` (`FaultRobustnessProofs.lean:731`)
+formalizes this: given `Regime.monotoneStep R R'` (R shrinks to R'),
+evidence under R transfers to R'.  The key is that `monotoneStep`
+only **drops** entries — when a gate closes, the obligation disappears,
+so the evidence is trivially preserved.
+
+**The mode 3 problem**: When we insert `k ↦ true` into R (going from
+R to R' = `{ R with map := R.map.insert k true }`), R' has **more**
+entries than R.  This is regime **growth**, not shrinkage.  The
+monotone lemma goes the wrong direction:
+
+- `closureCapturedVarsRegime_monotone` handles R → R' when
+  `monotoneStep R R'` (R shrinks to R')
+- We need R → R' when R **grows** to R' (k added)
+- For captured vars inside closures with guard tag k:
+  - Under R: `R.lookup? k = none` → gate closed → no evidence needed
+  - Under R': `R'.lookup? k = some true` → gate open → evidence needed
+  - But no evidence was collected when the gate was closed
+
+**Why it's architectural, not semantic**: `predSat` is
+memory-independent (sub-problem A finding), so if a captured value
+`v_cap` satisfies `predSat k μ v_cap`, it does so regardless of
+memory state.  The predicate still "holds" in the intended semantic
+sense.  But the proof framework never recorded evidence for captured
+vars with guard tag k when the gate was closed, and there is no
+mechanism to recover it when the gate reopens.
+
+#### Resolution Options
+
+**(a) Gate conjunct 3 like conjuncts 1 & 2.**  Change the third
+conjunct of `consistentWithRegime` from:
+
+```lean
+∀ x qt v, ctx.varEnv.lookup x = some qt →
+   ρ.lookup x = some v →
+   closureCapturedVarsRegime predSat R qt μ v
+```
+
+to something like:
+
+```lean
+∀ x qt v k, ctx.varEnv.lookup x = some qt →
+   ρ.lookup x = some v →
+   qtypGuardTag qt = some k → R.lookup? k ≠ none →
+   closureCapturedVarsRegime predSat R qt μ v
+```
+
+This would make the gate uniform across all three conjuncts.  When R
+grows to R', the new obligations for the newly-opened gate could be
+discharged using the same `PredSatLaws.match_iff` derivation as
+conjuncts 1 and 2 (modulo sub-problem A).
+
+**Risk**: This changes the `consistentWithRegime` definition.  Every
+existing proof that establishes or uses conjunct 3 would need to be
+updated.  The `stepFR_vlet` and `stepFR_var` proofs that shuttle
+closure evidence through variable storage/retrieval would need to
+handle the gate.  Also, `closureCapturedVarsRegime_monotone` and
+its callers would need reworking.
+
+**(b) Carry "latent evidence" for closed gates.**  Add an auxiliary
+invariant (either a fourth conjunct or a separate `StepFR` premise)
+that records `predSat k μ v_cap` for captured vars even when
+`R.lookup? k = none`.  When the gate reopens, the latent evidence
+is promoted.
+
+Since `predSat` is memory-independent, the latent evidence remains
+valid across memory growth — `predSat_mem_noPred_compat` ensures
+that.  The invariant could be:
+
+```
+∀ x qt v, varEnv.lookup x = some qt → ρ.lookup x = some v →
+   ∀ (captured var with guard tag k in closure of v),
+     predSat k μ v_cap
+```
+
+**Risk**: Adds complexity to the proof framework.  Requires threading
+through all StepFR cases.  May need significant engineering effort.
+
+**(c) Prove all entries with tag k alias the owning value.**  Show
+that `runtimeInstantiatesCtx` forces all entries with guard tag `k`
+to bind the same runtime value (or values that share the same
+predicate satisfaction status).
+
+**Assessment**: Investigation found that `runtimeInstantiatesCtx`
+does not directly relate values across different variables.  Tags
+propagate through let-binding (same value), deref (same value), and
+ref aliasing (shared location), but `joinPredicates` drops to
+`noPred` when tags disagree.  A formal single-owner proof would need
+to show that tag propagation through assignment and let-binding
+preserves value identity, which is non-trivial.
+
+**(d) Accept sorry as known architectural limitation.**  Document that
+the closure conjunct transfer for regime growth is a known gap.  The
+sorry in `consistentWithRegime_insert_regime_true` (conjunct 3) would
+remain, and the overall fault-robustness proof would be conditional
+on this gap.
+
+#### Recommendation
+
+Option (a) (gating conjunct 3) is the most principled fix — it makes
+the framework uniformly handle regime growth the same way for all
+three conjuncts.  However, it is also the most invasive, requiring
+changes to the `consistentWithRegime` definition and all its clients.
+
+The decision depends on how much refactoring is acceptable.  If
+modifying `consistentWithRegime` is too costly, option (d) (accept
+sorry) is a pragmatic fallback that still allows the rest of the
+mode 3 proof to proceed.
+
+**All subsequent tasks (predTagsBoundedInCtx threading, false-branch
+transfer lemma, match_iff application) are ON HOLD pending this
+decision**, since the choice of resolution affects whether and how
+those tasks should be implemented.
 
 ### While-Depoison: Same Obligation Per-Iteration
 
