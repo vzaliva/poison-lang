@@ -43,6 +43,47 @@ output.  `joinRegimes` drops the disagreeing entry for `k` (since
 the input regime's state.  Thus `Regime.monotoneStep` between input
 and output is preserved.
 
+### Historical: Bound-Guarded Invariant Attempt
+
+An earlier attempt tried to avoid changing the typechecker by changing
+the invariant itself: make `tagEnvConsistentWithRegime` constrain only
+in-bound tags (tags `k < R.bound`).  Concretely, this meant adding an
+explicit bound guard, e.g.:
+
+```lean
+def tagEnvConsistentWithRegime (tagEnv : TagEnv) (regime : Regime) : Prop :=
+  ∀ k deps, tagEnv.get? k = some ⟨true, deps⟩ →
+    k < regime.bound →
+    regime.lookup? k = some true
+```
+
+or an equivalent `if k < regime.bound then ... else True` formulation.
+This would make a mode 3 branch context "consistent" even when
+`R.lookup? k = none` because `k` is out of bounds.
+
+This approach failed in practice for proof engineering reasons:
+
+1. It pushed a new `k < R.bound` premise into essentially every use of
+   `tagEnvConsistentWithRegime` across the StepFR development (e.g.
+   `stepFR_var`, `stepFR_deref`, and many transport/preservation lemmas),
+   since all of them would now have to prove boundedness whenever they
+   relied on the invariant.
+
+2. Those call sites typically learn `k` only from a lookup
+   `tagEnv.get? k = some ⟨true, deps⟩`, which does not imply
+   `k < R.bound`.  The obligation becomes stuck unless we thread an
+   additional invariant about all predicate tags being in-bound anyway.
+
+3. Once we accepted that proving boundedness of tags returned by
+   `matchGuard` is unavoidable, it was strictly better to keep the
+   original strong invariant and instead fix the typechecker so that
+   branch contexts satisfy it.
+
+Therefore we kept the original definition (no bound guard) and moved
+the burden to (a) synchronizing `R.map` with `L` inside the branch
+typing contexts and (b) proving that `matchGuard` returns in-bound tags
+in the relevant ioFree contexts.
+
 **Why `k < R.bound` holds:** In ioFree mode, `matchGuard` can only
 return tags `k < regime.bound`.  This follows from three facts:
 
