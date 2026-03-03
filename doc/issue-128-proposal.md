@@ -31,20 +31,20 @@ The mismatch occurs in **two** places in the typechecker:
 **Update `R.map` (not `R.bound`) alongside `L`.**
 Insert `k |-> b` in the regime map when inserting `k |-> b` in
 tagEnv.  For tags with `k < R.bound` this makes `R.lookup? k = some b`,
-restoring consistency.  The bound is never modified, so
-`Regime.monotoneStep` (which requires `R'.bound = R.bound`) is
-unaffected.
+restoring consistency.  The bound is never modified.
 
-**Why the invariant does not need weakening:**
+**Note on `Regime.monotoneStep`:**  `Regime.monotoneStep` constrains
+the *input-to-output* regime relationship (i.e., the regime entering
+the if/while vs. the regime leaving it).  The per-branch regimes
+`R[k |-> true]` and `R[k |-> false]` are *intermediate*: they exist
+only inside the branch typing contexts and do not appear in the
+output.  `joinRegimes` drops the disagreeing entry for `k` (since
+`true ≠ false`), so the output regime has `R(k) = none` — exactly
+the input regime's state.  Thus `Regime.monotoneStep` between input
+and output is preserved.
 
-An earlier version of this proposal weakened the invariant by adding a
-`k < regime.bound` guard.  This was abandoned because it propagated
-a new proof obligation to every downstream use site (`stepFR_var`,
-`stepFR_deref`, helper lemmas, etc.) without a clear way to discharge
-`k < regime.bound` at those sites.
-
-Instead, we observe that **in ioFree mode, `matchGuard` can only
-return tags `k < regime.bound`**.  This follows from three facts:
+**Why `k < R.bound` holds:** In ioFree mode, `matchGuard` can only
+return tags `k < regime.bound`.  This follows from three facts:
 
 1. **No fresh tags in ioFree.**  The only fresh-tag generator is
    `typecheckFrand` (`Typecheck.lean:1161`), which throws before
@@ -69,6 +69,47 @@ satisfied.
 - **Mode 3 / while** (`R(k) = none`): the R.map update plus
   `k < R.bound` makes `R.lookup? k = some true`, satisfying the
   strong invariant via `tagEnvConsistentWithRegime_insert_true_with_regime`.
+
+### Symmetry Decision: Both Branches Get R.map Updates
+
+Both the true branch (`R[k |-> true]`) and the false branch
+(`R[k |-> false]`) receive regime map insertions.  This was a
+deliberate design choice:
+
+1. **Semantic faithfulness**: In the true branch we know the guard
+   predicate holds; in the false branch we know it does not hold.
+   Recording both facts in the regime is the faithful representation.
+
+2. **Nested if-expressions**: If a nested `if` in the false branch
+   references the same guard tag `k`, having `R(k) = some false` in
+   the regime allows the typechecker to use mode 2 (known-false)
+   rather than mode 3 (unknown).  Removing the false-branch insertion
+   would lose this information, potentially affecting typing precision
+   for nested conditionals.
+
+3. **Proof obligations are dischargeable**: The false-branch
+   `consistentWithRegime` obligations mirror the true-branch ones.
+   `PredSatLaws.match_iff` gives `b = true ↔ predSat k μ v` for the
+   owning value.  In the false branch (`b = false`), the negation
+   `¬ predSat k μ v` is exactly what `varsRegime.withPred_ok` /
+   `locsRegime.withPred_ok` need for the `b = false → ¬qtypPredHolds`
+   direction.
+
+4. **Output regime is unchanged**: `joinRegimes` drops entries where
+   the two branches disagree.  Since `true ≠ false`, the output
+   regime has `R(k) = none` regardless, so the insertions are purely
+   local to each branch.
+
+**Dependency on tag reuse resolution:** Points 2 and 3 above are
+only sound if the tag reuse caveat (Section 5) can be resolved.
+Setting `R(k) = false` globally inside the false branch asserts
+`¬ predSat k μ v` for **all** entries with guard tag `k`, not just
+the owning one.  If multiple entries share tag `k` but bind different
+runtime values, this assertion may be semantically wrong — not merely
+hard to prove.  If tag reuse cannot be ruled out or controlled, the
+false-branch insertion may need to be dropped (reverting to the
+asymmetric approach where only the true branch gets `R[k |-> true]`
+and the false branch inherits `R` unchanged).
 
 ## 2. Changes to Ott Rules
 
@@ -193,8 +234,8 @@ def tagEnvConsistentWithRegime (tagEnv : TagEnv) (regime : Regime) : Prop :=
   ∀ k deps, tagEnv.get? k = some ⟨true, deps⟩ → regime.lookup? k = some true
 ```
 
-No weakening is needed.  The strong invariant is preserved because
-`matchGuard` only returns in-bound tags in ioFree mode (Section 1).
+The strong invariant is preserved because `matchGuard` only returns
+in-bound tags in ioFree mode (Section 1).
 
 ### Impact on Existing Lemmas
 
@@ -243,28 +284,67 @@ invariant.
 
 ## 5. Proof Obligations for Future `stepFR_ite_mode3` / While-Depoison Work
 
-The items in this section are **not** part of the immediate
-implementation (Sections 2–4).  They document obligations that will
-arise when the mode 3 / while-depoison FR proofs are filled in.
+The items in this section document proof obligations on the
+**critical path** to closing `stepFR_ite_mode3` (the issue #128
+blocker) and the while-depoison FR proof.  Some have been
+implemented (with partial sorry's); the rest must be completed
+to fully resolve the issue.
 
-### Proving `matchGuard` Returns In-Bound Tags
+**Critical path** from issue #128 to resolution (dependency order):
 
-The key enabler for the strong-invariant approach is a lemma
+1. `matchGuard_tag_in_bound` — establishes `k < R.bound` from
+   bounded context tags *(implemented, one sorry in ref case)*.
+2. `tagEnvConsistentWithRegime_insert_true_with_regime` — uses
+   `k < R.bound` to restore the `tagEnvConsistentWithRegime`
+   invariant after inserting into both L and R *(implemented, proven)*.
+3. `consistentWithRegime_insert_regime_{true,false}` — transfers the
+   full `consistentWithRegime` to the extended regime
+   *(true version implemented, closure conjunct sorry'd;
+   false version not yet implemented)*.
+4. `predTagsBoundedInCtx` invariant — threading through StepFR
+   so that (1)'s premises can be discharged at the call site
+   *(not yet implemented)*.
+5. `PredSatLaws.match_iff` application — derives predicate
+   satisfaction from guard evaluation to discharge (3)'s premises
+   *(not yet implemented)*.
+
+**Recommended work order** (highest risk first — fail fast):
+
+1. **Tag reuse caveat** — if multiple entries share guard tag `k`,
+   `PredSatLaws.match_iff` only gives satisfaction for the owning
+   value. If this cannot be resolved, the entire approach may need
+   to be reconsidered. Investigate first.
+2. **`predTagsBoundedInCtx` invariant** — requires threading a new
+   premise through StepFR or deriving it from existing premises.
+   Potentially invasive; assess feasibility early.
+3. **`PredSatLaws.match_iff` application** — should be
+   straightforward once (1) and (2) are resolved.
+4. **Remaining sorry's** — mechanical fixes (ref case non-emptiness,
+   while-depoison per-iteration).
+
+### Proving `matchGuard` Returns In-Bound Tags (Critical Path Step 1)
+
+The **required** bridge for closing `stepFR_ite_mode3` is a lemma
 establishing that `matchGuard` only returns tags within the regime's
-domain in ioFree mode:
+domain in ioFree mode.  Without this, `tagEnvConsistentWithRegime_insert_true_with_regime`
+cannot be applied (it requires `k < R.bound`):
 
 ```lean
-lemma matchGuard_tag_in_bound (ctx : TypeContext) (e : Expr) (k : Tag) (deps : Deps)
-    (fuel : Nat)
-    (hctx : regimeConsistentWithCtx ctx)
-    (hpreds_bounded : ∀ k', predTagInCtx ctx k' → k' < ctx.regime.bound)
-    (hmatch : matchGuard e ctx.memEnv ctx.varEnv fuel = .ok (k, deps)) :
+private lemma matchGuard_tag_in_bound
+    (ctx : TypeContext) (cond : Expr) (k : Tag) (deps : Deps)
+    {fuel : Nat}
+    (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps))
+    (hvar_bounded : ∀ x qt k', ctx.varEnv.lookup x = some qt →
+        qtypGuardTag qt = some k' → k' < ctx.regime.bound)
+    (hmem_bounded : ∀ l qt k', ctx.memEnv.lookup l = some qt →
+        qtypGuardTag qt = some k' → k' < ctx.regime.bound) :
     k < ctx.regime.bound
 ```
 
-The `hpreds_bounded` premise states that all predicate tags currently
-in the context are in-bound.  This needs to be established as an
-invariant preserved by ioFree typechecking:
+The `hvar_bounded` / `hmem_bounded` premises state that all predicate
+guard tags in `varEnv` and `memEnv` are within the regime's bound.
+This needs to be established as an invariant preserved by ioFree
+typechecking:
 
 **Proof strategy** (parallels `typecheck_ioFree_preserves_nextTag`):
 
@@ -284,7 +364,7 @@ showing that `hpreds_bounded` is preserved at each step.  Since
 ioFree never creates predicates, most cases are trivial (predicates
 are inherited or dropped).
 
-### Deriving `consistentWithRegime` for the Extended Regime
+### Deriving `consistentWithRegime` for the Extended Regime (Critical Path Step 3)
 
 ### The Obligation
 
@@ -353,13 +433,18 @@ The derivation chain for the true-branch IH (mode 3 if / while body):
    `consistentWithRegime` already provides witnesses that can be
    transferred.
 
-### Tag Reuse Caveat
+### Tag Reuse Caveat (Biggest Remaining Semantic Risk)
 
 Step 5 above covers the **owning** entry — the one `matchGuard`
 identified.  `consistentWithRegime` requires witnesses for **all**
 entries with guard tag `k`.  This is only straightforward if the
 owning entry is the only one (or all entries with tag `k` share the
 same runtime value).
+
+**This is the biggest remaining semantic risk** for the proposal.
+If it cannot be resolved, the `consistentWithRegime_insert_regime_true`
+transfer lemma (critical path step 3) will remain sorry'd on its
+closure conjunct, and `stepFR_ite_mode3` cannot be fully closed.
 
 The project documentation (`doc/poison-lang-description.tex`,
 "Tag Uniqueness" paragraph and "No variable environment parameter")
@@ -406,37 +491,49 @@ from that iteration.
 
 ### New Lemma: `consistentWithRegime` Under R.map Insert
 
-A transfer lemma is needed for the full `consistentWithRegime`:
+A transfer lemma is needed for the full `consistentWithRegime`.
+With symmetric R.map updates, **both** a true-branch and false-branch
+version are required (or a single lemma parameterized by `b : Bool`):
 
 ```lean
+-- True branch (implemented: conjuncts 1+2 proven, conjunct 3 sorry'd)
 private lemma consistentWithRegime_insert_regime_true
-    (predSat : PredSat) (tm : TagMeaning)
-    (ctx : TypeContext) (regime : Regime)
-    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-    (k : Tag) (deps : Deps)
-    (hcwr : consistentWithRegime predSat regime ctx μ ρ θ)
-    (hk_bound : k < regime.bound)
-    (hk_none : regime.lookup? k = none)
-    -- For each var/loc entry with guard tag k, predicate satisfaction:
+    (predSat : PredSat) (ctx : TypeContext) (R : Regime)
+    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (k : Tag)
+    (hcwr : consistentWithRegime predSat R ctx μ ρ θ)
+    (hk_bound : k < R.bound) (hk_none : R.lookup? k = none)
     (hmem_k : ∀ l qt, ctx.memEnv.lookup l = some qt →
         qtypGuardTag qt = some k →
-        locsRegime predSat { regime with map := regime.map.insert k true } μ θ (l, qt))
+        locsRegime predSat { R with map := R.map.insert k true } μ θ (l, qt))
     (hvar_k : ∀ x qt, ctx.varEnv.lookup x = some qt →
         qtypGuardTag qt = some k →
-        varsRegime predSat { regime with map := regime.map.insert k true } μ ρ (x, qt)) :
-    consistentWithRegime predSat
-      { regime with map := regime.map.insert k true }
-      ctx μ ρ θ := by
-  ...
+        varsRegime predSat { R with map := R.map.insert k true } μ ρ (x, qt)) :
+    consistentWithRegime predSat { R with map := R.map.insert k true } ctx μ ρ θ
+
+-- False branch (not yet implemented — same structure with b = false)
+private lemma consistentWithRegime_insert_regime_false
+    (predSat : PredSat) (ctx : TypeContext) (R : Regime)
+    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (k : Tag)
+    (hcwr : consistentWithRegime predSat R ctx μ ρ θ)
+    (hk_bound : k < R.bound) (hk_none : R.lookup? k = none)
+    (hmem_k : ∀ l qt, ctx.memEnv.lookup l = some qt →
+        qtypGuardTag qt = some k →
+        locsRegime predSat { R with map := R.map.insert k false } μ θ (l, qt))
+    (hvar_k : ∀ x qt, ctx.varEnv.lookup x = some qt →
+        qtypGuardTag qt = some k →
+        varsRegime predSat { R with map := R.map.insert k false } μ ρ (x, qt)) :
+    consistentWithRegime predSat { R with map := R.map.insert k false } ctx μ ρ θ
 ```
 
 The `hmem_k` / `hvar_k` premises are discharged at each call site
-using `PredSatLaws.match_iff` and the guard evaluation result (modulo
-the tag reuse caveat above).
+using `PredSatLaws.match_iff` and the guard evaluation result.
+For the true branch, `match_iff` gives `predSat k μ v`; for the
+false branch, it gives `¬ predSat k μ v`.  Both are modulo the
+tag reuse caveat above.
 
 ## 6. Verification Checklist
 
-### Completed (unblocks issue #128)
+### Completed (typechecker + spec changes, unblocks proof work)
 
 - [x] Modify `typecheckIf` mode 3 in `Typecheck.lean` (Section 3)
 - [x] Modify `runWhileFixpoint` body context in `Typecheck.lean` (Section 3)
@@ -455,15 +552,54 @@ the tag reuse caveat above).
 - [x] Run `make test` — 80/80 pass
 - [x] Run `make lean-build` — compiles (no new sorry's)
 
-### Future proof work (needed when filling in mode 3 / while sorry's)
+### Proof infrastructure (implemented, some sorry's remain)
 
-- [ ] Prove `matchGuard_tag_in_bound`: in ioFree mode with
-      well-formed context, `matchGuard` returns `k < regime.bound`
-      (Section 5; parallels `typecheck_ioFree_preserves_nextTag`)
-- [ ] Add `consistentWithRegime_insert_regime_true` transfer lemma
-      (Section 5)
-- [ ] Resolve tag reuse caveat: single-owner invariant, or hybrid
-      approach (Section 5)
-- [ ] Derive `consistentWithRegime` for mode 3 branch contexts using
-      `PredSatLaws.match_iff` + guard evaluation result
-- [ ] Same derivation for while-depoison body context per-iteration
+- [x] Add `regime_insert_lookup_other` and `regime_insert_lookup_self`
+      helpers for reasoning about `R.map.insert k b` lookups
+      (`FaultRobustnessProofs.lean:150`)
+- [x] Add `matchGuard_ok_tag_from_ctx`: successful `matchGuard` implies
+      the returned tag appears as `qtypGuardTag` in `varEnv` or `memEnv`
+      (`FaultRobustnessProofs.lean:9219`; ref case sorry for LocSet
+      non-emptiness — see below)
+- [x] Add `matchGuard_tag_in_bound`: given bounded context tags,
+      `matchGuard` returns `k < regime.bound`
+      (`FaultRobustnessProofs.lean:9243`; fully proven modulo
+      `matchGuard_ok_tag_from_ctx`)
+- [x] Add `consistentWithRegime_insert_regime_true` transfer lemma
+      (`FaultRobustnessProofs.lean:9268`; conjuncts 1+2 fully proven,
+      conjunct 3 (closures) sorry'd — see tag reuse caveat below)
+- [ ] Add `consistentWithRegime_insert_regime_false` transfer lemma
+      (false-branch analogue; same structure, not yet implemented)
+
+### Remaining sorry's in new lemmas
+
+- [ ] `matchGuard_ok_tag_from_ctx` ref case: need `∃ l, l ∈ ls` for
+      the location set. Follows from `matchGuard_refStep` requiring
+      `ls.isEmpty = false`. Fix: strengthen `ref_match_from_refMatches`
+      invariant to carry non-emptiness witness.
+- [ ] `consistentWithRegime_insert_regime_true` conjunct 3
+      (`closureCapturedVarsRegime`): transfer from R to R' is
+      non-trivial because R' interprets more tags. Needs resolution
+      of the tag reuse caveat (Section 5).
+
+### Remaining work to close `stepFR_ite_mode3` (highest risk first)
+
+- [ ] **Tag reuse caveat resolution** (highest risk — do first):
+      Either prove a single-owner invariant, or adopt a hybrid
+      approach.  If this cannot be resolved, the entire R.map
+      synchronization approach may need to be reconsidered.
+      Blocks closing the closure conjunct sorry in
+      `consistentWithRegime_insert_regime_true` (Section 5).
+- [ ] **`predTagsBoundedInCtx` invariant** (high risk — potentially
+      invasive): Add to StepFR (or derive from existing premises) so
+      `matchGuard_tag_in_bound`'s `hvar_bounded` / `hmem_bounded`
+      premises can be discharged at the call site.
+- [ ] **`consistentWithRegime_insert_regime_false`** (medium risk):
+      False-branch analogue of the true-branch transfer lemma.
+      Same structure; soundness depends on tag reuse resolution.
+- [ ] **`PredSatLaws.match_iff` application** (medium risk):
+      Derive predicate satisfaction from the guard evaluation result
+      to discharge `consistentWithRegime_insert_regime_{true,false}`'s
+      `hmem_k` / `hvar_k` premises for the owning entry.
+- [ ] Same derivation chain for **while-depoison** body context
+      per-iteration.
