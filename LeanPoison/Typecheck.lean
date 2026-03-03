@@ -1060,7 +1060,10 @@ def runWhileFixpoint (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel 
     -- In practice, while loops can't appear in pure contexts, but we preserve ctx.pureCtx for correctness
     let bodyCtxBase : TypeContext := { bodyEnvCtx with nextLoc := guardRes.nextLoc', nextTag := guardRes.nextTag', pureCtx := ctx.pureCtx }
     let bodyCtx := match guardOpt with
-      | some (k, deps) => { bodyCtxBase with tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps) }
+      | some (k, deps) =>
+          { bodyCtxBase with
+            tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps),
+            regime := { bodyCtxBase.regime with map := bodyCtxBase.regime.map.insert k true } }
       | none => bodyCtxBase
 
     -- (3) Typecheck the body
@@ -1736,9 +1739,12 @@ def typecheckIf (mode : EvalMode) (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : 
       | none => do
         -- R(k) = none: conservative fallback (if_depoison_*_R_unknown rules)
         -- Branch pc is poisoned by guard poison
+        -- Sync R.map with L (Issue #128): insert k |-> true/false when branching
         let branchPc := joinPoison ctx.pc p1
-        let ctxTruePoisoned := { ctxTrue with pc := branchPc }
-        let ctxFalsePoisoned := { ctxFalse with pc := branchPc }
+        let regimeTrue := { ctx.regime with map := ctx.regime.map.insert k true }
+        let regimeFalse := { ctx.regime with map := ctx.regime.map.insert k false }
+        let ctxTruePoisoned := { ctxTrue with pc := branchPc, regime := regimeTrue }
+        let ctxFalsePoisoned := { ctxFalse with pc := branchPc, regime := regimeFalse }
 
         let result2 ← typecheckExpr mode ctxTruePoisoned e2 fuel
         let ⟨etyp2, p2, _pred2⟩ := result2.qualType

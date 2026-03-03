@@ -1070,8 +1070,8 @@ pm ; R ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G2 ; L2
 match_guard e1 G S = k with LS
 R(k) = none
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R[k |-> true] ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R[k |-> false] ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
 T2 = ST1 -> ST2 # p' tclosures tcls2
 T3 = ST1 -> ST2 # p'' tclosures tcls3
 p = join p' p''
@@ -1108,8 +1108,8 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p'' tclosures tc
 match_guard e1 G S = k with LS
 R(k) = none
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R[k |-> true] ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R[k |-> false] ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
 T2 = ST1 -> ST2 # p' tpclosures ptcls2
 T3 = ST1 -> ST2 # p'' tpclosures ptcls3
 p = join p' p''
@@ -1146,8 +1146,8 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p'' tpclosures p
 match_guard e1 G S = k with LS
 R(k) = none
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : ref @ LS1 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : ref @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R[k |-> true] ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : ref @ LS1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R[k |-> false] ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : ref @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
 LS = LS1 U LS2
 ----------------------------------  :: if_depoison_ref_R_unknown
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref @ LS :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
@@ -1177,8 +1177,8 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref @ LS2 :> join pc p3 { no_
 match_guard e1 G S = k with LS
 R(k) = none
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R[k |-> true] ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R[k |-> false] ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
 ----------------------------------  :: if_depoison_R_unknown
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
@@ -1271,7 +1271,7 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 
 % Predicate-based while typing rule (when matching predicate found)
 match_guard e1 G S = k with LS
 pure ; R ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexL L i ; indexR R i
-pm ; indexR R i ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexL L i[k |-> true using LS] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i ; indexedR R 2 i
+pm ; (indexR R i)[k |-> true] ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexL L i[k |-> true using LS] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i ; indexedR R 2 i
 indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
 % NOTE(join-policy-while): the memory fixpoint currently uses JoinRestrict
 % (implemented via restrict + JoinG / joinMemEnvs). We may later switch this

@@ -1899,10 +1899,10 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
          res1.qualType.etyp = ETyp.bool ∧
          ∃ res2 : TypeResult,
            let branchPc := joinPoison ctx.pc res1.qualType.poison
-           let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
+           let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k true } }
            typecheckExpr .ioFree ctxTrue e2 (fuel - 1) = .ok res2 ∧
            ∃ res3 : TypeResult,
-             let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
+             let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k false } }
              let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
              typecheckExpr .ioFree ctxFalse' e3 (fuel - 1) = .ok res3 ∧
             res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv' ∧
@@ -2036,7 +2036,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
           · constructor; exact hbool
             simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at htc
             let branchPc := joinPoison ctx.pc p1
-            let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
+            let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k true } }
             cases htc2 : typecheckExpr .ioFree ctxTrue e2 fuel' with
             | error e => rw [htc2] at htc; simp at htc
             | ok result2 =>
@@ -2045,7 +2045,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
               match hq2 : result2.qualType with
               | ⟨etyp2, p2, pred2⟩ =>
               simp only [hq2] at htc
-              let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
+              let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k false } }
               let ctxFalse' := { ctxFalse with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
               cases htc3 : typecheckExpr .ioFree ctxFalse' e3 fuel' with
               | error e => rw [htc3] at htc; cases htc
@@ -3022,6 +3022,66 @@ private lemma joinRegimes_lookup_of_some_some
   rw [if_pos hkjoin]
   simpa [joinRegimes] using hcombine
 
+private lemma joinRegimes_lookup_of_some_disagree
+    (R1 R2 : Regime) (k : Tag)
+    (h1 : R1.lookup? k = some false)
+    (h2 : R2.lookup? k = some true) :
+    (joinRegimes R1 R2).lookup? k = none := by
+  have hk1 : k < R1.bound := by
+    by_contra h
+    unfold Regime.lookup? at h1; simp [h] at h1
+  have hk2 : k < R2.bound := by
+    by_contra h
+    unfold Regime.lookup? at h2; simp [h] at h2
+  have hkmin : k < min R1.bound R2.bound := Nat.lt_min.2 ⟨hk1, hk2⟩
+  have hmap1 : R1.map[k]? = some false := by
+    unfold Regime.lookup? at h1; simp [hk1] at h1; simpa [Std.ExtTreeMap.get?_eq_getElem?] using h1
+  have hmap2 : R2.map[k]? = some true := by
+    unfold Regime.lookup? at h2; simp [hk2] at h2; simpa [Std.ExtTreeMap.get?_eq_getElem?] using h2
+  have hcombine := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
+    (fun _ ob1 ob2 => match ob1, ob2 with | some b1, some b2 => if b1 == b2 then some b1 else none | _, _ => none)
+    k rfl
+  have hf : (fun _ ob1 ob2 => match ob1, ob2 with | some b1, some b2 => if b1 == b2 then some b1 else none | _, _ => none)
+      k (some false) (some true) = none := rfl
+  have hcombine' : (joinRegimes R1 R2).map.get? k = none := by
+    unfold joinRegimes
+    have h := hcombine
+    simp [hmap1, hmap2] at h
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using h
+  unfold Regime.lookup?
+  rw [if_pos (by simpa [joinRegimes] using hkmin)]
+  simp only [joinRegimes]
+  exact hcombine'
+
+private lemma joinRegimes_lookup_of_some_disagree_symm
+    (R1 R2 : Regime) (k : Tag)
+    (h1 : R1.lookup? k = some true)
+    (h2 : R2.lookup? k = some false) :
+    (joinRegimes R1 R2).lookup? k = none := by
+  have hk1 : k < R1.bound := by
+    by_contra h
+    unfold Regime.lookup? at h1; simp [h] at h1
+  have hk2 : k < R2.bound := by
+    by_contra h
+    unfold Regime.lookup? at h2; simp [h] at h2
+  have hkmin : k < min R1.bound R2.bound := Nat.lt_min.2 ⟨hk1, hk2⟩
+  have hmap1 : R1.map[k]? = some true := by
+    unfold Regime.lookup? at h1; simp [hk1] at h1; simpa [Std.ExtTreeMap.get?_eq_getElem?] using h1
+  have hmap2 : R2.map[k]? = some false := by
+    unfold Regime.lookup? at h2; simp [hk2] at h2; simpa [Std.ExtTreeMap.get?_eq_getElem?] using h2
+  have hcombine := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
+    (fun _ ob1 ob2 => match ob1, ob2 with | some b1, some b2 => if b1 == b2 then some b1 else none | _, _ => none)
+    k rfl
+  have hcombine' : (joinRegimes R1 R2).map.get? k = none := by
+    unfold joinRegimes
+    have h := hcombine
+    simp [hmap1, hmap2] at h
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using h
+  unfold Regime.lookup?
+  rw [if_pos (by simpa [joinRegimes] using hkmin)]
+  simp only [joinRegimes]
+  exact hcombine'
+
 private lemma joinRegimes_lookup_of_left_none
     (R1 R2 : Regime) (k : Tag)
     (h1 : R1.lookup? k = none) :
@@ -3117,6 +3177,31 @@ private lemma joinRegimes_lookup_of_right_none
       simpa [joinRegimes] using hkmin
     unfold Regime.lookup?
     simp [hk_join]
+
+private lemma joinRegimes_lookup_comm (R1 R2 : Regime) (k : Tag) :
+    (joinRegimes R1 R2).lookup? k = (joinRegimes R2 R1).lookup? k := by
+  by_cases h1 : R1.lookup? k = none
+  · rw [joinRegimes_lookup_of_left_none R1 R2 k h1]
+    rw [joinRegimes_lookup_of_right_none R2 R1 k]
+    exact h1
+  · obtain ⟨b1, h1⟩ := Option.ne_none_iff_exists'.1 h1
+    by_cases h2 : R2.lookup? k = none
+    · rw [joinRegimes_lookup_of_right_none R1 R2 k h2]
+      rw [joinRegimes_lookup_of_left_none R2 R1 k]
+      exact h2
+    · obtain ⟨b2, h2⟩ := Option.ne_none_iff_exists'.1 h2
+      by_cases heq : b1 = b2
+      · rw [joinRegimes_lookup_of_some_some R1 R2 k b1 h1 (heq ▸ h2)]
+        rw [joinRegimes_lookup_of_some_some R2 R1 k b2 h2 (heq.symm ▸ h1)]
+        exact congr_arg some heq
+      · -- b1 ≠ b2: one true, one false; both joins give none
+        cases b1 <;> cases b2 <;> simp at heq
+        · -- b1 = false, b2 = true: R1 has false, R2 has true
+          rw [joinRegimes_lookup_of_some_disagree R1 R2 k h1 h2,
+              joinRegimes_lookup_of_some_disagree_symm R2 R1 k h2 h1]
+        · -- b1 = true, b2 = false: R1 has true, R2 has false
+          rw [joinRegimes_lookup_of_some_disagree_symm R1 R2 k h1 h2,
+              joinRegimes_lookup_of_some_disagree R2 R1 k h2 h1]
 
 lemma joinRegimes_lookup_some_left
     (R1 R2 : Regime) (k : Tag) (b : Bool) :
@@ -3243,6 +3328,153 @@ private lemma joinRegimes_no_new_left
   have hnone : (joinRegimes R1 R2).lookup? k = none :=
     joinRegimes_lookup_of_left_none R1 R2 k h1none
   exact hjoin hnone
+
+/-- Mode 3 if: when R(k)=none, branch regimes extend R with k|->true/false; join drops k (Issue #128). -/
+private lemma joinRegimes_monotone_mode3
+    (R R2 R3 : Regime) (k : Tag)
+    (hk_none : R.lookup? k = none)
+    (hm2 : Regime.monotoneStep { R with map := R.map.insert k true } R2)
+    (hm3 : Regime.monotoneStep { R with map := R.map.insert k false } R3) :
+    Regime.monotoneStep R (joinRegimes R2 R3) := by
+  refine ⟨?_, ?_, ?_⟩
+  · rw [joinRegimes, hm2.1, hm3.1, Nat.min_self]
+  · intro k' b hkR
+    by_cases hk'_eq : k' = k
+    · subst k'
+      exact absurd (hk_none.symm.trans hkR) (fun heq => Option.some_ne_none b heq.symm)
+    · have hcmp : compare k k' ≠ Ordering.eq := fun heq => hk'_eq ((Nat.compare_eq_eq).1 heq).symm
+      have hk_ext : ({ R with map := R.map.insert k true }).lookup? k' = some b := by
+        simp only [Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]; exact hkR
+      have hk2 := hm2.2.1 k' b hk_ext
+      have hk_ext' : ({ R with map := R.map.insert k false }).lookup? k' = some b := by
+        simp only [Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]; exact hkR
+      have hk3 := hm3.2.1 k' b hk_ext'
+      cases hk2 with
+      | inl h2 =>
+          cases hk3 with
+          | inl h3 => exact Or.inl (joinRegimes_lookup_of_some_some R2 R3 k' b h2 h3)
+          | inr h3 => exact Or.inr (joinRegimes_lookup_of_right_none R2 R3 k' h3)
+      | inr h2 =>
+          exact Or.inr (joinRegimes_lookup_of_left_none R2 R3 k' h2)
+  · intro k' hkjoin
+    have hk1 : R2.lookup? k' ≠ none := joinRegimes_no_new_left R2 R3 k' hkjoin
+    by_cases hk'_eq : k' = k
+    · subst k'
+      -- Extended regime has lookup? k = none when k >= R.bound; else some true/false.
+      -- By monotone 2.2: R2.lookup? k ≠ none → extended.lookup? k ≠ none.
+      -- If k >= R.bound, extended.lookup? k = none, so R2.lookup? k = none.
+      by_cases hk_bound : k < R.bound
+      · have hk2 : ({ R with map := R.map.insert k true }).lookup? k = some true := by
+          unfold Regime.lookup?; simp [hk_bound]
+        have hk3 : ({ R with map := R.map.insert k false }).lookup? k = some false := by
+          unfold Regime.lookup?; simp [hk_bound]
+        have hr2 := hm2.2.1 k true hk2
+        have hr3 := hm3.2.1 k false hk3
+        have hjoin_none : (joinRegimes R2 R3).lookup? k = none := by
+          cases hr2 with
+          | inl h2 =>
+              cases hr3 with
+              | inl h3 => rw [joinRegimes_lookup_comm R2 R3 k]; exact joinRegimes_lookup_of_some_disagree R3 R2 k h3 h2
+              | inr h3 => exact joinRegimes_lookup_of_right_none R2 R3 k h3
+          | inr h2 => exact joinRegimes_lookup_of_left_none R2 R3 k h2
+        exact absurd hjoin_none hkjoin
+      · have hR2_none : R2.lookup? k = none := by
+          by_contra h
+          have := hm2.2.2 k h
+          have hext : ({ R with map := R.map.insert k true }).lookup? k = none := by
+            unfold Regime.lookup?; simp [hk_bound]
+          rw [hext] at this
+          exact this rfl
+        exact absurd (joinRegimes_lookup_of_left_none R2 R3 k hR2_none) hkjoin
+    · have hk_ext_eq : ({ R with map := R.map.insert k true }).lookup? k' = R.lookup? k' := by
+        have hcmp : compare k k' ≠ Ordering.eq := fun heq => hk'_eq ((Nat.compare_eq_eq).1 heq).symm
+        unfold Regime.lookup?
+        simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]
+        simp
+      have hkR : R.lookup? k' ≠ none := by
+        intro h
+        have := hm2.2.2 k' hk1
+        rw [hk_ext_eq, h] at this
+        simp at this
+      exact hkR
+
+/-- When the body regime extends R_base with k|->true (Issue #128), and R_base is monotone from R,
+    the join R ⊓ R' is monotone from R because the join drops k. -/
+private lemma joinRegimes_monotone_while_body_ext
+    (R R_base R' : Regime) (k : Tag)
+    (hmono : Regime.monotoneStep { R_base with map := R_base.map.insert k true } R')
+    (hbase : Regime.monotoneStep R R_base) :
+    Regime.monotoneStep R (joinRegimes R R') := by
+  have hbound : R_base.bound = R.bound := hbase.1
+  refine ⟨?_, ?_, ?_⟩
+  · rw [joinRegimes, hmono.1, hbound, Nat.min_self]
+  · intro k' b hkR
+    have hk_base := hbase.2.1 k' b hkR
+    cases hk_base with
+    | inl hk_base_some =>
+        by_cases hk'_eq : k' = k
+        · subst k'
+          -- Extended has k|->true; use that to get R'.lookup? k, then join gives none (R has b, R' has true/none)
+          have hk_bound : k < R_base.bound := by
+            unfold Regime.lookup? at hkR
+            by_cases h : k < R.bound
+            · rw [hbound]; exact h
+            · simp [h] at hkR
+          have hext : ({ R_base with map := R_base.map.insert k true }).lookup? k = some true := by
+            unfold Regime.lookup?; simp [hk_bound]
+          have hk' := hmono.2.1 k true hext
+          cases hk' with
+          | inl hsome =>
+              by_cases hb : b = true
+              · subst hb; exact Or.inl (joinRegimes_lookup_of_some_some R R' k true hkR hsome)
+              · have hb' : b = false := Or.resolve_right (Bool.dichotomy b) hb
+                subst hb'
+                exact Or.inr (joinRegimes_lookup_of_some_disagree R R' k hkR hsome)
+          | inr hnone => exact Or.inr (joinRegimes_lookup_of_right_none R R' k hnone)
+        · have hk_ext : ({ R_base with map := R_base.map.insert k true }).lookup? k' = some b := by
+            have hcmp : compare k k' ≠ Ordering.eq := fun heq => hk'_eq ((Nat.compare_eq_eq).1 heq).symm
+            unfold Regime.lookup?
+            simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]
+            exact hk_base_some
+          have hk' := hmono.2.1 k' b hk_ext
+          cases hk' with
+          | inl hsome => exact Or.inl (joinRegimes_lookup_of_some_some R R' k' b hkR hsome)
+          | inr hnone => exact Or.inr (joinRegimes_lookup_of_right_none R R' k' hnone)
+    | inr hk_base_none =>
+        by_cases hk'_eq : k' = k
+        · subst k'
+          -- R_base doesn't have k, R_ext has k|->true; use hmono.2.1
+          have hk_bound : k < R_base.bound := by
+            unfold Regime.lookup? at hkR
+            by_cases h : k < R.bound
+            · rw [hbound]; exact h
+            · simp [h] at hkR
+          have hk_ext : ({ R_base with map := R_base.map.insert k true }).lookup? k = some true := by
+            unfold Regime.lookup?
+            simp [hk_bound]
+          have hk' := hmono.2.1 k true hk_ext
+          cases hk' with
+          | inl hsome =>
+              by_cases hb : b = true
+              · subst hb
+                exact Or.inl (joinRegimes_lookup_of_some_some R R' k true hkR hsome)
+              · have hb' : b = false := Or.resolve_right (Bool.dichotomy b) hb
+                subst hb'
+                -- R has false, R' has true: join gives none (values disagree)
+                exact Or.inr (joinRegimes_lookup_of_some_disagree R R' k hkR hsome)
+          | inr hnone =>
+              exact Or.inr (joinRegimes_lookup_of_right_none R R' k hnone)
+        · have hk_ext_none : ({ R_base with map := R_base.map.insert k true }).lookup? k' = none := by
+            have hcmp : compare k k' ≠ Ordering.eq := fun heq => hk'_eq ((Nat.compare_eq_eq).1 heq).symm
+            unfold Regime.lookup?
+            simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]
+            exact hk_base_none
+          have hR'_none : R'.lookup? k' = none := by
+            by_contra hR'n
+            exact hmono.2.2 k' hR'n hk_ext_none
+          exact Or.inr (joinRegimes_lookup_of_right_none R R' k' hR'_none)
+  · intro k' hkjoin
+    exact joinRegimes_no_new_left R R' k' hkjoin
 
 private lemma joinRegimes_monotone_of_monotone
     (R R1 R2 : Regime)
@@ -3681,33 +3913,47 @@ private lemma runWhileFixpoint_regime_mono
               set bodyCtxBase : TypeContext := { bodyEnvCtx with nextLoc := guardRes.nextLoc', nextTag := guardRes.nextTag', pureCtx := ctx.pureCtx } with hbodyCtxBase
               set bodyCtx : TypeContext :=
                 match guardOpt with
-                | some (k, deps) => { bodyCtxBase with tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps) }
+                | some (k, deps) =>
+                    { bodyCtxBase with
+                      tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps),
+                      regime := { bodyCtxBase.regime with map := bodyCtxBase.regime.map.insert k true } }
                 | none => bodyCtxBase with hbodyCtx
               have htc_body : typecheck .ioFree bodyCtx e2 fuel' = .ok bodyRes := by
                 simp [typecheck, bodyCtx]
                 cases guardOpt <;> simp at hbody <;> simp <;> apply hbody
               have hbody_mono_local : Regime.monotoneStep bodyCtx.regime bodyRes.regime' :=
                 IH fuel' (lt_add_one fuel') e2 bodyCtx bodyRes htc_body
-              have hctx_body_mono : Regime.monotoneStep ctx.regime bodyRes.regime' := by
-                have hbodyCtx_regime :
-                    bodyCtx.regime = (if pureGuard then ctx.regime else guardRes.regime') := by
-                  cases guardOpt <;> simp [hbodyCtx, hbodyCtxBase, hbodyEnvCtx, hbodyRegime]
-                cases hpg : pureGuard with
-                | false =>
-                    have hbody_from_guard : Regime.monotoneStep guardRes.regime' bodyRes.regime' := by
-                      simpa [hpg, hbodyCtx_regime] using hbody_mono_local
-                    exact regimeMonotone_trans hctx_guard_mono hbody_from_guard
-                | true =>
-                    simpa [hpg, hbodyCtx_regime] using hbody_mono_local
               set newPc : Poison := joinPoison ctx.pc p2 with hnewPc
               set restrictedBodyEnv : MemoryTypeEnv := restrictMemEnv bodyRes.memEnv' ctx.memEnv with hrestrictedBodyEnv
               set newMemEnv : MemoryTypeEnv := joinMemEnvs ctx.memEnv restrictedBodyEnv with hnewMemEnv
               set newTagEnv : TagEnv := joinTagEnvs ctx.tagEnv bodyRes.tagEnv' with hnewTagEnv
               set newRegime : Regime := joinRegimes ctx.regime bodyRes.regime' with hnewRegime
               have hnewRegime_mono : Regime.monotoneStep ctx.regime newRegime := by
-                apply joinRegimes_monotone_of_monotone ctx.regime ctx.regime bodyRes.regime'
-                · exact regimeMonotone_refl ctx.regime
-                · exact hctx_body_mono
+                cases guardOpt with
+                | none =>
+                    have hctx_body_mono : Regime.monotoneStep ctx.regime bodyRes.regime' := by
+                      have hbodyCtx_regime :
+                          bodyCtx.regime = (if pureGuard then ctx.regime else guardRes.regime') := by
+                        simp [hbodyCtx, hbodyCtxBase, hbodyEnvCtx, hbodyRegime]
+                      cases hpg : pureGuard with
+                      | false =>
+                          have hbody_from_guard : Regime.monotoneStep guardRes.regime' bodyRes.regime' := by
+                            simpa [hpg, hbodyCtx_regime] using hbody_mono_local
+                          exact regimeMonotone_trans hctx_guard_mono hbody_from_guard
+                      | true =>
+                          simpa [hpg, hbodyCtx_regime] using hbody_mono_local
+                    exact joinRegimes_monotone_of_monotone ctx.regime ctx.regime bodyRes.regime'
+                      (regimeMonotone_refl ctx.regime) hctx_body_mono
+                | some val =>
+                    have hbody_regime : bodyCtx.regime = { bodyRegime with map := bodyRegime.map.insert val.1 true } := by
+                      simp [hbodyCtx, hbodyCtxBase, hbodyEnvCtx, hbodyRegime]
+                    have hbase : Regime.monotoneStep ctx.regime bodyRegime := by
+                      cases pureGuard <;> simp [hbodyRegime]
+                      · exact hctx_guard_mono
+                      · exact regimeMonotone_refl ctx.regime
+                    have hmono' : Regime.monotoneStep { bodyRegime with map := bodyRegime.map.insert val.1 true } bodyRes.regime' := by
+                      rw [← hbody_regime]; exact hbody_mono_local
+                    exact joinRegimes_monotone_while_body_ext ctx.regime bodyRegime bodyRes.regime' val.1 hmono' hbase
               by_cases hfixpoint :
                   newMemEnv == ctx.memEnv && newPc == ctx.pc && newTagEnv == ctx.tagEnv && newRegime.bound == ctx.regime.bound
               · simp at hfixpoint
@@ -3957,46 +4203,51 @@ private lemma typecheckIf_regime_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fue
               have hm3 := IH fuel' h_fuel e3 ctxFalse res3 htc3'
               simpa [hregime, ctxFalse] using hm3
           | inr h_rest2 =>
-              cases h_rest2 with
-              | inl h3 =>
-                  rcases h3 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, htc2, res3, htc3, _hmem, _htag, _hloc, _hnexttag, hregime, _hpoison⟩
-                  let branchPc := joinPoison ctx.pc res1.qualType.poison
-                  let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
-                  let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
-                  let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
-                  have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by
-                    simpa [typecheck, ctxTrue, branchPc] using htc2
-                  have htc3' : typecheck .ioFree ctxFalse' e3 fuel' = .ok res3 := by
-                    simpa [typecheck, ctxFalse', ctxFalse, branchPc] using htc3
-                  have hm2 := IH fuel' h_fuel e2 ctxTrue res2 htc2'
-                  have hm3 := IH fuel' h_fuel e3 ctxFalse' res3 htc3'
-                  have hjoin : Regime.monotoneStep ctx.regime (joinRegimes res2.regime' res3.regime') :=
-                    joinRegimes_monotone_of_monotone ctx.regime res2.regime' res3.regime' hm2 hm3
-                  simpa [hregime] using hjoin
-              | inr h4 =>
-                  obtain ⟨⟨err, _hmatch_fail⟩, res1, htc1, _hbool, res2, htc2, res3, htc3, _hmem, _htag, _hloc, _hnexttag, hregime, _hpoison⟩ := h4
-                  let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
-                  let pc' := joinPoison ctx.pc res1.qualType.poison
-                  let ctx'' := { ctx1 with pc := pc' }
-                  let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
-                  have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by
-                    simpa [typecheck] using htc1
-                  have htc2' : typecheck .ioFree ctx'' e2 fuel' = .ok res2 := by
-                    simpa [typecheck, ctx'', ctx1, pc'] using htc2
-                  have htc3' : typecheck .ioFree ctxForE3 e3 fuel' = .ok res3 := by
-                    simpa [typecheck, ctxForE3, ctx'', ctx1, pc'] using htc3
-                  have hm1 := IH fuel' h_fuel e1 ctx res1 htc1'
-                  have hm2_local := IH fuel' h_fuel e2 ctx'' res2 htc2'
-                  have hm3_local := IH fuel' h_fuel e3 ctxForE3 res3 htc3'
-                  have hm2' : Regime.monotoneStep res1.regime' res2.regime' := by
-                    simpa [ctx'', ctx1] using hm2_local
-                  have hm3' : Regime.monotoneStep res1.regime' res3.regime' := by
-                    simpa [ctxForE3, ctx'', ctx1] using hm3_local
-                  have hm2 : Regime.monotoneStep ctx.regime res2.regime' := regimeMonotone_trans hm1 hm2'
-                  have hm3 : Regime.monotoneStep ctx.regime res3.regime' := regimeMonotone_trans hm1 hm3'
-                  have hjoin : Regime.monotoneStep ctx.regime (joinRegimes res2.regime' res3.regime') :=
-                    joinRegimes_monotone_of_monotone ctx.regime res2.regime' res3.regime' hm2 hm3
-                  simpa [hregime] using hjoin
+              rcases h_rest2 with hmode3 | hmode4
+              · -- Mode 3: regime.lookup? k = none (first disjunct)
+                obtain ⟨k, deps, _, hR_none, res1, _htc1, _hbool, res2, htc2, res3, htc3, _hmem, _htag, _hloc, _hnexttag, hregime, _hpoison⟩ := hmode3
+                let branchPc := joinPoison ctx.pc res1.qualType.poison
+                let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+                let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k false } }
+                let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by
+                  simpa [typecheck, ctxTrue, branchPc] using htc2
+                have htc3' : typecheck .ioFree ctxFalse' e3 fuel' = .ok res3 := by
+                  simpa [typecheck, ctxFalse', ctxFalse, branchPc] using htc3
+                have hm2 := IH fuel' h_fuel e2 ctxTrue res2 htc2'
+                have hm3 := IH fuel' h_fuel e3 ctxFalse' res3 htc3'
+                have hjoin : Regime.monotoneStep ctx.regime (joinRegimes res2.regime' res3.regime') :=
+                  joinRegimes_monotone_mode3 ctx.regime res2.regime' res3.regime' k hR_none hm2 hm3
+                simpa [hregime] using hjoin
+              · -- Mode 4: matchGuard fails. Destructure manually to work around let-bindings in the type.
+                have ⟨_h_err, h_res⟩ := hmode4
+                have ⟨res1, htc1, _hbool, h_res2⟩ := h_res
+                have ⟨res2, h_body⟩ := h_res2
+                have ⟨htc2, h_res3⟩ := h_body
+                have ⟨res3, h_body3⟩ := h_res3
+                have ⟨htc3, _hmem, _htag, _hloc, _hnexttag, hregime, _hpoison⟩ := h_body3
+                let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+                let pc' := joinPoison ctx.pc res1.qualType.poison
+                let ctx'' := { ctx1 with pc := pc' }
+                let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by
+                  simpa [typecheck] using htc1
+                have htc2' : typecheck .ioFree ctx'' e2 fuel' = .ok res2 := by
+                  simpa [typecheck, ctx'', ctx1, pc'] using htc2
+                have htc3' : typecheck .ioFree ctxForE3 e3 fuel' = .ok res3 := by
+                  simpa [typecheck, ctxForE3, ctx'', ctx1, pc'] using htc3
+                have hm1 := IH fuel' h_fuel e1 ctx res1 htc1'
+                have hm2_local := IH fuel' h_fuel e2 ctx'' res2 htc2'
+                have hm3_local := IH fuel' h_fuel e3 ctxForE3 res3 htc3'
+                have hm2' : Regime.monotoneStep res1.regime' res2.regime' := by
+                  simpa [ctx'', ctx1] using hm2_local
+                have hm3' : Regime.monotoneStep res1.regime' res3.regime' := by
+                  simpa [ctxForE3, ctx'', ctx1] using hm3_local
+                have hm2 : Regime.monotoneStep ctx.regime res2.regime' := regimeMonotone_trans hm1 hm2'
+                have hm3 : Regime.monotoneStep ctx.regime res3.regime' := regimeMonotone_trans hm1 hm3'
+                have hjoin : Regime.monotoneStep ctx.regime (joinRegimes res2.regime' res3.regime') :=
+                  joinRegimes_monotone_of_monotone ctx.regime res2.regime' res3.regime' hm2 hm3
+                simpa [hregime] using hjoin
 
 private lemma typecheckUnaryOp_regime_mono (ctx : TypeContext) (op : UnaryOp) (e : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
@@ -4678,7 +4929,10 @@ private lemma runWhileFixpoint_preserves_nextTag
               set bodyCtxBase : TypeContext := { bodyEnvCtx with nextLoc := guardRes.nextLoc', nextTag := guardRes.nextTag', pureCtx := ctx.pureCtx } with hbodyCtxBase
               set bodyCtx : TypeContext :=
                 match guardOpt with
-                | some (k, deps) => { bodyCtxBase with tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps) }
+                | some (k, deps) =>
+                    { bodyCtxBase with
+                      tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps),
+                      regime := { bodyCtxBase.regime with map := bodyCtxBase.regime.map.insert k true } }
                 | none => bodyCtxBase with hbodyCtx
               have htc_body : typecheck .ioFree bodyCtx e2 fuel' = .ok bodyRes := by
                 simp [typecheck, bodyCtx]
@@ -5061,60 +5315,65 @@ private lemma typecheckIf_preserves_nextTag (ctx : TypeContext) (e1 e2 e3 : Expr
                 _ = ctxFalse.nextTag := h3
                 _ = ctx.nextTag := by simp [ctxFalse]
           | inr h_rest2 =>
-              cases h_rest2 with
-              | inl h3 =>
-                  rcases h3 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, htc2, res3, htc3, _hmem, _htag, _hloc, hnexttag, _hregime, _hpoison⟩
-                  let branchPc := joinPoison ctx.pc res1.qualType.poison
-                  let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
-                  let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
-                  let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
-                  have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by
-                    simpa [typecheck, ctxTrue, branchPc] using htc2
-                  have htc3' : typecheck .ioFree ctxFalse' e3 fuel' = .ok res3 := by
-                    simpa [typecheck, ctxFalse', ctxFalse, branchPc] using htc3
-                  have h2 := IH fuel' h_fuel e2 ctxTrue res2 htc2'
-                  have h3 := IH fuel' h_fuel e3 ctxFalse' res3 htc3'
-                  have hres2_ctx : res2.nextTag' = ctx.nextTag := by
-                    calc
-                      res2.nextTag' = ctxTrue.nextTag := h2
-                      _ = ctx.nextTag := by simp [ctxTrue]
-                  have hres3_ctx : res3.nextTag' = ctx.nextTag := by
-                    calc
-                      res3.nextTag' = ctxFalse'.nextTag := h3
-                      _ = res2.nextTag' := by simp [ctxFalse']
-                      _ = ctx.nextTag := hres2_ctx
+              rcases h_rest2 with hmode3 | hmode4
+              · -- Mode 3: regime.lookup? k = none (first disjunct)
+                obtain ⟨k, deps, _hmatch, _hreg, res1, _htc1, _hbool, res2, htc2, res3, htc3, _hmem, _htag, _hloc, hnexttag, _hregime, _hpoison⟩ := hmode3
+                let branchPc := joinPoison ctx.pc res1.qualType.poison
+                let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+                let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k false } }
+                let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by
+                  simpa [typecheck, ctxTrue, branchPc] using htc2
+                have htc3' : typecheck .ioFree ctxFalse' e3 fuel' = .ok res3 := by
+                  simpa [typecheck, ctxFalse', ctxFalse, branchPc] using htc3
+                have h2 := IH fuel' h_fuel e2 ctxTrue res2 htc2'
+                have h3 := IH fuel' h_fuel e3 ctxFalse' res3 htc3'
+                have hres2_ctx : res2.nextTag' = ctx.nextTag := by
                   calc
-                    res.nextTag' = max res2.nextTag' res3.nextTag' := hnexttag
-                    _ = ctx.nextTag := by simp [hres2_ctx, hres3_ctx]
-              | inr h4 =>
-                  obtain ⟨⟨err, _hmatch_fail⟩, res1, htc1, _hbool, res2, htc2, res3, htc3, _hmem, _htag, _hloc, hnexttag, _hregime, _hpoison⟩ := h4
-                  let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
-                  let pc' := joinPoison ctx.pc res1.qualType.poison
-                  let ctx'' := { ctx1 with pc := pc' }
-                  let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
-                  have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by
-                    simpa [typecheck] using htc1
-                  have htc2' : typecheck .ioFree ctx'' e2 fuel' = .ok res2 := by
-                    simpa [typecheck, ctx'', ctx1, pc'] using htc2
-                  have htc3' : typecheck .ioFree ctxForE3 e3 fuel' = .ok res3 := by
-                    simpa [typecheck, ctxForE3, ctx'', ctx1, pc'] using htc3
-                  have h1_eq := IH fuel' h_fuel e1 ctx res1 htc1'
-                  have h2_eq := IH fuel' h_fuel e2 ctx'' res2 htc2'
-                  have h3_eq := IH fuel' h_fuel e3 ctxForE3 res3 htc3'
-                  have hres2_ctx : res2.nextTag' = ctx.nextTag := by
-                    calc
-                      res2.nextTag' = ctx''.nextTag := h2_eq
-                      _ = ctx1.nextTag := by simp [ctx'']
-                      _ = res1.nextTag' := by simp [ctx1]
-                      _ = ctx.nextTag := h1_eq
-                  have hres3_ctx : res3.nextTag' = ctx.nextTag := by
-                    calc
-                      res3.nextTag' = ctxForE3.nextTag := h3_eq
-                      _ = res2.nextTag' := by simp [ctxForE3]
-                      _ = ctx.nextTag := hres2_ctx
+                    res2.nextTag' = ctxTrue.nextTag := h2
+                    _ = ctx.nextTag := by simp [ctxTrue]
+                have hres3_ctx : res3.nextTag' = ctx.nextTag := by
                   calc
-                    res.nextTag' = max res2.nextTag' res3.nextTag' := hnexttag
-                    _ = ctx.nextTag := by simp [hres2_ctx, hres3_ctx]
+                    res3.nextTag' = ctxFalse'.nextTag := h3
+                    _ = res2.nextTag' := by simp [ctxFalse']
+                    _ = ctx.nextTag := hres2_ctx
+                calc
+                  res.nextTag' = max res2.nextTag' res3.nextTag' := hnexttag
+                  _ = ctx.nextTag := by simp [hres2_ctx, hres3_ctx]
+              · -- Mode 4: matchGuard fails. Destructure manually to work around let-bindings in the type.
+                have ⟨_h_err, h_res⟩ := hmode4
+                have ⟨res1, htc1, _hbool, h_res2⟩ := h_res
+                have ⟨res2, h_body⟩ := h_res2
+                have ⟨htc2, h_res3⟩ := h_body
+                have ⟨res3, h_body3⟩ := h_res3
+                have ⟨htc3, _hmem, _htag, _hloc, hnexttag, _hregime, _hpoison⟩ := h_body3
+                let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+                let pc' := joinPoison ctx.pc res1.qualType.poison
+                let ctx'' := { ctx1 with pc := pc' }
+                let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by
+                  simpa [typecheck] using htc1
+                have htc2' : typecheck .ioFree ctx'' e2 fuel' = .ok res2 := by
+                  simpa [typecheck, ctx'', ctx1, pc'] using htc2
+                have htc3' : typecheck .ioFree ctxForE3 e3 fuel' = .ok res3 := by
+                  simpa [typecheck, ctxForE3, ctx'', ctx1, pc'] using htc3
+                have h1_eq := IH fuel' h_fuel e1 ctx res1 htc1'
+                have h2_eq := IH fuel' h_fuel e2 ctx'' res2 htc2'
+                have h3_eq := IH fuel' h_fuel e3 ctxForE3 res3 htc3'
+                have hres2_ctx : res2.nextTag' = ctx.nextTag := by
+                  calc
+                    res2.nextTag' = ctx''.nextTag := h2_eq
+                    _ = ctx1.nextTag := by simp [ctx'']
+                    _ = res1.nextTag' := by simp [ctx1]
+                    _ = ctx.nextTag := h1_eq
+                have hres3_ctx : res3.nextTag' = ctx.nextTag := by
+                  calc
+                    res3.nextTag' = ctxForE3.nextTag := h3_eq
+                    _ = res2.nextTag' := by simp [ctxForE3]
+                    _ = ctx.nextTag := hres2_ctx
+                calc
+                  res.nextTag' = max res2.nextTag' res3.nextTag' := hnexttag
+                  _ = ctx.nextTag := by simp [hres2_ctx, hres3_ctx]
 
 private lemma typecheckUnaryOp_preserves_nextTag (ctx : TypeContext) (op : UnaryOp) (e : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
@@ -5879,7 +6138,10 @@ private lemma runWhileFixpoint_nextTag_mono_normal
               set bodyCtxBase : TypeContext := { bodyEnvCtx with nextLoc := guardRes.nextLoc', nextTag := guardRes.nextTag', pureCtx := ctx.pureCtx } with hbodyCtxBase
               set bodyCtx : TypeContext :=
                 match guardOpt with
-                | some (k, deps) => { bodyCtxBase with tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps) }
+                | some (k, deps) =>
+                    { bodyCtxBase with
+                      tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps),
+                      regime := { bodyCtxBase.regime with map := bodyCtxBase.regime.map.insert k true } }
                 | none => bodyCtxBase with hbodyCtx
               have htc_body : typecheck .normal bodyCtx e2 fuel' = .ok bodyRes := by
                 simp [typecheck, bodyCtx]
@@ -6579,8 +6841,10 @@ private lemma typecheckIf_nextTag_mono_normal (ctx : TypeContext) (e1 e2 e3 : Ex
                 | none =>
                     simp [hreg] at htc
                     let branchPc := joinPoison ctx.pc p1
-                    let ctxTruePoisoned := { ctxTrue with pc := branchPc }
-                    let ctxFalsePoisoned := { ctxFalse with pc := branchPc }
+                    let regimeTrue := { ctx.regime with map := ctx.regime.map.insert k true }
+                    let regimeFalse := { ctx.regime with map := ctx.regime.map.insert k false }
+                    let ctxTruePoisoned := { ctxTrue with pc := branchPc, regime := regimeTrue }
+                    let ctxFalsePoisoned := { ctxFalse with pc := branchPc, regime := regimeFalse }
                     cases hte2 : typecheckExpr .normal ctxTruePoisoned e2 fuel' with
                     | error err2 =>
                         erw [hte2] at htc
@@ -7060,25 +7324,43 @@ private lemma typecheckIf_nextLoc_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fu
             _ ≤ res3.nextLoc' := IH3
             _ = res.nextLoc' := hnextloc.symm
         | inr h_rest2 =>
-          cases h_rest2 with
-          | inl h3 =>
-            -- R(k) = none
-            rcases h3 with ⟨k, deps, _, _, res1, htc1, _, res2, htc2, res3, htc3, _, _, hnextloc, _hnexttag, _⟩
-            have IH2 := IH fuel' h_fuel e2 _ res2 htc2
+          rcases h_rest2 with hmode3 | hmode4
+          · -- R(k) = none
+            obtain ⟨k, deps, _, _, res1, htc1, _, res2, htc2, res3, htc3, _, _, hnextloc, _hnexttag, _⟩ := hmode3
+            let branchPc := joinPoison ctx.pc res1.qualType.poison
+            let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+            have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by simpa [typecheck, ctxTrue, branchPc] using htc2
+            have IH2 := IH fuel' h_fuel e2 ctxTrue res2 htc2'
             calc ctx.nextLoc
-              _ ≤ res2.nextLoc' := by omega
+              _ ≤ res2.nextLoc' := by simpa [ctxTrue] using IH2
               _ ≤ max res2.nextLoc' res3.nextLoc' := Nat.le_max_left _ _
               _ = res.nextLoc' := hnextloc.symm
-          | inr h4 =>
-            -- Standard (matchGuard fails)
-            obtain ⟨⟨err, _hmatch_fail⟩, res1, htc1, _, res2, htc2, res3, htc3, _, _, hnextloc, _hnexttag, _⟩ := h4
-            have IH1 := IH fuel' h_fuel e1 ctx res1 htc1
-            have IH2 := IH fuel' h_fuel e2 _ res2 htc2
+          · -- Standard (matchGuard fails). Destructure manually to work around let-bindings in the type.
+            have ⟨_h_err, h_res⟩ := hmode4
+            have ⟨res1, htc1, _hbool, h_res2⟩ := h_res
+            have ⟨res2, h_body⟩ := h_res2
+            have ⟨htc2, h_res3⟩ := h_body
+            have ⟨res3, h_body3⟩ := h_res3
+            -- Mode 4: mem, tag, nextLoc, nextTag, regime, poison (4th=nextLoc, 5th=nextTag)
+            have ⟨htc3, _hmem, _htag, _hloc, hnextloc, _hregime, _hpoison⟩ := h_body3
+            let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+            let pc' := joinPoison ctx.pc res1.qualType.poison
+            let ctx'' := { ctx1 with pc := pc' }
+            let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+            have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by simpa [typecheck] using htc1
+            have htc2' : typecheck .ioFree ctx'' e2 fuel' = .ok res2 := by simpa [typecheck, ctx'', ctx1, pc'] using htc2
+            have htc3' : typecheck .ioFree ctxForE3 e3 fuel' = .ok res3 := by simpa [typecheck, ctxForE3, ctx'', ctx1, pc'] using htc3
+            have IH1 := IH fuel' h_fuel e1 ctx res1 htc1'
+            have IH2 := IH fuel' h_fuel e2 ctx'' res2 htc2'
+            have h_loc1 : ctx.nextLoc ≤ res1.nextLoc' := IH1
+            have h_loc2 : res1.nextLoc' ≤ res2.nextLoc' := by
+              have := IH2
+              simpa [ctx'', ctx1] using this
             calc ctx.nextLoc
-              _ ≤ res1.nextLoc' := IH1
-              _ ≤ res2.nextLoc' := IH2
+              _ ≤ res1.nextLoc' := h_loc1
+              _ ≤ res2.nextLoc' := h_loc2
               _ ≤ max res2.nextLoc' res3.nextLoc' := Nat.le_max_left _ _
-              _ = res.nextLoc' := hnextloc.symm
+              _ = res.nextLoc' := _hloc.symm
 
 lemma joinTypeResults_nextLoc_eq_max
   (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) :
@@ -7654,7 +7936,10 @@ private lemma runWhileFixpoint_nextLoc_mono
             set bodyCtxBase : TypeContext := { bodyEnvCtx with nextLoc := guardRes.nextLoc', nextTag := guardRes.nextTag', pureCtx := ctx.pureCtx } with hbodyCtxBase
             set bodyCtx : TypeContext :=
               match guardOpt with
-              | some (k, deps) => { bodyCtxBase with tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps) }
+              | some (k, deps) =>
+                  { bodyCtxBase with
+                    tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps),
+                    regime := { bodyCtxBase.regime with map := bodyCtxBase.regime.map.insert k true } }
               | none => bodyCtxBase with hbodyCtx
             have htc_body : typecheck .ioFree bodyCtx e2 fuel' = .ok bodyRes := by
               simp [typecheck, bodyCtx]
@@ -12366,11 +12651,13 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                       let ctxTrue : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          regime := { ctx.regime with map := ctx.regime.map.insert k true } }
                       let ctxFalse' : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
+                          regime := { ctx.regime with map := ctx.regime.map.insert k false }
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag' }
                       have htc2' :
@@ -12845,11 +13132,13 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                       let ctxTrue : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          regime := { ctx.regime with map := ctx.regime.map.insert k' true } }
                       let ctxFalse' : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
+                          regime := { ctx.regime with map := ctx.regime.map.insert k' false }
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag' }
                       have htc2' :
@@ -12859,9 +13148,19 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                           typecheckExpr .ioFree { ctxFalse' with pureCtx := true } e3 (fuel' - 1) = .ok res3 := by
                         simpa [ctxFalse'] using htc3
                       have hk2 : ctxTrue.regime.lookup? k = some b := by
-                        simpa [ctxTrue] using hk
+                        by_cases hkeq : k = k'
+                        · subst hkeq
+                          exfalso
+                          exact Option.noConfusion (_hregNone.symm.trans hk)
+                        · have hcmp : compare k' k ≠ Ordering.eq := fun heq => hkeq ((Nat.compare_eq_eq).1 heq).symm
+                          simp only [ctxTrue, Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]; exact hk
                       have hk3 : ctxFalse'.regime.lookup? k = some b := by
-                        simpa [ctxFalse'] using hk
+                        by_cases hkeq : k = k'
+                        · subst hkeq
+                          exfalso
+                          exact Option.noConfusion (_hregNone.symm.trans hk)
+                        · have hcmp : compare k' k ≠ Ordering.eq := fun heq => hkeq ((Nat.compare_eq_eq).1 heq).symm
+                          simp only [ctxFalse', Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]; exact hk
                       have hreg2 :
                           res2.regime'.lookup? k = some b :=
                         ih (fuel' - 1) hltSub ctxTrue e2 pe2 res2 hpe2 htc2' k b hk2
@@ -13317,11 +13616,13 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                       let ctxTrue : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          regime := { ctx.regime with map := ctx.regime.map.insert k' true } }
                       let ctxFalse' : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
+                          regime := { ctx.regime with map := ctx.regime.map.insert k' false }
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag' }
                       have htc2' :
@@ -13846,11 +14147,13 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                       let ctxTrue : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          regime := { ctx.regime with map := ctx.regime.map.insert k' true } }
                       let ctxFalse' : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
+                          regime := { ctx.regime with map := ctx.regime.map.insert k' false }
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag' }
                       have htc2' :
@@ -13864,9 +14167,15 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                       have hlookupCtxFalse : ctxFalse'.memEnv.lookup l = some qt := by
                         simpa [ctxFalse'] using hlookup
                       have hRdefTrue : ctxTrue.regime.lookup? k ≠ none := by
-                        simpa [ctxTrue] using hRdef
+                        by_cases hkeq : k = k'
+                        · subst hkeq; simp only [ctxTrue, Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert_self]; intro _; contradiction
+                        · have hcmp : compare k' k ≠ Ordering.eq := fun heq => hkeq ((Nat.compare_eq_eq).1 heq).symm
+                          simp only [ctxTrue, Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]; exact hRdef
                       have hRdefFalse : ctxFalse'.regime.lookup? k ≠ none := by
-                        simpa [ctxFalse'] using hRdef
+                        by_cases hkeq : k = k'
+                        · subst hkeq; simp only [ctxFalse', Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert_self]; intro _; contradiction
+                        · have hcmp : compare k' k ≠ Ordering.eq := fun heq => hkeq ((Nat.compare_eq_eq).1 heq).symm
+                          simp only [ctxFalse', Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]; exact hRdef
                       have hlookup2 :
                           res2.memEnv'.lookup l = some qt :=
                         ih (fuel' - 1) hltSub ctxTrue e2 pe2 res2 hpe2 htc2' l qt k hlookupCtxTrue hguard hRdefTrue
