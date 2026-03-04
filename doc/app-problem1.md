@@ -115,6 +115,41 @@ regime evidence in `agreeValueUnder_same` (FaultRobustnessProofs.lean).  Without
 the closure and peClosure cases of `agreeValueUnder_same` have no proof, which blocks
 `agreeOnClean_same_config` → `stepFR_app`.
 
+### Dependency diagram (before)
+
+```
+agreeValueUnder_same (closure case)
+│
+│  needs: agreeCapturedEnv ... σcap env env
+│           ├─ typing evidence for σcap's variables
+│           └─ regime evidence for σcap's variables
+│
+├── Source 1: valueHasETyp ──────────────────────────┐
+│   └─ inverts typing judgement                      │
+│      └─ yields tenv ∈ tcls                         │
+│           ├─ henv  (typing for tenv's vars)        │ independent
+│           └─ hcover (coverage for tenv's vars)     │ existentials
+│                                                    │
+├── Source 2: consistentWithRegime (conjunct 3) ─────┘
+│   └─ closureCapturedVarsRegime
+│      └─ inverts deepValueQTypProperty
+│         └─ yields σcap_deep ∈ tcls
+│              ├─ capturedVarsRegimeProperty (σcap_deep, env)
+│              └─ deep recursion (σcap_deep, env)
+│
+╔══════════════════════════════════════════════════════╗
+║  tenv and σcap_deep are independently existential.   ║
+║  No guarantee tenv = σcap_deep.                      ║
+║                                                      ║
+║  - typing evidence covers tenv's variables only      ║
+║  - regime evidence covers σcap_deep's variables only ║
+║  - agreeCapturedEnv needs BOTH for ONE σcap          ║
+║  ─────────────────────────────────────────────────── ║
+║  Cannot pick σcap = tenv (missing regime evidence)   ║
+║  Cannot pick σcap = σcap_deep (missing typing)       ║
+╚══════════════════════════════════════════════════════╝
+```
+
 ## 3. Relationship to Historical Sigma Mismatch
 
 This problem is a **new manifestation of the same root cause** documented in
@@ -141,25 +176,25 @@ re-exposing the sigma mismatch.
   pattern-matched `agreeValueUnder` inductive; unclear if transport lemmas survive
 - Path D (direct member evidence) — solved transport, not construction
 
-## 4. Solution: Bundle Typing + Regime Evidence
+## 4. Solution: Strengthen `closureCapturedVarsRegime` in Place
 
-Strengthen the third conjunct of `consistentWithRegime` (and `valueConsistentWithRegime`)
-so that the `deepValueQTypProperty` existential member carries **both** regime evidence and
-typing evidence (`henv` + `hcover` from `valueHasETyp`).  This is achieved by using a
-stronger predicate `P` that conjoins `capturedVarsRegimeProperty` with typing conditions.
+Strengthen `closureCapturedVarsRegime` so that its `deepValueQTypProperty` predicate `P`
+conjoins `capturedVarsRegimeProperty` with typing conditions.  This makes every
+`closureCapturedVarsRegime` proof carry **both** regime evidence and typing evidence
+(`henv` + `hcover` from `valueHasETyp`) for the **same** existential `σcap` member.
 
 This leaves `deepValueQTypProperty` unchanged (it's parameterized by abstract `P`) and
 doesn't touch the `agreeValueUnder` inductive.  It extends Path D's proven philosophy of
 synchronizing on a specific member early and carrying evidence directly — Path D did this
-for `agreeValueUnder` at lambda sites; this approach does it for `consistentWithRegime` /
-`valueConsistentWithRegime` at every step.
+for `agreeValueUnder` at lambda sites; this approach does it for `closureCapturedVarsRegime`
+at every step.
 
 Step theorems already prove both regime and typing properties; the main cost is ensuring the
 same member is used for both.
 
 ### Proposed code changes
 
-**Step 1 — new definitions** (RegimeConsistency.lean, after `capturedVarsRegimeProperty`):
+**Step 1 — new helper definitions** (RegimeConsistency.lean):
 
 ```lean
 -- NEW: "σcap matches ρcap under θ" — typing evidence for captured variables
@@ -169,35 +204,42 @@ def capturedVarsTypingProperty (θ : RealizationMap)
   (∀ y qt, σcap.lookup y = some qt → ∃ v, ρcap.lookup y = some v) ∧
   (∀ y qt v, σcap.lookup y = some qt →
     ρcap.lookup y = some v → valueHasETyp θ v qt.etyp)
-
--- NEW: bundle regime + typing for the same σcap member chosen by deepValueQTypProperty
-def capturedVarsRegimeAndTypingProperty (predSat : PredSat) (R : Regime)
-    (μ : Memory) (θ : RealizationMap)
-    (σcap : CapturedVarEnv) (ρcap : VarEnv) : Prop :=
-  capturedVarsRegimeProperty predSat R μ σcap ρcap ∧
-  capturedVarsTypingProperty θ σcap ρcap
-
--- NEW: strengthened wrapper — carries both regime and typing evidence
-inductive closureCapturedVarsRegimeAndTyping (predSat : PredSat) (R : Regime)
-    (qt : QTyp) (μ : Memory) (θ : RealizationMap) (v : Value) : Prop where
-  | intro :
-      deepValueQTypProperty (capturedVarsRegimeAndTypingProperty predSat R μ θ) qt v →
-      closureCapturedVarsRegimeAndTyping predSat R qt μ θ v
 ```
 
-**Step 2 — generic forgetful map** (RegimeConsistency.lean, after `deepValueQTypProperty`):
+The `Nodup` requirement is always satisfiable: every `FnTClosure`/`PFnTClosure` member's
+`σcap` is produced by `VarTypeEnv.toCaptured`, which calls `ExtTreeMap.toList` on a
+sorted tree map — keys are unique by construction.
+
+The monotonicity lemma already exists as `deepValueQTypProperty_monotone_P` (private, in
+FaultRobustnessProofs.lean).  It should be moved to RegimeConsistency.lean and made
+non-private:
 
 ```lean
--- NEW: if P implies Q pointwise, then deepValueQTypProperty P implies deepValueQTypProperty Q
+-- MOVED from FaultRobustnessProofs.lean; made non-private
 lemma deepValueQTypProperty_mono
     (h : ∀ σ ρ, P σ ρ → Q σ ρ) :
     deepValueQTypProperty P qt v → deepValueQTypProperty Q qt v
 ```
 
-This gives backward compatibility: any code that only needs `closureCapturedVarsRegime`
-can recover it via `deepValueQTypProperty_mono` (dropping the typing conjunct).
+This provides backward compatibility: any site that only needs the regime part can
+project it out via `deepValueQTypProperty_mono (fun _ _ h => h.1)`.
 
-**Step 3 — modify `consistentWithRegime`** (RegimeConsistency.lean):
+**Step 2 — strengthen `closureCapturedVarsRegime`** (RegimeConsistency.lean):
+
+```lean
+-- CHANGED: added θ; P strengthened from regime-only to regime ∧ typing
+inductive closureCapturedVarsRegime (predSat : PredSat) (R : Regime)
+    (qt : QTyp) (μ : Memory) (θ : RealizationMap) (v : Value) : Prop where
+  | intro :
+      deepValueQTypProperty (fun σcap ρcap =>
+        capturedVarsRegimeProperty predSat R μ σcap ρcap ∧
+        capturedVarsTypingProperty θ σcap ρcap) qt v →
+      closureCapturedVarsRegime predSat R qt μ θ v
+```
+
+**Step 3 — thread `θ` through consumers** (signature changes only):
+
+`consistentWithRegime` already has `θ` — it just threads it to `closureCapturedVarsRegime`:
 
 ```lean
 def consistentWithRegime (predSat : PredSat) (R : Regime) (ctx : TypeContext)
@@ -206,93 +248,167 @@ def consistentWithRegime (predSat : PredSat) (R : Regime) (ctx : TypeContext)
   ...
   (∀ x qt v, ctx.varEnv.lookup x = some qt →
      ρ.lookup x = some v →
-     closureCapturedVarsRegimeAndTyping predSat R qt μ θ v)  -- ← CHANGED (was closureCapturedVarsRegime)
+     closureCapturedVarsRegime predSat R qt μ θ v)  -- ← now receives θ
 ```
 
-**Step 4 — modify `valueConsistentWithRegime`** (FaultRobustness.lean):
+`valueConsistentWithRegime` and `trustedVarsClosureRegimeInit` gain `θ` and pass it
+through to `closureCapturedVarsRegime`:
 
 ```lean
+-- CHANGED: added θ parameter, threaded to closureCapturedVarsRegime
 inductive valueConsistentWithRegime (predSat : PredSat) (R : Regime)
-    (qt : QTyp) (μ : Memory) (θ : RealizationMap)            -- ← CHANGED: added θ
-    (v : Value) : Prop where
+    (qt : QTyp) (μ : Memory) (θ : RealizationMap) (v : Value) : Prop where
   | noTag :
       qtypGuardTag qt = none →
-      closureCapturedVarsRegimeAndTyping predSat R qt μ θ v → -- ← CHANGED
+      closureCapturedVarsRegime predSat R qt μ θ v →
       valueConsistentWithRegime predSat R qt μ θ v
-  -- (all other constructors: same change in last argument)
+  -- (all other constructors: same pattern)
   ...
-```
 
-This is necessary because `consistentWithRegime_closure_body_start` obtains
-`closureCapturedVarsRegime` for the argument value `vArg` by extracting it from
-`valueConsistentWithRegime` (via `valueConsistentWithRegime_closureCapturedVarsRegime`).
-If the extraction only gives plain `closureCapturedVarsRegime` but the body context
-needs the bundle, the member-matching problem resurfaces at the construction site.
-Making `valueConsistentWithRegime` carry the bundle avoids this.
-
-**Step 5 — strengthen `trustedVarsClosureRegimeInit`** (FaultRobustness.lean:692):
-
-```lean
+-- CHANGED: added θ parameter
 inductive trustedVarsClosureRegimeInit
     (predSat : PredSat) (R : Regime) (s : InputSpec) (ctx : TypeContext)
-    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)             -- ← CHANGED: added θ
-    : Prop where
+    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop where
   | intro :
       (∀ x qt v, ctx.varEnv.lookup x = some qt →
         ¬ s.vars.hasKey x → ρ.lookup x = some v →
-        closureCapturedVarsRegimeAndTyping predSat R qt μ θ v)  -- ← CHANGED
-      → trustedVarsClosureRegimeInit predSat R s ctx μ ρ θ
+        closureCapturedVarsRegime predSat R qt μ θ v) →
+      trustedVarsClosureRegimeInit predSat R s ctx μ ρ θ
 ```
+
+`valueConsistentWithRegime` must carry the strengthened `closureCapturedVarsRegime`
+(not just the old regime-only version) because `consistentWithRegime_closure_body_start`
+extracts it for the argument value `vArg` via
+`valueConsistentWithRegime_closureCapturedVarsRegime`.  If extraction only gave the
+regime part, the member-matching problem would resurface when building the body context.
+
+### Dependency diagram (after)
+
+```
+agreeValueUnder_same (closure case)
+│
+│  needs: agreeCapturedEnv ... σcap env env
+│           ├─ typing evidence for σcap's variables
+│           └─ regime evidence for σcap's variables
+│
+└── Single source: consistentWithRegime (conjunct 3)
+    └─ closureCapturedVarsRegime               [STRENGTHENED]
+       └─ inverts deepValueQTypProperty
+          └─ yields ONE σcap ∈ tcls
+               │
+               ├─ capturedVarsRegimeProperty (σcap, env)  ─── regime  ✓
+               │    └─ derives MemberVarsRegimeEvidence
+               │
+               ├─ capturedVarsTypingProperty (σcap, env)  ─── typing  ✓
+               │    ├─ henv  (valueHasETyp for σcap's vars)
+               │    └─ hcover (coverage for σcap's vars)
+               │
+               └─ deep recursion (σcap, env)
+                    └─ derives MemberCvcrEvidence
+                       (via deepValueQTypProperty_mono,
+                        projecting regime conjunct)
+
+╔══════════════════════════════════════════════════════╗
+║  Single σcap carries both typing and regime evidence ║
+║  → agreeCapturedEnv gets everything it needs         ║
+║  → no member-matching required                       ║
+╚══════════════════════════════════════════════════════╝
+```
+
+#### Backward compatibility
+
+Sites that only need the regime part project it out locally:
+
+```
+closureCapturedVarsRegime (strengthened, P = regime ∧ typing)
+│
+├── (full P) ─── agreeValueUnder_same         [uses both conjuncts]
+│
+└── deepValueQTypProperty_mono (h := fun _ _ ⟨r, _⟩ => r)
+    └── deepValueQTypProperty regime-only     [for existing consumers]
+```
+
+No parallel definition hierarchy — one `closureCapturedVarsRegime`, one invariant.
 
 ### How this solves the member-matching problem
 
-When `agreeValueUnder_same` inverts `closureCapturedVarsRegimeAndTyping` on a closure
-`v = Value.closure x body env`, the `deepValueQTypProperty.closure` case yields a **single**
-`σcap` with:
+`agreeValueUnder_same` must gain `closureCapturedVarsRegime` as an explicit hypothesis
+(currently it has none — the proof relied on the false `closure_same_config_tenv_env`):
+
+```lean
+private lemma agreeValueUnder_same
+  (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap)
+  (qt : QTyp) (v : Value)
+  (hclean : qtypCleanUnder R qt)
+  (htyp : valueHasETyp θ v qt.etyp)
+  (hcvcr : closureCapturedVarsRegime predSat R qt μ θ v) :  -- ← NEW
+  agreeValueUnder predSat R μ μ θ θ qt v v
+```
+
+The caller (`agreeOnClean_same_config`) extracts `hcvcr` from `consistentWithRegime`'s
+conjunct 3, which now stores the strengthened `closureCapturedVarsRegime`.
+
+When `agreeValueUnder_same` inverts `hcvcr` on a closure `v = Value.closure x body env`,
+the `deepValueQTypProperty.closure` case yields a **single** `σcap` with:
 
 - `FnTClosure.regular x body σcap ∈ tcls`
 - `capturedVarsRegimeProperty predSat R μ σcap env` → derives `MemberVarsRegimeEvidence`
-- `∀ y qt v, σcap.lookup y = some qt → env.lookup y = some v → valueHasETyp θ v qt.etyp`
-  → provides `htyp1`, `htyp2` for `agreeCapturedEnv.cons_clean`
-- `∀ y qt, σcap.lookup y = some qt → ∃ v, env.lookup y = some v`
-  → provides `hlookup1`, `hlookup2` for `agreeCapturedEnv`
-- Deep recursion → derives `MemberCvcrEvidence` (via `deepValueQTypProperty_mono` to
-  extract the regime part) and recursive `agreeValueUnder_same` via IH
+- `capturedVarsTypingProperty θ σcap env`:
+  - `∀ y qt v, σcap.lookup y = some qt → env.lookup y = some v → valueHasETyp θ v qt.etyp`
+    → provides `htyp1`, `htyp2` for `agreeCapturedEnv.cons_clean`
+  - `∀ y qt, σcap.lookup y = some qt → ∃ v, env.lookup y = some v`
+    → provides `hlookup1`, `hlookup2` for `agreeCapturedEnv`
+- Deep recursion: for each captured `(y, qt_y, v_y)` in `(σcap, env)`:
+  - `closureCapturedVarsRegime predSat R qt_y μ θ v_y` — sub-evidence for the recursive call
+  - `valueHasETyp θ v_y qt_y.etyp` — from `capturedVarsTypingProperty`
+  - → recursive `agreeValueUnder_same` call with these as inputs
 
 All from the **same** `σcap`.  No member-matching needed.
 
-### Why `valueConsistentWithRegime` must also be strengthened
+### Resolving the mutual recursion (agreeCapturedEnv_same_toCaptured sorry)
 
-If only `consistentWithRegime` is strengthened (option 1), the app body context construction
-(`consistentWithRegime_closure_body_start`) still needs the bundle for the argument value
-`vArg`.  Currently, `h_arg_cvcr` is derived from `valueConsistentWithRegime` via
-`valueConsistentWithRegime_closureCapturedVarsRegime`.  If `valueConsistentWithRegime` only
-carries plain `closureCapturedVarsRegime`, we'd need to reconstruct the bundle by combining
-it with the separate `valueHasETyp` from the `StepFR` IH — which re-exposes the
-member-matching problem (two independent existentials for the same value).
+Adding `closureCapturedVarsRegime` as input resolves a second problem: the existing
+`agreeCapturedEnv_same_toCaptured` is admitted (sorry) to break mutual recursion with
+`agreeValueUnder_same`.
 
-Making `valueConsistentWithRegime` carry the bundle (option 2) avoids this: the bundle
-flows from the IH through `valueConsistentWithRegime`, through extraction, into
-`consistentWithRegime_closure_body_start`, without ever needing to re-combine independent
-existentials.
+With the new signature, the recursion follows the **structure of the
+`closureCapturedVarsRegime` evidence tree** rather than cycling between two lemmas:
 
-### Why construction is feasible
+```
+agreeValueUnder_same (hcvcr : closureCapturedVarsRegime qt v)
+│
+├── non-closure: trivial (deepValueQTypProperty.nonClosure)
+│
+└── closure v = Value.closure x body env:
+    invert hcvcr → σcap, P(σcap, env), sub-evidence for each captured v_y
+    │
+    └── build agreeCapturedEnv ... σcap env env by iterating σcap:
+        for each (y, qt_y) ∈ σcap with env.lookup y = v_y:
+        │
+        └── agreeValueUnder_same                  [structural recursion]
+              (hcvcr := sub-evidence for v_y)     [strictly smaller sub-tree]
+              (htyp := from capturedVarsTypingProperty)
+```
 
-The bundle survives all standard transformations applied in step theorems:
+This is well-founded structural induction on the `deepValueQTypProperty` tree.
+No separate `agreeCapturedEnv_same_toCaptured` lemma is needed — the captured env
+agreement is built inline, and each recursive call receives a strictly smaller sub-tree
+of the input evidence.  The `ctx` and `ρ` parameters also drop from the signature (they
+were only needed to connect to `consistentWithRegime`; now the evidence is self-contained).
 
-- **Closure creation** (`typecheckFn`): `tcls` is a singleton — only one member, bundle
-  is trivially constructed from `runtimeInstantiatesCtx` + existing regime evidence.
-- **Joins** (`joinETyps`): original member persists in merged `tcls` via
-  `mergeFnTClosures`; the evidence references the original member, not `tcls`.
-- **Regime monotonicity** (`Regime.monotoneStep`): the typing part
-  (`capturedVarsTypingProperty`) is regime-independent; the regime part uses
-  `closureCapturedVarsRegime_monotone`.
-- **Memory transport** (`transport_μ`): the typing part is memory-independent; the regime
-  part uses `closureCapturedVarsRegime_transport_μ`.
-- **Map extension** (`wfExtendsMap θ θ'`): `valueHasETyp` is monotone in `θ` (lookup
-  extension preserves all constructors); the regime part doesn't mention `θ`.
-- **Non-closure results** (int, bool, unit, string, loc): `deepValueQTypProperty.nonClosure`
-  applies — no member needed, bundle is vacuously satisfied.
+### Why the strengthened invariant survives all transformations
+
+The two conjuncts of `P = regime ∧ typing` have complementary stability properties —
+between them, every standard transformation preserves both:
+
+| Transformation | Regime conjunct | Typing conjunct |
+|---|---|---|
+| Regime monotonicity (`Regime.monotoneStep`) | Uses existing `_monotone` | Regime-independent — preserved for free |
+| Memory transport (`transport_μ`) | Uses existing `_transport_μ` | Memory-independent — preserved for free |
+| Map extension (`wfExtendsMap θ θ'`) | θ-independent — preserved for free | `valueHasETyp` is monotone in θ |
+| Joins (`joinETyps`) | Original member persists in merged `tcls` | Same member, same evidence |
+| Closure creation (`typecheckFn`) | Singleton `tcls` — trivial | From `runtimeInstantiatesCtx` |
+| Non-closure values | `deepValueQTypProperty.nonClosure` — vacuous | Same — vacuous |
 
 ## 5. Affected Lemmas
 
@@ -300,18 +416,24 @@ The bundle survives all standard transformations applied in step theorems:
 
 | Definition | File | Change |
 |---|---|---|
-| `consistentWithRegime` | RegimeConsistency.lean | Conjunct 3 → `closureCapturedVarsRegimeAndTyping` |
-| `valueConsistentWithRegime` | FaultRobustness.lean | Add `θ` param; all constructors → `...AndTyping` |
-| `trustedVarsClosureRegimeInit` | FaultRobustness.lean | Add `θ` param; body → `...AndTyping` |
+| `closureCapturedVarsRegime` | RegimeConsistency.lean | Add `θ` param; strengthen `P` to `regime ∧ typing` |
+| `MemberCvcrEvidence` | FaultRobustness.lean | Add `θ` param (uses `closureCapturedVarsRegime`) |
+| `consistentWithRegime` | RegimeConsistency.lean | Thread `θ` to `closureCapturedVarsRegime` (already has `θ`) |
+| `valueConsistentWithRegime` | FaultRobustness.lean | Add `θ` param (flows to `closureCapturedVarsRegime`) |
+| `trustedVarsClosureRegimeInit` | FaultRobustness.lean | Add `θ` param (flows to `closureCapturedVarsRegime`) |
+| `agreeValueUnder` | FaultRobustness.lean | `clean_internal_arrow`/`clean_internal_parrow` constructors: `MemberCvcrEvidence` gains `θ` (`θ₁`/`θ₂` already in scope) |
 
 ### New definitions
 
 | Definition | File | Purpose |
 |---|---|---|
 | `capturedVarsTypingProperty` | RegimeConsistency.lean | Typing evidence (`Nodup` + `hcover` + `henv`) |
-| `capturedVarsRegimeAndTypingProperty` | RegimeConsistency.lean | Conjunction of regime + typing |
-| `closureCapturedVarsRegimeAndTyping` | RegimeConsistency.lean | Wrapper using `deepValueQTypProperty` |
-| `deepValueQTypProperty_mono` | RegimeConsistency.lean | Generic `P → Q` forgetful map |
+
+### Moved definitions
+
+| Definition | From | To | Change |
+|---|---|---|---|
+| `deepValueQTypProperty_monotone_P` | FaultRobustnessProofs.lean (private) | RegimeConsistency.lean (public) | Renamed `deepValueQTypProperty_mono` |
 
 ### Lemmas deleted (false)
 
@@ -320,29 +442,51 @@ The bundle survives all standard transformations applied in step theorems:
 | `closure_same_config_tenv_env` | TypeSafety.lean |
 | `peClosure_same_config_tenv_env` | TypeSafety.lean |
 
+### Lemmas deleted (subsumed)
+
+| Lemma | File | Reason |
+|---|---|---|
+| `agreeCapturedEnv_same_toCaptured` | FaultRobustnessProofs.lean | Was sorry; subsumed by structural recursion within `agreeValueUnder_same` |
+
 ### Lemmas rewritten
 
 | Lemma | File | Change |
 |---|---|---|
-| `agreeValueUnder_same` | FaultRobustnessProofs.lean | Closure/peClosure cases invert bundle |
-| `agreeCapturedEnv_same_toCaptured` | FaultRobustnessProofs.lean | Likely replaced by direct version |
+| `agreeValueUnder_same` | FaultRobustnessProofs.lean | Add `hcvcr` hypothesis; drop `ctx`/`ρ` params; structural recursion on evidence tree (see §4) |
+| `agreeOnClean_same_config` | FaultRobustnessProofs.lean | Extract `closureCapturedVarsRegime` from `consistentWithRegime` and pass to `agreeValueUnder_same` |
 
 ### Lemmas requiring signature/body updates (ripple from definition changes)
 
-| Lemma / site | File | Nature of change |
+**Signature-only updates** (thread `θ` into `closureCapturedVarsRegime` / `valueConsistentWithRegime` / `MemberCvcrEvidence`):
+
+| Lemma / site | File |
+|---|---|
+| `valueConsistentWithRegime_closureCapturedVarsRegime` | FaultRobustnessProofs.lean |
+| `consistentRegimeSpec_implies_consistentWithRegime` | FaultRobustnessProofs.lean |
+| `consistentWithRegime_closure_body_start` | FaultRobustnessProofs.lean |
+| `memberCvcrEvidence_of_toCaptured` | FaultRobustnessProofs.lean |
+| `FaultRobustnessSpec` / `FaultRobustnessSpec_ioFree` | FaultRobustnessProofs.lean |
+| All `agreeValueUnder` pattern matches | FaultRobustnessProofs.lean |
+
+**Transport/monotonicity lemmas** (update to preserve both conjuncts):
+
+| Lemma | File | Nature of change |
 |---|---|---|
-| `consistentRegimeSpec_implies_consistentWithRegime` | FaultRobustnessProofs.lean | Build bundled conjunct 3 |
-| `consistentWithRegime_closure_body_start` | FaultRobustnessProofs.lean | Accept/pass bundled `h_arg_cvcr` |
-| `consistentWithRegime_monotone` | FaultRobustnessProofs.lean | Use `...AndTyping_monotone` |
-| `valueConsistentWithRegime_closureCapturedVarsRegime` | FaultRobustnessProofs.lean | Extraction via `deepValueQTypProperty_mono` |
-| `closureCapturedVarsRegime_monotone` | FaultRobustnessProofs.lean | Mirror for `...AndTyping` version |
-| `closureCapturedVarsRegime_transport_μ` | FaultRobustnessProofs.lean | Mirror for `...AndTyping` version |
-| `closureCapturedVarsRegime_transport_etyp` | FaultRobustnessProofs.lean | Mirror for `...AndTyping` (used in pred/poison normalization ~line 18740) |
-| `closureCapturedVarsRegime_transport_pred` | FaultRobustnessProofs.lean | Mirror for `...AndTyping` (same normalization paths) |
-| *(new)* `closureCapturedVarsRegimeAndTyping_transport_θ` | FaultRobustnessProofs.lean | Transport across `wfExtendsMap θ θ'` (uses `valueHasETyp_extends`) |
-| `memberVarsRegimeEvidence_of_toCaptured` | FaultRobustnessProofs.lean | May need updating |
-| `memberCvcrEvidence_of_toCaptured` | FaultRobustnessProofs.lean | May need updating |
-| `join_transport_consistentWithRegime` | FaultRobustnessProofs.lean | Pass bundle through monotonicity |
-| `joinTypeResults_transport_consistentWithRegime_from_member` | FaultRobustnessProofs.lean | Pass bundle through member transport |
-| Step theorems (`stepFR_*`) | FaultRobustnessProofs.lean | Produce bundled `valueConsistentWithRegime` |
-| `FaultRobustnessSpec` / `FaultRobustnessSpec_ioFree` | FaultRobustnessProofs.lean | Pass strengthened `trustedVarsClosureRegimeInit` |
+| `closureCapturedVarsRegime_monotone` | FaultRobustnessProofs.lean | Preserve typing conjunct (regime-independent, trivial) |
+| `closureCapturedVarsRegime_transport_μ` | FaultRobustnessProofs.lean | Preserve typing conjunct (memory-independent, trivial) |
+| `closureCapturedVarsRegime_transport_etyp` | FaultRobustnessProofs.lean | Preserve typing conjunct |
+| `closureCapturedVarsRegime_transport_pred` | FaultRobustnessProofs.lean | Preserve typing conjunct |
+| *(new)* `closureCapturedVarsRegime_transport_θ` | FaultRobustnessProofs.lean | New: transport across `wfExtendsMap θ θ'` (uses `valueHasETyp_extends`) |
+| `consistentWithRegime_monotone` | FaultRobustnessProofs.lean | Flows from `closureCapturedVarsRegime_monotone` |
+| `join_transport_consistentWithRegime` | FaultRobustnessProofs.lean | Flows from transport lemmas |
+| `joinTypeResults_transport_consistentWithRegime_from_member` | FaultRobustnessProofs.lean | Flows from transport lemmas |
+
+**Step theorems** (`stepFR_*`):
+
+| Category | Lemmas | Change |
+|---|---|---|
+| Inherit from IH | `stepFR_seq`, `stepFR_vlet`, `stepFR_assign`, `stepFR_kwhile` | Thread `θ'` (already in scope) |
+| Non-closure results | `stepFR_literal`, `stepFR_op`, `stepFR_unaryop`, `stepFR_newRef`, `stepFR_ite_*` | `deepValueQTypProperty.nonClosure` makes both conjuncts vacuous |
+| Closure creation | `stepFR_fn`, `stepFR_pfn` | Singleton `tcls` — build typing conjunct from `runtimeInstantiatesCtx` |
+| Value extraction | `stepFR_var`, `stepFR_deref` | Extract strengthened `closureCapturedVarsRegime` from `consistentWithRegime` |
+| **Beneficiary** | `stepFR_app` | Goes from *stuck* to *provable* |
