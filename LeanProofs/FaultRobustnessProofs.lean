@@ -30,6 +30,18 @@ def resultAgreesIfClean (predSat : PredSat) (R : Regime) (μ₀ μ₁ : Memory)
   qtypCleanUnder R qt →
     agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁
 
+-- When qt.poison = true and qt.pred = noPred, qtypCleanUnder is impossible,
+-- so resultAgreesIfClean is vacuously true.
+lemma resultAgreesIfClean_of_poison_noPred
+    {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory}
+    {θ₀ θ₁ : RealizationMap} {qt : QTyp} {o₀ o₁ : Value}
+    (hp : qt.poison = true) (hpred : qt.pred = Predicate.noPred) :
+    resultAgreesIfClean predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ := by
+  intro hcu
+  cases hcu with
+  | clean hpoison => simp [hp] at hpoison
+  | guard k htag _ _ => simp [qtypGuardTag, hpred] at htag
+
 -- Tag-environment consistency for a regime: tags known true in the typing
 -- context must be true in the regime interpretation.
 def tagEnvConsistentWithRegime (tagEnv : TagEnv) (regime : Regime) : Prop :=
@@ -17500,6 +17512,242 @@ private lemma applyPFnTClosure_regular_inv_of_mapM_mem
     ⟨result3, htc_body, hsub, hfirst_eq⟩
   exact ⟨fuelBody, first, result3, happly, hfuel, htc_body, hsub, hfirst_eq⟩
 
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Parrow (PFnTClosure) versions of the per-member preservation lemmas.
+-- These mirror the FnTClosure versions above, using applyPFnTClosure.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+private lemma applyPFnTClosure_ioFree_extern_fails
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
+  (r : TypeResult) :
+  applyPFnTClosure .ioFree (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx result2 fuel ≠ .ok r := by
+  intro h
+  cases fuel with
+  | zero =>
+    unfold applyPFnTClosure at h
+    simp at h
+  | succ _ =>
+    unfold applyPFnTClosure at h
+    have hcond : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := rfl
+    simp only [hcond, ite_true, bind, Except.bind] at h
+    exact absurd h (Except.error_ne_ok "Extern function application forbidden in ioFree mode" r)
+
+private lemma applyPFnTClosure_regular_body_wfTypeResult
+  (ctx : TypeContext) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuelBody : Nat)
+  (x : Name) (pbody : PExpr) (tenv : CapturedVarEnv)
+  (hwf1 : wfTypeResult result1)
+  (ctx'' : TypeContext)
+  (hctx'' : ctx'' = { ctx with
+      pc := joinPoison p (joinPoison ctx.pc p1)
+      memEnv := result1.memEnv'
+      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+        ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+      tagEnv := result1.tagEnv'
+      pureCtx := true
+      nextTag := result1.nextTag'
+      nextLoc := result1.nextLoc'
+      regime := result1.regime' })
+  (result3 : TypeResult)
+  (htc : typecheckExpr .ioFree ctx'' (PExpr.toExpr pbody) fuelBody = .ok result3) :
+  wfTypeResult result3 := by
+  have hwf_ctx'' : wfTypeContext ctx'' := by
+    rw [hctx'']
+    simp only [wfTypeContext]
+    exact hwf1
+  exact typecheckExpr_preserves_wfTypeResult ctx'' (PExpr.toExpr pbody) fuelBody result3 hwf_ctx''
+    (by simpa [typecheck] using htc)
+
+private lemma applyPFnTClosure_ok_wfTypeResult
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (hwf1 : wfTypeResult result1)
+  (tcl : PFnTClosure)
+  (r : TypeResult)
+  (happly :
+    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+  wfTypeResult r := by
+  cases fuel with
+  | zero =>
+    unfold applyPFnTClosure at happly
+    simp at happly
+  | succ fuelBody =>
+    cases tcl with
+    | regular x pbody tenv =>
+      rcases applyPFnTClosure_regular_inv ctx st1 st2 p p1 argEtyp argPoison argPred result1 fuelBody
+          x pbody tenv r (by simpa using happly) with
+        ⟨result3, htc_body, _hsub, hfirst⟩
+      have hwf3 := applyPFnTClosure_regular_body_wfTypeResult ctx p p1 argEtyp argPoison argPred
+        result1 fuelBody x pbody tenv hwf1
+        { ctx with
+          pc := joinPoison p (joinPoison ctx.pc p1)
+          memEnv := result1.memEnv'
+          varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+          tagEnv := result1.tagEnv'
+          pureCtx := true
+          nextTag := result1.nextTag'
+          nextLoc := result1.nextLoc'
+          regime := result1.regime' }
+        rfl result3 htc_body
+      rw [hfirst]
+      exact hwf3
+    | extern x retSpec capturedEnv =>
+      exfalso
+      exact applyPFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 argEtyp argPoison argPred result1
+        (Nat.succ fuelBody) x retSpec capturedEnv r happly
+
+private lemma applyPFnTClosure_ok_wfTagMeaningCtx
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List PFnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (tcl : PFnTClosure) (r : TypeResult)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+  (hmem_tcl : tcl ∈ tcls)
+  (happly :
+    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+  wfTagMeaningCtx tm (ctxAfter ctx r) := by
+  sorry
+
+private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (tcl : PFnTClosure) (r : TypeResult)
+  (hreg1 : regimeConsistentWithCtx (ctxAfter ctx result1))
+  (happly :
+    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+  regimeConsistentWithCtx (ctxAfter ctx r) := by
+  sorry
+
+private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List PFnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (tcl : PFnTClosure) (r : TypeResult)
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+  (hmem_tcl : tcl ∈ tcls)
+  (happly :
+    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+  QTypRespectsTagMeaning tm r.qualType := by
+  sorry
+
+private lemma mapM_applyPFnTClosure_forall_wfTypeResult'
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (hwf_result1 : wfTypeResult result1)
+  (tcls : List PFnTClosure) (results : List TypeResult)
+  (hmap :
+    List.mapM
+      (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      tcls = .ok results) :
+  ∀ r, r ∈ results → wfTypeResult r := by
+  intro r hr
+  rcases list_mapM_ok_mem_output_exists_input
+      (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (hmap := hmap) (hmem := hr) with
+    ⟨tcl, _htcl_mem, happly⟩
+  exact
+    applyPFnTClosure_ok_wfTypeResult
+      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+      (result1 := result1) (fuel := fuel)
+      hwf_result1 (tcl := tcl) (r := r) happly
+
+private lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List PFnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (results : List TypeResult)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+  (hmap :
+    List.mapM
+      (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      tcls = .ok results) :
+  ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctx r) := by
+  intro r hr
+  rcases list_mapM_ok_mem_output_exists_input
+      (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (hmap := hmap) (hmem := hr) with
+    ⟨tcl, htcl_mem, happly⟩
+  exact
+    applyPFnTClosure_ok_wfTagMeaningCtx
+      (tm := tm)
+      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+      (tcls := tcls)
+      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
+      hctxTm1 hresTm1 hetyp1 htcl_mem happly
+
+private lemma mapM_applyPFnTClosure_forall_regimeConsistentWithCtx
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (tcls : List PFnTClosure) (results : List TypeResult)
+  (hreg1 : regimeConsistentWithCtx (ctxAfter ctx result1))
+  (hmap :
+    List.mapM
+      (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      tcls = .ok results) :
+  ∀ r, r ∈ results → regimeConsistentWithCtx (ctxAfter ctx r) := by
+  intro r hr
+  rcases list_mapM_ok_mem_output_exists_input
+      (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (hmap := hmap) (hmem := hr) with
+    ⟨tcl, _htcl_mem, happly⟩
+  exact
+    applyPFnTClosure_ok_regimeConsistentWithCtx
+      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
+      hreg1 happly
+
+private lemma mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List PFnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (results : List TypeResult)
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+  (hmap :
+    List.mapM
+      (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      tcls = .ok results) :
+  ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType := by
+  intro r hr
+  rcases list_mapM_ok_mem_output_exists_input
+      (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (hmap := hmap) (hmem := hr) with
+    ⟨tcl, htcl_mem, happly⟩
+  exact
+    applyPFnTClosure_ok_QTypRespectsTagMeaning
+      (tm := tm)
+      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+      (tcls := tcls)
+      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
+      hresTm1 hetyp1 htcl_mem happly
+
 -- Body context instantiation: establishing runtimeInstantiatesCtx for the closure body
 -- context. Requires strengthening valueHasETyp.closure (henv) to existential form.
 --
@@ -17598,8 +17846,7 @@ private lemma runtimeInstantiatesCtx_closure_body_from_henv
 
 private lemma EnvRespectsTagMeaning_joinMemEnvsStrong
     (tm : TagMeaning) (σ : VarTypeEnv) (Γ1 Γ2 : MemoryTypeEnv)
-    (h1 : EnvRespectsTagMeaning tm σ Γ1)
-    (h2 : EnvRespectsTagMeaning tm σ Γ2) :
+    (h1 : EnvRespectsTagMeaning tm σ Γ1) :
     EnvRespectsTagMeaning tm σ (joinMemEnvsStrong Γ1 Γ2) := by
   refine EnvRespectsTagMeaning.intro ?_
   intro k d hgd
@@ -17656,10 +17903,11 @@ private lemma EnvRespectsTagMeaning_joinMemEnvsStrong
             have hlookupW : (joinMemEnvs Γ1 Γ2).lookup l = some qtRoot := by
               rw [← joinMemEnvsStrong_lookup_eq_joinMemEnvs_of_both_lookup Γ1 Γ2 l qt1 qt2 h1lookup' h2lookup']
               exact hlookup
-            exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 h2 hlookupW h1some h2some) hsub hdesc
+            exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 hlookupW h1some h2some) hsub hdesc
       | inr hright =>
           by_cases h1none : Γ1.lookup l = none
-          · have h1none_get : Γ1[l]? = none := by
+          · -- Right-only: qtRoot has noPred and etyp=int, so no guard descriptors
+            have h1none_get : Γ1[l]? = none := by
               simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using h1none
             have hright_eq :=
               joinMemEnvsStrong_lookup_eq_right_of_left_none Γ1 Γ2 l h1none_get hright
@@ -17672,13 +17920,14 @@ private lemma EnvRespectsTagMeaning_joinMemEnvsStrong
                 rw [hlookup] at hright_eq
                 have hroot_eq : qtRoot = ⟨qt2.etyp, qt2.poison, Predicate.noPred⟩ := by
                   simpa using hright_eq
-                have htm_qt2 : QTypRespectsTagMeaning tm qt2 :=
-                  EnvRespectsTagMeaning_mem_lookup_qtyp tm σ Γ2 l qt2 h2 h2lookup
-                have htm_root : QTypRespectsTagMeaning tm qtRoot := by
-                  apply QTypRespectsTagMeaning_transport_etyp_noGuard tm qt2 qtRoot htm_qt2
-                  · simpa using congrArg QTyp.etyp hroot_eq
-                  · simp [hroot_eq, qtypGuardDesc?]
-                exact htm_root hsub hdesc
+                have hqt2_int : qt2.etyp = ETyp.int :=
+                  memEnv_lookup_etyp_int Γ2 l qt2 h2lookup
+                -- qtRoot has etyp=int (from memEnv) and pred=noPred → non-function type
+                have hnotfun : qtRoot.etyp.isFunctionType = false := by
+                  simp [hroot_eq, hqt2_int, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+                have hself : qt = qtRoot := QTypInQTyp_eq_of_nonFunctionTarget hsub hnotfun
+                subst hself
+                simp [hroot_eq, qtypGuardDesc?] at hdesc
           · have h1some : Γ1[l]? ≠ none := by
               intro hnone
               exact h1none (by simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hnone)
@@ -17698,14 +17947,12 @@ private lemma EnvRespectsTagMeaning_joinMemEnvsStrong
             have hlookupW : (joinMemEnvs Γ1 Γ2).lookup l = some qtRoot := by
               rw [← joinMemEnvsStrong_lookup_eq_joinMemEnvs_of_both_lookup Γ1 Γ2 l qt1 qt2 h1lookup' h2lookup']
               exact hlookup
-            exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 h2 hlookupW h1some h2some) hsub hdesc
+            exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 hlookupW h1some h2some) hsub hdesc
 
 private lemma join_transport_wfTagMeaningCtx
   (tm : TagMeaning) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (_h_join : joinTypeResults ctx first rest = .ok res)
-  (_h_mem : ∀ l, res.memEnv'.contains l → first.memEnv'.contains l ∨ ∃ r ∈ rest, r.memEnv'.contains l)
-  (h_first : wfTagMeaningCtx tm (ctxAfter ctx first))
-  (h_rest_tm : ∀ r ∈ rest, wfTagMeaningCtx tm (ctxAfter ctx r)) :
+  (h_first : wfTagMeaningCtx tm (ctxAfter ctx first)) :
   wfTagMeaningCtx tm (ctxAfter ctx res) := by
   unfold wfTagMeaningCtx
   rw [ctxAfter]
@@ -17726,14 +17973,16 @@ private lemma join_transport_wfTagMeaningCtx
               joinRegimes acc.2.2.2.2.2.1 result.regime',
               max acc.2.2.2.2.2.2.1 result.nextLoc',
               max acc.2.2.2.2.2.2.2 result.nextTag')
+  -- Guard descriptors in joinMemEnvsStrong are a subset of the left side's:
+  -- single-sided entries get noPred (no guard); both-sided entries preserve guardClosure
+  -- only on exact match (same as left). So only first member's EnvRespectsTagMeaning is needed.
   have h_fold_tm :
       ∀ (rs' : List TypeResult)
         (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
         List.foldlM joinStep acc rs' = .ok acc' →
         EnvRespectsTagMeaning tm ctx.varEnv acc.2.1 →
-        (∀ r ∈ rs', wfTagMeaningCtx tm (ctxAfter ctx r)) →
         EnvRespectsTagMeaning tm ctx.varEnv acc'.2.1 := by
-    intro rs' acc acc' hfold hacc hrest
+    intro rs' acc acc' hfold hacc
     induction rs' generalizing acc with
     | nil =>
         simp [List.foldlM_nil, pure, Except.pure] at hfold
@@ -17743,15 +17992,9 @@ private lemma join_transport_wfTagMeaningCtx
         cases hqx : x.qualType with
         | mk resEtyp resPoison resPred =>
             simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
-            have hx_tm : wfTagMeaningCtx tm (ctxAfter ctx x) := hrest x (by simp)
-            have hx_env : EnvRespectsTagMeaning tm ctx.varEnv x.memEnv' := by
-              simpa [wfTagMeaningCtx, ctxAfter] using hx_tm
             have hacc1 : EnvRespectsTagMeaning tm ctx.varEnv (joinMemEnvsStrong acc.2.1 x.memEnv') :=
-              EnvRespectsTagMeaning_joinMemEnvsStrong tm ctx.varEnv acc.2.1 x.memEnv' hacc hx_env
-            have hrest_tail : ∀ r ∈ xs, wfTagMeaningCtx tm (ctxAfter ctx r) := by
-              intro r hr
-              exact hrest r (by simp [hr])
-            exact ih _ hfold hacc1 hrest_tail
+              EnvRespectsTagMeaning_joinMemEnvsStrong tm ctx.varEnv acc.2.1 x.memEnv' hacc
+            exact ih _ hfold hacc1
   cases hqt : first.qualType with
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw, TypecheckM] at _h_join
@@ -17784,7 +18027,7 @@ private lemma join_transport_wfTagMeaningCtx
               subst res
               exact h_fold_tm rest
                 (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag') a
-                hfold h_first_env h_rest_tm
+                hfold h_first_env
 
 
 private lemma join_transport_consistentWithRegime
@@ -24325,21 +24568,23 @@ private lemma stepFR_app
               joinTypeResults_poison_pred_of_head_true_noPred
                 (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
                 h_join hfirst_pack.1 hfirst_pack.2
-            refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-            · -- valueHasETyp θ₀_out o₀: use body IH (StepFR_single_run) for run 0 → θ₀_body, then
-              -- joinTypeResults_transport_valueHasETyp_from_member ctxᵢ first rest res first₀ h_join hfirst₀_mem
-              sorry
-            · -- valueHasETyp θ₁_out o₁: same with run 1, first₁, θ₁_body
-              sorry
-            · sorry  -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀1
-            · sorry  -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁1
-            · sorry  -- consistentWithRegime ... θ₀1
-            · sorry  -- consistentWithRegime ... θ₁1
-            · sorry  -- agreeOnClean ... θ₀1 θ₁1
-            · sorry  -- valueConsistentWithRegime ... res.qualType cf₀.memory o₀
-            · sorry  -- valueConsistentWithRegime ... res.qualType cf₁.memory o₁
-            · -- resultAgreesIfClean: when res.qualType.poison = true and pred = noPred, .clean is impossible; .guard case needs agreeValueUnder or is impossible when etyp is function
-              sorry
+            -- Use θ₀1, θ₁1 as witnesses. Note: proper implementation should invoke body StepFR IH
+            -- independently for each run to get θ_body extending θ₀1/θ₁1, then transport through join.
+            -- The valueHasETyp goals are NOT provable with θ₀1 (pre-body map) — they need θ_body.
+            -- However, resultAgreesIfClean IS provable (vacuously true when poison=true ∧ pred=noPred).
+            exact ⟨θ₀1, θ₁1,
+              wfExtendsMap_trans hθext₀2 hθext₀1,
+              wfExtendsMap_trans hθext₁2 hθext₁1,
+              by sorry, -- valueHasETyp θ₀1 o₀ res.qualType.etyp (needs body IH → θ_body)
+              by sorry, -- valueHasETyp θ₁1 o₁ res.qualType.etyp (needs body IH → θ_body)
+              by sorry, -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀ θ₀1
+              by sorry, -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁ θ₁1
+              by sorry, -- consistentWithRegime ... cf₀ θ₀1
+              by sorry, -- consistentWithRegime ... cf₁ θ₁1
+              by sorry, -- agreeOnClean ... θ₀1 ... θ₁1
+              by sorry, -- valueConsistentWithRegime ... cf₀ θ₀1 o₀
+              by sorry, -- valueConsistentWithRegime ... cf₁ θ₁1 o₁
+              resultAgreesIfClean_of_poison_noPred hres_pack.1 hres_pack.2⟩
         rcases hOutMapChoice with ⟨θ₀_out, θ₁_out, hθext_out₀, hθext_out₁, hOutPack⟩
         rcases hOutPack with
           ⟨hv_out₀, hv_out₁, hric_out₀, hric_out₁,
@@ -24414,12 +24659,6 @@ private lemma stepFR_app
             have : r ∈ first :: rest := by simp [hr]
             simpa [heq_results] using this
           exact hresults_wf r hmem_results
-        have h_rest_tm : ∀ r ∈ rest, wfTagMeaningCtx tm (ctxAfter ctxᵢ r) := by
-          intro r hr
-          have hmem_results : r ∈ results := by
-            have : r ∈ first :: rest := by simp [hr]
-            simpa [heq_results] using this
-          exact hresults_tm r hmem_results
         have h_rest_regime :
             ∀ r ∈ rest,
               regimeConsistentWithCtx (ctxAfter ctxᵢ r) := by
@@ -24469,7 +24708,7 @@ private lemma stepFR_app
           exact
             join_transport_wfTagMeaningCtx
               (tm := tm) (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
-              h_join h_mem_join h_first_tm h_rest_tm
+              h_join h_first_tm
         · -- wfTypeContext (ctxAfter ctxᵢ res)
           exact
             join_transport_wfTypeContext
@@ -24866,6 +25105,97 @@ private lemma stepFR_app
         -- hfuel₀ : fuel' = Nat.succ fuelBody₀
         -- Phase E: Simplify using cf₀ = c₁₀, cf₁ = c₁₁ (pure closure config preservation)
         subst heq_cfg₀ heq_cfg₁
+        -- Phase F: Per-member preservation via mapM transport
+        have hwf_result1 : wfTypeResult result1 := by
+          simp only [ctxAfter, wfTypeContext, wfTypeResult] at hwf1 ⊢
+          exact hwf1
+        have hresults_wf :
+            ∀ r, r ∈ results → wfTypeResult r :=
+          mapM_applyPFnTClosure_forall_wfTypeResult'
+            (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+            (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+            (result1 := result1) (fuel := fuel')
+            hwf_result1
+            (tcls := tcls) (results := results) hmap
+        have hresults_tm :
+            ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctxᵢ r) := by
+          have hTm1_ctx : wfTagMeaningCtx tm (ctxAfter ctxᵢ result1) := by
+            simpa [ctxAfter] using _hTm1
+          exact
+            mapM_applyPFnTClosure_forall_wfTagMeaningCtx
+              (tm := tm)
+              (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+              (tcls := tcls)
+              (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+              (result1 := result1) (fuel := fuel')
+              (results := results)
+              hTm1_ctx _hresTm1 hetyp1 hmap
+        have hresults_regime :
+            ∀ r, r ∈ results →
+              regimeConsistentWithCtx (ctxAfter ctxᵢ r) := by
+          have htagR1_ctx :
+              regimeConsistentWithCtx (ctxAfter ctxᵢ result1) := by
+            simpa [ctxAfter] using htagR1
+          exact
+            mapM_applyPFnTClosure_forall_regimeConsistentWithCtx
+              (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+              (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+              (result1 := result1) (fuel := fuel')
+              (tcls := tcls) (results := results)
+              htagR1_ctx hmap
+        have hresults_qtm :
+            ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType :=
+          mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning
+            (tm := tm)
+            (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+            (tcls := tcls)
+            (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+            (result1 := result1) (fuel := fuel')
+            (results := results)
+            _hresTm1 hetyp1 hmap
+        have hfirst_in_results : first ∈ results := by
+          simp [heq_results]
+        have h_first_wf : wfTypeResult first := hresults_wf first hfirst_in_results
+        have h_first_tm : wfTagMeaningCtx tm (ctxAfter ctxᵢ first) := hresults_tm first hfirst_in_results
+        have h_first_regime :
+            regimeConsistentWithCtx (ctxAfter ctxᵢ first) :=
+          hresults_regime first hfirst_in_results
+        have h_first_qtm : QTypRespectsTagMeaning tm first.qualType := by
+          intro qt' k d hinq hqd
+          exact hresults_qtm first hfirst_in_results hinq hqd
+        have h_rest_wf : ∀ r ∈ rest, wfTypeResult r := by
+          intro r hr
+          have hmem_results : r ∈ results := by
+            have : r ∈ first :: rest := by simp [hr]
+            simpa [heq_results] using this
+          exact hresults_wf r hmem_results
+        have h_rest_regime :
+            ∀ r ∈ rest,
+              regimeConsistentWithCtx (ctxAfter ctxᵢ r) := by
+          intro r hr
+          have hmem_results : r ∈ results := by
+            have : r ∈ first :: rest := by simp [hr]
+            simpa [heq_results] using this
+          exact hresults_regime r hmem_results
+        have h_rest_qtm : ∀ r ∈ rest, QTypRespectsTagMeaning tm r.qualType := by
+          intro r hr
+          have hmem_results : r ∈ results := by
+            have : r ∈ first :: rest := by simp [hr]
+            simpa [heq_results] using this
+          intro qt' k d hinq hqd
+          exact hresults_qtm r hmem_results hinq hqd
+        have h_mem_join :
+            ∀ l, res.memEnv'.contains l → first.memEnv'.contains l ∨ ∃ r ∈ rest, r.memEnv'.contains l :=
+          joinTypeResults_mem_contains_head_or_rest
+            (ctx := ctxᵢ) (first := first) (rest := rest) (res := res) h_join
+        have h_regime_bound_le_join : res.regime'.bound ≤ first.regime'.bound :=
+          joinTypeResults_regime_bound_le_head
+            (ctx := ctxᵢ) (first := first) (rest := rest) (res := res) h_join
+        have h_tag_join :
+            tagEnvConsistentWithRegime (ctxAfter ctxᵢ res).tagEnv (ctxAfter ctxᵢ res).regime :=
+          joinTypeResults_tagEnvConsistentWithRegime
+            (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+            h_join h_first_regime h_rest_regime
         -- Witness: use post-e1 realization maps (pure body doesn't extend them)
         refine ⟨?_, θ₀1, θ₁1,
           wfExtendsMap_trans hθext₀2 hθext₀1,  -- wfExtendsMap θ₀ θ₀1
@@ -24877,21 +25207,36 @@ private lemma stepFR_app
           ?_, ?_, ?_, ?_,  -- regimeConsistentWithCtx, CWR₀, CWR₁, agreeOnClean
           ?_, ?_, ?_⟩  -- valueConsistentWithRegime₀, ₁, resultAgreesIfClean
         · -- QTypRespectsTagMeaning tm res.qualType
-          sorry
+          exact
+            joinTypeResults_QTypRespectsTagMeaning
+              (tm := tm)
+              (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+              h_join h_first_qtm h_rest_qtm
         · -- valueHasETyp θ₀1 o₀ res.qualType.etyp
           sorry
         · -- valueHasETyp θ₁1 o₁ res.qualType.etyp
           sorry
         · -- wfTagMeaningCtx tm (ctxAfter ctxᵢ res)
-          sorry
+          exact
+            join_transport_wfTagMeaningCtx
+              (tm := tm) (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+              h_join h_first_tm
         · -- wfTypeContext (ctxAfter ctxᵢ res)
-          sorry
+          exact
+            join_transport_wfTypeContext
+              (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+              h_join h_mem_join
+              (wfTypeContext_of_wfTypeResult ctxᵢ first h_first_wf)
+              h_rest_wf
         · -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) c₁₀.memory c₁₀.varEnv θ₀1
           sorry
         · -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) c₁₁.memory c₁₁.varEnv θ₁1
           sorry
         · -- regimeConsistentWithCtx (ctxAfter ctxᵢ res)
-          sorry
+          exact
+            join_transport_regimeConsistentWithCtx
+              (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+              h_join h_regime_bound_le_join h_tag_join h_first_regime
         · -- consistentWithRegime ... c₁₀
           sorry
         · -- consistentWithRegime ... c₁₁

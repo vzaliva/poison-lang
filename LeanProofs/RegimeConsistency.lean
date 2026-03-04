@@ -349,7 +349,6 @@ lemma QTypRespectsTagMeaning_transport_etyp_noGuard
 lemma QTypRespectsTagMeaning_joinMem_lookup
     (tm : TagMeaning) (σ : VarTypeEnv) (Γ1 Γ2 : MemoryTypeEnv) (l : Loc) (qtRoot : QTyp)
     (h1 : EnvRespectsTagMeaning tm σ Γ1)
-    (_h2 : EnvRespectsTagMeaning tm σ Γ2)
     (hlookup : (joinMemEnvs Γ1 Γ2).lookup l = some qtRoot)
     (h1_some : Γ1[l]? ≠ none)
     (h2_some : Γ2[l]? ≠ none) :
@@ -443,7 +442,7 @@ lemma EnvRespectsTagMeaning_joinMemEnvs
                 have hnot_some : ¬Option.isSome (Γ1[l]?) := by simp [heq]
                 have hmem : l ∈ Γ1 := (Std.ExtTreeMap.contains_iff_mem).mp hleft
                 exact hnot_some ((Std.ExtTreeMap.mem_iff_isSome_getElem?).mp hmem)
-              exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 h2
+              exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1
                 hlookup h1_some h2_none) hinq hm
           | inr hright =>
             by_cases h1_none : Γ1[l]? = none
@@ -456,7 +455,7 @@ lemma EnvRespectsTagMeaning_joinMemEnvs
                 have hnot_some : ¬Option.isSome (Γ2[l]?) := by simp [heq]
                 have hmem : l ∈ Γ2 := (Std.ExtTreeMap.contains_iff_mem).mp hright
                 exact hnot_some ((Std.ExtTreeMap.mem_iff_isSome_getElem?).mp hmem)
-              exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 h2 hlookup
+              exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 hlookup
                 h1_none h2_some) hinq hm
 
 /-- Membership in a captured environment produced from `VarTypeEnv.toCaptured`

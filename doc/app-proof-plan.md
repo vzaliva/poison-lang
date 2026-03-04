@@ -117,6 +117,74 @@ Design details formerly in `doc/app-problem1.md` (deleted after implementation).
 
 ## 3. Current Status and Plan
 
+### Checkpoint: 2026-03-04 (2) — Parrow infrastructure + Phase 4 done
+
+Build: **clean** (no errors; sorry-only warnings).
+
+Steps completed since last checkpoint:
+- **Phase 4 (Step 1 residual)**: `typecheckApp_wfTypeResult` proved in TypeSafety.lean
+  (arrow/parrow mapM + joinTypeResults inline unfolding).
+- **Parrow infrastructure (Step 6 partial)**:
+  - Created 10 parrow helper lemmas (mirroring FnTClosure versions):
+    `applyPFnTClosure_ioFree_extern_fails`,
+    `applyPFnTClosure_regular_body_wfTypeResult`,
+    `applyPFnTClosure_ok_wfTypeResult` (no sorry),
+    `applyPFnTClosure_ok_wfTagMeaningCtx` (sorry),
+    `applyPFnTClosure_ok_regimeConsistentWithCtx` (sorry),
+    `applyPFnTClosure_ok_QTypRespectsTagMeaning` (sorry),
+    `mapM_applyPFnTClosure_forall_wfTypeResult'`,
+    `mapM_applyPFnTClosure_forall_wfTagMeaningCtx`,
+    `mapM_applyPFnTClosure_forall_regimeConsistentWithCtx`,
+    `mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning`
+  - Added ~80-line derivation chain before parrow refine block (join transport setup)
+  - Filled 4 of 13 parrow refine block sorrys:
+    `QTypRespectsTagMeaning` (via `joinTypeResults_QTypRespectsTagMeaning`),
+    `wfTagMeaningCtx` (via `join_transport_wfTagMeaningCtx`),
+    `wfTypeContext` (via `join_transport_wfTypeContext`),
+    `regimeConsistentWithCtx` (via `join_transport_regimeConsistentWithCtx`)
+- **Discovered**: `applyFnTClosure_ok_wfTagMeaningCtx` is NOT provable as a purely static lemma
+  (mode 3 `ite` creates new tags, so `wfTagMeaningCtx` depends on runtime semantics). All 6
+  preservation lemmas (3 FnTClosure + 3 PFnTClosure) are blocked on this.
+- **Discovered**: `valueHasETyp_det` (TypeSafety.lean) is likely FALSE (`Value.loc` can type
+  as `ETyp.ref ls` for different `ls`). It is unused — not in the stepFR_app chain.
+
+#### New blocker identified: Body StepFR IH evidence
+
+All remaining sorrys in `stepFR_app` (both arrow fallback and parrow body-dependent paths)
+require per-run post-body evidence (valueHasETyp, runtimeInstantiatesCtx, consistentWithRegime,
+etc.), but `StepFR` IH requires TWO runs evaluating the SAME expression.  Fallback paths handle
+cases where the two outer runs may pick different closure alternatives.
+
+Detailed analysis and proposed resolution: **`doc/app-problem2.md`**.
+
+#### In-scope sorrys (stepFR_app dependency chain)
+
+**`FaultRobustnessProofs.lean`** — 10 declarations with sorry, 30 sorry keywords:
+
+| Group | Lemma(s) | Keywords | Risk | Step |
+|---|---|---|---|---|
+| Preservation (FnT) | `applyFnTClosure_ok_wfTagMeaningCtx` | 1 | Blocked — not purely static | 4 |
+| Preservation (FnT) | `applyFnTClosure_ok_regimeConsistentWithCtx` | 1 | Blocked — not purely static | 4 |
+| Preservation (FnT) | `applyFnTClosure_ok_QTypRespectsTagMeaning` | 1 | Blocked — not purely static | 4 |
+| Preservation (PFnT) | `applyPFnTClosure_ok_wfTagMeaningCtx` | 1 | Blocked — mirrors FnT | 4 |
+| Preservation (PFnT) | `applyPFnTClosure_ok_regimeConsistentWithCtx` | 1 | Blocked — mirrors FnT | 4 |
+| Preservation (PFnT) | `applyPFnTClosure_ok_QTypRespectsTagMeaning` | 1 | Blocked — mirrors FnT | 4 |
+| Arrow ¬intPoisonClean | sorry in `stepFR_app` ¬ `internalPoisonClean` branch | 1 | Medium — needs body IH | 5 |
+| Arrow ¬qtypClean | sorrys in `stepFR_app` ¬ `qtypCleanUnder` branch | 9 | Medium — needs body IH | 5 |
+| Parrow refine block | sorrys in `stepFR_app` parrow refine | 9 | Medium — needs body IH | 6 |
+| Parrow body IH | sorrys at parrow clean/dirty split | 2 | Medium — needs body IH | 6 |
+
+**`TypeSafety.lean`** — 0 sorrys in stepFR_app chain (down from 1).
+
+#### Out-of-scope sorrys (not targeted here)
+
+| Lemma | File | Keywords | Reason |
+|---|---|---|---|
+| `stepFR_ite_mode3` | FaultRobustnessProofs | 1 | Different concern |
+| `stepFR_ite_mode4` | FaultRobustnessProofs | 1 | Different concern |
+| `stepFR_kwhile` | FaultRobustnessProofs | 1 | Deferred; while-loop fixpoint |
+| `valueHasETyp_det` | TypeSafety | 1 | Likely false; unused |
+
 ### Checkpoint: 2026-03-04 — Steps 1–3 complete, build clean
 
 Build: **clean** (no errors; sorry-only warnings).
@@ -130,24 +198,6 @@ Steps completed:
   `agreeCapturedEnv_same_toCaptured` deleted (subsumed).
   `agreeValueUnder_same` rewritten with structural induction on `deepValueQTypProperty` tree.
   All θ-transport sorry's in `stepFR_app` arrow clean path resolved.
-
-#### In-scope sorrys (stepFR_app dependency chain)
-
-**`FaultRobustnessProofs.lean`** — 7 declarations with sorry:
-
-| Group | Lemma(s) | Count | Risk | Step |
-|---|---|---|---|---|
-| Preservation | `applyFnTClosure_ok_wfTagMeaningCtx` | 1 | Low — standard preservation | 4 |
-| Preservation | `applyFnTClosure_ok_regimeConsistentWithCtx` | 1 | Low — standard preservation | 4 |
-| Preservation | `applyFnTClosure_ok_QTypRespectsTagMeaning` | 1 | Low — standard preservation | 4 |
-| Arrow fallback | sorrys in `stepFR_app` `¬ qtypCleanUnder` branch | ~11 | Low — `poison=true`, `pred=noPred` | 5 |
-| Parrow branch | sorrys in `stepFR_app` parrow path | ~15 | Low — mechanical mirror of arrow | 6 |
-
-**`TypeSafety.lean`** — 1 sorry (in stepFR_app chain):
-
-| Lemma | Risk | Step |
-|---|---|---|
-| `typecheckApp_wfTypeResult` | Low — mechanical mapM/joinTypeResults unfolding | 1 (residual) |
 
 #### Out-of-scope sorrys (not targeted here)
 
@@ -194,8 +244,7 @@ All sub-tasks completed:
 2. ✓ `StepFR_implies_wfTypeResult` deleted.
 3. ✓ Signatures of `applyFnTClosure_ok_wfTypeResult` / `mapM_applyFnTClosure_forall_wfTypeResult`
    simplified (dropped StepFR IH, PredSat, TagMeaning parameters).
-One planned sorry remains: `typecheckApp_wfTypeResult` (arrow/parrow mapM + joinTypeResults
-inline unfolding — the same pattern as `typecheckExpr` app case but fully inlined).
+4. ✓ `typecheckApp_wfTypeResult` proved (Phase 4).
 
 **Step 2+3: Close same-config agreement — Issue G** ✓ DONE
 
@@ -206,49 +255,50 @@ Resolved by the closure member-matching fix (strengthened `closureCapturedVarsRe
 - θ-transport sorry's in arrow clean path resolved.
 - All definitions gained `θ` parameter; ~105 call sites updated across FaultRobustnessProofs.lean.
 
-**Step 4: Preservation lemmas**
+**Step 4: Preservation lemmas** — BLOCKED
 
-Fill `applyFnTClosure_ok_wfTagMeaningCtx`, `applyFnTClosure_ok_regimeConsistentWithCtx`,
-`applyFnTClosure_ok_QTypRespectsTagMeaning`.  These are standard preservation properties
-(context well-formedness invariants survive function body typechecking) and are independent of
-the runtime proof.  Each follows the same pattern: case-split on `FnTClosure` constructor
-(regular vs fallback), unfold `applyFnTClosure`, and use typechecker-level preservation
-or the corresponding `mapM_applyFnTClosure_forall_*` sibling lemma patterns.
+Six lemmas with sorry (3 FnTClosure + 3 PFnTClosure):
+- `applyFnTClosure_ok_wfTagMeaningCtx`, `applyFnTClosure_ok_regimeConsistentWithCtx`,
+  `applyFnTClosure_ok_QTypRespectsTagMeaning`
+- `applyPFnTClosure_ok_wfTagMeaningCtx`, `applyPFnTClosure_ok_regimeConsistentWithCtx`,
+  `applyPFnTClosure_ok_QTypRespectsTagMeaning` (new — created as mirrors)
 
-**Step 5: Arrow fallback branch (¬ qtypCleanUnder)**
+**Status**: Discovered these are NOT purely static — `wfTagMeaningCtx` depends on runtime
+semantics (mode 3 `ite` creates new tags).  Cannot be proved by typechecker-level fuel
+induction alone.  The right approach is to derive them from the StepFR IH (body evaluation
+evidence), making them part of the body IH plumbing rather than independent lemmas.
 
-Close the `hOutMapChoice` fallback branch in `stepFR_app` (11 sorrys).  Key facts available:
-- `res.qualType.poison = true` and `res.qualType.pred = noPred` (from
-  `joinTypeResults_poison_pred_of_head_true_noPred`)
-- `p1 = true` (from `hpoison1_true`)
+**Step 5: Arrow fallback branches** — BLOCKED on body IH infrastructure
 
-Obligations and approach:
-- `valueHasETyp θ₀ o₀ res.qualType.etyp` / `θ₁ o₁`: use body StepFR IH for one run
-  (single-run variant), then `joinTypeResults_transport_valueHasETyp_from_member`.
-- `runtimeInstantiatesCtx (ctxAfter ctxᵢ res)`: use
-  `joinTypeResults_transport_runtimeInstantiatesCtx_from_member` (or prove it; transport
-  `runtimeInstantiatesCtx` from the shared member to the joined context).
-- `consistentWithRegime`: use
-  `joinTypeResults_transport_consistentWithRegime_from_member`.
-- `agreeOnClean`: use `join_transport_agreeOnClean_from_member`.
-- `valueConsistentWithRegime`: `poison = true` makes this trivial (poisoned values are
-  vacuously consistent).
-- `resultAgreesIfClean`: `poison = true ∧ pred = noPred` → `.clean` case is impossible
-  (by `qtypCleanUnder` definition); `.guard` case is impossible (`pred = noPred` has no
-  `guardClosure` tag).
+Two sub-branches:
 
-**Step 6: Parrow mirror**
+**5a: ¬ `internalPoisonClean`** (1 sorry at line ~24544):
+`qtypCleanUnder` holds (p1 = false), so the existing shared-body sync logic applies.  The
+only difference from the clean path is `resultAgreesIfClean`, which uses `dirty_internal_arrow`
+(needs only `valueHasETyp`).  Most of the pack should come from the shared body IH.
 
-Mirror the completed arrow path into the parrow branch (15 sorrys).  The parrow branch has
-the same structure as the arrow clean path but with `PExpr`/`PFnTClosure`/`parrow` types.
-The obligations are identical in structure:
-- `QTypRespectsTagMeaning`: use `joinTypeResults_QTypRespectsTagMeaning`.
-- `valueHasETyp`: body IH + `joinTypeResults_transport_valueHasETyp_from_member`.
-- `wfTagMeaningCtx`, `wfTypeContext`: join transport lemmas (same as arrow path).
-- `runtimeInstantiatesCtx`, `consistentWithRegime`, `agreeOnClean`: member-to-joined transport.
-- `valueConsistentWithRegime`, `resultAgreesIfClean`: member-to-joined transport.
-- Parrow-specific: two remaining sorrys at end are the `hclean1_e1` clean/dirty split
-  (same structure as arrow but with `PFnTClosure`).
+**5b: ¬ `qtypCleanUnder`** (9 sorrys at lines ~24578–24586):
+p1 = true, res.poison = true, res.pred = noPred.  Runs may pick different closures.  Need
+per-run body evidence via `StepFR_single_run` + join transport.  Cross-run `agreeOnClean`
+needs a pc-based argument (no new clean entries under poisoned PC).  `resultAgreesIfClean`
+already proved vacuously.
+
+**Step 6: Parrow mirror** — PARTIALLY DONE
+
+Infrastructure created (10 helpers).  4 of 13 refine block sorrys filled (join transport for
+QTypRespectsTagMeaning, wfTagMeaningCtx, wfTypeContext, regimeConsistentWithCtx).
+
+Remaining: 9 sorrys in refine block (same structure as arrow fallback) + 2 sorrys at
+clean/dirty split (shared-body IH + `dirty_internal_parrow`).
+
+### Issue H: Body StepFR IH evidence for fallback paths
+
+See **`doc/app-problem2.md`** for detailed analysis.
+
+**Summary**: StepFR IH requires same expression for both runs.  Fallback paths have different
+bodies.  Recommended approach: prove `agreeOnClean_self` (config agrees with itself) and
+`StepFR_single_run` (corollary of StepFR via self-agree), then use per-run body IH + join
+transport for single-run obligations, and pc-based argument for cross-run `agreeOnClean`.
 
 ### Dependency order
 
@@ -257,15 +307,19 @@ Step 1 (typecheckExpr_preserves_wfTypeResult) ✓ DONE
 
 Step 2+3 (closure member-matching fix) ✓ DONE
 
-Step 4 (preservation lemmas)
-  └─ independent of remaining steps
+Step 4 (preservation lemmas) — BLOCKED (not purely static; fold into body IH)
+
+Issue H infrastructure (agreeOnClean_self, StepFR_single_run)
+  └─ prerequisite for Steps 5, 6
 
 Step 5 (arrow fallback)
-  └─ depends on Step 4 (for wfTagMeaningCtx, regimeConsistentWithCtx transport)
+  └─ depends on Issue H infrastructure
 
 Step 6 (parrow mirror)
   └─ depends on Step 4 (same as Step 5)
-  └─ structurally mirrors arrow clean path + Step 5
+Step 6 (parrow mirror)
+  └─ depends on Issue H infrastructure
+  └─ structurally mirrors arrow paths
 ```
 
 ### Stop / reassess conditions
@@ -274,6 +328,11 @@ Step 6 (parrow mirror)
   closure member-matching fix (Issue G).**
 - ~~If the `mutual` block for `agreeCapturedEnv_same_toCaptured`~~ — **resolved; mutual recursion
   eliminated by structural induction on evidence tree.**
+- If `agreeOnClean_self` turns out to be hard (e.g., `agreeValueUnder_same` has missing
+  preconditions for the reflexive case) — reassess Approach D in `doc/app-problem2.md`.
+- If pc-based `agreeOnClean` transport (Approach B) is blocked by `joinTypeResults` semantics —
+  consider alternative: prove a direct `agreeOnClean_poisonedPC_transport` from pre-body to
+  post-body when pc = true.
 
 ## 4. Design History
 
@@ -301,7 +360,14 @@ chronological evolution with commit references.
 - `stepFR_app`
 - `applyFnTClosure_ok_wfTypeResult`, `mapM_applyFnTClosure_forall_wfTypeResult`,
   `applyFnTClosure_regular_body_wfTypeResult`
-- `typecheckExpr_preserves_wfTypeResult` (new — Step 1)
+- `applyPFnTClosure_ok_wfTypeResult`, `mapM_applyPFnTClosure_forall_wfTypeResult'`,
+  `applyPFnTClosure_regular_body_wfTypeResult` (new — parrow mirrors)
+- `applyPFnTClosure_ioFree_extern_fails` (new — parrow extern contradiction)
+- `mapM_applyPFnTClosure_forall_wfTagMeaningCtx`,
+  `mapM_applyPFnTClosure_forall_regimeConsistentWithCtx`,
+  `mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning` (new — parrow mapM lifters)
+- `typecheckExpr_preserves_wfTypeResult` (Step 1)
+- `typecheckApp_wfTypeResult` (Step 1 residual, now proved)
 - `wfTagMeaningCtx_closure_body` (body context wfTagMeaning)
 
 ### Same-config agreement
@@ -338,7 +404,17 @@ chronological evolution with commit references.
 - `joinTypeResults_qualType_parrow_member_from_member`
 - `joinTypeResults_transport_resultAgreesIfClean_from_member`
 - `joinTypeResults_QTypRespectsTagMeaning` (proved)
+- `joinTypeResults_poison_pred_of_head_true_noPred` (p1=true → joined result poisoned/noPred)
+- `resultAgreesIfClean_of_poison_noPred` (vacuous when poison=true ∧ pred=noPred)
+- `applyFnTClosure_ok_poison_pred_of_p1_true`, `applyPFnTClosure_ok_poison_pred_of_p1_true`
 - `joinPredicates_eq_guardClosure`, `fold_joinPred_guardClosure_init` (in `TypeSafety.lean`)
+- `join_transport_wfTagMeaningCtx`, `join_transport_wfTypeContext`,
+  `join_transport_regimeConsistentWithCtx` (join transport for context invariants)
+
+### Planned (Issue H)
+- `agreeOnClean_self` (to be created — config agrees with itself on clean entries)
+- `StepFR_single_run` (to be created — single-run corollary of StepFR via self-agree)
 
 ### Issue tags
 - `APP-BODYSTART-VARSREGIME` (legacy; may no longer appear)
+- `APP-BODY-IH-BLOCKER` (Issue H — body StepFR IH requires same expression for both runs)

@@ -9908,10 +9908,84 @@ private lemma typecheckApp_wfTypeResult
   cases fuel with
   | zero => simp [typecheckApp] at htc
   | succ fuel' =>
-    -- typecheckApp calls typecheckExpr twice then mapM + joinTypeResults
-    -- Each sub-call at fuel' < fuel'.succ preserves wfTypeResult via IH
-    -- Then joinTypeResults preserves wfTypeResult from all members
-    sorry
+    have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+    unfold typecheckApp at htc
+    simp only [bind, Except.bind] at htc
+    cases htc2 : typecheckExpr .ioFree ctx e2 fuel' with
+    | error _ => simp [htc2] at htc
+    | ok result2 =>
+      simp [htc2] at htc
+      have hwf2 : wfTypeResult result2 :=
+        IH fuel' h_fuel e2 ctx result2 hwf (by simpa [typecheck] using htc2)
+      cases hqt2 : result2.qualType with
+      | mk etyp2 p2 pred2 =>
+        simp [hqt2] at htc
+        cases htc1 : typecheckExpr .ioFree { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' } e1 fuel' with
+        | error _ => simp [htc1] at htc
+        | ok result1 =>
+          simp [htc1] at htc
+          have hwf_ctx' : wfTypeContext { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' } := by
+            simp only [wfTypeContext]; exact hwf2
+          have hwf1 : wfTypeResult result1 :=
+            IH fuel' h_fuel e1 _ result1 hwf_ctx' (by simpa [typecheck] using htc1)
+          cases hqt1 : result1.qualType with
+          | mk etyp1 p1_val pred1 =>
+            simp [hqt1] at htc
+            cases etyp1 with
+            | arrow st1 st2 p tcls =>
+              simp at htc
+              by_cases hpure : ctx.pureCtx = true
+              · simp [hpure] at htc
+              · simp [hpure] at htc
+                simp [pure, Except.pure] at htc
+                by_cases hempty : tcls = []
+                · simp [hempty] at htc
+                · simp [hempty] at htc
+                  by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
+                  · simp [hsub] at htc
+                  · push_neg at hsub
+                    simp [hsub] at htc
+                    cases hmap : List.mapM (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1_val etyp2 p2 pred2 ctx result1 fuel') tcls with
+                    | error _ => simp [hmap] at htc
+                    | ok results =>
+                      simp [hmap] at htc
+                      cases hresults : results with
+                      | nil => subst hresults; simp at htc
+                      | cons firstResult restResults =>
+                        subst hresults; simp at htc
+                        have hwf_all : ∀ r ∈ firstResult :: restResults, wfTypeResult r :=
+                          mapM_applyFnTClosure_forall_wfTypeResult
+                            fuel'.succ IH st1 st2 p p1_val etyp2 p2 pred2
+                            ctx result1 fuel' h_fuel hwf1 tcls _ hmap
+                        exact joinTypeResults_wfTypeResult ctx firstResult restResults res htc
+                          (hwf_all firstResult (by simp))
+                          (fun r hr => hwf_all r (by simp [hr]))
+            | parrow st1 st2 p tcls_p =>
+              simp at htc
+              by_cases hempty : tcls_p = []
+              · simp [hempty] at htc
+              · simp [hempty] at htc
+                simp [pure, Except.pure] at htc
+                by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
+                · simp [hsub] at htc
+                · push_neg at hsub
+                  simp [hsub] at htc
+                  cases hmap : List.mapM (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1_val etyp2 p2 pred2 ctx result1 fuel') tcls_p with
+                  | error _ => simp [hmap] at htc
+                  | ok results =>
+                    simp [hmap] at htc
+                    cases hresults : results with
+                    | nil => subst hresults; simp at htc
+                    | cons firstResult restResults =>
+                      subst hresults; simp at htc
+                      have hwf_all : ∀ r ∈ firstResult :: restResults, wfTypeResult r :=
+                        mapM_applyPFnTClosure_forall_wfTypeResult
+                          fuel'.succ IH st1 st2 p p1_val etyp2 p2 pred2
+                          ctx result1 fuel' h_fuel hwf1 tcls_p _ hmap
+                      exact joinTypeResults_wfTypeResult ctx firstResult restResults res htc
+                        (hwf_all firstResult (by simp))
+                        (fun r hr => hwf_all r (by simp [hr]))
+            | _ => simp at htc
 
 /-- runWhileFixpoint memEnv domain is subset of initial ctx memEnv -/
 private lemma runWhileFixpoint_memEnv_subset
