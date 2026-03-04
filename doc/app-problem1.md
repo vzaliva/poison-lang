@@ -17,22 +17,26 @@ mutually-inductive `agreeCapturedEnv`).
 
 ### Why FR must look inside closures
 
-Closures carry captured runtime environments.  A closure can "hide" a poisoned value in its
-captured env, and that value can later escape when the closure is applied.  To prevent this,
-FR tracks regime consistency *deeply*: the invariant `closureCapturedVarsRegime` recursively
-checks that every value inside a closure's captured env satisfies the regime, and
-`agreeCapturedEnv` checks that the captured values from two runs agree.
+Closures carry captured runtime environments that may contain poisoned values.
+When the closure is applied, these captured values participate in computation
+and can affect the result. FR must therefore track regime consistency *deeply*:
+the invariant `closureCapturedVarsRegime` recursively checks that every value
+inside a closure's captured env satisfies the regime, and `agreeCapturedEnv`
+checks that the captured values from two runs agree.
 
 ### The "same-config" case
 
 The reflexive case — a single run agrees with itself — is not trivial for closures.  When
-proving `agreeValueUnder predSat R μ μ θ θ qt v v` for a closure `v = Value.closure x body env`,
-the proof must:
+proving `agreeValueUnder predSat R μ μ θ θ qt v v` (where `R` is a regime) for a closure
+`v = Value.closure x body env` whose qualified type `qt` has underlying type
+`ETyp.arrow st1 st2 p tcls`, the proof must:
 
-1. Identify a captured typing environment `σcap` (a member of the type's closure list `tcls`).
-2. Show `agreeCapturedEnv ... σcap env env` — the captured runtime env agrees with itself
-   under `σcap`.
-3. Provide regime evidence (`MemberVarsRegimeEvidence`, `MemberCvcrEvidence`) for `(σcap, env)`.
+1. Find a member `FnTClosure.regular x body σcap ∈ tcls` — a captured *typing* environment
+   `σcap` (mapping variables to qualified types) that matches the closure's binder and body.
+2. Show `agreeCapturedEnv ... σcap env env` — the captured *runtime* environment `env`
+   (mapping variables to values) agrees with itself under `σcap`.
+3. Provide regime evidence (`MemberVarsRegimeEvidence`, `MemberCvcrEvidence`) for the pair
+   `(σcap, env)`.
 
 These obligations require **both typing information and regime information** for the **same**
 `σcap` member.  This is where the problem lies.
