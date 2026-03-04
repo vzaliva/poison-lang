@@ -72,7 +72,8 @@ case "$AGENT" in
     CLAUDE_CONFIG_DIR="/home/user/.config/poison-claude"
     # Add --dangerously-skip-permissions for smoother operation
     # Also load a persisted MCP config that preconfigures lean-lsp.
-    AGENT_ARGS="--dangerously-skip-permissions --mcp-config ${CLAUDE_CONFIG_DIR}/mcp.json --continue"
+    # Claude ignores CLAUDE_CONFIG_DIR for plugins (hardcodes ~/.claude); load lean4 explicitly.
+    AGENT_ARGS="--dangerously-skip-permissions --mcp-config ${CLAUDE_CONFIG_DIR}/mcp.json --plugin-dir /opt/lean4-skills-seed/plugins/lean4 --continue"
     ;;
   codex)
     CMD="codex"
@@ -191,6 +192,7 @@ PODMAN_ARGS+=(
   -v ai_agent_cache_lake:/home/user/.cache/lake:rw,U
   -v ai_agent_cache_uv:/home/user/.cache/uv:rw,U
   -v ai_agent_config:/home/user/.config:rw,U
+  -v ai_agent_skills:/home/user/.agents:rw,U
 )
 
 # Elan home: by default, bind-mount host ~/.elan read-only.
@@ -226,6 +228,12 @@ fi
 if [ -n "${LEAN_LOG_LEVEL:-}" ]; then
   PODMAN_ARGS+=(-e LEAN_LOG_LEVEL="$LEAN_LOG_LEVEL")
 fi
+# lean4-skills: scripts and refs (Codex skill needs these; Claude gets them from plugin bootstrap)
+PODMAN_ARGS+=(
+  -e LEAN4_PLUGIN_ROOT=/opt/lean4-skills-seed/plugins/lean4
+  -e LEAN4_SCRIPTS=/opt/lean4-skills-seed/plugins/lean4/lib/scripts
+  -e LEAN4_REFS=/opt/lean4-skills-seed/plugins/lean4/skills/lean4/references
+)
 
 # Forward SSH agent for git authentication
 if [ -n "${SSH_AUTH_SOCK:-}" ] && [ -S "$SSH_AUTH_SOCK" ]; then

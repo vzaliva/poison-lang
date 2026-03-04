@@ -3,8 +3,11 @@ set -euo pipefail
 
 # Build the AI agent container image. Used by both claude-jailed and codex-jailed
 # (one image, per-agent container names at run time).
-# Run this when there are new versions of Codex or Claude Code so the image
-# gets fresh npm/installer copies. Run from the repo root (where Containerfile.ai-agent lives).
+# Run this when there are new versions of Codex, Claude Code, or lean4-skills
+# so the image gets fresh copies. Run from the repo root (where Containerfile.ai-agent lives).
+#
+# To update only a specific component without full cache bust:
+#   podman build --build-arg LEAN4_SKILLS_UPDATE=$(date +%s) -t ... -f Containerfile.ai-agent .
 
 if [ ! -f Containerfile.ai-agent ]; then
   echo "Error: Containerfile.ai-agent not found in $(pwd)" >&2
@@ -15,6 +18,7 @@ CACHE_BUST="$(date +%s)"
 exec podman build \
   --build-arg CODEX_UPDATE="$CACHE_BUST" \
   --build-arg CLAUDE_UPDATE="$CACHE_BUST" \
+  --build-arg LEAN4_SKILLS_UPDATE="$CACHE_BUST" \
   -t localhost/poison-ai-agent:latest \
   -f Containerfile.ai-agent \
   .

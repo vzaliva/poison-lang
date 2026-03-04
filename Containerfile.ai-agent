@@ -16,19 +16,29 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8
 
 # Base dependencies + Node.js + Python for AI agents
+# lean4-skills scripts require: Bash 4+, Python 3.9+ (parse_lean_errors uses list[str]),
+# ripgrep (optional, faster), diff (solver_cascade.py), lake (via elan)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git ca-certificates \
     openssh-client \
     build-essential clang lld cmake pkg-config \
     libgmp-dev libuv1-dev \
+    libpcre3 \
     xz-utils util-linux \
     unzip \
     m4 \
     openssl \
     python3 python3-pip \
-    # Common CLI tools for AI agents
+    diffutils \
+    # Common CLI tools for AI agents (incl. Batsov's Claude Code list)
+    fd-find \
     ripgrep \
     jq \
+    rename \
+    shellcheck \
+    sd \
+    git-delta \
+    dtrx \
     # LaTeX for PDF generation
     latexmk texlive-latex-extra texlive-fonts-recommended texlive-latex-recommended texlive-lang-english \
     && rm -rf /var/lib/apt/lists/*
@@ -91,6 +101,48 @@ ENV NPM_CONFIG_PREFIX=/usr/local
 # Tree-sitter CLI (pin version; Parser.lean relies on flags like --config-path and -x)
 RUN npm i -g tree-sitter-cli@0.25.10
 
+# fd: symlink fdfind to fd (Debian renames it to avoid conflict with another package)
+RUN ln -sf /usr/bin/fdfind /usr/local/bin/fd
+
+# ast-grep (AST-based code search)
+RUN npm i -g @ast-grep/cli
+
+# difftastic, scc, yq, hyperfine, watchexec, comby: install from GitHub releases (amd64/arm64)
+# shaffa: not found — omit; add if you meant another tool
+RUN set -eux \
+    && ARCH="$(dpkg --print-architecture)" \
+    && case "${ARCH}" in \
+        amd64) DIFT_ARCH=x86_64-unknown-linux-gnu; SCC_ARCH=x86_64; YQ_ARCH=amd64; HF_ARCH=x86_64-unknown-linux-musl; WX_ARCH=x86_64-unknown-linux-gnu; COMBY_ARCH=x86_64-linux ;; \
+        arm64) DIFT_ARCH=aarch64-unknown-linux-gnu; SCC_ARCH=arm64; YQ_ARCH=arm64; HF_ARCH=aarch64-unknown-linux-musl; WX_ARCH=aarch64-unknown-linux-gnu; COMBY_ARCH="" ;; \
+        *) echo "Unsupported arch ${ARCH}"; exit 1 ;; \
+    esac \
+    && curl -fsSL "https://github.com/Wilfred/difftastic/releases/latest/download/difft-${DIFT_ARCH}.tar.gz" -o /tmp/difft.tar.gz \
+    && tar -xzf /tmp/difft.tar.gz -C /tmp \
+    && install -m 0755 /tmp/difft /usr/local/bin/ \
+    && rm -f /tmp/difft.tar.gz /tmp/difft \
+    && curl -fsSL "https://github.com/boyter/scc/releases/download/v3.6.0/scc_Linux_${SCC_ARCH}.tar.gz" -o /tmp/scc.tar.gz \
+    && tar -xzf /tmp/scc.tar.gz -C /tmp \
+    && install -m 0755 /tmp/scc /usr/local/bin/ \
+    && rm -f /tmp/scc.tar.gz /tmp/scc \
+    && curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${YQ_ARCH}" -o /usr/local/bin/yq \
+    && chmod 0755 /usr/local/bin/yq \
+    && HF_TAG="v1.20.0" \
+    && curl -fsSL "https://github.com/sharkdp/hyperfine/releases/download/${HF_TAG}/hyperfine-${HF_TAG}-${HF_ARCH}.tar.gz" -o /tmp/hyperfine.tar.gz \
+    && tar -xzf /tmp/hyperfine.tar.gz -C /tmp \
+    && install -m 0755 /tmp/hyperfine-${HF_TAG}-${HF_ARCH}/hyperfine /usr/local/bin/ \
+    && rm -rf /tmp/hyperfine.tar.gz /tmp/hyperfine-* \
+    && WX_VER="1.20.5" \
+    && curl -fsSL "https://github.com/watchexec/watchexec/releases/download/cli-v${WX_VER}/watchexec-${WX_VER}-${WX_ARCH}.tar.xz" -o /tmp/watchexec.tar.xz \
+    && tar -xJf /tmp/watchexec.tar.xz -C /tmp \
+    && install -m 0755 /tmp/watchexec-${WX_VER}-${WX_ARCH}/watchexec /usr/local/bin/ \
+    && rm -rf /tmp/watchexec.tar.xz /tmp/watchexec-* \
+    && if [ -n "${COMBY_ARCH}" ]; then \
+      curl -fsSL "https://github.com/comby-tools/comby/releases/download/1.8.1/comby-1.8.1-${COMBY_ARCH}.tar.gz" -o /tmp/comby.tar.gz \
+      && tar -xzf /tmp/comby.tar.gz -C /tmp \
+      && install -m 0755 /tmp/comby-1.8.1-${COMBY_ARCH} /usr/local/bin/comby \
+      && rm -f /tmp/comby.tar.gz /tmp/comby-*; \
+    fi
+
 # OpenAI Codex CLI. To force reinstall from npm when the package is updated, pass a new
 # value to bust the cache, e.g.: --build-arg CODEX_UPDATE=2 or CODEX_UPDATE=$(date +%s)
 ARG CODEX_UPDATE=1
@@ -104,6 +156,15 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
 
 # Note: lean-lsp-mcp MCP tool (used by both Claude and Codex) will be
 # downloaded on first use via uvx. It will be cached in the ai_agent_config volume.
+
+# --- Lean 4 skills plugin for Claude Code (https://github.com/cameronfreer/lean4-skills) ---
+# To force a fresh clone when the plugin is updated, pass --build-arg LEAN4_SKILLS_UPDATE=<new value>.
+ARG LEAN4_SKILLS_UPDATE=1
+ENV LEAN4_SKILLS_SEED=/opt/lean4-skills-seed
+RUN : "${LEAN4_SKILLS_UPDATE}" \
+    && git clone --depth 1 https://github.com/cameronfreer/lean4-skills.git "${LEAN4_SKILLS_SEED}" \
+    && chmod -R a+rX "${LEAN4_SKILLS_SEED}" \
+    && find "${LEAN4_SKILLS_SEED}/plugins/lean4/lib/scripts" -type f \( -name '*.sh' -o -name '*.py' \) -exec chmod +x {} \;
 
 # --- Seed Elan into a read-only location in the image ---
 # Do not hardcode a Lean toolchain here; projects specify it via /work/lean-toolchain.
@@ -194,6 +255,27 @@ RUN printf '%s\n' \
 '  ln -sf "${CLAUDE_SEED:-/opt/claude-seed}/.local/bin/claude" "/home/user/.local/bin/claude" 2>/dev/null || true' \
 'fi' \
 '' \
+'# Lean 4 skills plugin: env vars and symlink from image seed (no persistence needed).' \
+'LEAN4_PLUGIN_ROOT="${LEAN4_SKILLS_SEED:-/opt/lean4-skills-seed}/plugins/lean4"' \
+'export LEAN4_PLUGIN_ROOT LEAN4_SCRIPTS="${LEAN4_PLUGIN_ROOT}/lib/scripts" LEAN4_REFS="${LEAN4_PLUGIN_ROOT}/skills/lean4/references"' \
+'PLUGINS_DIR="${CLAUDE_CONFIG_DIR}/plugins"' \
+'mkdir -p "${PLUGINS_DIR}"' \
+'if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${PLUGINS_DIR}" 2>/dev/null || true; fi' \
+'if [ -w "${PLUGINS_DIR}" ] && [ -d "${LEAN4_PLUGIN_ROOT}" ]; then' \
+'  rm -f "${PLUGINS_DIR}/lean4" 2>/dev/null; ln -sf "${LEAN4_PLUGIN_ROOT}" "${PLUGINS_DIR}/lean4"' \
+'  if [ "$(id -u)" -eq 0 ]; then chown -h "${HOST_UID}:${HOST_GID}" "${PLUGINS_DIR}/lean4" 2>/dev/null || true; fi' \
+'fi' \
+'' \
+'# Codex: symlink lean4 skill into ~/.agents/skills (Codex discovers skills from user dir).' \
+'CODEX_SKILLS_DIR="${HOME}/.agents/skills"' \
+'mkdir -p "${CODEX_SKILLS_DIR}"' \
+'if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "${CODEX_SKILLS_DIR}" 2>/dev/null || true; fi' \
+'if [ -w "${CODEX_SKILLS_DIR}" ] && [ -d "${LEAN4_SKILLS_SEED:-/opt/lean4-skills-seed}/plugins/lean4/skills/lean4" ]; then' \
+'  rm -f "${CODEX_SKILLS_DIR}/lean4" 2>/dev/null' \
+'  ln -sf "${LEAN4_SKILLS_SEED}/plugins/lean4/skills/lean4" "${CODEX_SKILLS_DIR}/lean4"' \
+'  if [ "$(id -u)" -eq 0 ]; then chown -h "${HOST_UID}:${HOST_GID}" "${CODEX_SKILLS_DIR}/lean4" 2>/dev/null || true; fi' \
+'fi' \
+'' \
 '# Persist SSH known_hosts (agent keys stay on host; we only keep host fingerprints).' \
 'mkdir -p "${HOME}/.ssh"' \
 'chmod 700 "${HOME}/.ssh" 2>/dev/null || true' \
@@ -214,7 +296,8 @@ RUN printf '%s\n' \
 '  fi' \
 'fi' \
 '' \
-'# Ensure Claude Code config dir exists (for persistent auth).' \
+'# Ensure Claude Code config dir exists (for persistent auth); export so claude CLI finds it.' \
+'export CLAUDE_CONFIG_DIR' \
 'mkdir -p "${CLAUDE_CONFIG_DIR}"' \
 'if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_CONFIG_DIR}" 2>/dev/null || true; fi' \
 '' \
