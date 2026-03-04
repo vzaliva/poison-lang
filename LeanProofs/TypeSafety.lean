@@ -1103,18 +1103,6 @@ def runtimeInstantiatesCtx (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ :
   (∀ {x qt}, ctx.varEnv.lookup x = some qt →
      ∃ v, ρ.lookup x = some v ∧ valueHasETyp θ v qt.etyp)
 
-/-- In the "same config" setting, a closure's captured env and runtime env coincide with the
-    type context: when the realisation map instantiates the context and the value is typed as
-    that closure, the closure's σcap is ctx.varEnv.toCaptured and env = ρ. -/
-lemma closure_same_config_tenv_env
-  (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
-  (x : Name) (body : Expr) (env : VarEnv) (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
-  (htyp : valueHasETyp θ (Value.closure x body env) (ETyp.arrow st1 st2 p tcls))
-  (σcap : CapturedVarEnv) (htcl : FnTClosure.regular x body σcap ∈ tcls) :
-  σcap = VarTypeEnv.toCaptured ctx.varEnv ∧ env = ρ := by
-  sorry
-
 /-- Typing is deterministic in the type: same value, same etyp. -/
 lemma valueHasETyp_det
   {θ : RealizationMap} {v : Value} {e1 e2 : ETyp}
@@ -1154,16 +1142,6 @@ lemma valueHasETyp_peClosure_mem_inv
   ∃ pbody tenv, Expr.toPExpr? body = some pbody ∧ PFnTClosure.regular x pbody tenv ∈ tcl := by
   cases h with
   | peClosure hpure htcl => exact ⟨_, _, hpure, htcl⟩
-
-/-- Same for peClosure / parrow. -/
-lemma peClosure_same_config_tenv_env
-  (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
-  (x : Name) (body : Expr) (pbody : PExpr) (env : VarEnv) (st1 st2 : Typ) (p : Poison) (tcls : List PFnTClosure)
-  (htyp : valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcls))
-  (σcap : CapturedVarEnv) (htcl : PFnTClosure.regular x pbody σcap ∈ tcls) :
-  σcap = VarTypeEnv.toCaptured ctx.varEnv ∧ env = ρ := by
-  sorry
 
 /-- Future-use lemma for preservation proofs:
     when typing joins function closure sets (e.g. branch joins / merged alternatives),

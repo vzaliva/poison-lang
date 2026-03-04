@@ -303,7 +303,7 @@ lemma consistentRegimeSpec_implies_consistentWithRegime
     (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
     (h_spec : consistentRegimeSpec predSat R s μ ρ θ)
     (h_ric : runtimeInstantiatesCtx ctx μ ρ θ)
-    (h_trusted_init : trustedVarsClosureRegimeInit predSat R s ctx μ ρ)
+    (h_trusted_init : trustedVarsClosureRegimeInit predSat R s ctx μ ρ θ)
     (h_input_wf : wfInputSpec s)
     (h_match : ctxMatchesInputSpec s ctx)
     (h_wf : wfRegime R s)
@@ -512,8 +512,8 @@ def StepFR
           consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
           consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
           agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
-          valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf₀.memory o₀ ∧
-          valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf₁.memory o₁ ∧
+          valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf₀.memory θ₀' o₀ ∧
+          valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf₁.memory θ₁' o₁ ∧
           resultAgreesIfClean predSat (ctxAfter ctx res).regime cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
 
 -- Step theorem spec derived from typing (context-driven).
@@ -682,7 +682,7 @@ private lemma memberCvcrEvidence_of_toCaptured
   (predSat : PredSat) (R : Regime) (ctx : TypeContext)
   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
   (hcwr : consistentWithRegime predSat R ctx μ ρ θ) :
-  MemberCvcrEvidence predSat R μ (VarTypeEnv.toCaptured ctx.varEnv) ρ := by
+  MemberCvcrEvidence predSat R μ θ (VarTypeEnv.toCaptured ctx.varEnv) ρ := by
   intro y qt_y v_y hlookup_σ hlookup_ρ
   have hlookup_list :
       (VarTypeEnv.toCaptured ctx.varEnv).lookup y = some qt_y :=
@@ -747,112 +747,119 @@ private lemma agreeCapturedEnv_same
         · exact False.elim (CapturedVarEnv_nodup_head_notin_tail x qt tail qt' hnd (by simpa [CapturedVarEnv.lookup_eq, beq_iff_eq.mp heq] using hσ))
         · exact hhenv y qt' v' (by simp only [heq, CapturedVarEnv.lookup_eq, List.lookup]; exact hσ) hρ
 
--- Admitted to break mutual recursion (agreeValueUnder_same ⇄ agreeCapturedEnv_same_toCaptured).
--- TODO: prove without sorry (e.g. by resolving mutual recursion or well-founded measure).
-private lemma agreeCapturedEnv_same_toCaptured
-  (predSat : PredSat) (R : Regime) (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (hric : runtimeInstantiatesCtx ctx μ ρ θ) (hcwr : consistentWithRegime predSat R ctx μ ρ θ) (hR : R = ctx.regime) :
-  agreeCapturedEnv predSat R μ μ θ θ (VarTypeEnv.toCaptured ctx.varEnv) ρ ρ := sorry
+-- Auxiliary: builds agreeValueUnder from deepValueQTypProperty evidence (induction on the tree).
+-- This resolves the mutual recursion that previously required sorry in agreeCapturedEnv_same_toCaptured.
+-- Note: hclean and htyp are in the conclusion (not parameters) so that induction on hdeep
+-- automatically generalizes them without needing manual revert/intro.
+private lemma agreeValueUnder_same_aux
+    {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap}
+    {qt : QTyp} {v : Value}
+    (hdeep : deepValueQTypProperty (fun σcap ρcap =>
+      capturedVarsRegimeProperty predSat R μ σcap ρcap ∧
+      capturedVarsTypingProperty θ σcap ρcap) qt v) :
+    qtypCleanUnder R qt → valueHasETyp θ v qt.etyp →
+    agreeValueUnder predSat R μ μ θ θ qt v v := by
+  induction hdeep with
+  | @nonClosure _qt' v' hnclos hnclospe =>
+    intro hclean htyp
+    cases hclean with
+    | clean hpoison =>
+      cases v' with
+      | num n =>
+        have hetyp := valueHasETyp_etyp_num htyp
+        exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
+      | bool _ =>
+        have hetyp := valueHasETyp_etyp_bool htyp
+        exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
+      | unit =>
+        have hetyp := valueHasETyp_etyp_unit htyp
+        exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
+      | str _ =>
+        have hetyp := valueHasETyp_etyp_str htyp
+        exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
+      | loc a =>
+        rcases valueHasETyp_loc_inv htyp with ⟨_ls, l, hetyp, hlookup, hin⟩
+        exact agreeValueUnder.clean_ref hpoison hetyp hlookup hin rfl hlookup rfl
+      | closure x body env => exact absurd rfl (hnclos x body env)
+      | peClosure x body env => exact absurd rfl (hnclospe x body env)
+    | guard k htag hregime _hnotfun =>
+      cases v' with
+      | num n =>
+        have hetyp := valueHasETyp_etyp_num htyp
+        exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
+      | bool _ =>
+        have hetyp := valueHasETyp_etyp_bool htyp
+        exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
+      | unit =>
+        have hetyp := valueHasETyp_etyp_unit htyp
+        exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
+      | str _ =>
+        have hetyp := valueHasETyp_etyp_str htyp
+        exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
+      | loc a =>
+        rcases valueHasETyp_loc_inv htyp with ⟨_ls, l, hetyp, hlookup, hin⟩
+        exact agreeValueUnder.withPred_true_ref k htag hregime hetyp hlookup hin rfl hlookup rfl
+      | closure x body env => exact absurd rfl (hnclos x body env)
+      | peClosure x body env => exact absurd rfl (hnclospe x body env)
+  | @closure qt' _v' xp body ρcap σcap st1 st2 p tcls hval hetyp_eq hmem hP hSub ih =>
+    subst hval
+    intro _hclean htyp
+    obtain ⟨hRegime, hnd, hcover, hhenv⟩ := hP
+    by_cases hdirty : ¬internalPoisonClean qt'
+    · exact agreeValueUnder.dirty_internal_arrow hdirty
+        (by rw [hetyp_eq]; rfl) htyp htyp
+    · have h_clean_int : internalPoisonClean qt' := by by_contra h; exact hdirty h
+      have hcap : agreeCapturedEnv predSat R μ μ θ θ σcap ρcap ρcap :=
+        agreeCapturedEnv_same predSat R μ θ σcap ρcap hnd hcover hhenv
+          (fun y qt_y v_y hσ hρ hclean_y htyp_y => ih y qt_y v_y hσ hρ hclean_y htyp_y)
+      have hmemberVars : MemberVarsRegimeEvidence predSat R μ σcap ρcap := by
+        intro y qt_y k_y v_y hlookup_σ _hlookup_ρ hguard hkR
+        exact hRegime y qt_y k_y
+          (list_lookup_of_ofCaptured_lookup σcap y qt_y hlookup_σ) hguard hkR
+      have hmemberCvcr : MemberCvcrEvidence predSat R μ θ σcap ρcap := by
+        intro y qt_y v_y hlookup_σ hlookup_ρ
+        exact .intro (hSub y qt_y v_y
+          (list_lookup_of_ofCaptured_lookup σcap y qt_y hlookup_σ) hlookup_ρ)
+      exact agreeValueUnder.clean_internal_arrow h_clean_int hetyp_eq hmem rfl
+        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr rfl rfl
+  | @peClosure qt' _v' xp body pbody ρcap σcap st1 st2 p tcls hval hetyp_eq hpure_deep hmem hP hSub ih =>
+    subst hval
+    intro _hclean htyp
+    obtain ⟨hRegime, hnd, hcover, hhenv⟩ := hP
+    by_cases hdirty : ¬internalPoisonClean qt'
+    · exact agreeValueUnder.dirty_internal_parrow hdirty
+        (by rw [hetyp_eq]; rfl) htyp htyp
+    · have h_clean_int : internalPoisonClean qt' := by by_contra h; exact hdirty h
+      have hcap : agreeCapturedEnv predSat R μ μ θ θ σcap ρcap ρcap :=
+        agreeCapturedEnv_same predSat R μ θ σcap ρcap hnd hcover hhenv
+          (fun y qt_y v_y hσ hρ hclean_y htyp_y => ih y qt_y v_y hσ hρ hclean_y htyp_y)
+      have hmemberVars : MemberVarsRegimeEvidence predSat R μ σcap ρcap := by
+        intro y qt_y k_y v_y hlookup_σ _hlookup_ρ hguard hkR
+        exact hRegime y qt_y k_y
+          (list_lookup_of_ofCaptured_lookup σcap y qt_y hlookup_σ) hguard hkR
+      have hmemberCvcr : MemberCvcrEvidence predSat R μ θ σcap ρcap := by
+        intro y qt_y v_y hlookup_σ hlookup_ρ
+        exact .intro (hSub y qt_y v_y
+          (list_lookup_of_ofCaptured_lookup σcap y qt_y hlookup_σ) hlookup_ρ)
+      exact agreeValueUnder.clean_internal_parrow h_clean_int hetyp_eq hmem ⟨hpure_deep, rfl⟩
+        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr rfl rfl
 
 -- Reflexive agreement when both sides are the same config.
+-- Uses closureCapturedVarsRegime evidence (which carries both regime and typing info for a single σcap)
+-- to build agreeCapturedEnv, resolving the member-matching problem.
 private lemma agreeValueUnder_same
-  (predSat : PredSat) (R : Regime) (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (hric : runtimeInstantiatesCtx ctx μ ρ θ) (hcwr : consistentWithRegime predSat R ctx μ ρ θ)
-  (hR : R = ctx.regime) (qt : QTyp) (v : Value) (hclean : qtypCleanUnder R qt) (htyp : valueHasETyp θ v qt.etyp) :
-  agreeValueUnder predSat R μ μ θ θ qt v v := by
-  cases hclean with
-  | clean hpoison =>
-    cases v with
-    | num n =>
-      have hetyp := valueHasETyp_etyp_num htyp
-      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
-    | bool _ =>
-      have hetyp := valueHasETyp_etyp_bool htyp
-      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
-    | unit =>
-      have hetyp := valueHasETyp_etyp_unit htyp
-      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
-    | str _ =>
-      have hetyp := valueHasETyp_etyp_str htyp
-      exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
-    | loc a =>
-      rcases valueHasETyp_loc_inv htyp with ⟨_ls, l, hetyp, hlookup, hin⟩
-      exact agreeValueUnder.clean_ref hpoison hetyp hlookup hin rfl hlookup rfl
-    | closure x body env =>
-      by_cases hdirty : ¬internalPoisonClean qt
-      · exact agreeValueUnder.dirty_internal_arrow hdirty (valueHasETyp_closure_etyp_arrow htyp) htyp htyp
-      · have h_clean_int : internalPoisonClean qt := by by_contra h; exact hdirty h
-        obtain ⟨st1, st2, p, tcl, hetyp⟩ := valueHasETyp_closure_etyp_arrow_inv htyp
-        have htyp_arrow : valueHasETyp θ (Value.closure x body env) (ETyp.arrow st1 st2 p tcl) := by rw [← hetyp]; exact htyp
-        obtain ⟨tenv, htcl⟩ := valueHasETyp_closure_mem_inv htyp_arrow
-        obtain ⟨heq_tenv, heq_env⟩ := closure_same_config_tenv_env ctx μ ρ θ hric x body env st1 st2 p tcl htyp_arrow tenv htcl
-        have hcap := heq_tenv ▸ agreeCapturedEnv_same_toCaptured predSat R ctx μ ρ θ hric hcwr hR
-        have hVars := heq_tenv ▸ memberVarsRegimeEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
-        have hCvcr := heq_tenv ▸ memberCvcrEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
-        have heq_v := congr_arg (Value.closure x body) heq_env
-        exact agreeValueUnder.clean_internal_arrow h_clean_int hetyp htcl rfl hcap hVars hCvcr hVars hCvcr heq_v heq_v
-    | peClosure x body env =>
-      by_cases hdirty : ¬internalPoisonClean qt
-      · exact agreeValueUnder.dirty_internal_parrow hdirty (valueHasETyp_peClosure_etyp_parrow htyp) htyp htyp
-      · have h_clean_int : internalPoisonClean qt := by by_contra h; exact hdirty h
-        obtain ⟨st1, st2, p, tcl, hetyp⟩ := valueHasETyp_peClosure_etyp_parrow_inv htyp
-        have htyp_parrow : valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcl) := by rw [← hetyp]; exact htyp
-        obtain ⟨pbody, tenv, hpure, htcl⟩ := valueHasETyp_peClosure_mem_inv htyp_parrow
-        obtain ⟨heq_tenv, heq_env⟩ := peClosure_same_config_tenv_env ctx μ ρ θ hric x body pbody env st1 st2 p tcl htyp_parrow tenv htcl
-        have hcap := heq_tenv ▸ agreeCapturedEnv_same_toCaptured predSat R ctx μ ρ θ hric hcwr hR
-        have hVars := heq_tenv ▸ memberVarsRegimeEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
-        have hCvcr := heq_tenv ▸ memberCvcrEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
-        have heq_v := congr_arg (Value.peClosure x body) heq_env
-        exact agreeValueUnder.clean_internal_parrow h_clean_int hetyp htcl ⟨hpure, rfl⟩ hcap hVars hCvcr hVars hCvcr heq_v heq_v
-  | guard k htag hregime _hnotfun =>
-    cases v with
-    | num n =>
-      have hetyp := valueHasETyp_etyp_num htyp
-      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
-    | bool _ =>
-      have hetyp := valueHasETyp_etyp_bool htyp
-      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
-    | unit =>
-      have hetyp := valueHasETyp_etyp_unit htyp
-      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
-    | str _ =>
-      have hetyp := valueHasETyp_etyp_str htyp
-      exact agreeValueUnder.withPred_true_eq k htag hregime (by rw [hetyp]; rfl) (fun ⟨_, h⟩ => by rw [hetyp] at h; injection h) rfl
-    | loc a =>
-      rcases valueHasETyp_loc_inv htyp with ⟨_ls, l, hetyp, hlookup, hin⟩
-      exact agreeValueUnder.withPred_true_ref k htag hregime hetyp hlookup hin rfl hlookup rfl
-    | closure x body env =>
-      by_cases hdirty : ¬internalPoisonClean qt
-      · exact agreeValueUnder.dirty_internal_arrow hdirty (valueHasETyp_closure_etyp_arrow htyp) htyp htyp
-      · have h_clean_int : internalPoisonClean qt := by by_contra h; exact hdirty h
-        obtain ⟨st1, st2, p, tcl, hetyp⟩ := valueHasETyp_closure_etyp_arrow_inv htyp
-        have htyp_arrow : valueHasETyp θ (Value.closure x body env) (ETyp.arrow st1 st2 p tcl) := by rw [← hetyp]; exact htyp
-        obtain ⟨tenv, htcl⟩ := valueHasETyp_closure_mem_inv htyp_arrow
-        obtain ⟨heq_tenv, heq_env⟩ := closure_same_config_tenv_env ctx μ ρ θ hric x body env st1 st2 p tcl htyp_arrow tenv htcl
-        have hcap := heq_tenv ▸ agreeCapturedEnv_same_toCaptured predSat R ctx μ ρ θ hric hcwr hR
-        have hVars := heq_tenv ▸ memberVarsRegimeEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
-        have hCvcr := heq_tenv ▸ memberCvcrEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
-        have heq_v := congr_arg (Value.closure x body) heq_env
-        exact agreeValueUnder.clean_internal_arrow h_clean_int hetyp htcl rfl hcap hVars hCvcr hVars hCvcr heq_v heq_v
-    | peClosure x body env =>
-      by_cases hdirty : ¬internalPoisonClean qt
-      · exact agreeValueUnder.dirty_internal_parrow hdirty (valueHasETyp_peClosure_etyp_parrow htyp) htyp htyp
-      · have h_clean_int : internalPoisonClean qt := by by_contra h; exact hdirty h
-        obtain ⟨st1, st2, p, tcl, hetyp⟩ := valueHasETyp_peClosure_etyp_parrow_inv htyp
-        have htyp_parrow : valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcl) := by rw [← hetyp]; exact htyp
-        obtain ⟨pbody, tenv, hpure, htcl⟩ := valueHasETyp_peClosure_mem_inv htyp_parrow
-        obtain ⟨heq_tenv, heq_env⟩ := peClosure_same_config_tenv_env ctx μ ρ θ hric x body pbody env st1 st2 p tcl htyp_parrow tenv htcl
-        have hcap := heq_tenv ▸ agreeCapturedEnv_same_toCaptured predSat R ctx μ ρ θ hric hcwr hR
-        have hVars := heq_tenv ▸ memberVarsRegimeEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
-        have hCvcr := heq_tenv ▸ memberCvcrEvidence_of_toCaptured predSat R ctx μ ρ θ hcwr
-        have heq_v := congr_arg (Value.peClosure x body) heq_env
-        exact agreeValueUnder.clean_internal_parrow h_clean_int hetyp htcl ⟨hpure, rfl⟩ hcap hVars hCvcr hVars hCvcr heq_v heq_v
+    {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap}
+    {qt : QTyp} {v : Value} (hclean : qtypCleanUnder R qt) (htyp : valueHasETyp θ v qt.etyp)
+    (hcvcr : closureCapturedVarsRegime predSat R qt μ θ v) :
+    agreeValueUnder predSat R μ μ θ θ qt v v := by
+  obtain ⟨hdeep⟩ := hcvcr
+  exact agreeValueUnder_same_aux hdeep hclean htyp
 
 -- agreeOnClean when both sides are the same (μ, ρ, θ).
 private lemma agreeOnClean_same_config
   (predSat : PredSat) (R : Regime) (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
   (hric : runtimeInstantiatesCtx ctx μ ρ θ) (hcwr : consistentWithRegime predSat R ctx μ ρ θ)
-  (hR : R = ctx.regime) :
+  (_hR : R = ctx.regime) :
   agreeOnClean predSat R ctx μ ρ θ μ ρ θ := by
   constructor
   · intro l qt hlookup hclean
@@ -868,13 +875,16 @@ private lemma agreeOnClean_same_config
         by_cases hetyp : qt.etyp = ETyp.int
         · have hμ : Memory.lookup μ a = some n := by simp [Memory.lookup, ExtTreeMap.get?_eq_getElem?, hμan]
           have htyp : valueHasETyp θ (Value.num n) qt.etyp := by rw [hetyp]; exact valueHasETyp.num n
+          have hcvcr : closureCapturedVarsRegime predSat R qt μ θ (Value.num n) :=
+            .intro (.nonClosure (fun _ _ _ h => by injection h) (fun _ _ _ h => by injection h))
           exact agreeLocUnder.agree_values l qt a a n n hθ hθ hμ hμ
-            (agreeValueUnder_same predSat R ctx μ ρ θ hric hcwr hR qt (Value.num n) hclean htyp)
+            (agreeValueUnder_same hclean htyp hcvcr)
         · exact False.elim (hetyp (memEnv_lookup_etyp_int ctx.memEnv l qt hlookup))
   · intro x qt hlookup hclean
     rcases hric.2 hlookup with ⟨v, hρ, htyp⟩
+    have hcvcr := hcwr.2.2 x qt v hlookup hρ
     refine agreeVarUnder.agree_values x qt v v hρ hρ
-      (agreeValueUnder_same predSat R ctx μ ρ θ hric hcwr hR qt v hclean htyp)
+      (agreeValueUnder_same hclean htyp hcvcr)
 
 section TypeSystemEnforcesFaultRobustness_impl_proof
 
@@ -984,31 +994,15 @@ private lemma capturedVarsRegimeProperty_monotone
   | inl hk'_eq => exact varsRegime_monotone h_mono hguard hb hk'_eq hvr_R
   | inr hk'_none => exact absurd hk'_none hkR'
 
--- Monotonicity of deepValueQTypProperty under monotone P.
-private lemma deepValueQTypProperty_monotone_P
-  {P P' : CapturedVarEnv → VarEnv → Prop}
-  (hPP : ∀ σcap ρcap, P σcap ρcap → P' σcap ρcap)
-  {qt : QTyp} {v : Value}
-  (h : deepValueQTypProperty P qt v) :
-  deepValueQTypProperty P' qt v := by
-  induction h with
-  | nonClosure hv hpe => exact .nonClosure hv hpe
-  | closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem hP _hdeep ih =>
-      exact .closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem
-        (hPP σcap ρcap hP) (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr)
-  | peClosure xp body pbody ρcap σcap st1 st2 p tcls hval hetyp hmem hP _hdeep ih =>
-      exact .peClosure xp body pbody ρcap σcap st1 st2 p tcls hval hetyp hmem
-        (hPP σcap ρcap hP) (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr)
-
 private lemma closureCapturedVarsRegime_monotone
-  {predSat : PredSat} {R R' : Regime} {qt : QTyp} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R R' : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   (h_mono : Regime.monotoneStep R R')
-  (h : closureCapturedVarsRegime predSat R qt μ v) :
-  closureCapturedVarsRegime predSat R' qt μ v := by
+  (h : closureCapturedVarsRegime predSat R qt μ θ v) :
+  closureCapturedVarsRegime predSat R' qt μ θ v := by
   cases h with
   | intro hdeep =>
-      exact .intro (deepValueQTypProperty_monotone_P
-        (fun σcap ρcap hP => capturedVarsRegimeProperty_monotone h_mono hP)
+      exact .intro (deepValueQTypProperty_mono
+        (fun σcap ρcap ⟨hP, hT⟩ => ⟨capturedVarsRegimeProperty_monotone h_mono hP, hT⟩)
         hdeep)
 
 -- Lookup-back transport helpers used by both the `ite` and join transport proofs.
@@ -1069,17 +1063,17 @@ private lemma capturedVarsRegimeProperty_transport_lookup_back
           hlookup_back hguard hkR'some hvr_R
 
 private lemma closureCapturedVarsRegime_transport_lookup_back
-  {predSat : PredSat} {R R' : Regime} {qt : QTyp} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R R' : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
-  (h : closureCapturedVarsRegime predSat R qt μ v) :
-  closureCapturedVarsRegime predSat R' qt μ v := by
+  (h : closureCapturedVarsRegime predSat R qt μ θ v) :
+  closureCapturedVarsRegime predSat R' qt μ θ v := by
   cases h with
   | intro hdeep =>
-      exact .intro (deepValueQTypProperty_monotone_P
-        (fun σcap ρcap hP =>
-          capturedVarsRegimeProperty_transport_lookup_back
+      exact .intro (deepValueQTypProperty_mono
+        (fun σcap ρcap ⟨hP, hT⟩ =>
+          ⟨capturedVarsRegimeProperty_transport_lookup_back
             (predSat := predSat) (R := R) (R' := R') (μ := μ)
-            hlookup_back hP)
+            hlookup_back hP, hT⟩)
         hdeep)
 
 private lemma memberVarsRegimeEvidence_transport_lookup_back
@@ -1107,11 +1101,11 @@ private lemma memberVarsRegimeEvidence_transport_lookup_back
           hlookup_back hguard hkR'some hvr_R
 
 private lemma memberCvcrEvidence_transport_lookup_back
-  {predSat : PredSat} {R R' : Regime} {μ : Memory}
+  {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
   (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : MemberCvcrEvidence predSat R μ σcap ρcap) :
-  MemberCvcrEvidence predSat R' μ σcap ρcap := by
+  (h : MemberCvcrEvidence predSat R μ θ σcap ρcap) :
+  MemberCvcrEvidence predSat R' μ θ σcap ρcap := by
   intro y qt_y v_y hlookup_σ hlookup_ρ
   exact
     closureCapturedVarsRegime_transport_lookup_back
@@ -1120,10 +1114,10 @@ private lemma memberCvcrEvidence_transport_lookup_back
 
 -- Transport closureCapturedVarsRegime across qt.etyp equality.
 private lemma closureCapturedVarsRegime_transport_etyp
-  {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   (hetyp : qt.etyp = qt'.etyp)
-  (h : closureCapturedVarsRegime predSat R qt μ v) :
-  closureCapturedVarsRegime predSat R qt' μ v := by
+  (h : closureCapturedVarsRegime predSat R qt μ θ v) :
+  closureCapturedVarsRegime predSat R qt' μ θ v := by
   cases h with
   | intro hdeep =>
       refine .intro ?_
@@ -1131,17 +1125,17 @@ private lemma closureCapturedVarsRegime_transport_etyp
       | nonClosure hv hpe => exact .nonClosure hv hpe
       | closure xp body ρcap σcap st1 st2 p tcls hval hetyp_eq hmem hP hrec =>
           exact .closure xp body ρcap σcap st1 st2 p tcls hval (hetyp ▸ hetyp_eq) hmem hP hrec
-      | peClosure xp body pbody ρcap σcap st1 st2 p tcls hval hetyp_eq hmem hP hrec =>
-          exact .peClosure xp body pbody ρcap σcap st1 st2 p tcls hval (hetyp ▸ hetyp_eq) hmem hP hrec
+      | peClosure xp body pbody ρcap σcap st1 st2 p tcls hval hetyp_eq hpure hmem hP hrec =>
+          exact .peClosure xp body pbody ρcap σcap st1 st2 p tcls hval (hetyp ▸ hetyp_eq) hpure hmem hP hrec
 
 -- Weaken closureCapturedVarsRegime when the closure list grows (superset).
 -- Used when joining type results: mergeFnTClosures produces a superset.
 private lemma closureCapturedVarsRegime_weaken_fnTClosures
-  {predSat : PredSat} {R : Regime} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap} {v : Value}
   {st1 st2 : Typ} {p : Poison} {tcls tcls' : List FnTClosure} {poison : Poison} {pred : Predicate}
   (hmem : ∀ tcl, tcl ∈ tcls → tcl ∈ tcls')
-  (h : closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p tcls, poison, pred⟩ μ v) :
-  closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p tcls', poison, pred⟩ μ v := by
+  (h : closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
+  closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p tcls', poison, pred⟩ μ θ v := by
   cases h with
   | intro hdeep =>
       refine .intro ?_
@@ -1157,11 +1151,11 @@ private lemma closureCapturedVarsRegime_weaken_fnTClosures
 
 -- Weaken with different inner poison (joinETyps changes p to joinPoison p1 p2).
 private lemma closureCapturedVarsRegime_weaken_fnTClosures'
-  {predSat : PredSat} {R : Regime} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap} {v : Value}
   {st1 st2 : Typ} {p p' : Poison} {tcls tcls' : List FnTClosure} {poison : Poison} {pred : Predicate}
   (hmem : ∀ tcl, tcl ∈ tcls → tcl ∈ tcls')
-  (h : closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p tcls, poison, pred⟩ μ v) :
-  closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p' tcls', poison, pred⟩ μ v := by
+  (h : closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
+  closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p' tcls', poison, pred⟩ μ θ v := by
   cases h with
   | intro hdeep =>
       refine .intro ?_
@@ -1177,11 +1171,11 @@ private lemma closureCapturedVarsRegime_weaken_fnTClosures'
 
 -- Analogous for parrow/PFnTClosure.
 private lemma closureCapturedVarsRegime_weaken_pFnTClosures
-  {predSat : PredSat} {R : Regime} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap} {v : Value}
   {st1 st2 : Typ} {p : Poison} {tcls tcls' : List PFnTClosure} {poison : Poison} {pred : Predicate}
   (hmem : ∀ tcl, tcl ∈ tcls → tcl ∈ tcls')
-  (h : closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p tcls, poison, pred⟩ μ v) :
-  closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p tcls', poison, pred⟩ μ v := by
+  (h : closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
+  closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p tcls', poison, pred⟩ μ θ v := by
   cases h with
   | intro hdeep =>
       refine .intro ?_
@@ -1190,18 +1184,18 @@ private lemma closureCapturedVarsRegime_weaken_pFnTClosures
       | closure _ _ _ _ _ _ _ _ _ hetyp_eq_arr _ _ =>
           exfalso
           simp at hetyp_eq_arr
-      | peClosure xp body pbody ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hmem_src hP hrec =>
+      | peClosure xp body pbody ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hpure hmem_src hP hrec =>
           have heq_tcls : tcls_src = tcls := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
           subst heq_tcls
-          exact .peClosure xp body pbody ρcap σcap st1 st2 p tcls' hval rfl (hmem _ hmem_src) hP hrec
+          exact .peClosure xp body pbody ρcap σcap st1 st2 p tcls' hval rfl hpure (hmem _ hmem_src) hP hrec
 
 -- Weaken parrow with different inner poison (joinETyps changes p).
 private lemma closureCapturedVarsRegime_weaken_pFnTClosures'
-  {predSat : PredSat} {R : Regime} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap} {v : Value}
   {st1 st2 : Typ} {p p' : Poison} {tcls tcls' : List PFnTClosure} {poison : Poison} {pred : Predicate}
   (hmem : ∀ tcl, tcl ∈ tcls → tcl ∈ tcls')
-  (h : closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p tcls, poison, pred⟩ μ v) :
-  closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p' tcls', poison, pred⟩ μ v := by
+  (h : closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
+  closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p' tcls', poison, pred⟩ μ θ v := by
   cases h with
   | intro hdeep =>
       refine .intro ?_
@@ -1210,29 +1204,29 @@ private lemma closureCapturedVarsRegime_weaken_pFnTClosures'
       | closure _ _ _ _ _ _ _ _ _ hetyp_eq_arr _ _ =>
           exfalso
           simp at hetyp_eq_arr
-      | peClosure xp body pbody ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hmem_src hP hrec =>
+      | peClosure xp body pbody ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hpure hmem_src hP hrec =>
           have heq_tcls : tcls_src = tcls := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
           subst heq_tcls
-          exact .peClosure xp body pbody ρcap σcap st1 st2 p' tcls' hval rfl (hmem _ hmem_src) hP hrec
+          exact .peClosure xp body pbody ρcap σcap st1 st2 p' tcls' hval rfl hpure (hmem _ hmem_src) hP hrec
 
 -- Transport closureCapturedVarsRegime across qt.pred equality.
 -- Since the new definition is indexed by qt.etyp, we need an additional
 -- etyp equality (defaults to rfl for the common case where only pred changes).
 private lemma closureCapturedVarsRegime_transport_pred
-  {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   (_hpred : qt.pred = qt'.pred)
-  (h : closureCapturedVarsRegime predSat R qt μ v)
+  (h : closureCapturedVarsRegime predSat R qt μ θ v)
   (hetyp : qt.etyp = qt'.etyp := by rfl) :
-  closureCapturedVarsRegime predSat R qt' μ v :=
+  closureCapturedVarsRegime predSat R qt' μ θ v :=
   closureCapturedVarsRegime_transport_etyp hetyp h
 
 -- When Regime.monotoneStep R R', valueConsistentWithRegime for R implies for R'
 -- (R' has fewer entries, so fewer constraints).
 private lemma valueConsistentWithRegime_monotone
-  {predSat : PredSat} {R R' : Regime} {qt : QTyp} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R R' : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   (h_mono : Regime.monotoneStep R R')
-  (h : valueConsistentWithRegime predSat R qt μ v) :
-  valueConsistentWithRegime predSat R' qt μ v := by
+  (h : valueConsistentWithRegime predSat R qt μ θ v) :
+  valueConsistentWithRegime predSat R' qt μ θ v := by
   cases h with
   | noTag htag hcap =>
       exact valueConsistentWithRegime.noTag htag (closureCapturedVarsRegime_monotone h_mono hcap)
@@ -1262,9 +1256,9 @@ private lemma valueConsistentWithRegime_monotone
 
 -- Extract closureCapturedVarsRegime evidence from valueConsistentWithRegime.
 private lemma valueConsistentWithRegime_closureCapturedVarsRegime
-  {predSat : PredSat} {R : Regime} {qt : QTyp} {μ : Memory} {v : Value}
-  (h : valueConsistentWithRegime predSat R qt μ v) :
-  closureCapturedVarsRegime predSat R qt μ v := by
+  {predSat : PredSat} {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  (h : valueConsistentWithRegime predSat R qt μ θ v) :
+  closureCapturedVarsRegime predSat R qt μ θ v := by
   cases h with
   | noTag _ hcap => exact hcap
   | guardOnly_ok _k _ hcap => exact hcap
@@ -1275,9 +1269,9 @@ private lemma valueConsistentWithRegime_closureCapturedVarsRegime
 -- For guard-closure predicates, `valueConsistentWithRegime` determines the same
 -- predicate-consistency obligation needed by `varsRegime.withPred_ok`.
 private lemma valueConsistentWithRegime_guardClosure_consistency
-  {predSat : PredSat} {R : Regime} {qt : QTyp} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   {k : Tag} {arg_name : Name} {pred_body : PExpr} {var_env : CapturedVarEnv} {b : Bool}
-  (hvalc : valueConsistentWithRegime predSat R qt μ v)
+  (hvalc : valueConsistentWithRegime predSat R qt μ θ v)
   (hpred : qt.pred = Predicate.guardClosure k arg_name pred_body var_env)
   (hreg : R.lookup? k = some b) :
   (b = true → qtypPredHolds predSat qt μ v) ∧
@@ -1356,12 +1350,12 @@ private lemma valueConsistentWithRegime_guardClosure_consistency
 -- Build a `varsRegime` fact for an active-guard variable from the corresponding
 -- `valueConsistentWithRegime` fact.
 private lemma varsRegime_of_valueConsistentWithRegime_active
-  {predSat : PredSat} {R : Regime} {μ : Memory} {ρ : VarEnv}
+  {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap} {ρ : VarEnv}
   {x : Name} {qt : QTyp} {v : Value} {k : Tag}
   (hlookup : ρ.lookup x = some v)
   (hguard : qtypGuardTag qt = some k)
   (hRdef : R.lookup? k ≠ none)
-  (hvalc : valueConsistentWithRegime predSat R qt μ v) :
+  (hvalc : valueConsistentWithRegime predSat R qt μ θ v) :
   varsRegime predSat R μ ρ (x, qt) := by
   cases hpred : qt.pred with
   | noPred =>
@@ -1462,47 +1456,104 @@ private lemma capturedVarsRegimeProperty_transport_predHolds
 
 -- Transport closureCapturedVarsRegime across memory change given a predicate iff.
 private lemma closureCapturedVarsRegime_transport_μ
-  {predSat : PredSat} {R : Regime} {qt : QTyp} {μ μ' : Memory} {v : Value}
+  {predSat : PredSat} {R : Regime} {qt : QTyp} {μ μ' : Memory} {θ : RealizationMap} {v : Value}
   (hpred_compat : ∀ (qt : QTyp) (v : Value),
     qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
-  (h : closureCapturedVarsRegime predSat R qt μ v) :
-  closureCapturedVarsRegime predSat R qt μ' v := by
+  (h : closureCapturedVarsRegime predSat R qt μ θ v) :
+  closureCapturedVarsRegime predSat R qt μ' θ v := by
   cases h with
   | intro hdeep =>
-      exact .intro (deepValueQTypProperty_monotone_P
-        (fun σcap ρcap hP => capturedVarsRegimeProperty_transport_predHolds hpred_compat hP)
+      exact .intro (deepValueQTypProperty_mono
+        (fun σcap ρcap ⟨hP, hT⟩ => ⟨capturedVarsRegimeProperty_transport_predHolds hpred_compat hP, hT⟩)
+        hdeep)
+
+-- Monotonicity of valueHasETyp under θ extension.
+-- Moved before transport lemmas so they can use it.
+private lemma valueHasETyp_extends'
+  {θ₀ θ₁ : RealizationMap} {v : Value} {t : ETyp} :
+  θ₀.extendsMap θ₁ →
+  valueHasETyp θ₀ v t →
+  valueHasETyp θ₁ v t := by
+  intro hExt hval
+  induction hval generalizing θ₁ with
+  | num n => exact valueHasETyp.num n
+  | bool b => exact valueHasETyp.bool b
+  | unit => exact valueHasETyp.unit
+  | str s => exact valueHasETyp.str s
+  | loc hlookup hin => exact valueHasETyp.loc (hExt _ _ hlookup) hin
+  | closure htcl henv hcover ih =>
+      refine valueHasETyp.closure (htcl := htcl) (hcover := hcover) ?_
+      intro y qt v hlookupT hlookupV
+      exact ih y qt v hlookupT hlookupV hExt
+  | peClosure hpure htcl henv hcover ih =>
+      refine valueHasETyp.peClosure (hpure := hpure) (htcl := htcl) (hcover := hcover) ?_
+      intro y qt v hlookupT hlookupV
+      exact ih y qt v hlookupT hlookupV hExt
+
+-- Transport closureCapturedVarsRegime across both memory and θ (map extension).
+-- The regime property is insensitive to θ; the typing property is monotone
+-- under θ extension via valueHasETyp_extends'.
+private lemma closureCapturedVarsRegime_transport_μ_θ
+  {predSat : PredSat} {R : Regime} {qt : QTyp} {μ μ' : Memory} {θ θ' : RealizationMap} {v : Value}
+  (hpred_compat : ∀ (qt : QTyp) (v : Value),
+    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  (hθ : θ.extendsMap θ')
+  (h : closureCapturedVarsRegime predSat R qt μ θ v) :
+  closureCapturedVarsRegime predSat R qt μ' θ' v := by
+  cases h with
+  | intro hdeep =>
+      exact .intro (deepValueQTypProperty_mono
+        (fun σcap ρcap ⟨hP, hnd, hcover, htyp⟩ =>
+          ⟨capturedVarsRegimeProperty_transport_predHolds hpred_compat hP,
+           hnd, hcover,
+           fun y qt_y v_y hσ hρ => valueHasETyp_extends' hθ (htyp y qt_y v_y hσ hρ)⟩)
         hdeep)
 
 private lemma memberCvcrEvidence_monotone
-  {predSat : PredSat} {R R' : Regime} {μ : Memory}
+  {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
   (h_mono : Regime.monotoneStep R R')
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : MemberCvcrEvidence predSat R μ σcap ρcap) :
-  MemberCvcrEvidence predSat R' μ σcap ρcap := by
+  (h : MemberCvcrEvidence predSat R μ θ σcap ρcap) :
+  MemberCvcrEvidence predSat R' μ θ σcap ρcap := by
   intro y qt_y v_y hlookup_σ hlookup_ρ
   exact
     closureCapturedVarsRegime_monotone h_mono
       (h y qt_y v_y hlookup_σ hlookup_ρ)
 
 private lemma memberCvcrEvidence_transport_μ
-  {predSat : PredSat} {R : Regime} {μ μ' : Memory}
+  {predSat : PredSat} {R : Regime} {μ μ' : Memory} {θ : RealizationMap}
   (hpred_compat : ∀ (qt : QTyp) (v : Value),
     qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : MemberCvcrEvidence predSat R μ σcap ρcap) :
-  MemberCvcrEvidence predSat R μ' σcap ρcap := by
+  (h : MemberCvcrEvidence predSat R μ θ σcap ρcap) :
+  MemberCvcrEvidence predSat R μ' θ σcap ρcap := by
   intro y qt_y v_y hlookup_σ hlookup_ρ
   exact
     closureCapturedVarsRegime_transport_μ hpred_compat
       (h y qt_y v_y hlookup_σ hlookup_ρ)
 
+-- Transport MemberCvcrEvidence across both μ and θ (extends).
+-- The θ transport requires recursing through deepValueQTypProperty to update
+-- capturedVarsTypingProperty via valueHasETyp_extends at every nesting level.
+private lemma memberCvcrEvidence_transport_μ_θ
+  {predSat : PredSat} {R : Regime} {μ μ' : Memory} {θ θ' : RealizationMap}
+  (hpred_compat : ∀ (qt : QTyp) (v : Value),
+    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  (hθ : θ.extendsMap θ')
+  {σcap : CapturedVarEnv} {ρcap : VarEnv}
+  (h : MemberCvcrEvidence predSat R μ θ σcap ρcap) :
+  MemberCvcrEvidence predSat R μ' θ' σcap ρcap := by
+  intro y qt_y v_y hlookup_σ hlookup_ρ
+  exact closureCapturedVarsRegime_transport_μ_θ hpred_compat hθ
+    (h y qt_y v_y hlookup_σ hlookup_ρ)
+
 -- Transport with explicit closureCapturedVarsRegime transport (used when etyp may differ, e.g. joinETyps).
 private lemma valueConsistentWithRegime_transport_pred'
-  {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   (hpred : qt.pred = qt'.pred)
-  (hcap_tr : closureCapturedVarsRegime predSat R qt μ v → closureCapturedVarsRegime predSat R qt' μ v) :
-  valueConsistentWithRegime predSat R qt μ v →
-  valueConsistentWithRegime predSat R qt' μ v := by
+  (hcap_tr : closureCapturedVarsRegime predSat R qt μ θ v → closureCapturedVarsRegime predSat R qt' μ θ v) :
+  valueConsistentWithRegime predSat R qt μ θ v →
+  valueConsistentWithRegime predSat R qt' μ θ v := by
   intro h
   cases h with
   | noTag htag hcap =>
@@ -1536,14 +1587,14 @@ private lemma valueConsistentWithRegime_transport_pred'
           (μ := μ) (v := v) hpred hnot
 
 private lemma valueConsistentWithRegime_transport_pred
-  {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {v : Value}
+  {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   (hpred : qt.pred = qt'.pred)
   (hetyp : qt.etyp = qt'.etyp := by rfl) :
-  valueConsistentWithRegime predSat R qt μ v →
-  valueConsistentWithRegime predSat R qt' μ v := by
+  valueConsistentWithRegime predSat R qt μ θ v →
+  valueConsistentWithRegime predSat R qt' μ θ v := by
   intro h
-  have hcap_tr : ∀ hcap : closureCapturedVarsRegime predSat R qt μ v,
-      closureCapturedVarsRegime predSat R qt' μ v :=
+  have hcap_tr : ∀ hcap : closureCapturedVarsRegime predSat R qt μ θ v,
+      closureCapturedVarsRegime predSat R qt' μ θ v :=
     fun hcap => closureCapturedVarsRegime_transport_etyp hetyp hcap
   cases h with
   | noTag htag hcap =>
@@ -1595,11 +1646,10 @@ private lemma nonClosure_of_nonFunctionType
 -- Helper: construct closureCapturedVarsRegime for non-closure values using
 -- typeHasETyp evidence.
 private lemma closureCapturedVarsRegime_nonClosure_of_nonFunctionType
-  {predSat : PredSat} {R : Regime} {qt : QTyp} {μ : Memory} {v : Value}
-  {θ : RealizationMap}
+  {predSat : PredSat} {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   (hvet : valueHasETyp θ v qt.etyp)
   (hnotfun : qt.etyp.isFunctionType = false) :
-  closureCapturedVarsRegime predSat R qt μ v :=
+  closureCapturedVarsRegime predSat R qt μ θ v :=
   let ⟨hnc, hnpe⟩ := nonClosure_of_nonFunctionType hvet hnotfun
   .intro (.nonClosure hnc hnpe)
 
@@ -2996,9 +3046,9 @@ private lemma agreeValueUnder_clean_extends
         exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch
           (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
-          (memberCvcrEvidence_transport_μ hpred_compat₀ hmemberCvcr₁)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
-          (memberCvcrEvidence_transport_μ hpred_compat₁ hmemberCvcr₂)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
           hv₁ hv₂)
       (dirty_internal_arrow := by
         intro qt v₁ v₂ hdirty hisArrow htyp1 htyp2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
@@ -3010,9 +3060,9 @@ private lemma agreeValueUnder_clean_extends
         exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch
           (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
-          (memberCvcrEvidence_transport_μ hpred_compat₀ hmemberCvcr₁)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
-          (memberCvcrEvidence_transport_μ hpred_compat₁ hmemberCvcr₂)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
           hv₁ hv₂)
       (dirty_internal_parrow := by
         intro qt v₁ v₂ hdirty hisParrow htyp1 htyp2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
@@ -3092,9 +3142,9 @@ private lemma agreeCapturedEnv_clean_extends
         exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch
           (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
-          (memberCvcrEvidence_transport_μ hpred_compat₀ hmemberCvcr₁)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
-          (memberCvcrEvidence_transport_μ hpred_compat₁ hmemberCvcr₂)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
           hv₁ hv₂)
       (dirty_internal_arrow := by
         intro qt v₁ v₂ hdirty hisArrow htyp1 htyp2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
@@ -3106,9 +3156,9 @@ private lemma agreeCapturedEnv_clean_extends
         exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch
           (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
-          (memberCvcrEvidence_transport_μ hpred_compat₀ hmemberCvcr₁)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
-          (memberCvcrEvidence_transport_μ hpred_compat₁ hmemberCvcr₂)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
           hv₁ hv₂)
       (dirty_internal_parrow := by
         intro qt v₁ v₂ hdirty hisParrow htyp1 htyp2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
@@ -3480,9 +3530,9 @@ private lemma consistentWithRegime_closure_body_start
     ∀ x qt v,
       (VarTypeEnv.ofCaptured σcap).lookup x = some qt →
       ρcap.lookup x = some v →
-      closureCapturedVarsRegime predSat result1.regime' qt μ v)
+      closureCapturedVarsRegime predSat result1.regime' qt μ θ v)
   (h_arg_cvcr :
-    closureCapturedVarsRegime predSat result1.regime' argQt μ vArg) :
+    closureCapturedVarsRegime predSat result1.regime' argQt μ θ vArg) :
   let bodyCtx : TypeContext :=
     { ctx with
       memEnv := result1.memEnv'
@@ -4241,7 +4291,7 @@ private lemma stepFR_var
       (hρ : ρ.lookup name = some v)
     (hcwr : consistentWithRegime predSat ctxᵢ.regime ctxᵢ μ ρ θ)
     (hric : runtimeInstantiatesCtx ctxᵢ μ ρ θ) :
-    valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime res.qualType μ v := by
+    valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime res.qualType μ θ v := by
     -- Rewrite the regime to the input one.
     simp [hreg_after]
     cases hlookup_ctx : ctxᵢ.varEnv.lookup name with
@@ -4352,7 +4402,7 @@ private lemma stepFR_var
                           simp [typecheckVar, hlookup_ctx, hpred', hqt, htag', hft, pure, Except.pure] at htc''
                           cases htc''
                           simp [hpred']
-                have hnclos : closureCapturedVarsRegime predSat ctxᵢ.regime res.qualType μ v :=
+                have hnclos : closureCapturedVarsRegime predSat ctxᵢ.regime res.qualType μ θ v :=
                   closureCapturedVarsRegime_transport_etyp (by simp [hres]) (hcwr.2.2 name qt v hlookup_ctx hρ)
                 cases hk : ctxᵢ.regime.lookup? k with
                 | none =>
@@ -5768,7 +5818,7 @@ private lemma stepFR_newRef
             | some b =>
                 have hval0 :
                     valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
-                      res1.qualType cfg₀'.memory (Value.num n₀) := by
+                      res1.qualType cfg₀'.memory θ₀1 (Value.num n₀) := by
                   simpa [hregime_eq] using _hval_consist₀
                 have hpred_res1 :
                     res1.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env := by
@@ -5986,7 +6036,7 @@ private lemma stepFR_newRef
         simpa [hvar₀] using hlookup_v
       have hcap := hcwr₀1.2.2 x qt v hlookup_res1 hlookup_v_old
       rw [← hregime_eq] at hcap
-      exact closureCapturedVarsRegime_transport_μ hqtypPredHolds_mem hcap
+      exact closureCapturedVarsRegime_transport_μ_θ hqtypPredHolds_mem hθext₀'.1 hcap
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
     classical
     let storedQt : QTyp :=
@@ -6070,7 +6120,7 @@ private lemma stepFR_newRef
               | some b =>
                   have hval1 :
                       valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
-                        res1.qualType cfg₁'.memory (Value.num n₁) := by
+                        res1.qualType cfg₁'.memory θ₁1 (Value.num n₁) := by
                     simpa [hregime_eq] using _hval_consist₁
                   have hpred_res1 :
                       res1.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env := by
@@ -6285,7 +6335,7 @@ private lemma stepFR_newRef
         simpa [hvar₁] using hlookup_v
       have hcap := hcwr₁1.2.2 x qt v hlookup_res1 hlookup_v_old
       rw [← hregime_eq] at hcap
-      exact closureCapturedVarsRegime_transport_μ hqtypPredHolds_mem hcap
+      exact closureCapturedVarsRegime_transport_μ_θ hqtypPredHolds_mem hθext₁'.1 hcap
   let storedQt : QTyp := ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩
   have hres1_desc :
       ∀ {qt k d}, QTypInQTyp qt res1.qualType →
@@ -6785,7 +6835,7 @@ private lemma stepFR_vlet
         have hlookup_v : cfg₀2.varEnv.lookup x = some v₀1 := by
           simp [cfg₀2, VarEnv.update, VarEnv.lookup]
         have hval_consist :
-            valueConsistentWithRegime predSat ctx'.regime res1.qualType cfg₀2.memory v₀1 := by
+            valueConsistentWithRegime predSat ctx'.regime res1.qualType cfg₀2.memory θ₀1 v₀1 := by
           simpa [hctx', ctxAfter, cfg₀2] using _hval_consist₀1
         cases hpred_case : res1.qualType.pred with
         | noPred =>
@@ -6971,7 +7021,7 @@ private lemma stepFR_vlet
             -- We need return-value regime-consistency for `v₁1` to discharge the new-binding
             -- `varsRegime` obligation when the guard tag is in the regime domain.
             have hval_consist :
-                valueConsistentWithRegime predSat ctx'.regime res1.qualType cfg₁2.memory v₁1 := by
+                valueConsistentWithRegime predSat ctx'.regime res1.qualType cfg₁2.memory θ₁1 v₁1 := by
               simpa [hctx', ctxAfter, cfg₁2] using _hval_consist₁1
             have htag_k' : qtypGuardTag res1.qualType = some k' := by
               simp [qtypGuardTag, hpred_case]
@@ -7507,7 +7557,7 @@ private lemma stepFR_vlet
         rw [← hR_eq] at hcap₂
         have hPredSat_mem₀ : ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v :=
           predSat_mem_noPred_compat hpredlaws θ₀
-        exact closureCapturedVarsRegime_transport_μ (fun qt' v' =>
+        exact closureCapturedVarsRegime_transport_μ_θ (fun qt' v' =>
           ⟨fun h => by cases h with
             | noPred_ok hp => exact qtypPredHolds.noPred_ok hp
             | guardClosure_ok hp hs =>
@@ -7520,7 +7570,7 @@ private lemma stepFR_vlet
                 exact qtypPredHolds.guardClosure_ok hp ((hPredSat_mem₀ _ μ₀ cf₀.memory v').2 hs)
             | guardOnly_ok hp hs =>
                 exact qtypPredHolds.guardOnly_ok hp ((hPredSat_mem₀ _ μ₀ cf₀.memory v').2 hs)⟩)
-          hcap₂
+          hθext₀.1 hcap₂
       · -- x ≠ vname: use hcwr₀2 from IH2 and transport regimes/memory
         have hlookup_ctxᵢ : ctxᵢ.varEnv.lookup x = some qt := by
           simpa [ctxAfter] using hlookup
@@ -7643,7 +7693,7 @@ private lemma stepFR_vlet
         rw [← hR_eq] at hcap₂
         have hPredSat_mem₁ : ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v :=
           predSat_mem_noPred_compat hpredlaws θ₁
-        exact closureCapturedVarsRegime_transport_μ (fun qt' v' =>
+        exact closureCapturedVarsRegime_transport_μ_θ (fun qt' v' =>
           ⟨fun h => by cases h with
             | noPred_ok hp => exact qtypPredHolds.noPred_ok hp
             | guardClosure_ok hp hs =>
@@ -7656,7 +7706,7 @@ private lemma stepFR_vlet
                 exact qtypPredHolds.guardClosure_ok hp ((hPredSat_mem₁ _ μ₁ cf₁.memory v').2 hs)
             | guardOnly_ok hp hs =>
                 exact qtypPredHolds.guardOnly_ok hp ((hPredSat_mem₁ _ μ₁ cf₁.memory v').2 hs)⟩)
-          hcap₂
+          hθext₁.1 hcap₂
       · -- x ≠ vname: use hcwr₁2 from IH2 and transport regimes/memory
         have hlookup_ctxᵢ : ctxᵢ.varEnv.lookup x = some qt := by
           simpa [ctxAfter] using hlookup
@@ -7711,10 +7761,10 @@ private lemma stepFR_vlet
       simpa using h_ret_pred.symm
     have hmem_eq : cf₀.memory = cfg₀3.memory := by
       simp [hcf₀_eq]
-    have hv2 : valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res2.qualType cfg₀3.memory o₀ :=
+    have hv2 : valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res2.qualType cfg₀3.memory θ₀2 o₀ :=
       _hval_consist₀2
     have hv' :
-        valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res.qualType cfg₀3.memory o₀ :=
+        valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res.qualType cfg₀3.memory θ₀2 o₀ :=
       valueConsistentWithRegime_transport_pred (predSat := predSat) (R := (ctxAfter ctx' res2).regime)
         (qt := res2.qualType) (qt' := res.qualType) (μ := cfg₀3.memory) (v := o₀) hpred_eq (hetyp := h_ret_etyp.symm) hv2
     simpa [hR_eq, hmem_eq] using hv'
@@ -7725,10 +7775,10 @@ private lemma stepFR_vlet
       simpa using h_ret_pred.symm
     have hmem_eq : cf₁.memory = cfg₁3.memory := by
       simp [hcf₁_eq]
-    have hv2 : valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res2.qualType cfg₁3.memory o₁ :=
+    have hv2 : valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res2.qualType cfg₁3.memory θ₁2 o₁ :=
       _hval_consist₁2
     have hv' :
-        valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res.qualType cfg₁3.memory o₁ :=
+        valueConsistentWithRegime predSat (ctxAfter ctx' res2).regime res.qualType cfg₁3.memory θ₁2 o₁ :=
       valueConsistentWithRegime_transport_pred (predSat := predSat) (R := (ctxAfter ctx' res2).regime)
         (qt := res2.qualType) (qt' := res.qualType) (μ := cfg₁3.memory) (v := o₁) hpred_eq (hetyp := h_ret_etyp.symm) hv2
     simpa [hR_eq, hmem_eq] using hv'
@@ -7912,10 +7962,18 @@ private lemma stepFR_fn
         · rfl
         · simp [hres, res_expected]
         · simp
-        · intro y qt_y k_y hlookup_σ hguard hkR
-          exact hcwr₀.2.1 y qt_y k_y
-            (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
-            hguard hkR
+        · constructor
+          · intro y qt_y k_y hlookup_σ hguard hkR
+            exact hcwr₀.2.1 y qt_y k_y
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+              hguard hkR
+          · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+              fun y qt hlookup_σ =>
+                let ⟨v, hv, _⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                ⟨v, hv⟩,
+              fun y qt v hlookup_σ hlookup_ρ =>
+                let ⟨v', hv', htyp⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
         · intro y qt_y v_y hlookup_σ hlookup_ρ
           cases hcwr₀.2.2 y qt_y v_y
               (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
@@ -7931,10 +7989,18 @@ private lemma stepFR_fn
         · rfl
         · simp [hres, res_expected]
         · simp
-        · intro y qt_y k_y hlookup_σ hguard hkR
-          exact hcwr₁.2.1 y qt_y k_y
-            (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
-            hguard hkR
+        · constructor
+          · intro y qt_y k_y hlookup_σ hguard hkR
+            exact hcwr₁.2.1 y qt_y k_y
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+              hguard hkR
+          · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+              fun y qt hlookup_σ =>
+                let ⟨v, hv, _⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                ⟨v, hv⟩,
+              fun y qt v hlookup_σ hlookup_ρ =>
+                let ⟨v', hv', htyp⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
         · intro y qt_y v_y hlookup_σ hlookup_ρ
           cases hcwr₁.2.2 y qt_y v_y
               (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
@@ -7975,14 +8041,14 @@ private lemma stepFR_fn
               (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
               (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁)
         have hmemberCvcr₀ :
-            MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₀
+            MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₀ θ₀
               (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ := by
           simpa [hctxAfter] using
             (memberCvcrEvidence_of_toCaptured
               (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
               (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀)
         have hmemberCvcr₁ :
-            MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₁
+            MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₁ θ₁
               (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ := by
           simpa [hctxAfter] using
             (memberCvcrEvidence_of_toCaptured
@@ -8150,11 +8216,20 @@ private lemma stepFR_pfn
                 [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
             · rfl
             · simp [hres, res_expected]
+            · exact hto
             · simp
-            · intro y qt_y k_y hlookup_σ hguard hkR
-              exact hcwr₀.2.1 y qt_y k_y
-                (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
-                hguard hkR
+            · constructor
+              · intro y qt_y k_y hlookup_σ hguard hkR
+                exact hcwr₀.2.1 y qt_y k_y
+                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+                  hguard hkR
+              · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+                  fun y qt hlookup_σ =>
+                    let ⟨v, hv, _⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                    ⟨v, hv⟩,
+                  fun y qt v hlookup_σ hlookup_ρ =>
+                    let ⟨v', hv', htyp⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                    by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
             · intro y qt_y v_y hlookup_σ hlookup_ρ
               cases hcwr₀.2.2 y qt_y v_y
                   (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
@@ -8169,11 +8244,20 @@ private lemma stepFR_pfn
                 [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
             · rfl
             · simp [hres, res_expected]
+            · exact hto
             · simp
-            · intro y qt_y k_y hlookup_σ hguard hkR
-              exact hcwr₁.2.1 y qt_y k_y
-                (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
-                hguard hkR
+            · constructor
+              · intro y qt_y k_y hlookup_σ hguard hkR
+                exact hcwr₁.2.1 y qt_y k_y
+                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+                  hguard hkR
+              · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+                  fun y qt hlookup_σ =>
+                    let ⟨v, hv, _⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                    ⟨v, hv⟩,
+                  fun y qt v hlookup_σ hlookup_ρ =>
+                    let ⟨v', hv', htyp⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                    by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
             · intro y qt_y v_y hlookup_σ hlookup_ρ
               cases hcwr₁.2.2 y qt_y v_y
                   (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
@@ -8219,14 +8303,14 @@ private lemma stepFR_pfn
                   (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
                   (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁)
             have hmemberCvcr₀ :
-                MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₀
+                MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₀ θ₀
                   (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ := by
               simpa [hctxAfter] using
                 (memberCvcrEvidence_of_toCaptured
                   (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
                   (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀)
             have hmemberCvcr₁ :
-                MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₁
+                MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₁ θ₁
                   (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ := by
               simpa [hctxAfter] using
                 (memberCvcrEvidence_of_toCaptured
@@ -9233,7 +9317,7 @@ private lemma consistentWithRegime_transport_ctxAfter_pure_to_ctx_insert_true
       have hcapRes :
           closureCapturedVarsRegime predSat
             (ctxAfter { ctx with pureCtx := true } res).regime
-            qt μ v :=
+            qt μ θ v :=
         hcwr.2.2 x qt v hlookupRes hlookup_v
       exact
         closureCapturedVarsRegime_transport_lookup_back
@@ -9673,16 +9757,16 @@ private lemma agreeValueUnder_clean_transport_by_cleanBack
           MemberVarsRegimeEvidence predSat R' μ₀ σcap ρcap)
     (hmemberCvcr₀_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberCvcrEvidence predSat R μ₀ σcap ρcap →
-          MemberCvcrEvidence predSat R' μ₀ σcap ρcap)
+        MemberCvcrEvidence predSat R μ₀ θ₀ σcap ρcap →
+          MemberCvcrEvidence predSat R' μ₀ θ₀ σcap ρcap)
     (hmemberVars₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
         MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap →
           MemberVarsRegimeEvidence predSat R' μ₁ σcap ρcap)
     (hmemberCvcr₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberCvcrEvidence predSat R μ₁ σcap ρcap →
-          MemberCvcrEvidence predSat R' μ₁ σcap ρcap) :
+        MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap →
+          MemberCvcrEvidence predSat R' μ₁ θ₁ σcap ρcap) :
     qtypCleanUnder R' qt →
       agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
         agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
@@ -9991,8 +10075,8 @@ private lemma stepFR_ite_mode1
           hlookupBackAll h
     have hmemberCvcr₀_transport :
         ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-          MemberCvcrEvidence predSat res1.regime' cfg₀1.memory σcap ρcap →
-            MemberCvcrEvidence predSat ctxTrue.regime cfg₀1.memory σcap ρcap := by
+          MemberCvcrEvidence predSat res1.regime' cfg₀1.memory θ₀1 σcap ρcap →
+            MemberCvcrEvidence predSat ctxTrue.regime cfg₀1.memory θ₀1 σcap ρcap := by
       intro σcap ρcap h
       exact
         memberCvcrEvidence_transport_lookup_back
@@ -10009,8 +10093,8 @@ private lemma stepFR_ite_mode1
           hlookupBackAll h
     have hmemberCvcr₁_transport :
         ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-          MemberCvcrEvidence predSat res1.regime' cfg₁1.memory σcap ρcap →
-            MemberCvcrEvidence predSat ctxTrue.regime cfg₁1.memory σcap ρcap := by
+          MemberCvcrEvidence predSat res1.regime' cfg₁1.memory θ₁1 σcap ρcap →
+            MemberCvcrEvidence predSat ctxTrue.regime cfg₁1.memory θ₁1 σcap ρcap := by
       intro σcap ρcap h
       exact
         memberCvcrEvidence_transport_lookup_back
@@ -10140,17 +10224,17 @@ private lemma stepFR_ite_mode1
   · refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
       (qt := res.qualType) (μ := cf₀.memory) (v := o₀) ?_ ?_
     · simp [qtypGuardTag, hpredNo]
-    · have hcap₂ : closureCapturedVarsRegime predSat (ctxAfter ctxTrue res2).regime res2.qualType cf₀.memory o₀ :=
+    · have hcap₂ : closureCapturedVarsRegime predSat (ctxAfter ctxTrue res2).regime res2.qualType cf₀.memory θ₀2 o₀ :=
         valueConsistentWithRegime_closureCapturedVarsRegime _hvalc₀2
-      have hcap₂' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res2.qualType cf₀.memory o₀ := by
+      have hcap₂' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res2.qualType cf₀.memory θ₀2 o₀ := by
         simpa [hctxAfter] using hcap₂
       exact closureCapturedVarsRegime_transport_etyp hetyp.symm hcap₂'
   · refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
       (qt := res.qualType) (μ := cf₁.memory) (v := o₁) ?_ ?_
     · simp [qtypGuardTag, hpredNo]
-    · have hcap₂ : closureCapturedVarsRegime predSat (ctxAfter ctxTrue res2).regime res2.qualType cf₁.memory o₁ :=
+    · have hcap₂ : closureCapturedVarsRegime predSat (ctxAfter ctxTrue res2).regime res2.qualType cf₁.memory θ₁2 o₁ :=
         valueConsistentWithRegime_closureCapturedVarsRegime _hvalc₁2
-      have hcap₂' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res2.qualType cf₁.memory o₁ := by
+      have hcap₂' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res2.qualType cf₁.memory θ₁2 o₁ := by
         simpa [hctxAfter] using hcap₂
       exact closureCapturedVarsRegime_transport_etyp hetyp.symm hcap₂'
   · intro hclean
@@ -10408,8 +10492,8 @@ private lemma stepFR_ite_mode2
           hlookupBackAll h
     have hmemberCvcr₀_transport :
         ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-          MemberCvcrEvidence predSat res1.regime' cfg₀1.memory σcap ρcap →
-            MemberCvcrEvidence predSat ctxFalse.regime cfg₀1.memory σcap ρcap := by
+          MemberCvcrEvidence predSat res1.regime' cfg₀1.memory θ₀1 σcap ρcap →
+            MemberCvcrEvidence predSat ctxFalse.regime cfg₀1.memory θ₀1 σcap ρcap := by
       intro σcap ρcap h
       exact
         memberCvcrEvidence_transport_lookup_back
@@ -10426,8 +10510,8 @@ private lemma stepFR_ite_mode2
           hlookupBackAll h
     have hmemberCvcr₁_transport :
         ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-          MemberCvcrEvidence predSat res1.regime' cfg₁1.memory σcap ρcap →
-            MemberCvcrEvidence predSat ctxFalse.regime cfg₁1.memory σcap ρcap := by
+          MemberCvcrEvidence predSat res1.regime' cfg₁1.memory θ₁1 σcap ρcap →
+            MemberCvcrEvidence predSat ctxFalse.regime cfg₁1.memory θ₁1 σcap ρcap := by
       intro σcap ρcap h
       exact
         memberCvcrEvidence_transport_lookup_back
@@ -10557,17 +10641,17 @@ private lemma stepFR_ite_mode2
   · refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
       (qt := res.qualType) (μ := cf₀.memory) (v := o₀) ?_ ?_
     · simp [qtypGuardTag, hpredNo]
-    · have hcap₃ : closureCapturedVarsRegime predSat (ctxAfter ctxFalse res3).regime res3.qualType cf₀.memory o₀ :=
+    · have hcap₃ : closureCapturedVarsRegime predSat (ctxAfter ctxFalse res3).regime res3.qualType cf₀.memory θ₀2 o₀ :=
         valueConsistentWithRegime_closureCapturedVarsRegime _hvalc₀3
-      have hcap₃' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res3.qualType cf₀.memory o₀ := by
+      have hcap₃' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res3.qualType cf₀.memory θ₀2 o₀ := by
         simpa [hctxAfter] using hcap₃
       exact closureCapturedVarsRegime_transport_etyp hetyp.symm hcap₃'
   · refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
       (qt := res.qualType) (μ := cf₁.memory) (v := o₁) ?_ ?_
     · simp [qtypGuardTag, hpredNo]
-    · have hcap₃ : closureCapturedVarsRegime predSat (ctxAfter ctxFalse res3).regime res3.qualType cf₁.memory o₁ :=
+    · have hcap₃ : closureCapturedVarsRegime predSat (ctxAfter ctxFalse res3).regime res3.qualType cf₁.memory θ₁2 o₁ :=
         valueConsistentWithRegime_closureCapturedVarsRegime _hvalc₁3
-      have hcap₃' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res3.qualType cf₁.memory o₁ := by
+      have hcap₃' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res3.qualType cf₁.memory θ₁2 o₁ := by
         simpa [hctxAfter] using hcap₃
       exact closureCapturedVarsRegime_transport_etyp hetyp.symm hcap₃'
   · intro hclean
@@ -13488,14 +13572,14 @@ private lemma stepFR_assign
           have hlookup_v_ctx2 : cfg₀2.varEnv.lookup x = some v := by
             simpa [hvar₀] using hlookup_v
           have hcap_ctx2 :
-              closureCapturedVarsRegime predSat (ctxAfter ctx' res2).regime qt cfg₀2.memory v :=
+              closureCapturedVarsRegime predSat (ctxAfter ctx' res2).regime qt cfg₀2.memory θ₀2 v :=
             hcwr₀2.2.2 x qt v hlookup_ctx2 hlookup_v_ctx2
           have hmono_res2_to_final :
               Regime.monotoneStep (ctxAfter ctx' res2).regime (ctxAfter ctxᵢ res).regime := by
             simpa [ctxAfter, ctx', hRegime] using
               invalidateRegimeDeps_monotone res2.regime' res2.tagEnv' ls
           have hcap_final_regime :
-              closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime qt cfg₀2.memory v :=
+              closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime qt cfg₀2.memory θ₀2 v :=
             closureCapturedVarsRegime_monotone hmono_res2_to_final hcap_ctx2
           have hpred_compat :
               ∀ (qt' : QTyp) (v' : Value),
@@ -13889,14 +13973,14 @@ private lemma stepFR_assign
           have hlookup_v_ctx2 : cfg₁2.varEnv.lookup x = some v := by
             simpa [hvar₁] using hlookup_v
           have hcap_ctx2 :
-              closureCapturedVarsRegime predSat (ctxAfter ctx' res2).regime qt cfg₁2.memory v :=
+              closureCapturedVarsRegime predSat (ctxAfter ctx' res2).regime qt cfg₁2.memory θ₁2 v :=
             hcwr₁2.2.2 x qt v hlookup_ctx2 hlookup_v_ctx2
           have hmono_res2_to_final :
               Regime.monotoneStep (ctxAfter ctx' res2).regime (ctxAfter ctxᵢ res).regime := by
             simpa [ctxAfter, ctx', hRegime] using
               invalidateRegimeDeps_monotone res2.regime' res2.tagEnv' ls
           have hcap_final_regime :
-              closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime qt cfg₁2.memory v :=
+              closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime qt cfg₁2.memory θ₁2 v :=
             closureCapturedVarsRegime_monotone hmono_res2_to_final hcap_ctx2
           have hpred_compat :
               ∀ (qt' : QTyp) (v' : Value),
@@ -14994,7 +15078,7 @@ private lemma stepFR_deref
     have hderef_etyp_int : res.qualType.etyp = ETyp.int :=
       typecheckDeref_etyp_int ctxᵢ e (Nat.succ fuel') res htc'
     have _hnclos₀ : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime
-        res.qualType cf₀.memory (Value.num n₀) :=
+        res.qualType cf₀.memory θ₀' (Value.num n₀) :=
       closureCapturedVarsRegime_nonClosure_of_nonFunctionType (θ := θ₀')
         (by rw [hderef_etyp_int]; exact valueHasETyp.num n₀)
         (by simp [hderef_etyp_int, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
@@ -15288,7 +15372,7 @@ private lemma stepFR_deref
     have hderef_etyp_int₁ : res.qualType.etyp = ETyp.int :=
       typecheckDeref_etyp_int ctxᵢ e (Nat.succ fuel') res htc'
     have _hnclos₁ : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime
-        res.qualType cf₁.memory (Value.num n₁) :=
+        res.qualType cf₁.memory θ₁' (Value.num n₁) :=
       closureCapturedVarsRegime_nonClosure_of_nonFunctionType (θ := θ₁')
         (by rw [hderef_etyp_int₁]; exact valueHasETyp.num n₁)
         (by simp [hderef_etyp_int₁, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
@@ -16172,21 +16256,21 @@ private lemma join_transport_regimeConsistentWithCtx
 
 private lemma join_transport_valueConsistentWithRegime
   (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (qt : QTyp) (μ : Memory) (v : Value)
+  (qt : QTyp) (μ : Memory) (θ : RealizationMap) (v : Value)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (h_regime_mono : Regime.monotoneStep first.regime' res.regime')
-  (h_first : valueConsistentWithRegime predSat (ctxAfter ctx first).regime qt μ v) :
-  valueConsistentWithRegime predSat (ctxAfter ctx res).regime qt μ v :=
+  (h_first : valueConsistentWithRegime predSat (ctxAfter ctx first).regime qt μ θ v) :
+  valueConsistentWithRegime predSat (ctxAfter ctx res).regime qt μ θ v :=
   valueConsistentWithRegime_monotone h_regime_mono h_first
 
 -- Single-step: transport closureCapturedVarsRegime across one joinETyps application.
 private lemma closureCapturedVarsRegime_joinETyps_step
-  (predSat : PredSat) (R : Regime) (μ : Memory) (v : Value)
+  (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap) (v : Value)
   (etyp1 resEtyp : ETyp) (p1 resPoison : Poison) (pr1 resPred : Predicate)
   (hcompat : beqETypSignature etyp1 resEtyp = true)
-  (hcap : closureCapturedVarsRegime predSat R ⟨etyp1, p1, pr1⟩ μ v) :
+  (hcap : closureCapturedVarsRegime predSat R ⟨etyp1, p1, pr1⟩ μ θ v) :
   closureCapturedVarsRegime predSat R ⟨joinETyps etyp1 resEtyp p1 resPoison,
-    joinPoison p1 resPoison, joinPredicates pr1 resPred⟩ μ v := by
+    joinPoison p1 resPoison, joinPredicates pr1 resPred⟩ μ θ v := by
   cases etyp1 with
   | int | bool | unit | string =>
       simp [joinETyps]
@@ -16229,10 +16313,10 @@ private lemma closureCapturedVarsRegime_joinETyps_step
 -- Proved by induction on the join fold; each step uses closureCapturedVarsRegime_joinETyps_step.
 private lemma joinTypeResults_closure_cvcr_transport
   (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (R : Regime) (μ : Memory) (v : Value)
+  (R : Regime) (μ : Memory) (θ : RealizationMap) (v : Value)
   (_h_join : joinTypeResults ctx first rest = .ok res)
-  (hcap : closureCapturedVarsRegime predSat R first.qualType μ v) :
-  closureCapturedVarsRegime predSat R res.qualType μ v := by
+  (hcap : closureCapturedVarsRegime predSat R first.qualType μ θ v) :
+  closureCapturedVarsRegime predSat R res.qualType μ θ v := by
   let joinStep : (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
         TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
     fun acc result =>
@@ -16247,8 +16331,8 @@ private lemma joinTypeResults_closure_cvcr_transport
       ∀ (rs' : List TypeResult) (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
         (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
         List.foldlM joinStep acc rs' = .ok acc' →
-        closureCapturedVarsRegime predSat R ⟨acc.1, acc.2.2.1, acc.2.2.2.1⟩ μ v →
-        closureCapturedVarsRegime predSat R ⟨acc'.1, acc'.2.2.1, acc'.2.2.2.1⟩ μ v := by
+        closureCapturedVarsRegime predSat R ⟨acc.1, acc.2.2.1, acc.2.2.2.1⟩ μ θ v →
+        closureCapturedVarsRegime predSat R ⟨acc'.1, acc'.2.2.1, acc'.2.2.2.1⟩ μ θ v := by
     intro rs' acc acc' hcompat hfold hcap_acc
     induction rs' generalizing acc with
     | nil =>
@@ -16267,9 +16351,9 @@ private lemma joinTypeResults_closure_cvcr_transport
               joinPredicates acc.2.2.2.1 resPred, joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
               joinRegimes acc.2.2.2.2.2.1 x.regime',
               max acc.2.2.2.2.2.2.1 x.nextLoc', max acc.2.2.2.2.2.2.2 x.nextTag')
-            have hcap1 := closureCapturedVarsRegime_joinETyps_step predSat R μ v acc.1 resEtyp
+            have hcap1 := closureCapturedVarsRegime_joinETyps_step predSat R μ θ v acc.1 resEtyp
               acc.2.2.1 resPoison acc.2.2.2.1 resPred hcompat_x hcap_acc
-            have hcap1' : closureCapturedVarsRegime predSat R ⟨acc1.1, acc1.2.2.1, acc1.2.2.2.1⟩ μ v := by
+            have hcap1' : closureCapturedVarsRegime predSat R ⟨acc1.1, acc1.2.2.1, acc1.2.2.2.1⟩ μ θ v := by
               simpa [acc1] using hcap1
             have hcompat_tail : ∀ r ∈ xs, beqETypSignature acc1.1 r.qualType.etyp = true := by
               intro r hr
@@ -16310,16 +16394,16 @@ private lemma joinTypeResults_closure_cvcr_transport
 -- Transport valueConsistentWithRegime when qualType changes from first to res (via pred transport).
 private lemma join_transport_valueConsistentWithRegime_resQual
   (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (μ : Memory) (v : Value)
+  (μ : Memory) (θ : RealizationMap) (v : Value)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (_hpred : res.qualType.pred = first.qualType.pred)
   (h_regime_mono : Regime.monotoneStep first.regime' res.regime')
-  (h_first : valueConsistentWithRegime predSat (ctxAfter ctx first).regime first.qualType μ v) :
-  valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType μ v := by
+  (h_first : valueConsistentWithRegime predSat (ctxAfter ctx first).regime first.qualType μ θ v) :
+  valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType μ θ v := by
   have h_mono := valueConsistentWithRegime_monotone h_regime_mono h_first
   refine valueConsistentWithRegime_transport_pred' (_hpred.symm)
     (fun hcap => joinTypeResults_closure_cvcr_transport predSat ctx first rest res
-      (ctxAfter ctx res).regime μ v _h_join hcap) h_mono
+      (ctxAfter ctx res).regime μ θ v _h_join hcap) h_mono
 
 -- Weaken runtimeInstantiatesCtx when going from post-e1 context to post-e2 context.
 -- Requires memEnv equality (holds when e1 is var/fn/pfn producing arrow).
@@ -17890,16 +17974,16 @@ private lemma agreeValueUnder_clean_transport_by_lookupTrueBack
           MemberVarsRegimeEvidence predSat R' μ₀ σcap ρcap)
     (hmemberCvcr₀_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberCvcrEvidence predSat R μ₀ σcap ρcap →
-          MemberCvcrEvidence predSat R' μ₀ σcap ρcap)
+        MemberCvcrEvidence predSat R μ₀ θ₀ σcap ρcap →
+          MemberCvcrEvidence predSat R' μ₀ θ₀ σcap ρcap)
     (hmemberVars₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
         MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap →
           MemberVarsRegimeEvidence predSat R' μ₁ σcap ρcap)
     (hmemberCvcr₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberCvcrEvidence predSat R μ₁ σcap ρcap →
-          MemberCvcrEvidence predSat R' μ₁ σcap ρcap) :
+        MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap →
+          MemberCvcrEvidence predSat R' μ₁ θ₁ σcap ρcap) :
     qtypCleanUnder R' qt →
       agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
         agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
@@ -17925,16 +18009,16 @@ private lemma agreeCapturedEnv_transport_by_lookupTrueBack
           MemberVarsRegimeEvidence predSat R' μ₀ σcap ρcap)
     (hmemberCvcr₀_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberCvcrEvidence predSat R μ₀ σcap ρcap →
-          MemberCvcrEvidence predSat R' μ₀ σcap ρcap)
+        MemberCvcrEvidence predSat R μ₀ θ₀ σcap ρcap →
+          MemberCvcrEvidence predSat R' μ₀ θ₀ σcap ρcap)
     (hmemberVars₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
         MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap →
           MemberVarsRegimeEvidence predSat R' μ₁ σcap ρcap)
     (hmemberCvcr₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberCvcrEvidence predSat R μ₁ σcap ρcap →
-          MemberCvcrEvidence predSat R' μ₁ σcap ρcap) :
+        MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap →
+          MemberCvcrEvidence predSat R' μ₁ θ₁ σcap ρcap) :
     agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁ →
       agreeCapturedEnv predSat R' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁ := by
   intro hcap
@@ -18096,16 +18180,16 @@ private lemma join_transport_agreeOnClean_from_member
         MemberVarsRegimeEvidence predSat res.regime' μ₀ σcap ρcap)
   (hmemberCvcr₀_transport :
     ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-      MemberCvcrEvidence predSat src.regime' μ₀ σcap ρcap →
-        MemberCvcrEvidence predSat res.regime' μ₀ σcap ρcap)
+      MemberCvcrEvidence predSat src.regime' μ₀ θ₀ σcap ρcap →
+        MemberCvcrEvidence predSat res.regime' μ₀ θ₀ σcap ρcap)
   (hmemberVars₁_transport :
     ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
       MemberVarsRegimeEvidence predSat src.regime' μ₁ σcap ρcap →
         MemberVarsRegimeEvidence predSat res.regime' μ₁ σcap ρcap)
   (hmemberCvcr₁_transport :
     ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-      MemberCvcrEvidence predSat src.regime' μ₁ σcap ρcap →
-        MemberCvcrEvidence predSat res.regime' μ₁ σcap ρcap) :
+      MemberCvcrEvidence predSat src.regime' μ₁ θ₁ σcap ρcap →
+        MemberCvcrEvidence predSat res.regime' μ₁ θ₁ σcap ρcap) :
   agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
     μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ := by
   simp only [agreeOnClean, ctxAfter]
@@ -18203,12 +18287,12 @@ private lemma join_transport_resultAgreesIfClean
 
 -- Single-step: transport closureCapturedVarsRegime from the RIGHT argument of joinETyps.
 private lemma closureCapturedVarsRegime_joinETyps_step_right
-  (predSat : PredSat) (R : Regime) (μ : Memory) (v : Value)
+  (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap) (v : Value)
   (etyp1 resEtyp : ETyp) (p1 resPoison : Poison) (pr1 resPred : Predicate)
   (hcompat : beqETypSignature etyp1 resEtyp = true)
-  (hcap : closureCapturedVarsRegime predSat R ⟨resEtyp, resPoison, resPred⟩ μ v) :
+  (hcap : closureCapturedVarsRegime predSat R ⟨resEtyp, resPoison, resPred⟩ μ θ v) :
   closureCapturedVarsRegime predSat R ⟨joinETyps etyp1 resEtyp p1 resPoison,
-    joinPoison p1 resPoison, joinPredicates pr1 resPred⟩ μ v := by
+    joinPoison p1 resPoison, joinPredicates pr1 resPred⟩ μ θ v := by
   cases hcap with
   | intro hdeep =>
       cases hdeep with
@@ -18239,16 +18323,16 @@ private lemma closureCapturedVarsRegime_joinETyps_step_right
               obtain ⟨rfl, rfl⟩ := hcompat
               have hcap_src :
                   closureCapturedVarsRegime predSat R
-                    ⟨ETyp.arrow st1l st2l pr tclr, resPoison, resPred⟩ μ v := by
+                    ⟨ETyp.arrow st1l st2l pr tclr, resPoison, resPred⟩ μ θ v := by
                 simpa using (closureCapturedVarsRegime.intro
                   (deepValueQTypProperty.closure x body ρcap σcap st1l st2l pr tclr
                     hval rfl htcl hP hrec))
               have hcap_join :
                   closureCapturedVarsRegime predSat R
                     ⟨ETyp.arrow st1l st2l (joinPoison pl pr) (mergeFnTClosures tclsl tclr),
-                      resPoison, resPred⟩ μ v :=
+                      resPoison, resPred⟩ μ θ v :=
                 closureCapturedVarsRegime_weaken_fnTClosures'
-                  (predSat := predSat) (R := R) (μ := μ) (v := v)
+                  (predSat := predSat) (R := R) (μ := μ) (θ := θ) (v := v)
                   (st1 := st1l) (st2 := st2l) (p := pr)
                   (p' := joinPoison pl pr) (tcls := tclr)
                   (tcls' := mergeFnTClosures tclsl tclr)
@@ -18263,7 +18347,7 @@ private lemma closureCapturedVarsRegime_joinETyps_step_right
           | parrow st1l st2l pl tclsl =>
               exfalso
               simp [beqETypSignature] at hcompat
-      | peClosure x body pbody ρcap σcap st1r st2r pr tclr hval hetyp_r htcl hP hrec =>
+      | peClosure x body pbody ρcap σcap st1r st2r pr tclr hval hetyp_r hpure htcl hP hrec =>
           have hetyp_r' : resEtyp = ETyp.parrow st1r st2r pr tclr := by
             simpa using hetyp_r
           subst resEtyp
@@ -18291,16 +18375,16 @@ private lemma closureCapturedVarsRegime_joinETyps_step_right
               obtain ⟨rfl, rfl⟩ := hcompat
               have hcap_src :
                   closureCapturedVarsRegime predSat R
-                    ⟨ETyp.parrow st1l st2l pr tclr, resPoison, resPred⟩ μ v := by
+                    ⟨ETyp.parrow st1l st2l pr tclr, resPoison, resPred⟩ μ θ v := by
                 simpa using (closureCapturedVarsRegime.intro
                   (deepValueQTypProperty.peClosure x body pbody ρcap σcap st1l st2l pr tclr
-                    hval rfl htcl hP hrec))
+                    hval rfl hpure htcl hP hrec))
               have hcap_join :
                   closureCapturedVarsRegime predSat R
                     ⟨ETyp.parrow st1l st2l (joinPoison pl pr) (mergePFnTClosures tclsl tclr),
-                      resPoison, resPred⟩ μ v :=
+                      resPoison, resPred⟩ μ θ v :=
                 closureCapturedVarsRegime_weaken_pFnTClosures'
-                  (predSat := predSat) (R := R) (μ := μ) (v := v)
+                  (predSat := predSat) (R := R) (μ := μ) (θ := θ) (v := v)
                   (st1 := st1l) (st2 := st2l) (p := pr)
                   (p' := joinPoison pl pr) (tcls := tclr)
                   (tcls' := mergePFnTClosures tclsl tclr)
@@ -18316,11 +18400,11 @@ private lemma closureCapturedVarsRegime_joinETyps_step_right
 -- Member-oriented transport for closureCapturedVarsRegime across joinTypeResults.
 private lemma joinTypeResults_closure_cvcr_transport_from_member
   (predSat : PredSat) (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult)
-  (res : TypeResult) (R : Regime) (μ : Memory) (v : Value)
+  (res : TypeResult) (R : Regime) (μ : Memory) (θ : RealizationMap) (v : Value)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (_hmem_src : src ∈ first :: rest)
-  (hcap_src : closureCapturedVarsRegime predSat R src.qualType μ v) :
-  closureCapturedVarsRegime predSat R res.qualType μ v := by
+  (hcap_src : closureCapturedVarsRegime predSat R src.qualType μ θ v) :
+  closureCapturedVarsRegime predSat R res.qualType μ θ v := by
   let joinStep : (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
       TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
     fun acc result =>
@@ -18336,8 +18420,8 @@ private lemma joinTypeResults_closure_cvcr_transport_from_member
         (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
         (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
         List.foldlM joinStep acc rs' = .ok acc' →
-        closureCapturedVarsRegime predSat R ⟨acc.1, acc.2.2.1, acc.2.2.2.1⟩ μ v →
-        closureCapturedVarsRegime predSat R ⟨acc'.1, acc'.2.2.1, acc'.2.2.2.1⟩ μ v := by
+        closureCapturedVarsRegime predSat R ⟨acc.1, acc.2.2.1, acc.2.2.2.1⟩ μ θ v →
+        closureCapturedVarsRegime predSat R ⟨acc'.1, acc'.2.2.1, acc'.2.2.2.1⟩ μ θ v := by
     intro rs' acc acc' hcompat hfold hcap_acc
     induction rs' generalizing acc with
     | nil =>
@@ -18359,10 +18443,10 @@ private lemma joinTypeResults_closure_cvcr_transport_from_member
                 joinRegimes acc.2.2.2.2.2.1 x.regime',
                 max acc.2.2.2.2.2.2.1 x.nextLoc', max acc.2.2.2.2.2.2.2 x.nextTag')
             have hcap_acc1 :
-                closureCapturedVarsRegime predSat R ⟨acc1.1, acc1.2.2.1, acc1.2.2.2.1⟩ μ v := by
+                closureCapturedVarsRegime predSat R ⟨acc1.1, acc1.2.2.1, acc1.2.2.2.1⟩ μ θ v := by
               have hstep :=
                 closureCapturedVarsRegime_joinETyps_step
-                  predSat R μ v acc.1 resEtyp acc.2.2.1 resPoison acc.2.2.2.1 resPred
+                  predSat R μ θ v acc.1 resEtyp acc.2.2.1 resPoison acc.2.2.2.1 resPred
                   hcompat_x hcap_acc
               simpa [acc1] using hstep
             have hcompat_tail : ∀ r ∈ xs, beqETypSignature acc1.1 r.qualType.etyp = true := by
@@ -18381,8 +18465,8 @@ private lemma joinTypeResults_closure_cvcr_transport_from_member
         (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
         List.foldlM joinStep acc rs' = .ok acc' →
         src' ∈ rs' →
-        closureCapturedVarsRegime predSat R src'.qualType μ v →
-        closureCapturedVarsRegime predSat R ⟨acc'.1, acc'.2.2.1, acc'.2.2.2.1⟩ μ v := by
+        closureCapturedVarsRegime predSat R src'.qualType μ θ v →
+        closureCapturedVarsRegime predSat R ⟨acc'.1, acc'.2.2.1, acc'.2.2.2.1⟩ μ θ v := by
     intro rs' acc acc' src' hcompat hfold hmem_src' hcap_src'
     induction rs' generalizing acc acc' src' with
     | nil =>
@@ -18413,10 +18497,10 @@ private lemma joinTypeResults_closure_cvcr_transport_from_member
             · subst src'
               have hcap_acc1 :
                   closureCapturedVarsRegime predSat R
-                    ⟨acc1.1, acc1.2.2.1, acc1.2.2.2.1⟩ μ v := by
+                    ⟨acc1.1, acc1.2.2.1, acc1.2.2.2.1⟩ μ θ v := by
                 have hstep :=
                   closureCapturedVarsRegime_joinETyps_step_right
-                    predSat R μ v acc.1 resEtyp acc.2.2.1 resPoison acc.2.2.2.1 resPred
+                    predSat R μ θ v acc.1 resEtyp acc.2.2.1 resPoison acc.2.2.2.1 resPred
                     hcompat_x (by simpa [hqx] using hcap_src')
                 simpa [acc1] using hstep
               exact h_fold_left_cvcr xs acc1 acc' hcompat_tail hfold_tail hcap_acc1
@@ -18452,14 +18536,14 @@ private lemma joinTypeResults_closure_cvcr_transport_from_member
               rcases (List.mem_cons.mp _hmem_src) with hsrc_head | hsrc_tail
               · subst src
                 have hcap_a :
-                    closureCapturedVarsRegime predSat R ⟨a.1, a.2.2.1, a.2.2.2.1⟩ μ v :=
+                    closureCapturedVarsRegime predSat R ⟨a.1, a.2.2.1, a.2.2.2.1⟩ μ θ v :=
                   h_fold_left_cvcr rest
                     (etyp, first.memEnv', poison, pred, first.tagEnv',
                       first.regime', first.nextLoc', first.nextTag')
                     a hcompat hfold (by simpa [hqt] using hcap_src)
                 exact closureCapturedVarsRegime_transport_etyp hetyp_res hcap_a
               · have hcap_a :
-                    closureCapturedVarsRegime predSat R ⟨a.1, a.2.2.1, a.2.2.2.1⟩ μ v :=
+                    closureCapturedVarsRegime predSat R ⟨a.1, a.2.2.1, a.2.2.2.1⟩ μ θ v :=
                   h_fold_member_cvcr rest
                     (etyp, first.memEnv', poison, pred, first.tagEnv',
                       first.regime', first.nextLoc', first.nextTag')
@@ -18616,15 +18700,15 @@ private lemma joinTypeResults_pred_eq_guardClosure_from_member
 -- App-closure normalization transport stubs (`result3` -> `firstShared`).
 private lemma valueConsistentWithRegime_transport_normalizeAppResultByProvenance
   (predSat : PredSat) (R : Regime) (p p1 : Poison) (qt : QTyp)
-  (μ : Memory) (v : Value)
-  (h : valueConsistentWithRegime predSat R qt μ v) :
+  (μ : Memory) (θ : RealizationMap) (v : Value)
+  (h : valueConsistentWithRegime predSat R qt μ θ v) :
   valueConsistentWithRegime predSat R
     (normalizeAppResultByProvenance p1
-      { qt with poison := joinPoison p1 (joinPoison p qt.poison) }) μ v := by
+      { qt with poison := joinPoison p1 (joinPoison p qt.poison) }) μ θ v := by
   unfold normalizeAppResultByProvenance
   split
   · -- p1 = true: result has pred := noPred, etyp unchanged
-    have hcap_src : closureCapturedVarsRegime predSat R qt μ v := by
+    have hcap_src : closureCapturedVarsRegime predSat R qt μ θ v := by
       cases h with
       | noTag _ hcap => exact hcap
       | guardOnly_ok _ _ hcap => exact hcap
@@ -19208,11 +19292,11 @@ private lemma joinTypeResults_lookup_member_regime_compat
 private lemma joinTypeResults_transport_valueConsistentWithRegime_from_member
   (predSat : PredSat)
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (μ : Memory) (v : Value)
+  (μ : Memory) (θ : RealizationMap) (v : Value)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (_hmem_src : src ∈ first :: rest)
-  (h_src : valueConsistentWithRegime predSat (ctxAfter ctx src).regime src.qualType μ v) :
-  valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType μ v := by
+  (h_src : valueConsistentWithRegime predSat (ctxAfter ctx src).regime src.qualType μ θ v) :
+  valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType μ θ v := by
   have hlookup_back :
       ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
         (ctxAfter ctx src).regime.lookup? k = some b := by
@@ -19222,21 +19306,21 @@ private lemma joinTypeResults_transport_valueConsistentWithRegime_from_member
         (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
         _h_join _hmem_src k b hk
   have hcap_src :
-      closureCapturedVarsRegime predSat (ctxAfter ctx src).regime src.qualType μ v :=
+      closureCapturedVarsRegime predSat (ctxAfter ctx src).regime src.qualType μ θ v :=
     valueConsistentWithRegime_closureCapturedVarsRegime h_src
   have hcap_src_resR :
-      closureCapturedVarsRegime predSat (ctxAfter ctx res).regime src.qualType μ v :=
+      closureCapturedVarsRegime predSat (ctxAfter ctx res).regime src.qualType μ θ v :=
     closureCapturedVarsRegime_transport_lookup_back
       (predSat := predSat)
       (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
-      (qt := src.qualType) (μ := μ) (v := v)
+      (qt := src.qualType) (μ := μ) (θ := θ) (v := v)
       hlookup_back hcap_src
   have hcap_res :
-      closureCapturedVarsRegime predSat (ctxAfter ctx res).regime res.qualType μ v :=
+      closureCapturedVarsRegime predSat (ctxAfter ctx res).regime res.qualType μ θ v :=
     joinTypeResults_closure_cvcr_transport_from_member
       (predSat := predSat)
       (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
-      (R := (ctxAfter ctx res).regime) (μ := μ) (v := v)
+      (R := (ctxAfter ctx res).regime) (μ := μ) (θ := θ) (v := v)
       _h_join _hmem_src hcap_src_resR
   cases hpred_res : res.qualType.pred with
   | noPred =>
@@ -22175,7 +22259,7 @@ private lemma joinTypeResults_transport_consistentWithRegime_from_member
             hlookup_back hguard hkres hvar_src
   · intro x qt v hlookup hlookup_v
     have hcap_src :
-        closureCapturedVarsRegime predSat (ctxAfter ctx src).regime qt μ v :=
+        closureCapturedVarsRegime predSat (ctxAfter ctx src).regime qt μ θ v :=
       h_src.2.2 x qt v
         (by simpa [ctxAfter] using hlookup)
         hlookup_v
@@ -22183,7 +22267,7 @@ private lemma joinTypeResults_transport_consistentWithRegime_from_member
       closureCapturedVarsRegime_transport_lookup_back
         (predSat := predSat)
         (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
-        (qt := qt) (μ := μ) (v := v)
+        (qt := qt) (μ := μ) (θ := θ) (v := v)
         hlookup_back hcap_src
 
 private lemma joinTypeResults_mem_contains_of_member
@@ -22624,9 +22708,9 @@ private lemma stepFR_app_arrow_sync_from_clean
       body₀ = body₁ ∧
       agreeCapturedEnv predSat (ctxAfter ctx res1).regime μ₀ μ₁ θ₀ θ₁ σcap env₀ env₁ ∧
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₀ σcap env₀ ∧
-      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₀ σcap env₀ ∧
+      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₀ θ₀ σcap env₀ ∧
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₁ σcap env₁ ∧
-      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ σcap env₁)
+      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁)
   ∨ (¬ internalPoisonClean res1.qualType) := by
   -- Unfold resultAgreesIfClean and apply hclean to get agreeValueUnder
   have h := hagree hclean
@@ -22952,11 +23036,11 @@ private lemma stepFR_app
                     MemberVarsRegimeEvidence predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                       c₁₀.memory σcap env₀ ∧
                     MemberCvcrEvidence predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                      c₁₀.memory σcap env₀ ∧
+                      c₁₀.memory θ₀1 σcap env₀ ∧
                     MemberVarsRegimeEvidence predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                       c₁₁.memory σcap env₁ ∧
                     MemberCvcrEvidence predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                      c₁₁.memory σcap env₁)
+                      c₁₁.memory θ₁1 σcap env₁)
                 ∨ (¬ internalPoisonClean result1.qualType) := by
           intro hclean1_e1
           exact
@@ -23022,11 +23106,11 @@ private lemma stepFR_app
                     MemberVarsRegimeEvidence predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                       c₁₀.memory σcap env₀ ∧
                     MemberCvcrEvidence predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                      c₁₀.memory σcap env₀ ∧
+                      c₁₀.memory θ₀1 σcap env₀ ∧
                     MemberVarsRegimeEvidence predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                       c₁₁.memory σcap env₁ ∧
                     MemberCvcrEvidence predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                      c₁₁.memory σcap env₁ ∧
+                      c₁₁.memory θ₁1 σcap env₁ ∧
                     applyFnTClosure .ioFree (FnTClosure.regular x₀ body₀ σcap) st1 st2 p p1
                       etyp2 p2 pred2 ctxᵢ result1 fuel' = .ok firstShared ∧
                   fuel' = Nat.succ fuelBody ∧
@@ -23081,9 +23165,9 @@ private lemma stepFR_app
                agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
                  cf₀.memory cf₀.varEnv θ₀_out cf₁.memory cf₁.varEnv θ₁_out ∧
                valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
-                 res.qualType cf₀.memory o₀ ∧
+                 res.qualType cf₀.memory θ₀_out o₀ ∧
                valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
-                 res.qualType cf₁.memory o₁ ∧
+                 res.qualType cf₁.memory θ₁_out o₁ ∧
                resultAgreesIfClean predSat (ctxAfter ctxᵢ res).regime
                  cf₀.memory cf₁.memory θ₀_out θ₁_out res.qualType o₀ o₁) := by
           by_cases hclean1_e1 :
@@ -23266,22 +23350,22 @@ private lemma stepFR_app
                   intro k hguard hRdef
                   have hvalc_arg_e2 :
                       valueConsistentWithRegime predSat (ctxAfter ctxᵢ result2).regime
-                        ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₀.memory v₂₀ := by
+                        ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₀.memory θ₀2 v₂₀ := by
                     have hvalc₂ :
                         valueConsistentWithRegime predSat (ctxAfter ctxᵢ result2).regime
-                          result2.qualType c₂'₀.memory v₂₀ := by
+                          result2.qualType c₂'₀.memory θ₀2 v₂₀ := by
                       simpa [ctxAfter] using _hvalc₂₀
                     exact
                       valueConsistentWithRegime_transport_pred
                         (predSat := predSat) (R := (ctxAfter ctxᵢ result2).regime)
                         (qt := result2.qualType)
                         (qt' := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
-                        (μ := c₂'₀.memory) (v := v₂₀)
+                        (μ := c₂'₀.memory) (θ := θ₀2) (v := v₂₀)
                         (by simp [hqt2]) (hetyp := by simp [hqt2])
                         hvalc₂
                   have hvalc_arg_e1 :
                       valueConsistentWithRegime predSat result1.regime'
-                        ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₀.memory v₂₀ :=
+                        ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₀.memory θ₀2 v₂₀ :=
                     valueConsistentWithRegime_monotone h_mono1 hvalc_arg_e2
                   have hlookup_v_body :
                       (env₀.update x₀ v₂₀).lookup x₀ = some v₂₀ := by
@@ -23338,57 +23422,12 @@ private lemma stepFR_app
                     (μ := c₁₀.memory) (θ := θ₀1) (ρcap := env₀) (vArg := v₂₀)
                     hlocs_src₀ hvars_cap₀ hvars_arg₀
                       hmemberCvcr₀
-                    (by
-                      have hvalc_arg_e2 :
-                          valueConsistentWithRegime predSat (ctxAfter ctxᵢ result2).regime
-                            ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₀.memory v₂₀ := by
-                        have hvalc₂ :
-                            valueConsistentWithRegime predSat (ctxAfter ctxᵢ result2).regime
-                              result2.qualType c₂'₀.memory v₂₀ := by
-                          simpa [ctxAfter] using _hvalc₂₀
-                        exact
-                          valueConsistentWithRegime_transport_pred
-                            (predSat := predSat) (R := (ctxAfter ctxᵢ result2).regime)
-                            (qt := result2.qualType)
-                            (qt' := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
-                            (μ := c₂'₀.memory) (v := v₂₀)
-                            (by simp [hqt2]) (hetyp := by simp [hqt2])
-                            hvalc₂
-                      have hcvcr_arg_e2 :
-                          closureCapturedVarsRegime predSat (ctxAfter ctxᵢ result2).regime
-                            ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₀.memory v₂₀ :=
-                        valueConsistentWithRegime_closureCapturedVarsRegime hvalc_arg_e2
-                      have hcvcr_arg_e1 :
-                          closureCapturedVarsRegime predSat result1.regime'
-                            ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₀.memory v₂₀ :=
-                        closureCapturedVarsRegime_monotone h_mono1 hcvcr_arg_e2
-                      have hPredSat_mem :
-                          ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v :=
-                        predSat_mem_noPred_compat hpredlaws θ₀1
-                      exact
-                        closureCapturedVarsRegime_transport_μ
-                          (fun qt' v' =>
-                            ⟨fun h => by
-                                cases h with
-                                | noPred_ok hp =>
-                                    exact qtypPredHolds.noPred_ok hp
-                                | guardClosure_ok hp hs =>
-                                    exact qtypPredHolds.guardClosure_ok hp
-                                      ((hPredSat_mem _ c₂'₀.memory c₁₀.memory v').1 hs)
-                                | guardOnly_ok hp hs =>
-                                    exact qtypPredHolds.guardOnly_ok hp
-                                      ((hPredSat_mem _ c₂'₀.memory c₁₀.memory v').1 hs),
-                              fun h => by
-                                cases h with
-                                | noPred_ok hp =>
-                                    exact qtypPredHolds.noPred_ok hp
-                                | guardClosure_ok hp hs =>
-                                    exact qtypPredHolds.guardClosure_ok hp
-                                      ((hPredSat_mem _ c₂'₀.memory c₁₀.memory v').2 hs)
-                                | guardOnly_ok hp hs =>
-                                    exact qtypPredHolds.guardOnly_ok hp
-                                      ((hPredSat_mem _ c₂'₀.memory c₁₀.memory v').2 hs)⟩)
-                          hcvcr_arg_e1)
+                    (closureCapturedVarsRegime_transport_μ_θ
+                      (qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ₀1 c₂'₀.memory c₁₀.memory)
+                      hθext₀1.1
+                      (closureCapturedVarsRegime_monotone h_mono1
+                        (closureCapturedVarsRegime_transport_etyp (by simp [hqt2])
+                          (valueConsistentWithRegime_closureCapturedVarsRegime _hvalc₂₀))))
               have hcwr_body₁ :
                   consistentWithRegime predSat bodyCtx.regime bodyCtx
                     c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 := by
@@ -23420,22 +23459,22 @@ private lemma stepFR_app
                   intro k hguard hRdef
                   have hvalc_arg_e2 :
                       valueConsistentWithRegime predSat (ctxAfter ctxᵢ result2).regime
-                        ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₁.memory v₂₁ := by
+                        ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₁.memory θ₁2 v₂₁ := by
                     have hvalc₂ :
                         valueConsistentWithRegime predSat (ctxAfter ctxᵢ result2).regime
-                          result2.qualType c₂'₁.memory v₂₁ := by
+                          result2.qualType c₂'₁.memory θ₁2 v₂₁ := by
                       simpa [ctxAfter] using _hvalc₂₁
                     exact
                       valueConsistentWithRegime_transport_pred
                         (predSat := predSat) (R := (ctxAfter ctxᵢ result2).regime)
                         (qt := result2.qualType)
                         (qt' := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
-                        (μ := c₂'₁.memory) (v := v₂₁)
+                        (μ := c₂'₁.memory) (θ := θ₁2) (v := v₂₁)
                         (by simp [hqt2]) (hetyp := by simp [hqt2])
                         hvalc₂
                   have hvalc_arg_e1 :
                       valueConsistentWithRegime predSat result1.regime'
-                        ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₁.memory v₂₁ :=
+                        ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₁.memory θ₁2 v₂₁ :=
                     valueConsistentWithRegime_monotone h_mono1 hvalc_arg_e2
                   have hlookup_v_body :
                       (env₁.update x₀ v₂₁).lookup x₀ = some v₂₁ := by
@@ -23495,57 +23534,12 @@ private lemma stepFR_app
                       (μ := c₁₁.memory) (θ := θ₁1) (ρcap := env₁) (vArg := v₂₁)
                       hlocs_src₁ hvars_cap₁ hvars_arg₁
                       hmemberCvcr₁
-                      (by
-                        have hvalc_arg_e2 :
-                            valueConsistentWithRegime predSat (ctxAfter ctxᵢ result2).regime
-                              ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₁.memory v₂₁ := by
-                          have hvalc₂ :
-                              valueConsistentWithRegime predSat (ctxAfter ctxᵢ result2).regime
-                                result2.qualType c₂'₁.memory v₂₁ := by
-                            simpa [ctxAfter] using _hvalc₂₁
-                          exact
-                            valueConsistentWithRegime_transport_pred
-                              (predSat := predSat) (R := (ctxAfter ctxᵢ result2).regime)
-                              (qt := result2.qualType)
-                              (qt' := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
-                              (μ := c₂'₁.memory) (v := v₂₁)
-                              (by simp [hqt2]) (hetyp := by simp [hqt2])
-                              hvalc₂
-                        have hcvcr_arg_e2 :
-                            closureCapturedVarsRegime predSat (ctxAfter ctxᵢ result2).regime
-                              ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₁.memory v₂₁ :=
-                          valueConsistentWithRegime_closureCapturedVarsRegime hvalc_arg_e2
-                        have hcvcr_arg_e1 :
-                            closureCapturedVarsRegime predSat result1.regime'
-                              ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ c₂'₁.memory v₂₁ :=
-                          closureCapturedVarsRegime_monotone h_mono1 hcvcr_arg_e2
-                        have hPredSat_mem :
-                            ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v :=
-                          predSat_mem_noPred_compat hpredlaws θ₁1
-                        exact
-                          closureCapturedVarsRegime_transport_μ
-                            (fun qt' v' =>
-                              ⟨fun h => by
-                                  cases h with
-                                  | noPred_ok hp =>
-                                      exact qtypPredHolds.noPred_ok hp
-                                  | guardClosure_ok hp hs =>
-                                      exact qtypPredHolds.guardClosure_ok hp
-                                        ((hPredSat_mem _ c₂'₁.memory c₁₁.memory v').1 hs)
-                                  | guardOnly_ok hp hs =>
-                                      exact qtypPredHolds.guardOnly_ok hp
-                                        ((hPredSat_mem _ c₂'₁.memory c₁₁.memory v').1 hs),
-                                fun h => by
-                                  cases h with
-                                  | noPred_ok hp =>
-                                      exact qtypPredHolds.noPred_ok hp
-                                  | guardClosure_ok hp hs =>
-                                      exact qtypPredHolds.guardClosure_ok hp
-                                        ((hPredSat_mem _ c₂'₁.memory c₁₁.memory v').2 hs)
-                                  | guardOnly_ok hp hs =>
-                                      exact qtypPredHolds.guardOnly_ok hp
-                                        ((hPredSat_mem _ c₂'₁.memory c₁₁.memory v').2 hs)⟩)
-                            hcvcr_arg_e1)
+                      (closureCapturedVarsRegime_transport_μ_θ
+                        (qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ₁1 c₂'₁.memory c₁₁.memory)
+                        hθext₁1.1
+                        (closureCapturedVarsRegime_monotone h_mono1
+                          (closureCapturedVarsRegime_transport_etyp (by simp [hqt2])
+                            (valueConsistentWithRegime_closureCapturedVarsRegime _hvalc₂₁))))
                 have hx' : x₁ = x₀ := by simpa using hx.symm
                 have henv_update :
                     env₁.update x₀ v₂₁ = env₁.update x₁ v₂₁ := by
@@ -23951,9 +23945,9 @@ private lemma stepFR_app
                   agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
                     cf₀.memory cf₀.varEnv θ₀_body cf₁.memory cf₁.varEnv θ₁_body ∧
                   valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
-                    res.qualType cf₀.memory o₀ ∧
+                    res.qualType cf₀.memory θ₀_body o₀ ∧
                   valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
-                    res.qualType cf₁.memory o₁ ∧
+                    res.qualType cf₁.memory θ₁_body o₁ ∧
                   resultAgreesIfClean predSat (ctxAfter ctxᵢ res).regime
                     cf₀.memory cf₁.memory θ₀_body θ₁_body res.qualType o₀ o₁ := by
                 have hsrc_mem' : firstShared ∈ first :: rest := by
@@ -24143,29 +24137,10 @@ private lemma stepFR_app
                               hlookup_back_res1_to_src hguard hk_src hvar_res1_mem
                           simpa [hvar₀_eq] using hvar_src
                     · intro x qt v hlookup hlookup_v
-                      have hlookup_res1_ctx :
-                          (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                        simpa [ctxAfter] using hlookup
-                      have hlookup_v_res1 : c₁₀.varEnv.lookup x = some v := by
-                        simpa [hvar₀_eq] using hlookup_v
-                      have hcvcr_res1 :
-                          closureCapturedVarsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                            qt c₁₀.memory v :=
-                        hcwr₀1.2.2 x qt v hlookup_res1_ctx hlookup_v_res1
-                      have hcvcr_res1_mem :
-                          closureCapturedVarsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                            qt cf₀.memory v :=
-                        closureCapturedVarsRegime_transport_μ hpred_compat₀ hcvcr_res1
-                      have hcvcr_src :
-                          closureCapturedVarsRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                            qt cf₀.memory v :=
-                        closureCapturedVarsRegime_transport_lookup_back
-                          (predSat := predSat)
-                          (R := (ctxAfter (ctxAfter ctxᵢ result2) result1).regime)
-                          (R' := (ctxAfter ctxᵢ firstShared).regime)
-                          (qt := qt) (μ := cf₀.memory) (v := v)
-                          hlookup_back_res1_to_src hcvcr_res1_mem
-                      exact hcvcr_src
+                      have hcvcr := hcwr₀1.2.2 x qt v (by simpa [ctxAfter] using hlookup)
+                        (by rw [hvar₀_eq] at hlookup_v; exact hlookup_v)
+                      exact closureCapturedVarsRegime_transport_μ_θ hpred_compat₀ _hθext₀_body.1
+                        (closureCapturedVarsRegime_transport_lookup_back hlookup_back_res1_to_src hcvcr)
                   exact
                     joinTypeResults_transport_consistentWithRegime_from_member
                       (predSat := predSat)
@@ -24233,29 +24208,10 @@ private lemma stepFR_app
                               hlookup_back_res1_to_src hguard hk_src hvar_res1_mem
                           simpa [hvar₁_eq] using hvar_src
                     · intro x qt v hlookup hlookup_v
-                      have hlookup_res1_ctx :
-                          (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                        simpa [ctxAfter] using hlookup
-                      have hlookup_v_res1 : c₁₁.varEnv.lookup x = some v := by
-                        simpa [hvar₁_eq] using hlookup_v
-                      have hcvcr_res1 :
-                          closureCapturedVarsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                            qt c₁₁.memory v :=
-                        hcwr₁1.2.2 x qt v hlookup_res1_ctx hlookup_v_res1
-                      have hcvcr_res1_mem :
-                          closureCapturedVarsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                            qt cf₁.memory v :=
-                        closureCapturedVarsRegime_transport_μ hpred_compat₁ hcvcr_res1
-                      have hcvcr_src :
-                          closureCapturedVarsRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                            qt cf₁.memory v :=
-                        closureCapturedVarsRegime_transport_lookup_back
-                          (predSat := predSat)
-                          (R := (ctxAfter (ctxAfter ctxᵢ result2) result1).regime)
-                          (R' := (ctxAfter ctxᵢ firstShared).regime)
-                          (qt := qt) (μ := cf₁.memory) (v := v)
-                          hlookup_back_res1_to_src hcvcr_res1_mem
-                      exact hcvcr_src
+                      have hcvcr := hcwr₁1.2.2 x qt v (by simpa [ctxAfter] using hlookup)
+                        (by rw [hvar₁_eq] at hlookup_v; exact hlookup_v)
+                      exact closureCapturedVarsRegime_transport_μ_θ hpred_compat₁ _hθext₁_body.1
+                        (closureCapturedVarsRegime_transport_lookup_back hlookup_back_res1_to_src hcvcr)
                   exact
                     joinTypeResults_transport_consistentWithRegime_from_member
                       (predSat := predSat)
@@ -24267,46 +24223,46 @@ private lemma stepFR_app
                     simp [heq_cfg₀]
                   have hval_src₀ :
                       valueConsistentWithRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                        firstShared.qualType cf₀.memory o₀ := by
+                        firstShared.qualType cf₀.memory θ₀_body o₀ := by
                     have hval_first :
                         valueConsistentWithRegime predSat (ctxAfter bodyCtx result3Shared).regime
                           (normalizeAppResultByProvenance p1
                             { result3Shared.qualType with
                               poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
-                          evalCfg₀.memory o₀ :=
+                          evalCfg₀.memory θ₀_body o₀ :=
                       valueConsistentWithRegime_transport_normalizeAppResultByProvenance
                         (predSat := predSat) (R := (ctxAfter bodyCtx result3Shared).regime)
                         (p := p) (p1 := p1) (qt := result3Shared.qualType)
-                        (μ := evalCfg₀.memory) (v := o₀) _hvalc_body₀
+                        (μ := evalCfg₀.memory) (θ := θ₀_body) (v := o₀) _hvalc_body₀
                     simpa [ctxAfter, hfirstShared, hmem₀_eq] using hval_first
                   exact
                     joinTypeResults_transport_valueConsistentWithRegime_from_member
                       (predSat := predSat)
                       (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                      (μ := cf₀.memory) (v := o₀)
+                      (μ := cf₀.memory) (θ := θ₀_body) (v := o₀)
                       h_join hsrc_mem' hval_src₀
                 · -- shared-member valueConsistentWithRegime -> joined result qualType (run 1).
                   have hmem₁_eq : cf₁.memory = evalCfg₁.memory := by
                     simp [heq_cfg₁]
                   have hval_src₁ :
                       valueConsistentWithRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                        firstShared.qualType cf₁.memory o₁ := by
+                        firstShared.qualType cf₁.memory θ₁_body o₁ := by
                     have hval_first :
                         valueConsistentWithRegime predSat (ctxAfter bodyCtx result3Shared).regime
                           (normalizeAppResultByProvenance p1
                             { result3Shared.qualType with
                               poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
-                          evalCfg₁.memory o₁ :=
+                          evalCfg₁.memory θ₁_body o₁ :=
                       valueConsistentWithRegime_transport_normalizeAppResultByProvenance
                         (predSat := predSat) (R := (ctxAfter bodyCtx result3Shared).regime)
                         (p := p) (p1 := p1) (qt := result3Shared.qualType)
-                        (μ := evalCfg₁.memory) (v := o₁) _hvalc_body₁
+                        (μ := evalCfg₁.memory) (θ := θ₁_body) (v := o₁) _hvalc_body₁
                     simpa [ctxAfter, hfirstShared, hmem₁_eq] using hval_first
                   exact
                     joinTypeResults_transport_valueConsistentWithRegime_from_member
                       (predSat := predSat)
                       (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                      (μ := cf₁.memory) (v := o₁)
+                      (μ := cf₁.memory) (θ := θ₁_body) (v := o₁)
                       h_join hsrc_mem' hval_src₁
                 · -- shared-member resultAgreesIfClean -> joined result qualType.
                   have hmem₀_eq : cf₀.memory = evalCfg₀.memory := by
@@ -25241,8 +25197,8 @@ def FaultRobustnessSpec_ioFree (e : Expr) (s : InputSpec) (obs : ObservableSpec)
     wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } →
     inputsConformSpec s μ₁ ρ₁ θ₁ →  inputsConformSpec s μ₂ ρ₂ θ₂ →
     runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
-    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₁ ρ₁ →
-    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₂ ρ₂ →
+    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₁ ρ₁ θ₁ →
+    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₂ ρ₂ θ₂ →
     consistentRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat ctx.regime s μ₂ ρ₂ θ₂ →
     agreeOnCriticalInputsUnderRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
     agreeOnTrustedInputs predSat ctx.regime s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →

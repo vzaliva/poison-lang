@@ -93,54 +93,60 @@ heavy semantic preservation lemmas — it is pure location arithmetic with no ru
 - `applyFnTClosure_ok_wfTypeResult` and `mapM_applyFnTClosure_forall_wfTypeResult` → may
   simplify but structural flow stays the same.
 
-### G. `closure_same_config_tenv_env` / `peClosure_same_config_tenv_env` (open)
+### G. Closure member-matching in same-config agreement (resolved)
 
-These TypeSafety.lean lemmas are needed by `agreeValueUnder_same` (closure branches), which is
-needed for `agreeOnClean_same_config` → `stepFR_app`.  They assert that when a closure value
-is typed at an arrow/parrow type and the realization map instantiates the context, the closure's
-captured env is `ctx.varEnv.toCaptured` and its runtime env is `ρ`.
+The false lemmas `closure_same_config_tenv_env` and `peClosure_same_config_tenv_env` were
+**deleted** — they assumed `σcap = toCaptured ctx.varEnv` and `env = ρ`, which fails for
+closures created in earlier scopes or after joins with multiple alternatives.
 
-The proof requires inverting `runtimeInstantiatesCtx` and `valueHasETyp` at the closure.
-Care needed: if a closure can be typed at multiple arrow types (different `tcls` members),
-we need to ensure the specific member `FnTClosure.regular x body σcap ∈ tcls` pins `σcap`
-to `ctx.varEnv.toCaptured`.
+Resolution: strengthened `closureCapturedVarsRegime` to carry **both** regime and typing
+evidence for the **same** `σcap` member (see `capturedVarsTypingProperty` in
+RegimeConsistency.lean).  This eliminates the member-matching problem entirely:
+- `agreeValueUnder_same` now takes `closureCapturedVarsRegime` as input and does structural
+  induction on the `deepValueQTypProperty` evidence tree
+- `agreeCapturedEnv_same_toCaptured` (was sorry'd mutual recursion) deleted — subsumed by
+  inline construction within `agreeValueUnder_same`
+- All definitions gained a `θ : RealizationMap` parameter: `closureCapturedVarsRegime`,
+  `consistentWithRegime`, `valueConsistentWithRegime`, `MemberCvcrEvidence`,
+  `trustedVarsClosureRegimeInit`, `FaultRobustnessSpec`
+- Transport lemmas extended: `closureCapturedVarsRegime_transport_μ_θ`,
+  `memberCvcrEvidence_transport_μ_θ` (new)
+- `deepValueQTypProperty.peClosure` gained `Expr.toPExpr? body = some pbody` field
+
+Design details formerly in `doc/app-problem1.md` (deleted after implementation).
 
 ## 3. Current Status and Plan
 
-### Checkpoint: 2026-02-27b — Step 1 complete, build clean, 33 in-scope sorrys
+### Checkpoint: 2026-03-04 — Steps 1–3 complete, build clean
 
 Build: **clean** (no errors; sorry-only warnings).
 
-Step 1 completed:
-- `typecheckExpr_preserves_wfTypeResult` proved in TypeSafety.lean (fuel induction, ~800 lines).
-- `StepFR_implies_wfTypeResult` deleted from FaultRobustnessProofs.lean.
-- `applyFnTClosure_regular_body_wfTypeResult` rewritten to call
-  `typecheckExpr_preserves_wfTypeResult` directly (no longer needs StepFR IH).
-- `applyFnTClosure_ok_wfTypeResult` and `mapM_applyFnTClosure_forall_wfTypeResult` simplified:
-  dropped `predSat`, `tm`, `fuel_app`, `h_fuel`, `IH`, `hpred`, `hTm1`, `tcls`, `hetyp1`,
-  `hresTm1`, `hmem_tcl`/`hargTm` parameters (no longer needed for purely static wfTypeResult).
-- One planned sorry remains in `typecheckApp_wfTypeResult` (arrow/parrow mapM + joinTypeResults
-  inline unfolding — mechanical but tedious).
+Steps completed:
+- **Step 1**: `typecheckExpr_preserves_wfTypeResult` proved; `StepFR_implies_wfTypeResult` deleted;
+  `applyFnTClosure_regular_body_wfTypeResult` rewritten; signatures simplified.
+  One planned sorry remains in `typecheckApp_wfTypeResult`.
+- **Step 2 + 3 (Issue G)**: Resolved via closure member-matching fix.
+  `closure_same_config_tenv_env` and `peClosure_same_config_tenv_env` deleted (false).
+  `agreeCapturedEnv_same_toCaptured` deleted (subsumed).
+  `agreeValueUnder_same` rewritten with structural induction on `deepValueQTypProperty` tree.
+  All θ-transport sorry's in `stepFR_app` arrow clean path resolved.
 
 #### In-scope sorrys (stepFR_app dependency chain)
 
-**`FaultRobustnessProofs.lean`** — 30 sorrys:
+**`FaultRobustnessProofs.lean`** — 7 declarations with sorry:
 
 | Group | Lemma(s) | Count | Risk | Step |
 |---|---|---|---|---|
-| Mutual recursion | `agreeCapturedEnv_same_toCaptured` | 1 | Low — logic sound, need `mutual`/`termination_by` | 3 |
 | Preservation | `applyFnTClosure_ok_wfTagMeaningCtx` | 1 | Low — standard preservation | 4 |
 | Preservation | `applyFnTClosure_ok_regimeConsistentWithCtx` | 1 | Low — standard preservation | 4 |
 | Preservation | `applyFnTClosure_ok_QTypRespectsTagMeaning` | 1 | Low — standard preservation | 4 |
-| Arrow fallback | 11 sorrys in `stepFR_app` `¬ qtypCleanUnder` branch | 11 | Low — `poison=true`, `pred=noPred` | 5 |
-| Parrow branch | 15 sorrys in `stepFR_app` parrow path | 15 | Low — mechanical mirror of arrow | 6 |
+| Arrow fallback | sorrys in `stepFR_app` `¬ qtypCleanUnder` branch | ~11 | Low — `poison=true`, `pred=noPred` | 5 |
+| Parrow branch | sorrys in `stepFR_app` parrow path | ~15 | Low — mechanical mirror of arrow | 6 |
 
-**`TypeSafety.lean`** — 3 sorrys:
+**`TypeSafety.lean`** — 1 sorry (in stepFR_app chain):
 
 | Lemma | Risk | Step |
 |---|---|---|
-| `closure_same_config_tenv_env` | Medium — see Issue G | 2 |
-| `peClosure_same_config_tenv_env` | Medium — mirror of above | 2 |
 | `typecheckApp_wfTypeResult` | Low — mechanical mapM/joinTypeResults unfolding | 1 (residual) |
 
 #### Out-of-scope sorrys (not targeted here)
@@ -157,8 +163,6 @@ Step 1 completed:
 - `stepFR_deref`: proved.
 - `joinTypeResults_QTypRespectsTagMeaning` + `QTypRespectsTagMeaning_joinStep`: proved.
 - `hTm_ctx''` in `applyFnTClosure_ok_wfTypeResult`: proved.
-- `agreeValueUnder_same` closure/peClosure branches: closed in FaultRobustnessProofs (now call
-  `closure_same_config_tenv_env` / `peClosure_same_config_tenv_env` from TypeSafety).
 - `agreeOnClean_same_config`, `agreeCapturedEnv_same`: proved.
 - Phase 0 (invariant initialization), Path D / APP-SIGMA-WITNESS-MISMATCH, strong mem-join,
   member-to-joined transport cascade: all proved.
@@ -166,6 +170,19 @@ Step 1 completed:
   `StepFR_implies_wfTypeResult` deleted; `applyFnTClosure_regular_body_wfTypeResult` rewritten;
   `applyFnTClosure_ok_wfTypeResult` / `mapM_applyFnTClosure_forall_wfTypeResult` signatures
   simplified (dropped StepFR/PredSat/TagMeaning parameters).
+- **Steps 2+3 (Issue G)**: Closure member-matching fix implemented.  Key changes:
+  - `closureCapturedVarsRegime` strengthened: `P = capturedVarsRegimeProperty ∧ capturedVarsTypingProperty`
+  - `θ` parameter added to `closureCapturedVarsRegime`, `consistentWithRegime`,
+    `valueConsistentWithRegime`, `MemberCvcrEvidence`, `trustedVarsClosureRegimeInit`,
+    `FaultRobustnessSpec`
+  - `deepValueQTypProperty.peClosure` gained `Expr.toPExpr? body = some pbody` field
+  - `agreeValueUnder_same` rewritten: takes `closureCapturedVarsRegime` as input, structural
+    induction on `deepValueQTypProperty` tree (no mutual recursion needed)
+  - Deleted: `closure_same_config_tenv_env`, `peClosure_same_config_tenv_env` (false),
+    `agreeCapturedEnv_same_toCaptured` (subsumed)
+  - New transport lemmas: `closureCapturedVarsRegime_transport_μ_θ`, `memberCvcrEvidence_transport_μ_θ`
+  - All θ-transport sorry's in arrow clean path resolved via chained transport:
+    `closureCapturedVarsRegime_transport_etyp` → `_monotone` → `_transport_μ_θ`
 
 ### Plan (risk-first)
 
@@ -180,18 +197,14 @@ All sub-tasks completed:
 One planned sorry remains: `typecheckApp_wfTypeResult` (arrow/parrow mapM + joinTypeResults
 inline unfolding — the same pattern as `typecheckExpr` app case but fully inlined).
 
-**Step 2: Close same-config agreement — Issue G**
+**Step 2+3: Close same-config agreement — Issue G** ✓ DONE
 
-Prove `closure_same_config_tenv_env` and `peClosure_same_config_tenv_env` in TypeSafety.lean
-by inverting `runtimeInstantiatesCtx` and `valueHasETyp` at the closure value.  Once done, the
-`agreeValueUnder_same` closure cases have no sorry dependence beyond the `memEnv_lookup_etyp_int`
-axiom (which is intentionally out of scope).
-
-**Step 3: Resolve mutual recursion — `agreeCapturedEnv_same_toCaptured`**
-
-Either introduce a `mutual` block with `agreeValueUnder_same`, or give `agreeValueUnder_same` a
-`termination_by Value.size v` measure.  Once done, the `agreeCapturedEnv_same_toCaptured` sorry
-is replaced with a proper structural induction.
+Resolved by the closure member-matching fix (strengthened `closureCapturedVarsRegime`).
+- False lemmas `closure_same_config_tenv_env` / `peClosure_same_config_tenv_env` deleted.
+- `agreeCapturedEnv_same_toCaptured` deleted (mutual recursion eliminated).
+- `agreeValueUnder_same` rewritten with structural induction on `deepValueQTypProperty` tree.
+- θ-transport sorry's in arrow clean path resolved.
+- All definitions gained `θ` parameter; ~105 call sites updated across FaultRobustnessProofs.lean.
 
 **Step 4: Preservation lemmas**
 
@@ -240,37 +253,27 @@ The obligations are identical in structure:
 ### Dependency order
 
 ```
-Step 1 (typecheckExpr_preserves_wfTypeResult)
-  └─ no dependencies on other steps; enables Steps 5, 6
+Step 1 (typecheckExpr_preserves_wfTypeResult) ✓ DONE
 
-Step 2 (closure_same_config_tenv_env)
-  └─ no dependencies; enables Step 3
-
-Step 3 (agreeCapturedEnv_same_toCaptured)
-  └─ depends on Step 2
+Step 2+3 (closure member-matching fix) ✓ DONE
 
 Step 4 (preservation lemmas)
-  └─ independent; parallel with Steps 1-3
+  └─ independent of remaining steps
 
 Step 5 (arrow fallback)
-  └─ depends on Step 1 (for join_transport_wfTypeContext)
   └─ depends on Step 4 (for wfTagMeaningCtx, regimeConsistentWithCtx transport)
 
 Step 6 (parrow mirror)
-  └─ depends on Steps 1, 4 (same as Step 5)
+  └─ depends on Step 4 (same as Step 5)
   └─ structurally mirrors arrow clean path + Step 5
 ```
 
 ### Stop / reassess conditions
 
-- If `typecheckExpr_preserves_wfTypeResult` induction turns out to require many case-specific
-  sub-lemmas about `joinMemEnvs`, `joinMemEnvsStrong`, `updateMemEnv`, `updateLocsetWeak` etc.,
-  stop and assess whether these sub-lemmas should be proved first as standalone helpers.
-- If `closure_same_config_tenv_env` turns out to be false (e.g. σcap can differ from
-  `ctx.varEnv.toCaptured` for multi-alternative closures at different capture points), the
-  `agreeValueUnder_same` closure proof strategy needs revision — stop and discuss.
-- If the `mutual` block for `agreeCapturedEnv_same_toCaptured` / `agreeValueUnder_same`
-  requires a different recursion structure, stop and discuss before large refactors.
+- ~~If `closure_same_config_tenv_env` turns out to be false~~ — **confirmed false; resolved via
+  closure member-matching fix (Issue G).**
+- ~~If the `mutual` block for `agreeCapturedEnv_same_toCaptured`~~ — **resolved; mutual recursion
+  eliminated by structural induction on evidence tree.**
 
 ## 4. Design History
 
@@ -302,15 +305,18 @@ chronological evolution with commit references.
 - `wfTagMeaningCtx_closure_body` (body context wfTagMeaning)
 
 ### Same-config agreement
-- `agreeOnClean_same_config`, `agreeCapturedEnv_same`, `agreeCapturedEnv_same_toCaptured`,
-  `agreeValueUnder_same`
+- `agreeOnClean_same_config`, `agreeCapturedEnv_same`, `agreeValueUnder_same`
+- `agreeValueUnder_same_aux` (structural induction on `deepValueQTypProperty` tree)
 - `valueHasETyp_loc_inv` (avoids dependent elimination in `agreeValueUnder_same` loc cases)
 - `valueHasETyp_closure_etyp_arrow`, `valueHasETyp_peClosure_etyp_parrow`
+- `capturedVarsTypingProperty` (new — typing evidence for captured vars)
+- `deepValueQTypProperty_mono` (moved from FaultRobustnessProofs.lean to RegimeConsistency.lean)
 
 ### Member-evidence transport
 - `memberVarsRegimeEvidence_monotone`, `memberVarsRegimeEvidence_transport_μ`
 - `memberCvcrEvidence_monotone`, `memberCvcrEvidence_transport_μ`
 - `memberVarsRegimeEvidence_transport_lookup_back`, `memberCvcrEvidence_transport_lookup_back`
+- `closureCapturedVarsRegime_transport_μ_θ`, `memberCvcrEvidence_transport_μ_θ` (new — combined μ+θ transport)
 
 ### Agreement transport
 - `qtypPredHolds_mem_compat_of_predSatLaws`

@@ -297,32 +297,32 @@ def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : Realizat
 -- Regime consistency for a single (QTyp, Value) pair
 -- This tracks whether a value's predicate is consistent with the regime
 inductive valueConsistentWithRegime (predSat : PredSat) (R : Regime)
-    (qt : QTyp) (μ : Memory) (v : Value) : Prop where
+    (qt : QTyp) (μ : Memory) (θ : RealizationMap) (v : Value) : Prop where
   | noTag :
       qtypGuardTag qt = none →
-      closureCapturedVarsRegime predSat R qt μ v →
-      valueConsistentWithRegime predSat R qt μ v
+      closureCapturedVarsRegime predSat R qt μ θ v →
+      valueConsistentWithRegime predSat R qt μ θ v
   | guardOnly_ok (k : Tag) :
       qt.pred = Predicate.guardOnly k →
-      closureCapturedVarsRegime predSat R qt μ v →
-      valueConsistentWithRegime predSat R qt μ v
+      closureCapturedVarsRegime predSat R qt μ θ v →
+      valueConsistentWithRegime predSat R qt μ θ v
   | notInRegime (k : Tag) :
       qtypGuardTag qt = some k →
       R.lookup? k = none →
-      closureCapturedVarsRegime predSat R qt μ v →
-      valueConsistentWithRegime predSat R qt μ v
+      closureCapturedVarsRegime predSat R qt μ θ v →
+      valueConsistentWithRegime predSat R qt μ θ v
   | inRegimeTrue (k : Tag) :
       qtypGuardTag qt = some k →
       R.lookup? k = some true →
       qtypPredHolds predSat qt μ v →
-      closureCapturedVarsRegime predSat R qt μ v →
-      valueConsistentWithRegime predSat R qt μ v
+      closureCapturedVarsRegime predSat R qt μ θ v →
+      valueConsistentWithRegime predSat R qt μ θ v
   | inRegimeFalse (k : Tag) :
       qtypGuardTag qt = some k →
       R.lookup? k = some false →
       ¬qtypPredHolds predSat qt μ v →
-      closureCapturedVarsRegime predSat R qt μ v →
-      valueConsistentWithRegime predSat R qt μ v
+      closureCapturedVarsRegime predSat R qt μ θ v →
+      valueConsistentWithRegime predSat R qt μ θ v
 
 -- Monotonicity lemmas for regime predicates
 -- When Regime.monotoneStep R R' and the lookup values match, we can transfer locsRegime/varsRegime
@@ -479,12 +479,12 @@ def MemberVarsRegimeEvidence
 /-- Path D payload: direct recursive captured-value
 closure-regime facts for a fixed captured member `(σcap, ρcap)` at the current regime/memory. -/
 def MemberCvcrEvidence
-    (predSat : PredSat) (R : Regime) (μ : Memory)
+    (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap)
     (σcap : CapturedVarEnv) (ρcap : VarEnv) : Prop :=
   ∀ (y : Name) (qt_y : QTyp) (v_y : Value),
     (VarTypeEnv.ofCaptured σcap).lookup y = some qt_y →
     ρcap.lookup y = some v_y →
-    closureCapturedVarsRegime predSat R qt_y μ v_y
+    closureCapturedVarsRegime predSat R qt_y μ θ v_y
 
 mutual
   inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
@@ -511,9 +511,9 @@ mutual
         (hmatch : tcl = FnTClosure.regular x body σcap)
         (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
         (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
-        (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ σcap ρcap₁)
+        (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
         (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
-        (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ σcap ρcap₂)
+        (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.closure x body ρcap₁)
         (hv₂ : v₂ = Value.closure x body ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
@@ -533,9 +533,9 @@ mutual
         (hmatch : Expr.toPExpr? body = some pbody ∧ tcl = PFnTClosure.regular x pbody σcap)
         (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
         (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
-        (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ σcap ρcap₁)
+        (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
         (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
-        (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ σcap ρcap₂)
+        (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.peClosure x body ρcap₁)
         (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
@@ -694,11 +694,11 @@ bridge to context-indexed `consistentWithRegime` can discharge the third conjunc
 trusted variables as well. -/
 inductive trustedVarsClosureRegimeInit
     (predSat : PredSat) (R : Regime) (s : InputSpec) (ctx : TypeContext)
-    (μ : Memory) (ρ : VarEnv) : Prop where
+    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop where
   | intro :
       (∀ x qt v, ctx.varEnv.lookup x = some qt → ¬ s.vars.hasKey x → ρ.lookup x = some v →
-        closureCapturedVarsRegime predSat R qt μ v) →
-      trustedVarsClosureRegimeInit predSat R s ctx μ ρ
+        closureCapturedVarsRegime predSat R qt μ θ v) →
+      trustedVarsClosureRegimeInit predSat R s ctx μ ρ θ
 
 -- ------------------------ Top-level definitions -------------------------------
 
@@ -715,8 +715,8 @@ def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx :
     wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } →  -- initial config₂ well-formed
     inputsConformSpec s μ₁ ρ₁ θ₁ →  inputsConformSpec s μ₂ ρ₂ θ₂ →
     runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
-    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₁ ρ₁ →
-    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₂ ρ₂ →
+    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₁ ρ₁ θ₁ →
+    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₂ ρ₂ θ₂ →
     consistentRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat ctx.regime s μ₂ ρ₂ θ₂ →
     agreeOnCriticalInputsUnderRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
     agreeOnTrustedInputs predSat ctx.regime s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
