@@ -223,6 +223,49 @@ shared predicate-join helpers consolidated in `TypeSafety.lean`.
 11. Wrapper-first transport migration + Path D swap (Feb 25)
 12. Path D join-transport proof completion (Feb 25)
 
+## Issue H History: `StepFR_single_run` and "Don't Derive Static Facts From StepFR"
+
+This file mostly records the Path D redesign needed to make the clean-internal function
+result transportable across closure-list joins.
+
+After Path D, the remaining `stepFR_app` blocker shifted to **fallback branches** where the
+two runs can execute **different** closure bodies (notably when function outer poison
+`p1 = true`).  In those branches the body `StepFR` IH cannot be applied directly because
+`StepFR` requires both runs to evaluate the **same expression**.
+
+### What was tried
+
+- Commit `dba4db3` (Feb 26) introduced a helper lemma `StepFR_single_run` in
+  `FaultRobustnessProofs.lean`.  The idea was to instantiate `StepFR` with both runs equal
+  (`μ₀ = μ₁`, `cf₀ = cf₁`, `o₀ = o₁`) and discharge the precondition using same-config
+  `agreeOnClean` (at the time via an `agreeOnClean_self`/same-config lemma).
+- This is **logically sound** as a packaging lemma *when a `terminatesTo` witness exists* for
+  the expression being stepped.
+
+### Why it was removed / what went wrong at the time
+
+- Commit `ec05def` (Feb 27) removed `StepFR_single_run` during a checkpoint refactor.
+  The helper was not the core blocker, and at that point the surrounding same-config
+  infrastructure was still in flux (mutual recursion between `agreeValueUnder_same` and
+  captured-env agreement; and later `closure_same_config_tenv_env`/`peClosure_same_config_tenv_env`
+  were discovered to be false and removed after the member-matching redesign).
+- Separately, the project tried to route **purely static** obligations through StepFR
+  (notably `StepFR_implies_wfTypeResult` for `applyFnTClosure_ok_wfTypeResult`), but this has
+  no viable proof path because StepFR fundamentally requires runtime evidence (`terminatesTo`)
+  and runtime context instantiation premises.  This was recognized explicitly and the lemma
+  was deleted in commit `02e7fcb`, replaced by a direct typechecker fuel-induction lemma
+  `typecheckExpr_preserves_wfTypeResult` in `TypeSafety.lean`.
+
+### Implication for the current proposal (avoid going in circles)
+
+- Reintroducing a `StepFR_single_run` corollary is fine *only* for **executed** closure bodies
+  where a per-run `terminatesTo` witness is available from runtime inversion of application.
+  This is a legitimate way to obtain per-run packs (`valueHasETyp`, `runtimeInstantiatesCtx`,
+  `consistentWithRegime`, etc.) needed in fallback branches.
+- `StepFR_single_run` does **not** solve left-biased join/preservation lemmas for
+  **non-executed** closure alternatives, because there is no `terminatesTo` witness for those.
+  Those lemmas must remain static (typechecker-only) or be avoided by restructuring.
+
 ## Historical Identifiers (removed from code)
 
 - `ArrowMemberCvcrSelector`

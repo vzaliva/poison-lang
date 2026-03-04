@@ -293,32 +293,46 @@ clean/dirty split (shared-body IH + `dirty_internal_parrow`).
 
 ### Issue H: Body StepFR IH evidence for fallback paths
 
-See **`doc/app-problem2.md`** for detailed analysis.
+See **`doc/app-problem2.md`** for detailed analysis (revised 2026-03-04).
 
 **Summary**: StepFR IH requires same expression for both runs.  Fallback paths have different
-bodies.  Recommended approach: prove `agreeOnClean_self` (config agrees with itself) and
-`StepFR_single_run` (corollary of StepFR via self-agree), then use per-run body IH + join
-transport for single-run obligations, and pc-based argument for cross-run `agreeOnClean`.
+bodies.  Recommended approach:
+- Use existing `agreeOnClean_same_config` (not a new `agreeOnClean_self` — the latter had
+  insufficient premises; see §7 Step 1 in app-problem2.md).
+- Prove `StepFR_single_run` (corollary of StepFR via `agreeOnClean_same_config`).
+- Per-run body IH + membership transport for single-run obligations.
+- Cross-run `agreeOnClean` via `join_transport_agreeOnClean_from_member` with
+  `h_mem_from_src_or_unrealized` (§7 Step 4 in app-problem2.md).
+- **High-risk item**: precise characterization of guard-clean entries under poisoned PC;
+  `qtypCleanUnder.guard` can make entries clean even when `qt.poison = true` (for non-function
+  types with active guard tags), so the naive "no new clean entries" claim is too strong.
+  Investigation needed (§7 Step 4, items 1–3).
+- Preservation lemmas (Step 4) are NOT fully subsumed by `StepFR_single_run`; they serve
+  left-biased join transport needs independent of which closure the runtime executes (§8).
 
-### Dependency order
+### Dependency order (high-risk first)
 
 ```
 Step 1 (typecheckExpr_preserves_wfTypeResult) ✓ DONE
 
 Step 2+3 (closure member-matching fix) ✓ DONE
 
-Step 4 (preservation lemmas) — BLOCKED (not purely static; fold into body IH)
+NEXT: Investigate guard-clean entries under poisoned PC  ← CRITICAL PATH
+  └─ determines feasibility of ¬qtypCleanUnder agreeOnClean
+  └─ if vacuous: overall plan is Medium feasibility
+  └─ if not: real proof-design iteration needed (High risk)
 
-Issue H infrastructure (agreeOnClean_self, StepFR_single_run)
+Issue H infrastructure (StepFR_single_run via agreeOnClean_same_config)
   └─ prerequisite for Steps 5, 6
 
+Step 4 (preservation lemmas) — BLOCKED (not purely static; partially independent of body IH)
+
 Step 5 (arrow fallback)
-  └─ depends on Issue H infrastructure
+  ├─ 5a (¬internalPoisonClean): depends on Issue H (shared body, low risk)
+  └─ 5b (¬qtypCleanUnder): depends on Issue H + poisoned-PC investigation (high risk)
 
 Step 6 (parrow mirror)
-  └─ depends on Step 4 (same as Step 5)
-Step 6 (parrow mirror)
-  └─ depends on Issue H infrastructure
+  └─ depends on Issue H + same investigation
   └─ structurally mirrors arrow paths
 ```
 
@@ -328,11 +342,17 @@ Step 6 (parrow mirror)
   closure member-matching fix (Issue G).**
 - ~~If the `mutual` block for `agreeCapturedEnv_same_toCaptured`~~ — **resolved; mutual recursion
   eliminated by structural induction on evidence tree.**
-- If `agreeOnClean_self` turns out to be hard (e.g., `agreeValueUnder_same` has missing
-  preconditions for the reflexive case) — reassess Approach D in `doc/app-problem2.md`.
-- If pc-based `agreeOnClean` transport (Approach B) is blocked by `joinTypeResults` semantics —
-  consider alternative: prove a direct `agreeOnClean_poisonedPC_transport` from pre-body to
-  post-body when pc = true.
+- ~~If `agreeOnClean_self` turns out to be hard~~ — **moot; using existing
+  `agreeOnClean_same_config` instead.**
+- If guard-clean entries survive the join under poisoned PC (investigation item 3 in §7
+  Step 4) AND neither static analysis nor pre-call agreement transport can handle them —
+  consider: (a) strengthening `joinMemEnvsStrong` to drop guards when both sides have
+  `poison = true`, or (b) adding a regime-level invariant that guard tags under poisoned PC
+  are always `R[k] = false`.
+- If preservation lemmas are not provable statically and cannot be derived from
+  `StepFR_single_run` (no `terminatesTo` witness for non-executed closures) — consider
+  restructuring the refine blocks to only use first-member evidence obtained via the
+  mapM wrapper + a direct first-member `terminatesTo` witness.
 
 ## 4. Design History
 
@@ -412,8 +432,9 @@ chronological evolution with commit references.
   `join_transport_regimeConsistentWithCtx` (join transport for context invariants)
 
 ### Planned (Issue H)
-- `agreeOnClean_self` (to be created — config agrees with itself on clean entries)
-- `StepFR_single_run` (to be created — single-run corollary of StepFR via self-agree)
+- ~~`agreeOnClean_self`~~ — **not needed**; use existing `agreeOnClean_same_config`
+  (FaultRobustnessProofs.lean:870) which has the correct premises
+- `StepFR_single_run` (to be created — single-run corollary of StepFR via `agreeOnClean_same_config`)
 
 ### Issue tags
 - `APP-BODYSTART-VARSREGIME` (legacy; may no longer appear)
