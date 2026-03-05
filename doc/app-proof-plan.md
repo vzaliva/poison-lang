@@ -12,8 +12,7 @@ Complete the remaining obligations in the `app` case of the fault-robustness ste
 (`stepFR_app`) in `LeanProofs/FaultRobustnessProofs.lean`, and all lemmas it depends upon.
 
 **Out of scope** (separate concerns):
-- `stepFR_ite_mode3`, `stepFR_ite_mode4` — branch case analysis, different proof
-- `stepFR_kwhile` — while-loop fixpoint reasoning, deferred
+- `stepFR_ite_*`, `stepFR_kwhile` — separate expression-form proofs, not covered here
 - `memEnv_lookup_etyp_int` — axiom / issue #70; treated as a given primitive
 - `valueHasETyp_det` — not called anywhere in the `stepFR_app` chain
 
@@ -117,12 +116,11 @@ Design details formerly in `doc/app-problem1.md` (deleted after implementation).
 
 ## 3. Current Status and Plan
 
-### Checkpoint: 2026-03-05 — Body IH partially resolved, 8 sorry keywords remain in chain
+### Checkpoint: 2026-03-05 — Body IH partially resolved, 9 sorry sites remain in chain
 
 Build: **clean** (no errors; sorry-only warnings).
 
-**Sorry count**: 10 sorry statements total in FaultRobustnessProofs.lean (down from 20 at
-last commit).  Of these, **8 sorry keywords** are in the stepFR_app dependency chain.
+**Sorry count in app chain**: 9 sorry sites (see `doc/app-problem2.md` for full inventory).
 
 Steps completed since last checkpoint:
 - **Issue H (partial)**: `StepFR_single_run` proved via `agreeOnClean_same_config` ✓
@@ -138,18 +136,13 @@ Steps completed since last checkpoint:
 
 #### In-scope sorrys (stepFR_app dependency chain)
 
-**`FaultRobustnessProofs.lean`** — 8 sorry keywords in chain:
+See `doc/app-problem2.md` for the detailed 9-sorry inventory with line numbers and blockers.
 
-| Group | Lemma(s) | Keywords | Risk | Step |
-|---|---|---|---|---|
-| Preservation (FnT) | `applyFnTClosure_ok_wfTagMeaningCtx` | 1 | Needs static induction | 4 |
-| Preservation (FnT) | `applyFnTClosure_ok_QTypRespectsTagMeaning` | 1 | Needs static induction | 4 |
-| Preservation (PFnT) | `applyPFnTClosure_ok_wfTagMeaningCtx` | 1 | Needs static induction | 4 |
-| Preservation (PFnT) | `applyPFnTClosure_ok_QTypRespectsTagMeaning` | 1 | Needs static induction | 4 |
-| Arrow dirty-internal + agreeOnClean | sorry pack at line ~25428 | 1 | Blocked on Step 5 | 5 |
-| Arrow agreeOnClean | `by sorry` at line ~26098 | 1 | Blocked on Step 5 | 5 |
-| Parrow dirty-internal | sorry at line ~27932 | 1 | Blocked on Step 5 | 6 |
-| Parrow agreeOnClean | `by sorry` at line ~28643 | 1 | Blocked on Step 5 | 6 |
+Summary by group:
+- **Preservation (static fuel induction)**: 5 sorrys — `wfTagMeaningCtx` sub-cases (vlet,
+  newRef, assign, app) + full `QTypRespectsTagMeaning`.  Resolution: combined induction.
+- **Arrow dirty-internal + agreeOnClean**: 2 sorrys — per-run body IH + locations conjunct.
+- **Parrow dirty-internal + agreeOnClean**: 2 sorrys — mirror of arrow.
 
 **Resolved since last checkpoint** (no longer sorry):
 - `applyFnTClosure_ok_regimeConsistentWithCtx` ✓
@@ -158,17 +151,9 @@ Steps completed since last checkpoint:
 - All arrow clean path sorrys ✓
 - All parrow clean path sorrys ✓
 - Parrow ¬qtypCleanUnder per-run obligations (except agreeOnClean) ✓
+- `typecheckExpr_preserves_wfTagMeaningCtx` partial proof (trivial + chain + ite cases) ✓
 
 **`TypeSafety.lean`** — 0 sorrys in stepFR_app chain.
-
-#### Out-of-scope sorrys (not targeted here)
-
-| Lemma | File | Keywords | Reason |
-|---|---|---|---|
-| `stepFR_ite_mode3` | FaultRobustnessProofs | 1 | Different concern |
-| `stepFR_ite_mode4` | FaultRobustnessProofs | 1 | Different concern |
-| `stepFR_kwhile` | FaultRobustnessProofs | 1 | Deferred; while-loop fixpoint |
-| `valueHasETyp_det` | TypeSafety | 1 | Likely false; unused |
 
 ### Checkpoint: 2026-03-04 — Steps 1–3 complete, build clean
 
@@ -184,14 +169,8 @@ Steps completed:
   `agreeValueUnder_same` rewritten with structural induction on `deepValueQTypProperty` tree.
   All θ-transport sorry's in `stepFR_app` arrow clean path resolved.
 
-#### Out-of-scope sorrys (not targeted here)
-
-| Lemma | File | Reason |
-|---|---|---|
-| `stepFR_ite_mode3`, `stepFR_ite_mode4` | FaultRobustnessProofs | Different concern |
-| `stepFR_kwhile` | FaultRobustnessProofs | Deferred; while-loop fixpoint |
-| `memEnv_lookup_etyp_int` | TypeSafety | Axiom / issue #70 |
-| `valueHasETyp_det` | TypeSafety | Not used in stepFR_app chain |
+_(Out-of-scope sorrys such as `stepFR_ite_*`, `stepFR_kwhile`, `valueHasETyp_det` are not
+tracked here.)_
 
 ### What was done (prior sessions)
 
@@ -258,8 +237,8 @@ strong induction.  Both FnTClosure and PFnTClosure cases handled in lines 17497-
 
 **Remaining**: `wfTagMeaningCtx` and `QTypRespectsTagMeaning` need similar
 `typecheckExpr_preserves_*` theorems (~500 lines each).  The same inline-IH approach can
-resolve the circular dependency.  However, the `wfTagMeaningCtx` proof also depends on how
-mode 3 `ite` creates new tags (same blocker as out-of-scope `stepFR_ite_mode3`).
+resolve the circular dependency.  The `wfTagMeaningCtx` proof's ite case is already complete;
+vlet/newRef/assign/app sub-cases remain (see `doc/app-problem2.md` §4).
 
 **Step 5: Arrow fallback branches** — BLOCKED on body IH infrastructure
 

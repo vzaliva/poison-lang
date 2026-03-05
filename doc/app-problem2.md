@@ -1,6 +1,9 @@
 # Body StepFR IH Evidence Blocker
 
-Analysis of the main remaining blocker for `stepFR_app` completion.
+Analysis of the remaining blockers for `stepFR_app` completion.
+
+**Scope**: Only `stepFR_app` and its direct dependency chain.  Excludes `stepFR_ite_*`,
+`stepFR_kwhile`, and their preservation sub-cases — those are separate concerns.
 
 ## Current Status (2026-03-05)
 
@@ -11,23 +14,30 @@ dirty-outer path (`p1=true`) may have different closure bodies.
 works for all per-run obligations.  Cross-run `agreeOnClean` **variables conjuncts** are
 now fully proved for both arrow and parrow `¬qtypCleanUnder` paths.  The remaining
 concentrated blocker is **cross-run `agreeOnClean` locations conjuncts** — 2 narrowed sorry
-sites (arrow line 26124, parrow line 28720).
+sites (arrow line ~26646, parrow line ~29242).
 
-Additionally, 4 preservation lemma sorrys (`wfTagMeaningCtx` / `QTypRespectsTagMeaning`
-for FnTClosure and PFnTClosure) and 2 dirty-internal sorrys remain.
+Additionally, preservation lemma infrastructure is partially built:
+`typecheckExpr_preserves_wfTagMeaningCtx` has a partial fuel induction proof (trivial cases,
+chain cases, and ite proved; vlet/newRef/assign/app remain as sorry within the app dependency
+chain).  `typecheckExpr_preserves_QTypRespectsTagMeaning` remains as a full sorry.
 
-### Sorry inventory (stepFR_app dependency chain only)
+### App-chain sorry inventory
 
-| # | Line | Location | Status |
-|---|------|----------|--------|
-| 1 | 17673 | `applyFnTClosure_ok_wfTagMeaningCtx` | Needs `typecheckExpr_preserves_wfTagMeaningCtx` |
-| 2 | 17745 | `applyFnTClosure_ok_QTypRespectsTagMeaning` | Needs `typecheckExpr_preserves_QTypRespectsTagMeaning` |
-| 3 | 18391 | `applyPFnTClosure_ok_wfTagMeaningCtx` | Mirror of #1 |
-| 4 | 18460 | `applyPFnTClosure_ok_QTypRespectsTagMeaning` | Mirror of #2 |
-| 5 | 25426 | arrow dirty-internal pack (¬internalPoisonClean) | Needs per-run body IH |
-| 6 | 26124 | arrow `agreeOnClean` **locations only** | Variables proved; locations sorry |
-| 7 | 27981 | parrow dirty-internal | Needs per-run body IH |
-| 8 | 28720 | parrow `agreeOnClean` **locations only** | Variables proved; locations sorry |
+| # | Line | Location | Blocker |
+|---|------|----------|---------|
+| 1 | 17961 | `wfTagMeaningCtx` vlet (hwf_mid) | Needs combined induction with QTypRespectsTagMeaning |
+| 2 | 17975 | `wfTagMeaningCtx` newRef | Needs QTypRespectsTagMeaning for stored pred |
+| 3 | 17977 | `wfTagMeaningCtx` assign | Needs structure extension + QTypRespectsTagMeaning |
+| 4 | 18044 | `wfTagMeaningCtx` app | Deep (closure body context well-formedness) |
+| 5 | 18061 | `QTypRespectsTagMeaning` | Full sorry (~500 lines, fuel induction) |
+| 6 | 25948 | arrow dirty-internal | Per-run body IH restructuring |
+| 7 | 26646 | arrow `agreeOnClean` locations | Guard-clean entry analysis |
+| 8 | 28503 | parrow dirty-internal | Mirror of #6 |
+| 9 | 29242 | parrow `agreeOnClean` locations | Mirror of #7 |
+
+Note: sorrys #1-5 feed into `applyFnTClosure_ok_wfTagMeaningCtx` /
+`applyFnTClosure_ok_QTypRespectsTagMeaning` and their PFnTClosure mirrors (4 sorry lemmas
+total that depend on the fuel induction being complete for the relevant cases).
 
 ### Completed
 
@@ -44,22 +54,12 @@ for FnTClosure and PFnTClosure) and 2 dirty-internal sorrys remain.
    Mirror of arrow; accounts for `subst heq_cfg₀ heq_cfg₁` consuming config equalities
 9. **Made `joinTypeResults_regime_monotone`, `applyFnTClosure_regime_mono`,
    `applyPFnTClosure_regime_mono` public** in TypeSafety.lean ✓
-
-### Key technique: agreeOnClean variables conjunct proof
-
-The variables conjunct for `agreeOnClean` at `ctxAfter ctxᵢ res` (joined result) uses a
-two-step transport:
-
-1. **Regime monotonicity chain**: Establish `Regime.monotoneStep result1.regime' res.regime'`
-   via `List.mapM_Except_preserves_property` (each `applyFnTClosure`/`applyPFnTClosure` result
-   is monotone) + `joinTypeResults_regime_monotone`.
-
-2. **Backward transport**: For clean variables in the joined result:
-   - `cleanUnder_of_monotone h_mono_res` → clean at `result1.regime'`
-   - `ctxAfter ctxᵢ res` has `varEnv = ctxᵢ.varEnv` (unchanged by body)
-   - Pre-call `hagree1.2` gives `agreeVarUnder` at pre-call regime
-   - `agreeValueUnder_clean_extends` transports through θ extension (memory/θ change)
-   - `agreeValueUnder_clean_monotoneRegime` transports through regime change
+10. **`applyFnTClosure_ok_regimeConsistentWithCtx`** and PFnTClosure mirror — proved ✓
+11. **`typecheckExpr_preserves_wfTagMeaningCtx` partial proof** — proved ✓
+    Fuel induction covering: num, bool, unit, str, var (all pred variants), fn, pfn,
+    extern* (impossible), rand/frand/print* (impossible), unaryop, deref, op, seq,
+    ite (all 4 modes).  Uses `EnvRespectsTagMeaning_joinMemEnvsStrong'` for join cases,
+    `EnvRespectsTagMeaning_mix` for vlet final transport.
 
 ## 1. Background: How Function Application Works
 
@@ -85,8 +85,8 @@ post-call contexts conservatively: `JoinGStrong` (memory) drops single-sided pre
 | Case | `p1` | `internalPoisonClean` | Both runs pick same closure? | Status |
 |------|------|-----------------------|-----------------------------|--------|
 | Clean | false | true | Yes | **DONE ✓** |
-| Dirty internal | false | false | **Not guaranteed** | Sorry #5 |
-| Dirty outer | true | n/a | **No** | Sorrys #6, #8 (narrowed) |
+| Dirty internal | false | false | **Not guaranteed** | Sorry #6 |
+| Dirty outer | true | n/a | **No** | Sorrys #7, #9 (narrowed) |
 
 **KEY FINDING**: `p` (internal poison in ETyp.arrow/parrow) ≠ `p1` (external poison in QTyp).
 `qtypCleanUnder.guard` requires `isFunctionType=false`, so only `qtypCleanUnder.clean` applies
@@ -153,7 +153,7 @@ For each run independently:
 
 ### Step 4: Cross-run `agreeOnClean` locations conjunct — THE REMAINING BLOCKER
 
-#### Arrow and parrow `¬qtypCleanUnder` paths (p1 = true) — sorrys #6, #8
+#### Arrow and parrow `¬qtypCleanUnder` paths (p1 = true) — sorrys #7, #9
 
 The variables conjuncts are now fully proved. The **locations conjuncts** remain.
 
@@ -173,26 +173,16 @@ For each guard-clean location `l` in `res.memEnv'`, we need to show either:
 2. For fresh locations: show they are unrealized in both θs (since body allocated them
    after θ₀_body/θ₁_body were established)
 
-#### Dirty-internal (¬internalPoisonClean, p1=false) — sorrys #5, #7
+#### Dirty-internal (¬internalPoisonClean, p1=false) — sorrys #6, #8
 
 Same structure as dirty-outer: both may have different closures. Need per-run body IH via
 `StepFR_single_run`. Additionally, `resultAgreesIfClean` for the result type is non-vacuous
 (unlike dirty-outer where it's vacuous via `dirty_noPred_arrow`).
 
-The dirty-internal sorry at line 25426 currently uses `θ₀1, θ₁1` (pre-body maps) as
-witnesses. Needs restructuring to use `θ₀_body, θ₁_body` (post-body maps from
-`StepFR_single_run`).
+The dirty-internal sorry currently uses `θ₀1, θ₁1` (pre-body maps) as witnesses. Needs
+restructuring to use `θ₀_body, θ₁_body` (post-body maps from `StepFR_single_run`).
 
-## 4. Preservation Lemmas (sorrys #1-4)
-
-Four preservation lemmas with sorry:
-
-| Lemma | Line | Goal |
-|-------|------|------|
-| `applyFnTClosure_ok_wfTagMeaningCtx` | 17673 | `wfTagMeaningCtx tm (ctxAfter ctx r)` |
-| `applyFnTClosure_ok_QTypRespectsTagMeaning` | 17745 | `QTypRespectsTagMeaning tm r.qualType` |
-| `applyPFnTClosure_ok_wfTagMeaningCtx` | 18391 | same, PFnT version |
-| `applyPFnTClosure_ok_QTypRespectsTagMeaning` | 18460 | same, PFnT version |
+## 4. Preservation Lemmas (app dependency chain)
 
 ### RESOLVED: `regimeConsistentWithCtx` preservation
 
@@ -200,21 +190,43 @@ The `applyFnTClosure_ok_regimeConsistentWithCtx` and PFnTClosure mirrors are **f
 The circular dependency in `typecheckExpr_preserves_regimeConsistentWithCtx_main` was resolved
 by inlining helper logic using `IH'` from strong induction.
 
-### Remaining: `wfTagMeaningCtx` and `QTypRespectsTagMeaning`
+### IN PROGRESS: `wfTagMeaningCtx` and `QTypRespectsTagMeaning`
 
-These need general `typecheckExpr_preserves_*` theorems (~500 lines each, fuel induction over
-all expression forms).  The same circular dependency approach (inline with `IH'`) applies.
+`typecheckExpr_preserves_wfTagMeaningCtx_main` is partially proved via fuel induction
+(~200 lines). Completed expression cases: num, bool, unit, str, var, fn, pfn, extern*, rand,
+frand, print*, unaryop, deref, op, seq, ite (all 4 modes). Remaining sub-sorrys in the app
+dependency chain: **vlet, newRef, assign, app** (sorrys #1-4 above).
 
-`StepFR_single_run` **cannot** be used for non-executed closure alternatives (no
-`terminatesTo` witness).  Previously tried and rejected (deleted in 02e7fcb).
+**Mutual dependency discovered**: `wfTagMeaningCtx` and `QTypRespectsTagMeaning` have a
+circular dependency through the `vlet` case:
+- `wfTagMeaningCtx` for the extended context needs `QTypRespectsTagMeaning` for the new binding
+- `QTypRespectsTagMeaning` for seq/vlet results needs `wfTagMeaningCtx` for intermediate contexts
+
+**Resolution approach**: Combine both into a single strong induction returning
+`wfTagMeaningCtx ∧ QTypRespectsTagMeaning`. This mirrors the approach used for
+`regimeConsistentWithCtx`.
+
+**Current sub-sorrys in `_main`** (app-relevant):
+
+| Sub-sorry | Blocker | Effort |
+|-----------|---------|--------|
+| vlet (hwf_mid) | QTypRespectsTagMeaning for result1.qualType | Combined induction |
+| newRef | QTypRespectsTagMeaning for stored pred | Combined induction |
+| assign | Structure lemma extension + QTypRespectsTagMeaning | Combined induction + ~50 lines |
+| app | Closure body context well-formedness | Deep (uses IH' on body) |
+
+**`StepFR_single_run` cannot be used** for non-executed closure alternatives (no
+`terminatesTo` witness). Previously tried and rejected (deleted in 02e7fcb).
 
 ### Paths forward
 
-1. **Purely static proofs** (typechecker fuel induction): Follow the pattern of
-   `typecheckExpr_preserves_wfTypeResult` and `typecheckExpr_preserves_regimeConsistentWithCtx`.
+1. **Combined fuel induction** for `wfTagMeaningCtx ∧ QTypRespectsTagMeaning`: Would
+   resolve vlet, newRef, assign (3 sub-sorrys). Estimated ~100-200 additional lines on
+   top of existing proof.
 
-2. **Refine-block restructuring**: `join_transport_wfTagMeaningCtx` only needs the first
-   member.  If the executed member happens to be the first, `StepFR_single_run` suffices.
+2. **App case via IH'**: The body is typechecked at smaller fuel, so IH' applies. The
+   challenge is establishing `wfTagMeaningCtx tm bodyCtx` for the closure body context
+   (captured vars + argument). This requires knowing captured vars' guard descs are in `tm`.
 
 ## 5. Summary
 
@@ -224,17 +236,54 @@ all expression forms).  The same circular dependency approach (inline with `IH'`
 | Per-run body evidence | **DONE ✓** | — |
 | Transport to joined result | **DONE ✓** (except agreeOnClean locations) | — |
 | `agreeOnClean` variables conjuncts | **DONE ✓** (both arrow and parrow) | — |
-| `agreeOnClean` locations conjuncts | 2 narrowed sorrys | 100–300 lines |
-| Dirty-internal per-run body IH | 2 sorrys (arrow + parrow) | 200–400 lines |
-| Preservation lemmas (#1-4) | Not started | 100–500 lines (static induction) |
-| **Total remaining** | 8 sorrys in stepFR_app chain | **~400–1200 lines** |
+| `agreeOnClean` locations conjuncts | 2 narrowed sorrys (#7, #9) | 100–300 lines |
+| Dirty-internal per-run body IH | 2 sorrys (#6, #8) | 200–400 lines |
+| `wfTagMeaningCtx` partial proof | **DONE ✓** (4 app-chain sub-sorrys remain: #1-4) | — |
+| Combined `wfTagMeaningCtx ∧ QTypRespects` | Not started (resolves #1-3, #5) | 100–200 lines |
+| `wfTagMeaningCtx` app sub-case | sorry #4 | 100–200 lines |
+| **Total remaining in app chain** | 9 sorrys | **~500–1100 lines** |
 
-## 6. Implementation Order
+## 6. Implementation Order (recommended)
 
-1. **Dirty-internal per-run body IH** (sorrys #5, #7) — restructure to use `StepFR_single_run`
-   with `θ₀_body, θ₁_body` witnesses. Similar to `¬qtypCleanUnder` path but `resultAgreesIfClean`
-   needs `dirty_internal_arrow`/`dirty_internal_parrow` constructor.
-2. **`agreeOnClean` locations conjuncts** (sorrys #6, #8) — analyze guard-clean entry
+1. **Combined `wfTagMeaningCtx ∧ QTypRespectsTagMeaning` induction** — resolves sorrys
+   #1-3 (vlet, newRef, assign sub-cases) and #5 (full QTypRespectsTagMeaning sorry).
+   Estimated ~100-200 lines of restructuring.
+
+2. **App case in `_main`** via IH' on closure body — resolves sorry #4.
+   Requires establishing `wfTagMeaningCtx tm bodyCtx` from closure captured vars evidence.
+   Estimated ~100-200 lines.
+
+3. **Dirty-internal per-run body IH** (sorrys #6, #8) — restructure to use
+   `StepFR_single_run` with `θ₀_body, θ₁_body` witnesses.
+
+4. **`agreeOnClean` locations conjuncts** (sorrys #7, #9) — analyze guard-clean entry
    preservation through joins, prove locations trace back to pre-call state.
-3. **`typecheckExpr_preserves_wfTagMeaningCtx`** — static fuel induction (~500 lines).
-4. **`typecheckExpr_preserves_QTypRespectsTagMeaning`** — similar.
+
+### Key technique: agreeOnClean variables conjunct proof
+
+The variables conjunct for `agreeOnClean` at `ctxAfter ctxᵢ res` (joined result) uses a
+two-step transport:
+
+1. **Regime monotonicity chain**: Establish `Regime.monotoneStep result1.regime' res.regime'`
+   via `List.mapM_Except_preserves_property` (each `applyFnTClosure`/`applyPFnTClosure` result
+   is monotone) + `joinTypeResults_regime_monotone`.
+
+2. **Backward transport**: For clean variables in the joined result:
+   - `cleanUnder_of_monotone h_mono_res` → clean at `result1.regime'`
+   - `ctxAfter ctxᵢ res` has `varEnv = ctxᵢ.varEnv` (unchanged by body)
+   - Pre-call `hagree1.2` gives `agreeVarUnder` at pre-call regime
+   - `agreeValueUnder_clean_extends` transports through θ extension (memory/θ change)
+   - `agreeValueUnder_clean_monotoneRegime` transports through regime change
+
+### Key technique: wfTagMeaningCtx preservation (ite case)
+
+The ite case for `typecheckExpr_preserves_wfTagMeaningCtx` splits into 4 modes:
+
+- **Modes 1/2** (single branch): `res.memEnv' = resBranch.memEnv'` — direct from IH on the
+  active branch. `wfTagMeaningCtx` only depends on `varEnv` and `memEnv`; since `tagEnv`
+  changes don't affect it, the branch context has `wfTagMeaningCtx = hwf`.
+
+- **Modes 3/4** (join): `res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv'` — uses
+  `EnvRespectsTagMeaning_joinMemEnvsStrong'` which only needs the LEFT side's evidence.
+  For mode 4, IH on e1 provides `wfTagMeaningCtx` for the intermediate context
+  (same varEnv, updated memEnv).
