@@ -4,12 +4,15 @@
 # Stage 1: build gh-sub-issue extension (no GitHub auth required; gh extension install would require auth).
 FROM ubuntu:24.04 AS gh-sub-issue-builder
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git golang-go \
-    && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 1 https://github.com/yahsan2/gh-sub-issue.git /tmp/gh-sub-issue \
+    && rm -rf /var/lib/apt/lists/* \
+    && git clone --depth 1 https://github.com/yahsan2/gh-sub-issue.git /tmp/gh-sub-issue \
     && cd /tmp/gh-sub-issue && go build -o gh-sub-issue .
 
 # Stage 2: main image
 FROM ubuntu:24.04
+
+LABEL org.opencontainers.image.source="https://github.com/vzaliva/poison-lang" \
+      org.opencontainers.image.description="AI coding agent env (Claude, Codex) with Lean toolchain"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -39,6 +42,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sd \
     git-delta \
     dtrx \
+    # Lean-heavy workflows: fzf+bat (file/symbol nav + preview), just (task runner), entr (rebuild on change), parallel (parallel checks)
+    fzf bat \
+    just \
+    entr \
+    parallel \
     # LaTeX for PDF generation
     latexmk texlive-latex-extra texlive-fonts-recommended texlive-latex-recommended texlive-lang-english \
     && rm -rf /var/lib/apt/lists/*
@@ -90,7 +98,7 @@ ENV DISABLE_AUTOUPDATER=1 \
     CLAUDE_SEED=/opt/claude-seed
 RUN : "${CLAUDE_UPDATE}" \
     && mkdir -p "${CLAUDE_SEED}" \
-    && HOME="${CLAUDE_SEED}" bash -lc 'curl -fsSL https://claude.ai/install.sh | bash'
+    && HOME="${CLAUDE_SEED}" PATH="${CLAUDE_SEED}/.local/bin:${PATH}" bash -lc 'curl -fsSL https://claude.ai/install.sh | bash'
 # Do not install claude to /usr/local/bin: the CLI treats that as a leftover npm install and warns.
 # Entrypoint symlinks ~/.local/bin/claude to the seed binary so PATH finds it.
 
@@ -107,13 +115,12 @@ RUN ln -sf /usr/bin/fdfind /usr/local/bin/fd
 # ast-grep (AST-based code search)
 RUN npm i -g @ast-grep/cli
 
-# difftastic, scc, yq, hyperfine, watchexec, comby: install from GitHub releases (amd64/arm64)
-# shaffa: not found — omit; add if you meant another tool
+# difftastic, scc, yq, hyperfine, watchexec, comby, rga: install from GitHub releases (amd64/arm64)
 RUN set -eux \
     && ARCH="$(dpkg --print-architecture)" \
     && case "${ARCH}" in \
-        amd64) DIFT_ARCH=x86_64-unknown-linux-gnu; SCC_ARCH=x86_64; YQ_ARCH=amd64; HF_ARCH=x86_64-unknown-linux-musl; WX_ARCH=x86_64-unknown-linux-gnu; COMBY_ARCH=x86_64-linux ;; \
-        arm64) DIFT_ARCH=aarch64-unknown-linux-gnu; SCC_ARCH=arm64; YQ_ARCH=arm64; HF_ARCH=aarch64-unknown-linux-musl; WX_ARCH=aarch64-unknown-linux-gnu; COMBY_ARCH="" ;; \
+        amd64) DIFT_ARCH=x86_64-unknown-linux-gnu; SCC_ARCH=x86_64; YQ_ARCH=amd64; HF_ARCH=x86_64-unknown-linux-musl; WX_ARCH=x86_64-unknown-linux-gnu; COMBY_ARCH=x86_64-linux; RGA_ARCH=x86_64-unknown-linux-musl ;; \
+        arm64) DIFT_ARCH=aarch64-unknown-linux-gnu; SCC_ARCH=arm64; YQ_ARCH=arm64; HF_ARCH=aarch64-unknown-linux-musl; WX_ARCH=aarch64-unknown-linux-gnu; COMBY_ARCH=""; RGA_ARCH=aarch64-unknown-linux-gnu ;; \
         *) echo "Unsupported arch ${ARCH}"; exit 1 ;; \
     esac \
     && curl -fsSL "https://github.com/Wilfred/difftastic/releases/latest/download/difft-${DIFT_ARCH}.tar.gz" -o /tmp/difft.tar.gz \
@@ -141,7 +148,14 @@ RUN set -eux \
       && tar -xzf /tmp/comby.tar.gz -C /tmp \
       && install -m 0755 /tmp/comby-1.8.1-${COMBY_ARCH} /usr/local/bin/comby \
       && rm -f /tmp/comby.tar.gz /tmp/comby-*; \
-    fi
+    fi \
+    && RGA_VER="0.10.10" \
+    && RGA_DIR="ripgrep_all-v${RGA_VER}-${RGA_ARCH}" \
+    && curl -fsSL "https://github.com/phiresky/ripgrep-all/releases/download/v${RGA_VER}/${RGA_DIR}.tar.gz" -o /tmp/rga.tar.gz \
+    && tar -xzf /tmp/rga.tar.gz -C /tmp \
+    && install -m 0755 "/tmp/${RGA_DIR}/rga" /usr/local/bin/ \
+    && ( [ -f "/tmp/${RGA_DIR}/rga-preproc" ] && install -m 0755 "/tmp/${RGA_DIR}/rga-preproc" /usr/local/bin/ || true ) \
+    && rm -rf /tmp/rga.tar.gz "/tmp/${RGA_DIR}"
 
 # OpenAI Codex CLI. To force reinstall from npm when the package is updated, pass a new
 # value to bust the cache, e.g.: --build-arg CODEX_UPDATE=2 or CODEX_UPDATE=$(date +%s)
@@ -192,212 +206,7 @@ WORKDIR /work
 # --- ENTRYPOINT: add host UID/GID to passwd, drop privs, exec ---
 # Bump CONFIG_SEED to force this layer to re-run (e.g. after editing seeded config.toml).
 ARG CONFIG_SEED=1
-RUN printf '%s\n' \
-'#!/usr/bin/env bash' \
-'set -euo pipefail' \
-'# Preserve TZ from Podman -e so exec'\''d process sees host timezone.' \
-'SAVED_TZ="${TZ:-}"' \
-': "${HOST_UID:=1000}"' \
-': "${HOST_GID:=1000}"' \
-': "${HOST_USER:=user}"' \
-': "${HOST_GROUP:=user}"' \
-': "${ELAN_HOME:=/home/user/.elan}"' \
-': "${XDG_CACHE_HOME:=/home/user/.cache}"' \
-'# Container-local Codex state (config/auth/history). Overridable by wrapper.' \
-': "${CODEX_HOME:=/home/user/.config/poison-codex}"' \
-'# Container-local Claude Code state (config/auth). Overridable by wrapper.' \
-': "${CLAUDE_CONFIG_DIR:=/home/user/.config/poison-claude}"' \
-'' \
-'# Ensure mapped identity exists (avoids $HOME warning).' \
-'if [ "$(id -u)" -eq 0 ]; then' \
-'  if ! getent group "${HOST_GID}" >/dev/null 2>&1; then echo "${HOST_GROUP}:x:${HOST_GID}:" >> /etc/group; fi' \
-'  if ! getent passwd "${HOST_UID}" >/dev/null 2>&1; then echo "${HOST_USER}:x:${HOST_UID}:${HOST_GID}:User:/home/user:/bin/bash" >> /etc/passwd; fi' \
-'fi' \
-'' \
-'# Ensure home/config/cache dirs are writable by mapped UID/GID.' \
-'for d in "/home/user" "${XDG_CACHE_HOME}" "/home/user/.config"; do' \
-'  mkdir -p "${d}"' \
- '  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${d}" 2>/dev/null || true; fi' \
-'done' \
-'' \
-'# Tree-sitter CLI uses ~/.config/tree-sitter/config.json to locate grammar repos.' \
-'# Seed a minimal config pointing at the project parser directory (first run only).' \
-'mkdir -p "${HOME}/.config/tree-sitter"' \
-'if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "${HOME}/.config/tree-sitter" 2>/dev/null || true; fi' \
-'if [ ! -f "${HOME}/.config/tree-sitter/config.json" ]; then' \
-'  cat > "${HOME}/.config/tree-sitter/config.json" <<'\''EOF'\''' \
-'{' \
-'  "parser-directories": ["/work/parser"]' \
-'}' \
-'EOF' \
-'  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${HOME}/.config/tree-sitter/config.json" 2>/dev/null || true; fi' \
-'fi' \
-'' \
-'# Ensure ~/.local/bin exists and is on PATH (some CLIs expect it).' \
-'mkdir -p "/home/user/.local/bin"' \
-'if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "/home/user/.local" 2>/dev/null || true; fi' \
-'export PATH="/home/user/.local/bin:${PATH}"' \
-'' \
-'# First-run seed: gh extensions live under ~/.local/share/gh/extensions; copy from image seed so they persist with the home volume.' \
-'GH_EXT_DIR="${XDG_DATA_HOME:-/home/user/.local/share}/gh/extensions"' \
-'mkdir -p "${GH_EXT_DIR}"' \
-'if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "${GH_EXT_DIR}" 2>/dev/null || true; fi' \
-'if [ -w "${GH_EXT_DIR}" ] && [ ! -d "${GH_EXT_DIR}/gh-sub-issue" ]; then' \
-'  if [ -d "${GH_EXTENSIONS_SEED:-/opt/gh-extensions-seed}/.local/share/gh/extensions" ]; then' \
-'    cp -a "${GH_EXTENSIONS_SEED}/.local/share/gh/extensions/." "${GH_EXT_DIR}/"' \
-'    if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "${GH_EXT_DIR}"; fi' \
-'  fi' \
-'fi' \
-'' \
-'# Claude Code: expose the seed binary via ~/.local/bin/claude (on PATH) so the CLI is found' \
-'# without putting it in /usr/local/bin (which the CLI treats as a leftover npm install).' \
-'if [ ! -e "/home/user/.local/bin/claude" ] && [ -x "${CLAUDE_SEED:-/opt/claude-seed}/.local/bin/claude" ]; then' \
-'  ln -sf "${CLAUDE_SEED:-/opt/claude-seed}/.local/bin/claude" "/home/user/.local/bin/claude" 2>/dev/null || true' \
-'fi' \
-'' \
-'# Lean 4 skills plugin: env vars and symlink from image seed (no persistence needed).' \
-'LEAN4_PLUGIN_ROOT="${LEAN4_SKILLS_SEED:-/opt/lean4-skills-seed}/plugins/lean4"' \
-'export LEAN4_PLUGIN_ROOT LEAN4_SCRIPTS="${LEAN4_PLUGIN_ROOT}/lib/scripts" LEAN4_REFS="${LEAN4_PLUGIN_ROOT}/skills/lean4/references"' \
-'PLUGINS_DIR="${CLAUDE_CONFIG_DIR}/plugins"' \
-'mkdir -p "${PLUGINS_DIR}"' \
-'if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${PLUGINS_DIR}" 2>/dev/null || true; fi' \
-'if [ -w "${PLUGINS_DIR}" ] && [ -d "${LEAN4_PLUGIN_ROOT}" ]; then' \
-'  rm -f "${PLUGINS_DIR}/lean4" 2>/dev/null; ln -sf "${LEAN4_PLUGIN_ROOT}" "${PLUGINS_DIR}/lean4"' \
-'  if [ "$(id -u)" -eq 0 ]; then chown -h "${HOST_UID}:${HOST_GID}" "${PLUGINS_DIR}/lean4" 2>/dev/null || true; fi' \
-'fi' \
-'' \
-'# Codex: symlink lean4 skill into ~/.agents/skills (Codex discovers skills from user dir).' \
-'CODEX_SKILLS_DIR="${HOME}/.agents/skills"' \
-'mkdir -p "${CODEX_SKILLS_DIR}"' \
-'if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "${CODEX_SKILLS_DIR}" 2>/dev/null || true; fi' \
-'if [ -w "${CODEX_SKILLS_DIR}" ] && [ -d "${LEAN4_SKILLS_SEED:-/opt/lean4-skills-seed}/plugins/lean4/skills/lean4" ]; then' \
-'  rm -f "${CODEX_SKILLS_DIR}/lean4" 2>/dev/null' \
-'  ln -sf "${LEAN4_SKILLS_SEED}/plugins/lean4/skills/lean4" "${CODEX_SKILLS_DIR}/lean4"' \
-'  if [ "$(id -u)" -eq 0 ]; then chown -h "${HOST_UID}:${HOST_GID}" "${CODEX_SKILLS_DIR}/lean4" 2>/dev/null || true; fi' \
-'fi' \
-'' \
-'# Persist SSH known_hosts (agent keys stay on host; we only keep host fingerprints).' \
-'mkdir -p "${HOME}/.ssh"' \
-'chmod 700 "${HOME}/.ssh" 2>/dev/null || true' \
-'touch "${HOME}/.ssh/known_hosts" 2>/dev/null || true' \
-'chmod 600 "${HOME}/.ssh/known_hosts" 2>/dev/null || true' \
-'if ! grep -q "^github\\.com[ ,]" "${HOME}/.ssh/known_hosts" 2>/dev/null; then' \
-'  ssh-keyscan -H github.com 2>/dev/null >> "${HOME}/.ssh/known_hosts" || true' \
-'fi' \
-'' \
-'# OpenSSH picks UserKnownHostsFile based on the passwd home directory for the current uid,' \
-'# not the HOME environment variable. Under rootless keep-id, the uid may map to a user whose' \
-'# home is /home/ubuntu (or similar). Ensure that home dir uses the persisted /home/user/.ssh.' \
-'USER_HOME="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6 || true)"' \
-'if [ -n "${USER_HOME}" ] && [ "${USER_HOME}" != "${HOME}" ]; then' \
-'  mkdir -p "${USER_HOME}" 2>/dev/null || true' \
-'  if [ ! -e "${USER_HOME}/.ssh" ]; then' \
-'    ln -s "${HOME}/.ssh" "${USER_HOME}/.ssh" 2>/dev/null || true' \
-'  fi' \
-'fi' \
-'' \
-'# Ensure Claude Code config dir exists (for persistent auth); export so claude CLI finds it.' \
-'export CLAUDE_CONFIG_DIR' \
-'mkdir -p "${CLAUDE_CONFIG_DIR}"' \
-'if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_CONFIG_DIR}" 2>/dev/null || true; fi' \
-'' \
-'# Seed installMethod so the CLI does not warn "config install method is unknown" (we run the native binary).' \
-'if [ ! -f "${CLAUDE_CONFIG_DIR}/.config.json" ]; then' \
-'  echo '\''{"installMethod":"native"}'\'' > "${CLAUDE_CONFIG_DIR}/.config.json"' \
-'  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_CONFIG_DIR}/.config.json" 2>/dev/null || true; fi' \
-'fi' \
-'' \
-'# Seed a minimal Claude MCP config (first run only) to enable lean-lsp via uvx.' \
-'if [ ! -f "${CLAUDE_CONFIG_DIR}/mcp.json" ]; then' \
-'  cat > "${CLAUDE_CONFIG_DIR}/mcp.json" <<'\''EOF'\''' \
-'{' \
-'  "mcpServers": {' \
-'    "lean-lsp": {' \
-'      "type": "stdio",' \
-'      "command": "uvx",' \
-'      "args": ["lean-lsp-mcp"],' \
-'      "env": {' \
-'        "LEAN_PROJECT_PATH": "/work",' \
-'        "LEAN_LOG_LEVEL": "NONE"' \
-'      }' \
-'    }' \
-'  }' \
-'}' \
-'EOF' \
-'  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_CONFIG_DIR}/mcp.json" 2>/dev/null || true; fi' \
-'fi' \
-'' \
-'# Seed a minimal Codex config in CODEX_HOME (first run only).' \
-'mkdir -p "${CODEX_HOME}"' \
-'if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CODEX_HOME}" 2>/dev/null || true; fi' \
-'if [ ! -f "${CODEX_HOME}/config.toml" ]; then' \
-'  cat > "${CODEX_HOME}/config.toml" <<'\''EOF'\''' \
-'model = "gpt-5.2"' \
-'model_reasoning_effort = "xhigh"' \
-'sandbox_mode = "workspace-write"' \
-'approval_policy = "on-request"' \
-'' \
-'[projects."/work"]' \
-'trust_level = "trusted"' \
-'' \
-'[mcp_servers.lean-lsp]' \
-'command = "uvx"' \
-'args = ["lean-lsp-mcp"]' \
-'' \
-'[mcp_servers.lean-lsp.env]' \
-'LEAN_PROJECT_PATH = "/work"' \
-'LEAN_LOG_LEVEL = "NONE"' \
-'' \
-'web_search = "live"' \
-'EOF' \
-'  if [ "$(id -u)" -eq 0 ]; then chown "${HOST_UID}:${HOST_GID}" "${CODEX_HOME}/config.toml" 2>/dev/null || true; fi' \
-'fi' \
-'' \
-'# First-run seed: if volume ELAN_HOME is empty/missing elan, copy from image seed (fast, no network).' \
-'if [ ! -x "${ELAN_HOME}/bin/elan" ]; then' \
-'  if [ -w "${ELAN_HOME}" ]; then' \
-'    echo "[entrypoint] Seeding ${ELAN_HOME} from ${ELAN_SEED} …"' \
-'    mkdir -p "${ELAN_HOME}"' \
-'    cp -a "${ELAN_SEED}/." "${ELAN_HOME}/"' \
-'    if [ "$(id -u)" -eq 0 ]; then chown -R "${HOST_UID}:${HOST_GID}" "${ELAN_HOME}"; fi' \
-'  else' \
-'    # e.g. ELAN_HOME bind-mounted read-only from host; fall back to using the seed elan binary.' \
-'    export PATH="${ELAN_SEED}/bin:${PATH}"' \
-'  fi' \
-'fi' \
-'' \
-'# Prefer volume-managed elan in PATH so updates persist there.' \
-'export PATH="${ELAN_HOME}/bin:${PATH}"' \
-'' \
-'# Ensure the project-specified toolchain exists in ELAN_HOME (if writable). This avoids' \
-'# surprising downloads when the toolchain is already available via a host mount or volume.' \
-'if [ -f "/work/lean-toolchain" ] && [ -w "${ELAN_HOME}" ]; then' \
-'  TOOLCHAIN="$(tr -d '\''\r\n'\'' < /work/lean-toolchain)"' \
-'  if [ -n "${TOOLCHAIN}" ]; then' \
-'    "${ELAN_HOME}/bin/elan" toolchain install "${TOOLCHAIN}" >/dev/null 2>&1 || true' \
-'  fi' \
-'fi' \
-'' \
-'# If we are already running unprivileged, we cannot (and do not need to) drop privileges.' \
-'if [ "$(id -u)" -ne 0 ]; then' \
-'  [ -n "${SAVED_TZ:-}" ] && export TZ="${SAVED_TZ}"' \
-'  exec "$@"' \
-'fi' \
-'' \
-'# Rootless Podman commonly maps host UID to container uid 0. In that case, dropping to' \
-'# HOST_UID (e.g. 1000) can make /work bind mounts unreadable. Detect this mapping and' \
-'# keep running as uid 0 when it maps directly to HOST_UID.' \
-'if [ "$(id -u)" -eq 0 ] && awk '\''NR==1{print $1, $2, $3; exit}'\'' /proc/self/uid_map | grep -qx "0 ${HOST_UID} 1"; then' \
-'  [ -n "${SAVED_TZ:-}" ] && export TZ="${SAVED_TZ}"' \
-'  exec "$@"' \
-'fi' \
-'' \
-'# Otherwise, drop to mapped user and exec. Avoid --clear-groups because setgroups is commonly' \
-'# denied in rootless user namespaces (which would break startup even when uid/gid changes are OK).' \
-'[ -n "${SAVED_TZ:-}" ] && export TZ="${SAVED_TZ}"' \
-'exec setpriv --reuid="${HOST_UID}" --regid="${HOST_GID}" --keep-groups -- "$@"' \
-> /usr/local/bin/ai-agent-entrypoint.sh \
- && chmod +x /usr/local/bin/ai-agent-entrypoint.sh
+COPY --chmod=0755 scripts/ai-agent-entrypoint.sh /usr/local/bin/ai-agent-entrypoint.sh
 
 ENTRYPOINT ["/usr/local/bin/ai-agent-entrypoint.sh"]
 CMD ["bash"]
