@@ -25,6 +25,7 @@ RED = "\033[0;31m" if sys.stdout.isatty() else ""
 GREEN = "\033[38;5;34m" if sys.stdout.isatty() else ""
 YELLOW = "\033[1;33m" if sys.stdout.isatty() else ""
 BOLD = "\033[1m" if sys.stdout.isatty() else ""
+ITALIC = "\033[3m" if sys.stdout.isatty() else ""
 NC = "\033[0m" if sys.stdout.isatty() else ""
 
 SORRY_TOKEN_PATTERN = re.compile(r"(?<![A-Za-z0-9_!?'])sorry(?![A-Za-z0-9_!?'])")
@@ -206,51 +207,50 @@ def main() -> int:
             print(f"{RED}Branch '{args.branch}' not found.{NC}", file=sys.stderr)
             return 1
 
-    print("== Pre-commit summary ==")
-    print()
-
     # --- 1. Lake build (unless --no-build) ---
     if args.no_build:
-        print("--- Build ---")
-        print("  (skipped with --no-build)")
+        print(f"{ITALIC}Build{NC}: {YELLOW}Skipped{NC}")
         print()
     else:
-        print("--- Build ---")
         exit_code, build_out = run_lake_build(root)
         if exit_code != 0:
-            print(f"{RED}Build failed:{NC}")
+            print(f"{ITALIC}Build{NC}: {RED}Failed{NC}")
             print(build_out)
             return 1
+
+        print(f"{ITALIC}Build{NC}: {GREEN}OK{NC}")
 
         # Parse warnings
         all_warnings = re.findall(r"^warning:", build_out, re.MULTILINE)
         sorry_items, sorry_count = parse_build_sorry_warnings(build_out)
         other_warnings = len(all_warnings) - sorry_count
         if other_warnings > 0:
-            print(f"{YELLOW}Building files emits {other_warnings} warnings (excluding sorry).{NC}")
+            print(f"  {YELLOW}Building files emits {other_warnings} warnings (excluding sorry).{NC}")
 
-        print("Build completed.")
         print()
-        print("--- Lemmas with sorry (from build warnings) ---")
+        print(f"{ITALIC}--- Lemmas with sorry (from build warnings) ---{NC}")
         if not sorry_items:
             print("  (none)")
-            print("  Total: 0")
+            print(f"  {BOLD}Total{NC}: 0")
         else:
             for filepath, count in sorry_items:
-                print(f"  {filepath}: {count}")
-            print(f"  Total: {sorry_count}")
+                print(f"  {BOLD}{filepath}{NC}: {count}")
+            print(f"  {BOLD}Total{NC}: {sorry_count}")
     print()
 
     # --- 2. Git diff ---
     diff = get_git_diff(root, args.branch)
     diff_label = f"HEAD vs {args.branch}" if args.branch else "vs HEAD"
 
-    print(f"--- Git diff: sorry/axiom changes ({diff_label}) ---")
+    print(f"{ITALIC}--- Git diff: sorry/axiom changes ({diff_label}) ---{NC}")
     if not diff.strip():
         no_changes = f"since {args.branch}" if args.branch else ""
         print(f"  No {'uncommitted changes' if not args.branch else 'changes ' + no_changes}.")
-        print("  Added sorry: 0, Removed sorry: 0")
-        print("  Added axiom: 0, Removed axiom: 0")
+        print()
+        print("  Total:")
+        print("     sorry +0 -0 = +0")
+        print("     axiom +0 -0 = +0")
+        print("     net: +0")
     else:
         def color_for_net(net: int) -> str:
             if net > 0:
