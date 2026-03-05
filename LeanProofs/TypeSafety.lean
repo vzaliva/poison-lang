@@ -3132,7 +3132,7 @@ lemma invalidateRegimeDeps_monotone
         simp [hklt]
     exact hkInv hnone
 
-private lemma joinTypeResults_regime_monotone
+lemma joinTypeResults_regime_monotone
     (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) (R : Regime)
     (h_r : Regime.monotoneStep R r.regime')
     (h_rs : ∀ x ∈ rs, Regime.monotoneStep R x.regime') :
@@ -3213,7 +3213,7 @@ private lemma joinTypeResults_regime_monotone
                 (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') a
                 hfold h_r h_rs
 
-private lemma applyFnTClosure_regime_mono
+lemma applyFnTClosure_regime_mono
     (tcl : FnTClosure) (ctx : TypeContext)
     (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -3251,7 +3251,7 @@ private lemma applyFnTClosure_regime_mono
     · cases happly  -- ioFree: throw gives .error, contradicts .ok r2
     · contradiction
 
-private lemma applyPFnTClosure_regime_mono
+lemma applyPFnTClosure_regime_mono
     (tcl : PFnTClosure) (ctx : TypeContext)
     (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)

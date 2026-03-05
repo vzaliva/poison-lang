@@ -7903,7 +7903,7 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
     Expr.toPExpr? e = some pe →
     cfg₀.pureMode = true →
     LeanPoison.beval mode fuel cfg₀ e verbose w₀ = EST.Out.ok (.success cfg₁ v) w₁ →
-    cfg₁.nextAddr = cfg₀.nextAddr ∧ cfg₁.pureMode = true := by
+    cfg₁.nextAddr = cfg₀.nextAddr ∧ cfg₁.pureMode = true ∧ cfg₁.memory = cfg₀.memory := by
   revert e cfg₀ cfg₁ v verbose w₀ w₁ pe
   induction fuel using Nat.strong_induction_on with
   | _ fuel IH =>
@@ -7921,28 +7921,28 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
             injection hbeval with h_res h_world
             injection h_res with h_cfg_eq h_val_eq
             subst h_cfg_eq
-            exact ⟨rfl, h_pm⟩
+            exact ⟨rfl, h_pm, rfl⟩
         | str s =>
             unfold LeanPoison.beval at hbeval
             simp at hbeval
             injection hbeval with h_res h_world
             injection h_res with h_cfg_eq h_val_eq
             subst h_cfg_eq
-            exact ⟨rfl, h_pm⟩
+            exact ⟨rfl, h_pm, rfl⟩
         | num n =>
             unfold LeanPoison.beval at hbeval
             simp at hbeval
             injection hbeval with h_res h_world
             injection h_res with h_cfg_eq h_val_eq
             subst h_cfg_eq
-            exact ⟨rfl, h_pm⟩
+            exact ⟨rfl, h_pm, rfl⟩
         | bool b =>
             unfold LeanPoison.beval at hbeval
             simp at hbeval
             injection hbeval with h_res h_world
             injection h_res with h_cfg_eq h_val_eq
             subst h_cfg_eq
-            exact ⟨rfl, h_pm⟩
+            exact ⟨rfl, h_pm, rfl⟩
         | var x =>
             unfold LeanPoison.beval at hbeval
             simp at hbeval
@@ -7952,7 +7952,7 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
                 injection hbeval with h_res h_world
                 injection h_res with h_cfg_eq h_val_eq
                 subst h_cfg_eq
-                exact ⟨rfl, h_pm⟩
+                exact ⟨rfl, h_pm, rfl⟩
             | none =>
                 simp [h_lookup] at hbeval
                 cases hbeval
@@ -7977,15 +7977,19 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
                     have h_pure_op : (e1.op op e2).toPExpr? = some (pe1.op op pe2) := by
                       simp [Expr.toPExpr?, h_pe1, h_pe2]
                     have h1 := IH fuel' h_fuel e1 cfg₀ cfg₁1 v1 verbose w₀ w_mid pe1 h_pe1 h_pm hbeval1'
-                    have h2 := IH fuel' h_fuel e2 cfg₁1 cfg₁2 v2 verbose w_mid w₁ pe2 h_pe2 h1.2 hbeval2'
-                    constructor
+                    have h2 := IH fuel' h_fuel e2 cfg₁1 cfg₁2 v2 verbose w_mid w₁ pe2 h_pe2 h1.2.1 hbeval2'
+                    refine ⟨?_, ?_, ?_⟩
                     · calc
                         cfg₁.nextAddr = cfg₁2.nextAddr := h_next.symm
                         _ = cfg₁1.nextAddr := h2.1
                         _ = cfg₀.nextAddr := h1.1
                     · calc
                         cfg₁.pureMode = cfg₁2.pureMode := h_pure_eq.symm
-                        _ = true := h2.2
+                        _ = true := h2.2.1
+                    · calc
+                        cfg₁.memory = cfg₁2.memory := _h_mem.symm
+                        _ = cfg₁1.memory := h2.2.2
+                        _ = cfg₀.memory := h1.2.2
         | unaryop op e1 =>
             have hstruct :=
               bevalUnaryOp_structure mode op e1 (fuel' + 1) verbose cfg₀ cfg₁ v w₀ w₁ hbeval
@@ -7999,13 +8003,16 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
                 simp [h_pe1] at h_pure
                 subst h_pure
                 have h1 := IH fuel' h_fuel e1 cfg₀ cfg₁1 v1 verbose w₀ w₁ pe1 h_pe1 h_pm hbeval1'
-                constructor
+                refine ⟨?_, ?_, ?_⟩
                 · calc
                     cfg₁.nextAddr = cfg₁1.nextAddr := h_next.symm
                     _ = cfg₀.nextAddr := h1.1
                 · calc
                     cfg₁.pureMode = cfg₁1.pureMode := h_pure_eq.symm
-                    _ = true := h1.2
+                    _ = true := h1.2.1
+                · calc
+                    cfg₁.memory = cfg₁1.memory := _h_mem.symm
+                    _ = cfg₀.memory := h1.2.2
         | ite e1 e2 e3 =>
             unfold LeanPoison.beval at hbeval
             simp at hbeval
@@ -8046,12 +8053,15 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
                                         injection hbeval with h_res h_world
                                         injection h_res with h_cfg_eq h_val_eq
                                         subst h_cfg_eq
-                                        have h2 := IH fuel' h_fuel e2 cfg₁1 cfg₂ v₂ verbose h_state1 h_state2 pe2 h_pe2 h1.2 h_beval2
-                                        constructor
+                                        have h2 := IH fuel' h_fuel e2 cfg₁1 cfg₂ v₂ verbose h_state1 h_state2 pe2 h_pe2 h1.2.1 h_beval2
+                                        refine ⟨?_, ?_, ?_⟩
                                         · calc
                                             cfg₂.nextAddr = cfg₁1.nextAddr := h2.1
                                             _ = cfg₀.nextAddr := h1.1
-                                        · simpa using h2.2
+                                        · simpa using h2.2.1
+                                        · calc
+                                            cfg₂.memory = cfg₁1.memory := h2.2.2
+                                            _ = cfg₀.memory := h1.2.2
                                       · next =>
                                         simp [pure] at hbeval
                                         cases hbeval
@@ -8073,12 +8083,15 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
                                         injection hbeval with h_res h_world
                                         injection h_res with h_cfg_eq h_val_eq
                                         subst h_cfg_eq
-                                        have h3 := IH fuel' h_fuel e3 cfg₁1 cfg₂ v₃ verbose h_state1 h_state3 pe3 h_pe3 h1.2 h_beval3
-                                        constructor
+                                        have h3 := IH fuel' h_fuel e3 cfg₁1 cfg₂ v₃ verbose h_state1 h_state3 pe3 h_pe3 h1.2.1 h_beval3
+                                        refine ⟨?_, ?_, ?_⟩
                                         · calc
                                             cfg₂.nextAddr = cfg₁1.nextAddr := h3.1
                                             _ = cfg₀.nextAddr := h1.1
-                                        · simpa using h3.2
+                                        · simpa using h3.2.1
+                                        · calc
+                                            cfg₂.memory = cfg₁1.memory := h3.2.2
+                                            _ = cfg₀.memory := h1.2.2
                                       · next =>
                                         simp [pure] at hbeval
                                         cases hbeval
@@ -8166,14 +8179,17 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
                     subst h_pure
                     have h1 := IH fuel' h_fuel e1 cfg₀ cfg₁1 v1 verbose w₀ w_mid pe1 h_pe1 h_pm hbeval1
                     have h_pm2 : cfg₂.pureMode = true := by
-                      simpa [hcfg2_eq] using h1.2
+                      simpa [hcfg2_eq] using h1.2.1
                     have h2 := IH fuel' h_fuel e2 cfg₂ cfg₃ v verbose w_mid w₁ pe2 h_pe2 h_pm2 hbeval2
                     subst hcfg2_eq hcfg_final_eq
-                    constructor
+                    refine ⟨?_, ?_, ?_⟩
                     · calc
                         cfg₃.nextAddr = cfg₁1.nextAddr := h2.1
                         _ = cfg₀.nextAddr := h1.1
-                    · simpa using h2.2
+                    · simpa using h2.2.1
+                    · calc
+                        cfg₃.memory = cfg₁1.memory := h2.2.2
+                        _ = cfg₀.memory := h1.2.2
         | app e1 e2 =>
             unfold LeanPoison.beval at hbeval
             simp at hbeval
@@ -8201,7 +8217,7 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
                         · next h_result1 h_state1 h_beval1 =>
                           split at hbeval
                           · next cfg₂ x body env =>
-                            have h1 := IH fuel' h_fuel e1 cfg₁' cfg₂ (Value.closure x body env) verbose h_state2 h_state1 pe1 h_pe1 h2.2 h_beval1
+                            have h1 := IH fuel' h_fuel e1 cfg₁' cfg₂ (Value.closure x body env) verbose h_state2 h_state1 pe1 h_pe1 h2.2.1 h_beval1
                             -- impure closure: impossible in pureMode
                             split at hbeval
                             · next _ =>
@@ -8209,7 +8225,7 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
                               injection h_res
                             · next h_notPureMode =>
                               have : False := by
-                                simpa [h_notPureMode] using h1.2
+                                simpa [h_notPureMode] using h1.2.1
                               cases this
                           · next cfg₂ x body env =>
                             cases h_pure_body : Expr.toPExpr? body with
@@ -8219,7 +8235,7 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
                                 injection h_res
                             | some pe_body =>
                                 simp [h_pure_body] at hbeval
-                                have h1 := IH fuel' h_fuel e1 cfg₁' cfg₂ (Value.peClosure x body env) verbose h_state2 h_state1 pe1 h_pe1 h2.2 h_beval1
+                                have h1 := IH fuel' h_fuel e1 cfg₁' cfg₂ (Value.peClosure x body env) verbose h_state2 h_state1 pe1 h_pe1 h2.2.1 h_beval1
                                 cases fuel' with
                                 | zero =>
                                     simp [LeanPoison.bevalFunctionBody] at hbeval
@@ -8236,12 +8252,16 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
                                         injection hbeval with h_res h_world
                                         injection h_res with h_cfg_eq h_val_eq
                                         subst h_cfg_eq
-                                        constructor
+                                        refine ⟨?_, ?_, ?_⟩
                                         · calc
                                             ({ cfg₂ with pureMode := cfg₂.pureMode } : Config).nextAddr = cfg₂.nextAddr := rfl
                                             _ = cfg₁'.nextAddr := h1.1
                                             _ = cfg₀.nextAddr := h2.1
-                                        · simpa using h1.2
+                                        · simpa using h1.2.1
+                                        · calc
+                                            ({ cfg₂ with pureMode := cfg₂.pureMode } : Config).memory = cfg₂.memory := rfl
+                                            _ = cfg₁'.memory := h1.2.2
+                                            _ = cfg₀.memory := h2.2.2
                                       · next =>
                                         simp [pure] at hbeval
                                         cases hbeval
@@ -8304,6 +8324,15 @@ private lemma beval_pure_nextAddr_eq (mode : LeanPoison.EvalMode) (e : Expr) (fu
     cfg₁.nextAddr = cfg₀.nextAddr := by
   intro h_pure h_pm hbeval
   exact (beval_pure_config_eq mode e fuel cfg₀ cfg₁ v verbose w₀ w₁ pe h_pure h_pm hbeval).1
+
+lemma beval_pure_memory_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Config) (v : Value)
+    (verbose : Bool) (w₀ w₁ : Void IO.RealWorld) (pe : PExpr) :
+    Expr.toPExpr? e = some pe →
+    cfg₀.pureMode = true →
+    LeanPoison.beval mode fuel cfg₀ e verbose w₀ = EST.Out.ok (.success cfg₁ v) w₁ →
+    cfg₁.memory = cfg₀.memory := by
+  intro h_pure h_pm hbeval
+  exact (beval_pure_config_eq mode e fuel cfg₀ cfg₁ v verbose w₀ w₁ pe h_pure h_pm hbeval).2.2
 
 -- Monotonicity of well-formedness: larger bounds preserve wfValue/wfVarEnv.
 mutual
