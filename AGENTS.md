@@ -74,7 +74,11 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 
 **Main properties:**
 - `RegimeConsistency.lean` - Regime-consistency definitions (tag meaning, guard descriptors) shared by fault-robustness
-- `FaultRobustness*.lean` - Fault-robustness (poison tracking ensures conservative fault propagation)
+- `FaultRobustness.lean` - Top-level fault-robustness definitions (`FaultRobustnessSpec`, `agreeOnClean`, `agreeValueUnder`, etc.)
+- `StepFR.lean` - Step-based proof mechanics and shared definitions (`StepFR`, `StepFR_IH`, utility lemmas, `TypeSystemEnforcesFaultRobustness_impl`)
+- `StepFRApp.lean` - Fault-robustness proof for the function application case (`stepFR_app` and exclusive helpers)
+- `StepFRAssign.lean` - Fault-robustness proof for the assignment case (`stepFR_assign` and exclusive helpers)
+- `FaultRobustnessProofs.lean` - Remaining case proofs (stepFR_literal through stepFR_kwhile, excluding app and assign), step theorem (`TypeSystemEnforcesFaultRobustness_step_IOFree`), and final bridges (`TypeSystemEnforcesFaultRobustness_IOFree`)
 - `Progress*.lean` - Progress (well-typed expressions evaluate or diverge, never get stuck)
 - `MemoryMonotonicity.lean` - Memory monotonicity (evaluation only adds locations, never removes)
 
@@ -122,6 +126,10 @@ To add a test:
 - **IO monad reasoning**: See `doc/IO_equality_approach.md` for guidelines on functions defined in IO monad (e.g., `beval`)
 - **Proof techniques**: Many proofs use structural induction on fuel or expression structure
 - **Lean LSP tooling**: Use `lean-lsp` MCP tool to examine proof goals, errors, and search for lemmas
+- **Bounded falsification check**: When a lemma looks suspicious, try 2–3 quick
+  counterexample attempts before committing to a long proof. If you find a
+  concrete counterexample, or a precise obstruction showing the statement cannot
+  hold as written, stop and report it instead of forcing the proof.
 
 ## Lean 4 Workflows
 

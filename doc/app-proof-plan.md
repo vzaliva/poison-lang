@@ -9,7 +9,7 @@ Notes:
 ## 1. Problem Statement
 
 Complete the remaining obligations in the `app` case of the fault-robustness step theorem
-(`stepFR_app`) in `LeanProofs/FaultRobustnessProofs.lean`, and all lemmas it depends upon.
+(`stepFR_app`) in `LeanProofs/StepFRApp.lean`, and all lemmas it depends upon.
 
 **Out of scope** (separate concerns):
 - `stepFR_ite_*`, `stepFR_kwhile` — they stay `sorry` for this track; we are not spending
