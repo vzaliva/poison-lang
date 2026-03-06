@@ -8,6 +8,9 @@ Scope of this note:
 - in scope: the cross-run body-synchronization / `resultAgreesIfClean` problem for
   application
 - out of scope: the separate post-body location/frame blocker
+- out of scope: the pre-existing Ott-spec gap that there are singleton parrow app
+  rules, but no `app_fn_cons_parrow` or `app_pfn_cons_parrow` rules for
+  multi-closure parrow results
 
 ## 1. Exact Problematic Case
 
@@ -135,6 +138,18 @@ The same shape appears in:
 - `app_pfn_cons_ref`
 - `app_pfn_cons`
 
+For **function-valued** application results, the current Ott spec is asymmetric:
+
+- arrow result rules exist in both singleton and cons forms
+- parrow result rules exist only in singleton form:
+  `app_fn_singleton_parrow` and `app_pfn_singleton_parrow`
+
+Those existing singleton parrow rules already return `no_pred`.
+
+There are currently no `app_fn_cons_parrow` or `app_pfn_cons_parrow` rules in the
+Ott spec. So multi-closure functions returning parrow types are a separate
+pre-existing specification gap, not something this proposal changes.
+
 ### Proposed change
 
 For those **non-function** application rules, gate predicate retention on the
@@ -172,8 +187,10 @@ Then the final result can no longer become clean only through the guard case, so
 proof never has to build `withPred_true_eq` or `withPred_true_ref` after losing body
 synchronization. The problematic branch closes immediately.
 
-Arrow/parrow result rules do not need any change here, because they already produce
-`no_pred`.
+The existing arrow-result rules, and the existing singleton parrow-result rules, do
+not need any change here, because they already produce `no_pred`. The missing
+cons-parrow rules are a separate pre-existing spec gap and are not addressed by this
+proposal.
 
 ## 6. Effect Of The Proposed Fix
 
