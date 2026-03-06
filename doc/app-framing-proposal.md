@@ -2,6 +2,12 @@
 
 This note isolates the remaining **locations / framing** blocker in `stepFR_app`.
 
+Status:
+
+- this is a focused blocker memo, not the active planning document
+- the active next-step plan now lives in `doc/app-proof-plan.md`
+- design history for attempted framing routes lives in `doc/app-proof-history.md`
+
 Scope of this note:
 
 - in scope: the post-body `agreeOnClean` locations conjunct in the different-body app
@@ -136,12 +142,20 @@ That poisoned-body-`pc` fact is likely important for the proposal below.
 
 ## 3. Why Existing Transport Stops Here
 
+Final recombination is no longer the blocker.
+
 The shared-body case already has the right proof shape in
 [`StepFRApp.lean`](/work/LeanProofs/StepFRApp.lean), via
 `join_transport_agreeOnClean_from_member`.
 
-That works because both runs can be traced back to one common source member, so for a
-clean final location the proof can show either:
+That lemma already packages the joined clean-location proof once the branch can supply
+either:
+
+- a source-member lookup for the clean final location, or
+- final `θ₀.lookup l = none ∧ θ₁.lookup l = none`
+
+In the shared-body case this is easy, because both runs can be traced back to one common
+source member, so for a clean final location the proof can show either:
 
 - it came from that shared source member, or
 - it was unrealized in both runs, using `theta_not_contains_if_not_in_memEnv`
@@ -171,188 +185,40 @@ This is also why `wfExtendsMap` is insufficient:
 - it preserves existing realizations
 - it does not prove `none` stays `none`
 
-So the gap is a real unary clean-location preservation fact, not a missing transport
-step.
+So the remaining gap is a real unary clean-location preservation fact, not a missing
+final recombination step.
 
-## 4. Proposal
+## 4. Current Outcome
 
-Current status after the first validation gate:
+The narrowed different-body app proof is no longer blocked on final recombination.
 
-- the inheritance-only version of Lemma A is false
-- under poisoned `pc`, `typecheckVar` can preserve a guard predicate when its tag is
-  unknown, `typecheckNewRef` stores that predicate on the fresh location, and
-  `joinMemEnvsStrong` preserves it on two-sided entries
-- so a fresh clean location can survive the final join if both bodies allocate it with
-  matching guard predicates
+The remaining blocker is the unary fact needed to feed that recombination:
 
-This changes the shape of the decision.
+- when pre-body agreement gives `both_unrealized` for an inherited clean location, the
+  chosen post-body maps must also leave that location unrealized
 
-### Approach 1: restated app-driven helper lemmas
+That fact is not available from the current local interfaces:
 
-Approach 1 remains plausible, but no longer as a pure "every clean final location is
-inherited" story.
+- `StepFR_single_run` only exposes an existential post-run `θ'`
+- `wfExtendsMap` preserves existing `some` bindings, not `none`
+- `runtimeInstantiatesCtx` permits realizing old typed locations
+- `freshLoc_not_realized` only applies to fresh `l >= nextLoc`
+- the only obvious local `parrow` escape hatch, reusing the pre-body maps as final
+  witnesses, also stalls because the library has extension transport such as
+  `valueHasETyp_extends`, but no reverse/shrink transport for `valueHasETyp` or
+  `valueConsistentWithRegime`
 
-Informal reading:
-
-- first classify each clean final location as either inherited from the pre-body context
-  or fresh on both sides of the join
-- then handle inherited locations with unary preservation facts, and handle symmetric
-  fresh locations directly in the `some / some` branch
-
-Required pieces:
-
-1. a static classification step for clean final locations: inherited or symmetric fresh
-2. a unary preservation lemma for one inherited clean location in one body run
-3. a direct `some / some` argument for the symmetric fresh case
-4. a short recombination step that rebuilds `agreeLocUnder`
-
-What failed:
-
-- the earlier inheritance-only Lemma A is false as stated
-- the concrete counterexample is `newRef (var x)` under poisoned `pc`, with `x`
-  carrying a preserved guard predicate and both body typings allocating the same fresh
-  logical location
-
-What still looks promising:
-
-- the symmetric fresh case no longer threatens the asymmetric `none / some` branches;
-  it lands directly in `some / some`
-- for `parrow`, the fresh-location classification is no longer the immediate blocker:
-  pure bodies preserve memory / `nextAddr`, and `applyPFnTClosure` keeps typed memory
-  inside the pre-body memory typing
-- the current blocker is instead the inherited-location `none → none` bridge:
-  `StepFR_single_run` only returns an existential `θ'`, and its current interface does
-  not imply that an old unrealized inherited location stays unrealized
-- the `arrow` write-preservation argument for already-realized clean locations remains a
-  later risk point, but it is no longer the first blocking one
-
-Costs:
-
-- Approach 1 is no longer a pure unary decomposition
-- it needs an explicit symmetric-fresh case split at the final join
-- it may also need a new theorem about realization-map growth that is not exposed by the
-  current `StepFR_single_run` interface
-- the direct `some / some` fresh case may still require nontrivial value agreement work
-
-### Approach 2: broaden `StepFR` more aggressively
-
-The inheritance-only `StepFR` invariant sketched earlier is false for the same reason as
-the original Lemma A.
-
-So a viable `StepFR` route would need a broader invariant that distinguishes:
-
-- inherited clean output locations
-- clean output locations freshly introduced by the step
-
-This is still a possible fallback, but it is now more expensive than the original
-version because the broader invariant would have to be maintained across the whole
-`StepFR` proof, not just exposed from the existing unary output.
-
-Current recommendation:
-
-- keep Approach 1 as the primary path, but only in the restated inherited-vs-symmetric-
-  fresh form
-- treat the missing unary `θ` bridge as the immediate go/no-go item for Approach 1
-- treat Approach 2 as fallback only if that broader two-case story looks conceptually
-  right but too awkward to keep app-local
+So this note stops here: the next move is no longer an app-local proof edit inside
+`stepFR_app`.
 
 
 ## 5. Action Plan
 
-Objective:
+Stop condition reached:
 
-- finish the different-body app location proof by a restated Approach 1
-
-Do not do this:
-
-- do **not** try to prove the old inheritance-only Lemma A
-- that statement is false and should be treated as dead
-
-Current status:
-
-- steps 1-2 of the earlier plan are no longer the immediate blocker for `parrow`
-- the current blocker is step 3: there is no bridge yet from `StepFR_single_run`'s
-  existential `θ'` to "old unrealized inherited locations stay unrealized"
-- this is not a cosmetic gap in the proof script; the current interfaces really allow
-  countermodels where an old inherited location moves from unrealized to realized while
-  preserving `wfExtendsMap`, `wfTypeContext`, and `runtimeInstantiatesCtx`
-
-Execution sequence:
-
-1. Freeze the static side of the plan.
-   Deliverable:
-   a precise statement that classifies each clean final location as either:
-   - inherited from the pre-body memory typing environment, or
-   - fresh on both sides of the join
-   Go/no-go:
-   if this classification statement cannot be written cleanly, stop and reassess the
-   whole Approach 1 path.
-
-2. Resolve the missing unary `θ` bridge before doing more branch work.
-   Deliverable:
-   either:
-   - a local theorem showing that an inherited location unrealized before one body run
-     stays unrealized after that run, or
-   - a clear decision that this cannot be derived from the current unary interface
-   Why the current interface is insufficient:
-   - `wfExtendsMap` preserves existing `some` bindings but says nothing about preserving
-     `none`
-   - `runtimeInstantiatesCtx` permits realizing any old typed location
-   - `freshLoc_not_realized` only applies to fresh locations `l >= nextLoc`, not to old
-     inherited locations `l < nextLoc`
-   Go/no-go:
-   if this bridge cannot be obtained locally, treat that as the main signal that
-   Approach 1 is blocked on the current interfaces.
-
-3. Only after the unary `θ` bridge is resolved, return to the symmetric-fresh branch.
-   Deliverable:
-   a proof sketch, or a small prototype lemma, for the `some / some` case created by a
-   fresh-on-both-sides location.
-   What must be shown:
-   - both runs realize the location
-   - the realized integers can be related strongly enough to build `agreeLocUnder`
-   Go/no-go:
-   if this already expands into a large new binary proof, treat that as evidence that
-   Approach 1 is losing its locality.
-
-4. Use `parrow` as the validation branch for the inherited case.
-   Deliverable:
-   close the outer-not-clean `parrow` location hole using:
-   - the resolved unary `θ` bridge for inherited locations, and
-   - the symmetric-fresh `some / some` argument if needed
-   Reason:
-   - pure evaluation removes the write-preservation risk
-   - success here validates the restated proof shape before more `arrow` investment
-
-5. Attack the inherited-location write-preservation half for `arrow`.
-   Deliverable:
-   a proof sketch or prototype lemma for:
-   - if an inherited clean location was already realized before the body, the `arrow`
-     body does not disturb the stored integer in the way that matters for
-     `agreeLocUnder`
-   This is the main risk point.
-   Go/no-go:
-   if this turns into broad assignment-style heap-update analysis, that is the main
-   signal to switch away from app-local lemmas.
-
-6. Recombine for the narrowed outer-not-clean holes.
-   Deliverable:
-   direct construction of final `agreeLocUnder` from:
-   - the inherited-case unary results, or
-   - the symmetric-fresh `some / some` argument, plus
-   - the pre-body `agreeLocUnder` fact where relevant
-
-7. Only then lift the machinery into dirty-internal arrow/parrow branches.
-   Deliverable:
-   reuse the location-framing work inside those broader branch proofs.
-   Reminder:
-   - these branches still have non-location obligations
-   - the dirty-internal `parrow` branch also has a non-vacuous
-     `resultAgreesIfClean` obligation
-
-Fallback:
-
-- if the unary `θ` bridge cannot be obtained from the current local interfaces, that is
-  the strongest evidence so far for moving to a broader `StepFR`-level invariant; if
-  that happens, update [app-proof-plan.md](/home/lord/src/poison-lang/doc/app-proof-plan.md)
-  before continuing
+- do not continue local proof edits in `stepFR_app` on this path
+- move the active plan to
+  [app-proof-plan.md](app-proof-plan.md)
+- the next track should strengthen broader unary proof infrastructure so the needed
+  post-run realization-map fact is exposed directly, rather than reconstructed inside the
+  app branches

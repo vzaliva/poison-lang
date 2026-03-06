@@ -279,6 +279,67 @@ Effect for future reference:
   dirty-internal fallback branches
 - the earlier standalone note `doc/app-typing.proposal` is obsolete after landing this change
 
+## Issue J History: Different-body framing experiments (March 6)
+
+After the app-typing change landed, the remaining app-specific blocker moved to the
+different-body location obligations inside `stepFR_app`.
+
+What was tried:
+
+- First framing proposal: keep the fix app-local by proving that every clean post-body
+  location is inherited from the pre-body memory typing environment, then combine that with
+  unary preservation lemmas.
+- This failed.  Under poisoned `pc`, `typecheckVar` can preserve a guard predicate,
+  `typecheckNewRef` can store it on a fresh location, and `joinMemEnvsStrong` can preserve
+  it on a two-sided fresh join entry.  So a fresh clean location can survive the final join.
+- The local route was then restated as an inherited-vs-symmetric-fresh split: inherited
+  locations handled by unary facts, symmetric-fresh locations handled in the final
+  `some / some` branch.
+
+What was learned:
+
+- Final recombination is not the blocker.  `join_transport_agreeOnClean_from_member` already
+  packages the joined clean-location proof once the branch can supply either a source-member
+  witness or final `none / none`.
+- The real blocker is the unary `θ` bridge for inherited clean locations: from pre-body
+  `both_unrealized`, show the chosen post-body maps also leave the location unrealized.
+- The current local interface does not provide this:
+  - `StepFR_single_run` only exposes an existential post-run `θ'`
+  - `wfExtendsMap` preserves existing `some` bindings, not `none`
+  - `runtimeInstantiatesCtx` permits realizing old typed locations
+  - `freshLoc_not_realized` only applies to fresh `l >= nextLoc`
+- The only obvious local `parrow` escape hatch also stalled: reusing the pre-body maps as
+  final witnesses would require reverse/shrink transport for `valueHasETyp` and
+  `valueConsistentWithRegime`, while the library only exposes extension transport.
+
+Decision:
+
+- stop the app-local framing route at that go/no-go gate
+- move the active plan to broader unary proof infrastructure in `doc/app-proof-plan.md`
+- keep the focused blocker write-up in `doc/app-framing-proposal.md`
+
+## Issue K History: Former `app-problem2.md` snapshot
+
+The deleted file `doc/app-problem2.md` recorded an intermediate checkpoint right after the
+app-typing change landed.
+
+Its main claim was:
+
+- once the app-typing fix was in, and once a framing fix was chosen, no app-specific
+  conceptual blocker should remain; the four app holes should reduce to ordinary proof
+  integration
+
+That snapshot is useful only as a record of what was believed at that stage.
+
+What later invalidated it:
+
+- the inheritance-only framing lemma turned out to be false
+- the restated app-local framing route then stopped at the unary `θ` bridge
+- so the remaining work did not collapse to local proof plumbing after all
+
+During March 6 housekeeping, the file was merged into this history log and deleted so the
+active planning surface stayed smaller.
+
 ## Historical Identifiers (removed from code)
 
 - `ArrowMemberCvcrSelector`
