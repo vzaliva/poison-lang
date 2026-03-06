@@ -45,6 +45,9 @@ What is settled:
   once a branch can supply either a source-member witness or final `none / none`
 - the remaining different-body app blocker is the unary fact needed to produce that final
   `none / none` for inherited clean locations
+- the missing shape now looks more specific: a strengthened `StepFR_single_run`-style
+  theorem in `StepFR.lean` that keeps the same existential post-map witness `θ'` but adds
+  inherited clean-location preservation facts for that same `θ'`
 
 Why the app-local route stopped:
 
@@ -62,7 +65,8 @@ Decision:
 - stop local proof edits aimed only at the narrowed `stepFR_app` holes
 - move the active plan to broader unary proof infrastructure
 - the goal is to make single-run body results expose the realization-map fact the app proof
-  needs, rather than reconstructing it ad hoc inside the app branches
+  needs by strengthening the `StepFR_single_run` package in `StepFR.lean`, rather than
+  reconstructing it ad hoc inside the app branches
 
 See [app-framing-proposal.md](app-framing-proposal.md) for the
 focused blocker memo.
@@ -81,35 +85,57 @@ Target shape:
 
 Execution sequence:
 
-1. **Freeze the new unary property and where it lives**
-   - Decide whether the new fact belongs on `StepFR`, `StepFR_single_run`, or a new wrapper
-     theorem around the body-execution pipeline.
-   - Keep the property scoped to inherited clean locations; the symmetric-fresh case still
-     belongs to the app proof.
-   - Deliverable: one precise theorem statement that the rest of the fallback path will aim
-     to prove and consume.
+1. **Freeze the exact strengthened conclusion**
+   - Extend `StepFR_single_run` with one extra conjunct
+     `PreservesInheritedCleanLocsOneRun ... θ θ'` exactly as described in
+     [app-framing-proposal.md](app-framing-proposal.md).
+   - Do not invent a separate public theorem.
+   - Keep the property scoped to inherited clean input locations; the symmetric-fresh case
+     remains in `stepFR_app`.
+   - Deliverable:
+     one precise theorem statement in `LeanProofs/StepFR.lean`.
 
-2. **Attack the semantic risk cases first**
-   - Validate the target property against the expression forms that can actually realize or
-     overwrite memory: at minimum `newRef` and assignment-style updates.
-   - Do this before committing to broad theorem plumbing.
-   - Go/no-go: if the target property fails, or only survives in a much weaker form, restate
-     it before touching the wider proof infrastructure.
+2. **Change `StepFR_single_run` to that signature and leave only the new conjunct as `sorry`**
+   - Update the theorem statement in `LeanProofs/StepFR.lean`.
+   - Propagate the stronger result shape through the minimum downstream surface needed for
+     app.
+   - Do not try to prove the new conjunct yet.
+   - Deliverable:
+     the code compiles with the strengthened `StepFR_single_run`, with the new conjunct as
+     the only new `sorry`.
 
-3. **Thread the property through the unary pipeline**
-   - Extend the chosen unary interface so body-step results carry the new preservation fact.
-   - Update the helper layer used by `applyFnTClosure` / `applyPFnTClosure` so the app proof
-     can consume the strengthened result directly.
-   - Avoid reverse/shrink witness transport as the primary mechanism; the goal is to expose
-     the needed post-run fact directly.
+3. **Plug the stronger result into the outer-not-clean `parrow` location hole first**
+   - Use the strengthened `StepFR_single_run` result in the narrowed `parrow` hole.
+   - Prove the downstream app steps that use the new conjunct.
+   - Treat the new conjunct itself as an assumption coming from the temporary `sorry`.
+   - Stop point:
+     once the `parrow` hole is reduced to exactly the new unary conjunct, or once it
+     becomes clear that the strengthened conclusion is still missing data.
 
-4. **Return to the app holes in risk order**
-   - Close the outer-not-clean `parrow` location hole first.
-   - Then close the outer-not-clean `arrow` location hole.
+4. **Assess after `parrow` before doing anything broader**
+   - If the `parrow` hole does not accept this interface cleanly, stop and restate the
+     strengthened conclusion.
+   - If `parrow` does accept it, keep the shape and repeat the same check on the narrowed
+     `arrow` hole.
+   - Do not touch the broader dirty-internal branches yet.
+
+5. **Only after both narrowed holes accept the interface, prove the new conjunct**
+   - Attack the semantic risk cases first: `newRef`, then assignment-style updates.
+   - Start from the reusable fragments already identified:
+     `theta_not_contains_if_not_in_memEnv`, the old-location transport in `stepFR_newRef`,
+     the final-clean-implies-old-clean assignment argument in `StepFRAssign`, and the pure
+     body memory / regime bridges used by the `parrow` path.
+   - Deliverable:
+     a proof of the new `PreservesInheritedCleanLocsOneRun ... θ θ'` conjunct inside
+     `StepFR_single_run`.
+
+6. **Return to the app proof only after the unary proof lands**
+   - Close the outer-not-clean `parrow` location hole for real.
+   - Then close the outer-not-clean `arrow` location hole for real.
    - Only after those are done, reuse the same strengthened unary fact inside the broader
      dirty-internal arrow/parrow branches.
 
-5. **Only widen further if the strengthened unary route proves coherent**
+7. **Only widen further if the strengthened unary route remains coherent**
    - If proving the new interface starts forcing unrelated invariants or major theorem
      reshaping outside the body-execution path, pause and reassess before paying that cost.
 
@@ -144,6 +170,7 @@ Likely key lemmas / definitions for the current track:
 - `stepFR_app`
 - `join_transport_agreeOnClean_from_member`
 - `StepFR_single_run`
+- `theta_not_contains_if_not_in_memEnv`
 - `wfExtendsMap`
 - `runtimeInstantiatesCtx`
 - `freshLoc_not_realized`

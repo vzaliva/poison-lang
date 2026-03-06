@@ -303,6 +303,9 @@ What was learned:
   witness or final `none / none`.
 - The real blocker is the unary `θ` bridge for inherited clean locations: from pre-body
   `both_unrealized`, show the chosen post-body maps also leave the location unrealized.
+- A later implementation attempt tightened this further: the missing object is best viewed as
+  a shared unary theorem in `StepFR.lean` that constructs a canonical post-run realization map,
+  rather than another local `stepFR_app` lemma built around an existential witness.
 - The current local interface does not provide this:
   - `StepFR_single_run` only exposes an existential post-run `θ'`
   - `wfExtendsMap` preserves existing `some` bindings, not `none`
@@ -311,6 +314,10 @@ What was learned:
 - The only obvious local `parrow` escape hatch also stalled: reusing the pre-body maps as
   final witnesses would require reverse/shrink transport for `valueHasETyp` and
   `valueConsistentWithRegime`, while the library only exposes extension transport.
+- The same attempt did identify reusable fragments for the unary theorem:
+  `theta_not_contains_if_not_in_memEnv`, the old-location transport in `stepFR_newRef`, the
+  final-clean-implies-old-clean assignment argument in `StepFRAssign`, and the pure-body
+  memory / regime bridges used by the `parrow` path.
 
 Decision:
 

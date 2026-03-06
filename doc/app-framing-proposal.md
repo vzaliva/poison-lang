@@ -188,37 +188,141 @@ This is also why `wfExtendsMap` is insufficient:
 So the remaining gap is a real unary clean-location preservation fact, not a missing
 final recombination step.
 
-## 4. Current Outcome
+## 4. Proposal
 
-The narrowed different-body app proof is no longer blocked on final recombination.
+The cleanest next move is to strengthen the unary interface in `StepFR.lean`.
 
-The remaining blocker is the unary fact needed to feed that recombination:
+The missing fact is not app-specific. It is a single-run statement:
 
-- when pre-body agreement gives `both_unrealized` for an inherited clean location, the
-  chosen post-body maps must also leave that location unrealized
+- given one body execution, use the same post-run realization map `θ'` already returned
+  by the unary theorem
+- strengthen that unary package with inherited-clean-location preservation facts for that
+  same `θ'`
 
-That fact is not available from the current local interfaces:
+That is exactly the fact the different-body app branches need and do not currently get
+from `StepFR_single_run`.
 
-- `StepFR_single_run` only exposes an existential post-run `θ'`
-- `wfExtendsMap` preserves existing `some` bindings, not `none`
-- `runtimeInstantiatesCtx` permits realizing old typed locations
-- `freshLoc_not_realized` only applies to fresh `l >= nextLoc`
-- the only obvious local `parrow` escape hatch, reusing the pre-body maps as final
-  witnesses, also stalls because the library has extension transport such as
-  `valueHasETyp_extends`, but no reverse/shrink transport for `valueHasETyp` or
-  `valueConsistentWithRegime`
+### 4.1. What To Add
 
-So this note stops here: the next move is no longer an app-local proof edit inside
-`stepFR_app`.
+Add a small helper predicate in `StepFR.lean`, next to the new theorem that uses it:
+
+```lean
+/-- For one run, an inherited clean location is preserved strongly enough for the
+later binary `agreeLocUnder` proof. -/
+inductive PreservesInheritedCleanLocOneRun
+  (μ_in μ_out : Memory) (θ_in θ_out : RealizationMap) (l : Loc) : Prop where
+  | both_unrealized
+      (h_in : θ_in.lookup l = none)
+      (h_out : θ_out.lookup l = none)
+  | preserve_value
+      (a : Address) (n : Int)
+      (h_in : θ_in.lookup l = some a)
+      (h_mem_in : μ_in.lookup a = some n)
+      (h_out : θ_out.lookup l = some a)
+      (h_mem_out : μ_out.lookup a = some n)
+
+/-- The theorem-level wrapper: every inherited clean input location is preserved. -/
+inductive PreservesInheritedCleanLocsOneRun
+  (ctx : TypeContext)
+  (μ_in μ_out : Memory)
+  (θ_in θ_out : RealizationMap) : Prop :=
+  | intro
+      (hpres :
+        ∀ l qt,
+          ctx.memEnv.lookup l = some qt →
+          qtypCleanUnder ctx.regime qt →
+          PreservesInheritedCleanLocOneRun μ_in μ_out θ_in θ_out l)
+```
+
+Then extend the conclusion of `StepFR_single_run` itself.
+
+The intended change is:
+
+- same single-run hypotheses
+- same existential witness `θ'`
+- same output package
+- one extra conjunct `PreservesInheritedCleanLocsOneRun ... θ θ'`
+
+So the first implementation step should be to strengthen `StepFR_single_run`, not to add
+a separate theorem with a new name.
+
+```lean
+/-- Sketch only: same theorem as `StepFR_single_run`, but with one extra conjunct in the
+existential package. -/
+lemma StepFR_single_run
+  ...same hypotheses as today... :
+  QTypRespectsTagMeaning tm res.qualType ∧
+  ∃ θ_out,
+    -- Same existential package as `StepFR_single_run` up to this point.
+    wfExtendsMap θ θ_out ∧
+    valueHasETyp θ_out o res.qualType.etyp ∧
+    wfTagMeaningCtx tm (ctxAfter ctx res) ∧
+    wfTypeContext (ctxAfter ctx res) ∧
+    wfConfig cf ∧
+    runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ_out ∧
+    regimeConsistentWithCtx (ctxAfter ctx res) ∧
+    consistentWithRegime predSat (ctxAfter ctx res).regime
+      (ctxAfter ctx res) cf.memory cf.varEnv θ_out ∧
+    valueConsistentWithRegime predSat (ctxAfter ctx res).regime
+      res.qualType cf.memory θ_out o ∧
+    -- New conjunct: every inherited clean input location is preserved on this same `θ_out`.
+    PreservesInheritedCleanLocsOneRun ctx μ cf.memory θ θ_out := by
+  sorry
+```
+
+The intended reading is:
+
+- the theorem does **not** classify all clean output locations
+- it does **not** try to solve the symmetric-fresh case
+- it simply strengthens the package already returned by `StepFR_single_run`
+- once the app proof is reasoning about a clean location already present in the input
+  typing context, this extra conjunct gives the preservation facts needed for that
+  location
+- the inner inductive handles the per-location case split, while the outer single-
+  constructor inductive packages the universal quantification as named evidence
+
+### 4.2. How `stepFR_app` Uses It
+
+The intended use in `stepFR_app` is:
+
+1. In a different-body branch, run the strengthened unary theorem once per body run.
+2. Obtain post-run maps `θ₀_body` and `θ₁_body` plus inherited-clean
+   preservation facts for each run.
+3. For a location `l` that the app proof has already identified as inherited and clean in
+   the pre-body context:
+   - if pre-body agreement gives `both_unrealized`, use the unary theorem on both runs to
+     get `θ₀_body.lookup l = none` and `θ₁_body.lookup l = none`
+   - if pre-body agreement gives a realized location, use the unary theorem on both runs
+     to show the same address and integer are preserved
+4. Feed those facts into the existing final recombination step.
+
+So the theorem plugs exactly into the current gap:
+
+- `stepFR_app` already knows how to finish once it has either a source-member witness or
+  final `none / none`
+- the strengthened unary theorem is what should produce the final `none / none` fact for
+  inherited clean locations in the different-body branches
+
+### 4.3. Proof Ingredients
+
+The most relevant existing ingredients are:
+
+- `theta_not_contains_if_not_in_memEnv` in `StepFR.lean`
+- the old-location transport in `stepFR_newRef`
+- the final-clean-implies-old-clean assignment argument in `StepFRAssign`
+- the pure-body memory / regime bridges used by the `parrow` path
+
+So this proposal is coherent at the module level:
+
+- the definition and theorem live in `StepFR.lean`
+- `stepFR_app` consumes them
+- the symmetric-fresh case stays local to `StepFRApp.lean`
 
 
 ## 5. Action Plan
 
-Stop condition reached:
+The next track should build the strengthened `StepFR_single_run` theorem described above
+in `StepFR.lean`, then
+return to `stepFR_app` and use it in the different-body branches.
 
-- do not continue local proof edits in `stepFR_app` on this path
-- move the active plan to
-  [app-proof-plan.md](app-proof-plan.md)
-- the next track should strengthen broader unary proof infrastructure so the needed
-  post-run realization-map fact is exposed directly, rather than reconstructed inside the
-  app branches
+The operational steps live in [app-proof-plan.md](app-proof-plan.md).
