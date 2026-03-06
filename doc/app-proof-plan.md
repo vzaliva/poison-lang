@@ -14,7 +14,6 @@ Complete the remaining obligations in the `app` case of the fault-robustness ste
 **Out of scope** (separate concerns):
 - `stepFR_ite_*`, `stepFR_kwhile` — separate expression-form proofs, not covered here
 - `memEnv_lookup_etyp_int` — axiom / issue #70; treated as a given primitive
-- `valueHasETyp_det` — not called anywhere in the `stepFR_app` chain
 
 What makes `stepFR_app` hard:
 - runtime picks a specific closure alternative (member-oriented reasoning), while
@@ -169,8 +168,7 @@ Steps completed:
   `agreeValueUnder_same` rewritten with structural induction on `deepValueQTypProperty` tree.
   All θ-transport sorry's in `stepFR_app` arrow clean path resolved.
 
-_(Out-of-scope sorrys such as `stepFR_ite_*`, `stepFR_kwhile`, `valueHasETyp_det` are not
-tracked here.)_
+_(Out-of-scope sorrys such as `stepFR_ite_*`, `stepFR_kwhile`, are not tracked here.)_
 
 ### What was done (prior sessions)
 

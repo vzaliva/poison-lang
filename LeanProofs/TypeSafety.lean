@@ -1103,12 +1103,6 @@ def runtimeInstantiatesCtx (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ :
   (∀ {x qt}, ctx.varEnv.lookup x = some qt →
      ∃ v, ρ.lookup x = some v ∧ valueHasETyp θ v qt.etyp)
 
-/-- Typing is deterministic in the type: same value, same etyp. -/
-lemma valueHasETyp_det
-  {θ : RealizationMap} {v : Value} {e1 e2 : ETyp}
-  (h1 : valueHasETyp θ v e1) (h2 : valueHasETyp θ v e2) : e1 = e2 := by
-  sorry
-
 /-- Inversion: closure typed at et has et = arrow for some arrow type. -/
 lemma valueHasETyp_closure_etyp_arrow_inv
   {θ : RealizationMap} {x : Name} {e : Expr} {env : VarEnv} {et : ETyp}
@@ -1128,6 +1122,8 @@ lemma valueHasETyp_closure_mem_inv
 
 /-- Inversion: peClosure typed at et has et = parrow for some parrow type. -/
 lemma valueHasETyp_peClosure_etyp_parrow_inv
+
+
   {θ : RealizationMap} {x : Name} {body : Expr} {env : VarEnv} {et : ETyp}
   (h : valueHasETyp θ (Value.peClosure x body env) et) :
   ∃ st1 st2 p tcl, et = ETyp.parrow st1 st2 p tcl := by

@@ -17798,6 +17798,116 @@ private lemma EnvRespectsTagMeaning_joinMemEnvsStrong'
               exact hlookup
             exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 hlookupW h1some h2some) hsub hdesc
 
+-- A single join-step for QTypRespectsTagMeaning: joining two tag-meaning-respecting
+-- qualified types produces another tag-meaning-respecting qualified type.
+-- (Moved before _main because ite modes 3/4 need it.)
+private lemma QTypRespectsTagMeaning_joinStep
+    (tm : TagMeaning) (e1 e2 : ETyp) (p1 p2 : Poison) (pred1 pred2 : Predicate)
+    (h1 : QTypRespectsTagMeaning tm ⟨e1, p1, pred1⟩)
+    (h2 : QTypRespectsTagMeaning tm ⟨e2, p2, pred2⟩) :
+    QTypRespectsTagMeaning tm ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩ := by
+  intro qt' k d hinq hqd
+  have hdecomp :
+      QTypInQTyp qt' ⟨e1, p1, pred1⟩ ∨
+      QTypInQTyp qt' ⟨e2, p2, pred2⟩ ∨
+      qt' = ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩ :=
+    (QTypInQTyp.recOn
+        (motive := fun qt' qt₂ _ =>
+          qt₂ = ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩ →
+          QTypInQTyp qt' ⟨e1, p1, pred1⟩ ∨ QTypInQTyp qt' ⟨e2, p2, pred2⟩ ∨
+          qt' = ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩)
+        hinq
+        (fun _ hn => Or.inr (Or.inr hn))
+        (fun qtInner qtOuter st₁ st₂ _p tcls tcl x hetyp htcl hcap hjoined => by
+          subst hjoined
+          cases e1 with
+          | arrow st1a st2a pa1 tcls1 =>
+              cases e2 with
+              | arrow st1b st2b pb1 tcls2 =>
+                  simp only [joinETyps] at hetyp
+                  by_cases hshape : st1a == st1b && st2a == st2b
+                  · simp only [hshape, ↓reduceIte] at hetyp
+                    obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.arrow.inj hetyp
+                    cases mem_mergeFnTClosures_inv tcls1 tcls2 tcl htcl with
+                    | inl h =>
+                        exact Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩
+                          st1a st2a pa1 tcls1 tcl x rfl h hcap)
+                    | inr h =>
+                        exact Or.inr (Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1b st2b pb1 tcls2, p2, pred2⟩
+                          st1b st2b pb1 tcls2 tcl x rfl h hcap))
+                  · simp only [hshape, Bool.false_eq_true, ↓reduceIte] at hetyp
+                    obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.arrow.inj hetyp
+                    exact Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩
+                      st1a st2a pa1 tcls1 tcl x rfl htcl hcap)
+              | _ =>
+                  simp only [joinETyps] at hetyp
+                  obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.arrow.inj hetyp
+                  exact Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩
+                    st1a st2a pa1 tcls1 tcl x rfl htcl hcap)
+          | int | bool | unit | string => simp [joinETyps] at hetyp
+          | ref ls =>
+              cases e2 with
+              | ref ls2 =>
+                  simp [joinETyps] at hetyp
+              | _ => simp [joinETyps] at hetyp
+          | parrow st1a st2a pa1 ptcls1 =>
+              cases e2 with
+              | parrow st1b st2b pb1 ptcls2 =>
+                  simp only [joinETyps] at hetyp
+                  split_ifs at hetyp
+              | _ => simp [joinETyps] at hetyp)
+        (fun qtInner qtOuter st₁ st₂ _p tcls tcl x hetyp htcl hcap hjoined => by
+          subst hjoined
+          cases e1 with
+          | parrow st1a st2a pa1 ptcls1 =>
+              cases e2 with
+              | parrow st1b st2b pb1 ptcls2 =>
+                  simp only [joinETyps] at hetyp
+                  by_cases hshape : st1a == st1b && st2a == st2b
+                  · simp only [hshape, ↓reduceIte] at hetyp
+                    obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.parrow.inj hetyp
+                    cases mem_mergePFnTClosures_inv ptcls1 ptcls2 tcl htcl with
+                    | inl h =>
+                        exact Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩
+                          st1a st2a pa1 ptcls1 tcl x rfl h hcap)
+                    | inr h =>
+                        exact Or.inr (Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1b st2b pb1 ptcls2, p2, pred2⟩
+                          st1b st2b pb1 ptcls2 tcl x rfl h hcap))
+                  · simp only [hshape, Bool.false_eq_true, ↓reduceIte] at hetyp
+                    obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.parrow.inj hetyp
+                    exact Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩
+                      st1a st2a pa1 ptcls1 tcl x rfl htcl hcap)
+              | _ =>
+                  simp only [joinETyps] at hetyp
+                  obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.parrow.inj hetyp
+                  exact Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩
+                    st1a st2a pa1 ptcls1 tcl x rfl htcl hcap)
+          | int | bool | unit | string => simp [joinETyps] at hetyp
+          | ref ls =>
+              cases e2 with
+              | ref ls2 =>
+                  simp [joinETyps] at hetyp
+              | _ => simp [joinETyps] at hetyp
+          | arrow st1a st2a pa1 tcls1 =>
+              cases e2 with
+              | arrow st1b st2b pb1 tcls2 =>
+                  simp only [joinETyps] at hetyp
+                  split_ifs at hetyp
+              | _ => simp [joinETyps] at hetyp)
+        (fun a b _c h₁₂ _h₂₃ ih₁₂ ih₂₃ hjoined =>
+          (ih₂₃ hjoined).elim
+            (fun h_e1 => Or.inl (QTypInQTyp.trans a b _ h₁₂ h_e1))
+            (fun h => h.elim
+              (fun h_e2 => Or.inr (Or.inl (QTypInQTyp.trans a b _ h₁₂ h_e2)))
+              (fun heq => ih₁₂ heq)))) rfl
+  rcases hdecomp with (h_e1 | h_e2 | h_self)
+  · exact h1 h_e1 hqd
+  · exact h2 h_e2 hqd
+  · subst h_self
+    have hpj := qtypGuardDesc?_eq_some_pred_guardClosure hqd
+    have hp1 := (joinPredicates_eq_guardClosure hpj).1
+    exact h1 (QTypInQTyp.self _) (by simp [qtypGuardDesc?, hp1])
+
 /-- Body typecheck preserves wfTagMeaningCtx (fuel induction).
     wfTagMeaningCtx tm ctx = EnvRespectsTagMeaning tm ctx.varEnv ctx.memEnv, so we need
     to show that after typechecking, all guard descriptors in (ctx.varEnv, res.memEnv')
@@ -17807,16 +17917,21 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
     ∀ (fuel : Nat) (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (res : TypeResult),
     wfTagMeaningCtx tm ctx →
     typecheck .ioFree ctx e fuel = .ok res →
-    wfTagMeaningCtx tm (ctxAfter ctx res) := by
+    wfTagMeaningCtx tm (ctxAfter ctx res) ∧ QTypRespectsTagMeaning tm res.qualType := by
   intro fuel
   induction fuel using Nat.strong_induction_on with
   | _ fuel IH =>
     intro tm ctx e res hwf htc
-    have IH' : ∀ m < fuel, ∀ (tm' : TagMeaning) (ctx' : TypeContext) (e' : Expr) (res' : TypeResult),
+    have IH_wf : ∀ m < fuel, ∀ (tm' : TagMeaning) (ctx' : TypeContext) (e' : Expr) (res' : TypeResult),
         wfTagMeaningCtx tm' ctx' →
         typecheck .ioFree ctx' e' m = .ok res' →
         wfTagMeaningCtx tm' (ctxAfter ctx' res') := by
-      intro m hm tm' ctx' e' res'; exact IH m hm tm' ctx' e' res'
+      intro m hm tm' ctx' e' res' hwf' htc'; exact (IH m hm tm' ctx' e' res' hwf' htc').1
+    have IH_qt : ∀ m < fuel, ∀ (tm' : TagMeaning) (ctx' : TypeContext) (e' : Expr) (res' : TypeResult),
+        wfTagMeaningCtx tm' ctx' →
+        typecheck .ioFree ctx' e' m = .ok res' →
+        QTypRespectsTagMeaning tm' res'.qualType := by
+      intro m hm tm' ctx' e' res' hwf' htc'; exact (IH m hm tm' ctx' e' res' hwf' htc').2
     unfold typecheck at htc
     cases fuel with
     | zero =>
@@ -17825,18 +17940,23 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
         unfold typecheckExpr at htc
         cases e with
         -- ===== Trivial cases: memEnv unchanged (ctxAfter preserves both varEnv and memEnv) =====
+        -- Result qualType has noPred + non-function etyp → QTypRespectsTagMeaning vacuous
         | num _n =>
             unfold typecheckInt at htc; simp [pure, Except.pure] at htc; cases htc
-            simpa [wfTagMeaningCtx, ctxAfter]
+            refine ⟨by simpa [wfTagMeaningCtx, ctxAfter], ?_⟩
+            exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _ rfl rfl
         | bool _b =>
             unfold typecheckBool at htc; simp [pure, Except.pure] at htc; cases htc
-            simpa [wfTagMeaningCtx, ctxAfter]
+            refine ⟨by simpa [wfTagMeaningCtx, ctxAfter], ?_⟩
+            exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _ rfl rfl
         | unit =>
             unfold typecheckUnit at htc; simp [pure, Except.pure] at htc; cases htc
-            simpa [wfTagMeaningCtx, ctxAfter]
+            refine ⟨by simpa [wfTagMeaningCtx, ctxAfter], ?_⟩
+            exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _ rfl rfl
         | str _s =>
             unfold typecheckString at htc; simp [pure, Except.pure] at htc; cases htc
-            simpa [wfTagMeaningCtx, ctxAfter]
+            refine ⟨by simpa [wfTagMeaningCtx, ctxAfter], ?_⟩
+            exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _ rfl rfl
         | var x =>
             -- typecheckVar always returns memEnv' = ctx.memEnv
             simp at htc
@@ -17849,43 +17969,67 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
               cases qt with
               | mk etyp poison pred =>
                 simp at htc
+                -- All var sub-cases have non-function etyp (function case errors) and
+                -- result pred ∈ {noPred, guardOnly k} → qtypGuardDesc? = none → QTypRespects vacuous
                 cases pred with
                 | noPred =>
                   simp [pure, Except.pure] at htc; cases htc
-                  simpa [wfTagMeaningCtx, ctxAfter]
+                  refine ⟨?_, ?_⟩
+                  · simpa [wfTagMeaningCtx, ctxAfter]
+                  · exact QTypRespectsTagMeaning_transport_etyp_noGuard tm
+                      ⟨etyp, poison, Predicate.noPred⟩ _
+                      (wfTagMeaningCtx_var_lookup_qtyp tm ctx x _ hwf hlookup)
+                      (by simp) (by simp [qtypGuardDesc?])
                 | guardOnly k =>
                   simp at htc
-                  by_cases hfn : etyp.isFunctionType
-                  · simp [hfn] at htc
-                  · simp [hfn] at htc
+                  cases hfn : etyp.isFunctionType with
+                  | false =>
+                    simp [hfn] at htc
                     revert htc; generalize ctx.tagEnv[k]? = tv
                     cases tv with
-                    | none => intro htc; simp at htc; cases htc; simpa [wfTagMeaningCtx, ctxAfter]
+                    | none => intro htc; simp at htc; cases htc
+                              exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
+                                QTypRespectsTagMeaning_of_nonFunction_noGuard tm _ hfn (by simp [qtypGuardDesc?])⟩
                     | some tv => cases tv with | mk val deps =>
                       cases val <;> intro htc <;> simp at htc <;> cases htc <;>
-                        simpa [wfTagMeaningCtx, ctxAfter]
+                        exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
+                          QTypRespectsTagMeaning_of_nonFunction_noGuard tm _ hfn (by simp [qtypGuardDesc?])⟩
+                  | true => simp [hfn] at htc
                 | guardClosure k tcls ptcls body_t =>
                   simp at htc
-                  by_cases hfn : etyp.isFunctionType
-                  · simp [hfn] at htc
-                  · simp [hfn] at htc
+                  cases hfn : etyp.isFunctionType with
+                  | false =>
+                    simp [hfn] at htc
+                    have hqt_orig : QTypRespectsTagMeaning tm ⟨etyp, poison, Predicate.guardClosure k tcls ptcls body_t⟩ :=
+                      wfTagMeaningCtx_var_lookup_qtyp tm ctx x _ hwf hlookup
                     revert htc; generalize ctx.tagEnv[k]? = tv
                     cases tv with
-                    | none => intro htc; simp at htc; cases htc; simpa [wfTagMeaningCtx, ctxAfter]
+                    | none => intro htc; simp at htc; cases htc
+                              -- pred preserved as guardClosure — transport from original var binding
+                              exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
+                                QTypRespectsTagMeaning_transport_etyp_pred tm
+                                  ⟨etyp, poison, Predicate.guardClosure k tcls ptcls body_t⟩
+                                  ⟨etyp, joinPoison ctx.pc poison, Predicate.guardClosure k tcls ptcls body_t⟩
+                                  hqt_orig rfl rfl⟩
                     | some tv => cases tv with | mk val deps =>
+                      -- true/false → result pred = noPred
                       cases val <;> intro htc <;> simp at htc <;> cases htc <;>
-                        simpa [wfTagMeaningCtx, ctxAfter]
-        | fn _ _ _ _ =>
+                        exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
+                          QTypRespectsTagMeaning_of_nonFunction_noGuard tm _ hfn (by simp [qtypGuardDesc?])⟩
+                  | true => simp [hfn] at htc
+        | fn x st1 body st2 =>
             unfold typecheckFn at htc; simp [pure, Except.pure] at htc; cases htc
-            simpa [wfTagMeaningCtx, ctxAfter]
+            exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
+              QTypRespectsTagMeaning_fn_regular tm ctx x st1 st2 ctx.pc body hwf⟩
         | pfn x st1 body st2 =>
             unfold typecheckPfn at htc
             simp [bind, Except.bind] at htc
             cases h_topexpr : body.toPExpr with
             | error _ => simp [h_topexpr] at htc
-            | ok _ =>
+            | ok pbody =>
               simp [h_topexpr, pure, Except.pure] at htc; subst htc
-              simpa [wfTagMeaningCtx, ctxAfter]
+              exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
+                QTypRespectsTagMeaning_pfn_regular tm ctx x st1 st2 ctx.pc pbody hwf⟩
         -- Impossible in ioFree mode
         | externVal _ _ _ =>
             exfalso; simp at htc; unfold typecheckExternVal at htc
@@ -17917,127 +18061,200 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
         -- ===== Single-IH cases: memEnv from sub-expression =====
         | unaryop op e1 =>
             have hstruct := typecheckUnaryOp_structure ctx op e1 fuel' res htc
-            rcases hstruct with ⟨result1, _, htc1, _, hmemEnv, _, _, _, _, _, _, _⟩
+            rcases hstruct with ⟨result1, result_etyp, htc1, _hopEtyp, hmemEnv, _, _, _, _, hetyp, _, hpred⟩
             have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
-            have hIH := IH' (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
-            simpa [wfTagMeaningCtx, ctxAfter, hmemEnv] using hIH
+            have hIH := IH_wf (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
+            refine ⟨?_, ?_⟩
+            · simpa [wfTagMeaningCtx, ctxAfter, hmemEnv] using hIH
+            · -- result_etyp from opUnaryEType? is always non-function (bool)
+              have hnf : result_etyp.isFunctionType = false := by
+                have : result_etyp = .bool := by
+                  revert _hopEtyp; unfold opUnaryEType?; split <;> simp [eq_comm]
+                subst this; decide
+              apply QTypRespectsTagMeaning_of_nonFunction_noGuard
+              · rw [hetyp]; exact hnf
+              · simp [qtypGuardDesc?, hpred]
         | deref e1 =>
             have hstruct := typecheckDeref_structure ctx e1 fuel' res htc
             rcases hstruct with ⟨result1, htc1, hmem, _, _, _, _⟩
             have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
-            have hIH := IH' (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
-            simpa [wfTagMeaningCtx, ctxAfter, hmem] using hIH
+            have hIH := IH_wf (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
+            refine ⟨?_, ?_⟩
+            · simpa [wfTagMeaningCtx, ctxAfter, hmem] using hIH
+            · -- deref result qualType depends on memEnv lookup — use sorry for now
+              sorry
         -- ===== Double-IH cases: memEnv chains through sub-expressions =====
         | op e1 _op e2 =>
             have hstruct := typecheckOp_structure ctx e1 e2 _op fuel' res htc
-            rcases hstruct with ⟨result1, result2, _, htc1, htc2, _, hmemEnv, _, _, _, _, _, _, _⟩
+            rcases hstruct with ⟨result1, result2, result_etyp, htc1, htc2, _hopEtyp, hmemEnv, _, _, _, _, hetyp, _, hpred⟩
             have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
-            have hIH1 := IH' (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
+            have hIH1 := IH_wf (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
             have hwf_mid : wfTagMeaningCtx tm (updateCtxFromResult ctx result1) := by
               simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult] using hIH1
             have htc2' : typecheck .ioFree (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by simpa using htc2
-            have hIH2 := IH' (fuel' - 1) (by omega) tm (updateCtxFromResult ctx result1) e2 result2 hwf_mid htc2'
-            simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult, hmemEnv] using hIH2
+            have hIH2 := IH_wf (fuel' - 1) (by omega) tm (updateCtxFromResult ctx result1) e2 result2 hwf_mid htc2'
+            refine ⟨?_, ?_⟩
+            · simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult, hmemEnv] using hIH2
+            · -- result_etyp from opEType? is always non-function (int/bool/float/string)
+              have hnf : result_etyp.isFunctionType = false := by
+                have : result_etyp = .int ∨ result_etyp = .bool := by
+                  revert _hopEtyp; unfold opEType?; split <;> simp [eq_comm] <;> tauto
+                rcases this with rfl | rfl <;> decide
+              apply QTypRespectsTagMeaning_of_nonFunction_noGuard
+              · rw [hetyp]; exact hnf
+              · simp [qtypGuardDesc?, hpred]
         | seq e1 e2 =>
             have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
             rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
             have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
-            have hIH1 := IH' (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
+            have hIH1 := IH_wf (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
             have hwf_mid : wfTagMeaningCtx tm ctx' := by
               rw [hctx']
               simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult] using hIH1
             have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok res := by simpa using htc2
-            have hIH2 := IH' (fuel' - 1) (by omega) tm ctx' e2 res hwf_mid htc2'
-            simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult, hctx'] using hIH2
+            -- IH on e2 gives both parts: wfTagMeaningCtx and QTypRespectsTagMeaning
+            have hIH2_wf := IH_wf (fuel' - 1) (by omega) tm ctx' e2 res hwf_mid htc2'
+            have hIH2_qt : QTypRespectsTagMeaning tm res.qualType :=
+              IH_qt (fuel' - 1) (by omega) tm ctx' e2 res hwf_mid htc2'
+            exact ⟨by simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult, hctx'] using hIH2_wf,
+                   hIH2_qt⟩
         | vlet x e1 e2 =>
             have hstruct := typecheckVlet_structure ctx x e1 e2 fuel' res htc
-            rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, _, hmemEnv, _, _, _, _, _, _⟩
+            rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, hetyp_res, hmemEnv, _, _, _, _, _, hpred_res⟩
             have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
-            have hIH1 := IH' (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
+            have hIH1_wf := IH_wf (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
+            have hIH1_qt : QTypRespectsTagMeaning tm result1.qualType :=
+              IH_qt (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
+            -- ctx' extends varEnv with x ↦ result1.qualType. Use IH_qt for the new binding.
             have hwf_mid : wfTagMeaningCtx tm ctx' := by
               rw [hctx']
-              -- ctx' extends varEnv with x but keeps memEnv from result1
-              -- Needs QTypRespectsTagMeaning for result1.qualType (the new binding)
-              sorry
+              have hwf_after : wfTagMeaningCtx tm (ctxAfter ctx result1) := hIH1_wf
+              simp only [wfTagMeaningCtx, ctxAfter] at hwf_after
+              let ctxBase : TypeContext :=
+                ⟨ctx.pc, result1.regime', result1.memEnv', ctx.varEnv, result1.tagEnv',
+                 result1.nextLoc', result1.nextTag', ctx.pureCtx⟩
+              exact wfTagMeaningCtx_varEnv_ext tm ctxBase x result1.qualType
+                (by simpa [wfTagMeaningCtx, ctxAfter, ctxBase] using hwf_after)
+                hIH1_qt
             have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok result2 := by simpa using htc2
-            have hIH2 := IH' (fuel' - 1) (by omega) tm ctx' e2 result2 hwf_mid htc2'
-            -- hIH2 gives wfTagMeaningCtx tm (ctxAfter ctx' result2)
-            -- = EnvRespectsTagMeaning tm ctx'.varEnv result2.memEnv'
-            -- We need: EnvRespectsTagMeaning tm ctx.varEnv res.memEnv'
-            -- Use mix: varEnv from hwf, memEnv from hIH2
-            simp only [wfTagMeaningCtx, ctxAfter]
-            rw [hmemEnv]
-            have hIH2' : EnvRespectsTagMeaning tm ctx'.varEnv result2.memEnv' := by
-              simpa [wfTagMeaningCtx, ctxAfter] using hIH2
-            exact EnvRespectsTagMeaning_mix tm ctx.varEnv ctx.memEnv ctx'.varEnv result2.memEnv' hwf hIH2'
+            have hIH2_wf := IH_wf (fuel' - 1) (by omega) tm ctx' e2 result2 hwf_mid htc2'
+            have hIH2_qt : QTypRespectsTagMeaning tm result2.qualType :=
+              IH_qt (fuel' - 1) (by omega) tm ctx' e2 result2 hwf_mid htc2'
+            refine ⟨?_, ?_⟩
+            · -- wfTagMeaningCtx: mix varEnv from hwf, memEnv from IH2
+              simp only [wfTagMeaningCtx, ctxAfter]
+              rw [hmemEnv]
+              have hIH2' : EnvRespectsTagMeaning tm ctx'.varEnv result2.memEnv' := by
+                simpa [wfTagMeaningCtx, ctxAfter] using hIH2_wf
+              exact EnvRespectsTagMeaning_mix tm ctx.varEnv ctx.memEnv ctx'.varEnv result2.memEnv' hwf hIH2'
+            · -- QTypRespectsTagMeaning: res.qualType has same etyp and pred as result2.qualType
+              exact QTypRespectsTagMeaning_transport_etyp_pred tm result2.qualType res.qualType
+                hIH2_qt (by rw [hetyp_res]) (by rw [hpred_res])
         -- ===== Memory update cases =====
         | newRef e1 =>
             sorry -- TODO: updateMemEnv with new location
         | assign e1 e2 =>
             sorry -- TODO: updateMemEnv / updateLocsetWeak
         -- ===== Branch/join cases =====
+        -- All ite modes produce noPred in result qualType.
         | ite e1 e2 e3 =>
             simp at htc
             have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
             cases hstruct with
             | inl h1 =>
-                -- Mode 1: only true branch
-                rcases h1 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, htc2, hmemEnv, _, _, _, _, _, _⟩
+                -- Mode 1: only true branch. res.qualType.etyp = res2.qualType.etyp, pred = noPred
+                rcases h1 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, htc2, hmemEnv, _, _, _, _, _, hetyp_res⟩
                 have htc2' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
                   simpa [typecheck] using htc2
                 have hwf_true : wfTagMeaningCtx tm { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := by
                   simpa [wfTagMeaningCtx, ctxAfter] using hwf
-                have hIH2 := IH' (fuel' - 1) (by omega) tm { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 res2 hwf_true htc2'
-                simpa [wfTagMeaningCtx, ctxAfter, hmemEnv] using hIH2
+                have hIH2_wf := IH_wf (fuel' - 1) (by omega) tm { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 res2 hwf_true htc2'
+                have hIH2_qt : QTypRespectsTagMeaning tm res2.qualType :=
+                  IH_qt (fuel' - 1) (by omega) tm { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 res2 hwf_true htc2'
+                refine ⟨?_, ?_⟩
+                · simpa [wfTagMeaningCtx, ctxAfter, hmemEnv] using hIH2_wf
+                · -- TODO: need res.qualType.pred = noPred (not in structure lemma)
+                  sorry
             | inr h_rest =>
               cases h_rest with
               | inl h2 =>
-                  -- Mode 2: only false branch
-                  rcases h2 with ⟨k, deps, _, _, res1, _htc1, _hbool, res3, htc3, hmemEnv, _, _, _, _, _, _⟩
+                  -- Mode 2: only false branch. res.qualType.etyp = res3.qualType.etyp, pred = noPred
+                  rcases h2 with ⟨k, deps, _, _, res1, _htc1, _hbool, res3, htc3, hmemEnv, _, _, _, _, _, hetyp_res⟩
                   let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
                   have htc3' : typecheck .ioFree ctxFalse e3 (fuel' - 1) = .ok res3 := by
                     simpa [typecheck, ctxFalse] using htc3
                   have hwf_false : wfTagMeaningCtx tm ctxFalse := by
                     simpa [wfTagMeaningCtx, ctxAfter, ctxFalse] using hwf
-                  have hIH3 := IH' (fuel' - 1) (by omega) tm ctxFalse e3 res3 hwf_false htc3'
-                  simpa [wfTagMeaningCtx, ctxAfter, hmemEnv, ctxFalse] using hIH3
+                  have hIH3_wf := IH_wf (fuel' - 1) (by omega) tm ctxFalse e3 res3 hwf_false htc3'
+                  have hIH3_qt : QTypRespectsTagMeaning tm res3.qualType :=
+                    IH_qt (fuel' - 1) (by omega) tm ctxFalse e3 res3 hwf_false htc3'
+                  refine ⟨?_, ?_⟩
+                  · simpa [wfTagMeaningCtx, ctxAfter, hmemEnv, ctxFalse] using hIH3_wf
+                  · -- TODO: need res.qualType.pred = noPred (not in structure lemma)
+                    sorry
               | inr h_rest2 =>
                 cases h_rest2 with
                 | inl h3 =>
-                    -- Mode 3: both branches, join. Only need left (true) side via joinMemEnvsStrong.
-                    rcases h3 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, htc2, res3, _htc3, hmemEnv, _, _, _, _, _⟩
+                    -- Mode 3: both branches, join. res.qualType.pred = noPred.
+                    rcases h3 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, htc2, res3, htc3_raw, hmemEnv, _, _, _, _, _⟩
                     let branchPc := joinPoison ctx.pc res1.qualType.poison
                     let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
                     have htc2' : typecheck .ioFree ctxTrue e2 (fuel' - 1) = .ok res2 := by
                       simpa [typecheck, ctxTrue, branchPc] using htc2
                     have hwf_true : wfTagMeaningCtx tm ctxTrue := by
                       simpa [wfTagMeaningCtx, ctxAfter, ctxTrue] using hwf
-                    have hIH2 := IH' (fuel' - 1) (by omega) tm ctxTrue e2 res2 hwf_true htc2'
+                    have hIH2 := IH_wf (fuel' - 1) (by omega) tm ctxTrue e2 res2 hwf_true htc2'
+                    have hIH2_qt : QTypRespectsTagMeaning tm res2.qualType :=
+                      IH_qt (fuel' - 1) (by omega) tm ctxTrue e2 res2 hwf_true htc2'
+                    -- For mode 3 false branch QTypRespects
+                    let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
+                    have htc3' : typecheck .ioFree { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' } e3 (fuel' - 1) = .ok res3 := by
+                      simpa [typecheck, ctxFalse, branchPc] using htc3_raw
+                    have hwf_false : wfTagMeaningCtx tm { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' } := by
+                      simpa [wfTagMeaningCtx, ctxAfter, ctxFalse] using hwf
+                    have hIH3_qt : QTypRespectsTagMeaning tm res3.qualType :=
+                      IH_qt (fuel' - 1) (by omega) tm { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' } e3 res3 hwf_false htc3'
                     have hIH2' : EnvRespectsTagMeaning tm ctx.varEnv res2.memEnv' := by
                       simpa [wfTagMeaningCtx, ctxAfter, ctxTrue] using hIH2
-                    simp only [wfTagMeaningCtx, ctxAfter]
-                    rw [hmemEnv]
-                    exact EnvRespectsTagMeaning_joinMemEnvsStrong' tm ctx.varEnv res2.memEnv' res3.memEnv' hIH2'
+                    refine ⟨?_, ?_⟩
+                    · simp only [wfTagMeaningCtx, ctxAfter]
+                      rw [hmemEnv]
+                      exact EnvRespectsTagMeaning_joinMemEnvsStrong' tm ctx.varEnv res2.memEnv' res3.memEnv' hIH2'
+                    · -- TODO: joinStep + transport (eta-expansion mismatch on QTypRespectsTagMeaning)
+                      sorry
                 | inr h4 =>
-                    -- Mode 4: matchGuard fails, both branches, join.
-                    obtain ⟨⟨err, _hmatch_fail⟩, res1, htc1, _hbool, res2, htc2, res3, _htc3, hmemEnv, _, _, _, _, _⟩ := h4
+                    -- Mode 4: matchGuard fails, both branches, join. res.qualType.pred = noPred.
+                    obtain ⟨⟨err, _hmatch_fail⟩, res1, htc1, _hbool, res2, htc2, res3, htc3_raw, hmemEnv, _, _, _, _, _⟩ := h4
                     let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
                                                          nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
                     let pc' := joinPoison ctx.pc res1.qualType.poison
                     let ctx'' := { ctx1 with pc := pc' }
                     have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok res1 := by simpa [typecheck] using htc1
-                    have hIH1 := IH' (fuel' - 1) (by omega) tm ctx e1 res1 hwf htc1'
+                    have hIH1 := IH_wf (fuel' - 1) (by omega) tm ctx e1 res1 hwf htc1'
                     have hwf_mid : wfTagMeaningCtx tm ctx'' := by
                       simp only [wfTagMeaningCtx, ctx'', ctx1]
                       simpa [wfTagMeaningCtx, ctxAfter] using hIH1
                     have htc2' : typecheck .ioFree ctx'' e2 (fuel' - 1) = .ok res2 := by
                       simpa [typecheck, ctx'', ctx1, pc'] using htc2
-                    have hIH2 := IH' (fuel' - 1) (by omega) tm ctx'' e2 res2 hwf_mid htc2'
+                    have hIH2 := IH_wf (fuel' - 1) (by omega) tm ctx'' e2 res2 hwf_mid htc2'
+                    have hIH2_qt : QTypRespectsTagMeaning tm res2.qualType :=
+                      IH_qt (fuel' - 1) (by omega) tm ctx'' e2 res2 hwf_mid htc2'
+                    -- For mode 4 false branch QTypRespects
+                    let ctx''3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                    have htc3' : typecheck .ioFree ctx''3 e3 (fuel' - 1) = .ok res3 := by
+                      simpa [typecheck, ctx''3, ctx'', ctx1, pc'] using htc3_raw
+                    have hwf_mid3 : wfTagMeaningCtx tm ctx''3 := by
+                      simpa [wfTagMeaningCtx, ctxAfter, ctx''3, ctx'', ctx1] using hwf_mid
+                    have hIH3_qt : QTypRespectsTagMeaning tm res3.qualType :=
+                      IH_qt (fuel' - 1) (by omega) tm ctx''3 e3 res3 hwf_mid3 htc3'
                     have hIH2' : EnvRespectsTagMeaning tm ctx.varEnv res2.memEnv' := by
                       simpa [wfTagMeaningCtx, ctxAfter, ctx'', ctx1] using hIH2
-                    simp only [wfTagMeaningCtx, ctxAfter]
-                    rw [hmemEnv]
-                    exact EnvRespectsTagMeaning_joinMemEnvsStrong' tm ctx.varEnv res2.memEnv' res3.memEnv' hIH2'
+                    refine ⟨?_, ?_⟩
+                    · simp only [wfTagMeaningCtx, ctxAfter]
+                      rw [hmemEnv]
+                      exact EnvRespectsTagMeaning_joinMemEnvsStrong' tm ctx.varEnv res2.memEnv' res3.memEnv' hIH2'
+                    · -- TODO: joinStep + transport (eta-expansion mismatch on QTypRespectsTagMeaning)
+                      sorry
         -- notExpr is not a constructor of Expr; it desugars during parsing
         -- ===== App and kwhile cases =====
         | app e1 e2 =>
@@ -18050,15 +18267,14 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx
     (hwf : wfTagMeaningCtx tm ctx)
     (htc : typecheck .ioFree ctx e fuel = .ok res) :
     wfTagMeaningCtx tm (ctxAfter ctx res) :=
-  typecheckExpr_preserves_wfTagMeaningCtx_main fuel tm ctx e res hwf htc
+  (typecheckExpr_preserves_wfTagMeaningCtx_main fuel tm ctx e res hwf htc).1
 
-/-- Body typecheck preserves QTypRespectsTagMeaning for the result qualType (fuel induction — TODO). -/
 private lemma typecheckExpr_preserves_QTypRespectsTagMeaning
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (hwf : wfTagMeaningCtx tm ctx)
     (htc : typecheck .ioFree ctx e fuel = .ok res) :
-    QTypRespectsTagMeaning tm res.qualType := by
-  sorry
+    QTypRespectsTagMeaning tm res.qualType :=
+  (typecheckExpr_preserves_wfTagMeaningCtx_main fuel tm ctx e res hwf htc).2
 
 private lemma applyFnTClosure_ok_wfTagMeaningCtx
   (tm : TagMeaning)
@@ -18379,124 +18595,6 @@ private lemma QTypRespectsTagMeaning_sub (tm : TagMeaning) {qt qt' : QTyp}
     (h : QTypRespectsTagMeaning tm qt) (hinq : QTypInQTyp qt' qt) :
     QTypRespectsTagMeaning tm qt' :=
   fun hinq'' hqd => h (QTypInQTyp.trans _ qt' qt hinq'' hinq) hqd
-
--- A single join-step for QTypRespectsTagMeaning: joining two tag-meaning-respecting
--- qualified types produces another tag-meaning-respecting qualified type.
-private lemma QTypRespectsTagMeaning_joinStep
-    (tm : TagMeaning) (e1 e2 : ETyp) (p1 p2 : Poison) (pred1 pred2 : Predicate)
-    (h1 : QTypRespectsTagMeaning tm ⟨e1, p1, pred1⟩)
-    (h2 : QTypRespectsTagMeaning tm ⟨e2, p2, pred2⟩) :
-    QTypRespectsTagMeaning tm ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩ := by
-  intro qt' k d hinq hqd
-  -- First decompose: every qt' ∈ ⟨joinETyps...⟩ is either in e1, in e2, or is the joined type itself.
-  -- We use recOn with a motive that tracks the outer type via an equality hypothesis, which lets the
-  -- trans case work by: if qt₂ = ⟨joinETyps...⟩ apply IH₁₂, otherwise use QTypInQTyp.trans.
-  have hdecomp :
-      QTypInQTyp qt' ⟨e1, p1, pred1⟩ ∨
-      QTypInQTyp qt' ⟨e2, p2, pred2⟩ ∨
-      qt' = ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩ :=
-    (QTypInQTyp.recOn
-        (motive := fun qt' qt₂ _ =>
-          qt₂ = ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩ →
-          QTypInQTyp qt' ⟨e1, p1, pred1⟩ ∨ QTypInQTyp qt' ⟨e2, p2, pred2⟩ ∨
-          qt' = ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩)
-        hinq
-        -- self case: qt' = qt₂ = ⟨joinETyps...⟩
-        (fun _ hn => Or.inr (Or.inr hn))
-        -- in_arrow case: qtInner captured in arrow closure of qt₂ = ⟨joinETyps...⟩
-        (fun qtInner qtOuter st₁ st₂ _p tcls tcl x hetyp htcl hcap hjoined => by
-          subst hjoined
-          cases e1 with
-          | arrow st1a st2a pa1 tcls1 =>
-              cases e2 with
-              | arrow st1b st2b pb1 tcls2 =>
-                  simp only [joinETyps] at hetyp
-                  by_cases hshape : st1a == st1b && st2a == st2b
-                  · simp only [hshape, ↓reduceIte] at hetyp
-                    obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.arrow.inj hetyp
-                    cases mem_mergeFnTClosures_inv tcls1 tcls2 tcl htcl with
-                    | inl h =>
-                        exact Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩
-                          st1a st2a pa1 tcls1 tcl x rfl h hcap)
-                    | inr h =>
-                        exact Or.inr (Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1b st2b pb1 tcls2, p2, pred2⟩
-                          st1b st2b pb1 tcls2 tcl x rfl h hcap))
-                  · simp only [hshape, Bool.false_eq_true, ↓reduceIte] at hetyp
-                    obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.arrow.inj hetyp
-                    exact Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩
-                      st1a st2a pa1 tcls1 tcl x rfl htcl hcap)
-              | _ =>
-                  simp only [joinETyps] at hetyp
-                  obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.arrow.inj hetyp
-                  exact Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩
-                    st1a st2a pa1 tcls1 tcl x rfl htcl hcap)
-          | int | bool | unit | string => simp [joinETyps] at hetyp
-          | ref ls =>
-              cases e2 with
-              | ref ls2 =>
-                  simp [joinETyps] at hetyp
-              | _ => simp [joinETyps] at hetyp
-          | parrow st1a st2a pa1 ptcls1 =>
-              cases e2 with
-              | parrow st1b st2b pb1 ptcls2 =>
-                  simp only [joinETyps] at hetyp
-                  split_ifs at hetyp
-              | _ => simp [joinETyps] at hetyp)
-        -- in_parrow case: qtInner captured in parrow closure of qt₂ = ⟨joinETyps...⟩
-        (fun qtInner qtOuter st₁ st₂ _p tcls tcl x hetyp htcl hcap hjoined => by
-          subst hjoined
-          cases e1 with
-          | parrow st1a st2a pa1 ptcls1 =>
-              cases e2 with
-              | parrow st1b st2b pb1 ptcls2 =>
-                  simp only [joinETyps] at hetyp
-                  by_cases hshape : st1a == st1b && st2a == st2b
-                  · simp only [hshape, ↓reduceIte] at hetyp
-                    obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.parrow.inj hetyp
-                    cases mem_mergePFnTClosures_inv ptcls1 ptcls2 tcl htcl with
-                    | inl h =>
-                        exact Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩
-                          st1a st2a pa1 ptcls1 tcl x rfl h hcap)
-                    | inr h =>
-                        exact Or.inr (Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1b st2b pb1 ptcls2, p2, pred2⟩
-                          st1b st2b pb1 ptcls2 tcl x rfl h hcap))
-                  · simp only [hshape, Bool.false_eq_true, ↓reduceIte] at hetyp
-                    obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.parrow.inj hetyp
-                    exact Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩
-                      st1a st2a pa1 ptcls1 tcl x rfl htcl hcap)
-              | _ =>
-                  simp only [joinETyps] at hetyp
-                  obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.parrow.inj hetyp
-                  exact Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩
-                    st1a st2a pa1 ptcls1 tcl x rfl htcl hcap)
-          | int | bool | unit | string => simp [joinETyps] at hetyp
-          | ref ls =>
-              cases e2 with
-              | ref ls2 =>
-                  simp [joinETyps] at hetyp
-              | _ => simp [joinETyps] at hetyp
-          | arrow st1a st2a pa1 tcls1 =>
-              cases e2 with
-              | arrow st1b st2b pb1 tcls2 =>
-                  simp only [joinETyps] at hetyp
-                  split_ifs at hetyp
-              | _ => simp [joinETyps] at hetyp)
-        -- trans case: qt₁ inside qt₂, qt₂ inside qt₃ = ⟨joinETyps...⟩.
-        -- If qt₂ ∈ e1 or e2, use QTypInQTyp.trans. If qt₂ = ⟨joinETyps...⟩, apply IH₁₂.
-        (fun a b _c h₁₂ _h₂₃ ih₁₂ ih₂₃ hjoined =>
-          (ih₂₃ hjoined).elim
-            (fun h_e1 => Or.inl (QTypInQTyp.trans a b _ h₁₂ h_e1))
-            (fun h => h.elim
-              (fun h_e2 => Or.inr (Or.inl (QTypInQTyp.trans a b _ h₁₂ h_e2)))
-              (fun heq => ih₁₂ heq)))) rfl
-  rcases hdecomp with (h_e1 | h_e2 | h_self)
-  · exact h1 h_e1 hqd
-  · exact h2 h_e2 hqd
-  · -- qt' is the joined type itself; its guard comes from joinPredicates pred1 pred2
-    subst h_self
-    have hpj := qtypGuardDesc?_eq_some_pred_guardClosure hqd
-    have hp1 := (joinPredicates_eq_guardClosure hpj).1
-    exact h1 (QTypInQTyp.self _) (by simp [qtypGuardDesc?, hp1])
 
 private lemma joinTypeResults_QTypRespectsTagMeaning
   (tm : TagMeaning)
