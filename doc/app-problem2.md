@@ -2,9 +2,9 @@
 
 This note updates the earlier blocker analysis under the following assumptions:
 
-- the typing change from [app-problem3.md](/work/doc/app-problem3.md) is accepted and
+- the typing change from [app-typing.proposal](/work/doc/app-typing.proposal) is accepted and
   implemented
-- the framing/location fix from [appr-problem4.md](/work/doc/appr-problem4.md) is also
+- the framing/location fix from [app-framing-proposal.md](/work/doc/app-framing-proposal.md) is also
   accepted and implemented
 
 For the framing fix, there are two allowed routes:
@@ -114,8 +114,8 @@ in `stepFR_app`.
 
 ## Current Best Reading
 
-Assuming the proposals from [app-problem3.md](/work/doc/app-problem3.md) and
-[appr-problem4.md](/work/doc/appr-problem4.md) are accepted:
+Assuming the proposals from [app-typing.proposal](/work/doc/app-typing.proposal) and
+[app-framing-proposal.md](/work/doc/app-framing-proposal.md) are accepted:
 
 - `stepFR_app` no longer has a known app-specific conceptual blocker
 - the remaining task is to finish the proof by integration
