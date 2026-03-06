@@ -1,9 +1,9 @@
-# `stepFR_app` Status After The Proposed Fixes
+# `stepFR_app` Status After The Implemented Fixes
 
-This note updates the earlier blocker analysis under the following assumptions:
+This note updates the earlier blocker analysis after the following changes:
 
-- the typing change from [app-typing.proposal](/work/doc/app-typing.proposal) is accepted and
-  implemented
+- the app-typing change is implemented: non-function app results now use
+  `AppPred (join p1 p) P3`
 - the framing/location fix from [app-framing-proposal.md](/work/doc/app-framing-proposal.md) is also
   accepted and implemented
 
@@ -13,8 +13,9 @@ For the framing fix, there are two allowed routes:
 - or strengthen `StepFR` so the needed clean-location preservation fact is carried as part
   of the invariant
 
-This is therefore a **forward-looking completion note**: it describes what should remain
-once those decisions are made.
+This is therefore a **status note after landing the typing fix**: it describes what should
+remain once the retained-predicate dirty-internal blocker is gone and the framing decision is
+made.
 
 ## Purpose
 
@@ -35,7 +36,7 @@ The earlier narrowed surface had two conceptual problems:
 - dirty-internal `resultAgreesIfClean` for the `p1 = false` non-function case
 - post-body clean-location agreement across different body executions
 
-Under the accepted fixes:
+Under the implemented typing change and accepted framing fix:
 
 - the typing change removes the first problem by preventing the bad retained-predicate
   path
@@ -68,7 +69,7 @@ fairly local.
 
 Expected steps:
 
-1. thread the typing change through Ott, implementation, and the app proof
+1. thread the implemented typing-rule shape through the remaining app proof branches
 2. prove the static inheritance lemma and the typed-evaluation preservation lemma
 3. use those lemmas to close the remaining locations conjuncts
 4. discharge any now-trivial dirty-internal leftovers
@@ -114,8 +115,8 @@ in `stepFR_app`.
 
 ## Current Best Reading
 
-Assuming the proposals from [app-typing.proposal](/work/doc/app-typing.proposal) and
-[app-framing-proposal.md](/work/doc/app-framing-proposal.md) are accepted:
+With the app-typing change implemented and the framing/location fix in
+[app-framing-proposal.md](/work/doc/app-framing-proposal.md) accepted:
 
 - `stepFR_app` no longer has a known app-specific conceptual blocker
 - the remaining task is to finish the proof by integration
@@ -129,13 +130,13 @@ If this note is handed off as a standalone assignment, the intended contract is:
 
 Deliverable:
 
-- assume both proposed fixes are accepted
+- assume the app-typing change is already landed and the framing fix is accepted
 - finish `stepFR_app`
 - close the remaining app-local `sorry`s
 
 Preferred order:
 
-1. implement the typing change
+1. use the landed typing-rule shape in the remaining app branches
 2. choose one framing route
 3. close the app branches using that route
 4. rebuild and verify the affected proof chain

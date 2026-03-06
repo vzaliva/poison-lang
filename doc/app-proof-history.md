@@ -266,6 +266,19 @@ two runs can execute **different** closure bodies (notably when function outer p
   **non-executed** closure alternatives, because there is no `terminatesTo` witness for those.
   Those lemmas must remain static (typechecker-only) or be avoided by restructuring.
 
+## Issue I History: App-result provenance gate widened
+
+The narrow dirty-internal non-function app blocker was later removed by a typing change.
+Non-function app rules now use `AppPred (join p1 p) P3` in Ott, and the implementation/proof
+side matches this with `normalizeAppResultByProvenance (joinPoison p1 p)`.
+
+Effect for future reference:
+
+- when `p = true`, the final non-function app result drops the body predicate even if `p1 = false`
+- this removes the retained-predicate path that previously forced cross-run agreement in the
+  dirty-internal fallback branches
+- the earlier standalone note `doc/app-typing.proposal` is obsolete after landing this change
+
 ## Historical Identifiers (removed from code)
 
 - `ArrowMemberCvcrSelector`

@@ -2,9 +2,8 @@
 
 This note isolates the remaining **locations / framing** blocker in `stepFR_app`.
 
-It assumes the typing-side fix from [app-typing.proposal](/work/doc/app-typing.proposal) is
-accepted, so the old dirty-internal `resultAgreesIfClean` issue is no longer the main
-problem.
+It assumes the app-typing change is already landed, so the old dirty-internal
+`resultAgreesIfClean` issue is no longer the main problem.
 
 Scope of this note:
 
@@ -202,8 +201,7 @@ So it cannot by itself close the asymmetric `none / some` cases.
 
 ## 6. Why The Typing Fix Does Not Solve This
 
-The typing fix from [app-typing.proposal](/work/doc/app-typing.proposal) removes one old source
-of final-result agreement pressure:
+The landed app-typing change removes one old source of final-result agreement pressure:
 
 - the final non-function app result no longer stays clean only because of a retained
   guard predicate from an internally dirty callee
@@ -644,8 +642,8 @@ executions**.
 
 ## 10. Bottom Line
 
-Assuming the typing fix from [app-typing.proposal](/work/doc/app-typing.proposal), the remaining
-conceptual blocker in `stepFR_app` is:
+Assuming the app-typing change is already in place, the remaining conceptual blocker in
+`stepFR_app` is:
 
 - prove the locations conjunct of `agreeOnClean` after two different body executions
 

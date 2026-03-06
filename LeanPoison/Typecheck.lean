@@ -1380,10 +1380,10 @@ def typecheckSeq (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Na
 termination_by fuel
 
 
-/-- Issue #113: when p1 (function outer poison) is true, the application result
-    is irrecoverably poisoned with no predicate. -/
-def normalizeAppResultByProvenance (p1 : Poison) (qt : QTyp) : QTyp :=
-  if p1 then { qt with poison := true, pred := Predicate.noPred } else qt
+/-- Issue #113: when p1p (join of function outer poison p1 and internal arrow poison p) is true,
+    the application result is irrecoverably poisoned with no predicate. -/
+def normalizeAppResultByProvenance (p1p : Poison) (qt : QTyp) : QTyp :=
+  if p1p then { qt with poison := true, pred := Predicate.noPred } else qt
 
 /-- Helper: Apply a single FnTClosure and return the result type and updated environments.
     This encapsulates the body typing logic for a single closure alternative.
@@ -1412,10 +1412,10 @@ def applyFnTClosure (mode : EvalMode) (tcl : FnTClosure) (_st1 st2 : Typ) (p : P
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Issue #111: taint app result by function poison (p, p1)
-        -- Issue #113: provenance gate - if p1, force irrecoverable poison and no_pred
+        -- Issue #113: provenance gate - if join p1 p, force irrecoverable poison and no_pred
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
-        return { result3 with qualType := normalizeAppResultByProvenance p1 taintedQt }
+        return { result3 with qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt }
 
     | FnTClosure.extern x retSpec effects capturedEnv =>
         if mode == .ioFree then throw "Extern function application forbidden in ioFree mode"
@@ -1469,7 +1469,7 @@ def applyFnTClosure (mode : EvalMode) (tcl : FnTClosure) (_st1 st2 : Typ) (p : P
             -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
-            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := advanceNextTagForSyntaxPred pred (advanceNextTagForEffects effects result2.nextTag'), regime' := result2.regime' }
 
@@ -1480,7 +1480,7 @@ def applyFnTClosure (mode : EvalMode) (tcl : FnTClosure) (_st1 st2 : Typ) (p : P
             -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
-            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := advanceNextTagForEffects effects result2.nextTag', regime' := result2.regime' }
 
@@ -1491,7 +1491,7 @@ def applyFnTClosure (mode : EvalMode) (tcl : FnTClosure) (_st1 st2 : Typ) (p : P
             -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
-            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := advanceNextTagForEffects effects result2.nextTag', regime' := result2.regime' }
 termination_by fuel
@@ -1522,10 +1522,10 @@ def applyPFnTClosure (mode : EvalMode) (tcl : PFnTClosure) (_st1 st2 : Typ) (p :
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Issue #111: taint app result by function poison (p, p1)
-        -- Issue #113: provenance gate - if p1, force irrecoverable poison and no_pred
+        -- Issue #113: provenance gate - if join p1 p, force irrecoverable poison and no_pred
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
-        return { result3 with qualType := normalizeAppResultByProvenance p1 taintedQt }
+        return { result3 with qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt }
 
     | PFnTClosure.extern x retSpec capturedEnv =>
         if mode == .ioFree then throw "Extern function application forbidden in ioFree mode"
@@ -1544,7 +1544,7 @@ def applyPFnTClosure (mode : EvalMode) (tcl : PFnTClosure) (_st1 st2 : Typ) (p :
             -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
-            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := advanceNextTagForSyntaxPred pred result2.nextTag', regime' := result2.regime' }
 
@@ -1555,7 +1555,7 @@ def applyPFnTClosure (mode : EvalMode) (tcl : PFnTClosure) (_st1 st2 : Typ) (p :
             -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
-            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
 
@@ -1566,7 +1566,7 @@ def applyPFnTClosure (mode : EvalMode) (tcl : PFnTClosure) (_st1 st2 : Typ) (p :
             -- Issue #113: provenance gate
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
-            let normalizedQt := normalizeAppResultByProvenance p1 qt
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
 termination_by fuel
@@ -1842,6 +1842,10 @@ def typecheckWhile (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : 
 termination_by fuel
 
 end
+
+lemma normalizeAppResultByProvenance_etyp (p1p : Poison) (qt : QTyp) :
+  (normalizeAppResultByProvenance p1p qt).etyp = qt.etyp := by
+  simp only [normalizeAppResultByProvenance]; split_ifs <;> rfl
 
 -- Main type checking function
 def typecheck (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=

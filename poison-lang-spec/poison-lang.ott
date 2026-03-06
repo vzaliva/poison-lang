@@ -166,7 +166,7 @@ predicate, P :: 'P_' ::= {{ com predicate (pure function from T to bool) }}
   | guard k pred_closure pcl ::   :: pred_closure {{ com predicate as pure closure }} {{tex \mathsf{guard}\,[[k]]\,\mathsf{pred\_closure}\,[[pcl]] }}
   | guard k                   ::   :: guard_only {{ com guard tag only }} {{tex \mathsf{guard}\,[[k]] }}
   | no_pred                   ::   :: no_pred {{ com no predicate }} {{tex \bot }}
-  | AppPred p P              ::   :: app_pred {{ com provenance gate: if p (function outer poison) is poisoned, result is no predicate; otherwise P }} {{ tex \mathrm{AppPred}([[p]], [[P]]) }}
+  | AppPred p P              ::   :: app_pred {{ com provenance gate: if p (join of outer and internal poison) is poisoned, result is no predicate; otherwise P }} {{ tex \mathrm{AppPred}([[p]], [[P]]) }}
   | indexedP P idx1 idx2    :: M :: indexedP {{ com doubly-indexed predicate for while-loop }} {{ tex [[P]]_{[[idx1]]}^{[[idx2]]} }}
 
 qualified_type, Q :: 'Q_' ::= {{ com qualified type (type with poison and optional predicate) }}
@@ -840,8 +840,9 @@ impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures ( x , e , S1 ) :
 ST1 <: T1
 impure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- e : T2 :> p3 { P3 } -| G3 ; L3 ; R3
 ST2 <: T2
+p6 = join p1 p
 ----------------------------------------------------------------------  :: app_fn_singleton
-impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { AppPred p1 P3 } -| G3 ; L3 ; R3
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { AppPred p6 P3 } -| G3 ; L3 ; R3
 
 % Function application typing - multiple closures case - result is arrow type
 % When both the head and tail applications return arrow types:
@@ -884,8 +885,9 @@ T' = ref @ LS1
 T'' = ref @ LS2
 LS = LS1 U LS2
 JoinP P' P'' = P3
+p6 = join p1 p
 ----------------------------------------------------------------------  :: app_fn_cons_ref
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ref @ LS :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ref @ LS :> join pc join p1 join p join p' p'' { AppPred p6 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
 
 % Function application typing - multiple closures case - result is non-arrow type (base result)
 % When results are non-reference, non-arrow types, signature compatibility forces equality; the result type is that base type.
@@ -898,8 +900,9 @@ impure ; R2 ; pc ; G2 ; S ; L2 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
 ST2 <: T'
 T' ≈ T''
 JoinP P' P'' = P3
+p6 = join p1 p
 ----------------------------------------------------------------------  :: app_fn_cons
-impure ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p1 join p join p' p'' { AppPred p6 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
 
 % Pure function application typing - singleton closure case - result is arrow type
 % Premises follow argument-first call-by-value order: type e2, then type e1.
@@ -942,8 +945,9 @@ pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures ( x , pe , S1 ) :> 
 ST1 <: T1
 pure ; R1 ; join p join p1 pc ; G1 ; S1[x |-> T1 :> join pc p2 { P2 }] ; L1 |- pe : T2 :> p3 { P3 } -| G3 ; L3 ; R3
 ST2 <: T2
+p6 = join p1 p
 ----------------------------------------------------------------------  :: app_pfn_singleton
-pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { AppPred p1 P3 } -| G3 ; L3 ; R3
+pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { AppPred p6 P3 } -| G3 ; L3 ; R3
 
 % Pure function application typing - multiple closures case - result is pure arrow type
 % When both the head and tail applications return pure arrow types:
@@ -987,8 +991,9 @@ T' = ref @ LS1
 T'' = ref @ LS2
 LS = LS1 U LS2
 JoinP P' P'' = P3
+p6 = join p1 p
 ----------------------------------------------------------------------  :: app_pfn_cons_ref
-pm ; R ; pc ; G ; S ; L |- e1 e2 : ref @ LS :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
+pm ; R ; pc ; G ; S ; L |- e1 e2 : ref @ LS :> join pc join p1 join p join p' p'' { AppPred p6 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
 
 % Pure function application typing - multiple closures case - result is non-arrow type (base result)
 % When results are non-reference, non-arrow types, signature compatibility forces equality; the result type is that base type.
@@ -1001,8 +1006,9 @@ pm ; R2 ; pc ; G2 ; S ; L2 |- e0 e2 : T'' :> p'' { P'' } -| G'' ; L'' ; R''
 ST2 <: T'
 T' ≈ T''
 JoinP P' P'' = P3
+p6 = join p1 p
 ----------------------------------------------------------------------  :: app_pfn_cons
-pm ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p1 join p join p' p'' { AppPred p1 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
+pm ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p1 join p join p' p'' { AppPred p6 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
 
 % Typing for rand - takes integer argument, returns random integer
 pm ; R ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1 ; R1

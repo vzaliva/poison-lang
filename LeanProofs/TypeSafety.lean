@@ -11112,7 +11112,7 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                                                                   r =
                                                                     { result3 with
                                                                       qualType :=
-                                                                        normalizeAppResultByProvenance p1r
+                                                                        normalizeAppResultByProvenance (joinPoison p1r p)
                                                                           { result3.qualType with
                                                                             poison := joinPoison p1r
                                                                               (joinPoison p result3.qualType.poison) } } := by
@@ -11643,7 +11643,7 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                                                                       r =
                                                                         { result3 with
                                                                           qualType :=
-                                                                            normalizeAppResultByProvenance p1r
+                                                                            normalizeAppResultByProvenance (joinPoison p1r p)
                                                                               { result3.qualType with
                                                                                 poison := joinPoison p1r
                                                                                   (joinPoison p result3.qualType.poison) } } := by
@@ -12118,7 +12118,7 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                                                                       r =
                                                                         { result3 with
                                                                           qualType :=
-                                                                            normalizeAppResultByProvenance p1r
+                                                                            normalizeAppResultByProvenance (joinPoison p1r p)
                                                                               { result3.qualType with
                                                                                 poison := joinPoison p1r
                                                                                   (joinPoison p result3.qualType.poison) } } := by
@@ -12646,7 +12646,7 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                                                                       r =
                                                                         { result3 with
                                                                           qualType :=
-                                                                            normalizeAppResultByProvenance p1r
+                                                                            normalizeAppResultByProvenance (joinPoison p1r p)
                                                                               { result3.qualType with
                                                                                 poison := joinPoison p1r
                                                                                   (joinPoison p result3.qualType.poison) } } := by

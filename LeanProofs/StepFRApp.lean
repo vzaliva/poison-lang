@@ -334,7 +334,7 @@ private lemma applyFnTClosure_regular_inv
     first =
       { result3 with
         qualType :=
-          normalizeAppResultByProvenance p1
+          normalizeAppResultByProvenance (joinPoison p1 p)
             { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
   unfold applyFnTClosure at happly
   simp [bind, Except.bind] at happly
@@ -369,7 +369,7 @@ private lemma applyFnTClosure_regular_inv
                     Except.ok
                       { result3 with
                         qualType :=
-                          normalizeAppResultByProvenance p1
+                          normalizeAppResultByProvenance (joinPoison p1 p)
                             { result3.qualType with
                               poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
                 simpa [hq3, hsub', pure, Except.pure] using happly.symm
@@ -377,7 +377,7 @@ private lemma applyFnTClosure_regular_inv
                   first =
                     { result3 with
                       qualType :=
-                        normalizeAppResultByProvenance p1
+                        normalizeAppResultByProvenance (joinPoison p1 p)
                           { result3.qualType with
                             poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
                 injection happly' with hEq
@@ -444,7 +444,7 @@ private lemma applyFnTClosure_regular_inv_of_mapM_mem
     first =
       { result3 with
         qualType :=
-          normalizeAppResultByProvenance p1
+          normalizeAppResultByProvenance (joinPoison p1 p)
             { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
   rcases applyFnTClosure_ok_of_mem_mapM
       ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel tcls results
@@ -2088,7 +2088,7 @@ private lemma applyFnTClosure_ok_wfTagMeaningCtx
         · next hsub =>
           simp only [pure, Except.pure] at happly
           cases happly
-          -- r = { result3 with qualType := normalizeAppResultByProvenance p1 taintedQt }
+          -- r = { result3 with qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt }
           -- ctxAfter ctx r has varEnv = ctx.varEnv, memEnv = result3.memEnv'
           set bodyCtx := { ctx with
               pc := joinPoison p (joinPoison p1 ctx.pc),
@@ -2215,7 +2215,7 @@ private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
         · next hsub =>
           simp only [pure, Except.pure] at happly
           cases happly
-          -- r.qualType = normalizeAppResultByProvenance p1 { result3.qualType with poison := taintedPoison }
+          -- r.qualType = normalizeAppResultByProvenance (joinPoison p1 p) { result3.qualType with poison := taintedPoison }
           set bodyCtx := { ctx with
               pc := joinPoison p (joinPoison p1 ctx.pc),
               memEnv := result1.memEnv',
@@ -2564,7 +2564,7 @@ private lemma applyPFnTClosure_regular_inv
     first =
       { result3 with
         qualType :=
-          normalizeAppResultByProvenance p1
+          normalizeAppResultByProvenance (joinPoison p1 p)
             { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
   unfold applyPFnTClosure at happly
   simp [bind, Except.bind] at happly
@@ -2600,7 +2600,7 @@ private lemma applyPFnTClosure_regular_inv
                     Except.ok
                       { result3 with
                         qualType :=
-                          normalizeAppResultByProvenance p1
+                          normalizeAppResultByProvenance (joinPoison p1 p)
                             { result3.qualType with
                               poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
                 simpa [hq3, hsub', pure, Except.pure] using happly.symm
@@ -2608,7 +2608,7 @@ private lemma applyPFnTClosure_regular_inv
                   first =
                     { result3 with
                       qualType :=
-                        normalizeAppResultByProvenance p1
+                        normalizeAppResultByProvenance (joinPoison p1 p)
                           { result3.qualType with
                             poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
                 injection happly' with hEq
@@ -2662,7 +2662,7 @@ private lemma applyPFnTClosure_regular_inv_of_mapM_mem
     first =
       { result3 with
         qualType :=
-          normalizeAppResultByProvenance p1
+          normalizeAppResultByProvenance (joinPoison p1 p)
             { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
   rcases applyPFnTClosure_ok_of_mem_mapM
       ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel tcls results
@@ -4224,11 +4224,11 @@ private lemma valueConsistentWithRegime_transport_normalizeAppResultByProvenance
   (μ : Memory) (θ : RealizationMap) (v : Value)
   (h : valueConsistentWithRegime predSat R qt μ θ v) :
   valueConsistentWithRegime predSat R
-    (normalizeAppResultByProvenance p1
+    (normalizeAppResultByProvenance (joinPoison p1 p)
       { qt with poison := joinPoison p1 (joinPoison p qt.poison) }) μ θ v := by
   unfold normalizeAppResultByProvenance
   split
-  · -- p1 = true: result has pred := noPred, etyp unchanged
+  · -- joinPoison p1 p = true: result has pred := noPred, etyp unchanged
     have hcap_src : closureCapturedVarsRegime predSat R qt μ θ v := by
       cases h with
       | noTag _ hcap => exact hcap
@@ -4238,11 +4238,12 @@ private lemma valueConsistentWithRegime_transport_normalizeAppResultByProvenance
       | inRegimeFalse _ _ _ _ hcap => exact hcap
     exact valueConsistentWithRegime.noTag (by simp [qtypGuardTag])
       (closureCapturedVarsRegime_transport_etyp (by simp) hcap_src)
-  · rename_i hp1_false
-    have hp1 : p1 = false := by simpa using hp1_false
-    subst hp1
+  · rename_i hp1p_false
+    have hp1p : joinPoison p1 p = false := by simpa using hp1p_false
+    have hand : p1 = false ∧ p = false := (Bool.or_eq_false_iff).mp (by simpa [joinPoison] using hp1p)
+    rw [hand.1, hand.2]
     simp only [joinPoison, Bool.false_or]
-    set qt' : QTyp := { qt with poison := joinPoison p qt.poison } with hqt'_def
+    set qt' : QTyp := { qt with poison := joinPoison false qt.poison } with hqt'_def
     have hpred_eq : qt.pred = qt'.pred := rfl
     cases h with
     | noTag htag hcap =>
@@ -4275,7 +4276,7 @@ private lemma resultAgreesIfClean_transport_normalizeAppResultByProvenance
   (μ₀ μ₁ : Memory) (θ₀ θ₁ : RealizationMap) (o₀ o₁ : Value)
   (h : resultAgreesIfClean predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁) :
   resultAgreesIfClean predSat R μ₀ μ₁ θ₀ θ₁
-    (normalizeAppResultByProvenance p1
+    (normalizeAppResultByProvenance (joinPoison p1 p)
       { qt with poison := joinPoison p1 (joinPoison p qt.poison) }) o₀ o₁ := by
   intro hclean_norm
   unfold normalizeAppResultByProvenance at hclean_norm
@@ -4284,29 +4285,18 @@ private lemma resultAgreesIfClean_transport_normalizeAppResultByProvenance
     cases hclean_norm with
     | clean hpoison => simp at hpoison
     | guard k htag => simp [qtypGuardTag] at htag
-  · rename_i hp1_false
-    have hp1 : p1 = false := by simpa using hp1_false
-    subst hp1
+  · rename_i hp1p_false
+    have hp1p : joinPoison p1 p = false := by simpa using hp1p_false
+    obtain ⟨hp1, hp⟩ := Bool.or_eq_false_iff.mp (by simpa [joinPoison] using hp1p)
+    subst hp1; subst hp
     simp only [joinPoison, Bool.false_or] at hclean_norm
-    set qt' : QTyp := { qt with poison := joinPoison p qt.poison }
     have hclean_qt : qtypCleanUnder R qt := by
-      cases hclean_norm with
-      | clean hpoison =>
-          have : (joinPoison p qt.poison) = false := hpoison
-          have hqtp : qt.poison = false := by
-            simp [joinPoison] at this; exact this.2
-          exact qtypCleanUnder.clean hqtp
-      | guard k htag hregime hnotfun =>
-          exact qtypCleanUnder.guard k
-            (show qtypGuardTag qt = some k by simpa [qtypGuardTag, qt'] using htag)
-            hregime (by simpa [qt'] using hnotfun)
+      convert hclean_norm using 1; cases qt; rfl
     have hagree := h hclean_qt
     unfold normalizeAppResultByProvenance
-    simp only [joinPoison, Bool.false_or]
-    exact agreeValueUnder_transport_clean (qt := qt') (qt2 := qt) hclean_norm rfl
-      (fun hp => by
-        have : (p || qt.poison) = false := hp
-        simp at this; exact this.2) hagree
+    simp [joinPoison]
+    convert hagree using 1
+    cases qt; rfl
 
 -- Join-compatibility helpers for transporting clean location agreement from the
 -- join result back to the head seed `first` in app-closure proofs.
@@ -8433,7 +8423,7 @@ private lemma stepFR_app_arrow_extract_shared_member
     first =
       { result3 with
         qualType :=
-          normalizeAppResultByProvenance p1
+          normalizeAppResultByProvenance (joinPoison p1 p)
             { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
   rcases hsync with ⟨σcap, hmem, hx, hbody⟩
   rcases applyFnTClosure_regular_inv_of_mapM_mem
@@ -8484,7 +8474,7 @@ private lemma stepFR_app_parrow_extract_shared_member
     first =
       { result3 with
         qualType :=
-          normalizeAppResultByProvenance p1
+          normalizeAppResultByProvenance (joinPoison p1 p)
             { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
   rcases hsync with ⟨x, pbody, σcap, htoPExpr, hmem, hx₀, hx₁, hbody⟩
   rcases applyPFnTClosure_regular_inv_of_mapM_mem
@@ -8648,7 +8638,7 @@ lemma stepFR_app
                 first =
                   { result3 with
                     qualType :=
-                      normalizeAppResultByProvenance p1
+                      normalizeAppResultByProvenance (joinPoison p1 p)
                         { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
           intro hsync
           exact
@@ -8695,7 +8685,7 @@ lemma stepFR_app
                   firstShared =
                     { result3Shared with
                       qualType :=
-                        normalizeAppResultByProvenance p1
+                        normalizeAppResultByProvenance (joinPoison p1 p)
                           { result3Shared.qualType with poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) } })
               ∨ (¬ internalPoisonClean result1.qualType) := by
           intro hclean1_e1
@@ -9533,8 +9523,7 @@ lemma stepFR_app
                   subst hr_eq
                   simpa [heq_results] using hr_mem
                 have hfirstShared_etyp : firstShared.qualType.etyp = result3Shared.qualType.etyp := by
-                  rw [hfirstShared]
-                  cases p1 <;> simp [normalizeAppResultByProvenance]
+                  rw [hfirstShared]; unfold normalizeAppResultByProvenance; split_ifs <;> rfl
                 have hres1_to_src_mono :
                     Regime.monotoneStep (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                       (ctxAfter ctxᵢ firstShared).regime := by
@@ -9793,7 +9782,7 @@ lemma stepFR_app
                         firstShared.qualType cf₀.memory θ₀_body o₀ := by
                     have hval_first :
                         valueConsistentWithRegime predSat (ctxAfter bodyCtx result3Shared).regime
-                          (normalizeAppResultByProvenance p1
+                          (normalizeAppResultByProvenance (joinPoison p1 p)
                             { result3Shared.qualType with
                               poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
                           evalCfg₀.memory θ₀_body o₀ :=
@@ -9816,7 +9805,7 @@ lemma stepFR_app
                         firstShared.qualType cf₁.memory θ₁_body o₁ := by
                     have hval_first :
                         valueConsistentWithRegime predSat (ctxAfter bodyCtx result3Shared).regime
-                          (normalizeAppResultByProvenance p1
+                          (normalizeAppResultByProvenance (joinPoison p1 p)
                             { result3Shared.qualType with
                               poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
                           evalCfg₁.memory θ₁_body o₁ :=
@@ -9842,7 +9831,7 @@ lemma stepFR_app
                     have hres_agree_first :
                         resultAgreesIfClean predSat (ctxAfter bodyCtx result3Shared).regime
                           evalCfg₀.memory evalCfg₁.memory θ₀_body θ₁_body
-                          (normalizeAppResultByProvenance p1
+                          (normalizeAppResultByProvenance (joinPoison p1 p)
                             { result3Shared.qualType with
                               poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
                           o₀ o₁ :=
@@ -10596,7 +10585,7 @@ lemma stepFR_app
                       firstA₀.qualType cf₀.memory θ₀_body o₀ := by
                   have hval_first :
                       valueConsistentWithRegime predSat (ctxAfter bodyCtxA₀ result3A₀).regime
-                        (normalizeAppResultByProvenance p1
+                        (normalizeAppResultByProvenance (joinPoison p1 p)
                           { result3A₀.qualType with
                             poison := joinPoison p1 (joinPoison p result3A₀.qualType.poison) })
                         evalCfg₀.memory θ₀_body o₀ :=
@@ -10618,7 +10607,7 @@ lemma stepFR_app
                       firstA₁.qualType cf₁.memory θ₁_body o₁ := by
                   have hval_first :
                       valueConsistentWithRegime predSat (ctxAfter bodyCtxA₁ result3A₁).regime
-                        (normalizeAppResultByProvenance p1
+                        (normalizeAppResultByProvenance (joinPoison p1 p)
                           { result3A₁.qualType with
                             poison := joinPoison p1 (joinPoison p result3A₁.qualType.poison) })
                         evalCfg₁.memory θ₁_body o₁ :=
@@ -11101,7 +11090,7 @@ lemma stepFR_app
                 first =
                   { result3 with
                     qualType :=
-                      normalizeAppResultByProvenance p1
+                      normalizeAppResultByProvenance (joinPoison p1 p)
                         { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
           intro hsync
           exact
@@ -11151,7 +11140,7 @@ lemma stepFR_app
                   firstShared =
                     { result3Shared with
                       qualType :=
-                        normalizeAppResultByProvenance p1
+                        normalizeAppResultByProvenance (joinPoison p1 p)
                           { result3Shared.qualType with poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) } })
               ∨ (¬ internalPoisonClean result1.qualType) := by
           intro hclean1_e1
@@ -12069,8 +12058,7 @@ lemma stepFR_app
                 subst hr_eq
                 simpa [heq_results] using hr_mem
               have hfirstShared_etyp : firstShared.qualType.etyp = result3Shared.qualType.etyp := by
-                rw [hfirstShared]
-                cases p1 <;> simp [normalizeAppResultByProvenance]
+                rw [hfirstShared, normalizeAppResultByProvenance_etyp]
               have hres1_to_src_mono :
                   Regime.monotoneStep (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                     (ctxAfter ctxᵢ firstShared).regime := by
@@ -12341,7 +12329,7 @@ lemma stepFR_app
                       firstShared.qualType cf₀.memory θ₀_body o₀ := by
                   have hval_first :
                       valueConsistentWithRegime predSat (ctxAfter bodyCtx result3Shared).regime
-                        (normalizeAppResultByProvenance p1
+                        (normalizeAppResultByProvenance (joinPoison p1 p)
                           { result3Shared.qualType with
                             poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
                         evalCfg₀.memory θ₀_body o₀ :=
@@ -12363,7 +12351,7 @@ lemma stepFR_app
                       firstShared.qualType cf₁.memory θ₁_body o₁ := by
                   have hval_first :
                       valueConsistentWithRegime predSat (ctxAfter bodyCtx result3Shared).regime
-                        (normalizeAppResultByProvenance p1
+                        (normalizeAppResultByProvenance (joinPoison p1 p)
                           { result3Shared.qualType with
                             poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
                         evalCfg₁.memory θ₁_body o₁ :=
@@ -12387,7 +12375,7 @@ lemma stepFR_app
                   have hres_agree_first :
                       resultAgreesIfClean predSat (ctxAfter bodyCtx result3Shared).regime
                         evalCfg₀.memory evalCfg₁.memory θ₀_body θ₁_body
-                        (normalizeAppResultByProvenance p1
+                        (normalizeAppResultByProvenance (joinPoison p1 p)
                           { result3Shared.qualType with
                             poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
                         o₀ o₁ :=
@@ -13192,7 +13180,7 @@ lemma stepFR_app
                     firstA₀.qualType cf₀.memory θ₀_body o₀ := by
                 have hval_first :
                     valueConsistentWithRegime predSat (ctxAfter bodyCtxA₀ result3A₀).regime
-                      (normalizeAppResultByProvenance p1
+                      (normalizeAppResultByProvenance (joinPoison p1 p)
                         { result3A₀.qualType with
                           poison := joinPoison p1 (joinPoison p result3A₀.qualType.poison) })
                       evalCfg₀.memory θ₀_body o₀ :=
@@ -13214,7 +13202,7 @@ lemma stepFR_app
                     firstA₁.qualType cf₁.memory θ₁_body o₁ := by
                 have hval_first :
                     valueConsistentWithRegime predSat (ctxAfter bodyCtxA₁ result3A₁).regime
-                      (normalizeAppResultByProvenance p1
+                      (normalizeAppResultByProvenance (joinPoison p1 p)
                         { result3A₁.qualType with
                           poison := joinPoison p1 (joinPoison p result3A₁.qualType.poison) })
                       evalCfg₁.memory θ₁_body o₁ :=

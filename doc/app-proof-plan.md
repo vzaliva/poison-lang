@@ -122,20 +122,26 @@ Design details formerly in `doc/app-problem1.md` (deleted after implementation).
 
 ## 3. Current Status and Plan
 
-### Checkpoint: 2026-03-06 — Body-IH strategy validated; 4 direct app-local sorry sites remain
+### Checkpoint: 2026-03-06 — Body-IH strategy validated; typing-side blocker removed; 4 direct app-local sorry sites remain
 
 Build: **clean** (no errors; sorry-only warnings).
 
-**Current app-local blockers in `stepFR_app`**:
-- Arrow dirty-internal fallback
+**Current app-local proof tasks in `stepFR_app`**:
+- Arrow dirty-internal fallback cleanup
 - Arrow `agreeOnClean` locations conjunct in the `¬ qtypCleanUnder` branch
-- Parrow dirty-internal fallback
+- Parrow dirty-internal fallback cleanup
 - Parrow `agreeOnClean` locations conjunct in the `¬ qtypCleanUnder` branch
 
-See `doc/app-problem2.md` for the current blocker inventory and rationale.
+The old retained-predicate dirty-internal blocker is now unblocked by the implemented
+app-typing change to `AppPred (join p1 p)`.
+
+See `doc/app-problem2.md` for the current post-typing-change status note and rationale.
 
 ### What landed since the earlier plan
 
+- Non-function app results now use the widened provenance gate
+  `AppPred (join p1 p)` / `normalizeAppResultByProvenance (joinPoison p1 p)`,
+  so the old retained-predicate dirty-internal blocker is gone.
 - `StepFR_single_run` proved via `agreeOnClean_same_config`.
 - Clean shared-member path proved for both arrow and parrow.
 - `¬ qtypCleanUnder` per-run scaffolding is in place for both arrow and parrow.
@@ -198,12 +204,15 @@ Working stance:
 ### Active plan (risk-first)
 
 1. **Finish arrow dirty-internal fallback**
+   - Treat this as proof cleanup, not a live design blocker: the old retained-predicate
+     obstruction disappeared once non-function app results switched to
+     `AppPred (join p1 p)`.
    - Replace the placeholder pack in the `¬ internalPoisonClean` branch with the same
      per-run `StepFR_single_run` pattern already used in the `¬ qtypCleanUnder` branch.
-   - Key difference from dirty-outer: `resultAgreesIfClean` is not vacuous when `p1 = false`.
 
 2. **Finish parrow dirty-internal fallback**
-   - Mirror the arrow dirty-internal solution.
+   - Mirror the arrow dirty-internal cleanup.
+   - This is likewise unblocked by the landed app-typing change.
    - Reuse as much of the existing `¬ qtypCleanUnder` parrow scaffolding as possible.
 
 3. **Finish the two `agreeOnClean` locations conjuncts**

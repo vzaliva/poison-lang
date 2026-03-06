@@ -1131,7 +1131,7 @@ lemma typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent
                                     have hfirstEq :
                                         first =
                                           { qualType :=
-                                              normalizeAppResultByProvenance p1
+                                              normalizeAppResultByProvenance (joinPoison p1 p)
                                                 { etyp := etyp3
                                                   poison := joinPoison p1 (joinPoison p p3)
                                                   pred := pred3 }
@@ -1141,17 +1141,17 @@ lemma typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent
                                             nextTag' := result3.nextTag'
                                             regime' := result3.regime' } := by
                                       simpa using happly.symm
-                                    by_cases hp1T : p1 = true
+                                    by_cases hp1pT : (joinPoison p1 p) = true
                                     ·
                                         have : first.qualType.pred = Predicate.noPred := by
-                                          simp [hfirstEq, normalizeAppResultByProvenance, hp1T]
+                                          simp [hfirstEq, normalizeAppResultByProvenance, hp1pT]
                                         have : False := by
                                           simp [this] at hfirstPredQ
                                         exact False.elim this
                                     ·
                                         have hpred3 : pred3 = Predicate.guardClosure k arg_name pred_body var_env := by
                                           have hpredEq : first.qualType.pred = pred3 := by
-                                            simp [hfirstEq, normalizeAppResultByProvenance, hp1T]
+                                            simp [hfirstEq, normalizeAppResultByProvenance, hp1pT]
                                           simp [hpredEq] at hfirstPredQ
                                           exact hfirstPredQ
                                         have hltFuel : fuel'' < fuel'' + 1 + 1 + 1 := by
@@ -1433,7 +1433,7 @@ lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
                                     have hfirstEq :
                                         first =
                                           { qualType :=
-                                              normalizeAppResultByProvenance p1
+                                              normalizeAppResultByProvenance (joinPoison p1 p)
                                                 { etyp := etyp3
                                                   poison := joinPoison p1 (joinPoison p p3)
                                                   pred := pred3 }
@@ -1443,17 +1443,17 @@ lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
                                             nextTag' := result3.nextTag'
                                             regime' := result3.regime' } := by
                                       simpa using happly.symm
-                                    by_cases hp1T : p1 = true
+                                    by_cases hp1pT : (joinPoison p1 p) = true
                                     ·
                                         have : first.qualType.pred = Predicate.noPred := by
-                                          simp [hfirstEq, normalizeAppResultByProvenance, hp1T]
+                                          simp [hfirstEq, normalizeAppResultByProvenance, hp1pT]
                                         have : False := by
                                           simp [this] at hfirstPredQ
                                         exact False.elim this
                                     ·
                                         have hpred3 : pred3 = Predicate.guardClosure k arg_name pred_body var_env := by
                                           have hpredEq : first.qualType.pred = pred3 := by
-                                            simp [hfirstEq, normalizeAppResultByProvenance, hp1T]
+                                            simp [hfirstEq, normalizeAppResultByProvenance, hp1pT]
                                           simp [hpredEq] at hfirstPredQ
                                           exact hfirstPredQ
                                         have hltFuel : fuel'' < fuel'' + 1 + 1 + 1 := by
