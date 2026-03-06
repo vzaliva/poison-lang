@@ -8074,6 +8074,48 @@ private lemma applyPFnTClosure_ok_poison_pred_of_p1_true
           rw [hmode] at hcontra
           simp [bind, Except.bind] at hcontra
 
+private lemma applyPFnTClosure_mem_subset
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat) (tcl : PFnTClosure) (r : TypeResult)
+  (happly :
+    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+  ∀ l, r.memEnv'.contains l → result2.memEnv'.contains l := by
+  intro l hcontains
+  cases fuel with
+  | zero =>
+      simp [applyPFnTClosure] at happly
+  | succ fuelBody =>
+      cases tcl with
+      | regular x body env =>
+          rcases applyPFnTClosure_regular_inv
+              ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuelBody x body env r happly with
+            ⟨result3, htcBody, _hsub, hr⟩
+          subst hr
+          let bodyCtx : TypeContext :=
+            { ctx with
+              pc := joinPoison p (joinPoison ctx.pc p1)
+              memEnv := result2.memEnv'
+              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              tagEnv := result2.tagEnv'
+              nextTag := result2.nextTag'
+              nextLoc := result2.nextLoc'
+              regime := result2.regime' }
+          have hsub_body :
+              ∀ l, result3.memEnv'.contains l → bodyCtx.memEnv.contains l :=
+            typecheckExpr_pure_mem_subset_of_toPExpr
+              (ctx := bodyCtx) (e := PExpr.toExpr body) (pe := body)
+              (fuel := fuelBody) (res := result3)
+              (hpe := by simpa using toExpr_toPExpr? body)
+              (htc := by simpa [bodyCtx] using htcBody)
+          simpa [bodyCtx] using hsub_body l hcontains
+      | extern x retSpec capturedEnv =>
+          exact False.elim <|
+            applyPFnTClosure_ioFree_extern_fails
+              ctx st1 st2 p p1 argEtyp argPoison argPred result2
+              (Nat.succ fuelBody) x retSpec capturedEnv r happly
+
 private lemma joinTypeResults_poison_pred_of_head_true_noPred
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (h_join : joinTypeResults ctx first rest = .ok res)
