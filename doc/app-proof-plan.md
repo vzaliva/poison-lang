@@ -12,8 +12,15 @@ Complete the remaining obligations in the `app` case of the fault-robustness ste
 (`stepFR_app`) in `LeanProofs/FaultRobustnessProofs.lean`, and all lemmas it depends upon.
 
 **Out of scope** (separate concerns):
-- `stepFR_ite_*`, `stepFR_kwhile` — separate expression-form proofs, not covered here
+- `stepFR_ite_*`, `stepFR_kwhile` — they stay `sorry` for this track; we are not spending
+  time proving them here
 - `memEnv_lookup_etyp_int` — axiom / issue #70; treated as a given primitive
+
+**Scope guard**:
+- App-proof work should not intentionally expand the proof surface so that
+  `stepFR_ite_*` / `stepFR_kwhile` become mandatory subtasks.
+- If progress on `stepFR_app` appears to require proving those lemmas, stop and reassess the
+  proof architecture instead of absorbing them into this plan.
 
 What makes `stepFR_app` hard:
 - runtime picks a specific closure alternative (member-oriented reasoning), while
@@ -115,212 +122,117 @@ Design details formerly in `doc/app-problem1.md` (deleted after implementation).
 
 ## 3. Current Status and Plan
 
-### Checkpoint: 2026-03-05 — Body IH partially resolved, 9 sorry sites remain in chain
+### Checkpoint: 2026-03-06 — Body-IH strategy validated; 4 direct app-local sorry sites remain
 
 Build: **clean** (no errors; sorry-only warnings).
 
-**Sorry count in app chain**: 9 sorry sites (see `doc/app-problem2.md` for full inventory).
+**Current app-local blockers in `stepFR_app`**:
+- Arrow dirty-internal fallback
+- Arrow `agreeOnClean` locations conjunct in the `¬ qtypCleanUnder` branch
+- Parrow dirty-internal fallback
+- Parrow `agreeOnClean` locations conjunct in the `¬ qtypCleanUnder` branch
 
-Steps completed since last checkpoint:
-- **Issue H (partial)**: `StepFR_single_run` proved via `agreeOnClean_same_config` ✓
-- **Step 5/6 (partial)**: Arrow clean path fully proved.  Parrow clean path fully proved.
-  Parrow ¬qtypCleanUnder full 15-element StepFR tuple proved.
-- **Step 4 (partial)**: `regimeConsistentWithCtx` preservation RESOLVED:
-  - `applyFnTClosure_ok_regimeConsistentWithCtx` proved (was sorry)
-  - `applyPFnTClosure_ok_regimeConsistentWithCtx` proved (was sorry)
-  - `typecheckExpr_preserves_regimeConsistentWithCtx_main` app case proved
-    (circular dependency resolved by inlining with `IH'` from strong induction)
-- **Investigation**: Confirmed dirty-internal (¬internalPoisonClean) is NOT contradictory
-  with qtypCleanUnder for function types (p ≠ p1); genuinely needs per-run body IH.
+See `doc/app-problem2.md` for the current blocker inventory and rationale.
 
-#### In-scope sorrys (stepFR_app dependency chain)
+### What landed since the earlier plan
 
-See `doc/app-problem2.md` for the detailed 9-sorry inventory with line numbers and blockers.
+- `StepFR_single_run` proved via `agreeOnClean_same_config`.
+- Clean shared-member path proved for both arrow and parrow.
+- `¬ qtypCleanUnder` per-run scaffolding is in place for both arrow and parrow.
+- The `agreeOnClean` **variables conjunct** is proved in those `¬ qtypCleanUnder` branches.
+- `applyFnTClosure_ok_regimeConsistentWithCtx` and
+  `applyPFnTClosure_ok_regimeConsistentWithCtx` are proved.
+- `typecheckExpr_preserves_wfTagMeaningCtx_main` now already returns
+  `wfTagMeaningCtx ∧ QTypRespectsTagMeaning`; the combined-induction refactor has happened.
 
-Summary by group:
-- **Preservation (static fuel induction)**: 5 sorrys — `wfTagMeaningCtx` sub-cases (vlet,
-  newRef, assign, app) + full `QTypRespectsTagMeaning`.  Resolution: combined induction.
-- **Arrow dirty-internal + agreeOnClean**: 2 sorrys — per-run body IH + locations conjunct.
-- **Parrow dirty-internal + agreeOnClean**: 2 sorrys — mirror of arrow.
+### Scope discipline for the current track
 
-**Resolved since last checkpoint** (no longer sorry):
-- `applyFnTClosure_ok_regimeConsistentWithCtx` ✓
-- `applyPFnTClosure_ok_regimeConsistentWithCtx` ✓
-- `typecheckExpr_preserves_regimeConsistentWithCtx_main` app case ✓
-- All arrow clean path sorrys ✓
-- All parrow clean path sorrys ✓
-- Parrow ¬qtypCleanUnder per-run obligations (except agreeOnClean) ✓
-- `typecheckExpr_preserves_wfTagMeaningCtx` partial proof (trivial + chain + ite cases) ✓
+- We are **not** trying to clear all transitive `sorry`s in generic declarations.
+- In particular, `stepFR_ite_*` and `stepFR_kwhile` stay out of scope and remain `sorry`.
+- If app-local work starts pulling those lemmas into the critical path as proof obligations
+  we must discharge now, that is a **reassess signal**, not the next task.
 
-**`TypeSafety.lean`** — 0 sorrys in stepFR_app chain.
+### Proof-style rule
 
-### Checkpoint: 2026-03-04 — Steps 1–3 complete, build clean
+- Prefer proving invariant facts **inline inside `stepFR_*` proofs or app-specific closure
+  helper lemmas**, where the main induction and runtime evidence already exist.
+- Avoid introducing or expanding whole-syntax lemmas of the form
+  `typecheckExpr_preserves_<invariant>` unless there is a strong reason they cannot be avoided.
+- Reason: those lemmas duplicate syntax induction, force unrelated case analysis, and discard
+  runtime information that the `stepFR` proof already has available.
+- Keep the `StepFR` statement fixed whenever possible; do not add new invariant-preserving
+  premises or conclusions just to support these helper proofs.
+- Current justified exception: `typecheckExpr_preserves_wfTypeResult`, because `wfTypeResult`
+  must hold for **all** closure alternatives, including non-executed ones, so runtime `StepFR`
+  evidence is not enough.
 
-Build: **clean** (no errors; sorry-only warnings).
+### Status of the supporting lemmas
 
-Steps completed:
-- **Step 1**: `typecheckExpr_preserves_wfTypeResult` proved; `StepFR_implies_wfTypeResult` deleted;
-  `applyFnTClosure_regular_body_wfTypeResult` rewritten; signatures simplified.
-  One planned sorry remains in `typecheckApp_wfTypeResult`.
-- **Step 2 + 3 (Issue G)**: Resolved via closure member-matching fix.
-  `closure_same_config_tenv_env` and `peClosure_same_config_tenv_env` deleted (false).
-  `agreeCapturedEnv_same_toCaptured` deleted (subsumed).
-  `agreeValueUnder_same` rewritten with structural induction on `deepValueQTypProperty` tree.
-  All θ-transport sorry's in `stepFR_app` arrow clean path resolved.
+- `regimeConsistentWithCtx` support is good enough for the current app-local work:
+  the app-specific closure helpers are proved, even though the generic theorem still has
+  unrelated `ite` mode 3 / `kwhile` holes.
+- `wfTagMeaningCtx` / `QTypRespectsTagMeaning` support is partially built:
+  the combined theorem exists, but we should only fill further preservation cases if they are
+  directly forced by the app-local helpers.  Proving the whole generic theorem, especially its
+  `ite` / `kwhile` cases, is not a goal of this track.
 
-_(Out-of-scope sorrys such as `stepFR_ite_*`, `stepFR_kwhile`, are not tracked here.)_
+### Suspect generic preservation lemmas
 
-### What was done (prior sessions)
+These are technically relevant to the broader file state, but they are **not** part of the
+intended `doc/app-problem2.md` blocker path and should be treated as deferred unless a narrow
+app-local fragment is truly forced:
 
-- `stepFR_deref`: proved.
-- `joinTypeResults_QTypRespectsTagMeaning` + `QTypRespectsTagMeaning_joinStep`: proved.
-- `hTm_ctx''` in `applyFnTClosure_ok_wfTypeResult`: proved.
-- `agreeOnClean_same_config`, `agreeCapturedEnv_same`: proved.
-- Phase 0 (invariant initialization), Path D / APP-SIGMA-WITNESS-MISMATCH, strong mem-join,
-  member-to-joined transport cascade: all proved.
-- **Step 1 (Issue F)**: `typecheckExpr_preserves_wfTypeResult` proved (TypeSafety.lean);
-  `StepFR_implies_wfTypeResult` deleted; `applyFnTClosure_regular_body_wfTypeResult` rewritten;
-  `applyFnTClosure_ok_wfTypeResult` / `mapM_applyFnTClosure_forall_wfTypeResult` signatures
-  simplified (dropped StepFR/PredSat/TagMeaning parameters).
-- **Steps 2+3 (Issue G)**: Closure member-matching fix implemented.  Key changes:
-  - `closureCapturedVarsRegime` strengthened: `P = capturedVarsRegimeProperty ∧ capturedVarsTypingProperty`
-  - `θ` parameter added to `closureCapturedVarsRegime`, `consistentWithRegime`,
-    `valueConsistentWithRegime`, `MemberCvcrEvidence`, `trustedVarsClosureRegimeInit`,
-    `FaultRobustnessSpec`
-  - `deepValueQTypProperty.peClosure` gained `Expr.toPExpr? body = some pbody` field
-  - `agreeValueUnder_same` rewritten: takes `closureCapturedVarsRegime` as input, structural
-    induction on `deepValueQTypProperty` tree (no mutual recursion needed)
-  - Deleted: `closure_same_config_tenv_env`, `peClosure_same_config_tenv_env` (false),
-    `agreeCapturedEnv_same_toCaptured` (subsumed)
-  - New transport lemmas: `closureCapturedVarsRegime_transport_μ_θ`, `memberCvcrEvidence_transport_μ_θ`
-  - All θ-transport sorry's in arrow clean path resolved via chained transport:
-    `closureCapturedVarsRegime_transport_etyp` → `_monotone` → `_transport_μ_θ`
+- `typecheckExpr_preserves_regimeConsistentWithCtx_main`
+- `typecheckExpr_preserves_wfTagMeaningCtx_main`
+- `typecheckExpr_preserves_QTypRespectsTagMeaning`
 
-### Plan (risk-first)
+Working stance:
+- Do **not** make completion of `doc/app-problem2.md` depend on finishing these generic lemmas.
+- If one of the app-local holes needs support in this area, prefer:
+  - an inline argument inside the relevant `stepFR_app` branch, or
+  - a narrow app-specific helper about closure body contexts,
+  rather than proving the full whole-syntax theorem.
+- Revisit the generic lemmas later, after the blocker in `doc/app-problem2.md` is closed, if
+  they still matter for the broader `app` proof cleanup.
 
-**Step 1: Prove `typecheckExpr_preserves_wfTypeResult` — Issue F** ✓ DONE
+### Active plan (risk-first)
 
-Proved `typecheckExpr_preserves_wfTypeResult` in TypeSafety.lean (~800 lines, fuel induction).
-All sub-tasks completed:
-1. ✓ `applyFnTClosure_regular_body_wfTypeResult` rewritten to use the new lemma directly.
-2. ✓ `StepFR_implies_wfTypeResult` deleted.
-3. ✓ Signatures of `applyFnTClosure_ok_wfTypeResult` / `mapM_applyFnTClosure_forall_wfTypeResult`
-   simplified (dropped StepFR IH, PredSat, TagMeaning parameters).
-4. ✓ `typecheckApp_wfTypeResult` proved (Phase 4).
+1. **Finish arrow dirty-internal fallback**
+   - Replace the placeholder pack in the `¬ internalPoisonClean` branch with the same
+     per-run `StepFR_single_run` pattern already used in the `¬ qtypCleanUnder` branch.
+   - Key difference from dirty-outer: `resultAgreesIfClean` is not vacuous when `p1 = false`.
 
-**Step 2+3: Close same-config agreement — Issue G** ✓ DONE
+2. **Finish parrow dirty-internal fallback**
+   - Mirror the arrow dirty-internal solution.
+   - Reuse as much of the existing `¬ qtypCleanUnder` parrow scaffolding as possible.
 
-Resolved by the closure member-matching fix (strengthened `closureCapturedVarsRegime`).
-- False lemmas `closure_same_config_tenv_env` / `peClosure_same_config_tenv_env` deleted.
-- `agreeCapturedEnv_same_toCaptured` deleted (mutual recursion eliminated).
-- `agreeValueUnder_same` rewritten with structural induction on `deepValueQTypProperty` tree.
-- θ-transport sorry's in arrow clean path resolved.
-- All definitions gained `θ` parameter; ~105 call sites updated across FaultRobustnessProofs.lean.
+3. **Finish the two `agreeOnClean` locations conjuncts**
+   - Arrow `¬ qtypCleanUnder` locations conjunct
+   - Parrow `¬ qtypCleanUnder` locations conjunct
+   - The variables conjunct is already done, so the remaining cross-run work is now strictly
+     about locations.
 
-**Step 4: Preservation lemmas** — PARTIALLY RESOLVED
+4. **Only add preservation support that directly unblocks app helpers**
+   - If `applyFnTClosure_ok_*` / `applyPFnTClosure_ok_*` need more preservation support, fill
+     the narrowest cases needed for app progress.
+   - Do **not** widen this into a full cleanup of generic `typecheckExpr_preserves_*` theorems.
 
-Originally six lemmas with sorry (3 FnTClosure + 3 PFnTClosure).
-Two resolved, four remain:
+### Explicit non-goals for this plan
 
-- ✓ `applyFnTClosure_ok_regimeConsistentWithCtx` — PROVED (circular dependency resolved)
-- ✓ `applyPFnTClosure_ok_regimeConsistentWithCtx` — PROVED (mirror)
-- `applyFnTClosure_ok_wfTagMeaningCtx` — sorry (needs `typecheckExpr_preserves_wfTagMeaningCtx`)
-- `applyFnTClosure_ok_QTypRespectsTagMeaning` — sorry (needs `typecheckExpr_preserves_QTypRespectsTagMeaning`)
-- `applyPFnTClosure_ok_wfTagMeaningCtx` — sorry (mirror)
-- `applyPFnTClosure_ok_QTypRespectsTagMeaning` — sorry (mirror)
-
-**Resolution for `regimeConsistentWithCtx`**: The circular dependency (main induction → helpers
-→ wrapper → main) was broken by inlining the helper logic in the app case using `IH'` from
-strong induction.  Both FnTClosure and PFnTClosure cases handled in lines 17497-17649.
-
-**Remaining**: `wfTagMeaningCtx` and `QTypRespectsTagMeaning` need similar
-`typecheckExpr_preserves_*` theorems (~500 lines each).  The same inline-IH approach can
-resolve the circular dependency.  The `wfTagMeaningCtx` proof's ite case is already complete;
-vlet/newRef/assign/app sub-cases remain (see `doc/app-problem2.md` §4).
-
-**Step 5: Arrow fallback branches** — BLOCKED on body IH infrastructure
-
-Two sub-branches:
-
-**5a: ¬ `internalPoisonClean`** (1 sorry at line ~24544):
-`qtypCleanUnder` holds (p1 = false), so the existing shared-body sync logic applies.  The
-only difference from the clean path is `resultAgreesIfClean`, which uses `dirty_internal_arrow`
-(needs only `valueHasETyp`).  Most of the pack should come from the shared body IH.
-
-**5b: ¬ `qtypCleanUnder`** (9 sorrys at lines ~24578–24586):
-p1 = true, res.poison = true, res.pred = noPred.  Runs may pick different closures.  Need
-per-run body evidence via `StepFR_single_run` + join transport.  Cross-run `agreeOnClean`
-needs a pc-based argument (no new clean entries under poisoned PC).  `resultAgreesIfClean`
-already proved vacuously.
-
-**Step 6: Parrow mirror** — PARTIALLY DONE
-
-Infrastructure created (10 helpers).  4 of 13 refine block sorrys filled (join transport for
-QTypRespectsTagMeaning, wfTagMeaningCtx, wfTypeContext, regimeConsistentWithCtx).
-
-Remaining: 9 sorrys in refine block (same structure as arrow fallback) + 2 sorrys at
-clean/dirty split (shared-body IH + `dirty_internal_parrow`).
-
-### Issue H: Body StepFR IH evidence for fallback paths — PARTIALLY RESOLVED
-
-See **`doc/app-problem2.md`** for detailed analysis (revised 2026-03-05).
-
-**Resolved**:
-- ✓ `StepFR_single_run` proved via `agreeOnClean_same_config`.
-- ✓ Per-run body IH + membership transport for single-run obligations (all transport lemmas
-  proved: valueHasETyp, consistentWithRegime, valueConsistentWithRegime,
-  runtimeInstantiatesCtx, wfConfig).
-- ✓ Clean path (arrow + parrow): fully proved.
-- ✓ Parrow ¬qtypCleanUnder per-run obligations: fully proved (except agreeOnClean).
-
-**Remaining concentrated blocker**: Cross-run `agreeOnClean` — 4 sorry sites.
-- **High-risk item**: precise characterization of guard-clean entries under poisoned PC;
-  `qtypCleanUnder.guard` can make entries clean even when `qt.poison = true` (for non-function
-  types with active guard tags), so the naive "no new clean entries" claim is too strong.
-  Investigation needed (§4 in app-problem2.md).
-- Preservation lemmas (#1-4 in chain) need `typecheckExpr_preserves_wfTagMeaningCtx` /
-  `_QTypRespectsTagMeaning` — static fuel induction, independent of cross-run agreement.
-
-### Dependency order (updated 2026-03-05)
-
-```
-Step 1 (typecheckExpr_preserves_wfTypeResult) ✓ DONE
-Step 2+3 (closure member-matching fix) ✓ DONE
-Issue H infrastructure (StepFR_single_run) ✓ DONE
-Step 5/6 clean paths ✓ DONE
-Step 4 partial (regimeConsistentWithCtx preservation) ✓ DONE
-
-NEXT: Investigate guard-clean entries under poisoned PC  ← CRITICAL PATH
-  └─ determines if 4 agreeOnClean sorrys are trivial or need substantial work
-  └─ if vacuous: sorrys #5-8 collapse immediately
-  └─ if not: need agreeOnClean_poisonedPC_from_precall (High risk)
-
-Step 4 remainder (wfTagMeaningCtx / QTypRespectsTagMeaning preservation)
-  └─ independent of Issue H; needs static fuel induction (~500 lines each)
-  └─ can proceed in parallel with agreeOnClean investigation
-
-Step 5a (arrow ¬internalPoisonClean): depends on agreeOnClean (shared body, low risk)
-Step 5b (arrow ¬qtypCleanUnder agreeOnClean): depends on poisoned-PC investigation
-Step 6 (parrow mirror): structurally mirrors arrow paths
-```
+- Proving `stepFR_ite_mode3`
+- Proving `stepFR_ite_mode4`
+- Proving `stepFR_kwhile`
+- Proving every remaining case in generic preservation theorems just because they are present
 
 ### Stop / reassess conditions
 
-- ~~If `closure_same_config_tenv_env` turns out to be false~~ — **confirmed false; resolved via
-  closure member-matching fix (Issue G).**
-- ~~If the `mutual` block for `agreeCapturedEnv_same_toCaptured`~~ — **resolved; mutual recursion
-  eliminated by structural induction on evidence tree.**
-- ~~If `agreeOnClean_self` turns out to be hard~~ — **moot; using existing
-  `agreeOnClean_same_config` instead.**
-- If guard-clean entries survive the join under poisoned PC (investigation item 3 in §7
-  Step 4) AND neither static analysis nor pre-call agreement transport can handle them —
-  consider: (a) strengthening `joinMemEnvsStrong` to drop guards when both sides have
-  `poison = true`, or (b) adding a regime-level invariant that guard tags under poisoned PC
-  are always `R[k] = false`.
-- If preservation lemmas are not provable statically and cannot be derived from
-  `StepFR_single_run` (no `terminatesTo` witness for non-executed closures) — consider
-  restructuring the refine blocks to only use first-member evidence obtained via the
-  mapM wrapper + a direct first-member `terminatesTo` witness.
+- If the shortest route to `stepFR_app` starts requiring proofs of `stepFR_ite_*` or
+  `stepFR_kwhile`, stop and reassess rather than absorbing those lemmas into this track.
+- If a proposed app-proof refactor would increase reliance on generic body theorems with open
+  `ite` / `kwhile` cases, reject that refactor or replace it with a narrower app-specific
+  helper.
+- If the `agreeOnClean` locations conjuncts appear to need a new global invariant about
+  poisoned-PC guard cleanliness, pause and reassess before widening the theory surface.
 
 ## 4. Design History
 

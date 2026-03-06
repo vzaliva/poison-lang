@@ -1,289 +1,215 @@
 # Body StepFR IH Evidence Blocker
 
-Analysis of the remaining blockers for `stepFR_app` completion.
-
-**Scope**: Only `stepFR_app` and its direct dependency chain.  Excludes `stepFR_ite_*`,
-`stepFR_kwhile`, and their preservation sub-cases — those are separate concerns.
-
-## Current Status (2026-03-05)
-
-**Original blocker**: StepFR IH requires two runs evaluating the SAME expression, but the
-dirty-outer path (`p1=true`) may have different closure bodies.
-
-**Resolution status**: The per-run approach (`StepFR_single_run` + membership transport)
-works for all per-run obligations.  Cross-run `agreeOnClean` **variables conjuncts** are
-now fully proved for both arrow and parrow `¬qtypCleanUnder` paths.  The remaining
-concentrated blocker is **cross-run `agreeOnClean` locations conjuncts** — 2 narrowed sorry
-sites (arrow line ~26646, parrow line ~29242).
-
-Additionally, preservation lemma infrastructure is partially built:
-`typecheckExpr_preserves_wfTagMeaningCtx` has a partial fuel induction proof (trivial cases,
-chain cases, and ite proved; vlet/newRef/assign/app remain as sorry within the app dependency
-chain).  `typecheckExpr_preserves_QTypRespectsTagMeaning` remains as a full sorry.
-
-### App-chain sorry inventory
-
-| # | Line | Location | Blocker |
-|---|------|----------|---------|
-| 1 | 17961 | `wfTagMeaningCtx` vlet (hwf_mid) | Needs combined induction with QTypRespectsTagMeaning |
-| 2 | 17975 | `wfTagMeaningCtx` newRef | Needs QTypRespectsTagMeaning for stored pred |
-| 3 | 17977 | `wfTagMeaningCtx` assign | Needs structure extension + QTypRespectsTagMeaning |
-| 4 | 18044 | `wfTagMeaningCtx` app | Deep (closure body context well-formedness) |
-| 5 | 18061 | `QTypRespectsTagMeaning` | Full sorry (~500 lines, fuel induction) |
-| 6 | 25948 | arrow dirty-internal | Per-run body IH restructuring |
-| 7 | 26646 | arrow `agreeOnClean` locations | Guard-clean entry analysis |
-| 8 | 28503 | parrow dirty-internal | Mirror of #6 |
-| 9 | 29242 | parrow `agreeOnClean` locations | Mirror of #7 |
-
-Note: sorrys #1-5 feed into `applyFnTClosure_ok_wfTagMeaningCtx` /
-`applyFnTClosure_ok_QTypRespectsTagMeaning` and their PFnTClosure mirrors (4 sorry lemmas
-total that depend on the fuel induction being complete for the relevant cases).
-
-### Completed
-
-1. **`StepFR_single_run`** — proved ✓
-2. **Parrow clean shared path** — proved ✓
-3. **Parrow ¬qtypCleanUnder full 15-element StepFR tuple** — proved ✓
-4. **`regimeConsistentWithCtx` preservation (app case)** — proved ✓
-   (circular dependency resolved by inlining with `IH'` from strong induction)
-5. **Arrow dirty-internal structure** — investigated; confirmed NOT contradictory ✓
-6. **Various transport/membership lemmas** for join infrastructure ✓
-7. **Arrow `agreeOnClean` variables conjunct** (¬qtypCleanUnder path) — proved ✓
-   Uses `cleanUnder_of_monotone` + `agreeValueUnder_clean_extends` + `agreeValueUnder_clean_monotoneRegime`
-8. **Parrow `agreeOnClean` variables conjunct** (¬qtypCleanUnder path) — proved ✓
-   Mirror of arrow; accounts for `subst heq_cfg₀ heq_cfg₁` consuming config equalities
-9. **Made `joinTypeResults_regime_monotone`, `applyFnTClosure_regime_mono`,
-   `applyPFnTClosure_regime_mono` public** in TypeSafety.lean ✓
-10. **`applyFnTClosure_ok_regimeConsistentWithCtx`** and PFnTClosure mirror — proved ✓
-11. **`typecheckExpr_preserves_wfTagMeaningCtx` partial proof** — proved ✓
-    Fuel induction covering: num, bool, unit, str, var (all pred variants), fn, pfn,
-    extern* (impossible), rand/frand/print* (impossible), unaryop, deref, op, seq,
-    ite (all 4 modes).  Uses `EnvRespectsTagMeaning_joinMemEnvsStrong'` for join cases,
-    `EnvRespectsTagMeaning_mix` for vlet final transport.
-
-## 1. Background: How Function Application Works
-
-### Ott spec rules
-
-The Poison type system handles function application with **closure alternatives**.  A function
-type carries a list of typed closures:
-
-```
-ST1 -> ST2 # p tclosures tcls          (arrow / impure)
-ST1 -> ST2 # p tpclosures ptcls        (parrow / pure)
-```
-
-The list `tcls` arises because the typechecker doesn't know which branch created the closure
-(e.g., `if cond then (fun x -> e1) else (fun x -> e2)` yields two alternatives).
-
-**Multi-closure rules**: The typechecker evaluates each closure's body, then **joins** the
-post-call contexts conservatively: `JoinGStrong` (memory) drops single-sided predicates,
-`JoinL` (tags) keeps only entries that agree, `JoinR` (regime) keeps only entries that agree.
-
-### The three cases in the FR proof
-
-| Case | `p1` | `internalPoisonClean` | Both runs pick same closure? | Status |
-|------|------|-----------------------|-----------------------------|--------|
-| Clean | false | true | Yes | **DONE ✓** |
-| Dirty internal | false | false | **Not guaranteed** | Sorry #6 |
-| Dirty outer | true | n/a | **No** | Sorrys #7, #9 (narrowed) |
-
-**KEY FINDING**: `p` (internal poison in ETyp.arrow/parrow) ≠ `p1` (external poison in QTyp).
-`qtypCleanUnder.guard` requires `isFunctionType=false`, so only `qtypCleanUnder.clean` applies
-→ `p1=false`.  But `¬internalPoisonClean` means `p=true` (different variable!).  Both
-dirty-internal sorrys genuinely need per-run body IH infrastructure.
-
-**CORRECTION (2026-03-05)**: The dirty-internal case does NOT have shared closure info.
-`agreeValueUnder.dirty_internal_arrow` only requires `valueHasETyp` for both values — it
-does NOT guarantee `body₀ = body₁`. So the dirty-internal case may have different closures,
-same as the dirty-outer case. Both need per-run body IH via `StepFR_single_run`.
-
-The difference: dirty-internal has `p1=false` so `resultAgreesIfClean` for the result type
-may be non-vacuous (guard-clean results possible). Dirty-outer has `p1=true` and
-`res.qualType.poison=true, pred=noPred` so `resultAgreesIfClean` is vacuous.
+Focused note on the remaining blocker in `stepFR_app`.
 
-For dirty-internal, `res.qualType.poison = true` because `joinPoison p1 (joinPoison p ...)
-= joinPoison false (joinPoison true ...) = true`. So `resultAgreesIfClean` is non-vacuous
-only via guard (needs guard tag in result predicate + `R[k] = some true`). The
-`dirty_internal_arrow` constructor of `agreeValueUnder` can handle this since the result
-type should NOT be a function type.
+## Purpose
 
-## 2. Problem Statement
+This document tracks the **body-IH / cross-run agreement blocker** that still needs to be
+solved before we can return to [app-proof-plan.md](/work/doc/app-proof-plan.md) and continue
+finishing the `app` proof in the normal flow.
 
-The `StepFR` proof obligation requires **two runs evaluating the SAME expression**.  The IH
-from the fuel induction gives `StepFR` for sub-expressions at smaller fuel.
+It is **not** a full inventory of every remaining `sorry` in generic declarations.
 
-In the **clean** path, both runs share the same closure (from `agreeValueUnder.clean_internal_arrow`).
-StepFR IH applies directly.
+## Scope
 
-In the **dirty internal** and **dirty outer** paths, the two runs may pick **different**
-closure alternatives.  Since StepFR IH requires both runs to evaluate the same expression,
-it cannot be applied when the body expressions differ. Both paths need per-run
-`StepFR_single_run`.
+In scope:
+- The dirty-internal and `¬ qtypCleanUnder` fallback branches inside `stepFR_app`
+- The use of `StepFR_single_run` to recover per-run body evidence
+- The remaining `agreeOnClean` obligations that are specific to those branches
 
-## 3. Approach: Single-Run Corollary + Membership Transport
+Out of scope for this note:
+- `stepFR_ite_*`
+- `stepFR_kwhile`
+- Generic preservation cleanup, except where a very narrow helper is directly needed to finish
+  the blocker below
 
-### Step 1: `StepFR_single_run` — DONE ✓
+Scope guard:
+- If the shortest route to closing this blocker starts requiring proofs of `stepFR_ite_*` or
+  `stepFR_kwhile`, stop and reassess in the main plan instead of expanding this blocker note.
 
-Proved as a corollary of `StepFR` via self-agreement using `agreeOnClean_same_config`.
-Gives 9-element output tuple (θ', valueHasETyp, runtimeInstantiatesCtx,
-consistentWithRegime, valueConsistentWithRegime, wfTagMeaningCtx, wfTypeContext,
-regimeConsistentWithCtx, wfConfig).
+## Current Status (2026-03-06)
 
-### Step 2: Per-run body evidence via member chain — DONE ✓
+**Verdict**: the blocker is **partially solved, not fully solved**.
 
-For each run independently:
-1. `valueHasETyp.closure` → FnTClosure membership
-2. `applyFnTClosure_regular_inv_of_mapM_mem` → body typing extraction
-3. Construct body context + establish prerequisites
-4. Apply `StepFR_single_run` → post-body evidence
-5. `applyFnTClosure_ok_of_mem_mapM` → TypeResult membership
+What is already solved:
+- `StepFR_single_run` exists and is proved.
+- The per-run workaround is implemented in the `¬ qtypCleanUnder` branches for both arrow and
+  parrow.
+- The cross-run `agreeOnClean` **variables conjunct** is proved in those branches.
+- The clean shared-member path is proved.
 
-### Step 3: Transport per-run evidence to joined result — DONE for most obligations ✓
+What remains in `stepFR_app` itself:
+- Arrow dirty-internal fallback placeholder pack
+- Arrow `agreeOnClean` locations conjunct
+- Parrow dirty-internal fallback
+- Parrow `agreeOnClean` locations conjunct
 
-| Obligation | Transport lemma | Status |
-|-----------|----------------|--------|
-| `valueHasETyp` | `joinTypeResults_transport_valueHasETyp_from_member` | Done ✓ |
-| `consistentWithRegime` | `joinTypeResults_transport_consistentWithRegime_from_member` | Done ✓ |
-| `valueConsistentWithRegime` | `joinTypeResults_transport_valueConsistentWithRegime_from_member` | Done ✓ |
-| `runtimeInstantiatesCtx` | Composite (memEnv containment + varEnv extension) | Done ✓ |
-| `wfConfig` | Direct from body IH | Done ✓ |
-| `agreeOnClean` (variables) | Via regime monotonicity chain + backward transport | **Done ✓** |
-| `agreeOnClean` (locations) | Needs guard-clean entry analysis | **BLOCKED** (Step 5) |
+## 1. The Blocker
 
-### Step 4: Cross-run `agreeOnClean` locations conjunct — THE REMAINING BLOCKER
+The induction hypothesis for `StepFR` expects both runs to evaluate the **same expression**.
+That works in the clean shared-member case, but it fails in the dirty cases when the two runs
+may choose different closure bodies.
 
-#### Arrow and parrow `¬qtypCleanUnder` paths (p1 = true) — sorrys #7, #9
+This affects two situations:
+- **Dirty internal**: `p1 = false`, but `¬ internalPoisonClean`
+- **Dirty outer**: `¬ qtypCleanUnder` (equivalently the path where `p1 = true` in the app proof)
 
-The variables conjuncts are now fully proved. The **locations conjuncts** remain.
+The proposed fix was:
+1. derive a single-run corollary `StepFR_single_run`,
+2. apply it separately to each chosen body,
+3. transport the resulting facts from each selected member back to the joined app result.
 
-For each guard-clean location `l` in `res.memEnv'`, we need to show either:
-- `agreeLocUnder.agree_values`: both θs realize `l`, and the values agree
-- `agreeLocUnder.both_unrealized`: neither θ realizes `l`
+That approach is now validated, but not yet complete.
 
-**Investigation results** (from agent analysis):
-- Guard-clean entries CAN exist in `res.memEnv'` when `p1=true` — NOT vacuously true
-- Pre-existing entries that all alternatives leave intact survive with their guard predicates
-- Fresh realized locations need cross-run body IH (genuine blocker for different bodies)
-- For pre-existing locations: body execution can still modify runtime values at addresses
+## 2. What Has Been Validated
 
-**Approach options**:
-1. Show guard-clean locations in the join trace back to unmodified pre-existing entries
-   where pre-call agreement carries over
-2. For fresh locations: show they are unrealized in both θs (since body allocated them
-   after θ₀_body/θ₁_body were established)
+### A. `StepFR_single_run` works
 
-#### Dirty-internal (¬internalPoisonClean, p1=false) — sorrys #6, #8
+`StepFR_single_run` is proved via same-config self-agreement and is already being used in the
+fallback machinery.
 
-Same structure as dirty-outer: both may have different closures. Need per-run body IH via
-`StepFR_single_run`. Additionally, `resultAgreesIfClean` for the result type is non-vacuous
-(unlike dirty-outer where it's vacuous via `dirty_noPred_arrow`).
+### B. Per-run body extraction works
 
-The dirty-internal sorry currently uses `θ₀1, θ₁1` (pre-body maps) as witnesses. Needs
-restructuring to use `θ₀_body, θ₁_body` (post-body maps from `StepFR_single_run`).
+The proof already successfully performs the following pattern:
+1. extract the selected closure member for each run,
+2. recover body typing from the corresponding `applyFnTClosure` / `applyPFnTClosure` map,
+3. build the per-run body context,
+4. apply `StepFR_single_run`,
+5. transport the resulting evidence back through `joinTypeResults`.
 
-## 4. Preservation Lemmas (app dependency chain)
+### C. The variables half of `agreeOnClean` works
 
-### RESOLVED: `regimeConsistentWithCtx` preservation
+For the `¬ qtypCleanUnder` branches, the variables conjunct is already done using the expected
+monotonicity and transport chain.
 
-The `applyFnTClosure_ok_regimeConsistentWithCtx` and PFnTClosure mirrors are **fully proved**.
-The circular dependency in `typecheckExpr_preserves_regimeConsistentWithCtx_main` was resolved
-by inlining helper logic using `IH'` from strong induction.
+So the method is not speculative anymore.  The remaining work is concentrated in the parts
+listed below.
 
-### IN PROGRESS: `wfTagMeaningCtx` and `QTypRespectsTagMeaning`
+## 3. Remaining Work To Clear This Blocker
 
-`typecheckExpr_preserves_wfTagMeaningCtx_main` is partially proved via fuel induction
-(~200 lines). Completed expression cases: num, bool, unit, str, var, fn, pfn, extern*, rand,
-frand, print*, unaryop, deref, op, seq, ite (all 4 modes). Remaining sub-sorrys in the app
-dependency chain: **vlet, newRef, assign, app** (sorrys #1-4 above).
+### A. Dirty-internal arrow branch
 
-**Mutual dependency discovered**: `wfTagMeaningCtx` and `QTypRespectsTagMeaning` have a
-circular dependency through the `vlet` case:
-- `wfTagMeaningCtx` for the extended context needs `QTypRespectsTagMeaning` for the new binding
-- `QTypRespectsTagMeaning` for seq/vlet results needs `wfTagMeaningCtx` for intermediate contexts
+The dirty-internal arrow branch still ends in a placeholder pack.
 
-**Resolution approach**: Combine both into a single strong induction returning
-`wfTagMeaningCtx ∧ QTypRespectsTagMeaning`. This mirrors the approach used for
-`regimeConsistentWithCtx`.
+What remains:
+- replace the placeholder with the same per-run body-IH structure already used in the
+  `¬ qtypCleanUnder` branch,
+- discharge the non-vacuous `resultAgreesIfClean` obligation that appears because `p1 = false`.
 
-**Current sub-sorrys in `_main`** (app-relevant):
+### B. Dirty-internal parrow branch
 
-| Sub-sorry | Blocker | Effort |
-|-----------|---------|--------|
-| vlet (hwf_mid) | QTypRespectsTagMeaning for result1.qualType | Combined induction |
-| newRef | QTypRespectsTagMeaning for stored pred | Combined induction |
-| assign | Structure lemma extension + QTypRespectsTagMeaning | Combined induction + ~50 lines |
-| app | Closure body context well-formedness | Deep (uses IH' on body) |
+The dirty-internal parrow branch is the same conceptual problem as the arrow one, but is still
+left as a top-level `sorry`.
 
-**`StepFR_single_run` cannot be used** for non-executed closure alternatives (no
-`terminatesTo` witness). Previously tried and rejected (deleted in 02e7fcb).
-
-### Paths forward
-
-1. **Combined fuel induction** for `wfTagMeaningCtx ∧ QTypRespectsTagMeaning`: Would
-   resolve vlet, newRef, assign (3 sub-sorrys). Estimated ~100-200 additional lines on
-   top of existing proof.
-
-2. **App case via IH'**: The body is typechecked at smaller fuel, so IH' applies. The
-   challenge is establishing `wfTagMeaningCtx tm bodyCtx` for the closure body context
-   (captured vars + argument). This requires knowing captured vars' guard descs are in `tm`.
-
-## 5. Summary
-
-| Step | Status | Remaining effort |
-|------|--------|-----------------|
-| `StepFR_single_run` | **DONE ✓** | — |
-| Per-run body evidence | **DONE ✓** | — |
-| Transport to joined result | **DONE ✓** (except agreeOnClean locations) | — |
-| `agreeOnClean` variables conjuncts | **DONE ✓** (both arrow and parrow) | — |
-| `agreeOnClean` locations conjuncts | 2 narrowed sorrys (#7, #9) | 100–300 lines |
-| Dirty-internal per-run body IH | 2 sorrys (#6, #8) | 200–400 lines |
-| `wfTagMeaningCtx` partial proof | **DONE ✓** (4 app-chain sub-sorrys remain: #1-4) | — |
-| Combined `wfTagMeaningCtx ∧ QTypRespects` | Not started (resolves #1-3, #5) | 100–200 lines |
-| `wfTagMeaningCtx` app sub-case | sorry #4 | 100–200 lines |
-| **Total remaining in app chain** | 9 sorrys | **~500–1100 lines** |
-
-## 6. Implementation Order (recommended)
-
-1. **Combined `wfTagMeaningCtx ∧ QTypRespectsTagMeaning` induction** — resolves sorrys
-   #1-3 (vlet, newRef, assign sub-cases) and #5 (full QTypRespectsTagMeaning sorry).
-   Estimated ~100-200 lines of restructuring.
-
-2. **App case in `_main`** via IH' on closure body — resolves sorry #4.
-   Requires establishing `wfTagMeaningCtx tm bodyCtx` from closure captured vars evidence.
-   Estimated ~100-200 lines.
-
-3. **Dirty-internal per-run body IH** (sorrys #6, #8) — restructure to use
-   `StepFR_single_run` with `θ₀_body, θ₁_body` witnesses.
-
-4. **`agreeOnClean` locations conjuncts** (sorrys #7, #9) — analyze guard-clean entry
-   preservation through joins, prove locations trace back to pre-call state.
-
-### Key technique: agreeOnClean variables conjunct proof
-
-The variables conjunct for `agreeOnClean` at `ctxAfter ctxᵢ res` (joined result) uses a
-two-step transport:
-
-1. **Regime monotonicity chain**: Establish `Regime.monotoneStep result1.regime' res.regime'`
-   via `List.mapM_Except_preserves_property` (each `applyFnTClosure`/`applyPFnTClosure` result
-   is monotone) + `joinTypeResults_regime_monotone`.
-
-2. **Backward transport**: For clean variables in the joined result:
-   - `cleanUnder_of_monotone h_mono_res` → clean at `result1.regime'`
-   - `ctxAfter ctxᵢ res` has `varEnv = ctxᵢ.varEnv` (unchanged by body)
-   - Pre-call `hagree1.2` gives `agreeVarUnder` at pre-call regime
-   - `agreeValueUnder_clean_extends` transports through θ extension (memory/θ change)
-   - `agreeValueUnder_clean_monotoneRegime` transports through regime change
-
-### Key technique: wfTagMeaningCtx preservation (ite case)
-
-The ite case for `typecheckExpr_preserves_wfTagMeaningCtx` splits into 4 modes:
-
-- **Modes 1/2** (single branch): `res.memEnv' = resBranch.memEnv'` — direct from IH on the
-  active branch. `wfTagMeaningCtx` only depends on `varEnv` and `memEnv`; since `tagEnv`
-  changes don't affect it, the branch context has `wfTagMeaningCtx = hwf`.
-
-- **Modes 3/4** (join): `res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv'` — uses
-  `EnvRespectsTagMeaning_joinMemEnvsStrong'` which only needs the LEFT side's evidence.
-  For mode 4, IH on e1 provides `wfTagMeaningCtx` for the intermediate context
-  (same varEnv, updated memEnv).
+What remains:
+- mirror the arrow dirty-internal construction,
+- reuse the nearby parrow `¬ qtypCleanUnder` scaffolding where possible.
+
+### C. `agreeOnClean` locations conjuncts
+
+The remaining cross-run blocker in the `¬ qtypCleanUnder` branches is the **locations** half of
+`agreeOnClean`.
+
+For a clean location entry in the joined result, the proof still needs to show one of:
+- both runs realize the location with agreeing values, or
+- both runs leave it unrealized.
+
+This is the last unresolved cross-run obligation after the variables conjunct.
+
+## 4. Working Hypothesis
+
+The right path is still:
+- finish dirty-internal using the same per-run `StepFR_single_run` pattern,
+- then close the two locations-conjunct obligations.
+
+Nothing in the current file suggests a different architecture is needed yet.
+
+The main risk is narrower than before:
+- the locations conjunct may require a sharper characterization of which guard-clean memory
+  entries can survive the join under poisoned control flow.
+
+That is still an app-local issue.  It should not automatically expand into proving unrelated
+`ite`/`kwhile` theorems.
+
+## 5. Exit Condition
+
+This blocker note is finished when the four direct app-local holes are closed:
+- dirty-internal arrow fallback
+- dirty-internal parrow fallback
+- arrow locations conjunct
+- parrow locations conjunct
+
+At that point, control returns to [app-proof-plan.md](/work/doc/app-proof-plan.md) for the
+remaining `app` proof work.
+
+## 6. Bottom Line
+
+- The blocker is **not solved yet**.
+- The `StepFR_single_run` strategy is **already validated in code**.
+- The remaining work is **narrow** and still centered on the four app-local holes above.
+- This document should stay focused on that blocker only; broader proof-surface cleanup belongs
+  in the main plan, if needed at all.
+
+## 7. Small Guidance
+
+Use the existing `¬ qtypCleanUnder` branches as the primary template.
+
+Helpful reminders:
+- For the dirty-internal arrow/parrow branches, reuse the same per-run structure already used
+  in the `¬ qtypCleanUnder` branches:
+  - extract the chosen member with `closureCapturedVarsRegime_closure_extract` or
+    `closureCapturedVarsRegime_peClosure_extract`,
+  - recover body typing with `applyFnTClosure_regular_inv_of_mapM_mem` or
+    `applyPFnTClosure_regular_inv_of_mapM_mem`,
+  - run `StepFR_single_run` separately on each body,
+  - transport the resulting facts back with the existing `joinTypeResults_transport_*_from_member`
+    lemmas.
+- The main difference from the `¬ qtypCleanUnder` branches is not the structure; it is that
+  `resultAgreesIfClean` is **not vacuous** when `p1 = false`.  So keep the transported
+  `resultAgreesIfClean` evidence instead of trying to collapse it via the poisoned/noPred path.
+- For the locations conjunct, start from the same regime-monotonicity setup already used for
+  the variables conjunct:
+  - member monotonicity for each closure application,
+  - `joinTypeResults_regime_monotone`,
+  - `cleanUnder_of_monotone` to pull cleanliness back before the join.
+- A useful split for clean joined locations is:
+  - locations already present before the body runs,
+  - locations introduced by a selected body result.
+- For pre-existing locations, first try to transport the pre-call locations half of
+  `agreeOnClean` through the same theta-extension / regime-monotonicity path already used for
+  variables.
+- For body-produced locations, first try the `both_unrealized` route rather than immediately
+  trying to prove agreement of fresh values across runs.
+- If either subproblem starts forcing full generic preservation cleanup or proofs of
+  `stepFR_ite_*` / `stepFR_kwhile`, stop and return to [app-proof-plan.md](/work/doc/app-proof-plan.md)
+  for reassessment instead of widening this blocker note.
+
+## 8. Handoff Constraints
+
+If this note is handed to someone as a standalone assignment, the intended contract is:
+
+Deliverable:
+- Close the four app-local holes described above.
+- Keep the work localized to `stepFR_app` and closely related app-specific helper lemmas.
+- Leave `stepFR_ite_*` and `stepFR_kwhile` untouched.
+
+Preferred proof style:
+- Reuse the existing `StepFR_single_run` pattern.
+- Prefer inline reasoning inside the relevant `stepFR_app` branches or narrow app-specific
+  helpers over new whole-syntax `typecheckExpr_preserves_<invariant>` lemmas.
+- Reuse existing transport lemmas before inventing new abstractions.
+
+Constraints:
+- Do not change the statement of `StepFR`.
+- Do not add new global invariant-preservation premises or conclusions to `StepFR`.
+- Do not widen the task into generic typechecker-preservation cleanup.
+- Avoid relying on line numbers; search by lemma names, branch comments, and nearby helper names.
+
+Reassess triggers:
+- The shortest route appears to require proving `stepFR_ite_*` or `stepFR_kwhile`.
+- The shortest route appears to require finishing whole-syntax generic preservation lemmas.
+- The locations conjunct appears to require a new global invariant rather than a local transport
+  argument.
+
+In those cases, stop and hand control back to [app-proof-plan.md](/work/doc/app-proof-plan.md)
+instead of continuing to widen this blocker assignment.
