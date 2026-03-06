@@ -6710,13 +6710,13 @@ private lemma stepFR_ite
       | inl h_mode3 =>
         -- Mode 3: R(k) = none (conservative join)
         obtain ⟨k, deps, hmatch, hregime_none, res1, htc1, hbool, res2, htc2, res3, htc3,
-                hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison⟩ := h_mode3
+                hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, _hetyp, _hpred⟩ := h_mode3
         exact stepFR_ite_mode3 ctxᵢ predSat tm e1 e2 e3 fuel' res IH k deps hmatch hregime_none
           res1 res2 res3 htc1 hbool htc2 htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison
       | inr h_mode4 =>
         -- Mode 4: matchGuard fails (standard join)
         obtain ⟨⟨err, hmatch_fail⟩, res1, htc1, hbool, res2, htc2, res3, htc3,
-                hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison⟩ := h_mode4
+                hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, _hetyp, _hpred⟩ := h_mode4
         exact stepFR_ite_mode4 ctxᵢ predSat tm e1 e2 e3 fuel' res IH err hmatch_fail
           res1 res2 res3 htc1 hbool htc2 htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison
 

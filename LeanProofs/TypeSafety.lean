@@ -1824,7 +1824,10 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
             res.nextTag' = max res2.nextTag' res3.nextTag' ∧
             res.regime' = joinRegimes res2.regime' res3.regime' ∧
             res.qualType.poison = joinPoison ctx.pc (joinPoison res1.qualType.poison
-                                    (joinPoison res2.qualType.poison res3.qualType.poison)))
+                                    (joinPoison res2.qualType.poison res3.qualType.poison)) ∧
+            res.qualType.etyp = joinETyps res2.qualType.etyp res3.qualType.etyp
+                                  res2.qualType.poison res3.qualType.poison ∧
+            res.qualType.pred = Predicate.noPred)
    ∨
    (-- Mode 4: Standard (matchGuard fails)
     (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .error err) ∧
@@ -1846,7 +1849,10 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
           res.nextTag' = max res2.nextTag' res3.nextTag' ∧
           res.regime' = joinRegimes res2.regime' res3.regime' ∧
           res.qualType.poison = joinPoison ctx.pc (joinPoison res1.qualType.poison
-                                  (joinPoison res2.qualType.poison res3.qualType.poison))) := by
+                                  (joinPoison res2.qualType.poison res3.qualType.poison)) ∧
+          res.qualType.etyp = joinETyps res2.qualType.etyp res3.qualType.etyp
+                                res2.qualType.poison res3.qualType.poison ∧
+          res.qualType.pred = Predicate.noPred) := by
   intro htc
   cases fuel with
   | zero =>

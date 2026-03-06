@@ -1457,6 +1457,137 @@ private lemma EnvRespectsTagMeaning_mix
     exact h2.1 (GuardDescInEnvsDeep.intro qt k d
       (QTypInEnvs.inMem σ₂ Γ₂ l qt qtRoot hlookup hinq) hguard)
 
+/-- typecheckIf always produces a result with pred = noPred in ioFree mode. -/
+private lemma typecheckIf_pred_noPred
+    (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult)
+    (htc : typecheckIf .ioFree ctx e1 e2 e3 fuel = .ok res) :
+    res.qualType.pred = Predicate.noPred := by
+  cases fuel with
+  | zero => simp [typecheckIf] at htc
+  | succ fuel' =>
+    unfold typecheckIf at htc
+    simp only [bind, Except.bind] at htc
+    cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
+    | ok kd =>
+      obtain ⟨k, deps⟩ := kd
+      simp only [hmatch] at htc
+      cases hregime : ctx.regime.lookup? k with
+      | some b =>
+        cases b with
+        | true =>
+          simp only [hregime] at htc
+          cases htc1 : typecheckExpr .ioFree { ctx with pureCtx := true } e1 fuel' with
+          | error e => simp only [htc1] at htc; cases htc
+          | ok result1 =>
+            simp only [htc1] at htc
+            match hq1 : result1.qualType with
+            | ⟨etyp1, _, _⟩ =>
+              simp only [hq1] at htc
+              by_cases hbool : etyp1 = ETyp.bool
+              · have heq_mode : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+                simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte,
+                  pure, Except.pure, heq_mode] at htc
+                cases htc2 : typecheckExpr .ioFree _ e2 fuel' with
+                | error e => rw [htc2] at htc; simp at htc
+                | ok result2 =>
+                  rw [htc2] at htc; simp at htc
+                  match hq2 : result2.qualType with
+                  | ⟨_, _, _⟩ =>
+                    simp only [hq2] at htc
+                    injection htc with heq_res; rw [← heq_res]
+              · simp only [hbool, bne_iff_ne, ne_eq, not_true_eq_false, ↓reduceIte] at htc
+                cases htc
+        | false =>
+          simp only [hregime] at htc
+          cases htc1 : typecheckExpr .ioFree { ctx with pureCtx := true } e1 fuel' with
+          | error e => simp only [htc1] at htc; cases htc
+          | ok result1 =>
+            simp only [htc1] at htc
+            match hq1 : result1.qualType with
+            | ⟨etyp1, _, _⟩ =>
+              simp only [hq1] at htc
+              by_cases hbool : etyp1 = ETyp.bool
+              · have heq_mode : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+                simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte,
+                  pure, Except.pure, heq_mode] at htc
+                cases htc3 : typecheckExpr .ioFree _ e3 fuel' with
+                | error e => rw [htc3] at htc; simp at htc
+                | ok result3 =>
+                  rw [htc3] at htc; simp at htc
+                  match hq3 : result3.qualType with
+                  | ⟨_, _, _⟩ =>
+                    simp only [hq3] at htc
+                    injection htc with heq_res; rw [← heq_res]
+              · simp only [hbool, bne_iff_ne, ne_eq, not_true_eq_false, ↓reduceIte] at htc
+                cases htc
+      | none =>
+        simp only [hregime] at htc
+        cases htc1 : typecheckExpr .ioFree { ctx with pureCtx := true } e1 fuel' with
+        | error e => simp only [htc1] at htc; cases htc
+        | ok result1 =>
+          simp only [htc1] at htc
+          match hq1 : result1.qualType with
+          | ⟨etyp1, _, _⟩ =>
+            simp only [hq1] at htc
+            by_cases hbool : etyp1 = ETyp.bool
+            · simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte,
+                pure, Except.pure] at htc
+              cases htc2 : typecheckExpr .ioFree _ e2 fuel' with
+              | error e => rw [htc2] at htc; simp at htc
+              | ok result2 =>
+                rw [htc2] at htc; simp at htc
+                match hq2 : result2.qualType with
+                | ⟨etyp2, _, _⟩ =>
+                  simp only [hq2] at htc
+                  cases htc3 : typecheckExpr .ioFree _ e3 fuel' with
+                  | error e => rw [htc3] at htc; cases htc
+                  | ok result3 =>
+                    rw [htc3] at htc
+                    match hq3 : result3.qualType with
+                    | ⟨etyp3, _, _⟩ =>
+                      simp only [hq3] at htc
+                      by_cases hcompat : beqETypSignature etyp2 etyp3 = false
+                      · simp only [hcompat, ↓reduceIte] at htc; cases htc
+                      · have hcompat' : beqETypSignature etyp2 etyp3 = true := by
+                          cases h : beqETypSignature etyp2 etyp3 <;> simp_all
+                        simp only [hcompat'] at htc; cases htc; simp [*]
+            · simp only [hbool, bne_iff_ne, ne_eq, not_true_eq_false, ↓reduceIte] at htc
+              cases htc
+    | error err =>
+      simp only [hmatch] at htc
+      cases htc1 : typecheckExpr .ioFree ctx e1 fuel' with
+      | error e => simp only [htc1] at htc; cases htc
+      | ok result1 =>
+        simp only [htc1] at htc
+        match hq1 : result1.qualType with
+        | ⟨etyp1, _, _⟩ =>
+          simp only [hq1] at htc
+          by_cases hbool : etyp1 = ETyp.bool
+          · simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at htc
+            cases htc2 : typecheckExpr .ioFree _ e2 fuel' with
+            | error e => rw [htc2] at htc; cases htc
+            | ok result2 =>
+              rw [htc2] at htc
+              match hq2 : result2.qualType with
+              | ⟨etyp2, _, _⟩ =>
+                simp only [hq2] at htc
+                cases htc3 : typecheckExpr .ioFree _ e3 fuel' with
+                | error e => rw [htc3] at htc; cases htc
+                | ok result3 =>
+                  rw [htc3] at htc
+                  match hq3 : result3.qualType with
+                  | ⟨etyp3, _, _⟩ =>
+                    simp only [hq3] at htc
+                    by_cases hcompat : beqETypSignature etyp2 etyp3 = false
+                    · simp only [hcompat, Bool.not_eq_true', ↓reduceIte] at htc; cases htc
+                    · have hcompat' : beqETypSignature etyp2 etyp3 = true := by
+                        cases h : beqETypSignature etyp2 etyp3 <;> simp_all
+                      simp only [hcompat', Bool.not_true, Bool.false_eq_true, ↓reduceIte,
+                        pure, Except.pure, Except.ok.injEq] at htc
+                      subst htc; rfl
+          · simp only [hbool, bne_iff_ne, ne_eq, not_true_eq_false, ↓reduceIte] at htc
+            cases htc
+
 /-- Transport QTypRespectsTagMeaning across same etyp when pred becomes noPred.
     The self-descriptor vanishes (noPred → none), and nested descriptors through etyp
     are unchanged. -/
@@ -1953,8 +2084,8 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                   IH_qt (fuel' - 1) (by omega) tm { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 res2 hwf_true htc2'
                 refine ⟨?_, ?_⟩
                 · simpa [wfTagMeaningCtx, ctxAfter, hmemEnv] using hIH2_wf
-                · -- TODO: need res.qualType.pred = noPred (not in structure lemma)
-                  sorry
+                · exact QTypRespectsTagMeaning_of_etyp_noPred tm res2.qualType res.qualType
+                    hIH2_qt hetyp_res (typecheckIf_pred_noPred ctx e1 e2 e3 fuel' res htc)
             | inr h_rest =>
               cases h_rest with
               | inl h2 =>
@@ -1970,13 +2101,13 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                     IH_qt (fuel' - 1) (by omega) tm ctxFalse e3 res3 hwf_false htc3'
                   refine ⟨?_, ?_⟩
                   · simpa [wfTagMeaningCtx, ctxAfter, hmemEnv, ctxFalse] using hIH3_wf
-                  · -- TODO: need res.qualType.pred = noPred (not in structure lemma)
-                    sorry
+                  · exact QTypRespectsTagMeaning_of_etyp_noPred tm res3.qualType res.qualType
+                      hIH3_qt hetyp_res (typecheckIf_pred_noPred ctx e1 e2 e3 fuel' res htc)
               | inr h_rest2 =>
                 cases h_rest2 with
                 | inl h3 =>
                     -- Mode 3: both branches, join. res.qualType.pred = noPred.
-                    rcases h3 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, htc2, res3, htc3_raw, hmemEnv, _, _, _, _, _⟩
+                    rcases h3 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, htc2, res3, htc3_raw, hmemEnv, _, _, _, _, _hpoison, hetyp_res, hpred_res⟩
                     let branchPc := joinPoison ctx.pc res1.qualType.poison
                     let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
                     have htc2' : typecheck .ioFree ctxTrue e2 (fuel' - 1) = .ok res2 := by
@@ -2000,11 +2131,24 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                     · simp only [wfTagMeaningCtx, ctxAfter]
                       rw [hmemEnv]
                       exact EnvRespectsTagMeaning_joinMemEnvsStrong' tm ctx.varEnv res2.memEnv' res3.memEnv' hIH2'
-                    · -- TODO: joinStep + transport (eta-expansion mismatch on QTypRespectsTagMeaning)
-                      sorry
+                    · -- Use joinStep + etyp_noPred transport.
+                      -- @[reducible] QTypRespectsTagMeaning requires intro + full application.
+                      cases hq2 : res2.qualType with
+                      | mk e2 p2 pred2 =>
+                      cases hq3 : res3.qualType with
+                      | mk e3' p3 pred3 =>
+                      have hjoin_qt : QTypRespectsTagMeaning tm
+                          ⟨joinETyps e2 e3' p2 p3, joinPoison p2 p3, joinPredicates pred2 pred3⟩ :=
+                        QTypRespectsTagMeaning_joinStep tm e2 e3' p2 p3 pred2 pred3
+                          (hq2 ▸ hIH2_qt) (hq3 ▸ hIH3_qt)
+                      simp only [hq2, hq3] at hetyp_res
+                      intro q' k' d' hinq hgd
+                      exact QTypRespectsTagMeaning_of_etyp_noPred tm
+                        ⟨joinETyps e2 e3' p2 p3, joinPoison p2 p3, joinPredicates pred2 pred3⟩
+                        res.qualType hjoin_qt hetyp_res hpred_res hinq hgd
                 | inr h4 =>
                     -- Mode 4: matchGuard fails, both branches, join. res.qualType.pred = noPred.
-                    obtain ⟨⟨err, _hmatch_fail⟩, res1, htc1, _hbool, res2, htc2, res3, htc3_raw, hmemEnv, _, _, _, _, _⟩ := h4
+                    obtain ⟨⟨err, _hmatch_fail⟩, res1, htc1, _hbool, res2, htc2, res3, htc3_raw, hmemEnv, _, _, _, _, _hpoison, hetyp_res, hpred_res⟩ := h4
                     let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
                                                          nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
                     let pc' := joinPoison ctx.pc res1.qualType.poison
@@ -2033,8 +2177,20 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                     · simp only [wfTagMeaningCtx, ctxAfter]
                       rw [hmemEnv]
                       exact EnvRespectsTagMeaning_joinMemEnvsStrong' tm ctx.varEnv res2.memEnv' res3.memEnv' hIH2'
-                    · -- TODO: joinStep + transport (eta-expansion mismatch on QTypRespectsTagMeaning)
-                      sorry
+                    · -- @[reducible] QTypRespectsTagMeaning requires intro + full application.
+                      cases hq2 : res2.qualType with
+                      | mk e2' p2 pred2 =>
+                      cases hq3 : res3.qualType with
+                      | mk e3' p3 pred3 =>
+                      have hjoin_qt : QTypRespectsTagMeaning tm
+                          ⟨joinETyps e2' e3' p2 p3, joinPoison p2 p3, joinPredicates pred2 pred3⟩ :=
+                        QTypRespectsTagMeaning_joinStep tm e2' e3' p2 p3 pred2 pred3
+                          (hq2 ▸ hIH2_qt) (hq3 ▸ hIH3_qt)
+                      simp only [hq2, hq3] at hetyp_res
+                      intro q' k' d' hinq hgd
+                      exact QTypRespectsTagMeaning_of_etyp_noPred tm
+                        ⟨joinETyps e2' e3' p2 p3, joinPoison p2 p3, joinPredicates pred2 pred3⟩
+                        res.qualType hjoin_qt hetyp_res hpred_res hinq hgd
         -- notExpr is not a constructor of Expr; it desugars during parsing
         -- ===== App and kwhile cases =====
         | app e1 e2 =>
@@ -8047,6 +8203,145 @@ private lemma applyPFnTClosure_ok_poison_pred_of_p1_true
                                 nextTag' := result3.nextTag'
                                 regime' := result3.regime' } : Except String TypeResult) = Except.ok r := by
                         simpa [hsub', hq3, pure, Except.pure, normalizeAppResultByProvenance] using happly
+                      have hr :
+                          { qualType := { etyp := et3, poison := true, pred := Predicate.noPred }
+                            memEnv' := result3.memEnv'
+                            tagEnv' := result3.tagEnv'
+                            nextLoc' := result3.nextLoc'
+                            nextTag' := result3.nextTag'
+                            regime' := result3.regime' } = r := by
+                        exact Except.ok.inj happly'
+                      subst hr
+                      simp
+      | extern x retSpec capturedEnv =>
+          have hmode : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by
+            decide
+          have hcontra := happly
+          rw [hmode] at hcontra
+          simp [bind, Except.bind] at hcontra
+
+-- Generalized variants: when joinPoison p1 p = true (covers both p1=true and p=true cases).
+-- After the app-typing fix (AppPred (join p1 p) P3), normalizeAppResultByProvenance
+-- is called with (joinPoison p1 p), so either outer or internal poison being dirty
+-- forces poison=true, pred=noPred.
+private lemma applyFnTClosure_ok_poison_pred_of_p1p_true
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat) (tcl : FnTClosure) (r : TypeResult)
+  (h_p1p : joinPoison p1 p = true)
+  (happly :
+    applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+  r.qualType.poison = true ∧ r.qualType.pred = Predicate.noPred := by
+  unfold applyFnTClosure at happly
+  cases fuel with
+  | zero =>
+      simp at happly
+  | succ fuelBody =>
+      cases tcl with
+      | regular x body env =>
+          simp [bind, Except.bind] at happly
+          cases htc :
+              typecheckExpr .ioFree
+                { ctx with
+                  pc := joinPoison p (joinPoison p1 ctx.pc)
+                  memEnv := result2.memEnv'
+                  varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                    ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+                  tagEnv := result2.tagEnv'
+                  nextTag := result2.nextTag'
+                  nextLoc := result2.nextLoc'
+                  regime := result2.regime' } body fuelBody with
+          | error err =>
+              simp [htc] at happly
+          | ok result3 =>
+              simp [htc] at happly
+              cases hq3 : result3.qualType with
+              | mk et3 p3 pred3 =>
+                  cases hsub : isSubtype st2 result3.qualType with
+                  | false =>
+                      have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                        simpa [hq3] using hsub
+                      simp [hsub', hq3] at happly
+                  | true =>
+                      have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
+                        simpa [hq3] using hsub
+                      have happly' :
+                          (Except.ok
+                              { qualType := { etyp := et3, poison := true, pred := Predicate.noPred }
+                                memEnv' := result3.memEnv'
+                                tagEnv' := result3.tagEnv'
+                                nextLoc' := result3.nextLoc'
+                                nextTag' := result3.nextTag'
+                                regime' := result3.regime' } : Except String TypeResult) = Except.ok r := by
+                        simpa [hsub', hq3, pure, Except.pure, normalizeAppResultByProvenance, h_p1p] using happly
+                      have hr :
+                          { qualType := { etyp := et3, poison := true, pred := Predicate.noPred }
+                            memEnv' := result3.memEnv'
+                            tagEnv' := result3.tagEnv'
+                            nextLoc' := result3.nextLoc'
+                            nextTag' := result3.nextTag'
+                            regime' := result3.regime' } = r := by
+                        exact Except.ok.inj happly'
+                      subst hr
+                      simp
+      | extern x retSpec effects capturedEnv =>
+          have hmode : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by
+            decide
+          have hcontra := happly
+          rw [hmode] at hcontra
+          simp [bind, Except.bind] at hcontra
+
+private lemma applyPFnTClosure_ok_poison_pred_of_p1p_true
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat) (tcl : PFnTClosure) (r : TypeResult)
+  (h_p1p : joinPoison p1 p = true)
+  (happly :
+    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+  r.qualType.poison = true ∧ r.qualType.pred = Predicate.noPred := by
+  unfold applyPFnTClosure at happly
+  cases fuel with
+  | zero =>
+      simp at happly
+  | succ fuelBody =>
+      cases tcl with
+      | regular x body env =>
+          simp [bind, Except.bind] at happly
+          cases htc :
+              typecheckExpr .ioFree
+                { ctx with
+                  pc := joinPoison p (joinPoison ctx.pc p1)
+                  memEnv := result2.memEnv'
+                  varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                    ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+                  tagEnv := result2.tagEnv'
+                  pureCtx := true
+                  nextTag := result2.nextTag'
+                  nextLoc := result2.nextLoc'
+                  regime := result2.regime' } (PExpr.toExpr body) fuelBody with
+          | error err =>
+              simp [htc] at happly
+          | ok result3 =>
+              simp [htc] at happly
+              cases hq3 : result3.qualType with
+              | mk et3 p3 pred3 =>
+                  cases hsub : isSubtype st2 result3.qualType with
+                  | false =>
+                      have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                        simpa [hq3] using hsub
+                      simp [hsub', hq3] at happly
+                  | true =>
+                      have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
+                        simpa [hq3] using hsub
+                      have happly' :
+                          (Except.ok
+                              { qualType := { etyp := et3, poison := true, pred := Predicate.noPred }
+                                memEnv' := result3.memEnv'
+                                tagEnv' := result3.tagEnv'
+                                nextLoc' := result3.nextLoc'
+                                nextTag' := result3.nextTag'
+                                regime' := result3.regime' } : Except String TypeResult) = Except.ok r := by
+                        simpa [hsub', hq3, pure, Except.pure, normalizeAppResultByProvenance, h_p1p] using happly
                       have hr :
                           { qualType := { etyp := et3, poison := true, pred := Predicate.noPred }
                             memEnv' := result3.memEnv'
