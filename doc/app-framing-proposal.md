@@ -307,6 +307,29 @@ cases.
 This looks especially promising on the parrow side, where pure typing already constrains
 the post-body memory typing environment more tightly.
 
+A Lean-shaped statement sketch for that lemma could be:
+
+```lean
+/-- Sketch only: under a poisoned body `pc`, any post-body clean location must come
+from the incoming body memory typing environment, and it was already clean there. -/
+private lemma app_body_clean_loc_inherited_of_poisoned_pc
+  (bodyCtx : TypeContext) (body : Expr) (fuel : Nat) (result3 : TypeResult)
+  (hpc : bodyCtx.pc = true)
+  (htcBody : typecheckExpr .ioFree bodyCtx body fuel = .ok result3)
+  (hmono : Regime.monotoneStep bodyCtx.regime result3.regime')
+  {l : Loc} {qt_post : QTyp}
+  (hlookup_post : result3.memEnv'.lookup l = some qt_post)
+  (hclean_post : qtypCleanUnder result3.regime' qt_post) :
+  ∃ qt_pre,
+    bodyCtx.memEnv.lookup l = some qt_pre ∧
+    qtypCleanUnder bodyCtx.regime qt_pre := by
+  sorry
+```
+
+If the first implementation pass focuses on the pure `parrow` branch, the same statement
+can be instantiated with `body := PExpr.toExpr pbody` and the existing pure-typing bridge
+lemmas.
+
 ### B. Typed-evaluation preservation lemma for inherited clean locations
 
 This should **not** be phrased as a runtime-only lemma, because "clean" is not a runtime
@@ -347,6 +370,49 @@ Informally:
 This is especially needed on the arrow side, where evaluation may still allocate or write
 elsewhere.
 
+A location-local statement sketch for that second lemma could be:
+
+```lean
+/-- Sketch only: once `l` is known to be an inherited clean location, the two
+single-run body evaluations must preserve enough framing to re-establish the
+post-body `agreeLocUnder` obligation for `l`. -/
+private lemma app_inherited_clean_loc_agree_after_body
+  (predSat : PredSat)
+  (preCtx postCtx : TypeContext)
+  (μ₀_pre μ₁_pre μ₀_post μ₁_post : Memory)
+  (θ₀_pre θ₁_pre θ₀_post θ₁_post : RealizationMap)
+  {l : Loc} {qt_pre qt_post : QTyp}
+  (hlookup_pre : preCtx.memEnv.lookup l = some qt_pre)
+  (hlookup_post : postCtx.memEnv.lookup l = some qt_post)
+  (hloc_pre :
+    agreeLocUnder predSat preCtx.regime μ₀_pre μ₁_pre θ₀_pre θ₁_pre (l, qt_pre))
+  (hclean_pre : qtypCleanUnder preCtx.regime qt_pre)
+  (hclean_post : qtypCleanUnder postCtx.regime qt_post)
+  (hetyp_post_pre : qt_post.etyp = qt_pre.etyp)
+  (hpoison_post_pre : qt_post.poison = false → qt_pre.poison = false)
+  (hmono : Regime.monotoneStep preCtx.regime postCtx.regime)
+  (hpredCompat₀ :
+    ∀ (qt : QTyp) (v : Value),
+      qtypPredHolds predSat qt μ₀_pre v ↔ qtypPredHolds predSat qt μ₀_post v)
+  (hpredCompat₁ :
+    ∀ (qt : QTyp) (v : Value),
+      qtypPredHolds predSat qt μ₁_pre v ↔ qtypPredHolds predSat qt μ₁_post v)
+  (hunrealized₀ : θ₀_pre.lookup l = none → θ₀_post.lookup l = none)
+  (hunrealized₁ : θ₁_pre.lookup l = none → θ₁_post.lookup l = none)
+  (hvalue₀ :
+    ∀ a n, θ₀_pre.lookup l = some a → μ₀_pre.lookup a = some n →
+      θ₀_post.lookup l = some a ∧ μ₀_post.lookup a = some n)
+  (hvalue₁ :
+    ∀ a n, θ₁_pre.lookup l = some a → μ₁_pre.lookup a = some n →
+      θ₁_post.lookup l = some a ∧ μ₁_post.lookup a = some n) :
+  agreeLocUnder predSat postCtx.regime μ₀_post μ₁_post θ₀_post θ₁_post (l, qt_post) := by
+  sorry
+```
+
+This is deliberately location-local. If it turns out to need much more branch-specific
+transport data than this, that is evidence the fix is drifting toward a strengthened
+`StepFR` invariant rather than two narrow side lemmas.
+
 So the proposal is not to prove a fully general frame theorem first. It is to try a
 strictly narrower path:
 
@@ -370,6 +436,161 @@ High-level idea:
   usual step-style shape of:
   - an assumption about the incoming state/context
   - and a matching guarantee about the outgoing state/result
+
+One plausible Lean-shaped sketch for the added unary property is:
+
+```lean
+/-- Sketch only: unary framing fact for clean output locations that are inherited
+from the incoming context. Intended to be carried by `StepFR` for each run. -/
+def PreservesInheritedCleanLocsOneRun
+  (ctx : TypeContext) (res : TypeResult)
+  (μ_in μ_out : Memory) (θ_in θ_out : RealizationMap) : Prop :=
+  ∀ l qt_out,
+    (ctxAfter ctx res).memEnv.lookup l = some qt_out →
+    qtypCleanUnder (ctxAfter ctx res).regime qt_out →
+    ∃ qt_in,
+      ctx.memEnv.lookup l = some qt_in ∧
+      qtypCleanUnder ctx.regime qt_in ∧
+      qt_out.etyp = qt_in.etyp ∧
+      (qt_out.poison = false → qt_in.poison = false) ∧
+      (θ_in.lookup l = none → θ_out.lookup l = none) ∧
+      (∀ a n, θ_in.lookup l = some a → μ_in.lookup a = some n →
+        θ_out.lookup l = some a ∧ μ_out.lookup a = some n)
+```
+
+A cleaner refactor is **not** to splice two bare copies of that unary fact directly into
+the middle of `StepFR`.
+
+Instead, package all per-run postconditions into one unary **edge** judgment, and let
+the binary `StepFR` theorem return one instance of that judgment for each run.
+
+To make chaining explicit, the unary judgment should mention both the input and output
+configurations. Then the same predicate can expose a "next-step premises" eliminator.
+
+For example:
+
+```lean
+inductive StepFRUnaryEdge
+  (predSat : PredSat) (tm : TagMeaning)
+  (ctx : TypeContext) (res : TypeResult)
+  (cf_in : Config) (θ_in : RealizationMap)
+  (cf_out : Config) (o : Value) : Prop where
+  | intro
+      (θ_out : RealizationMap)
+      (hθext : wfExtendsMap θ_in θ_out)
+      (htyped : valueHasETyp θ_out o res.qualType.etyp)
+      (hwfTm : wfTagMeaningCtx tm (ctxAfter ctx res))
+      (hwfCtx : wfTypeContext (ctxAfter ctx res))
+      (hwfCfg : wfConfig cf_out)
+      (hric : runtimeInstantiatesCtx (ctxAfter ctx res) cf_out.memory cf_out.varEnv θ_out)
+      (hreg : regimeConsistentWithCtx (ctxAfter ctx res))
+      (hcwr :
+        consistentWithRegime predSat (ctxAfter ctx res).regime
+          (ctxAfter ctx res) cf_out.memory cf_out.varEnv θ_out)
+      (hvalc :
+        valueConsistentWithRegime predSat (ctxAfter ctx res).regime
+          res.qualType cf_out.memory θ_out o)
+      (hframe :
+        PreservesInheritedCleanLocsOneRun ctx res cf_in.memory cf_out.memory θ_in θ_out) :
+      StepFRUnaryEdge predSat tm ctx res cf_in θ_in cf_out o
+```
+
+and, crucially, add the explicit chaining view:
+
+```lean
+namespace StepFRUnaryEdge
+
+def θ_out
+  (h : StepFRUnaryEdge predSat tm ctx res cf_in θ_in cf_out o) : RealizationMap :=
+  match h with
+  | .intro θ_out .. => θ_out
+
+lemma next_step_premises
+  (h : StepFRUnaryEdge predSat tm ctx res cf_in θ_in cf_out o) :
+  wfTagMeaningCtx tm (ctxAfter ctx res) ∧
+  wfTypeContext (ctxAfter ctx res) ∧
+  wfConfig cf_out ∧
+  runtimeInstantiatesCtx
+    (ctxAfter ctx res) cf_out.memory cf_out.varEnv (θ_out h) ∧
+  regimeConsistentWithCtx (ctxAfter ctx res) ∧
+  consistentWithRegime predSat (ctxAfter ctx res).regime
+    (ctxAfter ctx res) cf_out.memory cf_out.varEnv (θ_out h) := by
+  cases h with
+  | intro θ_out _ _ hwfTm hwfCtx hwfCfg hric hreg hcwr _ _ =>
+      exact ⟨hwfTm, hwfCtx, hwfCfg, hric, hreg, hcwr⟩
+
+end StepFRUnaryEdge
+```
+
+Then `StepFR` itself can be refactored to return two unary edges plus the genuinely
+binary conclusions:
+
+```lean
+def StepFR
+  (mode : LeanPoison.EvalMode)
+  (ctx : TypeContext)
+  (e : Expr)
+  (res : TypeResult)
+  (predSat : PredSat)
+  (tm : TagMeaning) : Prop :=
+  ...
+      terminatesTo mode e ... cf₀ o₀ →
+      terminatesTo mode e ... cf₁ o₁ →
+      QTypRespectsTagMeaning tm res.qualType ∧
+      -- NEW: instead of exposing all unary post-state facts as a flat sequence
+      -- of conjuncts, package each run's unary output into one edge witness.
+      ∃ out₀ :
+          StepFRUnaryEdge predSat tm ctx res
+            { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } θ₀ cf₀ o₀,
+        ∃ out₁ :
+          StepFRUnaryEdge predSat tm ctx res
+            { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } θ₁ cf₁ o₁,
+          -- UNCHANGED IN SPIRIT: these remain the genuinely binary conclusions.
+          -- CHANGED IN FORM: they now consume `θ_out` projected from the unary edges
+          -- instead of raw `θ₀'`, `θ₁'` witnesses threaded directly in the tuple.
+          agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+            cf₀.memory cf₀.varEnv (StepFRUnaryEdge.θ_out out₀)
+            cf₁.memory cf₁.varEnv (StepFRUnaryEdge.θ_out out₁) ∧
+          resultAgreesIfClean predSat (ctxAfter ctx res).regime
+            cf₀.memory cf₁.memory
+            (StepFRUnaryEdge.θ_out out₀) (StepFRUnaryEdge.θ_out out₁)
+            res.qualType o₀ o₁
+```
+
+Under that refactor, `StepFR_single_run` becomes the natural reuse point for the unary
+part:
+
+```lean
+lemma StepFR_single_run
+  ...
+  (ht : terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o) :
+  QTypRespectsTagMeaning tm res.qualType ∧
+  -- NEW: the single-run API now projects the unary edge judgment directly.
+  -- This is the intended chaining interface for downstream proofs.
+  StepFRUnaryEdge predSat tm ctx res
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } θ cf o := by
+  ...
+```
+
+Conceptually, the proof would still instantiate the binary theorem with the same run on
+both sides, but the **API** exposed to consumers would now be the unary edge judgment. That
+is the right reuse direction:
+
+- do **not** try to derive the new unary framing fact from the old `StepFR_single_run`
+  after the fact
+- instead, strengthen `StepFR` once, and let `StepFR_single_run` project the unary edge
+
+This keeps the framing invariant unary at the level where it naturally lives, avoids
+repeating two ad hoc conjuncts throughout the code, and gives `stepFR_app` a clean way to
+obtain the same property for each body run by calling the same unary projection twice.
+
+More importantly, the chaining story is now visible in the interface itself:
+
+- `StepFR_single_run` gives a `StepFRUnaryEdge` from one config to the next
+- `StepFRUnaryEdge.next_step_premises` extracts exactly the standard premises needed to
+  start the next `StepFR` application at `ctxAfter ctx res` and `cf_out`
+- the same predicate therefore serves both as the unary summary and as the composition
+  boundary between adjacent proof steps
 
 Why this might help:
 
