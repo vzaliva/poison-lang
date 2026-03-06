@@ -1,0 +1,198 @@
+# Narrow `stepFR_app` Problem And Proposed Typing Fix
+
+This note isolates one remaining **IH-disconnect** case in `stepFR_app` and records
+one proposed fix.
+
+Scope of this note:
+
+- in scope: the cross-run body-synchronization / `resultAgreesIfClean` problem for
+  application
+- out of scope: the separate post-body location/frame blocker
+
+## 1. Exact Problematic Case
+
+The narrow open case is this:
+
+- the callee `e1` is a function value whose **internal arrow poison** is dirty
+- the callee's **outer qualified-type poison** is clean
+- the final application result is **non-function**
+- that final result is considered clean only through a **retained guard predicate**
+
+This combination is possible. A variable can store a function type whose internal
+arrow poison is dirty while the variable entry itself remains outer-clean:
+
+```text
+S(f) = (ST1 -> ST2 # poisoned tclosures tcls) :> clean { no_pred }
+------------------  :: var_no_pred
+pm ; R ; pc ; G ; S ; L |- f : ST1 -> ST2 # poisoned tclosures tcls :> join pc clean { no_pred } -| G ; L ; R
+```
+
+Under clean `pc`, looking up `f` gives a callee that is:
+
+- internally dirty
+- outer-clean
+
+That is the exact callee shape relevant here.
+
+## 2. Why This Can Lose Body Synchronization
+
+A runtime function value is still a single closure. The list lives only in the
+**typing-closure** component of the function type.
+
+For example, a conditional returning functions merges typing-closure sets:
+
+```text
+T2 = ST1 -> ST2 # p'  tclosures tcls2
+T3 = ST1 -> ST2 # p'' tclosures tcls3
+p    = join p' p''
+tcls = tcls2 U tcls3
+----------------------------------  :: if_std_fn
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3
+  : ST1 -> ST2 # p tclosures tcls :> join pc join p1 join p2 p3 { no_pred }
+    -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+```
+
+So the same source expression can evaluate to different runtime closures in two runs
+while still fitting the same static function type.
+
+This is exactly why FR does **not** require same-body agreement for internally dirty
+functions. In that case, the callee-side agreement clause is intentionally weak:
+
+- clean internal poison: same body + captured-environment agreement
+- dirty internal poison: only the right function type, no body synchronization
+
+That split is intentional and is the reason the proof cannot recover the normal
+cross-run body IH in this case.
+
+## 3. Where The Proof Gets Stuck
+
+The failing path is:
+
+1. The callee is **outer-clean**, so its `resultAgreesIfClean` premise can fire.
+2. The callee is **internally dirty**, so FR enters `dirty_internal_arrow` or
+   `dirty_internal_parrow`.
+3. From that clause the proof gets only unary typing facts (`valueHasETyp`), not:
+   - a shared body
+   - a shared binder
+   - captured-environment agreement
+4. So the normal cross-run body IH is unavailable, and the proof falls back to two
+   separate single-run body proofs.
+5. For the final result, the non-function application rules keep a predicate through
+   `AppPred p1 P3`.
+6. Since here `p1 = false`, that retained predicate can still make the final result
+   clean-under-regime.
+7. The final target therefore becomes a real cross-run agreement constructor:
+   - `withPred_true_eq`, or
+   - `withPred_true_ref`
+8. But those need a cross-run relation on the two final outputs, and the single-run
+   fallback does not provide one.
+
+That is the narrow remaining IH-disconnect problem.
+
+Other app cases are not the focus of this note. They either already use the normal
+shared-body IH, or the final clean-result premise closes immediately.
+
+## 4. Why The Inner/Outer Split Exists
+
+The inner/outer function-poison split was introduced earlier to solve exactly this
+kind of `stepFR_app` pressure without throwing away the meaning of outer provenance.
+
+The design intent is:
+
+- **outer poison** answers: "is this function value trusted as a value produced here?"
+- **internal arrow poison** answers: "may FR demand closure-body synchronization and
+  captured-environment agreement across runs?"
+
+So the split was added on purpose:
+
+- keep outer poison for call-site provenance and ordinary taint tracking
+- use internal poison to decide whether same-body reasoning is justified
+- do not allow guard-based de-poisoning of function values themselves
+
+Because of that history, any proposed fix should preserve the split for function
+values and change only the narrow app-result corner that still causes trouble.
+
+## 5. Proposed Typing Fix
+
+The proposed fix is a **typing change**, not an FR-spec change.
+
+### Current shape
+
+For non-function application results, the Ott rules currently keep the body
+predicate using only the callee's **outer** poison `p1`:
+
+```text
+----------------------------------------------------------------------  :: app_fn_singleton
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p p3 { AppPred p1 P3 } -| G3 ; L3 ; R3
+```
+
+The same shape appears in:
+
+- `app_fn_singleton`
+- `app_fn_cons_ref`
+- `app_fn_cons`
+- `app_pfn_singleton`
+- `app_pfn_cons_ref`
+- `app_pfn_cons`
+
+### Proposed change
+
+For those **non-function** application rules, gate predicate retention on the
+callee's internal poison `p` as well:
+
+```text
+AppPred p1 P3
+```
+
+becomes
+
+```text
+AppPred (join p1 p) P3
+```
+
+So if the callee is internally dirty (`p = true`), the final non-function app result
+does **not** retain the body predicate.
+
+### Why this fixes the narrow problem
+
+In the bad case of this note:
+
+- `p1 = false`
+- `p = true`
+
+so:
+
+```text
+AppPred (join p1 p) P3 = AppPred true P3
+```
+
+and the predicate is dropped.
+
+Then the final result can no longer become clean only through the guard case, so the
+proof never has to build `withPred_true_eq` or `withPred_true_ref` after losing body
+synchronization. The problematic branch closes immediately.
+
+Arrow/parrow result rules do not need any change here, because they already produce
+`no_pred`.
+
+## 6. Effect Of The Proposed Fix
+
+This is a conservative typing change.
+
+Effect on soundness for FR:
+
+- safer, because it removes one way for an internally dirty application result to look
+  clean
+- no FR theorem weakening is required
+
+Effect on precision for FR:
+
+- there is a real but narrow precision loss
+- the loss is only for **non-function** results of **internally dirty but outer-clean**
+  callees
+- that is, some results that currently become clean-under-regime via a retained guard
+  predicate would instead stay dirty
+
+Importantly, this does **not** remove the inner/outer split for function values
+themselves. It only narrows what non-function application results may recover from an
+internally dirty callee.
