@@ -33,6 +33,67 @@ What makes `stepFR_app` hard:
 
 ## 2. Current Status and Plan
 
+### Checkpoint: 2026-03-07 — Step 5 classified: current unary clause is not enough for `arrow`
+
+Build: **clean** (no errors; sorry-only warnings).
+
+What was checked:
+
+- the remaining inherited dirty-to-clean `arrow` branch was compared against the actual
+  `ioFree` typing rules (`typecheckVar`, `typecheckDeref`, `typecheckAssign`)
+- the bounded falsification target was not “the theorem is false”, but “can the body make an
+  inherited location final-clean without that location being pre-body clean?”
+
+What this showed:
+
+- yes, in principle: an impure body under `pc = true` can write an inherited location `l`
+  from a source value that is already clean-under-regime even when the pre-body entry at `l`
+  is not clean
+- the key shape is a write from a value whose guard tag is active in `regime` but not
+  syntactically known in `tagEnv`; in that case `typecheckVar` / `typecheckDeref` preserve
+  the guard predicate, and `typecheckAssign` can leave `l` final-clean-under-regime even
+  though `qt'` at `l` was not pre-body clean
+- this does **not** give a counterexample to fault-robustness by itself; the source value may
+  still agree across runs because it is clean
+- but it does show the current unary fact
+  `PreservesInheritedCleanLocsOneRun ...`
+  is not sufficient to finish the inherited dirty-to-clean `arrow` branch locally:
+  it only talks about locations that were already clean before the run, while the remaining
+  `arrow` case needs a summary about locations that become clean by being overwritten from a
+  clean source during the run
+
+Plan consequence:
+
+- keep the current unary clause for `parrow`; it was the right fix there
+- do **not** start proving the new conjunct in `StepFR` yet
+- the next design step is now to decide on a second unary/body-summary fact for impure
+  `arrow` bodies, rather than trying to force the current clause through the remaining
+  `arrow` branch
+
+### Checkpoint: 2026-03-07 — `arrow` validation paused at inherited dirty-to-clean case
+
+Build: **clean** (no errors; sorry-only warnings).
+
+What changed since the previous checkpoint:
+
+- the narrowed outer-not-clean `arrow` locations hole was decomposed into two explicit
+  residual subcases instead of one broad `sorry`
+- the inherited-clean subcase is now proved and follows the same pattern as `parrow`
+- the remaining `arrow` work is no longer just the fresh-location question
+
+What this revealed:
+
+- the fresh-location subcase is still a local `stepFR_app` obligation
+- but the inherited dirty-to-clean subcase is the actual plan-level fork:
+  an inherited location can be pre-body dirty, become final-clean after body updates, and
+  then the current `PreservesInheritedCleanLocsOneRun` interface does not directly apply
+- this means the earlier Step 4 summary (“`arrow` only needs a fresh-location cleanliness
+  fact”) was too optimistic
+- before proving the new unary conjunct in `StepFR`, we must first classify this inherited
+  dirty-to-clean `arrow` subcase as either:
+  1. locally solvable from existing assignment/update transport machinery, or
+  2. a genuine obstruction showing the current unary interface is too weak for `arrow`
+
 ### Checkpoint: 2026-03-07 — strengthened unary interface validated on `parrow`; keep the shape
 
 Build: **clean** (no errors; sorry-only warnings).
@@ -152,34 +213,39 @@ Execution sequence:
      under poisoned body `pc`; it did not expose a missing field in the unary interface.
    - Do not widen the unary theorem further at this point.
 
-5. **Close the narrowed outer-not-clean `arrow` location hole with the now-confirmed interface**
-   - Prove or isolate the local fact needed on the `arrow` side:
-     under poisoned body `pc`, any location newly introduced by the body cannot be clean in
-     the final typed result.
-   - Use that to split the `arrow` locations argument into the same two cases as `parrow`:
-     inherited clean locations handled by the strengthened unary interface, fresh locations
-     ruled out by dirty-fresh reasoning.
+5. **Classify the inherited dirty-to-clean `arrow` subcase before doing more unary work** — done
+   - Result:
+     the current unary clause is not enough for this branch.
+   - The missing shape is no longer “preserve an already-clean inherited location”, but
+     rather “explain why a final-clean inherited location is clean after the run”.
+   - In particular, the remaining `arrow` branch needs a way to summarize writes from
+     clean sources during an impure body, not just preservation of pre-body-clean cells.
+
+6. **Design the additional unary/body summary needed by impure `arrow` bodies**
+   - Candidate direction:
+     for an inherited location that is final-clean after one run, expose either
+     1. a pre-body clean witness for the same location, or
+     2. a clean source/witness explaining the final value written there.
+   - Reuse the assignment-specific “final clean after update” reasoning from
+     `StepFRAssign` as the template.
    - Stop point:
-     once the narrowed `arrow` hole closes without changing the `StepFR_single_run`
-     interface.
+     freeze the exact new statement before more local app proof work.
 
-6. **Only after both narrowed holes accept the interface, prove the new conjunct**
-   - Attack the semantic risk cases first: `newRef`, then assignment-style updates.
-   - Start from the reusable fragments already identified:
-     `theta_not_contains_if_not_in_memEnv`, the old-location transport in `stepFR_newRef`,
-     the final-clean-implies-old-clean assignment argument in `StepFRAssign`, and the pure
-     body memory / regime bridges used by the `parrow` path.
-   - Deliverable:
-     a proof of the new `PreservesInheritedCleanLocsOneRun ... θ θ'` conjunct inside
-     `StepFR_single_run`.
+7. **Use the new summary to finish the inherited dirty-to-clean `arrow` branch**
+   - Replace the current local dead-end at the inherited-location `sorry`s with the new
+     unary fact.
+   - Do not spend effort on the fresh-location `arrow` branch until this inherited branch
+     accepts the revised summary.
 
-7. **Return to the app proof only after the unary proof lands**
-   - Reuse the proved unary fact inside the broader dirty-internal arrow/parrow branches.
-   - Keep the narrowed `parrow` / `arrow` results as the checked template for that reuse.
+8. **Only after that, finish the narrowed `arrow` fresh-location subcase**
+   - Prove or isolate the local fact needed on the fresh `arrow` side:
+     under poisoned body `pc`, any location newly introduced by the body cannot become
+     final-clean in the problematic way.
 
-8. **Only widen further if the strengthened unary route remains coherent**
-   - If proving the new interface starts forcing unrelated invariants or major theorem
-     reshaping outside the body-execution path, pause and reassess before paying that cost.
+9. **Then return to proving unary facts in `StepFR`**
+   - Prove both unary summaries inside the proof-producing `StepFR` pipeline.
+   - Keep the current `PreservesInheritedCleanLocsOneRun` result for the `parrow` path
+     unless the new summary cleanly subsumes it.
 
 ## 3. Working Rules
 

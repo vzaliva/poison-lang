@@ -1495,7 +1495,7 @@ private lemma typecheckIf_pred_noPred
                   | ⟨_, _, _⟩ =>
                     simp only [hq2] at htc
                     injection htc with heq_res; rw [← heq_res]
-              · simp only [hbool, bne_iff_ne, ne_eq, not_true_eq_false, ↓reduceIte] at htc
+              · simp only [hbool, bne_iff_ne, ne_eq] at htc
                 cases htc
         | false =>
           simp only [hregime] at htc
@@ -1518,7 +1518,7 @@ private lemma typecheckIf_pred_noPred
                   | ⟨_, _, _⟩ =>
                     simp only [hq3] at htc
                     injection htc with heq_res; rw [← heq_res]
-              · simp only [hbool, bne_iff_ne, ne_eq, not_true_eq_false, ↓reduceIte] at htc
+              · simp only [hbool, bne_iff_ne, ne_eq] at htc
                 cases htc
       | none =>
         simp only [hregime] at htc
@@ -1551,7 +1551,7 @@ private lemma typecheckIf_pred_noPred
                       · have hcompat' : beqETypSignature etyp2 etyp3 = true := by
                           cases h : beqETypSignature etyp2 etyp3 <;> simp_all
                         simp only [hcompat'] at htc; cases htc; simp [*]
-            · simp only [hbool, bne_iff_ne, ne_eq, not_true_eq_false, ↓reduceIte] at htc
+            · simp only [hbool, bne_iff_ne, ne_eq] at htc
               cases htc
     | error err =>
       simp only [hmatch] at htc
@@ -1585,7 +1585,7 @@ private lemma typecheckIf_pred_noPred
                       simp only [hcompat', Bool.not_true, Bool.false_eq_true, ↓reduceIte,
                         pure, Except.pure, Except.ok.injEq] at htc
                       subst htc; rfl
-          · simp only [hbool, bne_iff_ne, ne_eq, not_true_eq_false, ↓reduceIte] at htc
+          · simp only [hbool, bne_iff_ne, ne_eq] at htc
             cases htc
 
 /-- Transport QTypRespectsTagMeaning across same etyp when pred becomes noPred.
@@ -10905,15 +10905,26 @@ lemma stepFR_app
                     -- Inherited location: l is in result1.memEnv' with type qt'
                     have hetyp_qt : qt.etyp = ETyp.int :=
                       memEnv_lookup_etyp_int res.memEnv' l qt hlookup_res
-                    have _hetyp_qt' : qt'.etyp = ETyp.int :=
+                    have hetyp_qt' : qt'.etyp = ETyp.int :=
                       memEnv_lookup_etyp_int result1.memEnv' l qt' hlookup_body
                     -- Establish qt' cleanness under result1.regime'
                     -- (bodies may change the type at l; qt' ≠ qt is possible)
                     have hclean_pre' : qtypCleanUnder result1.regime' qt' := by
                       by_cases hpf : qt'.poison = false
                       · exact qtypCleanUnder.clean hpf
-                      · -- qt'.poison = true → need guard; isolated sorry
-                        sorry
+                      · have hnotfun_qt' : qt'.etyp.isFunctionType = false := by
+                          simp [hetyp_qt', ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+                        cases htag_pre : qtypGuardTag qt' with
+                        | none =>
+                            -- Remaining hard case: the inherited pre-body entry has no
+                            -- active guard witness, yet the final post-body entry is clean.
+                            sorry
+                        | some k' =>
+                            by_cases hkpre : result1.regime'.lookup? k' = some true
+                            · exact qtypCleanUnder.guard k' htag_pre hkpre hnotfun_qt'
+                            · -- Remaining hard case: the inherited pre-body entry has a
+                              -- guard tag, but it is not active before the body.
+                              sorry
                     -- Use qt' cleanness to prove agreeLocUnder
                     have hlookup_pre :
                         (ctxAfter (ctxAfter ctxᵢ result2) result1).memEnv.lookup l =
