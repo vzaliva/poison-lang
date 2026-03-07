@@ -8962,8 +8962,201 @@ private lemma typecheckExpr_clean_lookup_origin_of_pc_true
                 ⟨qt_in, hlookup_in, hclean_in⟩
               exact ⟨qt_in, hlookup_in, hclean_in⟩
       | app e1 e2 =>
-          sorry
+          have htcApp : typecheckApp .ioFree ctx e1 e2 fuel' = .ok res := by
+            simpa [typecheckExpr] using htc
+          cases fuel' with
+          | zero =>
+              simp [typecheckApp] at htcApp
+          | succ fuelApp =>
+              obtain ⟨result2, result1, etyp2, p2, pred2, _hqt2, htc2, htc1, hcases⟩ :=
+                typecheckApp_arrow_structure_full ctx e1 e2 fuelApp res htcApp
+              let ctxFun : TypeContext :=
+                { ctx with
+                  memEnv := result2.memEnv'
+                  tagEnv := result2.tagEnv'
+                  nextLoc := result2.nextLoc'
+                  nextTag := result2.nextTag'
+                  regime := result2.regime' }
+              have hpcFun : ctxFun.pc = true := by
+                simpa [ctxFun] using hpc
+              have hbackToCtx :
+                  ∀ qt_mid,
+                    result1.memEnv'.lookup l = some qt_mid →
+                    qtypCleanUnder result1.regime' qt_mid →
+                    ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qtypCleanUnder ctx.regime qt_in := by
+                intro qt_mid hlookup_mid hclean_mid
+                rcases ih fuelApp (by omega) ctxFun e1 result1
+                    (by simpa [ctxFun] using htc1) hpcFun l qt_mid hlookup_mid hclean_mid with
+                  ⟨qt_arg, hlookup_arg, hclean_arg⟩
+                rcases ih fuelApp (by omega) ctx e2 result2
+                    (by simpa using htc2) hpc l qt_arg
+                    (by simpa [ctxFun] using hlookup_arg)
+                    (by simpa [ctxFun] using hclean_arg) with
+                  ⟨qt_in, hlookup_in, hclean_in⟩
+                exact ⟨qt_in, hlookup_in, hclean_in⟩
+              have hcontains_res : res.memEnv'.contains l := by
+                exact memEnv_contains_of_lookup_some res.memEnv' l qt_out hlookup_out
+              have hlookup_res_ctx :
+                  (ctxAfter ctx res).memEnv.lookup l = some qt_out := by
+                simpa [ctxAfter] using hlookup_out
+              have hclean_res_ctx :
+                  qtypCleanUnder (ctxAfter ctx res).regime qt_out := by
+                simpa [ctxAfter] using hclean_out
+              cases hcases with
+              | inl harrow =>
+                  obtain ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1,
+                      _hnpure, _hnempty, _hsub, hmap, heq_results, h_join⟩ := harrow
+                  have hmember_origin :
+                      ∀ srcRes, srcRes ∈ first :: rest → srcRes.memEnv'.contains l →
+                        ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qtypCleanUnder ctx.regime qt_in := by
+                    intro srcRes hsrc_mem hsrc_contains
+                    have hsrc_results : srcRes ∈ results := by
+                      simpa [heq_results] using hsrc_mem
+                    rcases list_mapM_ok_mem_output_exists_input
+                        (f := fun tcl =>
+                          applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuelApp)
+                        (xs := tcls) (ys := results) (y := srcRes)
+                        hmap hsrc_results with
+                      ⟨tcl, _htcl_mem, happly_src⟩
+                    rcases memEnv_lookup_some_of_contains srcRes.memEnv' l hsrc_contains with
+                      ⟨qt_src, hlookup_src⟩
+                    have hlookup_src_ctx :
+                        (ctxAfter ctx srcRes).memEnv.lookup l = some qt_src := by
+                      simpa [ctxAfter] using hlookup_src
+                    have hclean_src_ctx :
+                        qtypCleanUnder (ctxAfter ctx srcRes).regime qt_src := by
+                      exact
+                        joinTypeResults_lookup_member_clean_compat
+                          (ctx := ctx) (first := first) (src := srcRes) (rest := rest) (res := res)
+                          h_join hsrc_mem l qt_out qt_src hlookup_res_ctx hclean_res_ctx hlookup_src_ctx
+                    cases tcl with
+                    | regular x body tenv =>
+                        rcases applyFnTClosure_regular_structure
+                            ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuelApp x body tenv
+                            srcRes happly_src with
+                          ⟨fuelBody, hfuelBody⟩
+                        have happly_succ :
+                            applyFnTClosure .ioFree (FnTClosure.regular x body tenv)
+                              st1 st2 p p1 etyp2 p2 pred2 ctx result1 (Nat.succ fuelBody) = .ok srcRes := by
+                          simpa [hfuelBody] using happly_src
+                        rcases applyFnTClosure_regular_inv
+                            ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuelBody x body tenv srcRes
+                            happly_succ with
+                          ⟨result3, htcBody, _hsubBody, hr⟩
+                        let bodyCtx : TypeContext :=
+                          { ctx with
+                            pc := joinPoison p (joinPoison p1 ctx.pc)
+                            memEnv := result1.memEnv'
+                            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+                              ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
+                            tagEnv := result1.tagEnv'
+                            nextTag := result1.nextTag'
+                            nextLoc := result1.nextLoc'
+                            regime := result1.regime' }
+                        have hpcBody : bodyCtx.pc = true := by
+                          simp [bodyCtx, hpc, joinPoison]
+                        have hlookup_result3 : result3.memEnv'.lookup l = some qt_src := by
+                          simpa [hr] using hlookup_src
+                        have hclean_result3 : qtypCleanUnder result3.regime' qt_src := by
+                          simpa [ctxAfter, hr] using hclean_src_ctx
+                        rcases ih fuelBody (by omega) bodyCtx body result3
+                            (by simpa [bodyCtx] using htcBody)
+                            hpcBody l qt_src hlookup_result3 hclean_result3 with
+                          ⟨qt_mid, hlookup_mid_body, hclean_mid_body⟩
+                        exact
+                          hbackToCtx qt_mid
+                            (by simpa [bodyCtx] using hlookup_mid_body)
+                            (by simpa [bodyCtx] using hclean_mid_body)
+                    | extern x retSpec effects capturedEnv =>
+                        exact False.elim <|
+                          applyFnTClosure_ioFree_extern_fails
+                            ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuelApp
+                            x retSpec effects capturedEnv srcRes happly_src
+                  rcases joinTypeResults_mem_contains_head_or_rest
+                      ctx first rest res h_join l hcontains_res with
+                    hhead | ⟨srcRes, hsrc_rest, hsrc_contains⟩
+                  · exact hmember_origin first (by simp) hhead
+                  · exact hmember_origin srcRes (List.mem_cons_of_mem _ hsrc_rest) hsrc_contains
+              | inr hparrow =>
+                  obtain ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1,
+                      _hnempty, _hsub, hmap, heq_results, h_join⟩ := hparrow
+                  have hmember_origin :
+                      ∀ srcRes, srcRes ∈ first :: rest → srcRes.memEnv'.contains l →
+                        ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qtypCleanUnder ctx.regime qt_in := by
+                    intro srcRes hsrc_mem hsrc_contains
+                    have hsrc_results : srcRes ∈ results := by
+                      simpa [heq_results] using hsrc_mem
+                    rcases list_mapM_ok_mem_output_exists_input
+                        (f := fun tcl =>
+                          applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuelApp)
+                        (xs := tcls) (ys := results) (y := srcRes)
+                        hmap hsrc_results with
+                      ⟨tcl, _htcl_mem, happly_src⟩
+                    rcases memEnv_lookup_some_of_contains srcRes.memEnv' l hsrc_contains with
+                      ⟨qt_src, hlookup_src⟩
+                    have hlookup_src_ctx :
+                        (ctxAfter ctx srcRes).memEnv.lookup l = some qt_src := by
+                      simpa [ctxAfter] using hlookup_src
+                    have hclean_src_ctx :
+                        qtypCleanUnder (ctxAfter ctx srcRes).regime qt_src := by
+                      exact
+                        joinTypeResults_lookup_member_clean_compat
+                          (ctx := ctx) (first := first) (src := srcRes) (rest := rest) (res := res)
+                          h_join hsrc_mem l qt_out qt_src hlookup_res_ctx hclean_res_ctx hlookup_src_ctx
+                    cases tcl with
+                    | regular x pbody tenv =>
+                        have hcontains_result1 : result1.memEnv'.contains l := by
+                          exact
+                            applyPFnTClosure_mem_subset
+                              (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                              (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                              (result2 := result1) (fuel := fuelApp)
+                              (tcl := PFnTClosure.regular x pbody tenv) (r := srcRes)
+                              happly_src l hsrc_contains
+                        rcases memEnv_lookup_some_of_contains result1.memEnv' l hcontains_result1 with
+                          ⟨qt_mid, hlookup_mid⟩
+                        have hlookup_preserved :
+                            srcRes.memEnv'.lookup l = some qt_mid := by
+                          exact
+                            applyPFnTClosure_preserves_memEnv_lookup
+                              (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                              (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                              (result2 := result1) (fuel := fuelApp)
+                              (tcl := PFnTClosure.regular x pbody tenv) (r := srcRes)
+                              happly_src l qt_mid hlookup_mid
+                        have hqt_mid : qt_src = qt_mid := by
+                          rw [hlookup_src] at hlookup_preserved
+                          exact Option.some.inj hlookup_preserved
+                        have hmono_src : Regime.monotoneStep result1.regime' srcRes.regime' := by
+                          exact
+                            applyPFnTClosure_regime_mono
+                              (tcl := PFnTClosure.regular x pbody tenv)
+                              (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                              (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                              (r1 := result1) (r2 := srcRes) (fuel := fuelApp)
+                              (IH := fun m _hlt e ctx' res' htc' =>
+                                by
+                                  simpa [typecheck] using regime_monotone ctx' e m res' htc')
+                              happly_src
+                        have hclean_mid : qtypCleanUnder result1.regime' qt_mid := by
+                          simpa [hqt_mid] using
+                            (cleanUnder_of_monotone hmono_src
+                              (by simpa [ctxAfter] using hclean_src_ctx) :
+                                qtypCleanUnder result1.regime' qt_src)
+                        exact hbackToCtx qt_mid hlookup_mid hclean_mid
+                    | extern x retSpec capturedEnv =>
+                        exact False.elim <|
+                          applyPFnTClosure_ioFree_extern_fails
+                            ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuelApp
+                            x retSpec capturedEnv srcRes happly_src
+                  rcases joinTypeResults_mem_contains_head_or_rest
+                      ctx first rest res h_join l hcontains_res with
+                    hhead | ⟨srcRes, hsrc_rest, hsrc_contains⟩
+                  · exact hmember_origin first (by simp) hhead
+                  · exact hmember_origin srcRes (List.mem_cons_of_mem _ hsrc_rest) hsrc_contains
       | kwhile e1 e2 =>
+          -- Deferred for now: `kwhile` may be removed from the language, so we do
+          -- not want to spend more proof effort here until that design decision lands.
           sorry
       | rand e1 =>
           have htcRand : typecheckRand .ioFree ctx e1 fuel' = .ok res := by

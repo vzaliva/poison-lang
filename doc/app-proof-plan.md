@@ -33,6 +33,30 @@ What makes `stepFR_app` hard:
 
 ## 2. Current Status and Plan
 
+### Checkpoint: 2026-03-07 — `app` branch resolved in the origin theorem; `kwhile` intentionally deferred
+
+Build: pending full `lean-build` for checkpoint verification.
+
+What changed:
+
+- `typecheckExpr_clean_lookup_origin_of_pc_true` now has a compiled `app` branch
+- the `app` proof now:
+  - decomposes `typecheckApp`
+  - picks a clean member from `joinTypeResults`
+  - handles impure `arrow` members by recursing through the selected body under poisoned
+    control
+  - handles pure `parrow` members by pure-memory lookup preservation plus regime
+    monotonicity
+- the only remaining `sorry` inside that theorem is now the `kwhile` branch
+
+Interpretation:
+
+- the `app`-specific origin problem is solved at the typing layer
+- the remaining `kwhile` proof work is being explicitly deferred because we may remove
+  `kwhile` from the language
+- this means the `app` proof plan can continue without spending more time on while-fixpoint
+  infrastructure unless the language decision changes
+
 ### Checkpoint: 2026-03-07 — origin theorem now proved through structural, write, and `if` cases; only `app` and `while` remain
 
 Build: pending full `lean-build` for checkpoint verification.
