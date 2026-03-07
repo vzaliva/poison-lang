@@ -900,6 +900,19 @@ lemma agreeOnClean_same_config
     refine agreeVarUnder.agree_values x qt v v hρ hρ
       (agreeValueUnder_same hclean htyp hcvcr)
 
+-- Unary preservation: a single run preserves the value at an inherited clean location.
+inductive PreservesInheritedCleanLocOneRun
+  (μ_in μ_out : Memory) (θ_in θ_out : RealizationMap) (l : Loc) : Prop where
+  | both_unrealized (h_in : θ_in.lookup l = none) (h_out : θ_out.lookup l = none)
+  | preserve_value (a : Address) (n : Int)
+      (h_in : θ_in.lookup l = some a) (h_mem_in : μ_in.lookup a = some n)
+      (h_out : θ_out.lookup l = some a) (h_mem_out : μ_out.lookup a = some n)
+
+inductive PreservesInheritedCleanLocsOneRun
+  (ctx : TypeContext) (μ_in μ_out : Memory) (θ_in θ_out : RealizationMap) : Prop where
+  | intro (hpres : ∀ l qt, ctx.memEnv.lookup l = some qt →
+      qtypCleanUnder ctx.regime qt → PreservesInheritedCleanLocOneRun μ_in μ_out θ_in θ_out l)
+
 -- Single-run corollary of StepFR: instantiate with identical configs to extract
 -- per-run evidence (θ', valueHasETyp, runtimeInstantiatesCtx, etc.) from one execution.
 lemma StepFR_single_run
@@ -933,14 +946,15 @@ lemma StepFR_single_run
     runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
     regimeConsistentWithCtx (ctxAfter ctx res) ∧
     consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
-    valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o := by
+    valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
+    PreservesInheritedCleanLocsOneRun ctx μ cf.memory θ θ' := by
   have hagree := agreeOnClean_same_config predSat ctx.regime ctx μ ρ θ hric hcwr rfl
   rcases hfr hpredlaws hwfTm μ μ ρ ρ θ θ cf cf o o
     hθwf hθwf hwfCtx hric hric htagR hRbound hcwr hcwr hagree
     a a pm hwfcfg hwfcfg ht ht with
     ⟨hresTm, θ₀', _θ₁', hext₀, _hext₁, htyp₀, _htyp₁, hTm, hwfC, hwfcf₀, _hwfcf₁,
       hric₀, _hric₁, htagR', hcwr₀, _hcwr₁, _hagree', hvalc₀, _hvalc₁, _hresAgree⟩
-  exact ⟨hresTm, θ₀', hext₀, htyp₀, hTm, hwfC, hwfcf₀, hric₀, htagR', hcwr₀, hvalc₀⟩
+  exact ⟨hresTm, θ₀', hext₀, htyp₀, hTm, hwfC, hwfcf₀, hric₀, htagR', hcwr₀, hvalc₀, sorry⟩
 
 section TypeSystemEnforcesFaultRobustness_impl_proof
 

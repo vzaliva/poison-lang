@@ -33,6 +33,38 @@ What makes `stepFR_app` hard:
 
 ## 2. Current Status and Plan
 
+### Checkpoint: 2026-03-07 — strengthened unary interface validated on `parrow`; keep the shape
+
+Build: **clean** (no errors; sorry-only warnings).
+
+What is now settled:
+
+- `PreservesInheritedCleanLocOneRun` / `PreservesInheritedCleanLocsOneRun` were added in
+  `LeanProofs/StepFR.lean`
+- `StepFR_single_run` was strengthened with the extra unary conjunct, and the downstream
+  destructuring sites needed by app were updated
+- the narrowed outer-not-clean `parrow` locations hole now accepts the strengthened unary
+  interface cleanly
+- the `parrow` proof no longer needs an app-local ad hoc witness trick; it works by:
+  impossible fresh-clean case via pure mem-subset, then inherited-clean transport back to
+  the pre-body context, then `hpres₀ / hpres₁` plus pre-body `agreeOnClean`
+- the helper needed on the `parrow` side turned out to be a pure typing bridge
+  (`typecheckExpr_pure_mem_lookup_bridge_of_toPExpr`), not evidence that
+  `StepFR_single_run` needs a broader semantic interface
+
+What the assessment showed:
+
+- the added `StepFR_single_run` clause did solve the blocker it was meant to solve:
+  the different-body `parrow` location proof now has the unary fact it needed
+- the remaining narrowed `arrow` hole is different in kind: it needs a fact of the form
+  “under poisoned body `pc`, freshly introduced locations cannot remain clean in the final
+  typed result”
+- that remaining `arrow` gap does **not** currently look like missing data in the new
+  unary interface, so the strengthened conclusion should stay as-is
+- proving the new `PreservesInheritedCleanLocsOneRun ... θ θ'` conjunct itself will still
+  require changes in the proof-producing `StepFR` induction / case proofs, not just in the
+  `StepFR_single_run` wrapper
+
 ### Checkpoint: 2026-03-06 — app-local framing route stopped; move to broader unary infrastructure
 
 Build: **clean** (no errors; sorry-only warnings).
@@ -85,7 +117,7 @@ Target shape:
 
 Execution sequence:
 
-1. **Freeze the exact strengthened conclusion**
+1. **Freeze the exact strengthened conclusion** — done
    - Extend `StepFR_single_run` with one extra conjunct
      `PreservesInheritedCleanLocsOneRun ... θ θ'` exactly as described in
      [app-framing-proposal.md](app-framing-proposal.md).
@@ -95,7 +127,7 @@ Execution sequence:
    - Deliverable:
      one precise theorem statement in `LeanProofs/StepFR.lean`.
 
-2. **Change `StepFR_single_run` to that signature and leave only the new conjunct as `sorry`**
+2. **Change `StepFR_single_run` to that signature and leave only the new conjunct as `sorry`** — done
    - Update the theorem statement in `LeanProofs/StepFR.lean`.
    - Propagate the stronger result shape through the minimum downstream surface needed for
      app.
@@ -104,22 +136,34 @@ Execution sequence:
      the code compiles with the strengthened `StepFR_single_run`, with the new conjunct as
      the only new `sorry`.
 
-3. **Plug the stronger result into the outer-not-clean `parrow` location hole first**
+3. **Plug the stronger result into the outer-not-clean `parrow` location hole first** — done
    - Use the strengthened `StepFR_single_run` result in the narrowed `parrow` hole.
    - Prove the downstream app steps that use the new conjunct.
    - Treat the new conjunct itself as an assumption coming from the temporary `sorry`.
+   - Outcome:
+     the `parrow` hole now closes structurally; the only extra dependency was a pure
+     typing bridge for `memEnv.lookup`, not a further extension of the unary interface.
+
+4. **Assess after `parrow` before doing anything broader** — done
+   - Result:
+     keep the strengthened `StepFR_single_run` shape unchanged.
+   - `parrow` accepted the interface cleanly.
+   - The narrowed `arrow` review exposed a different missing fact about fresh locations
+     under poisoned body `pc`; it did not expose a missing field in the unary interface.
+   - Do not widen the unary theorem further at this point.
+
+5. **Close the narrowed outer-not-clean `arrow` location hole with the now-confirmed interface**
+   - Prove or isolate the local fact needed on the `arrow` side:
+     under poisoned body `pc`, any location newly introduced by the body cannot be clean in
+     the final typed result.
+   - Use that to split the `arrow` locations argument into the same two cases as `parrow`:
+     inherited clean locations handled by the strengthened unary interface, fresh locations
+     ruled out by dirty-fresh reasoning.
    - Stop point:
-     once the `parrow` hole is reduced to exactly the new unary conjunct, or once it
-     becomes clear that the strengthened conclusion is still missing data.
+     once the narrowed `arrow` hole closes without changing the `StepFR_single_run`
+     interface.
 
-4. **Assess after `parrow` before doing anything broader**
-   - If the `parrow` hole does not accept this interface cleanly, stop and restate the
-     strengthened conclusion.
-   - If `parrow` does accept it, keep the shape and repeat the same check on the narrowed
-     `arrow` hole.
-   - Do not touch the broader dirty-internal branches yet.
-
-5. **Only after both narrowed holes accept the interface, prove the new conjunct**
+6. **Only after both narrowed holes accept the interface, prove the new conjunct**
    - Attack the semantic risk cases first: `newRef`, then assignment-style updates.
    - Start from the reusable fragments already identified:
      `theta_not_contains_if_not_in_memEnv`, the old-location transport in `stepFR_newRef`,
@@ -129,13 +173,11 @@ Execution sequence:
      a proof of the new `PreservesInheritedCleanLocsOneRun ... θ θ'` conjunct inside
      `StepFR_single_run`.
 
-6. **Return to the app proof only after the unary proof lands**
-   - Close the outer-not-clean `parrow` location hole for real.
-   - Then close the outer-not-clean `arrow` location hole for real.
-   - Only after those are done, reuse the same strengthened unary fact inside the broader
-     dirty-internal arrow/parrow branches.
+7. **Return to the app proof only after the unary proof lands**
+   - Reuse the proved unary fact inside the broader dirty-internal arrow/parrow branches.
+   - Keep the narrowed `parrow` / `arrow` results as the checked template for that reuse.
 
-7. **Only widen further if the strengthened unary route remains coherent**
+8. **Only widen further if the strengthened unary route remains coherent**
    - If proving the new interface starts forcing unrelated invariants or major theorem
      reshaping outside the body-execution path, pause and reassess before paying that cost.
 

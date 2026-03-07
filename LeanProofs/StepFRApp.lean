@@ -8401,6 +8401,48 @@ private lemma applyPFnTClosure_mem_subset
               ctx st1 st2 p p1 argEtyp argPoison argPred result2
               (Nat.succ fuelBody) x retSpec capturedEnv r happly
 
+private lemma applyPFnTClosure_preserves_memEnv_lookup
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat) (tcl : PFnTClosure) (r : TypeResult)
+  (happly :
+    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+  ∀ l qt, result2.memEnv'.lookup l = some qt → r.memEnv'.lookup l = some qt := by
+  intro l qt hlookup
+  cases fuel with
+  | zero =>
+      simp [applyPFnTClosure] at happly
+  | succ fuelBody =>
+      cases tcl with
+      | regular x body env =>
+          rcases applyPFnTClosure_regular_inv
+              ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuelBody x body env r happly with
+            ⟨result3, htcBody, _hsub, hr⟩
+          subst hr
+          let bodyCtx : TypeContext :=
+            { ctx with
+              pc := joinPoison p (joinPoison ctx.pc p1)
+              memEnv := result2.memEnv'
+              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              tagEnv := result2.tagEnv'
+              nextTag := result2.nextTag'
+              nextLoc := result2.nextLoc'
+              regime := result2.regime' }
+          have hpres_body :
+              ∀ l qt, bodyCtx.memEnv.lookup l = some qt → result3.memEnv'.lookup l = some qt :=
+            typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
+              (ctx := bodyCtx) (e := PExpr.toExpr body) (pe := body)
+              (fuel := fuelBody) (res := result3)
+              (hpe := by simpa using toExpr_toPExpr? body)
+              (htc := by simpa [bodyCtx] using htcBody)
+          simpa [bodyCtx] using hpres_body l qt hlookup
+      | extern x retSpec capturedEnv =>
+          exact False.elim <|
+            applyPFnTClosure_ioFree_extern_fails
+              ctx st1 st2 p p1 argEtyp argPoison argPred result2
+              (Nat.succ fuelBody) x retSpec capturedEnv r happly
+
 private lemma joinTypeResults_poison_pred_of_head_true_noPred
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (h_join : joinTypeResults ctx first rest = .ok res)
@@ -10414,7 +10456,7 @@ lemma stepFR_app
               ⟨_, θ₀_body, hθext₀_body, hv₀_body_typed,
                 _hTm_bodyA₀_after, _hwf_bodyA₀_after, _hwfcf_bodyA₀,
                 hric_bodyA₀_final, _htagR_bodyA₀_final,
-                hcwr_bodyA₀_final, hvalc_bodyA₀⟩
+                hcwr_bodyA₀_final, hvalc_bodyA₀, _hpres₀⟩
             -- ===== Run 1: StepFR_single_run =====
             have hTmBodyA₁ : wfTagMeaningCtx tm bodyCtxA₁ := by
               have hresTm1' : QTypRespectsTagMeaning tm result1.qualType := hresTm1
@@ -10582,7 +10624,7 @@ lemma stepFR_app
               ⟨_, θ₁_body, hθext₁_body, hv₁_body_typed,
                 _hTm_bodyA₁_after, _hwf_bodyA₁_after, _hwfcf_bodyA₁,
                 hric_bodyA₁_final, _htagR_bodyA₁_final,
-                hcwr_bodyA₁_final, hvalc_bodyA₁⟩
+                hcwr_bodyA₁_final, hvalc_bodyA₁, _hpres₁⟩
             -- ===== Transport to joined result and pack =====
             -- etyp agreement: body result etyp = firstA etyp (normalizeAppResultByProvenance preserves etyp)
             have hfirstA₀_etyp : firstA₀.qualType.etyp = result3A₀.qualType.etyp := by
@@ -12982,7 +13024,7 @@ lemma stepFR_app
             ⟨_, θ₀_body, hθext₀_body, hv₀_body_typed,
               _hTm_bodyA₀_after, _hwf_bodyA₀_after, _hwfcf_bodyA₀,
               hric_bodyA₀_final, _htagR_bodyA₀_final,
-              hcwr_bodyA₀_final, hvalc_bodyA₀⟩
+              hcwr_bodyA₀_final, hvalc_bodyA₀, hpres₀⟩
           -- ===== Run 1: StepFR_single_run =====
           have hTmBodyA₁ : wfTagMeaningCtx tm bodyCtxA₁ := by
             have hresTm1' : QTypRespectsTagMeaning tm result1.qualType := _hresTm1
@@ -13155,7 +13197,7 @@ lemma stepFR_app
             ⟨_, θ₁_body, hθext₁_body, hv₁_body_typed,
               _hTm_bodyA₁_after, _hwf_bodyA₁_after, _hwfcf_bodyA₁,
               hric_bodyA₁_final, _htagR_bodyA₁_final,
-              hcwr_bodyA₁_final, hvalc_bodyA₁⟩
+              hcwr_bodyA₁_final, hvalc_bodyA₁, hpres₁⟩
           -- ===== Transport to joined result and pack =====
           -- etyp agreement: body result etyp = firstA etyp (normalizeAppResultByProvenance preserves etyp)
           have hfirstA₀_etyp : firstA₀.qualType.etyp = result3A₀.qualType.etyp := by
@@ -13442,7 +13484,145 @@ lemma stepFR_app
               constructor
               · -- Locations conjunct
                 intro l qt hlookup hclean
-                sorry
+                have hclean_res : qtypCleanUnder res.regime' qt := by
+                  simpa [ctxAfter] using hclean
+                have hlookup_res : res.memEnv'.lookup l = some qt := by
+                  simpa [ctxAfter] using hlookup
+                -- Case split: is l inherited from result1.memEnv'?
+                cases hlookup_body : (result1.memEnv'.lookup l) with
+                | none =>
+                  -- l is NOT in result1.memEnv' but IS in res.memEnv'. Contradiction:
+                  -- every alternative's memEnv' ⊆ result1.memEnv' (pure bodies can't grow memEnv)
+                  exfalso
+                  have hcontains_res :=
+                    memEnv_contains_of_lookup_some res.memEnv' l qt hlookup_res
+                  have hcontains_l : result1.memEnv'.contains l := by
+                    rcases joinTypeResults_mem_contains_head_or_rest ctxᵢ first rest res
+                        h_join l hcontains_res with hfirst | ⟨r, hr, hrl⟩
+                    · rcases list_mapM_ok_mem_output_exists_input
+                          (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1
+                            etyp2 p2 pred2 ctxᵢ result1 fuel')
+                          hmap (show first ∈ results by rw [heq_results]; exact List.Mem.head rest)
+                        with ⟨tcl, _, happly⟩
+                      exact applyPFnTClosure_mem_subset ctxᵢ st1 st2 p p1 etyp2 p2
+                        pred2 result1 fuel' tcl first happly l hfirst
+                    · rcases list_mapM_ok_mem_output_exists_input
+                          (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1
+                            etyp2 p2 pred2 ctxᵢ result1 fuel')
+                          hmap (by rw [heq_results]; exact List.mem_cons_of_mem first hr)
+                        with ⟨tcl, _, happly⟩
+                      exact applyPFnTClosure_mem_subset ctxᵢ st1 st2 p p1 etyp2 p2
+                        pred2 result1 fuel' tcl r happly l hrl
+                  rcases memEnv_lookup_some_of_contains result1.memEnv' l hcontains_l
+                    with ⟨_, hlookup'⟩
+                  exact Option.noConfusion (hlookup_body ▸ hlookup')
+                | some qt' =>
+                  -- Inherited location: l is in result1.memEnv' with type qt'
+                  have hetyp_qt : qt.etyp = ETyp.int :=
+                    memEnv_lookup_etyp_int res.memEnv' l qt hlookup_res
+                  have hetyp_qt' : qt'.etyp = ETyp.int :=
+                    memEnv_lookup_etyp_int result1.memEnv' l qt' hlookup_body
+                  -- qt' is clean under result1.regime' (needed for hagree1 and hpres)
+                  -- Proof: applyPFnTClosure preserves memEnv values for PExpr bodies,
+                  -- so firstA₀.memEnv'.lookup l = some qt'. Then
+                  -- joinTypeResults_lookup_member_clean_compat gives cleanness at
+                  -- firstA₀.regime', and backward monotonicity gives result1.regime'.
+                  have hclean_pre' : qtypCleanUnder result1.regime' qt' := by
+                    have hfirstA₀_lookup :=
+                      applyPFnTClosure_preserves_memEnv_lookup ctxᵢ st1 st2 p p1
+                        etyp2 p2 pred2 result1 fuel'
+                        (PFnTClosure.regular x₀ pbodyA₀ σcapA₀) firstA₀
+                        happlyA₀ l qt' hlookup_body
+                    have hclean_member :=
+                      joinTypeResults_lookup_member_clean_compat ctxᵢ first firstA₀
+                        rest res h_join hfirstA₀_mem' l qt qt'
+                        (by simpa [ctxAfter] using hlookup_res)
+                        (by simpa [ctxAfter] using hclean_res)
+                        (by simpa [ctxAfter] using hfirstA₀_lookup)
+                    exact cleanUnder_of_monotone hres1_to_firstA₀_mono hclean_member
+                  -- Pre-body agreement from hagree1
+                  have hlookup_pre :
+                      (ctxAfter (ctxAfter ctxᵢ result2) result1).memEnv.lookup l = some qt' := by
+                    simpa [ctxAfter] using hlookup_body
+                  have hloc_pre := hagree1.1 l qt' hlookup_pre hclean_pre'
+                  -- Per-run preservation
+                  rcases hpres₀ with ⟨hpres₀_fn⟩
+                  have hpres_l₀ := hpres₀_fn l qt'
+                    (by simp only [bodyCtxA₀]; exact hlookup_body) hclean_pre'
+                  rcases hpres₁ with ⟨hpres₁_fn⟩
+                  have hpres_l₁ := hpres₁_fn l qt'
+                    (by simp only [bodyCtxA₁]; exact hlookup_body) hclean_pre'
+                  -- Case split on pre-body loc agreement × run-0 preservation
+                  cases hloc_pre with
+                  | both_unrealized _ _ hθ₀_none hθ₁_none =>
+                    cases hpres_l₀ with
+                    | both_unrealized _ hout₀ =>
+                      cases hpres_l₁ with
+                      | both_unrealized _ hout₁ =>
+                        exact agreeLocUnder.both_unrealized l qt hout₀ hout₁
+                      | preserve_value a n hin _ _ _ =>
+                        exact absurd (hθ₁_none ▸ hin) (by exact Option.noConfusion)
+                    | preserve_value a n hin _ _ _ =>
+                      exact absurd (hθ₀_none ▸ hin) (by exact Option.noConfusion)
+                  | agree_values _ _ a₀ a₁ n₀ n₁ hθ₀_in hθ₁_in hm₀_in hm₁_in hagree_val =>
+                    cases hpres_l₀ with
+                    | both_unrealized hin₀ _ =>
+                      exact absurd (hin₀ ▸ hθ₀_in) (by exact Option.noConfusion)
+                    | preserve_value a₀' n₀' hθ₀_in' hm₀_in' hθ₀_out hm₀_out =>
+                      cases hpres_l₁ with
+                      | both_unrealized hin₁ _ =>
+                        exact absurd (hin₁ ▸ hθ₁_in) (by exact Option.noConfusion)
+                      | preserve_value a₁' n₁' hθ₁_in' hm₁_in' hθ₁_out hm₁_out =>
+                        -- Equate addresses via unique θ lookups
+                        have ha₀ : a₀' = a₀ :=
+                          Option.some.inj (hθ₀_in'.symm.trans hθ₀_in)
+                        have ha₁ : a₁' = a₁ :=
+                          Option.some.inj (hθ₁_in'.symm.trans hθ₁_in)
+                        -- Equate values via unique memory lookups
+                        have hn₀ : n₀' = n₀ := by
+                          rw [ha₀] at hm₀_in'
+                          exact Option.some.inj (hm₀_in'.symm.trans hm₀_in)
+                        have hn₁ : n₁' = n₁ := by
+                          rw [ha₁] at hm₁_in'
+                          exact Option.some.inj (hm₁_in'.symm.trans hm₁_in)
+                        -- Extract pre-body value equality (clean ints must agree)
+                        have heq_pre : n₀ = n₁ := by
+                          cases hagree_val with
+                          | clean_eq_nonref_nonarrow _ _ _ hEq =>
+                            exact Value.num.inj hEq
+                          | withPred_true_eq _ _ _ _ _ hEq =>
+                            exact Value.num.inj hEq
+                          | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                            cases hv₀
+                          | dirty_internal_arrow _ hisA htyp₀ _ =>
+                            simp [valueHasETyp_num_etyp htyp₀, ETyp.isArrow] at hisA
+                          | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                            cases hv₀
+                          | dirty_internal_parrow _ hisP htyp₀ _ =>
+                            simp [valueHasETyp_num_etyp htyp₀, ETyp.isParrow] at hisP
+                          | clean_ref _ _ _ _ hv₀ _ _ => cases hv₀
+                          | withPred_true_ref _ _ _ _ _ _ hv₀ _ _ => cases hv₀
+                        -- Post-body values equal: n₀' = n₁'
+                        have heq_post : n₀' = n₁' := by
+                          rw [hn₀, hn₁, heq_pre]
+                        -- Construct post-body agreeLocUnder
+                        -- (rewrite evalCfg.memory → cf.memory using pure-body memory preservation)
+                        refine agreeLocUnder.agree_values l qt a₀' a₁'
+                          n₀' n₁' hθ₀_out hθ₁_out
+                          (by rw [hmem₀_eq]; exact hm₀_out)
+                          (by rw [hmem₁_eq]; exact hm₁_out) ?_
+                        rw [heq_post]
+                        -- Build agreeValueUnder for clean qt with equal int values
+                        cases hclean_res with
+                        | clean hpoison =>
+                          exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison
+                            (by simp [hetyp_qt, ETyp.isFunctionType, ETyp.isArrow,
+                                      ETyp.isParrow])
+                            (by intro ⟨ls, h⟩; simp [hetyp_qt] at h) rfl
+                        | guard k htag hregime hnotfun =>
+                          exact agreeValueUnder.withPred_true_eq k htag
+                            (by simpa [ctxAfter] using hregime) hnotfun
+                            (by intro ⟨ls, h⟩; simp [hetyp_qt] at h) rfl
               · -- Variables conjunct
                 intro x qt hlookup hclean
                 have hlookup_pre :
