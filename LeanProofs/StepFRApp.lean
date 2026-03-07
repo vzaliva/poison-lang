@@ -2202,6 +2202,13 @@ private lemma typecheckExpr_preserves_QTypRespectsTagMeaning
     QTypRespectsTagMeaning tm res.qualType :=
   (typecheckExpr_preserves_wfTagMeaningCtx_main fuel tm ctx e res hwf htc).2
 
+lemma typecheckExpr_QTypRespectsTagMeaning_of_ok
+    (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+    (hwf : wfTagMeaningCtx tm ctx)
+    (htc : typecheck .ioFree ctx e fuel = .ok res) :
+    QTypRespectsTagMeaning tm res.qualType :=
+  typecheckExpr_preserves_QTypRespectsTagMeaning tm ctx e fuel res hwf htc
+
 private lemma applyFnTClosure_ok_wfTagMeaningCtx
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -8523,7 +8530,7 @@ private lemma joinMemEnvsStrong_lookup_cleanUnder_left_or_right
           native_decide
         exact ⟨qt2, hlookup2, qtypCleanUnder.guard k htag2 hk2 hnotfun2⟩
 
-private lemma typecheckExpr_clean_lookup_origin_of_pc_true
+lemma typecheckExpr_clean_lookup_origin_of_pc_true
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
   (hpc : ctx.pc = true) :
@@ -9186,7 +9193,7 @@ private lemma typecheckExpr_clean_lookup_origin_of_pc_true
             native_decide
           simp [typecheckExpr, typecheckExternPfn, heq, bind, Except.bind] at htc
 
-private lemma typecheckExpr_lookup_clean_back_of_pc_true
+lemma typecheckExpr_lookup_clean_back_of_pc_true
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
   (hpc : ctx.pc = true) :
