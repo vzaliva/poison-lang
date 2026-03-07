@@ -37,6 +37,36 @@ closure list grows past a singleton (via any join), this reasoning breaks.
 
 ## Approaches Tried and Rejected
 
+### 0. Full-witness unary theorem for conservative `ite` joins (Mar 2026)
+
+The induction-side theorem `StepFRSingleRunFinalCleanPcTrue` was initially shaped as a
+single-run analogue of `StepFR_single_run_core`: it returns not just the chosen output
+realization map witness and the final-clean preservation fact, but also the full joined
+post-context payload (`wfTagMeaningCtx`, `runtimeInstantiatesCtx`, `regimeConsistentWithCtx`,
+`consistentWithRegime`, `valueConsistentWithRegime`).
+
+This shape works for straight-line constructors and for local write cases like `assign`, but it
+becomes the wrong target for conservative `ite` joins:
+
+- the runtime executes only one branch
+- the typing result is the conservative join of both branches
+- the `stepFR_app` fallback uses only the chosen `θ'` together with
+  `PreservesInheritedFinalCleanLocsOneRun`
+- the additional joined-post-context obligations are therefore off the critical path for app,
+  yet they dominate the remaining proof work in the risky `ite` modes
+
+The practical conclusion was not “the preservation theorem is false”.  The branch-clean
+transport still looks viable, and helper lemmas for extracting clean lookups from the actually
+executed branch now compile.  The failure is that the full-witness theorem surface is broader
+than the app proof needs.
+
+Accepted direction after this checkpoint:
+
+- prioritize a narrower app-focused unary theorem surface that returns the chosen `θ'` and the
+  final-clean preservation fact
+- defer or split off the broader joined-post-context witness obligations unless a downstream
+  proof actually needs them
+
 ### 1. Predicate-driven `closureCapturedVarsRegime` (commit `87878ef`, Feb 19)
 
 First version, gated on `qt.pred = guardClosure k ...`.  Added to every
