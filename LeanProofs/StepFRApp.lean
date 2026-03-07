@@ -10889,7 +10889,113 @@ lemma stepFR_app
                 constructor
                 · -- Locations conjunct
                   intro l qt hlookup hclean
-                  sorry
+                  have hclean_res : qtypCleanUnder res.regime' qt := by
+                    simpa [ctxAfter] using hclean
+                  have hlookup_res : res.memEnv'.lookup l = some qt := by
+                    simpa [ctxAfter] using hlookup
+                  -- Case split: is l inherited from result1.memEnv'?
+                  cases hlookup_body : (result1.memEnv'.lookup l) with
+                  | none =>
+                    -- Fresh location: l not in result1.memEnv' but in res.memEnv'
+                    -- All body contexts have pc = true (from hp1_true), so fresh locations
+                    -- have poison = true. Single-sided join gives noPred → not clean.
+                    -- Both-sided with guard is theoretically possible but rare.
+                    sorry
+                  | some qt' =>
+                    -- Inherited location: l is in result1.memEnv' with type qt'
+                    have hetyp_qt : qt.etyp = ETyp.int :=
+                      memEnv_lookup_etyp_int res.memEnv' l qt hlookup_res
+                    have _hetyp_qt' : qt'.etyp = ETyp.int :=
+                      memEnv_lookup_etyp_int result1.memEnv' l qt' hlookup_body
+                    -- Establish qt' cleanness under result1.regime'
+                    -- (bodies may change the type at l; qt' ≠ qt is possible)
+                    have hclean_pre' : qtypCleanUnder result1.regime' qt' := by
+                      by_cases hpf : qt'.poison = false
+                      · exact qtypCleanUnder.clean hpf
+                      · -- qt'.poison = true → need guard; isolated sorry
+                        sorry
+                    -- Use qt' cleanness to prove agreeLocUnder
+                    have hlookup_pre :
+                        (ctxAfter (ctxAfter ctxᵢ result2) result1).memEnv.lookup l =
+                          some qt' := by
+                      simpa [ctxAfter] using hlookup_body
+                    have hloc_pre := hagree1.1 l qt' hlookup_pre hclean_pre'
+                    -- Per-run preservation
+                    rcases _hpres₀ with ⟨hpres₀_fn⟩
+                    have hpres_l₀ := hpres₀_fn l qt'
+                      (by simp only [bodyCtxA₀]; exact hlookup_body) hclean_pre'
+                    rcases _hpres₁ with ⟨hpres₁_fn⟩
+                    have hpres_l₁ := hpres₁_fn l qt'
+                      (by simp only [bodyCtxA₁]; exact hlookup_body) hclean_pre'
+                    -- Case split on pre-body loc agreement × run preservation
+                    cases hloc_pre with
+                    | both_unrealized _ _ hθ₀_none hθ₁_none =>
+                      cases hpres_l₀ with
+                      | both_unrealized _ hout₀ =>
+                        cases hpres_l₁ with
+                        | both_unrealized _ hout₁ =>
+                          exact agreeLocUnder.both_unrealized l qt hout₀ hout₁
+                        | preserve_value a n hin _ _ _ =>
+                          exact absurd (hθ₁_none ▸ hin) (by exact Option.noConfusion)
+                      | preserve_value a n hin _ _ _ =>
+                        exact absurd (hθ₀_none ▸ hin) (by exact Option.noConfusion)
+                    | agree_values _ _ a₀ a₁ n₀ n₁ hθ₀_in hθ₁_in hm₀_in hm₁_in
+                        hagree_val =>
+                      cases hpres_l₀ with
+                      | both_unrealized hin₀ _ =>
+                        exact absurd (hin₀ ▸ hθ₀_in) (by exact Option.noConfusion)
+                      | preserve_value a₀' n₀' hθ₀_in' hm₀_in' hθ₀_out hm₀_out =>
+                        cases hpres_l₁ with
+                        | both_unrealized hin₁ _ =>
+                          exact absurd (hin₁ ▸ hθ₁_in) (by exact Option.noConfusion)
+                        | preserve_value a₁' n₁' hθ₁_in' hm₁_in' hθ₁_out hm₁_out =>
+                          -- Equate addresses via unique θ lookups
+                          have ha₀ : a₀' = a₀ :=
+                            Option.some.inj (hθ₀_in'.symm.trans hθ₀_in)
+                          have ha₁ : a₁' = a₁ :=
+                            Option.some.inj (hθ₁_in'.symm.trans hθ₁_in)
+                          -- Equate values via unique memory lookups
+                          have hn₀ : n₀' = n₀ := by
+                            rw [ha₀] at hm₀_in'
+                            exact Option.some.inj (hm₀_in'.symm.trans hm₀_in)
+                          have hn₁ : n₁' = n₁ := by
+                            rw [ha₁] at hm₁_in'
+                            exact Option.some.inj (hm₁_in'.symm.trans hm₁_in)
+                          -- Pre-body value equality (clean ints must agree)
+                          have heq_pre : n₀ = n₁ := by
+                            cases hagree_val with
+                            | clean_eq_nonref_nonarrow _ _ _ hEq =>
+                              exact Value.num.inj hEq
+                            | withPred_true_eq _ _ _ _ _ hEq =>
+                              exact Value.num.inj hEq
+                            | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                              cases hv₀
+                            | dirty_internal_arrow _ hisA htyp₀ _ =>
+                              simp [valueHasETyp_num_etyp htyp₀, ETyp.isArrow] at hisA
+                            | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                              cases hv₀
+                            | dirty_internal_parrow _ hisP htyp₀ _ =>
+                              simp [valueHasETyp_num_etyp htyp₀, ETyp.isParrow] at hisP
+                            | clean_ref _ _ _ _ hv₀ _ _ => cases hv₀
+                            | withPred_true_ref _ _ _ _ _ _ hv₀ _ _ => cases hv₀
+                          have heq_post : n₀' = n₁' := by
+                            rw [hn₀, hn₁, heq_pre]
+                          -- Construct post-body agreeLocUnder
+                          refine agreeLocUnder.agree_values l qt a₀' a₁'
+                            n₀' n₁' hθ₀_out hθ₁_out
+                            (by rw [hmem₀_eq]; exact hm₀_out)
+                            (by rw [hmem₁_eq]; exact hm₁_out) ?_
+                          rw [heq_post]
+                          cases hclean_res with
+                          | clean hpoison =>
+                            exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison
+                              (by simp [hetyp_qt, ETyp.isFunctionType, ETyp.isArrow,
+                                        ETyp.isParrow])
+                              (by intro ⟨ls, h⟩; simp [hetyp_qt] at h) rfl
+                          | guard k htag hregime hnotfun =>
+                            exact agreeValueUnder.withPred_true_eq k htag
+                              (by simpa [ctxAfter] using hregime) hnotfun
+                              (by intro ⟨ls, h⟩; simp [hetyp_qt] at h) rfl
                 · -- Variables conjunct
                   intro x qt hlookup hclean
                   have hlookup_pre :
