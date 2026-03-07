@@ -14,118 +14,121 @@ actually needed for that proof.
 Out of scope:
 
 - `stepFR_ite_*`
-- `stepFR_kwhile`
+- all `kwhile` proof work
 - unrelated proof cleanup
 
 ## Current State
 
 What is done:
 
-- the strengthened unary interface
-  `PreservesInheritedCleanLocOneRun` /
-  `PreservesInheritedCleanLocsOneRun`
-  exists in `LeanProofs/StepFR.lean`
-- the strengthened `StepFR_single_run` statement is in place
-- the `parrow` location blocker is structurally solved
+- the local `arrow` fallback packaging in `stepFR_app` is closed
+- the local `parrow` dirty-internal fallback packaging in `stepFR_app` is closed
 - the control-poison write semantics change is complete across spec, implementation, docs,
   proofs, and tests
-- the typing-side `app` origin theorem
+- the app-specific uses of
   `typecheckExpr_clean_lookup_origin_of_pc_true`
-  now has its `app` branch proved
+  are in place and the `app` branch of that theorem is proved
 
-What is intentionally deferred:
+What still contains `sorry` on the app path:
 
-- the `kwhile` branch inside
-  `typecheckExpr_clean_lookup_origin_of_pc_true`
-  is still `sorry`
-- all `kwhile` proof work is permanently postponed from this plan
+- `StepFR_single_run`
+  still ends with `sorry` for
+  `PreservesInheritedCleanLocsOneRun`
+- `typecheckExpr_clean_lookup_origin_of_pc_true`
+  still has the permanently-postponed `kwhile` branch
 
 Build status:
 
-- `make lean-build` passes
+- `make lean-build-file FILE=LeanProofs/StepFRApp.lean` passes
 - remaining warnings are `sorry` warnings only
 
-## Remaining Proof Debt For `stepFR_app`
+## Main Blocker
 
-To completely finish `stepFR_app`, the remaining work is:
+The current unary clause
 
-1. close the `arrow` fallback branch in `stepFR_app`
-   - this is the branch currently ending in the local existential pack `sorry`
-   - current diagnosis: it still needs a reusable unary member-evidence / output-packaging
-     fact, not more app-typing infrastructure
+- `PreservesInheritedCleanLocsOneRun`
 
-2. close the `parrow` dirty-internal fallback branch in `stepFR_app`
-   - this currently has a direct `sorry`
-   - current diagnosis: it likely needs the same dual-run body-IH packaging shape as the
-     `arrow` fallback, so it should not be attacked independently first
+is too strong for arbitrary impure `Expr` bodies.
 
-3. prove the new unary conjunct in `StepFR_single_run`
-   - `StepFR_single_run` still ends with `sorry` for
-     `PreservesInheritedCleanLocsOneRun`
-   - if the remaining `stepFR_app` fallback branches truly need this semantic fact, this is
-     the main upstream dependency
+Why:
 
-4. remove the deferred `kwhile` theorem debt from the `stepFR_app` dependency cone
-   - preferred route: split the current origin theorem or replace it with an app-specific
-     helper that does not mention `kwhile`
-   - do not prove `kwhile`; refactor around it instead
+- it requires an inherited clean location to keep the same realized address/value pair after
+  one run
+- but an impure body can overwrite an inherited clean location
+- therefore the clause is false in general for `arrow` bodies
+
+This is not just a missing proof. It is a statement-level mismatch.
+
+The current uses in `stepFR_app` only need a narrower fact:
+
+- if a body is typed under poisoned control, and a final lookup at inherited location `l`
+  is still clean, then the runtime cell for `l` was preserved across that run
+
+That narrower fact matches the strengthened control-poison semantics:
+
+- poisoned writes strip predicates
+- so a location that is finally clean under `pc = true` should be one that was not
+  dirtied by the body
+
+## Remaining Work For `stepFR_app`
+
+1. replace the unsound unary clause with the narrower preservation fact actually needed by
+   `stepFR_app`
+   - do this at the `StepFR` / single-run interface level, not as another app-local trick
+   - the new fact should talk about inherited locations that are final-clean, not all
+     inherited clean input locations
+
+2. update the `arrow` and `parrow` body-IH use sites in `stepFR_app`
+   - they currently destruct the unsound `hpres₀` / `hpres₁` witnesses
+   - switch them to the narrower output-conditioned preservation theorem
+
+3. remove the deferred `kwhile` theorem from the `stepFR_app` dependency cone
+   - preferred route:
+     split `typecheckExpr_clean_lookup_origin_of_pc_true` into an app-relevant theorem that
+     excludes `kwhile`
+   - do not prove `kwhile`
+
+4. run full verification
+   - `make lean-build`
+   - reassess remaining `sorry`s reachable from `stepFR_app`
 
 ## Execution Order
 
-The plan is ordered by risk. The first steps are meant to expose architectural problems
-early, before paying for long local proofs.
-
-1. classify the exact missing fact in the `arrow` fallback branch
-   - work inside `stepFR_app`, not in generic infrastructure
-   - goal:
-     reduce the current fallback `sorry` to one precise reusable statement
+1. redesign the unary preservation statement narrowly enough to be true for impure bodies
    - success condition:
-     either the branch closes locally, or the exact missing unary/output-pack fact is frozen
+     a concrete replacement statement is frozen and justified against the current
+     control-poison semantics
 
-2. if Step 1 freezes a real unary/output-pack fact, prove that fact at the `StepFR` layer
-   - target:
-     the current `StepFR_single_run` conjunct or a tightly-related corollary
-   - do not widen the interface again unless the current statement is provably insufficient
+2. prove the replacement statement where `StepFR_single_run` currently returns the unsound
+   clause
    - success condition:
-     `StepFR_single_run` no longer contains the new conjunct `sorry`
+     `StepFR_single_run` no longer depends on the old false preservation claim
 
-3. return to the `arrow` fallback branch and finish it
-   - use the proved unary fact instead of adding new app-local witness tricks
+3. rewire `stepFR_app` to consume that narrower theorem
    - success condition:
-     the existential output pack in the `arrow` case is closed
+     the current `hpres₀` / `hpres₁` uses are replaced with the new theorem
 
-4. reuse the same pattern for the `parrow` dirty-internal fallback branch
-   - only after the `arrow` fallback is understood
-   - success condition:
-     the remaining direct `sorry` in the `parrow` path is gone
-
-5. cut `kwhile` out of the theorem dependency cone for `stepFR_app`
-   - preferred route:
-     split `typecheckExpr_clean_lookup_origin_of_pc_true` into an app-relevant helper that
-     excludes `kwhile`
+4. cut `kwhile` out of the dependency cone
    - success condition:
      `stepFR_app` no longer depends on a theorem containing the deferred `kwhile` `sorry`
 
-6. run full verification
-   - `make lean-build`
-   - reassess any remaining `sorry`s reachable from `stepFR_app`
+5. run full verification
 
 ## Design Rules
 
-- Keep this plan focused on finishing `stepFR_app`, not on generic cleanup.
-- Prefer proving one reusable semantic fact over duplicating app-local witness arguments in
-  both `arrow` and `parrow`.
-- Do not reopen the control-poison typing redesign unless a new contradiction appears.
+- Do not try to prove `PreservesInheritedCleanLocsOneRun` as currently stated for arbitrary
+  impure bodies.
+- Keep the replacement fact as narrow as possible and shaped by the current app use sites.
 - Do not spend proof effort on `kwhile`.
+- Prefer one reusable semantic theorem over duplicating local runtime arguments in both
+  `arrow` and `parrow`.
 
 ## Stop / Reassess Conditions
 
-- If the `arrow` fallback branch cannot be reduced to a single precise missing fact, stop
-  and restate the obstruction before more proof work.
-- If finishing the current unary fact would require widening the `StepFR` interface again,
-  stop and justify that redesign explicitly.
-- If `stepFR_app` still depends on `kwhile` after attempted theorem factoring, keep the
-  `kwhile` proofs postponed and split the dependency instead of proving them.
+- If the narrowed unary theorem still fails for a concrete impure overwrite example, stop
+  and restate the counterexample before more proof work.
+- If cutting `kwhile` out of the dependency cone forces a larger refactor than the unary
+  redesign, do the unary redesign first and postpone the factoring step.
 
 ## Working Set
 
@@ -141,4 +144,4 @@ Current key lemmas:
 - `StepFR_single_run`
 - `typecheckExpr_clean_lookup_origin_of_pc_true`
 - `typecheckExpr_lookup_clean_back_of_pc_true`
-- `applyFnTClosure_fresh_lookup_not_clean_of_p1_true`
+- `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
