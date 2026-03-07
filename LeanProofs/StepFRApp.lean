@@ -1417,7 +1417,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtx_main :
                 (fun r hr => h_all_reg r (List.mem_cons_of_mem _ hr))
         | kwhile e1 e2 =>
             simp at htc
-            sorry -- TODO: while case
+            sorry -- permanently postponed: kwhile proofs are out of active scope
 
 lemma typecheckExpr_preserves_regimeConsistentWithCtx
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
@@ -2186,7 +2186,7 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
         | app e1 e2 =>
             sorry -- TODO: body typecheck + joinTypeResults
         | kwhile e1 e2 =>
-            sorry -- TODO: while fixpoint
+            sorry -- permanently postponed: kwhile proofs are out of active scope
 
 private lemma typecheckExpr_preserves_wfTagMeaningCtx
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
@@ -9155,8 +9155,7 @@ private lemma typecheckExpr_clean_lookup_origin_of_pc_true
                   · exact hmember_origin first (by simp) hhead
                   · exact hmember_origin srcRes (List.mem_cons_of_mem _ hsrc_rest) hsrc_contains
       | kwhile e1 e2 =>
-          -- Deferred for now: `kwhile` may be removed from the language, so we do
-          -- not want to spend more proof effort here until that design decision lands.
+          -- Permanently postponed: `kwhile` proofs are out of active scope for this work.
           sorry
       | rand e1 =>
           have htcRand : typecheckRand .ioFree ctx e1 fuel' = .ok res := by
