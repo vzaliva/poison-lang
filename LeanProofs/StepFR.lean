@@ -3745,7 +3745,8 @@ lemma agreeOnClean_newRef_extend
   (h_mem :
       res.memEnv' =
         updateMemEnv res1.memEnv' l
-          ⟨etyp, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩)
+          ⟨etyp, joinPoison ctxᵢ.pc res1.qualType.poison,
+            if ctxᵢ.pc = true then Predicate.noPred else res1.qualType.pred⟩)
   (h_etyp1 : res1.qualType.etyp = etyp)
   (h_etyp_int : etyp = ETyp.int)
   (ha₀_new : a₀_new = cfg₀'.nextAddr)
@@ -3773,7 +3774,8 @@ lemma agreeOnClean_newRef_extend
       resultAgreesIfClean predSat R cfg₀'.memory cfg₁'.memory θ₀1 θ₁1 res1.qualType (Value.num n₀) (Value.num n₁)) :
   agreeOnClean predSat R (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
   let storedQt : QTyp :=
-    ⟨etyp, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩
+    ⟨etyp, joinPoison ctxᵢ.pc res1.qualType.poison,
+      if ctxᵢ.pc = true then Predicate.noPred else res1.qualType.pred⟩
   constructor
   · intro l' qt hlookup hclean
     by_cases h_eq : l' = l
@@ -3810,8 +3812,13 @@ lemma agreeOnClean_newRef_extend
               simpa [storedQt] using hpoison
             exact qtypCleanUnder.clean (joinPoison_eq_false hjoin).2
         | guard k htag hreg hnotfun =>
+            have hpc_false : ctxᵢ.pc = false := by
+              cases hpc : ctxᵢ.pc with
+              | false => exact rfl
+              | true =>
+                  simp [storedQt, qtypGuardTag, hpc] at htag
             have htag' : qtypGuardTag res1.qualType = some k := by
-              simpa [qtypGuardTag, storedQt] using htag
+              simpa [qtypGuardTag, storedQt, hpc_false] using htag
             have hnotfun' : res1.qualType.etyp.isFunctionType = false := by
               simpa [storedQt, h_etyp1] using hnotfun
             exact qtypCleanUnder.guard k htag' hreg hnotfun'

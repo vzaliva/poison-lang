@@ -1609,9 +1609,9 @@ private lemma stepFR_newRef
     rw [h_loc]
     by_cases h_eq : l' = l
     · subst h_eq; rw [hl]; exact Nat.lt_succ_self res1.nextLoc'
-    · have hmem : l' ∈ updateMemEnv res1.memEnv' l ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩ :=
+    · have hmem : l' ∈ updateMemEnv res1.memEnv' l ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, if ctxᵢ.pc = true then Predicate.noPred else res1.qualType.pred⟩ :=
         (Std.ExtTreeMap.contains_iff_mem).1 hcontains
-      have h_isSome : ((updateMemEnv res1.memEnv' l ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩)[l']?).isSome = true :=
+      have h_isSome : ((updateMemEnv res1.memEnv' l ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, if ctxᵢ.pc = true then Predicate.noPred else res1.qualType.pred⟩)[l']?).isSome = true :=
         (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
       have h_cmp_ne : compare l l' ≠ Ordering.eq := by
         intro hcmp; have : l = l' := LawfulEqCmp.eq_of_compare hcmp; exact h_eq this.symm
@@ -1747,13 +1747,13 @@ private lemma stepFR_newRef
   -- consistentWithRegime for extended realization maps
   -- Key insight: res.regime' = res1.regime' (newRef doesn't change regime)
   -- For newRef:
-  -- 1. New location l has a fresh address with storedQt whose pred comes from res1.qualType.pred
+  -- 1. New location l has a fresh address with storedQt whose pred is gated by ctxᵢ.pc
   -- 2. Old locations transfer from hcwr₀1/hcwr₁1
   -- 3. VarEnv is unchanged
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
     classical
     let storedQt : QTyp :=
-      ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩
+      ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, if ctxᵢ.pc = true then Predicate.noPred else res1.qualType.pred⟩
     have hPredSat_mem :
         ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
       intro k μ μ' v
@@ -1838,13 +1838,18 @@ private lemma stepFR_newRef
                     valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
                       res1.qualType cfg₀'.memory θ₀1 (Value.num n₀) := by
                   simpa [hregime_eq] using _hval_consist₀
+                have hpc_false : ctxᵢ.pc = false := by
+                  cases hpc : ctxᵢ.pc with
+                  | false => exact rfl
+                  | true =>
+                      simp [storedQt, hpc] at hpred_case
                 have hpred_res1 :
                     res1.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env := by
-                  simpa [storedQt] using hpred_case
+                  simpa [storedQt, hpc_false] using hpred_case
                 have htag_res1 : qtypGuardTag res1.qualType = some k := by
                   simp [qtypGuardTag, hpred_res1]
                 have hpredEq : res1.qualType.pred = storedQt.pred := by
-                  simp [storedQt]
+                  simp [storedQt, hpc_false]
                 have hconsist_old :
                       (b = true → qtypPredHolds predSat storedQt cfg₀'.memory (Value.num n₀)) ∧
                       (b = false → ¬ qtypPredHolds predSat storedQt cfg₀'.memory (Value.num n₀)) := by
@@ -2058,7 +2063,7 @@ private lemma stepFR_newRef
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
     classical
     let storedQt : QTyp :=
-      ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩
+      ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, if ctxᵢ.pc = true then Predicate.noPred else res1.qualType.pred⟩
     have hPredSat_mem :
         ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
       intro k μ μ' v
@@ -2140,13 +2145,18 @@ private lemma stepFR_newRef
                       valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
                         res1.qualType cfg₁'.memory θ₁1 (Value.num n₁) := by
                     simpa [hregime_eq] using _hval_consist₁
+                  have hpc_false : ctxᵢ.pc = false := by
+                    cases hpc : ctxᵢ.pc with
+                    | false => exact rfl
+                    | true =>
+                        simp [storedQt, hpc] at hpred_case
                   have hpred_res1 :
                       res1.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env := by
-                    simpa [storedQt] using hpred_case
+                    simpa [storedQt, hpc_false] using hpred_case
                   have htag_res1 : qtypGuardTag res1.qualType = some k := by
                     simp [qtypGuardTag, hpred_res1]
                   have hpredEq : res1.qualType.pred = storedQt.pred := by
-                    simp [storedQt]
+                    simp [storedQt, hpc_false]
                   have hconsist_old :
                       (b = true → qtypPredHolds predSat storedQt cfg₁'.memory (Value.num n₁)) ∧
                       (b = false → ¬ qtypPredHolds predSat storedQt cfg₁'.memory (Value.num n₁)) := by
@@ -2354,7 +2364,7 @@ private lemma stepFR_newRef
       have hcap := hcwr₁1.2.2 x qt v hlookup_res1 hlookup_v_old
       rw [← hregime_eq] at hcap
       exact closureCapturedVarsRegime_transport_μ_θ hqtypPredHolds_mem hθext₁'.1 hcap
-  let storedQt : QTyp := ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, res1.qualType.pred⟩
+  let storedQt : QTyp := ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, if ctxᵢ.pc = true then Predicate.noPred else res1.qualType.pred⟩
   have hres1_desc :
       ∀ {qt k d}, QTypInQTyp qt res1.qualType →
         qtypGuardDesc? qt = some (k, d) →
@@ -2370,8 +2380,13 @@ private lemma stepFR_newRef
       simp [storedQt, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
     have hEq : qt = storedQt := QTypInQTyp_eq_of_nonFunctionTarget hinq hnotfun
     subst hEq
+    have hpc_false : ctxᵢ.pc = false := by
+      cases hpc : ctxᵢ.pc with
+      | false => exact rfl
+      | true =>
+          simp [storedQt, qtypGuardDesc?, hpc] at hqd
     have hqd' : qtypGuardDesc? res1.qualType = some (k, d) := by
-      simpa [storedQt, qtypGuardDesc?] using hqd
+      simpa [storedQt, qtypGuardDesc?, hpc_false] using hqd
     exact hres1_desc (QTypInQTyp.self res1.qualType) hqd'
   have hEnvTm_res1 : EnvRespectsTagMeaning tm ctxᵢ.varEnv res1.memEnv' := by
     simpa [wfTagMeaningCtx, ctxAfter] using _hTm1

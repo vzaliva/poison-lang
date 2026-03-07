@@ -33,6 +33,44 @@ What makes `stepFR_app` hard:
 
 ## 2. Current Status and Plan
 
+### Checkpoint: 2026-03-07 — control-poison write semantics strengthened; `arrow` architecture must be reassessed on the new rules
+
+Build: **clean** (no errors; sorry-only warnings). Implementation tests: **80 passed, 0 failed**.
+
+What changed:
+
+- the language spec, documentation, Lean typechecker, and proof infrastructure were updated
+  so writes under poisoned control strip stored predicates instead of preserving them
+- concretely:
+  - `ref` now stores `AppPred pc P`
+  - clean-reference `assign` now stores `AppPred pc P2` / `JoinP AppPred pc P2 P3 = P4`
+  - the corresponding Lean typing and proof lemmas were updated to match
+
+Why this matters for the app plan:
+
+- the earlier architectural concern for `arrow` relied on the possibility that an impure
+  body under `pc = true` could preserve a guard predicate through a write and thereby make an
+  inherited location final-clean-under-regime even when it was not pre-body clean
+- that specific route is now blocked by the typing rules
+- as a result, the previous Step 5 conclusion
+  (“the current unary clause is not enough for `arrow`”) is no longer current guidance; it
+  must be re-validated against the strengthened write semantics before we design any new
+  unary/body summary
+
+Plan consequence:
+
+- keep the current unary clause added to `StepFR_single_run`; it remains validated for
+  `parrow`
+- return to `StepFRApp.lean` and reassess the narrowed `arrow` residual cases under the new
+  semantics
+- only if a real `arrow` blocker survives that reassessment should we reopen the unary
+  interface design
+
+Historical note:
+
+- the next two checkpoints below were recorded **before** the control-poison write semantics
+  change and are kept as design history, not as current architectural direction
+
 ### Checkpoint: 2026-03-07 — Step 5 classified: current unary clause is not enough for `arrow`
 
 Build: **clean** (no errors; sorry-only warnings).
@@ -213,39 +251,38 @@ Execution sequence:
      under poisoned body `pc`; it did not expose a missing field in the unary interface.
    - Do not widen the unary theorem further at this point.
 
-5. **Classify the inherited dirty-to-clean `arrow` subcase before doing more unary work** — done
-   - Result:
-     the current unary clause is not enough for this branch.
-   - The missing shape is no longer “preserve an already-clean inherited location”, but
-     rather “explain why a final-clean inherited location is clean after the run”.
-   - In particular, the remaining `arrow` branch needs a way to summarize writes from
-     clean sources during an impure body, not just preservation of pre-body-clean cells.
+5. **Reassess the narrowed `arrow` residual cases under the strengthened control-poison write semantics**
+   - Re-check the inherited dirty-to-clean branch.
+   - Re-check the fresh-location branch.
+   - Treat the old “guard preserved through poisoned-control write” route as obsolete unless
+     it reappears in a different form under the new rules.
+   - Deliverable:
+     an updated classification of the remaining `arrow` obligations in `StepFRApp.lean`.
 
-6. **Design the additional unary/body summary needed by impure `arrow` bodies**
-   - Candidate direction:
-     for an inherited location that is final-clean after one run, expose either
-     1. a pre-body clean witness for the same location, or
-     2. a clean source/witness explaining the final value written there.
-   - Reuse the assignment-specific “final clean after update” reasoning from
-     `StepFRAssign` as the template.
+6. **Try to finish the remaining `arrow` holes locally before widening the unary interface**
+   - Prefer local proof closure in `StepFRApp.lean` using the strengthened typing rules and
+     the current `PreservesInheritedCleanLocsOneRun` interface.
+   - If the inherited branch now reduces to the already-known inherited-clean pattern, close
+     it directly.
+   - If the fresh branch simplifies to a local impossibility argument, close it directly.
+
+7. **Only if `arrow` still blocks, freeze the exact remaining missing fact**
+   - Write down the precise statement that is still missing after the semantic change.
+   - Do not reuse the old pre-change “final-clean inherited location” summary unless the new
+     rules still force it.
    - Stop point:
-     freeze the exact new statement before more local app proof work.
+     freeze the exact missing statement before changing `StepFR` interfaces again.
 
-7. **Use the new summary to finish the inherited dirty-to-clean `arrow` branch**
-   - Replace the current local dead-end at the inherited-location `sorry`s with the new
-     unary fact.
-   - Do not spend effort on the fresh-location `arrow` branch until this inherited branch
-     accepts the revised summary.
-
-8. **Only after that, finish the narrowed `arrow` fresh-location subcase**
-   - Prove or isolate the local fact needed on the fresh `arrow` side:
-     under poisoned body `pc`, any location newly introduced by the body cannot become
-     final-clean in the problematic way.
+8. **If needed, redesign the unary/body summary from the new semantics, not the old ones**
+   - Any new unary fact should be justified by the post-change typing rules, not by the
+     pre-change guard-preservation path.
+   - Reuse `StepFRAssign` only if the new residual `arrow` goal actually has the same shape.
 
 9. **Then return to proving unary facts in `StepFR`**
-   - Prove both unary summaries inside the proof-producing `StepFR` pipeline.
+   - First prove whatever unary facts remain genuinely necessary after the new `arrow`
+     reassessment.
    - Keep the current `PreservesInheritedCleanLocsOneRun` result for the `parrow` path
-     unless the new summary cleanly subsumes it.
+     unless a replacement clearly subsumes it.
 
 ## 3. Working Rules
 

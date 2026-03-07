@@ -1554,7 +1554,9 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
     res.qualType.etyp = ETyp.ref (LocSet.singleton l) ∧
     res.qualType.poison = ctx.pc ∧
     res.qualType.pred = Predicate.noPred ∧
-    res.memEnv' = updateMemEnv result1.memEnv' l ⟨ETyp.int, joinPoison ctx.pc result1.qualType.poison, result1.qualType.pred⟩ ∧
+    res.memEnv' = updateMemEnv result1.memEnv' l
+      ⟨ETyp.int, joinPoison ctx.pc result1.qualType.poison,
+        if ctx.pc then Predicate.noPred else result1.qualType.pred⟩ ∧
     res.tagEnv' = result1.tagEnv' ∧
     res.nextLoc' = result1.nextLoc' + 1 ∧
     res.nextTag' = result1.nextTag' ∧
@@ -1593,10 +1595,12 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
             have := congrArg TypeResult.qualType h_typecheck
             simp at this
             exact this.symm
-          have h_memEnv : res.memEnv' = updateMemEnv result1.memEnv' result1.nextLoc' ⟨ETyp.int, joinPoison ctx.pc poison, pred⟩ := by
+          have h_memEnv :
+              res.memEnv' = updateMemEnv result1.memEnv' result1.nextLoc'
+                ⟨ETyp.int, joinPoison ctx.pc poison, if ctx.pc then Predicate.noPred else pred⟩ := by
             have := congrArg TypeResult.memEnv' h_typecheck
             simp at this
-            exact this.symm
+            simpa using this.symm
           have h_tagEnv : res.tagEnv' = result1.tagEnv' := by
             have := congrArg TypeResult.tagEnv' h_typecheck
             simp at this
@@ -9499,7 +9503,8 @@ private lemma typecheckAssign_wfTypeResult
               · subst h_etyp2_int; simp at htc; cases htc
                 intro l' hcontains
                 have hor := assign_memEnv_formula_contains_eq_or_mem result2.memEnv' ls
-                  (joinPoison ctx.pc (joinPoison p1 p2)) (if p1 then Predicate.noPred else pred2) l' hcontains
+                  (joinPoison ctx.pc (joinPoison p1 p2))
+                  (if p1 = true ∨ ctx.pc = true then Predicate.noPred else pred2) l' hcontains
                 cases hor with
                 | inl hOld =>
                   exact Nat.lt_of_lt_of_le (hwf2 l' hOld) (locset_fold_max_ge_init ls result2.nextLoc')

@@ -661,29 +661,31 @@ pm ; R ; pc ; G ; S ; L |- not e : bool :> join pc p { no_pred } -| G1 ; L1 ; R1
 % New ref creation with region types
 % ref creates a reference with pc poison status and allocates fresh logical location l
 % The region type ref @ { l } precisely tracks which logical location is allocated
-% Predicate P is preserved in the memory location
+% Predicate P is preserved only when the write is not control-poisoned;
+% poisoned control stores AppPred pc P = no_pred.
 % NOTE: Memory can only store integers (matching runtime semantics)
 pm ; R ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1 ; R1
   fresh l
 ----------------------- :: ref
-pm ; R ; pc ; G ; S ; L |- ref e : ref @ { l } :> pc { no_pred } -| G1[l |-> join pc p { P }] ; L1 ; R1
+pm ; R ; pc ; G ; S ; L |- ref e : ref @ { l } :> pc { no_pred } -| G1[l |-> join pc p { AppPred pc P }] ; L1 ; R1
 
 % Assignment (singleton locset): strong update through clean reference
 % The result (unit) is poisoned if the pc is poisoned. The stored value
 % is poisoned if the assignment is poisoned, or the value is poisoned.
-% Predicate from e2 is preserved in the memory location.
+% Predicate from e2 is preserved only when the write is not control-poisoned.
 % NOTE: Memory can only store integers (matching runtime semantics)
 pm ; R ; pc ; G ; S ; L |- e1 : ref @ { l } :> clean { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2 ; R2
 invalidate_deps L2 { l } = L3
 invalidate_regime_deps R2 L2 { l } = R3
 ----------------------- :: assign_singleton
-pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc clean { no_pred } -| G2[l |-> join pc p2 { P2 }] ; L3 ; R3
+pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc clean { no_pred } -| G2[l |-> join pc p2 { AppPred pc P2 }] ; L3 ; R3
 
 % Assignment (non-singleton locset): weak update through clean reference
 % Joins stored poison/predicate with existing memory entries via JoinPoisons and MergePreds.
 % This ensures soundness when the typechecker cannot determine which location
-% in the locset will be updated at runtime.
+% in the locset will be updated at runtime. The write-side predicate is first
+% gated by AppPred pc _ so control-poisoned writes do not preserve guards.
 % NOTE: Memory can only store integers (matching runtime semantics)
 pm ; R ; pc ; G ; S ; L |- e1 : ref @ LS0 :> clean { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; pc ; G1 ; S ; L1 |- e2 : int :> p2 { P2 } -| G2 ; L2 ; R2
@@ -691,7 +693,7 @@ invalidate_deps L2 LS0 = L3
 invalidate_regime_deps R2 L2 LS0 = R3
 JoinPoisons G2 LS0 = p3
 MergePreds G2 LS0 = P3
-JoinP P2 P3 = P4
+JoinP AppPred pc P2 P3 = P4
 ----------------------- :: assign_locset
 pm ; R ; pc ; G ; S ; L |- e1 := e2 : unit :> join pc clean { no_pred } -| G2[LS0 |-> join p3 join pc p2 { P4 }] ; L3 ; R3
 
