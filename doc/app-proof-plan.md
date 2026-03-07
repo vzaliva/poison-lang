@@ -33,6 +33,38 @@ What makes `stepFR_app` hard:
 
 ## 2. Current Status and Plan
 
+### Checkpoint: 2026-03-07 — narrowed `arrow` location proof now reduced entirely to two theorem-shaped obligations
+
+Build: **clean** (no errors; sorry-only warnings).
+
+What changed:
+
+- the app-local fresh-location `arrow` `sorry` in the main locations conjunct is gone
+- that branch now dispatches through one reusable closure-body theorem-shaped obligation:
+  `applyFnTClosure_fresh_lookup_not_clean_of_p1_true`
+- together with the earlier inherited-location theorem
+  `typecheckExpr_lookup_clean_back_of_pc_true`, the narrowed `arrow` locations proof no
+  longer contains ad hoc local `sorry` branches
+
+What remains for the narrowed `arrow` locations branch:
+
+- `typecheckExpr_lookup_clean_back_of_pc_true`
+- `applyFnTClosure_fresh_lookup_not_clean_of_p1_true`
+
+Interpretation:
+
+- this is a better plan state than the earlier mixed local/global situation
+- the remaining work is now classified cleanly:
+  - one theorem for inherited locations becoming clean under `pc = true`
+  - one theorem ruling out fresh final-clean locations under `p1 = true`
+- no further widening of the `StepFR_single_run` interface is indicated by the current code
+
+Next step:
+
+- prove `applyFnTClosure_fresh_lookup_not_clean_of_p1_true` first
+- then decide whether `typecheckExpr_lookup_clean_back_of_pc_true` can be proved from the
+  same underlying typing invariants or needs separate induction
+
 ### Checkpoint: 2026-03-07 — `arrow` inherited-location split collapsed to one reusable typing-side theorem; fresh-location branch remains
 
 Build: **clean** (no errors; sorry-only warnings).

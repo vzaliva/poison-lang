@@ -8444,6 +8444,19 @@ private lemma typecheckExpr_lookup_clean_back_of_pc_true
     qtypCleanUnder ctx.regime qt_in := by
   sorry
 
+private lemma applyFnTClosure_fresh_lookup_not_clean_of_p1_true
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat) (tcl : FnTClosure) (r : TypeResult)
+  (h_p1 : p1 = true)
+  (l : Loc) (qt : QTyp)
+  (hlookup_in : result2.memEnv'.lookup l = none)
+  (happly :
+    applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r)
+  (hlookup_out : r.memEnv'.lookup l = some qt) :
+  ¬ qtypCleanUnder r.regime' qt := by
+  sorry
+
 private lemma joinTypeResults_poison_pred_of_head_true_noPred
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (h_join : joinTypeResults ctx first rest = .ok res)
@@ -10897,11 +10910,62 @@ lemma stepFR_app
                   -- Case split: is l inherited from result1.memEnv'?
                   cases hlookup_body : (result1.memEnv'.lookup l) with
                   | none =>
-                    -- Fresh location: l not in result1.memEnv' but in res.memEnv'
-                    -- All body contexts have pc = true (from hp1_true), so fresh locations
-                    -- have poison = true. Single-sided join gives noPred → not clean.
-                    -- Both-sided with guard is theoretically possible but rare.
-                    sorry
+                    exfalso
+                    have hcontains_res : res.memEnv'.contains l := by
+                      exact memEnv_contains_of_lookup_some res.memEnv' l qt hlookup_res
+                    rcases joinTypeResults_mem_contains_head_or_rest
+                        ctxᵢ first rest res h_join l hcontains_res with
+                      hsrc_head | ⟨srcRes, hsrc_rest, hsrc_contains⟩
+                    · have hsrc_results : first ∈ results := by
+                        simp [heq_results]
+                      rcases list_mapM_ok_mem_output_exists_input
+                          (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1
+                            etyp2 p2 pred2 ctxᵢ result1 fuel')
+                          (xs := tcls) (ys := results) (y := first) hmap hsrc_results with
+                        ⟨tcl, _htcl_mem, happly_src⟩
+                      rcases memEnv_lookup_some_of_contains first.memEnv' l hsrc_head with
+                        ⟨qt_src, hlookup_src⟩
+                      have hlookup_src_ctx :
+                          (ctxAfter ctxᵢ first).memEnv.lookup l = some qt_src := by
+                        simpa [ctxAfter] using hlookup_src
+                      have hclean_src :
+                          qtypCleanUnder (ctxAfter ctxᵢ first).regime qt_src := by
+                        exact
+                          joinTypeResults_lookup_member_clean_compat
+                            (ctx := ctxᵢ) (first := first) (src := first) (rest := rest) (res := res)
+                            h_join (by simp) l qt qt_src hlookup hclean hlookup_src_ctx
+                      exact
+                        applyFnTClosure_fresh_lookup_not_clean_of_p1_true
+                          (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                          (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                          (result2 := result1) (fuel := fuel') (tcl := tcl) (r := first)
+                          hp1_true l qt_src hlookup_body happly_src hlookup_src hclean_src
+                    · have hsrc_mem : srcRes ∈ first :: rest := by
+                        exact List.mem_cons_of_mem first hsrc_rest
+                      have hsrc_results : srcRes ∈ results := by
+                        simpa [heq_results] using hsrc_mem
+                      rcases list_mapM_ok_mem_output_exists_input
+                          (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1
+                            etyp2 p2 pred2 ctxᵢ result1 fuel')
+                          (xs := tcls) (ys := results) (y := srcRes) hmap hsrc_results with
+                        ⟨tcl, _htcl_mem, happly_src⟩
+                      rcases memEnv_lookup_some_of_contains srcRes.memEnv' l hsrc_contains with
+                        ⟨qt_src, hlookup_src⟩
+                      have hlookup_src_ctx :
+                          (ctxAfter ctxᵢ srcRes).memEnv.lookup l = some qt_src := by
+                        simpa [ctxAfter] using hlookup_src
+                      have hclean_src :
+                          qtypCleanUnder (ctxAfter ctxᵢ srcRes).regime qt_src := by
+                        exact
+                          joinTypeResults_lookup_member_clean_compat
+                            (ctx := ctxᵢ) (first := first) (src := srcRes) (rest := rest) (res := res)
+                            h_join hsrc_mem l qt qt_src hlookup hclean hlookup_src_ctx
+                      exact
+                        applyFnTClosure_fresh_lookup_not_clean_of_p1_true
+                          (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                          (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                          (result2 := result1) (fuel := fuel') (tcl := tcl) (r := srcRes)
+                          hp1_true l qt_src hlookup_body happly_src hlookup_src hclean_src
                   | some qt' =>
                     -- Inherited location: l is in result1.memEnv' with type qt'
                     have hetyp_qt : qt.etyp = ETyp.int :=
