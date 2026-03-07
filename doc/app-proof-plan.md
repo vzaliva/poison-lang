@@ -33,6 +33,39 @@ What makes `stepFR_app` hard:
 
 ## 2. Current Status and Plan
 
+### Checkpoint: 2026-03-07 — `arrow` inherited-location split collapsed to one reusable typing-side theorem; fresh-location branch remains
+
+Build: **clean** (no errors; sorry-only warnings).
+
+What changed:
+
+- the remaining inherited-location `arrow` work in `StepFRApp.lean` was refactored so the
+  two local subcases
+  - pre-body entry has no guard tag, and
+  - pre-body entry has an inactive guard tag
+  are no longer separate app-local `sorry`s
+- instead, that reasoning is now factored into one reusable theorem-shaped obligation:
+  `typecheckExpr_lookup_clean_back_of_pc_true`
+- this theorem currently lives in `LeanProofs/StepFRApp.lean` because it depends on
+  `qtypCleanUnder` (so it cannot live in `TypeSafety.lean` without introducing the wrong
+  dependency direction)
+
+What is now clearer:
+
+- under the strengthened control-poison write semantics, the inherited-location part of the
+  narrowed `arrow` blocker is no longer best understood as two ad hoc local proof holes
+- the real shape is one generic statement:
+  if an inherited location is clean in the post-body typing result under `pc = true`, then
+  the corresponding pre-body entry was already clean under the pre-body regime
+- the only remaining app-local location hole in the narrowed `arrow` branch is now the
+  **fresh-location** case
+
+Plan consequence:
+
+- treat the fresh-location case as the next local `arrow` target
+- after that, decide whether `typecheckExpr_lookup_clean_back_of_pc_true` should be proved
+  in place in `StepFRApp.lean` or moved into a more shared FR-layer file
+
 ### Checkpoint: 2026-03-07 — control-poison write semantics strengthened; `arrow` architecture must be reassessed on the new rules
 
 Build: **clean** (no errors; sorry-only warnings). Implementation tests: **80 passed, 0 failed**.

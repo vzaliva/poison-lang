@@ -8433,6 +8433,17 @@ private lemma applyPFnTClosure_preserves_memEnv_lookup
               ctx st1 st2 p p1 argEtyp argPoison argPred result2
               (Nat.succ fuelBody) x retSpec capturedEnv r happly
 
+private lemma typecheckExpr_lookup_clean_back_of_pc_true
+  (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+  (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
+  (hpc : ctx.pc = true) :
+  ∀ (l : Loc) (qt_in qt_out : QTyp),
+    ctx.memEnv.lookup l = some qt_in →
+    res.memEnv'.lookup l = some qt_out →
+    qtypCleanUnder res.regime' qt_out →
+    qtypCleanUnder ctx.regime qt_in := by
+  sorry
+
 private lemma joinTypeResults_poison_pred_of_head_true_noPred
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (h_join : joinTypeResults ctx first rest = .ok res)
@@ -10931,30 +10942,21 @@ lemma stepFR_app
                         joinTypeResults_lookup_member_clean_compat
                           (ctx := ctxᵢ) (first := first) (src := firstA₀) (rest := rest) (res := res)
                           h_join hfirstA₀_mem' l qt qt_A₀ hlookup hclean hlookup_A₀_ctx
-                    have hclean_A₁ :
-                        qtypCleanUnder (ctxAfter ctxᵢ firstA₁).regime qt_A₁ := by
-                      exact
-                        joinTypeResults_lookup_member_clean_compat
-                          (ctx := ctxᵢ) (first := first) (src := firstA₁) (rest := rest) (res := res)
-                          h_join hfirstA₁_mem' l qt qt_A₁ hlookup hclean hlookup_A₁_ctx
                     -- Establish qt' cleanness under result1.regime'
                     -- (bodies may change the type at l; qt' ≠ qt is possible)
                     have hclean_pre' : qtypCleanUnder result1.regime' qt' := by
-                      by_cases hpf : qt'.poison = false
-                      · exact qtypCleanUnder.clean hpf
-                      · have hnotfun_qt' : qt'.etyp.isFunctionType = false := by
-                          simp [hetyp_qt', ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-                        cases htag_pre : qtypGuardTag qt' with
-                        | none =>
-                            -- Remaining hard case: the inherited pre-body entry has no
-                            -- active guard witness, yet the final post-body entry is clean.
-                            sorry
-                        | some k' =>
-                            by_cases hkpre : result1.regime'.lookup? k' = some true
-                            · exact qtypCleanUnder.guard k' htag_pre hkpre hnotfun_qt'
-                            · -- Remaining hard case: the inherited pre-body entry has a
-                              -- guard tag, but it is not active before the body.
-                              sorry
+                      have hlookup_result3A₀ : result3A₀.memEnv'.lookup l = some qt_A₀ := by
+                        simpa [hfirstA₀_eq] using hlookup_A₀
+                      have hclean_result3A₀ : qtypCleanUnder result3A₀.regime' qt_A₀ := by
+                        simpa [ctxAfter, hfirstA₀_eq] using hclean_A₀
+                      have hpc_bodyA₀ : bodyCtxA₀.pc = true := by
+                        simp [bodyCtxA₀, hp1_true, joinPoison]
+                      exact
+                        typecheckExpr_lookup_clean_back_of_pc_true
+                          (ctx := bodyCtxA₀) (e := body₀) (fuel := fuelBodyA₀) (res := result3A₀)
+                          htc_bodyA₀ hpc_bodyA₀ l qt' qt_A₀
+                          (by simpa [bodyCtxA₀] using hlookup_body)
+                          hlookup_result3A₀ hclean_result3A₀
                     -- Use qt' cleanness to prove agreeLocUnder
                     have hlookup_pre :
                         (ctxAfter (ctxAfter ctxᵢ result2) result1).memEnv.lookup l =

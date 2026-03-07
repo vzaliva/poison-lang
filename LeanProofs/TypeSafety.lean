@@ -11809,7 +11809,8 @@ lemma typecheckExpr_mem_contains_preserved
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckExpr .ioFree ctx e fuel = .ok res) :
     ∀ l, ctx.memEnv.contains l → res.memEnv'.contains l := by
-  sorry
+  intro l hcontains
+  exact typecheckExpr_ioFree_mem_contains_preserved ctx e fuel res l htc hcontains
 
 lemma typecheckExpr_pure_mem_subset_of_toPExpr
     (ctx : TypeContext) (e : Expr) (pe : PExpr) (fuel : Nat) (res : TypeResult)
