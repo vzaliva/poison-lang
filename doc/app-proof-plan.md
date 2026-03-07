@@ -33,6 +33,41 @@ What makes `stepFR_app` hard:
 
 ## 2. Current Status and Plan
 
+### Checkpoint: 2026-03-07 — both narrowed `arrow` wrappers are now resolved; one origin theorem remains
+
+Build: **clean** (`make lean-build` passes; sorry-only warnings).
+
+What changed:
+
+- `typecheckExpr_lookup_clean_back_of_pc_true` is no longer a direct `sorry`; it is now a
+  proved wrapper around `typecheckExpr_clean_lookup_origin_of_pc_true`
+- `applyFnTClosure_fresh_lookup_not_clean_of_p1_true` is also no longer a direct `sorry`;
+  it is now a proved wrapper using closure inversion plus the same origin theorem
+- the generic lookup-back helper
+  `assign_memEnv_formula_lookup_eq_of_not_mem`
+  was moved into `LeanProofs/TypeSafety.lean`, together with
+  `updateLocsetWeak_lookup_eq_of_not_mem`, so the remaining induction can use them without
+  `StepFRAssign`-local duplication
+
+Current state of the narrowed `arrow` work:
+
+- the wrapper layer is done
+- the only remaining theorem-shaped blocker for this slice is now
+  `typecheckExpr_clean_lookup_origin_of_pc_true`
+
+Interpretation:
+
+- the previous two overlapping `arrow` obligations have been successfully collapsed
+  into one stronger semantic statement
+- no change of proof architecture is needed at this point; the next work is still the
+  planned induction over `typecheckExpr`
+
+Next step:
+
+- prove `typecheckExpr_clean_lookup_origin_of_pc_true`
+- once that is done, the narrowed `arrow` locations branch is expected to close without
+  further redesign
+
 ### Checkpoint: 2026-03-07 — `arrow` theorem debt reduced from two obligations to one stronger origin theorem
 
 Build: **clean** on affected files (`TypeSafety`, `StepFRAssign`, `StepFRApp`); full
