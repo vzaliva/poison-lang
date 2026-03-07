@@ -33,6 +33,36 @@ What makes `stepFR_app` hard:
 
 ## 2. Current Status and Plan
 
+### Checkpoint: 2026-03-07 — `arrow` theorem debt reduced from two obligations to one stronger origin theorem
+
+Build: **clean** on affected files (`TypeSafety`, `StepFRAssign`, `StepFRApp`); full
+`lean-build` pending for checkpoint verification.
+
+What changed:
+
+- the generic helper `assign_memEnv_formula_lookup_eq_of_not_mem` was moved into
+  `LeanProofs/TypeSafety.lean`
+- the previous two `arrow` theorem-shaped obligations
+  - `typecheckExpr_lookup_clean_back_of_pc_true`
+  - `applyFnTClosure_fresh_lookup_not_clean_of_p1_true`
+  have been refactored so that only one stronger theorem remains as a direct hole:
+  `typecheckExpr_clean_lookup_origin_of_pc_true`
+- the old two statements are now proved wrappers around that stronger origin theorem
+
+Why this is better:
+
+- the remaining proof debt now matches the actual semantic question under poisoned control:
+  any final clean memory lookup should come from a clean pre-body lookup
+- the fresh and inherited `arrow` subcases are no longer treated as unrelated obligations
+- this reduces the local `sorry` surface in `StepFRApp.lean` by one and gives a clearer
+  target for the next induction
+
+Next step:
+
+- prove `typecheckExpr_clean_lookup_origin_of_pc_true` by induction on `typecheckExpr`
+- use the moved `assign_memEnv_formula_lookup_eq_of_not_mem` helper in the `assign` case
+- once that theorem is proved, both current `arrow` wrappers close automatically
+
 ### Checkpoint: 2026-03-07 — narrowed `arrow` location proof now reduced entirely to two theorem-shaped obligations
 
 Build: **clean** (no errors; sorry-only warnings).

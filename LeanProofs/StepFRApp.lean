@@ -8433,6 +8433,16 @@ private lemma applyPFnTClosure_preserves_memEnv_lookup
               ctx st1 st2 p p1 argEtyp argPoison argPred result2
               (Nat.succ fuelBody) x retSpec capturedEnv r happly
 
+private lemma typecheckExpr_clean_lookup_origin_of_pc_true
+  (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+  (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
+  (hpc : ctx.pc = true) :
+  ∀ (l : Loc) (qt_out : QTyp),
+    res.memEnv'.lookup l = some qt_out →
+    qtypCleanUnder res.regime' qt_out →
+    ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qtypCleanUnder ctx.regime qt_in := by
+  sorry
+
 private lemma typecheckExpr_lookup_clean_back_of_pc_true
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
@@ -8442,7 +8452,16 @@ private lemma typecheckExpr_lookup_clean_back_of_pc_true
     res.memEnv'.lookup l = some qt_out →
     qtypCleanUnder res.regime' qt_out →
     qtypCleanUnder ctx.regime qt_in := by
-  sorry
+  intro l qt_in qt_out hlookup_in hlookup_out hclean_out
+  rcases typecheckExpr_clean_lookup_origin_of_pc_true
+      (ctx := ctx) (e := e) (fuel := fuel) (res := res)
+      htc hpc l qt_out hlookup_out hclean_out with
+    ⟨qt_in', hlookup_in', hclean_in'⟩
+  have hqt : qt_in' = qt_in := by
+    rw [hlookup_in] at hlookup_in'
+    exact Option.some.inj hlookup_in'.symm
+  subst hqt
+  exact hclean_in'
 
 private lemma applyFnTClosure_fresh_lookup_not_clean_of_p1_true
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -8455,7 +8474,47 @@ private lemma applyFnTClosure_fresh_lookup_not_clean_of_p1_true
     applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r)
   (hlookup_out : r.memEnv'.lookup l = some qt) :
   ¬ qtypCleanUnder r.regime' qt := by
-  sorry
+  intro hclean_out
+  cases fuel with
+  | zero =>
+      simp [applyFnTClosure] at happly
+  | succ fuelBody =>
+      cases tcl with
+      | regular x body capturedEnv =>
+          rcases applyFnTClosure_regular_inv
+              ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuelBody x body capturedEnv r happly with
+            ⟨result3, htcBody, _hsub, hr⟩
+          subst hr
+          let bodyCtx : TypeContext :=
+            { ctx with
+              pc := joinPoison p (joinPoison p1 ctx.pc)
+              memEnv := result2.memEnv'
+              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              tagEnv := result2.tagEnv'
+              nextTag := result2.nextTag'
+              nextLoc := result2.nextLoc'
+              regime := result2.regime' }
+          have hpc_body : bodyCtx.pc = true := by
+            simp [bodyCtx, h_p1, joinPoison]
+          have hlookup_result3 : result3.memEnv'.lookup l = some qt := by
+            simpa using hlookup_out
+          have hclean_result3 : qtypCleanUnder result3.regime' qt := by
+            simpa using hclean_out
+          rcases typecheckExpr_clean_lookup_origin_of_pc_true
+              (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
+              (htc := by simpa [bodyCtx] using htcBody)
+              hpc_body l qt hlookup_result3 hclean_result3 with
+            ⟨qt_in, hlookup_in_body, _hclean_in⟩
+          have hlookup_in_result2 : result2.memEnv'.lookup l = some qt_in := by
+            simpa [bodyCtx] using hlookup_in_body
+          rw [hlookup_in] at hlookup_in_result2
+          cases hlookup_in_result2
+      | extern x retSpec effects capturedEnv =>
+          exact False.elim <|
+            applyFnTClosure_ioFree_extern_fails
+              ctx st1 st2 p p1 argEtyp argPoison argPred result2
+              (Nat.succ fuelBody) x retSpec effects capturedEnv r happly
 
 private lemma joinTypeResults_poison_pred_of_head_true_noPred
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)

@@ -1035,6 +1035,52 @@ lemma assign_memEnv_formula_contains_of_contains
           simp
           exact updateLocsetWeak_contains_of_contains env ls storedPoison storedPred l h
 
+lemma updateLocsetWeak_lookup_eq_of_not_mem
+    (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate)
+    (l : Loc) (hnot : l ∉ ls) :
+    (updateLocsetWeak env ls storedPoison storedPred).lookup l = env.lookup l := by
+  unfold updateLocsetWeak
+  set joined :=
+    LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l =>
+      match env.get? l with
+      | some qt => (joinPoison accP qt.poison, joinPredicates accPred qt.pred)
+      | none => (accP, accPred))
+  set finalQt : QTyp := ⟨ETyp.int, joined.1, joined.2⟩
+  dsimp
+  unfold LocSet.fold
+  rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+  have hnotList : l ∉ ls.toList := by
+    intro hmem
+    exact hnot ((Std.ExtTreeSet.mem_toList).1 hmem)
+  exact
+    list_fold_updateMemEnv_lookup_eq_of_not_mem
+      ls.toList env l finalQt hnotList
+
+lemma assign_memEnv_formula_lookup_eq_of_not_mem
+    (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate)
+    (l : Loc) (hnot : l ∉ ls) :
+    (match Std.ExtTreeSet.toList ls with
+      | [l0] => updateMemEnv env l0 { etyp := ETyp.int, poison := storedPoison, pred := storedPred }
+      | _ => updateLocsetWeak env ls storedPoison storedPred).lookup l = env.lookup l := by
+  cases hls : Std.ExtTreeSet.toList ls with
+  | nil =>
+      simp
+      exact updateLocsetWeak_lookup_eq_of_not_mem env ls storedPoison storedPred l hnot
+  | cons x xs =>
+      cases xs with
+      | nil =>
+          have hxInList : x ∈ ls.toList := by simp [hls]
+          have hxIn : x ∈ ls := (Std.ExtTreeSet.mem_toList).1 hxInList
+          have hneq : l ≠ x := by
+            intro hEq
+            exact hnot (by simpa [hEq] using hxIn)
+          simp [MemoryTypeEnv_lookup_updateMemEnv_ne
+            (Γ := env) (l := x) (l' := l)
+            (qt := { etyp := ETyp.int, poison := storedPoison, pred := storedPred }) hneq]
+      | cons y ys =>
+          simp
+          exact updateLocsetWeak_lookup_eq_of_not_mem env ls storedPoison storedPred l hnot
+
 -- Helper: locset fold max successor bound from membership
 lemma locset_fold_max_succ_ge_of_mem
     (ls : LocSet) (init l : Nat)
