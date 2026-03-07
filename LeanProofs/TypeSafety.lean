@@ -2425,6 +2425,101 @@ lemma typecheckAssign_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) 
       | error _err =>
           simp [h_tc1] at h_typecheck
 
+lemma typecheckAssign_memEnv_formula (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheckAssign .ioFree ctx e1 e2 fuel = .ok res →
+  ∃ (result1 result2 : TypeResult) (ls : LocSet),
+    typecheckExpr .ioFree ctx e1 (fuel - 1) = .ok result1 ∧
+    result1.qualType.etyp = ETyp.ref ls ∧
+    typecheckExpr .ioFree (updateCtxFromResult ctx result1) e2 (fuel - 1) = .ok result2 ∧
+    result2.qualType.etyp = ETyp.int ∧
+    (res.memEnv' =
+      match Std.ExtTreeSet.toList ls with
+      | [l] =>
+          updateMemEnv result2.memEnv' l
+            { etyp := ETyp.int
+              poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+              pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+      | _ =>
+          updateLocsetWeak result2.memEnv' ls
+            (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+            (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)) ∧
+    res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+      unfold typecheckAssign at h_typecheck
+      simp at h_typecheck
+  | succ fuel' =>
+      unfold typecheckAssign at h_typecheck
+      simp at h_typecheck
+      simp [bind, Except.bind] at h_typecheck
+      cases h_tc1 : typecheckExpr .ioFree ctx e1 fuel' with
+      | ok result1 =>
+          simp [h_tc1] at h_typecheck
+          cases h_qt1 : result1.qualType with
+          | mk etyp1 p1 pred1 =>
+              rw [h_qt1] at h_typecheck
+              simp at h_typecheck
+              cases etyp1 with
+              | ref ls =>
+                  simp at h_typecheck
+                  cases h_tc2 :
+                    typecheckExpr .ioFree
+                        { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                                   nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                        e2 fuel' with
+                  | ok result2 =>
+                      rw [h_tc2] at h_typecheck
+                      simp at h_typecheck
+                      have h_tc2_orig :
+                          typecheckExpr .ioFree (updateCtxFromResult ctx result1) e2 fuel' = .ok result2 := by
+                        simpa [updateCtxFromResult] using h_tc2
+                      cases h_qt2 : result2.qualType with
+                      | mk etyp2 p2 pred2 =>
+                          rw [h_qt2] at h_typecheck
+                          simp at h_typecheck
+                          split at h_typecheck
+                          · rename_i h_etyp2_int
+                            simp [pure, Except.pure] at h_typecheck
+                            cases h_typecheck
+                            simp only [Nat.add_sub_cancel]
+                            refine ⟨result1, result2, ls, h_tc1, ?_, h_tc2_orig, ?_, ?_, ?_⟩
+                            · rw [h_qt1]
+                            · rw [h_qt2]
+                              exact h_etyp2_int
+                            · have hself :
+                                  (match Std.ExtTreeSet.toList ls with
+                                   | [l] =>
+                                       updateMemEnv result2.memEnv' l
+                                         { etyp := ETyp.int
+                                           poison := joinPoison ctx.pc (joinPoison p1 p2)
+                                           pred := if p1 = true ∨ ctx.pc = true then Predicate.noPred else pred2 }
+                                   | _ =>
+                                       updateLocsetWeak result2.memEnv' ls
+                                         (joinPoison ctx.pc (joinPoison p1 p2))
+                                         (if p1 = true ∨ ctx.pc = true then Predicate.noPred else pred2)) =
+                                  (match Std.ExtTreeSet.toList ls with
+                                   | [l] =>
+                                       updateMemEnv result2.memEnv' l
+                                         { etyp := ETyp.int
+                                           poison := joinPoison ctx.pc (joinPoison p1 p2)
+                                           pred := if p1 = true ∨ ctx.pc = true then Predicate.noPred else pred2 }
+                                   | _ =>
+                                       updateLocsetWeak result2.memEnv' ls
+                                         (joinPoison ctx.pc (joinPoison p1 p2))
+                                         (if p1 = true ∨ ctx.pc = true then Predicate.noPred else pred2)) := rfl
+                              convert hself using 1
+                              simp [h_qt1, h_qt2]
+                            · rfl
+                          · cases h_typecheck
+                  | error _err =>
+                      rw [h_tc2] at h_typecheck
+                      simp at h_typecheck
+              | _ =>
+                  simp at h_typecheck
+      | error _err =>
+          simp [h_tc1] at h_typecheck
+
 -- Structure lemma for deref typechecking
 -- All branches preserve nextTag' from the subexpression result
 lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :

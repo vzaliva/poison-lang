@@ -33,6 +33,61 @@ What makes `stepFR_app` hard:
 
 ## 2. Current Status and Plan
 
+### Checkpoint: 2026-03-07 — origin theorem now proved through structural, write, and `if` cases; only `app` and `while` remain
+
+Build: pending full `lean-build` for checkpoint verification.
+
+What changed:
+
+- `typecheckExpr_clean_lookup_origin_of_pc_true` is no longer a blanket `sorry`
+- it now has a real strong-induction proof covering:
+  - literals / variables / functions / pure functions
+  - `op`, `unaryop`, `deref`, `seq`, `vlet`
+  - `newRef`
+  - `assign`
+  - all four `if` modes
+- added local proof support in `StepFRApp.lean`:
+  - `list_fold_joinPredicates_init_noPred`
+  - `joinMemEnvsStrong_lookup_cleanUnder_left_or_right`
+- strengthened the shared helper
+  `typecheckAssign_memEnv_formula` in `LeanProofs/TypeSafety.lean`
+  so it now also returns the post-`regime'` equation
+
+What remains inside the theorem:
+
+- `app`
+- `kwhile`
+
+Interpretation:
+
+- the theorem debt is now concentrated exactly where the semantics are genuinely global:
+  closure-result joins and the while fixpoint
+- the previous broad uncertainty about assignment / poisoned writes / conditional joins is
+  now discharged in the theorem body itself
+
+### Checkpoint: 2026-03-07 — generic `assign` memory-shape helper proved; origin theorem still the active blocker
+
+Build: pending full `lean-build` for checkpoint verification.
+
+What changed:
+
+- added a proved generic helper in `LeanProofs/TypeSafety.lean`:
+  `typecheckAssign_memEnv_formula`
+- this packages the exact post-`memEnv'` formula for successful `assign` typing, including
+  the strengthened control-poison predicate erasure rule
+- the helper is intended to remove duplicated local re-unfolding in
+  `typecheckExpr_clean_lookup_origin_of_pc_true`, especially its `assign` case
+
+What this means for the plan:
+
+- the remaining blocker is still
+  `typecheckExpr_clean_lookup_origin_of_pc_true`
+- but one of its nastier subcases now has the right shared infrastructure in `TypeSafety`
+  instead of being reconstructed ad hoc inside `StepFRApp`
+- likely next supporting helper after this:
+  a `restrictMemEnv` lookup theorem for the eventual `while` case, if the induction reaches
+  that point
+
 ### Checkpoint: 2026-03-07 — both narrowed `arrow` wrappers are now resolved; one origin theorem remains
 
 Build: **clean** (`make lean-build` passes; sorry-only warnings).
