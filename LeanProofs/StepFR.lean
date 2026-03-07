@@ -908,13 +908,95 @@ inductive PreservesInheritedCleanLocOneRun
       (h_in : θ_in.lookup l = some a) (h_mem_in : μ_in.lookup a = some n)
       (h_out : θ_out.lookup l = some a) (h_mem_out : μ_out.lookup a = some n)
 
-inductive PreservesInheritedCleanLocsOneRun
-  (ctx : TypeContext) (μ_in μ_out : Memory) (θ_in θ_out : RealizationMap) : Prop where
-  | intro (hpres : ∀ l qt, ctx.memEnv.lookup l = some qt →
-      qtypCleanUnder ctx.regime qt → PreservesInheritedCleanLocOneRun μ_in μ_out θ_in θ_out l)
+lemma PreservesInheritedCleanLocOneRun.trans
+  {μ₀ μ₁ μ₂ : Memory} {θ₀ θ₁ θ₂ : RealizationMap} {l : Loc}
+  (h₀₁ : PreservesInheritedCleanLocOneRun μ₀ μ₁ θ₀ θ₁ l)
+  (h₁₂ : PreservesInheritedCleanLocOneRun μ₁ μ₂ θ₁ θ₂ l) :
+  PreservesInheritedCleanLocOneRun μ₀ μ₂ θ₀ θ₂ l := by
+  cases h₀₁ with
+  | both_unrealized hnone₀ hnone₁ =>
+      cases h₁₂ with
+      | both_unrealized hnone₁' hnone₂ =>
+          exact .both_unrealized hnone₀ hnone₂
+      | preserve_value _ _ hsome₁ _ _ _ =>
+          exact False.elim (Option.noConfusion (hnone₁.symm.trans hsome₁))
+  | preserve_value a n hθ₀ hm₀ hθ₁ hm₁ =>
+      cases h₁₂ with
+      | both_unrealized hnone₁ _ =>
+          exact False.elim (Option.noConfusion (hθ₁.symm.trans hnone₁))
+      | preserve_value a' n' hθ₁' hm₁' hθ₂ hm₂ =>
+          have ha : a' = a := Option.some.inj (hθ₁'.symm.trans hθ₁)
+          have hn : n' = n := by
+            rw [ha] at hm₁'
+            exact Option.some.inj (hm₁'.symm.trans hm₁)
+          subst ha
+          subst hn
+          exact .preserve_value a' n' hθ₀ hm₀ hθ₂ hm₂
+
+inductive PreservesInheritedFinalCleanLocsOneRun
+  (ctx : TypeContext) (res : TypeResult)
+  (μ_in μ_out : Memory) (θ_in θ_out : RealizationMap) : Prop where
+  | intro (hpres : ∀ l qt_in qt_out,
+      ctx.memEnv.lookup l = some qt_in →
+      res.memEnv'.lookup l = some qt_out →
+      qtypCleanUnder res.regime' qt_out →
+      PreservesInheritedCleanLocOneRun μ_in μ_out θ_in θ_out l)
+
+lemma PreservesInheritedFinalCleanLocsOneRun.apply
+  {ctx : TypeContext} {res : TypeResult}
+  {μ_in μ_out : Memory} {θ_in θ_out : RealizationMap}
+  (hpres :
+    PreservesInheritedFinalCleanLocsOneRun ctx res μ_in μ_out θ_in θ_out)
+  {l : Loc} {qt_in qt_out : QTyp}
+  (hlookup_in : ctx.memEnv.lookup l = some qt_in)
+  (hlookup_out : res.memEnv'.lookup l = some qt_out)
+  (hclean_out : qtypCleanUnder res.regime' qt_out) :
+  PreservesInheritedCleanLocOneRun μ_in μ_out θ_in θ_out l := by
+  rcases hpres with ⟨hpres⟩
+  exact hpres l qt_in qt_out hlookup_in hlookup_out hclean_out
 
 -- Single-run corollary of StepFR: instantiate with identical configs to extract
 -- per-run evidence (θ', valueHasETyp, runtimeInstantiatesCtx, etc.) from one execution.
+lemma StepFR_single_run_core
+  {mode : LeanPoison.EvalMode}
+  {ctx : TypeContext}
+  {e : Expr}
+  {res : TypeResult}
+  {predSat : PredSat}
+  {tm : TagMeaning}
+  (hfr : StepFR mode ctx e res predSat tm)
+  (hpredlaws : PredSatLaws predSat tm)
+  (hwfTm : wfTagMeaningCtx tm ctx)
+  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (cf : Config) (o : Value)
+  (hθwf : wfRealizationMap θ)
+  (hwfCtx : wfTypeContext ctx)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+  (htagR : regimeConsistentWithCtx ctx)
+  (hRbound : regimeBounded ctx.regime)
+  (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ)
+  (a : Address) (pm : Bool)
+  (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+  (ht : terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o) :
+  QTypRespectsTagMeaning tm res.qualType ∧
+  ∃ (θ' : RealizationMap),
+    wfExtendsMap θ θ' ∧
+    valueHasETyp θ' o res.qualType.etyp ∧
+    wfTagMeaningCtx tm (ctxAfter ctx res) ∧
+    wfTypeContext (ctxAfter ctx res) ∧
+    wfConfig cf ∧
+    runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+    regimeConsistentWithCtx (ctxAfter ctx res) ∧
+    consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+    valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o := by
+  have hagree := agreeOnClean_same_config predSat ctx.regime ctx μ ρ θ hric hcwr rfl
+  rcases hfr hpredlaws hwfTm μ μ ρ ρ θ θ cf cf o o
+    hθwf hθwf hwfCtx hric hric htagR hRbound hcwr hcwr hagree
+    a a pm hwfcfg hwfcfg ht ht with
+    ⟨hresTm, θ₀', _θ₁', hext₀, _hext₁, htyp₀, _htyp₁, hTm, hwfC, hwfcf₀, _hwfcf₁,
+      hric₀, _hric₁, htagR', hcwr₀, _hcwr₁, _hagree', hvalc₀, _hvalc₁, _hresAgree⟩
+  exact ⟨hresTm, θ₀', hext₀, htyp₀, hTm, hwfC, hwfcf₀, hric₀, htagR', hcwr₀, hvalc₀⟩
+
 lemma StepFR_single_run
   {mode : LeanPoison.EvalMode}
   {ctx : TypeContext}
@@ -947,14 +1029,44 @@ lemma StepFR_single_run
     regimeConsistentWithCtx (ctxAfter ctx res) ∧
     consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
     valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-    PreservesInheritedCleanLocsOneRun ctx μ cf.memory θ θ' := by
-  have hagree := agreeOnClean_same_config predSat ctx.regime ctx μ ρ θ hric hcwr rfl
-  rcases hfr hpredlaws hwfTm μ μ ρ ρ θ θ cf cf o o
-    hθwf hθwf hwfCtx hric hric htagR hRbound hcwr hcwr hagree
-    a a pm hwfcfg hwfcfg ht ht with
-    ⟨hresTm, θ₀', _θ₁', hext₀, _hext₁, htyp₀, _htyp₁, hTm, hwfC, hwfcf₀, _hwfcf₁,
-      hric₀, _hric₁, htagR', hcwr₀, _hcwr₁, _hagree', hvalc₀, _hvalc₁, _hresAgree⟩
-  exact ⟨hresTm, θ₀', hext₀, htyp₀, hTm, hwfC, hwfcf₀, hric₀, htagR', hcwr₀, hvalc₀, sorry⟩
+    PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' := by
+  rcases StepFR_single_run_core hfr hpredlaws hwfTm μ ρ θ cf o
+      hθwf hwfCtx hric htagR hRbound hcwr a pm hwfcfg ht with
+    ⟨hresTm, θ', hext, htyp, hTm, hwfC, hwfcf, hric', htagR', hcwr', hvalc⟩
+  exact ⟨hresTm, θ', hext, htyp, hTm, hwfC, hwfcf, hric', htagR', hcwr', hvalc, sorry⟩
+
+def StepFRSingleRunFinalCleanPcTrue
+  (mode : LeanPoison.EvalMode)
+  (ctx : TypeContext)
+  (e : Expr)
+  (res : TypeResult)
+  (predSat : PredSat)
+  (tm : TagMeaning) : Prop :=
+    PredSatLaws predSat tm →
+    wfTagMeaningCtx tm ctx →
+    ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+      (cf : Config) (o : Value),
+      wfRealizationMap θ →
+      wfTypeContext ctx →
+      runtimeInstantiatesCtx ctx μ ρ θ →
+      regimeConsistentWithCtx ctx →
+      regimeBounded ctx.regime →
+      consistentWithRegime predSat ctx.regime ctx μ ρ θ →
+      ∀ (a : Address) (pm : Bool),
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
+        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        ctx.pc = true →
+        ∃ (θ' : RealizationMap),
+          wfExtendsMap θ θ' ∧
+          valueHasETyp θ' o res.qualType.etyp ∧
+          wfTagMeaningCtx tm (ctxAfter ctx res) ∧
+          wfTypeContext (ctxAfter ctx res) ∧
+          wfConfig cf ∧
+          runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+          regimeConsistentWithCtx (ctxAfter ctx res) ∧
+          consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+          valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
 
 section TypeSystemEnforcesFaultRobustness_impl_proof
 
@@ -4069,12 +4181,28 @@ abbrev StepFR_IH (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
     wfTagMeaningCtx tm ctxᵢ →
     ∀ (res : TypeResult), typecheck .ioFree ctxᵢ e m = .ok res → StepFR .ioFree ctxᵢ e res predSat tm
 
+abbrev StepFRSingleRunFinalCleanPcTrue_IH
+    (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
+  ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext),
+    wfTagMeaningCtx tm ctxᵢ →
+    ∀ (res : TypeResult),
+      typecheck .ioFree ctxᵢ e m = .ok res →
+      StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ e res predSat tm
+
 -- Convert strong-induction IH (no wfTagMeaningCtx) to StepFR_IH; the extra premise is unused
 lemma StepFR_IH_of_induction
   (predSat : PredSat) (tm : TagMeaning) (k : Nat)
   (IH : ∀ m < k, ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
     typecheck .ioFree ctxᵢ e m = .ok res → StepFR .ioFree ctxᵢ e res predSat tm) :
   StepFR_IH predSat tm k :=
+  fun m hm e ctxᵢ _hwfTm res htc => IH m hm e ctxᵢ res htc
+
+lemma StepFRSingleRunFinalCleanPcTrue_IH_of_induction
+  (predSat : PredSat) (tm : TagMeaning) (k : Nat)
+  (IH : ∀ m < k, ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
+    typecheck .ioFree ctxᵢ e m = .ok res →
+      StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ e res predSat tm) :
+  StepFRSingleRunFinalCleanPcTrue_IH predSat tm k :=
   fun m hm e ctxᵢ _hwfTm res htc => IH m hm e ctxᵢ res htc
 
 end TypeSystemEnforcesFaultRobustness_step_proof

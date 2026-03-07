@@ -347,6 +347,75 @@ What later invalidated it:
 During March 6 housekeeping, the file was merged into this history log and deleted so the
 active planning surface stayed smaller.
 
+## Issue L History: Single-run witness redesign attempts (March 7)
+
+After the app-local location packaging was closed, the remaining blocker moved to the
+single-run witness used in the different-body `arrow` / `parrow` fallback branches.
+
+### Failed path 1: strengthen `StepFR_single_run` directly
+
+What was tried:
+
+- Replace the old input-clean property with an output-conditioned one:
+  inherited location `l`, final lookup `res.memEnv'.lookup l = some qt_out`,
+  final cleanness `qtypCleanUnder res.regime' qt_out`, then preserve the runtime cell.
+- Rewire the app fallback sites to consume that narrower witness.
+
+What was learned:
+
+- This fixes the statement mismatch in the old
+  `PreservesInheritedCleanLocsOneRun`, but it does **not** solve witness selection.
+- `StepFR_single_run_core` still exposes only an existential post-run realization map `θ'`.
+- The narrowed preservation fact must hold for the **same** `θ'` that the app proof later uses.
+  It cannot be recovered after the fact from an arbitrary witness extracted from plain `StepFR`.
+
+Decision:
+
+- keep the output-conditioned statement shape
+- stop trying to derive it as a thin wrapper over `StepFR_single_run_core`
+
+### Failed path 2: widen `StepFR` itself
+
+What was considered:
+
+- Add the narrowed single-run witness property directly to the global `StepFR` contract, so
+  every case proof would produce it uniformly.
+
+Why it was rejected:
+
+- `StepFR` is the shared two-run contract used by essentially every `stepFR_*` lemma.
+- Widening it would force nontrivial proof work in many unrelated cases:
+  `assign`, `ite`, `seq`, `vlet`, `op`, `newRef`, and eventually `kwhile`.
+- The new property is only needed in app-body fallback reasoning, so this would pay a large
+  global cost for a local consumer.
+
+Decision:
+
+- do **not** widen `StepFR`
+- keep `StepFR` as the shared two-run theorem
+- move the extra witness-producing fact to the induction side
+
+### Current accepted direction
+
+The accepted architecture is now:
+
+- keep `StepFR_single_run_core` as the sound extraction wrapper over `StepFR`
+- treat the current `StepFR_single_run` wrapper as historical / transitional only
+- define a separate induction-side theorem
+  `StepFRSingleRunFinalCleanPcTrue`
+  for expressions typed under `pc = true`
+- thread that theorem through the strong induction IH used by `stepFR_app`
+- rewire the app fallback sites to consume that IH directly
+
+Supporting work completed at this checkpoint:
+
+- generic unary composition lemma:
+  `PreservesInheritedCleanLocOneRun.trans`
+- induction-side theorem surface:
+  `StepFRSingleRunFinalCleanPcTrue`
+- induction-side IH surface:
+  `StepFRSingleRunFinalCleanPcTrue_IH`
+
 ## Historical Identifiers (removed from code)
 
 - `ArrowMemberCvcrSelector`

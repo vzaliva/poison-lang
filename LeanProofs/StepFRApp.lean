@@ -10711,13 +10711,19 @@ lemma stepFR_app
                         joinTypeResults_lookup_member_clean_compat
                           (ctx := ctxᵢ) (first := first) (src := firstA₀) (rest := rest) (res := res)
                           h_join hfirstA₀_mem' l qt qt_A₀ hlookup hclean hlookup_A₀_ctx
+                    have hclean_A₁ :
+                        qtypCleanUnder (ctxAfter ctxᵢ firstA₁).regime qt_A₁ := by
+                      exact
+                        joinTypeResults_lookup_member_clean_compat
+                          (ctx := ctxᵢ) (first := first) (src := firstA₁) (rest := rest) (res := res)
+                          h_join hfirstA₁_mem' l qt qt_A₁ hlookup hclean hlookup_A₁_ctx
+                    have hlookup_result3A₀ : result3A₀.memEnv'.lookup l = some qt_A₀ := by
+                      simpa [hfirstA₀_eq] using hlookup_A₀
+                    have hclean_result3A₀ : qtypCleanUnder result3A₀.regime' qt_A₀ := by
+                      simpa [ctxAfter, hfirstA₀_eq] using hclean_A₀
                     -- Establish qt' cleanness under result1.regime'
                     -- (bodies may change the type at l; qt' ≠ qt is possible)
                     have hclean_pre' : qtypCleanUnder result1.regime' qt' := by
-                      have hlookup_result3A₀ : result3A₀.memEnv'.lookup l = some qt_A₀ := by
-                        simpa [hfirstA₀_eq] using hlookup_A₀
-                      have hclean_result3A₀ : qtypCleanUnder result3A₀.regime' qt_A₀ := by
-                        simpa [ctxAfter, hfirstA₀_eq] using hclean_A₀
                       have hpc_bodyA₀ : bodyCtxA₀.pc = true := by
                         simp [bodyCtxA₀, joinPoison] at h_p1p ⊢
                         cases p1 <;> cases p <;> simp at h_p1p ⊢
@@ -10735,11 +10741,17 @@ lemma stepFR_app
                     have hloc_pre := hagree1.1 l qt' hlookup_pre hclean_pre'
                     -- Per-run preservation
                     rcases _hpres₀ with ⟨hpres₀_fn⟩
-                    have hpres_l₀ := hpres₀_fn l qt'
-                      (by simp only [bodyCtxA₀]; exact hlookup_body) hclean_pre'
+                    have hpres_l₀ := hpres₀_fn l qt' qt_A₀
+                      (by simp only [bodyCtxA₀]; exact hlookup_body)
+                      hlookup_result3A₀ hclean_result3A₀
+                    have hlookup_result3A₁ : result3A₁.memEnv'.lookup l = some qt_A₁ := by
+                      simpa [hfirstA₁_eq] using hlookup_A₁
+                    have hclean_result3A₁ : qtypCleanUnder result3A₁.regime' qt_A₁ := by
+                      simpa [ctxAfter, hfirstA₁_eq] using hclean_A₁
                     rcases _hpres₁ with ⟨hpres₁_fn⟩
-                    have hpres_l₁ := hpres₁_fn l qt'
-                      (by simp only [bodyCtxA₁]; exact hlookup_body) hclean_pre'
+                    have hpres_l₁ := hpres₁_fn l qt' qt_A₁
+                      (by simp only [bodyCtxA₁]; exact hlookup_body)
+                      hlookup_result3A₁ hclean_result3A₁
                     -- Case split on pre-body loc agreement × run preservation
                     cases hloc_pre with
                     | both_unrealized _ _ hθ₀_none hθ₁_none =>
@@ -13445,24 +13457,39 @@ lemma stepFR_app
                     memEnv_lookup_etyp_int res.memEnv' l qt hlookup_res
                   have hetyp_qt' : qt'.etyp = ETyp.int :=
                     memEnv_lookup_etyp_int result1.memEnv' l qt' hlookup_body
+                  have hfirstA₀_lookup :=
+                    applyPFnTClosure_preserves_memEnv_lookup ctxᵢ st1 st2 p p1
+                      etyp2 p2 pred2 result1 fuel'
+                      (PFnTClosure.regular x₀ pbodyA₀ σcapA₀) firstA₀
+                      happlyA₀ l qt' hlookup_body
+                  have hclean_member :
+                      qtypCleanUnder (ctxAfter ctxᵢ firstA₀).regime qt' := by
+                    exact
+                      joinTypeResults_lookup_member_clean_compat ctxᵢ first firstA₀
+                        rest res h_join hfirstA₀_mem' l qt qt'
+                        (by simpa [ctxAfter] using hlookup_res)
+                        (by simpa [ctxAfter] using hclean_res)
+                        (by simpa [ctxAfter] using hfirstA₀_lookup)
                   -- qt' is clean under result1.regime' (needed for hagree1 and hpres)
                   -- Proof: applyPFnTClosure preserves memEnv values for PExpr bodies,
                   -- so firstA₀.memEnv'.lookup l = some qt'. Then
                   -- joinTypeResults_lookup_member_clean_compat gives cleanness at
                   -- firstA₀.regime', and backward monotonicity gives result1.regime'.
                   have hclean_pre' : qtypCleanUnder result1.regime' qt' := by
-                    have hfirstA₀_lookup :=
-                      applyPFnTClosure_preserves_memEnv_lookup ctxᵢ st1 st2 p p1
-                        etyp2 p2 pred2 result1 fuel'
-                        (PFnTClosure.regular x₀ pbodyA₀ σcapA₀) firstA₀
-                        happlyA₀ l qt' hlookup_body
-                    have hclean_member :=
-                      joinTypeResults_lookup_member_clean_compat ctxᵢ first firstA₀
-                        rest res h_join hfirstA₀_mem' l qt qt'
+                    exact cleanUnder_of_monotone hres1_to_firstA₀_mono hclean_member
+                  have hfirstA₁_lookup :=
+                    applyPFnTClosure_preserves_memEnv_lookup ctxᵢ st1 st2 p p1
+                      etyp2 p2 pred2 result1 fuel'
+                      (PFnTClosure.regular x₁ pbodyA₁ σcapA₁) firstA₁
+                      happlyA₁ l qt' hlookup_body
+                  have hclean_member₁ :
+                      qtypCleanUnder (ctxAfter ctxᵢ firstA₁).regime qt' := by
+                    exact
+                      joinTypeResults_lookup_member_clean_compat ctxᵢ first firstA₁
+                        rest res h_join hfirstA₁_mem' l qt qt'
                         (by simpa [ctxAfter] using hlookup_res)
                         (by simpa [ctxAfter] using hclean_res)
-                        (by simpa [ctxAfter] using hfirstA₀_lookup)
-                    exact cleanUnder_of_monotone hres1_to_firstA₀_mono hclean_member
+                        (by simpa [ctxAfter] using hfirstA₁_lookup)
                   -- Pre-body agreement from hagree1
                   have hlookup_pre :
                       (ctxAfter (ctxAfter ctxᵢ result2) result1).memEnv.lookup l = some qt' := by
@@ -13470,11 +13497,15 @@ lemma stepFR_app
                   have hloc_pre := hagree1.1 l qt' hlookup_pre hclean_pre'
                   -- Per-run preservation
                   rcases hpres₀ with ⟨hpres₀_fn⟩
-                  have hpres_l₀ := hpres₀_fn l qt'
-                    (by simp only [bodyCtxA₀]; exact hlookup_body) hclean_pre'
+                  have hpres_l₀ := hpres₀_fn l qt' qt'
+                    (by simp only [bodyCtxA₀]; exact hlookup_body)
+                    (by simpa [hfirstA₀_eq] using hfirstA₀_lookup)
+                    (by simpa [ctxAfter, hfirstA₀_eq] using hclean_member)
                   rcases hpres₁ with ⟨hpres₁_fn⟩
-                  have hpres_l₁ := hpres₁_fn l qt'
-                    (by simp only [bodyCtxA₁]; exact hlookup_body) hclean_pre'
+                  have hpres_l₁ := hpres₁_fn l qt' qt'
+                    (by simp only [bodyCtxA₁]; exact hlookup_body)
+                    (by simpa [hfirstA₁_eq] using hfirstA₁_lookup)
+                    (by simpa [ctxAfter, hfirstA₁_eq] using hclean_member₁)
                   -- Case split on pre-body loc agreement × run-0 preservation
                   cases hloc_pre with
                   | both_unrealized _ _ hθ₀_none hθ₁_none =>
