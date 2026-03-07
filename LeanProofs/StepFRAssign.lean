@@ -436,41 +436,6 @@ lemma tagEnvConsistentWithRegime_invalidateRegimeDeps
     · exact hkR
     · exact hcontains
 
-lemma updateLocsetWeak_contains_of_contains
-    (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate)
-    (l : Loc) (h : env.contains l = true) :
-    (updateLocsetWeak env ls storedPoison storedPred).contains l = true := by
-  unfold updateLocsetWeak
-  set joined :=
-    LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l =>
-      match env.get? l with
-      | some qt => (joinPoison accP qt.poison, joinPredicates accPred qt.pred)
-      | none => (accP, accPred))
-  set finalQt : QTyp := ⟨ETyp.int, joined.1, joined.2⟩
-  dsimp
-  unfold LocSet.fold
-  rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-  exact list_fold_updateMemEnv_contains_of_contains ls.toList env l finalQt h
-
-lemma assign_memEnv_formula_contains_of_contains
-    (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate)
-    (l : Loc) (h : env.contains l = true) :
-    (match Std.ExtTreeSet.toList ls with
-      | [l0] => updateMemEnv env l0 { etyp := ETyp.int, poison := storedPoison, pred := storedPred }
-      | _ => updateLocsetWeak env ls storedPoison storedPred).contains l = true := by
-  cases hls : Std.ExtTreeSet.toList ls with
-  | nil =>
-      simp
-      exact updateLocsetWeak_contains_of_contains env ls storedPoison storedPred l h
-  | cons x xs =>
-      cases xs with
-      | nil =>
-          simp
-          exact updateMemEnv_contains_of_contains env x l { etyp := ETyp.int, poison := storedPoison, pred := storedPred } h
-      | cons y ys =>
-          simp
-          exact updateLocsetWeak_contains_of_contains env ls storedPoison storedPred l h
-
 -- updateLocsetWeak_contains_eq_or_mem: moved to TypeSafety.lean
 -- assign_memEnv_formula_contains_eq_or_mem: moved to TypeSafety.lean
 

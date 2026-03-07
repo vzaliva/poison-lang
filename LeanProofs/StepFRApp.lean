@@ -18,16 +18,6 @@ open scoped MemoryTypeEnv
 -- properties from `(ctxAfter ctx first)` to `(ctxAfter ctx res)`. Used by both peClosure
 -- and closure branches.
 
-private lemma memEnv_lookup_some_of_contains
-  (env : MemoryTypeEnv) (l : Loc)
-  (hcontains : env.contains l) :
-  ∃ qt, env.lookup l = some qt := by
-  have hmem : l ∈ env := (Std.ExtTreeMap.contains_iff_mem).1 hcontains
-  have hisSome : Option.isSome env[l]? := (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
-  rcases Option.isSome_iff_exists.mp hisSome with ⟨e, hget⟩
-  refine ⟨⟨ETyp.int, e.poison, e.pred⟩, ?_⟩
-  simp only [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hget, Option.map]
-
 private lemma join_transport_runtimeInstantiatesCtx
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
@@ -10907,6 +10897,46 @@ lemma stepFR_app
                       memEnv_lookup_etyp_int res.memEnv' l qt hlookup_res
                     have hetyp_qt' : qt'.etyp = ETyp.int :=
                       memEnv_lookup_etyp_int result1.memEnv' l qt' hlookup_body
+                    have hcontains_body : result1.memEnv'.contains l := by
+                      exact
+                        memEnv_contains_of_lookup_some
+                          (env := result1.memEnv') (l := l) (qt := qt') hlookup_body
+                    have hcontains_A₀ : firstA₀.memEnv'.contains l := by
+                      have hcontains_result3A₀ : result3A₀.memEnv'.contains l := by
+                        exact
+                          typecheckExpr_mem_contains_preserved
+                            (ctx := bodyCtxA₀) (e := body₀) (fuel := fuelBodyA₀) (res := result3A₀)
+                            htc_bodyA₀ l (by simpa [bodyCtxA₀] using hcontains_body)
+                      simpa [hfirstA₀_eq] using hcontains_result3A₀
+                    have hcontains_A₁ : firstA₁.memEnv'.contains l := by
+                      have hcontains_result3A₁ : result3A₁.memEnv'.contains l := by
+                        exact
+                          typecheckExpr_mem_contains_preserved
+                            (ctx := bodyCtxA₁) (e := body₁) (fuel := fuelBodyA₁) (res := result3A₁)
+                            htc_bodyA₁ l (by simpa [bodyCtxA₁] using hcontains_body)
+                      simpa [hfirstA₁_eq] using hcontains_result3A₁
+                    rcases memEnv_lookup_some_of_contains firstA₀.memEnv' l hcontains_A₀ with
+                      ⟨qt_A₀, hlookup_A₀⟩
+                    rcases memEnv_lookup_some_of_contains firstA₁.memEnv' l hcontains_A₁ with
+                      ⟨qt_A₁, hlookup_A₁⟩
+                    have hlookup_A₀_ctx :
+                        (ctxAfter ctxᵢ firstA₀).memEnv.lookup l = some qt_A₀ := by
+                      simpa [ctxAfter] using hlookup_A₀
+                    have hlookup_A₁_ctx :
+                        (ctxAfter ctxᵢ firstA₁).memEnv.lookup l = some qt_A₁ := by
+                      simpa [ctxAfter] using hlookup_A₁
+                    have hclean_A₀ :
+                        qtypCleanUnder (ctxAfter ctxᵢ firstA₀).regime qt_A₀ := by
+                      exact
+                        joinTypeResults_lookup_member_clean_compat
+                          (ctx := ctxᵢ) (first := first) (src := firstA₀) (rest := rest) (res := res)
+                          h_join hfirstA₀_mem' l qt qt_A₀ hlookup hclean hlookup_A₀_ctx
+                    have hclean_A₁ :
+                        qtypCleanUnder (ctxAfter ctxᵢ firstA₁).regime qt_A₁ := by
+                      exact
+                        joinTypeResults_lookup_member_clean_compat
+                          (ctx := ctxᵢ) (first := first) (src := firstA₁) (rest := rest) (res := res)
+                          h_join hfirstA₁_mem' l qt qt_A₁ hlookup hclean hlookup_A₁_ctx
                     -- Establish qt' cleanness under result1.regime'
                     -- (bodies may change the type at l; qt' ≠ qt is possible)
                     have hclean_pre' : qtypCleanUnder result1.regime' qt' := by
