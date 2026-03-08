@@ -1815,35 +1815,6 @@ lemma assign_mem_formula_guardClosure_lookup_implies_rhs_pred
 
 -- locset_fold_max_succ_ge_of_mem: moved to TypeSafety.lean
 
-private lemma not_qtypCleanUnder_of_poison_true_noPred {qt : QTyp}
-  (hpoison : qt.poison = true) (hpred : qt.pred = Predicate.noPred) :
-  ¬ qtypCleanUnder R qt := by
-  intro hclean
-  cases hclean with
-  | clean hfalse =>
-      rw [hpoison] at hfalse
-      cases hfalse
-  | guard _ htag _ _ =>
-      simp [qtypGuardTag, hpred] at htag
-
-private lemma list_fold_joinPredicates_init_noPred
-  (env : MemoryTypeEnv) (xs : List Loc) (storedPoison : Poison) :
-  ((xs.foldl
-      (fun acc l0 =>
-        match env[l0]? with
-        | some qt0 => (joinPoison acc.1 qt0.poison, joinPredicates acc.2 qt0.pred)
-        | none => acc)
-      (storedPoison, Predicate.noPred)).2) = Predicate.noPred := by
-  induction xs generalizing storedPoison with
-  | nil =>
-      simp
-  | cons x xs ih =>
-      cases hget : env[x]? with
-      | none =>
-          simpa [List.foldl, hget] using ih storedPoison
-      | some qtX =>
-          simpa [List.foldl, hget, joinPredicates] using ih (joinPoison storedPoison qtX.poison)
-
 lemma typecheckAssign_result2_lookup_clean_back_of_pc_true
     (ctx : TypeContext) (result1 result2 res : TypeResult) (ls : LocSet)
     (_hInt : result2.qualType.etyp = ETyp.int)

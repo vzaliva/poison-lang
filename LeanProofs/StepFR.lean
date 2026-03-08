@@ -1159,6 +1159,36 @@ lemma qtypPredHolds_mem_compat_of_predSatLaws
     | guardOnly_ok hp hs =>
         exact qtypPredHolds.guardOnly_ok hp ((hPredSat_mem _ _ _ v).2 hs)
 
+lemma not_qtypCleanUnder_of_poison_true_noPred
+  {R : Regime} {qt : QTyp}
+  (hpoison : qt.poison = true)
+  (hpred : qt.pred = Predicate.noPred) :
+  ¬ qtypCleanUnder R qt := by
+  intro hclean
+  cases hclean with
+  | clean hpoison' =>
+      simp [hpoison] at hpoison'
+  | guard _ htag _ _ =>
+      simp [qtypGuardTag, hpred] at htag
+
+lemma list_fold_joinPredicates_init_noPred
+  (env : MemoryTypeEnv) (xs : List Loc) (storedPoison : Poison) :
+  ((xs.foldl
+      (fun acc l0 =>
+        match env[l0]? with
+        | some qt0 => (joinPoison acc.1 qt0.poison, joinPredicates acc.2 qt0.pred)
+        | none => acc)
+      (storedPoison, Predicate.noPred)).2) = Predicate.noPred := by
+  induction xs generalizing storedPoison with
+  | nil =>
+      simp
+  | cons x xs ih =>
+      cases hget : env[x]? with
+      | none =>
+          simpa [List.foldl, hget] using ih storedPoison
+      | some qtX =>
+          simpa [List.foldl, hget, joinPredicates] using ih (joinPoison storedPoison qtX.poison)
+
 -- Monotonicity of capturedVarsRegimeProperty under Regime.monotoneStep.
 lemma capturedVarsRegimeProperty_monotone
   {predSat : PredSat} {R R' : Regime} {μ : Memory}

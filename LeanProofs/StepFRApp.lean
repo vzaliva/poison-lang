@@ -9343,18 +9343,6 @@ private lemma applyPFnTClosure_preserves_memEnv_lookup
               ctx st1 st2 p p1 argEtyp argPoison argPred result2
               (Nat.succ fuelBody) x retSpec capturedEnv r happly
 
-private lemma not_qtypCleanUnder_of_poison_true_noPred
-  {R : Regime} {qt : QTyp}
-  (hpoison : qt.poison = true)
-  (hpred : qt.pred = Predicate.noPred) :
-  ¬ qtypCleanUnder R qt := by
-  intro hclean
-  cases hclean with
-  | clean hpoison' =>
-      simp [hpoison] at hpoison'
-  | guard k htag _ _ =>
-      simp [qtypGuardTag, hpred] at htag
-
 private lemma clean_lookup_origin_of_same_qt
   {R R' : Regime} {Γ Γ' : MemoryTypeEnv} {l : Loc} {qt : QTyp}
   (hlookup_in : Γ.lookup l = some qt)
@@ -9364,24 +9352,6 @@ private lemma clean_lookup_origin_of_same_qt
   ∃ qt_in, Γ.lookup l = some qt_in ∧ qtypCleanUnder R qt_in := by
   intro hclean
   exact ⟨qt, hlookup_in, cleanUnder_of_monotone hmono hclean⟩
-
-private lemma list_fold_joinPredicates_init_noPred
-  (env : MemoryTypeEnv) (xs : List Loc) (storedPoison : Poison) :
-  ((xs.foldl
-      (fun acc l0 =>
-        match env[l0]? with
-        | some qt0 => (joinPoison acc.1 qt0.poison, joinPredicates acc.2 qt0.pred)
-        | none => acc)
-      (storedPoison, Predicate.noPred)).2) = Predicate.noPred := by
-  induction xs generalizing storedPoison with
-  | nil =>
-      simp
-  | cons x xs ih =>
-      cases hget : env[x]? with
-      | none =>
-          simpa [List.foldl, hget] using ih storedPoison
-      | some qtX =>
-          simpa [List.foldl, hget, joinPredicates] using ih (joinPoison storedPoison qtX.poison)
 
 private lemma joinMemEnvsStrong_lookup_cleanUnder_left_or_right
   (env1 env2 : MemoryTypeEnv) (R1 R2 : Regime) (l : Loc) (qt : QTyp)
