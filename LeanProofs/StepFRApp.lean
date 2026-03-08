@@ -1419,16 +1419,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtx_main :
             simp at htc
             sorry -- permanently postponed: kwhile proofs are out of active scope
 
-lemma typecheckExpr_preserves_regimeConsistentWithCtx
-    (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
-    (hreg : regimeConsistentWithCtx ctx)
-    (htc : typecheck .ioFree ctx e fuel = .ok res) :
-    regimeConsistentWithCtx (ctxAfter ctx res) :=
-  typecheckExpr_preserves_regimeConsistentWithCtx_main fuel ctx e res hreg htc
 
-/-- Mix lemma: combine inVar evidence from one (σ, Γ₁) pair with inMem evidence from
-    another (σ₂, Γ) pair. Works because `QTypInEnvs.inVar` only uses σ and
-    `QTypInEnvs.inMem` only uses Γ. -/
 private lemma EnvRespectsTagMeaning_mix
     (tm : TagMeaning) (σ₁ : VarTypeEnv) (Γ₁ : MemoryTypeEnv) (σ₂ : VarTypeEnv) (Γ₂ : MemoryTypeEnv)
     (h1 : EnvRespectsTagMeaning tm σ₁ Γ₁)
@@ -3118,26 +3109,8 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
         | kwhile e1 e2 =>
             sorry -- permanently postponed: kwhile proofs are out of active scope
 
-lemma typecheckExpr_preserves_wfTagMeaningCtx
-    (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
-    (hwf : wfTagMeaningCtx tm ctx)
-    (htc : typecheck .ioFree ctx e fuel = .ok res) :
-    wfTagMeaningCtx tm (ctxAfter ctx res) :=
-  (typecheckExpr_preserves_wfTagMeaningCtx_main fuel tm ctx e res hwf htc).1
 
-lemma typecheckExpr_preserves_QTypRespectsTagMeaning
-    (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
-    (hwf : wfTagMeaningCtx tm ctx)
-    (htc : typecheck .ioFree ctx e fuel = .ok res) :
-    QTypRespectsTagMeaning tm res.qualType :=
-  (typecheckExpr_preserves_wfTagMeaningCtx_main fuel tm ctx e res hwf htc).2
 
-lemma typecheckExpr_QTypRespectsTagMeaning_of_ok
-    (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
-    (hwf : wfTagMeaningCtx tm ctx)
-    (htc : typecheck .ioFree ctx e fuel = .ok res) :
-    QTypRespectsTagMeaning tm res.qualType :=
-  typecheckExpr_preserves_QTypRespectsTagMeaning tm ctx e fuel res hwf htc
 
 private lemma applyFnTClosure_ok_wfTagMeaningCtx
   (tm : TagMeaning)

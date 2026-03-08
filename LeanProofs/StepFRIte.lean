@@ -1,0 +1,2373 @@
+/-
+  Auto-extracted from FaultRobustnessProofs.lean during StepFR operator refactor.
+-/
+import LeanProofs.StepFR
+
+open List
+open List.Mem
+open Std
+open scoped MemoryTypeEnv
+
+private def matchGuard_checkNoPredOnArrow (qt : QTyp) : TypecheckM Unit := do
+  match qt.etyp with
+  | ETyp.arrow _ _ _ _ | ETyp.parrow _ _ _ _ =>
+      match qt.pred with
+      | Predicate.noPred => pure ()
+      | _ => throw "Function types cannot carry predicates in matchGuard"
+  | _ => pure ()
+
+/-- Shared predicate matcher from `matchGuard`. -/
+private def matchGuard_checkPredicate
+    (conditionPExpr : PExpr) (sCaptured : CapturedVarEnv) (arg : PExpr) (qt : QTyp)
+    (fuel : Nat) :
+    TypecheckM (Option (Tag × Deps)) := do
+  matchGuard_checkNoPredOnArrow qt
+  match qt.pred with
+  | Predicate.noPred => return none
+  | Predicate.guardOnly _tag => return none
+  | Predicate.guardClosure tag arg_name pred_body var_env =>
+      -- Use `... = true` conditionals to stay syntactically aligned with the unfolded
+      -- `matchGuard` implementation (which often normalizes Bool-ifs this way).
+      if PExpr.usesArg arg_name pred_body = true then
+        if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+            (some (arg_name, arg)) fuel = true then do
+          let deps ← extractDepsFromPred qt.pred fuel
+          return some (tag, deps)
+        else
+          return none
+      else
+        return none
+
+/-- Var-side matches used by `matchGuard`, expressed via `toList` fold for proof convenience. -/
+private def matchGuard_varMatches (conditionPExpr : PExpr) (ctx : TypeContext)
+    (fuel : Nat) : List (Tag × Deps) :=
+  let sCaptured := VarTypeEnv.toCaptured ctx.varEnv
+  VarTypeEnv.foldl [] (fun acc name qt =>
+    let arg := PExpr.var name
+    match matchGuard_checkPredicate conditionPExpr sCaptured arg qt fuel with
+    | .ok (some kd) => kd :: acc
+    | .ok none => acc
+    | .error _ => acc) ctx.varEnv
+
+/-- Single ref-entry transition used by `matchGuard` ref-side matching. -/
+private def matchGuard_refStep
+    (conditionPExpr : PExpr) (sCaptured : CapturedVarEnv) (ctx : TypeContext)
+    (acc : List (Tag × Deps)) (entry : Name × QTyp) (fuel : Nat) :
+    TypecheckM (List (Tag × Deps)) := do
+  let name := entry.1
+  let qt := entry.2
+  match qt.etyp with
+  | ETyp.ref ls =>
+      if qt.poison = true then
+        pure acc
+      else
+        if ExtTreeSet.isEmpty ls = true then throw "Reference locset is empty in matchGuard" else
+        let arg := PExpr.deref (PExpr.var name)
+        let merged? ←
+          ls.foldM (init := (none : Option Predicate)) (fun accPred? l => do
+            match ctx.memEnv.lookup l with
+            | some memQt =>
+                matchGuard_checkNoPredOnArrow memQt
+                let nextPred :=
+                  match accPred? with
+                  | none => memQt.pred
+                  | some p => joinPredicates p memQt.pred
+                pure (some nextPred)
+            | none => throw s!"Location {l} not found in memory environment during matchGuard")
+        let depsMerged ←
+          ls.foldM (init := LocSet.empty) (fun dacc l => do
+            match ctx.memEnv.lookup l with
+            | some memQt =>
+                matchGuard_checkNoPredOnArrow memQt
+                let deps ← extractDepsFromPred memQt.pred fuel
+                pure (LocSet.union dacc (LocSet.union (LocSet.singleton l) deps))
+            | none => throw s!"Location {l} not found in memory environment during matchGuard")
+        let merged := merged?.getD Predicate.noPred
+        match merged with
+        | Predicate.guardClosure tag arg_name pred_body var_env =>
+            if PExpr.usesArg arg_name pred_body = true then
+              if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                  (some (arg_name, arg)) fuel = true then
+                pure ((tag, depsMerged) :: acc)
+              else
+                pure acc
+            else
+              pure acc
+        | Predicate.guardOnly _ => pure acc
+        | Predicate.noPred => pure acc
+  | _ => pure acc
+
+/-- Ref-side matches used by `matchGuard`, expressed via `toList` fold for proof convenience. -/
+private def matchGuard_refMatches (conditionPExpr : PExpr) (ctx : TypeContext)
+    (fuel : Nat) : TypecheckM (List (Tag × Deps)) := do
+  let sCaptured := VarTypeEnv.toCaptured ctx.varEnv
+  VarTypeEnv.foldlM (init := ([] : List (Tag × Deps)))
+    (fun acc name qt => matchGuard_refStep conditionPExpr sCaptured ctx acc (name, qt) fuel)
+    ctx.varEnv
+
+private lemma matchGuard_checkPredicate_ok_some_guardClosure
+    (conditionPExpr : PExpr) (sCaptured : CapturedVarEnv) (arg : PExpr) (qt : QTyp)
+    (fuel : Nat)
+    (k : Tag) (deps : Deps)
+    (h :
+      matchGuard_checkPredicate conditionPExpr sCaptured arg qt fuel = .ok (some (k, deps))) :
+    ∃ arg_name pred_body var_env,
+      qt.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+  cases hpred : qt.pred with
+  | noPred =>
+      unfold matchGuard_checkPredicate at h
+      have : False := by
+        cases hchk : matchGuard_checkNoPredOnArrow qt <;> simp [hchk, hpred] at h
+      exact False.elim this
+  | guardOnly _ =>
+      unfold matchGuard_checkPredicate at h
+      have : False := by
+        cases hchk : matchGuard_checkNoPredOnArrow qt <;> simp [hchk, hpred] at h
+      exact False.elim this
+  | guardClosure k' arg_name pred_body var_env =>
+      unfold matchGuard_checkPredicate at h
+      cases hchk : matchGuard_checkNoPredOnArrow qt with
+      | error err =>
+          have : False := by
+            simp [hchk, hpred] at h
+            cases h
+          exact False.elim this
+      | ok _ =>
+          simp [hchk, hpred] at h
+          by_cases huses : PExpr.usesArg arg_name pred_body = true
+          · simp [huses] at h
+            by_cases heqv :
+                PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                  (some (arg_name, arg)) fuel = true
+            · simp [heqv] at h
+              cases hdeps : extractDepsFromPred (Predicate.guardClosure k' arg_name pred_body var_env) fuel with
+              | error err =>
+                  have : False := by
+                    simp [hdeps] at h
+                    cases h
+                  exact False.elim this
+              | ok d =>
+                  simp [hdeps] at h
+                  cases h
+                  exact ⟨arg_name, pred_body, var_env, rfl⟩
+            · simp [heqv] at h
+          · simp [huses] at h
+
+/-- From `matchGuard = .ok`, recover singleton structure of combined var/ref matches. -/
+private lemma matchGuard_ok_allMatches_singleton
+    (ctx : TypeContext) (cond : Expr) (k : Tag) (deps : Deps)
+    (conditionPExpr : PExpr)
+    (fuel : Nat)
+    (hcond : cond.toPExpr = .ok conditionPExpr)
+  (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps)) :
+  ∃ refMatches,
+    matchGuard_refMatches conditionPExpr ctx fuel = .ok refMatches ∧
+    matchGuard_varMatches conditionPExpr ctx fuel ++ refMatches = [(k, deps)] := by
+  let varMatchesRaw : List (Tag × Deps) :=
+    VarTypeEnv.foldl []
+      (fun acc name qt =>
+        let arg := PExpr.var name
+        match matchGuard_checkPredicate conditionPExpr (VarTypeEnv.toCaptured ctx.varEnv) arg qt fuel with
+        | .ok (some (tag, deps)) => (tag, deps) :: acc
+        | .ok none => acc
+        | .error _ => acc)
+      ctx.varEnv
+  have hmatch2 :
+      (do
+        let refMatches ← matchGuard_refMatches conditionPExpr ctx fuel
+        match varMatchesRaw ++ refMatches with
+        | [(tag, deps)] => pure (tag, deps)
+        | [] => throw "No matching guard found for condition"
+        | _ =>
+            throw s!"Multiple matching guards found for condition: {repr (varMatchesRaw ++ refMatches)}") =
+      .ok (k, deps) := by
+    simpa [varMatchesRaw, matchGuard, hcond, matchGuard_refMatches, matchGuard_refStep,
+      matchGuard_checkPredicate, matchGuard_checkNoPredOnArrow,
+      bind, Except.bind] using hmatch
+  cases href0 : matchGuard_refMatches conditionPExpr ctx fuel with
+  | error err =>
+      have hbad : (Except.error err : TypecheckM (Tag × Deps)) = .ok (k, deps) := by
+        have htmp := hmatch2
+        simp [href0, bind, Except.bind] at htmp
+      cases hbad
+  | ok refMatches =>
+      refine ⟨refMatches, by simp, ?_⟩
+      have hsingle_raw : varMatchesRaw ++ refMatches = [(k, deps)] := by
+        have hmain :
+            (match varMatchesRaw ++ refMatches with
+            | [(tag, deps)] => Except.ok (tag, deps)
+            | [] => Except.error "No matching guard found for condition"
+            | _ =>
+                Except.error s!"Multiple matching guards found for condition: {
+                  repr (varMatchesRaw ++ refMatches)}")
+              = Except.ok (k, deps) := by
+          simpa [href0, bind, Except.bind] using hmatch2
+        set allMatches : List (Tag × Deps) := varMatchesRaw ++ refMatches
+        have hmain' :
+            (match allMatches with
+            | [(tag, deps)] => Except.ok (tag, deps)
+            | [] => Except.error "No matching guard found for condition"
+            | _ => Except.error s!"Multiple matching guards found for condition: {repr allMatches}")
+              = Except.ok (k, deps) := by
+          simpa [allMatches] using hmain
+        cases hall : allMatches with
+        | nil =>
+            have : False := by
+              simp [hall] at hmain'
+            exact False.elim this
+        | cons a as =>
+            cases as with
+            | nil =>
+                have ha : a = (k, deps) := by
+                  simpa [hall] using hmain'
+                subst ha
+                simp
+            | cons b bs =>
+                have : False := by
+                  simp [hall] at hmain'
+                exact False.elim this
+      have hvarRaw_eq : varMatchesRaw = matchGuard_varMatches conditionPExpr ctx fuel := by
+        unfold varMatchesRaw
+        unfold matchGuard_varMatches
+        refine congrArg (fun f => VarTypeEnv.foldl [] f ctx.varEnv) ?_
+        funext acc name qt
+        dsimp
+        cases hcp :
+            matchGuard_checkPredicate conditionPExpr (VarTypeEnv.toCaptured ctx.varEnv)
+              (PExpr.var name) qt fuel with
+        | error err =>
+            simp
+        | ok opt =>
+            cases opt <;> simp
+      simpa [hvarRaw_eq] using hsingle_raw
+
+/-- Singleton append split. -/
+private lemma singleton_allMatches_implies_var_or_ref
+    (varMatches refMatches : List (Tag × Deps)) (k : Tag) (deps : Deps)
+    (hall : varMatches ++ refMatches = [(k, deps)]) :
+    (k, deps) ∈ varMatches ∨ (k, deps) ∈ refMatches := by
+  have hmem : (k, deps) ∈ varMatches ++ refMatches := by simp [hall]
+  exact List.mem_append.mp hmem
+
+private lemma var_match_from_varMatches_aux
+    (ctx : TypeContext) (conditionPExpr : PExpr) (sCaptured : CapturedVarEnv)
+    (fuel : Nat) :
+    ∀ (entries : List (Name × QTyp)),
+      (∀ name qt, (name, qt) ∈ entries → ctx.varEnv.lookup name = some qt) →
+      ∀ (acc : List (Tag × Deps)),
+      (∀ kd, kd ∈ acc →
+        ∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+          ctx.varEnv.lookup x = some qt ∧
+          qt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) →
+      ∀ kd, kd ∈ List.foldl
+        (fun acc entry =>
+          let name := entry.1
+          let qt := entry.2
+          let arg := PExpr.var name
+          match matchGuard_checkPredicate conditionPExpr sCaptured arg qt fuel with
+          | .ok (some kd) => kd :: acc
+          | .ok none => acc
+          | .error _ => acc) acc entries →
+        ∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+          ctx.varEnv.lookup x = some qt ∧
+          qt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env := by
+  intro entries
+  induction entries with
+  | nil =>
+      intro _hentries acc hacc kd hmem
+      simpa using hacc kd hmem
+  | cons entry entries ih =>
+      intro hentries acc hacc kd hmem
+      rcases entry with ⟨name, qt⟩
+      have hlookup_name : ctx.varEnv.lookup name = some qt := by
+        exact hentries name qt (by simp)
+      set acc1 :=
+        (match matchGuard_checkPredicate conditionPExpr sCaptured (PExpr.var name) qt fuel with
+        | .ok (some kd) => kd :: acc
+        | .ok none => acc
+        | .error _ => acc)
+      have hacc1 :
+          ∀ kd, kd ∈ acc1 →
+            ∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+              ctx.varEnv.lookup x = some qt ∧
+              qt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env := by
+        intro kd' hmem'
+        dsimp [acc1] at hmem'
+        cases hcp : matchGuard_checkPredicate conditionPExpr sCaptured (PExpr.var name) qt fuel with
+        | error err =>
+            simp [hcp] at hmem'
+            exact hacc kd' hmem'
+        | ok opt =>
+            cases opt with
+            | none =>
+                simp [hcp] at hmem'
+                exact hacc kd' hmem'
+            | some kd0 =>
+                simp [hcp] at hmem'
+                rcases hmem' with hhead | htail
+                · subst hhead
+                  have hcp' :
+                      matchGuard_checkPredicate conditionPExpr sCaptured (PExpr.var name) qt fuel = .ok (some kd') := by
+                    simp [hcp]
+                  rcases matchGuard_checkPredicate_ok_some_guardClosure
+                    conditionPExpr sCaptured (PExpr.var name) qt fuel kd'.1 kd'.2 hcp'
+                    with ⟨arg_name, pred_body, var_env, hpred⟩
+                  exact ⟨name, qt, arg_name, pred_body, var_env, hlookup_name, hpred⟩
+                · exact hacc kd' htail
+      have hentries_tail :
+          ∀ name qt, (name, qt) ∈ entries → ctx.varEnv.lookup name = some qt := by
+        intro name' qt' hmem'
+        exact hentries name' qt' (List.mem_cons_of_mem _ hmem')
+      exact ih hentries_tail acc1 hacc1 kd hmem
+
+/-- Var-side extraction from varMatches membership. -/
+private lemma var_match_from_varMatches
+    (ctx : TypeContext) (conditionPExpr : PExpr) (k : Tag) (deps : Deps)
+    (fuel : Nat)
+    (hmem : (k, deps) ∈ matchGuard_varMatches conditionPExpr ctx fuel) :
+    ∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+      ctx.varEnv.lookup x = some qt ∧
+      qt.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+  unfold matchGuard_varMatches at hmem
+  rw [VarTypeEnv.foldl, Std.ExtTreeMap.foldl_eq_foldl_toList] at hmem
+  have hentries_toList :
+      ∀ name qt, (name, qt) ∈ ctx.varEnv.toList → ctx.varEnv.lookup name = some qt := by
+    intro name qt hmemToList
+    have hlookup : ctx.varEnv[name]? = some qt :=
+      (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some (t := ctx.varEnv)).1 hmemToList
+    simpa [VarTypeEnv.lookup] using hlookup
+  have h :=
+    var_match_from_varMatches_aux ctx conditionPExpr (VarTypeEnv.toCaptured ctx.varEnv) fuel
+      ctx.varEnv.toList hentries_toList [] (by intro kd h; cases h) (k, deps) hmem
+  simpa using h
+
+private def matchGuard_refPredFoldF (ctx : TypeContext)
+    (accPred? : Option Predicate) (l : Loc) : TypecheckM (Option Predicate) := do
+  match ctx.memEnv.lookup l with
+  | some memQt =>
+      matchGuard_checkNoPredOnArrow memQt
+      let nextPred :=
+        match accPred? with
+        | none => memQt.pred
+        | some p => joinPredicates p memQt.pred
+      pure (some nextPred)
+  | none => throw s!"Location {l} not found in memory environment during matchGuard"
+
+private lemma list_foldlM_matchGuard_refPred_eq_guardClosure_from_some
+    (ctx : TypeContext) :
+    ∀ (xs : List Loc) (p0 : Predicate) (pred? : Option Predicate)
+      (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+      List.foldlM (matchGuard_refPredFoldF ctx) (some p0) xs = .ok pred? →
+      pred?.getD Predicate.noPred = Predicate.guardClosure k arg_name pred_body var_env →
+      p0 = Predicate.guardClosure k arg_name pred_body var_env ∧
+      (∀ l ∈ xs, ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+        memQt.pred = Predicate.guardClosure k arg_name pred_body var_env) := by
+  intro xs
+  induction xs with
+  | nil =>
+      intro p0 pred? k arg_name pred_body var_env hfold hpred
+      simp [List.foldlM_nil, pure, Except.pure] at hfold
+      subst hfold
+      refine ⟨?_, ?_⟩
+      · simpa using hpred
+      · intro l hl
+        cases hl
+  | cons x xs ih =>
+      intro p0 pred? k arg_name pred_body var_env hfold hpred
+      simp [List.foldlM_cons, bind, Except.bind] at hfold
+      cases hfx : matchGuard_refPredFoldF ctx (some p0) x with
+      | error err =>
+          simp [hfx] at hfold
+      | ok acc' =>
+          simp [hfx] at hfold
+          cases hlookup : ctx.memEnv.lookup x with
+          | none =>
+              have hlookup' : ctx.memEnv.lookup x = none := hlookup
+              have : False := by
+                simp [matchGuard_refPredFoldF, hlookup'] at hfx
+              exact False.elim this
+          | some memQt =>
+              have hlookup' : ctx.memEnv.lookup x = some memQt := hlookup
+              cases hchk : matchGuard_checkNoPredOnArrow memQt with
+              | error err =>
+                  have : False := by
+                    simp [matchGuard_refPredFoldF, hlookup', hchk] at hfx
+                  exact False.elim this
+              | ok _ =>
+                  simp [matchGuard_refPredFoldF, hlookup', hchk] at hfx
+                  cases hfx
+                  have htail_fold :
+                      List.foldlM (matchGuard_refPredFoldF ctx)
+                        (some (joinPredicates p0 memQt.pred)) xs = .ok pred? := by
+                    simpa using hfold
+                  have hih :=
+                    ih (joinPredicates p0 memQt.pred) pred? k arg_name pred_body var_env htail_fold hpred
+                  have hjoin :=
+                    joinPredicates_eq_guardClosure
+                      (p := p0) (q := memQt.pred)
+                      (k := k) (arg_name := arg_name) (pred_body := pred_body) (var_env := var_env)
+                      hih.1
+                  refine ⟨hjoin.1, ?_⟩
+                  intro l hl
+                  rcases (List.mem_cons.mp hl) with rfl | hltail
+                  · refine ⟨memQt, ?_, hjoin.2⟩
+                    simpa [MemoryTypeEnv.lookup] using hlookup
+                  · exact hih.2 l hltail
+
+private lemma list_foldlM_matchGuard_refPred_eq_guardClosure
+    (ctx : TypeContext) :
+    ∀ (xs : List Loc) (pred? : Option Predicate)
+      (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+      List.foldlM (matchGuard_refPredFoldF ctx) (none : Option Predicate) xs = .ok pred? →
+      pred?.getD Predicate.noPred = Predicate.guardClosure k arg_name pred_body var_env →
+      (∀ l ∈ xs, ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+        memQt.pred = Predicate.guardClosure k arg_name pred_body var_env) := by
+  intro xs
+  cases xs with
+  | nil =>
+      intro pred? k arg_name pred_body var_env _hfold _hpred l hl
+      cases hl
+  | cons x xs =>
+      intro pred? k arg_name pred_body var_env hfold hpred
+      simp [List.foldlM_cons, bind, Except.bind] at hfold
+      cases hfx : matchGuard_refPredFoldF ctx none x with
+      | error err =>
+          simp [hfx] at hfold
+      | ok acc' =>
+          simp [hfx] at hfold
+          cases hlookup : ctx.memEnv.lookup x with
+          | none =>
+              have hlookup' : ctx.memEnv.lookup x = none := hlookup
+              have : False := by
+                simp [matchGuard_refPredFoldF, hlookup'] at hfx
+              exact False.elim this
+          | some memQt =>
+              have hlookup' : ctx.memEnv.lookup x = some memQt := hlookup
+              cases hchk : matchGuard_checkNoPredOnArrow memQt with
+              | error err =>
+                  have : False := by
+                    simp [matchGuard_refPredFoldF, hlookup', hchk] at hfx
+                  exact False.elim this
+              | ok _ =>
+                  simp [matchGuard_refPredFoldF, hlookup', hchk] at hfx
+                  cases hfx
+                  have htail_fold :
+                      List.foldlM (matchGuard_refPredFoldF ctx) (some memQt.pred) xs = .ok pred? := by
+                    simpa using hfold
+                  have htail :=
+                    list_foldlM_matchGuard_refPred_eq_guardClosure_from_some
+                      ctx xs memQt.pred pred? k arg_name pred_body var_env htail_fold hpred
+                  intro l hl
+                  rcases (List.mem_cons.mp hl) with rfl | hltail
+                  · refine ⟨memQt, ?_, htail.1⟩
+                    simpa [MemoryTypeEnv.lookup] using hlookup
+                  · exact htail.2 l hltail
+
+private lemma matchGuard_refPred_foldM_guardClosure
+    (ctx : TypeContext) (ls : LocSet) (pred? : Option Predicate)
+    (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
+    (hfold : LocSet.foldM ls (init := (none : Option Predicate)) (matchGuard_refPredFoldF ctx) = .ok pred?)
+    (hpred : pred?.getD Predicate.noPred = Predicate.guardClosure k arg_name pred_body var_env) :
+    ∀ l, l ∈ ls →
+      ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+        memQt.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+  unfold LocSet.foldM at hfold
+  rw [ExtTreeSet.foldlM_eq_foldlM_toList] at hfold
+  have hlist :=
+    list_foldlM_matchGuard_refPred_eq_guardClosure
+      ctx ls.toList pred? k arg_name pred_body var_env hfold hpred
+  intro l hl
+  have hl' : l ∈ ls.toList := by
+    simpa using hl
+  exact hlist l hl'
+
+private lemma matchGuard_refStep_preserves_invariant
+    (ctx : TypeContext) (conditionPExpr : PExpr) (sCaptured : CapturedVarEnv)
+    (name : Name) (qt : QTyp) (acc acc1 : List (Tag × Deps))
+    (fuel : Nat)
+    (hlookup_name : ctx.varEnv.lookup name = some qt)
+    (hacc :
+      ∀ kd, kd ∈ acc →
+        ∃ (x : Name) (qt : QTyp) (ls : LocSet)
+          (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+          ctx.varEnv.lookup x = some qt ∧
+          qt.etyp = ETyp.ref ls ∧
+          (∀ l, l ∈ ls →
+            ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+              memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env))
+    (hstep : matchGuard_refStep conditionPExpr sCaptured ctx acc (name, qt) fuel = .ok acc1) :
+    ∀ kd, kd ∈ acc1 →
+      ∃ (x : Name) (qt : QTyp) (ls : LocSet)
+        (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+        ctx.varEnv.lookup x = some qt ∧
+        qt.etyp = ETyp.ref ls ∧
+        (∀ l, l ∈ ls →
+            ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+            memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) := by
+  intro kd hmem
+  have hstep0 : matchGuard_refStep conditionPExpr sCaptured ctx acc (name, qt) fuel = .ok acc1 := hstep
+  unfold matchGuard_refStep at hstep
+  cases hEt : qt.etyp with
+  | ref ls =>
+      by_cases hpoisonT : qt.poison = true
+      · simp [hEt, hpoisonT] at hstep
+        cases hstep
+        exact hacc kd hmem
+      · have hpoisonF : qt.poison = false := by
+          cases hq : qt.poison with
+          | false =>
+              rfl
+          | true =>
+              simp [hq] at hpoisonT
+        by_cases hlsEmptyT : ls.isEmpty = true
+        · simp [hEt, hpoisonF, hlsEmptyT] at hstep
+        · cases hmerged :
+            LocSet.foldM ls (init := (none : Option Predicate))
+              (fun accPred? l => do
+                match ctx.memEnv.lookup l with
+                | some memQt =>
+                    matchGuard_checkNoPredOnArrow memQt
+                    let nextPred :=
+                      match accPred? with
+                      | none => memQt.pred
+                      | some p => joinPredicates p memQt.pred
+                    pure (some nextPred)
+                | none => throw s!"Location {l} not found in memory environment during matchGuard") with
+          | error err =>
+              have hlsEmptyF : ls.isEmpty = false := by
+                cases hls : ls.isEmpty with
+                | false =>
+                    rfl
+                | true =>
+                    simp [hls] at hlsEmptyT
+              have hstepErr :
+                  matchGuard_refStep conditionPExpr sCaptured ctx acc (name, qt) fuel = .error err := by
+                unfold matchGuard_refStep
+                try simp [hEt, hpoisonF, hlsEmptyF]
+                erw [hmerged]
+                simp [bind, Except.bind]
+              have : False := by
+                rw [hstepErr] at hstep0
+                simp at hstep0
+              exact False.elim this
+          | ok merged? =>
+              have hlsEmptyF : ls.isEmpty = false := by
+                cases hls : ls.isEmpty with
+                | false =>
+                    rfl
+                | true =>
+                    simp [hls] at hlsEmptyT
+              cases hdeps :
+                  LocSet.foldM ls (init := LocSet.empty) (fun dacc l => do
+                    match ctx.memEnv.lookup l with
+                    | some memQt =>
+                        matchGuard_checkNoPredOnArrow memQt
+                        let deps ← extractDepsFromPred memQt.pred fuel
+                        pure (LocSet.union dacc (LocSet.union (LocSet.singleton l) deps))
+                    | none => throw s!"Location {l} not found in memory environment during matchGuard") with
+                | error err =>
+                  have hstepErr :
+                      matchGuard_refStep conditionPExpr sCaptured ctx acc (name, qt) fuel = .error err := by
+                    unfold matchGuard_refStep
+                    -- Simplify outer control-flow first, then rewrite the computed folds.
+                    simp [hEt, hpoisonF, hlsEmptyF]
+                    erw [hmerged]
+                    erw [hdeps]
+                    simp [bind, Except.bind]
+                  have : False := by
+                    rw [hstepErr] at hstep0
+                    simp at hstep0
+                  exact False.elim this
+                | ok depsMerged =>
+                  cases hmg : merged?.getD Predicate.noPred with
+                  | noPred =>
+                      have hacc1eq : acc1 = acc := by
+                        have hstep' := hstep0
+                        unfold matchGuard_refStep at hstep'
+                        simp [hEt, hpoisonF, hlsEmptyF] at hstep'
+                        erw [hmerged] at hstep'
+                        erw [hdeps] at hstep'
+                        simp [bind, Except.bind] at hstep'
+                        erw [hmg] at hstep'
+                        simp at hstep'
+                        cases hstep'
+                        rfl
+                      subst hacc1eq
+                      exact hacc kd hmem
+                  | guardOnly gk =>
+                      have hacc1eq : acc1 = acc := by
+                        have hstep' := hstep0
+                        unfold matchGuard_refStep at hstep'
+                        simp [hEt, hpoisonF, hlsEmptyF] at hstep'
+                        erw [hmerged] at hstep'
+                        erw [hdeps] at hstep'
+                        simp [bind, Except.bind] at hstep'
+                        erw [hmg] at hstep'
+                        simp at hstep'
+                        cases hstep'
+                        rfl
+                      subst hacc1eq
+                      exact hacc kd hmem
+                  | guardClosure tag arg_name pred_body var_env =>
+                      by_cases husesT : PExpr.usesArg arg_name pred_body = true
+                      · by_cases heqvT :
+                          PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                            (some (arg_name, PExpr.deref (PExpr.var name))) fuel = true
+                        · have hacc1eq : acc1 = (tag, depsMerged) :: acc := by
+                            have hstep' := hstep0
+                            unfold matchGuard_refStep at hstep'
+                            simp [hEt, hpoisonF, hlsEmptyF] at hstep'
+                            erw [hmerged] at hstep'
+                            erw [hdeps] at hstep'
+                            simp [bind, Except.bind] at hstep'
+                            erw [hmg] at hstep'
+                            simp [husesT, heqvT] at hstep'
+                            cases hstep'
+                            rfl
+                          subst hacc1eq
+                          rcases (List.mem_cons.mp hmem) with hhead | htail
+                          · subst hhead
+                            refine ⟨name, qt, ls, arg_name, pred_body, var_env, hlookup_name, hEt, ?_⟩
+                            have hmerged' :
+                                LocSet.foldM ls (init := (none : Option Predicate))
+                                  (matchGuard_refPredFoldF ctx) = .ok merged? := by
+                              simpa [matchGuard_refPredFoldF] using hmerged
+                            have hls :
+                                ∀ l, l ∈ ls →
+                                  ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+                                    memQt.pred =
+                                      Predicate.guardClosure tag arg_name pred_body var_env :=
+                              matchGuard_refPred_foldM_guardClosure
+                                ctx ls merged? tag arg_name pred_body var_env hmerged'
+                                (by simp [hmg])
+                            exact hls
+                          · exact hacc kd htail
+                        · have heqvF :
+                              PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                                (some (arg_name, PExpr.deref (PExpr.var name))) fuel = false := by
+                            cases heqv :
+                                PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                                  (some (arg_name, PExpr.deref (PExpr.var name))) fuel with
+                            | false =>
+                                rfl
+                            | true =>
+                                simp [heqv] at heqvT
+                          have hacc1eq : acc1 = acc := by
+                            have hstep' := hstep0
+                            unfold matchGuard_refStep at hstep'
+                            simp [hEt, hpoisonF, hlsEmptyF] at hstep'
+                            erw [hmerged] at hstep'
+                            erw [hdeps] at hstep'
+                            simp [bind, Except.bind] at hstep'
+                            erw [hmg] at hstep'
+                            simp [husesT, heqvF] at hstep'
+                            cases hstep'
+                            rfl
+                          subst hacc1eq
+                          exact hacc kd hmem
+                      · have husesF : PExpr.usesArg arg_name pred_body = false := by
+                          cases huses : PExpr.usesArg arg_name pred_body with
+                          | false =>
+                              rfl
+                          | true =>
+                              simp [huses] at husesT
+                        have hacc1eq : acc1 = acc := by
+                          have hstep' := hstep0
+                          unfold matchGuard_refStep at hstep'
+                          -- Avoid fragile `rw/erw` matching on folded expressions; `simp` with the
+                          -- computed fold equalities is stable under definitional unfolding.
+                          simp [hEt, hpoisonF, hlsEmptyF] at hstep'
+                          erw [hmerged] at hstep'
+                          erw [hdeps] at hstep'
+                          simp [bind, Except.bind] at hstep'
+                          erw [hmg] at hstep'
+                          simp [husesF] at hstep'
+                          cases hstep'
+                          rfl
+                        subst hacc1eq
+                        exact hacc kd hmem
+    | int =>
+        simp [hEt] at hstep
+        cases hstep
+        exact hacc kd hmem
+  | bool =>
+      simp [hEt] at hstep
+      cases hstep
+      exact hacc kd hmem
+  | unit =>
+      simp [hEt] at hstep
+      cases hstep
+      exact hacc kd hmem
+  | arrow t1 t2 p1 p2 =>
+      simp [hEt] at hstep
+      cases hstep
+      exact hacc kd hmem
+  | parrow t1 t2 p1 p2 =>
+      simp [hEt] at hstep
+      cases hstep
+      exact hacc kd hmem
+  | string =>
+      simp [hEt] at hstep
+      cases hstep
+      exact hacc kd hmem
+
+private lemma ref_match_from_refMatches_aux
+    (ctx : TypeContext) (conditionPExpr : PExpr) (sCaptured : CapturedVarEnv)
+    (fuel : Nat) :
+    ∀ (entries : List (Name × QTyp)),
+      (∀ name qt, (name, qt) ∈ entries → ctx.varEnv.lookup name = some qt) →
+      ∀ (acc : List (Tag × Deps)),
+      (∀ kd, kd ∈ acc →
+        ∃ (x : Name) (qt : QTyp) (ls : LocSet)
+          (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+          ctx.varEnv.lookup x = some qt ∧
+          qt.etyp = ETyp.ref ls ∧
+          (∀ l, l ∈ ls →
+            ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+              memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env)) →
+      ∀ acc',
+        List.foldlM (fun acc entry => matchGuard_refStep conditionPExpr sCaptured ctx acc entry fuel) acc entries =
+          .ok acc' →
+      ∀ kd, kd ∈ acc' →
+        ∃ (x : Name) (qt : QTyp) (ls : LocSet)
+          (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+          ctx.varEnv.lookup x = some qt ∧
+          qt.etyp = ETyp.ref ls ∧
+          (∀ l, l ∈ ls →
+            ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+              memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) := by
+  intro entries
+  induction entries with
+  | nil =>
+      intro _hentries acc hacc acc' hfold kd hmem
+      simp [List.foldlM_nil, pure, Except.pure] at hfold
+      cases hfold
+      simpa using hacc kd hmem
+  | cons entry entries ih =>
+      intro hentries acc hacc acc' hfold kd hmem
+      rcases entry with ⟨name, qt⟩
+      have hlookup_name : ctx.varEnv.lookup name = some qt := by
+        exact hentries name qt (by simp)
+      cases hstep : matchGuard_refStep conditionPExpr sCaptured ctx acc (name, qt) fuel with
+      | error err =>
+          simp [List.foldlM_cons, hstep, bind, Except.bind] at hfold
+      | ok acc1 =>
+          simp [List.foldlM_cons, hstep, bind, Except.bind] at hfold
+          have hacc1 :
+              ∀ kd, kd ∈ acc1 →
+                ∃ (x : Name) (qt : QTyp) (ls : LocSet)
+                  (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+                  ctx.varEnv.lookup x = some qt ∧
+                  qt.etyp = ETyp.ref ls ∧
+                  (∀ l, l ∈ ls →
+                    ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+                      memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) := by
+            exact
+              matchGuard_refStep_preserves_invariant
+                ctx conditionPExpr sCaptured name qt acc acc1 fuel hlookup_name hacc hstep
+          have hentries_tail :
+              ∀ name qt, (name, qt) ∈ entries → ctx.varEnv.lookup name = some qt := by
+            intro name' qt' hmem'
+            exact hentries name' qt' (List.mem_cons_of_mem _ hmem')
+          exact ih hentries_tail acc1 hacc1 acc' hfold kd hmem
+
+/-- Ref-side extraction from refMatches membership. -/
+private lemma ref_match_from_refMatches
+    (ctx : TypeContext) (conditionPExpr : PExpr) (k : Tag) (deps : Deps)
+    (refMatches : List (Tag × Deps))
+    (fuel : Nat)
+    (href : matchGuard_refMatches conditionPExpr ctx fuel = .ok refMatches)
+    (hmem : (k, deps) ∈ refMatches) :
+    ∃ (x : Name) (qt : QTyp) (ls : LocSet)
+      (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+      ctx.varEnv.lookup x = some qt ∧
+      qt.etyp = ETyp.ref ls ∧
+      (∀ l, l ∈ ls →
+        ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+          memQt.pred = Predicate.guardClosure k arg_name pred_body var_env) := by
+  unfold matchGuard_refMatches at href
+  rw [VarTypeEnv.foldlM, Std.ExtTreeMap.foldlM_eq_foldlM_toList] at href
+  cases hfold :
+      List.foldlM
+        (fun acc entry =>
+          matchGuard_refStep conditionPExpr (VarTypeEnv.toCaptured ctx.varEnv) ctx acc entry fuel)
+        [] ctx.varEnv.toList with
+  | error err =>
+      simp [hfold] at href
+  | ok rms =>
+      simp [hfold] at href
+      subst href
+      exact
+        ref_match_from_refMatches_aux ctx conditionPExpr (VarTypeEnv.toCaptured ctx.varEnv) fuel
+          ctx.varEnv.toList
+          (by
+            intro name qt hmemToList
+            have hlookup : ctx.varEnv[name]? = some qt :=
+              (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some (t := ctx.varEnv)).1 hmemToList
+            simpa [VarTypeEnv.lookup] using hlookup)
+          [] (by intro kd h; cases h) rms hfold (k, deps) hmem
+
+/-- Successful `matchGuard` implies the condition has a pure-expression view. -/
+private lemma matchGuard_ok_toPExpr?_some
+    (ctx : TypeContext) (cond : Expr) (k : Tag) (deps : Deps)
+    {fuel : Nat}
+    (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps)) :
+    ∃ conditionPExpr, Expr.toPExpr? cond = some conditionPExpr := by
+  cases hcond : cond.toPExpr with
+  | error _err =>
+      unfold matchGuard at hmatch
+      simp [hcond] at hmatch
+      cases hmatch
+  | ok conditionPExpr =>
+      exact ⟨conditionPExpr, Expr_toPExpr?_eq_some_of_toPExpr_ok cond conditionPExpr hcond⟩
+
+private lemma qtypCleanUnder_transport_pure_regime_of_toPExpr
+    (ctx : TypeContext) (e : Expr) (pe : PExpr) (fuel : Nat) (res : TypeResult)
+    (hpe : Expr.toPExpr? e = some pe)
+    (htc : typecheckExpr .ioFree { ctx with pureCtx := true } e fuel = .ok res) :
+    ∀ qt, qtypCleanUnder ctx.regime qt → qtypCleanUnder res.regime' qt := by
+  intro qt hclean
+  cases hclean with
+  | clean hpoison =>
+      exact qtypCleanUnder.clean hpoison
+  | guard k htag hreg hnotfun =>
+      have hreg' : res.regime'.lookup? k = some true :=
+        typecheckExpr_pure_regime_bridge_of_toPExpr
+          (ctx := ctx) (e := e) (pe := pe) (fuel := fuel) (res := res)
+          hpe htc k true hreg
+      exact qtypCleanUnder.guard k htag hreg' hnotfun
+
+private lemma runtimeInstantiatesCtx_transport_mem_subset_tag_insert_true
+    (ctx : TypeContext) (res : TypeResult) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+    (k : Tag) (deps : Deps)
+    (hsub : ∀ l, res.memEnv'.contains l → ctx.memEnv.contains l)
+    (hric :
+      runtimeInstantiatesCtx
+        (ctxAfter { ctx with pureCtx := true } res)
+        μ ρ θ) :
+    runtimeInstantiatesCtx
+      { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+      μ ρ θ := by
+  rcases hric with ⟨hmem, hvar⟩
+  unfold runtimeInstantiatesCtx
+  constructor
+  · intro l a hlookup
+    rcases hmem l a hlookup with ⟨hcontainsRes, hcontainsMem⟩
+    exact ⟨hsub l hcontainsRes, hcontainsMem⟩
+  · intro x qt hlookup
+    have hlookup' :
+        (ctxAfter { ctx with pureCtx := true } res).varEnv.lookup x = some qt := by
+      simpa [ctxAfter] using hlookup
+    exact hvar hlookup'
+
+private lemma consistentWithRegime_transport_ctxAfter_pure_to_ctx_insert_true
+    (predSat : PredSat) (ctx : TypeContext) (res : TypeResult)
+    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+    (kTrue : Tag) (depsTrue : Deps)
+    (hreg_bridge :
+      ∀ k b, ctx.regime.lookup? k = some b → res.regime'.lookup? k = some b)
+    (hmem_bridge :
+      ∀ l qt k,
+        ctx.memEnv.lookup l = some qt →
+        qtypGuardTag qt = some k →
+        ctx.regime.lookup? k ≠ none →
+        res.memEnv'.lookup l = some qt)
+    (hcwr :
+      consistentWithRegime predSat
+        (ctxAfter { ctx with pureCtx := true } res).regime
+        (ctxAfter { ctx with pureCtx := true } res) μ ρ θ) :
+    consistentWithRegime predSat
+      ({ ctx with tagEnv := ctx.tagEnv.insert kTrue ⟨true, depsTrue⟩ }).regime
+      ({ ctx with tagEnv := ctx.tagEnv.insert kTrue ⟨true, depsTrue⟩ }) μ ρ θ := by
+  unfold consistentWithRegime at hcwr ⊢
+  constructor
+  · intro l qt k hlookup hguard hRdef
+    have hlookupRes : res.memEnv'.lookup l = some qt := hmem_bridge l qt k hlookup hguard hRdef
+    cases hbctx : ctx.regime.lookup? k with
+    | none =>
+        exact False.elim (hRdef hbctx)
+    | some b =>
+        have hbres : res.regime'.lookup? k = some b := hreg_bridge k b hbctx
+        have hloc :=
+          hcwr.1 l qt k
+            (by
+              unfold ctxAfter
+              exact hlookupRes)
+            hguard
+            (by
+              unfold ctxAfter
+              intro hnone
+              rw [hbres] at hnone
+              contradiction)
+        cases hloc with
+        | noPred_ok hpred =>
+            exact locsRegime.noPred_ok (l, qt) hpred
+        | guardOnly_ok k' hgo =>
+            exact locsRegime.guardOnly_ok (l, qt) k' hgo
+        | withPred_ok k' arg_name pred_body var_env a n b' hclos hregime hreal hmem hconsist =>
+            have hclos' : qt.pred = Predicate.guardClosure k' arg_name pred_body var_env := by
+              simpa using hclos
+            have htag_qt : qtypGuardTag qt = some k' := by
+              simp [qtypGuardTag, hclos']
+            have hkEq : k' = k := by
+              have : some k' = some k := by
+                calc
+                  some k' = qtypGuardTag qt := by symm; exact htag_qt
+                  _ = some k := hguard
+              exact Option.some.inj this
+            have hbEq : b' = b := by
+              have : some b' = some b := by
+                calc
+                  some b' = res.regime'.lookup? k' := hregime.symm
+                  _ = res.regime'.lookup? k := by simp [hkEq]
+                  _ = some b := hbres
+              exact Option.some.inj this
+            have hbctx' : ctx.regime.lookup? k' = some b' := by
+              calc
+                ctx.regime.lookup? k' = ctx.regime.lookup? k := by simp [hkEq]
+                _ = some b := hbctx
+                _ = some b' := by simp [hbEq]
+            exact
+              locsRegime.withPred_ok (l, qt) k' arg_name pred_body var_env a n b'
+                hclos hbctx' hreal hmem hconsist
+  · constructor
+    · intro x qt k hlookup hguard hRdef
+      cases hbctx : ctx.regime.lookup? k with
+      | none =>
+          exact False.elim (hRdef hbctx)
+      | some b =>
+          have hbres : res.regime'.lookup? k = some b := hreg_bridge k b hbctx
+          have hvar :=
+            hcwr.2.1 x qt k
+              (by
+                unfold ctxAfter
+                exact hlookup)
+              hguard
+              (by
+                unfold ctxAfter
+                intro hnone
+                rw [hbres] at hnone
+                contradiction)
+          cases hvar with
+          | noPred_ok hpred =>
+              exact varsRegime.noPred_ok (x, qt) hpred
+          | guardOnly_ok k' hgo =>
+              exact varsRegime.guardOnly_ok (x, qt) k' hgo
+          | withPred_ok k' arg_name pred_body var_env v b' hclos hregime hvarLookup hconsist =>
+              have hclos' : qt.pred = Predicate.guardClosure k' arg_name pred_body var_env := by
+                simpa using hclos
+              have htag_qt : qtypGuardTag qt = some k' := by
+                simp [qtypGuardTag, hclos']
+              have hkEq : k' = k := by
+                have : some k' = some k := by
+                  calc
+                    some k' = qtypGuardTag qt := by symm; exact htag_qt
+                    _ = some k := hguard
+                exact Option.some.inj this
+              have hbEq : b' = b := by
+                have : some b' = some b := by
+                  calc
+                    some b' = res.regime'.lookup? k' := hregime.symm
+                    _ = res.regime'.lookup? k := by simp [hkEq]
+                    _ = some b := hbres
+                exact Option.some.inj this
+              have hbctx' : ctx.regime.lookup? k' = some b' := by
+                calc
+                  ctx.regime.lookup? k' = ctx.regime.lookup? k := by simp [hkEq]
+                  _ = some b := hbctx
+                  _ = some b' := by simp [hbEq]
+              exact
+                varsRegime.withPred_ok (x, qt) k' arg_name pred_body var_env v b'
+                  hclos hbctx' hvarLookup hconsist
+    · intro x qt v hlookup hlookup_v
+      have hlookupRes :
+          (ctxAfter { ctx with pureCtx := true } res).varEnv.lookup x = some qt := by
+        unfold ctxAfter
+        exact hlookup
+      have hcapRes :
+          closureCapturedVarsRegime predSat
+            (ctxAfter { ctx with pureCtx := true } res).regime
+            qt μ θ v :=
+        hcwr.2.2 x qt v hlookupRes hlookup_v
+      exact
+        closureCapturedVarsRegime_transport_lookup_back
+          (predSat := predSat)
+          (R := (ctxAfter { ctx with pureCtx := true } res).regime)
+          (R' := ({ ctx with tagEnv := ctx.tagEnv.insert kTrue ⟨true, depsTrue⟩ }).regime)
+          (μ := μ)
+          (hlookup_back := by
+            intro k b hk
+            simpa [ctxAfter] using hreg_bridge k b hk)
+          hcapRes
+
+/-- Extract a context-level guard owner from successful `matchGuard`. -/
+private lemma matchGuard_ok_extract_owner_in_ctx
+    (ctx : TypeContext) (cond : Expr) (k : Tag) (deps : Deps)
+    {fuel : Nat}
+    (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps)) :
+    ( (∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+          ctx.varEnv.lookup x = some qt ∧
+          qt.pred = Predicate.guardClosure k arg_name pred_body var_env)
+      ∨
+      (∃ (x : Name) (qt : QTyp) (ls : LocSet)
+          (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+          ctx.varEnv.lookup x = some qt ∧
+          qt.etyp = ETyp.ref ls ∧
+          (∀ l, l ∈ ls →
+            ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+              memQt.pred = Predicate.guardClosure k arg_name pred_body var_env) ) ) := by
+  have hcond_ok : ∃ conditionPExpr, cond.toPExpr = .ok conditionPExpr := by
+    rcases matchGuard_ok_toPExpr?_some ctx cond k deps hmatch with ⟨conditionPExpr, hcond_some⟩
+    have hcond_ok' : cond.toPExpr = .ok conditionPExpr := by
+      unfold Expr.toPExpr
+      rw [hcond_some]
+      simp [pure, Except.pure]
+    exact ⟨conditionPExpr, hcond_ok'⟩
+  rcases hcond_ok with ⟨conditionPExpr, hcond⟩
+  rcases matchGuard_ok_allMatches_singleton ctx cond k deps conditionPExpr fuel hcond hmatch
+    with ⟨refMatches, href, hall⟩
+  have hvar_or_href :=
+    singleton_allMatches_implies_var_or_ref (matchGuard_varMatches conditionPExpr ctx fuel)
+      refMatches k deps hall
+  rcases hvar_or_href with hvar | hrefMem
+  · left
+    exact var_match_from_varMatches ctx conditionPExpr k deps fuel hvar
+  · right
+    exact ref_match_from_refMatches ctx conditionPExpr k deps refMatches fuel href hrefMem
+
+/-- Lift a context-level owner witness to the runtime owner witness shape used by `match_iff`. -/
+private lemma owner_in_ctx_to_runtime_owner_witness
+    (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+    (k : Tag)
+    (hctx :
+      ( (∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+            ctx.varEnv.lookup x = some qt ∧
+            qt.pred = Predicate.guardClosure k arg_name pred_body var_env)
+        ∨
+        (∃ (x : Name) (qt : QTyp) (ls : LocSet)
+            (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+            ctx.varEnv.lookup x = some qt ∧
+            qt.etyp = ETyp.ref ls ∧
+            (∀ l, l ∈ ls →
+              ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+                memQt.pred = Predicate.guardClosure k arg_name pred_body var_env) ) ))
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ) :
+    ∃ v,
+      ( (∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+          ctx.varEnv.lookup x = some qt ∧
+          qt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
+          ρ.lookup x = some v)
+        ∨
+        (∃ (x : Name) (qt memQt : QTyp) (ls : LocSet) (l0 : Loc) (a : Address) (n : Int)
+            (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+          ctx.varEnv.lookup x = some qt ∧
+          qt.etyp = ETyp.ref ls ∧
+          l0 ∈ ls ∧
+          ctx.memEnv.lookup l0 = some memQt ∧
+          memQt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
+          θ.lookup l0 = some a ∧
+          μ.lookup a = some n ∧
+          v = Value.num n) ) := by
+  rcases hric with ⟨hmemInst, hvarInst⟩
+  rcases hctx with hvar | href
+  · rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred⟩
+    rcases hvarInst hlookup with ⟨v, hρ, _⟩
+    exact ⟨v, Or.inl ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred, hρ⟩⟩
+  · rcases href with ⟨x, qt, ls, arg_name, pred_body, var_env, hlookup, hetyp, hall⟩
+    rcases hvarInst hlookup with ⟨v0, _hρ, hvtyp⟩
+    have hvtyp_ref : valueHasETyp θ v0 (ETyp.ref ls) := by
+      simpa [hetyp] using hvtyp
+    cases hvtyp_ref with
+    | loc hθ hin =>
+        rename_i a l0
+        have hμcontains : μ.contains a = true := (hmemInst l0 a hθ).2
+        rcases Memory_lookup_some_of_contains hμcontains with ⟨n, hμ⟩
+        rcases hall l0 hin with ⟨memQt, hlookupMem, hpredMem⟩
+        exact ⟨Value.num n, Or.inr
+          ⟨x, qt, memQt, ls, l0, a, n, arg_name, pred_body, var_env,
+            hlookup, hetyp, hin, hlookupMem, hpredMem, hθ, hμ, rfl⟩⟩
+
+/-- If `matchGuard` succeeds at `(k,deps)`, there is a runtime owner witness for tag `k`
+    under any runtime that instantiates `ctx`. -/
+private lemma matchGuard_ok_runtime_owner
+    (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+    (cond : Expr) (k : Tag) (deps : Deps)
+    {fuel : Nat}
+    (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps))
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ) :
+    ∃ v,
+      ( (∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+          ctx.varEnv.lookup x = some qt ∧
+          qt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
+          ρ.lookup x = some v)
+        ∨
+        (∃ (x : Name) (qt memQt : QTyp) (ls : LocSet) (l0 : Loc) (a : Address) (n : Int)
+            (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+          ctx.varEnv.lookup x = some qt ∧
+          qt.etyp = ETyp.ref ls ∧
+          l0 ∈ ls ∧
+          ctx.memEnv.lookup l0 = some memQt ∧
+          memQt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
+          θ.lookup l0 = some a ∧
+          μ.lookup a = some n ∧
+          v = Value.num n) ) := by
+  have hctx := matchGuard_ok_extract_owner_in_ctx ctx cond k deps hmatch
+  exact owner_in_ctx_to_runtime_owner_witness ctx μ ρ θ k hctx hric
+
+/-- Optional local helper for the `ite` FR modes.
+    Shows the guard evaluation boolean is aligned with the regime value once
+    `matchGuard` succeeds and an owner witness is available.
+
+    NOTE: `howner` is the runtime owner-witness needed by `PredSatLaws.match_iff`
+    (premise (iii)). At intended call sites, derive it via bridge lemmas:
+    `matchGuard_ok_owner_in_ctx` then `owner_in_ctx_to_runtime`.
+    Sketch:
+    `matchGuard_ok_owner_in_ctx`:
+      `matchGuard cond ctx.memEnv ctx.varEnv = .ok (k,deps) →`
+      `∃ owner, ownerHasGuardTagInCtx ctx cond k owner`
+    `owner_in_ctx_to_runtime`:
+      `runtimeInstantiatesCtx ctx μ ρ θ → ownerHasGuardTagInCtx ctx cond k owner →`
+      `∃ v, ownerWitnessAtRuntime owner μ ρ θ v`
+    This helper itself does not need `runtimeInstantiatesCtx`; that premise
+    is expected while constructing `howner` via the bridge lemmas. -/
+private lemma guard_branch_alignment
+    (predSat : PredSat) (tm : TagMeaning) (mode : LeanPoison.EvalMode)
+    (ctx : TypeContext) (μ₀ : Memory) (ρ₀ : VarEnv) (θ₀ : RealizationMap)
+    (l₀ : Address) (pm₀ : Bool)
+    (hwfTm : wfTagMeaningCtx tm ctx) (hpred : PredSatLaws predSat tm)
+    (hcwr : consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀)
+    (cond : Expr) (k : Tag) (deps : Deps) (b b' : Bool) (cfg' : Config)
+    {fuel : Nat}
+    (howner :
+      ∃ v,
+        ( (∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+            ctx.varEnv.lookup x = some qt ∧
+            qt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
+            ρ₀.lookup x = some v)
+          ∨
+          (∃ (x : Name) (qt memQt : QTyp) (ls : LocSet) (l0 : Loc) (a : Address) (n : Int)
+              (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+            ctx.varEnv.lookup x = some qt ∧
+            qt.etyp = ETyp.ref ls ∧
+            l0 ∈ ls ∧
+            ctx.memEnv.lookup l0 = some memQt ∧
+            memQt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
+            θ₀.lookup l0 = some a ∧
+            μ₀.lookup a = some n ∧
+            v = Value.num n) ) ) :
+    matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps) →
+    ctx.regime.lookup? k = some b →
+    terminatesTo mode cond
+      { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+      cfg' (Value.bool b') →
+    b' = b := by
+  intro hmatch hregime hterm
+  rcases howner with ⟨v, hv_owner⟩
+  have hmatch_iff_v : (b' = true ↔ predSat k μ₀ v) := by
+    apply hpred.match_iff mode cond ctx.memEnv ctx.varEnv fuel k deps
+      μ₀ ρ₀ θ₀ l₀ pm₀ cfg' v b'
+    · exact hwfTm
+    · exact hmatch
+    · exact hterm
+    · cases hv_owner with
+      | inl hvar =>
+          rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred_qt, hvar⟩
+          left
+          refine ⟨x, qt, hlookup, ?_, hvar⟩
+          simp [qtypGuardTag, hpred_qt]
+      | inr href =>
+          rcases href with
+            ⟨x, qt, memQt, ls, l0, a, n, arg_name, pred_body, var_env,
+              hlookup, hetyp, hIn, hlookupMem, hpred_memQt, hθ, hμ, hv⟩
+          right
+          refine ⟨x, qt, memQt, ls, l0, a, n, hlookup, hetyp, hIn, hlookupMem, ?_, hθ, hμ, hv⟩
+          simp [qtypGuardTag, hpred_memQt]
+  have hRdef : ctx.regime.lookup? k ≠ none := by
+    simp [hregime]
+  have hpred_implies_lookup_true : predSat k μ₀ v → ctx.regime.lookup? k = some true := by
+    intro hsat
+    cases hv_owner with
+    | inl hvar =>
+        rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred_qt, hvar⟩
+        have htag_qt : qtypGuardTag qt = some k := by
+          simp [qtypGuardTag, hpred_qt]
+        have hvr : varsRegime predSat ctx.regime μ₀ ρ₀ (x, qt) :=
+          hcwr.2.1 x qt k hlookup htag_qt hRdef
+        cases hvr with
+        | noPred_ok hnp =>
+            exfalso
+            simp [qtypGuardTag, hpred_qt] at hnp
+        | guardOnly_ok _k hgo =>
+            exfalso
+            simp [hpred_qt] at hgo
+        | withPred_ok k1 arg_name1 pred_body1 var_env1 v1 b1 hclos hregime1 hvar1 hconsist =>
+            have hk : k1 = k := by
+              have hEq :
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 =
+                  Predicate.guardClosure k arg_name pred_body var_env := by
+                calc
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 = qt.pred := by
+                    symm; exact hclos
+                  _ = Predicate.guardClosure k arg_name pred_body var_env := hpred_qt
+              cases hEq
+              rfl
+            have hv1 : v1 = v := by
+              have : some v1 = some v := by simpa [hvar1] using hvar
+              exact Option.some.inj this
+            by_cases hb1t : b1 = true
+            ·
+              have hlookup_k_b1 : ctx.regime.lookup? k = some b1 := by
+                simpa [hk] using hregime1
+              simpa [hb1t] using hlookup_k_b1
+            · have hb1f : b1 = false := by
+                cases b1 <;> simp at hb1t ⊢
+              have hnot : ¬ qtypPredHolds predSat qt μ₀ v1 := hconsist.2 hb1f
+              have hsat1 : predSat k1 μ₀ v1 := by
+                simpa [hk, hv1] using hsat
+              have hholds : qtypPredHolds predSat qt μ₀ v1 :=
+                qtypPredHolds.guardClosure_ok hclos hsat1
+              exact False.elim (hnot hholds)
+    | inr href =>
+        rcases href with
+          ⟨x, qt, memQt, ls, l0, a, n, arg_name, pred_body, var_env,
+            hlookup, hetyp, hIn, hlookupMem, hpred_memQt, hθ, hμ, hv⟩
+        have htag_memQt : qtypGuardTag memQt = some k := by
+          simp [qtypGuardTag, hpred_memQt]
+        have hlr : locsRegime predSat ctx.regime μ₀ θ₀ (l0, memQt) :=
+          hcwr.1 l0 memQt k hlookupMem htag_memQt hRdef
+        cases hlr with
+        | noPred_ok hnp =>
+            exfalso
+            simp [qtypGuardTag, hpred_memQt] at hnp
+        | guardOnly_ok _k hgo =>
+            exfalso
+            simp [hpred_memQt] at hgo
+        | withPred_ok k1 arg_name1 pred_body1 var_env1 a1 n1 b1 hclos hregime1 hreal hmem hconsist =>
+            have hk : k1 = k := by
+              have hEq :
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 =
+                  Predicate.guardClosure k arg_name pred_body var_env := by
+                calc
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 = memQt.pred := by
+                    symm; exact hclos
+                  _ = Predicate.guardClosure k arg_name pred_body var_env := hpred_memQt
+              cases hEq
+              rfl
+            have ha : a1 = a := by
+              have : some a1 = some a := by simpa [hreal] using hθ
+              exact Option.some.inj this
+            have hmemA : μ₀.lookup a = some n1 := by
+              simpa [ha] using hmem
+            have hn : n1 = n := by
+              have : some n1 = some n := by simpa [hmemA] using hμ
+              exact Option.some.inj this
+            have hv_num : v = Value.num n1 := by
+              calc
+                v = Value.num n := hv
+                _ = Value.num n1 := by simp [hn]
+            by_cases hb1t : b1 = true
+            ·
+              have hlookup_k_b1 : ctx.regime.lookup? k = some b1 := by
+                simpa [hk] using hregime1
+              simpa [hb1t] using hlookup_k_b1
+            · have hb1f : b1 = false := by
+                cases b1 <;> simp at hb1t ⊢
+              have hnot : ¬ qtypPredHolds predSat memQt μ₀ (Value.num n1) := hconsist.2 hb1f
+              have hsat_num : predSat k1 μ₀ (Value.num n1) := by
+                simpa [hk, hv_num] using hsat
+              have hholds : qtypPredHolds predSat memQt μ₀ (Value.num n1) :=
+                qtypPredHolds.guardClosure_ok hclos hsat_num
+              exact False.elim (hnot hholds)
+  have hlookup_true_implies_pred : ctx.regime.lookup? k = some true → predSat k μ₀ v := by
+    intro hktrue
+    cases hv_owner with
+    | inl hvar =>
+        rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred_qt, hvar⟩
+        have htag_qt : qtypGuardTag qt = some k := by
+          simp [qtypGuardTag, hpred_qt]
+        have hvr : varsRegime predSat ctx.regime μ₀ ρ₀ (x, qt) :=
+          hcwr.2.1 x qt k hlookup htag_qt hRdef
+        cases hvr with
+        | noPred_ok hnp =>
+            exfalso
+            simp [qtypGuardTag, hpred_qt] at hnp
+        | guardOnly_ok _k hgo =>
+            exfalso
+            simp [hpred_qt] at hgo
+        | withPred_ok k1 arg_name1 pred_body1 var_env1 v1 b1 hclos hregime1 hvar1 hconsist =>
+            have hk : k1 = k := by
+              have hEq :
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 =
+                  Predicate.guardClosure k arg_name pred_body var_env := by
+                calc
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 = qt.pred := by
+                    symm; exact hclos
+                  _ = Predicate.guardClosure k arg_name pred_body var_env := hpred_qt
+              cases hEq
+              rfl
+            have hv1 : v1 = v := by
+              have : some v1 = some v := by simpa [hvar1] using hvar
+              exact Option.some.inj this
+            have hb1t : b1 = true := by
+              have hlookup_k1_true : ctx.regime.lookup? k1 = some true := by
+                simpa [hk] using hktrue
+              have : some b1 = some true := by simpa [hregime1] using hlookup_k1_true
+              exact Option.some.inj this
+            have hholds : qtypPredHolds predSat qt μ₀ v1 := hconsist.1 hb1t
+            cases hholds with
+            | noPred_ok hnp =>
+                exfalso
+                simp [hpred_qt] at hnp
+            | guardOnly_ok hgo _ =>
+                exfalso
+                simp [hpred_qt] at hgo
+            | guardClosure_ok hclos' hsat' =>
+                rename_i k2 arg2 body2 env2
+                have hk2 : k2 = k1 := by
+                  have hEq :
+                      Predicate.guardClosure k2 arg2 body2 env2 =
+                      Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 := by
+                    calc
+                      Predicate.guardClosure k2 arg2 body2 env2 = qt.pred := by
+                        symm; exact hclos'
+                      _ = Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 := hclos
+                  cases hEq
+                  rfl
+                subst hk2
+                simpa [hk, hv1] using hsat'
+    | inr href =>
+        rcases href with
+          ⟨x, qt, memQt, ls, l0, a, n, arg_name, pred_body, var_env,
+            hlookup, hetyp, hIn, hlookupMem, hpred_memQt, hθ, hμ, hv⟩
+        have htag_memQt : qtypGuardTag memQt = some k := by
+          simp [qtypGuardTag, hpred_memQt]
+        have hlr : locsRegime predSat ctx.regime μ₀ θ₀ (l0, memQt) :=
+          hcwr.1 l0 memQt k hlookupMem htag_memQt hRdef
+        cases hlr with
+        | noPred_ok hnp =>
+            exfalso
+            simp [qtypGuardTag, hpred_memQt] at hnp
+        | guardOnly_ok _k hgo =>
+            exfalso
+            simp [hpred_memQt] at hgo
+        | withPred_ok k1 arg_name1 pred_body1 var_env1 a1 n1 b1 hclos hregime1 hreal hmem hconsist =>
+            have hk : k1 = k := by
+              have hEq :
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 =
+                  Predicate.guardClosure k arg_name pred_body var_env := by
+                calc
+                  Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 = memQt.pred := by
+                    symm; exact hclos
+                  _ = Predicate.guardClosure k arg_name pred_body var_env := hpred_memQt
+              cases hEq
+              rfl
+            have ha : a1 = a := by
+              have : some a1 = some a := by simpa [hreal] using hθ
+              exact Option.some.inj this
+            have hmemA : μ₀.lookup a = some n1 := by
+              simpa [ha] using hmem
+            have hn : n1 = n := by
+              have : some n1 = some n := by simpa [hmemA] using hμ
+              exact Option.some.inj this
+            have hv_num : v = Value.num n1 := by
+              calc
+                v = Value.num n := hv
+                _ = Value.num n1 := by simp [hn]
+            have hb1t : b1 = true := by
+              have hlookup_k1_true : ctx.regime.lookup? k1 = some true := by
+                simpa [hk] using hktrue
+              have : some b1 = some true := by simpa [hregime1] using hlookup_k1_true
+              exact Option.some.inj this
+            have hholds : qtypPredHolds predSat memQt μ₀ (Value.num n1) := hconsist.1 hb1t
+            have hsat_num : predSat k1 μ₀ (Value.num n1) := by
+              cases hholds with
+              | noPred_ok hnp =>
+                  exfalso
+                  simp [hpred_memQt] at hnp
+              | guardOnly_ok hgo _ =>
+                  exfalso
+                  simp [hpred_memQt] at hgo
+              | guardClosure_ok hclos' hsat' =>
+                  rename_i k2 arg2 body2 env2
+                  have hk2 : k2 = k1 := by
+                    have hEq :
+                        Predicate.guardClosure k2 arg2 body2 env2 =
+                        Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 := by
+                      calc
+                        Predicate.guardClosure k2 arg2 body2 env2 = memQt.pred := by
+                          symm; exact hclos'
+                        _ = Predicate.guardClosure k1 arg_name1 pred_body1 var_env1 := hclos
+                    cases hEq
+                    rfl
+                  subst hk2
+                  exact hsat'
+            simpa [hk, hv_num] using hsat_num
+  have hb'_iff : (b' = true ↔ b = true) := by
+    constructor
+    · intro hb'true
+      have hsat : predSat k μ₀ v := hmatch_iff_v.mp hb'true
+      have hktrue : ctx.regime.lookup? k = some true := hpred_implies_lookup_true hsat
+      have : some b = some true := by simpa [hregime] using hktrue
+      exact Option.some.inj this
+    · intro hbtrue
+      have hktrue : ctx.regime.lookup? k = some true := by
+        simp [hregime, hbtrue]
+      have hsat : predSat k μ₀ v := hlookup_true_implies_pred hktrue
+      exact hmatch_iff_v.mpr hsat
+  cases b <;> cases b' <;> simp at hb'_iff ⊢
+
+private lemma stepFR_ite_mode1
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (htc : typecheck .ioFree ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res)
+  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
+  (hregime_true : ctxᵢ.regime.lookup? k = some true)
+  (res1 res2 : TypeResult)
+  (htc1 : typecheckExpr .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
+  (hbool : res1.qualType.etyp = ETyp.bool)
+  (htc2 : let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
+          typecheckExpr .ioFree ctxTrue e2 fuel' = .ok res2)
+  (hmemEnv : res.memEnv' = res2.memEnv')
+  (htagEnv : res.tagEnv' = res2.tagEnv')
+  (hnextLoc : res.nextLoc' = res2.nextLoc')
+  (hnextTag : res.nextTag' = res2.nextTag')
+  (hregime' : res.regime' = res2.regime')
+  (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc res2.qualType.poison)
+  (hetyp : res.qualType.etyp = res2.qualType.etyp) :
+  StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
+  classical
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+  rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
+  have hstruct₁ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+  rcases hstruct₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁_final⟩
+  have htc1' : typecheck .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have hwfTm_pure : wfTagMeaningCtx tm { ctxᵢ with pureCtx := true } := by
+    simpa [wfTagMeaningCtx] using hwfTm
+  have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 { ctxᵢ with pureCtx := true } hwfTm_pure res1 htc1'
+  have hwf_pure : wfTypeContext { ctxᵢ with pureCtx := true } := by
+    simp [wfTypeContext] at hwf ⊢
+    exact hwf
+  have hstep_e1 :=
+    hIH_e1 hpredlaws hwfTm_pure μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+  rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hwfTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
+  have hb₀_true : b₀ = true := by
+    have howner₀ := matchGuard_ok_runtime_owner ctxᵢ μ₀ ρ₀ θ₀ e1 k deps hmatch hric₀
+    exact
+      guard_branch_alignment predSat tm .ioFree
+        ctxᵢ μ₀ ρ₀ θ₀ a₀ pm
+        hwfTm hpredlaws hcwr₀
+        e1 k deps true b₀ cfg₀1
+        howner₀
+        hmatch hregime_true ht₀_e1
+  have hb₁_true : b₁ = true := by
+    have howner₁ := matchGuard_ok_runtime_owner ctxᵢ μ₁ ρ₁ θ₁ e1 k deps hmatch hric₁
+    exact
+      guard_branch_alignment predSat tm .ioFree
+        ctxᵢ μ₁ ρ₁ θ₁ a₁ pm
+        hwfTm hpredlaws hcwr₁
+        e1 k deps true b₁ cfg₁1
+        howner₁
+        hmatch hregime_true ht₁_e1
+  have ht₀_e2 : terminatesTo .ioFree e2 cfg₀1 cf₀ o₀ := by
+    cases hbranch₀ with
+    | inl h => exact h.2
+    | inr h =>
+        have : false = true := by rw [← h.1, hb₀_true]
+        contradiction
+  have ht₁_e2 : terminatesTo .ioFree e2 cfg₁1 cf₁ o₁ := by
+    cases hbranch₁ with
+    | inl h => exact h.2
+    | inr h =>
+        have : false = true := by rw [← h.1, hb₁_true]
+        contradiction
+  let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
+  have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc2
+  have hwfTm_true : wfTagMeaningCtx tm ctxTrue := by
+    simpa [wfTagMeaningCtx, ctxTrue] using hwfTm
+  have hIH_e2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e2 ctxTrue hwfTm_true res2 htc2'
+  have htcIf : typecheckIf .ioFree ctxᵢ e1 e2 e3 (Nat.succ fuel') = .ok res := by
+    simpa [typecheck, typecheckExpr_ite_succ] using htc
+  have hpredNo : res.qualType.pred = Predicate.noPred := by
+    have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by
+      native_decide
+    unfold typecheckIf at htcIf
+    erw [hmatch] at htcIf
+    simp [hregime_true, heq, bind, Except.bind] at htcIf
+    rw [htc1] at htcIf
+    simp at htcIf
+    cases hq1 : res1.qualType with
+    | mk etyp1 p1 pred1 =>
+        simp [hq1] at htcIf
+        have hbool1 : etyp1 = ETyp.bool := by
+          simpa [hq1] using hbool
+        rw [hbool1] at htcIf
+        simp [htc2, pure, Except.pure] at htcIf
+        cases hq2 : res2.qualType with
+        | mk etyp2 p2 pred2 =>
+            simp [hq2] at htcIf
+            cases htcIf
+            rfl
+  have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
+  have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
+  have hwf_true : wfTypeContext ctxTrue := by
+    simpa [wfTypeContext, ctxTrue] using hwf
+  have hric₀1' : runtimeInstantiatesCtx ctxTrue cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+    have hsub₀ : ∀ l, res1.memEnv'.contains l → ctxᵢ.memEnv.contains l := by
+      rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+      exact
+        typecheckExpr_pure_mem_subset_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1
+    exact
+      runtimeInstantiatesCtx_transport_mem_subset_tag_insert_true
+        (ctx := ctxᵢ) (res := res1) (μ := cfg₀1.memory) (ρ := cfg₀1.varEnv) (θ := θ₀1)
+        (k := k) (deps := deps)
+        hsub₀ hric₀1
+  have hric₁1' : runtimeInstantiatesCtx ctxTrue cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    have hsub₁ : ∀ l, res1.memEnv'.contains l → ctxᵢ.memEnv.contains l := by
+      rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+      exact
+        typecheckExpr_pure_mem_subset_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1
+    exact
+      runtimeInstantiatesCtx_transport_mem_subset_tag_insert_true
+        (ctx := ctxᵢ) (res := res1) (μ := cfg₁1.memory) (ρ := cfg₁1.varEnv) (θ := θ₁1)
+        (k := k) (deps := deps)
+        hsub₁ hric₁1
+  have htagR_true : regimeConsistentWithCtx ctxTrue := by
+    unfold regimeConsistentWithCtx at htagR ⊢
+    constructor
+    · exact tagEnvConsistentWithRegime_insert_true
+        ctxᵢ.tagEnv ctxᵢ.regime k deps htagR.1 hregime_true
+    · simpa [ctxTrue] using htagR.2
+  have hRbound_true : regimeBounded ctxTrue.regime := by
+    simpa [ctxTrue] using hRbound
+  have hcwr₀1' : consistentWithRegime predSat ctxTrue.regime ctxTrue cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+    refine
+      consistentWithRegime_transport_ctxAfter_pure_to_ctx_insert_true
+        (predSat := predSat) (ctx := ctxᵢ) (res := res1)
+        (μ := cfg₀1.memory) (ρ := cfg₀1.varEnv) (θ := θ₀1)
+        (kTrue := k) (depsTrue := deps)
+        ?hreg_bridge ?hmem_bridge hcwr₀1
+    · intro k' b hk
+      rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+      exact
+        typecheckExpr_pure_regime_bridge_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1 k' b hk
+    · intro l qt k' hlookup hguard hRdef
+      rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+      exact
+        typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1 l qt k' hlookup hguard hRdef
+  have hcwr₁1' : consistentWithRegime predSat ctxTrue.regime ctxTrue cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    refine
+      consistentWithRegime_transport_ctxAfter_pure_to_ctx_insert_true
+        (predSat := predSat) (ctx := ctxᵢ) (res := res1)
+        (μ := cfg₁1.memory) (ρ := cfg₁1.varEnv) (θ := θ₁1)
+        (kTrue := k) (depsTrue := deps)
+        ?hreg_bridge1 ?hmem_bridge1 hcwr₁1
+    · intro k' b hk
+      rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+      exact
+        typecheckExpr_pure_regime_bridge_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1 k' b hk
+    · intro l qt k' hlookup hguard hRdef
+      rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+      exact
+        typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1 l qt k' hlookup hguard hRdef
+  have hagree1' :
+      agreeOnClean predSat ctxTrue.regime ctxTrue
+        cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+    have hcleanBack :
+        ∀ qt, qtypCleanUnder ctxTrue.regime qt → qtypCleanUnder res1.regime' qt := by
+      intro qt hclean
+      exact
+        qtypCleanUnder_transport_pure_regime_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1 qt (by simpa [ctxTrue] using hclean)
+    have hlookupBackAll :
+        ∀ k' b, ctxTrue.regime.lookup? k' = some b → res1.regime'.lookup? k' = some b := by
+      intro k' b hk
+      exact
+        typecheckExpr_pure_regime_bridge_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1 k' b (by simpa [ctxTrue] using hk)
+    have hmemberVars₀_transport :
+        ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
+          MemberVarsRegimeEvidence predSat res1.regime' cfg₀1.memory σcap ρcap →
+            MemberVarsRegimeEvidence predSat ctxTrue.regime cfg₀1.memory σcap ρcap := by
+      intro σcap ρcap h
+      exact
+        memberVarsRegimeEvidence_transport_lookup_back
+          (predSat := predSat) (R := res1.regime') (R' := ctxTrue.regime) (μ := cfg₀1.memory)
+          hlookupBackAll h
+    have hmemberCvcr₀_transport :
+        ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
+          MemberCvcrEvidence predSat res1.regime' cfg₀1.memory θ₀1 σcap ρcap →
+            MemberCvcrEvidence predSat ctxTrue.regime cfg₀1.memory θ₀1 σcap ρcap := by
+      intro σcap ρcap h
+      exact
+        memberCvcrEvidence_transport_lookup_back
+          (predSat := predSat) (R := res1.regime') (R' := ctxTrue.regime) (μ := cfg₀1.memory)
+          hlookupBackAll h
+    have hmemberVars₁_transport :
+        ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
+          MemberVarsRegimeEvidence predSat res1.regime' cfg₁1.memory σcap ρcap →
+            MemberVarsRegimeEvidence predSat ctxTrue.regime cfg₁1.memory σcap ρcap := by
+      intro σcap ρcap h
+      exact
+        memberVarsRegimeEvidence_transport_lookup_back
+          (predSat := predSat) (R := res1.regime') (R' := ctxTrue.regime) (μ := cfg₁1.memory)
+          hlookupBackAll h
+    have hmemberCvcr₁_transport :
+        ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
+          MemberCvcrEvidence predSat res1.regime' cfg₁1.memory θ₁1 σcap ρcap →
+            MemberCvcrEvidence predSat ctxTrue.regime cfg₁1.memory θ₁1 σcap ρcap := by
+      intro σcap ρcap h
+      exact
+        memberCvcrEvidence_transport_lookup_back
+          (predSat := predSat) (R := res1.regime') (R' := ctxTrue.regime) (μ := cfg₁1.memory)
+          hlookupBackAll h
+    constructor
+    · intro l qt hlookup hclean
+      have hlookupRes :
+          res1.memEnv'.lookup l = some qt :=
+        typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1 l qt (by simpa [ctxTrue] using hlookup)
+      have hcleanRes : qtypCleanUnder res1.regime' qt := hcleanBack qt hclean
+      have hagreeRes :
+          agreeLocUnder predSat res1.regime'
+            cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 (l, qt) :=
+        hagree1.1 l qt (by simpa [ctxAfter] using hlookupRes) hcleanRes
+      cases hagreeRes with
+      | both_unrealized l qt hnone₀ hnone₁ =>
+          exact agreeLocUnder.both_unrealized l qt hnone₀ hnone₁
+      | agree_values l qt a₀ a₁ n₀ n₁ hreal₀ hreal₁ hlookup₀ hlookup₁ hagreeV =>
+          have hagreeV' :
+              agreeValueUnder predSat ctxTrue.regime
+                cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 qt (Value.num n₀) (Value.num n₁) :=
+            agreeValueUnder_clean_transport_by_cleanBack
+              (predSat := predSat)
+              (R := res1.regime')
+              (R' := ctxTrue.regime)
+              (h_clean_back := hcleanBack)
+              (hmemberVars₀_transport := hmemberVars₀_transport)
+              (hmemberCvcr₀_transport := hmemberCvcr₀_transport)
+              (hmemberVars₁_transport := hmemberVars₁_transport)
+              (hmemberCvcr₁_transport := hmemberCvcr₁_transport)
+              hclean hagreeV
+          exact agreeLocUnder.agree_values l qt a₀ a₁ n₀ n₁ hreal₀ hreal₁ hlookup₀ hlookup₁ hagreeV'
+    · intro x qt hlookup hclean
+      have hcleanRes : qtypCleanUnder res1.regime' qt := hcleanBack qt hclean
+      have hagreeRes :
+          agreeVarUnder predSat res1.regime'
+            cfg₀1.memory cfg₀1.varEnv cfg₁1.memory cfg₁1.varEnv θ₀1 θ₁1 (x, qt) :=
+        hagree1.2 x qt (by simpa [ctxAfter, ctxTrue] using hlookup) hcleanRes
+      cases hagreeRes with
+      | both_none x qt hnone₀ hnone₁ =>
+          exact agreeVarUnder.both_none x qt hnone₀ hnone₁
+      | agree_values x qt v₀ v₁ hlookup₀ hlookup₁ hagreeV =>
+          have hagreeV' :
+              agreeValueUnder predSat ctxTrue.regime
+                cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 qt v₀ v₁ :=
+            agreeValueUnder_clean_transport_by_cleanBack
+              (predSat := predSat)
+              (R := res1.regime')
+              (R' := ctxTrue.regime)
+              (h_clean_back := hcleanBack)
+              (hmemberVars₀_transport := hmemberVars₀_transport)
+              (hmemberCvcr₀_transport := hmemberCvcr₀_transport)
+              (hmemberVars₁_transport := hmemberVars₁_transport)
+              (hmemberCvcr₁_transport := hmemberCvcr₁_transport)
+              hclean hagreeV
+          exact agreeVarUnder.agree_values x qt v₀ v₁ hlookup₀ hlookup₁ hagreeV'
+  have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
+  have hcfg₁1_eq :
+      cfg₁1 =
+        { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
+          pureMode := cfg₀1.pureMode } := by
+    cases cfg₁1
+    simp only [Config.mk.injEq, true_and]
+    exact hpm_eq
+  have ht₁_e2' : terminatesTo .ioFree e2
+      { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
+        pureMode := cfg₀1.pureMode }
+      cf₁ o₁ := by
+    rw [← hcfg₁1_eq]
+    exact ht₁_e2
+  have hwfcf₁1' : wfConfig
+      { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
+        pureMode := cfg₀1.pureMode } := by
+    rw [← hcfg₁1_eq]
+    exact hwfcf₁1
+  have hstep_e2 :=
+    hIH_e2 hpredlaws hwfTm_true
+      cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
+      cf₀ cf₁ o₀ o₁
+      hθ₀1wf hθ₁1wf hwf_true hric₀1' hric₁1' htagR_true hRbound_true
+      hcwr₀1' hcwr₁1' hagree1'
+      cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
+      ht₀_e2 ht₁_e2'
+  rcases hstep_e2 with ⟨hresTm2, hstep_e2⟩
+  rcases hstep_e2 with
+    ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hvtyp₀2, _hvtyp₁2, _hTm2, hwf2, hwfcf₀2, hwfcf₁2,
+      hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₀2, _hvalc₁2, hres_agree2⟩
+  have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
+  have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
+  have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxTrue res2 := by
+    simp [ctxAfter, ctxTrue, hmemEnv, htagEnv, hnextLoc, hnextTag, hregime']
+  have hric₀_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
+    simpa [hctxAfter] using hric₀2
+  have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
+    simpa [hctxAfter] using hric₁2
+  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
+    simpa [hctxAfter] using htagR2
+  have hcwr₀_final :
+      consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+        cf₀.memory cf₀.varEnv θ₀2 := by
+    simpa [hctxAfter] using hcwr₀2
+  have hcwr₁_final :
+      consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+        cf₁.memory cf₁.varEnv θ₁2 := by
+    simpa [hctxAfter] using hcwr₁2
+  have hagree_final :
+      agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+        cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
+    simpa [hctxAfter] using hagree2
+  have hresTm : QTypRespectsTagMeaning tm res.qualType := by
+    have hguard : qtypGuardDesc? res.qualType = none := by
+      simp [qtypGuardDesc?, hpredNo]
+    intro qt' k' d hinq hqd
+    exact
+      (QTypRespectsTagMeaning_transport_etyp_noGuard
+        tm res2.qualType res.qualType hresTm2 hetyp hguard) hinq hqd
+  refine ⟨hresTm, ?_⟩
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, ?_, ?_, hwfcf₀2, hwfcf₁2,
+    hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_final, ?_, ?_, ?_⟩
+  · simpa [hetyp] using _hvtyp₀2
+  · simpa [hetyp] using _hvtyp₁2
+  · simpa [hctxAfter] using _hTm2
+  · simpa [hctxAfter] using hwf2
+  · refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := cf₀.memory) (v := o₀) ?_ ?_
+    · simp [qtypGuardTag, hpredNo]
+    · have hcap₂ : closureCapturedVarsRegime predSat (ctxAfter ctxTrue res2).regime res2.qualType cf₀.memory θ₀2 o₀ :=
+        valueConsistentWithRegime_closureCapturedVarsRegime _hvalc₀2
+      have hcap₂' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res2.qualType cf₀.memory θ₀2 o₀ := by
+        simpa [hctxAfter] using hcap₂
+      exact closureCapturedVarsRegime_transport_etyp hetyp.symm hcap₂'
+  · refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := cf₁.memory) (v := o₁) ?_ ?_
+    · simp [qtypGuardTag, hpredNo]
+    · have hcap₂ : closureCapturedVarsRegime predSat (ctxAfter ctxTrue res2).regime res2.qualType cf₁.memory θ₁2 o₁ :=
+        valueConsistentWithRegime_closureCapturedVarsRegime _hvalc₁2
+      have hcap₂' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res2.qualType cf₁.memory θ₁2 o₁ := by
+        simpa [hctxAfter] using hcap₂
+      exact closureCapturedVarsRegime_transport_etyp hetyp.symm hcap₂'
+  · intro hclean
+    have hpoison_imp : res.qualType.poison = false → res2.qualType.poison = false := by
+      intro hpoison_res
+      have hjoin : joinPoison ctxᵢ.pc res2.qualType.poison = false := by
+        calc
+          joinPoison ctxᵢ.pc res2.qualType.poison = res.qualType.poison := by
+            symm
+            exact hpoison
+          _ = false := hpoison_res
+      exact (joinPoison_eq_false hjoin).2
+    have hclean2 : qtypCleanUnder (ctxAfter ctxᵢ res).regime res2.qualType := by
+      cases hclean with
+      | clean hpoison_res =>
+          exact qtypCleanUnder.clean (hpoison_imp hpoison_res)
+      | guard k' htag _hreg _hnotfun =>
+          exfalso
+          simp [qtypGuardTag, hpredNo] at htag
+    have hres_agree2' :
+        resultAgreesIfClean predSat (ctxAfter ctxᵢ res).regime
+          cf₀.memory cf₁.memory θ₀2 θ₁2 res2.qualType o₀ o₁ := by
+      simpa [hctxAfter] using hres_agree2
+    have hagree2' :
+        agreeValueUnder predSat (ctxAfter ctxᵢ res).regime
+          cf₀.memory cf₁.memory θ₀2 θ₁2 res2.qualType o₀ o₁ :=
+      hres_agree2' hclean2
+    exact agreeValueUnder_transport_clean hclean hetyp hpoison_imp hagree2'
+
+-- Mode 2: R(k) = some false (else-branch effective)
+private lemma stepFR_ite_mode2
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (htc : typecheck .ioFree ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res)
+  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
+  (hregime_false : ctxᵢ.regime.lookup? k = some false)
+  (res1 res3 : TypeResult)
+  (htc1 : typecheckExpr .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
+  (hbool : res1.qualType.etyp = ETyp.bool)
+  (htc3 : let ctxFalse := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩ }
+          typecheckExpr .ioFree ctxFalse e3 fuel' = .ok res3)
+  (hmemEnv : res.memEnv' = res3.memEnv')
+  (htagEnv : res.tagEnv' = res3.tagEnv')
+  (hnextLoc : res.nextLoc' = res3.nextLoc')
+  (hnextTag : res.nextTag' = res3.nextTag')
+  (hregime' : res.regime' = res3.regime')
+  (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc res3.qualType.poison)
+  (hetyp : res.qualType.etyp = res3.qualType.etyp) :
+  StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
+  classical
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+  rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
+  have hstruct₁ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+  rcases hstruct₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁_final⟩
+  have htc1' : typecheck .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have hwfTm_pure : wfTagMeaningCtx tm { ctxᵢ with pureCtx := true } := by
+    simpa [wfTagMeaningCtx] using hwfTm
+  have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 { ctxᵢ with pureCtx := true } hwfTm_pure res1 htc1'
+  have hwf_pure : wfTypeContext { ctxᵢ with pureCtx := true } := by
+    simp [wfTypeContext] at hwf ⊢
+    exact hwf
+  have hstep_e1 :=
+    hIH_e1 hpredlaws hwfTm_pure μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+  rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hwfTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
+  have hb₀_false : b₀ = false := by
+    have howner₀ := matchGuard_ok_runtime_owner ctxᵢ μ₀ ρ₀ θ₀ e1 k deps hmatch hric₀
+    exact
+      guard_branch_alignment predSat tm .ioFree
+        ctxᵢ μ₀ ρ₀ θ₀ a₀ pm
+        hwfTm hpredlaws hcwr₀
+        e1 k deps false b₀ cfg₀1
+        howner₀
+        hmatch hregime_false ht₀_e1
+  have hb₁_false : b₁ = false := by
+    have howner₁ := matchGuard_ok_runtime_owner ctxᵢ μ₁ ρ₁ θ₁ e1 k deps hmatch hric₁
+    exact
+      guard_branch_alignment predSat tm .ioFree
+        ctxᵢ μ₁ ρ₁ θ₁ a₁ pm
+        hwfTm hpredlaws hcwr₁
+        e1 k deps false b₁ cfg₁1
+        howner₁
+        hmatch hregime_false ht₁_e1
+  have ht₀_e3 : terminatesTo .ioFree e3 cfg₀1 cf₀ o₀ := by
+    cases hbranch₀ with
+    | inl h =>
+        have : true = false := by rw [← h.1, hb₀_false]
+        contradiction
+    | inr h => exact h.2
+  have ht₁_e3 : terminatesTo .ioFree e3 cfg₁1 cf₁ o₁ := by
+    cases hbranch₁ with
+    | inl h =>
+        have : true = false := by rw [← h.1, hb₁_false]
+        contradiction
+    | inr h => exact h.2
+  let ctxFalse := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩ }
+  have htc3' : typecheck .ioFree ctxFalse e3 fuel' = .ok res3 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc3
+  have hwfTm_false : wfTagMeaningCtx tm ctxFalse := by
+    simpa [wfTagMeaningCtx, ctxFalse] using hwfTm
+  have hIH_e3 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e3 ctxFalse hwfTm_false res3 htc3'
+  have htcIf : typecheckIf .ioFree ctxᵢ e1 e2 e3 (Nat.succ fuel') = .ok res := by
+    simpa [typecheck, typecheckExpr_ite_succ] using htc
+  have hpredNo : res.qualType.pred = Predicate.noPred := by
+    have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by
+      native_decide
+    unfold typecheckIf at htcIf
+    erw [hmatch] at htcIf
+    simp [hregime_false, heq, bind, Except.bind] at htcIf
+    rw [htc1] at htcIf
+    simp at htcIf
+    cases hq1 : res1.qualType with
+    | mk etyp1 p1 pred1 =>
+        simp [hq1] at htcIf
+        have hbool1 : etyp1 = ETyp.bool := by
+          simpa [hq1] using hbool
+        rw [hbool1] at htcIf
+        simp [htc3, pure, Except.pure] at htcIf
+        cases hq3 : res3.qualType with
+        | mk etyp3 p3 pred3 =>
+            simp [hq3] at htcIf
+            cases htcIf
+            rfl
+  have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
+  have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
+  have hwf_false : wfTypeContext ctxFalse := by
+    simpa [wfTypeContext, ctxFalse] using hwf
+  have hric₀1' : runtimeInstantiatesCtx ctxFalse cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+    have hsub₀ : ∀ l, res1.memEnv'.contains l → ctxᵢ.memEnv.contains l := by
+      rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+      exact
+        typecheckExpr_pure_mem_subset_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1
+    have hric₀1_true :
+        runtimeInstantiatesCtx
+          { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
+          cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+      exact
+        runtimeInstantiatesCtx_transport_mem_subset_tag_insert_true
+          (ctx := ctxᵢ) (res := res1) (μ := cfg₀1.memory) (ρ := cfg₀1.varEnv) (θ := θ₀1)
+          (k := k) (deps := deps)
+          hsub₀ hric₀1
+    simpa [runtimeInstantiatesCtx, ctxFalse] using hric₀1_true
+  have hric₁1' : runtimeInstantiatesCtx ctxFalse cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    have hsub₁ : ∀ l, res1.memEnv'.contains l → ctxᵢ.memEnv.contains l := by
+      rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+      exact
+        typecheckExpr_pure_mem_subset_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1
+    have hric₁1_true :
+        runtimeInstantiatesCtx
+          { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
+          cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+      exact
+        runtimeInstantiatesCtx_transport_mem_subset_tag_insert_true
+          (ctx := ctxᵢ) (res := res1) (μ := cfg₁1.memory) (ρ := cfg₁1.varEnv) (θ := θ₁1)
+          (k := k) (deps := deps)
+          hsub₁ hric₁1
+    simpa [runtimeInstantiatesCtx, ctxFalse] using hric₁1_true
+  have htagR_false : regimeConsistentWithCtx ctxFalse := by
+    unfold regimeConsistentWithCtx at htagR ⊢
+    constructor
+    · exact tagEnvConsistentWithRegime_insert_false
+        ctxᵢ.tagEnv ctxᵢ.regime k deps htagR.1
+    · simpa [ctxFalse] using htagR.2
+  have hRbound_false : regimeBounded ctxFalse.regime := by
+    simpa [ctxFalse] using hRbound
+  have hcwr₀1' : consistentWithRegime predSat ctxFalse.regime ctxFalse cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+    have hcwr₀1_true :
+        consistentWithRegime predSat
+          ({ ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }).regime
+          ({ ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ })
+          cfg₀1.memory cfg₀1.varEnv θ₀1 := by
+      refine
+        consistentWithRegime_transport_ctxAfter_pure_to_ctx_insert_true
+          (predSat := predSat) (ctx := ctxᵢ) (res := res1)
+          (μ := cfg₀1.memory) (ρ := cfg₀1.varEnv) (θ := θ₀1)
+          (kTrue := k) (depsTrue := deps)
+          ?hreg_bridge ?hmem_bridge hcwr₀1
+      · intro k' b hk
+        rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+        exact
+          typecheckExpr_pure_regime_bridge_of_toPExpr
+            (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+            hpe1 htc1 k' b hk
+      · intro l qt k' hlookup hguard hRdef
+        rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+        exact
+          typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
+            (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+            hpe1 htc1 l qt k' hlookup hguard hRdef
+    simpa [consistentWithRegime, ctxFalse] using hcwr₀1_true
+  have hcwr₁1' : consistentWithRegime predSat ctxFalse.regime ctxFalse cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    have hcwr₁1_true :
+        consistentWithRegime predSat
+          ({ ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }).regime
+          ({ ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ })
+          cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+      refine
+        consistentWithRegime_transport_ctxAfter_pure_to_ctx_insert_true
+          (predSat := predSat) (ctx := ctxᵢ) (res := res1)
+          (μ := cfg₁1.memory) (ρ := cfg₁1.varEnv) (θ := θ₁1)
+          (kTrue := k) (depsTrue := deps)
+          ?hreg_bridge1 ?hmem_bridge1 hcwr₁1
+      · intro k' b hk
+        rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+        exact
+          typecheckExpr_pure_regime_bridge_of_toPExpr
+            (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+            hpe1 htc1 k' b hk
+      · intro l qt k' hlookup hguard hRdef
+        rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+        exact
+          typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
+            (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+            hpe1 htc1 l qt k' hlookup hguard hRdef
+    simpa [consistentWithRegime, ctxFalse] using hcwr₁1_true
+  have hagree1' :
+      agreeOnClean predSat ctxFalse.regime ctxFalse
+        cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
+    rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
+    have hcleanBack :
+        ∀ qt, qtypCleanUnder ctxFalse.regime qt → qtypCleanUnder res1.regime' qt := by
+      intro qt hclean
+      exact
+        qtypCleanUnder_transport_pure_regime_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1 qt (by simpa [ctxFalse] using hclean)
+    have hlookupBackAll :
+        ∀ k' b, ctxFalse.regime.lookup? k' = some b → res1.regime'.lookup? k' = some b := by
+      intro k' b hk
+      exact
+        typecheckExpr_pure_regime_bridge_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1 k' b (by simpa [ctxFalse] using hk)
+    have hmemberVars₀_transport :
+        ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
+          MemberVarsRegimeEvidence predSat res1.regime' cfg₀1.memory σcap ρcap →
+            MemberVarsRegimeEvidence predSat ctxFalse.regime cfg₀1.memory σcap ρcap := by
+      intro σcap ρcap h
+      exact
+        memberVarsRegimeEvidence_transport_lookup_back
+          (predSat := predSat) (R := res1.regime') (R' := ctxFalse.regime) (μ := cfg₀1.memory)
+          hlookupBackAll h
+    have hmemberCvcr₀_transport :
+        ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
+          MemberCvcrEvidence predSat res1.regime' cfg₀1.memory θ₀1 σcap ρcap →
+            MemberCvcrEvidence predSat ctxFalse.regime cfg₀1.memory θ₀1 σcap ρcap := by
+      intro σcap ρcap h
+      exact
+        memberCvcrEvidence_transport_lookup_back
+          (predSat := predSat) (R := res1.regime') (R' := ctxFalse.regime) (μ := cfg₀1.memory)
+          hlookupBackAll h
+    have hmemberVars₁_transport :
+        ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
+          MemberVarsRegimeEvidence predSat res1.regime' cfg₁1.memory σcap ρcap →
+            MemberVarsRegimeEvidence predSat ctxFalse.regime cfg₁1.memory σcap ρcap := by
+      intro σcap ρcap h
+      exact
+        memberVarsRegimeEvidence_transport_lookup_back
+          (predSat := predSat) (R := res1.regime') (R' := ctxFalse.regime) (μ := cfg₁1.memory)
+          hlookupBackAll h
+    have hmemberCvcr₁_transport :
+        ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
+          MemberCvcrEvidence predSat res1.regime' cfg₁1.memory θ₁1 σcap ρcap →
+            MemberCvcrEvidence predSat ctxFalse.regime cfg₁1.memory θ₁1 σcap ρcap := by
+      intro σcap ρcap h
+      exact
+        memberCvcrEvidence_transport_lookup_back
+          (predSat := predSat) (R := res1.regime') (R' := ctxFalse.regime) (μ := cfg₁1.memory)
+          hlookupBackAll h
+    constructor
+    · intro l qt hlookup hclean
+      have hlookupRes :
+          res1.memEnv'.lookup l = some qt :=
+        typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
+          (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
+          hpe1 htc1 l qt (by simpa [ctxFalse] using hlookup)
+      have hcleanRes : qtypCleanUnder res1.regime' qt := hcleanBack qt hclean
+      have hagreeRes :
+          agreeLocUnder predSat res1.regime'
+            cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 (l, qt) :=
+        hagree1.1 l qt (by simpa [ctxAfter] using hlookupRes) hcleanRes
+      cases hagreeRes with
+      | both_unrealized l qt hnone₀ hnone₁ =>
+          exact agreeLocUnder.both_unrealized l qt hnone₀ hnone₁
+      | agree_values l qt a₀ a₁ n₀ n₁ hreal₀ hreal₁ hlookup₀ hlookup₁ hagreeV =>
+          have hagreeV' :
+              agreeValueUnder predSat ctxFalse.regime
+                cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 qt (Value.num n₀) (Value.num n₁) :=
+            agreeValueUnder_clean_transport_by_cleanBack
+              (predSat := predSat)
+              (R := res1.regime')
+              (R' := ctxFalse.regime)
+              (h_clean_back := hcleanBack)
+              (hmemberVars₀_transport := hmemberVars₀_transport)
+              (hmemberCvcr₀_transport := hmemberCvcr₀_transport)
+              (hmemberVars₁_transport := hmemberVars₁_transport)
+              (hmemberCvcr₁_transport := hmemberCvcr₁_transport)
+              hclean hagreeV
+          exact agreeLocUnder.agree_values l qt a₀ a₁ n₀ n₁ hreal₀ hreal₁ hlookup₀ hlookup₁ hagreeV'
+    · intro x qt hlookup hclean
+      have hcleanRes : qtypCleanUnder res1.regime' qt := hcleanBack qt hclean
+      have hagreeRes :
+          agreeVarUnder predSat res1.regime'
+            cfg₀1.memory cfg₀1.varEnv cfg₁1.memory cfg₁1.varEnv θ₀1 θ₁1 (x, qt) :=
+        hagree1.2 x qt (by simpa [ctxAfter, ctxFalse] using hlookup) hcleanRes
+      cases hagreeRes with
+      | both_none x qt hnone₀ hnone₁ =>
+          exact agreeVarUnder.both_none x qt hnone₀ hnone₁
+      | agree_values x qt v₀ v₁ hlookup₀ hlookup₁ hagreeV =>
+          have hagreeV' :
+              agreeValueUnder predSat ctxFalse.regime
+                cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 qt v₀ v₁ :=
+            agreeValueUnder_clean_transport_by_cleanBack
+              (predSat := predSat)
+              (R := res1.regime')
+              (R' := ctxFalse.regime)
+              (h_clean_back := hcleanBack)
+              (hmemberVars₀_transport := hmemberVars₀_transport)
+              (hmemberCvcr₀_transport := hmemberCvcr₀_transport)
+              (hmemberVars₁_transport := hmemberVars₁_transport)
+              (hmemberCvcr₁_transport := hmemberCvcr₁_transport)
+              hclean hagreeV
+          exact agreeVarUnder.agree_values x qt v₀ v₁ hlookup₀ hlookup₁ hagreeV'
+  have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
+  have hcfg₁1_eq :
+      cfg₁1 =
+        { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
+          pureMode := cfg₀1.pureMode } := by
+    cases cfg₁1
+    simp only [Config.mk.injEq, true_and]
+    exact hpm_eq
+  have ht₁_e3' : terminatesTo .ioFree e3
+      { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
+        pureMode := cfg₀1.pureMode }
+      cf₁ o₁ := by
+    rw [← hcfg₁1_eq]
+    exact ht₁_e3
+  have hwfcf₁1' : wfConfig
+      { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
+        pureMode := cfg₀1.pureMode } := by
+    rw [← hcfg₁1_eq]
+    exact hwfcf₁1
+  have hstep_e3 :=
+    hIH_e3 hpredlaws hwfTm_false
+      cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
+      cf₀ cf₁ o₀ o₁
+      hθ₀1wf hθ₁1wf hwf_false hric₀1' hric₁1' htagR_false hRbound_false
+      hcwr₀1' hcwr₁1' hagree1'
+      cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
+      ht₀_e3 ht₁_e3'
+  rcases hstep_e3 with ⟨hresTm3, hstep_e3⟩
+  rcases hstep_e3 with
+    ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hvtyp₀3, _hvtyp₁3, _hTm3, hwf3, hwfcf₀3, hwfcf₁3,
+      hric₀3, hric₁3, htagR3, hcwr₀3, hcwr₁3, hagree3, _hvalc₀3, _hvalc₁3, hres_agree3⟩
+  have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
+  have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
+  have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxFalse res3 := by
+    simp [ctxAfter, ctxFalse, hmemEnv, htagEnv, hnextLoc, hnextTag, hregime']
+  have hric₀_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
+    simpa [hctxAfter] using hric₀3
+  have hric₁_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
+    simpa [hctxAfter] using hric₁3
+  have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
+    simpa [hctxAfter] using htagR3
+  have hcwr₀_final :
+      consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+        cf₀.memory cf₀.varEnv θ₀2 := by
+    simpa [hctxAfter] using hcwr₀3
+  have hcwr₁_final :
+      consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+        cf₁.memory cf₁.varEnv θ₁2 := by
+    simpa [hctxAfter] using hcwr₁3
+  have hagree_final :
+      agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+        cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
+    simpa [hctxAfter] using hagree3
+  have hresTm : QTypRespectsTagMeaning tm res.qualType := by
+    have hguard : qtypGuardDesc? res.qualType = none := by
+      simp [qtypGuardDesc?, hpredNo]
+    intro qt' k' d hinq hqd
+    exact
+      (QTypRespectsTagMeaning_transport_etyp_noGuard
+        tm res3.qualType res.qualType hresTm3 hetyp hguard) hinq hqd
+  refine ⟨hresTm, ?_⟩
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, ?_, ?_, hwfcf₀3, hwfcf₁3,
+    hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_final, ?_, ?_, ?_⟩
+  · simpa [hetyp] using _hvtyp₀3
+  · simpa [hetyp] using _hvtyp₁3
+  · simpa [hctxAfter] using _hTm3
+  · simpa [hctxAfter] using hwf3
+  · refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := cf₀.memory) (v := o₀) ?_ ?_
+    · simp [qtypGuardTag, hpredNo]
+    · have hcap₃ : closureCapturedVarsRegime predSat (ctxAfter ctxFalse res3).regime res3.qualType cf₀.memory θ₀2 o₀ :=
+        valueConsistentWithRegime_closureCapturedVarsRegime _hvalc₀3
+      have hcap₃' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res3.qualType cf₀.memory θ₀2 o₀ := by
+        simpa [hctxAfter] using hcap₃
+      exact closureCapturedVarsRegime_transport_etyp hetyp.symm hcap₃'
+  · refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
+      (qt := res.qualType) (μ := cf₁.memory) (v := o₁) ?_ ?_
+    · simp [qtypGuardTag, hpredNo]
+    · have hcap₃ : closureCapturedVarsRegime predSat (ctxAfter ctxFalse res3).regime res3.qualType cf₁.memory θ₁2 o₁ :=
+        valueConsistentWithRegime_closureCapturedVarsRegime _hvalc₁3
+      have hcap₃' : closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime res3.qualType cf₁.memory θ₁2 o₁ := by
+        simpa [hctxAfter] using hcap₃
+      exact closureCapturedVarsRegime_transport_etyp hetyp.symm hcap₃'
+  · intro hclean
+    have hpoison_imp : res.qualType.poison = false → res3.qualType.poison = false := by
+      intro hpoison_res
+      have hjoin : joinPoison ctxᵢ.pc res3.qualType.poison = false := by
+        calc
+          joinPoison ctxᵢ.pc res3.qualType.poison = res.qualType.poison := by
+            symm
+            exact hpoison
+          _ = false := hpoison_res
+      exact (joinPoison_eq_false hjoin).2
+    have hclean3 : qtypCleanUnder (ctxAfter ctxᵢ res).regime res3.qualType := by
+      cases hclean with
+      | clean hpoison_res =>
+          exact qtypCleanUnder.clean (hpoison_imp hpoison_res)
+      | guard k' htag _hreg _hnotfun =>
+          exfalso
+          simp [qtypGuardTag, hpredNo] at htag
+    have hres_agree3' :
+        resultAgreesIfClean predSat (ctxAfter ctxᵢ res).regime
+          cf₀.memory cf₁.memory θ₀2 θ₁2 res3.qualType o₀ o₁ := by
+      simpa [hctxAfter] using hres_agree3
+    have hagree3' :
+        agreeValueUnder predSat (ctxAfter ctxᵢ res).regime
+          cf₀.memory cf₁.memory θ₀2 θ₁2 res3.qualType o₀ o₁ :=
+      hres_agree3' hclean3
+    exact agreeValueUnder_transport_clean hclean hetyp hpoison_imp hagree3'
+
+-- Mode 3: R(k) = none (conservative join)
+private lemma stepFR_ite_mode3
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
+  (hregime_none : ctxᵢ.regime.lookup? k = none)
+  (res1 res2 res3 : TypeResult)
+  (htc1 : typecheckExpr .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
+  (hbool : res1.qualType.etyp = ETyp.bool)
+  (htc2 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
+          let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
+          typecheckExpr .ioFree ctxTrue e2 fuel' = .ok res2)
+  (htc3 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
+          let ctxFalse := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
+          let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+          typecheckExpr .ioFree ctxFalse' e3 fuel' = .ok res3)
+  (hmemEnv : res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv')
+  (htagEnv : res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv')
+  (hnextLoc : res.nextLoc' = max res2.nextLoc' res3.nextLoc')
+  (hnextTag : res.nextTag' = max res2.nextTag' res3.nextTag')
+  (hregime' : res.regime' = joinRegimes res2.regime' res3.regime')
+  (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc (joinPoison res1.qualType.poison
+                          (joinPoison res2.qualType.poison res3.qualType.poison))) :
+  StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
+  classical
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Invert ite evaluation (world-free)
+  have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+  rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
+  have hstruct₁ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+  rcases hstruct₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁_final⟩
+  -- Apply IH to e1
+  have htc1' : typecheck .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have hwfTm_pure : wfTagMeaningCtx tm { ctxᵢ with pureCtx := true } := by simpa [wfTagMeaningCtx] using hwfTm
+  have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 { ctxᵢ with pureCtx := true } hwfTm_pure res1 htc1'
+  have hwf_pure : wfTypeContext { ctxᵢ with pureCtx := true } := by
+    simp [wfTypeContext] at hwf ⊢; exact hwf
+  have hstep_e1 :=
+    hIH_e1 hpredlaws hwfTm_pure μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+  rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
+  -- In mode 3, we don't know which branch each run takes - need to handle all cases
+  -- The key is that the joined result is conservative over both branches
+  sorry -- Mode 3: complex proof with branch case analysis
+
+-- Mode 4: matchGuard fails (standard join)
+private lemma stepFR_ite_mode4
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (err : String) (hmatch_fail : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .error err)
+  (res1 res2 res3 : TypeResult)
+  (htc1 : typecheckExpr .ioFree ctxᵢ e1 fuel' = .ok res1)
+  (hbool : res1.qualType.etyp = ETyp.bool)
+  (htc2 : (let ctx' := { ctxᵢ with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+           let pc' := joinPoison ctxᵢ.pc res1.qualType.poison
+           let ctx'' := { ctx' with pc := pc' }
+           typecheckExpr .ioFree ctx'' e2 fuel' = .ok res2))
+  (htc3 : (let ctx' := { ctxᵢ with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+           let pc' := joinPoison ctxᵢ.pc res1.qualType.poison
+           let ctx'' := { ctx' with pc := pc' }
+           let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+           typecheckExpr .ioFree ctxForE3 e3 fuel' = .ok res3))
+  (hmemEnv : res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv')
+  (htagEnv : res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv')
+  (hnextLoc : res.nextLoc' = max res2.nextLoc' res3.nextLoc')
+  (hnextTag : res.nextTag' = max res2.nextTag' res3.nextTag')
+  (hregime' : res.regime' = joinRegimes res2.regime' res3.regime')
+  (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc (joinPoison res1.qualType.poison
+                          (joinPoison res2.qualType.poison res3.qualType.poison))) :
+  StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
+  classical
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  -- Invert ite evaluation (world-free)
+  have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+  rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
+  have hstruct₁ := terminatesTo_ite_inv' e1 e2 e3
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+  rcases hstruct₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁_final⟩
+  -- Apply IH to e1 (without pureCtx in this mode)
+  have htc1' : typecheck .ioFree ctxᵢ e1 fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 ctxᵢ hwfTm res1 htc1'
+  have hstep_e1 :=
+    hIH_e1 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+  rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, hvalc₀1, hvalc₁1, hres_agree1⟩
+  -- Similar to mode 3, need to handle all branch combinations
+  sorry -- Mode 4: complex proof with branch case analysis
+
+-- Main lemma that dispatches to mode-specific lemmas
+lemma stepFR_ite
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (htc : typecheck .ioFree ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
+  classical
+  -- Parse typecheck result
+  have htc' : typecheckIf .ioFree ctxᵢ e1 e2 e3 (Nat.succ fuel') = .ok res := by
+    simp [typecheck, typecheckExpr] at htc
+    exact htc
+  have hstruct := typecheckIf_structure ctxᵢ e1 e2 e3 (Nat.succ fuel') res htc'
+  -- Case split on typecheck structure (4 modes)
+  cases hstruct with
+  | inl h_mode1 =>
+    -- Mode 1: R(k) = some true (then-branch effective)
+    obtain ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, htc2,
+            hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp⟩ := h_mode1
+    exact stepFR_ite_mode1 ctxᵢ predSat tm e1 e2 e3 fuel' res IH htc k deps hmatch hregime_true
+      res1 res2 htc1 hbool htc2 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison hetyp
+  | inr h_rest =>
+    cases h_rest with
+    | inl h_mode2 =>
+      -- Mode 2: R(k) = some false (else-branch effective)
+      obtain ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, res3, htc3,
+              hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp⟩ := h_mode2
+      exact stepFR_ite_mode2 ctxᵢ predSat tm e1 e2 e3 fuel' res IH htc k deps hmatch hregime_false
+        res1 res3 htc1 hbool htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison hetyp
+    | inr h_rest2 =>
+      cases h_rest2 with
+      | inl h_mode3 =>
+        -- Mode 3: R(k) = none (conservative join)
+        obtain ⟨k, deps, hmatch, hregime_none, res1, htc1, hbool, res2, htc2, res3, htc3,
+                hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, _hetyp, _hpred⟩ := h_mode3
+        exact stepFR_ite_mode3 ctxᵢ predSat tm e1 e2 e3 fuel' res IH k deps hmatch hregime_none
+          res1 res2 res3 htc1 hbool htc2 htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison
+      | inr h_mode4 =>
+        -- Mode 4: matchGuard fails (standard join)
+        obtain ⟨⟨err, hmatch_fail⟩, res1, htc1, hbool, res2, htc2, res3, htc3,
+                hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, _hetyp, _hpred⟩ := h_mode4
+        exact stepFR_ite_mode4 ctxᵢ predSat tm e1 e2 e3 fuel' res IH err hmatch_fail
+          res1 res2 res3 htc1 hbool htc2 htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison
