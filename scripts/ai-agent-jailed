@@ -25,6 +25,7 @@ set -euo pipefail
 #   claude-jailed           # If symlinked
 #   claude-jailed ~/src/poison-lang-worktree
 #   codex-jailed --help     # If symlinked
+#   codex-jailed --replace  # Replace existing container with same name (Podman)
 #
 # Environment variables:
 #   POISON_PROJECT_DIR       - Override default project directory (default: ~/src/poison-lang or git root)
@@ -73,6 +74,18 @@ if [ $# -gt 0 ] && [ -d "$1" ]; then
   WORKSPACE_DIR="$(cd "$1" && pwd -P)"
   shift
 fi
+
+# Parse --replace: instruct Podman to replace an existing container with the same name.
+PODMAN_REPLACE=""
+NEW_ARGS=()
+for a in "$@"; do
+  if [ "$a" = "--replace" ]; then
+    PODMAN_REPLACE="--replace"
+  else
+    NEW_ARGS+=("$a")
+  fi
+done
+set -- "${NEW_ARGS[@]}"
 
 # Map agent name to actual command and arguments
 case "$AGENT" in
@@ -190,8 +203,11 @@ if [ "$HOST_UID" -ne 0 ]; then
 fi
 
 # Build podman run command with SSH agent forwarding if available
-PODMAN_ARGS=(
-  run --rm -it
+PODMAN_ARGS=( run --rm -it )
+if [ -n "$PODMAN_REPLACE" ]; then
+  PODMAN_ARGS+=(--replace)
+fi
+PODMAN_ARGS+=(
   --name "$CONTAINER_NAME"
   --network host
   "${PODMAN_USERNS_ARGS[@]}"
