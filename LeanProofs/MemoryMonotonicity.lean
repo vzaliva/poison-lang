@@ -1266,15 +1266,11 @@ private lemma beval_memory_monotonic_kwhile (mode : LeanPoison.EvalMode) (e1 e2 
     -- fuel = fuel' + 1, so fuel - 1 = fuel'
     -- So we have: beval fuel' config₀ (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit) verbose w₀ = Result.ok (.success config₁ v) w₁
     have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-    -- Define the unfolded expression that kwhile expands to
-    let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
-    -- h_eq already contains the evaluation of this unfolded expression
-    -- Construct existential for IH
-    have h_beval_unfolded_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ unfolded verbose w₀' = EST.Out.ok (.success config₁ v) w₁' :=
-      ⟨w₀, w₁, h_eq⟩
     -- Apply IH: since fuel' < fuel'.succ, we can use IH for the unfolded expression
     -- The unfolded expression (ite) preserves memory monotonicity by IH (which internally uses the ite proof)
-    exact IH fuel' h_fuel unfolded config₀ config₁ v h_beval_unfolded_ex l h_contains
+    exact
+      IH fuel' h_fuel (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit)
+        config₀ config₁ v ⟨w₀, w₁, h_eq⟩ l h_contains
 
 private lemma beval_memory_monotonic_externVal (mode : LeanPoison.EvalMode) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
     (h_eval : ∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.externVal typ poison pred) verbose w₀ = EST.Out.ok (.success config₁ v) w₁)

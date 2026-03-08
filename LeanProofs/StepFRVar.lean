@@ -647,8 +647,7 @@ lemma stepFR_var
                       | clean_eq_nonref_nonarrow _ hnotfun hnotref hEq =>
                           have hnotref' : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
                             intro ⟨ls, h⟩
-                            apply hnotref
-                            exact ⟨ls, by simpa [hres] using h⟩
+                            exact hnotref ⟨ls, by simpa [hres] using h⟩
                           have hnotfun' : res.qualType.etyp.isFunctionType = false := by
                             simpa [hres] using hnotfun
                           have htagRes : qtypGuardTag res.qualType = some k := by
@@ -684,8 +683,7 @@ lemma stepFR_var
                       | withPred_true_eq _ _ _ hnotfun hnotref hEq =>
                           have hnotref' : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
                             intro ⟨ls, h⟩
-                            apply hnotref
-                            exact ⟨ls, by simpa [hres] using h⟩
+                            exact hnotref ⟨ls, by simpa [hres] using h⟩
                           have hnotfun' : res.qualType.etyp.isFunctionType = false := by
                             simpa [hres] using hnotfun
                           have htagRes : qtypGuardTag res.qualType = some k := by
@@ -757,8 +755,7 @@ lemma stepFR_var
                           | clean_eq_nonref_nonarrow _ hnotfun hnotref hEq =>
                               have hnotref' : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
                                 intro ⟨ls, h⟩
-                                apply hnotref
-                                exact ⟨ls, by simpa [hres] using h⟩
+                                exact hnotref ⟨ls, by simpa [hres] using h⟩
                               have hnotfun' : res.qualType.etyp.isFunctionType = false := by
                                 simpa [hres] using hnotfun
                               exact agreeValueUnder.clean_eq_nonref_nonarrow (by simp [hres, hpc]) hnotfun' hnotref' hEq
@@ -796,8 +793,7 @@ lemma stepFR_var
                           | withPred_true_eq _ _ _ hnotfun hnotref hEq =>
                               have hnotref' : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
                                 intro ⟨ls, h⟩
-                                apply hnotref
-                                exact ⟨ls, by simpa [hres] using h⟩
+                                exact hnotref ⟨ls, by simpa [hres] using h⟩
                               have hpoison' : res.qualType.poison = false := by
                                 simp [hres, hpc]
                               have hnotfun' : res.qualType.etyp.isFunctionType = false := by

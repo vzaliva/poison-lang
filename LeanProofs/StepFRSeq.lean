@@ -17,8 +17,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq
   (htc : typecheck .ioFree ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrue .ioFree ctx (Expr.seq e1 e2) res predSat tm := by
   have htc' : typecheckSeq .ioFree ctx e1 e2 (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr_seq_succ] at htc
-    exact htc
+    simpa [typecheck, typecheckExpr_seq_succ] using htc
   obtain ⟨res1, ctx', htc1, hctx', htc2⟩ :=
     typecheckSeq_structure ctx e1 e2 (Nat.succ fuel') res htc'
   have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by
@@ -29,7 +28,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq
   have hstruct := terminatesTo_seq_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg1, v1, ht_e1, ht_e2, _hpm1, _hpm2⟩
-  have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e1 ctx hwfTm res1 htc1'
   have hTm1 : wfTagMeaningCtx tm (ctxAfter ctx res1) :=
     typecheckExpr_preserves_wfTagMeaningCtx tm ctx e1 fuel' res1 hwfTm htc1'
@@ -38,8 +37,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq
       (typecheckExpr_preserves_wfTypeResult ctx e1 fuel' res1 hwf htc1')
   have hreg1 : regimeConsistentWithCtx (ctxAfter ctx res1) :=
     typecheckExpr_preserves_regimeConsistentWithCtx ctx e1 fuel' res1 hregCtx htc1'
-  have hwfcfg1 : wfConfig cfg1 := by
-    exact (wfConfig_preserved .ioFree e1 _ cfg1 v1 ht_e1 hwfcfg).1
+  have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved .ioFree e1 _ cfg1 v1 ht_e1 hwfcfg).1
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht_e1 hpc
@@ -64,7 +62,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq
     simpa [hctx', updateCtxFromResult, ctxAfter] using hcwr1
   have hwf1' : wfTypeContext ctx' := by
     simpa [hctx', ctxAfter] using hwf1
-  have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' res htc2'
   rcases
     hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
@@ -113,8 +111,7 @@ lemma stepFR_seq
   StepFR .ioFree ctxᵢ (Expr.seq e1 e2) res predSat tm := by
   -- Parse typecheck result
   have htc' : typecheckSeq .ioFree ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr_seq_succ] at htc
-    exact htc
+    simpa [typecheck, typecheckExpr_seq_succ] using htc
   obtain ⟨res1, ctx', htc1, hctx', htc2⟩ :=
     typecheckSeq_structure ctxᵢ e1 e2 (Nat.succ fuel') res htc'
   have htc1' : typecheck .ioFree ctxᵢ e1 fuel' = .ok res1 := by
@@ -122,7 +119,7 @@ lemma stepFR_seq
   have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e1 ctxᵢ hwfTm res1 htc1'
   -- Use world-free inversion lemma for seq
   have hstruct₀ := terminatesTo_seq_inv' e1 e2
@@ -138,7 +135,7 @@ lemma stepFR_seq
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
   rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, _hval_consist₀1, _hval_consist₁1, hres_agree1⟩
   have hwfTm' : wfTagMeaningCtx tm ctx' := by simpa [hctx', ctxAfter] using _hTm1
-  have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' res htc2'
   -- Prepare for IH2
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
@@ -223,4 +220,3 @@ lemma stepFR_seq
   simpa [hctxAfter] using hres_agree2
 
 -- World-free version of stepFRW_vlet
-

@@ -279,8 +279,7 @@ private lemma var_match_from_varMatches_aux
   | cons entry entries ih =>
       intro hentries acc hacc kd hmem
       rcases entry with ⟨name, qt⟩
-      have hlookup_name : ctx.varEnv.lookup name = some qt := by
-        exact hentries name qt (by simp)
+      have hlookup_name : ctx.varEnv.lookup name = some qt := hentries name qt (by simp)
       set acc1 :=
         (match matchGuard_checkPredicate conditionPExpr sCaptured (PExpr.var name) qt fuel with
         | .ok (some kd) => kd :: acc
@@ -746,8 +745,7 @@ private lemma ref_match_from_refMatches_aux
   | cons entry entries ih =>
       intro hentries acc hacc acc' hfold kd hmem
       rcases entry with ⟨name, qt⟩
-      have hlookup_name : ctx.varEnv.lookup name = some qt := by
-        exact hentries name qt (by simp)
+      have hlookup_name : ctx.varEnv.lookup name = some qt := hentries name qt (by simp)
       cases hstep : matchGuard_refStep conditionPExpr sCaptured ctx acc (name, qt) fuel with
       | error err =>
           simp [List.foldlM_cons, hstep, bind, Except.bind] at hfold
@@ -1164,24 +1162,21 @@ private lemma guard_branch_alignment
   intro hmatch hregime hterm
   rcases howner with ⟨v, hv_owner⟩
   have hmatch_iff_v : (b' = true ↔ predSat k μ₀ v) := by
-    apply hpred.match_iff mode cond ctx.memEnv ctx.varEnv fuel k deps
-      μ₀ ρ₀ θ₀ l₀ pm₀ cfg' v b'
-    · exact hwfTm
-    · exact hmatch
-    · exact hterm
-    · cases hv_owner with
-      | inl hvar =>
-          rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred_qt, hvar⟩
-          left
-          refine ⟨x, qt, hlookup, ?_, hvar⟩
-          simp [qtypGuardTag, hpred_qt]
-      | inr href =>
-          rcases href with
-            ⟨x, qt, memQt, ls, l0, a, n, arg_name, pred_body, var_env,
-              hlookup, hetyp, hIn, hlookupMem, hpred_memQt, hθ, hμ, hv⟩
-          right
-          refine ⟨x, qt, memQt, ls, l0, a, n, hlookup, hetyp, hIn, hlookupMem, ?_, hθ, hμ, hv⟩
-          simp [qtypGuardTag, hpred_memQt]
+    exact hpred.match_iff mode cond ctx.memEnv ctx.varEnv fuel k deps
+      μ₀ ρ₀ θ₀ l₀ pm₀ cfg' v b' hwfTm hmatch hterm (by
+        cases hv_owner with
+        | inl hvar =>
+            rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred_qt, hvar⟩
+            left
+            refine ⟨x, qt, hlookup, ?_, hvar⟩
+            simp [qtypGuardTag, hpred_qt]
+        | inr href =>
+            rcases href with
+              ⟨x, qt, memQt, ls, l0, a, n, arg_name, pred_body, var_env,
+                hlookup, hetyp, hIn, hlookupMem, hpred_memQt, hθ, hμ, hv⟩
+            right
+            refine ⟨x, qt, memQt, ls, l0, a, n, hlookup, hetyp, hIn, hlookupMem, ?_, hθ, hμ, hv⟩
+            simp [qtypGuardTag, hpred_memQt])
   have hRdef : ctx.regime.lookup? k ≠ none := by
     simp [hregime]
   have hpred_implies_lookup_true : predSat k μ₀ v → ctx.regime.lookup? k = some true := by
@@ -2338,8 +2333,7 @@ lemma stepFR_ite
   classical
   -- Parse typecheck result
   have htc' : typecheckIf .ioFree ctxᵢ e1 e2 e3 (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr] at htc
-    exact htc
+    simpa [typecheck, typecheckExpr] using htc
   have hstruct := typecheckIf_structure ctxᵢ e1 e2 e3 (Nat.succ fuel') res htc'
   -- Case split on typecheck structure (4 modes)
   cases hstruct with

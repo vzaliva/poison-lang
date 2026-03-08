@@ -57,8 +57,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_unaryop
         have hclean_out1 : qtypCleanUnder res1.regime' qt_out := by
           simpa [h_regime] using hclean_out
         simpa [hmem] using hpres_fn l qt_in qt_out hlookup_in hlookup_out1 hclean_out1
-  have hwfcfg_final : wfConfig cf := by
-    exact (wfConfig_preserved .ioFree (Expr.unaryop op e) _ cf o ht hwfcfg).1
+  have hwfcfg_final : wfConfig cf := (wfConfig_preserved .ioFree (Expr.unaryop op e) _ cf o ht hwfcfg).1
   refine ⟨θ', hθext, hvaltyp_final, ?_, ?_, hvalc_final, hpres_final⟩
   · simpa [hctxAfter, hmem, hvar] using hric'
   · simpa [hctxAfter, hmem, hvar] using hcwr'
@@ -412,11 +411,8 @@ lemma stepFR_unaryop
   have hEq : o₀ = o₁ := by
     have : some o₀ = some o₁ := by
       calc
-        some o₀ = LeanPoison.evalUnaryOp op v₀' := by
-          symm
-          exact h_evalop₀
-        _ = some o₁ := by
-          exact hEval₁'
+        some o₀ = LeanPoison.evalUnaryOp op v₀' := by symm; exact h_evalop₀
+        _ = some o₁ := hEval₁'
     exact Option.some.inj this
   have hnotref : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
     intro hcontra
@@ -551,14 +547,11 @@ lemma stepFRSingleRunFinalCleanPcTrue_op
         (qt := res.qualType) (μ := cf.memory) (v := o)
         (by simp [qtypGuardTag, h_ret_pred])
         (closureCapturedVarsRegime_nonClosure_of_nonFunctionType hvaltyp_final hnotfun_res)
-  have hwfcfg_final : wfConfig cf := by
-    exact (wfConfig_preserved .ioFree (Expr.op e1 op e2) _ cf o ht hwfcfg).1
+  have hwfcfg_final : wfConfig cf := (wfConfig_preserved .ioFree (Expr.op e1 op e2) _ cf o ht hwfcfg).1
   have hcfg_eq : cfg1.pureMode = pm := by
     simpa using hpm1
   refine ⟨θ2, hθext, hvaltyp_final, ?_, ?_, hvalc_final, hpres_final⟩
   · simpa [hctxAfter, hcfg_eq] using hric2
   · simpa [hctxAfter, hcfg_eq] using hcwr2
-
-
 
 

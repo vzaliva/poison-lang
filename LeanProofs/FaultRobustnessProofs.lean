@@ -645,8 +645,8 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
         have hret_notfun_obs : et.isFunctionType = false := by
           simpa [wfObsSpec, hretOpt] using _hos
         -- Use output regime since hret_agree now uses (ctxAfter ctx res).regime
-        have hret_clean : qtypCleanUnder (ctxAfter ctx res).regime res.qualType := by
-          exact qtypCleanUnder.clean hret_poison
+        have hret_clean : qtypCleanUnder (ctxAfter ctx res).regime res.qualType :=
+          qtypCleanUnder.clean hret_poison
         have hret_agree' :
             agreeValueUnder predSat (ctxAfter ctx res).regime cf₁.memory cf₂.memory θ₁' θ₂' res.qualType o₁ o₂ :=
           hret_agree hret_clean
@@ -682,15 +682,9 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
                   refine ⟨a₂', ?_⟩
                   exact And.intro hlookup2 hv2
             | clean_eq_nonref_nonarrow _ _ hnotref _ =>
-                have : False := by
-                  apply hnotref
-                  exact ⟨ls, hret_et⟩
-                exact False.elim this
+                exact (hnotref ⟨ls, hret_et⟩).elim
             | withPred_true_eq _ _ _ _ hnotref _ =>
-                have : False := by
-                  apply hnotref
-                  exact ⟨ls, hret_et⟩
-                exact False.elim this
+                exact (hnotref ⟨ls, hret_et⟩).elim
             | clean_internal_arrow _ hetyp _ _ _ _ _ _ _ =>
                 cases (Eq.trans (Eq.symm hetyp) hret_et)
             | dirty_internal_arrow _ hisArrow =>
@@ -748,4 +742,4 @@ theorem TypeSystemEnforcesFaultRobustness_IOFree
   TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs := by
   apply TypeSystemEnforcesFaultRobustness_impl_IOFree
   · intro e' ctxᵢ predSat tm
-    exact TypeSystemEnforcesFaultRobustness_step_IOFree e' ctxᵢ predSat tm
+    simpa using TypeSystemEnforcesFaultRobustness_step_IOFree e' ctxᵢ predSat tm

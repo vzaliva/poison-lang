@@ -77,9 +77,7 @@ lemma stepFR_literal
       (ho₁ ▸ closureCapturedVarsRegime_nonClosure_of_nonFunctionType (hvtyp θ₁) hnotfun)
   · -- resultAgreesIfClean
     intro _hclean
-    have hval' : o₀ = o₁ := by
-      simp [ho₀, ho₁]
-    exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref hval'
+    exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref (by simp [ho₀, ho₁])
 
 lemma stepFRSingleRunFinalCleanPcTrue_literal
   (mode : LeanPoison.EvalMode)
@@ -98,9 +96,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal
   have hvalc : valueConsistentWithRegime predSat ctx.regime res.qualType μ θ o := by
     exact valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpredNo])
       (ho ▸ closureCapturedVarsRegime_nonClosure_of_nonFunctionType (hvtyp θ) hnotfun)
-  exact
-    singleRunFinalCleanWitness_of_same_state
-      (ctx := ctx) (res := res) (predSat := predSat) (tm := tm)
-      (μ := μ) (ρ := ρ) (θ := θ) (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
-      (o := o) (a := a) (pm := pm)
+  exact singleRunFinalCleanWitness_of_same_state
+    (ctx := ctx) (res := res) (predSat := predSat) (tm := tm)
+    (μ := μ) (ρ := ρ) (θ := θ) (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+    (o := o) (a := a) (pm := pm)
       hctxAfter rfl (ho ▸ hvtyp θ) hvalc hwfTm hwf hric hreg hcwr hwfcfg

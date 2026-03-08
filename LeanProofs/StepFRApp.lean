@@ -329,11 +329,8 @@ private lemma applyFnTClosure_ok_wfTagMeaningCtx
     cases fuel with
     | zero => simp [applyFnTClosure] at happly
     | succ fuel' =>
-      simp only [applyFnTClosure] at happly
-      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-      rw [hioFree] at happly
-      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-      exact absurd happly (by simp)
+      exact (applyFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 argEtyp argPoison argPred
+        result1 (Nat.succ fuel') x retSpec effects capturedEnv r happly).elim
 
 private lemma applyFnTClosure_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -372,9 +369,7 @@ private lemma applyFnTClosure_ok_regimeConsistentWithCtx
               nextLoc := result1.nextLoc', regime := result1.regime' }
           have htcBody' : typecheck .ioFree bodyCtx body fuel' = .ok result3 := by simpa using htcBody
           have hreg_body : regimeConsistentWithCtx bodyCtx := by
-            constructor
-            · exact hreg1.1
-            · exact hreg1.2
+            simpa [bodyCtx, ctxAfter, regimeConsistentWithCtx] using hreg1
           have hIH := typecheckExpr_preserves_regimeConsistentWithCtx bodyCtx body fuel' result3 hreg_body htcBody'
           apply regimeConsistentWithCtx_of_tagEnv_regime_nextTag (ctxAfter bodyCtx result3)
           · simp [ctxAfter]
@@ -386,11 +381,8 @@ private lemma applyFnTClosure_ok_regimeConsistentWithCtx
     cases fuel with
     | zero => simp [applyFnTClosure] at happly
     | succ fuel' =>
-      simp only [applyFnTClosure] at happly
-      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-      rw [hioFree] at happly
-      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-      exact absurd happly (by simp)
+      exact (applyFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 argEtyp argPoison argPred
+        result1 (Nat.succ fuel') x retSpec effects capturedEnv r happly).elim
 
 private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
   (tm : TagMeaning)
@@ -459,11 +451,8 @@ private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
     cases fuel with
     | zero => simp [applyFnTClosure] at happly
     | succ fuel' =>
-      simp only [applyFnTClosure] at happly
-      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-      rw [hioFree] at happly
-      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-      simp at happly
+      exact (applyFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 argEtyp argPoison argPred
+        result1 (Nat.succ fuel') x retSpec effects capturedEnv r happly).elim
 
 private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx
   (tm : TagMeaning)
@@ -486,7 +475,7 @@ private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx
       (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
     ⟨tcl, htcl_mem, happly⟩
-  exact
+  simpa using
     applyFnTClosure_ok_wfTagMeaningCtx
       (tm := tm)
       (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
@@ -511,7 +500,7 @@ private lemma mapM_applyFnTClosure_forall_regimeConsistentWithCtx
       (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
     ⟨tcl, _htcl_mem, happly⟩
-  exact
+  simpa using
     applyFnTClosure_ok_regimeConsistentWithCtx
       (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
       (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
@@ -925,11 +914,8 @@ private lemma applyPFnTClosure_ok_wfTagMeaningCtx
     cases fuel with
     | zero => simp [applyPFnTClosure] at happly
     | succ fuel' =>
-      simp only [applyPFnTClosure] at happly
-      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-      rw [hioFree] at happly
-      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-      exact absurd happly (by simp)
+      exact (applyPFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 argEtyp argPoison argPred
+        result1 (Nat.succ fuel') x retSpec capturedEnv r happly).elim
 
 private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -966,9 +952,7 @@ private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
               nextLoc := result1.nextLoc', regime := result1.regime' }
           have htcBody' : typecheck .ioFree bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by simpa using htcBody
           have hreg_body : regimeConsistentWithCtx bodyCtx := by
-            constructor
-            · exact hreg1.1
-            · exact hreg1.2
+            simpa [bodyCtx, ctxAfter, regimeConsistentWithCtx] using hreg1
           have hIH := typecheckExpr_preserves_regimeConsistentWithCtx bodyCtx (PExpr.toExpr body) fuel' result3 hreg_body htcBody'
           apply regimeConsistentWithCtx_of_tagEnv_regime_nextTag (ctxAfter bodyCtx result3)
           · simp [ctxAfter]
@@ -979,11 +963,8 @@ private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
     cases fuel with
     | zero => simp [applyPFnTClosure] at happly
     | succ fuel' =>
-      simp only [applyPFnTClosure] at happly
-      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-      rw [hioFree] at happly
-      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-      exact absurd happly (by simp)
+      exact (applyPFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 argEtyp argPoison argPred
+        result1 (Nat.succ fuel') x retSpec capturedEnv r happly).elim
 
 private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning
   (tm : TagMeaning)
@@ -1049,11 +1030,8 @@ private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning
     cases fuel with
     | zero => simp [applyPFnTClosure] at happly
     | succ fuel' =>
-      simp only [applyPFnTClosure] at happly
-      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-      rw [hioFree] at happly
-      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-      simp at happly
+      exact (applyPFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 argEtyp argPoison argPred
+        result1 (Nat.succ fuel') x retSpec capturedEnv r happly).elim
 
 private lemma mapM_applyPFnTClosure_forall_wfTypeResult'
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -1071,7 +1049,7 @@ private lemma mapM_applyPFnTClosure_forall_wfTypeResult'
       (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
     ⟨tcl, _htcl_mem, happly⟩
-  exact
+  simpa using
     applyPFnTClosure_ok_wfTypeResult
       (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
       (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
@@ -1099,7 +1077,7 @@ private lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx
       (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
     ⟨tcl, htcl_mem, happly⟩
-  exact
+  simpa using
     applyPFnTClosure_ok_wfTagMeaningCtx
       (tm := tm)
       (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
@@ -1124,7 +1102,7 @@ private lemma mapM_applyPFnTClosure_forall_regimeConsistentWithCtx
       (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
     ⟨tcl, _htcl_mem, happly⟩
-  exact
+  simpa using
     applyPFnTClosure_ok_regimeConsistentWithCtx
       (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
       (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
@@ -6886,9 +6864,8 @@ lemma stepFR_app
                       c₁₁.memory σcap env₁ ∧
                     MemberCvcrEvidence predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                       c₁₁.memory θ₁1 σcap env₁)
-                ∨ (¬ internalPoisonClean result1.qualType) := by
-          intro hclean1_e1
-          exact
+                ∨ (¬ internalPoisonClean result1.qualType) :=
+          fun hclean1_e1 =>
             stepFR_app_arrow_sync_from_clean
               (predSat := predSat)
               (ctx := (ctxAfter ctxᵢ result2))
@@ -6927,9 +6904,8 @@ lemma stepFR_app
                   { result3 with
                     qualType :=
                       normalizeAppResultByProvenance (joinPoison p1 p)
-                        { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
-          intro hsync
-          exact
+                        { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } :=
+          fun hsync =>
             stepFR_app_arrow_extract_shared_member
               (ctx := ctxᵢ)
               (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
@@ -9564,8 +9540,8 @@ lemma stepFR_app
         -- Synchronization is used only under a clean-result assumption for `result1`.
         -- Keep it deferred to avoid requiring a global clean fact at this point.
         have _hsync1_of_clean :
-            ∀ hclean1_e1 :
-                qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType,
+              ∀ hclean1_e1 :
+                  qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType,
               (∃ x pbody σcap,
                   Expr.toPExpr? body₀ = some pbody ∧
                   PFnTClosure.regular x pbody σcap ∈ tcls ∧
@@ -9582,9 +9558,8 @@ lemma stepFR_app
                     c₁₁.memory σcap env₁ ∧
                   MemberCvcrEvidence predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                     c₁₁.memory θ₁1 σcap env₁)
-              ∨ (¬ internalPoisonClean result1.qualType) := by
-          intro hclean1_e1
-          exact
+              ∨ (¬ internalPoisonClean result1.qualType) :=
+          fun hclean1_e1 =>
             stepFR_app_parrow_sync_from_clean
               (predSat := predSat)
               (ctx := (ctxAfter ctxᵢ result2))
@@ -9628,9 +9603,8 @@ lemma stepFR_app
                   { result3 with
                     qualType :=
                       normalizeAppResultByProvenance (joinPoison p1 p)
-                        { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
-          intro hsync
-          exact
+                        { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } :=
+          fun hsync =>
             stepFR_app_parrow_extract_shared_member
               (ctx := ctxᵢ)
               (st1 := st1) (st2 := st2) (p := p) (p1 := p1)

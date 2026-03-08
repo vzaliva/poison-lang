@@ -19,14 +19,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef
   StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ (Expr.newRef e) res predSat tm := by
   classical
   have htc' : typecheckNewRef .ioFree ctxᵢ e (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr] at htc
-    exact htc
+    simpa [typecheck, typecheckExpr] using htc
   obtain ⟨res1, l, htc1, hl, h_etyp1, h_etyp, _h_poison, h_pred, h_mem, h_tag, h_loc, h_ntag, h_regime⟩ :=
     typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht hpc
-  have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   have hstruct := terminatesTo_newRef_inv' .ioFree e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o rfl ht
@@ -43,8 +42,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef
       (typecheckExpr_preserves_wfTypeResult ctxᵢ e fuel' res1 hwf htc1')
   have hreg1 : regimeConsistentWithCtx (ctxAfter ctxᵢ res1) :=
     typecheckExpr_preserves_regimeConsistentWithCtx ctxᵢ e fuel' res1 hregCtx htc1'
-  have hwfcfg1 : wfConfig cfg' := by
-    exact (wfConfig_preserved .ioFree e _ cfg' (Value.num n) ht_e hwfcfg).1
+  have hwfcfg1 : wfConfig cfg' := (wfConfig_preserved .ioFree e _ cfg' (Value.num n) ht_e hwfcfg).1
   have hregime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime := by
     simp [ctxAfter, h_regime]
   let θ' := θ1.update l cfg'.nextAddr
@@ -441,14 +439,13 @@ lemma stepFR_newRef
   StepFR .ioFree ctxᵢ (Expr.newRef e) res predSat tm := by
   -- Parse typecheck result
   have htc' : typecheckNewRef .ioFree ctxᵢ e (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr] at htc
-    exact htc
+    simpa [typecheck, typecheckExpr] using htc
   obtain ⟨res1, l, htc1, hl, h_etyp1, h_etyp, h_poison, h_pred, h_mem, h_tag, h_loc, h_ntag, h_regime⟩ :=
     typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   -- Use world-free inversion lemma for newRef
   have hstruct₀ := terminatesTo_newRef_inv' .ioFree e
@@ -1383,4 +1380,3 @@ lemma stepFR_newRef
     exact agreeValueUnder.clean_ref hpoison_res h_etyp hlookup1 hin1 ho₀ hlookup2 ho₁
 
 -- World-free version of stepFRW_seq
-

@@ -16,7 +16,6 @@ noncomputable def defaultWorld : Void IO.RealWorld :=
 
 /-- Specialization of `evalAtWorld_eq` to the fixed witness. -/
 @[simp] theorem evalAtDefault_eq {α} {m n : IO α} :
-    m = n → m defaultWorld = n defaultWorld :=
-  evalAtWorld_eq defaultWorld
+    m = n → m defaultWorld = n defaultWorld := evalAtWorld_eq defaultWorld
 
 end LeanProofs

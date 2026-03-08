@@ -666,8 +666,8 @@ lemma stepFR_pfn
               simp
             have hmatch : Expr.toPExpr? body = some pbody ∧
                 PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv) =
-                  PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv) := by
-              exact ⟨hto, rfl⟩
+                  PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv) :=
+              ⟨hto, rfl⟩
             -- Same reasoning as stepFR_fn: outer poison = ctxᵢ.pc = false, so internal clean
             have hpc_clean : ctxᵢ.pc = false := by
               have hqt_poison : res.qualType.poison = ctxᵢ.pc := by

@@ -149,8 +149,7 @@ lemma stepFR_vlet
   StepFR .ioFree ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
   -- Parse typecheck result
   have htc' : typecheckVlet .ioFree ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr_vlet_succ] at htc
-    exact htc
+    simpa [typecheck, typecheckExpr_vlet_succ] using htc
   obtain ⟨res1, res2, ctx', htc1, hctx', htc2, h_ret_etyp, h_mem, h_tag, h_loc, h_ntag,
           h_ret_regime, h_ret_poison, h_ret_pred⟩ :=
     typecheckVlet_structure ctxᵢ vname e1 e2 (Nat.succ fuel') res htc'
@@ -159,7 +158,7 @@ lemma stepFR_vlet
   have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res2 := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e1 ctxᵢ hwfTm res1 htc1'
   -- Use world-free inversion lemma for vlet
   have hstruct₀ := terminatesTo_vlet_inv' vname e1 e2
@@ -186,7 +185,7 @@ lemma stepFR_vlet
   have hwfTm' : wfTagMeaningCtx tm ctx' := by
     simp only [hctx']
     exact wfTagMeaningCtx_varEnv_ext tm (ctxAfter ctxᵢ res1) vname res1.qualType _hTm1 hres1_desc
-  have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' res2 htc2'
   -- Prepare for IH2
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
@@ -1435,8 +1434,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet
   (htc : typecheck .ioFree ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
   have htc' : typecheckVlet .ioFree ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr_vlet_succ] at htc
-    exact htc
+    simpa [typecheck, typecheckExpr_vlet_succ] using htc
   obtain ⟨res1, res2, ctx', htc1, hctx', htc2, h_ret_etyp, h_mem, h_tag, h_loc, h_ntag,
       h_ret_regime, h_ret_poison, h_ret_pred⟩ :=
     typecheckVlet_structure ctxᵢ vname e1 e2 (Nat.succ fuel') res htc'
@@ -1450,7 +1448,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet
   rcases hstruct with ⟨cfg1, v1, cfg3, ht_e1, ht_e2, hcf_eq, _hpm1, _hpm_final⟩
   let cfg2 : Config := { cfg1 with varEnv := cfg1.varEnv.update vname v1 }
   have hcfg2_eq : cfg2 = { cfg1 with varEnv := cfg1.varEnv.update vname v1 } := rfl
-  have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e1 ctxᵢ hwfTm res1 htc1'
   have hTm1 : wfTagMeaningCtx tm (ctxAfter ctxᵢ res1) :=
     typecheckExpr_preserves_wfTagMeaningCtx tm ctxᵢ e1 fuel' res1 hwfTm htc1'
@@ -1500,7 +1498,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet
       have hwfenv2 : wfVarEnv cfg1.nextAddr ((vname, v1) :: cfg1.varEnv) :=
         wfVarEnv.cons vname v1 cfg1.varEnv hv1_wf hwfenv1
       simpa [cfg2, VarEnv.update] using hwfenv2
-  have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' res2 htc2'
   rcases
     hIH2 hpredlaws hwfTm' cfg2.memory cfg2.varEnv θ1 cfg3 o
@@ -1631,5 +1629,3 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet
   refine ⟨θ2, hθext, ?_, hric_final, hcwr_final, hvalc_final, hpres_final⟩
   rw [h_ret_etyp]
   exact hv2
-
-

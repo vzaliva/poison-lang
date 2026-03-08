@@ -966,8 +966,7 @@ lemma PreservesInheritedFinalCleanLocsOneRun.refl
   | none =>
       exact .both_unrealized hθ hθ
   | some a =>
-      have hcontains_a : μ.contains a = true := by
-        exact (hric.1 l a hθ).2
+      have hcontains_a : μ.contains a = true := (hric.1 l a hθ).2
       have hmem : a ∈ μ := (ExtTreeMap.contains_iff_mem).1 hcontains_a
       have hisSome : μ[a]?.isSome = true := (ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
       cases hlookup_mem_raw : μ[a]? with
@@ -9067,4 +9066,3 @@ lemma typecheckExpr_lookup_clean_back_of_pc_true
     exact Option.some.inj hlookup_in'.symm
   subst hqt
   exact hclean_in'
-

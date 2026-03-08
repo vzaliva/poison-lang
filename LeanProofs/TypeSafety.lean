@@ -12274,10 +12274,7 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                                                           simpa [ctxBody] using htcBody
                                                         have hsubBody :
                                                             ∀ l, result3.memEnv'.contains l → ctxBody.memEnv.contains l :=
-                                                          ih fuelBody (by
-                                                            have hlt3 : fuelBody < fuelBody + 1 + 1 + 1 := by
-                                                              omega
-                                                            exact hlt3)
+                                                          ih fuelBody (by omega)
                                                             ctxBody (PExpr.toExpr pbody) pbody result3
                                                             hpeBody htcBody'
                                                         have hctxBody : ctxBody.memEnv.contains l := hsubBody l hrl3
@@ -12761,10 +12758,7 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                                                               have hkBody : ctxBody.regime.lookup? k = some b := by
                                                                 simpa [ctxBody] using hreg_fun
                                                               exact
-                                                                ih fuelBody (by
-                                                                  have hlt3 : fuelBody < fuelBody + 1 + 1 + 1 := by
-                                                                    omega
-                                                                  exact hlt3)
+                                                                ih fuelBody (by omega)
                                                                   ctxBody (PExpr.toExpr pbody) pbody result3
                                                                   hpeBody htcBody' k b hkBody
                                                             have hrReg :
@@ -13236,10 +13230,7 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                                                               simpa [ctxBody] using hlookup_fun
                                                             have hlookupBody :
                                                                 result3.memEnv'.lookup l = some qt :=
-                                                              ih fuelBody (by
-                                                                have hlt3 : fuelBody < fuelBody + 1 + 1 + 1 := by
-                                                                  omega
-                                                                exact hlt3)
+                                                              ih fuelBody (by omega)
                                                                 ctxBody (PExpr.toExpr pbody) pbody result3
                                                                 hpeBody htcBody' l qt hlookupBodyCtx
                                                             have hrMem :
@@ -13764,10 +13755,7 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                                                               contradiction
                                                             have hlookupBody :
                                                                 result3.memEnv'.lookup l = some qt :=
-                                                              ih fuelBody (by
-                                                                have hlt3 : fuelBody < fuelBody + 1 + 1 + 1 := by
-                                                                  omega
-                                                                exact hlt3)
+                                                              ih fuelBody (by omega)
                                                                 ctxBody (PExpr.toExpr pbody) pbody result3
                                                                 hpeBody htcBody' l qt k hlookupBodyCtx hguard hRdefBody
                                                             have hrMem :

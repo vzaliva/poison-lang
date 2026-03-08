@@ -16,8 +16,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref
   StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ (Expr.deref e) res predSat tm := by
   classical
   have htc' : typecheckDeref .ioFree ctxᵢ e (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr] at htc
-    exact htc
+    simpa [typecheck, typecheckExpr] using htc
   obtain ⟨res1, htc1, h_mem, h_tag, h_loc, h_ntag, h_regime⟩ :=
     typecheckDeref_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1_expr : typecheckExpr .ioFree ctxᵢ e fuel' = .ok res1 := by
@@ -25,7 +24,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref
   have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht hpc
-  have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   have hstruct := terminatesTo_deref_inv' e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
@@ -214,8 +213,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref
                                       Predicate.guardClosure k' arg_name' pred_body' var_env' := by
                                     simp [hmerged]
                                   _ = res.qualType.pred := by
-                                    symm
-                                    exact hpred_tc
+                                    exact hpred_tc.symm
                                   _ = Predicate.guardClosure k arg_name pred_body var_env := by
                                     exact hpred_res
                               obtain ⟨qt_mem, hlookup_mem, hqt_pred⟩ :=
@@ -312,8 +310,7 @@ lemma stepFR_deref
   classical
   -- Parse typecheck result
   have htc' : typecheckDeref .ioFree ctxᵢ e (Nat.succ fuel') = .ok res := by
-    simp [typecheck, typecheckExpr] at htc
-    exact htc
+    simpa [typecheck, typecheckExpr] using htc
   obtain ⟨res1, htc1, h_mem, h_tag, h_loc, h_ntag, h_regime⟩ :=
     typecheckDeref_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1_expr : typecheckExpr .ioFree ctxᵢ e fuel' = .ok res1 := by
@@ -321,7 +318,7 @@ lemma stepFR_deref
   have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   -- Invert deref evaluation (world-free)
   have hstruct₀ := terminatesTo_deref_inv' e
@@ -589,7 +586,7 @@ lemma stepFR_deref
                                       Predicate.guardClosure k' arg_name' pred_body' var_env' := by
                                     simp [hmerged]
                                   _ = res.qualType.pred := by
-                                    symm; exact hpred_tc
+                                    exact hpred_tc.symm
                                   _ = Predicate.guardClosure k arg_name pred_body var_env := by
                                     exact hpred_res
                               have ⟨qt_mem, hlookup_mem, hqt_pred⟩ :=
@@ -879,7 +876,7 @@ lemma stepFR_deref
                                       Predicate.guardClosure k' arg_name' pred_body' var_env' := by
                                     simp [hmerged]
                                   _ = res.qualType.pred := by
-                                    symm; exact hpred_tc
+                                    exact hpred_tc.symm
                                   _ = Predicate.guardClosure k arg_name pred_body var_env := by
                                     exact hpred_res
                               have ⟨qt_mem, hlookup_mem, hqt_pred⟩ :=

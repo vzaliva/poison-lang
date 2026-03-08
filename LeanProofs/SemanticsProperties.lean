@@ -2574,8 +2574,7 @@ lemma beval_ioFree_mode_eq_pure (fuel : Nat) (cfg : Config) (e : Expr) (verbose 
     LeanPoison.beval .ioFree fuel cfg e verbose w = EST.Out.ok r w →
     LeanPoison.beval .ioFree fuel cfg e verbose = pure r := by
   intro heval_w
-  apply funext
-  intro w'
+  funext w'
   cases h : LeanPoison.beval .ioFree fuel cfg e verbose w' with
   | error e_err w_err =>
     exfalso
