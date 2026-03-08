@@ -2,7 +2,13 @@
 
 This file preserves the full design history for the `stepFR_app` proof work: approaches tried
 and rejected, detailed issue analysis, implementation milestones, and the chronological evolution
-of the closure-invariant design.  The active planning document is `doc/app-proof-plan.md`.
+of the closure-invariant design.
+
+How to use this file:
+
+- check here before reviving an old route, to avoid repeating discarded work
+- use `doc/app-proof-plan.md` for the active next steps
+- use `doc/app-framing-proposal.md` for the current blocker discussion
 
 ## Root Cause Analysis: Selector Transport Across Merged Closure Lists
 
@@ -445,6 +451,88 @@ Supporting work completed at this checkpoint:
   `StepFRSingleRunFinalCleanPcTrue`
 - induction-side IH surface:
   `StepFRSingleRunFinalCleanPcTrue_IH`
+
+## Issue M History: Old `app-framing-proposal.md` routes moved here (March 7)
+
+The older version of `doc/app-framing-proposal.md` mixed three things:
+
+- a still-useful diagnosis of the different-body framing problem
+- a concrete proposal to strengthen `StepFR_single_run` directly
+- a near-term action plan based on that proposal
+
+That was no longer a good separation of concerns once the proof state moved on. The live
+problem description now stays in `doc/app-framing-proposal.md`; the obsolete proposal
+routes stay here.
+
+What from the old proposal remains valid:
+
+- the blocker really is in the different-body `arrow` / `parrow` fallback branches
+- final recombination is not the main issue
+- the proof needs a unary fact tied to the chosen post-run realization map witness, not
+  just more local case splits in `stepFR_app`
+
+What from the old proposal is now obsolete:
+
+- the suggested fix "strengthen `StepFR_single_run` directly with
+  `PreservesInheritedCleanLocsOneRun`"
+- the stronger claim that inherited clean input locations are preserved unchanged across
+  arbitrary impure body execution
+- the corresponding action plan that treated the old wrapper as the main path forward
+
+Why it is obsolete:
+
+- the input-clean formulation is false for impure bodies that overwrite inherited clean
+  locations
+- the output-conditioned reformulation still cannot be recovered as a thin wrapper over
+  `StepFR_single_run_core`, because witness choice matters
+- widening `StepFR` itself was rejected as too large a blast radius
+- the current induction-side theorem `StepFRSingleRunFinalCleanPcTrue` then exposed a
+  different problem: its full-witness packaging is too broad for conservative `ite` joins
+
+Decision captured by the doc split:
+
+- keep `doc/app-framing-proposal.md` focused on the live blocker and current ways forward
+- keep all rejected wrapper-based and broad-theorem routes in this history file so they do
+  not get reopened by accident
+
+## Issue N History: Do not route `stepFR_app` through `stepFR_ite_*` (March 7)
+
+At one point the active app notes still described conservative `ite` modes as the next
+"high-risk" constructors for the unary route.
+
+That framing is now rejected for two independent reasons:
+
+- `stepFR_ite_*` work is owned separately and is not part of the app effort
+- there is an independent known blocker on the `ite` side, so using it as an upstream
+  prerequisite for `stepFR_app` would stall the app proof on unrelated work
+
+What this changes in practice:
+
+- the current full-witness route through `StepFRSingleRunFinalCleanPcTrue` is not merely
+  awkward; it is the wrong dependency shape for app
+- any unary theorem for app must be narrowed or refactored until it no longer requires
+  proving `ite` cases
+- references to conservative `ite` are now diagnostic only: they explain why the current
+  theorem shape is unacceptable, not what we plan to prove next
+
+Additional clarification recorded after that decision:
+
+- the exclusion of `ite` from the app dependency cone is not a claim that `ite` is
+  irrelevant or permanently unprovable
+- the known blocker is a separate type-system / regime-handling issue, believed to be
+  orthogonal to the app framing work
+- that external `ite` work is tracked in GitHub issue `#128`
+- so the app-side narrowing should remain principled enough that, once that external
+  blocker is fixed, the eventual `ite` proof can reuse the same theorem family rather
+  than having to undo an app-specific hack
+
+Later clarification:
+
+- "do not route app through `ite`" should be read operationally, not literally
+- because closure bodies are general expressions, the narrowed unary theorem still ranges
+  over expressions that may contain `ite`
+- the intended meaning is: do not take on new `ite` proof obligations in the app branch;
+  keep the theorem shape compatible with later completion of the deferred `ite` cases
 
 ## Historical Identifiers (removed from code)
 
