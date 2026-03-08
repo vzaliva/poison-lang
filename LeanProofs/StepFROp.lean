@@ -429,3 +429,136 @@ lemma stepFR_unaryop
   have hnotfun_res : res.qualType.etyp.isFunctionType = false := by
     simpa [h_ret_etyp] using hnonfun_arg.2
   exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison_res hnotfun_res hnotref hEq
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Op single-run infrastructure (moved from FaultRobustnessProofs.lean)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+lemma stepFRSingleRunFinalCleanPcTrue_op
+  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (htc : typecheck .ioFree ctx (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrue .ioFree ctx (Expr.op e1 op e2) res predSat tm := by
+  have htc' : typecheckOp .ioFree ctx e1 e2 (Nat.succ fuel') op = .ok res := by
+    simp [typecheck, typecheckExpr_op_succ] at htc
+    exact htc
+  obtain ⟨res1, res2, result_etyp, htc1, htc2, h_op, h_mem, h_tag, h_loc, h_ntag, h_regime,
+          h_ret_etyp, h_ret_poison, h_ret_pred⟩ :=
+    typecheckOp_structure ctx e1 e2 op (Nat.succ fuel') res htc'
+  let ctx' : TypeContext :=
+    { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+  have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res2 := by
+    simpa [ctx', typecheck, Nat.succ_sub_one] using htc2
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht hpc
+  have hstruct := terminatesTo_op_inv' e1 op e2
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+  rcases hstruct with ⟨cfg1, v1, v2, ht_e1, ht_e2, h_evalop, hpm1, hpm2⟩
+  have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 ctx hwfTm res1 htc1'
+  have hTm1 : wfTagMeaningCtx tm (ctxAfter ctx res1) :=
+    typecheckExpr_preserves_wfTagMeaningCtx tm ctx e1 fuel' res1 hwfTm htc1'
+  have hwf1 : wfTypeContext (ctxAfter ctx res1) :=
+    wfTypeContext_of_wfTypeResult ctx res1
+      (typecheckExpr_preserves_wfTypeResult ctx e1 fuel' res1 hwf htc1')
+  have hreg1 : regimeConsistentWithCtx (ctxAfter ctx res1) :=
+    typecheckExpr_preserves_regimeConsistentWithCtx ctx e1 fuel' res1 hregCtx htc1'
+  have hwfcfg1 : wfConfig cfg1 := by
+    exact (wfConfig_preserved .ioFree e1 _ cfg1 v1 ht_e1 hwfcfg).1
+  rcases
+    hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
+      hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht_e1 hpc
+    with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1⟩
+  have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
+  have hwfTm' : wfTagMeaningCtx tm ctx' := by
+    simpa [ctx', ctxAfter] using hTm1
+  have hwf1' : wfTypeContext ctx' := by
+    simpa [ctx', ctxAfter] using hwf1
+  have hric1' : runtimeInstantiatesCtx ctx' cfg1.memory cfg1.varEnv θ1 := by
+    simpa [ctx', ctxAfter] using hric1
+  have hreg1' : regimeConsistentWithCtx ctx' := by
+    simpa [ctx', ctxAfter] using hreg1
+  have hcwr1' : consistentWithRegime predSat ctx'.regime ctx' cfg1.memory cfg1.varEnv θ1 := by
+    simpa [ctx', ctxAfter] using hcwr1
+  have hpc1 : ctx'.pc = true := by
+    simp [ctx']
+    exact hpc
+  have hmono1 : Regime.monotoneStep ctx.regime res1.regime' :=
+    regime_monotone ctx e1 fuel' res1 htc1'
+  have hRbound1 : regimeBounded ctx'.regime := by
+    have hctx'_regime : ctx'.regime = res1.regime' := by simp [ctx']
+    rw [hctx'_regime]
+    exact regimeBounded_of_monotoneStep ctx.regime res1.regime' hRbound hmono1
+  have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e2 ctx' hwfTm' res2 htc2'
+  rcases
+    hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf v2
+      hθ1wf hwf1' hric1' hreg1' hRbound1 hcwr1'
+      cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
+    with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2⟩
+  have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
+  have hctxAfter : ctxAfter ctx res = ctxAfter ctx' res2 := by
+    simp [ctxAfter, ctx', h_mem, h_tag, h_loc, h_ntag, h_regime]
+  have hpres2' :
+      PreservesInheritedFinalCleanLocsOneRun (ctxAfter ctx res1) res2 cfg1.memory cf.memory θ1 θ2 := by
+    simpa [ctx', ctxAfter] using hpres2
+  have hclean_back :
+      ∀ l qt_in qt_out,
+        ctx.memEnv.lookup l = some qt_in →
+        res2.memEnv'.lookup l = some qt_out →
+        qtypCleanUnder res2.regime' qt_out →
+        ∃ qt_mid, res1.memEnv'.lookup l = some qt_mid ∧ qtypCleanUnder res1.regime' qt_mid := by
+    intro l _qt_in qt_out _hlookup_in hlookup_out hclean_out
+    rcases
+      typecheckExpr_clean_lookup_origin_of_pc_true
+        (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res2)
+        (by simpa [ctx', ctxAfter] using htc2')
+        (by simpa [ctxAfter] using hpc)
+        l qt_out
+        (by simpa using hlookup_out)
+        (by simpa using hclean_out)
+      with ⟨qt_mid, hlookup_mid, hclean_mid⟩
+    exact ⟨qt_mid, by simpa [ctxAfter] using hlookup_mid, by simpa [ctxAfter] using hclean_mid⟩
+  have hpres_final :
+      PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ2 := by
+    have hpres_to_res2 :
+        PreservesInheritedFinalCleanLocsOneRun ctx res2 μ cf.memory θ θ2 := by
+      exact
+        PreservesInheritedFinalCleanLocsOneRun.compose
+          (ctx := ctx) (res1 := res1) (res2 := res2)
+          hclean_back hpres1 hpres2'
+    rcases hpres_to_res2 with ⟨hpres_fn⟩
+    refine ⟨?_⟩
+    intro l qt_in qt_out hlookup_in hlookup_out hclean_out
+    have hlookup_out2 : res2.memEnv'.lookup l = some qt_out := by
+      simpa [h_mem] using hlookup_out
+    have hclean_out2 : qtypCleanUnder res2.regime' qt_out := by
+      simpa [h_regime] using hclean_out
+    exact hpres_fn l qt_in qt_out hlookup_in hlookup_out2 hclean_out2
+  have hvaltyp_final : valueHasETyp θ2 o res.qualType.etyp := by
+    rw [h_ret_etyp]
+    exact valueHasETyp_of_evalOp op v1 v2 o θ2 res1.qualType.etyp res2.qualType.etyp result_etyp
+      (OpEType.complete h_op) h_evalop
+  have hvalc_final :
+      valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ2 o := by
+    have hnotfun_res : res.qualType.etyp.isFunctionType = false := by
+      simpa [h_ret_etyp] using (opEType_implies_nonfun op res1.qualType.etyp res2.qualType.etyp result_etyp h_op).2.2
+    exact
+      valueConsistentWithRegime.noTag
+        (predSat := predSat) (R := (ctxAfter ctx res).regime)
+        (qt := res.qualType) (μ := cf.memory) (v := o)
+        (by simp [qtypGuardTag, h_ret_pred])
+        (closureCapturedVarsRegime_nonClosure_of_nonFunctionType hvaltyp_final hnotfun_res)
+  have hwfcfg_final : wfConfig cf := by
+    exact (wfConfig_preserved .ioFree (Expr.op e1 op e2) _ cf o ht hwfcfg).1
+  have hcfg_eq : cfg1.pureMode = pm := by
+    simpa using hpm1
+  refine ⟨θ2, hθext, hvaltyp_final, ?_, ?_, hvalc_final, hpres_final⟩
+  · simpa [hctxAfter, hcfg_eq] using hric2
+  · simpa [hctxAfter, hcfg_eq] using hcwr2
+
+
+
+

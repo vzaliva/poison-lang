@@ -12,7 +12,7 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
-lemma invalidateRegimeDeps_preserves_lookup_of_surviving_tag
+private lemma invalidateRegimeDeps_preserves_lookup_of_surviving_tag
     (R : Regime) (env : TagEnv) (ls : LocSet) (k : Tag) (b : Bool)
     (hR : R.lookup? k = some b)
     (hkeep : (invalidateTagDeps env ls).contains k = true) :
@@ -31,7 +31,7 @@ lemma invalidateRegimeDeps_preserves_lookup_of_surviving_tag
     simpa [Regime.lookup?, hk] using hmap'
   · simp [hk] at hR
 
-lemma invalidateTagDeps_contains_true_implies_lookup_some_and_disjoint
+private lemma invalidateTagDeps_contains_true_implies_lookup_some_and_disjoint
     (env : TagEnv) (ls : LocSet) (k : Tag)
     (hkeep : (invalidateTagDeps env ls).contains k = true) :
     ∃ tv, env.get? k = some tv ∧ tv.deps.any ls.contains = false := by
@@ -53,7 +53,7 @@ lemma invalidateTagDeps_contains_true_implies_lookup_some_and_disjoint
       refine ⟨tv, ?_, hdeps⟩
       simpa [Std.ExtTreeMap.get?_eq_getElem?] using hget
 
-lemma invalidateRegimeDeps_lookup_eq_lookup_of_surviving_tag
+private lemma invalidateRegimeDeps_lookup_eq_lookup_of_surviving_tag
     (R : Regime) (env : TagEnv) (ls : LocSet) (k : Tag)
     (hkeep : (invalidateTagDeps env ls).contains k = true) :
     (invalidateRegimeDeps R env ls).lookup? k = R.lookup? k := by
@@ -72,7 +72,7 @@ lemma invalidateRegimeDeps_lookup_eq_lookup_of_surviving_tag
         invalidateRegimeDeps_preserves_lookup_of_surviving_tag R env ls k b hR hkeep
       simpa [hR] using hkeepLookup
 
-lemma invalidateRegimeDeps_survives_of_lookup_ne_none
+private lemma invalidateRegimeDeps_survives_of_lookup_ne_none
     (R : Regime) (env : TagEnv) (ls : LocSet) (k : Tag)
     (hlookup : (invalidateRegimeDeps R env ls).lookup? k ≠ none) :
     (invalidateTagDeps env ls).contains k = true := by
@@ -93,7 +93,7 @@ lemma invalidateRegimeDeps_survives_of_lookup_ne_none
   · unfold invalidateRegimeDeps Regime.lookup? at hlookup
     simp [hklt] at hlookup
 
-lemma invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
+private lemma invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
     (R : Regime) (env : TagEnv) (ls : LocSet) (k : Tag)
     (hlookup : (invalidateRegimeDeps R env ls).lookup? k ≠ none) :
     R.lookup? k ≠ none := by
@@ -104,7 +104,7 @@ lemma invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
     invalidateRegimeDeps_lookup_eq_lookup_of_surviving_tag R env ls k hkeep
   rwa [heq] at hlookup
 
-lemma invalidateRegimeDeps_lookup_ne_none_implies_surviving_tag_entry
+private lemma invalidateRegimeDeps_lookup_ne_none_implies_surviving_tag_entry
     (R : Regime) (env : TagEnv) (ls : LocSet) (k : Tag)
     (hlookup : (invalidateRegimeDeps R env ls).lookup? k ≠ none) :
     ∃ tv, env.get? k = some tv ∧ tv.deps.any ls.contains = false := by
@@ -112,7 +112,7 @@ lemma invalidateRegimeDeps_lookup_ne_none_implies_surviving_tag_entry
     invalidateRegimeDeps_survives_of_lookup_ne_none R env ls k hlookup
   exact invalidateTagDeps_contains_true_implies_lookup_some_and_disjoint env ls k hkeep
 
-lemma regime_lookup_ne_none_or_false_tag_of_invalidate_lookup
+private lemma regime_lookup_ne_none_or_false_tag_of_invalidate_lookup
     (R R2 : Regime) (env : TagEnv) (ls : LocSet) (k : Tag)
     (hcons : tagEnvConsistentWithRegime env R2)
     (hlookup : (invalidateRegimeDeps R env ls).lookup? k ≠ none) :
@@ -128,7 +128,7 @@ lemma regime_lookup_ne_none_or_false_tag_of_invalidate_lookup
       right
       exact ⟨deps, by simp [hb] at hget; exact hget⟩
 
-lemma qtypCleanUnder_of_monotone
+private lemma qtypCleanUnder_of_monotone
     {R R' : Regime} (hmono : Regime.monotoneStep R R') {qt : QTyp} :
     qtypCleanUnder R' qt → qtypCleanUnder R qt := by
   intro hclean
@@ -153,7 +153,7 @@ lemma qtypCleanUnder_of_monotone
           | inr hkNone =>
               simp [hkNone] at hreg
 
-lemma qtypCleanUnder_of_invalidateRegimeDeps
+private lemma qtypCleanUnder_of_invalidateRegimeDeps
     (R : Regime) (env : TagEnv) (ls : LocSet) {qt : QTyp}
     (hclean : qtypCleanUnder (invalidateRegimeDeps R env ls) qt) :
     qtypCleanUnder R qt := by
@@ -172,7 +172,7 @@ lemma qtypCleanUnder_of_invalidateRegimeDeps
         simpa [heq] using hreg
       exact qtypCleanUnder.guard k htag hregR hnotfun
 
-lemma agreeValueUnder_transport_memory
+private lemma agreeValueUnder_transport_memory
     {predSat : PredSat} {R : Regime}
     {μ₀ μ₁ μ₀' μ₁' : Memory}
     {θ₀ θ₁ : RealizationMap} {qt : QTyp} {v₀ v₁ : Value}
@@ -191,7 +191,7 @@ lemma agreeValueUnder_transport_memory
       (by intro l a h; exact h)
       hagree
 
-lemma agreeValueUnder_clean_monotoneRegime_public
+private lemma agreeValueUnder_clean_monotoneRegime_public
     {predSat : PredSat} {R R' : Regime} {μ₀ μ₁ : Memory}
     {θ₀ θ₁ : RealizationMap} {qt : QTyp} {v₀ v₁ : Value} :
     Regime.monotoneStep R R' →
@@ -283,7 +283,7 @@ lemma agreeValueUnder_clean_monotoneRegime_public
       hagree
   exact hrec hclean
 
-lemma agreeValueUnder_transport_insert_clean_monotone
+private lemma agreeValueUnder_transport_insert_clean_monotone
     {predSat : PredSat} {R R' : Regime}
     {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
     {qt : QTyp} {v₀ v₁ : Value}
@@ -311,7 +311,7 @@ lemma agreeValueUnder_transport_insert_clean_monotone
       (qtypCleanUnder_of_monotone hmono hclean) hagree
   exact agreeValueUnder_clean_monotoneRegime_public hmono hclean hagree_mem
 
-lemma agreeOnClean_transport_assign_final_of_split
+private lemma agreeOnClean_transport_assign_final_of_split
     (predSat : PredSat)
     (ctxFinal : TypeContext)
     (cf₀ cf₁ : Config) (θ₀2 θ₁2 : RealizationMap)
@@ -331,7 +331,7 @@ lemma agreeOnClean_transport_assign_final_of_split
       cf₀.memory cf₀.varEnv θ₀2 cf₁.memory cf₁.varEnv θ₁2 := by
   exact ⟨hloc_final, hvar_final⟩
 
-lemma resultAgreesIfClean_ref_shared_witness
+private lemma resultAgreesIfClean_ref_shared_witness
     {predSat : PredSat} {R : Regime}
     {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
     {qt : QTyp} {ls : LocSet} {a₀w a₁w : Address}
@@ -375,7 +375,7 @@ lemma resultAgreesIfClean_ref_shared_witness
       cases hv2
       exact ⟨_, hin, hlookup1, hlookup2⟩
 
-lemma agreeValueUnder_num_num_eq
+private lemma agreeValueUnder_num_num_eq
     {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory}
     {θ₀ θ₁ : RealizationMap} {qt : QTyp} {n₀ n₁ : Int}
     (hagree :
@@ -403,7 +403,7 @@ lemma agreeValueUnder_num_num_eq
   | withPred_true_ref _ _ _ _ _ _ hv₀ _ _ =>
       cases hv₀
 
-lemma tagEnvConsistentWithRegime_invalidateRegimeDeps
+private lemma tagEnvConsistentWithRegime_invalidateRegimeDeps
     (tagEnv : TagEnv) (R : Regime) (ls : LocSet)
     (h : tagEnvConsistentWithRegime tagEnv R) :
     tagEnvConsistentWithRegime (invalidateTagDeps tagEnv ls) (invalidateRegimeDeps R tagEnv ls) := by
@@ -443,7 +443,7 @@ lemma tagEnvConsistentWithRegime_invalidateRegimeDeps
 If every `tagEnv` entry at tag `k` depends on locations from `ls`, then
 `invalidateRegimeDeps` drops `k` from the regime.
 -/
-lemma assign_updated_new_guardClosure_implies_invalidated_regime_none
+private lemma assign_updated_new_guardClosure_implies_invalidated_regime_none
     (R : Regime) (tagEnv : TagEnv) (ls : LocSet) (k : Tag)
     (htagInvalid : ∀ tv, tagEnv.get? k = some tv → tv.deps.any ls.contains = true) :
     (invalidateRegimeDeps R tagEnv ls).lookup? k = none := by
@@ -472,7 +472,7 @@ lemma assign_updated_new_guardClosure_implies_invalidated_regime_none
     simp [hkeep_false] at hsurvive
   exact this.elim
 
-lemma typecheckIf_ioFree_ok_pred_noPred
+private lemma typecheckIf_ioFree_ok_pred_noPred
     (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckIf .ioFree ctx e1 e2 e3 fuel = .ok res) :
     res.qualType.pred = Predicate.noPred := by
@@ -586,7 +586,7 @@ lemma typecheckIf_ioFree_ok_pred_noPred
                                           rfl
                       · simp [hbool] at htc
 
-lemma typecheckVar_guardClosure_pred_implies_tag_absent
+private lemma typecheckVar_guardClosure_pred_implies_tag_absent
     (ctx : TypeContext) (x : Name) (res : TypeResult)
     (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
     (htc : typecheckVar ctx x = .ok res)
@@ -699,7 +699,7 @@ lemma typecheckVar_guardClosure_pred_implies_tag_absent
                     simpa [htagEq] using hkg
                   simpa [hkEq] using hnoneKg
 
-lemma typecheckDeref_guardClosure_pred_implies_tag_absent
+private lemma typecheckDeref_guardClosure_pred_implies_tag_absent
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
     (htc : typecheckDeref .ioFree ctx e fuel = .ok res)
@@ -817,7 +817,7 @@ lemma typecheckDeref_guardClosure_pred_implies_tag_absent
                                   simpa [hkEq] using hnoneKg
               | _ => simp at htc
 
-lemma joinTagEnvs_get?_none_of_left_none
+private lemma joinTagEnvs_get?_none_of_left_none
     (accTag tagEnv : TagEnv) (k : Tag)
     (hacc : accTag.get? k = none) :
     (joinTagEnvs accTag tagEnv).get? k = none := by
@@ -847,7 +847,7 @@ lemma joinTagEnvs_get?_none_of_left_none
   · have hgo := combineExtTreeMaps_go_get_not_mem accTag tagEnv f ks ({} : TagEnv) k hmem
     simpa using hgo
 
-lemma typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent
+private lemma typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent
     (ctx : TypeContext) (res : TypeResult)
     (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
     (fuel' : Nat)
@@ -1148,7 +1148,7 @@ lemma typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent
                 simpa using htagEq.symm
               simpa [hresTag] using hjoinedTagNone
 
-lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
+private lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
     (ctx : TypeContext) (res : TypeResult)
     (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
     (fuel' : Nat)
@@ -1451,7 +1451,7 @@ lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
                 simpa using htagEq.symm
               simpa [hresTag] using hjoinedTagNone
 
-lemma ioFree_guardClosure_pred_implies_tag_absent
+private lemma ioFree_guardClosure_pred_implies_tag_absent
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
     (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
@@ -1688,7 +1688,7 @@ lemma ioFree_guardClosure_pred_implies_tag_absent
           simp [typecheckExpr, typecheckExternPfn, heq] at htc'
           cases htc'
 
-lemma assign_mem_formula_guardClosure_lookup_implies_rhs_pred
+private lemma assign_mem_formula_guardClosure_lookup_implies_rhs_pred
     (ctxᵢ : TypeContext) (res1 res2 res : TypeResult) (ls : LocSet)
     (l : Loc) (qt : QTyp)
     (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
@@ -1815,7 +1815,7 @@ lemma assign_mem_formula_guardClosure_lookup_implies_rhs_pred
 
 -- locset_fold_max_succ_ge_of_mem: moved to TypeSafety.lean
 
-lemma typecheckAssign_result2_lookup_clean_back_of_pc_true
+private lemma typecheckAssign_result2_lookup_clean_back_of_pc_true
     (ctx : TypeContext) (result1 result2 res : TypeResult) (ls : LocSet)
     (_hInt : result2.qualType.etyp = ETyp.int)
     (h_mem :
@@ -1978,7 +1978,7 @@ lemma typecheckAssign_result2_lookup_clean_back_of_pc_true
         hclean_inv
     exact ⟨qt_out, hlookup₂, hclean₂⟩
 
-lemma assign_write_step_preserves_inherited_final_clean_pc_true
+private lemma assign_write_step_preserves_inherited_final_clean_pc_true
     (ctx : TypeContext) (result1 result2 res : TypeResult) (ls : LocSet)
     (cfg2 : Config) (θ : RealizationMap) (a_w : Address) (n : Int)
     (hRef : result1.qualType.etyp = ETyp.ref ls)
@@ -4294,3 +4294,987 @@ lemma stepFR_assign
       cases this
 
 -- World-free version of stepFRW_deref (simplified with sorry)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Assign single-run infrastructure (moved from FaultRobustnessProofs.lean)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+private lemma typecheckAssign_lookup_clean_back_to_result1_of_pc_true
+  (ctx : TypeContext) (e2 : Expr) (fuel : Nat)
+  (result1 result2 res : TypeResult) (ls : LocSet)
+  (htc2 : typecheckExpr .ioFree (updateCtxFromResult ctx result1) e2 fuel = .ok result2)
+  (hInt : result2.qualType.etyp = ETyp.int)
+  (h_mem :
+    res.memEnv' =
+      match Std.ExtTreeSet.toList ls with
+      | [l] =>
+          updateMemEnv result2.memEnv' l
+            { etyp := ETyp.int
+              poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+              pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+      | _ =>
+          updateLocsetWeak result2.memEnv' ls
+            (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+            (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred))
+  (h_regime : res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls)
+  (hpc : ctx.pc = true) :
+  ∀ l qt_mid qt_out,
+    result1.memEnv'.lookup l = some qt_mid →
+    res.memEnv'.lookup l = some qt_out →
+    qtypCleanUnder res.regime' qt_out →
+    qtypCleanUnder result1.regime' qt_mid := by
+  intro l qt_mid qt_out hlookup_mid hlookup_out hclean_out
+  rcases
+    typecheckAssign_result2_lookup_clean_back_of_pc_true
+      (ctx := ctx) (result1 := result1) (result2 := result2) (res := res) (ls := ls)
+      hInt h_mem h_regime hpc l qt_out hlookup_out hclean_out
+    with ⟨qt₂, hlookup₂, hclean₂⟩
+  have hpc2 : (updateCtxFromResult ctx result1).pc = true := by
+    simpa [updateCtxFromResult] using hpc
+  exact
+    typecheckExpr_lookup_clean_back_of_pc_true
+      (ctx := updateCtxFromResult ctx result1) (e := e2) (fuel := fuel) (res := result2)
+      htc2 hpc2 l qt_mid qt₂
+      (by simpa [updateCtxFromResult] using hlookup_mid)
+      hlookup₂
+      hclean₂
+
+private lemma assign_preservesInheritedFinalCleanLocsOneRun_pc_true
+  (ctx : TypeContext) (e2 : Expr) (fuel : Nat)
+  (result1 result2 res : TypeResult) (ls : LocSet)
+  (μ : Memory) (cfg1 cfg2 : Config) (θ θ1 θ2 : RealizationMap)
+  (a_w : Address) (n : Int)
+  (htc2 : typecheckExpr .ioFree (updateCtxFromResult ctx result1) e2 fuel = .ok result2)
+  (hRef : result1.qualType.etyp = ETyp.ref ls)
+  (hInt : result2.qualType.etyp = ETyp.int)
+  (h_mem :
+    res.memEnv' =
+      match Std.ExtTreeSet.toList ls with
+      | [l] =>
+          updateMemEnv result2.memEnv' l
+            { etyp := ETyp.int
+              poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+              pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+      | _ =>
+          updateLocsetWeak result2.memEnv' ls
+            (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+            (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred))
+  (h_regime : res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls)
+  (hpc : ctx.pc = true)
+  (hθ2wf : wfRealizationMap θ2)
+  (hvalRef2 : valueHasETyp θ2 (Value.loc a_w) result1.qualType.etyp)
+  (hric2 : runtimeInstantiatesCtx (ctxAfter (updateCtxFromResult ctx result1) result2) cfg2.memory cfg2.varEnv θ2)
+  (hpres1 : PreservesInheritedFinalCleanLocsOneRun ctx result1 μ cfg1.memory θ θ1)
+  (hpres2 : PreservesInheritedFinalCleanLocsOneRun (updateCtxFromResult ctx result1) result2 cfg1.memory cfg2.memory θ1 θ2) :
+  PreservesInheritedFinalCleanLocsOneRun
+    ctx res μ (Std.ExtTreeMap.insert cfg2.memory a_w n) θ θ2 := by
+  have hpres_to_result2 :
+      PreservesInheritedFinalCleanLocsOneRun ctx result2 μ cfg2.memory θ θ2 := by
+    refine
+      PreservesInheritedFinalCleanLocsOneRun.compose
+        (ctx := ctx) (res1 := result1) (res2 := result2)
+        ?_ hpres1 ?_
+    · intro l qt_in qt_out hlookup_in hlookup_out hclean_out
+      have hpc2 : (updateCtxFromResult ctx result1).pc = true := by
+        simpa [updateCtxFromResult] using hpc
+      rcases
+        typecheckExpr_clean_lookup_origin_of_pc_true
+          (ctx := updateCtxFromResult ctx result1) (e := e2) (fuel := fuel) (res := result2)
+          htc2 hpc2 l qt_out hlookup_out hclean_out
+        with ⟨qt_mid, hlookup_mid, hclean_mid⟩
+      exact ⟨qt_mid, by simpa [updateCtxFromResult] using hlookup_mid, by simpa [updateCtxFromResult] using hclean_mid⟩
+    · simpa [ctxAfter, updateCtxFromResult] using hpres2
+  have hpres_write :
+      PreservesInheritedFinalCleanLocsOneRun
+        (ctxAfter ctx result2) res
+        cfg2.memory (Std.ExtTreeMap.insert cfg2.memory a_w n) θ2 θ2 := by
+    simpa [ctxAfter, updateCtxFromResult] using
+      assign_write_step_preserves_inherited_final_clean_pc_true
+        (ctx := ctx) (result1 := result1) (result2 := result2) (res := res) (ls := ls)
+        (cfg2 := cfg2) (θ := θ2) (a_w := a_w) (n := n)
+        hRef hvalRef2 hθ2wf hric2 h_mem hpc
+  refine
+    PreservesInheritedFinalCleanLocsOneRun.compose
+      (ctx := ctx) (res1 := result2) (res2 := res)
+      ?_ hpres_to_result2 hpres_write
+  intro l qt_in qt_out _hlookup_in hlookup_out hclean_out
+  exact
+    typecheckAssign_result2_lookup_clean_back_of_pc_true
+      (ctx := ctx) (result1 := result1) (result2 := result2) (res := res) (ls := ls)
+      hInt h_mem h_regime hpc l qt_out hlookup_out hclean_out
+
+
+private lemma assign_lookup_not_clean_of_pc_true_of_mem
+    (ctx : TypeContext) (result1 result2 res : TypeResult) (ls : LocSet)
+    (h_mem :
+      res.memEnv' =
+        match Std.ExtTreeSet.toList ls with
+        | [l] =>
+            updateMemEnv result2.memEnv' l
+              { etyp := ETyp.int
+                poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+        | _ =>
+            updateLocsetWeak result2.memEnv' ls
+              (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+              (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred))
+    (hpc : ctx.pc = true)
+    {l : Loc} {qt_out : QTyp}
+    (hIn : l ∈ ls)
+    (hlookup_out : res.memEnv'.lookup l = some qt_out) :
+    ¬ qtypCleanUnder res.regime' qt_out := by
+  intro hclean_out
+  have hlookup_formula :
+      (match Std.ExtTreeSet.toList ls with
+        | [l0] =>
+            updateMemEnv result2.memEnv' l0
+              { etyp := ETyp.int
+                poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+        | _ =>
+            updateLocsetWeak result2.memEnv' ls
+              (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+              (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)).lookup l =
+        some qt_out := by
+    simpa [h_mem] using hlookup_out
+  cases hls : Std.ExtTreeSet.toList ls with
+  | nil =>
+      have hInList : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hIn
+      simp [hls] at hInList
+  | cons x xs =>
+      cases xs with
+      | nil =>
+          have hlEq : l = x := by
+            have hInList : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hIn
+            simpa [hls] using hInList
+          subst l
+          have hlookup_single :
+              (updateMemEnv result2.memEnv' x
+                { etyp := ETyp.int
+                  poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                  pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }).lookup x =
+              some qt_out := by
+            simpa [hls] using hlookup_formula
+          have hqt :
+              qt_out =
+                { etyp := ETyp.int
+                  poison := true
+                  pred := Predicate.noPred } := by
+            have hsomes :
+                some qt_out =
+                  some { etyp := ETyp.int, poison := true, pred := Predicate.noPred } := by
+              calc
+                some qt_out =
+                    (updateMemEnv result2.memEnv' x
+                      { etyp := ETyp.int
+                        poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                        pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }).lookup x := by
+                          symm
+                          exact hlookup_single
+                _ = some { etyp := ETyp.int, poison := true, pred := Predicate.noPred } := by
+                      simp [hpc, joinPoison, updateMemEnv, MemoryTypeEnv.lookup]
+            exact Option.some.inj hsomes
+          subst hqt
+          exact (not_qtypCleanUnder_of_poison_true_noPred rfl rfl) hclean_out
+      | cons y ys =>
+          have hlookup_weak :
+              (updateLocsetWeak result2.memEnv' ls
+                (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+                (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)).lookup l =
+              some qt_out := by
+            simpa [hls] using hlookup_formula
+          unfold updateLocsetWeak at hlookup_weak
+          set joined :=
+            LocSet.fold ls
+              (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison),
+                if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)
+              (fun (accP, accPred) l0 =>
+                match result2.memEnv'.get? l0 with
+                | some qt0 => (joinPoison accP qt0.poison, joinPredicates accPred qt0.pred)
+                | none => (accP, accPred)) with hjoined
+          set finalQt : QTyp := ⟨ETyp.int, joined.1, joined.2⟩ with hfinalQt
+          dsimp at hlookup_weak
+          unfold LocSet.fold at hlookup_weak
+          rw [Std.ExtTreeSet.foldl_eq_foldl_toList] at hlookup_weak
+          have hInList : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hIn
+          have hlookup_final :
+              (ls.toList.foldl (fun acc l0 => updateMemEnv acc l0 finalQt) result2.memEnv').lookup l =
+              some finalQt :=
+            list_fold_updateMemEnv_lookup_eq_of_mem ls.toList result2.memEnv' l finalQt hInList rfl
+          have hqt : qt_out = finalQt := by
+            have hsomes : some qt_out = some finalQt := by
+              calc
+                some qt_out =
+                    (ls.toList.foldl (fun acc l0 => updateMemEnv acc l0 finalQt) result2.memEnv').lookup l := by
+                      symm
+                      exact hlookup_weak
+                _ = some finalQt := hlookup_final
+            exact Option.some.inj hsomes
+          subst hqt
+          have hpoison : finalQt.poison = true := by
+            simp [finalQt, joined, hpc]
+            unfold LocSet.fold
+            rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+            simpa using
+              list_fold_joinPoison_first_true result2.memEnv' ls.toList Predicate.noPred
+          have hpred : finalQt.pred = Predicate.noPred := by
+            simp [finalQt, joined, hpc]
+            unfold LocSet.fold
+            rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+            simpa using list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
+          exact (not_qtypCleanUnder_of_poison_true_noPred hpoison hpred) hclean_out
+
+private lemma assign_updated_lookup_shape_of_pc_true
+    (ctx : TypeContext) (result1 result2 res : TypeResult) (ls : LocSet)
+    (h_mem :
+      res.memEnv' =
+        match Std.ExtTreeSet.toList ls with
+        | [l] =>
+            updateMemEnv result2.memEnv' l
+              { etyp := ETyp.int
+                poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+        | _ =>
+            updateLocsetWeak result2.memEnv' ls
+              (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+              (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred))
+    (hpc : ctx.pc = true)
+    {l : Loc} {qt_out : QTyp}
+    (hIn : l ∈ ls)
+    (hlookup_out : res.memEnv'.lookup l = some qt_out) :
+    qt_out.poison = true ∧ qt_out.pred = Predicate.noPred := by
+  have hlookup_formula :
+      (match Std.ExtTreeSet.toList ls with
+        | [l0] =>
+            updateMemEnv result2.memEnv' l0
+              { etyp := ETyp.int
+                poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+        | _ =>
+            updateLocsetWeak result2.memEnv' ls
+              (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+              (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)).lookup l =
+      some qt_out := by
+    simpa [h_mem] using hlookup_out
+  cases hls : Std.ExtTreeSet.toList ls with
+  | nil =>
+      have hInList : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hIn
+      simp [hls] at hInList
+  | cons x xs =>
+      cases xs with
+      | nil =>
+          have hlEq : l = x := by
+            have hInList : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hIn
+            simpa [hls] using hInList
+          subst l
+          have hlookup_single :
+              (updateMemEnv result2.memEnv' x
+                { etyp := ETyp.int
+                  poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                  pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }).lookup x =
+              some qt_out := by
+            simpa [hls] using hlookup_formula
+          have hqt :
+              qt_out =
+                { etyp := ETyp.int
+                  poison := true
+                  pred := Predicate.noPred } := by
+            have hsomes :
+                some qt_out =
+                  some { etyp := ETyp.int, poison := true, pred := Predicate.noPred } := by
+              calc
+                some qt_out =
+                    (updateMemEnv result2.memEnv' x
+                      { etyp := ETyp.int
+                        poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                        pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }).lookup x := by
+                          symm
+                          exact hlookup_single
+                _ = some { etyp := ETyp.int, poison := true, pred := Predicate.noPred } := by
+                      simp [hpc, joinPoison, updateMemEnv, MemoryTypeEnv.lookup]
+            exact Option.some.inj hsomes
+          subst hqt
+          exact ⟨rfl, rfl⟩
+      | cons y ys =>
+          have hlookup_weak :
+              (updateLocsetWeak result2.memEnv' ls
+                (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+                (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)).lookup l =
+              some qt_out := by
+            simpa [hls] using hlookup_formula
+          unfold updateLocsetWeak at hlookup_weak
+          set joined :=
+            LocSet.fold ls
+              (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison),
+                if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)
+              (fun (accP, accPred) l0 =>
+                match result2.memEnv'.get? l0 with
+                | some qt0 => (joinPoison accP qt0.poison, joinPredicates accPred qt0.pred)
+                | none => (accP, accPred)) with hjoined
+          set finalQt : QTyp := ⟨ETyp.int, joined.1, joined.2⟩ with hfinalQt
+          dsimp at hlookup_weak
+          unfold LocSet.fold at hlookup_weak
+          rw [Std.ExtTreeSet.foldl_eq_foldl_toList] at hlookup_weak
+          have hInList : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hIn
+          have hlookup_final :
+              (ls.toList.foldl (fun acc l0 => updateMemEnv acc l0 finalQt) result2.memEnv').lookup l =
+              some finalQt :=
+            list_fold_updateMemEnv_lookup_eq_of_mem ls.toList result2.memEnv' l finalQt hInList rfl
+          have hqt : qt_out = finalQt := by
+            exact Option.some.inj <| by
+              calc
+                some qt_out =
+                    (ls.toList.foldl (fun acc l0 => updateMemEnv acc l0 finalQt) result2.memEnv').lookup l := by
+                      symm
+                      exact hlookup_weak
+                _ = some finalQt := hlookup_final
+          subst hqt
+          have hpoison : finalQt.poison = true := by
+            simp [finalQt, joined, hpc]
+            unfold LocSet.fold
+            rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+            simpa using
+              list_fold_joinPoison_first_true result2.memEnv' ls.toList Predicate.noPred
+          have hpred : finalQt.pred = Predicate.noPred := by
+            simp [finalQt, joined, hpc]
+            unfold LocSet.fold
+            rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+            simpa using list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
+          exact ⟨hpoison, hpred⟩
+
+private lemma assign_final_clean_preservation
+  (ctx : TypeContext) (e2 : Expr) (fuel' : Nat)
+  (result1 result2 res : TypeResult) (ls : LocSet)
+  (μ : Memory) (cfg1 cfg2 cf : Config)
+  (θ θ1 θ2 : RealizationMap)
+  (aw : Address) (n : Int)
+  (hRef : result1.qualType.etyp = ETyp.ref ls)
+  (hInt : result2.qualType.etyp = ETyp.int)
+  (htc2_expr : typecheckExpr .ioFree (ctxAfter ctx result1) e2 fuel' = .ok result2)
+  (hmem_res :
+    res.memEnv' =
+      match Std.ExtTreeSet.toList ls with
+      | [l] =>
+          updateMemEnv result2.memEnv' l
+            { etyp := ETyp.int
+              poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+              pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+      | _ =>
+          updateLocsetWeak result2.memEnv' ls
+            (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+            (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred))
+  (hRegime : res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls)
+  (hpc : ctx.pc = true)
+  (hvloc1 : valueHasETyp θ1 (Value.loc aw) result1.qualType.etyp)
+  (hθext2 : wfExtendsMap θ1 θ2)
+  (hθ2wf : wfRealizationMap θ2)
+  (hric2 : runtimeInstantiatesCtx (ctxAfter (ctxAfter ctx result1) result2) cfg2.memory cfg2.varEnv θ2)
+  (hmem : cf.memory = Std.ExtTreeMap.insert cfg2.memory aw n)
+  (hpres1 : PreservesInheritedFinalCleanLocsOneRun ctx result1 μ cfg1.memory θ θ1)
+  (hpres2 : PreservesInheritedFinalCleanLocsOneRun (ctxAfter ctx result1) result2 cfg1.memory cfg2.memory θ1 θ2) :
+  PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ2 := by
+  refine ⟨?_⟩
+  intro l qt_in qt_out hlookup_in hlookup_out hclean_out
+  have hnotin : l ∉ ls := by
+    intro hIn
+    exact
+      (assign_lookup_not_clean_of_pc_true_of_mem
+        (ctx := ctx) (result1 := result1) (result2 := result2) (res := res) (ls := ls)
+        hmem_res hpc hIn hlookup_out) hclean_out
+  rcases
+    typecheckAssign_result2_lookup_clean_back_of_pc_true
+      (ctx := ctx) (result1 := result1) (result2 := result2) (res := res) (ls := ls)
+      hInt hmem_res hRegime hpc l qt_out hlookup_out hclean_out
+    with ⟨qt_mid, hlookup_mid, hclean_mid⟩
+  have hpc_mid : (ctxAfter ctx result1).pc = true := by
+    simpa [ctxAfter] using hpc
+  rcases
+    typecheckExpr_clean_lookup_origin_of_pc_true
+      (ctx := ctxAfter ctx result1) (e := e2) (fuel := fuel') (res := result2)
+      htc2_expr hpc_mid l qt_mid hlookup_mid hclean_mid
+    with ⟨qt_pre, hlookup_pre_ctx, hclean_pre⟩
+  have hpres_l1 :=
+    PreservesInheritedFinalCleanLocsOneRun.apply
+      (ctx := ctx) (res := result1) (μ_in := μ) (μ_out := cfg1.memory)
+      (θ_in := θ) (θ_out := θ1) hpres1
+      hlookup_in (by simpa [ctxAfter] using hlookup_pre_ctx) hclean_pre
+  have hpres_l2 :=
+    PreservesInheritedFinalCleanLocsOneRun.apply
+      (ctx := ctxAfter ctx result1) (res := result2)
+      (μ_in := cfg1.memory) (μ_out := cfg2.memory)
+      (θ_in := θ1) (θ_out := θ2) hpres2
+      hlookup_pre_ctx hlookup_mid hclean_mid
+  have hpres_mid :
+      PreservesInheritedCleanLocOneRun μ cfg2.memory θ θ2 l :=
+    PreservesInheritedCleanLocOneRun.trans hpres_l1 hpres_l2
+  have hvloc2 : valueHasETyp θ2 (Value.loc aw) result1.qualType.etyp := by
+    exact valueHasETyp_extends hθext2.1 hvloc1
+  have hwrite_pres :
+      PreservesInheritedFinalCleanLocsOneRun
+        (ctxAfter (updateCtxFromResult ctx result1) result2) res
+        cfg2.memory cf.memory θ2 θ2 := by
+    simpa [ctxAfter, updateCtxFromResult, hmem] using
+      assign_write_step_preserves_inherited_final_clean_pc_true
+        (ctx := ctx) (result1 := result1) (result2 := result2) (res := res) (ls := ls)
+        (cfg2 := cfg2) (θ := θ2) (a_w := aw) (n := n)
+        hRef hvloc2 hθ2wf hric2 hmem_res hpc
+  have hpres_write :=
+    PreservesInheritedFinalCleanLocsOneRun.apply
+      (ctx := ctxAfter (updateCtxFromResult ctx result1) result2) (res := res)
+      (μ_in := cfg2.memory) (μ_out := cf.memory)
+      (θ_in := θ2) (θ_out := θ2) hwrite_pres
+      (by simpa [ctxAfter, updateCtxFromResult] using hlookup_mid)
+      hlookup_out hclean_out
+  exact PreservesInheritedCleanLocOneRun.trans hpres_mid hpres_write
+
+private lemma assign_single_run_post_transport_pc_true
+  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (result1 result2 res : TypeResult) (ls : LocSet)
+  (cfg2 cf : Config) (θ : RealizationMap) (a_w : Address) (n : Int)
+  (hpredlaws : PredSatLaws predSat tm)
+  (hwfTm2 : wfTagMeaningCtx tm (ctxAfter (ctxAfter ctx result1) result2))
+  (hwf2 : wfTypeContext (ctxAfter (ctxAfter ctx result1) result2))
+  (hric2 : runtimeInstantiatesCtx (ctxAfter (ctxAfter ctx result1) result2) cfg2.memory cfg2.varEnv θ)
+  (hreg2 : regimeConsistentWithCtx (ctxAfter (ctxAfter ctx result1) result2))
+  (hcwr2 :
+    consistentWithRegime predSat
+      (ctxAfter (ctxAfter ctx result1) result2).regime
+      (ctxAfter (ctxAfter ctx result1) result2)
+      cfg2.memory cfg2.varEnv θ)
+  (hRef : result1.qualType.etyp = ETyp.ref ls)
+  (hvalRef : valueHasETyp θ (Value.loc a_w) result1.qualType.etyp)
+  (hθwf : wfRealizationMap θ)
+  (hmem : cf.memory = Std.ExtTreeMap.insert cfg2.memory a_w n)
+  (hvar : cf.varEnv = cfg2.varEnv)
+  (hNextLoc : res.nextLoc' = ls.fold result2.nextLoc' (fun acc l => max acc (l + 1)))
+  (hNextTag : res.nextTag' = result2.nextTag')
+  (hRegime : res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls)
+  (hmem_res :
+    res.memEnv' =
+      match Std.ExtTreeSet.toList ls with
+      | [l] =>
+          updateMemEnv result2.memEnv' l
+            { etyp := ETyp.int
+              poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+              pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+      | _ =>
+          updateLocsetWeak result2.memEnv' ls
+            (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+            (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred))
+  (htag_res : res.tagEnv' = invalidateTagDeps result2.tagEnv' ls)
+  (hpc : ctx.pc = true) :
+  wfTagMeaningCtx tm (ctxAfter ctx res) ∧
+  wfTypeContext (ctxAfter ctx res) ∧
+  runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ ∧
+  regimeConsistentWithCtx (ctxAfter ctx res) ∧
+  consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ := by
+  rcases valueHasETyp_loc_inv hvalRef with ⟨ls', lw, hRef', hwrite, hlwIn'⟩
+  have hls : ls' = ls := by
+    rw [hRef] at hRef'
+    cases hRef'
+    rfl
+  have hlwIn : lw ∈ ls := by
+    simpa [hls] using hlwIn'
+  have hstored_pred_respects : PredRespectsTagMeaning tm Predicate.noPred := by
+    intro k arg_name pred_body var_env hpred
+    simp at hpred
+  have hstored_qtyp :
+      QTypRespectsTagMeaning tm
+        { etyp := ETyp.int
+          poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+          pred := Predicate.noPred } := by
+    exact
+      QTypRespectsTagMeaning_int_of_predRespects
+        tm
+        (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+        Predicate.noPred
+        hstored_pred_respects
+  have hEnvTm_res2 : EnvRespectsTagMeaning tm ctx.varEnv result2.memEnv' := by
+    simpa [wfTagMeaningCtx, ctxAfter] using hwfTm2
+  have hPredSat_mem :
+      ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
+    intro k μ μ' v
+    exact predSat_mem_noPred_compat hpredlaws θ k μ μ' v
+  have hqtypPredHolds_mem :
+      ∀ (qt : QTyp) (v : Value),
+        qtypPredHolds predSat qt cfg2.memory v ↔
+          qtypPredHolds predSat qt cf.memory v := by
+    intro qt v
+    exact qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ cfg2.memory cf.memory qt v
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · have hEnvTm_res : EnvRespectsTagMeaning tm ctx.varEnv res.memEnv' := by
+      rw [hmem_res]
+      cases hlsToList : Std.ExtTreeSet.toList ls with
+      | nil =>
+          simpa [hlsToList, hpc] using
+            (EnvRespectsTagMeaning_updateLocsetWeak
+              tm ctx.varEnv result2.memEnv' ls
+              (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+              Predicate.noPred
+              hEnvTm_res2
+              hstored_pred_respects)
+      | cons x xs =>
+          cases xs with
+          | nil =>
+              simpa [hlsToList, hpc] using
+                (EnvRespectsTagMeaning_updateMemEnv
+                  tm ctx.varEnv result2.memEnv' x
+                  { etyp := ETyp.int
+                    poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                    pred := Predicate.noPred }
+                  (by simp)
+                  hEnvTm_res2 hstored_qtyp)
+          | cons y ys =>
+              simpa [hlsToList, hpc] using
+                (EnvRespectsTagMeaning_updateLocsetWeak
+                  tm ctx.varEnv result2.memEnv' ls
+                  (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+                  Predicate.noPred
+                  hEnvTm_res2
+                  hstored_pred_respects)
+    exact wfTagMeaningCtx_ctxAfter tm ctx res hEnvTm_res
+  · intro l hcontains
+    have hcontains' : res.memEnv'.contains l = true := by
+      simpa [ctxAfter] using hcontains
+    have hsplit : result2.memEnv'.contains l = true ∨ l ∈ ls := by
+      rw [hmem_res] at hcontains'
+      exact
+        assign_memEnv_formula_contains_eq_or_mem
+          result2.memEnv' ls
+          (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+          (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)
+          l hcontains'
+    cases hsplit with
+    | inl hOld =>
+        have hOldCtx :
+            (ctxAfter (ctxAfter ctx result1) result2).memEnv.contains l := by
+          simpa [ctxAfter] using hOld
+        have hltOld' : l < (ctxAfter (ctxAfter ctx result1) result2).nextLoc := by
+          exact hwf2 l hOldCtx
+        have hltOld : l < result2.nextLoc' := by
+          simpa [ctxAfter] using hltOld'
+        have hbase : result2.nextLoc' ≤ res.nextLoc' := by
+          rw [hNextLoc]
+          unfold LocSet.fold
+          rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+          exact list_fold_max_ge_init ls.toList result2.nextLoc'
+        exact Nat.lt_of_lt_of_le hltOld hbase
+    | inr hIn =>
+        have hle : l + 1 ≤ res.nextLoc' := by
+          rw [hNextLoc]
+          exact locset_fold_max_succ_ge_of_mem ls result2.nextLoc' l hIn
+        exact Nat.lt_of_lt_of_le (Nat.lt_succ_self l) hle
+  · unfold runtimeInstantiatesCtx at hric2 ⊢
+    rcases hric2 with ⟨hmem₂, hvars₂⟩
+    constructor
+    · intro l a hlookup
+      have hmem_old := hmem₂ l a hlookup
+      constructor
+      · have h_old_contains : result2.memEnv'.contains l = true := by
+          simpa [ctxAfter] using hmem_old.1
+        have h_new_contains : res.memEnv'.contains l = true := by
+          rw [hmem_res]
+          exact
+            assign_memEnv_formula_contains_of_contains
+              result2.memEnv' ls
+              (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+              (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)
+              l h_old_contains
+        simpa [ctxAfter] using h_new_contains
+      · have hμ_old : cfg2.memory.contains a = true := by
+          simpa using hmem_old.2
+        have hμ_new : cf.memory.contains a = true := by
+          rw [hmem, Std.ExtTreeMap.contains_insert]
+          simp [hμ_old]
+        simpa using hμ_new
+    · intro x qt hlookup
+      have hlookup_ctx2 :
+          (ctxAfter (ctxAfter ctx result1) result2).varEnv.lookup x = some qt := by
+        simpa [ctxAfter] using hlookup
+      obtain ⟨v, hvlookup, hvtyp⟩ := hvars₂ hlookup_ctx2
+      refine ⟨v, ?_, hvtyp⟩
+      simpa [hvar] using hvlookup
+  · unfold regimeConsistentWithCtx at hreg2 ⊢
+    constructor
+    · have htag_res2_R2 : tagEnvConsistentWithRegime result2.tagEnv' result2.regime' := by
+        simpa [ctxAfter] using hreg2.1
+      have htag_inv :
+          tagEnvConsistentWithRegime (invalidateTagDeps result2.tagEnv' ls)
+            (invalidateRegimeDeps result2.regime' result2.tagEnv' ls) :=
+        tagEnvConsistentWithRegime_invalidateRegimeDeps result2.tagEnv' result2.regime' ls htag_res2_R2
+      simpa [ctxAfter, htag_res, hRegime] using htag_inv
+    · have hbound2 : result2.regime'.bound ≤ result2.nextTag' := by
+        simpa [ctxAfter] using hreg2.2
+      have hbound_res2 : (invalidateRegimeDeps result2.regime' result2.tagEnv' ls).bound ≤ result2.nextTag' := by
+        simpa [invalidateRegimeDeps] using hbound2
+      simpa [ctxAfter, hRegime, hNextTag] using hbound_res2
+  · unfold consistentWithRegime
+    constructor
+    · intro l qt k hlookup hguard hkR
+      have hlookup_res : res.memEnv'.lookup l = some qt := by
+        simpa [ctxAfter] using hlookup
+      have hcontains_res : res.memEnv'.contains l = true := by
+        exact (Std.ExtTreeMap.contains_iff_mem).2 <|
+          memEnv_contains_of_lookup_some res.memEnv' l qt hlookup_res
+      have hcontains_formula :
+          (match Std.ExtTreeSet.toList ls with
+            | [l0] =>
+                updateMemEnv result2.memEnv' l0
+                  { etyp := ETyp.int
+                    poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                    pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+            | _ =>
+                updateLocsetWeak result2.memEnv' ls
+                  (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+                  (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)).contains l = true := by
+        simpa [hmem_res] using hcontains_res
+      have hsplit : result2.memEnv'.contains l = true ∨ l ∈ ls := by
+        exact
+          assign_memEnv_formula_contains_eq_or_mem
+            result2.memEnv' ls
+            (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+            (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)
+            l hcontains_formula
+      cases hsplit with
+      | inl hOld =>
+          by_cases hIn : l ∈ ls
+          · have ⟨_hpoison, hpred_out⟩ :=
+              assign_updated_lookup_shape_of_pc_true
+                (ctx := ctx) (result1 := result1) (result2 := result2) (res := res) (ls := ls)
+                hmem_res hpc hIn hlookup_res
+            simp [qtypGuardTag, hpred_out] at hguard
+          · have hlookup_ctx2 :
+              (ctxAfter (ctxAfter ctx result1) result2).memEnv.lookup l = some qt := by
+              have hlookup_result2 : result2.memEnv'.lookup l = some qt := by
+                have hlookup_formula :
+                    (match Std.ExtTreeSet.toList ls with
+                      | [l0] =>
+                          updateMemEnv result2.memEnv' l0
+                            { etyp := ETyp.int
+                              poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                              pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+                      | _ =>
+                          updateLocsetWeak result2.memEnv' ls
+                            (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+                            (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)).lookup l =
+                    some qt := by
+                  simpa [hmem_res] using hlookup_res
+                have hlookup_eq :
+                    (match Std.ExtTreeSet.toList ls with
+                      | [l0] =>
+                          updateMemEnv result2.memEnv' l0
+                            { etyp := ETyp.int
+                              poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                              pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+                      | _ =>
+                          updateLocsetWeak result2.memEnv' ls
+                            (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+                            (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)).lookup l =
+                    result2.memEnv'.lookup l :=
+                  assign_memEnv_formula_lookup_eq_of_not_mem
+                    result2.memEnv' ls
+                    (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+                    (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)
+                    l hIn
+                rwa [hlookup_eq] at hlookup_formula
+              simpa [ctxAfter] using hlookup_result2
+            have hkR_result2 : result2.regime'.lookup? k ≠ none := by
+              have hkR_inv :
+                  (invalidateRegimeDeps result2.regime' result2.tagEnv' ls).lookup? k ≠ none := by
+                simpa [ctxAfter, hRegime] using hkR
+              exact
+                invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
+                  result2.regime' result2.tagEnv' ls k hkR_inv
+            have hloc := hcwr2.1 l qt k hlookup_ctx2 hguard hkR_result2
+            cases hloc with
+            | noPred_ok hnp =>
+                simp [hnp] at hguard
+            | guardOnly_ok k' hgo =>
+                exact locsRegime.guardOnly_ok (l, qt) k' hgo
+            | withPred_ok k' arg_name pred_body var_env a n_old b hclos hreg hreal hmem_old hcons =>
+                have hk_eq : k' = k := by
+                  have hclos' : qt.pred = Predicate.guardClosure k' arg_name pred_body var_env := by
+                    simpa using hclos
+                  have hguard' : qtypGuardTag qt = some k' := by
+                    simp [qtypGuardTag, hclos']
+                  have : some k' = some k := by
+                    calc
+                      some k' = qtypGuardTag qt := by symm; exact hguard'
+                      _ = some k := hguard
+                  exact Option.some.inj this
+                have hkR_inv :
+                    (invalidateRegimeDeps result2.regime' result2.tagEnv' ls).lookup? k ≠ none := by
+                  simpa [ctxAfter, hRegime] using hkR
+                have hkeep : (invalidateTagDeps result2.tagEnv' ls).contains k = true :=
+                  invalidateRegimeDeps_survives_of_lookup_ne_none result2.regime' result2.tagEnv' ls k hkR_inv
+                have hlookup_eq :
+                    (ctxAfter ctx res).regime.lookup? k = result2.regime'.lookup? k := by
+                  simpa [ctxAfter, hRegime] using
+                    invalidateRegimeDeps_lookup_eq_lookup_of_surviving_tag result2.regime' result2.tagEnv' ls k hkeep
+                have hreg_result2 : result2.regime'.lookup? k = some b := by
+                  simpa [ctxAfter, hk_eq] using hreg
+                have hregR : (ctxAfter ctx res).regime.lookup? k' = some b := by
+                  calc
+                    (ctxAfter ctx res).regime.lookup? k' = (ctxAfter ctx res).regime.lookup? k := by
+                      simp [hk_eq]
+                    _ = result2.regime'.lookup? k := hlookup_eq
+                    _ = some b := hreg_result2
+                have hmem_final : cf.memory.lookup a = some n_old := by
+                  have ha_ne : a ≠ a_w := by
+                    intro ha
+                    have hlookup_lw : θ.lookup lw = some a := by
+                      simpa [ha] using hwrite
+                    have hl_eq : l = lw := hθwf _ _ _ hreal hlookup_lw
+                    exact hIn (by simpa [hl_eq] using hlwIn)
+                  have hcmp : compare a_w a ≠ Ordering.eq := by
+                    intro hce
+                    exact ha_ne ((Nat.compare_eq_eq).1 hce).symm
+                  simpa [hmem, Memory.lookup, Std.ExtTreeMap.getElem?_insert, hcmp] using hmem_old
+                have hcons_final :
+                    (b = true → qtypPredHolds predSat qt cf.memory (Value.num n_old)) ∧
+                    (b = false → ¬ qtypPredHolds predSat qt cf.memory (Value.num n_old)) := by
+                  constructor
+                  · intro hbtrue
+                    exact (hqtypPredHolds_mem qt (Value.num n_old)).1 (hcons.1 hbtrue)
+                  · intro hbfalse hholds_new
+                    exact (hcons.2 hbfalse) ((hqtypPredHolds_mem qt (Value.num n_old)).2 hholds_new)
+                exact
+                  locsRegime.withPred_ok (l, qt) k' arg_name pred_body var_env a n_old b
+                    hclos hregR hreal hmem_final hcons_final
+      | inr hIn =>
+          have ⟨_hpoison, hpred_out⟩ :=
+            assign_updated_lookup_shape_of_pc_true
+              (ctx := ctx) (result1 := result1) (result2 := result2) (res := res) (ls := ls)
+              hmem_res hpc hIn hlookup_res
+          simp [qtypGuardTag, hpred_out] at hguard
+    · constructor
+      · intro x qt k hlookup hguard hkR
+        have hkR_result2 : result2.regime'.lookup? k ≠ none := by
+          have hkR_inv :
+              (invalidateRegimeDeps result2.regime' result2.tagEnv' ls).lookup? k ≠ none := by
+            simpa [ctxAfter, hRegime] using hkR
+          exact
+            invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
+              result2.regime' result2.tagEnv' ls k hkR_inv
+        have hvars :=
+          hcwr2.2.1 x qt k
+            (by simpa [ctxAfter] using hlookup)
+            hguard hkR_result2
+        cases hvars with
+        | noPred_ok hnp =>
+            exact varsRegime.noPred_ok (x, qt) hnp
+        | guardOnly_ok k' hgo =>
+            exact varsRegime.guardOnly_ok (x, qt) k' hgo
+        | withPred_ok k' arg_name pred_body var_env v b hclos hreg hvar_old hcons =>
+            have hk_eq : k' = k := by
+              have hclos' : qt.pred = Predicate.guardClosure k' arg_name pred_body var_env := by
+                simpa using hclos
+              have hguard' : qtypGuardTag qt = some k' := by
+                simp [qtypGuardTag, hclos']
+              have : some k' = some k := by
+                calc
+                  some k' = qtypGuardTag qt := by symm; exact hguard'
+                  _ = some k := hguard
+              exact Option.some.inj this
+            have hkR_inv :
+                (invalidateRegimeDeps result2.regime' result2.tagEnv' ls).lookup? k ≠ none := by
+              simpa [ctxAfter, hRegime] using hkR
+            have hkeep : (invalidateTagDeps result2.tagEnv' ls).contains k = true :=
+              invalidateRegimeDeps_survives_of_lookup_ne_none result2.regime' result2.tagEnv' ls k hkR_inv
+            have hlookup_eq :
+                (ctxAfter ctx res).regime.lookup? k = result2.regime'.lookup? k := by
+              simpa [ctxAfter, hRegime] using
+                invalidateRegimeDeps_lookup_eq_lookup_of_surviving_tag result2.regime' result2.tagEnv' ls k hkeep
+            have hreg_result2 : result2.regime'.lookup? k = some b := by
+              simpa [ctxAfter, hk_eq] using hreg
+            have hregR : (ctxAfter ctx res).regime.lookup? k' = some b := by
+              calc
+                (ctxAfter ctx res).regime.lookup? k' = (ctxAfter ctx res).regime.lookup? k := by
+                  simp [hk_eq]
+                _ = result2.regime'.lookup? k := hlookup_eq
+                _ = some b := hreg_result2
+            have hcons_final :
+                (b = true → qtypPredHolds predSat qt cf.memory v) ∧
+                (b = false → ¬ qtypPredHolds predSat qt cf.memory v) := by
+              constructor
+              · intro hbtrue
+                exact (hqtypPredHolds_mem qt v).1 (hcons.1 hbtrue)
+              · intro hbfalse hholds_new
+                exact (hcons.2 hbfalse) ((hqtypPredHolds_mem qt v).2 hholds_new)
+            have hvar_final : cf.varEnv.lookup x = some v := by
+              simpa [hvar] using hvar_old
+            exact
+              varsRegime.withPred_ok (x, qt) k' arg_name pred_body var_env v b
+                hclos hregR hvar_final hcons_final
+      · intro x qt v hlookup hlookup_v
+        have hcap :=
+          hcwr2.2.2 x qt v
+            (by simpa [ctxAfter] using hlookup)
+            (by simpa [hvar] using hlookup_v)
+        have hmono_res2_to_final :
+            Regime.monotoneStep
+              (ctxAfter (ctxAfter ctx result1) result2).regime
+              (ctxAfter ctx res).regime := by
+          simpa [ctxAfter, hRegime] using
+            invalidateRegimeDeps_monotone result2.regime' result2.tagEnv' ls
+        have hcap_final_regime :
+            closureCapturedVarsRegime predSat (ctxAfter ctx res).regime qt cfg2.memory θ v :=
+          closureCapturedVarsRegime_monotone hmono_res2_to_final hcap
+        exact closureCapturedVarsRegime_transport_μ hqtypPredHolds_mem hcap_final_regime
+
+
+lemma stepFRSingleRunFinalCleanPcTrue_assign
+  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (htc : typecheck .ioFree ctx (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrue .ioFree ctx (Expr.assign e1 e2) res predSat tm := by
+  classical
+  have htc' : typecheckAssign .ioFree ctx e1 e2 (Nat.succ fuel') = .ok res := by
+    simp [typecheck, typecheckExpr] at htc
+    exact htc
+  obtain ⟨result1, result2, ls, htc1, hRef, htc2, hInt, hNextLoc, hNextTag, hRegime, hEtyp, hPoison, hPred⟩ :=
+    typecheckAssign_structure ctx e1 e2 (Nat.succ fuel') res htc'
+  have htc1_expr : typecheckExpr .ioFree ctx e1 fuel' = .ok result1 := by
+    simpa [Nat.succ_sub_one] using htc1
+  have htc2_expr_raw :
+      typecheckExpr
+          .ioFree
+          { ctx with
+            memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+            nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+          e2 fuel' = .ok result2 := by
+    simpa [Nat.succ_sub_one] using htc2
+  have htc1' : typecheck .ioFree ctx e1 fuel' = .ok result1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have htc2' : typecheck .ioFree (ctxAfter ctx result1) e2 fuel' = .ok result2 := by
+    simpa [typecheck, ctxAfter] using htc2_expr_raw
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht hpc
+  have hinv := terminatesTo_assign_inv' e1 e2
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+  rcases hinv with ⟨cfg1, cfg2, aw, n, ht_e1, ht_e2, ho, hmem, hvar, _hnext, _hpm⟩
+  have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 ctx hwfTm result1 htc1'
+  have hTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1) :=
+    typecheckExpr_preserves_wfTagMeaningCtx tm ctx e1 fuel' result1 hwfTm htc1'
+  have hwf1 : wfTypeContext (ctxAfter ctx result1) :=
+    wfTypeContext_of_wfTypeResult ctx result1
+      (typecheckExpr_preserves_wfTypeResult ctx e1 fuel' result1 hwf htc1')
+  have hreg1 : regimeConsistentWithCtx (ctxAfter ctx result1) :=
+    typecheckExpr_preserves_regimeConsistentWithCtx ctx e1 fuel' result1 hregCtx htc1'
+  have hwfcfg1 : wfConfig cfg1 := by
+    exact (wfConfig_preserved .ioFree e1 _ cfg1 (Value.loc aw) ht_e1 hwfcfg).1
+  rcases
+    hIH1 hpredlaws hwfTm μ ρ θ cfg1 (Value.loc aw)
+      hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht_e1 hpc
+    with ⟨θ1, hθext1, hvloc1, hric1, hcwr1, _hvalc1, hpres1⟩
+  have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
+  have hmono1 : Regime.monotoneStep ctx.regime result1.regime' :=
+    regime_monotone ctx e1 fuel' result1 htc1'
+  have hRbound1 : regimeBounded (ctxAfter ctx result1).regime := by
+    simpa [ctxAfter] using
+      regimeBounded_of_monotoneStep ctx.regime result1.regime' hRbound hmono1
+  have hpc1 : (ctxAfter ctx result1).pc = true := by
+    simpa [ctxAfter] using hpc
+  have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e2 (ctxAfter ctx result1) hTm1 result2 htc2'
+  rcases
+    hIH2 hpredlaws hTm1 cfg1.memory cfg1.varEnv θ1 cfg2 (Value.num n)
+      hθ1wf hwf1 hric1 hreg1 hRbound1 hcwr1
+      cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
+    with ⟨θ2, hθext2, hvnum2, hric2, hcwr2, _hvalc2, hpres2⟩
+  have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
+  have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθ1wf
+  have hvloc2 : valueHasETyp θ2 (Value.loc aw) result1.qualType.etyp := by
+    exact valueHasETyp_extends hθext2.1 hvloc1
+  have hassign_eq :
+      { qualType := { etyp := ETyp.unit, poison := joinPoison ctx.pc result1.qualType.poison, pred := Predicate.noPred }
+        memEnv' :=
+          match Std.ExtTreeSet.toList ls with
+          | [l] =>
+              updateMemEnv result2.memEnv' l
+                { etyp := ETyp.int
+                  poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                  pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+          | _ =>
+              updateLocsetWeak result2.memEnv' ls
+                (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+                (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)
+        tagEnv' := invalidateTagDeps result2.tagEnv' ls
+        nextLoc' := ls.fold result2.nextLoc' (fun acc l => max acc (l + 1))
+        nextTag' := result2.nextTag'
+        regime' := invalidateRegimeDeps result2.regime' result2.tagEnv' ls } = res := by
+    cases hq1 : result1.qualType with
+    | mk etyp1 p1 pred1 =>
+        cases hq2 : result2.qualType with
+        | mk etyp2 p2 pred2 =>
+            have hRef' := hRef
+            have hInt' := hInt
+            simp [hq1, hq2] at hRef' hInt'
+            have htc_assign_simp := htc'
+            simp [typecheckAssign, htc1_expr, htc2_expr_raw, hq1, hq2, hRef', hInt', bind, Except.bind, pure, Except.pure] at htc_assign_simp
+            simpa [hq1, hq2] using htc_assign_simp
+  have hmem_assign := congrArg TypeResult.memEnv' hassign_eq
+  have htag_assign := congrArg TypeResult.tagEnv' hassign_eq
+  have hmem_res :
+      res.memEnv' =
+        match Std.ExtTreeSet.toList ls with
+        | [l] =>
+            updateMemEnv result2.memEnv' l
+              { etyp := ETyp.int
+                poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
+                pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
+        | _ =>
+            updateLocsetWeak result2.memEnv' ls
+              (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
+              (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred) := by
+    simpa using hmem_assign.symm
+  have htag_res : res.tagEnv' = invalidateTagDeps result2.tagEnv' ls := by
+    simpa using htag_assign.symm
+  have hTm2 : wfTagMeaningCtx tm (ctxAfter (ctxAfter ctx result1) result2) :=
+    typecheckExpr_preserves_wfTagMeaningCtx tm (ctxAfter ctx result1) e2 fuel' result2 hTm1 htc2'
+  have hwf2 : wfTypeContext (ctxAfter (ctxAfter ctx result1) result2) :=
+    wfTypeContext_of_wfTypeResult (ctxAfter ctx result1) result2
+      (typecheckExpr_preserves_wfTypeResult (ctxAfter ctx result1) e2 fuel' result2 hwf1 htc2')
+  have hreg2 : regimeConsistentWithCtx (ctxAfter (ctxAfter ctx result1) result2) :=
+    typecheckExpr_preserves_regimeConsistentWithCtx (ctxAfter ctx result1) e2 fuel' result2 hreg1 htc2'
+  rcases
+    assign_single_run_post_transport_pc_true
+      (ctx := ctx) (predSat := predSat) (tm := tm)
+      (result1 := result1) (result2 := result2) (res := res) (ls := ls)
+      (cfg2 := cfg2) (cf := cf) (θ := θ2) (a_w := aw) (n := n)
+      hpredlaws hTm2 hwf2 hric2 hreg2 hcwr2
+      hRef hvloc2 hθ2wf hmem hvar hNextLoc hNextTag hRegime hmem_res htag_res hpc
+    with ⟨hTm_final, hwf_final, hric_final, hreg_final, hcwr_final⟩
+  have hvalc_final :
+      valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ2 o := by
+    subst ho
+    refine
+      valueConsistentWithRegime.noTag
+        (predSat := predSat) (R := (ctxAfter ctx res).regime)
+        (qt := res.qualType) (μ := cf.memory) (v := Value.unit)
+        ?_ ?_
+    · simp [qtypGuardTag, hPred]
+    · exact
+        closureCapturedVarsRegime_nonClosure_of_nonFunctionType
+          (by simpa [hEtyp] using valueHasETyp.unit (θ := θ2))
+          (by simp [hEtyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
+  have hpres_final :
+      PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ2 := by
+    exact
+      assign_final_clean_preservation
+        (ctx := ctx) (e2 := e2) (fuel' := fuel')
+        (result1 := result1) (result2 := result2) (res := res) (ls := ls)
+        (μ := μ) (cfg1 := cfg1) (cfg2 := cfg2) (cf := cf)
+        (θ := θ) (θ1 := θ1) (θ2 := θ2)
+        (aw := aw) (n := n)
+        hRef hInt
+        (by simpa [ctxAfter] using htc2_expr_raw)
+        hmem_res hRegime hpc hvloc1 hθext2 hθ2wf hric2 hmem hpres1 hpres2
+  have hwfcfg_final : wfConfig cf := by
+    exact (wfConfig_preserved .ioFree (Expr.assign e1 e2) _ cf o ht hwfcfg).1
+  refine ⟨θ2, hθext, ?_, hric_final, hcwr_final, hvalc_final, hpres_final⟩
+  subst ho
+  simpa [hEtyp] using valueHasETyp.unit (θ := θ2)
+
+
