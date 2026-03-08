@@ -2233,10 +2233,16 @@ private lemma stepFR_ite_mode3
   (htc1 : typecheckExpr .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
   (hbool : res1.qualType.etyp = ETyp.bool)
   (htc2 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
-          let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
+          let ctxTrue := { ctxᵢ with
+            tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩
+            pc := branchPc
+            regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k true } }
           typecheckExpr .ioFree ctxTrue e2 fuel' = .ok res2)
   (htc3 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
-          let ctxFalse := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
+          let ctxFalse := { ctxᵢ with
+            tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩
+            pc := branchPc
+            regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k false } }
           let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
           typecheckExpr .ioFree ctxFalse' e3 fuel' = .ok res3)
   (hmemEnv : res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv')

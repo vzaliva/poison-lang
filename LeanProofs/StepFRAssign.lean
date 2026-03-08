@@ -554,7 +554,11 @@ private lemma typecheckIf_ioFree_ok_pred_noPred
                       by_cases hbool : etyp1 = ETyp.bool
                       · simp [hbool, pure, Except.pure] at htc
                         let branchPc := joinPoison ctx.pc p1
-                        let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
+                        let ctxTrue :=
+                          { ctx with
+                            tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
+                            pc := branchPc
+                            regime := { ctx.regime with map := ctx.regime.map.insert k true } }
                         cases htc2 : typecheckExpr .ioFree ctxTrue e2 fuel' with
                         | error err =>
                             rw [htc2] at htc
@@ -565,7 +569,11 @@ private lemma typecheckIf_ioFree_ok_pred_noPred
                             cases hq2 : res2.qualType with
                             | mk etyp2 p2 pred2 =>
                                 simp [hq2] at htc
-                                let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
+                                let ctxFalse :=
+                                  { ctx with
+                                    tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩
+                                    pc := branchPc
+                                    regime := { ctx.regime with map := ctx.regime.map.insert k false } }
                                 let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
                                 cases htc3 : typecheckExpr .ioFree ctxFalse' e3 fuel' with
                                 | error err =>

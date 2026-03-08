@@ -10132,8 +10132,16 @@ private lemma typecheckIf_wfTypeResult
     · -- Mode 3: Depoison, R(k) = none
       rcases h3 with ⟨k, deps, _, _, res1, _, _, res2, htc2, res3, htc3, hmem, _, hnextloc, _, _, _⟩
       let branchPc := joinPoison ctx.pc res1.qualType.poison
-      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
-      let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
+      let ctxTrue : TypeContext :=
+        { ctx with
+          tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
+          pc := branchPc
+          regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+      let ctxFalse : TypeContext :=
+        { ctx with
+          tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩
+          pc := branchPc
+          regime := { ctx.regime with map := ctx.regime.map.insert k false } }
       let ctxFalse' : TypeContext := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
       have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by simpa [ctxTrue, branchPc] using htc2
       have htc3' : typecheck .ioFree ctxFalse' e3 fuel' = .ok res3 := by simpa [ctxFalse', ctxFalse, branchPc] using htc3
@@ -11349,7 +11357,8 @@ private lemma typecheckIf_mem_contains_preserved
         let ctxTrue : TypeContext :=
           { ctx with
             tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
-            pc := joinPoison ctx.pc res1.qualType.poison }
+            pc := joinPoison ctx.pc res1.qualType.poison
+            regime := { ctx.regime with map := ctx.regime.map.insert k true } }
         have hcontains2 : res2.memEnv'.contains l :=
           IH fuel' h_fuel e2 ctxTrue res2
             (by simpa [typecheck, ctxTrue] using htc2) l

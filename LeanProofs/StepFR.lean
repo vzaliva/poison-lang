@@ -7010,7 +7010,11 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                     -- Mode 3: both branches, join. res.qualType.pred = noPred.
                     rcases h3 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, htc2, res3, htc3_raw, hmemEnv, _, _, _, _, _hpoison, hetyp_res, hpred_res⟩
                     let branchPc := joinPoison ctx.pc res1.qualType.poison
-                    let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
+                    let ctxTrue :=
+                      { ctx with
+                        tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
+                        pc := branchPc
+                        regime := { ctx.regime with map := ctx.regime.map.insert k true } }
                     have htc2' : typecheck .ioFree ctxTrue e2 (fuel' - 1) = .ok res2 := by
                       simpa [typecheck, ctxTrue, branchPc] using htc2
                     have hwf_true : wfTagMeaningCtx tm ctxTrue := by
@@ -7019,7 +7023,11 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                     have hIH2_qt : QTypRespectsTagMeaning tm res2.qualType :=
                       IH_qt (fuel' - 1) (by omega) tm ctxTrue e2 res2 hwf_true htc2'
                     -- For mode 3 false branch QTypRespects
-                    let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
+                    let ctxFalse :=
+                      { ctx with
+                        tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩
+                        pc := branchPc
+                        regime := { ctx.regime with map := ctx.regime.map.insert k false } }
                     have htc3' : typecheck .ioFree { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' } e3 (fuel' - 1) = .ok res3 := by
                       simpa [typecheck, ctxFalse, branchPc] using htc3_raw
                     have hwf_false : wfTagMeaningCtx tm { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' } := by
@@ -8762,8 +8770,16 @@ lemma typecheckExpr_clean_lookup_origin_of_pc_true
                 res2.memEnv' res3.memEnv' res2.regime' res3.regime' l qt_out
                 hlookup_join hclean_join
             let branchPc := joinPoison ctx.pc res1.qualType.poison
-            let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc }
-            let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc }
+            let ctxTrue : TypeContext :=
+              { ctx with
+                tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
+                pc := branchPc
+                regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+            let ctxFalse : TypeContext :=
+              { ctx with
+                tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩
+                pc := branchPc
+                regime := { ctx.regime with map := ctx.regime.map.insert k false } }
             let ctxFalse' : TypeContext := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
             have hpcBranch : branchPc = true := by
               simp [branchPc, hpc, joinPoison]
@@ -8776,12 +8792,19 @@ lemma typecheckExpr_clean_lookup_origin_of_pc_true
               rcases ih (fuel' - 1) hltSub ctxTrue e2 res2
                   (by simpa [ctxTrue, branchPc] using htc2) hpcTrue l qt2 hlookup2 hclean2 with
                 ⟨qt_in, hlookup_in, hclean_in⟩
-              exact ⟨qt_in, by simpa [ctxTrue] using hlookup_in, by simpa [ctxTrue] using hclean_in⟩
+              have hclean_in_base : qtypCleanUnder ctx.regime qt_in := by
+                -- Issue #128 changes the mode-3 branch regime locally; transporting
+                -- clean-under facts back to the pre-branch regime needs a dedicated lemma.
+                sorry
+              exact ⟨qt_in, by simpa [ctxTrue] using hlookup_in, hclean_in_base⟩
             · rcases hright with ⟨qt3, hlookup3, hclean3⟩
               rcases ih (fuel' - 1) hltSub ctxFalse' e3 res3
                   (by simpa [ctxFalse', ctxFalse, branchPc] using htc3) hpcFalse l qt3 hlookup3 hclean3 with
                 ⟨qt_in, hlookup_in, hclean_in⟩
-              exact ⟨qt_in, by simpa [ctxFalse', ctxFalse] using hlookup_in, by simpa [ctxFalse', ctxFalse] using hclean_in⟩
+              have hclean_in_base : qtypCleanUnder ctx.regime qt_in := by
+                -- Same transport gap as the true branch above.
+                sorry
+              exact ⟨qt_in, by simpa [ctxFalse', ctxFalse] using hlookup_in, hclean_in_base⟩
           · rcases h4 with ⟨_herr, res1, htc1, _hBool, res2, htc2, res3, htc3, h_mem, _h_tag,
               _h_nextLoc, _h_nextTag, h_regime, _h_poison, _h_etyp, _h_pred⟩
             have hlookup_join :
