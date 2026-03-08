@@ -10657,6 +10657,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFr
                       (StepFRSingleRunFinalCleanPcTrue_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH)
                       htc
           | ite e1 e2 e3 =>
+              -- Deferred on this branch: unary `ite` remains blocked by the known
+              -- regime/type-system issue tracked under issue #128.
               sorry
           | newRef e =>
               cases fuel with
@@ -10699,6 +10701,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFr
                       (StepFRSingleRunFinalCleanPcTrue_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH)
                       htc
           | kwhile e1 e2 =>
+              -- Deferred on this branch: `kwhile` proof work is intentionally
+              -- postponed for now and is out of scope for the current app effort.
               sorry
           | vlet z e1 e2 =>
               cases fuel with
