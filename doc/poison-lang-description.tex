@@ -651,16 +651,20 @@ where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{
 \subsubsection*{Reference creation:}
 \[
 \frac{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e : \text{int} \triangleright p \{ P \} \dashv \Gamma_1 ; \mathcal{L}_1 \quad \text{fresh } l}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash \text{ref } e : \text{ref} @ \{l\} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_1[l \mapsto (\text{pc} \sqcup p) \{ P \}] \; ;\; \mathcal{L}_1}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash \text{ref } e : \text{ref} @ \{l\} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_1[l \mapsto (\text{pc} \sqcup p) \{ \mathrm{AppPred}(\text{pc}, P) \}] \; ;\; \mathcal{L}_1}
 \]
+
+The write performed by \texttt{ref} now follows the same control-poison discipline as
+assignment: if the allocation happens under poisoned control, the stored heap cell
+keeps the joined poison but stores \texttt{no\_pred} instead of preserving $P$.
 
 \subsubsection*{Assignment:}
 The Ott specification provides four assignment rules, distinguishing both by location
 set cardinality and by reference poison status:
 
 \begin{itemize}
-    \item \textbf{Clean reference, singleton locset} (\texttt{assign\_singleton}): Strong update that preserves the right-hand side's predicate.
-    \item \textbf{Clean reference, non-singleton locset} (\texttt{assign\_locset}): Weak update that merges the right-hand side's predicate with existing cell predicates.
+    \item \textbf{Clean reference, singleton locset} (\texttt{assign\_singleton}): Strong update that preserves the right-hand side's predicate only when control is clean; poisoned control stores \texttt{no\_pred}.
+    \item \textbf{Clean reference, non-singleton locset} (\texttt{assign\_locset}): Weak update that merges the control-gated right-hand side predicate with existing cell predicates.
     \item \textbf{Poisoned reference, singleton locset} (\texttt{assign\_singleton\_poisoned\_ref}): Strong update that stores \texttt{no\_pred}, erasing predicates.
     \item \textbf{Poisoned reference, non-singleton locset} (\texttt{assign\_locset\_poisoned\_ref}): Weak update that stores \texttt{no\_pred}, preventing predicate propagation through untrusted references.
 \end{itemize}
@@ -670,6 +674,12 @@ a poisoned reference erases predicates to prevent later de-poisoning, writing th
 a poisoned reference erases predicates to prevent introducing guard tags that could
 spuriously make locations clean under a regime.
 
+The clean-reference rules are now also sensitive to poisoned control flow. A write
+that occurs under poisoned \texttt{pc} still stores the joined poison, but its predicate
+is gated through $\mathrm{AppPred}(\text{pc}, P)$, which evaluates to \texttt{no\_pred}
+whenever control is poisoned. This prevents a guard carried by the right-hand side
+from being reintroduced into the heap solely because the reference itself was clean.
+
 \paragraph{Singleton, clean reference (strong update).}
 \[
 \frac{\begin{array}{c}
@@ -677,7 +687,7 @@ spuriously make locations clean under a regime.
 \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
 \text{invalidate\_deps}(\mathcal{L}_2, \{l\}) = \mathcal{L}_3
 \end{array}}
-{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_2[l \mapsto (\text{pc} \sqcup p_2) \{ P_2 \}] \; ;\; \mathcal{L}_3}
+{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_2[l \mapsto (\text{pc} \sqcup p_2) \{ \mathrm{AppPred}(\text{pc}, P_2) \}] \; ;\; \mathcal{L}_3}
 \]
 
 \paragraph{Non-singleton, clean reference (weak update).}
@@ -688,7 +698,7 @@ with the existing heap-cell information for that set:
 \pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 : \text{ref} @ LS \triangleright \text{clean} \{ P_1 \} \dashv \Gamma_1 ; \mathcal{L}_1 \\
 \pi \; ;\; \text{pc} \; ;\; \Gamma_1 \; ;\; \sigma \; ;\; \mathcal{L}_1 \vdash e_2 : \text{int} \triangleright p_2 \{ P_2 \} \dashv \Gamma_2 ; \mathcal{L}_2 \\
 \text{invalidate\_deps}(\mathcal{L}_2, LS) = \mathcal{L}_3 \\
-\text{JoinPoisons}(\Gamma_2, LS) = p_3 \qquad \text{MergePreds}(\Gamma_2, LS) = P_3 \qquad \text{JoinP}(P_2, P_3) = P_4
+\text{JoinPoisons}(\Gamma_2, LS) = p_3 \qquad \text{MergePreds}(\Gamma_2, LS) = P_3 \qquad \text{JoinP}(\mathrm{AppPred}(\text{pc}, P_2), P_3) = P_4
 \end{array}}
 {\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash e_1 := e_2 : \text{unit} \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma_2[LS \mapsto (p_3 \sqcup \text{pc} \sqcup p_2) \{ P_4 \}] \; ;\; \mathcal{L}_3}
 \]
@@ -952,8 +962,8 @@ The weak update computes joined poison and predicate using the existing $\mathsf
 
 Memory typing environment $\Gamma$ evolves through:
 \begin{itemize}
-    \item \textbf{Reference creation}: Extends $\Gamma$ with a new memory entry $(p, P)$ for the fresh location
-    \item \textbf{Assignment}: Updates poison status of data in $\Gamma$
+    \item \textbf{Reference creation}: Extends $\Gamma$ with a fresh entry whose stored poison is joined with $\text{pc}$ and whose predicate is gated by $\mathrm{AppPred}(\text{pc}, P)$
+    \item \textbf{Assignment}: Updates poison status and, under poisoned control, strips stored predicates to \texttt{no\_pred}
     \item \textbf{Control flow}: Joins environments from different branches (\texttt{if})
     \item \textbf{Sequencing/bindings}: Threads the updated $\Gamma$ through subexpressions (\texttt{;}, \texttt{let})
     \item \textbf{Loops}: Iterative fixpoint computation for flow-sensitive analysis (\texttt{while})

@@ -1245,7 +1245,7 @@ termination_by fuel
 -- pc ; G ; S ; L |- e : int :> p { P } -| G' ; L'
 -- fresh l
 -- -----------------------
--- pc ; G ; S ; L |- ref e : ref @ l :> pc { no_pred } -| G'[l |-> join pc p { P }] ; L'
+-- pc ; G ; S ; L |- ref e : ref @ l :> pc { no_pred } -| G'[l |-> join pc p { AppPred pc P }] ; L'
 -- NOTE: Memory can only store integers; G stores poison and predicate only (mem entry p { P })
 -/
 def typecheckNewRef (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
@@ -1262,7 +1262,8 @@ def typecheckNewRef (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat
     -- Generate fresh location (simplified)
     let (l, result') := freshTLocRes result
     let storedPoison := joinPoison ctx.pc poison
-    let storedQt : QTyp := ⟨ETyp.int, storedPoison, pred⟩
+    let storedPred := if ctx.pc then Predicate.noPred else pred
+    let storedQt : QTyp := ⟨ETyp.int, storedPoison, storedPred⟩
     let memEnv' := updateMemEnv result'.memEnv' l storedQt
 
     let qt : QTyp := ⟨ETyp.ref (LocSet.singleton l), ctx.pc, Predicate.noPred⟩
@@ -1287,8 +1288,8 @@ def typecheckAssign (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel :
         throw s!"Type error: can only assign int values, but got {repr etyp2}"
 
       let storedPoison := joinPoison ctx.pc (joinPoison p1 p2)
-      -- If reference is poisoned, erase predicates (store no_pred), mirroring deref_poisoned
-      let storedPred := if p1 then Predicate.noPred else pred2
+      -- Poisoned references and control-poisoned writes erase predicates in memory.
+      let storedPred := if p1 || ctx.pc then Predicate.noPred else pred2
       let memEnv' := match ExtTreeSet.toList ls with
         | [l] =>
           -- Singleton: strong update (assign_singleton / assign_singleton_poisoned_ref)
