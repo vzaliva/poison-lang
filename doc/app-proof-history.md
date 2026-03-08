@@ -8,7 +8,8 @@ How to use this file:
 
 - check here before reviving an old route, to avoid repeating discarded work
 - use `doc/app-proof-plan.md` for the active next steps
-- use `doc/app-framing-proposal.md` for the current blocker discussion
+- there is no separate live framing memo anymore; resolved blocker discussion stays here as
+  history
 
 ## Root Cause Analysis: Selector Transport Across Merged Closure Lists
 
@@ -447,7 +448,7 @@ Decision:
 
 - stop the app-local framing route at that go/no-go gate
 - move the active plan to broader unary proof infrastructure in `doc/app-proof-plan.md`
-- keep the focused blocker write-up in `doc/app-framing-proposal.md`
+- keep the focused blocker write-up out of the active plan unless a new blocker appears
 
 ## Issue K History: Former `app-problem2.md` snapshot
 
@@ -540,16 +541,16 @@ Supporting work completed at this checkpoint:
 - induction-side IH surface:
   `StepFRSingleRunFinalCleanPcTrue_IH`
 
-## Issue M History: Old `app-framing-proposal.md` routes moved here (March 7)
+## Issue M History: Old framing-proposal routes moved here (March 7)
 
-The older version of `doc/app-framing-proposal.md` mixed three things:
+The older framing-proposal note mixed three things:
 
 - a still-useful diagnosis of the different-body framing problem
 - a concrete proposal to strengthen `StepFR_single_run` directly
 - a near-term action plan based on that proposal
 
 That was no longer a good separation of concerns once the proof state moved on. The live
-problem description now stays in `doc/app-framing-proposal.md`; the obsolete proposal
+problem description stayed in a separate memo for a while; the obsolete proposal
 routes stay here.
 
 What from the old proposal remains valid:
@@ -579,7 +580,7 @@ Why it is obsolete:
 
 Decision captured by the doc split:
 
-- keep `doc/app-framing-proposal.md` focused on the live blocker and current ways forward
+- keep resolved blocker analysis in history rather than a separate active memo
 - keep all rejected wrapper-based and broad-theorem routes in this history file so they do
   not get reopened by accident
 

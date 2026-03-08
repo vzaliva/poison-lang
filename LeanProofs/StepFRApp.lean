@@ -12068,7 +12068,7 @@ lemma stepFR_app
             have hfuel_ltA₁ : fuelBodyA₁ < Nat.succ (Nat.succ fuel') := by
               have : fuelBodyA₁ < fuel' := by rw [hfuelA₁]; exact Nat.lt_succ_self _
               exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-            -- ===== Run 0: StepFR_single_run =====
+            -- ===== Run 0: unary body witness =====
             have hTmBodyA₀ : wfTagMeaningCtx tm bodyCtxA₀ := by
               have hresTm1' : QTypRespectsTagMeaning tm result1.qualType := hresTm1
               have hargTm : QTypRespectsTagMeaning tm ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ :=
@@ -12238,7 +12238,7 @@ lemma stepFR_app
             rcases hsr₀ with
               ⟨θ₀_body, hθext₀_body, hv₀_body_typed,
                 hric_bodyA₀_final, hcwr_bodyA₀_final, hvalc_bodyA₀, _hpres₀⟩
-            -- ===== Run 1: StepFR_single_run =====
+            -- ===== Run 1: unary body witness =====
             have hTmBodyA₁ : wfTagMeaningCtx tm bodyCtxA₁ := by
               have hresTm1' : QTypRespectsTagMeaning tm result1.qualType := hresTm1
               have hargTm : QTypRespectsTagMeaning tm ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ :=
@@ -14849,7 +14849,7 @@ lemma stepFR_app
           have hfuel_ltA₁ : fuelBodyA₁ < Nat.succ (Nat.succ fuel') := by
             have : fuelBodyA₁ < fuel' := by rw [hfuelA₁]; exact Nat.lt_succ_self _
             exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-          -- ===== Run 0: StepFR_single_run =====
+          -- ===== Run 0: unary body witness =====
           have hTmBodyA₀ : wfTagMeaningCtx tm bodyCtxA₀ := by
             have hresTm1' : QTypRespectsTagMeaning tm result1.qualType := _hresTm1
             have hargTm : QTypRespectsTagMeaning tm ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ :=
@@ -15026,7 +15026,7 @@ lemma stepFR_app
           rcases hsr₀ with
             ⟨θ₀_body, hθext₀_body, hv₀_body_typed,
               hric_bodyA₀_final, hcwr_bodyA₀_final, hvalc_bodyA₀, hpres₀⟩
-          -- ===== Run 1: StepFR_single_run =====
+          -- ===== Run 1: unary body witness =====
           have hTmBodyA₁ : wfTagMeaningCtx tm bodyCtxA₁ := by
             have hresTm1' : QTypRespectsTagMeaning tm result1.qualType := _hresTm1
             have hargTm : QTypRespectsTagMeaning tm ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ :=

@@ -3,7 +3,6 @@
 Notes:
 - This is the active forward plan for finishing `stepFR_app`.
 - Historical checkpoints and discarded routes live in `doc/app-proof-history.md`.
-- The focused memo for the framing problem is `doc/app-framing-proposal.md`.
 - Keep this file concrete: current state, next steps, and stop conditions.
 - Avoid depending on line numbers; use lemma names and `rg`.
 
@@ -34,8 +33,8 @@ What is done:
 
 - the local `arrow` fallback packaging in `stepFR_app` is closed
 - the local `parrow` dirty-internal fallback packaging in `stepFR_app` is closed
-- `StepFR_single_run_core` now exists in `LeanProofs/StepFR.lean`
-  and isolates the sound unary extraction payload from the unsound preservation add-on
+- the old `StepFR_single_run` / `StepFR_single_run_core` wrapper route has been removed
+  from `LeanProofs/StepFR.lean`
 - generic one-run composition now exists for
   `PreservesInheritedCleanLocOneRun.trans`
 - generic final-clean composition now exists for
@@ -63,7 +62,7 @@ What is done:
   `stepFRSingleRunFinalCleanPcTrue_newRef`, and
   `stepFRSingleRunFinalCleanPcTrue_deref`
 - the different-body `arrow` / `parrow` fallback sites in `stepFR_app` already consume the
-  narrowed unary IH instead of `StepFR_single_run`
+  narrowed unary IH directly
 - the unary `app` case is now factored into `LeanProofs/StepFRApp.lean` as
   `stepFRSingleRunFinalCleanPcTrue_app`, with private `arrow` and `parrow`
   branches that compile without depending on binary `StepFR_IH`
@@ -92,49 +91,52 @@ What is done:
 
 What still contains `sorry` on the app path:
 
-- `StepFR_single_run`
-  still ends with `sorry` for the old direct single-run wrapper path
 - `typecheckExpr_clean_lookup_origin_of_pc_true`
   still has the permanently-postponed `kwhile` branch
 - `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
-  still contains the deferred `kwhile` branch and therefore still carries a `sorry`
+  still carries `sorry`, but its remaining open branches are exactly deferred `ite` /
+  `kwhile`
 - `stepFR_ite_mode3` / `stepFR_ite_mode4` remain externally blocked under issue `#128`
 - `typecheckExpr_preserves_wfTagMeaningCtx_main`
   still carries `sorry`, but the remaining local branches are now only conservative
   `ite` mode 3 and permanently-deferred `kwhile`
+- `typecheckExpr_preserves_regimeConsistentWithCtx_main`
+  still carries `sorry`, but its remaining local branches are conservative `ite` mode 3 and
+  permanently-deferred `kwhile`
 
 Build status:
 
 - full `make lean-build` passes
 - remaining warnings are `sorry` warnings only
 
-## Main Blocker
+## Main Remaining Requirement
 
 Short version:
 
 - the app-local witness design problem is resolved:
   `stepFR_app` now uses the narrowed unary IH, and the unary `app` and `vlet` cases both
   compile
-- the remaining blocker is no longer inside `stepFR_app` or its app-specific helpers
-- what remains is theorem packaging:
-  the global unary assembly still contains deferred `kwhile`, and the separate `ite`
-  work remains blocked under issue `#128`
+- `stepFR_app` should not be treated as fully sorry-free until the global unary theorem
+  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` is also closed
+- at present, that global theorem is already reduced to deferred `ite` / `kwhile`
+  branches only, so the remaining debt is upstream rather than app-local
 
 Planning consequence:
 
 - do not reopen the app-local witness design
 - treat the current app implementation path as established
-- accept the existing deferred `ite` / `kwhile` `sorry`s as upstream debt on this branch
-- do not spend more time trying to isolate those branches away from the unary app route
-
-For the detailed technical discussion, see `doc/app-framing-proposal.md`.
+- include `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` in the
+  completion criterion for the app proof path
+- on this branch, the only accepted open branches on that path are deferred `ite` /
+  `kwhile`
 
 ## Remaining Work For `stepFR_app`
 
-1. treat the current app-local milestone as the target
+1. keep the global unary theorem on the completion path
    - `stepFR_app` itself is no longer blocked by app-specific unary reasoning
-   - the remaining `sorry`s are all outside that local path
-   - existing deferred `ite` / `kwhile` `sorry`s are accepted upstream debt for this branch
+   - the proof path is not considered closed until
+     `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` is also closed
+   - at the moment, its only remaining open branches are deferred `ite` / `kwhile`
 
 2. keep `ite` out of scope on this branch
    - do not do new `stepFR_ite_*` proof work
@@ -150,10 +152,12 @@ For the detailed technical discussion, see `doc/app-framing-proposal.md`.
    - success condition:
      full `make lean-build` passes and the app-local unary route remains stable
    - stopping rule:
-     stop here once only deferred upstream `ite` / `kwhile` `sorry`s remain on the app path
+     stop here once `stepFR_app` plus
+     `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
+     have no remaining non-`ite` / non-`kwhile` `sorry`s on the app path
 
 2. keep waiting on external `ite`
-   - success condition:
+  - success condition:
      no accidental `stepFR_ite_*` work is added on this branch
 
 ## Design Rules
@@ -173,8 +177,6 @@ For the detailed technical discussion, see `doc/app-framing-proposal.md`.
 - Do not keep the abandoned broad unary route around as a separate compiled legacy path;
   refactor it in place and use git history as the recovery mechanism.
 - Do not widen `StepFR` unless the induction-side route collapses first.
-- Do not invest more proof work in the old `StepFR_single_run` wrapper until the
-  induction-side theorem is usable.
 - Do not spend proof effort on `kwhile`.
 - Prefer one reusable semantic theorem over duplicating local runtime arguments in both
   `arrow` and `parrow`.
@@ -194,15 +196,15 @@ For the detailed technical discussion, see `doc/app-framing-proposal.md`.
 Primary files:
 
 - `LeanProofs/StepFRApp.lean`
-- `LeanProofs/StepFR.lean`
+- `LeanProofs/FaultRobustnessProofs.lean`
 - `LeanProofs/TypeSafety.lean`
 
 Current key lemmas:
 
 - `stepFR_app`
-- `StepFR_single_run_core`
 - `StepFRSingleRunFinalCleanPcTrue`
 - `StepFRSingleRunFinalCleanPcTrue_IH`
+- `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
 - `PreservesInheritedFinalCleanLocsOneRun.apply`
 - `PreservesInheritedFinalCleanLocsOneRun.compose`
 - `typecheckExpr_clean_lookup_origin_of_pc_true`
