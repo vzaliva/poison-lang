@@ -343,6 +343,18 @@ This is an intended order of attack, not a rigid waterfall.  In
 particular, the clean-lookup redesign and the regime-growth transfer
 story may partially collapse into the same implementation step.
 
+Current implementation status on this branch:
+
+- Step 1 is in progress, not complete.
+- A supporting regime-insert lookup bridge now exists in
+  `StepFR.lean` as `regime_lookup_insert_ne`.
+- The step-1 redesign target is now explicit: split the current shared
+  theorem into a poison-origin lemma and a guard-origin lemma, then
+  keep the existing existential theorem as a corollary for current
+  callers.
+- A checkpoint `lake build` succeeds with only existing
+  `sorry`-related warnings.
+
 1. **Redesign the shared clean-lookup theorem.**
    The current transport target in
    `typecheckExpr_clean_lookup_origin_of_pc_true` is false under the
@@ -350,6 +362,13 @@ story may partially collapse into the same implementation step.
    the current `main` style: preserve lookup/provenance information and
    keep the existing existential theorem only as a corollary for its
    current callers.
+   Status: in progress.  The redesign direction has been fixed to a
+   two-lemma split:
+   `typecheckExpr_lookup_poison_origin_of_pc_true` and
+   `typecheckExpr_lookup_guard_origin_of_pc_true`, with
+   `typecheckExpr_clean_lookup_origin_of_pc_true` rebuilt as a
+   corollary.  The remaining nontrivial proof sites are `ite` mode 3,
+   `ite` mode 4, `app`, and the `assign` invalidation case.
 
 2. **Make the regime-growth design decision early.**
    Re-evaluate symmetric versus asymmetric branch updates while the
@@ -364,6 +383,9 @@ story may partially collapse into the same implementation step.
    existing tagEnv insert lemmas together with a small regime-insert
    lookup bridge.  Treat this as supporting infrastructure, not as the
    main design risk.
+   Status: supporting infrastructure partially in place.  The small
+   regime-insert lookup bridge has been added already, but the actual
+   `regimeConsistentWithCtx` repair is still pending.
 
 4. **Re-introduce the `R.bound` bridge in the split layout.**
    Re-home or redesign `matchGuard_ok_tag_from_ctx`,

@@ -7370,6 +7370,38 @@ lemma cleanUnder_of_monotone {R R' : Regime} {qt : QTyp} :
           | inr hkR'_none =>
               simp [hkR'_none] at hkR'
 
+lemma monotoneStep_lookup_back {R R' : Regime}
+    (h_mono : Regime.monotoneStep R R') :
+    ∀ k b, R'.lookup? k = some b → R.lookup? k = some b := by
+  intro k b hkR'
+  have hRdef : R.lookup? k ≠ none := by
+    exact h_mono.2.2 k (by simp [hkR'])
+  cases hkR : R.lookup? k with
+  | none =>
+      exact False.elim (hRdef hkR)
+  | some b0 =>
+      have hkeep := h_mono.2.1 k b0 hkR
+      cases hkeep with
+      | inl hkR'' =>
+          have : b0 = b := by
+            exact Option.some.inj (hkR''.symm.trans hkR')
+          subst this
+          rfl
+      | inr hkR'' =>
+          simp [hkR''] at hkR'
+
+lemma regime_lookup_insert_ne {R : Regime} {k k' : Tag} {b : Bool}
+    (hneq : k' ≠ k) :
+    ({ R with map := R.map.insert k b }).lookup? k' = R.lookup? k' := by
+  unfold Regime.lookup?
+  by_cases hk' : k' < R.bound
+  · rw [if_pos hk', if_pos hk']
+    have hneq' : k ≠ k' := by
+      intro hkEq
+      exact hneq hkEq.symm
+    simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hneq']
+  · rw [if_neg hk', if_neg hk']
+
 lemma joinTypeResults_lookup_head_guardTag_compat
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (_h_join : joinTypeResults ctx first rest = .ok res)
