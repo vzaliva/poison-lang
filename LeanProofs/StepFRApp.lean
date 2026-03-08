@@ -1809,6 +1809,685 @@ private lemma QTypRespectsTagMeaning_joinStep
     have hp1 := (joinPredicates_eq_guardClosure hpj).1
     exact h1 (QTypInQTyp.self _) (by simp [qtypGuardDesc?, hp1])
 
+private lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List FnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (bodyIH :
+    ∀ (fuel' : Nat), fuel' < fuel →
+      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
+      wfTagMeaningCtx tm ctx →
+      typecheck .ioFree ctx e fuel' = .ok res →
+      wfTagMeaningCtx tm (ctxAfter ctx res))
+  (tcl : FnTClosure) (r : TypeResult)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
+  (hmem_tcl : tcl ∈ tcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (happly :
+    applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+  wfTagMeaningCtx tm (ctxAfter ctx r) := by
+  cases tcl with
+  | regular x body env =>
+    cases fuel with
+    | zero => simp [applyFnTClosure] at happly
+    | succ fuel' =>
+      simp only [applyFnTClosure, bind, Except.bind] at happly
+      split at happly
+      · exact absurd happly (Except.error_ne_ok _ _)
+      · next result3 htcBody =>
+        cases hqt3 : result3.qualType with
+        | mk etyp3 p3 pred3 =>
+        simp only [hqt3] at happly
+        split at happly
+        · simp at happly
+        · next hsub =>
+          simp only [pure, Except.pure] at happly
+          cases happly
+          set bodyCtx := { ctx with
+              pc := joinPoison p (joinPoison p1 ctx.pc),
+              memEnv := result1.memEnv',
+              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
+              tagEnv := result1.tagEnv', nextTag := result1.nextTag',
+              nextLoc := result1.nextLoc', regime := result1.regime' }
+          have htcBody' : typecheck .ioFree bodyCtx body fuel' = .ok result3 := by
+            simpa [typecheck] using htcBody
+          have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+            QTypRespectsTagMeaning_transport_etyp_pred tm
+              ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              hargTm rfl rfl
+          have hwf_body : wfTagMeaningCtx tm bodyCtx := by
+            simpa [bodyCtx, ctxAfter] using
+              wfTagMeaningCtx_closure_body tm ctx result1 result1.qualType st1 st2 p tcls
+                x body env x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+                hctxTm1 hresTm1 hetyp1 hmem_tcl hargTm'
+          have hIH : wfTagMeaningCtx tm (ctxAfter bodyCtx result3) :=
+            bodyIH fuel' (Nat.lt_succ_self _) bodyCtx body result3 hwf_body htcBody'
+          show wfTagMeaningCtx tm (ctxAfter ctx _)
+          unfold wfTagMeaningCtx at hctxTm1 hIH ⊢
+          simp only [ctxAfter] at hctxTm1 hIH ⊢
+          exact EnvRespectsTagMeaning_mix tm ctx.varEnv result1.memEnv'
+            bodyCtx.varEnv result3.memEnv' hctxTm1 hIH
+  | extern x retSpec effects capturedEnv =>
+    cases fuel with
+    | zero => simp [applyFnTClosure] at happly
+    | succ fuel' =>
+      simp only [applyFnTClosure] at happly
+      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+      rw [hioFree] at happly
+      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
+      exact absurd happly (by simp)
+
+private lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List FnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (bodyIH :
+    ∀ (fuel' : Nat), fuel' < fuel →
+      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
+      wfTagMeaningCtx tm ctx →
+      typecheck .ioFree ctx e fuel' = .ok res →
+      QTypRespectsTagMeaning tm res.qualType)
+  (tcl : FnTClosure) (r : TypeResult)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
+  (hmem_tcl : tcl ∈ tcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (happly :
+    applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+  QTypRespectsTagMeaning tm r.qualType := by
+  cases tcl with
+  | regular x body env =>
+    cases fuel with
+    | zero => simp [applyFnTClosure] at happly
+    | succ fuel' =>
+      simp only [applyFnTClosure, bind, Except.bind] at happly
+      split at happly
+      · exact absurd happly (Except.error_ne_ok _ _)
+      · next result3 htcBody =>
+        cases hqt3 : result3.qualType with
+        | mk etyp3 p3 pred3 =>
+        simp only [hqt3] at happly
+        split at happly
+        · simp at happly
+        · next hsub =>
+          simp only [pure, Except.pure] at happly
+          cases happly
+          set bodyCtx := { ctx with
+              pc := joinPoison p (joinPoison p1 ctx.pc),
+              memEnv := result1.memEnv',
+              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
+              tagEnv := result1.tagEnv', nextTag := result1.nextTag',
+              nextLoc := result1.nextLoc', regime := result1.regime' }
+          have htcBody' : typecheck .ioFree bodyCtx body fuel' = .ok result3 := by
+            simpa [typecheck] using htcBody
+          have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+            QTypRespectsTagMeaning_transport_etyp_pred tm
+              ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              hargTm rfl rfl
+          have hwf_body : wfTagMeaningCtx tm bodyCtx := by
+            simpa [bodyCtx, ctxAfter] using
+              wfTagMeaningCtx_closure_body tm ctx result1 result1.qualType st1 st2 p tcls
+                x body env x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+                hctxTm1 hresTm1 hetyp1 hmem_tcl hargTm'
+          have hresTm3 : QTypRespectsTagMeaning tm ⟨etyp3, p3, pred3⟩ := by
+            rw [← hqt3]
+            exact bodyIH fuel' (Nat.lt_succ_self _) bodyCtx body result3 hwf_body htcBody'
+          simp only [normalizeAppResultByProvenance]
+          split
+          · intro q' k' d' hinq hgd
+            exact QTypRespectsTagMeaning_of_etyp_noPred tm ⟨etyp3, p3, pred3⟩
+              ⟨etyp3, true, Predicate.noPred⟩ hresTm3 rfl rfl hinq hgd
+          · intro q' k' d' hinq hgd
+            exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
+              ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
+  | extern x retSpec effects capturedEnv =>
+    cases fuel with
+    | zero => simp [applyFnTClosure] at happly
+    | succ fuel' =>
+      simp only [applyFnTClosure] at happly
+      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+      rw [hioFree] at happly
+      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
+      simp at happly
+
+private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List FnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (results : List TypeResult)
+  (bodyIH :
+    ∀ (fuel' : Nat), fuel' < fuel →
+      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
+      wfTagMeaningCtx tm ctx →
+      typecheck .ioFree ctx e fuel' = .ok res →
+      wfTagMeaningCtx tm (ctxAfter ctx res))
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (hmap :
+    List.mapM
+      (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      tcls = .ok results) :
+  ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctx r) := by
+  intro r hr
+  rcases list_mapM_ok_mem_output_exists_input
+      (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (hmap := hmap) (hmem := hr) with
+    ⟨tcl, htcl_mem, happly⟩
+  exact
+    applyFnTClosure_ok_wfTagMeaningCtx_byIH
+      (tm := tm) (bodyIH := bodyIH)
+      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+      (tcls := tcls)
+      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
+      hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
+
+private lemma mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List FnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (results : List TypeResult)
+  (bodyIH :
+    ∀ (fuel' : Nat), fuel' < fuel →
+      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
+      wfTagMeaningCtx tm ctx →
+      typecheck .ioFree ctx e fuel' = .ok res →
+      QTypRespectsTagMeaning tm res.qualType)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (hmap :
+    List.mapM
+      (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      tcls = .ok results) :
+  ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType := by
+  intro r hr
+  rcases list_mapM_ok_mem_output_exists_input
+      (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (hmap := hmap) (hmem := hr) with
+    ⟨tcl, htcl_mem, happly⟩
+  exact
+    applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
+      (tm := tm) (bodyIH := bodyIH)
+      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+      (tcls := tcls)
+      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
+      hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
+
+private lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List PFnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (bodyIH :
+    ∀ (fuel' : Nat), fuel' < fuel →
+      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
+      wfTagMeaningCtx tm ctx →
+      typecheck .ioFree ctx e fuel' = .ok res →
+      wfTagMeaningCtx tm (ctxAfter ctx res))
+  (tcl : PFnTClosure) (r : TypeResult)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+  (hmem_tcl : tcl ∈ tcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (happly :
+    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+  wfTagMeaningCtx tm (ctxAfter ctx r) := by
+  cases tcl with
+  | regular x body env =>
+    cases fuel with
+    | zero => simp [applyPFnTClosure] at happly
+    | succ fuel' =>
+      simp only [applyPFnTClosure, bind, Except.bind] at happly
+      split at happly
+      · exact absurd happly (Except.error_ne_ok _ _)
+      · next result3 htcBody =>
+        cases hqt3 : result3.qualType with
+        | mk etyp3 p3 pred3 =>
+        simp only [hqt3] at happly
+        split at happly
+        · simp at happly
+        · next hsub =>
+          simp only [pure, Except.pure] at happly
+          cases happly
+          set bodyCtx := { ctx with
+              pc := joinPoison p (joinPoison ctx.pc p1),
+              memEnv := result1.memEnv',
+              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
+              tagEnv := result1.tagEnv', nextTag := result1.nextTag',
+              pureCtx := true,
+              nextLoc := result1.nextLoc', regime := result1.regime' }
+          have htcBody' : typecheck .ioFree bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by
+            simpa [typecheck] using htcBody
+          have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+            QTypRespectsTagMeaning_transport_etyp_pred tm
+              ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              hargTm rfl rfl
+          have hwf_body : wfTagMeaningCtx tm bodyCtx := by
+            simpa [bodyCtx, ctxAfter] using
+              wfTagMeaningCtx_pclosure_body tm ctx result1 result1.qualType st1 st2 p tcls
+                x body env x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+                hctxTm1 hresTm1 hetyp1 hmem_tcl hargTm'
+          have hIH : wfTagMeaningCtx tm (ctxAfter bodyCtx result3) :=
+            bodyIH fuel' (Nat.lt_succ_self _) bodyCtx (PExpr.toExpr body) result3 hwf_body htcBody'
+          show wfTagMeaningCtx tm (ctxAfter ctx _)
+          unfold wfTagMeaningCtx at hctxTm1 hIH ⊢
+          simp only [ctxAfter] at hctxTm1 hIH ⊢
+          exact EnvRespectsTagMeaning_mix tm ctx.varEnv result1.memEnv'
+            bodyCtx.varEnv result3.memEnv' hctxTm1 hIH
+  | extern x retSpec capturedEnv =>
+    cases fuel with
+    | zero => simp [applyPFnTClosure] at happly
+    | succ fuel' =>
+      simp only [applyPFnTClosure] at happly
+      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+      rw [hioFree] at happly
+      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
+      exact absurd happly (by simp)
+
+private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List PFnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (bodyIH :
+    ∀ (fuel' : Nat), fuel' < fuel →
+      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
+      wfTagMeaningCtx tm ctx →
+      typecheck .ioFree ctx e fuel' = .ok res →
+      QTypRespectsTagMeaning tm res.qualType)
+  (tcl : PFnTClosure) (r : TypeResult)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+  (hmem_tcl : tcl ∈ tcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (happly :
+    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+  QTypRespectsTagMeaning tm r.qualType := by
+  cases tcl with
+  | regular x body env =>
+    cases fuel with
+    | zero => simp [applyPFnTClosure] at happly
+    | succ fuel' =>
+      simp only [applyPFnTClosure, bind, Except.bind] at happly
+      split at happly
+      · exact absurd happly (Except.error_ne_ok _ _)
+      · next result3 htcBody =>
+        cases hqt3 : result3.qualType with
+        | mk etyp3 p3 pred3 =>
+        simp only [hqt3] at happly
+        split at happly
+        · simp at happly
+        · next hsub =>
+          simp only [pure, Except.pure] at happly
+          cases happly
+          set bodyCtx := { ctx with
+              pc := joinPoison p (joinPoison ctx.pc p1),
+              memEnv := result1.memEnv',
+              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
+              tagEnv := result1.tagEnv', nextTag := result1.nextTag',
+              pureCtx := true,
+              nextLoc := result1.nextLoc', regime := result1.regime' }
+          have htcBody' : typecheck .ioFree bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by
+            simpa [typecheck] using htcBody
+          have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+            QTypRespectsTagMeaning_transport_etyp_pred tm
+              ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              hargTm rfl rfl
+          have hwf_body : wfTagMeaningCtx tm bodyCtx := by
+            simpa [bodyCtx, ctxAfter] using
+              wfTagMeaningCtx_pclosure_body tm ctx result1 result1.qualType st1 st2 p tcls
+                x body env x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+                hctxTm1 hresTm1 hetyp1 hmem_tcl hargTm'
+          have hresTm3 : QTypRespectsTagMeaning tm ⟨etyp3, p3, pred3⟩ := by
+            rw [← hqt3]
+            exact bodyIH fuel' (Nat.lt_succ_self _) bodyCtx (PExpr.toExpr body) result3 hwf_body htcBody'
+          simp only [normalizeAppResultByProvenance]
+          split
+          · intro q' k' d' hinq hgd
+            exact QTypRespectsTagMeaning_of_etyp_noPred tm ⟨etyp3, p3, pred3⟩
+              ⟨etyp3, true, Predicate.noPred⟩ hresTm3 rfl rfl hinq hgd
+          · intro q' k' d' hinq hgd
+            exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
+              ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
+  | extern x retSpec capturedEnv =>
+    cases fuel with
+    | zero => simp [applyPFnTClosure] at happly
+    | succ fuel' =>
+      simp only [applyPFnTClosure] at happly
+      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+      rw [hioFree] at happly
+      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
+      simp at happly
+
+private lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List PFnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (results : List TypeResult)
+  (bodyIH :
+    ∀ (fuel' : Nat), fuel' < fuel →
+      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
+      wfTagMeaningCtx tm ctx →
+      typecheck .ioFree ctx e fuel' = .ok res →
+      wfTagMeaningCtx tm (ctxAfter ctx res))
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (hmap :
+    List.mapM
+      (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      tcls = .ok results) :
+  ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctx r) := by
+  intro r hr
+  rcases list_mapM_ok_mem_output_exists_input
+      (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (hmap := hmap) (hmem := hr) with
+    ⟨tcl, htcl_mem, happly⟩
+  exact
+    applyPFnTClosure_ok_wfTagMeaningCtx_byIH
+      (tm := tm) (bodyIH := bodyIH)
+      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+      (tcls := tcls)
+      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
+      hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
+
+private lemma mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List PFnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (results : List TypeResult)
+  (bodyIH :
+    ∀ (fuel' : Nat), fuel' < fuel →
+      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
+      wfTagMeaningCtx tm ctx →
+      typecheck .ioFree ctx e fuel' = .ok res →
+      QTypRespectsTagMeaning tm res.qualType)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (hmap :
+    List.mapM
+      (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      tcls = .ok results) :
+  ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType := by
+  intro r hr
+  rcases list_mapM_ok_mem_output_exists_input
+      (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (hmap := hmap) (hmem := hr) with
+    ⟨tcl, htcl_mem, happly⟩
+  exact
+    applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
+      (tm := tm) (bodyIH := bodyIH)
+      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+      (tcls := tcls)
+      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
+      hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
+
+private lemma join_transport_wfTagMeaningCtx_byFirst
+  (tm : TagMeaning) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (h_first : wfTagMeaningCtx tm (ctxAfter ctx first)) :
+  wfTagMeaningCtx tm (ctxAfter ctx res) := by
+  unfold wfTagMeaningCtx
+  rw [ctxAfter]
+  have h_first_env : EnvRespectsTagMeaning tm ctx.varEnv first.memEnv' := by
+    simpa [wfTagMeaningCtx, ctxAfter] using h_first
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvsStrong acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
+  have h_fold_tm :
+      ∀ (rs' : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
+        List.foldlM joinStep acc rs' = .ok acc' →
+        EnvRespectsTagMeaning tm ctx.varEnv acc.2.1 →
+        EnvRespectsTagMeaning tm ctx.varEnv acc'.2.1 := by
+    intro rs' acc acc' hfold hacc
+    induction rs' generalizing acc with
+    | nil =>
+        simp [List.foldlM_nil, pure, Except.pure] at hfold
+        cases hfold
+        exact hacc
+    | cons x xs ih =>
+        cases hqx : x.qualType with
+        | mk resEtyp resPoison resPred =>
+            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
+            have hacc1 : EnvRespectsTagMeaning tm ctx.varEnv (joinMemEnvsStrong acc.2.1 x.memEnv') :=
+              EnvRespectsTagMeaning_joinMemEnvsStrong' tm ctx.varEnv acc.2.1 x.memEnv' hacc
+            exact ih _ hfold hacc1
+  cases hqt : first.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw, TypecheckM] at _h_join
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++ toString (repr etyp) ++
+                        toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+      | ok _ =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at _h_join
+              simp at _h_join
+          | ok a =>
+              erw [hfold] at _h_join
+              simp at _h_join
+              subst res
+              exact h_fold_tm rest
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag')
+                a hfold h_first_env
+
+private lemma QTypRespectsTagMeaning_sub_byJoin
+    (tm : TagMeaning) {qt qt' : QTyp}
+    (h : QTypRespectsTagMeaning tm qt) (hinq : QTypInQTyp qt' qt) :
+    QTypRespectsTagMeaning tm qt' :=
+  fun hinq'' hqd => h (QTypInQTyp.trans _ qt' qt hinq'' hinq) hqd
+
+private lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
+  (tm : TagMeaning)
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (h_join : joinTypeResults ctx first rest = .ok res)
+  (h_first : QTypRespectsTagMeaning tm first.qualType)
+  (h_rest : ∀ r ∈ rest, QTypRespectsTagMeaning tm r.qualType) :
+  QTypRespectsTagMeaning tm res.qualType := by
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun acc result =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvsStrong acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
+  have h_fold_qtm :
+      ∀ (rs' : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
+        List.foldlM joinStep acc rs' = .ok acc' →
+        QTypRespectsTagMeaning tm ⟨acc.1, acc.2.2.1, acc.2.2.2.1⟩ →
+        (∀ r ∈ rs', QTypRespectsTagMeaning tm r.qualType) →
+        QTypRespectsTagMeaning tm ⟨acc'.1, acc'.2.2.1, acc'.2.2.2.1⟩ := by
+    intro rs' acc acc' hfold hacc hrs
+    induction rs' generalizing acc with
+    | nil =>
+        simp [List.foldlM_nil, pure, Except.pure] at hfold
+        cases hfold; exact hacc
+    | cons x xs ih =>
+        cases hqx : x.qualType with
+        | mk resEtyp resPoison resPred =>
+            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
+            let acc1 :
+                ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
+              (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+                joinMemEnvsStrong acc.2.1 x.memEnv',
+                joinPoison acc.2.2.1 resPoison,
+                joinPredicates acc.2.2.2.1 resPred,
+                joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
+                joinRegimes acc.2.2.2.2.2.1 x.regime',
+                max acc.2.2.2.2.2.2.1 x.nextLoc',
+                max acc.2.2.2.2.2.2.2 x.nextTag')
+            have hfold_tail : List.foldlM joinStep acc1 xs = .ok acc' := by
+              simpa [acc1] using hfold
+            have hx : QTypRespectsTagMeaning tm x.qualType := hrs x (by simp)
+            have hacc1 : QTypRespectsTagMeaning tm ⟨acc1.1, acc1.2.2.1, acc1.2.2.2.1⟩ :=
+              QTypRespectsTagMeaning_joinStep tm acc.1 resEtyp acc.2.2.1 resPoison
+                acc.2.2.2.1 resPred hacc (hqx ▸ hx)
+            have hrs_tail : ∀ r ∈ xs, QTypRespectsTagMeaning tm r.qualType := by
+              intro r hr; exact hrs r (by simp [hr])
+            show QTypRespectsTagMeaning tm ⟨acc'.1, acc'.2.2.1, acc'.2.2.2.1⟩
+            exact ih (acc := acc1) hfold_tail hacc1 hrs_tail
+  cases hqt : first.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw, TypecheckM] at h_join
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error _ => erw [hcheck] at h_join; simp at h_join
+      | ok _ =>
+          erw [hcheck] at h_join; simp at h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error _ => erw [hfold] at h_join; simp at h_join
+          | ok a =>
+              rcases a with
+                ⟨joinedEtyp, joinedMemEnv, joinedPoison, joinedPred,
+                  joinedTagEnv, joinedRegime, maxNextLoc, maxNextTag⟩
+              erw [hfold] at h_join
+              simp at h_join
+              subst res
+              have h_first_qtm : QTypRespectsTagMeaning tm ⟨etyp, poison, pred⟩ :=
+                hqt ▸ h_first
+              have hacc_qtm :
+                  QTypRespectsTagMeaning tm ⟨joinedEtyp, joinedPoison, joinedPred⟩ :=
+                h_fold_qtm rest
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag')
+                  (joinedEtyp, joinedMemEnv, joinedPoison, joinedPred,
+                    joinedTagEnv, joinedRegime, maxNextLoc, maxNextTag)
+                  hfold h_first_qtm h_rest
+              cases joinedEtyp with
+              | arrow st1 st2 p tcls =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_of_etyp_noPred tm
+                      ⟨ETyp.arrow st1 st2 p tcls, joinedPoison, joinedPred⟩
+                      ⟨ETyp.arrow st1 st2 p tcls, joinPoison ctx.pc joinedPoison, Predicate.noPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | parrow st1 st2 p tcls =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_of_etyp_noPred tm
+                      ⟨ETyp.parrow st1 st2 p tcls, joinedPoison, joinedPred⟩
+                      ⟨ETyp.parrow st1 st2 p tcls, joinPoison ctx.pc joinedPoison, Predicate.noPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | int =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_transport_etyp_pred tm
+                      ⟨ETyp.int, joinedPoison, joinedPred⟩
+                      ⟨ETyp.int, joinPoison ctx.pc joinedPoison, joinedPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | bool =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_transport_etyp_pred tm
+                      ⟨ETyp.bool, joinedPoison, joinedPred⟩
+                      ⟨ETyp.bool, joinPoison ctx.pc joinedPoison, joinedPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | unit =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_transport_etyp_pred tm
+                      ⟨ETyp.unit, joinedPoison, joinedPred⟩
+                      ⟨ETyp.unit, joinPoison ctx.pc joinedPoison, joinedPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | string =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_transport_etyp_pred tm
+                      ⟨ETyp.string, joinedPoison, joinedPred⟩
+                      ⟨ETyp.string, joinPoison ctx.pc joinedPoison, joinedPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | ref ls =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_transport_etyp_pred tm
+                      ⟨ETyp.ref ls, joinedPoison, joinedPred⟩
+                      ⟨ETyp.ref ls, joinPoison ctx.pc joinedPoison, joinedPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+
 /-- Body typecheck preserves wfTagMeaningCtx (fuel induction).
     wfTagMeaningCtx tm ctx = EnvRespectsTagMeaning tm ctx.varEnv ctx.memEnv, so we need
     to show that after typechecking, all guard descriptors in (ctx.varEnv, res.memEnv')
@@ -2315,7 +2994,127 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
         -- notExpr is not a constructor of Expr; it desugars during parsing
         -- ===== App and kwhile cases =====
         | app e1 e2 =>
-            sorry -- TODO: body typecheck + joinTypeResults
+            cases fuel' with
+            | zero =>
+                simp [typecheckApp] at htc
+            | succ fuel'' =>
+                have htcApp : typecheckApp .ioFree ctx e1 e2 (Nat.succ fuel'') = .ok res := htc
+                obtain ⟨result2, result1, etyp2, p2, pred2, hqt2, htc2, htc1, h_arrow_or_parrow⟩ :=
+                  typecheckApp_arrow_structure_full ctx e1 e2 fuel'' res htcApp
+                have htc2' : typecheck .ioFree ctx e2 fuel'' = .ok result2 := by
+                  simpa [typecheck] using htc2
+                have hIH2_wf := IH_wf fuel'' (by omega) tm ctx e2 result2 hwf htc2'
+                have hIH2_qt : QTypRespectsTagMeaning tm result2.qualType :=
+                  IH_qt fuel'' (by omega) tm ctx e2 result2 hwf htc2'
+                have hTm2 : wfTagMeaningCtx tm (ctxAfter ctx result2) := by
+                  simpa [ctxAfter] using hIH2_wf
+                have htc1' : typecheck .ioFree (ctxAfter ctx result2) e1 fuel'' = .ok result1 := by
+                  simp [ctxAfter] at htc1 ⊢
+                  exact htc1
+                have hIH1_wf := IH_wf fuel'' (by omega) tm (ctxAfter ctx result2) e1 result1 hTm2 htc1'
+                have hIH1_qt : QTypRespectsTagMeaning tm result1.qualType :=
+                  IH_qt fuel'' (by omega) tm (ctxAfter ctx result2) e1 result1 hTm2 htc1'
+                cases h_arrow_or_parrow with
+                | inl h_arrow =>
+                    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, _hp1, _hnpure,
+                      _hnempty, _hsub, hmap, heq_results, h_join⟩ := h_arrow
+                    have hTm1_ctx : wfTagMeaningCtx tm (ctxAfter ctx result1) := by
+                      simpa [ctxAfter] using hIH1_wf
+                    have hresTm2_arg : QTypRespectsTagMeaning tm ⟨etyp2, p2, pred2⟩ := by
+                      rw [← hqt2]
+                      exact hIH2_qt
+                    have hresults_tm :
+                        ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctx r) :=
+                      mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
+                        (tm := tm)
+                        (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                        (tcls := tcls)
+                        (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                        (result1 := result1) (fuel := fuel'')
+                        (results := results)
+                        (bodyIH := fun m hm ctx e res hwf htc =>
+                          IH_wf m (by omega) tm ctx e res hwf htc)
+                        hTm1_ctx hIH1_qt hetyp1 hresTm2_arg hmap
+                    have hresults_qtm :
+                        ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType :=
+                      mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH
+                        (tm := tm)
+                        (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                        (tcls := tcls)
+                        (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                        (result1 := result1) (fuel := fuel'')
+                        (results := results)
+                        (bodyIH := fun m hm ctx e res hwf htc =>
+                          IH_qt m (by omega) tm ctx e res hwf htc)
+                        hTm1_ctx hIH1_qt hetyp1 hresTm2_arg hmap
+                    have hfirst_in_results : first ∈ results := by
+                      simp [heq_results]
+                    have h_first_tm : wfTagMeaningCtx tm (ctxAfter ctx first) :=
+                      hresults_tm first hfirst_in_results
+                    have h_first_qtm : QTypRespectsTagMeaning tm first.qualType := by
+                      intro qt' k d hinq hqd
+                      exact hresults_qtm first hfirst_in_results hinq hqd
+                    have h_rest_qtm : ∀ r ∈ rest, QTypRespectsTagMeaning tm r.qualType := by
+                      intro r hr
+                      have hmem_results : r ∈ results := by
+                        have : r ∈ first :: rest := by simp [hr]
+                        simpa [heq_results] using this
+                      intro qt' k d hinq hqd
+                      exact hresults_qtm r hmem_results hinq hqd
+                    exact
+                      ⟨ join_transport_wfTagMeaningCtx_byFirst tm ctx first rest res h_join h_first_tm
+                      , joinTypeResults_QTypRespectsTagMeaning_byMembers tm ctx first rest res
+                          h_join h_first_qtm h_rest_qtm ⟩
+                | inr h_parrow =>
+                    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, _hp1,
+                      _hnempty, _hsub, hmap, heq_results, h_join⟩ := h_parrow
+                    have hTm1_ctx : wfTagMeaningCtx tm (ctxAfter ctx result1) := by
+                      simpa [ctxAfter] using hIH1_wf
+                    have hresTm2_arg : QTypRespectsTagMeaning tm ⟨etyp2, p2, pred2⟩ := by
+                      rw [← hqt2]
+                      exact hIH2_qt
+                    have hresults_tm :
+                        ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctx r) :=
+                      mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
+                        (tm := tm)
+                        (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                        (tcls := tcls)
+                        (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                        (result1 := result1) (fuel := fuel'')
+                        (results := results)
+                        (bodyIH := fun m hm ctx e res hwf htc =>
+                          IH_wf m (by omega) tm ctx e res hwf htc)
+                        hTm1_ctx hIH1_qt hetyp1 hresTm2_arg hmap
+                    have hresults_qtm :
+                        ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType :=
+                      mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH
+                        (tm := tm)
+                        (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                        (tcls := tcls)
+                        (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                        (result1 := result1) (fuel := fuel'')
+                        (results := results)
+                        (bodyIH := fun m hm ctx e res hwf htc =>
+                          IH_qt m (by omega) tm ctx e res hwf htc)
+                        hTm1_ctx hIH1_qt hetyp1 hresTm2_arg hmap
+                    have hfirst_in_results : first ∈ results := by
+                      simp [heq_results]
+                    have h_first_tm : wfTagMeaningCtx tm (ctxAfter ctx first) :=
+                      hresults_tm first hfirst_in_results
+                    have h_first_qtm : QTypRespectsTagMeaning tm first.qualType := by
+                      intro qt' k d hinq hqd
+                      exact hresults_qtm first hfirst_in_results hinq hqd
+                    have h_rest_qtm : ∀ r ∈ rest, QTypRespectsTagMeaning tm r.qualType := by
+                      intro r hr
+                      have hmem_results : r ∈ results := by
+                        have : r ∈ first :: rest := by simp [hr]
+                        simpa [heq_results] using this
+                      intro qt' k d hinq hqd
+                      exact hresults_qtm r hmem_results hinq hqd
+                    exact
+                      ⟨ join_transport_wfTagMeaningCtx_byFirst tm ctx first rest res h_join h_first_tm
+                      , joinTypeResults_QTypRespectsTagMeaning_byMembers tm ctx first rest res
+                          h_join h_first_qtm h_rest_qtm ⟩
         | kwhile e1 e2 =>
             sorry -- permanently postponed: kwhile proofs are out of active scope
 

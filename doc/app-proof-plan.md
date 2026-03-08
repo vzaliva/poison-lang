@@ -77,9 +77,10 @@ What is done:
   `EnvRespectsTagMeaning_updateLocsetWeak`, and companions)
   now live upstream in `LeanProofs/RegimeConsistency.lean` rather than being stranded
   in `StepFRAssign`
-- `typecheckExpr_preserves_wfTagMeaningCtx_main` has been reduced materially:
-  the `deref`, `newRef`, and `assign` branches now compile, so the remaining local surface
-  there is no longer the memory-read / memory-write cases
+- `typecheckExpr_preserves_wfTagMeaningCtx_main` now has its `app` branch compiled:
+  the helper layer for `applyFnTClosure` / `applyPFnTClosure` is in place and the
+  remaining local surface there is now only conservative `ite` mode 3 plus deferred
+  `kwhile`
 - the branch-join side of the unary `ite` route is now factored enough to classify the
   current failure mode:
   `joinMemEnvsStrong_lookup_cleanUnder_left_of_contains` and
@@ -99,8 +100,8 @@ What still contains `sorry` on the app path:
   still contains the deferred `kwhile` branch and therefore still carries a `sorry`
 - `stepFR_ite_mode3` / `stepFR_ite_mode4` remain externally blocked under issue `#128`
 - `typecheckExpr_preserves_wfTagMeaningCtx_main`
-  still carries `sorry`, but the remaining local branches are now `app`, conservative
-  `ite` mode 3, and permanently-deferred `kwhile`
+  still carries `sorry`, but the remaining local branches are now only conservative
+  `ite` mode 3 and permanently-deferred `kwhile`
 
 Build status:
 
@@ -123,31 +124,23 @@ Planning consequence:
 
 - do not reopen the app-local witness design
 - treat the current app implementation path as established
-- if more work is needed for an app-only end state, the next structural task is to split
-  the app-consumed unary theorem surface away from the deferred `kwhile` / external `ite`
-  branches, rather than reworking `stepFR_app` itself
+- accept the existing deferred `ite` / `kwhile` `sorry`s as upstream debt on this branch
+- do not spend more time trying to isolate those branches away from the unary app route
 
 For the detailed technical discussion, see `doc/app-framing-proposal.md`.
 
 ## Remaining Work For `stepFR_app`
 
-1. decide whether the current app-local milestone is sufficient
+1. treat the current app-local milestone as the target
    - `stepFR_app` itself is no longer blocked by app-specific unary reasoning
    - the remaining `sorry`s are all outside that local path
+   - existing deferred `ite` / `kwhile` `sorry`s are accepted upstream debt for this branch
 
-2. if an app-only end state is required, remove the deferred `kwhile` theorem from the
-   dependency cone
-   - preferred route:
-     split the app-consumed theorem surface so the body-IH theorem and the clean-origin
-     theorem each have an app-relevant form that excludes `kwhile`
-   - keep this split compatible with the already-finished unary `app` / `vlet` route
-   - do not prove `kwhile`
-
-3. keep `ite` out of scope on this branch
+2. keep `ite` out of scope on this branch
    - do not do new `stepFR_ite_*` proof work
    - wait for the separate regime/type-system fix in issue `#128`
 
-4. run full verification
+3. run full verification
    - `make lean-build`
    - reassess remaining `sorry`s reachable from `stepFR_app`
 
@@ -156,12 +149,10 @@ For the detailed technical discussion, see `doc/app-framing-proposal.md`.
 1. checkpoint the current app-local success
    - success condition:
      full `make lean-build` passes and the app-local unary route remains stable
+   - stopping rule:
+     stop here once only deferred upstream `ite` / `kwhile` `sorry`s remain on the app path
 
-2. only if needed, split away deferred `kwhile`
-   - success condition:
-     the app path no longer depends on a theorem containing the deferred `kwhile` `sorry`
-
-3. keep waiting on external `ite`
+2. keep waiting on external `ite`
    - success condition:
      no accidental `stepFR_ite_*` work is added on this branch
 
@@ -192,10 +183,11 @@ For the detailed technical discussion, see `doc/app-framing-proposal.md`.
 
 - If the narrowed unary theorem still fails for a concrete impure overwrite example, stop
   and restate the counterexample before more proof work.
-- If the narrowed unary theorem cannot be cut free of `ite`, stop and redesign the theorem
-  boundary instead of proving `ite`.
-- If cutting `kwhile` out of the dependency cone forces a larger refactor than the unary
-  redesign, do the unary redesign first and postpone the factoring step.
+- If a proposed refactor claims to remove `ite` or `kwhile` from the app dependency cone,
+  first identify the replacement theorem that can still serve as `singleIH` for arbitrary
+  closure bodies. Without that replacement, reject the refactor.
+- If only deferred upstream `ite` / `kwhile` `sorry`s remain after app-local work is closed,
+  stop rather than opening new isolation work on this branch.
 
 ## Working Set
 

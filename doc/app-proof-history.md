@@ -120,6 +120,33 @@ Related follow-up:
 - after that, the remaining `sorry`s were no longer app-local; they were only the
   deferred `kwhile` branch and the externally blocked `ite` branches under issue `#128`
 
+### 0.3. Trying to cut `kwhile` out of the app unary dependency cone failed (Mar 2026)
+
+After the app-local unary `app` and `vlet` cases were in place, the next cleanup idea was
+to factor the app-consumed theorem surface away from the deferred `kwhile` branch.
+
+This route is now rejected.
+
+Why it failed:
+
+- the unary `app` lemmas in `LeanProofs/StepFRApp.lean` invoke `singleIH` on the
+  runtime-selected closure body
+- that body is an arbitrary `Expr`
+- `Expr` includes `kwhile` (and `ite`)
+- so any theorem supplying that IH still needs theorem branches for those constructors unless
+  the language or the typing discipline for function bodies is restricted
+
+No such restriction exists in the current codebase. So theorem reshaping alone cannot remove
+`kwhile` from the app dependency cone.
+
+Conclusion:
+
+- do not spend time trying to manufacture an app-only unary theorem family that excludes
+  arbitrary-body constructors
+- keep the app-local proof route as established
+- treat the remaining `kwhile` and external `ite` branches as upstream deferred debt, not as
+  something the app branch can factor away locally
+
 ### 1. Predicate-driven `closureCapturedVarsRegime` (commit `87878ef`, Feb 19)
 
 First version, gated on `qt.pred = guardClosure k ...`.  Added to every

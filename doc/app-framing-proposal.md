@@ -301,10 +301,23 @@ Status:
 
 Out of scope permanently.
 
-The remaining app-adjacent structural question is whether the app work needs to split
-away from a global theorem that still contains the deferred `kwhile` branch.
+An earlier app-adjacent cleanup idea was to split away from a global theorem that still
+contains the deferred `kwhile` branch.
 
-That is now a dependency-cone cleanup issue, not a local app-proof design issue.
+That turns out not to be available under the current language and proof structure. The
+unary `app` lemmas in `LeanProofs/StepFRApp.lean` invoke `singleIH` on the
+runtime-selected closure body, and that body is an arbitrary `Expr`. Since `Expr`
+includes `kwhile`, any theorem supplying that IH still needs a `kwhile` branch unless the
+language or typing discipline for function bodies is restricted. No such restriction
+exists today.
+
+So the correct conclusion is:
+
+- keep `kwhile` deferred
+- do not spend proof effort on it on this branch
+- do not assume it can be removed from the app dependency cone by theorem reshaping alone
+- accept the existing deferred `kwhile` branch as upstream debt once the app-local route is
+  closed
 
 ## 6. Suggested Ways Forward
 
@@ -316,15 +329,19 @@ The main theorem-design decisions have already landed:
 - keep the narrowed `StepFRSingleRunFinalCleanPcTrue` shape
 - keep the unary `app` case in `LeanProofs/StepFRApp.lean`
 - keep `ite` external and `kwhile` deferred
+- treat existing deferred `ite` / `kwhile` branches as accepted upstream debt rather than as
+  something this branch must factor away
 
-### Way 2. If more isolation is needed, split away deferred branches
+### Way 2. If more isolation is needed, first change the language-side assumptions
 
 If the goal is an app-only end state with no unrelated residual `sorry`s in the consumed
-dependency cone, the next move is no longer to redesign the witness theorem. It is to
-split the app-consumed theorem surface away from:
+dependency cone, theorem reshaping alone is not enough. The current unary IH is consumed
+on arbitrary closure bodies, so both `ite` and `kwhile` remain in scope for the theorem
+family unless the language or body-typing discipline is restricted first.
 
-- the deferred `kwhile` branch
-- the externally blocked `ite` branches under issue `#128`
+On this branch, that restriction work is out of scope. So the practical rule is to keep
+the narrowed witness theorem as-is and accept the deferred upstream branches rather than
+pretending they can be factored away locally.
 
 ### Way 3. Keep the theorem family reusable for later `ite`
 
@@ -347,6 +364,7 @@ for a specific reason:
 - do not use an app-specific workaround that would make a future `ite` proof strictly
   harder once the separate regime/type-system blocker is removed
 - do not invest proof work in `kwhile`
+- do not invest new proof work merely to hide already-accepted upstream `sorry`s
 
 ## 8. Practical Success Condition
 
@@ -358,3 +376,5 @@ This framing issue is resolved for `stepFR_app` when all of the following are tr
 - that witness carries `PreservesInheritedFinalCleanLocsOneRun`
 - the theorem providing that witness does not make `stepFR_app` depend on any `ite`
   proof work
+- only the already-accepted upstream deferred `ite` / `kwhile` branches remain outside the
+  local app route
