@@ -345,14 +345,18 @@ story may partially collapse into the same implementation step.
 
 Current implementation status on this branch:
 
-- Step 1 is in progress, not complete.
+- Step 1 is complete.
+- Step 2 has been reviewed early and does not currently force a design
+  change; the implementation is continuing with the symmetric
+  branch-update design.
 - A supporting regime-insert lookup bridge now exists in
   `StepFR.lean` as `regime_lookup_insert_ne`.
-- The step-1 redesign target is now explicit: split the current shared
-  theorem into a poison-origin lemma and a guard-origin lemma, then
-  keep the existing existential theorem as a corollary for current
-  callers.
-- A checkpoint `lake build` succeeds with only existing
+- The shared clean-lookup redesign now exists as a split proof:
+  `typecheckExpr_lookup_poison_origin_of_pc_true`,
+  `typecheckExpr_lookup_guard_origin_of_pc_true`, and
+  `typecheckExpr_clean_lookup_origin_of_pc_true` rebuilt as a
+  corollary.
+- A checkpoint `lake build` succeeds after the step-1 refactor with only existing
   `sorry`-related warnings.
 
 1. **Redesign the shared clean-lookup theorem.**
@@ -362,19 +366,24 @@ Current implementation status on this branch:
    the current `main` style: preserve lookup/provenance information and
    keep the existing existential theorem only as a corollary for its
    current callers.
-   Status: in progress.  The redesign direction has been fixed to a
-   two-lemma split:
-   `typecheckExpr_lookup_poison_origin_of_pc_true` and
+   Status: complete.  The theorem has been refactored into the split
+   lemmas `typecheckExpr_lookup_poison_origin_of_pc_true` and
    `typecheckExpr_lookup_guard_origin_of_pc_true`, with
-   `typecheckExpr_clean_lookup_origin_of_pc_true` rebuilt as a
-   corollary.  The remaining nontrivial proof sites are `ite` mode 3,
-   `ite` mode 4, `app`, and the `assign` invalidation case.
+   `typecheckExpr_clean_lookup_origin_of_pc_true` rebuilt as the
+   existential corollary for existing callers.  The key proof sites
+   for that refactor were discharged in `ite` mode 3, `ite` mode 4,
+   `app`, and the `assign` invalidation case.  `while` remains out of
+   scope for this iteration and its existing `sorry` remains isolated.
 
 2. **Make the regime-growth design decision early.**
    Re-evaluate symmetric versus asymmetric branch updates while the
    clean-lookup redesign is still in flight.  Do not assume the
    false-branch insertion is worth keeping until the tag-reuse and
    guard-tag analysis say it is.
+   Status: complete for the current iteration.  The step-1 refactor
+   did not uncover a concrete obstruction or counterexample forcing
+   the asymmetric fallback, so the implementation continues with the
+   symmetric branch-update design until later evidence says otherwise.
 
 3. **Close the local mode-3 preservation gap for
    `regimeConsistentWithCtx`.**
