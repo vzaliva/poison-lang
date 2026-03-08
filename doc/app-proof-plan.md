@@ -5,11 +5,16 @@ Notes:
 - Historical checkpoints and discarded routes live in `doc/app-proof-history.md`.
 - Keep this file concrete: current state, next steps, and stop conditions.
 - Avoid depending on line numbers; use lemma names and `rg`.
+- Current status: the app-local route is complete, but the overall `stepFR_app`
+  proof path is not complete until
+  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` is
+  proved.
 
 ## Goal
 
-Finish `stepFR_app` in `LeanProofs/StepFRApp.lean` with only the dependencies that are
-actually needed for that proof.
+Finish the full reachable `stepFR_app` proof path, including
+`TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`, with only
+the dependencies that are actually needed for that proof.
 
 Out of scope:
 
@@ -104,6 +109,15 @@ What still contains `sorry` on the app path:
   still carries `sorry`, but its remaining local branches are conservative `ite` mode 3 and
   permanently-deferred `kwhile`
 
+Current conclusion:
+
+- `stepFR_app` itself is proved
+- the app-specific unary route is proved
+- the remaining app-path blocker is now concentrated in the global unary theorem
+  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
+- inside that theorem, the remaining open branches are deferred `ite` / `kwhile`
+- there is no remaining non-`ite` / non-`kwhile` `sorry` on the reachable app path
+
 Build status:
 
 - full `make lean-build` passes
@@ -116,27 +130,30 @@ Short version:
 - the app-local witness design problem is resolved:
   `stepFR_app` now uses the narrowed unary IH, and the unary `app` and `vlet` cases both
   compile
-- `stepFR_app` should not be treated as fully sorry-free until the global unary theorem
-  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` is also closed
-- at present, that global theorem is already reduced to deferred `ite` / `kwhile`
-  branches only, so the remaining debt is upstream rather than app-local
+- `stepFR_app` is not considered proved until the global unary theorem
+  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` is closed
+- there is no further app-local witness design work to do; the remaining work is now exactly
+  the remaining branches of that theorem
+- on this branch, those remaining branches are deferred `ite` / `kwhile`
 
 Planning consequence:
 
 - do not reopen the app-local witness design
-- treat the current app implementation path as established
-- include `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` in the
-  completion criterion for the app proof path
-- on this branch, the only accepted open branches on that path are deferred `ite` /
-  `kwhile`
+- treat the current app implementation path as established but not complete
+- keep `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` as the active
+  remaining target
+- do not declare the app proof done until that theorem is closed
+- if progress on that theorem halts solely on `ite` / `kwhile`, record that as the blocking
+  upstream dependency rather than treating the app proof as complete
 
 ## Remaining Work For `stepFR_app`
 
-1. keep the global unary theorem on the completion path
+1. finish `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
    - `stepFR_app` itself is no longer blocked by app-specific unary reasoning
-   - the proof path is not considered closed until
-     `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` is also closed
-   - at the moment, its only remaining open branches are deferred `ite` / `kwhile`
+   - the remaining open proof debt on the reachable app path is now exactly inside
+     `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
+   - keep proving branches of that theorem whenever they are not blocked by the accepted
+     external `ite` / deferred `kwhile` scope boundaries
 
 2. keep `ite` out of scope on this branch
    - do not do new `stepFR_ite_*` proof work
@@ -148,13 +165,16 @@ Planning consequence:
 
 ## Execution Order
 
-1. checkpoint the current app-local success
+1. finish the global unary theorem as far as this branch allows
    - success condition:
-     full `make lean-build` passes and the app-local unary route remains stable
-   - stopping rule:
-     stop here once `stepFR_app` plus
+     full `make lean-build` passes and
      `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
-     have no remaining non-`ite` / non-`kwhile` `sorry`s on the app path
+     has no remaining non-`ite` / non-`kwhile` `sorry`s
+   - stopping rule:
+     stop only when either:
+     `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` is closed, or
+     the only remaining blockers inside it are the accepted upstream `ite` / deferred
+     `kwhile` branches
 
 2. keep waiting on external `ite`
   - success condition:
@@ -188,8 +208,9 @@ Planning consequence:
 - If a proposed refactor claims to remove `ite` or `kwhile` from the app dependency cone,
   first identify the replacement theorem that can still serve as `singleIH` for arbitrary
   closure bodies. Without that replacement, reject the refactor.
-- If only deferred upstream `ite` / `kwhile` `sorry`s remain after app-local work is closed,
-  stop rather than opening new isolation work on this branch.
+- If the only remaining blockers are deferred upstream `ite` / `kwhile` branches inside
+  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`, stop and report that
+  the app proof path is blocked there rather than complete.
 
 ## Working Set
 

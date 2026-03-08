@@ -11,6 +11,22 @@ How to use this file:
 - there is no separate live framing memo anymore; resolved blocker discussion stays here as
   history
 
+## Current endpoint (March 2026)
+
+The app-local proof effort is now complete, but the full reachable `stepFR_app`
+proof path is still open.
+
+- `stepFR_app` is closed.
+- The different-body `arrow` / `parrow` fallback path uses the narrowed unary witness route.
+- The old `StepFR_single_run` wrapper route has been removed.
+- The global unary theorem
+  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
+  remains on the reachable app path, but its only open branches are the accepted deferred
+  `ite` / `kwhile` cases.
+
+So the app-local design work stops here on this branch, but the overall app proof is not
+considered complete until that global unary theorem is also closed.
+
 ## Root Cause Analysis: Selector Transport Across Merged Closure Lists
 
 `resultAgreesIfClean` unfolds to `qtypCleanUnder R qt -> agreeValueUnder ...`.
