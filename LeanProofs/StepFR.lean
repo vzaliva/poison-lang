@@ -1020,30 +1020,22 @@ lemma singleRunFinalCleanWitness_of_same_state
   (hcf : cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
   (hvaltyp : valueHasETyp θ o res.qualType.etyp)
   (hvalc : valueConsistentWithRegime predSat ctx.regime res.qualType μ θ o)
-  (hwfTm : wfTagMeaningCtx tm ctx)
-  (hwf : wfTypeContext ctx)
+  (_hwfTm : wfTagMeaningCtx tm ctx)
+  (_hwf : wfTypeContext ctx)
   (hric : runtimeInstantiatesCtx ctx μ ρ θ)
-  (hreg : regimeConsistentWithCtx ctx)
+  (_hreg : regimeConsistentWithCtx ctx)
   (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ)
-  (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }) :
+  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }) :
   ∃ (θ' : RealizationMap),
     wfExtendsMap θ θ' ∧
     valueHasETyp θ' o res.qualType.etyp ∧
-    wfTagMeaningCtx tm (ctxAfter ctx res) ∧
-    wfTypeContext (ctxAfter ctx res) ∧
-    wfConfig cf ∧
     runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
-    regimeConsistentWithCtx (ctxAfter ctx res) ∧
     consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
     valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
     PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' := by
-  refine ⟨θ, ?_, hvaltyp, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ, ?_, hvaltyp, ?_, ?_, ?_, ?_⟩
   · exact ⟨fun _ _ hlookup => hlookup, fun hθwf => hθwf⟩
-  · simpa [hctxAfter] using hwfTm
-  · simpa [hctxAfter] using hwf
-  · simpa [hcf] using hwfcfg
   · simpa [hctxAfter, hcf] using hric
-  · simpa [hctxAfter] using hreg
   · simpa [hctxAfter, hcf] using hcwr
   · simpa [hctxAfter, hcf] using hvalc
   · simpa [hcf] using (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctx) (res := res) (ρ := ρ) hric)
@@ -1152,11 +1144,7 @@ def StepFRSingleRunFinalCleanPcTrue
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
           valueHasETyp θ' o res.qualType.etyp ∧
-          wfTagMeaningCtx tm (ctxAfter ctx res) ∧
-          wfTypeContext (ctxAfter ctx res) ∧
-          wfConfig cf ∧
           runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
-          regimeConsistentWithCtx (ctxAfter ctx res) ∧
           consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
           PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'

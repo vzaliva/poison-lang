@@ -60,7 +60,26 @@ What is done:
   `stepFRSingleRunFinalCleanPcTrue_fn`,
   `stepFRSingleRunFinalCleanPcTrue_pfn`,
   `stepFRSingleRunFinalCleanPcTrue_var`,
-  and `stepFRSingleRunFinalCleanPcTrue_newRef`
+  `stepFRSingleRunFinalCleanPcTrue_newRef`, and
+  `stepFRSingleRunFinalCleanPcTrue_deref`
+- the different-body `arrow` / `parrow` fallback sites in `stepFR_app` already consume the
+  narrowed unary IH instead of `StepFR_single_run`
+- the unary `app` case is now factored into `LeanProofs/StepFRApp.lean` as
+  `stepFRSingleRunFinalCleanPcTrue_app`, with private `arrow` and `parrow`
+  branches that compile without depending on binary `StepFR_IH`
+- the global unary theorem now calls that app-specific lemma instead of carrying a local
+  `app` `sorry`
+- the unary `vlet` case now compiles as
+  `stepFRSingleRunFinalCleanPcTrue_vlet`
+  and is wired into the global unary theorem
+- generic tag-meaning update helpers
+  (`PredRespectsTagMeaning`, `EnvRespectsTagMeaning_updateMemEnv`,
+  `EnvRespectsTagMeaning_updateLocsetWeak`, and companions)
+  now live upstream in `LeanProofs/RegimeConsistency.lean` rather than being stranded
+  in `StepFRAssign`
+- `typecheckExpr_preserves_wfTagMeaningCtx_main` has been reduced materially:
+  the `deref`, `newRef`, and `assign` branches now compile, so the remaining local surface
+  there is no longer the memory-read / memory-write cases
 - the branch-join side of the unary `ite` route is now factored enough to classify the
   current failure mode:
   `joinMemEnvsStrong_lookup_cleanUnder_left_of_contains` and
@@ -74,14 +93,14 @@ What still contains `sorry` on the app path:
 
 - `StepFR_single_run`
   still ends with `sorry` for the old direct single-run wrapper path
-- the induction-side companion theorem
-  `StepFRSingleRunFinalCleanPcTrue`
-  is now defined, but not yet proved or threaded into the app body IH
-- `stepFR_app` still uses the current `StepFR_single_run` witness in the narrowed
-  inherited-location `arrow` / `parrow` fallback subproofs because the companion unary
-  theorem has not yet been threaded through the global induction
 - `typecheckExpr_clean_lookup_origin_of_pc_true`
   still has the permanently-postponed `kwhile` branch
+- `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
+  still contains the deferred `kwhile` branch and therefore still carries a `sorry`
+- `stepFR_ite_mode3` / `stepFR_ite_mode4` remain externally blocked under issue `#128`
+- `typecheckExpr_preserves_wfTagMeaningCtx_main`
+  still carries `sorry`, but the remaining local branches are now `app`, conservative
+  `ite` mode 3, and permanently-deferred `kwhile`
 
 Build status:
 
@@ -92,107 +111,59 @@ Build status:
 
 Short version:
 
-- `stepFR_app` needs a one-run witness for body executions under `pc = true`
-- that witness must carry `PreservesInheritedFinalCleanLocsOneRun` for the same chosen
-  post-run realization map `θ'`
-- `StepFR_single_run_core` is too weak because it does not provide that preservation fact
-- the current `StepFRSingleRunFinalCleanPcTrue` route is too broad because it still drags
-  in extra post-context obligations and, in practice, pulls `ite` into the dependency cone
-- closure bodies can themselves be `ite`, so this cannot be solved by assuming the app
-  fallback only sees non-`ite` bodies
+- the app-local witness design problem is resolved:
+  `stepFR_app` now uses the narrowed unary IH, and the unary `app` and `vlet` cases both
+  compile
+- the remaining blocker is no longer inside `stepFR_app` or its app-specific helpers
+- what remains is theorem packaging:
+  the global unary assembly still contains deferred `kwhile`, and the separate `ite`
+  work remains blocked under issue `#128`
 
 Planning consequence:
 
-- replace `StepFRSingleRunFinalCleanPcTrue` in place with a narrower app-focused statement
-- keep only the witness payload that `stepFR_app` actually consumes
-- reuse the existing strong-induction scaffolding for that theorem
-- do not take on new `ite` proof work in this branch; leave `ite` deferred under issue
-  `#128` and `kwhile` permanently deferred
-- if a theorem shape still requires extra joined-post-context obligations from `ite`,
-  reject that shape and refactor again
+- do not reopen the app-local witness design
+- treat the current app implementation path as established
+- if more work is needed for an app-only end state, the next structural task is to split
+  the app-consumed unary theorem surface away from the deferred `kwhile` / external `ite`
+  branches, rather than reworking `stepFR_app` itself
 
 For the detailed technical discussion, see `doc/app-framing-proposal.md`.
 
 ## Remaining Work For `stepFR_app`
 
-1. split the unary route into an app-focused theorem surface
-   - keep `StepFR` unchanged
-   - do not revive the old `StepFR_single_run` wrapper
-   - do the refactor in place: replace the current broad
-     `StepFRSingleRunFinalCleanPcTrue` route rather than moving it to a separate legacy
-     file
-   - keep the same theorem name: replace `StepFRSingleRunFinalCleanPcTrue` in place with
-     the narrower app-focused statement instead of adding a sibling theorem
-   - introduce or prioritize a theorem whose critical output is:
-     a chosen `θ'` together with `PreservesInheritedFinalCleanLocsOneRun`
-   - keep any extra witness obligations minimal and justified by actual `stepFR_app` use
-   - feasibility check:
-     the narrowed theorem must avoid `ite` as an upstream proof obligation even though
-     closure bodies may themselves be `ite`
-   - concrete mechanism:
-     reuse the current `StepFRSingleRunFinalCleanPcTrue` strong-induction route, but with
-     the narrowed payload; do not attempt to solve `ite` in this branch, and keep the
-     theorem shape compatible with later completion of the deferred `ite` branches
+1. decide whether the current app-local milestone is sufficient
+   - `stepFR_app` itself is no longer blocked by app-specific unary reasoning
+   - the remaining `sorry`s are all outside that local path
 
-2. finish the constructor coverage needed for that narrower unary theorem
-   - already covered:
-     literals, `assign`, `seq`, `unaryop`, `op`, `fn`, `pfn`, `var`, `newRef`
-   - still needed on the app path:
-     `deref` and `vlet`
-   - if a theorem shape still requires extra `ite` packaging, split the theorem again
-     instead of proving `ite`
-   - leave `kwhile` out of scope
-
-3. package the covered constructor lemmas into the strong-induction theorem
-   - do this for the narrowed unary theorem only
-   - only widen back out later if a real downstream need appears
-   - update the IH helpers in `StepFR.lean` to match the narrowed statement
-   - make the threading path explicit before rewiring `stepFR_app`
-   - in this branch, accept deferred `ite` and `kwhile` branches in that theorem; the
-     goal is to get the theorem boundary and non-`ite` cases right for `stepFR_app`
-
-4. update the `arrow` and `parrow` body-IH use sites in `stepFR_app`
-   - stop depending on the current `StepFR_single_run` wrapper in the different-body
-     fallback subproofs
-   - switch those sites to the companion unary IH theorem
-   - do this as soon as the theorem is available for the body forms used by `app`
-
-5. remove the deferred `kwhile` theorem from the `stepFR_app` dependency cone
+2. if an app-only end state is required, remove the deferred `kwhile` theorem from the
+   dependency cone
    - preferred route:
      split the app-consumed theorem surface so the body-IH theorem and the clean-origin
      theorem each have an app-relevant form that excludes `kwhile`
-   - keep this split compatible with step 1, so the unary redesign does not need to be
-     redone after the `kwhile` cut
+   - keep this split compatible with the already-finished unary `app` / `vlet` route
    - do not prove `kwhile`
 
-6. run full verification
+3. keep `ite` out of scope on this branch
+   - do not do new `stepFR_ite_*` proof work
+   - wait for the separate regime/type-system fix in issue `#128`
+
+4. run full verification
    - `make lean-build`
    - reassess remaining `sorry`s reachable from `stepFR_app`
 
 ## Execution Order
 
-1. narrow the unary theorem surface to the app-relevant preservation payload
+1. checkpoint the current app-local success
    - success condition:
-     `stepFR_app` no longer requires any new `ite` proof work on this branch
+     full `make lean-build` passes and the app-local unary route remains stable
 
-2. finish the remaining constructor cases on that narrowed theorem
+2. only if needed, split away deferred `kwhile`
    - success condition:
-     `deref` and `vlet` no longer block the body-IH route
+     the app path no longer depends on a theorem containing the deferred `kwhile` `sorry`
 
-3. thread the narrowed companion unary IH through the strong induction theorem
+3. keep waiting on external `ite`
    - success condition:
-     `stepFR_app` can obtain body single-run preservation from the body IH without
-     changing `StepFR`
-
-4. rewire `stepFR_app` to consume that narrower theorem
-   - success condition:
-     the current `hpres₀` / `hpres₁` uses are replaced with the new theorem
-
-5. cut `kwhile` out of the dependency cone
-   - success condition:
-     `stepFR_app` no longer depends on a theorem containing the deferred `kwhile` `sorry`
-
-6. run full verification
+     no accidental `stepFR_ite_*` work is added on this branch
 
 ## Design Rules
 

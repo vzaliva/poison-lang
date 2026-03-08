@@ -73,6 +73,53 @@ Accepted direction after this checkpoint:
 - defer or split off the broader joined-post-context witness obligations unless a downstream
   proof actually needs them
 
+### 0.1. Trying to close the narrowed unary `app` branch from `FaultRobustnessProofs.lean` (Mar 2026)
+
+After the payload narrowing and the initial case coverage rewrite, the next attempted move was
+to finish the remaining unary `app` branch from `FaultRobustnessProofs.lean`, ideally by
+reusing the existing binary `stepFR_app` result.
+
+This route is now classified as blocked.
+
+Why it failed:
+
+- `stepFR_app` consumes both `StepFR_IH` and `StepFRSingleRunFinalCleanPcTrue_IH`
+- the unary strong-induction theorem only has the unary IH directly available
+- the natural source of the binary IH is the later step theorem
+- but that step theorem already depends on the unary theorem in order to supply the body-IH
+  witness to `stepFR_app`
+
+So this route creates a dependency cycle:
+
+- unary theorem -> binary step theorem / `stepFR_app` -> unary theorem
+
+Conclusion:
+
+- do not try to finish the remaining unary `app` branch from `FaultRobustnessProofs.lean`
+  by calling `stepFR_app`
+- do not try to paper over this with the unfinished `StepFR_single_run` bridge
+- instead, factor the remaining unary `app` case directly into `StepFRApp.lean`, where the
+  single-run body machinery already lives
+
+### 0.2. Factoring the unary `app` branch into `StepFRApp.lean` succeeded (Mar 2026)
+
+The accepted follow-up to checkpoint `0.1` was implemented successfully:
+
+- the unary `app` case now lives in `LeanProofs/StepFRApp.lean`
+- it is split into app-local `arrow` and `parrow` one-run lemmas
+- those lemmas consume only `StepFRSingleRunFinalCleanPcTrue_IH`
+- they do not depend on binary `StepFR_IH`
+
+This closed the dependency cycle from `0.1` and allowed the global unary theorem to call
+the app-local unary lemma directly.
+
+Related follow-up:
+
+- once the unary `app` branch compiled, the remaining app-relevant unary constructor
+  `vlet` was also completed
+- after that, the remaining `sorry`s were no longer app-local; they were only the
+  deferred `kwhile` branch and the externally blocked `ite` branches under issue `#128`
+
 ### 1. Predicate-driven `closureCapturedVarsRegime` (commit `87878ef`, Feb 19)
 
 First version, gated on `qt.pred = guardClosure k ...`.  Added to every
@@ -243,6 +290,20 @@ Both transport theorems proved:
 
 Post-merge cleanup: pre-Path-D selector code removed, transitional naming cleaned up,
 shared predicate-join helpers consolidated in `TypeSafety.lean`.
+
+### Upstream helper extraction for app-side generic typing proofs
+
+Later app work exposed that a small family of generic tag-meaning update lemmas was living in
+`StepFRAssign.lean` even though the same facts were needed by `StepFRApp.lean`:
+
+- `PredRespectsTagMeaning`
+- `QTypRespectsTagMeaning_int_of_predRespects`
+- `EnvRespectsTagMeaning_updateMemEnv`
+- `EnvRespectsTagMeaning_updateLocsetWeak`
+
+Those lemmas were moved upstream into `LeanProofs/RegimeConsistency.lean`, which avoided adding
+a new `StepFRApp -> StepFRAssign` dependency and let the app-side generic theorem
+`typecheckExpr_preserves_wfTagMeaningCtx_main` close the `newRef` / `assign` branches in-place.
 
 ## Chronological Design Evolution
 

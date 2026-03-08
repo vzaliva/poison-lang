@@ -1,7 +1,6 @@
-# Current `stepFR_app` Framing / Unary Witness Blocker
+# Current `stepFR_app` Framing / Unary Witness Status
 
-This note isolates the current framing blocker on the path to finishing
-`stepFR_app`.
+This note records the current unary-witness design status for `stepFR_app`.
 
 Status:
 
@@ -196,6 +195,15 @@ So the active blocker is now:
 - not the branch-clean transport itself
 - but the theorem surface that packages too much around the witness
 
+Additional implementation result:
+
+- even after narrowing the payload, the remaining unary `app` branch does not close
+  cleanly inside `FaultRobustnessProofs.lean`
+- proving that branch by calling `stepFR_app` would require the binary `StepFR_IH`
+- but the main step theorem already depends on the unary theorem to supply the body-IH
+  argument to `stepFR_app`
+- so the remaining issue is now a dependency cycle, not just an oversized theorem payload
+
 ## 4. What The App Proof Actually Needs
 
 The app fallback branches need an app-focused one-run theorem for bodies typed under
@@ -230,22 +238,28 @@ Two design constraints matter here:
 If additional fields are convenient later, they should be added only when a downstream
 consumer actually uses them, or layered via a separate wrapper.
 
+One more constraint now comes from the implementation attempt:
+
+- the remaining unary `app` case should be factored where the app-specific single-run body
+  machinery already lives, namely `LeanProofs/StepFRApp.lean`
+- trying to finish it from `FaultRobustnessProofs.lean` by reusing `stepFR_app` is the
+  wrong dependency direction
+
 ## 5. Remaining Technical Work
 
 These are theorem-design implications of the blocker, not the execution checklist. The
 concrete work order lives in `doc/app-proof-plan.md`.
 
-### 5.1. Cut `ite` out of the dependency cone
+### 5.1. Current state of the old blocker
 
-This is the highest-risk design task.
+The original blocker described above is now resolved in the implementation:
 
-Success criterion:
+- the narrowed unary theorem shape is in place
+- the unary `app` case has been factored into `LeanProofs/StepFRApp.lean`
+- the unary `vlet` case now compiles
+- the global unary theorem calls both of those lemmas
 
-- the theorem used by `stepFR_app` no longer requires proving conservative `ite` cases on
-  this branch
-- `ite` should be treated as a reason to refactor the theorem boundary, not as a
-  constructor we plan to finish ourselves
-- this must hold even though closure bodies may themselves be `ite`
+So the active issue is no longer witness design inside `stepFR_app`.
 
 ### 5.2. `deref`
 
@@ -258,102 +272,67 @@ Expected route:
 - use `typecheckExpr_clean_lookup_origin_of_pc_true` for the subexpression as needed
 - transport the executed-run witness without introducing any new write-specific behavior
 
+Status:
+
+- this constructor is now covered by the narrowed unary theorem
+
+### 5.2a. `newRef` and `assign`
+
+These were the last app-adjacent memory-update cases on the generic typing side.
+
+Status:
+
+- both are now reduced in `typecheckExpr_preserves_wfTagMeaningCtx_main`
+- the generic tag-meaning update lemmas they needed have been moved upstream into
+  `LeanProofs/RegimeConsistency.lean`, which keeps the module graph clean and makes the
+  helpers available to both `StepFRApp` and `StepFRAssign`
+
 ### 5.3. `vlet`
 
-This is mainly a composition case, but it must compose the preservation fact on the same
-chosen witness. The existing helper
-`PreservesInheritedFinalCleanLocsOneRun.compose`
-is the intended tool here.
+`vlet` was the last non-`ite`, non-`kwhile` constructor still needed on the app path.
+
+Status:
+
+- it is now covered by the narrowed unary theorem
+- the one-run proof uses the seq-style preservation composition together with explicit
+  restored-varEnv transport at the end of the let body
 
 ### 5.4. `kwhile`
 
 Out of scope permanently.
 
-The app theorem surface should be structured so `stepFR_app` does not depend on a theorem
-that still drags a `kwhile` branch through the dependency cone. In practice, that means
-the narrowed unary theorem and any app-consumed clean-origin theorem may need app-relevant
-variants that exclude `kwhile` rather than reusing broader theorems unchanged.
+The remaining app-adjacent structural question is whether the app work needs to split
+away from a global theorem that still contains the deferred `kwhile` branch.
+
+That is now a dependency-cone cleanup issue, not a local app-proof design issue.
 
 ## 6. Suggested Ways Forward
 
-### Way 1. Narrow the unary theorem surface first
+### Way 1. Treat the current app-local route as established
 
-Recommended first move:
+The main theorem-design decisions have already landed:
 
-- split or prioritize an app-focused theorem surface for bodies typed under `pc = true`
-- do that refactor in place, replacing the abandoned broad route instead of preserving it
-  in a separate legacy file
-- make the preservation-focused witness its primary output
-- keep the stronger full-witness theorem, if needed at all, as a later wrapper or
-  extension
+- keep `StepFR` unchanged
+- keep the narrowed `StepFRSingleRunFinalCleanPcTrue` shape
+- keep the unary `app` case in `LeanProofs/StepFRApp.lean`
+- keep `ite` external and `kwhile` deferred
 
-Reason:
+### Way 2. If more isolation is needed, split away deferred branches
 
-- this directly attacks the current highest-risk obstruction
-- it avoids paying the conservative-`ite` cost for facts the app proof does not use
-- more importantly, it avoids routing the app proof through `ite` work that is explicitly
-  out of scope
-- git history is sufficient for recovering discarded proof fragments if needed later
-- the narrowing should still be principled, so the later `ite` proof can reuse or wrap
-  the same theorem family instead of being boxed out by an app-only hack
+If the goal is an app-only end state with no unrelated residual `sorry`s in the consumed
+dependency cone, the next move is no longer to redesign the witness theorem. It is to
+split the app-consumed theorem surface away from:
 
-### Way 1a. Concrete near-term assembly strategy
+- the deferred `kwhile` branch
+- the externally blocked `ite` branches under issue `#128`
 
-Use the current induction-side route, but change its role:
+### Way 3. Keep the theorem family reusable for later `ite`
 
-- replace `StepFRSingleRunFinalCleanPcTrue` in place with the narrowed payload
-- reuse the existing strong-induction/IH scaffolding around that theorem
-- retarget the already proved non-`ite` case lemmas to the narrowed statement
-- do not expand the deferred `ite` or `kwhile` branches on this branch
+The app work should now avoid two mistakes:
 
-This does not "solve `ite`". It only ensures that:
-
-- the theorem boundary used by `stepFR_app` is the right one
-- `stepFR_app` stops depending on the wrong broad payload
-- future `ite` work can later fill the remaining branches against the same theorem shape
-
-### Way 2. Refuse any theorem route that still requires `ite`
-
-Recommended decision rule:
-
-- if a proposed unary theorem still needs conservative `ite` cases, stop and refactor the
-  theorem boundary
-- do not continue proving upstream constructors on that route
-
-Reason:
-
-- `ite` is not just "hard"; it is off-limits for this workstream
-- so theorem design must accommodate that constraint directly
-
-### Way 3. Finish only the app-relevant remaining constructors
-
-Recommended order:
-
-1. `deref`
-2. `vlet`
-
-Reason:
-
-- once `ite` is excluded from the route, these are the remaining constructors that matter
-  on the app path
-
-### Way 4. Rewire `stepFR_app` as soon as the narrow theorem is usable
-
-Do not wait to finish a broader theorem first.
-
-Once the narrowed unary theorem covers the body shapes that appear in the app fallback:
-
-- switch the different-body `arrow` / `parrow` sites away from `StepFR_single_run`
-- consume the new one-run witness directly
-
-That is the point where the real benefit lands for `stepFR_app`.
-
-### Way 5. Keep `StepFR` itself unchanged unless this route collapses
-
-Widening `StepFR` remains the wrong default move:
-
-- it would spread app-specific witness work across many unrelated `stepFR_*` proofs
-- it increases blast radius before the app-focused unary route has actually failed
+- do not reopen the solved unary-witness design problem
+- do not special-case the theorem family so aggressively that later `ite` work cannot
+  reuse it once issue `#128` is fixed
 
 ## 7. Non-Directions
 
