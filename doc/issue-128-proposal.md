@@ -384,12 +384,67 @@ story may partially collapse into the same implementation step.
    in `FaultRobustnessProofs.lean`, then finish the top-level
    `stepFR_ite_mode3` proof in `StepFRIte.lean`.
 
-## 7. History
+## 7. Implementation Constraints
+
+The following rules apply to every implementation step in the plan above.
+
+### 7.1 Build discipline
+
+After each plan step (and at every intermediate checkpoint), the code must
+build with `lake build` and produce no warnings other than `sorry`-related
+ones.  A step that introduces new non-`sorry` warnings is not considered
+complete.
+
+### 7.2 Stable boundary definitions
+
+The following definitions and predicates sit at the boundary between the
+per-case proofs and the top-level theorem.  Changes to them propagate
+widely and are expensive to absorb:
+
+- `StepFR` (StepFR.lean:490)
+- `StepFR_IH` (StepFR.lean:4209)
+- `StepFRSingleRunFinalCleanPcTrue` (StepFR.lean:1042)
+- `StepFRSingleRunFinalCleanPcTrue_IH` (StepFR.lean:4214)
+- `FaultRobustnessSpec` (FaultRobustness.lean:707)
+- `TypeSystemEnforcesFaultRobustness_IOFree` (FaultRobustnessProofs.lean:740)
+
+and the predicates they directly depend on:
+
+- `consistentWithRegime`, `agreeOnClean`, `valueConsistentWithRegime`,
+  `resultAgreesIfClean` (RegimeConsistency.lean / FaultRobustness.lean)
+- `regimeConsistentWithCtx`, `regimeBounded` (StepFR.lean)
+- `runtimeInstantiatesCtx`, `wfTagMeaningCtx`, `wfTypeContext`
+  (TypeSafety.lean / StepFR.lean)
+
+Changes to any of these definitions or their signatures require explicit
+approval before implementation begins.  If the clean-lookup redesign or
+regime-growth work appears to require such a change, that is a stopping
+point (see 7.3).
+
+### 7.3 Stopping points
+
+Implementation should pause and report back for design review whenever:
+
+- a plan step appears to require changing a stable boundary definition
+  (Section 7.2)
+- a concrete counterexample or type-level obstruction is found that
+  invalidates the current theorem target or design assumption
+- the proof work uncovers a dependency not anticipated in the plan that
+  would change the order or scope of later steps
+- the symmetric/asymmetric design decision (Section 5.5) is forced by
+  evidence discovered during implementation
+
+At each stopping point, the implementer should document the finding
+concisely and wait for approval before proceeding.  The goal is to
+catch design-level surprises early rather than sinking effort into a
+path that will need to be unwound.
+
+## 8. History
 
 This section keeps older material that is no longer part of the active
 plan but may still matter for future design decisions.
 
-### 7.1 Rejected direction: weaken the invariant
+### 8.1 Rejected direction: weaken the invariant
 
 The earlier "bound-guarded invariant" idea changed
 `tagEnvConsistentWithRegime` so it only constrained tags within
@@ -401,7 +456,7 @@ That direction was rejected because it:
 - did not remove the need for a bounded-tags invariant
 - complicated the framework more than synchronizing `R.map` did
 
-### 7.2 Old-branch proof work is still useful as design input
+### 8.2 Old-branch proof work is still useful as design input
 
 The old pre-refactor branch developed parts of the story around:
 
@@ -412,7 +467,7 @@ The old pre-refactor branch developed parts of the story around:
 That work should still inform the design, but it should not be treated
 as current split-layout infrastructure until it is re-homed there.
 
-### 7.3 Historical status of the symmetric design
+### 8.3 Historical status of the symmetric design
 
 The symmetric `R[k |-> true]` / `R[k |-> false]` design was chosen to
 match the intended semantics and preserve nested-`if` precision.
