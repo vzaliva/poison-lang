@@ -4366,7 +4366,7 @@ lemma agreeValueUnder_clean_transport_by_cleanBack
 
 
 -- Moved from StepFRApp: shared typecheck preservation lemmas for tag meaning/regime consistency.
-private lemma applyFnTClosure_regular_structure
+lemma applyFnTClosure_regular_structure
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate) (result2 : TypeResult) (fuel : Nat)
   (x : Name) (body : Expr) (tenv : CapturedVarEnv)
@@ -4380,7 +4380,7 @@ private lemma applyFnTClosure_regular_structure
       exact ⟨fuelBody, rfl⟩
 
 -- In ioFree mode, extern closure application always throws (so cannot occur in stepFR_app).
-private lemma applyFnTClosure_ioFree_extern_fails
+lemma applyFnTClosure_ioFree_extern_fails
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat)
@@ -4401,7 +4401,7 @@ private lemma applyFnTClosure_ioFree_extern_fails
 
 -- Inversion for regular closures: successful application exposes the body typing
 -- derivation and successful return-type subtype check.
-private lemma applyFnTClosure_regular_inv
+lemma applyFnTClosure_regular_inv
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuelBody : Nat)
@@ -4476,7 +4476,7 @@ private lemma applyFnTClosure_regular_inv
 
 -- If `List.mapM f xs` succeeds and `x ∈ xs`, then `f x` succeeded for some output
 -- appearing in the mapped result list.
-private lemma list_mapM_ok_mem_input_exists_output
+lemma list_mapM_ok_mem_input_exists_output
   {α β ε : Type}
   (f : α → Except ε β) :
   ∀ {xs ys x}, List.mapM f xs = .ok ys → x ∈ xs →
@@ -4489,7 +4489,7 @@ private lemma list_mapM_ok_mem_input_exists_output
   exact ⟨y, hy, hxy⟩
 
 -- Specialized extraction for closure-application maps used in `stepFR_app`.
-private lemma applyFnTClosure_ok_of_mem_mapM
+lemma applyFnTClosure_ok_of_mem_mapM
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat)
@@ -4507,7 +4507,7 @@ private lemma applyFnTClosure_ok_of_mem_mapM
 
 -- Combined extraction for regular closures from a successful application map.
 -- Gives the selected closure's successful application together with body-typing inversion.
-private lemma applyFnTClosure_regular_inv_of_mapM_mem
+lemma applyFnTClosure_regular_inv_of_mapM_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (bodyState : TypeResult) (fuel : Nat)
@@ -4554,7 +4554,7 @@ private lemma applyFnTClosure_regular_inv_of_mapM_mem
   exact ⟨fuelBody, first, result3, happly, hfuel, htc_body, hsub, hfirst_eq⟩
 
 -- Forall₂ gives an existence for membership on the right.
-private lemma list_Forall2_exists_of_mem_right
+lemma list_Forall2_exists_of_mem_right
     {α β : Type} {R : α → β → Prop} {xs : List α} {ys : List β} :
     List.Forall₂ R xs ys →
     ∀ y ∈ ys, ∃ x, x ∈ xs ∧ R x y := by
@@ -4575,7 +4575,7 @@ private lemma list_Forall2_exists_of_mem_right
           exact ⟨x, by simp [hxmem], hR⟩
 
 -- If `List.mapM f xs` succeeds and `y ∈ ys`, then some `x ∈ xs` maps to `y`.
-private lemma list_mapM_ok_mem_output_exists_input
+lemma list_mapM_ok_mem_output_exists_input
   {α β ε : Type}
   (f : α → Except ε β)
   {xs : List α} {ys : List β} {y : β}
@@ -4590,7 +4590,7 @@ private lemma list_mapM_ok_mem_output_exists_input
   exact ⟨x, hxmem, hxy⟩
 
 -- Body typecheck in app context: wfTypeResult for result3 from typecheckExpr_preserves_wfTypeResult.
-private lemma applyFnTClosure_regular_body_wfTypeResult
+lemma applyFnTClosure_regular_body_wfTypeResult
   (ctx : TypeContext) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result1 : TypeResult) (fuelBody : Nat)
@@ -4619,7 +4619,7 @@ private lemma applyFnTClosure_regular_body_wfTypeResult
 -- Helper lemmas for wfTagMeaningCtx in closure body contexts.
 -- These need to be before applyFnTClosure_ok_wfTypeResult.
 
-private lemma QTypRespectsTagMeaning_of_arrow_captured_lookup
+lemma QTypRespectsTagMeaning_of_arrow_captured_lookup
   (tm : TagMeaning)
   (qtRes : QTyp) (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
   (xFun y : Name) (body : Expr) (σcap : CapturedVarEnv) (qtCap : QTyp)
@@ -4638,7 +4638,7 @@ private lemma QTypRespectsTagMeaning_of_arrow_captured_lookup
       hetyp hmem (by simpa [fnCapturedEnv] using hcapMem)
   exact hresTm (QTypInQTyp.trans qt qtCap qtRes hinq hroot) hqd
 
-private lemma wfTagMeaningCtx_ofCaptured_from_arrow
+lemma wfTagMeaningCtx_ofCaptured_from_arrow
   (tm : TagMeaning) (ctxMem : TypeContext)
   (qtRes : QTyp) (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
   (xFun : Name) (body : Expr) (σcap : CapturedVarEnv)
@@ -4664,7 +4664,7 @@ private lemma wfTagMeaningCtx_ofCaptured_from_arrow
       exact hctxTm.1 (GuardDescInEnvsDeep.intro qt k d
         (QTypInEnvs.inMem ctxMem.varEnv ctxMem.memEnv l qt qtRoot hlookup hinqRoot) hm)
 
-private lemma wfTagMeaningCtx_closure_body
+lemma wfTagMeaningCtx_closure_body
   (tm : TagMeaning) (ctx : TypeContext) (result1 : TypeResult)
   (qtRes : QTyp) (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
   (xFun : Name) (body : Expr) (σcap : CapturedVarEnv)
@@ -4702,7 +4702,7 @@ private lemma wfTagMeaningCtx_closure_body
     wfTagMeaningCtx_varEnv_ext tm ctxCap xArg argQt hctxCapTm hargTm
   simpa [ctxCap] using hbodyTm
 
-private lemma PExpr_toExpr_of_toPExpr?_some : ∀ (e : Expr) (pe : PExpr),
+lemma PExpr_toExpr_of_toPExpr?_some : ∀ (e : Expr) (pe : PExpr),
     Expr.toPExpr? e = some pe → PExpr.toExpr pe = e
   | .unit, _, h => by simp [Expr.toPExpr?] at h; subst h; rfl
   | .num n, _, h => by simp [Expr.toPExpr?] at h; subst h; rfl
@@ -4783,7 +4783,7 @@ private lemma PExpr_toExpr_of_toPExpr?_some : ∀ (e : Expr) (pe : PExpr),
   | .externFn _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
   | .externPfn _ _ _, _, h => by simp [Expr.toPExpr?] at h
 
-private lemma QTypRespectsTagMeaning_of_parrow_captured_lookup
+lemma QTypRespectsTagMeaning_of_parrow_captured_lookup
   (tm : TagMeaning)
   (qtRes : QTyp) (st1 st2 : Typ) (p : Poison) (tcls : List PFnTClosure)
   (xFun y : Name) (pbody : PExpr) (σcap : CapturedVarEnv) (qtCap : QTyp)
@@ -4802,7 +4802,7 @@ private lemma QTypRespectsTagMeaning_of_parrow_captured_lookup
       hetyp hmem (by simpa [pfnCapturedEnv] using hcapMem)
   exact hresTm (QTypInQTyp.trans qt qtCap qtRes hinq hroot) hqd
 
-private lemma wfTagMeaningCtx_ofCaptured_from_parrow
+lemma wfTagMeaningCtx_ofCaptured_from_parrow
   (tm : TagMeaning) (ctxMem : TypeContext)
   (qtRes : QTyp) (st1 st2 : Typ) (p : Poison) (tcls : List PFnTClosure)
   (xFun : Name) (pbody : PExpr) (σcap : CapturedVarEnv)
@@ -4828,7 +4828,7 @@ private lemma wfTagMeaningCtx_ofCaptured_from_parrow
       exact hctxTm.1 (GuardDescInEnvsDeep.intro qt k d
         (QTypInEnvs.inMem ctxMem.varEnv ctxMem.memEnv l qt qtRoot hlookup hinqRoot) hm)
 
-private lemma wfTagMeaningCtx_pclosure_body
+lemma wfTagMeaningCtx_pclosure_body
   (tm : TagMeaning) (ctx : TypeContext) (result1 : TypeResult)
   (qtRes : QTyp) (st1 st2 : Typ) (p : Poison) (tcls : List PFnTClosure)
   (xFun : Name) (pbody : PExpr) (σcap : CapturedVarEnv)
@@ -4870,7 +4870,7 @@ private lemma wfTagMeaningCtx_pclosure_body
 -- wfTypeResult for the body result comes from stepFR IH (StepFR for body → wfTypeResult).
 -- These are intentionally isolated so `stepFR_app` can consume them now and we
 -- can prove them incrementally.
-private lemma applyFnTClosure_ok_wfTypeResult
+lemma applyFnTClosure_ok_wfTypeResult
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result1 : TypeResult) (fuel : Nat)
@@ -4916,7 +4916,7 @@ private lemma applyFnTClosure_ok_wfTypeResult
 -- preserves the regime consistency invariant (tagEnv/regime agreement + bound).
 
 -- Helper: regimeConsistentWithCtx only depends on tagEnv, regime, nextTag
-private lemma regimeConsistentWithCtx_of_tagEnv_regime_nextTag
+lemma regimeConsistentWithCtx_of_tagEnv_regime_nextTag
     (ctx₁ ctx₂ : TypeContext)
     (htag : ctx₂.tagEnv = ctx₁.tagEnv)
     (hreg : ctx₂.regime = ctx₁.regime)
@@ -4926,7 +4926,7 @@ private lemma regimeConsistentWithCtx_of_tagEnv_regime_nextTag
   simp only [regimeConsistentWithCtx] at h ⊢
   rw [htag, hreg, hnt]; exact h
 
-private lemma joinTypeResults_tagEnvConsistentWithRegime'
+lemma joinTypeResults_tagEnvConsistentWithRegime'
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (h_join : joinTypeResults ctx first rest = .ok res)
   (h_first : regimeConsistentWithCtx (ctxAfter ctx first))
@@ -5033,7 +5033,7 @@ private lemma joinTypeResults_tagEnvConsistentWithRegime'
                     first.nextLoc', first.nextTag')
                   a hfold h_first_tag h_rest
 
-private lemma joinTypeResults_regimeConsistentWithCtx
+lemma joinTypeResults_regimeConsistentWithCtx
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (h_join : joinTypeResults ctx first rest = .ok res)
   (h_first : regimeConsistentWithCtx (ctxAfter ctx first))
@@ -5058,7 +5058,7 @@ private lemma joinTypeResults_regimeConsistentWithCtx
     simp [ctxAfter]
     exact Nat.le_trans (Nat.le_trans hbound_le_first hfirst_bound) hfirst_le_res
 
-private lemma typecheckExpr_preserves_regimeConsistentWithCtx_main :
+lemma typecheckExpr_preserves_regimeConsistentWithCtx_main :
     ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult),
     regimeConsistentWithCtx ctx →
     typecheck .ioFree ctx e fuel = .ok res →
@@ -5530,7 +5530,7 @@ lemma typecheckExpr_preserves_regimeConsistentWithCtx
 /-- Mix lemma: combine inVar evidence from one (σ, Γ₁) pair with inMem evidence from
     another (σ₂, Γ) pair. Works because `QTypInEnvs.inVar` only uses σ and
     `QTypInEnvs.inMem` only uses Γ. -/
-private lemma EnvRespectsTagMeaning_mix
+lemma EnvRespectsTagMeaning_mix
     (tm : TagMeaning) (σ₁ : VarTypeEnv) (Γ₁ : MemoryTypeEnv) (σ₂ : VarTypeEnv) (Γ₂ : MemoryTypeEnv)
     (h1 : EnvRespectsTagMeaning tm σ₁ Γ₁)
     (h2 : EnvRespectsTagMeaning tm σ₂ Γ₂) :
@@ -5549,7 +5549,7 @@ private lemma EnvRespectsTagMeaning_mix
       (QTypInEnvs.inMem σ₂ Γ₂ l qt qtRoot hlookup hinq) hguard)
 
 /-- typecheckIf always produces a result with pred = noPred in ioFree mode. -/
-private lemma typecheckIf_pred_noPred
+lemma typecheckIf_pred_noPred
     (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckIf .ioFree ctx e1 e2 e3 fuel = .ok res) :
     res.qualType.pred = Predicate.noPred := by
@@ -5682,7 +5682,7 @@ private lemma typecheckIf_pred_noPred
 /-- Transport QTypRespectsTagMeaning across same etyp when pred becomes noPred.
     The self-descriptor vanishes (noPred → none), and nested descriptors through etyp
     are unchanged. -/
-private lemma QTypRespectsTagMeaning_of_etyp_noPred
+lemma QTypRespectsTagMeaning_of_etyp_noPred
     (tm : TagMeaning) (qt qt' : QTyp)
     (h : QTypRespectsTagMeaning tm qt)
     (hetyp : qt'.etyp = qt.etyp)
@@ -5697,7 +5697,7 @@ private lemma QTypRespectsTagMeaning_of_etyp_noPred
   | inr hinq' =>
     exact h hinq' hqd
 
-private lemma EnvRespectsTagMeaning_joinMemEnvsStrong'
+lemma EnvRespectsTagMeaning_joinMemEnvsStrong'
     (tm : TagMeaning) (σ : VarTypeEnv) (Γ1 Γ2 : MemoryTypeEnv)
     (h1 : EnvRespectsTagMeaning tm σ Γ1) :
     EnvRespectsTagMeaning tm σ (joinMemEnvsStrong Γ1 Γ2) := by
@@ -5803,7 +5803,7 @@ private lemma EnvRespectsTagMeaning_joinMemEnvsStrong'
 -- A single join-step for QTypRespectsTagMeaning: joining two tag-meaning-respecting
 -- qualified types produces another tag-meaning-respecting qualified type.
 -- (Moved before _main because ite modes 3/4 need it.)
-private lemma QTypRespectsTagMeaning_joinStep
+lemma QTypRespectsTagMeaning_joinStep
     (tm : TagMeaning) (e1 e2 : ETyp) (p1 p2 : Poison) (pred1 pred2 : Predicate)
     (h1 : QTypRespectsTagMeaning tm ⟨e1, p1, pred1⟩)
     (h2 : QTypRespectsTagMeaning tm ⟨e2, p2, pred2⟩) :
@@ -5910,7 +5910,7 @@ private lemma QTypRespectsTagMeaning_joinStep
     have hp1 := (joinPredicates_eq_guardClosure hpj).1
     exact h1 (QTypInQTyp.self _) (by simp [qtypGuardDesc?, hp1])
 
-private lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
+lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List FnTClosure)
@@ -5983,7 +5983,7 @@ private lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
       simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
       exact absurd happly (by simp)
 
-private lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
+lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List FnTClosure)
@@ -6060,7 +6060,7 @@ private lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
       simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
       simp at happly
 
-private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
+lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List FnTClosure)
@@ -6096,7 +6096,7 @@ private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
       (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
       hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
 
-private lemma mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH
+lemma mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List FnTClosure)
@@ -6132,7 +6132,7 @@ private lemma mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH
       (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
       hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
 
-private lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
+lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List PFnTClosure)
@@ -6206,7 +6206,7 @@ private lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
       simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
       exact absurd happly (by simp)
 
-private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
+lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List PFnTClosure)
@@ -6284,7 +6284,7 @@ private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
       simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
       simp at happly
 
-private lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
+lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List PFnTClosure)
@@ -6320,7 +6320,7 @@ private lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
       (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
       hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
 
-private lemma mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH
+lemma mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List PFnTClosure)
@@ -6356,7 +6356,7 @@ private lemma mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH
       (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
       hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
 
-private lemma join_transport_wfTagMeaningCtx_byFirst
+lemma join_transport_wfTagMeaningCtx_byFirst
   (tm : TagMeaning) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (h_first : wfTagMeaningCtx tm (ctxAfter ctx first)) :
@@ -6434,13 +6434,13 @@ private lemma join_transport_wfTagMeaningCtx_byFirst
                 (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag')
                 a hfold h_first_env
 
-private lemma QTypRespectsTagMeaning_sub_byJoin
+lemma QTypRespectsTagMeaning_sub_byJoin
     (tm : TagMeaning) {qt qt' : QTyp}
     (h : QTypRespectsTagMeaning tm qt) (hinq : QTypInQTyp qt' qt) :
     QTypRespectsTagMeaning tm qt' :=
   fun hinq'' hqd => h (QTypInQTyp.trans _ qt' qt hinq'' hinq) hqd
 
-private lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
+lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
   (tm : TagMeaning)
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (h_join : joinTypeResults ctx first rest = .ok res)
@@ -6594,7 +6594,8 @@ private lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
     to show that after typechecking, all guard descriptors in (ctx.varEnv, res.memEnv')
     are in tm. Since ctxAfter preserves varEnv, the varEnv side is automatic. For memEnv,
     we track how each expression form transforms memEnv and use join/update lemmas. -/
-private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
+
+lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
     ∀ (fuel : Nat) (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (res : TypeResult),
     wfTagMeaningCtx tm ctx →
     typecheck .ioFree ctx e fuel = .ok res →

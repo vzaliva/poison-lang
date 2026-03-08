@@ -10017,7 +10017,7 @@ private lemma applyPFnTClosure_ioFree_wfTypeResult
       exact absurd htc (Except.error_ne_ok _ _)
 
 /-- mapM of applyFnTClosure gives wfTypeResult for all results -/
-private lemma mapM_applyFnTClosure_forall_wfTypeResult
+lemma mapM_applyFnTClosure_forall_wfTypeResult
     (fuel_top : Nat)
     (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
         wfTypeContext ctx' → typecheck .ioFree ctx' e m = .ok res' → wfTypeResult res')
@@ -10444,7 +10444,7 @@ end wfTypeResult_preservation
 
 section memEnv_contains_preservation
 
-private lemma joinTypeResults_mem_contains_of_member
+lemma joinTypeResults_mem_contains_of_member
     (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
     (_h_join : joinTypeResults ctx first rest = .ok res)
     (_hmem_src : src ∈ first :: rest) :
