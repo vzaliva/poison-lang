@@ -452,35 +452,53 @@ Current implementation status on this branch:
    remaining point directly: mode 3 of
    `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
    in `FaultRobustnessProofs.lean`.
-   Status: active, with a recommended narrowed path.  Modes 1, 2, and 4
-   of the single-run `ite` proof look routine under the current helper
-   layer.  The active blocker is mode 3, where starting the branch IH
-   under `ctxTrue` or `ctxFalse'` requires `consistentWithRegime` for a
-   regime that has just grown by interpreting the fresh tag `k`.  That
-   reuses the same closure-sensitive obstruction already discovered in
-   step 4: the mem/var conjuncts still look transportable, but the
-   closure conjunct can activate new captured-variable obligations for
-   `k`, and the current premises do not generically discharge them.
+   Status: paused at a confirmed Section 7.3 stopping point.  Modes 1,
+   2, and 4 of the single-run `ite` proof still look routine under the
+   current helper layer.  The active blocker remains mode 3, where
+   starting the branch IH under `ctxTrue` or `ctxFalse'` requires
+   `consistentWithRegime` for a regime that has just grown by
+   interpreting the fresh tag `k`.  That reuses the same
+   closure-sensitive obstruction already discovered in step 4: the
+   mem/var conjuncts still look transportable, but the closure conjunct
+   can activate new captured-variable obligations for `k`, and the
+   current premises do not generically discharge them.
 
-   The best current path forward is:
+   Reviewer feedback confirms the current path ranking:
 
-   - first, stay local and introduce a **private masked single-run
-     helper/theorem** for the conservative-join case, so the branch IH
-     can proceed while masking the newly interpreted tag `k` in the
-     closure-sensitive obligations
-   - then use that helper to finish the single-run `ite` proof in
-     `FaultRobustnessProofs.lean`
-   - only after that, revisit `stepFR_ite_mode3` in `StepFRIte.lean`
-     and decide whether the same masked idea is enough there, leaving
-     `stepFR_ite_mode4` as the lower-risk follow-on item
+   - **Preferred in principle:** a masked single-run approach for the
+     conservative-join case
+   - **Not recommended as primary path:** reviving the broad generic
+     `consistentWithRegime_insert_regime_{true,false}` effort, because
+     the closure-sensitive regime-growth story appears to require a new
+     cross-entry coherence invariant that is not currently present and
+     would likely put pressure on the Section 7.2 stable boundaries
+   - **Unlikely to help:** a matchGuard-specific "no closures mention
+     this tag" lemma, because the tag lifecycle permits dropped regime
+     tags to remain referenced in closure predicates
 
-   This path is preferred over reviving the broad generic
-   `consistentWithRegime_insert_regime_{true,false}` effort now,
-   because it keeps the blast radius local, respects the Section 7.2
-   stable boundaries, and tests the hard conservative-join case in the
-   most concrete context available.  If the masked single-run theorem
-   still appears to require changing `consistentWithRegime` or another
-   stable boundary definition, that is another stopping point.
+   The implementation finding is now stronger than before: the masked
+   single-run idea does **not** stay a one-off outer wrapper.  Because
+   the branch body may contain arbitrary subexpressions and the existing
+   single-run induction interface in `StepFR.lean`
+   (`StepFRSingleRunFinalCleanPcTrue_IH`) is unmasked, the masked path
+   would need its own recursive masked IH / theorem family.
+
+   The design choice now is between:
+
+   - **A1: parametric refactor.**  Refactor the per-case single-run
+     proofs so they are parametric in the relevant consistency
+     predicate, then instantiate that framework with the masked and
+     unmasked versions.  This has higher upfront cost but avoids
+     maintaining two parallel proof families.
+   - **A2: parallel masked proofs.**  Add a second masked single-run
+     proof family alongside the current unmasked one.  This avoids the
+     refactor but increases duplication and long-term maintenance cost.
+
+   Current recommendation: prefer **A1** if step 6 proceeds, since it
+   preserves the Section 7.2 boundaries while avoiding a duplicated
+   proof stack.  Before committing to the full refactor, run a scoping
+   spike on one representative simple case (for example `stepFR_seq`)
+   to measure the mechanical cost of the parametric interface.
 
 ## 7. Implementation Constraints
 
