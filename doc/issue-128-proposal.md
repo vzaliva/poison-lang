@@ -425,28 +425,31 @@ Current implementation status on this branch:
    existing tagEnv insert lemmas together with the step-3 bound bridge
    and the minimal simultaneous-insert lemmas from step 4.  Treat this
    as a local repair to land after the higher-risk blockers above.
-   Status: blocked pending review.  The new simultaneous-insert helpers
-   are enough for the subcase `k < ctx.regime.bound`, but they do not
-   close the full theorem target.  There is now a concrete branch-level
-   obstruction: `matchGuard` can return a tag `k` above the regime
-   bound, and then the mode-3 true-branch context has
-   `tagEnv[k] = true` while `regime.lookup? k = none`.  A minimal
-   literal branch preserves that inconsistency, so the current
-   induction hypothesis for
-   `typecheckExpr_preserves_regimeConsistentWithCtx_main` cannot be
-   applied in that subcase.  Finishing this step now appears to require
-   a new local preservation theorem for an “all true tags except
-   possibly k are consistent” invariant, or an equivalent redesign.
-   This is a Section 7.3 stopping point.
+   Status: complete.  The local repair now uses a recursive masked
+   preservation theorem
+   `typecheckExpr_preserves_regimeConsistentWithCtxMasked_main` in
+   `StepFR.lean`, together with the new masked TagEnv/Regime helper
+   layer (`tagEnvConsistentWithRegimeMasked_weaken`,
+   `tagEnvConsistentWithRegimeMasked_join_drop`,
+   `invalidateRegimeDeps_preserves_true_masked`, and related insert /
+   invalidate lemmas).  The original
+   `typecheckExpr_preserves_regimeConsistentWithCtx_main` has been
+   rebuilt as the `masked := False` wrapper, and the old mode-3 `sorry`
+   is gone.  A checkpoint `lake build` succeeds after this repair with
+   only the existing `sorry`-related warnings, including the still
+   deferred `kwhile` work.
 
 6. **Propagate the fix through downstream `ite` obligations.**
    Revisit
    `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
    in `FaultRobustnessProofs.lean`, then finish the top-level
    `stepFR_ite_mode3` proof in `StepFRIte.lean`.
-   Status: remains last.  Downstream obligations should only be
-   revisited after the bound bridge, regime-growth transport, and local
-   preservation proof are all in place.
+   Status: now active.  The remaining downstream proof work is in
+   `FaultRobustnessProofs.lean` (`ite` and the still-deferred `kwhile`
+   single-run branches) and in `StepFRIte.lean` (`stepFR_ite_mode3`
+   and `stepFR_ite_mode4`).  The local preservation prerequisite is now
+   in place, and the next proof effort is the actual runtime
+   branch-case analysis for the conservative join modes.
 
 ## 7. Implementation Constraints
 

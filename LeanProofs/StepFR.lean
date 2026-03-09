@@ -225,6 +225,57 @@ private lemma tagEnvConsistentWithRegime_to_masked
   intro k deps hget
   exact Or.inr (h k deps hget)
 
+private lemma tagEnvConsistentWithRegimeMasked_weaken
+    (masked masked' : Tag → Prop)
+    (tagEnv : TagEnv) (R : Regime)
+    (hsubset : ∀ k, masked k → masked' k)
+    (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
+    tagEnvConsistentWithRegimeMasked masked' tagEnv R := by
+  intro k deps hget
+  have hbase := h k deps hget
+  cases hbase with
+  | inl hmasked =>
+      exact Or.inl (hsubset k hmasked)
+  | inr hlookup =>
+      exact Or.inr hlookup
+
+private lemma tagEnvConsistentWithRegimeMasked_insert_true
+    (masked : Tag → Prop)
+    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
+    (h : tagEnvConsistentWithRegimeMasked masked tagEnv R)
+    (hk : R.lookup? k = some true) :
+    tagEnvConsistentWithRegimeMasked masked (tagEnv.insert k ⟨true, deps⟩) R := by
+  intro k' deps' hget
+  by_cases hkk' : k' = k
+  · subst hkk'
+    exact Or.inr hk
+  · have hcmp : compare k k' ≠ Ordering.eq := by
+      intro hce
+      have : k = k' := (Nat.compare_eq_eq).1 hce
+      exact hkk' this.symm
+    have hget' : tagEnv.get? k' = some ⟨true, deps'⟩ := by
+      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
+      exact hget
+    exact h k' deps' hget'
+
+private lemma tagEnvConsistentWithRegimeMasked_insert_false
+    (masked : Tag → Prop)
+    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
+    (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
+    tagEnvConsistentWithRegimeMasked masked (tagEnv.insert k ⟨false, deps⟩) R := by
+  intro k' deps' hget
+  by_cases hkk' : k' = k
+  · subst hkk'
+    simp [Std.ExtTreeMap.get?_eq_getElem?] at hget
+  · have hcmp : compare k k' ≠ Ordering.eq := by
+      intro hce
+      have : k = k' := (Nat.compare_eq_eq).1 hce
+      exact hkk' this.symm
+    have hget' : tagEnv.get? k' = some ⟨true, deps'⟩ := by
+      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
+      exact hget
+    exact h k' deps' hget'
+
 private lemma tagEnvConsistentWithRegimeMasked_insert_true_with_regime
     (masked : Tag → Prop)
     (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
@@ -311,6 +362,23 @@ lemma tagEnvConsistentWithRegime_invalidate
       rw [hget.1]
   exact h k deps hget'
 
+private lemma tagEnvConsistentWithRegimeMasked_invalidate
+    (masked : Tag → Prop)
+    (tagEnv : TagEnv) (R : Regime) (ls : LocSet)
+    (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
+    tagEnvConsistentWithRegimeMasked masked (invalidateTagDeps tagEnv ls) R := by
+  intro k deps hget
+  have hget' : tagEnv.get? k = some ⟨true, deps⟩ := by
+    unfold invalidateTagDeps at hget
+    rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter'] at hget
+    cases h0 : tagEnv.get? k
+    · rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
+      simp at hget
+    · rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
+      simp at hget
+      rw [hget.1]
+  exact h k deps hget'
+
 -- `invalidateRegimeDeps` keeps the regime and tag environment in sync: if a tag survives
 -- invalidation in the TagEnv, it also survives in the regime map.
 lemma invalidateRegimeDeps_preserves_true
@@ -365,6 +433,49 @@ lemma invalidateRegimeDeps_preserves_true
       simp only [Std.ExtTreeMap.contains_eq_isSome_getElem?]
       rw [← Std.ExtTreeMap.get?_eq_getElem?, hget]
       rfl
+
+private lemma invalidateRegimeDeps_preserves_true_masked
+    (masked : Tag → Prop)
+    (tagEnv : TagEnv) (R : Regime) (ls : LocSet)
+    (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
+    tagEnvConsistentWithRegimeMasked masked
+      (invalidateTagDeps tagEnv ls) (invalidateRegimeDeps R tagEnv ls) := by
+  intro k deps hget
+  have hkR_or_masked : masked k ∨ R.lookup? k = some true := by
+    have hkeep : tagEnv.get? k = some ⟨true, deps⟩ := by
+      unfold invalidateTagDeps at hget
+      rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter'] at hget
+      cases h0 : tagEnv.get? k
+      · rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
+        simp at hget
+      · rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
+        simp at hget
+        rw [hget.1]
+    exact h k deps hkeep
+  cases hkR_or_masked with
+  | inl hmasked =>
+      exact Or.inl hmasked
+  | inr hkR =>
+      right
+      unfold invalidateRegimeDeps
+      dsimp [Regime.lookup?] at hkR
+      split_ifs at hkR with hklt
+      · dsimp only [invalidateTagDeps]
+        have hcontains : (invalidateTagDeps tagEnv ls).contains k = true := by
+          simp only [Std.ExtTreeMap.contains_eq_isSome_getElem?]
+          rw [← Std.ExtTreeMap.get?_eq_getElem?, hget]
+          rfl
+        have hmap :
+            (R.map.filter (fun k _ => (invalidateTagDeps tagEnv ls).contains k)).get? k = some true := by
+          simp [Std.ExtTreeMap.get?_eq_getElem?, hcontains, hkR]
+        simp [Regime.lookup?, hklt]
+        constructor
+        · exact hkR
+        · unfold invalidateTagDeps at hget
+          show (ExtTreeMap.filter (fun x tv => !tv.deps.any (ExtTreeSet.contains ls)) tagEnv).contains k = true
+          simp only [Std.ExtTreeMap.contains_eq_isSome_getElem?]
+          rw [← Std.ExtTreeMap.get?_eq_getElem?, hget]
+          rfl
 
 -- Join of TagEnvs/Regimes preserves the invariant (meet-style join: only agreed tags remain).
 lemma tagEnvConsistentWithRegime_join
@@ -585,6 +696,24 @@ private lemma tagEnvNotTrueAt_join
     ⟨deps₁, deps₂, hget₁, _hget₂⟩
   exact hnot₁ deps₁ hget₁
 
+private lemma tagEnvNotTrueAt_join_left
+    (tagEnv₁ tagEnv₂ : TagEnv) (k : Tag)
+    (hnot₁ : tagEnvNotTrueAt tagEnv₁ k) :
+    tagEnvNotTrueAt (joinTagEnvs tagEnv₁ tagEnv₂) k := by
+  intro deps hget
+  rcases joinTagEnvs_lookup_true_elim tagEnv₁ tagEnv₂ k deps hget with
+    ⟨deps₁, _deps₂, hget₁, _hget₂⟩
+  exact hnot₁ deps₁ hget₁
+
+private lemma tagEnvNotTrueAt_join_right
+    (tagEnv₁ tagEnv₂ : TagEnv) (k : Tag)
+    (hnot₂ : tagEnvNotTrueAt tagEnv₂ k) :
+    tagEnvNotTrueAt (joinTagEnvs tagEnv₁ tagEnv₂) k := by
+  intro deps hget
+  rcases joinTagEnvs_lookup_true_elim tagEnv₁ tagEnv₂ k deps hget with
+    ⟨_deps₁, deps₂, _hget₁, hget₂⟩
+  exact hnot₂ deps₂ hget₂
+
 private lemma tagEnvConsistentWithRegime_join_left_masked
     (masked : Tag → Prop)
     (tagEnv₁ tagEnv₂ : TagEnv) (R₁ R₂ : Regime)
@@ -603,6 +732,54 @@ private lemma tagEnvConsistentWithRegime_join_left_masked
       exact False.elim ((hmasked_absent k deps₂ hmasked) hget₂)
   | inr hlookup =>
       exact joinRegimes_lookup_true_of_both_true R₁ R₂ k hlookup h₂_lookup
+
+private lemma tagEnvConsistentWithRegimeMasked_join
+    (masked : Tag → Prop)
+    (tagEnv₁ tagEnv₂ : TagEnv) (R₁ R₂ : Regime)
+    (h₁ : tagEnvConsistentWithRegimeMasked masked tagEnv₁ R₁)
+    (h₂ : tagEnvConsistentWithRegimeMasked masked tagEnv₂ R₂) :
+    tagEnvConsistentWithRegimeMasked masked (joinTagEnvs tagEnv₁ tagEnv₂) (joinRegimes R₁ R₂) := by
+  intro k deps hget
+  rcases joinTagEnvs_lookup_true_elim tagEnv₁ tagEnv₂ k deps hget with
+    ⟨deps₁, deps₂, hget₁, hget₂⟩
+  have h₁_lookup := h₁ k deps₁ hget₁
+  have h₂_lookup := h₂ k deps₂ hget₂
+  cases h₁_lookup with
+  | inl hmasked =>
+      exact Or.inl hmasked
+  | inr hlookup₁ =>
+      cases h₂_lookup with
+      | inl hmasked =>
+          exact Or.inl hmasked
+      | inr hlookup₂ =>
+          exact Or.inr (joinRegimes_lookup_true_of_both_true R₁ R₂ k hlookup₁ hlookup₂)
+
+private lemma tagEnvConsistentWithRegimeMasked_join_drop
+    (masked : Tag → Prop)
+    (tagEnv₁ tagEnv₂ : TagEnv) (R₁ R₂ : Regime) (k : Tag)
+    (h₁ : tagEnvConsistentWithRegimeMasked (fun t => masked t ∨ t = k) tagEnv₁ R₁)
+    (h₂ : tagEnvConsistentWithRegimeMasked masked tagEnv₂ R₂)
+    (h₂_not : tagEnvNotTrueAt tagEnv₂ k) :
+    tagEnvConsistentWithRegimeMasked masked (joinTagEnvs tagEnv₁ tagEnv₂) (joinRegimes R₁ R₂) := by
+  intro k' deps hget
+  rcases joinTagEnvs_lookup_true_elim tagEnv₁ tagEnv₂ k' deps hget with
+    ⟨deps₁, deps₂, hget₁, hget₂⟩
+  have h₁_lookup := h₁ k' deps₁ hget₁
+  have h₂_lookup := h₂ k' deps₂ hget₂
+  cases h₁_lookup with
+  | inl hmasked_or_eq =>
+      cases hmasked_or_eq with
+      | inl hmasked =>
+          exact Or.inl hmasked
+      | inr hk' =>
+          subst hk'
+          exact False.elim (h₂_not deps₂ hget₂)
+  | inr hlookup₁ =>
+      cases h₂_lookup with
+      | inl hmasked =>
+          exact Or.inl hmasked
+      | inr hlookup₂ =>
+          exact Or.inr (joinRegimes_lookup_true_of_both_true R₁ R₂ k' hlookup₁ hlookup₂)
 
 
 -- Helper lemma: regimeBounded transfers under monotonicity (bounds are equal)
@@ -5233,6 +5410,18 @@ lemma regimeConsistentWithCtx_of_tagEnv_regime_nextTag
   simp only [regimeConsistentWithCtx] at h ⊢
   rw [htag, hreg, hnt]; exact h
 
+private lemma regimeConsistentWithCtxMasked_of_tagEnv_regime_nextTag
+    (masked : Tag → Prop)
+    (ctx₁ ctx₂ : TypeContext)
+    (htag : ctx₂.tagEnv = ctx₁.tagEnv)
+    (hreg : ctx₂.regime = ctx₁.regime)
+    (hnt : ctx₂.nextTag = ctx₁.nextTag)
+    (h : regimeConsistentWithCtxMasked masked ctx₁) :
+    regimeConsistentWithCtxMasked masked ctx₂ := by
+  simp only [regimeConsistentWithCtxMasked] at h ⊢
+  rw [htag, hreg, hnt]
+  exact h
+
 lemma joinTypeResults_tagEnvConsistentWithRegime'
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (h_join : joinTypeResults ctx first rest = .ok res)
@@ -5336,8 +5525,8 @@ lemma joinTypeResults_tagEnvConsistentWithRegime'
                 simpa [regimeConsistentWithCtx, ctxAfter] using h_first.1
               exact
                 h_fold_tag rest
-                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
-                    first.nextLoc', first.nextTag')
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag')
                   a hfold h_first_tag h_rest
 
 lemma joinTypeResults_regimeConsistentWithCtx
@@ -5365,43 +5554,889 @@ lemma joinTypeResults_regimeConsistentWithCtx
     simp [ctxAfter]
     exact Nat.le_trans (Nat.le_trans hbound_le_first hfirst_bound) hfirst_le_res
 
-lemma typecheckExpr_preserves_regimeConsistentWithCtx_main :
-    ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult),
-    regimeConsistentWithCtx ctx →
+private lemma joinTypeResults_tagEnvNotTrueAt
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (k : Tag)
+  (h_join : joinTypeResults ctx first rest = .ok res)
+  (h_first : tagEnvNotTrueAt first.tagEnv' k) :
+  tagEnvNotTrueAt res.tagEnv' k := by
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvsStrong acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
+  have h_fold_not_true :
+      ∀ (rs' : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
+        List.foldlM joinStep acc rs' = .ok acc' →
+        tagEnvNotTrueAt acc.2.2.2.2.1 k →
+        tagEnvNotTrueAt acc'.2.2.2.2.1 k := by
+    intro rs' acc acc' hfold hacc
+    induction rs' generalizing acc with
+    | nil =>
+        simp [List.foldlM_nil, pure, Except.pure] at hfold
+        cases hfold
+        exact hacc
+    | cons x xs ih =>
+        cases hqx : x.qualType with
+        | mk resEtyp resPoison resPred =>
+            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
+            let acc1 :
+                ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
+              (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+                joinMemEnvsStrong acc.2.1 x.memEnv',
+                joinPoison acc.2.2.1 resPoison,
+                joinPredicates acc.2.2.2.1 resPred,
+                joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
+                joinRegimes acc.2.2.2.2.2.1 x.regime',
+                max acc.2.2.2.2.2.2.1 x.nextLoc',
+                max acc.2.2.2.2.2.2.2 x.nextTag')
+            have hfold_tail : List.foldlM joinStep acc1 xs = .ok acc' := by
+              simpa [acc1] using hfold
+            have hacc1 : tagEnvNotTrueAt acc1.2.2.2.2.1 k := by
+              simpa [acc1] using
+                (tagEnvNotTrueAt_join_left acc.2.2.2.2.1 x.tagEnv' k hacc)
+            exact ih (acc := acc1) hfold_tail hacc1
+  cases hqt : first.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw, TypecheckM] at h_join
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at h_join
+          simp at h_join
+      | ok _ =>
+          erw [hcheck] at h_join
+          simp at h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at h_join
+              simp at h_join
+          | ok a =>
+              erw [hfold] at h_join
+              simp at h_join
+              subst res
+              exact
+                h_fold_not_true rest
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag')
+                  a hfold h_first
+
+private lemma joinTypeResults_tagEnvConsistentWithRegimeMasked'
+  (masked : Tag → Prop)
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (h_join : joinTypeResults ctx first rest = .ok res)
+  (h_first : regimeConsistentWithCtxMasked masked (ctxAfter ctx first))
+  (h_rest : ∀ r ∈ rest, regimeConsistentWithCtxMasked masked (ctxAfter ctx r)) :
+  tagEnvConsistentWithRegimeMasked masked (ctxAfter ctx res).tagEnv (ctxAfter ctx res).regime := by
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvsStrong acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
+  have h_fold_tag :
+      ∀ (rs' : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
+        List.foldlM joinStep acc rs' = .ok acc' →
+        tagEnvConsistentWithRegimeMasked masked acc.2.2.2.2.1 acc.2.2.2.2.2.1 →
+        (∀ r ∈ rs', regimeConsistentWithCtxMasked masked (ctxAfter ctx r)) →
+        tagEnvConsistentWithRegimeMasked masked acc'.2.2.2.2.1 acc'.2.2.2.2.2.1 := by
+    intro rs' acc acc' hfold hacc hrs
+    induction rs' generalizing acc with
+    | nil =>
+        simp [List.foldlM_nil, pure, Except.pure] at hfold
+        cases hfold
+        exact hacc
+    | cons x xs ih =>
+        cases hqx : x.qualType with
+        | mk resEtyp resPoison resPred =>
+            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
+            let acc1 :
+                ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
+              (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+                joinMemEnvsStrong acc.2.1 x.memEnv',
+                joinPoison acc.2.2.1 resPoison,
+                joinPredicates acc.2.2.2.1 resPred,
+                joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
+                joinRegimes acc.2.2.2.2.2.1 x.regime',
+                max acc.2.2.2.2.2.2.1 x.nextLoc',
+                max acc.2.2.2.2.2.2.2 x.nextTag')
+            have hfold_tail : List.foldlM joinStep acc1 xs = .ok acc' := by
+              simpa [acc1] using hfold
+            have hx :
+                regimeConsistentWithCtxMasked masked (ctxAfter ctx x) :=
+              hrs x (by simp)
+            have hx_tag : tagEnvConsistentWithRegimeMasked masked x.tagEnv' x.regime' := by
+              simpa [regimeConsistentWithCtxMasked, ctxAfter] using hx.1
+            have hacc1 :
+                tagEnvConsistentWithRegimeMasked masked acc1.2.2.2.2.1 acc1.2.2.2.2.2.1 := by
+              simpa [acc1] using
+                (tagEnvConsistentWithRegimeMasked_join
+                  masked acc.2.2.2.2.1 x.tagEnv' acc.2.2.2.2.2.1 x.regime'
+                  hacc hx_tag)
+            have hrs_tail :
+                ∀ r ∈ xs, regimeConsistentWithCtxMasked masked (ctxAfter ctx r) := by
+              intro r hr
+              exact hrs r (by simp [hr])
+            exact ih (acc := acc1) hfold_tail hacc1 hrs_tail
+  cases hqt : first.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw, TypecheckM] at h_join
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at h_join
+          simp at h_join
+      | ok _ =>
+          erw [hcheck] at h_join
+          simp at h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at h_join
+              simp at h_join
+          | ok a =>
+              erw [hfold] at h_join
+              simp at h_join
+              subst res
+              have h_first_tag :
+                  tagEnvConsistentWithRegimeMasked masked first.tagEnv' first.regime' := by
+                simpa [regimeConsistentWithCtxMasked, ctxAfter] using h_first.1
+              exact
+                h_fold_tag rest
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag')
+                  a hfold h_first_tag h_rest
+
+private lemma joinTypeResults_regimeConsistentWithCtxMasked
+  (masked : Tag → Prop)
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (h_join : joinTypeResults ctx first rest = .ok res)
+  (h_first : regimeConsistentWithCtxMasked masked (ctxAfter ctx first))
+  (h_rest : ∀ r ∈ rest, regimeConsistentWithCtxMasked masked (ctxAfter ctx r)) :
+  regimeConsistentWithCtxMasked masked (ctxAfter ctx res) := by
+  constructor
+  · exact joinTypeResults_tagEnvConsistentWithRegimeMasked' masked ctx first rest res h_join h_first h_rest
+  · have hbound_le_first := joinTypeResults_regime_bound_le_head ctx first rest res h_join
+    have hfirst_bound : first.regime'.bound ≤ first.nextTag' := by
+      simpa [regimeConsistentWithCtxMasked, ctxAfter] using h_first.2
+    have h_nextTag_eq := joinTypeResults_nextTag_eq_max ctx first rest res h_join
+    have hfirst_le_res : first.nextTag' ≤ res.nextTag' := by
+      rw [h_nextTag_eq]
+      apply List.le_max_of_mem
+      simp
+    show (ctxAfter ctx res).regime.bound ≤ (ctxAfter ctx res).nextTag
+    simp [ctxAfter]
+    exact Nat.le_trans (Nat.le_trans hbound_le_first hfirst_bound) hfirst_le_res
+
+private lemma runWhileFixpoint_preserves_tagEnvNotTrueAt :
+    ∀ (fuel : Nat) (ctx : TypeContext) (e1 e2 : Expr) (pureGuard : Bool)
+      (guardOpt : Option (Tag × Deps))
+      (pc : Poison) (memEnv : MemoryTypeEnv) (tagEnv : TagEnv) (regime : Regime)
+      (nextLoc : Loc) (nextTag : Tag) (k : Tag),
+      tagEnvNotTrueAt ctx.tagEnv k →
+      ctx.regime.lookup? k ≠ some true →
+      runWhileFixpoint .ioFree ctx e1 e2 fuel pureGuard guardOpt =
+        .ok (pc, memEnv, tagEnv, regime, nextLoc, nextTag) →
+      tagEnvNotTrueAt tagEnv k := by
+  intro fuel
+  induction fuel with
+  | zero =>
+      intro ctx e1 e2 pureGuard guardOpt pc memEnv tagEnv regime nextLoc nextTag k
+        hnotTag hnotReg hfix
+      simp [runWhileFixpoint] at hfix
+  | succ fuel ih =>
+      intro ctx e1 e2 pureGuard guardOpt pc memEnv tagEnv regime nextLoc nextTag k
+        hnotTag hnotReg hfix
+      simp [runWhileFixpoint, bind, Except.bind] at hfix
+      set ctxForGuard : TypeContext := if pureGuard then { ctx with pureCtx := true } else ctx with hctxForGuard
+      cases hguard : typecheckExpr .ioFree ctxForGuard e1 fuel with
+      | error err =>
+          simp [hguard] at hfix
+      | ok guardRes =>
+          simp [hguard] at hfix
+          cases hq1 : guardRes.qualType with
+          | mk etyp1 p1 pred1 =>
+              simp [hq1] at hfix
+              by_cases hbool : etyp1 = ETyp.bool
+              · simp [hbool] at hfix
+                cases hbody : typecheckExpr .ioFree _ e2 fuel with
+                | error err =>
+                    simp [pure, Except.pure] at hfix
+                    erw [hbody] at hfix
+                    simp at hfix
+                | ok bodyRes =>
+                    simp [hbody] at hfix
+                    cases hq2 : bodyRes.qualType with
+                    | mk etyp2 p2 pred2 =>
+                        simp [hq2] at hfix
+                        by_cases hunit : etyp2 = ETyp.unit
+                        · simp [hunit] at hfix
+                          set newTagEnv : TagEnv := joinTagEnvs ctx.tagEnv bodyRes.tagEnv' with hnewTagEnv
+                          set newRegime : Regime := joinRegimes ctx.regime bodyRes.regime' with hnewRegime
+                          have hnewTag_not_true : tagEnvNotTrueAt newTagEnv k := by
+                            simpa [hnewTagEnv] using
+                              (tagEnvNotTrueAt_join_left ctx.tagEnv bodyRes.tagEnv' k hnotTag)
+                          have hnewReg_not_true : newRegime.lookup? k ≠ some true := by
+                            intro htrue
+                            exact hnotReg (joinRegimes_lookup_some_left ctx.regime bodyRes.regime' k true (by simpa [hnewRegime] using htrue))
+                          simp [pure, Except.pure] at hfix
+                          by_cases hfixpoint :
+                              (((joinMemEnvs ctx.memEnv (restrictMemEnv bodyRes.memEnv' ctx.memEnv) == ctx.memEnv) = true ∧
+                                  joinPoison ctx.pc p2 = ctx.pc) ∧
+                                (newTagEnv == ctx.tagEnv) = true) ∧
+                              newRegime.bound = ctx.regime.bound
+                          · rw [if_pos hfixpoint] at hfix
+                            simp at hfix
+                            have htagEq : joinTagEnvs ctx.tagEnv bodyRes.tagEnv' = tagEnv := hfix.2.2.1
+                            simpa [hnewTagEnv, htagEq] using hnewTag_not_true
+                          · set nextCtx : TypeContext :=
+                              { ctx with
+                                pc := joinPoison ctx.pc p2,
+                                memEnv := joinMemEnvs ctx.memEnv (restrictMemEnv bodyRes.memEnv' ctx.memEnv),
+                                tagEnv := newTagEnv,
+                                regime := newRegime,
+                                nextLoc := bodyRes.nextLoc',
+                                nextTag := bodyRes.nextTag' } with hnextCtx
+                            rw [if_neg hfixpoint] at hfix
+                            simp [hnextCtx] at hfix
+                            have := ih nextCtx e1 e2 pureGuard guardOpt pc memEnv tagEnv regime nextLoc nextTag k
+                              hnewTag_not_true hnewReg_not_true hfix
+                            simpa [hnextCtx] using this
+                        · exfalso
+                          rw [if_neg hunit] at hfix
+                          simp [pure, Except.pure] at hfix
+              · exfalso
+                rw [if_neg hbool] at hfix
+                simp at hfix
+
+private lemma typecheckWhile_preserves_tagEnvNotTrueAt
+    (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) (k : Tag)
+    (hnotTag : tagEnvNotTrueAt ctx.tagEnv k)
+    (hnotReg : ctx.regime.lookup? k ≠ some true)
+    (htc : typecheckWhile .ioFree ctx e1 e2 fuel = .ok res) :
+    tagEnvNotTrueAt res.tagEnv' k := by
+  cases fuel with
+  | zero =>
+      unfold typecheckWhile at htc
+      simp at htc
+  | succ fuel' =>
+      unfold typecheckWhile at htc
+      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
+      | ok g =>
+          rcases g with ⟨kWhile, deps⟩
+          simp [hguard] at htc
+          cases fuel' with
+          | zero =>
+              simp [typecheckWhileDepoison] at htc
+          | succ fuel'' =>
+              simp [typecheckWhileDepoison, bind, Except.bind] at htc
+              cases hfix :
+                  runWhileFixpoint .ioFree ctx e1 e2 fuel'' true (some (kWhile, deps)) with
+              | error err =>
+                  simp [hfix] at htc
+              | ok r =>
+                  rcases r with
+                    ⟨finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag⟩
+                  simp [hfix] at htc
+                  cases htc
+                  by_cases hkEq : k = kWhile
+                  · subst hkEq
+                    intro deps' hget
+                    simp [Std.ExtTreeMap.get?_eq_getElem?] at hget
+                  · have hfinal :
+                      tagEnvNotTrueAt finalTagEnv k := by
+                      exact
+                        runWhileFixpoint_preserves_tagEnvNotTrueAt fuel'' ctx e1 e2 true
+                          (some (kWhile, deps))
+                          finalPc finalMemEnv finalTagEnv finalRegime finalNextLoc finalNextTag
+                          k hnotTag hnotReg hfix
+                    exact tagEnvNotTrueAt_insert_false finalTagEnv k kWhile deps hfinal
+      | error err =>
+          simp [hguard] at htc
+          cases fuel' with
+          | zero =>
+              simp [typecheckWhileStd] at htc
+          | succ fuel'' =>
+              simp [typecheckWhileStd, bind, Except.bind] at htc
+              cases hfix : runWhileFixpoint .ioFree ctx e1 e2 fuel'' false none with
+              | error err =>
+                  simp [hfix] at htc
+              | ok r =>
+                  rcases r with
+                    ⟨finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag⟩
+                  simp [hfix] at htc
+                  cases htc
+                  exact
+                    runWhileFixpoint_preserves_tagEnvNotTrueAt fuel'' ctx e1 e2 false none
+                      finalPc finalMemEnv finalTagEnv finalRegime finalNextLoc finalNextTag
+                      k hnotTag hnotReg hfix
+
+private lemma monotoneStep_lookup_not_true_local
+    {R R' : Regime} (h_mono : Regime.monotoneStep R R')
+    {k : Tag}
+    (hnot : R.lookup? k ≠ some true) :
+    R'.lookup? k ≠ some true := by
+  intro hkR'
+  have hRdef : R.lookup? k ≠ none := h_mono.2.2 k (by simp [hkR'])
+  cases hkR : R.lookup? k with
+  | none =>
+      exact False.elim (hRdef hkR)
+  | some b =>
+      have hkeep := h_mono.2.1 k b hkR
+      cases hkeep with
+      | inl hkR'' =>
+          have hb : b = true := by
+            exact Option.some.inj (hkR''.symm.trans hkR')
+          subst hb
+          exact hnot hkR
+      | inr hkR'' =>
+          simp [hkR''] at hkR'
+
+private lemma regime_lookup_insert_false_not_true_local
+    {R : Regime} {k k' : Tag}
+    (hnot : R.lookup? k' ≠ some true) :
+    ({ R with map := R.map.insert k false }).lookup? k' ≠ some true := by
+  by_cases hk' : k' < R.bound
+  · have hnot' : R.map.get? k' ≠ some true := by
+      simpa [Regime.lookup?, hk', Std.ExtTreeMap.get?_eq_getElem?] using hnot
+    by_cases hEq : k' = k
+    · subst hEq
+      simp [Regime.lookup?, hk', Std.ExtTreeMap.get?_eq_getElem?]
+    · have hcmp : compare k k' ≠ Ordering.eq := by
+        intro hce
+        have : k = k' := (Nat.compare_eq_eq).1 hce
+        exact hEq this.symm
+      simpa [Regime.lookup?, hk', Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] using hnot'
+  · simp [Regime.lookup?, hk'] at hnot ⊢
+
+private lemma applyPFnTClosure_regular_inv_local
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuelBody : Nat)
+  (x : Name) (pbody : PExpr) (tenv : CapturedVarEnv)
+  (first : TypeResult)
+  (happly :
+    applyPFnTClosure .ioFree (PFnTClosure.regular x pbody tenv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 (Nat.succ fuelBody) = .ok first) :
+  ∃ result3,
+    typecheckExpr .ioFree
+      { ctx with
+        pc := joinPoison p (joinPoison ctx.pc p1)
+        memEnv := result2.memEnv'
+        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        tagEnv := result2.tagEnv'
+        pureCtx := true
+        nextTag := result2.nextTag'
+        nextLoc := result2.nextLoc'
+        regime := result2.regime' } (PExpr.toExpr pbody) fuelBody = .ok result3 ∧
+    isSubtype st2 result3.qualType = true ∧
+    first =
+      { result3 with
+        qualType :=
+          normalizeAppResultByProvenance (joinPoison p1 p)
+            { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+  unfold applyPFnTClosure at happly
+  simp [bind, Except.bind] at happly
+  cases htc_body : typecheckExpr .ioFree
+      { ctx with
+        pc := joinPoison p (joinPoison ctx.pc p1)
+        memEnv := result2.memEnv'
+        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        tagEnv := result2.tagEnv'
+        pureCtx := true
+        nextTag := result2.nextTag'
+        nextLoc := result2.nextLoc'
+        regime := result2.regime' } (PExpr.toExpr pbody) fuelBody with
+  | error err =>
+      simp [htc_body] at happly
+  | ok result3 =>
+      simp [htc_body] at happly
+      cases hsub : isSubtype st2 result3.qualType with
+      | false =>
+          cases hq3 : result3.qualType with
+          | mk et3 p3 pred3 =>
+              have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                simpa [hq3] using hsub
+              simp [hq3, hsub'] at happly
+      | true =>
+          cases hq3 : result3.qualType with
+          | mk et3 p3 pred3 =>
+              have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
+                simpa [hq3] using hsub
+              have happly' :
+                  (Except.ok first : Except String TypeResult) =
+                    Except.ok
+                      { result3 with
+                        qualType :=
+                          normalizeAppResultByProvenance (joinPoison p1 p)
+                            { result3.qualType with
+                              poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+                simpa [hq3, hsub', pure, Except.pure] using happly.symm
+              have hfirst :
+                  first =
+                    { result3 with
+                      qualType :=
+                        normalizeAppResultByProvenance (joinPoison p1 p)
+                          { result3.qualType with
+                            poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+                injection happly' with hEq
+              exact ⟨result3, rfl, hsub, hfirst⟩
+
+private lemma applyPFnTClosure_ioFree_extern_fails_local
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
+  (r : TypeResult) :
+  applyPFnTClosure .ioFree (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx result2 fuel ≠ .ok r := by
+  intro h
+  cases fuel with
+  | zero =>
+      unfold applyPFnTClosure at h
+      simp at h
+  | succ _ =>
+      unfold applyPFnTClosure at h
+      have hcond : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := rfl
+      simp [hcond, bind, Except.bind] at h
+
+private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
+    ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult) (k : Tag),
+    tagEnvNotTrueAt ctx.tagEnv k →
+    ctx.regime.lookup? k ≠ some true →
     typecheck .ioFree ctx e fuel = .ok res →
-    regimeConsistentWithCtx (ctxAfter ctx res) := by
+    tagEnvNotTrueAt res.tagEnv' k := by
   intro fuel
   induction fuel using Nat.strong_induction_on with
   | _ fuel IH =>
-    intro ctx e res hreg htc
+    intro ctx e res k hnotTag hnotReg htc
     have IH' : ∀ m < fuel, ∀ (ctx' : TypeContext) (e' : Expr) (res' : TypeResult),
-        regimeConsistentWithCtx ctx' →
+        tagEnvNotTrueAt ctx'.tagEnv k →
+        ctx'.regime.lookup? k ≠ some true →
         typecheck .ioFree ctx' e' m = .ok res' →
-        regimeConsistentWithCtx (ctxAfter ctx' res') := by
-      intro m hm ctx' e' res'; exact IH m hm ctx' e' res'
+        tagEnvNotTrueAt res'.tagEnv' k := by
+      intro m hm ctx' e' res' hnotTag' hnotReg' htc'
+      exact IH m hm ctx' e' res' k hnotTag' hnotReg' htc'
     unfold typecheck at htc
     cases fuel with
     | zero =>
-        unfold typecheckExpr at htc; simp at htc
+        unfold typecheckExpr at htc
+        simp at htc
     | succ fuel' =>
         unfold typecheckExpr at htc
-        have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
         cases e with
-        -- Literals and simple forms: tagEnv'/regime'/nextTag' = ctx fields
-        | num _n =>
-            unfold typecheckInt at htc; simp [pure, Except.pure] at htc; cases htc
-            simpa [ctxAfter, regimeConsistentWithCtx]
-        | bool _b =>
-            unfold typecheckBool at htc; simp [pure, Except.pure] at htc; cases htc
-            simpa [ctxAfter, regimeConsistentWithCtx]
-        | unit =>
-            unfold typecheckUnit at htc; simp [pure, Except.pure] at htc; cases htc
-            simpa [ctxAfter, regimeConsistentWithCtx]
-        | str _s =>
-            unfold typecheckString at htc; simp [pure, Except.pure] at htc; cases htc
-            simpa [ctxAfter, regimeConsistentWithCtx]
+        | num _ | bool _ | unit | str _ =>
+            simp at htc
+            cases htc
+            simpa using hnotTag
         | var x =>
-            -- typecheckVar always returns tagEnv' = ctx.tagEnv, regime' = ctx.regime, nextTag' = ctx.nextTag
+            simp at htc
+            unfold typecheckVar at htc
+            simp only [bind, Except.bind] at htc
+            cases hlookup : ctx.varEnv.lookup x with
+            | none => simp [hlookup] at htc
+            | some qt =>
+                simp [hlookup] at htc
+                cases qt with
+                | mk etyp poison pred =>
+                    simp at htc
+                    cases pred with
+                    | noPred =>
+                        simp [pure, Except.pure] at htc
+                        cases htc
+                        simpa using hnotTag
+                    | guardOnly k' =>
+                        by_cases hfn : etyp.isFunctionType
+                        · simp [hfn] at htc
+                        · simp [hfn] at htc
+                          revert htc; generalize htv : ctx.tagEnv[k']? = tv
+                          cases tv with
+                          | none =>
+                              intro htc
+                              simp at htc
+                              cases htc
+                              simpa using hnotTag
+                          | some tv =>
+                              cases tv with
+                              | mk val deps =>
+                                  cases val <;> intro htc <;> simp at htc <;> cases htc <;> simpa using hnotTag
+                    | guardClosure k' _ _ _ =>
+                        by_cases hfn : etyp.isFunctionType
+                        · simp [hfn] at htc
+                        · simp [hfn] at htc
+                          revert htc; generalize htv : ctx.tagEnv[k']? = tv
+                          cases tv with
+                          | none =>
+                              intro htc
+                              simp at htc
+                              cases htc
+                              simpa using hnotTag
+                          | some tv =>
+                              cases tv with
+                              | mk val deps =>
+                                  cases val <;> intro htc <;> simp at htc <;> cases htc <;> simpa using hnotTag
+        | fn _ _ _ _ =>
+            unfold typecheckFn at htc
+            simp [pure, Except.pure] at htc
+            cases htc
+            simpa using hnotTag
+        | pfn _ _ body _ =>
+            unfold typecheckPfn at htc
+            simp [bind, Except.bind] at htc
+            cases h_topexpr : body.toPExpr with
+            | error _ => simp [h_topexpr] at htc
+            | ok _ =>
+                simp [h_topexpr, pure, Except.pure] at htc
+                subst htc
+                simpa using hnotTag
+        | externVal _ _ _ =>
+            exfalso
+            simp at htc
+            unfold typecheckExternVal at htc
+            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+            simp [heq, bind, Except.bind] at htc
+        | externFn _ _ _ _ =>
+            exfalso
+            simp at htc
+            unfold typecheckExternFn at htc
+            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+            simp [heq, bind, Except.bind] at htc
+        | externPfn _ _ _ =>
+            exfalso
+            simp at htc
+            unfold typecheckExternPfn at htc
+            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+            simp [heq, bind, Except.bind] at htc
+        | rand _ =>
+            simp at htc
+            exact absurd htc (typecheckRand_ioFree_impossible ctx _ fuel' res)
+        | frand _ =>
+            simp at htc
+            exact absurd htc (typecheckFrand_ioFree_impossible ctx _ fuel' res)
+        | printInt _ =>
+            simp at htc
+            exact absurd htc (typecheckPrintInt_ioFree_impossible ctx _ fuel' res)
+        | printString _ =>
+            simp at htc
+            exact absurd htc (typecheckPrintString_ioFree_impossible ctx _ fuel' res)
+        | unaryop op e1 =>
+            have hstruct := typecheckUnaryOp_structure ctx op e1 fuel' res htc
+            rcases hstruct with ⟨result1, _, htc1, _, _, htag, _, _, _, _, _⟩
+            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
+            rwa [htag]
+        | deref e1 =>
+            have hstruct := typecheckDeref_structure ctx e1 fuel' res htc
+            rcases hstruct with ⟨result1, htc1, _, htag, _, _, _⟩
+            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
+            rwa [htag]
+        | newRef e1 =>
+            have hstruct := typecheckNewRef_structure ctx e1 fuel' res htc
+            rcases hstruct with ⟨result1, _, htc1, _, _, _, _, _, _, htag, _, _, _⟩
+            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
+            rwa [htag]
+        | op e1 op e2 =>
+            have hstruct := typecheckOp_structure ctx e1 e2 op fuel' res htc
+            rcases hstruct with ⟨result1, result2, _, htc1, htc2, _, _, htag, _, _, _, _, _, _⟩
+            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
+            have hnotReg2 : result1.regime'.lookup? k ≠ some true := by
+              exact monotoneStep_lookup_not_true_local (by simpa [ctxAfter] using regime_monotone ctx e1 (fuel' - 1) result1 htc1') hnotReg
+            have htc2' : typecheck .ioFree (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by simpa using htc2
+            have hIH2 := IH' (fuel' - 1) (by omega) (updateCtxFromResult ctx result1) e2 result2 hIH1 hnotReg2 htc2'
+            rwa [htag]
+        | seq e1 e2 =>
+            have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
+            rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
+            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
+            have hnotReg' : ctx'.regime.lookup? k ≠ some true := by
+              rw [hctx']
+              exact monotoneStep_lookup_not_true_local (by simpa [ctxAfter, updateCtxFromResult] using regime_monotone ctx e1 (fuel' - 1) result1 htc1') hnotReg
+            have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok res := by simpa using htc2
+            exact IH' (fuel' - 1) (by omega) ctx' e2 res (by rw [hctx']; simpa [updateCtxFromResult] using hIH1) hnotReg' htc2'
+        | vlet x e1 e2 =>
+            have hstruct := typecheckVlet_structure ctx x e1 e2 fuel' res htc
+            rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, _, _, htag, _, _, _, _⟩
+            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
+            have hnotReg' : ctx'.regime.lookup? k ≠ some true := by
+              rw [hctx']
+              exact monotoneStep_lookup_not_true_local (by simpa [ctxAfter] using regime_monotone ctx e1 (fuel' - 1) result1 htc1') hnotReg
+            have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok result2 := by simpa using htc2
+            have hIH2 := IH' (fuel' - 1) (by omega) ctx' e2 result2 (by rw [hctx']; simpa using hIH1) hnotReg' htc2'
+            rwa [htag]
+        | assign e1 e2 =>
+            unfold typecheckAssign at htc
+            cases fuel' with
+            | zero => simp at htc
+            | succ fuel'' =>
+                simp only [bind, Except.bind] at htc
+                cases h_tc1 : typecheckExpr .ioFree ctx e1 fuel'' with
+                | error _ => simp [h_tc1] at htc
+                | ok result1 =>
+                    simp [h_tc1] at htc
+                    have htc1' : typecheck .ioFree ctx e1 fuel'' = .ok result1 := by simpa using h_tc1
+                    have hIH1 := IH' fuel'' (by omega) ctx e1 result1 hnotTag hnotReg htc1'
+                    have hnotReg2 : result1.regime'.lookup? k ≠ some true := by
+                      exact monotoneStep_lookup_not_true_local (by simpa [ctxAfter] using regime_monotone ctx e1 fuel'' result1 htc1') hnotReg
+                    cases h_qt1 : result1.qualType with
+                    | mk etyp1 p1 pred1 =>
+                        rw [h_qt1] at htc
+                        simp at htc
+                        cases etyp1 with
+                        | ref ls =>
+                            simp at htc
+                            set ctx2 : TypeContext := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                            cases h_tc2 : typecheckExpr .ioFree ctx2 e2 fuel'' with
+                            | error _ => simp [h_tc2] at htc
+                            | ok result2 =>
+                                simp [h_tc2] at htc
+                                have htc2' : typecheck .ioFree ctx2 e2 fuel'' = .ok result2 := by simpa using h_tc2
+                                have hIH2 := IH' fuel'' (by omega) ctx2 e2 result2 hIH1 hnotReg2 htc2'
+                                cases h_qt2 : result2.qualType with
+                                | mk etyp2 p2 pred2 =>
+                                    rw [h_qt2] at htc
+                                    simp at htc
+                                    by_cases h_etyp2_int : etyp2 = ETyp.int
+                                    · subst h_etyp2_int
+                                      simp at htc
+                                      cases htc
+                                      exact tagEnvNotTrueAt_invalidate result2.tagEnv' ls k hIH2
+                                    · simp [h_etyp2_int] at htc
+                        | _ => simp at htc
+        | ite e1 e2 e3 =>
+            have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
+            rcases hstruct with h1 | h2 | h3 | h4
+            · rcases h1 with ⟨kWhile, deps, _, hRk, _, _, _, res2, htc2, _, htag, _, _, _, _⟩
+              have hkNe : k ≠ kWhile := by
+                intro hkEq
+                subst hkEq
+                exact hnotReg hRk
+              have htc2' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert kWhile ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
+                simpa using htc2
+              have hIH2 := IH' (fuel' - 1) (by omega)
+                { ctx with tagEnv := ctx.tagEnv.insert kWhile ⟨true, deps⟩ } e2 res2
+                (tagEnvNotTrueAt_insert_true_of_ne ctx.tagEnv k kWhile deps hkNe hnotTag)
+                hnotReg htc2'
+              rwa [htag]
+            · rcases h2 with ⟨kWhile, deps, _, _, _, _, _, res3, htc3, _, htag, _, _, _, _⟩
+              have htc3' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert kWhile ⟨false, deps⟩ } e3 (fuel' - 1) = .ok res3 := by
+                simpa using htc3
+              have hIH3 := IH' (fuel' - 1) (by omega)
+                { ctx with tagEnv := ctx.tagEnv.insert kWhile ⟨false, deps⟩ } e3 res3
+                (tagEnvNotTrueAt_insert_false ctx.tagEnv k kWhile deps hnotTag)
+                hnotReg htc3'
+              rwa [htag]
+            · rcases h3 with ⟨kWhile, deps, _, _, res1, htc1, _, res2, htc2, res3, htc3, _, htag, _, _, _, _, _⟩
+              set ctxFalse' : TypeContext :=
+                { pc := joinPoison ctx.pc res1.qualType.poison,
+                  regime := { ctx.regime with map := ctx.regime.map.insert kWhile false },
+                  memEnv := ctx.memEnv, varEnv := ctx.varEnv,
+                  tagEnv := ctx.tagEnv.insert kWhile ⟨false, deps⟩,
+                  nextLoc := res2.nextLoc', nextTag := res2.nextTag', pureCtx := ctx.pureCtx }
+              have htc3' : typecheck .ioFree ctxFalse' e3 (fuel' - 1) = .ok res3 := by
+                simpa [ctxFalse'] using htc3
+              have hIH3 := IH' (fuel' - 1) (by omega) ctxFalse' e3 res3
+                (by simpa [ctxFalse'] using tagEnvNotTrueAt_insert_false ctx.tagEnv k kWhile deps hnotTag)
+                (by simpa [ctxFalse'] using regime_lookup_insert_false_not_true_local hnotReg) htc3'
+              rw [htag]
+              exact tagEnvNotTrueAt_join_right res2.tagEnv' res3.tagEnv' k hIH3
+            · rcases h4 with ⟨_, res1, htc1, _, res2, htc2, res3, htc3, _, htag, _, _, _, _⟩
+              have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok res1 := by simpa using htc1
+              have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 res1 hnotTag hnotReg htc1'
+              have hnotReg1 : res1.regime'.lookup? k ≠ some true := by
+                exact monotoneStep_lookup_not_true_local (by simpa [ctxAfter] using regime_monotone ctx e1 (fuel' - 1) res1 htc1') hnotReg
+              set ctx'' := { ctx with pc := joinPoison ctx.pc res1.qualType.poison, memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+              have htc2' : typecheck .ioFree ctx'' e2 (fuel' - 1) = .ok res2 := by simpa [ctx''] using htc2
+              have hIH2 := IH' (fuel' - 1) (by omega) ctx'' e2 res2 hIH1 hnotReg1 htc2'
+              rw [htag]
+              exact tagEnvNotTrueAt_join_left res2.tagEnv' res3.tagEnv' k hIH2
+        | app e1 e2 =>
+            simp at htc
+            cases fuel' with
+            | zero => simp [typecheckApp] at htc
+            | succ fuel'' =>
+                rcases typecheckApp_arrow_structure_full ctx e1 e2 fuel'' res htc with
+                  ⟨result2, result1, etyp2, p2, pred2, _hqt2, htc2, htc1, hcases⟩
+                have hIH2 := IH' fuel'' (by omega) ctx e2 result2 hnotTag hnotReg htc2
+                have hnotReg2 : result2.regime'.lookup? k ≠ some true := by
+                  exact monotoneStep_lookup_not_true_local (by simpa [ctxAfter] using regime_monotone ctx e2 fuel'' result2 htc2) hnotReg
+                set ctxApp : TypeContext :=
+                  { pc := ctx.pc, regime := result2.regime', memEnv := result2.memEnv', varEnv := ctx.varEnv,
+                    tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', pureCtx := ctx.pureCtx }
+                have hIH1 := IH' fuel'' (by omega) ctxApp e1 result1 (by simpa [ctxApp] using hIH2) hnotReg2 htc1
+                have hnotReg1 : result1.regime'.lookup? k ≠ some true := by
+                  exact monotoneStep_lookup_not_true_local
+                    (by simpa [ctxAfter, ctxApp] using regime_monotone ctxApp e1 fuel'' result1 htc1)
+                    hnotReg2
+                have h_fn_closure_not_true :
+                    ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure) (results : List TypeResult),
+                    List.mapM (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
+                    ∀ r, r ∈ results → tagEnvNotTrueAt r.tagEnv' k := by
+                  intro st1 st2 p p1 tcls results hmap r hr
+                  rcases list_mapM_ok_mem_output_exists_input
+                    (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
+                    (hmap := hmap) (hmem := hr) with ⟨tcl, _, happly⟩
+                  cases tcl with
+                  | regular x body env =>
+                      cases fuel'' with
+                      | zero => simp [applyFnTClosure] at happly
+                      | succ fuelBody =>
+                          rcases applyFnTClosure_regular_inv ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuelBody x body env r happly with
+                            ⟨result3, hbody, _, hrEq⟩
+                          have hIH_body := IH' fuelBody (by omega)
+                            { ctx with
+                              pc := joinPoison p (joinPoison p1 ctx.pc),
+                              memEnv := result1.memEnv',
+                              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                                ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
+                              tagEnv := result1.tagEnv',
+                              nextTag := result1.nextTag',
+                              nextLoc := result1.nextLoc',
+                              regime := result1.regime' }
+                            body result3 hIH1 hnotReg1 (by simpa [typecheck] using hbody)
+                          simpa [hrEq]
+                  | extern x retSpec effects capturedEnv =>
+                      exact False.elim (applyFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuel'' x retSpec effects capturedEnv r happly)
+                have h_pfn_closure_not_true :
+                    ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure) (results : List TypeResult),
+                    List.mapM (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
+                    ∀ r, r ∈ results → tagEnvNotTrueAt r.tagEnv' k := by
+                  intro st1 st2 p p1 tcls results hmap r hr
+                  rcases list_mapM_ok_mem_output_exists_input
+                    (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
+                    (hmap := hmap) (hmem := hr) with ⟨tcl, _, happly⟩
+                  cases tcl with
+                  | regular x pbody env =>
+                      cases fuel'' with
+                      | zero => simp [applyPFnTClosure] at happly
+                      | succ fuelBody =>
+                          rcases applyPFnTClosure_regular_inv_local ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuelBody x pbody env r happly with
+                            ⟨result3, hbody, _, hrEq⟩
+                          have hIH_body := IH' fuelBody (by omega)
+                            { ctx with
+                              pc := joinPoison p (joinPoison ctx.pc p1),
+                              memEnv := result1.memEnv',
+                              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                                ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
+                              tagEnv := result1.tagEnv',
+                              pureCtx := true,
+                              nextTag := result1.nextTag',
+                              nextLoc := result1.nextLoc',
+                              regime := result1.regime' }
+                            (PExpr.toExpr pbody) result3 hIH1 hnotReg1 (by simpa [typecheck] using hbody)
+                          simpa [hrEq]
+                  | extern x retSpec capturedEnv =>
+                      exact False.elim (applyPFnTClosure_ioFree_extern_fails_local ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuel'' x retSpec capturedEnv r happly)
+                rcases hcases with
+                  ⟨st1, st2, p, p1, tcls, results, first, rest, _, _, _, _, _, hmap, hresults, h_join⟩ |
+                  ⟨st1, st2, p, p1, tcls, results, first, rest, _, _, _, _, hmap, hresults, h_join⟩
+                · subst hresults
+                  have hfirst : tagEnvNotTrueAt first.tagEnv' k := h_fn_closure_not_true st1 st2 p p1 tcls (first :: rest) hmap first (by simp)
+                  exact joinTypeResults_tagEnvNotTrueAt ctx first rest res k h_join hfirst
+                · subst hresults
+                  have hfirst : tagEnvNotTrueAt first.tagEnv' k := h_pfn_closure_not_true st1 st2 p p1 tcls (first :: rest) hmap first (by simp)
+                  exact joinTypeResults_tagEnvNotTrueAt ctx first rest res k h_join hfirst
+        | kwhile e1 e2 =>
+            simp at htc
+            exact typecheckWhile_preserves_tagEnvNotTrueAt ctx e1 e2 fuel' res k hnotTag hnotReg htc
+
+private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
+    ∀ (fuel : Nat) (masked : Tag → Prop) (ctx : TypeContext) (e : Expr) (res : TypeResult),
+    regimeConsistentWithCtxMasked masked ctx →
+    typecheck .ioFree ctx e fuel = .ok res →
+    regimeConsistentWithCtxMasked masked (ctxAfter ctx res) := by
+  intro fuel
+  induction fuel using Nat.strong_induction_on with
+  | _ fuel IH =>
+    intro masked ctx e res hreg htc
+    have IH' :
+        ∀ m < fuel, ∀ (masked' : Tag → Prop) (ctx' : TypeContext) (e' : Expr) (res' : TypeResult),
+          regimeConsistentWithCtxMasked masked' ctx' →
+          typecheck .ioFree ctx' e' m = .ok res' →
+          regimeConsistentWithCtxMasked masked' (ctxAfter ctx' res') := by
+      intro m hm masked' ctx' e' res' hreg' htc'
+      exact IH m hm masked' ctx' e' res' hreg' htc'
+    unfold typecheck at htc
+    cases fuel with
+    | zero =>
+        unfold typecheckExpr at htc
+        simp at htc
+    | succ fuel' =>
+        unfold typecheckExpr at htc
+        cases e with
+        | num _n =>
+            unfold typecheckInt at htc
+            simp [pure, Except.pure] at htc
+            cases htc
+            simpa [ctxAfter, regimeConsistentWithCtxMasked]
+        | bool _b =>
+            unfold typecheckBool at htc
+            simp [pure, Except.pure] at htc
+            cases htc
+            simpa [ctxAfter, regimeConsistentWithCtxMasked]
+        | unit =>
+            unfold typecheckUnit at htc
+            simp [pure, Except.pure] at htc
+            cases htc
+            simpa [ctxAfter, regimeConsistentWithCtxMasked]
+        | str _s =>
+            unfold typecheckString at htc
+            simp [pure, Except.pure] at htc
+            cases htc
+            simpa [ctxAfter, regimeConsistentWithCtxMasked]
+        | var x =>
             simp at htc
             unfold typecheckVar at htc
             simp only [bind, Except.bind] at htc
@@ -5414,54 +6449,77 @@ lemma typecheckExpr_preserves_regimeConsistentWithCtx_main :
                 simp at htc
                 cases pred with
                 | noPred =>
-                  simp [pure, Except.pure] at htc; cases htc
-                  simpa [ctxAfter, regimeConsistentWithCtx]
+                    simp [pure, Except.pure] at htc
+                    cases htc
+                    simpa [ctxAfter, regimeConsistentWithCtxMasked]
                 | guardOnly k =>
-                  simp at htc
-                  by_cases hfn : etyp.isFunctionType
-                  · simp [hfn] at htc
-                  · simp [hfn] at htc
-                    revert htc; generalize ctx.tagEnv[k]? = tv
-                    cases tv with
-                    | none => intro htc; simp at htc; cases htc; simpa [ctxAfter, regimeConsistentWithCtx]
-                    | some tv => cases tv with | mk val deps =>
-                      cases val <;> intro htc <;> simp at htc <;> cases htc <;>
-                        simpa [ctxAfter, regimeConsistentWithCtx]
+                    simp at htc
+                    by_cases hfn : etyp.isFunctionType
+                    · simp [hfn] at htc
+                    · simp [hfn] at htc
+                      revert htc
+                      generalize htv : ctx.tagEnv[k]? = tv
+                      cases tv with
+                      | none =>
+                          intro htc
+                          simp at htc
+                          cases htc
+                          simpa [ctxAfter, regimeConsistentWithCtxMasked]
+                      | some tv =>
+                          cases tv with
+                          | mk val deps =>
+                              cases val <;> intro htc <;> simp at htc <;> cases htc <;>
+                                simpa [ctxAfter, regimeConsistentWithCtxMasked]
                 | guardClosure k tcls ptcls body_t =>
-                  simp at htc
-                  by_cases hfn : etyp.isFunctionType
-                  · simp [hfn] at htc
-                  · simp [hfn] at htc
-                    revert htc; generalize ctx.tagEnv[k]? = tv
-                    cases tv with
-                    | none => intro htc; simp at htc; cases htc; simpa [ctxAfter, regimeConsistentWithCtx]
-                    | some tv => cases tv with | mk val deps =>
-                      cases val <;> intro htc <;> simp at htc <;> cases htc <;>
-                        simpa [ctxAfter, regimeConsistentWithCtx]
+                    simp at htc
+                    by_cases hfn : etyp.isFunctionType
+                    · simp [hfn] at htc
+                    · simp [hfn] at htc
+                      revert htc
+                      generalize htv : ctx.tagEnv[k]? = tv
+                      cases tv with
+                      | none =>
+                          intro htc
+                          simp at htc
+                          cases htc
+                          simpa [ctxAfter, regimeConsistentWithCtxMasked]
+                      | some tv =>
+                          cases tv with
+                          | mk val deps =>
+                              cases val <;> intro htc <;> simp at htc <;> cases htc <;>
+                                simpa [ctxAfter, regimeConsistentWithCtxMasked]
         | fn _ _ _ _ =>
-            unfold typecheckFn at htc; simp [pure, Except.pure] at htc; cases htc
-            simpa [ctxAfter, regimeConsistentWithCtx]
+            unfold typecheckFn at htc
+            simp [pure, Except.pure] at htc
+            cases htc
+            simpa [ctxAfter, regimeConsistentWithCtxMasked]
         | pfn x st1 body st2 =>
             unfold typecheckPfn at htc
             simp [bind, Except.bind] at htc
             cases h_topexpr : body.toPExpr with
             | error _ => simp [h_topexpr] at htc
             | ok _ =>
-              simp [h_topexpr, pure, Except.pure] at htc; subst htc
-              simpa [ctxAfter, regimeConsistentWithCtx]
-        -- Impossible in ioFree mode
+                simp [h_topexpr, pure, Except.pure] at htc
+                subst htc
+                simpa [ctxAfter, regimeConsistentWithCtxMasked]
         | externVal _ _ _ =>
-            exfalso; simp at htc; unfold typecheckExternVal at htc
+            exfalso
+            simp at htc
+            unfold typecheckExternVal at htc
             have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
             simp only [heq, ite_true, bind, Except.bind] at htc
             exact absurd htc (Except.error_ne_ok _ _)
         | externFn _ _ _ _ =>
-            exfalso; simp at htc; unfold typecheckExternFn at htc
+            exfalso
+            simp at htc
+            unfold typecheckExternFn at htc
             have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
             simp only [heq, ite_true, bind, Except.bind] at htc
             exact absurd htc (Except.error_ne_ok _ _)
         | externPfn _ _ _ =>
-            exfalso; simp at htc; unfold typecheckExternPfn at htc
+            exfalso
+            simp at htc
+            unfold typecheckExternPfn at htc
             have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
             simp only [heq, ite_true, bind, Except.bind] at htc
             exact absurd htc (Except.error_ne_ok _ _)
@@ -5477,355 +6535,445 @@ lemma typecheckExpr_preserves_regimeConsistentWithCtx_main :
         | printString _ =>
             simp at htc
             exact absurd htc (typecheckPrintString_ioFree_impossible ctx _ fuel' res)
-        -- Compound expressions with sub-expression chaining
         | unaryop op e1 =>
             have hstruct := typecheckUnaryOp_structure ctx op e1 fuel' res htc
             rcases hstruct with ⟨result1, _, htc1, _, _, htag, _, hnextTag, hreg', _, _, _⟩
             have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
-            have hIH := IH' (fuel' - 1) (by omega) ctx e1 result1 hreg htc1'
-            simp only [ctxAfter, regimeConsistentWithCtx] at hIH ⊢
+            have hIH := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
+            simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH ⊢
             rwa [htag, hnextTag, hreg']
         | deref e1 =>
             have hstruct := typecheckDeref_structure ctx e1 fuel' res htc
             rcases hstruct with ⟨result1, htc1, _, htag, _, hnextTag, hreg'⟩
             have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
-            have hIH := IH' (fuel' - 1) (by omega) ctx e1 result1 hreg htc1'
-            simp only [ctxAfter, regimeConsistentWithCtx] at hIH ⊢
+            have hIH := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
+            simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH ⊢
             rwa [htag, hnextTag, hreg']
         | newRef e1 =>
             have hstruct := typecheckNewRef_structure ctx e1 fuel' res htc
             rcases hstruct with ⟨result1, _, htc1, _, _, _, _, _, _, htag, _, hnextTag, hreg'⟩
             have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
-            have hIH := IH' (fuel' - 1) (by omega) ctx e1 result1 hreg htc1'
-            simp only [ctxAfter, regimeConsistentWithCtx] at hIH ⊢
+            have hIH := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
+            simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH ⊢
             rwa [htag, hnextTag, hreg']
         | op e1 op e2 =>
             have hstruct := typecheckOp_structure ctx e1 e2 op fuel' res htc
             rcases hstruct with ⟨result1, result2, _, htc1, htc2, _, _, htag, _, hnextTag, hregime', _, _, _⟩
             have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
-            have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 result1 hreg htc1'
-            have hreg_mid : regimeConsistentWithCtx (updateCtxFromResult ctx result1) := by
-              apply regimeConsistentWithCtx_of_tagEnv_regime_nextTag (ctxAfter ctx result1)
+            have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
+            have hreg_mid : regimeConsistentWithCtxMasked masked (updateCtxFromResult ctx result1) := by
+              apply regimeConsistentWithCtxMasked_of_tagEnv_regime_nextTag masked (ctxAfter ctx result1)
               · simp [ctxAfter, updateCtxFromResult]
               · simp [ctxAfter, updateCtxFromResult]
               · simp [ctxAfter, updateCtxFromResult]
               · exact hIH1
-            have htc2' : typecheck .ioFree (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by simpa using htc2
-            have hIH2 := IH' (fuel' - 1) (by omega) (updateCtxFromResult ctx result1) e2 result2 hreg_mid htc2'
-            simp only [ctxAfter, regimeConsistentWithCtx] at hIH2 ⊢
+            have htc2' : typecheck .ioFree (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by
+              simpa using htc2
+            have hIH2 := IH' (fuel' - 1) (by omega) masked (updateCtxFromResult ctx result1) e2 result2 hreg_mid htc2'
+            simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH2 ⊢
             rwa [htag, hnextTag, hregime']
         | seq e1 e2 =>
             have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
             rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
             have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
-            have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 result1 hreg htc1'
-            have hreg_mid : regimeConsistentWithCtx ctx' := by
+            have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
+            have hreg_mid : regimeConsistentWithCtxMasked masked ctx' := by
               rw [hctx']
-              apply regimeConsistentWithCtx_of_tagEnv_regime_nextTag (ctxAfter ctx result1)
+              apply regimeConsistentWithCtxMasked_of_tagEnv_regime_nextTag masked (ctxAfter ctx result1)
               · simp [ctxAfter, updateCtxFromResult]
               · simp [ctxAfter, updateCtxFromResult]
               · simp [ctxAfter, updateCtxFromResult]
               · exact hIH1
             have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok res := by simpa using htc2
-            exact IH' (fuel' - 1) (by omega) ctx' e2 res hreg_mid htc2'
+            exact IH' (fuel' - 1) (by omega) masked ctx' e2 res hreg_mid htc2'
         | vlet x e1 e2 =>
             have hstruct := typecheckVlet_structure ctx x e1 e2 fuel' res htc
             rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, _, _, htag, _, hnextTag, hregime', _, _⟩
             have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
-            have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 result1 hreg htc1'
-            have hreg_mid : regimeConsistentWithCtx ctx' := by
+            have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
+            have hreg_mid : regimeConsistentWithCtxMasked masked ctx' := by
               rw [hctx']
-              apply regimeConsistentWithCtx_of_tagEnv_regime_nextTag (ctxAfter ctx result1)
+              apply regimeConsistentWithCtxMasked_of_tagEnv_regime_nextTag masked (ctxAfter ctx result1)
               · simp [ctxAfter]
               · simp [ctxAfter]
               · simp [ctxAfter]
               · exact hIH1
             have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok result2 := by simpa using htc2
-            have hIH2 := IH' (fuel' - 1) (by omega) ctx' e2 result2 hreg_mid htc2'
-            simp only [ctxAfter, regimeConsistentWithCtx] at hIH2 ⊢
+            have hIH2 := IH' (fuel' - 1) (by omega) masked ctx' e2 result2 hreg_mid htc2'
+            simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH2 ⊢
             rwa [htag, hnextTag, hregime']
         | assign e1 e2 =>
             unfold typecheckAssign at htc
             cases fuel' with
             | zero => simp at htc
             | succ fuel'' =>
-            simp only [bind, Except.bind] at htc
-            cases h_tc1 : typecheckExpr .ioFree ctx e1 fuel'' with
-            | error _ => simp [h_tc1] at htc
-            | ok result1 =>
-              simp only [h_tc1] at htc
-              have htc1' : typecheck .ioFree ctx e1 fuel'' = .ok result1 := by simpa using h_tc1
-              have hIH1 := IH' fuel'' (by omega) ctx e1 result1 hreg htc1'
-              cases h_qt1 : result1.qualType with
-              | mk etyp1 p1 pred1 =>
-                rw [h_qt1] at htc; simp at htc
-                cases etyp1 with
-                | ref ls =>
-                  simp at htc
-                  set ctx2 : TypeContext := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
-                  have hreg2 : regimeConsistentWithCtx ctx2 := by
-                    apply regimeConsistentWithCtx_of_tagEnv_regime_nextTag (ctxAfter ctx result1)
-                    · simp [ctxAfter, ctx2]
-                    · simp [ctxAfter, ctx2]
-                    · simp [ctxAfter, ctx2]
-                    · exact hIH1
-                  cases h_tc2 : typecheckExpr .ioFree ctx2 e2 fuel'' with
-                  | error _ => simp [h_tc2] at htc
-                  | ok result2 =>
-                    simp only [h_tc2] at htc
-                    have htc2' : typecheck .ioFree ctx2 e2 fuel'' = .ok result2 := by simpa using h_tc2
-                    have hIH2 := IH' fuel'' (by omega) ctx2 e2 result2 hreg2 htc2'
-                    cases h_qt2 : result2.qualType with
-                    | mk etyp2 p2 pred2 =>
-                      rw [h_qt2] at htc; simp at htc
-                      by_cases h_etyp2_int : etyp2 = ETyp.int
-                      · subst h_etyp2_int; simp at htc; cases htc
-                        simp only [ctxAfter, regimeConsistentWithCtx] at hIH2 ⊢
-                        constructor
-                        · exact invalidateRegimeDeps_preserves_true result2.tagEnv' result2.regime' ls hIH2.1
-                        · simpa [invalidateRegimeDeps] using hIH2.2
-                      · simp [h_etyp2_int] at htc
-                | _ => simp at htc
+                simp only [bind, Except.bind] at htc
+                cases h_tc1 : typecheckExpr .ioFree ctx e1 fuel'' with
+                | error _ => simp [h_tc1] at htc
+                | ok result1 =>
+                    simp only [h_tc1] at htc
+                    have htc1' : typecheck .ioFree ctx e1 fuel'' = .ok result1 := by simpa using h_tc1
+                    have hIH1 := IH' fuel'' (by omega) masked ctx e1 result1 hreg htc1'
+                    cases h_qt1 : result1.qualType with
+                    | mk etyp1 p1 pred1 =>
+                        rw [h_qt1] at htc
+                        simp at htc
+                        cases etyp1 <;> simp at htc
+                        case ref ls =>
+                            let memEnv2 := result1.memEnv'
+                            let tagEnv2 := result1.tagEnv'
+                            let nextLoc2 := result1.nextLoc'
+                            let nextTag2 := result1.nextTag'
+                            let regime2 := result1.regime'
+                            let ctx2 : TypeContext :=
+                              { pc := ctx.pc, regime := regime2, memEnv := memEnv2, varEnv := ctx.varEnv,
+                                tagEnv := tagEnv2, nextLoc := nextLoc2, nextTag := nextTag2, pureCtx := ctx.pureCtx }
+                            have hreg2 : regimeConsistentWithCtxMasked masked ctx2 := by
+                              constructor
+                              · simpa [ctxAfter, ctx2, tagEnv2, regime2] using hIH1.1
+                              · simpa [ctxAfter, ctx2, nextTag2] using hIH1.2
+                            cases h_tc2 : typecheckExpr .ioFree ctx2 e2 fuel'' with
+                            | error err =>
+                                have h_tc2_explicit :
+                                    typecheckExpr .ioFree
+                                      { pc := ctx.pc, regime := result1.regime', memEnv := result1.memEnv',
+                                        varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                        nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
+                                      e2 fuel'' = .error err := by
+                                  simpa [ctx2, memEnv2, tagEnv2, nextLoc2, nextTag2, regime2] using h_tc2
+                                rw [h_tc2_explicit] at htc
+                                simp at htc
+                            | ok result2 =>
+                                have htc2' : typecheck .ioFree ctx2 e2 fuel'' = .ok result2 := by simpa using h_tc2
+                                have hIH2 := IH' fuel'' (by omega) masked ctx2 e2 result2 hreg2 htc2'
+                                have h_tc2_explicit :
+                                    typecheckExpr .ioFree
+                                      { pc := ctx.pc, regime := result1.regime', memEnv := result1.memEnv',
+                                        varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                        nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
+                                      e2 fuel'' = .ok result2 := by
+                                  simpa [ctx2, memEnv2, tagEnv2, nextLoc2, nextTag2, regime2] using h_tc2
+                                rw [h_tc2_explicit] at htc
+                                simp at htc
+                                cases h_qt2 : result2.qualType with
+                                | mk etyp2 p2 pred2 =>
+                                    rw [h_qt2] at htc
+                                    simp at htc
+                                    by_cases h_etyp2_int : etyp2 = ETyp.int
+                                    · subst h_etyp2_int
+                                      simp at htc
+                                      cases htc
+                                      simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH2 ⊢
+                                      constructor
+                                      · exact invalidateRegimeDeps_preserves_true_masked masked result2.tagEnv' result2.regime' ls hIH2.1
+                                      · simpa [invalidateRegimeDeps] using hIH2.2
+                                    · simp [h_etyp2_int] at htc
         | ite e1 e2 e3 =>
-            -- typecheckExpr dispatches to typecheckIf with fuel already decremented to fuel'
             have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
             rcases hstruct with h1 | h2 | h3 | h4
-            · -- Mode 1: R(k) = true, then-branch effective
-              rcases h1 with ⟨k, deps, _, hRk, _, _, _, res2, htc2, hmem, htag, _, hnextTag, hregEq, _⟩
-              have hreg_true : regimeConsistentWithCtx { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := by
+            · rcases h1 with ⟨k, deps, _, hRk, _, _, _, res2, htc2, _hmem, htag, _, hnextTag, hregEq, _⟩
+              have hreg_true : regimeConsistentWithCtxMasked masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := by
                 constructor
-                · exact tagEnvConsistentWithRegime_insert_true ctx.tagEnv ctx.regime k deps hreg.1 hRk
+                · exact tagEnvConsistentWithRegimeMasked_insert_true masked ctx.tagEnv ctx.regime k deps hreg.1 hRk
                 · exact hreg.2
-              -- htc2 is at fuel' - 1; convert to typecheck call for IH
-              have htc2' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by simpa using htc2
-              have hIH2 := IH' (fuel' - 1) (by omega) { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 res2 hreg_true htc2'
-              simp only [ctxAfter, regimeConsistentWithCtx] at hIH2 ⊢
+              have htc2' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
+                simpa using htc2
+              have hIH2 := IH' (fuel' - 1) (by omega) masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 res2 hreg_true htc2'
+              simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH2 ⊢
               rwa [htag, hnextTag, hregEq]
-            · -- Mode 2: R(k) = false, else-branch effective
-              rcases h2 with ⟨k, deps, _, _, _, _, _, res3, htc3, hmem, htag, _, hnextTag, hregEq, _⟩
-              have hreg_false : regimeConsistentWithCtx { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } := by
+            · rcases h2 with ⟨k, deps, _, _, _, _, _, res3, htc3, _hmem, htag, _, hnextTag, hregEq, _⟩
+              have hreg_false : regimeConsistentWithCtxMasked masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } := by
                 constructor
-                · exact tagEnvConsistentWithRegime_insert_false ctx.tagEnv ctx.regime k deps hreg.1
+                · exact tagEnvConsistentWithRegimeMasked_insert_false masked ctx.tagEnv ctx.regime k deps hreg.1
                 · exact hreg.2
-              have htc3' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } e3 (fuel' - 1) = .ok res3 := by simpa using htc3
-              have hIH3 := IH' (fuel' - 1) (by omega) { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } e3 res3 hreg_false htc3'
-              simp only [ctxAfter, regimeConsistentWithCtx] at hIH3 ⊢
+              have htc3' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } e3 (fuel' - 1) = .ok res3 := by
+                simpa using htc3
+              have hIH3 := IH' (fuel' - 1) (by omega) masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } e3 res3 hreg_false htc3'
+              simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH3 ⊢
               rwa [htag, hnextTag, hregEq]
-            · -- Mode 3: R(k) = none, conservative join
-              -- Tag insertion k↦true breaks tagEnvConsistentWithRegime when R(k)=none
-              -- This case requires specialized handling (parallel to stepFR_ite_mode3 sorry)
-              sorry
-            · -- Mode 4: Standard (matchGuard fails), join of both branches
-              rcases h4 with ⟨_, res1, htc1, _, res2, htc2, res3, htc3, hmem, htag, _, hnextTag, hregEq, _⟩
+            · rcases h3 with
+                ⟨k, deps, _hmatch, hRnone, res1, _htc1, _hbool, res2, htc2, res3, htc3, _hmem,
+                  htag, _, hnextTag, hregEq, _hpoison, _hetyp, _hpred⟩
+              let masked' : Tag → Prop := fun t => masked t ∨ t = k
+              let branchPc := joinPoison ctx.pc res1.qualType.poison
+              let ctxTrue : TypeContext :=
+                { ctx with
+                  tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
+                  pc := branchPc
+                  regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+              let ctxFalse : TypeContext :=
+                { ctx with
+                  tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩
+                  pc := branchPc
+                  regime := { ctx.regime with map := ctx.regime.map.insert k false } }
+              have htag_masked' : tagEnvConsistentWithRegimeMasked masked' ctx.tagEnv ctx.regime := by
+                exact tagEnvConsistentWithRegimeMasked_weaken masked masked' ctx.tagEnv ctx.regime
+                  (fun t ht => Or.inl ht) hreg.1
+              have hreg_true : regimeConsistentWithCtxMasked masked' ctxTrue := by
+                constructor
+                · exact tagEnvConsistentWithRegimeMasked_insert_true_with_regime
+                    masked' ctx.tagEnv ctx.regime k deps htag_masked' (Or.inl (Or.inr rfl))
+                · simpa [ctxTrue] using hreg.2
+              have htc2' : typecheck .ioFree ctxTrue e2 (fuel' - 1) = .ok res2 := by
+                simpa [ctxTrue, branchPc] using htc2
+              have hIH2 := IH' (fuel' - 1) (by omega) masked' ctxTrue e2 res2 hreg_true htc2'
+              have hnextTag_mono_true : ctx.nextTag ≤ res2.nextTag' := by
+                have : ctxTrue.nextTag ≤ res2.nextTag' :=
+                  typecheck_nextTag_mono .ioFree ctxTrue e2 (fuel' - 1) res2 htc2'
+                simpa [ctxTrue] using this
+              let ctxFalse' : TypeContext := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+              have hreg_false : regimeConsistentWithCtxMasked masked ctxFalse' := by
+                constructor
+                · show tagEnvConsistentWithRegimeMasked masked ctxFalse'.tagEnv ctxFalse'.regime
+                  simp [ctxFalse', ctxFalse]
+                  exact tagEnvConsistentWithRegimeMasked_insert_false_with_regime
+                    masked ctx.tagEnv ctx.regime k deps hreg.1
+                · show ctxFalse'.regime.bound ≤ ctxFalse'.nextTag
+                  simp [ctxFalse', ctxFalse]
+                  exact Nat.le_trans hreg.2 hnextTag_mono_true
+              have htc3' : typecheck .ioFree ctxFalse' e3 (fuel' - 1) = .ok res3 := by
+                simpa [ctxFalse', ctxFalse, branchPc] using htc3
+              have hIH3 := IH' (fuel' - 1) (by omega) masked ctxFalse' e3 res3 hreg_false htc3'
+              have hnot_false_start : tagEnvNotTrueAt ctxFalse'.tagEnv k := by
+                intro deps' hget
+                simp [ctxFalse', ctxFalse, Std.ExtTreeMap.get?_eq_getElem?] at hget
+              have hnotReg_false : ctxFalse'.regime.lookup? k ≠ some true := by
+                unfold ctxFalse' ctxFalse
+                unfold Regime.lookup?
+                split_ifs <;> simp [Std.ExtTreeMap.get?_eq_getElem?]
+              have hIH3_not_true :=
+                typecheckExpr_preserves_tagEnvNotTrueAt_main (fuel' - 1) ctxFalse' e3 res3 k
+                  hnot_false_start hnotReg_false htc3'
+              simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH2 hIH3 ⊢
+              rw [htag, hnextTag, hregEq]
+              constructor
+              · exact tagEnvConsistentWithRegimeMasked_join_drop
+                  masked res2.tagEnv' res3.tagEnv' res2.regime' res3.regime' k
+                  hIH2.1 hIH3.1 hIH3_not_true
+              · show (joinRegimes res2.regime' res3.regime').bound ≤ max res2.nextTag' res3.nextTag'
+                unfold joinRegimes
+                simp only
+                exact Nat.le_trans (Nat.min_le_left _ _) (Nat.le_trans hIH2.2 (Nat.le_max_left _ _))
+            · rcases h4 with ⟨_, res1, htc1, _, res2, htc2, res3, htc3, _hmem, htag, _, hnextTag, hregEq, _⟩
               have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok res1 := by simpa using htc1
-              have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 res1 hreg htc1'
-              -- Build ctx' (after e1)
+              have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 res1 hreg htc1'
               set ctx' := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
                                      nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
-              have hreg1 : regimeConsistentWithCtx ctx' := by
-                apply regimeConsistentWithCtx_of_tagEnv_regime_nextTag (ctxAfter ctx res1)
+              have hreg1 : regimeConsistentWithCtxMasked masked ctx' := by
+                apply regimeConsistentWithCtxMasked_of_tagEnv_regime_nextTag masked (ctxAfter ctx res1)
                 · simp [ctxAfter, ctx']
                 · simp [ctxAfter, ctx']
                 · simp [ctxAfter, ctx']
                 · exact hIH1
-              -- ctx'' just changes pc, doesn't affect regimeConsistentWithCtx
               set ctx'' := { ctx' with pc := joinPoison ctx.pc res1.qualType.poison }
-              have hreg1' : regimeConsistentWithCtx ctx'' := hreg1
+              have hreg1' : regimeConsistentWithCtxMasked masked ctx'' := hreg1
               have htc2' : typecheck .ioFree ctx'' e2 (fuel' - 1) = .ok res2 := by simpa using htc2
-              have hIH2 := IH' (fuel' - 1) (by omega) ctx'' e2 res2 hreg1' htc2'
-              -- ctxForE3: same tagEnv/regime as ctx'', but nextLoc/nextTag from res2
+              have hIH2 := IH' (fuel' - 1) (by omega) masked ctx'' e2 res2 hreg1' htc2'
               set ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
-              -- ctxForE3 has tagEnv/regime from ctx'' (= res1's), but nextLoc/nextTag from res2
-              -- Need: tagEnvConsistentWithRegime ctx''.tagEnv ctx''.regime (from IH1)
-              -- Need: ctx''.regime.bound ≤ res2.nextTag' (from IH1 bound + nextTag mono)
-              have hIH1_tagEnv : tagEnvConsistentWithRegime res1.tagEnv' res1.regime' := by
-                have h := hIH1; simp only [ctxAfter, regimeConsistentWithCtx] at h; exact h.1
+              have hIH1_tagEnv : tagEnvConsistentWithRegimeMasked masked res1.tagEnv' res1.regime' := by
+                have h := hIH1
+                simp only [ctxAfter, regimeConsistentWithCtxMasked] at h
+                exact h.1
               have hIH1_bound : res1.regime'.bound ≤ res1.nextTag' := by
-                have h := hIH1; simp only [ctxAfter, regimeConsistentWithCtx] at h; exact h.2
+                have h := hIH1
+                simp only [ctxAfter, regimeConsistentWithCtxMasked] at h
+                exact h.2
               have hnextTag_mono : res1.nextTag' ≤ res2.nextTag' := by
                 have : ctx''.nextTag ≤ res2.nextTag' :=
                   typecheck_nextTag_mono .ioFree ctx'' e2 (fuel' - 1) res2 htc2'
                 simpa [ctx'', ctx'] using this
-              have hreg2 : regimeConsistentWithCtx ctxForE3 := by
+              have hreg2 : regimeConsistentWithCtxMasked masked ctxForE3 := by
                 constructor
-                · -- tagEnvConsistentWithRegime: ctxForE3.tagEnv = ctx''.tagEnv = res1.tagEnv'
-                  show tagEnvConsistentWithRegime ctxForE3.tagEnv ctxForE3.regime
+                · show tagEnvConsistentWithRegimeMasked masked ctxForE3.tagEnv ctxForE3.regime
                   simp only [ctxForE3, ctx'', ctx']
                   exact hIH1_tagEnv
-                · -- bound: ctxForE3.regime.bound = res1.regime'.bound ≤ res1.nextTag' ≤ res2.nextTag'
-                  show ctxForE3.regime.bound ≤ ctxForE3.nextTag
+                · show ctxForE3.regime.bound ≤ ctxForE3.nextTag
                   simp only [ctxForE3, ctx'', ctx']
                   exact Nat.le_trans hIH1_bound hnextTag_mono
               have htc3' : typecheck .ioFree ctxForE3 e3 (fuel' - 1) = .ok res3 := by simpa using htc3
-              have hIH3 := IH' (fuel' - 1) (by omega) ctxForE3 e3 res3 hreg2 htc3'
-              have hIH2' : regimeConsistentWithCtx (ctxAfter ctx'' res2) := hIH2
-              simp only [ctxAfter, regimeConsistentWithCtx] at hIH2' hIH3 ⊢
+              have hIH3 := IH' (fuel' - 1) (by omega) masked ctxForE3 e3 res3 hreg2 htc3'
+              have hIH2' : regimeConsistentWithCtxMasked masked (ctxAfter ctx'' res2) := hIH2
+              simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH2' hIH3 ⊢
               rw [htag, hnextTag, hregEq]
               constructor
-              · exact tagEnvConsistentWithRegime_join res2.tagEnv' res3.tagEnv' res2.regime' res3.regime' hIH2'.1 hIH3.1
-              · -- (joinRegimes res2.regime' res3.regime').bound ≤ max res2.nextTag' res3.nextTag'
-                show (joinRegimes res2.regime' res3.regime').bound ≤ max res2.nextTag' res3.nextTag'
-                unfold joinRegimes; simp only
+              · exact tagEnvConsistentWithRegimeMasked_join
+                  masked res2.tagEnv' res3.tagEnv' res2.regime' res3.regime' hIH2'.1 hIH3.1
+              · show (joinRegimes res2.regime' res3.regime').bound ≤ max res2.nextTag' res3.nextTag'
+                unfold joinRegimes
+                simp only
                 exact Nat.le_trans (Nat.min_le_left _ _) (Nat.le_trans hIH2'.2 (Nat.le_max_left _ _))
         | app e1 e2 =>
             simp at htc
-            -- htc : typecheckApp .ioFree ctx e1 e2 fuel' = .ok res
             cases fuel' with
             | zero => simp [typecheckApp] at htc
             | succ fuel'' =>
-            -- htc : typecheckApp .ioFree ctx e1 e2 (fuel''.succ) = .ok res
-            rcases typecheckApp_arrow_structure_full ctx e1 e2 fuel'' res htc with
-              ⟨result2, result1, etyp2, p2, pred2, _hqt2, htc2, htc1, hcases⟩
-            -- IH on e2 (fuel'' < fuel''.succ.succ = fuel)
-            have hIH2 := IH' fuel'' (by omega) ctx e2 result2 hreg htc2
-            -- Build regime consistency for the e1 typecheck context
-            have hreg' : regimeConsistentWithCtx
-                (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, result2.tagEnv',
-                  result2.nextLoc', result2.nextTag', ctx.pureCtx⟩ : TypeContext) := by
-              apply regimeConsistentWithCtx_of_tagEnv_regime_nextTag (ctxAfter ctx result2)
-              · simp [ctxAfter]
-              · simp [ctxAfter]
-              · simp [ctxAfter]
-              · exact hIH2
-            -- IH on e1 (fuel'' < fuel)
-            have hIH1 := IH' fuel'' (by omega) _ e1 result1 hreg' htc1
-            -- Helper: for any closure result r from applyFnTClosure, regimeConsistentWithCtx (ctxAfter ctx r)
-            -- Derive regimeConsistentWithCtx for the body context (same tagEnv/regime/nextTag as ctxAfter _ result1)
-            have hIH1_tagEnv : tagEnvConsistentWithRegime result1.tagEnv' result1.regime' := by
-              have := hIH1.1; simp [ctxAfter] at this; exact this
-            have hIH1_bound : result1.regime'.bound ≤ result1.nextTag' := by
-              have := hIH1.2; simp [ctxAfter] at this; exact this
-            have h_fn_closure_reg :
-                ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure)
-                  (results : List TypeResult),
-                  List.mapM (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
-                  ∀ r, r ∈ results → regimeConsistentWithCtx (ctxAfter ctx r) := by
-              intro st1 st2 p p1 tcls results hmap r hr
-              rcases list_mapM_ok_mem_output_exists_input
-                  (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
-                  (hmap := hmap) (hmem := hr) with
-                ⟨tcl, _htcl_mem, happly⟩
-              cases tcl with
-              | regular x body env =>
-                cases fuel'' with
-                | zero => simp [applyFnTClosure] at happly
-                | succ k =>
-                  simp only [applyFnTClosure, bind, Except.bind] at happly
-                  split at happly
-                  · exact absurd happly (Except.error_ne_ok _ _)
-                  · next result3 htcBody =>
-                    cases hqt3 : result3.qualType with
-                    | mk etyp3 p3 pred3 =>
-                    simp only [hqt3] at happly
-                    split at happly
-                    · simp at happly
-                    · next _hsub =>
-                      simp only [pure, Except.pure] at happly
-                      cases happly
-                      have hreg_body : regimeConsistentWithCtx
-                          { ctx with
-                            pc := joinPoison p (joinPoison p1 ctx.pc),
-                            memEnv := result1.memEnv',
-                            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
-                            tagEnv := result1.tagEnv', nextTag := result1.nextTag',
-                            nextLoc := result1.nextLoc', regime := result1.regime' } := by
-                        exact ⟨hIH1_tagEnv, hIH1_bound⟩
-                      have htcBody' : typecheck .ioFree
-                          { ctx with
-                            pc := joinPoison p (joinPoison p1 ctx.pc),
-                            memEnv := result1.memEnv',
-                            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
-                            tagEnv := result1.tagEnv', nextTag := result1.nextTag',
-                            nextLoc := result1.nextLoc', regime := result1.regime' }
-                          body k = .ok result3 := by simpa using htcBody
-                      have hIH_body := IH' k (by omega) _ body result3 hreg_body htcBody'
-                      simp only [ctxAfter, regimeConsistentWithCtx] at hIH_body ⊢
-                      exact hIH_body
-              | extern x retSpec effects capturedEnv =>
-                cases fuel'' with
-                | zero => simp [applyFnTClosure] at happly
-                | succ k =>
-                  simp only [applyFnTClosure] at happly
-                  have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-                  rw [hioFree] at happly
-                  simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-                  exact absurd happly (by simp)
-            -- Helper: for any closure result r from applyPFnTClosure, regimeConsistentWithCtx (ctxAfter ctx r)
-            have h_pfn_closure_reg :
-                ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure)
-                  (results : List TypeResult),
-                  List.mapM (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
-                  ∀ r, r ∈ results → regimeConsistentWithCtx (ctxAfter ctx r) := by
-              intro st1 st2 p p1 tcls results hmap r hr
-              rcases list_mapM_ok_mem_output_exists_input
-                  (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
-                  (hmap := hmap) (hmem := hr) with
-                ⟨tcl, _htcl_mem, happly⟩
-              cases tcl with
-              | regular x body env =>
-                cases fuel'' with
-                | zero => simp [applyPFnTClosure] at happly
-                | succ k =>
-                  simp only [applyPFnTClosure, bind, Except.bind] at happly
-                  split at happly
-                  · exact absurd happly (Except.error_ne_ok _ _)
-                  · next result3 htcBody =>
-                    cases hqt3 : result3.qualType with
-                    | mk etyp3 p3 pred3 =>
-                    simp only [hqt3] at happly
-                    split at happly
-                    · simp at happly
-                    · next _hsub =>
-                      simp only [pure, Except.pure] at happly
-                      cases happly
-                      set bodyCtx := { ctx with
-                          pc := joinPoison p (joinPoison ctx.pc p1),
-                          memEnv := result1.memEnv',
-                          varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
-                          tagEnv := result1.tagEnv', nextTag := result1.nextTag',
-                          pureCtx := true,
-                          nextLoc := result1.nextLoc', regime := result1.regime' }
-                      have hreg_body : regimeConsistentWithCtx bodyCtx := by
-                        constructor
-                        · exact hIH1.1
-                        · exact hIH1.2
-                      have htcBody' : typecheck .ioFree bodyCtx (PExpr.toExpr body) k = .ok result3 := by simpa using htcBody
-                      have hIH_body := IH' k (by omega) bodyCtx (PExpr.toExpr body) result3 hreg_body htcBody'
-                      apply regimeConsistentWithCtx_of_tagEnv_regime_nextTag (ctxAfter bodyCtx result3)
-                      · simp [ctxAfter]
-                      · simp [ctxAfter]
-                      · simp [ctxAfter]
-                      · exact hIH_body
-              | extern x retSpec capturedEnv =>
-                cases fuel'' with
-                | zero => simp [applyPFnTClosure] at happly
-                | succ k =>
-                  simp only [applyPFnTClosure] at happly
-                  have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-                  rw [hioFree] at happly
-                  simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-                  exact absurd happly (by simp)
-            -- Now handle arrow/parrow cases
-            rcases hcases with
-              ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hpure, _hne, _hsub, hmap, hresults, h_join⟩ |
-              ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hne, _hsub, hmap, hresults, h_join⟩
-            · -- Arrow case
-              subst hresults
-              have h_all_reg : ∀ r, r ∈ (first :: rest) → regimeConsistentWithCtx (ctxAfter ctx r) :=
-                h_fn_closure_reg st1 st2 p p1 tcls (first :: rest) hmap
-              exact joinTypeResults_regimeConsistentWithCtx ctx first rest res h_join
-                (h_all_reg first (List.mem_cons_self ..))
-                (fun r hr => h_all_reg r (List.mem_cons_of_mem _ hr))
-            · -- Parrow case
-              subst hresults
-              have h_all_reg : ∀ r, r ∈ (first :: rest) → regimeConsistentWithCtx (ctxAfter ctx r) :=
-                h_pfn_closure_reg st1 st2 p p1 tcls (first :: rest) hmap
-              exact joinTypeResults_regimeConsistentWithCtx ctx first rest res h_join
-                (h_all_reg first (List.mem_cons_self ..))
-                (fun r hr => h_all_reg r (List.mem_cons_of_mem _ hr))
+                rcases typecheckApp_arrow_structure_full ctx e1 e2 fuel'' res htc with
+                  ⟨result2, result1, etyp2, p2, pred2, _hqt2, htc2, htc1, hcases⟩
+                have hIH2 := IH' fuel'' (by omega) masked ctx e2 result2 hreg htc2
+                have hreg' : regimeConsistentWithCtxMasked masked
+                    (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, result2.tagEnv',
+                      result2.nextLoc', result2.nextTag', ctx.pureCtx⟩ : TypeContext) := by
+                  apply regimeConsistentWithCtxMasked_of_tagEnv_regime_nextTag masked (ctxAfter ctx result2)
+                  · simp [ctxAfter]
+                  · simp [ctxAfter]
+                  · simp [ctxAfter]
+                  · exact hIH2
+                have hIH1 := IH' fuel'' (by omega) masked _ e1 result1 hreg' htc1
+                have hIH1_tagEnv : tagEnvConsistentWithRegimeMasked masked result1.tagEnv' result1.regime' := by
+                  have h := hIH1
+                  simp [ctxAfter, regimeConsistentWithCtxMasked] at h
+                  exact h.1
+                have hIH1_bound : result1.regime'.bound ≤ result1.nextTag' := by
+                  have h := hIH1
+                  simp [ctxAfter, regimeConsistentWithCtxMasked] at h
+                  exact h.2
+                have h_fn_closure_reg :
+                    ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure)
+                      (results : List TypeResult),
+                      List.mapM (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
+                      ∀ r, r ∈ results → regimeConsistentWithCtxMasked masked (ctxAfter ctx r) := by
+                  intro st1 st2 p p1 tcls results hmap r hr
+                  rcases list_mapM_ok_mem_output_exists_input
+                      (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
+                      (hmap := hmap) (hmem := hr) with
+                    ⟨tcl, _htcl_mem, happly⟩
+                  cases tcl with
+                  | regular x body env =>
+                      cases fuel'' with
+                      | zero => simp [applyFnTClosure] at happly
+                      | succ k =>
+                          simp only [applyFnTClosure, bind, Except.bind] at happly
+                          split at happly
+                          · exact absurd happly (Except.error_ne_ok _ _)
+                          · next result3 htcBody =>
+                              cases hqt3 : result3.qualType with
+                              | mk etyp3 p3 pred3 =>
+                                  simp only [hqt3] at happly
+                                  split at happly
+                                  · simp at happly
+                                  · next _hsub =>
+                                      simp only [pure, Except.pure] at happly
+                                      cases happly
+                                      have hreg_body : regimeConsistentWithCtxMasked masked
+                                          { ctx with
+                                            pc := joinPoison p (joinPoison p1 ctx.pc),
+                                            memEnv := result1.memEnv',
+                                            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                                              ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
+                                            tagEnv := result1.tagEnv', nextTag := result1.nextTag',
+                                            nextLoc := result1.nextLoc', regime := result1.regime' } := by
+                                        exact ⟨hIH1_tagEnv, hIH1_bound⟩
+                                      have htcBody' : typecheck .ioFree
+                                          { ctx with
+                                            pc := joinPoison p (joinPoison p1 ctx.pc),
+                                            memEnv := result1.memEnv',
+                                            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                                              ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
+                                            tagEnv := result1.tagEnv', nextTag := result1.nextTag',
+                                            nextLoc := result1.nextLoc', regime := result1.regime' }
+                                          body k = .ok result3 := by simpa using htcBody
+                                      have hIH_body := IH' k (by omega) masked _ body result3 hreg_body htcBody'
+                                      simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH_body ⊢
+                                      exact hIH_body
+                  | extern x retSpec effects capturedEnv =>
+                      cases fuel'' with
+                      | zero => simp [applyFnTClosure] at happly
+                      | succ k =>
+                          simp only [applyFnTClosure] at happly
+                          have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+                          rw [hioFree] at happly
+                          simp only [ite_true] at happly
+                          simp only [bind, Except.bind] at happly
+                          exact absurd happly (by simp)
+                have h_pfn_closure_reg :
+                    ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure)
+                      (results : List TypeResult),
+                      List.mapM (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
+                      ∀ r, r ∈ results → regimeConsistentWithCtxMasked masked (ctxAfter ctx r) := by
+                  intro st1 st2 p p1 tcls results hmap r hr
+                  rcases list_mapM_ok_mem_output_exists_input
+                      (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
+                      (hmap := hmap) (hmem := hr) with
+                    ⟨tcl, _htcl_mem, happly⟩
+                  cases tcl with
+                  | regular x body env =>
+                      cases fuel'' with
+                      | zero => simp [applyPFnTClosure] at happly
+                      | succ k =>
+                          simp only [applyPFnTClosure, bind, Except.bind] at happly
+                          split at happly
+                          · exact absurd happly (Except.error_ne_ok _ _)
+                          · next result3 htcBody =>
+                              cases hqt3 : result3.qualType with
+                              | mk etyp3 p3 pred3 =>
+                                  simp only [hqt3] at happly
+                                  split at happly
+                                  · simp at happly
+                                  · next _hsub =>
+                                      simp only [pure, Except.pure] at happly
+                                      cases happly
+                                      set bodyCtx := { ctx with
+                                          pc := joinPoison p (joinPoison ctx.pc p1),
+                                          memEnv := result1.memEnv',
+                                          varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                                            ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
+                                          tagEnv := result1.tagEnv', nextTag := result1.nextTag',
+                                          pureCtx := true,
+                                          nextLoc := result1.nextLoc', regime := result1.regime' }
+                                      have hreg_body : regimeConsistentWithCtxMasked masked bodyCtx := by
+                                        constructor
+                                        · exact hIH1_tagEnv
+                                        · exact hIH1_bound
+                                      have htcBody' : typecheck .ioFree bodyCtx (PExpr.toExpr body) k = .ok result3 := by
+                                        simpa using htcBody
+                                      have hIH_body := IH' k (by omega) masked bodyCtx (PExpr.toExpr body) result3 hreg_body htcBody'
+                                      apply regimeConsistentWithCtxMasked_of_tagEnv_regime_nextTag masked (ctxAfter bodyCtx result3)
+                                      · simp [ctxAfter]
+                                      · simp [ctxAfter]
+                                      · simp [ctxAfter]
+                                      · exact hIH_body
+                  | extern x retSpec capturedEnv =>
+                      cases fuel'' with
+                      | zero => simp [applyPFnTClosure] at happly
+                      | succ k =>
+                          simp only [applyPFnTClosure] at happly
+                          have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
+                          rw [hioFree] at happly
+                          simp only [ite_true] at happly
+                          simp only [bind, Except.bind] at happly
+                          exact absurd happly (by simp)
+                rcases hcases with
+                  ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hpure, _hne, _hsub, hmap, hresults, h_join⟩ |
+                  ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hne, _hsub, hmap, hresults, h_join⟩
+                · subst hresults
+                  have h_all_reg : ∀ r, r ∈ (first :: rest) → regimeConsistentWithCtxMasked masked (ctxAfter ctx r) :=
+                    h_fn_closure_reg st1 st2 p p1 tcls (first :: rest) hmap
+                  exact joinTypeResults_regimeConsistentWithCtxMasked masked ctx first rest res h_join
+                    (h_all_reg first (List.mem_cons_self ..))
+                    (fun r hr => h_all_reg r (List.mem_cons_of_mem _ hr))
+                · subst hresults
+                  have h_all_reg : ∀ r, r ∈ (first :: rest) → regimeConsistentWithCtxMasked masked (ctxAfter ctx r) :=
+                    h_pfn_closure_reg st1 st2 p p1 tcls (first :: rest) hmap
+                  exact joinTypeResults_regimeConsistentWithCtxMasked masked ctx first rest res h_join
+                    (h_all_reg first (List.mem_cons_self ..))
+                    (fun r hr => h_all_reg r (List.mem_cons_of_mem _ hr))
         | kwhile e1 e2 =>
             simp at htc
             sorry -- permanently postponed: kwhile proofs are out of active scope
+
+lemma typecheckExpr_preserves_regimeConsistentWithCtx_main :
+    ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult),
+    regimeConsistentWithCtx ctx →
+    typecheck .ioFree ctx e fuel = .ok res →
+    regimeConsistentWithCtx (ctxAfter ctx res) := by
+  intro fuel ctx e res hreg htc
+  have hmasked : regimeConsistentWithCtxMasked (fun _ => False) ctx := by
+    constructor
+    · exact tagEnvConsistentWithRegime_to_masked ctx.tagEnv ctx.regime (fun _ => False) hreg.1
+    · exact hreg.2
+  have hres :=
+    typecheckExpr_preserves_regimeConsistentWithCtxMasked_main fuel (fun _ => False) ctx e res hmasked htc
+  simpa [regimeConsistentWithCtxMasked, tagEnvConsistentWithRegimeMasked] using hres
 
 lemma typecheckExpr_preserves_regimeConsistentWithCtx
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
@@ -7718,6 +8866,38 @@ lemma regime_lookup_insert_ne {R : Regime} {k k' : Tag} {b : Bool}
       exact hneq hkEq.symm
     simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hneq']
   · rw [if_neg hk', if_neg hk']
+
+private lemma regime_lookup_insert_false_not_true
+    {R : Regime} {k k' : Tag}
+    (hnot : R.lookup? k' ≠ some true) :
+    ({ R with map := R.map.insert k false }).lookup? k' ≠ some true := by
+  by_cases hEq : k' = k
+  · subst hEq
+    unfold Regime.lookup?
+    by_cases hk' : k' < R.bound
+    · rw [if_pos hk']
+      simp [Std.ExtTreeMap.get?_eq_getElem?]
+    · rw [if_neg hk']
+      simp
+  · rw [regime_lookup_insert_ne hEq]
+    exact hnot
+
+private lemma regime_lookup_insert_true_not_true_of_ne
+    {R : Regime} {k k' : Tag}
+    (hneq : k' ≠ k)
+    (hnot : R.lookup? k' ≠ some true) :
+    ({ R with map := R.map.insert k true }).lookup? k' ≠ some true := by
+  rw [regime_lookup_insert_ne hneq]
+  exact hnot
+
+private lemma joinRegimes_lookup_not_true_left
+    {R₁ R₂ : Regime} {k : Tag}
+    (hnot : R₁.lookup? k ≠ some true) :
+    (joinRegimes R₁ R₂).lookup? k ≠ some true := by
+  intro hjoin
+  have h₁ : R₁.lookup? k = some true :=
+    joinRegimes_lookup_some_left R₁ R₂ k true hjoin
+  exact hnot h₁
 
 lemma joinTypeResults_lookup_head_guardTag_compat
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
