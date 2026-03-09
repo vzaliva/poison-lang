@@ -49,6 +49,11 @@ private def VarCtxToValCons
     CtxCons ctx μ ρ θ →
     ValCons (ctxAfter ctx res).regime res.qualType μ θ v
 
+def StepFRVarCtxToValCons
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
+  VarCtxToValCons CtxCons ValCons
+
 private def capturedVarsRegimePropertyMasked
     (masked : Tag → Prop) (predSat : PredSat) (R : Regime) (μ : Memory)
     (σcap : CapturedVarEnv) (ρcap : VarEnv) : Prop :=
@@ -609,6 +614,38 @@ private lemma stepFRSingleRunFinalCleanPcTrue_var_parametric
   · simpa [hctxAfter] using hctxCons
   · simpa [hctxAfter] using
       (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctxᵢ) (res := res) (ρ := ρ) hric)
+
+theorem stepFRVar_ctxToValCons_unmasked
+  (predSat : PredSat) :
+  StepFRVarCtxToValCons
+    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v => valueConsistentWithRegime predSat R qt μ θ v) := by
+  intro ctx name' res' μ ρ θ v htc' hρ hctxCons
+  simpa [StepFRVarCtxToValCons] using
+    var_valueConsistentWithRegime_of_typecheck
+      (ctxᵢ := ctx) (predSat := predSat) (name := name') (res := res')
+      (μ := μ) (ρ := ρ) (θ := θ) (v := v)
+      htc' hρ hctxCons
+
+theorem stepFRSingleRunFinalCleanPcTrue_var_param
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (mode : LeanPoison.EvalMode)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (name : Name) (res : TypeResult) (fuel : Nat)
+  (hCtxToVal : StepFRVarCtxToValCons CtxCons ValCons)
+  (htc : typecheck .ioFree ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrueParam
+    CtxCons ValCons mode ctxᵢ (Expr.var name) res predSat tm := by
+  change
+    StepFRSingleRunFinalCleanPcTrueWithCtxValCons
+      CtxCons ValCons mode ctxᵢ (Expr.var name) res predSat tm
+  exact
+    stepFRSingleRunFinalCleanPcTrue_var_parametric
+      (CtxCons := CtxCons) (ValCons := ValCons)
+      (mode := mode) (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
+      (name := name) (res := res) (fuel := fuel)
+      hCtxToVal htc
 
 lemma stepFRSingleRunFinalCleanPcTrue_var
   (mode : LeanPoison.EvalMode)

@@ -7158,6 +7158,132 @@ lemma stepFRSingleRunFinalCleanPcTrue_app
       e1 e2 fuel' res
       singleIH htc
 
+def StepFRAppClosureBodyStart
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (predSat : PredSat) (tm : TagMeaning) : Prop :=
+  AppClosureBodyStart CtxCons ValCons predSat tm
+
+def StepFRAppPClosureBodyStart
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (predSat : PredSat) (tm : TagMeaning) : Prop :=
+  AppPClosureBodyStart CtxCons ValCons predSat tm
+
+def StepFRAppMemberCtxCons
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (predSat : PredSat) : Prop :=
+  AppMemberCtxCons CtxCons predSat
+
+def StepFRAppJoinCtxConsFromMember
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop) : Prop :=
+  AppJoinCtxConsFromMember CtxCons
+
+def StepFRAppBodyResultValCons
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
+  AppBodyResultValCons ValCons
+
+def StepFRAppJoinValConsFromMember
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
+  AppJoinValConsFromMember ValCons
+
+theorem stepFRApp_closureBodyStart_unmasked
+  (predSat : PredSat) (tm : TagMeaning) :
+  StepFRAppClosureBodyStart
+    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
+    (valueConsistentWithRegime predSat) predSat tm := by
+  intro ctx result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg
+    hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure
+  simpa [StepFRAppClosureBodyStart] using
+    consistentWithRegime_app_arrow_body_start ctx predSat tm result2 result1 etyp2 p2 pred2
+      st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg
+      hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure
+
+theorem stepFRApp_pClosureBodyStart_unmasked
+  (predSat : PredSat) (tm : TagMeaning) :
+  StepFRAppPClosureBodyStart
+    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
+    (valueConsistentWithRegime predSat) predSat tm := by
+  intro ctx result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg
+    hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure
+  simpa [StepFRAppPClosureBodyStart] using
+    consistentWithRegime_app_parrow_body_start ctx predSat tm result2 result1 etyp2 p2 pred2
+      st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg
+      hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure
+
+theorem stepFRApp_memberCtxCons_unmasked
+  (predSat : PredSat) :
+  StepFRAppMemberCtxCons
+    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
+    predSat := by
+  intro ctx bodyCtx result2 result1 src result3 qtSrc cpre cbody cfinal θpre θfinal
+    hpred_mem srcEq hmem hvar hreg hθext hctxCons_pre hctxCons_body
+  simpa [StepFRAppMemberCtxCons] using
+    consistentWithRegime_app_member_from_body predSat ctx bodyCtx result2 result1 src result3
+      qtSrc cpre cbody cfinal θpre θfinal
+      hpred_mem srcEq hmem hvar hreg hθext hctxCons_pre hctxCons_body
+
+theorem stepFRApp_joinCtxConsFromMember_unmasked
+  (predSat : PredSat) :
+  StepFRAppJoinCtxConsFromMember
+    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ) := by
+  intro ctx first src rest res μ ρ θ h_join h_src hctxCons
+  simpa [StepFRAppJoinCtxConsFromMember] using
+    joinTypeResults_transport_consistentWithRegime_from_member
+      (predSat := predSat) (ctx := ctx) (first := first) (src := src)
+      (rest := rest) (res := res) (μ := μ) (ρ := ρ) (θ := θ)
+      h_join h_src hctxCons
+
+theorem stepFRApp_bodyResultValCons_unmasked
+  (predSat : PredSat) :
+  StepFRAppBodyResultValCons (valueConsistentWithRegime predSat) := by
+  intro ctx bodyCtx src result3 p p1 μ_src μ_body θ v hsrc hμ hval
+  simpa [StepFRAppBodyResultValCons] using
+    valueConsistentWithRegime_app_body_result_member predSat ctx bodyCtx src result3
+      p p1 μ_src μ_body θ v hsrc hμ hval
+
+theorem stepFRApp_joinValConsFromMember_unmasked
+  (predSat : PredSat) :
+  StepFRAppJoinValConsFromMember (valueConsistentWithRegime predSat) := by
+  intro ctx first src rest res μ θ v h_join h_src hval
+  simpa [StepFRAppJoinValConsFromMember] using
+    joinTypeResults_transport_valueConsistentWithRegime_from_member
+      (predSat := predSat) (ctx := ctx) (first := first) (src := src)
+      (rest := rest) (res := res) (μ := μ) (θ := θ) (v := v)
+      h_join h_src hval
+
+theorem stepFRSingleRunFinalCleanPcTrue_app_param
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (ctxClosureBodyStart :
+    StepFRAppClosureBodyStart CtxCons ValCons predSat tm)
+  (ctxPClosureBodyStart :
+    StepFRAppPClosureBodyStart CtxCons ValCons predSat tm)
+  (ctxMember :
+    StepFRAppMemberCtxCons CtxCons predSat)
+  (ctxJoinMember :
+    StepFRAppJoinCtxConsFromMember CtxCons)
+  (valBodyResult :
+    StepFRAppBodyResultValCons ValCons)
+  (valJoinMember :
+    StepFRAppJoinValConsFromMember ValCons)
+  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (singleIH :
+    StepFRSingleRunFinalCleanPcTrueParam_IH
+      CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
+  (htc : typecheck .ioFree ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrueParam
+    CtxCons ValCons .ioFree ctxᵢ (Expr.app e1 e2) res predSat tm := by
+  change
+    StepFRSingleRunFinalCleanPcTrueWithCtxValCons
+      CtxCons ValCons .ioFree ctxᵢ (Expr.app e1 e2) res predSat tm
+  exact
+    stepFRSingleRunFinalCleanPcTrue_app_parametric
+      CtxCons ValCons ctxᵢ predSat tm
+      ctxClosureBodyStart ctxPClosureBodyStart ctxMember ctxJoinMember valBodyResult valJoinMember
+      e1 e2 fuel' res singleIH htc
+
 -- Function application case: reduces to helper lemmas for closure/closure and peClosure branches
 lemma stepFR_app
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)

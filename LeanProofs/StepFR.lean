@@ -1553,6 +1553,37 @@ def StepFRSingleRunFinalCleanPcTrue
           valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
           PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
 
+def StepFRSingleRunFinalCleanPcTrueParam
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (mode : LeanPoison.EvalMode)
+  (ctx : TypeContext)
+  (e : Expr)
+  (res : TypeResult)
+  (predSat : PredSat)
+  (tm : TagMeaning) : Prop :=
+    PredSatLaws predSat tm →
+    wfTagMeaningCtx tm ctx →
+    ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+      (cf : Config) (o : Value),
+      wfRealizationMap θ →
+      wfTypeContext ctx →
+      runtimeInstantiatesCtx ctx μ ρ θ →
+      regimeConsistentWithCtx ctx →
+      regimeBounded ctx.regime →
+      CtxCons ctx μ ρ θ →
+      ∀ (a : Address) (pm : Bool),
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
+        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        ctx.pc = true →
+        ∃ (θ' : RealizationMap),
+          wfExtendsMap θ θ' ∧
+          valueHasETyp θ' o res.qualType.etyp ∧
+          runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+          CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+          ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
+
 section TypeSystemEnforcesFaultRobustness_impl_proof
 
 -- Helper lemmas: transport predicate-based properties across qualified types
@@ -4704,6 +4735,17 @@ abbrev StepFRSingleRunFinalCleanPcTrue_IH
       typecheck .ioFree ctxᵢ e m = .ok res →
       StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ e res predSat tm
 
+abbrev StepFRSingleRunFinalCleanPcTrueParam_IH
+    (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+    (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
+  ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
+    wfTagMeaningCtx tm ctx →
+    ∀ (res : TypeResult),
+      typecheck .ioFree ctx e m = .ok res →
+      StepFRSingleRunFinalCleanPcTrueParam
+        CtxCons ValCons .ioFree ctx e res predSat tm
+
 -- Convert strong-induction IH (no wfTagMeaningCtx) to StepFR_IH; the extra premise is unused
 lemma StepFR_IH_of_induction
   (predSat : PredSat) (tm : TagMeaning) (k : Nat)
@@ -4719,6 +4761,17 @@ lemma StepFRSingleRunFinalCleanPcTrue_IH_of_induction
       StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ e res predSat tm) :
   StepFRSingleRunFinalCleanPcTrue_IH predSat tm k :=
   fun m hm e ctxᵢ _hwfTm res htc => IH m hm e ctxᵢ res htc
+
+lemma StepFRSingleRunFinalCleanPcTrueParam_IH_of_induction
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (predSat : PredSat) (tm : TagMeaning) (k : Nat)
+  (IH : ∀ m < k, ∀ (e : Expr) (ctx : TypeContext) (res : TypeResult),
+    typecheck .ioFree ctx e m = .ok res →
+      StepFRSingleRunFinalCleanPcTrueParam
+        CtxCons ValCons .ioFree ctx e res predSat tm) :
+  StepFRSingleRunFinalCleanPcTrueParam_IH CtxCons ValCons predSat tm k :=
+  fun m hm e ctx _hwfTm res htc => IH m hm e ctx res htc
 
 end TypeSystemEnforcesFaultRobustness_step_proof
 

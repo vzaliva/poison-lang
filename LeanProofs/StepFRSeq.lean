@@ -148,6 +148,27 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
   · simpa [hctxAfter] using hctxCons2
   · simpa [hctxAfter] using hvalc2
 
+theorem stepFRSingleRunFinalCleanPcTrue_seq_param
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH :
+    StepFRSingleRunFinalCleanPcTrueParam_IH
+      CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
+  (htc : typecheck .ioFree ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrueParam
+    CtxCons ValCons .ioFree ctx (Expr.seq e1 e2) res predSat tm := by
+  change
+    StepFRSingleRunFinalCleanPcTrueWithCtxValCons
+      CtxCons ValCons .ioFree ctx (Expr.seq e1 e2) res predSat tm
+  exact
+    stepFRSingleRunFinalCleanPcTrue_seq_parametric
+      (CtxCons := CtxCons) (ValCons := ValCons)
+      (ctx := ctx) (predSat := predSat) (tm := tm)
+      (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res)
+      (IH := IH) htc
+
 lemma stepFRSingleRunFinalCleanPcTrue_seq
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
@@ -164,8 +185,6 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq
       (IH := fun m hm e ctx' hwfTm' res' htc' =>
         IH m hm e ctx' hwfTm' res' htc')
       htc
-
-
 
 lemma stepFR_seq
   (ctxᵢ : TypeContext) (predSat : PredSat)

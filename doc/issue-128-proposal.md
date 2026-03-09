@@ -647,9 +647,40 @@ Current implementation status on this branch:
    no Section 7.3 review stop was triggered by the paired lifts
    themselves.
 
-   Recommended next implementation step: return to the mode-3
-   single-run `ite` theorem in `FaultRobustnessProofs.lean` and thread
-   the paired bundled interface through that proof.
+   A further mechanical prerequisite is now complete as well: the
+   shared paired single-run predicate lives in `StepFR.lean`, and the
+   recursive case files export file-specific public wrappers around
+   their paired parametric theorems and hook predicates.  That removes
+   the earlier visibility/name-collision problem and makes the paired
+   case infrastructure reusable from `FaultRobustnessProofs.lean`.
+
+   A further interface fork appeared once the wrapper layer was in
+   place.  A theorem fully abstracted over arbitrary `CtxCons` /
+   `ValCons` would need **additional result-side hooks even for the
+   simple constructor cases** (`literal`, `fn` / `pfn`, `op`,
+   `unaryop`), because the top-level induction can no longer construct
+   an arbitrary `ValCons` result directly.  That is broader than the
+   current paired-interface rollout had assumed.
+
+   Current recommendation: do **not** jump straight to the fully
+   abstract theorem surface.  Instead, keep the next theorem concrete
+   over `consistentWithRegimeMasked` /
+   `valueConsistentWithRegimeMasked`, and abstract only the complex
+   recursive hook surface that already exists for `var`, `deref`,
+   `newRef`, `seq`, `vlet`, `assign`, and `app`.  The next concrete
+   implementation step is therefore to move the masked consistency
+   definitions into shared scope and export the masked leaf witnesses
+   needed by that more concrete single-run mode-3 rollout.
+
+   Additional implementation note from the first `FaultRobustnessProofs`
+   pass: the generalized theorem still needs a small result-side hook
+   extension for the remaining "simple" cases (`literal`, `unaryop`,
+   `op`, and likely `fn` / `pfn`).  The existing exported wrappers now
+   cover the recursive and leaf cases that *consume* paired
+   `CtxCons` / `ValCons`, but the generalized theorem also has to
+   *construct* `ValCons` directly for these non-recursive result shapes.
+   This is a local hook-bundle growth item, not a new semantic blocker
+   or Section 7.3 stop.
 
 ## 7. Implementation Constraints
 

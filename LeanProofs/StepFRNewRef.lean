@@ -432,6 +432,61 @@ private lemma stepFRSingleRunFinalCleanPcTrue_newRef_parametric
   refine
     ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final⟩
 
+def StepFRNewRefCtxConsFinish
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (predSat : PredSat) (tm : TagMeaning) : Prop :=
+  NewRefCtxConsFinish CtxCons predSat tm
+
+def StepFRNewRefResultValCons
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
+  NewRefResultValCons ValCons
+
+theorem stepFRNewRef_ctxConsFinish_unmasked
+  (predSat : PredSat) (tm : TagMeaning) :
+  StepFRNewRefCtxConsFinish
+    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
+    predSat tm := by
+  intro ctx res' res1 l storedQt cfg1 cf θ1 θ' n
+    hpredlaws hwfcfg1 hregime_eq hmemEq hmem hvar hpc hθext hstoredQt hctxCons
+  simpa [StepFRNewRefCtxConsFinish] using
+    consistentWithRegime_newRef_finish
+      (ctxᵢ := ctx) (predSat := predSat) (tm := tm)
+      (res := res') (res1 := res1) (l := l) (storedQt := storedQt)
+      (cfg' := cfg1) (cf := cf) (θ1 := θ1) (θ' := θ') (n := n)
+      hpredlaws hwfcfg1 hregime_eq hmemEq hmem hvar hpc hθext hstoredQt hctxCons
+
+theorem stepFRNewRef_resultValCons_unmasked
+  (predSat : PredSat) :
+  StepFRNewRefResultValCons
+    (fun R qt μ θ v => valueConsistentWithRegime predSat R qt μ θ v) := by
+  intro ctx res cf θ a hpred
+  simpa [StepFRNewRefResultValCons] using
+    newRef_valueConsistentWithRegime_result
+      (ctx := ctx) (predSat := predSat) (res := res) (cf := cf) (θ := θ) (a := a)
+      hpred
+
+theorem stepFRSingleRunFinalCleanPcTrue_newRef_param
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e : Expr) (fuel' : Nat) (res : TypeResult)
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (IH : StepFRSingleRunFinalCleanPcTrueParam_IH
+    CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
+  (hCtxCons_finish : StepFRNewRefCtxConsFinish CtxCons predSat tm)
+  (hValCons_result : StepFRNewRefResultValCons ValCons)
+  (htc : typecheck .ioFree ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrueParam
+    CtxCons ValCons .ioFree ctxᵢ (Expr.newRef e) res predSat tm := by
+  change
+    StepFRSingleRunFinalCleanPcTrueWithCtxValCons
+      CtxCons ValCons .ioFree ctxᵢ (Expr.newRef e) res predSat tm
+  exact
+    stepFRSingleRunFinalCleanPcTrue_newRef_parametric
+      (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
+      (e := e) (fuel' := fuel') (res := res)
+      (CtxCons := CtxCons) (ValCons := ValCons)
+      IH hCtxCons_finish hValCons_result htc
+
 lemma stepFRSingleRunFinalCleanPcTrue_newRef
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
