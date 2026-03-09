@@ -11,12 +11,226 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
-lemma stepFRSingleRunFinalCleanPcTrue_newRef
+private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (mode : LeanPoison.EvalMode)
+  (ctx : TypeContext)
+  (e : Expr)
+  (res : TypeResult)
+  (predSat : PredSat)
+  (tm : TagMeaning) : Prop :=
+    PredSatLaws predSat tm →
+    wfTagMeaningCtx tm ctx →
+    ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+      (cf : Config) (o : Value),
+      wfRealizationMap θ →
+      wfTypeContext ctx →
+      runtimeInstantiatesCtx ctx μ ρ θ →
+      regimeConsistentWithCtx ctx →
+      regimeBounded ctx.regime →
+      CtxCons ctx μ ρ θ →
+      ∀ (a : Address) (pm : Bool),
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
+        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        ctx.pc = true →
+        ∃ (θ' : RealizationMap),
+          wfExtendsMap θ θ' ∧
+          valueHasETyp θ' o res.qualType.etyp ∧
+          runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+          CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+          ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
+
+private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
+    (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+    (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
+  ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
+    wfTagMeaningCtx tm ctx →
+    ∀ (res : TypeResult),
+      typecheck .ioFree ctx e m = .ok res →
+      StepFRSingleRunFinalCleanPcTrueWithCtxValCons
+        CtxCons ValCons .ioFree ctx e res predSat tm
+
+private def NewRefCtxConsFinish
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (predSat : PredSat) (tm : TagMeaning) : Prop :=
+  ∀ (ctx : TypeContext) (res res1 : TypeResult) (l : Loc) (storedQt : QTyp)
+    (cfg1 cf : Config) (θ1 θ' : RealizationMap) (n : Int),
+    PredSatLaws predSat tm →
+    wfConfig cfg1 →
+    (ctxAfter ctx res).regime = (ctxAfter ctx res1).regime →
+    res.memEnv' = updateMemEnv res1.memEnv' l storedQt →
+    cf.memory = cfg1.memory.update cfg1.nextAddr n →
+    cf.varEnv = cfg1.varEnv →
+    ctx.pc = true →
+    wfExtendsMap θ1 θ' →
+    storedQt =
+      ⟨ETyp.int, joinPoison ctx.pc res1.qualType.poison,
+        if ctx.pc = true then Predicate.noPred else res1.qualType.pred⟩ →
+    CtxCons (ctxAfter ctx res1) cfg1.memory cfg1.varEnv θ1 →
+    CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ'
+
+private def NewRefResultValCons
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
+  ∀ (ctx : TypeContext) (res : TypeResult) (cf : Config)
+    (θ : RealizationMap) (a : Address),
+    res.qualType.pred = Predicate.noPred →
+    ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ (Value.loc a)
+
+private lemma newRef_valueConsistentWithRegime_result
+  (ctx : TypeContext) (predSat : PredSat) (res : TypeResult) (cf : Config)
+  (θ : RealizationMap) (a : Address)
+  (hpred : res.qualType.pred = Predicate.noPred) :
+  valueConsistentWithRegime predSat (ctxAfter ctx res).regime
+    res.qualType cf.memory θ (Value.loc a) := by
+  refine valueConsistentWithRegime.noTag ?_ ?_
+  · simp [qtypGuardTag, hpred]
+  · exact
+      .intro (.nonClosure
+        (by intro xp body ρcap h; simp at h)
+        (by intro xp body ρcap h; simp at h))
+
+private lemma consistentWithRegime_newRef_finish
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (res res1 : TypeResult) (l : Loc) (storedQt : QTyp)
+  (cfg' cf : Config) (θ1 θ' : RealizationMap) (n : Int)
+  (hpredlaws : PredSatLaws predSat tm)
+  (hwfcfg1 : wfConfig cfg')
+  (hregime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime)
+  (h_mem : res.memEnv' = updateMemEnv res1.memEnv' l storedQt)
+  (hmem : cf.memory = cfg'.memory.update cfg'.nextAddr n)
+  (hvar : cf.varEnv = cfg'.varEnv)
+  (hpc : ctxᵢ.pc = true)
+  (hθext' : wfExtendsMap θ1 θ')
+  (hstoredQt :
+    storedQt =
+      ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison,
+        if ctxᵢ.pc = true then Predicate.noPred else res1.qualType.pred⟩)
+  (hcwr1 :
+    consistentWithRegime predSat (ctxAfter ctxᵢ res1).regime (ctxAfter ctxᵢ res1)
+      cfg'.memory cfg'.varEnv θ1) :
+  consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+    cf.memory cf.varEnv θ' := by
+  have hqtypPredHolds_mem :
+      ∀ (qt : QTyp) (v : Value),
+        qtypPredHolds predSat qt cfg'.memory v ↔ qtypPredHolds predSat qt cf.memory v := by
+    intro qt v
+    exact qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ1 cfg'.memory cf.memory qt v
+  constructor
+  · intro l0 qt k hlookup hguard hkR
+    by_cases h_eq : l0 = l
+    · subst l0
+      have hlookup' : res.memEnv'.lookup l = some qt := by
+        simpa [ctxAfter] using hlookup
+      rw [h_mem] at hlookup'
+      have hqt : qt = storedQt := by
+        have hself :
+            (updateMemEnv res1.memEnv' l storedQt).lookup l =
+              some ⟨ETyp.int, storedQt.poison, storedQt.pred⟩ := by
+          simp [updateMemEnv, MemoryTypeEnv.lookup]
+        have hqt' : qt = ⟨ETyp.int, storedQt.poison, storedQt.pred⟩ := by
+          apply Option.some.inj
+          calc
+            some qt = (updateMemEnv res1.memEnv' l storedQt).lookup l := by
+              symm
+              exact hlookup'
+            _ = some ⟨ETyp.int, storedQt.poison, storedQt.pred⟩ := hself
+        simpa [hstoredQt] using hqt'
+      subst qt
+      exact locsRegime.noPred_ok (l, storedQt) (by simp [hstoredQt, hpc, qtypGuardTag])
+    · have hlookup_res1 : res1.memEnv'.lookup l0 = some qt := by
+        have hlookup' : res.memEnv'.lookup l0 = some qt := by
+          simpa [ctxAfter] using hlookup
+        rw [h_mem] at hlookup'
+        rw [MemoryTypeEnv_lookup_updateMemEnv_ne (Γ := res1.memEnv') (l := l) (l' := l0) (qt := storedQt) h_eq] at hlookup'
+        exact hlookup'
+      have hkR1 : (ctxAfter ctxᵢ res1).regime.lookup? k ≠ none := by
+        simpa [hregime_eq] using hkR
+      have hloc := hcwr1.1 l0 qt k (by simpa [ctxAfter] using hlookup_res1) hguard hkR1
+      cases hloc with
+      | noPred_ok hpred =>
+          exact locsRegime.noPred_ok (l0, qt) hpred
+      | guardOnly_ok k' hgo =>
+          exact locsRegime.guardOnly_ok (l0, qt) k' hgo
+      | withPred_ok k' arg_name pred_body var_env a_old n_old b hclos hreg hreal hmem_old hcons =>
+          have hreal' : θ'.lookup l0 = some a_old := by
+            exact hθext'.1 l0 a_old hreal
+          have hcontains_addr : cfg'.memory.contains a_old = true := Memory_contains_of_lookup hmem_old
+          have hneq_addr : a_old ≠ cfg'.nextAddr := by
+            intro haeq
+            subst haeq
+            exact Nat.lt_irrefl cfg'.nextAddr (hwfcfg1.1 cfg'.nextAddr hcontains_addr)
+          have hmem_same : cf.memory.lookup a_old = cfg'.memory.lookup a_old := by
+            rw [hmem]
+            simpa [Memory.update] using
+              (Memory_lookup_update_ne (μ := cfg'.memory) (a := a_old) (a' := cfg'.nextAddr) (v := n) hneq_addr)
+          have hmem_final : cf.memory.lookup a_old = some n_old := by
+            rw [hmem_same]
+            exact hmem_old
+          have hreg' : (ctxAfter ctxᵢ res).regime.lookup? k' = some b := by
+            simpa [hregime_eq] using hreg
+          have hcons' :
+              (b = true → qtypPredHolds predSat qt cf.memory (Value.num n_old)) ∧
+              (b = false → ¬ qtypPredHolds predSat qt cf.memory (Value.num n_old)) := by
+            constructor
+            · intro hb
+              exact (hqtypPredHolds_mem qt (Value.num n_old)).1 (hcons.1 hb)
+            · intro hb hholds
+              exact (hcons.2 hb) ((hqtypPredHolds_mem qt (Value.num n_old)).2 hholds)
+          exact
+            locsRegime.withPred_ok (l0, qt) k' arg_name pred_body var_env a_old n_old b
+              hclos hreg' hreal' hmem_final hcons'
+  constructor
+  · intro x qt k hlookup hguard hkR
+    have hlookup_old : ctxᵢ.varEnv.lookup x = some qt := by
+      simpa [ctxAfter] using hlookup
+    have hkR1 : (ctxAfter ctxᵢ res1).regime.lookup? k ≠ none := by
+      simpa [hregime_eq] using hkR
+    have hvars := hcwr1.2.1 x qt k hlookup_old hguard hkR1
+    cases hvars with
+    | noPred_ok hpred =>
+        exact varsRegime.noPred_ok (x, qt) hpred
+    | guardOnly_ok k' hgo =>
+        exact varsRegime.guardOnly_ok (x, qt) k' hgo
+    | withPred_ok k' arg_name pred_body var_env v b hclos hreg hvar_old hcons =>
+        have hvar' : cf.varEnv.lookup x = some v := by
+          simpa [hvar] using hvar_old
+        have hreg' : (ctxAfter ctxᵢ res).regime.lookup? k' = some b := by
+          simpa [hregime_eq] using hreg
+        have hcons' :
+            (b = true → qtypPredHolds predSat qt cf.memory v) ∧
+            (b = false → ¬ qtypPredHolds predSat qt cf.memory v) := by
+          constructor
+          · intro hb
+            exact (hqtypPredHolds_mem qt v).1 (hcons.1 hb)
+          · intro hb hholds
+            exact (hcons.2 hb) ((hqtypPredHolds_mem qt v).2 hholds)
+        exact varsRegime.withPred_ok (x, qt) k' arg_name pred_body var_env v b hclos hreg' hvar' hcons'
+  · intro x qt v hlookup hlookup_v
+    have hlookup_old : ctxᵢ.varEnv.lookup x = some qt := by
+      simpa [ctxAfter] using hlookup
+    have hlookup_v_old : cfg'.varEnv.lookup x = some v := by
+      simpa [hvar] using hlookup_v
+    have hcap :
+        closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime qt cfg'.memory θ1 v := by
+      rw [hregime_eq]
+      exact hcwr1.2.2 x qt v hlookup_old hlookup_v_old
+    exact closureCapturedVarsRegime_transport_μ_θ hqtypPredHolds_mem hθext'.1 hcap
+
+private lemma stepFRSingleRunFinalCleanPcTrue_newRef_parametric
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (IH : StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
+    CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
+  (hCtxCons_finish : NewRefCtxConsFinish CtxCons predSat tm)
+  (hValCons_result : NewRefResultValCons ValCons)
   (htc : typecheck .ioFree ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ (Expr.newRef e) res predSat tm := by
+  StepFRSingleRunFinalCleanPcTrueWithCtxValCons
+    CtxCons ValCons .ioFree ctxᵢ (Expr.newRef e) res predSat tm := by
   classical
   have htc' : typecheckNewRef .ioFree ctxᵢ e (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
@@ -33,15 +247,11 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef
   rcases
     hIH hpredlaws hwfTm μ ρ θ cfg' (Value.num n)
       hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht_e hpc
-    with ⟨θ1, hθext1, hvnum1, hric1, hcwr1, _hvalc1, hpres1⟩
+    with ⟨θ1, hθext1, hvnum1, hric1, hctxCons1, _hvalc1, hpres1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
-  have hTm1 : wfTagMeaningCtx tm (ctxAfter ctxᵢ res1) :=
-    typecheckExpr_preserves_wfTagMeaningCtx tm ctxᵢ e fuel' res1 hwfTm htc1'
   have hwf1 : wfTypeContext (ctxAfter ctxᵢ res1) :=
     wfTypeContext_of_wfTypeResult ctxᵢ res1
       (typecheckExpr_preserves_wfTypeResult ctxᵢ e fuel' res1 hwf htc1')
-  have hreg1 : regimeConsistentWithCtx (ctxAfter ctxᵢ res1) :=
-    typecheckExpr_preserves_regimeConsistentWithCtx ctxᵢ e fuel' res1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg' := (wfConfig_preserved .ioFree e _ cfg' (Value.num n) ht_e hwfcfg).1
   have hregime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime := by
     simp [ctxAfter, h_regime]
@@ -91,49 +301,6 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef
         ExtTreeMap_insert_preserves_injectivity
           θ1 l cfg'.nextAddr h_fresh_value' h_inj' l₁ l₂ a0 hlookup1' hlookup2'
   have hθext : wfExtendsMap θ θ' := wfExtendsMap_trans hθext1 hθext'
-  have hEnvTm_res1 : EnvRespectsTagMeaning tm ctxᵢ.varEnv res1.memEnv' := by
-    simpa [wfTagMeaningCtx, ctxAfter] using hTm1
-  have hstored_qtyp : QTypRespectsTagMeaning tm storedQt := by
-    have hnotfun : storedQt.etyp.isFunctionType = false := by
-      simp [storedQt, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-    have hguard : qtypGuardDesc? storedQt = none := by
-      simp [storedQt, hpc, qtypGuardDesc?]
-    intro qt k d hinq hqd
-    exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm storedQt hnotfun hguard) hinq hqd
-  have hEnvTm_res : EnvRespectsTagMeaning tm ctxᵢ.varEnv res.memEnv' := by
-    have hEnvTm_upd :
-        EnvRespectsTagMeaning tm ctxᵢ.varEnv (updateMemEnv res1.memEnv' l storedQt) := by
-      exact
-        EnvRespectsTagMeaning_updateMemEnv
-          tm ctxᵢ.varEnv res1.memEnv' l storedQt
-          (by simp [storedQt]) hEnvTm_res1 hstored_qtyp
-    simpa [h_mem, storedQt] using hEnvTm_upd
-  have hwf_final : wfTypeContext (ctxAfter ctxᵢ res) := by
-    intro l' hcontains
-    simp [ctxAfter] at hcontains ⊢
-    rw [h_mem] at hcontains
-    rw [h_loc]
-    by_cases h_eq : l' = l
-    · subst h_eq
-      rw [hl]
-      exact Nat.lt_succ_self res1.nextLoc'
-    · have hmem' : l' ∈ updateMemEnv res1.memEnv' l storedQt :=
-        (Std.ExtTreeMap.contains_iff_mem).1 hcontains
-      have h_isSome : ((updateMemEnv res1.memEnv' l storedQt)[l']?).isSome = true :=
-        (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem'
-      have h_cmp_ne : compare l l' ≠ Ordering.eq := by
-        intro hcmp
-        have : l = l' := LawfulEqCmp.eq_of_compare hcmp
-        exact h_eq this.symm
-      have h_isSome' : (res1.memEnv'[l']?).isSome = true := by
-        simpa [storedQt, updateMemEnv, ExtTreeMap.getElem?_insert, h_cmp_ne] using h_isSome
-      have hmem_old : l' ∈ res1.memEnv' := (Std.ExtTreeMap.mem_iff_isSome_getElem?).2 h_isSome'
-      have hcontains_old : res1.memEnv'.contains l' = true := (Std.ExtTreeMap.contains_iff_mem).2 hmem_old
-      have hlt : l' < res1.nextLoc' := by
-        have : (ctxAfter ctxᵢ res1).memEnv.contains l' = true := by
-          simpa [ctxAfter] using hcontains_old
-        exact hwf1 l' this
-      exact Nat.lt_succ_of_lt hlt
   have hric_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf.memory cf.varEnv θ' := by
     unfold runtimeInstantiatesCtx
     rcases hric1 with ⟨hmem1, hvars1⟩
@@ -181,112 +348,10 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef
       refine ⟨v, ?_, ?_⟩
       · simpa [hvar] using hvlookup
       · exact valueHasETyp_extends hθext'.1 hvtyp
-  have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
-    simpa [ctxAfter, h_regime, h_tag, h_ntag] using hreg1
-  have hqtypPredHolds_mem :
-      ∀ (qt : QTyp) (v : Value),
-        qtypPredHolds predSat qt cfg'.memory v ↔ qtypPredHolds predSat qt cf.memory v := by
-    intro qt v
-    exact qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ1 cfg'.memory cf.memory qt v
-  have hcwr_final :
-      consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf.memory cf.varEnv θ' := by
-    constructor
-    · intro l0 qt k hlookup hguard hkR
-      by_cases h_eq : l0 = l
-      · subst l0
-        have hlookup' : res.memEnv'.lookup l = some qt := by
-          simpa [ctxAfter] using hlookup
-        rw [h_mem] at hlookup'
-        have hqt : qt = storedQt := by
-          have hself : (updateMemEnv res1.memEnv' l storedQt).lookup l = some storedQt := by
-            simp [storedQt, updateMemEnv, MemoryTypeEnv.lookup]
-          have : (some qt : Option QTyp) = some storedQt := by
-            calc
-              some qt = (updateMemEnv res1.memEnv' l storedQt).lookup l := by
-                symm
-                exact hlookup'
-              _ = some storedQt := hself
-          exact Option.some.inj this
-        subst hqt
-        exact locsRegime.noPred_ok (l, storedQt) (by simp [storedQt, hpc, qtypGuardTag])
-      · have hlookup_res1 : res1.memEnv'.lookup l0 = some qt := by
-          have hlookup' : res.memEnv'.lookup l0 = some qt := by
-            simpa [ctxAfter] using hlookup
-          rw [h_mem] at hlookup'
-          rw [MemoryTypeEnv_lookup_updateMemEnv_ne (Γ := res1.memEnv') (l := l) (l' := l0) (qt := storedQt) h_eq] at hlookup'
-          exact hlookup'
-        have hkR1 : (ctxAfter ctxᵢ res1).regime.lookup? k ≠ none := by
-          simpa [hregime_eq] using hkR
-        have hloc := hcwr1.1 l0 qt k (by simpa [ctxAfter] using hlookup_res1) hguard hkR1
-        cases hloc with
-        | noPred_ok hpred =>
-            exact locsRegime.noPred_ok (l0, qt) hpred
-        | guardOnly_ok k' hgo =>
-            exact locsRegime.guardOnly_ok (l0, qt) k' hgo
-        | withPred_ok k' arg_name pred_body var_env a_old n_old b hclos hreg hreal hmem_old hcons =>
-            have hreal' : θ'.lookup l0 = some a_old := by
-              simpa [θ', RealizationMap_lookup_update_ne h_eq] using hreal
-            have hcontains_addr : cfg'.memory.contains a_old = true := Memory_contains_of_lookup hmem_old
-            have hneq_addr : a_old ≠ cfg'.nextAddr := by
-              intro haeq
-              subst haeq
-              exact Nat.lt_irrefl cfg'.nextAddr (hwfcfg1.1 cfg'.nextAddr hcontains_addr)
-            have hmem_same : cf.memory.lookup a_old = cfg'.memory.lookup a_old := by
-              rw [hmem]
-              simpa [Memory.update] using
-                (Memory_lookup_update_ne (μ := cfg'.memory) (a := a_old) (a' := cfg'.nextAddr) (v := n) hneq_addr)
-            have hmem_final : cf.memory.lookup a_old = some n_old := by
-              rw [hmem_same]
-              exact hmem_old
-            have hreg' : (ctxAfter ctxᵢ res).regime.lookup? k' = some b := by
-              simpa [hregime_eq] using hreg
-            have hcons' :
-                (b = true → qtypPredHolds predSat qt cf.memory (Value.num n_old)) ∧
-                (b = false → ¬ qtypPredHolds predSat qt cf.memory (Value.num n_old)) := by
-              constructor
-              · intro hb
-                exact (hqtypPredHolds_mem qt (Value.num n_old)).1 (hcons.1 hb)
-              · intro hb hholds
-                exact (hcons.2 hb) ((hqtypPredHolds_mem qt (Value.num n_old)).2 hholds)
-            exact
-              locsRegime.withPred_ok (l0, qt) k' arg_name pred_body var_env a_old n_old b
-                hclos hreg' hreal' hmem_final hcons'
-    constructor
-    · intro x qt k hlookup hguard hkR
-      have hlookup_old : ctxᵢ.varEnv.lookup x = some qt := by
-        simpa [ctxAfter] using hlookup
-      have hkR1 : (ctxAfter ctxᵢ res1).regime.lookup? k ≠ none := by
-        simpa [hregime_eq] using hkR
-      have hvars := hcwr1.2.1 x qt k hlookup_old hguard hkR1
-      cases hvars with
-      | noPred_ok hpred =>
-          exact varsRegime.noPred_ok (x, qt) hpred
-      | guardOnly_ok k' hgo =>
-          exact varsRegime.guardOnly_ok (x, qt) k' hgo
-      | withPred_ok k' arg_name pred_body var_env v b hclos hreg hvar_old hcons =>
-          have hvar' : cf.varEnv.lookup x = some v := by
-            simpa [hvar] using hvar_old
-          have hreg' : (ctxAfter ctxᵢ res).regime.lookup? k' = some b := by
-            simpa [hregime_eq] using hreg
-          have hcons' :
-              (b = true → qtypPredHolds predSat qt cf.memory v) ∧
-              (b = false → ¬ qtypPredHolds predSat qt cf.memory v) := by
-            constructor
-            · intro hb
-              exact (hqtypPredHolds_mem qt v).1 (hcons.1 hb)
-            · intro hb hholds
-              exact (hcons.2 hb) ((hqtypPredHolds_mem qt v).2 hholds)
-          exact varsRegime.withPred_ok (x, qt) k' arg_name pred_body var_env v b hclos hreg' hvar' hcons'
-    · intro x qt v hlookup hlookup_v
-      have hlookup_old : ctxᵢ.varEnv.lookup x = some qt := by
-        simpa [ctxAfter] using hlookup
-      have hlookup_v_old : cfg'.varEnv.lookup x = some v := by
-        simpa [hvar] using hlookup_v
-      have hcap :
-          closureCapturedVarsRegime predSat (ctxAfter ctxᵢ res).regime qt cfg'.memory θ1 v := by
-        rw [hregime_eq]
-        exact hcwr1.2.2 x qt v hlookup_old hlookup_v_old
-      exact closureCapturedVarsRegime_transport_μ_θ hqtypPredHolds_mem hθext'.1 hcap
+  have hctxCons_final : CtxCons (ctxAfter ctxᵢ res) cf.memory cf.varEnv θ' := by
+    exact
+      hCtxCons_finish ctxᵢ res res1 l storedQt cfg' cf θ1 θ' n
+        hpredlaws hwfcfg1 hregime_eq h_mem hmem hvar hpc hθext' rfl hctxCons1
   have hclean_back :
       ∀ l0 qt_in qt_out,
         ctxᵢ.memEnv.lookup l0 = some qt_in →
@@ -360,21 +425,49 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef
     have hlookup : θ'.lookup l = some cfg'.nextAddr := by
       simp [θ', RealizationMap.update, RealizationMap.lookup]
     exact valueHasETyp.loc (l := l) hlookup (by simp [LocSet.singleton])
-  have hTm_final : wfTagMeaningCtx tm (ctxAfter ctxᵢ res) := by
-    exact wfTagMeaningCtx_ctxAfter tm ctxᵢ res hEnvTm_res
   have hvalc_final :
-      valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime res.qualType cf.memory θ' o := by
+      ValCons (ctxAfter ctxᵢ res).regime res.qualType cf.memory θ' o := by
     subst ho
-    refine valueConsistentWithRegime.noTag ?_ ?_
-    · simp [qtypGuardTag, h_pred]
-    · exact
-        .intro (.nonClosure
-          (by intro xp body ρcap h; simp at h)
-          (by intro xp body ρcap h; simp at h))
-  have hwfcfg_final : wfConfig cf := by
-    exact (wfConfig_preserved .ioFree (Expr.newRef e) _ cf o ht hwfcfg).1
+    exact hValCons_result ctxᵢ res cf θ' cfg'.nextAddr h_pred
   refine
-    ⟨θ', hθext, hvaltyp_final, hric_final, hcwr_final, hvalc_final, hpres_final⟩
+    ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final⟩
+
+lemma stepFRSingleRunFinalCleanPcTrue_newRef
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (htc : typecheck .ioFree ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ (Expr.newRef e) res predSat tm := by
+  let CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop :=
+    fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ
+  let ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop :=
+    fun R qt μ θ v => valueConsistentWithRegime predSat R qt μ θ v
+  have hIH : StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
+      CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')) := by
+    intro m hm e' ctx hwfTm' res' htc'
+    simpa [StepFRSingleRunFinalCleanPcTrue, StepFRSingleRunFinalCleanPcTrueWithCtxValCons, CtxCons, ValCons] using
+      IH m hm e' ctx hwfTm' res' htc'
+  have hCtxCons_finish : NewRefCtxConsFinish CtxCons predSat tm := by
+    intro ctx res' res1 l storedQt cfg1 cf θ1 θ' n
+      hpredlaws hwfcfg1 hregime_eq hmemEq hmem hvar hpc hθext hstoredQt hctxCons
+    simpa [CtxCons] using
+      consistentWithRegime_newRef_finish
+        (ctxᵢ := ctx) (predSat := predSat) (tm := tm)
+        (res := res') (res1 := res1) (l := l) (storedQt := storedQt)
+        (cfg' := cfg1) (cf := cf) (θ1 := θ1) (θ' := θ') (n := n)
+        hpredlaws hwfcfg1 hregime_eq hmemEq hmem hvar hpc hθext hstoredQt hctxCons
+  have hValCons_result : NewRefResultValCons ValCons := by
+    intro ctx res' cf θ a hpred
+    simpa [ValCons] using
+      newRef_valueConsistentWithRegime_result
+        (ctx := ctx) (predSat := predSat) (res := res') (cf := cf)
+        (θ := θ) (a := a) hpred
+  simpa [StepFRSingleRunFinalCleanPcTrue, StepFRSingleRunFinalCleanPcTrueWithCtxValCons, CtxCons, ValCons] using
+    stepFRSingleRunFinalCleanPcTrue_newRef_parametric
+      (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
+      (e := e) (fuel' := fuel') (res := res)
+      (CtxCons := CtxCons) (ValCons := ValCons)
+      hIH hCtxCons_finish hValCons_result htc
 
 
 private lemma joinMemEnvsStrong_lookup_cleanUnder_left_of_contains

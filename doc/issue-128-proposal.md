@@ -615,13 +615,28 @@ Current implementation status on this branch:
      through one bundled hook, without exposing the concrete
      `locsRegime` conjunct at the theorem boundary.
 
-   Recommended next implementation step: move to `newRef` as the final
-   leaf check under the bundled `CtxCons` / `ValCons` interface.
-   `newRef` is lower risk than returning directly to mode-3 `ite`, but
-   it still tests the remaining leaf shape: context-side reconstruction
-   from the IH output while the result-side value consistency is
-   trivial.  If `newRef` also fits cleanly, that is the point to push
-   the bundled interface back into the mode-3 `ite` branch.
+   - `newRef`: complete.  `StepFRNewRef` now follows the same bundled
+     shape with a post-write context hook `NewRefCtxConsFinish`, a
+     trivial-result value hook `NewRefResultValCons`, and concrete
+     witnesses `consistentWithRegime_newRef_finish` and
+     `newRef_valueConsistentWithRegime_result`.  The public
+     `stepFRSingleRunFinalCleanPcTrue_newRef` is rederived from the
+     private parametric theorem
+     `stepFRSingleRunFinalCleanPcTrue_newRef_parametric`.  This keeps
+     the work on plan: `newRef` did not force a new design review, but
+     it did confirm one additional interface detail worth carrying
+     forward into the mode-3 rollout.  The bundled path needs both
+     kinds of local hooks:
+     post-IH `CtxCons` reconstruction hooks for context updates, and
+     lightweight `ValCons` constructors for result shapes whose value
+     consistency is trivial in the concrete regime semantics.
+
+   Recommended next implementation step: return to step 6 proper and
+   push the bundled `CtxCons` / `ValCons` interface back into the
+   single-run mode-3 `ite` proof in `FaultRobustnessProofs.lean`.  The
+   leaf spikes now cover the three relevant shapes (`var`, `deref`,
+   `newRef`), so the next risk-first question is whether the bundled
+   interface composes cleanly through the mode-3 branch setup and join.
 
 ## 7. Implementation Constraints
 
