@@ -404,16 +404,19 @@ Current implementation status on this branch:
    `tagEnvConsistentWithRegime_insert_*_with_regime` and
    `consistentWithRegime_insert_regime_{true,false}` as needed, with
    `PredSatLaws.match_iff` wired into the actual proof sites.
-   Status: blocked pending review.  The top-level mem/var transfer
-   shape still looks implementable, but the generic
-   `consistentWithRegime_insert_regime_{true,false}` story breaks at
-   the closure conjunct of `consistentWithRegime`.  Under regime
-   growth, previously inactive captured-variable obligations for the
-   newly interpreted tag `k` can become active inside closures, and the
-   current premises do not provide the runtime evidence needed to
-   discharge them.  This is the tag-reuse/closure caveat from Section
-   5.4 materializing as a real proof obstruction, so the step should
-   not be pushed further without review.
+   Status: partially complete under the narrowed path.  The local
+   simultaneous-insert helpers
+   `tagEnvConsistentWithRegime_insert_true_with_regime` and
+   `tagEnvConsistentWithRegime_insert_false_with_regime` are now in
+   `StepFR.lean`, and `lake build` succeeds after adding them.  The
+   broader generic `consistentWithRegime_insert_regime_{true,false}`
+   work remains blocked pending review: the top-level mem/var transfer
+   shape still looks implementable, but the generic closure-sensitive
+   story breaks at the closure conjunct of `consistentWithRegime`.
+   Under regime growth, previously inactive captured-variable
+   obligations for the newly interpreted tag `k` can become active
+   inside closures, and the current premises do not provide the runtime
+   evidence needed to discharge them.  That remains deferred.
 
 5. **Close the local mode-3 preservation gap for
    `regimeConsistentWithCtx`.**
@@ -422,9 +425,19 @@ Current implementation status on this branch:
    existing tagEnv insert lemmas together with the step-3 bound bridge
    and the minimal simultaneous-insert lemmas from step 4.  Treat this
    as a local repair to land after the higher-risk blockers above.
-   Status: deferred behind steps 3 and 4.  The earlier attempt showed
-   this proof is not independent supporting infrastructure after all;
-   it consumes the bound bridge and branch-insert transport facts.
+   Status: blocked pending review.  The new simultaneous-insert helpers
+   are enough for the subcase `k < ctx.regime.bound`, but they do not
+   close the full theorem target.  There is now a concrete branch-level
+   obstruction: `matchGuard` can return a tag `k` above the regime
+   bound, and then the mode-3 true-branch context has
+   `tagEnv[k] = true` while `regime.lookup? k = none`.  A minimal
+   literal branch preserves that inconsistency, so the current
+   induction hypothesis for
+   `typecheckExpr_preserves_regimeConsistentWithCtx_main` cannot be
+   applied in that subcase.  Finishing this step now appears to require
+   a new local preservation theorem for an “all true tags except
+   possibly k are consistent” invariant, or an equivalent redesign.
+   This is a Section 7.3 stopping point.
 
 6. **Propagate the fix through downstream `ite` obligations.**
    Revisit

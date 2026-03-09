@@ -113,6 +113,52 @@ lemma tagEnvConsistentWithRegime_insert_false
       exact hget
     exact h k' deps' hget'
 
+private lemma tagEnvConsistentWithRegime_insert_true_with_regime
+    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
+    (h : tagEnvConsistentWithRegime tagEnv R)
+    (hk_bound : k < R.bound) :
+    tagEnvConsistentWithRegime
+      (tagEnv.insert k ⟨true, deps⟩)
+      { R with map := R.map.insert k true } := by
+  intro k' deps' hget
+  by_cases hkk' : k' = k
+  · subst hkk'
+    unfold Regime.lookup?
+    simp [hk_bound, Std.ExtTreeMap.get?_eq_getElem?]
+  · have hcmp : compare k k' ≠ Ordering.eq := by
+      intro hce
+      have : k = k' := (Nat.compare_eq_eq).1 hce
+      exact hkk' this.symm
+    have hget' : tagEnv.get? k' = some ⟨true, deps'⟩ := by
+      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
+      exact hget
+    have hR' : R.lookup? k' = some true := h k' deps' hget'
+    unfold Regime.lookup? at hR' ⊢
+    simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hR' ⊢
+    exact hR'
+
+private lemma tagEnvConsistentWithRegime_insert_false_with_regime
+    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
+    (h : tagEnvConsistentWithRegime tagEnv R) :
+    tagEnvConsistentWithRegime
+      (tagEnv.insert k ⟨false, deps⟩)
+      { R with map := R.map.insert k false } := by
+  intro k' deps' hget
+  by_cases hkk' : k' = k
+  · subst hkk'
+    simp [Std.ExtTreeMap.get?_eq_getElem?] at hget
+  · have hcmp : compare k k' ≠ Ordering.eq := by
+      intro hce
+      have : k = k' := (Nat.compare_eq_eq).1 hce
+      exact hkk' this.symm
+    have hget' : tagEnv.get? k' = some ⟨true, deps'⟩ := by
+      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
+      exact hget
+    have hR' : R.lookup? k' = some true := h k' deps' hget'
+    unfold Regime.lookup? at hR' ⊢
+    simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hR' ⊢
+    exact hR'
+
 -- `invalidateTagDeps` only removes entries; it never creates new `true` bindings.
 lemma tagEnvConsistentWithRegime_invalidate
     (tagEnv : TagEnv) (R : Regime) (ls : LocSet)
