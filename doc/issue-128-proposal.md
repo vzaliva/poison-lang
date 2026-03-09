@@ -385,41 +385,46 @@ Current implementation status on this branch:
    the asymmetric fallback, so the implementation continues with the
    symmetric branch-update design until later evidence says otherwise.
 
-3. **Close the local mode-3 preservation gap for
-   `regimeConsistentWithCtx`.**
-   Repair
-   `typecheckExpr_preserves_regimeConsistentWithCtx_main` using the
-   existing tagEnv insert lemmas together with a small regime-insert
-   lookup bridge.  Treat this as supporting infrastructure, not as the
-   main design risk.
-   Status: blocked pending review.  The local mode-3 proof needs the
-   inserted branch tag to satisfy
-   `({ ctx.regime with map := ctx.regime.map.insert k b }).lookup? k = some b`
-   in order to re-establish `tagEnvConsistentWithRegime` for the
-   branch context.  Because `Regime.lookup?` is bounded by
-   `k < ctx.regime.bound`, this now depends on the missing step-4
-   bridge from successful `matchGuard` to regime-bound membership.
-   That changes the expected order of work: step 3 cannot currently be
-   closed before step 4.
-
-4. **Re-introduce the `R.bound` bridge in the split layout.**
+3. **Re-introduce the `R.bound` bridge in the split layout.**
    Re-home or redesign `matchGuard_ok_tag_from_ctx`,
    `matchGuard_tag_in_bound`, and the bounded-tags invariant they need.
    The output of this phase should be an active path from successful
    `matchGuard` to `k < ctx.regime.bound`.
+   Status: next highest-priority blocker.  The attempted step-3 repair
+   showed this bridge is needed earlier than expected, because
+   `Regime.lookup?` is bound-guarded and the mode-3 branch contexts
+   cannot be shown regime-consistent without first proving that the
+   matched tag lies below `ctx.regime.bound`.
 
-5. **Implement the regime-growth transfer lemmas for the chosen
+4. **Implement the regime-growth transfer lemmas for the chosen
    design.**
    This includes the split-layout versions of
    `tagEnvConsistentWithRegime_insert_*_with_regime` and
    `consistentWithRegime_insert_regime_{true,false}` as needed, with
    `PredSatLaws.match_iff` wired into the actual proof sites.
+   Status: high-risk and still open.  This is the tag-reuse and
+   closure-sensitive part of the issue-128 work, so it should stay
+   ahead of lower-risk local preservation repairs.
+
+5. **Close the local mode-3 preservation gap for
+   `regimeConsistentWithCtx`.**
+   Repair
+   `typecheckExpr_preserves_regimeConsistentWithCtx_main` using the
+   existing tagEnv insert lemmas together with the step-3 bound bridge
+   and the minimal simultaneous-insert lemmas from step 4.  Treat this
+   as a local repair to land after the higher-risk blockers above.
+   Status: deferred behind steps 3 and 4.  The earlier attempt showed
+   this proof is not independent supporting infrastructure after all;
+   it consumes the bound bridge and branch-insert transport facts.
 
 6. **Propagate the fix through downstream `ite` obligations.**
    Revisit
    `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
    in `FaultRobustnessProofs.lean`, then finish the top-level
    `stepFR_ite_mode3` proof in `StepFRIte.lean`.
+   Status: remains last.  Downstream obligations should only be
+   revisited after the bound bridge, regime-growth transport, and local
+   preservation proof are all in place.
 
 ## 7. Implementation Constraints
 
