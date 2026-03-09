@@ -12,8 +12,9 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
-private def StepFRSingleRunFinalCleanPcTrueWithCtxCons
+private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
   (mode : LeanPoison.EvalMode)
   (ctx : TypeContext)
   (e : Expr)
@@ -39,18 +40,19 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxCons
           valueHasETyp θ' o res.qualType.etyp ∧
           runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
-          valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
+          ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
           PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
 
-private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxCons_IH
+private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
     (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
     wfTagMeaningCtx tm ctx →
     ∀ (res : TypeResult),
       typecheck .ioFree ctx e m = .ok res →
-      StepFRSingleRunFinalCleanPcTrueWithCtxCons
-        CtxCons .ioFree ctx e res predSat tm
+      StepFRSingleRunFinalCleanPcTrueWithCtxValCons
+        CtxCons ValCons .ioFree ctx e res predSat tm
 
 private def AssignCtxConsPostTransport
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -90,6 +92,14 @@ private def AssignCtxConsPostTransport
     runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ ∧
     regimeConsistentWithCtx (ctxAfter ctx res) ∧
     CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ
+
+private def AssignResultValCons
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
+  ∀ (ctx : TypeContext) (res : TypeResult) (cf : Config)
+    (θ : RealizationMap),
+    res.qualType.pred = Predicate.noPred →
+    res.qualType.etyp = ETyp.unit →
+    ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ Value.unit
 
 private lemma invalidateRegimeDeps_preserves_lookup_of_surviving_tag
     (R : Regime) (env : TagEnv) (ls : LocSet) (k : Tag) (b : Bool)
@@ -5224,15 +5234,37 @@ private lemma consistentWithRegime_assign_post_transport
       hpredlaws hwfTm2 hwf2 hric2 hreg2 hcwr2
       hRef hvalRef hθwf hmem hvar hNextLoc hNextTag hRegime hmem_res htag_res hpc
 
+private lemma assign_result_valueConsistentWithRegime
+  (ctx : TypeContext) (predSat : PredSat) (res : TypeResult) (cf : Config)
+  (θ : RealizationMap)
+  (hPred : res.qualType.pred = Predicate.noPred)
+  (hEtyp : res.qualType.etyp = ETyp.unit) :
+  valueConsistentWithRegime predSat (ctxAfter ctx res).regime
+    res.qualType cf.memory θ Value.unit := by
+  refine
+    valueConsistentWithRegime.noTag
+      (predSat := predSat) (R := (ctxAfter ctx res).regime)
+      (qt := res.qualType) (μ := cf.memory) (v := Value.unit)
+      ?_ ?_
+  · simp [qtypGuardTag, hPred]
+  · exact
+      closureCapturedVarsRegime_nonClosure_of_nonFunctionType
+        (by simpa [hEtyp] using valueHasETyp.unit (θ := θ))
+        (by simp [hEtyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
+
 private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFRSingleRunFinalCleanPcTrueWithCtxCons_IH CtxCons predSat tm (Nat.succ (Nat.succ fuel')))
+  (IH :
+    StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
+      CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
   (hCtxConsPost : AssignCtxConsPostTransport CtxCons predSat tm)
+  (hValConsResult : AssignResultValCons ValCons)
   (htc : typecheck .ioFree ctx (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrueWithCtxCons
-    CtxCons .ioFree ctx (Expr.assign e1 e2) res predSat tm := by
+  StepFRSingleRunFinalCleanPcTrueWithCtxValCons
+    CtxCons ValCons .ioFree ctx (Expr.assign e1 e2) res predSat tm := by
   classical
   have htc' : typecheckAssign .ioFree ctx e1 e2 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
@@ -5349,18 +5381,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
       hRef hvloc2 hθ2wf hmem hvar hNextLoc hNextTag hRegime hmem_res htag_res hpc
     with ⟨hTm_final, hwf_final, hric_final, hreg_final, hctxCons_final⟩
   have hvalc_final :
-      valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ2 o := by
+      ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ2 o := by
     subst ho
-    refine
-      valueConsistentWithRegime.noTag
-        (predSat := predSat) (R := (ctxAfter ctx res).regime)
-        (qt := res.qualType) (μ := cf.memory) (v := Value.unit)
-        ?_ ?_
-    · simp [qtypGuardTag, hPred]
-    · exact
-        closureCapturedVarsRegime_nonClosure_of_nonFunctionType
-          (by simpa [hEtyp] using valueHasETyp.unit (θ := θ2))
-          (by simp [hEtyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
+    exact hValConsResult (ctx := ctx) (res := res) (cf := cf) (θ := θ2) hPred hEtyp
   have hpres_final :
       PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ2 := by
     exact
@@ -5388,16 +5411,24 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign
   StepFRSingleRunFinalCleanPcTrue .ioFree ctx (Expr.assign e1 e2) res predSat tm := by
   let CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop :=
     fun ctx' μ' ρ' θ' => consistentWithRegime predSat ctx'.regime ctx' μ' ρ' θ'
+  let ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop :=
+    valueConsistentWithRegime predSat
   have hIH' :
-      StepFRSingleRunFinalCleanPcTrueWithCtxCons_IH
-        CtxCons predSat tm (Nat.succ (Nat.succ fuel')) := by
+      StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
+        CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')) := by
     intro m hm e ctx' hwfTm' res' htc'
-    simpa [CtxCons] using IH m hm e ctx' hwfTm' res' htc'
+    simpa [CtxCons, ValCons] using IH m hm e ctx' hwfTm' res' htc'
   have hCtxConsPost : AssignCtxConsPostTransport CtxCons predSat tm := by
     simpa [CtxCons] using consistentWithRegime_assign_post_transport (predSat := predSat) (tm := tm)
-  simpa [CtxCons] using
+  have hValConsResult : AssignResultValCons ValCons := by
+    intro ctx' res' cf' θ' hPred hEtyp
+    simpa [ValCons] using
+      assign_result_valueConsistentWithRegime
+        (ctx := ctx') (predSat := predSat) (res := res') (cf := cf') (θ := θ')
+        hPred hEtyp
+  simpa [CtxCons, ValCons] using
     stepFRSingleRunFinalCleanPcTrue_assign_parametric
-      (CtxCons := CtxCons)
+      (CtxCons := CtxCons) (ValCons := ValCons)
       (ctx := ctx) (predSat := predSat) (tm := tm)
       (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res)
-      hIH' hCtxConsPost htc
+      hIH' hCtxConsPost hValConsResult htc

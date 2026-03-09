@@ -631,34 +631,25 @@ Current implementation status on this branch:
      lightweight `ValCons` constructors for result shapes whose value
      consistency is trivial in the concrete regime semantics.
 
-   First rollout finding after the leaf spikes: the next blocker is not
-   at the branch-local leaf layer anymore, but at the remaining
-   recursive combinators.  The current single-run helper spikes split
-   into two groups:
+   The recursive single-run combinator surface is now fully lifted to
+   the paired bundled interface.  `seq`, `vlet`, and `assign` have been
+   converted from `CtxCons`-only parametric proofs to the same paired
+   `CtxCons` / `ValCons` shape already used by `var`, `deref`,
+   `newRef`, and `app`.
 
-   - `var`, `deref`, `newRef` already use the paired bundled interface
-     (`CtxCons` and `ValCons`).
-   - `var`, `deref`, `newRef`, and now `app` use the paired bundled
-     interface (`CtxCons` and `ValCons`).
-   - `seq`, `vlet`, and `assign` still only have `CtxCons`-parametric
-     single-run proofs.
+   The only additional detail discovered during these mechanical lifts
+   is local, not architectural: some cases need both a context-side
+   post-IH transport hook and a lightweight value-side constructor hook
+   for trivial result shapes.  `assign` follows the same pattern as
+   `newRef` here.
 
-   That means the bundled mode-3 `ite` theorem cannot yet be threaded
-   recursively through arbitrary branch expressions.  Before returning
-   to the mode-3 single-run proof in `FaultRobustnessProofs.lean`, the
-   remaining recursive combinators have to be lifted to the paired
-   `CtxCons` / `ValCons` interface as well.
+   This keeps the work on plan.  No new semantic blocker appeared, and
+   no Section 7.3 review stop was triggered by the paired lifts
+   themselves.
 
-   `app` confirmed that the bundled path still scales.  The lift needed
-   an `app`-local hook family, including one additional member-to-join
-   `CtxCons` transport hook, but it did **not** uncover a new semantic
-   blocker or require a plan reset.
-
-   Recommended next implementation step: lift `seq`, `vlet`, and
-   `assign` to the same paired interface.  Those are now expected to be
-   mechanical follow-up lifts rather than new risk spikes.  After all
-   three are paired, return to the mode-3 single-run `ite` theorem in
-   `FaultRobustnessProofs.lean`.
+   Recommended next implementation step: return to the mode-3
+   single-run `ite` theorem in `FaultRobustnessProofs.lean` and thread
+   the paired bundled interface through that proof.
 
 ## 7. Implementation Constraints
 
