@@ -1004,6 +1004,544 @@ private lemma consistentWithRegime_transport_ctxAfter_pure_to_ctx_insert_true
             simpa [ctxAfter] using hreg_bridge k b hk)
           hcapRes
 
+private lemma joinMemEnvs_lookup_guardClosure_left
+  (env1 env2 : MemoryTypeEnv) (l : Loc) (qt qt1 : QTyp)
+  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
+  (hlookup_join : (joinMemEnvs env1 env2).lookup l = some qt)
+  (hlookup1 : env1.lookup l = some qt1)
+  (hpred_join : qt.pred = Predicate.guardClosure k arg_name pred_body var_env) :
+  qt1.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+  by_cases hlookup2_none : env2.lookup l = none
+  · have hcontains1 : env1.contains l := memEnv_contains_of_lookup_some env1 l qt1 hlookup1
+    have hleft := joinMemEnvs_lookup_eq_left_of_right_none env1 env2 l hcontains1
+      (by simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hlookup2_none)
+    rw [hlookup_join] at hleft
+    have hq : qt = qt1 := by simpa [hlookup1] using hleft
+    simpa [hq] using hpred_join
+  · rcases Option.ne_none_iff_exists'.1 hlookup2_none with ⟨qt2, hlookup2⟩
+    have hmem1 : l ∈ env1 := memEnv_contains_of_lookup_some env1 l qt1 hlookup1
+    have h_in : l ∈ (env1.keys ++ env2.keys).eraseDups := by
+      have hkeys1 : l ∈ env1.keys := by rw [Std.ExtTreeMap.mem_keys]; exact hmem1
+      exact List.mem_eraseDups_of_mem (List.mem_append_left _ hkeys1)
+    classical
+    let f : Loc → Option MemEntry → Option MemEntry → Option MemEntry := fun _ oe1 oe2 =>
+      match oe1, oe2 with
+      | some e1, none => some e1
+      | none, some e2 => some e2
+      | some e1, some e2 =>
+        some ⟨joinPoison e1.poison e2.poison, joinPredicates e1.pred e2.pred⟩
+      | none, none => none
+    have hgo := combineExtTreeMaps_go_get_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+      ({} : MemoryTypeEnv) l h_in
+    have he1 := memEnv_get_eq_of_lookup env1 l qt1 hlookup1
+    have he2 := memEnv_get_eq_of_lookup env2 l qt2 hlookup2
+    have hetyp_eq : qt1.etyp = qt2.etyp := by
+      rw [memEnv_lookup_etyp_int env1 l qt1 hlookup1, memEnv_lookup_etyp_int env2 l qt2 hlookup2]
+    cases qt1 with
+    | mk t1 p1 pred1 =>
+        cases qt2 with
+        | mk t2 p2 pred2 =>
+            have _ht12 : t1 = t2 := by simpa using hetyp_eq
+            have hjoin_lookup_get :
+                (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups ({} : MemoryTypeEnv))[l]? =
+                some ⟨qt.poison, qt.pred⟩ := by
+              have hget := memEnv_get_eq_of_lookup (joinMemEnvs env1 env2) l qt hlookup_join
+              simpa [joinMemEnvs, combineExtTreeMaps, Std.ExtTreeMap.get?_eq_getElem?] using hget
+            have hmatch : f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) = some ⟨qt.poison, qt.pred⟩ := by
+              have h : (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups ({} : MemoryTypeEnv))[l]? =
+                  f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) := by
+                cases hopt : f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) with
+                | none => have hgo' := hgo; rw [hopt] at hgo'; exact hgo'
+                | some v => have hgo' := hgo; rw [hopt] at hgo'; exact hgo'
+              rw [← h]
+              exact hjoin_lookup_get
+            rw [he1, he2] at hmatch
+            simp only [f] at hmatch
+            have hpred_joined : qt.pred = joinPredicates pred1 pred2 := by
+              exact (MemEntry.mk.inj (Option.some.inj hmatch.symm)).2
+            have hpred_eq : joinPredicates pred1 pred2 = Predicate.guardClosure k arg_name pred_body var_env := by
+              calc
+                joinPredicates pred1 pred2 = qt.pred := hpred_joined.symm
+                _ = Predicate.guardClosure k arg_name pred_body var_env := hpred_join
+            exact (joinPredicates_eq_guardClosure (p := pred1) (q := pred2) hpred_eq).1
+
+private lemma joinMemEnvs_lookup_guardClosure_right
+  (env1 env2 : MemoryTypeEnv) (l : Loc) (qt qt2 : QTyp)
+  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
+  (hlookup_join : (joinMemEnvs env1 env2).lookup l = some qt)
+  (hlookup2 : env2.lookup l = some qt2)
+  (hpred_join : qt.pred = Predicate.guardClosure k arg_name pred_body var_env) :
+  qt2.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+  by_cases hlookup1_none : env1.lookup l = none
+  · have hcontains2 : env2.contains l := memEnv_contains_of_lookup_some env2 l qt2 hlookup2
+    have hright := joinMemEnvs_lookup_eq_right_of_left_none env1 env2 l
+      (by simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hlookup1_none) hcontains2
+    rw [hlookup_join] at hright
+    have hq : qt = qt2 := by simpa [hlookup2] using hright
+    simpa [hq] using hpred_join
+  · rcases Option.ne_none_iff_exists'.1 hlookup1_none with ⟨qt1, hlookup1⟩
+    have hmem1 : l ∈ env1 := memEnv_contains_of_lookup_some env1 l qt1 hlookup1
+    have h_in : l ∈ (env1.keys ++ env2.keys).eraseDups := by
+      have hkeys1 : l ∈ env1.keys := by rw [Std.ExtTreeMap.mem_keys]; exact hmem1
+      exact List.mem_eraseDups_of_mem (List.mem_append_left _ hkeys1)
+    classical
+    let f : Loc → Option MemEntry → Option MemEntry → Option MemEntry := fun _ oe1 oe2 =>
+      match oe1, oe2 with
+      | some e1, none => some e1
+      | none, some e2 => some e2
+      | some e1, some e2 =>
+        some ⟨joinPoison e1.poison e2.poison, joinPredicates e1.pred e2.pred⟩
+      | none, none => none
+    have hgo := combineExtTreeMaps_go_get_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+      ({} : MemoryTypeEnv) l h_in
+    have he1 := memEnv_get_eq_of_lookup env1 l qt1 hlookup1
+    have he2 := memEnv_get_eq_of_lookup env2 l qt2 hlookup2
+    have hetyp_eq : qt1.etyp = qt2.etyp := by
+      rw [memEnv_lookup_etyp_int env1 l qt1 hlookup1, memEnv_lookup_etyp_int env2 l qt2 hlookup2]
+    cases qt1 with
+    | mk t1 p1 pred1 =>
+        cases qt2 with
+        | mk t2 p2 pred2 =>
+            have _ht12 : t1 = t2 := by simpa using hetyp_eq
+            have hjoin_lookup_get :
+                (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups ({} : MemoryTypeEnv))[l]? =
+                some ⟨qt.poison, qt.pred⟩ := by
+              have hget := memEnv_get_eq_of_lookup (joinMemEnvs env1 env2) l qt hlookup_join
+              simpa [joinMemEnvs, combineExtTreeMaps, Std.ExtTreeMap.get?_eq_getElem?] using hget
+            have hmatch : f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) = some ⟨qt.poison, qt.pred⟩ := by
+              have h : (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups ({} : MemoryTypeEnv))[l]? =
+                  f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) := by
+                cases hopt : f l (ExtTreeMap.get? env1 l) (ExtTreeMap.get? env2 l) with
+                | none => have hgo' := hgo; rw [hopt] at hgo'; exact hgo'
+                | some v => have hgo' := hgo; rw [hopt] at hgo'; exact hgo'
+              rw [← h]
+              exact hjoin_lookup_get
+            rw [he1, he2] at hmatch
+            simp only [f] at hmatch
+            have hpred_joined : qt.pred = joinPredicates pred1 pred2 := by
+              exact (MemEntry.mk.inj (Option.some.inj hmatch.symm)).2
+            have hpred_eq : joinPredicates pred1 pred2 = Predicate.guardClosure k arg_name pred_body var_env := by
+              calc
+                joinPredicates pred1 pred2 = qt.pred := hpred_joined.symm
+                _ = Predicate.guardClosure k arg_name pred_body var_env := hpred_join
+            exact (joinPredicates_eq_guardClosure (p := pred1) (q := pred2) hpred_eq).2
+
+private lemma joinMemEnvsStrong_lookup_guardClosure_left
+  (env1 env2 : MemoryTypeEnv) (l : Loc) (qt qt1 : QTyp)
+  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
+  (hlookup_join : (joinMemEnvsStrong env1 env2).lookup l = some qt)
+  (hlookup1 : env1.lookup l = some qt1)
+  (hpred_join : qt.pred = Predicate.guardClosure k arg_name pred_body var_env) :
+  qt1.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+  by_cases hlookup2_none : env2.lookup l = none
+  · have hcontains1 : env1.contains l := memEnv_contains_of_lookup_some env1 l qt1 hlookup1
+    have hlookup2_none_get : env2[l]? = none := by
+      simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hlookup2_none
+    have hleft :=
+      joinMemEnvsStrong_lookup_eq_left_of_right_none env1 env2 l hcontains1 hlookup2_none_get
+    rw [hlookup_join] at hleft
+    have hq : qt = ⟨qt1.etyp, qt1.poison, Predicate.noPred⟩ := by
+      simpa [hlookup1] using hleft
+    have : False := by
+      simp [hq] at hpred_join
+    exact False.elim this
+  · rcases Option.ne_none_iff_exists'.1 hlookup2_none with ⟨qt2, hlookup2⟩
+    have hlookupW : (joinMemEnvs env1 env2).lookup l = some qt := by
+      rw [← joinMemEnvsStrong_lookup_eq_joinMemEnvs_of_both_lookup env1 env2 l qt1 qt2 hlookup1 hlookup2]
+      exact hlookup_join
+    exact
+      joinMemEnvs_lookup_guardClosure_left
+        env1 env2 l qt qt1 k arg_name pred_body var_env
+        hlookupW hlookup1 hpred_join
+
+private lemma joinMemEnvsStrong_lookup_guardClosure_right
+  (env1 env2 : MemoryTypeEnv) (l : Loc) (qt qt2 : QTyp)
+  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
+  (hlookup_join : (joinMemEnvsStrong env1 env2).lookup l = some qt)
+  (hlookup2 : env2.lookup l = some qt2)
+  (hpred_join : qt.pred = Predicate.guardClosure k arg_name pred_body var_env) :
+  qt2.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+  by_cases hlookup1_none : env1.lookup l = none
+  · have hcontains2 : env2.contains l := memEnv_contains_of_lookup_some env2 l qt2 hlookup2
+    have hlookup1_none_get : env1[l]? = none := by
+      simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using hlookup1_none
+    have hright :=
+      joinMemEnvsStrong_lookup_eq_right_of_left_none env1 env2 l hlookup1_none_get hcontains2
+    rw [hlookup_join] at hright
+    have hq : qt = ⟨qt2.etyp, qt2.poison, Predicate.noPred⟩ := by
+      simpa [hlookup2] using hright
+    have : False := by
+      simp [hq] at hpred_join
+    exact False.elim this
+  · rcases Option.ne_none_iff_exists'.1 hlookup1_none with ⟨qt1, hlookup1⟩
+    have hlookupW : (joinMemEnvs env1 env2).lookup l = some qt := by
+      rw [← joinMemEnvsStrong_lookup_eq_joinMemEnvs_of_both_lookup env1 env2 l qt1 qt2 hlookup1 hlookup2]
+      exact hlookup_join
+    exact
+      joinMemEnvs_lookup_guardClosure_right
+        env1 env2 l qt qt2 k arg_name pred_body var_env
+        hlookupW hlookup2 hpred_join
+
+private lemma joinMemEnvsStrong_lookup_guardClosure_implies_left
+  (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : QTyp)
+  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
+  (hlookup_join : (joinMemEnvsStrong env1 env2).lookup l = some qt)
+  (hpred_join : qt.pred = Predicate.guardClosure k arg_name pred_body var_env) :
+  ∃ qt1, env1.lookup l = some qt1 ∧ qt1.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+  by_cases h1none : env1.lookup l = none
+  · have hcontains_join : (joinMemEnvsStrong env1 env2).contains l :=
+      memEnv_contains_of_lookup_some (env := (joinMemEnvsStrong env1 env2)) (l := l) (qt := qt) hlookup_join
+    have hor := joinMemEnvsStrong_contains_implies_or env1 env2 l hcontains_join
+    have hnot1 : ¬ env1.contains l := by
+      intro hcontains1
+      rcases memEnv_lookup_some_of_contains env1 l hcontains1 with ⟨qt1, hlookup1⟩
+      rw [hlookup1] at h1none
+      cases h1none
+    have hcontains2 : env2.contains l := by
+      cases hor with
+      | inl hcontains1 => exact (hnot1 hcontains1).elim
+      | inr hcontains2 => exact hcontains2
+    rcases memEnv_lookup_some_of_contains env2 l hcontains2 with ⟨qt2, hlookup2⟩
+    have h1none_get : env1[l]? = none := by
+      simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using h1none
+    have hright :=
+      joinMemEnvsStrong_lookup_eq_right_of_left_none env1 env2 l h1none_get hcontains2
+    rw [hlookup_join] at hright
+    have hq : qt = ⟨qt2.etyp, qt2.poison, Predicate.noPred⟩ := by
+      simpa [hlookup2] using hright
+    have : False := by
+      simp [hq] at hpred_join
+    exact False.elim this
+  · rcases Option.ne_none_iff_exists'.1 h1none with ⟨qt1, hlookup1⟩
+    exact ⟨qt1, hlookup1,
+      joinMemEnvsStrong_lookup_guardClosure_left
+        env1 env2 l qt qt1 k arg_name pred_body var_env
+        hlookup_join hlookup1 hpred_join⟩
+
+private lemma joinMemEnvsStrong_lookup_guardClosure_implies_right
+  (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : QTyp)
+  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
+  (hlookup_join : (joinMemEnvsStrong env1 env2).lookup l = some qt)
+  (hpred_join : qt.pred = Predicate.guardClosure k arg_name pred_body var_env) :
+  ∃ qt2, env2.lookup l = some qt2 ∧ qt2.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+  by_cases h2none : env2.lookup l = none
+  · have hcontains_join : (joinMemEnvsStrong env1 env2).contains l :=
+      memEnv_contains_of_lookup_some (env := (joinMemEnvsStrong env1 env2)) (l := l) (qt := qt) hlookup_join
+    have hor := joinMemEnvsStrong_contains_implies_or env1 env2 l hcontains_join
+    have hnot2 : ¬ env2.contains l := by
+      intro hcontains2
+      rcases memEnv_lookup_some_of_contains env2 l hcontains2 with ⟨qt2, hlookup2⟩
+      rw [hlookup2] at h2none
+      cases h2none
+    have hcontains1 : env1.contains l := by
+      cases hor with
+      | inl hcontains1 => exact hcontains1
+      | inr hcontains2 => exact (hnot2 hcontains2).elim
+    rcases memEnv_lookup_some_of_contains env1 l hcontains1 with ⟨qt1, hlookup1⟩
+    have h2none_get : env2[l]? = none := by
+      simpa [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] using h2none
+    have hleft :=
+      joinMemEnvsStrong_lookup_eq_left_of_right_none env1 env2 l hcontains1 h2none_get
+    rw [hlookup_join] at hleft
+    have hq : qt = ⟨qt1.etyp, qt1.poison, Predicate.noPred⟩ := by
+      simpa [hlookup1] using hleft
+    have : False := by
+      simp [hq] at hpred_join
+    exact False.elim this
+  · rcases Option.ne_none_iff_exists'.1 h2none with ⟨qt2, hlookup2⟩
+    exact ⟨qt2, hlookup2,
+      joinMemEnvsStrong_lookup_guardClosure_right
+        env1 env2 l qt qt2 k arg_name pred_body var_env
+        hlookup_join hlookup2 hpred_join⟩
+
+private lemma consistentWithRegime_join_from_left
+  (predSat : PredSat) (ctx : TypeContext)
+  (resLeft resRight res : TypeResult)
+  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hmemEnv : res.memEnv' = joinMemEnvsStrong resLeft.memEnv' resRight.memEnv')
+  (hregime : res.regime' = joinRegimes resLeft.regime' resRight.regime')
+  (hcwr :
+    consistentWithRegime predSat
+      (ctxAfter ctx resLeft).regime
+      (ctxAfter ctx resLeft) μ ρ θ) :
+  consistentWithRegime predSat
+    (ctxAfter ctx res).regime
+    (ctxAfter ctx res) μ ρ θ := by
+  have hlookup_back :
+      ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
+        (ctxAfter ctx resLeft).regime.lookup? k = some b := by
+    intro k b hk
+    have hk' : (joinRegimes resLeft.regime' resRight.regime').lookup? k = some b := by
+      simpa [ctxAfter, hregime] using hk
+    simpa [ctxAfter] using
+      joinRegimes_lookup_some_left resLeft.regime' resRight.regime' k b hk'
+  unfold consistentWithRegime at hcwr ⊢
+  refine ⟨?_, ?_, ?_⟩
+  · intro l qt k hlookup hguard hRdef
+    cases hpred : qt.pred with
+    | noPred =>
+        simp [qtypGuardTag, hpred] at hguard
+    | guardOnly k' =>
+        exact locsRegime.guardOnly_ok (l, qt) k' hpred
+    | guardClosure k' arg_name pred_body var_env =>
+        have hk_eq : k' = k := by
+          have : some k' = some k := by
+            calc
+              some k' = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
+              _ = some k := hguard
+          exact Option.some.inj this
+        rcases
+            joinMemEnvsStrong_lookup_guardClosure_implies_left
+              resLeft.memEnv' resRight.memEnv' l qt k' arg_name pred_body var_env
+              (by simpa [ctxAfter, hmemEnv] using hlookup)
+              hpred
+          with ⟨qtLeft, hlookupLeft, hpredLeft⟩
+        have hRdef_left : (ctxAfter ctx resLeft).regime.lookup? k' ≠ none := by
+          intro hnone
+          cases hkres : (ctxAfter ctx res).regime.lookup? k' with
+          | none =>
+              exact hRdef (by simpa [ctxAfter, hk_eq] using hkres)
+          | some b =>
+              have hk_left : (ctxAfter ctx resLeft).regime.lookup? k' = some b :=
+                hlookup_back k' b hkres
+              rw [hk_left] at hnone
+              contradiction
+        have hguard_left : qtypGuardTag qtLeft = some k' := by
+          simp [qtypGuardTag, hpredLeft]
+        have hloc_left :=
+          hcwr.1 l qtLeft k'
+            (by simpa [ctxAfter] using hlookupLeft)
+            hguard_left
+            hRdef_left
+        cases hloc_left with
+        | noPred_ok hnp =>
+            simp [qtypGuardTag, hpredLeft] at hnp
+        | guardOnly_ok _ hgo =>
+            simp [hpredLeft] at hgo
+        | withPred_ok kLeft arg_name' pred_body' var_env' a n b hclos hreg hreal hmem hcons =>
+            have hpred_ctor_eq :
+                Predicate.guardClosure kLeft arg_name' pred_body' var_env' =
+                  Predicate.guardClosure k' arg_name pred_body var_env := by
+              calc
+                Predicate.guardClosure kLeft arg_name' pred_body' var_env' = qtLeft.pred := by
+                  simpa using hclos.symm
+                _ = Predicate.guardClosure k' arg_name pred_body var_env := hpredLeft
+            cases hpred_ctor_eq
+            have hpred_eq : qtLeft.pred = qt.pred := by
+              simp [hpredLeft, hpred]
+            have hreg_res : (ctxAfter ctx res).regime.lookup? k' = some b := by
+              cases hkres : (ctxAfter ctx res).regime.lookup? k' with
+              | none =>
+                  exact False.elim (hRdef (by simpa [ctxAfter, hk_eq] using hkres))
+              | some b' =>
+                  have hk_left : (ctxAfter ctx resLeft).regime.lookup? k' = some b' :=
+                    hlookup_back k' b' hkres
+                  have hb_eq : b = b' := by
+                    have : some b = some b' := by
+                      calc
+                        some b = (ctxAfter ctx resLeft).regime.lookup? k' := by symm; exact hreg
+                        _ = some b' := hk_left
+                    exact Option.some.inj this
+                  exact congrArg some hb_eq.symm
+            have hcons_res :
+                (b = true → qtypPredHolds predSat qt μ (Value.num n)) ∧
+                (b = false → ¬ qtypPredHolds predSat qt μ (Value.num n)) := by
+              refine ⟨?_, ?_⟩
+              · intro hb
+                exact
+                  qtypPredHolds_transport_pred
+                    (predSat := predSat) (qt := qtLeft) (qt' := qt)
+                    (μ := μ) (v := Value.num n) hpred_eq (hcons.1 hb)
+              · intro hb
+                exact
+                  qtypPredHolds_transport_pred_not
+                    (predSat := predSat) (qt := qtLeft) (qt' := qt)
+                    (μ := μ) (v := Value.num n) hpred_eq (hcons.2 hb)
+            exact
+              locsRegime.withPred_ok (l, qt) k' arg_name pred_body var_env a n b
+                hpred hreg_res hreal hmem hcons_res
+  · intro x qt k hlookup hguard hRdef
+    cases hkres : (ctxAfter ctx res).regime.lookup? k with
+    | none =>
+        exact False.elim (hRdef hkres)
+    | some b =>
+        have hRdef_left : (ctxAfter ctx resLeft).regime.lookup? k ≠ none := by
+          intro hnone
+          have hk_left := hlookup_back k b hkres
+          rw [hk_left] at hnone
+          contradiction
+        have hvar_left :=
+          hcwr.2.1 x qt k
+            (by simpa [ctxAfter] using hlookup)
+            hguard
+            hRdef_left
+        exact
+          varsRegime_transport_active_lookup_back
+            (predSat := predSat)
+            (R := (ctxAfter ctx resLeft).regime)
+            (R' := (ctxAfter ctx res).regime)
+            (μ := μ) (ρ := ρ) (entry := (x, qt))
+            hlookup_back hguard hkres hvar_left
+  · intro x qt v hlookup hlookup_v
+    have hcap_left :
+        closureCapturedVarsRegime predSat
+          (ctxAfter ctx resLeft).regime
+          qt μ θ v :=
+      hcwr.2.2 x qt v
+        (by simpa [ctxAfter] using hlookup)
+        hlookup_v
+    exact
+      closureCapturedVarsRegime_transport_lookup_back
+        (predSat := predSat)
+        (R := (ctxAfter ctx resLeft).regime)
+        (R' := (ctxAfter ctx res).regime)
+        (qt := qt) (μ := μ) (θ := θ) (v := v)
+        hlookup_back hcap_left
+
+private lemma consistentWithRegime_join_from_right
+  (predSat : PredSat) (ctx : TypeContext)
+  (resLeft resRight res : TypeResult)
+  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hmemEnv : res.memEnv' = joinMemEnvsStrong resLeft.memEnv' resRight.memEnv')
+  (hregime : res.regime' = joinRegimes resLeft.regime' resRight.regime')
+  (hcwr :
+    consistentWithRegime predSat
+      (ctxAfter ctx resRight).regime
+      (ctxAfter ctx resRight) μ ρ θ) :
+  consistentWithRegime predSat
+    (ctxAfter ctx res).regime
+    (ctxAfter ctx res) μ ρ θ := by
+  have hlookup_back :
+      ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
+        (ctxAfter ctx resRight).regime.lookup? k = some b := by
+    intro k b hk
+    have hk' : (joinRegimes resLeft.regime' resRight.regime').lookup? k = some b := by
+      simpa [ctxAfter, hregime] using hk
+    simpa [ctxAfter] using
+      joinRegimes_lookup_some_right resLeft.regime' resRight.regime' k b hk'
+  unfold consistentWithRegime at hcwr ⊢
+  refine ⟨?_, ?_, ?_⟩
+  · intro l qt k hlookup hguard hRdef
+    cases hpred : qt.pred with
+    | noPred =>
+        simp [qtypGuardTag, hpred] at hguard
+    | guardOnly k' =>
+        exact locsRegime.guardOnly_ok (l, qt) k' hpred
+    | guardClosure k' arg_name pred_body var_env =>
+        have hk_eq : k' = k := by
+          have : some k' = some k := by
+            calc
+              some k' = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
+              _ = some k := hguard
+          exact Option.some.inj this
+        rcases
+            joinMemEnvsStrong_lookup_guardClosure_implies_right
+              resLeft.memEnv' resRight.memEnv' l qt k' arg_name pred_body var_env
+              (by simpa [ctxAfter, hmemEnv] using hlookup)
+              hpred
+          with ⟨qtRight, hlookupRight, hpredRight⟩
+        have hRdef_right : (ctxAfter ctx resRight).regime.lookup? k' ≠ none := by
+          intro hnone
+          cases hkres : (ctxAfter ctx res).regime.lookup? k' with
+          | none =>
+              exact hRdef (by simpa [ctxAfter, hk_eq] using hkres)
+          | some b =>
+              have hk_right : (ctxAfter ctx resRight).regime.lookup? k' = some b :=
+                hlookup_back k' b hkres
+              rw [hk_right] at hnone
+              contradiction
+        have hguard_right : qtypGuardTag qtRight = some k' := by
+          simp [qtypGuardTag, hpredRight]
+        have hloc_right :=
+          hcwr.1 l qtRight k'
+            (by simpa [ctxAfter] using hlookupRight)
+            hguard_right
+            hRdef_right
+        cases hloc_right with
+        | noPred_ok hnp =>
+            simp [qtypGuardTag, hpredRight] at hnp
+        | guardOnly_ok _ hgo =>
+            simp [hpredRight] at hgo
+        | withPred_ok kRight arg_name' pred_body' var_env' a n b hclos hreg hreal hmem hcons =>
+            have hpred_ctor_eq :
+                Predicate.guardClosure kRight arg_name' pred_body' var_env' =
+                  Predicate.guardClosure k' arg_name pred_body var_env := by
+              calc
+                Predicate.guardClosure kRight arg_name' pred_body' var_env' = qtRight.pred := by
+                  simpa using hclos.symm
+                _ = Predicate.guardClosure k' arg_name pred_body var_env := hpredRight
+            cases hpred_ctor_eq
+            have hpred_eq : qtRight.pred = qt.pred := by
+              simp [hpredRight, hpred]
+            have hreg_res : (ctxAfter ctx res).regime.lookup? k' = some b := by
+              cases hkres : (ctxAfter ctx res).regime.lookup? k' with
+              | none =>
+                  exact False.elim (hRdef (by simpa [ctxAfter, hk_eq] using hkres))
+              | some b' =>
+                  have hk_right : (ctxAfter ctx resRight).regime.lookup? k' = some b' :=
+                    hlookup_back k' b' hkres
+                  have hb_eq : b = b' := by
+                    have : some b = some b' := by
+                      calc
+                        some b = (ctxAfter ctx resRight).regime.lookup? k' := by symm; exact hreg
+                        _ = some b' := hk_right
+                    exact Option.some.inj this
+                  exact congrArg some hb_eq.symm
+            have hcons_res :
+                (b = true → qtypPredHolds predSat qt μ (Value.num n)) ∧
+                (b = false → ¬ qtypPredHolds predSat qt μ (Value.num n)) := by
+              refine ⟨?_, ?_⟩
+              · intro hb
+                exact
+                  qtypPredHolds_transport_pred
+                    (predSat := predSat) (qt := qtRight) (qt' := qt)
+                    (μ := μ) (v := Value.num n) hpred_eq (hcons.1 hb)
+              · intro hb
+                exact
+                  qtypPredHolds_transport_pred_not
+                    (predSat := predSat) (qt := qtRight) (qt' := qt)
+                    (μ := μ) (v := Value.num n) hpred_eq (hcons.2 hb)
+            exact
+              locsRegime.withPred_ok (l, qt) k' arg_name pred_body var_env a n b
+                hpred hreg_res hreal hmem hcons_res
+  · intro x qt k hlookup hguard hRdef
+    cases hkres : (ctxAfter ctx res).regime.lookup? k with
+    | none =>
+        exact False.elim (hRdef hkres)
+    | some b =>
+        have hRdef_right : (ctxAfter ctx resRight).regime.lookup? k ≠ none := by
+          intro hnone
+          have hk_right := hlookup_back k b hkres
+          rw [hk_right] at hnone
+          contradiction
+        have hvar_right :=
+          hcwr.2.1 x qt k
+            (by simpa [ctxAfter] using hlookup)
+            hguard
+            hRdef_right
+        exact
+          varsRegime_transport_active_lookup_back
+            (predSat := predSat)
+            (R := (ctxAfter ctx resRight).regime)
+            (R' := (ctxAfter ctx res).regime)
+            (μ := μ) (ρ := ρ) (entry := (x, qt))
+            hlookup_back hguard hkres hvar_right
+  · intro x qt v hlookup hlookup_v
+    have hcap_right :
+        closureCapturedVarsRegime predSat
+          (ctxAfter ctx resRight).regime
+          qt μ θ v :=
+      hcwr.2.2 x qt v
+        (by simpa [ctxAfter] using hlookup)
+        hlookup_v
+    exact
+      closureCapturedVarsRegime_transport_lookup_back
+        (predSat := predSat)
+        (R := (ctxAfter ctx resRight).regime)
+        (R' := (ctxAfter ctx res).regime)
+        (qt := qt) (μ := μ) (θ := θ) (v := v)
+        hlookup_back hcap_right
+
 /-- Extract a context-level guard owner from successful `matchGuard`. -/
 private lemma matchGuard_ok_extract_owner_in_ctx
     (ctx : TypeContext) (cond : Expr) (k : Tag) (deps : Deps)
