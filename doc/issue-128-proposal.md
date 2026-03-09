@@ -499,6 +499,35 @@ Current implementation status on this branch:
    proof stack.  Before committing to the full refactor, run a scoping
    spike on one representative simple case (for example `stepFR_seq`)
    to measure the mechanical cost of the parametric interface.
+   Status of that spike: complete.  `StepFRSeq.lean` now contains a
+   local parametric single-run prototype,
+   `StepFRSingleRunFinalCleanPcTrueWithCtxCons` together with
+   `stepFRSingleRunFinalCleanPcTrue_seq_parametric`, and the existing
+   unmasked `stepFRSingleRunFinalCleanPcTrue_seq` is rederived as an
+   instantiation.  A checkpoint `lake build` succeeds after that change.
+   The spike indicates that **A1 is mechanically viable on a simple
+   case without changing the Section 7.2 stable boundaries**.  It does
+   not yet resolve the larger cost question for `vlet`, `app`, `assign`,
+   and the downstream `ite` proofs, so step 6 remains paused for review
+   before the parametric pattern is pushed further.
+
+   A second spike on `vlet` is now also complete.  `StepFRVlet.lean`
+   contains local interface hooks `VletCtxConsBodyStart` and
+   `VletCtxConsFinish`, a private parametric theorem
+   `stepFRSingleRunFinalCleanPcTrue_vlet_parametric`, and the existing
+   unmasked `stepFRSingleRunFinalCleanPcTrue_vlet` is recovered as the
+   concrete instantiation with `CtxCons := fun ctx μ ρ θ =>
+   consistentWithRegime predSat ctx.regime ctx μ ρ θ`.  Importantly,
+   the theorem-level interface stayed generic: the parametric statement
+   needs only a body-start extension hook and a finalization hook, and
+   does **not** mention the loc / var / closure conjuncts of
+   `consistentWithRegime` directly.  The concrete structural
+   decomposition remains private inside `consistentWithRegime_vlet_finish`.
+   A checkpoint `lake build` succeeds after this change with only the
+   existing `sorry`-related warnings.  This is encouraging evidence for
+   **A1** on the first nontrivial decomposition case, though `app`,
+   `assign`, and the downstream mode-3 `ite` work still remain to be
+   scoped before step 6 is unpaused.
 
 ## 7. Implementation Constraints
 

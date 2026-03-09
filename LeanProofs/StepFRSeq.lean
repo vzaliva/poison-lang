@@ -10,12 +10,54 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
-lemma stepFRSingleRunFinalCleanPcTrue_seq
+private def StepFRSingleRunFinalCleanPcTrueWithCtxCons
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (mode : LeanPoison.EvalMode)
+  (ctx : TypeContext)
+  (e : Expr)
+  (res : TypeResult)
+  (predSat : PredSat)
+  (tm : TagMeaning) : Prop :=
+    PredSatLaws predSat tm →
+    wfTagMeaningCtx tm ctx →
+    ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+      (cf : Config) (o : Value),
+      wfRealizationMap θ →
+      wfTypeContext ctx →
+      runtimeInstantiatesCtx ctx μ ρ θ →
+      regimeConsistentWithCtx ctx →
+      regimeBounded ctx.regime →
+      CtxCons ctx μ ρ θ →
+      ∀ (a : Address) (pm : Bool),
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
+        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        ctx.pc = true →
+        ∃ (θ' : RealizationMap),
+          wfExtendsMap θ θ' ∧
+          valueHasETyp θ' o res.qualType.etyp ∧
+          runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+          CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+          valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
+
+private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxCons_IH
+    (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+    (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
+  ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
+    wfTagMeaningCtx tm ctx →
+    ∀ (res : TypeResult),
+      typecheck .ioFree ctx e m = .ok res →
+      StepFRSingleRunFinalCleanPcTrueWithCtxCons
+        CtxCons .ioFree ctx e res predSat tm
+
+private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (IH : StepFRSingleRunFinalCleanPcTrueWithCtxCons_IH CtxCons predSat tm (Nat.succ (Nat.succ fuel')))
   (htc : typecheck .ioFree ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrue .ioFree ctx (Expr.seq e1 e2) res predSat tm := by
+  StepFRSingleRunFinalCleanPcTrueWithCtxCons
+    CtxCons .ioFree ctx (Expr.seq e1 e2) res predSat tm := by
   have htc' : typecheckSeq .ioFree ctx e1 e2 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr_seq_succ] using htc
   obtain ⟨res1, ctx', htc1, hctx', htc2⟩ :=
@@ -24,7 +66,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hRbound hctxCons a pm hwfcfg ht hpc
   have hstruct := terminatesTo_seq_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg1, v1, ht_e1, ht_e2, _hpm1, _hpm2⟩
@@ -40,8 +82,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq
   have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved .ioFree e1 _ cfg1 v1 ht_e1 hwfcfg).1
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
-      hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht_e1 hpc
-    with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1⟩
+      hθwf hwf hric hregCtx hRbound hctxCons a pm hwfcfg ht_e1 hpc
+    with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwfTm' : wfTagMeaningCtx tm ctx' := by
     simpa [hctx', ctxAfter] using hTm1
@@ -58,17 +100,17 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq
     simpa [hctx', ctxAfter] using hric1
   have hreg1' : regimeConsistentWithCtx ctx' := by
     simpa [hctx', updateCtxFromResult, ctxAfter] using hreg1
-  have hcwr1' : consistentWithRegime predSat ctx'.regime ctx' cfg1.memory cfg1.varEnv θ1 := by
-    simpa [hctx', updateCtxFromResult, ctxAfter] using hcwr1
+  have hctxCons1' : CtxCons ctx' cfg1.memory cfg1.varEnv θ1 := by
+    simpa [hctx', updateCtxFromResult, ctxAfter] using hctxCons1
   have hwf1' : wfTypeContext ctx' := by
     simpa [hctx', ctxAfter] using hwf1
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' res htc2'
   rcases
     hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
-      hθ1wf hwf1' hric1' hreg1' hRbound1 hcwr1'
+      hθ1wf hwf1' hric1' hreg1' hRbound1 hctxCons1'
       cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
-    with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2⟩
+    with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
   have hctxAfter : ctxAfter ctx res = ctxAfter ctx' res := by
     simp only [ctxAfter, hctx', updateCtxFromResult]
@@ -98,8 +140,24 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq
         hclean_back hpres1 hpres2'
   refine ⟨θ2, hθext, hv2, ?_, ?_, ?_, hpres_final⟩
   · simpa [hctxAfter] using hric2
-  · simpa [hctxAfter] using hcwr2
+  · simpa [hctxAfter] using hctxCons2
   · simpa [hctxAfter] using hvalc2
+
+lemma stepFRSingleRunFinalCleanPcTrue_seq
+  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (htc : typecheck .ioFree ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrue .ioFree ctx (Expr.seq e1 e2) res predSat tm := by
+  exact
+    stepFRSingleRunFinalCleanPcTrue_seq_parametric
+      (CtxCons := fun ctx' μ' ρ' θ' =>
+        consistentWithRegime predSat ctx'.regime ctx' μ' ρ' θ')
+      (ctx := ctx) (predSat := predSat) (tm := tm)
+      (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res)
+      (IH := fun m hm e ctx' hwfTm' res' htc' =>
+        IH m hm e ctx' hwfTm' res' htc')
+      htc
 
 
 
