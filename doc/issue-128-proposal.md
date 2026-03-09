@@ -588,27 +588,40 @@ Current implementation status on this branch:
    interface".  Treat that enlargement as the active Section 7.3 review
    checkpoint for step 6.
 
-   Status of the first bundled-interface spike: complete.  `StepFRVar`
-   now contains a local bundled shell
-   `StepFRSingleRunFinalCleanPcTrueWithCtxValCons`, the paired hook type
-   `VarCtxToValCons`, local masked companions
-   `consistentWithRegimeMasked` / `valueConsistentWithRegimeMasked`, the
-   masked leaf witness `var_valueConsistentWithRegimeMasked_of_typecheck`,
-   and a private parametric theorem
-   `stepFRSingleRunFinalCleanPcTrue_var_parametric`; the public
-   `stepFRSingleRunFinalCleanPcTrue_var` is rederived as the concrete
-   unmasked instantiation.  This is encouraging evidence for the richer
-   bundled A1 shape: the hardest input-side context-to-value leaf works
-   under the paired interface, and the closure-aware masking behaved as
-   expected.
+   Bundled-interface spike status:
 
-   Recommended next implementation step: move to `deref` under the same
-   bundled `CtxCons` / `ValCons` interface.  `deref` is the next
-   risk-first leaf because it tests the other context-to-value pattern:
-   deriving the final value witness from the IH output consistency
-   rather than directly from the input premise.  If `deref` also fits
-   cleanly, then `newRef` should be the final leaf check before trying
-   to push the bundled interface back into the mode-3 `ite` branch.
+   - `var`: complete.  `StepFRVar` now contains a local bundled shell
+     `StepFRSingleRunFinalCleanPcTrueWithCtxValCons`, the paired hook
+     type `VarCtxToValCons`, local masked companions
+     `consistentWithRegimeMasked` / `valueConsistentWithRegimeMasked`,
+     the masked leaf witness
+     `var_valueConsistentWithRegimeMasked_of_typecheck`, and a private
+     parametric theorem
+     `stepFRSingleRunFinalCleanPcTrue_var_parametric`; the public
+     `stepFRSingleRunFinalCleanPcTrue_var` is rederived as the concrete
+     unmasked instantiation.  This validated the harder input-side
+     context-to-value leaf and confirmed that the masking must extend
+     through closure-captured-variable obligations.
+
+   - `deref`: complete.  `StepFRDeref` now uses the same bundled
+     `CtxCons` / `ValCons` shape, with a single deref-local post-IH
+     hook `DerefCtxToValCons` and a concrete witness
+     `deref_valueConsistentWithRegime_of_typecheck`.  The public
+     `stepFRSingleRunFinalCleanPcTrue_deref` is rederived from the
+     private parametric theorem
+     `stepFRSingleRunFinalCleanPcTrue_deref_parametric`.  This
+     validates the other context-to-value direction as well: the final
+     value witness can be reconstructed from the IH output consistency
+     through one bundled hook, without exposing the concrete
+     `locsRegime` conjunct at the theorem boundary.
+
+   Recommended next implementation step: move to `newRef` as the final
+   leaf check under the bundled `CtxCons` / `ValCons` interface.
+   `newRef` is lower risk than returning directly to mode-3 `ite`, but
+   it still tests the remaining leaf shape: context-side reconstruction
+   from the IH output while the result-side value consistency is
+   trivial.  If `newRef` also fits cleanly, that is the point to push
+   the bundled interface back into the mode-3 `ite` branch.
 
 ## 7. Implementation Constraints
 
