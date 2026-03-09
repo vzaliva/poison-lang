@@ -558,17 +558,17 @@ Current implementation status on this branch:
    - Define `valueConsistentWithRegimeMasked` as the masked companion to
      `consistentWithRegimeMasked`, mirroring the earlier masked
      `regimeConsistentWithCtx` pattern.
-     Important detail for the upcoming `var` spike: the masking must not
-     stop at the outer guard-tag case split.  It also has to propagate
-     through the closure side of value consistency, i.e. through the
-     `closureCapturedVarsRegime` obligations for closure values.  The
-     existing `var` proof uses the closure conjunct of
+     The completed `var` spike confirms one important detail: the
+     masking must not stop at the outer guard-tag case split.  It also
+     has to propagate through the closure side of value consistency,
+     i.e. through the `closureCapturedVarsRegime` obligations for
+     closure values.  The `var` proof uses the closure conjunct of
      `consistentWithRegime` heavily, and closure-captured variables may
      themselves mention the masked branch-local tag `k`.  So the masked
      value companion has to treat those captured-variable obligations in
-     a mask-aware way as well; otherwise the `var` leaf would still be
-     forced to re-open the same closure-sensitive obstruction inside the
-     masked branch.
+     a mask-aware way as well; otherwise the `var` leaf would still
+     re-open the same closure-sensitive obstruction inside the masked
+     branch.
 
    For the intended masked mode-3 `ite` instantiation:
 
@@ -588,12 +588,27 @@ Current implementation status on this branch:
    interface".  Treat that enlargement as the active Section 7.3 review
    checkpoint for step 6.
 
-   Recommended next implementation step once this direction is accepted:
-   start with a focused `var` spike under the bundled `CtxCons` /
-   `ValCons` interface.  `var` is the hardest context-to-value leaf and
-   therefore the best risk-first test of whether the masked
-   instantiation can support the mode-3 `ite` rollout without reopening
-   the broad regime-growth design from step 4.
+   Status of the first bundled-interface spike: complete.  `StepFRVar`
+   now contains a local bundled shell
+   `StepFRSingleRunFinalCleanPcTrueWithCtxValCons`, the paired hook type
+   `VarCtxToValCons`, local masked companions
+   `consistentWithRegimeMasked` / `valueConsistentWithRegimeMasked`, the
+   masked leaf witness `var_valueConsistentWithRegimeMasked_of_typecheck`,
+   and a private parametric theorem
+   `stepFRSingleRunFinalCleanPcTrue_var_parametric`; the public
+   `stepFRSingleRunFinalCleanPcTrue_var` is rederived as the concrete
+   unmasked instantiation.  This is encouraging evidence for the richer
+   bundled A1 shape: the hardest input-side context-to-value leaf works
+   under the paired interface, and the closure-aware masking behaved as
+   expected.
+
+   Recommended next implementation step: move to `deref` under the same
+   bundled `CtxCons` / `ValCons` interface.  `deref` is the next
+   risk-first leaf because it tests the other context-to-value pattern:
+   deriving the final value witness from the IH output consistency
+   rather than directly from the input premise.  If `deref` also fits
+   cleanly, then `newRef` should be the final leaf check before trying
+   to push the bundled interface back into the mode-3 `ite` branch.
 
 ## 7. Implementation Constraints
 
