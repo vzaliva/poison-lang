@@ -529,6 +529,71 @@ Current implementation status on this branch:
    `assign`, and the downstream mode-3 `ite` work still remain to be
    scoped before step 6 is unpaused.
 
+   A third spike on `app` is now also complete.  `StepFRApp.lean`
+   contains two new helper seams:
+   `consistentWithRegime_app_closure_body_start` and
+   `consistentWithRegime_app_member_from_body`.  The real single-run
+   arrow and parrow branches now use those helpers together with the
+   existing `joinTypeResults_transport_consistentWithRegime_from_member`
+   transport.  This sharpens the `A1` picture: the `app` case appears
+   to need a **small family of branch-local hooks**, not a single
+   one-size-fits-all consistency hook.  The good news is that the
+   abstraction boundary still does not force the theorem statement to
+   expose the loc / var / closure conjuncts directly; the less-good news
+   is that the hook family is clearly more branch-specific than in
+   `vlet`, so the remaining cost question is now about the number and
+   shape of such hooks rather than about whether any clean seams exist at
+   all.  A checkpoint `lake build` succeeds after this change with only
+   the existing `sorry`-related warnings.  The next unresolved scoping
+   target is still `assign`, followed by the downstream mode-3 `ite`
+   rollout if `A1` remains preferred.
+
+   A fourth spike on `assign` is now also complete.  `StepFRAssign.lean`
+   now contains a local parametric shell
+   `StepFRSingleRunFinalCleanPcTrueWithCtxCons`, an assignment-specific
+   hook interface `AssignCtxConsPostTransport`, a concrete witness
+   `consistentWithRegime_assign_post_transport`, and a private
+   parametric theorem `stepFRSingleRunFinalCleanPcTrue_assign_parametric`;
+   the public `stepFRSingleRunFinalCleanPcTrue_assign` is rederived as
+   the concrete instantiation with `CtxCons := fun ctx μ ρ θ =>
+   consistentWithRegime predSat ctx.regime ctx μ ρ θ`.  This is stronger
+   evidence for **A1** than the `app` spike: the `assign` case appears
+   to admit a **single post-transport hook**, rather than a family of
+   branch-local hooks, and that hook still does not force the theorem
+   boundary to mention the loc / var / closure conjuncts directly.  A
+   checkpoint `lake build` succeeds after this change with only the
+   existing `sorry`-related warnings.  The next unresolved scoping target
+   is now the downstream mode-3 `ite` rollout itself.
+
+   Starting that rollout exposed one more scoping issue that should be
+   recorded before deeper refactoring proceeds.  The earlier spikes
+   (`seq`, `vlet`, `app`, `assign`) only tested how to thread or
+   reconstruct a context-consistency premise through recursive calls.
+   But the actual single-run theorem also needs to *produce*
+   `valueConsistentWithRegime` for the result value, and several leaf /
+   near-leaf cases currently derive that output directly from the
+   concrete `consistentWithRegime` premise.  In particular, the existing
+   proofs in `StepFRVar.lean`, `StepFRNewRef.lean`, and
+   `StepFRDeref.lean` use the concrete premise to establish the final
+   value-consistency witness, not merely to thread a black-box context
+   invariant through.  So the `A1` rollout surface is broader than
+   "parametrize the theorem by `CtxCons` and add recursive transport
+   hooks": it also needs a small family of **leaf-case interfaces** (or
+   an equivalent richer abstraction) for cases that manufacture the
+   output `valueConsistentWithRegime` from the input consistency
+   premise.
+
+   This does not invalidate **A1**, and it does not point back toward
+   the broad regime-growth path from step 4.  But it *does* enlarge the
+   confirmed scope of the step-6 refactor beyond what the earlier spikes
+   had established.  Before continuing with the mode-3 `ite` rollout,
+   treat this as another Section 7.3 review checkpoint: the next design
+   choice is whether to keep the current `CtxCons`-only abstraction and
+   add explicit leaf hooks (for example a `var` / `deref` /
+   `newRef`-style value-consistency interface), or to replace it with a
+   richer single bundled interface that simultaneously covers branch
+   entry/exit transports and leaf result witnesses.
+
 ## 7. Implementation Constraints
 
 The following rules apply to every implementation step in the plan above.
