@@ -358,6 +358,12 @@ Current implementation status on this branch:
   corollary.
 - A checkpoint `lake build` succeeds after the step-1 refactor with only existing
   `sorry`-related warnings.
+- The step-4 closure-sensitive regime-growth blocker has now resurfaced
+  concretely inside step 6: the mode-3 single-run `ite` proof needs to
+  start a branch IH under `ctxTrue` / `ctxFalse'` after interpreting the
+  fresh guard tag `k`, but the existing transport helpers only preserve
+  `consistentWithRegime` for the old regime.  This is the same blocker in
+  a more local proof context, not a new design category.
 
 1. **Redesign the shared clean-lookup theorem.**
    The current transport target in
@@ -439,17 +445,42 @@ Current implementation status on this branch:
    only the existing `sorry`-related warnings, including the still
    deferred `kwhile` work.
 
-6. **Propagate the fix through downstream `ite` obligations.**
-   Revisit
+6. **Propagate the fix through downstream `ite` obligations, in
+   risk-first order.**
+   Do not spend time first polishing the mechanically easier `ite`
+   subcases.  The next proof effort should attack the highest-risk
+   remaining point directly: mode 3 of
    `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
-   in `FaultRobustnessProofs.lean`, then finish the top-level
-   `stepFR_ite_mode3` proof in `StepFRIte.lean`.
-   Status: now active.  The remaining downstream proof work is in
-   `FaultRobustnessProofs.lean` (`ite` and the still-deferred `kwhile`
-   single-run branches) and in `StepFRIte.lean` (`stepFR_ite_mode3`
-   and `stepFR_ite_mode4`).  The local preservation prerequisite is now
-   in place, and the next proof effort is the actual runtime
-   branch-case analysis for the conservative join modes.
+   in `FaultRobustnessProofs.lean`.
+   Status: active, with a recommended narrowed path.  Modes 1, 2, and 4
+   of the single-run `ite` proof look routine under the current helper
+   layer.  The active blocker is mode 3, where starting the branch IH
+   under `ctxTrue` or `ctxFalse'` requires `consistentWithRegime` for a
+   regime that has just grown by interpreting the fresh tag `k`.  That
+   reuses the same closure-sensitive obstruction already discovered in
+   step 4: the mem/var conjuncts still look transportable, but the
+   closure conjunct can activate new captured-variable obligations for
+   `k`, and the current premises do not generically discharge them.
+
+   The best current path forward is:
+
+   - first, stay local and introduce a **private masked single-run
+     helper/theorem** for the conservative-join case, so the branch IH
+     can proceed while masking the newly interpreted tag `k` in the
+     closure-sensitive obligations
+   - then use that helper to finish the single-run `ite` proof in
+     `FaultRobustnessProofs.lean`
+   - only after that, revisit `stepFR_ite_mode3` in `StepFRIte.lean`
+     and decide whether the same masked idea is enough there, leaving
+     `stepFR_ite_mode4` as the lower-risk follow-on item
+
+   This path is preferred over reviving the broad generic
+   `consistentWithRegime_insert_regime_{true,false}` effort now,
+   because it keeps the blast radius local, respects the Section 7.2
+   stable boundaries, and tests the hard conservative-join case in the
+   most concrete context available.  If the masked single-run theorem
+   still appears to require changing `consistentWithRegime` or another
+   stable boundary definition, that is another stopping point.
 
 ## 7. Implementation Constraints
 
