@@ -496,103 +496,104 @@ Current implementation status on this branch:
 
    Current recommendation: prefer **A1** if step 6 proceeds, since it
    preserves the Section 7.2 boundaries while avoiding a duplicated
-   proof stack.  Before committing to the full refactor, run a scoping
-   spike on one representative simple case (for example `stepFR_seq`)
-   to measure the mechanical cost of the parametric interface.
-   Status of that spike: complete.  `StepFRSeq.lean` now contains a
-   local parametric single-run prototype,
-   `StepFRSingleRunFinalCleanPcTrueWithCtxCons` together with
-   `stepFRSingleRunFinalCleanPcTrue_seq_parametric`, and the existing
-   unmasked `stepFRSingleRunFinalCleanPcTrue_seq` is rederived as an
-   instantiation.  A checkpoint `lake build` succeeds after that change.
-   The spike indicates that **A1 is mechanically viable on a simple
-   case without changing the Section 7.2 stable boundaries**.  It does
-   not yet resolve the larger cost question for `vlet`, `app`, `assign`,
-   and the downstream `ite` proofs, so step 6 remains paused for review
-   before the parametric pattern is pushed further.
+   proof stack.
 
-   A second spike on `vlet` is now also complete.  `StepFRVlet.lean`
-   contains local interface hooks `VletCtxConsBodyStart` and
-   `VletCtxConsFinish`, a private parametric theorem
-   `stepFRSingleRunFinalCleanPcTrue_vlet_parametric`, and the existing
-   unmasked `stepFRSingleRunFinalCleanPcTrue_vlet` is recovered as the
-   concrete instantiation with `CtxCons := fun ctx μ ρ θ =>
-   consistentWithRegime predSat ctx.regime ctx μ ρ θ`.  Importantly,
-   the theorem-level interface stayed generic: the parametric statement
-   needs only a body-start extension hook and a finalization hook, and
-   does **not** mention the loc / var / closure conjuncts of
-   `consistentWithRegime` directly.  The concrete structural
-   decomposition remains private inside `consistentWithRegime_vlet_finish`.
-   A checkpoint `lake build` succeeds after this change with only the
-   existing `sorry`-related warnings.  This is encouraging evidence for
-   **A1** on the first nontrivial decomposition case, though `app`,
-   `assign`, and the downstream mode-3 `ite` work still remain to be
-   scoped before step 6 is unpaused.
+   Scoping work completed so far:
 
-   A third spike on `app` is now also complete.  `StepFRApp.lean`
-   contains two new helper seams:
-   `consistentWithRegime_app_closure_body_start` and
-   `consistentWithRegime_app_member_from_body`.  The real single-run
-   arrow and parrow branches now use those helpers together with the
-   existing `joinTypeResults_transport_consistentWithRegime_from_member`
-   transport.  This sharpens the `A1` picture: the `app` case appears
-   to need a **small family of branch-local hooks**, not a single
-   one-size-fits-all consistency hook.  The good news is that the
-   abstraction boundary still does not force the theorem statement to
-   expose the loc / var / closure conjuncts directly; the less-good news
-   is that the hook family is clearly more branch-specific than in
-   `vlet`, so the remaining cost question is now about the number and
-   shape of such hooks rather than about whether any clean seams exist at
-   all.  A checkpoint `lake build` succeeds after this change with only
-   the existing `sorry`-related warnings.  The next unresolved scoping
-   target is still `assign`, followed by the downstream mode-3 `ite`
-   rollout if `A1` remains preferred.
+   - `seq` established the basic theorem-shape fact: a local
+     `StepFRSingleRunFinalCleanPcTrueWithCtxCons` can rederive the
+     existing unmasked single-run theorem without touching the Section
+     7.2 stable boundaries.
+   - `vlet`, `app`, and `assign` established the recursive transport
+     fact: the context-consistency part of the single-run proof can stay
+     behind private hooks rather than forcing the top-level theorem to
+     expose the loc / var / closure conjuncts of
+     `consistentWithRegime`.  The current picture is:
+     `vlet` needs a body-start hook plus a finish hook; `app` needs a
+     small family of branch-local hooks; `assign` admits a single
+     post-transport hook.
 
-   A fourth spike on `assign` is now also complete.  `StepFRAssign.lean`
-   now contains a local parametric shell
-   `StepFRSingleRunFinalCleanPcTrueWithCtxCons`, an assignment-specific
-   hook interface `AssignCtxConsPostTransport`, a concrete witness
-   `consistentWithRegime_assign_post_transport`, and a private
-   parametric theorem `stepFRSingleRunFinalCleanPcTrue_assign_parametric`;
-   the public `stepFRSingleRunFinalCleanPcTrue_assign` is rederived as
-   the concrete instantiation with `CtxCons := fun ctx μ ρ θ =>
-   consistentWithRegime predSat ctx.regime ctx μ ρ θ`.  This is stronger
-   evidence for **A1** than the `app` spike: the `assign` case appears
-   to admit a **single post-transport hook**, rather than a family of
-   branch-local hooks, and that hook still does not force the theorem
-   boundary to mention the loc / var / closure conjuncts directly.  A
-   checkpoint `lake build` succeeds after this change with only the
-   existing `sorry`-related warnings.  The next unresolved scoping target
-   is now the downstream mode-3 `ite` rollout itself.
+   Those spikes are enough to confirm that the recursive *context*
+   transport / reconstruction direction of **A1** is viable.  The
+   remaining question is the leaf side of the single-run theorem: how to
+   abstract the construction of the final `valueConsistentWithRegime`
+   witness while still supporting the masked mode-3 `ite` branch
+   instantiation.
 
-   Starting that rollout exposed one more scoping issue that should be
-   recorded before deeper refactoring proceeds.  The earlier spikes
-   (`seq`, `vlet`, `app`, `assign`) only tested how to thread or
-   reconstruct a context-consistency premise through recursive calls.
-   But the actual single-run theorem also needs to *produce*
-   `valueConsistentWithRegime` for the result value, and several leaf /
-   near-leaf cases currently derive that output directly from the
-   concrete `consistentWithRegime` premise.  In particular, the existing
-   proofs in `StepFRVar.lean`, `StepFRNewRef.lean`, and
-   `StepFRDeref.lean` use the concrete premise to establish the final
-   value-consistency witness, not merely to thread a black-box context
-   invariant through.  So the `A1` rollout surface is broader than
-   "parametrize the theorem by `CtxCons` and add recursive transport
-   hooks": it also needs a small family of **leaf-case interfaces** (or
-   an equivalent richer abstraction) for cases that manufacture the
-   output `valueConsistentWithRegime` from the input consistency
-   premise.
+   Reviewer follow-up narrows that issue more precisely than the earlier
+   "leaf hooks" framing:
 
-   This does not invalidate **A1**, and it does not point back toward
-   the broad regime-growth path from step 4.  But it *does* enlarge the
-   confirmed scope of the step-6 refactor beyond what the earlier spikes
-   had established.  Before continuing with the mode-3 `ite` rollout,
-   treat this as another Section 7.3 review checkpoint: the next design
-   choice is whether to keep the current `CtxCons`-only abstraction and
-   add explicit leaf hooks (for example a `var` / `deref` /
-   `newRef`-style value-consistency interface), or to replace it with a
-   richer single bundled interface that simultaneously covers branch
-   entry/exit transports and leaf result witnesses.
+   - `var` is the hardest leaf.  Its proof builds final value
+     consistency from the **input** `consistentWithRegime` premise,
+     using both the `varsRegime` and `closureCapturedVarsRegime`
+     conjuncts.
+   - `deref` is medium.  Its final value consistency is built from the
+     **IH output** consistency, specifically the `locsRegime` side.
+   - `newRef` does **not** need context consistency to build its final
+     value consistency.  Its result is `noPred`, so the value witness is
+     a direct `noTag` proof; the decomposition there is only for
+     rebuilding the final context consistency.
+
+   The important structural point is that the single-run recursion needs
+   both directions:
+
+   - **context → value:** derive a result-value consistency witness from
+     the current context-consistency premise (most sharply in `var`, and
+     in a different way in `deref`)
+   - **value → context:** use intermediate value consistency to start or
+     re-enter downstream contexts (`vlet`, `app`, and related recursive
+     cases)
+
+   So the recommended A1 shape is now a **richer bundled interface**,
+   not a `CtxCons`-only parameter plus ad hoc per-leaf hooks.  Concretely:
+
+   - Add a second abstract parameter `ValCons` alongside `CtxCons` in
+     the parametric single-run framework.
+   - Keep the already-discovered value-to-context hooks for recursive
+     cases (`vlet`, `app`, and the assign-style post-transport
+     situation), but express them in terms of `ValCons` rather than the
+     concrete `valueConsistentWithRegime`.
+   - Add the missing context-to-value hooks that let leaf / near-leaf
+     cases derive `ValCons` from `CtxCons` plus lookup/typing evidence.
+   - Define `valueConsistentWithRegimeMasked` as the masked companion to
+     `consistentWithRegimeMasked`, mirroring the earlier masked
+     `regimeConsistentWithCtx` pattern.
+     Important detail for the upcoming `var` spike: the masking must not
+     stop at the outer guard-tag case split.  It also has to propagate
+     through the closure side of value consistency, i.e. through the
+     `closureCapturedVarsRegime` obligations for closure values.  The
+     existing `var` proof uses the closure conjunct of
+     `consistentWithRegime` heavily, and closure-captured variables may
+     themselves mention the masked branch-local tag `k`.  So the masked
+     value companion has to treat those captured-variable obligations in
+     a mask-aware way as well; otherwise the `var` leaf would still be
+     forced to re-open the same closure-sensitive obstruction inside the
+     masked branch.
+
+   For the intended masked mode-3 `ite` instantiation:
+
+   - When a value's guard tag is the masked branch-local tag `k`,
+     `valueConsistentWithRegimeMasked` can treat that case as
+     intentionally masked inside the branch.
+   - After the conservative join drops `k` from the output regime,
+     recover the ordinary unmasked `valueConsistentWithRegime` directly:
+     use `notInRegime` for values guarded by the dropped tag `k`, and
+     ordinary transport for all other tags.
+
+   This still stays within Section 7.2: `ValCons` and
+   `valueConsistentWithRegimeMasked` are new companion definitions, not
+   changes to the existing stable boundary predicates.  But it enlarges
+   the confirmed A1 scope from "parametrize by a context-consistency
+   predicate" to "parametrize by a paired context/value consistency
+   interface".  Treat that enlargement as the active Section 7.3 review
+   checkpoint for step 6.
+
+   Recommended next implementation step once this direction is accepted:
+   start with a focused `var` spike under the bundled `CtxCons` /
+   `ValCons` interface.  `var` is the hardest context-to-value leaf and
+   therefore the best risk-first test of whether the masked
+   instantiation can support the mode-3 `ite` rollout without reopening
+   the broad regime-growth design from step 4.
 
 ## 7. Implementation Constraints
 
