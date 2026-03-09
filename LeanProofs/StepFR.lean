@@ -167,6 +167,57 @@ private def regimeConsistentWithCtxMasked
     (masked : Tag → Prop) (ctx : TypeContext) : Prop :=
   tagEnvConsistentWithRegimeMasked masked ctx.tagEnv ctx.regime ∧ ctx.regime.bound ≤ ctx.nextTag
 
+private def tagEnvNotTrueAt (tagEnv : TagEnv) (k : Tag) : Prop :=
+  ∀ deps, tagEnv.get? k ≠ some ⟨true, deps⟩
+
+private lemma tagEnvNotTrueAt_insert_false
+    (tagEnv : TagEnv) (k k' : Tag) (deps : Deps)
+    (hnot : tagEnvNotTrueAt tagEnv k) :
+    tagEnvNotTrueAt (tagEnv.insert k' ⟨false, deps⟩) k := by
+  intro deps' hget
+  by_cases hkk' : k = k'
+  · subst hkk'
+    simp [Std.ExtTreeMap.get?_eq_getElem?] at hget
+  · have hcmp : compare k' k ≠ Ordering.eq := by
+      intro hce
+      have : k' = k := (Nat.compare_eq_eq).1 hce
+      exact hkk' this.symm
+    have hget' : tagEnv.get? k = some ⟨true, deps'⟩ := by
+      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
+      exact hget
+    exact hnot deps' hget'
+
+private lemma tagEnvNotTrueAt_insert_true_of_ne
+    (tagEnv : TagEnv) (k k' : Tag) (deps : Deps)
+    (hneq : k ≠ k')
+    (hnot : tagEnvNotTrueAt tagEnv k) :
+    tagEnvNotTrueAt (tagEnv.insert k' ⟨true, deps⟩) k := by
+  intro deps' hget
+  have hcmp : compare k' k ≠ Ordering.eq := by
+    intro hce
+    have : k' = k := (Nat.compare_eq_eq).1 hce
+    exact hneq this.symm
+  have hget' : tagEnv.get? k = some ⟨true, deps'⟩ := by
+    simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
+    exact hget
+  exact hnot deps' hget'
+
+private lemma tagEnvNotTrueAt_invalidate
+    (tagEnv : TagEnv) (ls : LocSet) (k : Tag)
+    (hnot : tagEnvNotTrueAt tagEnv k) :
+    tagEnvNotTrueAt (invalidateTagDeps tagEnv ls) k := by
+  intro deps hget
+  have hget' : tagEnv.get? k = some ⟨true, deps⟩ := by
+    unfold invalidateTagDeps at hget
+    rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter'] at hget
+    cases h0 : tagEnv.get? k
+    · rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
+      simp at hget
+    · rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
+      simp at hget
+      rw [hget.1]
+  exact hnot deps hget'
+
 private lemma tagEnvConsistentWithRegime_to_masked
     (tagEnv : TagEnv) (R : Regime) (masked : Tag → Prop)
     (h : tagEnvConsistentWithRegime tagEnv R) :
@@ -523,6 +574,16 @@ private lemma joinRegimes_lookup_true_of_both_true
     simp only [↓reduceIte] at hgo_regime
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using hgo_regime
   simpa [Regime.lookup?, joinRegimes, hklt] using hkjoined
+
+private lemma tagEnvNotTrueAt_join
+    (tagEnv₁ tagEnv₂ : TagEnv) (k : Tag)
+    (hnot₁ : tagEnvNotTrueAt tagEnv₁ k)
+    (_hnot₂ : tagEnvNotTrueAt tagEnv₂ k) :
+    tagEnvNotTrueAt (joinTagEnvs tagEnv₁ tagEnv₂) k := by
+  intro deps hget
+  rcases joinTagEnvs_lookup_true_elim tagEnv₁ tagEnv₂ k deps hget with
+    ⟨deps₁, deps₂, hget₁, _hget₂⟩
+  exact hnot₁ deps₁ hget₁
 
 private lemma tagEnvConsistentWithRegime_join_left_masked
     (masked : Tag → Prop)
@@ -7636,6 +7697,15 @@ lemma monotoneStep_lookup_back {R R' : Regime}
           rfl
       | inr hkR'' =>
           simp [hkR''] at hkR'
+
+private lemma monotoneStep_lookup_not_true
+    {R R' : Regime} (h_mono : Regime.monotoneStep R R')
+    {k : Tag}
+    (hnot : R.lookup? k ≠ some true) :
+    R'.lookup? k ≠ some true := by
+  intro hkR'
+  have hkR : R.lookup? k = some true := monotoneStep_lookup_back h_mono k true hkR'
+  exact hnot hkR
 
 lemma regime_lookup_insert_ne {R : Regime} {k k' : Tag} {b : Bool}
     (hneq : k' ≠ k) :
