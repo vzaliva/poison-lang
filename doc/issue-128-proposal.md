@@ -390,11 +390,13 @@ Current implementation status on this branch:
    `matchGuard_tag_in_bound`, and the bounded-tags invariant they need.
    The output of this phase should be an active path from successful
    `matchGuard` to `k < ctx.regime.bound`.
-   Status: next highest-priority blocker.  The attempted step-3 repair
-   showed this bridge is needed earlier than expected, because
-   `Regime.lookup?` is bound-guarded and the mode-3 branch contexts
-   cannot be shown regime-consistent without first proving that the
-   matched tag lies below `ctx.regime.bound`.
+   Status: complete.  The split layout now has a shared bounded-tags
+   invariant `predTagsBoundedInCtx` in `StepFR.lean`, together with
+   `matchGuard_ok_tag_from_ctx` and `matchGuard_tag_in_bound` in
+   `StepFRIte.lean`.  The ref-side extraction was strengthened to carry
+   nonempty locset evidence, so successful `matchGuard` now yields a
+   concrete var/mem witness for the returned tag and a direct bridge to
+   `k < ctx.regime.bound` once `predTagsBoundedInCtx` is available.
 
 4. **Implement the regime-growth transfer lemmas for the chosen
    design.**
@@ -402,9 +404,16 @@ Current implementation status on this branch:
    `tagEnvConsistentWithRegime_insert_*_with_regime` and
    `consistentWithRegime_insert_regime_{true,false}` as needed, with
    `PredSatLaws.match_iff` wired into the actual proof sites.
-   Status: high-risk and still open.  This is the tag-reuse and
-   closure-sensitive part of the issue-128 work, so it should stay
-   ahead of lower-risk local preservation repairs.
+   Status: blocked pending review.  The top-level mem/var transfer
+   shape still looks implementable, but the generic
+   `consistentWithRegime_insert_regime_{true,false}` story breaks at
+   the closure conjunct of `consistentWithRegime`.  Under regime
+   growth, previously inactive captured-variable obligations for the
+   newly interpreted tag `k` can become active inside closures, and the
+   current premises do not provide the runtime evidence needed to
+   discharge them.  This is the tag-reuse/closure caveat from Section
+   5.4 materializing as a real proof obstruction, so the step should
+   not be pushed further without review.
 
 5. **Close the local mode-3 preservation gap for
    `regimeConsistentWithCtx`.**

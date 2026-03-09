@@ -58,6 +58,13 @@ def tagEnvConsistentWithRegime (tagEnv : TagEnv) (regime : Regime) : Prop :=
 def regimeConsistentWithCtx (ctx : TypeContext) : Prop :=
   tagEnvConsistentWithRegime ctx.tagEnv ctx.regime ∧ ctx.regime.bound ≤ ctx.nextTag
 
+/-- Every top-level guard tag already present in the context lies below the
+    regime bound. This is the context-side bounded-tags invariant needed to
+    turn successful `matchGuard` results into regime-domain facts. -/
+def predTagsBoundedInCtx (ctx : TypeContext) : Prop :=
+  (∀ x qt k, ctx.varEnv.lookup x = some qt → qtypGuardTag qt = some k → k < ctx.regime.bound) ∧
+  (∀ l qt k, ctx.memEnv.lookup l = some qt → qtypGuardTag qt = some k → k < ctx.regime.bound)
+
 -- ------------------------
 -- TagEnv/Regime consistency preservation lemmas
 --

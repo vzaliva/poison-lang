@@ -491,6 +491,7 @@ private lemma matchGuard_refStep_preserves_invariant
           (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
           ctx.varEnv.lookup x = some qt ∧
           qt.etyp = ETyp.ref ls ∧
+          ls.isEmpty = false ∧
           (∀ l, l ∈ ls →
             ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
               memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env))
@@ -500,6 +501,7 @@ private lemma matchGuard_refStep_preserves_invariant
         (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
         ctx.varEnv.lookup x = some qt ∧
         qt.etyp = ETyp.ref ls ∧
+        ls.isEmpty = false ∧
         (∀ l, l ∈ ls →
             ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
             memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) := by
@@ -626,7 +628,7 @@ private lemma matchGuard_refStep_preserves_invariant
                           subst hacc1eq
                           rcases (List.mem_cons.mp hmem) with hhead | htail
                           · subst hhead
-                            refine ⟨name, qt, ls, arg_name, pred_body, var_env, hlookup_name, hEt, ?_⟩
+                            refine ⟨name, qt, ls, arg_name, pred_body, var_env, hlookup_name, hEt, hlsEmptyF, ?_⟩
                             have hmerged' :
                                 LocSet.foldM ls (init := (none : Option Predicate))
                                   (matchGuard_refPredFoldF ctx) = .ok merged? := by
@@ -721,6 +723,7 @@ private lemma ref_match_from_refMatches_aux
           (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
           ctx.varEnv.lookup x = some qt ∧
           qt.etyp = ETyp.ref ls ∧
+          ls.isEmpty = false ∧
           (∀ l, l ∈ ls →
             ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
               memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env)) →
@@ -732,6 +735,7 @@ private lemma ref_match_from_refMatches_aux
           (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
           ctx.varEnv.lookup x = some qt ∧
           qt.etyp = ETyp.ref ls ∧
+          ls.isEmpty = false ∧
           (∀ l, l ∈ ls →
             ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
               memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) := by
@@ -757,6 +761,7 @@ private lemma ref_match_from_refMatches_aux
                   (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
                   ctx.varEnv.lookup x = some qt ∧
                   qt.etyp = ETyp.ref ls ∧
+                  ls.isEmpty = false ∧
                   (∀ l, l ∈ ls →
                     ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
                       memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) := by
@@ -780,6 +785,7 @@ private lemma ref_match_from_refMatches
       (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
       ctx.varEnv.lookup x = some qt ∧
       qt.etyp = ETyp.ref ls ∧
+      ls.isEmpty = false ∧
       (∀ l, l ∈ ls →
         ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
           memQt.pred = Predicate.guardClosure k arg_name pred_body var_env) := by
@@ -1011,6 +1017,7 @@ private lemma matchGuard_ok_extract_owner_in_ctx
           (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
           ctx.varEnv.lookup x = some qt ∧
           qt.etyp = ETyp.ref ls ∧
+          ls.isEmpty = false ∧
           (∀ l, l ∈ ls →
             ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
               memQt.pred = Predicate.guardClosure k arg_name pred_body var_env) ) ) := by
@@ -1046,6 +1053,7 @@ private lemma owner_in_ctx_to_runtime_owner_witness
             (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
             ctx.varEnv.lookup x = some qt ∧
             qt.etyp = ETyp.ref ls ∧
+            ls.isEmpty = false ∧
             (∀ l, l ∈ ls →
               ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
                 memQt.pred = Predicate.guardClosure k arg_name pred_body var_env) ) ))
@@ -1071,7 +1079,7 @@ private lemma owner_in_ctx_to_runtime_owner_witness
   · rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred⟩
     rcases hvarInst hlookup with ⟨v, hρ, _⟩
     exact ⟨v, Or.inl ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred, hρ⟩⟩
-  · rcases href with ⟨x, qt, ls, arg_name, pred_body, var_env, hlookup, hetyp, hall⟩
+  · rcases href with ⟨x, qt, ls, arg_name, pred_body, var_env, hlookup, hetyp, _hlsNonempty, hall⟩
     rcases hvarInst hlookup with ⟨v0, _hρ, hvtyp⟩
     have hvtyp_ref : valueHasETyp θ v0 (ETyp.ref ls) := by
       simpa [hetyp] using hvtyp
@@ -1111,6 +1119,47 @@ private lemma matchGuard_ok_runtime_owner
           v = Value.num n) ) := by
   have hctx := matchGuard_ok_extract_owner_in_ctx ctx cond k deps hmatch
   exact owner_in_ctx_to_runtime_owner_witness ctx μ ρ θ k hctx hric
+
+/-- Successful `matchGuard` implies the returned guard tag appears as
+    `qtypGuardTag` in the context's `varEnv` or `memEnv`. -/
+lemma matchGuard_ok_tag_from_ctx
+    (ctx : TypeContext) (cond : Expr) (k : Tag) (deps : Deps)
+    {fuel : Nat}
+    (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps)) :
+    (∃ x qt, ctx.varEnv.lookup x = some qt ∧ qtypGuardTag qt = some k) ∨
+    (∃ l qt, ctx.memEnv.lookup l = some qt ∧ qtypGuardTag qt = some k) := by
+  have howner := matchGuard_ok_extract_owner_in_ctx ctx cond k deps hmatch
+  rcases howner with hvar | href
+  · rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred⟩
+    left
+    exact ⟨x, qt, hlookup, by simp [qtypGuardTag, hpred]⟩
+  · rcases href with ⟨x, qt, ls, arg_name, pred_body, var_env, _hlookup, _hetyp, hlsNonempty, hall⟩
+    have hne : ls ≠ (∅ : LocSet) := by
+      exact (Std.ExtTreeSet.isEmpty_eq_false_iff).1 hlsNonempty
+    have hexists : ∃ l, l ∈ ls := by
+      by_contra hno
+      apply hne
+      exact (Std.ExtTreeSet.eq_empty_iff_forall_not_mem).2 (by
+        intro l
+        exact fun hl => hno ⟨l, hl⟩)
+    rcases hexists with ⟨l, hl⟩
+    rcases hall l hl with ⟨memQt, hlookupMem, hpredMem⟩
+    right
+    exact ⟨l, memQt, hlookupMem, by simp [qtypGuardTag, hpredMem]⟩
+
+/-- In a context where all top-level guard tags lie below the regime bound,
+    `matchGuard` returns a tag below that bound. -/
+lemma matchGuard_tag_in_bound
+    (ctx : TypeContext) (cond : Expr) (k : Tag) (deps : Deps)
+    {fuel : Nat}
+    (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps))
+    (hbounded : predTagsBoundedInCtx ctx) :
+    k < ctx.regime.bound := by
+  rcases hbounded with ⟨hvar_bounded, hmem_bounded⟩
+  rcases matchGuard_ok_tag_from_ctx ctx cond k deps hmatch with
+    ⟨x, qt, hlookup, htag⟩ | ⟨l, qt, hlookup, htag⟩
+  · exact hvar_bounded x qt k hlookup htag
+  · exact hmem_bounded l qt k hlookup htag
 
 /-- Optional local helper for the `ite` FR modes.
     Shows the guard evaluation boolean is aligned with the regime value once
