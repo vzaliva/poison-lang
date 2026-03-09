@@ -631,12 +631,34 @@ Current implementation status on this branch:
      lightweight `ValCons` constructors for result shapes whose value
      consistency is trivial in the concrete regime semantics.
 
-   Recommended next implementation step: return to step 6 proper and
-   push the bundled `CtxCons` / `ValCons` interface back into the
-   single-run mode-3 `ite` proof in `FaultRobustnessProofs.lean`.  The
-   leaf spikes now cover the three relevant shapes (`var`, `deref`,
-   `newRef`), so the next risk-first question is whether the bundled
-   interface composes cleanly through the mode-3 branch setup and join.
+   First rollout finding after the leaf spikes: the next blocker is not
+   at the branch-local leaf layer anymore, but at the remaining
+   recursive combinators.  The current single-run helper spikes split
+   into two groups:
+
+   - `var`, `deref`, `newRef` already use the paired bundled interface
+     (`CtxCons` and `ValCons`).
+   - `var`, `deref`, `newRef`, and now `app` use the paired bundled
+     interface (`CtxCons` and `ValCons`).
+   - `seq`, `vlet`, and `assign` still only have `CtxCons`-parametric
+     single-run proofs.
+
+   That means the bundled mode-3 `ite` theorem cannot yet be threaded
+   recursively through arbitrary branch expressions.  Before returning
+   to the mode-3 single-run proof in `FaultRobustnessProofs.lean`, the
+   remaining recursive combinators have to be lifted to the paired
+   `CtxCons` / `ValCons` interface as well.
+
+   `app` confirmed that the bundled path still scales.  The lift needed
+   an `app`-local hook family, including one additional member-to-join
+   `CtxCons` transport hook, but it did **not** uncover a new semantic
+   blocker or require a plan reset.
+
+   Recommended next implementation step: lift `seq`, `vlet`, and
+   `assign` to the same paired interface.  Those are now expected to be
+   mechanical follow-up lifts rather than new risk spikes.  After all
+   three are paired, return to the mode-3 single-run `ite` theorem in
+   `FaultRobustnessProofs.lean`.
 
 ## 7. Implementation Constraints
 
