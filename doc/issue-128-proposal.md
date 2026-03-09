@@ -392,9 +392,15 @@ Current implementation status on this branch:
    existing tagEnv insert lemmas together with a small regime-insert
    lookup bridge.  Treat this as supporting infrastructure, not as the
    main design risk.
-   Status: supporting infrastructure partially in place.  The small
-   regime-insert lookup bridge has been added already, but the actual
-   `regimeConsistentWithCtx` repair is still pending.
+   Status: blocked pending review.  The local mode-3 proof needs the
+   inserted branch tag to satisfy
+   `({ ctx.regime with map := ctx.regime.map.insert k b }).lookup? k = some b`
+   in order to re-establish `tagEnvConsistentWithRegime` for the
+   branch context.  Because `Regime.lookup?` is bounded by
+   `k < ctx.regime.bound`, this now depends on the missing step-4
+   bridge from successful `matchGuard` to regime-bound membership.
+   That changes the expected order of work: step 3 cannot currently be
+   closed before step 4.
 
 4. **Re-introduce the `R.bound` bridge in the split layout.**
    Re-home or redesign `matchGuard_ok_tag_from_ctx`,
