@@ -159,6 +159,84 @@ private lemma tagEnvConsistentWithRegime_insert_false_with_regime
     simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hR' ⊢
     exact hR'
 
+private def tagEnvConsistentWithRegimeMasked
+    (masked : Tag → Prop) (tagEnv : TagEnv) (regime : Regime) : Prop :=
+  ∀ k deps, tagEnv.get? k = some ⟨true, deps⟩ → masked k ∨ regime.lookup? k = some true
+
+private def regimeConsistentWithCtxMasked
+    (masked : Tag → Prop) (ctx : TypeContext) : Prop :=
+  tagEnvConsistentWithRegimeMasked masked ctx.tagEnv ctx.regime ∧ ctx.regime.bound ≤ ctx.nextTag
+
+private lemma tagEnvConsistentWithRegime_to_masked
+    (tagEnv : TagEnv) (R : Regime) (masked : Tag → Prop)
+    (h : tagEnvConsistentWithRegime tagEnv R) :
+    tagEnvConsistentWithRegimeMasked masked tagEnv R := by
+  intro k deps hget
+  exact Or.inr (h k deps hget)
+
+private lemma tagEnvConsistentWithRegimeMasked_insert_true_with_regime
+    (masked : Tag → Prop)
+    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
+    (h : tagEnvConsistentWithRegimeMasked masked tagEnv R)
+    (hk : masked k ∨ k < R.bound) :
+    tagEnvConsistentWithRegimeMasked masked
+      (tagEnv.insert k ⟨true, deps⟩)
+      { R with map := R.map.insert k true } := by
+  intro k' deps' hget
+  by_cases hkk' : k' = k
+  · subst hkk'
+    cases hk with
+    | inl hmasked =>
+        exact Or.inl hmasked
+    | inr hk_bound =>
+        right
+        unfold Regime.lookup?
+        simp [hk_bound, Std.ExtTreeMap.get?_eq_getElem?]
+  · have hcmp : compare k k' ≠ Ordering.eq := by
+      intro hce
+      have : k = k' := (Nat.compare_eq_eq).1 hce
+      exact hkk' this.symm
+    have hget' : tagEnv.get? k' = some ⟨true, deps'⟩ := by
+      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
+      exact hget
+    have hbase := h k' deps' hget'
+    cases hbase with
+    | inl hmasked =>
+        exact Or.inl hmasked
+    | inr hlookup =>
+        right
+        unfold Regime.lookup? at hlookup ⊢
+        simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hlookup ⊢
+        exact hlookup
+
+private lemma tagEnvConsistentWithRegimeMasked_insert_false_with_regime
+    (masked : Tag → Prop)
+    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
+    (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
+    tagEnvConsistentWithRegimeMasked masked
+      (tagEnv.insert k ⟨false, deps⟩)
+      { R with map := R.map.insert k false } := by
+  intro k' deps' hget
+  by_cases hkk' : k' = k
+  · subst hkk'
+    simp [Std.ExtTreeMap.get?_eq_getElem?] at hget
+  · have hcmp : compare k k' ≠ Ordering.eq := by
+      intro hce
+      have : k = k' := (Nat.compare_eq_eq).1 hce
+      exact hkk' this.symm
+    have hget' : tagEnv.get? k' = some ⟨true, deps'⟩ := by
+      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
+      exact hget
+    have hbase := h k' deps' hget'
+    cases hbase with
+    | inl hmasked =>
+        exact Or.inl hmasked
+    | inr hlookup =>
+        right
+        unfold Regime.lookup? at hlookup ⊢
+        simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hlookup ⊢
+        exact hlookup
+
 -- `invalidateTagDeps` only removes entries; it never creates new `true` bindings.
 lemma tagEnvConsistentWithRegime_invalidate
     (tagEnv : TagEnv) (R : Regime) (ls : LocSet)
@@ -348,6 +426,122 @@ lemma tagEnvConsistentWithRegime_join
       simp only [Regime.lookup?, hklt, ↓reduceIte, Std.ExtTreeMap.get?_eq_getElem?]
       rw [← Std.ExtTreeMap.get?_eq_getElem?]
       exact hkjoined
+
+private lemma joinTagEnvs_lookup_true_elim
+    (tagEnv₁ tagEnv₂ : TagEnv) (k : Tag) (deps : Deps)
+    (hget : (joinTagEnvs tagEnv₁ tagEnv₂).get? k = some ⟨true, deps⟩) :
+    ∃ deps₁ deps₂,
+      tagEnv₁.get? k = some ⟨true, deps₁⟩ ∧
+      tagEnv₂.get? k = some ⟨true, deps₂⟩ := by
+  unfold joinTagEnvs at hget
+  let f : Tag → Option TagVal → Option TagVal → Option TagVal := fun _ otv1 otv2 =>
+    match otv1, otv2 with
+    | some ⟨b1, deps1⟩, some ⟨b2, deps2⟩ =>
+        if b1 == b2 then some ⟨b1, LocSet.union deps1 deps2⟩ else none
+    | some _, none => none
+    | none, some _ => none
+    | none, none => none
+  have hcombine : (combineExtTreeMaps tagEnv₁ tagEnv₂ f).get? k = some ⟨true, deps⟩ := hget
+  simp only [combineExtTreeMaps] at hcombine
+  have hk_mem : k ∈ (tagEnv₁.keys ++ tagEnv₂.keys).eraseDups := by
+    by_contra hnot
+    have := combineExtTreeMaps_go_get_not_mem tagEnv₁ tagEnv₂ f
+      (tagEnv₁.keys ++ tagEnv₂.keys).eraseDups ({} : TagEnv) k hnot
+    simp [this] at hcombine
+  have hgo := combineExtTreeMaps_go_get_mem tagEnv₁ tagEnv₂ f
+    (tagEnv₁.keys ++ tagEnv₂.keys).eraseDups ({} : TagEnv) k hk_mem
+  simp only [Std.ExtTreeMap.get?_eq_getElem?] at hcombine hgo
+  rw [hcombine] at hgo
+  simp only [f] at hgo
+  cases h1 : tagEnv₁.get? k <;> cases h2 : tagEnv₂.get? k
+  · simp [← Std.ExtTreeMap.get?_eq_getElem?, h1, h2] at hgo
+  · simp [← Std.ExtTreeMap.get?_eq_getElem?, h1, h2] at hgo
+  · simp [← Std.ExtTreeMap.get?_eq_getElem?, h1, h2] at hgo
+  · rename_i val1 val2
+    rcases val1 with ⟨b1, deps1⟩
+    rcases val2 with ⟨b2, deps2⟩
+    cases hb1 : b1 with
+    | false =>
+        cases hb2 : b2 with
+        | false =>
+            simp [hb1, hb2, ← Std.ExtTreeMap.get?_eq_getElem?, h1, h2] at hgo
+        | true =>
+            simp [hb1, hb2, ← Std.ExtTreeMap.get?_eq_getElem?, h1, h2] at hgo
+    | true =>
+        cases hb2 : b2 with
+        | false =>
+            simp [hb1, hb2, ← Std.ExtTreeMap.get?_eq_getElem?, h1, h2] at hgo
+        | true =>
+            simp [hb1, hb2, ← Std.ExtTreeMap.get?_eq_getElem?, h1, h2] at hgo
+            subst hb1 hb2
+            refine ⟨deps1, deps2, ?_, ?_⟩
+            · rfl
+            · rfl
+
+private lemma joinRegimes_lookup_true_of_both_true
+    (R₁ R₂ : Regime) (k : Tag)
+    (hkR1 : R₁.lookup? k = some true)
+    (hkR2 : R₂.lookup? k = some true) :
+    (joinRegimes R₁ R₂).lookup? k = some true := by
+  have hklt1 : k < R₁.bound := by
+    dsimp [Regime.lookup?] at hkR1
+    split_ifs at hkR1 with hklt
+    · exact hklt
+  have hklt2 : k < R₂.bound := by
+    dsimp [Regime.lookup?] at hkR2
+    split_ifs at hkR2 with hklt
+    · exact hklt
+  have hklt : k < min R₁.bound R₂.bound := Nat.lt_min.2 ⟨hklt1, hklt2⟩
+  have hkmap1 : R₁.map.get? k = some true := by
+    dsimp [Regime.lookup?] at hkR1
+    split_ifs at hkR1
+    · exact hkR1
+  have hkmap2 : R₂.map.get? k = some true := by
+    dsimp [Regime.lookup?] at hkR2
+    split_ifs at hkR2
+    · exact hkR2
+  have hkjoined :
+      (combineExtTreeMaps R₁.map R₂.map
+        (fun _ ob1 ob2 =>
+          match ob1, ob2 with
+          | some b1, some b2 => if b1 = b2 then some b1 else none
+          | _, _ => none)).get? k = some true := by
+    simp only [combineExtTreeMaps]
+    have hk_mem_regime : k ∈ (R₁.map.keys ++ R₂.map.keys).eraseDups := by
+      have hk_contains : R₁.map.contains k := by
+        rw [Std.ExtTreeMap.contains_eq_isSome_getElem?, ← Std.ExtTreeMap.get?_eq_getElem?, hkmap1]
+        rfl
+      have hk_in_keys : k ∈ R₁.map.keys := ExtTreeMap.mem_keys.2 hk_contains
+      exact List.mem_eraseDups_of_mem (List.mem_append_left R₂.map.keys hk_in_keys)
+    have hgo_regime := combineExtTreeMaps_go_get_mem R₁.map R₂.map
+      (fun _ ob1 ob2 =>
+        match ob1, ob2 with
+        | some b1, some b2 => if b1 = b2 then some b1 else none
+        | _, _ => none)
+      (R₁.map.keys ++ R₂.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem_regime
+    simp only [← Std.ExtTreeMap.get?_eq_getElem?, hkmap1, hkmap2] at hgo_regime
+    simp only [↓reduceIte] at hgo_regime
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using hgo_regime
+  simpa [Regime.lookup?, joinRegimes, hklt] using hkjoined
+
+private lemma tagEnvConsistentWithRegime_join_left_masked
+    (masked : Tag → Prop)
+    (tagEnv₁ tagEnv₂ : TagEnv) (R₁ R₂ : Regime)
+    (h₁ : tagEnvConsistentWithRegimeMasked masked tagEnv₁ R₁)
+    (h₂ : tagEnvConsistentWithRegime tagEnv₂ R₂)
+    (hmasked_absent :
+      ∀ k deps, masked k → tagEnv₂.get? k ≠ some ⟨true, deps⟩) :
+    tagEnvConsistentWithRegime (joinTagEnvs tagEnv₁ tagEnv₂) (joinRegimes R₁ R₂) := by
+  intro k deps hget
+  rcases joinTagEnvs_lookup_true_elim tagEnv₁ tagEnv₂ k deps hget with
+    ⟨deps₁, deps₂, hget₁, hget₂⟩
+  have h₂_lookup : R₂.lookup? k = some true := h₂ k deps₂ hget₂
+  have h₁_lookup := h₁ k deps₁ hget₁
+  cases h₁_lookup with
+  | inl hmasked =>
+      exact False.elim ((hmasked_absent k deps₂ hmasked) hget₂)
+  | inr hlookup =>
+      exact joinRegimes_lookup_true_of_both_true R₁ R₂ k hlookup h₂_lookup
 
 
 -- Helper lemma: regimeBounded transfers under monotonicity (bounds are equal)
