@@ -159,11 +159,11 @@ private lemma tagEnvConsistentWithRegime_insert_false_with_regime
     simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hR' ⊢
     exact hR'
 
-private def tagEnvConsistentWithRegimeMasked
+def tagEnvConsistentWithRegimeMasked
     (masked : Tag → Prop) (tagEnv : TagEnv) (regime : Regime) : Prop :=
   ∀ k deps, tagEnv.get? k = some ⟨true, deps⟩ → masked k ∨ regime.lookup? k = some true
 
-private def regimeConsistentWithCtxMasked
+def regimeConsistentWithCtxMasked
     (masked : Tag → Prop) (ctx : TypeContext) : Prop :=
   tagEnvConsistentWithRegimeMasked masked ctx.tagEnv ctx.regime ∧ ctx.regime.bound ≤ ctx.nextTag
 
@@ -1556,6 +1556,39 @@ lemma singleRunFinalCleanWitness_of_same_state_param
   · simpa [hctxAfter, hcf] using hvalc
   · simpa [hcf] using (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctx) (res := res) (ρ := ρ) hric)
 
+lemma singleRunFinalCleanWitness_of_same_state_maskedReg_param
+  {masked : Tag → Prop}
+  {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
+  {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
+  {ctx : TypeContext} {res : TypeResult}
+  {_predSat : PredSat} {tm : TagMeaning}
+  {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+  {cf : Config} {o : Value}
+  {a : Address} {pm : Bool}
+  (hctxAfter : ctxAfter ctx res = ctx)
+  (hcf : cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+  (hvaltyp : valueHasETyp θ o res.qualType.etyp)
+  (hctxCons : CtxCons ctx μ ρ θ)
+  (hvalc : ValCons ctx.regime res.qualType μ θ o)
+  (_hwfTm : wfTagMeaningCtx tm ctx)
+  (_hwf : wfTypeContext ctx)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+  (_hreg : regimeConsistentWithCtxMasked masked ctx)
+  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }) :
+  ∃ (θ' : RealizationMap),
+    wfExtendsMap θ θ' ∧
+    valueHasETyp θ' o res.qualType.etyp ∧
+    runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+    CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+    ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
+    PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' := by
+  refine ⟨θ, ?_, hvaltyp, ?_, ?_, ?_, ?_⟩
+  · exact ⟨fun _ _ hlookup => hlookup, fun hθwf => hθwf⟩
+  · simpa [hctxAfter, hcf] using hric
+  · simpa [hctxAfter, hcf] using hctxCons
+  · simpa [hctxAfter, hcf] using hvalc
+  · simpa [hcf] using (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctx) (res := res) (ρ := ρ) hric)
+
 def StepFRSingleRunFinalCleanPcTrue
   (mode : LeanPoison.EvalMode)
   (ctx : TypeContext)
@@ -1602,6 +1635,38 @@ def StepFRSingleRunFinalCleanPcTrueParam
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ ρ θ →
       regimeConsistentWithCtx ctx →
+      regimeBounded ctx.regime →
+      CtxCons ctx μ ρ θ →
+      ∀ (a : Address) (pm : Bool),
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
+        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        ctx.pc = true →
+        ∃ (θ' : RealizationMap),
+          wfExtendsMap θ θ' ∧
+          valueHasETyp θ' o res.qualType.etyp ∧
+          runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+          CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+          ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
+
+def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+  (masked : Tag → Prop)
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (mode : LeanPoison.EvalMode)
+  (ctx : TypeContext)
+  (e : Expr)
+  (res : TypeResult)
+  (predSat : PredSat)
+  (tm : TagMeaning) : Prop :=
+    PredSatLaws predSat tm →
+    wfTagMeaningCtx tm ctx →
+    ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+      (cf : Config) (o : Value),
+      wfRealizationMap θ →
+      wfTypeContext ctx →
+      runtimeInstantiatesCtx ctx μ ρ θ →
+      regimeConsistentWithCtxMasked masked ctx →
       regimeBounded ctx.regime →
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
@@ -5357,6 +5422,18 @@ abbrev StepFRSingleRunFinalCleanPcTrueParam_IH
       StepFRSingleRunFinalCleanPcTrueParam
         CtxCons ValCons .ioFree ctx e res predSat tm
 
+abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+    (masked : Tag → Prop)
+    (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+    (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
+  ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
+    wfTagMeaningCtx tm ctx →
+    ∀ (res : TypeResult),
+      typecheck .ioFree ctx e m = .ok res →
+      StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+        masked CtxCons ValCons .ioFree ctx e res predSat tm
+
 -- Convert strong-induction IH (no wfTagMeaningCtx) to StepFR_IH; the extra premise is unused
 lemma StepFR_IH_of_induction
   (predSat : PredSat) (tm : TagMeaning) (k : Nat)
@@ -5382,6 +5459,19 @@ lemma StepFRSingleRunFinalCleanPcTrueParam_IH_of_induction
       StepFRSingleRunFinalCleanPcTrueParam
         CtxCons ValCons .ioFree ctx e res predSat tm) :
   StepFRSingleRunFinalCleanPcTrueParam_IH CtxCons ValCons predSat tm k :=
+  fun m hm e ctx _hwfTm res htc => IH m hm e ctx res htc
+
+lemma StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+  (masked : Tag → Prop)
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (predSat : PredSat) (tm : TagMeaning) (k : Nat)
+  (IH : ∀ m < k, ∀ (e : Expr) (ctx : TypeContext) (res : TypeResult),
+    typecheck .ioFree ctx e m = .ok res →
+      StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+        masked CtxCons ValCons .ioFree ctx e res predSat tm) :
+  StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+    masked CtxCons ValCons predSat tm k :=
   fun m hm e ctx _hwfTm res htc => IH m hm e ctx res htc
 
 end TypeSystemEnforcesFaultRobustness_step_proof
@@ -7645,6 +7735,14 @@ lemma typecheckExpr_preserves_regimeConsistentWithCtx
     (htc : typecheck .ioFree ctx e fuel = .ok res) :
     regimeConsistentWithCtx (ctxAfter ctx res) :=
   typecheckExpr_preserves_regimeConsistentWithCtx_main fuel ctx e res hreg htc
+
+lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked
+    (masked : Tag → Prop)
+    (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+    (hreg : regimeConsistentWithCtxMasked masked ctx)
+    (htc : typecheck .ioFree ctx e fuel = .ok res) :
+    regimeConsistentWithCtxMasked masked (ctxAfter ctx res) :=
+  typecheckExpr_preserves_regimeConsistentWithCtxMasked_main fuel masked ctx e res hreg htc
 
 /-- Mix lemma: combine inVar evidence from one (σ, Γ₁) pair with inMem evidence from
     another (σ₂, Γ) pair. Works because `QTypInEnvs.inVar` only uses σ and

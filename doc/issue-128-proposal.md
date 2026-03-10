@@ -439,6 +439,14 @@ Current implementation status on this branch:
 
    - The recursive single-run combinator surface is already lifted to
      the paired `CtxCons` / `ValCons` interface.
+   - The shared masked-regime single-run interface is now in place in
+     `StepFR.lean`:
+     `StepFRSingleRunFinalCleanPcTrueMaskedRegParam`,
+     `StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH`, and
+     `singleRunFinalCleanWitness_of_same_state_maskedReg_param`.
+   - The public masked typechecking-side preservation wrapper is now
+     available:
+     `typecheckExpr_preserves_regimeConsistentWithCtxMasked`.
    - The shared paired single-run predicate and public parametric case
      wrappers live in `StepFR.lean` and the `StepFR*` files.
    - `valueConsistentWithRegimeMasked` and the matching masked
@@ -474,6 +482,12 @@ Current implementation status on this branch:
      `stepFRSingleRunFinalCleanPcTrue_op_masked`,
      `stepFRSingleRunFinalCleanPcTrue_fn_masked`, and
      `stepFRSingleRunFinalCleanPcTrue_pfn_masked`.
+   - The first low-risk masked-regime lifts are complete:
+     `stepFRSingleRunFinalCleanPcTrue_literal_maskedReg`,
+     `stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg`,
+     `stepFRSingleRunFinalCleanPcTrue_op_maskedReg`,
+     `stepFRSingleRunFinalCleanPcTrue_fn_maskedReg`, and
+     `stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg`.
    - The shared masked-to-unmasked conversion layer is in place for the
      post-join phase:
      `consistentWithRegimeMasked_unmask` and
@@ -515,12 +529,10 @@ Current implementation status on this branch:
 
    Remaining work, in current risk-first order:
 
-   1. Extend the private masked single-run framework so the recursive
-      theorem takes `regimeConsistentWithCtxMasked mask` at branch start
-      instead of plain `regimeConsistentWithCtx`.
-   2. Re-thread the already lifted recursive combinator surface through
-      that masked branch-start premise.
-   3. Re-run the concrete mode-3 `ite` proof in
+   1. Lift the remaining recursive single-run case wrappers onto the
+      new masked branch-start premise, starting with the first real
+      recursive combinator (`seq`).
+   2. Re-run the concrete mode-3 `ite` proof in
       `FaultRobustnessProofs.lean` against the updated private
       framework.
 
