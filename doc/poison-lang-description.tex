@@ -1329,6 +1329,55 @@ consistent tag meaning and blocking contradictory instantiations.
 These axioms apply to all tags, including those in the initial specification and
 those generated during execution (e.g., by \texttt{frand} or extern functions).
 
+\paragraph{Why package these assumptions as \texttt{PredSatLaws}?}
+The proof does not need a concrete implementation of predicate evaluation.
+What it needs is a small, reusable \emph{interface} describing how the abstract
+relation \texttt{PredSat} is allowed to interact with the mechanisms already
+present in the type system.
+
+\texttt{PredSatLaws} is exactly that interface.  It packages the minimum
+assumptions used throughout the development:
+
+\begin{itemize}
+    \item how a successful \texttt{matchGuard} check relates a runtime boolean outcome to abstract predicate satisfaction, and
+    \item how predicate satisfaction behaves when memory changes outside the predicate's declared dependency footprint.
+\end{itemize}
+
+This is why the top-level theorem quantifies over \emph{all} \texttt{PredSat}
+relations satisfying \texttt{PredSatLaws}: the proof is parametric in the
+meaning of predicates, but it still needs these two proof-relevant facts to
+connect typing information with runtime behaviour.
+
+The extra parameter \texttt{TagMeaning} should be read as the global agreement
+on what each tag means.  A tag is not just a number: it stands for a specific
+guard descriptor (predicate body plus captured typing environment).  The laws
+are therefore stated relative to a fixed \texttt{TagMeaning} so that the same
+tag cannot silently change meaning in different parts of the derivation.
+
+\paragraph{Informal reading of the two laws.}
+Before reading the formal statements, it is helpful to understand their intent
+in plain language:
+
+\begin{itemize}
+    \item \textbf{\texttt{match\_iff}} says: if the type system recognizes a
+    condition as checking tag \(k\), and that condition evaluates to a boolean
+    at runtime, then the boolean result tells us exactly whether the predicate
+    named by \(k\) holds for the \emph{particular runtime value that was
+    checked}.  This is the law that lets the proof turn a successful guard test
+    into regime-consistency facts.
+    \item \textbf{\texttt{mem\_monotone}} says: if two memory states agree on
+    all locations a predicate depends on, then the predicate's truth value does
+    not change between those memories.  This is the law that lets the proof
+    transport predicate satisfaction across heap updates that are irrelevant to
+    the guard.
+\end{itemize}
+
+Together, these laws explain why \texttt{PredSat} is needed at all:
+runtime values do not carry their typing predicates, and captured predicate
+closures cannot be re-evaluated directly inside the proof.  \texttt{PredSat}
+acts as the abstract bridge, and \texttt{PredSatLaws} specifies the exact
+properties of that bridge that the fault-robustness argument relies on.
+
 \paragraph{Bidirectional matching axiom (\texttt{match\_iff}).} If a condition
 syntactically matches a tagged predicate via \texttt{matchGuard} and evaluates
 to boolean value $b$ under the current runtime state (omitting the evaluation mode and final
