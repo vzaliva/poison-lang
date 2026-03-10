@@ -457,23 +457,47 @@ Current implementation status on this branch:
      `stepFRVlet_ctxConsFinish_masked`,
      `stepFRVlet_valConsFinish_masked`, and
      `stepFRAssign_ctxConsPostTransport_masked`.
-   - `assign` needed one additional local factoring step,
-     `assign_single_run_post_transport_common`, to share the
-     post-write well-formedness/runtime side of the proof between the
-     unmasked and masked paths.  This stayed within proof-engineering
-     scope and did not change the plan.
+   - The masked `app` hook layer is complete:
+     `stepFRApp_closureBodyStart_masked`,
+     `stepFRApp_pClosureBodyStart_masked`,
+     `stepFRApp_memberCtxCons_masked`,
+     `stepFRApp_joinCtxConsFromMember_masked`,
+     `stepFRApp_bodyResultValCons_masked`, and
+     `stepFRApp_joinValConsFromMember_masked`.
+   - The first same-state support piece for the concrete masked theorem
+     is complete:
+     `singleRunFinalCleanWitness_of_same_state_param` in `StepFR.lean`
+     and `stepFRSingleRunFinalCleanPcTrue_literal_masked` in
+     `StepFRLiteral.lean`.
+   - The remaining simple concrete masked support cases are complete:
+     `stepFRSingleRunFinalCleanPcTrue_unaryop_masked`,
+     `stepFRSingleRunFinalCleanPcTrue_op_masked`,
+     `stepFRSingleRunFinalCleanPcTrue_fn_masked`, and
+     `stepFRSingleRunFinalCleanPcTrue_pfn_masked`.
+   - The shared masked-to-unmasked conversion layer is in place for the
+     post-join phase:
+     `consistentWithRegimeMasked_unmask` and
+     `valueConsistentWithRegimeMasked_unmask`.
+   - The masked `ite` transport layer is now in place in
+     `StepFRIte.lean` for the remaining single-run theorem work:
+     `consistentWithRegimeMasked_transport_ctxAfter_pure_to_ctx_insert_true`,
+     `consistentWithRegimeMasked_join_from_left`, and
+     `consistentWithRegimeMasked_join_from_right`.
+   - The top-level single-run proof is now refactored onto the
+     concrete masked recursive family in
+     `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`,
+     with the existing public theorem rebuilt as the `masked := False`
+     wrapper.
 
    Remaining work, in current risk-first order:
 
-   1. add the masked `app` hook layer, which remains the main
-      proof-engineering risk within the approved design;
-   2. return to the concrete masked single-run mode-3 theorem in
-      `FaultRobustnessProofs.lean`.
+   1. use the masked recursive family to close the concrete single-run
+      mode-3 `ite` theorem in `FaultRobustnessProofs.lean`.
 
    Step 6 should still pause for review if this masked/local path turns
    out to require changing the stable boundary definitions in Section
-   7.2, or if the masked `app` layer exposes a new obstruction beyond
-   proof-engineering scope.
+   7.2, or if the concrete masked mode-3 theorem exposes a new
+   obstruction beyond proof-engineering scope.
 
 ## 7. Implementation Constraints
 

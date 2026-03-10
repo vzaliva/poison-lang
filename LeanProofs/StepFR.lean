@@ -1524,6 +1524,38 @@ lemma singleRunFinalCleanWitness_of_same_state
   · simpa [hctxAfter, hcf] using hvalc
   · simpa [hcf] using (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctx) (res := res) (ρ := ρ) hric)
 
+lemma singleRunFinalCleanWitness_of_same_state_param
+  {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
+  {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
+  {ctx : TypeContext} {res : TypeResult}
+  {_predSat : PredSat} {tm : TagMeaning}
+  {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+  {cf : Config} {o : Value}
+  {a : Address} {pm : Bool}
+  (hctxAfter : ctxAfter ctx res = ctx)
+  (hcf : cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+  (hvaltyp : valueHasETyp θ o res.qualType.etyp)
+  (hctxCons : CtxCons ctx μ ρ θ)
+  (hvalc : ValCons ctx.regime res.qualType μ θ o)
+  (_hwfTm : wfTagMeaningCtx tm ctx)
+  (_hwf : wfTypeContext ctx)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+  (_hreg : regimeConsistentWithCtx ctx)
+  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }) :
+  ∃ (θ' : RealizationMap),
+    wfExtendsMap θ θ' ∧
+    valueHasETyp θ' o res.qualType.etyp ∧
+    runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+    CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+    ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
+    PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' := by
+  refine ⟨θ, ?_, hvaltyp, ?_, ?_, ?_, ?_⟩
+  · exact ⟨fun _ _ hlookup => hlookup, fun hθwf => hθwf⟩
+  · simpa [hctxAfter, hcf] using hric
+  · simpa [hctxAfter, hcf] using hctxCons
+  · simpa [hctxAfter, hcf] using hvalc
+  · simpa [hcf] using (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctx) (res := res) (ρ := ρ) hric)
+
 def StepFRSingleRunFinalCleanPcTrue
   (mode : LeanPoison.EvalMode)
   (ctx : TypeContext)
@@ -2087,6 +2119,105 @@ lemma valueConsistentWithRegimeMasked_closureCapturedVarsRegime
   | notInRegime _ _ _ hcap => exact hcap
   | inRegimeFalse _ _ _ _ hcap => exact hcap
   | inRegimeTrue _ _ _ _ hcap => exact hcap
+
+lemma capturedVarsRegimePropertyMasked_unmask
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime} {μ : Memory}
+  {σcap : CapturedVarEnv} {ρcap : VarEnv}
+  (hmasked_none : ∀ k, masked k → R.lookup? k = none)
+  (h :
+    capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap) :
+  capturedVarsRegimeProperty predSat R μ σcap ρcap := by
+  intro x qt_x k_x hlookup hguard hRdef
+  specialize h x qt_x k_x hlookup hguard hRdef
+  rcases h with hmasked | hvars
+  · exact False.elim (hRdef (hmasked_none k_x hmasked))
+  · exact hvars
+
+lemma closureCapturedVarsRegimeMasked_unmask
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  (hmasked_none : ∀ k, masked k → R.lookup? k = none)
+  (h : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
+  closureCapturedVarsRegime predSat R qt μ θ v := by
+  exact
+    .intro <|
+      deepValueQTypProperty_mono
+        (fun _ _ hP =>
+          ⟨capturedVarsRegimePropertyMasked_unmask
+              (masked := masked) (predSat := predSat)
+              (R := R) (μ := μ) hmasked_none hP.1,
+            hP.2⟩)
+        h
+
+lemma consistentWithRegimeMasked_unmask
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+  (hmasked_none : ∀ k, masked k → R.lookup? k = none)
+  (h : consistentWithRegimeMasked masked predSat R ctx μ ρ θ) :
+  consistentWithRegime predSat R ctx μ ρ θ := by
+  rcases h with ⟨hlocs, hvars, hclos⟩
+  refine ⟨?_, ?_, ?_⟩
+  · intro l qt k hlookup hguard hRdef
+    specialize hlocs l qt k hlookup hguard hRdef
+    rcases hlocs with hmasked | hloc
+    · exact False.elim (hRdef (hmasked_none k hmasked))
+    · exact hloc
+  · intro x qt k hlookup hguard hRdef
+    specialize hvars x qt k hlookup hguard hRdef
+    rcases hvars with hmasked | hvar
+    · exact False.elim (hRdef (hmasked_none k hmasked))
+    · exact hvar
+  · intro x qt v hlookup hρ
+    exact closureCapturedVarsRegimeMasked_unmask
+      (masked := masked) (predSat := predSat)
+      (R := R) (qt := qt) (μ := μ) (θ := θ) (v := v)
+      hmasked_none
+      (hclos x qt v hlookup hρ)
+
+lemma valueConsistentWithRegimeMasked_unmask
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  (hmasked_none : ∀ k, masked k → R.lookup? k = none)
+  (h : valueConsistentWithRegimeMasked masked predSat R qt μ θ v) :
+  valueConsistentWithRegime predSat R qt μ θ v := by
+  cases h with
+  | noTag htag hcap =>
+      exact valueConsistentWithRegime.noTag htag
+        (closureCapturedVarsRegimeMasked_unmask
+          (masked := masked) (predSat := predSat)
+          (R := R) (qt := qt) (μ := μ) (θ := θ) (v := v)
+          hmasked_none hcap)
+  | guardOnly_ok k hgo hcap =>
+      exact valueConsistentWithRegime.guardOnly_ok k hgo
+        (closureCapturedVarsRegimeMasked_unmask
+          (masked := masked) (predSat := predSat)
+          (R := R) (qt := qt) (μ := μ) (θ := θ) (v := v)
+          hmasked_none hcap)
+  | maskedTag k htag hmasked hcap =>
+      exact valueConsistentWithRegime.notInRegime k htag
+        (hmasked_none k hmasked)
+        (closureCapturedVarsRegimeMasked_unmask
+          (masked := masked) (predSat := predSat)
+          (R := R) (qt := qt) (μ := μ) (θ := θ) (v := v)
+          hmasked_none hcap)
+  | notInRegime k htag hknone hcap =>
+      exact valueConsistentWithRegime.notInRegime k htag hknone
+        (closureCapturedVarsRegimeMasked_unmask
+          (masked := masked) (predSat := predSat)
+          (R := R) (qt := qt) (μ := μ) (θ := θ) (v := v)
+          hmasked_none hcap)
+  | inRegimeFalse k htag hkfalse hnot hcap =>
+      exact valueConsistentWithRegime.inRegimeFalse k htag hkfalse hnot
+        (closureCapturedVarsRegimeMasked_unmask
+          (masked := masked) (predSat := predSat)
+          (R := R) (qt := qt) (μ := μ) (θ := θ) (v := v)
+          hmasked_none hcap)
+  | inRegimeTrue k htag hktrue hholds hcap =>
+      exact valueConsistentWithRegime.inRegimeTrue k htag hktrue hholds
+        (closureCapturedVarsRegimeMasked_unmask
+          (masked := masked) (predSat := predSat)
+          (R := R) (qt := qt) (μ := μ) (θ := θ) (v := v)
+          hmasked_none hcap)
 
 -- For guard-closure predicates, `valueConsistentWithRegime` determines the same
 -- predicate-consistency obligation needed by `varsRegime.withPred_ok`.

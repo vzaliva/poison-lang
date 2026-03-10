@@ -103,6 +103,112 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn
       (o := o) (a := a) (pm := pm)
       hctxAfter rfl hvaltyp hvalc hwfTm hwf hric hreg hcwr hwfcfg
 
+lemma stepFRSingleRunFinalCleanPcTrue_fn_masked
+  (masked : Tag → Prop)
+  (mode : LeanPoison.EvalMode)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+  (fuel : Nat) (res : TypeResult)
+  (htc : typecheck .ioFree ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrueParam
+    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+    mode ctxᵢ (Expr.fn x paramType body returnType) res predSat tm := by
+  have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
+    have h := htc
+    simp [typecheck, typecheckExpr] at h
+    exact h
+  let res_expected : TypeResult := {
+    qualType :=
+      ⟨ETyp.arrow paramType returnType ctxᵢ.pc
+          [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)],
+        ctxᵢ.pc, Predicate.noPred⟩
+    memEnv' := ctxᵢ.memEnv
+    tagEnv' := ctxᵢ.tagEnv
+    nextLoc' := ctxᵢ.nextLoc
+    nextTag' := ctxᵢ.nextTag
+    regime' := ctxᵢ.regime
+  }
+  have hres : res = res_expected := by
+    have htc' := htcFn
+    simp [typecheckFn] at htc'
+    cases htc'
+    rfl
+  have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+    simp [ctxAfter, hres, res_expected]
+  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg _hRbound hcwr a pm hwfcfg ht _hpc
+  have ⟨hcf, ho⟩ := terminatesTo_fn_inv' mode x paramType body returnType
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+  subst hcf
+  have hvaltyp : valueHasETyp θ o res.qualType.etyp := by
+    subst ho
+    have hcover : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+        ∃ v, ρ.lookup y = some v := by
+      intro y qt hlookupT
+      have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+      obtain ⟨v', hvlookup, _⟩ := hric.2 hlookup_ctx
+      exact ⟨v', hvlookup⟩
+    have hetyp_res :
+        res.qualType.etyp =
+          ETyp.arrow paramType returnType ctxᵢ.pc
+            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+      simp [hres, res_expected]
+    rw [hetyp_res]
+    refine valueHasETyp.closure
+      (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (htcl := by simp) (hcover := hcover) ?_
+    intro y qt v hlookupT hlookupV
+    have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
+      VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+    obtain ⟨v', hvlookup, hvtyp⟩ := hric.2 hlookup_ctx
+    have hvEq : v' = v := by
+      have : some v' = some v := by
+        calc
+          some v' = ρ.lookup y := by symm; exact hvlookup
+          _ = some v := hlookupV
+      exact Option.some.inj this
+    subst hvEq
+    exact hvtyp
+  have hvalc :
+      valueConsistentWithRegimeMasked masked predSat ctxᵢ.regime res.qualType μ θ o := by
+    subst ho
+    refine valueConsistentWithRegimeMasked.noTag
+      (by simp [qtypGuardTag, hres, res_expected]) ?_
+    apply deepValueQTypProperty.closure x body ρ
+      (VarTypeEnv.toCaptured ctxᵢ.varEnv) paramType returnType ctxᵢ.pc
+      [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
+    · rfl
+    · simp [hres, res_expected]
+    · simp
+    · constructor
+      · intro y qt_y k_y hlookup_σ hguard hkR
+        exact hcwr.2.1 y qt_y k_y
+          (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+          hguard hkR
+      · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+          fun y qt hlookup_σ =>
+            let ⟨v, hv, _⟩ := hric.2
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+            ⟨v, hv⟩,
+          fun y qt v hlookup_σ hlookup_ρ =>
+            let ⟨v', hv', htyp⟩ := hric.2
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+            by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
+    · intro y qt_y v_y hlookup_σ hlookup_ρ
+      exact hcwr.2.2 y qt_y v_y
+        (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+        hlookup_ρ
+  exact
+    singleRunFinalCleanWitness_of_same_state_param
+      (CtxCons := fun ctx μ ρ θ =>
+        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+      (ValCons := fun R qt μ θ v =>
+        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+      (_predSat := predSat) (ctx := ctxᵢ) (res := res) (tm := tm)
+      (μ := μ) (ρ := ρ) (θ := θ)
+      (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+      (o := o) (a := a) (pm := pm)
+      hctxAfter rfl hvaltyp hcwr hvalc hwfTm hwf hric hreg hwfcfg
+
 
 lemma stepFRSingleRunFinalCleanPcTrue_pfn
   (mode : LeanPoison.EvalMode)
@@ -206,6 +312,120 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn
           (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
           (o := o) (a := a) (pm := pm)
           hctxAfter rfl hvaltyp hvalc hwfTm hwf hric hreg hcwr hwfcfg
+
+lemma stepFRSingleRunFinalCleanPcTrue_pfn_masked
+  (masked : Tag → Prop)
+  (mode : LeanPoison.EvalMode)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
+  (fuel : Nat) (res : TypeResult)
+  (htc : typecheck .ioFree ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrueParam
+    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+    mode ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm := by
+  have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
+    have h := htc
+    simp [typecheck, typecheckExpr] at h
+    exact h
+  cases hbody : body.toPExpr with
+  | error err =>
+      simp [typecheckPfn, hbody] at htcPfn
+  | ok pbody =>
+      let res_expected : TypeResult := {
+        qualType :=
+          ⟨ETyp.parrow paramType returnType ctxᵢ.pc
+              [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)],
+            ctxᵢ.pc, Predicate.noPred⟩
+        memEnv' := ctxᵢ.memEnv
+        tagEnv' := ctxᵢ.tagEnv
+        nextLoc' := ctxᵢ.nextLoc
+        nextTag' := ctxᵢ.nextTag
+        regime' := ctxᵢ.regime
+      }
+      have hres : res = res_expected := by
+        have htc' := htcPfn
+        simp [typecheckPfn, hbody] at htc'
+        cases htc'
+        rfl
+      have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
+        simp [ctxAfter, hres, res_expected]
+      intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg _hRbound hcwr a pm hwfcfg ht _hpc
+      have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
+        { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+      subst hcf
+      have hto : Expr.toPExpr? body = some pbody :=
+        Expr_toPExpr?_eq_some_of_toPExpr_ok body pbody hbody
+      have hvaltyp : valueHasETyp θ o res.qualType.etyp := by
+        subst ho
+        have hcover : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+            ∃ v, ρ.lookup y = some v := by
+          intro y qt hlookupT
+          have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+          obtain ⟨v', hvlookup, _⟩ := hric.2 hlookup_ctx
+          exact ⟨v', hvlookup⟩
+        have hetyp_res :
+            res.qualType.etyp =
+              ETyp.parrow paramType returnType ctxᵢ.pc
+                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+          simp [hres, res_expected]
+        rw [hetyp_res]
+        refine valueHasETyp.peClosure
+          (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv)
+          (hpure := hto) (htcl := by simp) (hcover := hcover) ?_
+        intro y qt v hlookupT hlookupV
+        have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
+          VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+        obtain ⟨v', hvlookup, hvtyp⟩ := hric.2 hlookup_ctx
+        have hvEq : v' = v := by
+          have : some v' = some v := by
+            calc
+              some v' = ρ.lookup y := by symm; exact hvlookup
+              _ = some v := hlookupV
+          exact Option.some.inj this
+        subst hvEq
+        exact hvtyp
+      have hvalc :
+          valueConsistentWithRegimeMasked masked predSat ctxᵢ.regime res.qualType μ θ o := by
+        subst ho
+        refine valueConsistentWithRegimeMasked.noTag
+          (by simp [qtypGuardTag, hres, res_expected]) ?_
+        apply deepValueQTypProperty.peClosure x body pbody ρ
+          (VarTypeEnv.toCaptured ctxᵢ.varEnv) paramType returnType ctxᵢ.pc
+          [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
+        · rfl
+        · simp [hres, res_expected]
+        · exact hto
+        · simp
+        · constructor
+          · intro y qt_y k_y hlookup_σ hguard hkR
+            exact hcwr.2.1 y qt_y k_y
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+              hguard hkR
+          · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+              fun y qt hlookup_σ =>
+                let ⟨v, hv, _⟩ := hric.2
+                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                ⟨v, hv⟩,
+              fun y qt v hlookup_σ hlookup_ρ =>
+                let ⟨v', hv', htyp⟩ := hric.2
+                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
+        · intro y qt_y v_y hlookup_σ hlookup_ρ
+          exact hcwr.2.2 y qt_y v_y
+            (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+            hlookup_ρ
+      exact
+        singleRunFinalCleanWitness_of_same_state_param
+          (CtxCons := fun ctx μ ρ θ =>
+            consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+          (ValCons := fun R qt μ θ v =>
+            valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+          (_predSat := predSat) (ctx := ctxᵢ) (res := res) (tm := tm)
+          (μ := μ) (ρ := ρ) (θ := θ)
+          (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+          (o := o) (a := a) (pm := pm)
+          hctxAfter rfl hvaltyp hcwr hvalc hwfTm hwf hric hreg hwfcfg
 
 
 lemma stepFR_fn

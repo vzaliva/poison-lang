@@ -101,3 +101,39 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal
     (μ := μ) (ρ := ρ) (θ := θ) (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
     (o := o) (a := a) (pm := pm)
       hctxAfter rfl (ho ▸ hvtyp θ) hvalc hwfTm hwf hric hreg hcwr hwfcfg
+
+lemma stepFRSingleRunFinalCleanPcTrue_literal_masked
+  (masked : Tag → Prop)
+  (mode : LeanPoison.EvalMode)
+  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e : Expr) (res : TypeResult) (v : Value)
+  (hval : Expr.toValue? e = some v)
+  (hvtyp : ∀ θ, valueHasETyp θ v res.qualType.etyp)
+  (hnotfun : res.qualType.etyp.isFunctionType = false)
+  (hpredNo : res.qualType.pred = Predicate.noPred)
+  (hctxAfter : ctxAfter ctx res = ctx) :
+  StepFRSingleRunFinalCleanPcTrueParam
+    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+    mode ctx e res predSat tm := by
+  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg _hRbound hcwr a pm hwfcfg ht _hpc
+  have ⟨hcf, ho⟩ := terminatesTo_literal_inv' mode e v hval
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+  subst hcf
+  have hvalc :
+      valueConsistentWithRegimeMasked masked predSat ctx.regime res.qualType μ θ o := by
+    exact valueConsistentWithRegimeMasked.noTag
+      (by simp [qtypGuardTag, hpredNo])
+      (ho ▸ closureCapturedVarsRegimeMasked_nonClosure_of_nonFunctionType
+        (hvtyp θ) hnotfun)
+  exact
+    singleRunFinalCleanWitness_of_same_state_param
+      (CtxCons := fun ctx μ ρ θ =>
+        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+      (ValCons := fun R qt μ θ v =>
+        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+      (_predSat := predSat) (ctx := ctx) (res := res) (tm := tm)
+      (μ := μ) (ρ := ρ) (θ := θ)
+      (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+      (o := o) (a := a) (pm := pm)
+      hctxAfter rfl (ho ▸ hvtyp θ) hcwr hvalc hwfTm hwf hric hreg hwfcfg
