@@ -198,124 +198,95 @@ story may partially collapse into the same implementation step.
 The active plan now focuses only on the remaining mode-3/mode-4 proof
 work.
 
-### 6.1 Why the current `PredSatLaws` are insufficient
+### 6.1 Why the current proof-only path stops
 
-The existing `predSat_mem_noPred_compat` theorem already proves
-**memory-independence**:
+The current `PredSatLaws.match_iff` bridge is inherently
+owner-witness-specific: it connects one successful `matchGuard` check
+to the particular runtime value that was actually checked.
 
-    ∀ k μ μ' v, predSat k μ v ↔ predSat k μ' v
+That is enough for:
 
-So for fixed tag and value, the memory parameter is already irrelevant.
+- current variables that themselves witness the match, and
+- current memory entries reachable through the reference-rooted
+  owner-witness shape.
 
-The remaining question is whether `predSat` is also
-**value-independent**:
+It is not enough for the full active-tag mode-3 branch obligation,
+because the branch-local regime insertion for `k` must justify
+regime-consistency for all same-tag entries now made active, including:
 
-    ∀ k μ v₁ v₂, predSat k μ v₁ ↔ predSat k μ v₂
+- closure-captured values, and
+- current-memory entries that are orphaned from any current reference
+  root.
 
-There is no current reusable law in `PredSatLaws` that gives this.
-`PredSatLaws.match_iff` and `mem_monotone` only constrain:
+Since predicate satisfaction is value-sensitive, one owner witness
+cannot in general justify all of those other entries.  So the remaining
+step-6 gap is not just missing proof plumbing; it is a design-level
+problem about how tags are allowed to survive and be re-used.
 
-- relation to a matched current-scope owner witness, and
-- memory changes for a fixed value.
+### 6.2 Viable solution families
 
-In particular, `match_iff` never directly relates two different values
-at the same tag: its owner-witness premise binds `v` to one concrete
-runtime lookup shape.
+At this point the remaining plausible directions are structural, not
+proof-axiomatic.
 
-### 6.2 Where the current owner-witness bridge stops
+\textbf{A. Repair the tag lifecycle in the typechecker/spec.}
 
-For current variable entries, and for reference-rooted memory witnesses
-that fit the second owner-witness disjunct of `match_iff`, the branch
-boolean from `matchGuard` already gives the needed `predSat` fact for
-that runtime witness.
+The goal here is to prevent tags whose regime entry has been dropped
+from remaining re-matchable later as active in-bound tags.  Candidate
+mechanisms include:
 
-That does **not** cover the whole active-tag mode-3 obligation:
+- scrubbing dropped tags from joined predicates and related proof
+  surfaces,
+- or retagging surviving predicates with fresh out-of-bound tags after
+  joins, so later re-checks do not reactivate an old in-bound hole.
 
-- closures are outside the direct reach of `match_iff`, because
-  `closureCapturedVarsRegime` ranges over captured values in `ρcap`
-- same-tag current-memory entries are still a gap when they are
-  **orphaned** from any current reference root and therefore cannot be
-  fed to the owner-witness premise
+Any such design has to account for all places tags can survive:
 
-So the problem is genuinely multi-entry, not just “find the right owner
-witness”.
+- current `varEnv` entries,
+- joined `memEnv` entries,
+- and closure-carried typing data.
 
-### 6.3 Recommended coherence repair
+This is not an implementation bug relative to the current Ott rules.
+The existing `if_depoison_*_R_unknown` rules already type the branches
+under `R[k |-> true]` / `R[k |-> false]` and rejoin with `JoinR`; the
+question is whether the surrounding type/tag lifecycle needs a spec
+change so dropped tags do not remain reusable in the wrong shape.
 
-The recommended path is to strengthen `PredSatLaws` with
-`value_independent : ∀ k μ v₁ v₂, predSat k μ v₁ ↔ predSat k μ v₂`.
+\textbf{B. Redesign tag ownership.}
 
-Combined with the existing memory-independence, this collapses `predSat`
-to a tag-only fact for proof purposes.  That gives the missing bridge
-from one successful owner witness to:
+The deeper alternative is to make a tag name one live predicate
+instance (or one coherent owner family), rather than an arbitrary set
+of values carrying the same predicate descriptor.  In that world a
+single `matchGuard` owner witness could plausibly justify the active-tag
+branch insertion.
 
-- same-tag current variables
-- same-tag current memory entries that survive the join
-- closure-captured variables
+This would preserve value-sensitive predicates, but it is a much larger
+design shift.  It likely touches:
 
-This is a real premise-strengthening, because
-`TypeSystemEnforcesFaultRobustness_spec`,
-`TypeSystemEnforcesFaultRobustness_spec_ioFree`, and the step theorems
-quantify over `PredSatLaws`.  But it does **not** change the stable
-boundary signatures in Section 7.2.
+- tag generation / freshness,
+- copying and transport of predicates across bindings and memory,
+- and the way joins preserve or merge predicate tags.
 
-This also matches the role of `PredSat` described in
-`doc/poison-lang-description.tex`: it is a proof-side abstract
-assumption used to enforce consistency between runtime behaviour and
-typing predicates, not an implemented predicate evaluator.  So adding
-`value_independent` is a proof-modeling choice, not a runtime semantics
-change.
+### 6.3 Recommended next design step
 
-The code/API blast radius inside the current repo appears low: the
-existing proof code projects `.match_iff` and `.mem_monotone`, but does
-not appear to construct or destruct `PredSatLaws` in a broad way.
-The proof-engineering cost is still medium, because the active-tag
-branch will need new coherence lemmas for `qtypPredHolds`,
-`varsRegime`, `locsRegime`, `capturedVarsRegimeProperty`,
-`closureCapturedVarsRegime`, and the associated member-evidence
-wrappers, including masked variants.
+The recommended next step is a bounded design investigation of solution
+family A before any more proof work:
 
-### 6.4 Rejected fallback
+(a) catalogue exactly where a dropped tag can survive and later be
+    re-matched (`varEnv`, joined `memEnv`, closure typing data, etc.),
+(b) determine whether scrub or retag is enough, or whether the current
+    `varEnv` treatment forces a larger judgment/interface change,
+(c) compare the candidate repair against the Ott rules and write down
+    the minimal spec/typechecker change that removes in-bound-`none`
+    re-use,
+(d) only after that, return to the step-6 proof plan for mode 3, with
+    mode 4 remaining the lower-risk follow-on.
 
-The alternative typechecker path is to clear predicates whenever
-`joinRegimes` drops a tag, so the in-bound-`none` active-tag situation
-never arises.
-
-That would avoid the `PredSat` strengthening, but it loses precision and
-has a much larger proof blast radius.  The existing proof surface
-already contains many direct lemmas about `joinPredicates`,
-`joinMemEnvsStrong`, and `joinRegimes` (especially in `StepFR.lean`),
-so this is not just one local preservation repair.
-
-### 6.5 Execution plan
-
-Step 6 remains paused for review pending approval of the
-value-independence approach.  Because the repo contains no concrete
-in-tree `predSat` implementation, that approval is primarily about
-whether this stronger proof-side axiom matches the intended modeling
-stance from `doc/poison-lang-description.tex`.
-
-If approved, the concrete steps are:
-
-(a) Add `value_independent : ∀ k μ v₁ v₂, predSat k μ v₁ ↔
-    predSat k μ v₂` to `PredSatLaws`.
-(b) Derive `predSat_tag_only : ∀ k μ₁ μ₂ v₁ v₂, predSat k μ₁
-    v₁ ↔ predSat k μ₂ v₂` from `mem_monotone` + `value_independent`.
-(c1) Derive the local helper lemmas that turn `predSat_tag_only`
-     into the `qtypPredHolds` / `varsRegime` / `locsRegime`
-     coherence facts needed by the active-tag mode-3 branch.
-(c2) Derive the closure/captured-variable coherence layer:
-     `capturedVarsRegimeProperty`,
-     `closureCapturedVarsRegime`, and the associated member-evidence
-     wrappers (including masked variants).
-(d) Complete the masked single-run theorem for mode 3.
-(e) Complete mode 4 as the lower-risk follow-on.  Mode 4 should be
-    planned as simpler than mode 3: it shares the conservative join
-    back-half, but it avoids the active-tag regime-growth issue because
-    `matchGuard` failed.  Reuse mode-1 / mode-2 front-half proof
-    structure where it actually fits, and if reusable join / clean-back
-    lemmas are currently trapped in `StepFRApp.lean`, move them into
-    `StepFR.lean` rather than duplicating them in the `ite` proof.
+Mode 4 should still be planned as simpler than mode 3: it shares the
+conservative join back-half, but it avoids the active-tag regime-growth
+issue because `matchGuard` failed.  Reuse mode-1 / mode-2 front-half
+proof structure where it actually fits, and if reusable join /
+clean-back lemmas are currently trapped in `StepFRApp.lean`, move them
+into `StepFR.lean` rather than duplicating them in the `ite` proof.
 
 ## 7. Implementation Constraints
 
