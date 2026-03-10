@@ -239,7 +239,7 @@ private lemma tagEnvConsistentWithRegimeMasked_weaken
   | inr hlookup =>
       exact Or.inr hlookup
 
-private lemma tagEnvConsistentWithRegimeMasked_insert_true
+lemma tagEnvConsistentWithRegimeMasked_insert_true
     (masked : Tag → Prop)
     (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
     (h : tagEnvConsistentWithRegimeMasked masked tagEnv R)
@@ -258,7 +258,7 @@ private lemma tagEnvConsistentWithRegimeMasked_insert_true
       exact hget
     exact h k' deps' hget'
 
-private lemma tagEnvConsistentWithRegimeMasked_insert_false
+lemma tagEnvConsistentWithRegimeMasked_insert_false
     (masked : Tag → Prop)
     (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
     (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :

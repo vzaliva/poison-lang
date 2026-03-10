@@ -604,10 +604,20 @@ Current implementation status on this branch:
       Current exported helpers include the pure-expression witness from
       successful `matchGuard`, the true-branch runtime-instantiation
       transport, and a public runtime branch-alignment theorem.
-   3. The remaining live task is the concrete masked single-run `ite`
-      proof in `FaultRobustnessProofs.lean`.
+   3. In the concrete masked single-run `ite` proof, mode 1 and mode 2
+      now compile without new blockers.
+   4. The remaining live gap is concentrated in the join cases (mode 3
+      and mode 4): the proof still needs a reusable clean-location
+      back-transport helper from the final joined result to the branch
+      result actually used to discharge
+      `PreservesInheritedFinalCleanLocsOneRun`.
+   5. The next implementation step is therefore narrower than “finish
+      the theorem directly”:
+      first prove that join-case clean-location helper, then complete
+      mode 3 / mode 4 on top of it.
 
-   Step 6 remains in progress, but it is back on the approved plan.
+   Step 6 remains in progress.  This is a localized plan adjustment
+   inside the approved path, not a new Section 7.3 review stop.
 
 ## 7. Implementation Constraints
 

@@ -825,7 +825,7 @@ lemma matchGuard_ok_toPExpr?_some
   | ok conditionPExpr =>
       exact ⟨conditionPExpr, Expr_toPExpr?_eq_some_of_toPExpr_ok cond conditionPExpr hcond⟩
 
-private lemma qtypCleanUnder_transport_pure_regime_of_toPExpr
+lemma qtypCleanUnder_transport_pure_regime_of_toPExpr
     (ctx : TypeContext) (e : Expr) (pe : PExpr) (fuel : Nat) (res : TypeResult)
     (hpe : Expr.toPExpr? e = some pe)
     (htc : typecheckExpr .ioFree { ctx with pureCtx := true } e fuel = .ok res) :
@@ -2072,7 +2072,7 @@ private lemma owner_in_ctx_to_runtime_owner_witness
 
 /-- If `matchGuard` succeeds at `(k,deps)`, there is a runtime owner witness for tag `k`
     under any runtime that instantiates `ctx`. -/
-private lemma matchGuard_ok_runtime_owner
+lemma matchGuard_ok_runtime_owner
     (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
     (cond : Expr) (k : Tag) (deps : Deps)
     {fuel : Nat}
@@ -2154,7 +2154,7 @@ lemma matchGuard_tag_in_bound
       `∃ v, ownerWitnessAtRuntime owner μ ρ θ v`
     This helper itself does not need `runtimeInstantiatesCtx`; that premise
     is expected while constructing `howner` via the bridge lemmas. -/
-private lemma guard_branch_alignment
+lemma guard_branch_alignment
     (predSat : PredSat) (tm : TagMeaning) (mode : LeanPoison.EvalMode)
     (ctx : TypeContext) (μ₀ : Memory) (ρ₀ : VarEnv) (θ₀ : RealizationMap)
     (l₀ : Address) (pm₀ : Bool)
