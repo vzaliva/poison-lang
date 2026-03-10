@@ -54,87 +54,6 @@ def StepFRVarCtxToValCons
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   VarCtxToValCons CtxCons ValCons
 
-private def capturedVarsRegimePropertyMasked
-    (masked : Tag → Prop) (predSat : PredSat) (R : Regime) (μ : Memory)
-    (σcap : CapturedVarEnv) (ρcap : VarEnv) : Prop :=
-  ∀ (x : Name) (qt_x : QTyp) (k_x : Tag),
-    σcap.lookup x = some qt_x →
-    qtypGuardTag qt_x = some k_x →
-    R.lookup? k_x ≠ none →
-    masked k_x ∨ varsRegime predSat R μ ρcap (x, qt_x)
-
-private def closureCapturedVarsRegimeMasked
-    (masked : Tag → Prop) (predSat : PredSat) (R : Regime)
-    (qt : QTyp) (μ : Memory) (θ : RealizationMap) (v : Value) : Prop :=
-  deepValueQTypProperty
-    (fun σcap ρcap =>
-      capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap ∧
-      capturedVarsTypingProperty θ σcap ρcap)
-    qt v
-
-private def consistentWithRegimeMasked
-    (masked : Tag → Prop) (predSat : PredSat) (R : Regime) (ctx : TypeContext)
-    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
-  (∀ l qt k, ctx.memEnv.lookup l = some qt →
-     qtypGuardTag qt = some k →
-     R.lookup? k ≠ none →
-     masked k ∨ locsRegime predSat R μ θ (l, qt)) ∧
-  (∀ x qt k, ctx.varEnv.lookup x = some qt →
-     qtypGuardTag qt = some k →
-     R.lookup? k ≠ none →
-     masked k ∨ varsRegime predSat R μ ρ (x, qt)) ∧
-  (∀ x qt v, ctx.varEnv.lookup x = some qt →
-     ρ.lookup x = some v →
-     closureCapturedVarsRegimeMasked masked predSat R qt μ θ v)
-
-private inductive valueConsistentWithRegimeMasked
-    (masked : Tag → Prop) (predSat : PredSat) (R : Regime)
-    (qt : QTyp) (μ : Memory) (θ : RealizationMap) (v : Value) : Prop where
-  | noTag
-      (htag : qtypGuardTag qt = none)
-      (hcap : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
-      valueConsistentWithRegimeMasked masked predSat R qt μ θ v
-  | guardOnly_ok (k : Tag)
-      (hgo : qt.pred = Predicate.guardOnly k)
-      (hcap : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
-      valueConsistentWithRegimeMasked masked predSat R qt μ θ v
-  | maskedTag (k : Tag)
-      (htag : qtypGuardTag qt = some k)
-      (hmasked : masked k)
-      (hcap : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
-      valueConsistentWithRegimeMasked masked predSat R qt μ θ v
-  | notInRegime (k : Tag)
-      (htag : qtypGuardTag qt = some k)
-      (hknone : R.lookup? k = none)
-      (hcap : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
-      valueConsistentWithRegimeMasked masked predSat R qt μ θ v
-  | inRegimeFalse (k : Tag)
-      (htag : qtypGuardTag qt = some k)
-      (hkfalse : R.lookup? k = some false)
-      (hnot : ¬ qtypPredHolds predSat qt μ v)
-      (hcap : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
-      valueConsistentWithRegimeMasked masked predSat R qt μ θ v
-  | inRegimeTrue (k : Tag)
-      (htag : qtypGuardTag qt = some k)
-      (hktrue : R.lookup? k = some true)
-      (hholds : qtypPredHolds predSat qt μ v)
-      (hcap : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
-      valueConsistentWithRegimeMasked masked predSat R qt μ θ v
-
-private lemma closureCapturedVarsRegimeMasked_transport_etyp
-  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
-  {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
-  (hetyp : qt.etyp = qt'.etyp)
-  (h : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
-  closureCapturedVarsRegimeMasked masked predSat R qt' μ θ v := by
-  cases h with
-  | nonClosure hv hpe =>
-      exact .nonClosure hv hpe
-  | closure xp body ρcap σcap st1 st2 p tcls hval hetyp_eq hmem hP hrec =>
-      exact .closure xp body ρcap σcap st1 st2 p tcls hval (hetyp ▸ hetyp_eq) hmem hP hrec
-  | peClosure xp body pbody ρcap σcap st1 st2 p tcls hval hetyp_eq hpure hmem hP hrec =>
-      exact .peClosure xp body pbody ρcap σcap st1 st2 p tcls hval (hetyp ▸ hetyp_eq) hpure hmem hP hrec
-
 private lemma var_valueConsistentWithRegime_of_typecheck
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (name : Name) (res : TypeResult)
@@ -623,6 +542,23 @@ theorem stepFRVar_ctxToValCons_unmasked
   intro ctx name' res' μ ρ θ v htc' hρ hctxCons
   simpa [StepFRVarCtxToValCons] using
     var_valueConsistentWithRegime_of_typecheck
+      (ctxᵢ := ctx) (predSat := predSat) (name := name') (res := res')
+      (μ := μ) (ρ := ρ) (θ := θ) (v := v)
+      htc' hρ hctxCons
+
+theorem stepFRVar_ctxToValCons_masked
+  (masked : Tag → Prop) (predSat : PredSat) :
+  StepFRVarCtxToValCons
+    (fun ctx μ ρ θ =>
+      _root_.consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v =>
+      _root_.valueConsistentWithRegimeMasked masked predSat R qt μ θ v) := by
+  intro ctx name' res' μ ρ θ v htc' hρ hctxCons
+  simpa [StepFRVarCtxToValCons, _root_.consistentWithRegimeMasked,
+    _root_.valueConsistentWithRegimeMasked, consistentWithRegimeMasked,
+    valueConsistentWithRegimeMasked] using
+    var_valueConsistentWithRegimeMasked_of_typecheck
+      (masked := masked)
       (ctxᵢ := ctx) (predSat := predSat) (name := name') (res := res')
       (μ := μ) (ρ := ρ) (θ := θ) (v := v)
       htc' hρ hctxCons

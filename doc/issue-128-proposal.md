@@ -667,10 +667,10 @@ Current implementation status on this branch:
    over `consistentWithRegimeMasked` /
    `valueConsistentWithRegimeMasked`, and abstract only the complex
    recursive hook surface that already exists for `var`, `deref`,
-   `newRef`, `seq`, `vlet`, `assign`, and `app`.  The next concrete
-   implementation step is therefore to move the masked consistency
-   definitions into shared scope and export the masked leaf witnesses
-   needed by that more concrete single-run mode-3 rollout.
+   `newRef`, `seq`, `vlet`, `assign`, and `app`.  The first part of
+   that is now complete: the masked consistency definitions live in
+   shared scope in `StepFR.lean`, and the masked `var` hook is
+   exported from `StepFRVar.lean`.
 
    Additional implementation note from the first `FaultRobustnessProofs`
    pass: the generalized theorem still needs a small result-side hook
@@ -680,7 +680,9 @@ Current implementation status on this branch:
    `CtxCons` / `ValCons`, but the generalized theorem also has to
    *construct* `ValCons` directly for these non-recursive result shapes.
    This is a local hook-bundle growth item, not a new semantic blocker
-   or Section 7.3 stop.
+   or Section 7.3 stop.  The next concrete implementation step is to
+   add those simple masked result hooks and then write the concrete
+   masked single-run mode-3 theorem in `FaultRobustnessProofs.lean`.
 
 ## 7. Implementation Constraints
 
