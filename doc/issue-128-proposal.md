@@ -376,6 +376,13 @@ The live blocker for step 6 is now this:
 - In that subcase, inserting `k ↦ true` / `k ↦ false` makes `k`
   active rather than masked, so the approved local masked path no
   longer avoids the semantic regime-growth obligation.
+- This is a branch-local issue, not evidence that the post-`if` regime
+  is “failing to reset.”  The Ott `if_depoison_*_R_unknown` rules
+  explicitly type the two branches under `R[k |-> true]` and
+  `R[k |-> false]`, then rejoin them with `JoinR` in the conclusion.
+  The problem is that when `k < R.bound`, those branch-local inserts
+  become visible to `lookup?` and therefore activate regime-consistency
+  obligations during the branch proofs.
 - This is not a single-owner corner case.  Because same-tag predicates
   survive through `joinPredicates`, both-sided memory joins can retain
   them, `ctxAfter` leaves `varEnv` unchanged, and `joinRegimes` can drop
@@ -511,8 +518,8 @@ The live blocker for step 6 is now this:
        `StepFR.lean`), so this is not just one local preservation
        repair.
 
-   **Updated assessment:** The value-independence approach (item 13)
-   is still the recommended path forward.  It is stronger than the
+   **Recommended path.**  The value-independence approach (item 13) is
+   still the recommended path forward.  It is stronger than the
    minimal semantic fact strictly needed, but it is the smallest clean
    premise extension I found that simultaneously resolves:
 
@@ -542,7 +549,15 @@ The live blocker for step 6 is now this:
         `capturedVarsRegimeProperty`,
         `closureCapturedVarsRegime`, and the associated member-evidence
         wrappers (including masked variants).
-   (d) Complete the masked single-run theorem for mode 3 and mode 4.
+   (d) Complete the masked single-run theorem for mode 3.
+   (e) Complete mode 4 as the lower-risk follow-on.  Mode 4 should be
+       planned as simpler than mode 3: it shares the conservative join
+       back-half, but it avoids the active-tag regime-growth issue
+       because `matchGuard` failed.  Reuse mode-1 / mode-2 front-half
+       proof structure where it actually fits, and if reusable join /
+       clean-back lemmas are currently trapped in `StepFRApp.lean`,
+       move them into `StepFR.lean` rather than duplicating them in the
+       `ite` proof.
 
 ## 7. Implementation Constraints
 
@@ -636,3 +651,15 @@ That reasoning is still valid as a default, but after the rebase it is
 no longer sufficient by itself.  The clean-lookup blocker and the
 tag-reuse / closure-growth questions now determine whether symmetry is
 worth keeping.
+
+### 8.4 Summary of completed steps 1--5
+
+The completed early steps established the current starting point for the
+remaining design work:
+
+- the clean-lookup theorem was split and repaired
+- the bounded-tag / `R.bound` bridge was restored
+- the local masked preservation layer for
+  `regimeConsistentWithCtx` landed
+- the broad generic `consistentWithRegime_insert_regime_*` direction was
+  deferred in favour of the local masked path for step 6
