@@ -489,15 +489,46 @@ Current implementation status on this branch:
      with the existing public theorem rebuilt as the `masked := False`
      wrapper.
 
+   Newly confirmed blocker:
+
+   - The paired `CtxCons` / `ValCons` lift is not sufficient by itself
+     for the concrete masked mode-3 theorem.
+   - The recursive single-run framework still takes plain
+     `regimeConsistentWithCtx` as a separate premise, and mode-3 branch
+     contexts `ctxTrue` / `ctxFalse'` can fail that premise when the
+     masked guard tag `k` lies at or above `ctx.regime.bound`.
+   - This is the same out-of-bound masked-tag issue already seen on the
+     typechecking side, now resurfacing on the single-run recursion
+     boundary.
+
+   Approved adjustment:
+
+   - Do not add a third abstract `RegCons` parameter beside
+     `CtxCons` / `ValCons`.
+   - Instead, lift the private single-run framework directly onto
+     `regimeConsistentWithCtxMasked mask`, reusing the same masking
+     predicate already carried by
+     `consistentWithRegimeMasked mask` /
+     `valueConsistentWithRegimeMasked mask`.
+   - Recover the existing unmasked public theorem as the
+     `mask := fun _ => False` specialization.
+
    Remaining work, in current risk-first order:
 
-   1. use the masked recursive family to close the concrete single-run
-      mode-3 `ite` theorem in `FaultRobustnessProofs.lean`.
+   1. Extend the private masked single-run framework so the recursive
+      theorem takes `regimeConsistentWithCtxMasked mask` at branch start
+      instead of plain `regimeConsistentWithCtx`.
+   2. Re-thread the already lifted recursive combinator surface through
+      that masked branch-start premise.
+   3. Re-run the concrete mode-3 `ite` proof in
+      `FaultRobustnessProofs.lean` against the updated private
+      framework.
 
-   Step 6 should still pause for review if this masked/local path turns
-   out to require changing the stable boundary definitions in Section
-   7.2, or if the concrete masked mode-3 theorem exposes a new
-   obstruction beyond proof-engineering scope.
+   Step 6 is therefore paused again for review.  This does not require
+   changing the stable Section 7.2 boundary definitions, but it is a
+   confirmed scope increase inside the private recursive framework and
+   should be treated as a Section 7.3 planning adjustment rather than a
+   local tactic-level failure.
 
 ## 7. Implementation Constraints
 
