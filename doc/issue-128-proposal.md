@@ -527,20 +527,87 @@ Current implementation status on this branch:
    - Recover the existing unmasked public theorem as the
      `mask := fun _ => False` specialization.
 
-   Remaining work, in current risk-first order:
+   Completed masked-regime lift batch:
 
-   1. Lift the remaining recursive single-run case wrappers onto the
-      new masked branch-start premise, starting with the first real
-      recursive combinator (`seq`).
-   2. Re-run the concrete mode-3 `ite` proof in
-      `FaultRobustnessProofs.lean` against the updated private
-      framework.
+   - The `_maskedReg` wrapper lift is now complete for all remaining
+     per-constructor single-run files:
+     `seq`, `var`, `deref`, `newRef`, `vlet`, `assign`, and `app`.
+   - `StepFRAssign.lean` has the needed masked-regime post-transport
+     companion layer:
+     `AssignCtxConsPostTransportMaskedReg`,
+     `assign_single_run_post_transport_common_maskedReg`,
+     `consistentWithRegimeMasked_assign_post_transport_maskedReg`, and
+     `stepFRSingleRunFinalCleanPcTrue_assign_maskedReg`.
+   - `StepFRApp.lean` now also has the masked-regime single-run lift in
+     place:
+     `stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg`,
+     `stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg`,
+     `stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg`, and
+     `stepFRSingleRunFinalCleanPcTrue_app_maskedReg`.
 
-   Step 6 is therefore paused again for review.  This does not require
-   changing the stable Section 7.2 boundary definitions, but it is a
-   confirmed scope increase inside the private recursive framework and
-   should be treated as a Section 7.3 planning adjustment rather than a
-   local tactic-level failure.
+   Confirmed scope correction:
+
+   - The earlier expectation that single-run `app` would require a
+     broad masked-regime lift of the local closure/join helper family
+     was too pessimistic.
+   - For the single-run path, the needed work was narrower: add the
+     masked-regime copies of the existing single-run parametric `app`
+     theorems and thread the masked regime premise through them.
+   - This reduced scope rather than increasing it, and did not trigger a
+     new Section 7.3 review stop.
+
+   Current theorem-level checkpoint:
+
+   - `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`
+     is now genuinely lifted onto the masked-regime interface:
+     it targets `StepFRSingleRunFinalCleanPcTrueMaskedRegParam`, the
+     public unmasked theorem is rebuilt from the `mask := False`
+     specialization, and the strong-induction IH now ranges over
+     `masked'` so recursive mode-3 calls can enlarge the mask locally.
+
+   Newly confirmed obstruction:
+
+   - The current private theorem target is too strong for arbitrary
+     `masked`.
+   - In a nested `ite` mode-1 / mode-2 subcase, if `matchGuard`
+     returns a tag `k` with `ctx.regime.lookup? k = some b` and
+     `masked k`, then `consistentWithRegimeMasked masked` allows the
+     proof to discharge the required loc/var regime obligation by the
+     `masked k` branch alone.
+   - That is not enough to recover the runtime branch-alignment fact:
+     the proof still needs the semantic evidence that `predSat k`
+     matches the active regime interpretation, and that evidence is
+     exactly what masking suppresses.
+   - So the problem is not merely helper visibility from
+     `StepFRIte.lean`; there is a theorem-target gap.  A simple literal
+     then/else branch gives the obstruction shape: typechecking can be in
+     mode 1 from `ctx.regime.lookup? k = some true`, while the masked
+     assumptions alone do not rule out runtime taking the else branch.
+
+   Consequence:
+
+   - Step 6 has reached a Section 7.3 review stop.
+   - The likely repair is to strengthen the private masked recursive
+     theorem with the natural side condition
+     `∀ k, masked k → ctx.regime.lookup? k = none`
+     (or an equivalent invariant saying masked tags are outside the
+     active regime view), and then export or duplicate the small
+     `StepFRIte.lean` helper set needed by the concrete `ite` proof.
+
+   Current step-6 status:
+
+   1. The private masked recursive theorem has been strengthened by the
+      approved `masked -> lookup? = none` side condition.
+   2. The masked-regime premise is now threaded through the shared
+      single-run framework, and the minimal `StepFRIte` helper layer
+      needed by `FaultRobustnessProofs.lean` has been exported.
+      Current exported helpers include the pure-expression witness from
+      successful `matchGuard`, the true-branch runtime-instantiation
+      transport, and a public runtime branch-alignment theorem.
+   3. The remaining live task is the concrete masked single-run `ite`
+      proof in `FaultRobustnessProofs.lean`.
+
+   Step 6 remains in progress, but it is back on the approved plan.
 
 ## 7. Implementation Constraints
 

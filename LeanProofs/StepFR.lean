@@ -796,6 +796,15 @@ lemma regimeBounded_of_monotoneStep (R R' : Regime)
   have h_R_not_none := h_mono.2.2 k h_not_none
   exact h_R_not_none hR_none
 
+lemma masked_lookup_none_of_monotoneStep
+    {masked : Tag → Prop} {R R' : Regime}
+    (hmasked_none : ∀ k, masked k → R.lookup? k = none)
+    (h_mono : Regime.monotoneStep R R') :
+    ∀ k, masked k → R'.lookup? k = none := by
+  intro k hk
+  by_contra hnot
+  exact h_mono.2.2 k hnot (hmasked_none k hk)
+
 -- Bridge lemma: connect spec-indexed consistency to context-indexed consistency
 lemma consistentRegimeSpec_implies_consistentWithRegime
     (predSat : PredSat) (R : Regime) (s : InputSpec) (ctx : TypeContext)
@@ -1574,6 +1583,7 @@ lemma singleRunFinalCleanWitness_of_same_state_maskedReg_param
   (_hwf : wfTypeContext ctx)
   (hric : runtimeInstantiatesCtx ctx μ ρ θ)
   (_hreg : regimeConsistentWithCtxMasked masked ctx)
+  (_hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none)
   (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }) :
   ∃ (θ' : RealizationMap),
     wfExtendsMap θ θ' ∧
@@ -1667,6 +1677,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ ρ θ →
       regimeConsistentWithCtxMasked masked ctx →
+      (∀ k, masked k → ctx.regime.lookup? k = none) →
       regimeBounded ctx.regime →
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),

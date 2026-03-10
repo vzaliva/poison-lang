@@ -691,6 +691,79 @@ theorem stepFRSingleRunFinalCleanPcTrue_deref_param
       (e := e) (fuel' := fuel') (res := res)
       hCtxToVal IH htc
 
+lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
+  (masked : Tag → Prop)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH :
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+      masked
+      (fun ctx μ ρ θ =>
+        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+      (fun R qt μ θ v =>
+        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+      predSat tm (Nat.succ (Nat.succ fuel')))
+  (htc : typecheck .ioFree ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+    masked
+    (fun ctx μ ρ θ =>
+      consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v =>
+      valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+    .ioFree ctxᵢ (Expr.deref e) res predSat tm := by
+  classical
+  have htc' : typecheckDeref .ioFree ctxᵢ e (Nat.succ fuel') = .ok res := by
+    simpa [typecheck, typecheckExpr] using htc
+  obtain ⟨res1, htc1, h_mem, h_tag, h_loc, h_ntag, h_regime⟩ :=
+    typecheckDeref_structure ctxᵢ e (Nat.succ fuel') res htc'
+  have htc1_expr : typecheckExpr .ioFree ctxᵢ e fuel' = .ok res1 := by
+    simpa [Nat.succ_sub_one] using htc1
+  have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hRbound hcwr a pm hwfcfg ht hpc
+  have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e ctxᵢ hwfTm res1 htc1'
+  have hstruct := terminatesTo_deref_inv' e
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+  rcases hstruct with ⟨cfg', a', n, ht_e, hlookup, ho, hmem, hvar, _hnext, _hpm, _hpm_e⟩
+  rcases
+    hIH hpredlaws hwfTm μ ρ θ cfg' (Value.loc a')
+      hθwf hwf hric hregCtx hmasked_none hRbound hcwr a pm hwfcfg ht_e hpc
+    with ⟨θ', hθext, hvloc, hric', hctxCons', _hvalc', hpres'⟩
+  have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
+    simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime]
+  have hvaltyp_final : valueHasETyp θ' o res.qualType.etyp := by
+    subst ho
+    rw [typecheckDeref_etyp_int ctxᵢ e (Nat.succ fuel') res htc']
+    exact valueHasETyp.num n
+  have hric_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf.memory cf.varEnv θ' := by
+    simpa [hctxAfter, hmem, hvar] using hric'
+  have hctxCons_final :
+      consistentWithRegimeMasked masked predSat
+        (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf.memory cf.varEnv θ' := by
+    simpa [hctxAfter, hmem, hvar] using hctxCons'
+  have hvalc_final :
+      valueConsistentWithRegimeMasked masked predSat
+        (ctxAfter ctxᵢ res).regime res.qualType cf.memory θ' o := by
+    subst ho
+    have hlookup_cf : cf.memory.lookup a' = some n := by
+      simpa [hmem] using hlookup
+    exact
+      stepFRDeref_ctxToValCons_masked masked predSat
+        ctxᵢ e res res1 fuel' cf θ' a' n htc' htc1' h_mem hvloc hlookup_cf hctxCons_final
+  have hpres_final :
+      PreservesInheritedFinalCleanLocsOneRun ctxᵢ res μ cf.memory θ θ' := by
+    cases hpres' with
+    | intro hpres_fn =>
+        refine ⟨?_⟩
+        intro l qt_in qt_out hlookup_in hlookup_out hclean_out
+        have hlookup_out1 : res1.memEnv'.lookup l = some qt_out := by
+          simpa [h_mem] using hlookup_out
+        have hclean_out1 : qtypCleanUnder res1.regime' qt_out := by
+          simpa [h_regime] using hclean_out
+        simpa [hmem] using hpres_fn l qt_in qt_out hlookup_in hlookup_out1 hclean_out1
+  refine ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final⟩
+
 lemma stepFRSingleRunFinalCleanPcTrue_deref
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)

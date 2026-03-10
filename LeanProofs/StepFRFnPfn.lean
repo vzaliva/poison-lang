@@ -243,7 +243,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
     rfl
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg _hRbound hcwr a pm hwfcfg ht _hpc
+  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none _hRbound hcwr a pm hwfcfg ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_fn_inv' mode x paramType body returnType
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   subst hcf
@@ -315,7 +315,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
       (μ := μ) (ρ := ρ) (θ := θ)
       (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
       (o := o) (a := a) (pm := pm)
-      hctxAfter rfl hvaltyp hcwr hvalc hwfTm hwf hric hreg hwfcfg
+      hctxAfter rfl hvaltyp hcwr hvalc hwfTm hwf hric hreg hmasked_none hwfcfg
 
 
 lemma stepFRSingleRunFinalCleanPcTrue_pfn
@@ -573,7 +573,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg _hRbound hcwr a pm hwfcfg ht _hpc
+      intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none _hRbound hcwr a pm hwfcfg ht _hpc
       have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
       subst hcf
@@ -649,7 +649,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
           (μ := μ) (ρ := ρ) (θ := θ)
           (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
           (o := o) (a := a) (pm := pm)
-          hctxAfter rfl hvaltyp hcwr hvalc hwfTm hwf hric hreg hwfcfg
+          hctxAfter rfl hvaltyp hcwr hvalc hwfTm hwf hric hreg hmasked_none hwfcfg
 
 
 lemma stepFR_fn

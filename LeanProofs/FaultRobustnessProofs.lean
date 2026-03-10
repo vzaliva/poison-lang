@@ -33,15 +33,28 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
   ∀ fuel res,
     typecheck .ioFree ctxᵢ e fuel = .ok res →
-    StepFRSingleRunFinalCleanPcTrueParam
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+      masked
       (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       .ioFree ctxᵢ e res predSat tm := by
   intro fuel res htc
-  revert e ctxᵢ res htc
+  revert masked e ctxᵢ res htc
   induction fuel using Nat.strong_induction_on with
   | _ n IH =>
-      intro e ctxᵢ res htc
+      intro masked e ctxᵢ res htc
+      have IH' :
+          ∀ m < n, ∀ (masked' : Tag → Prop) (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+            typecheck .ioFree ctx' e' m = .ok res' →
+            StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+              masked'
+              (fun ctx μ ρ θ =>
+                consistentWithRegimeMasked masked' predSat ctx.regime ctx μ ρ θ)
+              (fun R qt μ θ v =>
+                valueConsistentWithRegimeMasked masked' predSat R qt μ θ v)
+              .ioFree ctx' e' res' predSat tm := by
+        intro m hm masked' e' ctx' res' htc'
+        exact IH m hm masked' e' ctx' res' htc'
       cases n with
       | zero =>
           simp [typecheck, typecheckExpr] at htc
@@ -69,7 +82,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
                 simp [ctxAfter, hres, res_expected]
               exact
-                stepFRSingleRunFinalCleanPcTrue_literal_masked
+                stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
                   masked .ioFree ctxᵢ predSat tm Expr.unit res Value.unit hval
                   (fun _ => by simp [hres, res_expected]; exact valueHasETyp.unit)
                   hnotfun hpredNo hctxAfter
@@ -95,7 +108,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
                 simp [ctxAfter, hres, res_expected]
               exact
-                stepFRSingleRunFinalCleanPcTrue_literal_masked
+                stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
                   masked .ioFree ctxᵢ predSat tm (Expr.num k) res (Value.num k) hval
                   (fun _ => by simp [hres, res_expected]; exact valueHasETyp.num k)
                   hnotfun hpredNo hctxAfter
@@ -121,7 +134,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
                 simp [ctxAfter, hres, res_expected]
               exact
-                stepFRSingleRunFinalCleanPcTrue_literal_masked
+                stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
                   masked .ioFree ctxᵢ predSat tm (Expr.bool b) res (Value.bool b) hval
                   (fun _ => by simp [hres, res_expected]; exact valueHasETyp.bool b)
                   hnotfun hpredNo hctxAfter
@@ -147,21 +160,15 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
                 simp [ctxAfter, hres, res_expected]
               exact
-                stepFRSingleRunFinalCleanPcTrue_literal_masked
+                stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
                   masked .ioFree ctxᵢ predSat tm (Expr.str s) res (Value.str s) hval
                   (fun _ => by simp [hres, res_expected]; exact valueHasETyp.str s)
                   hnotfun hpredNo hctxAfter
           | var name =>
               exact
-                stepFRSingleRunFinalCleanPcTrue_var_param
-                  (CtxCons := fun ctx μ ρ θ =>
-                    consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-                  (ValCons := fun R qt μ θ v =>
-                    valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                  .ioFree
-                  (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
-                  (name := name) (res := res) (fuel := fuel)
-                  (hCtxToVal := stepFRVar_ctxToValCons_masked masked predSat)
+                stepFRSingleRunFinalCleanPcTrue_var_maskedReg
+                  masked .ioFree
+                  ctxᵢ predSat tm name res fuel
                   htc
           | op e1 op e2 =>
               cases fuel with
@@ -169,14 +176,17 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr_op_succ, typecheckOp] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_op_masked
+                    stepFRSingleRunFinalCleanPcTrue_op_maskedReg
                       masked ctxᵢ predSat tm e1 e2 op fuel' res
-                      (StepFRSingleRunFinalCleanPcTrueParam_IH_of_induction
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                        masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        predSat tm (Nat.succ (Nat.succ fuel')) IH)
+                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        (fun m hm e' ctx' res' htc' =>
+                          IH' m hm masked e' ctx' res' htc'))
                       htc
           | unaryop uop e =>
               cases fuel with
@@ -184,14 +194,17 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_unaryop_masked
+                    stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg
                       masked ctxᵢ predSat tm e uop fuel' res
-                      (StepFRSingleRunFinalCleanPcTrueParam_IH_of_induction
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                        masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        predSat tm (Nat.succ (Nat.succ fuel')) IH)
+                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        (fun m hm e' ctx' res' htc' =>
+                          IH' m hm masked e' ctx' res' htc'))
                       htc
           | ite e1 e2 e3 =>
               -- Deferred on this branch: unary `ite` remains blocked by the known
@@ -203,21 +216,17 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr, typecheckNewRef] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_newRef_param
-                      (CtxCons := fun ctx μ ρ θ =>
-                        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-                      (ValCons := fun R qt μ θ v =>
-                        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                      (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
-                      (IH := StepFRSingleRunFinalCleanPcTrueParam_IH_of_induction
+                    stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
+                      masked ctxᵢ predSat tm e fuel' res
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                        masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        predSat tm (Nat.succ (Nat.succ fuel')) IH)
-                      (hCtxCons_finish := stepFRNewRef_ctxConsFinish_masked masked predSat tm)
-                      (hValCons_result := stepFRNewRef_resultValCons_masked masked predSat)
-                      (e := e) (fuel' := fuel') (res := res)
+                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        (fun m hm e' ctx' res' htc' =>
+                          IH' m hm masked e' ctx' res' htc'))
                       htc
           | assign e1 e2 =>
               cases fuel with
@@ -225,21 +234,17 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr, typecheckAssign] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_assign_param
-                      (CtxCons := fun ctx μ ρ θ =>
-                        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-                      (ValCons := fun R qt μ θ v =>
-                        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                      (ctx := ctxᵢ) (predSat := predSat) (tm := tm)
-                      (IH := StepFRSingleRunFinalCleanPcTrueParam_IH_of_induction
+                    stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
+                      masked ctxᵢ predSat tm e1 e2 fuel' res
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                        masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        predSat tm (Nat.succ (Nat.succ fuel')) IH)
-                      (hCtxConsPost := stepFRAssign_ctxConsPostTransport_masked masked predSat tm)
-                      (hValConsResult := stepFRAssign_resultValCons_masked masked predSat)
-                      (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res)
+                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        (fun m hm e' ctx' res' htc' =>
+                          IH' m hm masked e' ctx' res' htc'))
                       htc
           | deref e =>
               cases fuel with
@@ -247,20 +252,17 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr, typecheckDeref] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_deref_param
-                      (CtxCons := fun ctx μ ρ θ =>
-                        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-                      (ValCons := fun R qt μ θ v =>
-                        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                      (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
-                      (hCtxToVal := stepFRDeref_ctxToValCons_masked masked predSat)
-                      (IH := StepFRSingleRunFinalCleanPcTrueParam_IH_of_induction
+                    stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
+                      masked ctxᵢ predSat tm e fuel' res
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                        masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        predSat tm (Nat.succ (Nat.succ fuel')) IH)
-                      (e := e) (fuel' := fuel') (res := res)
+                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        (fun m hm e' ctx' res' htc' =>
+                          IH' m hm masked e' ctx' res' htc'))
                       htc
           | seq e1 e2 =>
               cases fuel with
@@ -268,19 +270,17 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_seq_param
-                      (CtxCons := fun ctx μ ρ θ =>
-                        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-                      (ValCons := fun R qt μ θ v =>
-                        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                      (ctx := ctxᵢ) (predSat := predSat) (tm := tm)
-                      (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res)
-                      (IH := StepFRSingleRunFinalCleanPcTrueParam_IH_of_induction
+                    stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
+                      masked ctxᵢ predSat tm e1 e2 fuel' res
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                        masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        predSat tm (Nat.succ (Nat.succ fuel')) IH)
+                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        (fun m hm e' ctx' res' htc' =>
+                          IH' m hm masked e' ctx' res' htc'))
                       htc
           | kwhile e1 e2 =>
               -- Deferred on this branch: `kwhile` proof work is intentionally
@@ -292,30 +292,25 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr_vlet_succ, typecheckVlet] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_vlet_param
-                      (CtxCons := fun ctx μ ρ θ =>
-                        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-                      (ValCons := fun R qt μ θ v =>
-                        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                      (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
-                      (hCtxCons_body_start := stepFRVlet_ctxConsBodyStart_masked masked predSat)
-                      (hCtxCons_finish := stepFRVlet_ctxConsFinish_masked masked predSat tm)
-                      (hValCons_finish := stepFRVlet_valConsFinish_masked masked predSat)
-                      (vname := z) (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res)
-                      (IH := StepFRSingleRunFinalCleanPcTrueParam_IH_of_induction
+                    stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
+                      masked ctxᵢ predSat tm z e1 e2 fuel' res
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                        masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        predSat tm (Nat.succ (Nat.succ fuel')) IH)
+                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        (fun m hm e' ctx' res' htc' =>
+                          IH' m hm masked e' ctx' res' htc'))
                       htc
           | fn name ty e1 ty2 =>
               exact
-                stepFRSingleRunFinalCleanPcTrue_fn_masked
+                stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
                   masked .ioFree ctxᵢ predSat tm name ty e1 ty2 fuel res htc
           | pfn name ty e1 ty2 =>
               exact
-                stepFRSingleRunFinalCleanPcTrue_pfn_masked
+                stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
                   masked .ioFree ctxᵢ predSat tm name ty e1 ty2 fuel res htc
           | app e1 e2 =>
               cases fuel with
@@ -323,28 +318,20 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr, typecheckApp] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_app_param
-                      (CtxCons := fun ctx μ ρ θ =>
-                        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-                      (ValCons := fun R qt μ θ v =>
-                        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                      (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
-                      (ctxClosureBodyStart := stepFRApp_closureBodyStart_masked masked predSat tm)
-                      (ctxPClosureBodyStart := stepFRApp_pClosureBodyStart_masked masked predSat tm)
-                      (ctxMember := stepFRApp_memberCtxCons_masked masked predSat)
-                      (ctxJoinMember := stepFRApp_joinCtxConsFromMember_masked masked predSat)
-                      (valBodyResult := stepFRApp_bodyResultValCons_masked masked predSat)
-                      (valJoinMember := stepFRApp_joinValConsFromMember_masked masked predSat)
-                      (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res)
-                      (singleIH := StepFRSingleRunFinalCleanPcTrueParam_IH_of_induction
+                    stepFRSingleRunFinalCleanPcTrue_app_maskedReg
+                      masked ctxᵢ predSat tm e1 e2 fuel' res
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                        masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        predSat tm (Nat.succ (Nat.succ fuel')) IH)
+                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        (fun m hm e' ctx' res' htc' =>
+                          IH' m hm masked e' ctx' res' htc'))
                       htc
           | rand _ | frand _ | printString _ | printInt _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
-              intro _hpredlaws _hwfTm μ ρ θ cf o hθwf hwf hric htagR hRbound hcwr a pm hwfcfg ht hpc
+              intro _hpredlaws _hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht hpc
               have : False := by
                 obtain ⟨fuelT, verboseT, heq⟩ := ht
                 have h_world := congrArg (fun f => f LeanProofs.defaultWorld) heq
@@ -367,6 +354,12 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFr
     TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree
       (masked := fun _ => False) e ctxᵢ predSat tm fuel res htc
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hRbound hcwr a pm hwfcfg ht hpc
+  have hreg_masked :
+      regimeConsistentWithCtxMasked (fun _ => False) ctxᵢ := by
+    constructor
+    · intro k deps hlookup
+      exact Or.inr (hreg.1 k deps hlookup)
+    · exact hreg.2
   have hcwr_masked :
       consistentWithRegimeMasked (fun _ => False) predSat ctxᵢ.regime ctxᵢ μ ρ θ := by
     rcases hcwr with ⟨hlocs, hvars, hclos⟩
@@ -385,8 +378,12 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFr
                     Or.inr (hP x qt_x k_x hlook hguard hkR)),
                   hT⟩)
               hdeep
+  have hmasked_none_init :
+      ∀ k, (fun _ => False) k → ctxᵢ.regime.lookup? k = none := by
+    intro k hk
+    cases hk
   rcases
-      hmasked hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hRbound hcwr_masked a pm hwfcfg ht hpc
+      hmasked hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg_masked hmasked_none_init hRbound hcwr_masked a pm hwfcfg ht hpc
     with ⟨θ', hθext, hvaltyp, hric', hcwr_masked', hvalc_masked', hpres⟩
   have hmasked_none :
       ∀ k, (fun _ => False) k → (ctxAfter ctxᵢ res).regime.lookup? k = none := by

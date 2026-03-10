@@ -812,7 +812,7 @@ private lemma ref_match_from_refMatches
           [] (by intro kd h; cases h) rms hfold (k, deps) hmem
 
 /-- Successful `matchGuard` implies the condition has a pure-expression view. -/
-private lemma matchGuard_ok_toPExpr?_some
+lemma matchGuard_ok_toPExpr?_some
     (ctx : TypeContext) (cond : Expr) (k : Tag) (deps : Deps)
     {fuel : Nat}
     (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps)) :
@@ -841,7 +841,7 @@ private lemma qtypCleanUnder_transport_pure_regime_of_toPExpr
           hpe htc k true hreg
       exact qtypCleanUnder.guard k htag hreg' hnotfun
 
-private lemma runtimeInstantiatesCtx_transport_mem_subset_tag_insert_true
+lemma runtimeInstantiatesCtx_transport_mem_subset_tag_insert_true
     (ctx : TypeContext) (res : TypeResult) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
     (k : Tag) (deps : Deps)
     (hsub : ∀ l, res.memEnv'.contains l → ctx.memEnv.contains l)
@@ -2436,6 +2436,29 @@ private lemma guard_branch_alignment
       have hsat : predSat k μ₀ v := hlookup_true_implies_pred hktrue
       exact hmatch_iff_v.mpr hsat
   cases b <;> cases b' <;> simp at hb'_iff ⊢
+
+/-- Public wrapper for branch-alignment from a successful `matchGuard`.
+    Packages the runtime-owner extraction and the semantic alignment step
+    needed by the single-run `ite` proof. -/
+theorem matchGuard_runtime_branch_alignment
+    (predSat : PredSat) (tm : TagMeaning) (mode : LeanPoison.EvalMode)
+    (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+    (a : Address) (pm : Bool)
+    (hwfTm : wfTagMeaningCtx tm ctx) (hpred : PredSatLaws predSat tm)
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+    (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ)
+    (cond : Expr) (k : Tag) (deps : Deps) (b b' : Bool) (cfg' : Config)
+    {fuel : Nat}
+    (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps))
+    (hregime : ctx.regime.lookup? k = some b)
+    (hterm : terminatesTo mode cond
+      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
+      cfg' (Value.bool b')) :
+    b' = b := by
+  have howner := matchGuard_ok_runtime_owner ctx μ ρ θ cond k deps hmatch hric
+  exact
+    guard_branch_alignment predSat tm mode ctx μ ρ θ a pm
+      hwfTm hpred hcwr cond k deps b b' cfg' howner hmatch hregime hterm
 
 private lemma stepFR_ite_mode1
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)

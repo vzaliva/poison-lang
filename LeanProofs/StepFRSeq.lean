@@ -169,6 +169,119 @@ theorem stepFRSingleRunFinalCleanPcTrue_seq_param
       (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res)
       (IH := IH) htc
 
+lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
+  (masked : Tag → Prop)
+  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH :
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+      masked
+      (fun ctx μ ρ θ =>
+        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+      (fun R qt μ θ v =>
+        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+      predSat tm (Nat.succ (Nat.succ fuel')))
+  (htc : typecheck .ioFree ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+    masked
+    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+    .ioFree ctx (Expr.seq e1 e2) res predSat tm := by
+  have htc' : typecheckSeq .ioFree ctx e1 e2 (Nat.succ fuel') = .ok res := by
+    simpa [typecheck, typecheckExpr_seq_succ] using htc
+  obtain ⟨res1, ctx', htc1, hctx', htc2⟩ :=
+    typecheckSeq_structure ctx e1 e2 (Nat.succ fuel') res htc'
+  have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by
+    simpa [typecheck, Nat.succ_sub_one] using htc1
+  have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res := by
+    simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hRbound hctxCons a pm hwfcfg ht hpc
+  have hstruct := terminatesTo_seq_inv' e1 e2
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+  rcases hstruct with ⟨cfg1, v1, ht_e1, ht_e2, _hpm1, _hpm2⟩
+  have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e1 ctx hwfTm res1 htc1'
+  have hTm1 : wfTagMeaningCtx tm (ctxAfter ctx res1) :=
+    typecheckExpr_preserves_wfTagMeaningCtx tm ctx e1 fuel' res1 hwfTm htc1'
+  have hwf1 : wfTypeContext (ctxAfter ctx res1) :=
+    wfTypeContext_of_wfTypeResult ctx res1
+      (typecheckExpr_preserves_wfTypeResult ctx e1 fuel' res1 hwf htc1')
+  have hreg1 : regimeConsistentWithCtxMasked masked (ctxAfter ctx res1) :=
+    typecheckExpr_preserves_regimeConsistentWithCtxMasked masked ctx e1 fuel' res1 hregCtx htc1'
+  have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved .ioFree e1 _ cfg1 v1 ht_e1 hwfcfg).1
+  rcases
+    hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
+      hθwf hwf hric hregCtx hmasked_none hRbound hctxCons a pm hwfcfg ht_e1 hpc
+    with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1⟩
+  have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
+  have hwfTm' : wfTagMeaningCtx tm ctx' := by
+    simpa [hctx', ctxAfter] using hTm1
+  have hpc1 : ctx'.pc = true := by
+    simpa [hctx', updateCtxFromResult, ctxAfter] using hpc
+  have hmono1 : Regime.monotoneStep ctx.regime res1.regime' :=
+    regime_monotone ctx e1 fuel' res1 htc1'
+  have hmasked_none1 : ∀ k, masked k → (ctxAfter ctx res1).regime.lookup? k = none := by
+    intro k hk
+    simpa [ctxAfter] using
+      masked_lookup_none_of_monotoneStep
+        (R := ctx.regime) (R' := res1.regime')
+        hmasked_none hmono1 k hk
+  have hRbound1 : regimeBounded ctx'.regime := by
+    have hctx'_regime : ctx'.regime = res1.regime' := by
+      simp [hctx', updateCtxFromResult]
+    rw [hctx'_regime]
+    exact regimeBounded_of_monotoneStep ctx.regime res1.regime' hRbound hmono1
+  have hric1' : runtimeInstantiatesCtx ctx' cfg1.memory cfg1.varEnv θ1 := by
+    simpa [hctx', ctxAfter] using hric1
+  have hreg1' : regimeConsistentWithCtxMasked masked ctx' := by
+    simpa [hctx', updateCtxFromResult, ctxAfter] using hreg1
+  have hmasked_none1' : ∀ k, masked k → ctx'.regime.lookup? k = none := by
+    intro k hk
+    simpa [hctx', updateCtxFromResult, ctxAfter] using hmasked_none1 k hk
+  have hctxCons1' :
+      consistentWithRegimeMasked masked predSat ctx'.regime ctx' cfg1.memory cfg1.varEnv θ1 := by
+    simpa [hctx', updateCtxFromResult, ctxAfter] using hctxCons1
+  have hwf1' : wfTypeContext ctx' := by
+    simpa [hctx', ctxAfter] using hwf1
+  have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+    e2 ctx' hwfTm' res htc2'
+  rcases
+    hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
+      hθ1wf hwf1' hric1' hreg1' hmasked_none1' hRbound1 hctxCons1'
+      cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
+    with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2⟩
+  have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
+  have hctxAfter : ctxAfter ctx res = ctxAfter ctx' res := by
+    simp only [ctxAfter, hctx', updateCtxFromResult]
+  have hpres2' :
+      PreservesInheritedFinalCleanLocsOneRun (ctxAfter ctx res1) res cfg1.memory cf.memory θ1 θ2 := by
+    simpa [hctx', updateCtxFromResult, ctxAfter] using hpres2
+  have hclean_back :
+      ∀ l qt_in qt_out,
+        ctx.memEnv.lookup l = some qt_in →
+        res.memEnv'.lookup l = some qt_out →
+        qtypCleanUnder res.regime' qt_out →
+        ∃ qt_mid, res1.memEnv'.lookup l = some qt_mid ∧ qtypCleanUnder res1.regime' qt_mid := by
+    intro l _qt_in qt_out _hlookup_in hlookup_out hclean_out
+    rcases
+      typecheckExpr_clean_lookup_origin_of_pc_true
+        (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
+        (by simpa [hctx', ctxAfter] using htc2')
+        (by simpa [ctxAfter] using hpc)
+        l qt_out hlookup_out hclean_out
+      with ⟨qt_mid, hlookup_mid, hclean_mid⟩
+    exact ⟨qt_mid, by simpa [ctxAfter] using hlookup_mid, by simpa [ctxAfter] using hclean_mid⟩
+  have hpres_final :
+      PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ2 := by
+    exact
+      PreservesInheritedFinalCleanLocsOneRun.compose
+        (ctx := ctx) (res1 := res1) (res2 := res)
+        hclean_back hpres1 hpres2'
+  refine ⟨θ2, hθext, hv2, ?_, ?_, ?_, hpres_final⟩
+  · simpa [hctxAfter] using hric2
+  · simpa [hctxAfter] using hctxCons2
+  · simpa [hctxAfter] using hvalc2
+
 lemma stepFRSingleRunFinalCleanPcTrue_seq
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)

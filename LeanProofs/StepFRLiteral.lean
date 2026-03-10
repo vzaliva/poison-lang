@@ -153,7 +153,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
     mode ctx e res predSat tm := by
-  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg _hRbound hcwr a pm hwfcfg ht _hpc
+  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none _hRbound hcwr a pm hwfcfg ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_literal_inv' mode e v hval
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   subst hcf
@@ -174,4 +174,4 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
       (μ := μ) (ρ := ρ) (θ := θ)
       (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
       (o := o) (a := a) (pm := pm)
-      hctxAfter rfl (ho ▸ hvtyp θ) hcwr hvalc hwfTm hwf hric hreg hwfcfg
+      hctxAfter rfl (ho ▸ hvtyp θ) hcwr hvalc hwfTm hwf hric hreg hmasked_none hwfcfg
