@@ -5252,6 +5252,24 @@ private lemma assign_result_valueConsistentWithRegime
         (by simpa [hEtyp] using valueHasETyp.unit (θ := θ))
         (by simp [hEtyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
 
+private lemma assign_result_valueConsistentWithRegimeMasked
+  (masked : Tag → Prop)
+  (ctx : TypeContext) (predSat : PredSat) (res : TypeResult) (cf : Config)
+  (θ : RealizationMap)
+  (hPred : res.qualType.pred = Predicate.noPred)
+  (hEtyp : res.qualType.etyp = ETyp.unit) :
+  valueConsistentWithRegimeMasked masked predSat (ctxAfter ctx res).regime
+    res.qualType cf.memory θ Value.unit := by
+  refine
+    valueConsistentWithRegimeMasked.noTag
+      (qt := res.qualType) (μ := cf.memory) (v := Value.unit)
+      ?_ ?_
+  · simp [qtypGuardTag, hPred]
+  · exact
+      closureCapturedVarsRegimeMasked_nonClosure_of_nonFunctionType
+        (by simpa [hEtyp] using valueHasETyp.unit (θ := θ))
+        (by simp [hEtyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
+
 private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
@@ -5456,6 +5474,17 @@ theorem stepFRAssign_resultValCons_unmasked
   intro ctx res cf θ hPred hEtyp
   simpa [StepFRAssignResultValCons] using
     assign_result_valueConsistentWithRegime
+      (ctx := ctx) (predSat := predSat) (res := res) (cf := cf) (θ := θ)
+      hPred hEtyp
+
+theorem stepFRAssign_resultValCons_masked
+  (masked : Tag → Prop) (predSat : PredSat) :
+  StepFRAssignResultValCons
+    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v) := by
+  intro ctx res cf θ hPred hEtyp
+  simpa [StepFRAssignResultValCons] using
+    assign_result_valueConsistentWithRegimeMasked
+      (masked := masked)
       (ctx := ctx) (predSat := predSat) (res := res) (cf := cf) (θ := θ)
       hPred hEtyp
 

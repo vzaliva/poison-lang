@@ -2369,6 +2369,241 @@ lemma memberCvcrEvidence_transport_μ_θ
   exact closureCapturedVarsRegime_transport_μ_θ hpred_compat hθ
     (h y qt_y v_y hlookup_σ hlookup_ρ)
 
+lemma capturedVarsRegimePropertyMasked_transport_lookup_back
+  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime} {μ : Memory}
+  (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
+  {σcap : CapturedVarEnv} {ρcap : VarEnv}
+  (h : capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap) :
+  capturedVarsRegimePropertyMasked masked predSat R' μ σcap ρcap := by
+  intro x qt_x k_x hlook hguard hkR'
+  cases hkR'some : R'.lookup? k_x with
+  | none =>
+      exact (hkR' hkR'some).elim
+  | some b =>
+      have hkR : R.lookup? k_x ≠ none := by
+        intro hnone
+        have hback := hlookup_back k_x b hkR'some
+        simp [hnone] at hback
+      have hmasked_or_hvr := h x qt_x k_x hlook hguard hkR
+      cases hmasked_or_hvr with
+      | inl hmasked =>
+          exact Or.inl hmasked
+      | inr hvr =>
+          exact Or.inr <|
+            varsRegime_transport_active_lookup_back
+              (predSat := predSat) (R := R) (R' := R')
+              (μ := μ) (ρ := ρcap) (entry := (x, qt_x))
+              hlookup_back hguard hkR'some hvr
+
+lemma closureCapturedVarsRegimeMasked_transport_lookup_back
+  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime}
+  {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
+  (h : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
+  closureCapturedVarsRegimeMasked masked predSat R' qt μ θ v := by
+  exact
+    deepValueQTypProperty_mono
+      (fun σcap ρcap ⟨hP, hT⟩ =>
+        ⟨capturedVarsRegimePropertyMasked_transport_lookup_back
+            (masked := masked) (predSat := predSat) (R := R) (R' := R')
+            (μ := μ) hlookup_back hP,
+          hT⟩)
+      h
+
+lemma capturedVarsRegimePropertyMasked_monotone
+  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime} {μ : Memory}
+  (h_mono : Regime.monotoneStep R R')
+  {σcap : CapturedVarEnv} {ρcap : VarEnv}
+  (h : capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap) :
+  capturedVarsRegimePropertyMasked masked predSat R' μ σcap ρcap := by
+  intro x qt_x k_x hlook hguard hkR'
+  have hkR : R.lookup? k_x ≠ none := fun hnone => h_mono.2.2 k_x hkR' hnone
+  have hmasked_or_hvr := h x qt_x k_x hlook hguard hkR
+  cases hmasked_or_hvr with
+  | inl hmasked =>
+      exact Or.inl hmasked
+  | inr hvr =>
+      cases hRk : R.lookup? k_x with
+      | none =>
+          exact (hkR hRk).elim
+      | some b =>
+          cases h_mono.2.1 k_x b hRk with
+          | inl hkR'_eq =>
+              exact Or.inr (varsRegime_monotone h_mono hguard hRk hkR'_eq hvr)
+          | inr hkR'_none =>
+              exact (hkR' hkR'_none).elim
+
+lemma closureCapturedVarsRegimeMasked_monotone
+  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime}
+  {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  (h_mono : Regime.monotoneStep R R')
+  (h : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
+  closureCapturedVarsRegimeMasked masked predSat R' qt μ θ v := by
+  exact
+    deepValueQTypProperty_mono
+      (fun σcap ρcap ⟨hP, hT⟩ =>
+        ⟨capturedVarsRegimePropertyMasked_monotone
+            (masked := masked) (predSat := predSat) (R := R) (R' := R')
+            (μ := μ) h_mono hP,
+          hT⟩)
+      h
+
+lemma capturedVarsRegimePropertyMasked_transport_predHolds
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime} {μ μ' : Memory}
+  (hpred_compat : ∀ (qt : QTyp) (v : Value),
+    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  {σcap : CapturedVarEnv} {ρcap : VarEnv}
+  (h : capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap) :
+  capturedVarsRegimePropertyMasked masked predSat R μ' σcap ρcap := by
+  intro x qt_x k_x hlook hguard hkR
+  have hmasked_or_hvr := h x qt_x k_x hlook hguard hkR
+  cases hmasked_or_hvr with
+  | inl hmasked =>
+      exact Or.inl hmasked
+  | inr hvr =>
+      exact Or.inr (varsRegime_transport_predHolds hpred_compat hvr)
+
+lemma closureCapturedVarsRegimeMasked_transport_μ
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {qt : QTyp} {μ μ' : Memory} {θ : RealizationMap} {v : Value}
+  (hpred_compat : ∀ (qt : QTyp) (v : Value),
+    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  (h : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
+  closureCapturedVarsRegimeMasked masked predSat R qt μ' θ v := by
+  exact
+    deepValueQTypProperty_mono
+      (fun σcap ρcap ⟨hP, hT⟩ =>
+        ⟨capturedVarsRegimePropertyMasked_transport_predHolds
+            (masked := masked) (predSat := predSat) (R := R)
+            hpred_compat hP,
+          hT⟩)
+      h
+
+lemma closureCapturedVarsRegimeMasked_transport_μ_θ
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {qt : QTyp} {μ μ' : Memory} {θ θ' : RealizationMap} {v : Value}
+  (hpred_compat : ∀ (qt : QTyp) (v : Value),
+    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  (hθ : θ.extendsMap θ')
+  (h : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
+  closureCapturedVarsRegimeMasked masked predSat R qt μ' θ' v := by
+  exact
+    deepValueQTypProperty_mono
+      (fun σcap ρcap ⟨hP, hnd, hcover, htyp⟩ =>
+        ⟨capturedVarsRegimePropertyMasked_transport_predHolds
+            (masked := masked) (predSat := predSat) (R := R)
+            hpred_compat hP,
+          hnd, hcover,
+          fun y qt_y v_y hσ hρ => valueHasETyp_extends' hθ (htyp y qt_y v_y hσ hρ)⟩)
+      h
+
+lemma closureCapturedVarsRegimeMasked_transport_pred
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  (_hpred : qt.pred = qt'.pred)
+  (h : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v)
+  (hetyp : qt.etyp = qt'.etyp := by rfl) :
+  closureCapturedVarsRegimeMasked masked predSat R qt' μ θ v :=
+  closureCapturedVarsRegimeMasked_transport_etyp hetyp h
+
+lemma valueConsistentWithRegimeMasked_monotone
+  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime}
+  {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  (h_mono : Regime.monotoneStep R R')
+  (h : valueConsistentWithRegimeMasked masked predSat R qt μ θ v) :
+  valueConsistentWithRegimeMasked masked predSat R' qt μ θ v := by
+  cases h with
+  | noTag htag hcap =>
+      exact valueConsistentWithRegimeMasked.noTag htag
+        (closureCapturedVarsRegimeMasked_monotone h_mono hcap)
+  | guardOnly_ok k hgo hcap =>
+      exact valueConsistentWithRegimeMasked.guardOnly_ok k hgo
+        (closureCapturedVarsRegimeMasked_monotone h_mono hcap)
+  | maskedTag k htag hmasked hcap =>
+      exact valueConsistentWithRegimeMasked.maskedTag k htag hmasked
+        (closureCapturedVarsRegimeMasked_monotone h_mono hcap)
+  | notInRegime k htag hknone hcap =>
+      have h' : R'.lookup? k = none := by
+        by_contra hneq
+        exact h_mono.2.2 k hneq hknone
+      exact valueConsistentWithRegimeMasked.notInRegime k htag h'
+        (closureCapturedVarsRegimeMasked_monotone h_mono hcap)
+  | inRegimeTrue k htag hktrue hholds hcap =>
+      have hcap' := closureCapturedVarsRegimeMasked_monotone h_mono hcap
+      have hR' := h_mono.2.1 k true hktrue
+      cases hR' with
+      | inl hk' =>
+          exact valueConsistentWithRegimeMasked.inRegimeTrue k htag hk' hholds hcap'
+      | inr hk'none =>
+          exact valueConsistentWithRegimeMasked.notInRegime k htag hk'none hcap'
+  | inRegimeFalse k htag hkfalse hnot hcap =>
+      have hcap' := closureCapturedVarsRegimeMasked_monotone h_mono hcap
+      have hR' := h_mono.2.1 k false hkfalse
+      cases hR' with
+      | inl hk' =>
+          exact valueConsistentWithRegimeMasked.inRegimeFalse k htag hk' hnot hcap'
+      | inr hk'none =>
+          exact valueConsistentWithRegimeMasked.notInRegime k htag hk'none hcap'
+
+lemma valueConsistentWithRegimeMasked_transport_pred'
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  (hpred : qt.pred = qt'.pred)
+  (hcap_tr :
+    closureCapturedVarsRegimeMasked masked predSat R qt μ θ v →
+      closureCapturedVarsRegimeMasked masked predSat R qt' μ θ v) :
+  valueConsistentWithRegimeMasked masked predSat R qt μ θ v →
+  valueConsistentWithRegimeMasked masked predSat R qt' μ θ v := by
+  intro h
+  cases h with
+  | noTag htag hcap =>
+      refine valueConsistentWithRegimeMasked.noTag ?_ (hcap_tr hcap)
+      have hEq := qtypGuardTag_of_pred_eq (qt := qt) (qt' := qt') hpred
+      simpa [hEq.symm] using htag
+  | guardOnly_ok k hgo hcap =>
+      refine valueConsistentWithRegimeMasked.guardOnly_ok k ?_ (hcap_tr hcap)
+      calc
+        qt'.pred = qt.pred := by simp [hpred]
+        _ = Predicate.guardOnly k := hgo
+  | maskedTag k htag hmasked hcap =>
+      refine valueConsistentWithRegimeMasked.maskedTag k ?_ hmasked (hcap_tr hcap)
+      have hEq := qtypGuardTag_of_pred_eq (qt := qt) (qt' := qt') hpred
+      simpa [hEq.symm] using htag
+  | notInRegime k htag hknone hcap =>
+      refine valueConsistentWithRegimeMasked.notInRegime k ?_ hknone (hcap_tr hcap)
+      have hEq := qtypGuardTag_of_pred_eq (qt := qt) (qt' := qt') hpred
+      simpa [hEq.symm] using htag
+  | inRegimeTrue k htag hktrue hholds hcap =>
+      refine valueConsistentWithRegimeMasked.inRegimeTrue k ?_ hktrue ?_ (hcap_tr hcap)
+      · have hEq := qtypGuardTag_of_pred_eq (qt := qt) (qt' := qt') hpred
+        simpa [hEq.symm] using htag
+      · exact qtypPredHolds_transport_pred
+          (predSat := predSat) (qt := qt) (qt' := qt')
+          (μ := μ) (v := v) hpred hholds
+  | inRegimeFalse k htag hkfalse hnot hcap =>
+      refine valueConsistentWithRegimeMasked.inRegimeFalse k ?_ hkfalse ?_ (hcap_tr hcap)
+      · have hEq := qtypGuardTag_of_pred_eq (qt := qt) (qt' := qt') hpred
+        simpa [hEq.symm] using htag
+      · exact qtypPredHolds_transport_pred_not
+          (predSat := predSat) (qt := qt) (qt' := qt')
+          (μ := μ) (v := v) hpred hnot
+
+lemma valueConsistentWithRegimeMasked_transport_pred
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  (hpred : qt.pred = qt'.pred)
+  (hetyp : qt.etyp = qt'.etyp := by rfl) :
+  valueConsistentWithRegimeMasked masked predSat R qt μ θ v →
+  valueConsistentWithRegimeMasked masked predSat R qt' μ θ v := by
+  intro h
+  exact
+    valueConsistentWithRegimeMasked_transport_pred'
+      (masked := masked) (predSat := predSat) (R := R)
+      (qt := qt) (qt' := qt') (μ := μ) (θ := θ) (v := v)
+      hpred
+      (fun hcap => closureCapturedVarsRegimeMasked_transport_etyp hetyp hcap)
+      h
+
 -- Transport with explicit closureCapturedVarsRegime transport (used when etyp may differ, e.g. joinETyps).
 lemma valueConsistentWithRegime_transport_pred'
   {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}

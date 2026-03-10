@@ -345,25 +345,14 @@ story may partially collapse into the same implementation step.
 
 Current implementation status on this branch:
 
-- Step 1 is complete.
-- Step 2 has been reviewed early and does not currently force a design
-  change; the implementation is continuing with the symmetric
-  branch-update design.
-- A supporting regime-insert lookup bridge now exists in
-  `StepFR.lean` as `regime_lookup_insert_ne`.
-- The shared clean-lookup redesign now exists as a split proof:
-  `typecheckExpr_lookup_poison_origin_of_pc_true`,
-  `typecheckExpr_lookup_guard_origin_of_pc_true`, and
-  `typecheckExpr_clean_lookup_origin_of_pc_true` rebuilt as a
-  corollary.
-- A checkpoint `lake build` succeeds after the step-1 refactor with only existing
-  `sorry`-related warnings.
-- The step-4 closure-sensitive regime-growth blocker has now resurfaced
-  concretely inside step 6: the mode-3 single-run `ite` proof needs to
-  start a branch IH under `ctxTrue` / `ctxFalse'` after interpreting the
-  fresh guard tag `k`, but the existing transport helpers only preserve
-  `consistentWithRegime` for the old regime.  This is the same blocker in
-  a more local proof context, not a new design category.
+- Steps 1 through 5 are complete.
+- The symmetric branch-update design remains in use for this iteration.
+- `lake build` is green at the current checkpoint, with only the
+  expected `sorry` warnings.
+- The broad generic regime-growth story for
+  `consistentWithRegime_insert_regime_{true,false}` remains deferred:
+  the closure-sensitive obstruction identified in step 4 is real, and
+  step 6 continues on the approved masked/local path instead.
 
 1. **Redesign the shared clean-lookup theorem.**
    The current transport target in
@@ -372,37 +361,32 @@ Current implementation status on this branch:
    the current `main` style: preserve lookup/provenance information and
    keep the existing existential theorem only as a corollary for its
    current callers.
-   Status: complete.  The theorem has been refactored into the split
-   lemmas `typecheckExpr_lookup_poison_origin_of_pc_true` and
-   `typecheckExpr_lookup_guard_origin_of_pc_true`, with
-   `typecheckExpr_clean_lookup_origin_of_pc_true` rebuilt as the
-   existential corollary for existing callers.  The key proof sites
-   for that refactor were discharged in `ite` mode 3, `ite` mode 4,
-   `app`, and the `assign` invalidation case.  `while` remains out of
-   scope for this iteration and its existing `sorry` remains isolated.
+   Status: complete.  `typecheckExpr_clean_lookup_origin_of_pc_true`
+   now sits on the split lemmas
+   `typecheckExpr_lookup_poison_origin_of_pc_true` and
+   `typecheckExpr_lookup_guard_origin_of_pc_true`, with the old
+   existential statement retained as a corollary for current callers.
 
 2. **Make the regime-growth design decision early.**
    Re-evaluate symmetric versus asymmetric branch updates while the
    clean-lookup redesign is still in flight.  Do not assume the
    false-branch insertion is worth keeping until the tag-reuse and
    guard-tag analysis say it is.
-   Status: complete for the current iteration.  The step-1 refactor
-   did not uncover a concrete obstruction or counterexample forcing
-   the asymmetric fallback, so the implementation continues with the
-   symmetric branch-update design until later evidence says otherwise.
+   Status: complete for the current iteration.  No concrete obstruction
+   has forced the asymmetric fallback, so the implementation continues
+   with the symmetric branch-update design unless later proof evidence
+   changes that call.
 
 3. **Re-introduce the `R.bound` bridge in the split layout.**
    Re-home or redesign `matchGuard_ok_tag_from_ctx`,
    `matchGuard_tag_in_bound`, and the bounded-tags invariant they need.
    The output of this phase should be an active path from successful
    `matchGuard` to `k < ctx.regime.bound`.
-   Status: complete.  The split layout now has a shared bounded-tags
-   invariant `predTagsBoundedInCtx` in `StepFR.lean`, together with
-   `matchGuard_ok_tag_from_ctx` and `matchGuard_tag_in_bound` in
-   `StepFRIte.lean`.  The ref-side extraction was strengthened to carry
-   nonempty locset evidence, so successful `matchGuard` now yields a
-   concrete var/mem witness for the returned tag and a direct bridge to
-   `k < ctx.regime.bound` once `predTagsBoundedInCtx` is available.
+   Status: complete.  The shared bounded-tags invariant
+   `predTagsBoundedInCtx` and the split-layout bridge lemmas
+   `matchGuard_ok_tag_from_ctx` / `matchGuard_tag_in_bound` are in
+   place and now give an active path from successful `matchGuard` to
+   `k < ctx.regime.bound`.
 
 4. **Implement the regime-growth transfer lemmas for the chosen
    design.**
@@ -411,18 +395,10 @@ Current implementation status on this branch:
    `consistentWithRegime_insert_regime_{true,false}` as needed, with
    `PredSatLaws.match_iff` wired into the actual proof sites.
    Status: partially complete under the narrowed path.  The local
-   simultaneous-insert helpers
-   `tagEnvConsistentWithRegime_insert_true_with_regime` and
-   `tagEnvConsistentWithRegime_insert_false_with_regime` are now in
-   `StepFR.lean`, and `lake build` succeeds after adding them.  The
-   broader generic `consistentWithRegime_insert_regime_{true,false}`
-   work remains blocked pending review: the top-level mem/var transfer
-   shape still looks implementable, but the generic closure-sensitive
-   story breaks at the closure conjunct of `consistentWithRegime`.
-   Under regime growth, previously inactive captured-variable
-   obligations for the newly interpreted tag `k` can become active
-   inside closures, and the current premises do not provide the runtime
-   evidence needed to discharge them.  That remains deferred.
+   simultaneous-insert helpers landed, but the broad generic
+   `consistentWithRegime_insert_regime_{true,false}` work stays
+   deferred because the closure conjunct can activate new
+   captured-variable obligations for the newly interpreted tag `k`.
 
 5. **Close the local mode-3 preservation gap for
    `regimeConsistentWithCtx`.**
@@ -431,19 +407,11 @@ Current implementation status on this branch:
    existing tagEnv insert lemmas together with the step-3 bound bridge
    and the minimal simultaneous-insert lemmas from step 4.  Treat this
    as a local repair to land after the higher-risk blockers above.
-   Status: complete.  The local repair now uses a recursive masked
+   Status: complete.  The local repair now uses the recursive masked
    preservation theorem
-   `typecheckExpr_preserves_regimeConsistentWithCtxMasked_main` in
-   `StepFR.lean`, together with the new masked TagEnv/Regime helper
-   layer (`tagEnvConsistentWithRegimeMasked_weaken`,
-   `tagEnvConsistentWithRegimeMasked_join_drop`,
-   `invalidateRegimeDeps_preserves_true_masked`, and related insert /
-   invalidate lemmas).  The original
-   `typecheckExpr_preserves_regimeConsistentWithCtx_main` has been
-   rebuilt as the `masked := False` wrapper, and the old mode-3 `sorry`
-   is gone.  A checkpoint `lake build` succeeds after this repair with
-   only the existing `sorry`-related warnings, including the still
-   deferred `kwhile` work.
+   `typecheckExpr_preserves_regimeConsistentWithCtxMasked_main`, and
+   the original unmasked theorem is rebuilt as the `masked := False`
+   wrapper.
 
 6. **Propagate the fix through downstream `ite` obligations, in
    risk-first order.**
@@ -452,237 +420,53 @@ Current implementation status on this branch:
    remaining point directly: mode 3 of
    `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
    in `FaultRobustnessProofs.lean`.
-   Status: paused at a confirmed Section 7.3 stopping point.  Modes 1,
-   2, and 4 of the single-run `ite` proof still look routine under the
-   current helper layer.  The active blocker remains mode 3, where
-   starting the branch IH under `ctxTrue` or `ctxFalse'` requires
-   `consistentWithRegime` for a regime that has just grown by
-   interpreting the fresh tag `k`.  That reuses the same
-   closure-sensitive obstruction already discovered in step 4: the
-   mem/var conjuncts still look transportable, but the closure conjunct
-   can activate new captured-variable obligations for `k`, and the
-   current premises do not generically discharge them.
+   Status: active.  The closure-sensitive obstruction from step 4 means
+   the remaining `ite` mode-3 work is proceeding on the approved local
+   masked path, not by reviving the broad generic regime-growth lemmas.
 
-   Reviewer feedback confirms the current path ranking:
+   Current design choice:
 
-   - **Preferred in principle:** a masked single-run approach for the
-     conservative-join case
-   - **Not recommended as primary path:** reviving the broad generic
-     `consistentWithRegime_insert_regime_{true,false}` effort, because
-     the closure-sensitive regime-growth story appears to require a new
-     cross-entry coherence invariant that is not currently present and
-     would likely put pressure on the Section 7.2 stable boundaries
-   - **Unlikely to help:** a matchGuard-specific "no closures mention
-     this tag" lemma, because the tag lifecycle permits dropped regime
-     tags to remain referenced in closure predicates
+   - Use **A1**: a parametric single-run framework over a paired
+     context/value consistency interface (`CtxCons` / `ValCons`)
+   - Keep the theorem concrete at the top level over
+     `consistentWithRegimeMasked` /
+     `valueConsistentWithRegimeMasked`
+   - Do **not** pursue the broad generic
+     `consistentWithRegime_insert_regime_{true,false}` path unless a
+     later review explicitly changes direction
 
-   The implementation finding is now stronger than before: the masked
-   single-run idea does **not** stay a one-off outer wrapper.  Because
-   the branch body may contain arbitrary subexpressions and the existing
-   single-run induction interface in `StepFR.lean`
-   (`StepFRSingleRunFinalCleanPcTrue_IH`) is unmasked, the masked path
-   would need its own recursive masked IH / theorem family.
+   Relevant completed infrastructure for step 6:
 
-   The design choice now is between:
+   - The recursive single-run combinator surface is already lifted to
+     the paired `CtxCons` / `ValCons` interface.
+   - The shared paired single-run predicate and public parametric case
+     wrappers live in `StepFR.lean` and the `StepFR*` files.
+   - `valueConsistentWithRegimeMasked` and the matching masked
+     runtime-consistency layer now live in shared scope.
+   - The shared masked transport layer is in place for lookup-back,
+     monotonicity, memory / `θ`, and predicate / `etyp` transport over
+     the masked closure/value predicates.
+   - The first masked hook-export batch is complete:
+     `stepFRVar_ctxToValCons_masked`,
+     `stepFRDeref_ctxToValCons_masked`,
+     `stepFRNewRef_ctxConsFinish_masked`,
+     `stepFRNewRef_resultValCons_masked`, and
+     `stepFRAssign_resultValCons_masked`.
 
-   - **A1: parametric refactor.**  Refactor the per-case single-run
-     proofs so they are parametric in the relevant consistency
-     predicate, then instantiate that framework with the masked and
-     unmasked versions.  This has higher upfront cost but avoids
-     maintaining two parallel proof families.
-   - **A2: parallel masked proofs.**  Add a second masked single-run
-     proof family alongside the current unmasked one.  This avoids the
-     refactor but increases duplication and long-term maintenance cost.
+   Remaining work, in current risk-first order:
 
-   Current recommendation: prefer **A1** if step 6 proceeds, since it
-   preserves the Section 7.2 boundaries while avoiding a duplicated
-   proof stack.
+   1. add the remaining masked `vlet` / `assign` hook layer
+      (`stepFRVlet_*_masked`,
+      `stepFRAssign_ctxConsPostTransport_masked`);
+   2. add the masked `app` hook layer, which remains the main
+      proof-engineering risk within the approved design;
+   3. return to the concrete masked single-run mode-3 theorem in
+      `FaultRobustnessProofs.lean`.
 
-   Scoping work completed so far:
-
-   - `seq` established the basic theorem-shape fact: a local
-     `StepFRSingleRunFinalCleanPcTrueWithCtxCons` can rederive the
-     existing unmasked single-run theorem without touching the Section
-     7.2 stable boundaries.
-   - `vlet`, `app`, and `assign` established the recursive transport
-     fact: the context-consistency part of the single-run proof can stay
-     behind private hooks rather than forcing the top-level theorem to
-     expose the loc / var / closure conjuncts of
-     `consistentWithRegime`.  The current picture is:
-     `vlet` needs a body-start hook plus a finish hook; `app` needs a
-     small family of branch-local hooks; `assign` admits a single
-     post-transport hook.
-
-   Those spikes are enough to confirm that the recursive *context*
-   transport / reconstruction direction of **A1** is viable.  The
-   remaining question is the leaf side of the single-run theorem: how to
-   abstract the construction of the final `valueConsistentWithRegime`
-   witness while still supporting the masked mode-3 `ite` branch
-   instantiation.
-
-   Reviewer follow-up narrows that issue more precisely than the earlier
-   "leaf hooks" framing:
-
-   - `var` is the hardest leaf.  Its proof builds final value
-     consistency from the **input** `consistentWithRegime` premise,
-     using both the `varsRegime` and `closureCapturedVarsRegime`
-     conjuncts.
-   - `deref` is medium.  Its final value consistency is built from the
-     **IH output** consistency, specifically the `locsRegime` side.
-   - `newRef` does **not** need context consistency to build its final
-     value consistency.  Its result is `noPred`, so the value witness is
-     a direct `noTag` proof; the decomposition there is only for
-     rebuilding the final context consistency.
-
-   The important structural point is that the single-run recursion needs
-   both directions:
-
-   - **context → value:** derive a result-value consistency witness from
-     the current context-consistency premise (most sharply in `var`, and
-     in a different way in `deref`)
-   - **value → context:** use intermediate value consistency to start or
-     re-enter downstream contexts (`vlet`, `app`, and related recursive
-     cases)
-
-   So the recommended A1 shape is now a **richer bundled interface**,
-   not a `CtxCons`-only parameter plus ad hoc per-leaf hooks.  Concretely:
-
-   - Add a second abstract parameter `ValCons` alongside `CtxCons` in
-     the parametric single-run framework.
-   - Keep the already-discovered value-to-context hooks for recursive
-     cases (`vlet`, `app`, and the assign-style post-transport
-     situation), but express them in terms of `ValCons` rather than the
-     concrete `valueConsistentWithRegime`.
-   - Add the missing context-to-value hooks that let leaf / near-leaf
-     cases derive `ValCons` from `CtxCons` plus lookup/typing evidence.
-   - Define `valueConsistentWithRegimeMasked` as the masked companion to
-     `consistentWithRegimeMasked`, mirroring the earlier masked
-     `regimeConsistentWithCtx` pattern.
-     The completed `var` spike confirms one important detail: the
-     masking must not stop at the outer guard-tag case split.  It also
-     has to propagate through the closure side of value consistency,
-     i.e. through the `closureCapturedVarsRegime` obligations for
-     closure values.  The `var` proof uses the closure conjunct of
-     `consistentWithRegime` heavily, and closure-captured variables may
-     themselves mention the masked branch-local tag `k`.  So the masked
-     value companion has to treat those captured-variable obligations in
-     a mask-aware way as well; otherwise the `var` leaf would still
-     re-open the same closure-sensitive obstruction inside the masked
-     branch.
-
-   For the intended masked mode-3 `ite` instantiation:
-
-   - When a value's guard tag is the masked branch-local tag `k`,
-     `valueConsistentWithRegimeMasked` can treat that case as
-     intentionally masked inside the branch.
-   - After the conservative join drops `k` from the output regime,
-     recover the ordinary unmasked `valueConsistentWithRegime` directly:
-     use `notInRegime` for values guarded by the dropped tag `k`, and
-     ordinary transport for all other tags.
-
-   This still stays within Section 7.2: `ValCons` and
-   `valueConsistentWithRegimeMasked` are new companion definitions, not
-   changes to the existing stable boundary predicates.  But it enlarges
-   the confirmed A1 scope from "parametrize by a context-consistency
-   predicate" to "parametrize by a paired context/value consistency
-   interface".  Treat that enlargement as the active Section 7.3 review
-   checkpoint for step 6.
-
-   Bundled-interface spike status:
-
-   - `var`: complete.  `StepFRVar` now contains a local bundled shell
-     `StepFRSingleRunFinalCleanPcTrueWithCtxValCons`, the paired hook
-     type `VarCtxToValCons`, local masked companions
-     `consistentWithRegimeMasked` / `valueConsistentWithRegimeMasked`,
-     the masked leaf witness
-     `var_valueConsistentWithRegimeMasked_of_typecheck`, and a private
-     parametric theorem
-     `stepFRSingleRunFinalCleanPcTrue_var_parametric`; the public
-     `stepFRSingleRunFinalCleanPcTrue_var` is rederived as the concrete
-     unmasked instantiation.  This validated the harder input-side
-     context-to-value leaf and confirmed that the masking must extend
-     through closure-captured-variable obligations.
-
-   - `deref`: complete.  `StepFRDeref` now uses the same bundled
-     `CtxCons` / `ValCons` shape, with a single deref-local post-IH
-     hook `DerefCtxToValCons` and a concrete witness
-     `deref_valueConsistentWithRegime_of_typecheck`.  The public
-     `stepFRSingleRunFinalCleanPcTrue_deref` is rederived from the
-     private parametric theorem
-     `stepFRSingleRunFinalCleanPcTrue_deref_parametric`.  This
-     validates the other context-to-value direction as well: the final
-     value witness can be reconstructed from the IH output consistency
-     through one bundled hook, without exposing the concrete
-     `locsRegime` conjunct at the theorem boundary.
-
-   - `newRef`: complete.  `StepFRNewRef` now follows the same bundled
-     shape with a post-write context hook `NewRefCtxConsFinish`, a
-     trivial-result value hook `NewRefResultValCons`, and concrete
-     witnesses `consistentWithRegime_newRef_finish` and
-     `newRef_valueConsistentWithRegime_result`.  The public
-     `stepFRSingleRunFinalCleanPcTrue_newRef` is rederived from the
-     private parametric theorem
-     `stepFRSingleRunFinalCleanPcTrue_newRef_parametric`.  This keeps
-     the work on plan: `newRef` did not force a new design review, but
-     it did confirm one additional interface detail worth carrying
-     forward into the mode-3 rollout.  The bundled path needs both
-     kinds of local hooks:
-     post-IH `CtxCons` reconstruction hooks for context updates, and
-     lightweight `ValCons` constructors for result shapes whose value
-     consistency is trivial in the concrete regime semantics.
-
-   The recursive single-run combinator surface is now fully lifted to
-   the paired bundled interface.  `seq`, `vlet`, and `assign` have been
-   converted from `CtxCons`-only parametric proofs to the same paired
-   `CtxCons` / `ValCons` shape already used by `var`, `deref`,
-   `newRef`, and `app`.
-
-   The only additional detail discovered during these mechanical lifts
-   is local, not architectural: some cases need both a context-side
-   post-IH transport hook and a lightweight value-side constructor hook
-   for trivial result shapes.  `assign` follows the same pattern as
-   `newRef` here.
-
-   This keeps the work on plan.  No new semantic blocker appeared, and
-   no Section 7.3 review stop was triggered by the paired lifts
-   themselves.
-
-   A further mechanical prerequisite is now complete as well: the
-   shared paired single-run predicate lives in `StepFR.lean`, and the
-   recursive case files export file-specific public wrappers around
-   their paired parametric theorems and hook predicates.  That removes
-   the earlier visibility/name-collision problem and makes the paired
-   case infrastructure reusable from `FaultRobustnessProofs.lean`.
-
-   A further interface fork appeared once the wrapper layer was in
-   place.  A theorem fully abstracted over arbitrary `CtxCons` /
-   `ValCons` would need **additional result-side hooks even for the
-   simple constructor cases** (`literal`, `fn` / `pfn`, `op`,
-   `unaryop`), because the top-level induction can no longer construct
-   an arbitrary `ValCons` result directly.  That is broader than the
-   current paired-interface rollout had assumed.
-
-   Current recommendation: do **not** jump straight to the fully
-   abstract theorem surface.  Instead, keep the next theorem concrete
-   over `consistentWithRegimeMasked` /
-   `valueConsistentWithRegimeMasked`, and abstract only the complex
-   recursive hook surface that already exists for `var`, `deref`,
-   `newRef`, `seq`, `vlet`, `assign`, and `app`.  The first part of
-   that is now complete: the masked consistency definitions live in
-   shared scope in `StepFR.lean`, and the masked `var` hook is
-   exported from `StepFRVar.lean`.
-
-   Additional implementation note from the first `FaultRobustnessProofs`
-   pass: the generalized theorem still needs a small result-side hook
-   extension for the remaining "simple" cases (`literal`, `unaryop`,
-   `op`, and likely `fn` / `pfn`).  The existing exported wrappers now
-   cover the recursive and leaf cases that *consume* paired
-   `CtxCons` / `ValCons`, but the generalized theorem also has to
-   *construct* `ValCons` directly for these non-recursive result shapes.
-   This is a local hook-bundle growth item, not a new semantic blocker
-   or Section 7.3 stop.  The next concrete implementation step is to
-   add those simple masked result hooks and then write the concrete
-   masked single-run mode-3 theorem in `FaultRobustnessProofs.lean`.
+   Step 6 should still pause for review if this masked/local path turns
+   out to require changing the stable boundary definitions in Section
+   7.2, or if the masked `app` layer exposes a new obstruction beyond
+   proof-engineering scope.
 
 ## 7. Implementation Constraints
 
