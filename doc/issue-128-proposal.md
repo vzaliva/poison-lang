@@ -349,275 +349,200 @@ Current implementation status on this branch:
 - The symmetric branch-update design remains in use for this iteration.
 - `lake build` is green at the current checkpoint, with only the
   expected `sorry` warnings.
-- The broad generic regime-growth story for
-  `consistentWithRegime_insert_regime_{true,false}` remains deferred:
-  the closure-sensitive obstruction identified in step 4 is real, and
-  step 6 continues on the approved masked/local path instead.
+- Step 6 is the only live item, and it is currently back at a
+  Section 7.3 review stop.
 
-1. **Redesign the shared clean-lookup theorem.**
-   The current transport target in
-   `typecheckExpr_clean_lookup_origin_of_pc_true` is false under the
-   currently visible invariants, so the theorem must change.  Work in
-   the current `main` style: preserve lookup/provenance information and
-   keep the existing existential theorem only as a corollary for its
-   current callers.
-   Status: complete.  `typecheckExpr_clean_lookup_origin_of_pc_true`
-   now sits on the split lemmas
-   `typecheckExpr_lookup_poison_origin_of_pc_true` and
-   `typecheckExpr_lookup_guard_origin_of_pc_true`, with the old
-   existential statement retained as a corollary for current callers.
+Only the completed work that is still relevant going forward is listed
+here:
 
-2. **Make the regime-growth design decision early.**
-   Re-evaluate symmetric versus asymmetric branch updates while the
-   clean-lookup redesign is still in flight.  Do not assume the
-   false-branch insertion is worth keeping until the tag-reuse and
-   guard-tag analysis say it is.
-   Status: complete for the current iteration.  No concrete obstruction
-   has forced the asymmetric fallback, so the implementation continues
-   with the symmetric branch-update design unless later proof evidence
-   changes that call.
+- The typechecking-side repair is in place: the clean-lookup redesign,
+  the `R.bound` bridge, and the recursive masked preservation theorem
+  `typecheckExpr_preserves_regimeConsistentWithCtxMasked_main` are all
+  complete.
+- The single-run proof infrastructure is in place: the paired
+  `CtxCons` / `ValCons` framework, the shared masked runtime/value
+  consistency layer, the masked-regime recursive interface, and the
+  per-constructor masked / masked-regime wrappers are all landed.
+- The top-level one-run theorem in
+  `FaultRobustnessProofs.lean` is already refactored onto the masked
+  recursive family, and mode 1 / mode 2 of the concrete masked `ite`
+  proof compile.
 
-3. **Re-introduce the `R.bound` bridge in the split layout.**
-   Re-home or redesign `matchGuard_ok_tag_from_ctx`,
-   `matchGuard_tag_in_bound`, and the bounded-tags invariant they need.
-   The output of this phase should be an active path from successful
-   `matchGuard` to `k < ctx.regime.bound`.
-   Status: complete.  The shared bounded-tags invariant
-   `predTagsBoundedInCtx` and the split-layout bridge lemmas
-   `matchGuard_ok_tag_from_ctx` / `matchGuard_tag_in_bound` are in
-   place and now give an active path from successful `matchGuard` to
-   `k < ctx.regime.bound`.
+The live blocker for step 6 is now this:
 
-4. **Implement the regime-growth transfer lemmas for the chosen
-   design.**
-   This includes the split-layout versions of
-   `tagEnvConsistentWithRegime_insert_*_with_regime` and
-   `consistentWithRegime_insert_regime_{true,false}` as needed, with
-   `PredSatLaws.match_iff` wired into the actual proof sites.
-   Status: partially complete under the narrowed path.  The local
-   simultaneous-insert helpers landed, but the broad generic
-   `consistentWithRegime_insert_regime_{true,false}` work stays
-   deferred because the closure conjunct can activate new
-   captured-variable obligations for the newly interpreted tag `k`.
+- The remaining gap is the **in-bound `none`** mode-3 case.
+  `typecheckIf` can enter mode 3 with `ctx.regime.lookup? k = none`
+  even when `k < ctx.regime.bound`.
+- In that subcase, inserting `k ↦ true` / `k ↦ false` makes `k`
+  active rather than masked, so the approved local masked path no
+  longer avoids the semantic regime-growth obligation.
+- This is not a single-owner corner case.  Because same-tag predicates
+  survive through `joinPredicates`, both-sided memory joins can retain
+  them, `ctxAfter` leaves `varEnv` unchanged, and `joinRegimes` can drop
+  the map entry while keeping `k < regime.bound`, a post-join context
+  can still contain many var / mem / closure-reachable entries
+  referring to `k` while `regime.lookup? k = none`.
+- So the concrete masked single-run theorem cannot be completed from
+  the current assumptions alone.  The remaining question is how to
+  supply multi-entry coherence for the active-tag case without changing
+  the stable boundaries in Section 7.2.
 
-5. **Close the local mode-3 preservation gap for
-   `regimeConsistentWithCtx`.**
-   Repair
-   `typecheckExpr_preserves_regimeConsistentWithCtx_main` using the
-   existing tagEnv insert lemmas together with the step-3 bound bridge
-   and the minimal simultaneous-insert lemmas from step 4.  Treat this
-   as a local repair to land after the higher-risk blockers above.
-   Status: complete.  The local repair now uses the recursive masked
-   preservation theorem
-   `typecheckExpr_preserves_regimeConsistentWithCtxMasked_main`, and
-   the original unmasked theorem is rebuilt as the `masked := False`
-   wrapper.
+   **Deep analysis: `predSat` value-dependence and multi-entry coherence**
 
-6. **Propagate the fix through downstream `ite` obligations, in
-   risk-first order.**
-   Do not spend time first polishing the mechanically easier `ite`
-   subcases.  The next proof effort should attack the highest-risk
-   remaining point directly: mode 3 of
-   `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree`
-   in `FaultRobustnessProofs.lean`.
-   Status: active.  The closure-sensitive obstruction from step 4 means
-   the remaining `ite` mode-3 work is proceeding on the approved local
-   masked path, not by reviving the broad generic regime-growth lemmas.
+   9. The existing `predSat_mem_noPred_compat` (StepFR.lean:1747)
+      proves **memory-independence**:
 
-   Current design choice:
+          ∀ k μ μ' v, predSat k μ v ↔ predSat k μ' v
 
-   - Use **A1**: a parametric single-run framework over a paired
-     context/value consistency interface (`CtxCons` / `ValCons`)
-   - Keep the theorem concrete at the top level over
-     `consistentWithRegimeMasked` /
-     `valueConsistentWithRegimeMasked`
-   - Do **not** pursue the broad generic
-     `consistentWithRegime_insert_regime_{true,false}` path unless a
-     later review explicitly changes direction
+      That is: same tag, same value, any two memories.  This was
+      already known and used in the codebase.
 
-   Relevant completed infrastructure for step 6:
+   10. The question is whether `predSat` is also
+       **value-independent**:
 
-   - The recursive single-run combinator surface is already lifted to
-     the paired `CtxCons` / `ValCons` interface.
-   - The shared masked-regime single-run interface is now in place in
-     `StepFR.lean`:
-     `StepFRSingleRunFinalCleanPcTrueMaskedRegParam`,
-     `StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH`, and
-     `singleRunFinalCleanWitness_of_same_state_maskedReg_param`.
-   - The public masked typechecking-side preservation wrapper is now
-     available:
-     `typecheckExpr_preserves_regimeConsistentWithCtxMasked`.
-   - The shared paired single-run predicate and public parametric case
-     wrappers live in `StepFR.lean` and the `StepFR*` files.
-   - `valueConsistentWithRegimeMasked` and the matching masked
-     runtime-consistency layer now live in shared scope.
-   - The shared masked transport layer is in place for lookup-back,
-     monotonicity, memory / `θ`, and predicate / `etyp` transport over
-     the masked closure/value predicates.
-   - The cheap masked hook-export batch is complete:
-     `stepFRVar_ctxToValCons_masked`,
-     `stepFRDeref_ctxToValCons_masked`,
-     `stepFRNewRef_ctxConsFinish_masked`,
-     `stepFRNewRef_resultValCons_masked`, and
-     `stepFRAssign_resultValCons_masked`.
-   - The masked `vlet` / `assign` hook layer is also complete:
-     `stepFRVlet_ctxConsBodyStart_masked`,
-     `stepFRVlet_ctxConsFinish_masked`,
-     `stepFRVlet_valConsFinish_masked`, and
-     `stepFRAssign_ctxConsPostTransport_masked`.
-   - The masked `app` hook layer is complete:
-     `stepFRApp_closureBodyStart_masked`,
-     `stepFRApp_pClosureBodyStart_masked`,
-     `stepFRApp_memberCtxCons_masked`,
-     `stepFRApp_joinCtxConsFromMember_masked`,
-     `stepFRApp_bodyResultValCons_masked`, and
-     `stepFRApp_joinValConsFromMember_masked`.
-   - The first same-state support piece for the concrete masked theorem
-     is complete:
-     `singleRunFinalCleanWitness_of_same_state_param` in `StepFR.lean`
-     and `stepFRSingleRunFinalCleanPcTrue_literal_masked` in
-     `StepFRLiteral.lean`.
-   - The remaining simple concrete masked support cases are complete:
-     `stepFRSingleRunFinalCleanPcTrue_unaryop_masked`,
-     `stepFRSingleRunFinalCleanPcTrue_op_masked`,
-     `stepFRSingleRunFinalCleanPcTrue_fn_masked`, and
-     `stepFRSingleRunFinalCleanPcTrue_pfn_masked`.
-   - The first low-risk masked-regime lifts are complete:
-     `stepFRSingleRunFinalCleanPcTrue_literal_maskedReg`,
-     `stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg`,
-     `stepFRSingleRunFinalCleanPcTrue_op_maskedReg`,
-     `stepFRSingleRunFinalCleanPcTrue_fn_maskedReg`, and
-     `stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg`.
-   - The shared masked-to-unmasked conversion layer is in place for the
-     post-join phase:
-     `consistentWithRegimeMasked_unmask` and
-     `valueConsistentWithRegimeMasked_unmask`.
-   - The masked `ite` transport layer is now in place in
-     `StepFRIte.lean` for the remaining single-run theorem work:
-     `consistentWithRegimeMasked_transport_ctxAfter_pure_to_ctx_insert_true`,
-     `consistentWithRegimeMasked_join_from_left`, and
-     `consistentWithRegimeMasked_join_from_right`.
-   - The top-level single-run proof is now refactored onto the
-     concrete masked recursive family in
-     `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`,
-     with the existing public theorem rebuilt as the `masked := False`
-     wrapper.
+           ∀ k μ v₁ v₂, predSat k μ v₁ ↔ predSat k μ v₂
 
-   Newly confirmed blocker:
+       There is no current reusable law in `PredSatLaws`
+       (RegimeConsistency.lean:796–827) that gives this directly.
+       `PredSatLaws` contains `match_iff` and `mem_monotone`, but
+       those only constrain:
 
-   - The paired `CtxCons` / `ValCons` lift is not sufficient by itself
-     for the concrete masked mode-3 theorem.
-   - The recursive single-run framework still takes plain
-     `regimeConsistentWithCtx` as a separate premise, and mode-3 branch
-     contexts `ctxTrue` / `ctxFalse'` can fail that premise when the
-     masked guard tag `k` lies at or above `ctx.regime.bound`.
-   - This is the same out-of-bound masked-tag issue already seen on the
-     typechecking side, now resurfacing on the single-run recursion
-     boundary.
+       - relation to a matched current-scope owner witness, and
+       - memory changes for a **fixed** value.
 
-   Approved adjustment:
+       In particular, `match_iff` never directly relates two different
+       values at the same tag: its owner-witness premise binds `v` to a
+       concrete runtime lookup shape.
 
-   - Do not add a third abstract `RegCons` parameter beside
-     `CtxCons` / `ValCons`.
-   - Instead, lift the private single-run framework directly onto
-     `regimeConsistentWithCtxMasked mask`, reusing the same masking
-     predicate already carried by
-     `consistentWithRegimeMasked mask` /
-     `valueConsistentWithRegimeMasked mask`.
-   - Recover the existing unmasked public theorem as the
-     `mask := fun _ => False` specialization.
+       I do not see a derivation of full
+       `∀ k μ v₁ v₂, predSat k μ v₁ ↔ predSat k μ v₂`
+       from the present interface alone.
 
-   Completed masked-regime lift batch:
+   11. For **current-scope entries** (variables in σ/ρ, memory
+       locations in μ), the multi-entry coherence problem is already
+       solved by `PredSatLaws.match_iff`:
 
-   - The `_maskedReg` wrapper lift is now complete for all remaining
-     per-constructor single-run files:
-     `seq`, `var`, `deref`, `newRef`, `vlet`, `assign`, and `app`.
-   - `StepFRAssign.lean` has the needed masked-regime post-transport
-     companion layer:
-     `AssignCtxConsPostTransportMaskedReg`,
-     `assign_single_run_post_transport_common_maskedReg`,
-     `consistentWithRegimeMasked_assign_post_transport_maskedReg`, and
-     `stepFRSingleRunFinalCleanPcTrue_assign_maskedReg`.
-   - `StepFRApp.lean` now also has the masked-regime single-run lift in
-     place:
-     `stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg`,
-     `stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg`,
-     `stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg`, and
-     `stepFRSingleRunFinalCleanPcTrue_app_maskedReg`.
+       `match_iff` gives, for any entry with guard tag `k` and
+       current runtime value `v`:
 
-   Confirmed scope correction:
+           b = true ↔ predSat k μ v
 
-   - The earlier expectation that single-run `app` would require a
-     broad masked-regime lift of the local closure/join helper family
-     was too pessimistic.
-   - For the single-run path, the needed work was narrower: add the
-     masked-regime copies of the existing single-run parametric `app`
-     theorems and thread the masked regime premise through them.
-   - This reduced scope rather than increasing it, and did not trigger a
-     new Section 7.3 review stop.
+       where `b` is the single boolean result of `matchGuard`.
+       This is fully correct for **current variable entries**, and for
+       **reference-rooted memory witnesses** that fit the second
+       existential owner-witness disjunct of `match_iff`.
 
-   Current theorem-level checkpoint:
+       It should not be stated as covering *all* current `memEnv`
+       entries without qualification: `match_iff` does not quantify over
+       an arbitrary bare memory entry, only over the specific
+       current-scope owner shapes admitted by its witness premise.
 
-   - `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`
-     is now genuinely lifted onto the masked-regime interface:
-     it targets `StepFRSingleRunFinalCleanPcTrueMaskedRegParam`, the
-     public unmasked theorem is rebuilt from the `mask := False`
-     specialization, and the strong-induction IH now ranges over
-     `masked'` so recursive mode-3 calls can enlarge the mask locally.
+   12. The remaining gap is therefore broader than “closures only,”
+       though closures are the clearest instance:
 
-   Newly confirmed obstruction:
+       - `closureCapturedVarsRegime` is definitely outside the direct
+         reach of `match_iff`, because its captured values live in
+         `ρcap`, not the current runtime `ρ`.
+       - More generally, any active same-tag entry that cannot itself be
+         fed to the owner-witness premise of `match_iff` still lacks a
+         bridge from the branch boolean `b` to its own
+         `qtypPredHolds` obligation.
+       - For current-memory entries, the practical gap is the
+         **orphaned** case: if a location is still rooted by some
+         current variable/reference shape admitted by `match_iff`, it is
+         already covered by the second owner-witness disjunct; the
+         problem is the same-tag location that survives in `memEnv`
+         without any such current root.
 
-   - The current private theorem target is too strong for arbitrary
-     `masked`.
-   - In a nested `ite` mode-1 / mode-2 subcase, if `matchGuard`
-     returns a tag `k` with `ctx.regime.lookup? k = some b` and
-     `masked k`, then `consistentWithRegimeMasked masked` allows the
-     proof to discharge the required loc/var regime obligation by the
-     `masked k` branch alone.
-   - That is not enough to recover the runtime branch-alignment fact:
-     the proof still needs the semantic evidence that `predSat k`
-     matches the active regime interpretation, and that evidence is
-     exactly what masking suppresses.
-   - So the problem is not merely helper visibility from
-     `StepFRIte.lean`; there is a theorem-target gap.  A simple literal
-     then/else branch gives the obstruction shape: typechecking can be in
-     mode 1 from `ctx.regime.lookup? k = some true`, while the masked
-     assumptions alone do not rule out runtime taking the else branch.
+       So closures are a real gap, but not necessarily the only one.
 
-   Consequence:
+   13. Adding a `predSat_value_independent` field to `PredSatLaws`
+       would close the gap cleanly:
 
-   - Step 6 has reached a Section 7.3 review stop.
-   - The likely repair is to strengthen the private masked recursive
-     theorem with the natural side condition
-     `∀ k, masked k → ctx.regime.lookup? k = none`
-     (or an equivalent invariant saying masked tags are outside the
-     active regime view), and then export or duplicate the small
-     `StepFRIte.lean` helper set needed by the concrete `ite` proof.
+       - Makes `predSat k μ v` depend only on `k` (combined with
+         existing memory-independence, the value and memory
+         parameters become irrelevant).
+       - Solves closure coherence: the boolean `b` from matchGuard
+         implies `predSat k μ v_current` for any current-scope
+         witness, which by value-independence implies
+         `predSat k μ v_captured` for any closure entry.
+       - Also solves the remaining same-tag current-memory case when the
+         entry itself is not directly owner-witnessable.
+       - Semantically solves the general multi-entry coherence problem
+         in one stroke, even though the downstream proof plumbing still
+         needs explicit helper lemmas.
+       - `PredSatLaws` is NOT a Section 7.2 stable boundary
+         definition, and no Section 7.2 theorem signature would change.
+         But this is still a real **premise-strengthening**:
+         `PredSatLaws` is quantified in
+         `TypeSystemEnforcesFaultRobustness_spec`,
+         `TypeSystemEnforcesFaultRobustness_spec_ioFree`, and the step
+         theorems, so adding a field makes any concrete future
+         instantiation of `PredSatLaws` harder to discharge, even if it
+         makes the proof development easier.
+       - The practical code blast radius inside the current Lean proofs
+         appears low: the codebase projects `.match_iff` and
+         `.mem_monotone`, but I did not find in-repo `PredSatLaws`
+         constructors or theorem proofs that destructure the structure
+         by cases.
+       - This aligns with the role of `PredSat` described in
+         `doc/poison-lang-description.tex`: it is a proof-side abstract
+         assumption used to enforce consistency between runtime
+         behaviour and typing predicates, not an implemented predicate
+         evaluator.  So adding `value_independent` is a proof-modeling
+         choice, not a runtime semantics change.
+       - The proof-engineering cost is still nontrivial: after adding a
+         tag-only `predSat` bridge, Step (c) will likely need new
+         regime-growth helper lemmas for
+         `capturedVarsRegimeProperty`,
+         `closureCapturedVarsRegime`, and the associated member-evidence
+         wrappers (including the masked variants).  So the API blast
+         radius is low, but the proof plumbing is probably medium.
+       - No typechecker changes needed.
 
-   Current step-6 status:
+   14. The alternative typechecker path (clear predicates when
+       `joinRegimes` drops a tag) would avoid
+       value-independence but loses precision (entries forget their
+       guards after any branch/join that disagrees on `k`) and
+       requires typechecker modifications plus a broader proof
+       revalidation pass.  The existing proof surface already contains
+       many direct lemmas about `joinPredicates`,
+       `joinMemEnvsStrong`, and `joinRegimes` (especially in
+       `StepFR.lean`), so this is not just one local preservation
+       repair.
 
-   1. The private masked recursive theorem has been strengthened by the
-      approved `masked -> lookup? = none` side condition.
-   2. The masked-regime premise is now threaded through the shared
-      single-run framework, and the minimal `StepFRIte` helper layer
-      needed by `FaultRobustnessProofs.lean` has been exported.
-      Current exported helpers include the pure-expression witness from
-      successful `matchGuard`, the true-branch runtime-instantiation
-      transport, and a public runtime branch-alignment theorem.
-   3. In the concrete masked single-run `ite` proof, mode 1 and mode 2
-      now compile without new blockers.
-   4. The remaining live gap is concentrated in the join cases (mode 3
-      and mode 4): the proof still needs a reusable clean-location
-      back-transport helper from the final joined result to the branch
-      result actually used to discharge
-      `PreservesInheritedFinalCleanLocsOneRun`.
-   5. The next implementation step is therefore narrower than “finish
-      the theorem directly”:
-      first prove that join-case clean-location helper, then complete
-      mode 3 / mode 4 on top of it.
+   **Updated assessment:** The value-independence approach (item 13)
+   is still the recommended path forward.  It is stronger than the
+   minimal semantic fact strictly needed, but it is the smallest clean
+   premise extension I found that simultaneously resolves:
 
-   Step 6 remains in progress.  This is a localized plan adjustment
-   inside the approved path, not a new Section 7.3 review stop.
+   - active same-tag current variables,
+   - same-tag current memory entries that survive the join, and
+   - closure-captured variables.
+
+   It avoids typechecker changes and does not alter the stable
+   boundary signatures in Section 7.2.
+
+   Step 6 remains paused for review pending approval of the
+   value-independence approach.  Because the repo contains no concrete
+   in-tree `predSat` implementation, that approval is primarily about
+   whether this stronger proof-side axiom matches the intended modeling
+   stance from `doc/poison-lang-description.tex`.  If approved, the
+   concrete steps are:
+
+   (a) Add `value_independent : ∀ k μ v₁ v₂, predSat k μ v₁ ↔
+       predSat k μ v₂` to `PredSatLaws`.
+   (b) Derive `predSat_tag_only : ∀ k μ₁ μ₂ v₁ v₂, predSat k μ₁
+       v₁ ↔ predSat k μ₂ v₂` from `mem_monotone` +
+       `value_independent`.
+   (c1) Derive the local helper lemmas that turn `predSat_tag_only`
+        into the `qtypPredHolds` / `varsRegime` / `locsRegime`
+        coherence facts needed by the active-tag mode-3 branch.
+   (c2) Derive the closure/captured-variable coherence layer:
+        `capturedVarsRegimeProperty`,
+        `closureCapturedVarsRegime`, and the associated member-evidence
+        wrappers (including masked variants).
+   (d) Complete the masked single-run theorem for mode 3 and mode 4.
 
 ## 7. Implementation Constraints
 
