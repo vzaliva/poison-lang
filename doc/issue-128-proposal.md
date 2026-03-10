@@ -446,21 +446,28 @@ Current implementation status on this branch:
    - The shared masked transport layer is in place for lookup-back,
      monotonicity, memory / `θ`, and predicate / `etyp` transport over
      the masked closure/value predicates.
-   - The first masked hook-export batch is complete:
+   - The cheap masked hook-export batch is complete:
      `stepFRVar_ctxToValCons_masked`,
      `stepFRDeref_ctxToValCons_masked`,
      `stepFRNewRef_ctxConsFinish_masked`,
      `stepFRNewRef_resultValCons_masked`, and
      `stepFRAssign_resultValCons_masked`.
+   - The masked `vlet` / `assign` hook layer is also complete:
+     `stepFRVlet_ctxConsBodyStart_masked`,
+     `stepFRVlet_ctxConsFinish_masked`,
+     `stepFRVlet_valConsFinish_masked`, and
+     `stepFRAssign_ctxConsPostTransport_masked`.
+   - `assign` needed one additional local factoring step,
+     `assign_single_run_post_transport_common`, to share the
+     post-write well-formedness/runtime side of the proof between the
+     unmasked and masked paths.  This stayed within proof-engineering
+     scope and did not change the plan.
 
    Remaining work, in current risk-first order:
 
-   1. add the remaining masked `vlet` / `assign` hook layer
-      (`stepFRVlet_*_masked`,
-      `stepFRAssign_ctxConsPostTransport_masked`);
-   2. add the masked `app` hook layer, which remains the main
+   1. add the masked `app` hook layer, which remains the main
       proof-engineering risk within the approved design;
-   3. return to the concrete masked single-run mode-3 theorem in
+   2. return to the concrete masked single-run mode-3 theorem in
       `FaultRobustnessProofs.lean`.
 
    Step 6 should still pause for review if this masked/local path turns

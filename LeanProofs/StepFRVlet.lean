@@ -296,6 +296,178 @@ private lemma valueConsistentWithRegime_vlet_finish
       (qt := qt) (qt' := qt') (μ := μ') (v := o)
       hpred (hetyp := hetyp) hval
 
+private lemma consistentWithRegimeMasked_vlet_body_start
+  (masked : Tag → Prop) (predSat : PredSat)
+  (ctx : TypeContext) (result1 : TypeResult) (x : Name)
+  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (v : Value)
+  (hcwr : consistentWithRegimeMasked masked predSat (ctxAfter ctx result1).regime (ctxAfter ctx result1) μ ρ θ)
+  (hvalc : valueConsistentWithRegimeMasked masked predSat (ctxAfter ctx result1).regime result1.qualType μ θ v) :
+  let ctx' : TypeContext :=
+    { ctx with
+      memEnv := result1.memEnv'
+      varEnv := ctx.varEnv.update x result1.qualType
+      tagEnv := result1.tagEnv'
+      nextLoc := result1.nextLoc'
+      nextTag := result1.nextTag'
+      regime := result1.regime' }
+  consistentWithRegimeMasked masked predSat ctx'.regime ctx' μ (ρ.update x v) θ := by
+  intro ctx'
+  refine ⟨?_, ?_, ?_⟩
+  · intro l qt k hlookup hguard hRdef
+    have hlookup' : (ctxAfter ctx result1).memEnv.lookup l = some qt := by
+      simpa [ctxAfter, ctx'] using hlookup
+    have hRdef' : (ctxAfter ctx result1).regime.lookup? k ≠ none := by
+      simpa [ctxAfter, ctx'] using hRdef
+    simpa [ctxAfter, ctx'] using hcwr.1 l qt k hlookup' hguard hRdef'
+  · intro y qt k hlookup hguard hRdef
+    by_cases hy : y = x
+    · subst y
+      have hlookup_x :
+          (ctx.varEnv.update x result1.qualType).lookup x = some qt := by
+        simpa [ctx'] using hlookup
+      have hqt : qt = result1.qualType := by
+        have hself :
+            (ctx.varEnv.update x result1.qualType).lookup x = some result1.qualType :=
+          VarTypeEnv_lookup_update_eq ctx.varEnv x result1.qualType
+        exact Option.some.inj (hlookup_x.symm.trans hself)
+      subst hqt
+      exact
+        varsRegime_of_valueConsistentWithRegimeMasked_active
+          (masked := masked) (predSat := predSat) (R := result1.regime') (μ := μ)
+          (θ := θ) (ρ := ρ.update x v) (x := x) (qt := result1.qualType)
+          (v := v) (k := k)
+          (by simp [VarEnv.update, VarEnv.lookup])
+          hguard
+          (by simpa [ctxAfter, ctx'] using hRdef)
+          (by simpa [ctxAfter, ctx'] using hvalc)
+    · have hlookup_old : ctx.varEnv.lookup y = some qt := by
+        have hne :=
+          VarTypeEnv_lookup_update_ne ctx.varEnv x y result1.qualType hy
+        simpa [ctxAfter, ctx', hne] using hlookup
+      have hRdef' : (ctxAfter ctx result1).regime.lookup? k ≠ none := by
+        simpa [ctxAfter, ctx'] using hRdef
+      have hvars := hcwr.2.1 y qt k hlookup_old hguard hRdef'
+      cases hvars with
+      | inl hmasked =>
+          exact Or.inl hmasked
+      | inr hvars =>
+          have hne := VarEnv_lookup_update_ne ρ x y v hy
+          cases hvars with
+          | noPred_ok hnp =>
+              exact Or.inr (varsRegime.noPred_ok (y, qt) hnp)
+          | guardOnly_ok k' hgo =>
+              exact Or.inr (varsRegime.guardOnly_ok (y, qt) k' hgo)
+          | withPred_ok k' arg_name pred_body var_env v0 b hpred hreg hlookup_v hcons =>
+              have hlookup_v' : (ρ.update x v).lookup y = some v0 := by
+                simpa [hne] using hlookup_v
+              exact Or.inr <|
+                varsRegime.withPred_ok (y, qt) k' arg_name pred_body var_env v0 b hpred hreg hlookup_v' hcons
+  · intro y qt v' hlookup hlookup_v
+    by_cases hy : y = x
+    · subst y
+      have hlookup_x :
+          (ctx.varEnv.update x result1.qualType).lookup x = some qt := by
+        simpa [ctx'] using hlookup
+      have hqt : qt = result1.qualType := by
+        have hself :
+            (ctx.varEnv.update x result1.qualType).lookup x = some result1.qualType :=
+          VarTypeEnv_lookup_update_eq ctx.varEnv x result1.qualType
+        exact Option.some.inj (hlookup_x.symm.trans hself)
+      have hv' : v' = v := by
+        have hself : (ρ.update x v).lookup x = some v := by
+          simp [VarEnv.update, VarEnv.lookup]
+        have hlookup_v' : (ρ.update x v).lookup x = some v' := by
+          simpa [VarEnv.update, VarEnv.lookup] using hlookup_v
+        exact Option.some.inj (hlookup_v'.symm.trans hself)
+      subst hqt hv'
+      exact valueConsistentWithRegimeMasked_closureCapturedVarsRegime (by simpa [ctxAfter, ctx'] using hvalc)
+    · have hlookup_old : ctx.varEnv.lookup y = some qt := by
+        have hne :=
+          VarTypeEnv_lookup_update_ne ctx.varEnv x y result1.qualType hy
+        simpa [ctxAfter, ctx', hne] using hlookup
+      have hlookup_v_old : ρ.lookup y = some v' := by
+        have hne := VarEnv_lookup_update_ne ρ x y v hy
+        simpa [hne] using hlookup_v
+      exact hcwr.2.2 y qt v' hlookup_old hlookup_v_old
+
+private lemma consistentWithRegimeMasked_vlet_finish
+  (masked : Tag → Prop) (predSat : PredSat) (tm : TagMeaning)
+  (ctx ctx' : TypeContext) (result1 result2 result : TypeResult)
+  (cfg1 cfg3 cf : Config) (θ1 θ2 : RealizationMap)
+  (hpredlaws : PredSatLaws predSat tm)
+  (hcf_eq : cf = { cfg3 with varEnv := cfg1.varEnv })
+  (h_mem : result.memEnv' = result2.memEnv')
+  (h_ret_regime : result.regime' = result2.regime')
+  (h_mono_e2 : Regime.monotoneStep (ctxAfter ctx result1).regime (ctxAfter ctx' result2).regime)
+  (hcwr1 : consistentWithRegimeMasked masked predSat (ctxAfter ctx result1).regime
+    (ctxAfter ctx result1) cfg1.memory cfg1.varEnv θ1)
+  (hcwr2 : consistentWithRegimeMasked masked predSat (ctxAfter ctx' result2).regime
+    (ctxAfter ctx' result2) cfg3.memory cfg3.varEnv θ2)
+  (hθext : wfExtendsMap θ1 θ2) :
+  consistentWithRegimeMasked masked predSat (ctxAfter ctx result).regime (ctxAfter ctx result)
+    cf.memory cf.varEnv θ2 := by
+  have hctxAfter_regime_eq : (ctxAfter ctx result).regime = (ctxAfter ctx' result2).regime := by
+    simp [ctxAfter, h_ret_regime]
+  have hpred_compat :
+      ∀ (qt : QTyp) (v' : Value),
+        qtypPredHolds predSat qt cfg1.memory v' ↔ qtypPredHolds predSat qt cf.memory v' := by
+    intro qt v'
+    exact qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ1 cfg1.memory cf.memory qt v'
+  have hcwr1_mono :
+      consistentWithRegimeMasked masked predSat (ctxAfter ctx' result2).regime
+        (ctxAfter ctx result1) cfg1.memory cfg1.varEnv θ1 := by
+    exact
+      consistentWithRegimeMasked_monotone masked predSat
+        (ctxAfter ctx result1).regime (ctxAfter ctx' result2).regime
+        (ctxAfter ctx result1) cfg1.memory cfg1.varEnv θ1 h_mono_e2 hcwr1
+  refine ⟨?_, ?_, ?_⟩
+  · intro l qt k hlookup hguard hkR
+    have hlookup' : (ctxAfter ctx' result2).memEnv.lookup l = some qt := by
+      simpa [ctxAfter, h_mem] using hlookup
+    have hkR' : (ctxAfter ctx' result2).regime.lookup? k ≠ none := by
+      simpa [hctxAfter_regime_eq] using hkR
+    have hloc := hcwr2.1 l qt k hlookup' hguard hkR'
+    cases hloc with
+    | inl hmasked =>
+        exact Or.inl hmasked
+    | inr hloc =>
+        exact Or.inr (by simpa [hctxAfter_regime_eq, hcf_eq] using hloc)
+  · intro u qt k hlookup hguard hkR
+    have hkR1 : (ctxAfter ctx' result2).regime.lookup? k ≠ none := by
+      simpa [hctxAfter_regime_eq] using hkR
+    have hlookup1 : (ctxAfter ctx result1).varEnv.lookup u = some qt := by
+      simpa [ctxAfter] using hlookup
+    have hvar1 := hcwr1_mono.2.1 u qt k hlookup1 hguard hkR1
+    cases hvar1 with
+    | inl hmasked =>
+        exact Or.inl hmasked
+    | inr hvar1 =>
+        have hvar1' := varsRegime_transport_predHolds hpred_compat hvar1
+        exact Or.inr (by simpa [hctxAfter_regime_eq, hcf_eq] using hvar1')
+  · intro u qt v_u hlookup hlookup_v
+    have hlookup1 : (ctxAfter ctx result1).varEnv.lookup u = some qt := by
+      simpa [ctxAfter] using hlookup
+    have hlookup_v1 : cfg1.varEnv.lookup u = some v_u := by
+      simpa [hcf_eq] using hlookup_v
+    have hcap1 := hcwr1_mono.2.2 u qt v_u hlookup1 hlookup_v1
+    have hcap1' :
+        closureCapturedVarsRegimeMasked masked predSat (ctxAfter ctx result).regime qt
+          cfg1.memory θ1 v_u := by
+      simpa [hctxAfter_regime_eq] using hcap1
+    exact closureCapturedVarsRegimeMasked_transport_μ_θ hpred_compat hθext.1 hcap1'
+
+private lemma valueConsistentWithRegimeMasked_vlet_finish
+  (masked : Tag → Prop) (predSat : PredSat) :
+  VletValConsFinish (fun R qt μ θ o => valueConsistentWithRegimeMasked masked predSat R qt μ θ o) := by
+  intro R R' qt qt' μ μ' θ o hμ hR hetyp hpred hval
+  subst hμ
+  subst R'
+  exact
+    valueConsistentWithRegimeMasked_transport_pred
+      (masked := masked) (predSat := predSat) (R := R)
+      (qt := qt) (qt' := qt') (μ := μ') (v := o)
+      hpred (hetyp := hetyp) hval
+
 
 lemma stepFR_vlet
   (ctxᵢ : TypeContext) (predSat : PredSat)
@@ -1815,6 +1987,38 @@ theorem stepFRVlet_valConsFinish_unmasked
   (predSat : PredSat) :
   StepFRVletValConsFinish (valueConsistentWithRegime predSat) := by
   simpa [StepFRVletValConsFinish] using valueConsistentWithRegime_vlet_finish predSat
+
+theorem stepFRVlet_ctxConsBodyStart_masked
+  (masked : Tag → Prop) (predSat : PredSat) :
+  StepFRVletCtxConsBodyStart
+    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v) := by
+  intro ctx result1 x μ ρ θ v hctxCons hvalc
+  simpa [StepFRVletCtxConsBodyStart] using
+    consistentWithRegimeMasked_vlet_body_start
+      masked predSat ctx result1 x μ ρ θ v hctxCons hvalc
+
+theorem stepFRVlet_ctxConsFinish_masked
+  (masked : Tag → Prop) (predSat : PredSat) (tm : TagMeaning) :
+  StepFRVletCtxConsFinish
+    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    predSat tm := by
+  intro ctx ctx' result1 result2 result cfg1 cfg3 cf θ1 θ2
+    hpredlaws hcf_eq h_mem h_ret_regime h_mono_e2 hctxCons1 hctxCons2 hθext
+  simpa [StepFRVletCtxConsFinish] using
+    consistentWithRegimeMasked_vlet_finish
+      (masked := masked) (predSat := predSat) (tm := tm)
+      (ctx := ctx) (ctx' := ctx')
+      (result1 := result1) (result2 := result2) (result := result)
+      (cfg1 := cfg1) (cfg3 := cfg3) (cf := cf) (θ1 := θ1) (θ2 := θ2)
+      hpredlaws hcf_eq h_mem h_ret_regime h_mono_e2 hctxCons1 hctxCons2 hθext
+
+theorem stepFRVlet_valConsFinish_masked
+  (masked : Tag → Prop) (predSat : PredSat) :
+  StepFRVletValConsFinish
+    (fun R qt μ θ o => valueConsistentWithRegimeMasked masked predSat R qt μ θ o) := by
+  simpa [StepFRVletValConsFinish] using
+    valueConsistentWithRegimeMasked_vlet_finish masked predSat
 
 theorem stepFRSingleRunFinalCleanPcTrue_vlet_param
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)

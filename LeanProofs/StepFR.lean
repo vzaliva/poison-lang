@@ -2208,6 +2208,91 @@ lemma varsRegime_of_valueConsistentWithRegime_active
               (b := b) hvalc hpred hlookupR
           exact varsRegime.withPred_ok (x, qt) k0 arg_name pred_body var_env v b hpred hlookupR hlookup hcons
 
+lemma varsRegime_of_valueConsistentWithRegimeMasked_active
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime} {μ : Memory}
+  {θ : RealizationMap} {ρ : VarEnv}
+  {x : Name} {qt : QTyp} {v : Value} {k : Tag}
+  (hlookup : ρ.lookup x = some v)
+  (hguard : qtypGuardTag qt = some k)
+  (hRdef : R.lookup? k ≠ none)
+  (hvalc : valueConsistentWithRegimeMasked masked predSat R qt μ θ v) :
+  masked k ∨ varsRegime predSat R μ ρ (x, qt) := by
+  cases hpred : qt.pred with
+  | noPred =>
+      simp [qtypGuardTag, hpred] at hguard
+  | guardOnly k0 =>
+      exact Or.inr (varsRegime.guardOnly_ok (x, qt) k0 hpred)
+  | guardClosure k0 arg_name pred_body var_env =>
+      have hk0_eq : k0 = k := by
+        have htag0 : qtypGuardTag qt = some k0 := by
+          simp [qtypGuardTag, hpred]
+        have : some k0 = some k := by
+          calc
+            some k0 = qtypGuardTag qt := by symm; exact htag0
+            _ = some k := hguard
+        exact Option.some.inj this
+      cases hlookupR : R.lookup? k0 with
+      | none =>
+          have : R.lookup? k = none := by simpa [hk0_eq] using hlookupR
+          exact False.elim (hRdef this)
+      | some b =>
+          cases hvalc with
+          | noTag htag _ =>
+              have : qtypGuardTag qt = some k0 := by simp [qtypGuardTag, hpred]
+              simp [this] at htag
+          | guardOnly_ok k' hgo _ =>
+              simp [hpred] at hgo
+          | maskedTag k' htag hmasked _ =>
+              have hk_eq : k' = k := by
+                have : some k' = some k := by
+                  calc
+                    some k' = qtypGuardTag qt := by simp [htag]
+                    _ = some k := hguard
+                exact Option.some.inj this
+              exact Or.inl (by simpa [hk_eq] using hmasked)
+          | notInRegime k' htag hnone _ =>
+              have hk_eq : k' = k := by
+                have : some k' = some k := by
+                  calc
+                    some k' = qtypGuardTag qt := by simp [htag]
+                    _ = some k := hguard
+                exact Option.some.inj this
+              have : R.lookup? k = none := by simpa [hk_eq] using hnone
+              exact False.elim (hRdef this)
+          | inRegimeTrue k' htag hk hholds _ =>
+              have hk_eq : k' = k := by
+                have : some k' = some k := by
+                  calc
+                    some k' = qtypGuardTag qt := by simp [htag]
+                    _ = some k := hguard
+                exact Option.some.inj this
+              have hk_true : R.lookup? k0 = some true := by simpa [hk0_eq, hk_eq] using hk
+              exact Or.inr <|
+                varsRegime.withPred_ok (x, qt) k0 arg_name pred_body var_env v true
+                  hpred hk_true hlookup
+                  ⟨fun _ => hholds, fun hbfalse _ =>
+                    by cases hbfalse⟩
+          | inRegimeFalse k' htag hk hnot _ =>
+              have hk_eq : k' = k := by
+                have : some k' = some k := by
+                  calc
+                    some k' = qtypGuardTag qt := by simp [htag]
+                    _ = some k := hguard
+                exact Option.some.inj this
+              have hk_false : R.lookup? k0 = some false := by simpa [hk0_eq, hk_eq] using hk
+              have hcons :
+                  (false = true → qtypPredHolds predSat qt μ v) ∧
+                  (false = false → ¬ qtypPredHolds predSat qt μ v) := by
+                constructor
+                · intro hbtrue
+                  cases hbtrue
+                · intro _
+                  exact hnot
+              exact Or.inr <|
+                varsRegime.withPred_ok (x, qt) k0 arg_name pred_body var_env v false
+                  hpred hk_false hlookup
+                  hcons
+
 -- Transport `varsRegime` across a memory change when predicate truth is preserved.
 lemma varsRegime_transport_predHolds
   {predSat : PredSat} {R : Regime} {μ μ' : Memory} {ρ : VarEnv} {entry : Name × QTyp}
@@ -4985,6 +5070,63 @@ lemma consistentWithRegime_monotone
   · -- Third conjunct: closureCapturedVarsRegime monotone under h_mono.
     intro x qt v hlookup hρ
     exact closureCapturedVarsRegime_monotone h_mono (h_cwr.2.2 x qt v hlookup hρ)
+
+lemma consistentWithRegimeMasked_monotone
+    (masked : Tag → Prop) (predSat : PredSat) (R R' : Regime) (ctx : TypeContext)
+    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+    (h_mono : Regime.monotoneStep R R')
+    (h_cwr : consistentWithRegimeMasked masked predSat R ctx μ ρ θ) :
+    consistentWithRegimeMasked masked predSat R' ctx μ ρ θ := by
+  simp only [consistentWithRegimeMasked] at h_cwr ⊢
+  refine ⟨?_, ?_, ?_⟩
+  · intro l qt k hlookup hguard hR'def
+    cases hk' : R'.lookup? k with
+    | none => exact absurd hk' hR'def
+    | some b =>
+        have hRdef : R.lookup? k ≠ none := h_mono.2.2 k hR'def
+        have hmasked_or_hloc := h_cwr.1 l qt k hlookup hguard hRdef
+        cases hmasked_or_hloc with
+        | inl hmasked =>
+            exact Or.inl hmasked
+        | inr hloc =>
+            cases hk : R.lookup? k with
+            | none => exact absurd hk hRdef
+            | some b' =>
+                have h := h_mono.2.1 k b' hk
+                cases h with
+                | inl h_eq =>
+                    have hb_eq : b' = b := by
+                      have : some b' = some b := h_eq.symm.trans hk'
+                      exact Option.some.inj this
+                    have hk_b : R.lookup? k = some b := by rw [← hb_eq]; exact hk
+                    exact Or.inr (locsRegime_monotone h_mono hguard hk_b hk' hloc)
+                | inr h_none =>
+                    simp [h_none] at hk'
+  · intro x qt k hlookup hguard hR'def
+    cases hk' : R'.lookup? k with
+    | none => exact absurd hk' hR'def
+    | some b =>
+        have hRdef : R.lookup? k ≠ none := h_mono.2.2 k hR'def
+        have hmasked_or_hvars := h_cwr.2.1 x qt k hlookup hguard hRdef
+        cases hmasked_or_hvars with
+        | inl hmasked =>
+            exact Or.inl hmasked
+        | inr hvars =>
+            cases hk : R.lookup? k with
+            | none => exact absurd hk hRdef
+            | some b' =>
+                have h := h_mono.2.1 k b' hk
+                cases h with
+                | inl h_eq =>
+                    have hb_eq : b' = b := by
+                      have : some b' = some b := h_eq.symm.trans hk'
+                      exact Option.some.inj this
+                    have hk_b : R.lookup? k = some b := by rw [← hb_eq]; exact hk
+                    exact Or.inr (varsRegime_monotone h_mono hguard hk_b hk' hvars)
+                | inr h_none =>
+                    simp [h_none] at hk'
+  · intro x qt v hlookup hρ
+    exact closureCapturedVarsRegimeMasked_monotone h_mono (h_cwr.2.2 x qt v hlookup hρ)
 
 lemma opEType_ne_ref (op : Op) (et1 et2 : ETyp) (ls : LocSet) :
   opEType? op et1 et2 ≠ some (ETyp.ref ls) := by
