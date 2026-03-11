@@ -24,7 +24,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git ca-certificates \
     openssh-client \
-    time util-linux
+    time util-linux \
     build-essential clang lld cmake pkg-config \
     libgmp-dev libuv1-dev \
     libpcre3 \
