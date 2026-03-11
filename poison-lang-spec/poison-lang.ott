@@ -1271,7 +1271,7 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 
 % Predicate-based while typing rule (when matching predicate found)
 match_guard e1 G S = k with LS
 pure ; R ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexL L i ; indexR R i
-pm ; (indexR R i)[k |-> true] ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexL L i[k |-> true using LS] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i ; indexedR R 2 i
+pm ; indexR R i [ k |-> true ] ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexL L i [ k |-> true using LS ] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i ; indexedR R 2 i
 indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
 % NOTE(join-policy-while): the memory fixpoint currently uses JoinRestrict
 % (implemented via restrict + JoinG / joinMemEnvs). We may later switch this
