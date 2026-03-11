@@ -5,8 +5,10 @@ GitHub issue: https://github.com/vzaliva/poison-lang/issues/128
 ## 1. Scope
 
 This document is about the remaining `if` proof work on top of the
-rebased branch and the current split proof layout on `main`, with mode
-3 as the primary blocker and mode 4 as the lower-risk follow-on.
+rebased branch and the current split proof layout on `main`.  Mode 3
+remains the primary blocker.  Mode 4 has now been completed, but its
+proof shape is still relevant as a reference point for the remaining
+mode-3 design discussion.
 
 `while` is out of scope for this iteration.  Any `while` lemmas or
 proof branches may remain `sorry` while the `if` mode-3 path is
@@ -123,10 +125,18 @@ point for the remaining design and proof work:
   `FaultRobustnessProofs.lean` is already refactored onto the masked
   recursive family, and mode 1 / mode 2 of the concrete masked `ite`
   proof compile
+- the split `stepFR_ite_mode4` proof is now complete; the top-level
+  `stepFR_ite` / `TypeSystemEnforcesFaultRobustness_step_IOFree`
+  dispatcher path now threads the existing
+  `StepFRSingleRunFinalCleanPcTrue_IH` through the mode-4 case without
+  changing any stable boundary definitions
 - the broad generic regime-growth path for
   `consistentWithRegime_insert_regime_*` remains deferred; the active
   direction is still the local masked path plus a targeted repair for
   the active-tag subcase
+- at the current checkpoint, `lake build` succeeds with no new
+  non-`sorry` warnings; the only remaining issue-128 proof holes are the
+  mode-3 ones listed in Section 6.4
 
 ## 5. Remaining Open Issues
 
@@ -170,24 +180,24 @@ current assumptions alone.  The remaining question is how to supply
 multi-entry coherence for the active-tag case without changing the
 stable boundaries in Section 7.2.
 
-### 5.3 Mode 4 is separate and lower risk
+### 5.3 Mode 4 is complete and remains separate from the blocker
 
-`stepFR_ite_mode4` is real remaining work, but it is not part of the
-issue-128 regime-sync blocker.  Mode 4 is the `matchGuard`-failure
-path, so it does not insert `k` into the regime and does not trigger the
-active-tag growth problem above.
+`stepFR_ite_mode4` is now proved.  This confirms the earlier risk
+assessment: mode 4 is the `matchGuard`-failure path, so it does not
+insert `k` into the regime and does not trigger the active-tag growth
+problem above.
 
-Mode 4 should therefore be treated as a lower-risk follow-on after mode
-3.  It should share:
+The completed mode-4 proof shares exactly the pieces expected in the
+proposal:
 
 - the conservative join back-half
 - any reusable clean-back / join transport lemmas
 - parts of the already-working mode-1 / mode-2 front-half where the
   proof shape truly matches
 
-If some of those reusable lemmas are currently trapped in
-`StepFRApp.lean`, they should be moved to `StepFR.lean` rather than
-duplicated locally.
+So mode 4 is no longer part of the remaining blocker surface for issue
+128.  Any later cleanup around helper placement is optional refactoring,
+not part of the live design problem.
 
 ## 6. Proposed Solution and Plan
 
@@ -195,7 +205,7 @@ This is an intended order of attack, not a rigid waterfall.  In
 particular, the clean-lookup redesign and the regime-growth transfer
 story may partially collapse into the same implementation step.
 
-The active plan now focuses only on the remaining mode-3/mode-4 proof
+The active plan now focuses only on the remaining mode-3 proof/design
 work.
 
 ### 6.1 Why the current proof-only path stops
@@ -278,20 +288,19 @@ family A before any more proof work:
 (c) compare the candidate repair against the Ott rules and write down
     the minimal spec/typechecker change that removes in-bound-`none`
     re-use,
-(d) only after that, return to the step-6 proof plan for mode 3, with
-    mode 4 remaining the lower-risk follow-on.
+(d) only after that, return to the step-6 proof plan for mode 3, using
+    the completed mode-4 proof only as reference material where its join
+    and clean-back structure applies.
 
-Mode 4 should still be planned as simpler than mode 3: it shares the
-conservative join back-half, but it avoids the active-tag regime-growth
-issue because `matchGuard` failed.  Reuse mode-1 / mode-2 front-half
-proof structure where it actually fits, and if reusable join /
-clean-back lemmas are currently trapped in `StepFRApp.lean`, move them
-into `StepFR.lean` rather than duplicating them in the `ite` proof.
+Mode 4 has therefore become evidence about proof shape rather than a
+remaining task: it validates the simpler non-active-tag path and helps
+separate "generic `if` join plumbing" from the genuinely blocked
+active-tag mode-3 obligations.
 
 ### 6.4 Current active `sorry` surface
 
 As of the current branch, the active code `sorry` surface in
-`LeanProofs/` is small and falls into three buckets:
+`LeanProofs/` is small and falls into two buckets:
 
 \textbf{(1) `kwhile`-related and out of scope for issue 128.}
 
@@ -311,17 +320,11 @@ As of the current branch, the active code `sorry` surface in
 - `FaultRobustnessProofs.lean`: the remaining mode-3 branch inside
   `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`
   This is the single-run manifestation of the same blocker.
-- `StepFRIte.lean`: `stepFR_ite_mode4`
-  This is not blocked by the mode-3 active-tag issue, but it is still
-  part of the remaining `if` proof scope and should be treated as the
-  lower-risk follow-on after mode 3.
 
 So the remaining proof surface relevant to finishing the `if` work is
 exactly:
 
-- two mode-3 holes sharing the same design blocker, and
-- one mode-4 hole that should remain after mode 3 as the simpler
-  follow-on.
+- two mode-3 holes sharing the same design blocker.
 
 ## 7. Implementation Constraints
 

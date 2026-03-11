@@ -2045,6 +2045,172 @@ lemma closureCapturedVarsRegime_weaken_pFnTClosures'
           subst heq_tcls
           exact .peClosure xp body pbody ρcap σcap st1 st2 p' tcls' hval rfl hpure (hmem _ hmem_src) hP hrec
 
+-- Single-step: transport closureCapturedVarsRegime across one joinETyps application.
+lemma closureCapturedVarsRegime_joinETyps_step
+  (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap) (v : Value)
+  (etyp1 resEtyp : ETyp) (p1 resPoison : Poison) (pr1 resPred : Predicate)
+  (hcompat : beqETypSignature etyp1 resEtyp = true)
+  (hcap : closureCapturedVarsRegime predSat R ⟨etyp1, p1, pr1⟩ μ θ v) :
+  closureCapturedVarsRegime predSat R
+    ⟨joinETyps etyp1 resEtyp p1 resPoison,
+      joinPoison p1 resPoison, joinPredicates pr1 resPred⟩ μ θ v := by
+  cases etyp1 with
+  | int | bool | unit | string =>
+      simp [joinETyps]
+      exact closureCapturedVarsRegime_transport_etyp (by simp) hcap
+  | ref ls =>
+      cases resEtyp with
+      | ref ls2 =>
+          simp only [beqETypSignature] at hcompat
+          cases hcap with
+          | intro hdeep =>
+              cases hdeep with
+              | nonClosure hv hpe => exact .intro (.nonClosure hv hpe)
+              | closure _ _ _ _ _ _ _ _ _ hetyp_arr _ _ => exfalso; exact ETyp.noConfusion hetyp_arr
+              | peClosure _ _ _ _ _ _ _ _ _ _ hetyp_parr _ _ => exfalso; exact ETyp.noConfusion hetyp_parr
+      | _ => simp [beqETypSignature] at hcompat
+  | arrow st1 st2 p tcls =>
+      have hisArrow : resEtyp.isArrow := by
+        cases resEtyp with
+        | arrow => rfl
+        | _ => simp [beqETypSignature] at hcompat
+      obtain ⟨p', tcls', heq, hmem⟩ :=
+        joinETyps_arrow_structure
+          (st1 := st1) (st2 := st2) (p1 := p) (tcls1 := tcls)
+          (t2 := resEtyp) (p1' := p1) (p2' := resPoison)
+          hisArrow hcompat
+      have hcap' :=
+        closureCapturedVarsRegime_weaken_fnTClosures'
+          (p' := p') (tcls' := tcls') hmem hcap
+      exact closureCapturedVarsRegime_transport_etyp heq.symm hcap'
+  | parrow st1 st2 p tcls =>
+      have hisParrow : resEtyp.isParrow := by
+        cases resEtyp with
+        | parrow => rfl
+        | _ => simp [beqETypSignature] at hcompat
+      obtain ⟨p', tcls', heq, hmem⟩ :=
+        joinETyps_parrow_structure
+          (st1 := st1) (st2 := st2) (p1 := p) (tcls1 := tcls)
+          (t2 := resEtyp) (p1' := p1) (p2' := resPoison)
+          hisParrow hcompat
+      have hcap' :=
+        closureCapturedVarsRegime_weaken_pFnTClosures'
+          (p' := p') (tcls' := tcls') hmem hcap
+      exact closureCapturedVarsRegime_transport_etyp heq.symm hcap'
+
+-- Single-step: transport closureCapturedVarsRegime from the RIGHT argument of joinETyps.
+lemma closureCapturedVarsRegime_joinETyps_step_right
+  (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap) (v : Value)
+  (etyp1 resEtyp : ETyp) (p1 resPoison : Poison) (pr1 resPred : Predicate)
+  (hcompat : beqETypSignature etyp1 resEtyp = true)
+  (hcap : closureCapturedVarsRegime predSat R ⟨resEtyp, resPoison, resPred⟩ μ θ v) :
+  closureCapturedVarsRegime predSat R
+    ⟨joinETyps etyp1 resEtyp p1 resPoison,
+      joinPoison p1 resPoison, joinPredicates pr1 resPred⟩ μ θ v := by
+  cases hcap with
+  | intro hdeep =>
+      cases hdeep with
+      | nonClosure hv hpe =>
+          exact .intro (.nonClosure hv hpe)
+      | closure x body ρcap σcap st1r st2r pr tclr hval hetyp_r htcl hP hrec =>
+          have hetyp_r' : resEtyp = ETyp.arrow st1r st2r pr tclr := by
+            simpa using hetyp_r
+          subst resEtyp
+          cases etyp1 with
+          | int =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+          | bool =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+          | unit =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+          | string =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+          | ref ls =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+          | arrow st1l st2l pl tclsl =>
+              simp [beqETypSignature] at hcompat
+              obtain ⟨rfl, rfl⟩ := hcompat
+              have hcap_src :
+                  closureCapturedVarsRegime predSat R
+                    ⟨ETyp.arrow st1l st2l pr tclr, resPoison, resPred⟩ μ θ v := by
+                simpa using (closureCapturedVarsRegime.intro
+                  (deepValueQTypProperty.closure x body ρcap σcap st1l st2l pr tclr
+                    hval rfl htcl hP hrec))
+              have hcap_join :
+                  closureCapturedVarsRegime predSat R
+                    ⟨ETyp.arrow st1l st2l (joinPoison pl pr) (mergeFnTClosures tclsl tclr),
+                      resPoison, resPred⟩ μ θ v :=
+                closureCapturedVarsRegime_weaken_fnTClosures'
+                  (predSat := predSat) (R := R) (μ := μ) (θ := θ) (v := v)
+                  (st1 := st1l) (st2 := st2l) (p := pr)
+                  (p' := joinPoison pl pr) (tcls := tclr)
+                  (tcls' := mergeFnTClosures tclsl tclr)
+                  (poison := resPoison) (pred := resPred)
+                  (fun tcl hmem => mem_mergeFnTClosures_right tclsl tclr tcl hmem)
+                  hcap_src
+              exact closureCapturedVarsRegime_transport_etyp (qt := _)
+                (qt' := ⟨joinETyps (ETyp.arrow st1l st2l pl tclsl) (ETyp.arrow st1l st2l pr tclr)
+                    p1 resPoison,
+                    joinPoison p1 resPoison, joinPredicates pr1 resPred⟩)
+                (by simp [joinETyps]) hcap_join
+          | parrow st1l st2l pl tclsl =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+      | peClosure x body pbody ρcap σcap st1r st2r pr tclr hval hetyp_r hpure htcl hP hrec =>
+          have hetyp_r' : resEtyp = ETyp.parrow st1r st2r pr tclr := by
+            simpa using hetyp_r
+          subst resEtyp
+          cases etyp1 with
+          | int =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+          | bool =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+          | unit =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+          | string =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+          | ref ls =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+          | arrow st1l st2l pl tclsl =>
+              exfalso
+              simp [beqETypSignature] at hcompat
+          | parrow st1l st2l pl tclsl =>
+              simp [beqETypSignature] at hcompat
+              obtain ⟨rfl, rfl⟩ := hcompat
+              have hcap_src :
+                  closureCapturedVarsRegime predSat R
+                    ⟨ETyp.parrow st1l st2l pr tclr, resPoison, resPred⟩ μ θ v := by
+                simpa using (closureCapturedVarsRegime.intro
+                  (deepValueQTypProperty.peClosure x body pbody ρcap σcap st1l st2l pr tclr
+                    hval rfl hpure htcl hP hrec))
+              have hcap_join :
+                  closureCapturedVarsRegime predSat R
+                    ⟨ETyp.parrow st1l st2l (joinPoison pl pr) (mergePFnTClosures tclsl tclr),
+                      resPoison, resPred⟩ μ θ v :=
+                closureCapturedVarsRegime_weaken_pFnTClosures'
+                  (predSat := predSat) (R := R) (μ := μ) (θ := θ) (v := v)
+                  (st1 := st1l) (st2 := st2l) (p := pr)
+                  (p' := joinPoison pl pr) (tcls := tclr)
+                  (tcls' := mergePFnTClosures tclsl tclr)
+                  (poison := resPoison) (pred := resPred)
+                  (fun tcl hmem => mem_mergePFnTClosures_right tclsl tclr tcl hmem)
+                  hcap_src
+              exact closureCapturedVarsRegime_transport_etyp (qt := _)
+                (qt' := ⟨joinETyps (ETyp.parrow st1l st2l pl tclsl) (ETyp.parrow st1l st2l pr tclr)
+                    p1 resPoison,
+                    joinPoison p1 resPoison, joinPredicates pr1 resPred⟩)
+                (by simp [joinETyps]) hcap_join
+
 -- Transport closureCapturedVarsRegime across qt.pred equality.
 -- Since the new definition is indexed by qt.etyp, we need an additional
 -- etyp equality (defaults to rfl for the common case where only pred changes).

@@ -1030,7 +1030,9 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                           (ctxAfter ctxᵢ res).regime
                                           ⟨res2.qualType.etyp, res2.qualType.poison, res2.qualType.pred⟩
                                           cf.memory θ2 o := by
-                                      cases hq2 : res2.qualType <;> simpa [hq2] using hcap2'
+                                      cases hq2 : res2.qualType with
+                                      | mk etyp2 poison2 pred2 =>
+                                          simpa [hq2] using hcap2'
                                     simpa using
                                       (closureCapturedVarsRegimeMasked_joinETyps_step
                                         masked predSat (ctxAfter ctxᵢ res).regime
@@ -1047,7 +1049,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                       joinPoison res2.qualType.poison res3.qualType.poison,
                                       joinPredicates res2.qualType.pred res3.qualType.pred⟩)
                                     (qt' := res.qualType)
-                                    (by simpa [hetyp]) hcap2_join
+                                    (by simp [hetyp]) hcap2_join
                         | inr hbranch_false =>
                             have ht_e3 : terminatesTo .ioFree e3 cfg1 cf o := hbranch_false.2
                             have hIH_e3 := IH' fuel' (by omega) masked e3 ctxForE3 res3 htc3'
@@ -1222,7 +1224,9 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                           (ctxAfter ctxᵢ res).regime
                                           ⟨res3.qualType.etyp, res3.qualType.poison, res3.qualType.pred⟩
                                           cf.memory θ3 o := by
-                                      cases hq3 : res3.qualType <;> simpa [hq3] using hcap3'
+                                      cases hq3 : res3.qualType with
+                                      | mk etyp3 poison3 pred3 =>
+                                          simpa [hq3] using hcap3'
                                     simpa using
                                       (closureCapturedVarsRegimeMasked_joinETyps_step_right
                                         masked predSat (ctxAfter ctxᵢ res).regime
@@ -1239,7 +1243,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                       joinPoison res2.qualType.poison res3.qualType.poison,
                                       joinPredicates res2.qualType.pred res3.qualType.pred⟩)
                                     (qt' := res.qualType)
-                                    (by simpa [hetyp]) hcap3_join
+                                    (by simp [hetyp]) hcap3_join
           | newRef e =>
               cases fuel with
               | zero =>
@@ -1580,7 +1584,13 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckIf] at htc
             | succ fuel' =>
-                exact stepFR_ite ctxᵢ predSat tm e1 e2 e3 fuel' res (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH) htc
+                have hsingleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) := by
+                  intro m _hm e ctx' hwfTm' res' htc'
+                  exact TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree e ctx' predSat tm m res' htc'
+                exact
+                  stepFR_ite ctxᵢ predSat tm e1 e2 e3 fuel' res
+                    (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH)
+                    hsingleIH htc
         | newRef e =>
             cases fuel with
             | zero =>
