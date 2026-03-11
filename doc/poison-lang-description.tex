@@ -1150,11 +1150,19 @@ For a single run, we say that $\mathcal{R}$ is \emph{consistent} with the critic
 
 \subsubsection{Regime-Aware Typing}
 
-The type system is parametrised by the guard regime $\mathcal{R}$ to enable precise reasoning about fault robustness. The typing judgment has the form:
+The type system is parametrised by the guard regime $\mathcal{R}$ to enable
+precise reasoning about fault robustness. The typing judgment has the form:
 \[
   \text{pm} ; \mathcal{R} ; \text{pc} ; \Gamma ; \sigma ; \mathcal{L} \vdash e : Q \dashv \Gamma' ; \mathcal{L}'
 \]
-where $\mathcal{R}$ is a flow-sensitive typing component threaded through premises and updated conservatively by typing rules (e.g.\ assignment invalidation and agreement-only joins at merges). During normal program execution, the regime is empty ($\mathcal{R} = \emptyset$), allowing the type system to conservatively account for all possible runtime guard outcomes. During fault-robustness reasoning, $\mathcal{R}$ is instantiated with the fixed guard regime for the two-run scenario, enabling the type system to exploit regime-deterministic guard outcomes.
+where $\mathcal{R}$ is a flow-sensitive typing component threaded through
+premises and updated conservatively by typing rules (e.g.\ assignment
+invalidation and agreement-only joins at merges). During normal program
+execution, the regime is empty ($\mathcal{R} = \emptyset$), allowing the type
+system to conservatively account for all possible runtime guard outcomes. During
+fault-robustness reasoning, $\mathcal{R}$ is instantiated with the fixed guard
+regime for the two-run scenario, enabling the type system to exploit
+regime-deterministic guard outcomes.
 
 \paragraph{Regime-aware conditional typing.}
 When typechecking a conditional \texttt{if e1 then e2 else e3} where \texttt{match\_guard} recognises a guard tag $k$, the type system consults $\mathcal{R}(k)$:
@@ -1164,9 +1172,14 @@ When typechecking a conditional \texttt{if e1 then e2 else e3} where \texttt{mat
   \item \textbf{$\mathcal{R}(k) = \text{none}$} (regime-unknown): The regime does not fix the guard outcome, so both branches may be taken in different fault-robustness runs. The type system conservatively poisons the branch program counter with the condition's poison (as in standard conditionals) and joins the branch results. This ensures that any writes in divergent branches are typed poisoned, preventing violations of the fault-robustness agreement invariant.
 \end{itemize}
 
-For standard conditionals (where \texttt{match\_guard} fails), the regime is not consulted: both branches are typechecked with a program counter poisoned by the condition, and results are joined.
+For standard conditionals (where \texttt{match\_guard} fails), the regime is not
+consulted: both branches are typechecked with a program counter poisoned by the
+condition, and results are joined.
 
-This regime-aware approach resolves the mismatch between flow-insensitive typing and regime-specific fault-robustness reasoning, enabling the type system to be both validation-friendly (when $R$ is empty) and proof-friendly (when $R$ is instantiated).
+This regime-aware approach resolves the mismatch between flow-insensitive typing
+and regime-specific fault-robustness reasoning, enabling the type system to be
+both validation-friendly (when $R$ is empty) and proof-friendly (when $R$ is
+instantiated).
 
 \begin{definition}[Fault Robustness Property]
 A program $e$ satisfies fault robustness with respect to the critical-input specification $S$, an observable specification $\text{obs}$, and an abstract predicate satisfaction relation, if for each guard regime $\mathcal{R}$ and any two runs with initial states $(\mu_1,\rho_1,\theta_1)$ and $(\mu_2,\rho_2,\theta_2)$:

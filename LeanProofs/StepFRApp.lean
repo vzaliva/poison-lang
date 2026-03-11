@@ -2717,7 +2717,7 @@ private lemma closureCapturedVarsRegimeMasked_weaken_pFnTClosures'
       subst heq_tcls
       exact .peClosure xp body pbody ρcap σcap st1 st2 p' tcls' hval rfl hpure (hmem _ hmem_src) hP hrec
 
-private lemma closureCapturedVarsRegimeMasked_joinETyps_step
+theorem closureCapturedVarsRegimeMasked_joinETyps_step
   (masked : Tag → Prop) (predSat : PredSat) (R : Regime)
   (μ : Memory) (θ : RealizationMap) (v : Value)
   (etyp1 resEtyp : ETyp) (p1 resPoison : Poison) (pr1 resPred : Predicate)
@@ -2768,7 +2768,7 @@ private lemma closureCapturedVarsRegimeMasked_joinETyps_step
           (masked := masked) (p' := p') (tcls' := tcls') hmem hcap
       exact closureCapturedVarsRegimeMasked_transport_etyp heq.symm hcap'
 
-private lemma closureCapturedVarsRegimeMasked_joinETyps_step_right
+theorem closureCapturedVarsRegimeMasked_joinETyps_step_right
   (masked : Tag → Prop) (predSat : PredSat) (R : Regime)
   (μ : Memory) (θ : RealizationMap) (v : Value)
   (etyp1 resEtyp : ETyp) (p1 resPoison : Poison) (pr1 resPred : Predicate)

@@ -288,6 +288,41 @@ proof structure where it actually fits, and if reusable join /
 clean-back lemmas are currently trapped in `StepFRApp.lean`, move them
 into `StepFR.lean` rather than duplicating them in the `ite` proof.
 
+### 6.4 Current active `sorry` surface
+
+As of the current branch, the active code `sorry` surface in
+`LeanProofs/` is small and falls into three buckets:
+
+\textbf{(1) `kwhile`-related and out of scope for issue 128.}
+
+- `StepFRKWhile.lean`: `stepFR_kwhile`
+- `StepFR.lean`: the `kwhile` branches inside
+  `typecheckExpr_preserves_regimeConsistentWithCtxMasked_main` and
+  `typecheckExpr_preserves_wfTagMeaningCtx_main`
+- `StepFR.lean`: `typecheckExpr_lookup_origin_of_pc_true_split_kwhile`
+- `FaultRobustnessProofs.lean`: the `kwhile` case in
+  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`
+
+\textbf{(2) `if`-related and inside the remaining issue-128 scope.}
+
+- `StepFRIte.lean`: `stepFR_ite_mode3`
+  This is blocked by the live mode-3 active-tag / in-bound-`none`
+  problem described in Section 5.1.
+- `FaultRobustnessProofs.lean`: the remaining mode-3 branch inside
+  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`
+  This is the single-run manifestation of the same blocker.
+- `StepFRIte.lean`: `stepFR_ite_mode4`
+  This is not blocked by the mode-3 active-tag issue, but it is still
+  part of the remaining `if` proof scope and should be treated as the
+  lower-risk follow-on after mode 3.
+
+So the remaining proof surface relevant to finishing the `if` work is
+exactly:
+
+- two mode-3 holes sharing the same design blocker, and
+- one mode-4 hole that should remain after mode 3 as the simpler
+  follow-on.
+
 ## 7. Implementation Constraints
 
 The following rules apply to every implementation step in the plan above.
