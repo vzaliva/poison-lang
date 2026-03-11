@@ -129,7 +129,10 @@ point for the remaining design and proof work:
   `stepFR_ite` / `TypeSystemEnforcesFaultRobustness_step_IOFree`
   dispatcher path now threads the existing
   `StepFRSingleRunFinalCleanPcTrue_IH` through the mode-4 case without
-  changing any stable boundary definitions
+  changing any stable boundary definitions; the current branch now also
+  uses a cleaner mode-4 wiring that precomputes the mode-4 compatibility
+  and result-shape facts in the dispatcher and passes them into
+  `stepFR_ite_mode4`
 - the broad generic regime-growth path for
   `consistentWithRegime_insert_regime_*` remains deferred; the active
   direction is still the local masked path plus a targeted repair for
