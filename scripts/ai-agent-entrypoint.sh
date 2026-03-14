@@ -172,8 +172,10 @@ mkdir -p "${CODEX_HOME}"
 if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "${CODEX_HOME}" 2>/dev/null || true; fi
 if [ ! -f "${CODEX_HOME}/config.toml" ]; then
   cat > "${CODEX_HOME}/config.toml" <<'EOF'
-model = "gpt-5.2"
+model = "gpt-5.4"
 model_reasoning_effort = "xhigh"
+model_context_window = 1000000 
+model_auto_compact_token_limit = 997500
 sandbox_mode = "workspace-write"
 approval_policy = "on-request"
 
