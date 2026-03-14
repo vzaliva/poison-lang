@@ -182,6 +182,15 @@ RUN : "${LEAN4_SKILLS_UPDATE}" \
     && chmod -R a+rX "${LEAN4_SKILLS_SEED}" \
     && find "${LEAN4_SKILLS_SEED}/plugins/lean4/lib/scripts" -type f \( -name '*.sh' -o -name '*.py' \) -exec chmod +x {} \;
 
+# --- Proof development skills (proof-step, proof-step-review, proof-planning) ---
+# Staged by scripts/build-ai-agent from ~/.claude/skills/ (following symlinks).
+# To force refresh when skills are updated, pass --build-arg PROOF_SKILLS_UPDATE=<new value>.
+ARG PROOF_SKILLS_UPDATE=1
+ENV PROOF_SKILLS_SEED=/opt/proof-skills-seed
+RUN : "${PROOF_SKILLS_UPDATE}" && mkdir -p "${PROOF_SKILLS_SEED}"
+COPY .build-cache/proof-skills/ "${PROOF_SKILLS_SEED}/"
+RUN chmod -R a+rX "${PROOF_SKILLS_SEED}"
+
 # --- Seed Elan into a read-only location in the image ---
 # Do not hardcode a Lean toolchain here; projects specify it via /work/lean-toolchain.
 ARG ELAN_TOOLCHAIN=none

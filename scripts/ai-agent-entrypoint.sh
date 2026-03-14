@@ -84,6 +84,38 @@ if [ -w "${CODEX_SKILLS_DIR}" ] && [ -d "${LEAN4_SKILLS_PATH}" ]; then
   fi
 fi
 
+# Proof development skills: symlink into Claude Code, Codex, and project skill dirs.
+PROOF_SKILLS_DIR="${PROOF_SKILLS_SEED:-/opt/proof-skills-seed}"
+# Claude Code: ${CLAUDE_CONFIG_DIR}/skills/ when CLAUDE_CONFIG_DIR is set, else ~/.claude/skills/
+CLAUDE_SKILLS_DIR="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/skills"
+mkdir -p "${CLAUDE_SKILLS_DIR}"
+if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_SKILLS_DIR}" 2>/dev/null || true; fi
+# Codex: ${CODEX_HOME}/skills/ (CODEX_HOME may be overridden, e.g. /home/user/.config/poison-codex)
+CODEX_CUSTOM_SKILLS="${CODEX_HOME:-${HOME}/.codex}/skills"
+mkdir -p "${CODEX_CUSTOM_SKILLS}"
+if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "${CODEX_CUSTOM_SKILLS}" 2>/dev/null || true; fi
+if [ -d "${PROOF_SKILLS_DIR}" ]; then
+  for skill in proof-step proof-step-review proof-planning; do
+    skill_path="${PROOF_SKILLS_DIR}/${skill}"
+    [ -d "${skill_path}" ] || continue
+    # Claude Code
+    if [ -w "${CLAUDE_SKILLS_DIR}" ]; then
+      rm -f "${CLAUDE_SKILLS_DIR}/${skill}" 2>/dev/null; ln -sf "${skill_path}" "${CLAUDE_SKILLS_DIR}/${skill}"
+      if [ "${AM_ROOT}" -eq 1 ]; then chown -h "${HOST_UID}:${HOST_GID}" "${CLAUDE_SKILLS_DIR}/${skill}" 2>/dev/null || true; fi
+    fi
+    # Codex (CODEX_HOME path)
+    if [ -w "${CODEX_CUSTOM_SKILLS}" ]; then
+      rm -f "${CODEX_CUSTOM_SKILLS}/${skill}" 2>/dev/null; ln -sf "${skill_path}" "${CODEX_CUSTOM_SKILLS}/${skill}"
+      if [ "${AM_ROOT}" -eq 1 ]; then chown -h "${HOST_UID}:${HOST_GID}" "${CODEX_CUSTOM_SKILLS}/${skill}" 2>/dev/null || true; fi
+    fi
+    # Codex (default ~/.agents/skills/ fallback)
+    if [ -w "${CODEX_SKILLS_DIR}" ]; then
+      rm -f "${CODEX_SKILLS_DIR}/${skill}" 2>/dev/null; ln -sf "${skill_path}" "${CODEX_SKILLS_DIR}/${skill}"
+      if [ "${AM_ROOT}" -eq 1 ]; then chown -h "${HOST_UID}:${HOST_GID}" "${CODEX_SKILLS_DIR}/${skill}" 2>/dev/null || true; fi
+    fi
+  done
+fi
+
 # Persist SSH known_hosts (agent keys stay on host; we only keep host fingerprints).
 mkdir -p "${HOME}/.ssh"
 chmod 700 "${HOME}/.ssh" 2>/dev/null || true

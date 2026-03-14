@@ -43,3 +43,6 @@ package.json
 examples/*.result
 
 testResults/*
+
+# Container build staging
+.build-cache/
