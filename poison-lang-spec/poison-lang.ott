@@ -104,7 +104,7 @@ e :: 'E_'  ::=	           {{ com expressions }}
 pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
   | n                       ::   :: num
   | b                       ::   :: bool
-  | x                       ::   :: Var
+  | x                       ::   :: var
   | s                       ::   :: string
   | pe1 op pe2              ::   :: op
   | if pe1 then pe2 else pe3 ::   :: if
@@ -167,7 +167,7 @@ predicate, P :: 'P_' ::= {{ com predicate (pure function from T to bool) }}
   | guard k                   ::   :: guard_only {{ com guard tag only }} {{tex \mathsf{guard}\,[[k]] }}
   | no_pred                   ::   :: no_pred {{ com no predicate }} {{tex \bot }}
   | AppPred p P              ::   :: app_pred {{ com provenance gate: if p (join of outer and internal poison) is poisoned, result is no predicate; otherwise P }} {{ tex \mathrm{AppPred}([[p]], [[P]]) }}
-  | indexedP P idx1 idx2    :: M :: indexedP {{ com doubly-indexed predicate for while-loop }} {{ tex [[P]]_{[[idx1]]}^{[[idx2]]} }}
+  | indexedP P idx1 idx2    :: M :: indexedP_pred {{ com doubly-indexed predicate for while-loop }} {{ tex [[P]]_{[[idx1]]}^{[[idx2]]} }}
 
 qualified_type, Q :: 'Q_' ::= {{ com qualified type (type with poison and optional predicate) }}
   | T :> p                  ::   :: qualified {{ tex [[T]] \triangleright [[p]] }}
@@ -202,7 +202,7 @@ S {{ tex \sigma }} :: S_ ::=     {{ com variable typing environments }} {{ phant
 tag_valuation, tv :: 'TV_' ::= {{ com tag valuation }}
   | k : b using LS     ::   :: tag_deps {{ com tag with boolean value and dependency locset }}
 
-L {{ tex \mathcal{L} }} :: L_ ::=     {{ com tag valuation environments }} {{ phantom }} {{ coq list tag_valuation }}
+L {{ tex \mathcal{L} }} :: L_ ::=     {{ com logical environment (tag valuation) }} {{ phantom }} {{ coq list tag_valuation }}
   | empty                   ::   :: empty {{ coq [] }}
   | L [ k |-> b using LS ] ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] \text{ using } [[LS]] ] }}
   | JoinL L1 L2             ::   :: JoinL {{ com agreement-only join of tag environments: for each tag k, if both L1 and L2 map k to the same boolean b with dependency locsets LS1, LS2, keep k with deps = LS1 U LS2; otherwise (k absent on some side, or booleans disagree), drop k }} {{ tex [[L1]] \sqcup [[L2]] }}
@@ -223,7 +223,7 @@ poison, p, pc :: 'p_' ::= {{ com poison status }}
   | poisoned                 ::   :: poisoned
   | join p1 p2               ::   :: join {{ com conservative join of poison flags: poisoned if either p1 or p2 is poisoned, clean only if both are clean }} {{ tex [[p1]] \sqcup [[p2]] }}
   | indexP p idx             ::   :: indexP   {{ com indexed poison sequence for while-loop fixpoint }} {{ tex [[p]]^{[[idx]]} }}
-  | indexedP p idx1 idx2     ::   :: indexedP {{ com doubly-indexed poison for while-loop }} {{ tex [[p]]_{[[idx1]]}^{[[idx2]]} }}                  
+  | indexedP p idx1 idx2     ::   :: indexedP_poison {{ com doubly-indexed poison for while-loop }} {{ tex [[p]]_{[[idx1]]}^{[[idx2]]} }}                  
   
 % Variable substitution environment for operational semantics
 var_binding, vb :: 'VB_' ::= {{ com variable binding }}
@@ -244,8 +244,8 @@ terminals :: terminals_ ::=
   | /    :: :: div
   | >=   :: :: gteq      {{ tex \geq }}
   | <=   :: :: lteq      {{ tex \leq }}
-  | >    :: :: gt
-  | <    :: :: lt
+  | >    :: :: gt        {{ tex > }}
+  | <    :: :: lt        {{ tex < }}
   | |-   :: :: turnstile {{ tex \vdash }}
   | -|   :: :: left_turnstile {{ tex \dashv }}
   | |->  :: :: mapsto    {{ tex \mapsto }}
@@ -1045,7 +1045,7 @@ pm ; R ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G1 ;
 % poison with the variable poison. Consider the following illustrative example:
 %
 % if poisoned_sensor > 0 then      // pc = poisoned
-%    let y = 42 in 17       // e2 doesn1t use y
+%    let y = 42 in 17       // e2 does not use y
 % else
 %    0
 % In this scenario, the let binding is deemed poisoned because the context
