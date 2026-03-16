@@ -1239,39 +1239,6 @@ private lemma beval_memory_monotonic_printString (mode : LeanPoison.EvalMode) (e
           injection h_result
       · next h_error h_state => injection h_eq
 
--- Helper lemma for kwhile case: while loops chain memory monotonicity through iterations
-private lemma beval_memory_monotonic_kwhile (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
-    (config₀ config₁ : Config) (v : Value)
-    (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
-      ∀ l, config₀.memory.contains l → config₁.memory.contains l) :
-  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.kwhile e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
-  ∀ l, config₀.memory.contains l → config₁.memory.contains l := by
-  intro h_eval l h_contains
-  rcases h_eval with ⟨w₀, w₁, h_eq⟩
-  -- kwhile expands to: ite e1 (seq e2 (kwhile e1 e2)) unit, then evaluates with fuel - 1
-  unfold LeanPoison.beval at h_eq
-  -- After unfold: let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
-  --                beval (fuel - 1) config₀ unfolded verbose
-  simp at h_eq
-  -- After simp: the let binding is inlined and fuel - 1 simplifies
-  -- Handle fuel = 0 case separately
-  cases fuel with
-  | zero =>
-    -- When fuel = 0, beval returns outOfFuel (contradiction)
-    simp [EStateM.pure] at h_eq
-    injection h_eq with h_res
-    cases h_res
-  | succ fuel' =>
-    -- fuel = fuel' + 1, so fuel - 1 = fuel'
-    -- So we have: beval fuel' config₀ (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit) verbose w₀ = Result.ok (.success config₁ v) w₁
-    have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-    -- Apply IH: since fuel' < fuel'.succ, we can use IH for the unfolded expression
-    -- The unfolded expression (ite) preserves memory monotonicity by IH (which internally uses the ite proof)
-    exact
-      IH fuel' h_fuel (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit)
-        config₀ config₁ v ⟨w₀, w₁, h_eq⟩ l h_contains
-
 private lemma beval_memory_monotonic_externVal (mode : LeanPoison.EvalMode) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
     (h_eval : ∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.externVal typ poison pred) verbose w₀ = EST.Out.ok (.success config₁ v) w₁)
     (l : Loc) (_h_contains : config₀.memory.contains l) :
@@ -1454,10 +1421,6 @@ lemma beval_memory_monotonic : ∀ (mode : LeanPoison.EvalMode) (e : Expr) (fuel
       -- Sequence: memory changes from e1, then e2
       -- Use helper lemma for sequences
       exact beval_memory_monotonic_seq mode e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
-    | kwhile e1 e2 =>
-      -- While loops: needs careful handling of iteration
-      -- Use helper lemma for kwhile
-      exact beval_memory_monotonic_kwhile mode e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval l h_contains
     | vlet x e1 e2 =>
       -- Let binding: memory changes from e1, then e2
       -- Use helper lemma for vlet

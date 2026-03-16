@@ -147,7 +147,6 @@ inductive Expr : Type where
   | assign : Expr → Expr → Expr                 -- e1 := e2
   | deref : Expr → Expr                         -- ! e
   | seq : Expr → Expr → Expr                    -- e1 ; e2
-  | kwhile : Expr → Expr → Expr                  -- while e1 do e2
   | vlet : Name → Expr → Expr → Expr             -- let x = e1 in e2
   | fn : Name → Typ → Expr → Typ → Expr         -- fn x : ST1 => e : ST2
   | pfn : Name → Typ → Expr → Typ → Expr        -- pfn x : ST1 => pe : ST2
@@ -212,7 +211,6 @@ def beqExpr : Expr → Expr → Bool
   | Expr.assign e1 e2, Expr.assign e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
   | Expr.deref e1, Expr.deref e2 => beqExpr e1 e2
   | Expr.seq e1 e2, Expr.seq e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
-  | Expr.kwhile e1 e2, Expr.kwhile e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
   | Expr.vlet x1 e1 e2, Expr.vlet x2 e1' e2' => x1 == x2 && beqExpr e1 e1' && beqExpr e2 e2'
   | Expr.fn x1 t1 e1 t1', Expr.fn x2 t2 e2 t2' => x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2'
   | Expr.pfn x1 t1 e1 t1', Expr.pfn x2 t2 e2 t2' => x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2'

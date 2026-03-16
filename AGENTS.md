@@ -79,7 +79,7 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 - `StepFR.lean` - Step-based proof mechanics and shared definitions (`StepFR`, `StepFR_IH`, utility lemmas, `TypeSystemEnforcesFaultRobustness_impl`)
 - `StepFRApp.lean` - Fault-robustness proof for the function application case (`stepFR_app` and exclusive helpers)
 - `StepFRAssign.lean` - Fault-robustness proof for the assignment case (`stepFR_assign` and exclusive helpers)
-- `FaultRobustnessProofs.lean` - Remaining case proofs (stepFR_literal through stepFR_kwhile, excluding app and assign), step theorem (`TypeSystemEnforcesFaultRobustness_step_IOFree`), and final bridges (`TypeSystemEnforcesFaultRobustness_IOFree`)
+- `FaultRobustnessProofs.lean` - Remaining case proofs (stepFR_literal through stepFR_seq, excluding app and assign), step theorem (`TypeSystemEnforcesFaultRobustness_step_IOFree`), and final bridges (`TypeSystemEnforcesFaultRobustness_IOFree`)
 - `Progress*.lean` - Progress (well-typed expressions evaluate or diverge, never get stuck)
 - `MemoryMonotonicity.lean` - Memory monotonicity (evaluation only adds locations, never removes)
 

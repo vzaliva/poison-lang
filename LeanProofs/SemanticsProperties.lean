@@ -1058,72 +1058,6 @@ lemma bevalIte_structure (mode : LeanPoison.EvalMode) (e1 e2 e3 : Expr) (fuel : 
     · next h_error1 h_state1 =>
       injection h_eq
 
--- Helper lemma: extract evaluation structure from successful beval of kwhile
-lemma bevalKwhile_structure (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
-    (config₀ config_final : Config) (v : Value) (w₀ w₁ : Void IO.RealWorld) :
-  LeanPoison.beval mode fuel.succ.succ.succ config₀ (Expr.kwhile e1 e2) verbose w₀ =
-      EST.Out.ok (.success config_final v) w₁ →
-  ∃ (config₁ : Config) (b : Bool) (w_mid : Void IO.RealWorld),
-    LeanPoison.beval mode fuel.succ config₀ e1 verbose w₀ =
-        EST.Out.ok (.success config₁ (Value.bool b)) w_mid ∧
-    ((b = false ∧ v = Value.unit ∧ config_final = config₁ ∧ w₁ = w_mid) ∨
-     (b = true ∧ ∃ (config₂ : Config) (v₂ : Value) (w_mid2 : Void IO.RealWorld),
-        LeanPoison.beval mode fuel config₁ e2 verbose w_mid =
-            EST.Out.ok (.success config₂ v₂) w_mid2 ∧
-        LeanPoison.beval mode fuel config₂ (Expr.kwhile e1 e2) verbose w_mid2 =
-            EST.Out.ok (.success config_final v) w₁)) := by
-  intro h_eq
-  let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
-  -- Unfold kwhile evaluation to the ite expansion
-  unfold LeanPoison.beval at h_eq
-  simp at h_eq
-  have h_unfolded :
-      LeanPoison.beval mode fuel.succ.succ config₀ unfolded verbose w₀ =
-        EST.Out.ok (.success config_final v) w₁ := by
-    simpa [unfolded] using h_eq
-  have hstruct :=
-    bevalIte_structure mode e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
-      fuel.succ.succ verbose config₀ config_final v w₀ w₁ h_unfolded
-  rcases hstruct with ⟨config₁, b, w_mid, hbeval_e1, hbranch⟩
-  have hbeval_e1' :
-      LeanPoison.beval mode fuel.succ config₀ e1 verbose w₀ =
-        EST.Out.ok (.success config₁ (Value.bool b)) w_mid := by
-    simpa using hbeval_e1
-  refine ⟨config₁, b, w_mid, hbeval_e1', ?_⟩
-  cases hbranch with
-  | inl htrue =>
-      rcases htrue with ⟨hb_eq, hbeval_seq⟩
-      have hseq :=
-        bevalSeq_structure mode e2 (Expr.kwhile e1 e2) fuel.succ verbose config₁ config_final v w_mid w₁ hbeval_seq
-      rcases hseq with ⟨config₂, v₂, w_mid2, hbeval_e2, hbeval_k⟩
-      have hbeval_e2' :
-          LeanPoison.beval mode fuel config₁ e2 verbose w_mid =
-            EST.Out.ok (.success config₂ v₂) w_mid2 := by
-        simpa using hbeval_e2
-      have hbeval_k' :
-          LeanPoison.beval mode fuel config₂ (Expr.kwhile e1 e2) verbose w_mid2 =
-            EST.Out.ok (.success config_final v) w₁ := by
-        simpa using hbeval_k
-      exact Or.inr ⟨hb_eq, ⟨config₂, v₂, w_mid2, hbeval_e2', hbeval_k'⟩⟩
-  | inr hfalse =>
-      rcases hfalse with ⟨hb_eq, hbeval_unit⟩
-      have h_unit : v = Value.unit ∧ config_final = config₁ ∧ w₁ = w_mid := by
-        cases fuel with
-        | zero =>
-          simp [LeanPoison.beval] at hbeval_unit
-          injection hbeval_unit with h_res h_world
-          injection h_res with h_cfg h_val
-          subst h_cfg h_val
-          exact ⟨rfl, rfl, h_world.symm⟩
-        | succ fuel' =>
-          simp [LeanPoison.beval] at hbeval_unit
-          injection hbeval_unit with h_res h_world
-          injection h_res with h_cfg h_val
-          subst h_cfg h_val
-          exact ⟨rfl, rfl, h_world.symm⟩
-      rcases h_unit with ⟨hv, hcfg, hw⟩
-      exact Or.inl ⟨hb_eq, hv, hcfg, hw⟩
-
 -- Helper lemma: extract evaluation structure from successful beval of app
 lemma bevalApp_structure (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config_final : Config) (v : Value) (w₀ w₁ : Void IO.RealWorld) :
@@ -1370,10 +1304,6 @@ lemma beval_ioFree_mode_preserves_world (fuel : Nat) (cfg : Config) (e : Expr) (
           (unfold LeanPoison.beval at h
            simp [pure, EST.pure] at h
            exact h.2.symm)
-      case kwhile e1 e2 =>
-        unfold LeanPoison.beval at h
-        simp at h
-        exact ih_fuel _ _ _ _ _ _ h
       case var x =>
         unfold LeanPoison.beval at h
         cases h_lookup : cfg.varEnv.lookup x <;>
@@ -1805,10 +1735,6 @@ lemma beval_ioFree_mode_result_eq (fuel : Nat) (cfg : Config) (e : Expr) (verbos
            cases h₁
            cases h₂
            rfl)
-      case kwhile e1 e2 =>
-        unfold LeanPoison.beval at h₁ h₂
-        simp at h₁ h₂
-        exact ih_fuel _ _ _ _ _ _ _ _ _ h₁ h₂
       case var x =>
         unfold LeanPoison.beval at h₁ h₂
         simp at h₁ h₂
@@ -2284,10 +2210,6 @@ lemma beval_ioFree_mode_no_error_if_ok (fuel : Nat) (cfg : Config) (e : Expr) (v
              simp [pure] at h
              cases h)
         -- Recursive cases require using the IH to rule out IO errors in sub-evaluations.
-        case kwhile e1 e2 =>
-          unfold LeanPoison.beval at h
-          simp at h
-          exact ih_fuel _ _ _ _ _ _ h
         case var x =>
           unfold LeanPoison.beval at h
           simp at h
@@ -5939,45 +5861,6 @@ private lemma beval_IOFree_eq_pure_ite (fuel : Nat) (ih : beval_IOFree_eq_pure_I
         simp only [h_sub1] at heval_w
         injection heval_w
 
-private lemma beval_IOFree_eq_pure_kwhile (fuel : Nat) (ih : beval_IOFree_eq_pure_IH fuel)
-    (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
-    (e₁ : Expr) (e₂ : Expr) (hio : IOFree (Expr.kwhile e₁ e₂))
-    (heval_w : LeanPoison.beval .ioFree fuel cfg (Expr.kwhile e₁ e₂) verbose w = EST.Out.ok r w) :
-    LeanPoison.beval .ioFree fuel cfg (Expr.kwhile e₁ e₂) verbose = pure r := by
-  have hio₁ : IOFree e₁ := by cases hio; assumption
-  have hio₂ : IOFree e₂ := by cases hio; assumption
-  cases fuel with
-  | zero =>
-    unfold LeanPoison.beval at heval_w
-    rw [if_pos rfl] at heval_w
-    cases heval_w
-    apply funext
-    intro w'
-    unfold LeanPoison.beval
-    rw [if_pos rfl]
-  | succ fuel' =>
-    let unfolded := Expr.ite e₁ (Expr.seq e₂ (Expr.kwhile e₁ e₂)) Expr.unit
-    have hio_unfolded : IOFree unfolded := by
-      -- kwhile unfolds to ite e₁ (seq e₂ (kwhile e₁ e₂)) unit
-      exact IOFree.ite _ _ _ hio₁ (IOFree.seq _ _ hio₂ hio) IOFree.unit
-    have h_unfolded_eval :
-        LeanPoison.beval .ioFree fuel' cfg unfolded verbose w = EST.Out.ok r w := by
-      -- unfold kwhile evaluation
-      unfold LeanPoison.beval at heval_w
-      rw [if_neg (Nat.add_one_ne_zero _)] at heval_w
-      exact heval_w
-    have h_unfolded_pure :=
-      ih fuel' (Nat.lt_succ_self _) cfg unfolded verbose r w hio_unfolded h_unfolded_eval
-    apply funext
-    intro w'
-    -- reduce kwhile to unfolded and use the IH on unfolded
-    have h_unfolded_w' := congrFun h_unfolded_pure w'
-    -- unfold kwhile at w' and use the unfolded equality
-    unfold LeanPoison.beval
-    rw [if_neg (Nat.add_one_ne_zero _)]
-    unfold unfolded at h_unfolded_w'
-    apply h_unfolded_w'
-
 private lemma beval_IOFree_eq_pure_app (fuel : Nat) (_ih : beval_IOFree_eq_pure_IH fuel)
     (cfg : Config) (verbose : Bool) (r : LeanPoison.EvalResult) (w : Void IO.RealWorld)
     (e₁ : Expr) (e₂ : Expr) (_hio : IOFree (Expr.app e₁ e₂))
@@ -6099,8 +5982,6 @@ lemma beval_IOFree_eq_pure (fuel : Nat) (cfg : Config) (e : Expr) (verbose : Boo
       exact beval_IOFree_eq_pure_assign fuel ih cfg verbose r w e₁ e₂ hio heval_w
     | ite e₁ e₂ e₃ =>
       exact beval_IOFree_eq_pure_ite fuel ih cfg verbose r w e₁ e₂ e₃ hio heval_w
-    | kwhile e₁ e₂ =>
-      exact beval_IOFree_eq_pure_kwhile fuel ih cfg verbose r w e₁ e₂ hio heval_w
     | app e₁ e₂ =>
       exact beval_IOFree_eq_pure_app fuel ih cfg verbose r w e₁ e₂ hio heval_w
     | rand e' =>
@@ -6718,14 +6599,6 @@ lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v 
             have hrec₃ :=
               ih fuel' (Nat.lt_succ_self _) e₃ cfg₁ c₁ v verbose hpure_e3
             rw [hrec₃, hrec₁]
-        | kwhile e₁ e₂ =>
-          let unfolded := Expr.ite e₁ (Expr.seq e₂ (Expr.kwhile e₁ e₂)) Expr.unit
-          have hpure_unfolded : LeanPoison.beval .ioFree fuel' c₀ unfolded verbose = pure (.success c₁ v) := by
-            unfold LeanPoison.beval at hpure
-            rw [if_neg (Nat.succ_ne_zero _)] at hpure
-            simpa [unfolded] using hpure
-          exact
-            ih fuel' (Nat.lt_succ_self _) unfolded c₀ c₁ v verbose hpure_unfolded
         | app e₁ e₂  =>
           let w := LeanProofs.defaultWorld
           have heval_w := LeanProofs.evalAtWorld_eq w hpure
@@ -7502,28 +7375,6 @@ private lemma beval_nextAddr_mono_app (mode : LeanPoison.EvalMode) (e1 e2 : Expr
       · next h_error2 h_state2 =>
         injection h_eq
 
-private lemma beval_nextAddr_mono_kwhile (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
-    (config₀ config₁ : Config) (v : Value)
-    (IH : ∀ m < fuel, ∀ (mode : LeanPoison.EvalMode) (e : Expr) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval mode m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
-      config₀.nextAddr ≤ config₁.nextAddr) :
-  (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ (Expr.kwhile e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
-  config₀.nextAddr ≤ config₁.nextAddr := by
-  intro h_eval
-  rcases h_eval with ⟨w₀, w₁, h_eq⟩
-  unfold LeanPoison.beval at h_eq
-  simp at h_eq
-  cases fuel with
-  | zero =>
-      simp at h_eq
-      cases h_eq
-  | succ fuel' =>
-      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-      let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
-      have h_beval_unfolded_ex : ∃ w₀' w₁', LeanPoison.beval mode fuel' config₀ unfolded verbose w₀' = EST.Out.ok (.success config₁ v) w₁' :=
-        ⟨w₀, w₁, h_eq⟩
-      exact IH fuel' h_fuel mode unfolded config₀ config₁ v h_beval_unfolded_ex
-
 private lemma beval_nextAddr_mono : ∀ (mode : LeanPoison.EvalMode) (e : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value),
   (∃ w₀ w₁, LeanPoison.beval mode fuel config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) →
@@ -7709,8 +7560,6 @@ private lemma beval_nextAddr_mono : ∀ (mode : LeanPoison.EvalMode) (e : Expr) 
             have hle1 := IH_converted fuel' h_fuel mode e1 config₀ cfg₁1 v1 ⟨w₀, w_mid, hbeval1⟩
             have hle2 := IH_converted fuel' h_fuel mode e2 cfg₁1 config₁ v ⟨w_mid, w₁, hbeval2⟩
             exact Nat.le_trans hle1 hle2
-    | kwhile e1 e2 =>
-        exact beval_nextAddr_mono_kwhile mode e1 e2 fuel verbose config₀ config₁ v IH_converted h_eval
     | vlet x e1 e2 =>
         cases fuel with
         | zero =>
@@ -8303,7 +8152,6 @@ private lemma beval_pure_config_eq (mode : LeanPoison.EvalMode) (e : Expr) (fuel
         | newRef e1
         | assign e1 e2
         | seq e1 e2
-        | kwhile e1 e2
         | fn x t1 body t2
         | pfn x t1 body t2
         | rand e1
@@ -8685,27 +8533,6 @@ private lemma wfConfig_preservedW_seq (mode : LeanPoison.EvalMode) (e1 e2 : Expr
   have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ w₀ w_mid hbeval1
   have hih2 := ih e2 cfg₁1 cfg₁ v hih1.1 w_mid w₁ hbeval2
   exact hih2
-
-private lemma wfConfig_preservedW_kwhile (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel : Nat)
-    (cfg₀ cfg₁ : Config) (v : Value) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld)
-    (hbeval : LeanPoison.beval mode (fuel + 1) cfg₀ (Expr.kwhile e1 e2) verbose w₀ =
-        EST.Out.ok (.success cfg₁ v) w₁)
-    (hwf₀ : wfConfig cfg₀)
-  (ih : ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
-      wfConfig cfg₀' →
-      ∀ (w₀' w₁' : Void IO.RealWorld),
-        LeanPoison.beval mode fuel cfg₀' e verbose w₀' = EST.Out.ok (.success cfg₁' v') w₁' →
-        wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
-  wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
-  -- Expose the recursive structure
-  unfold LeanPoison.beval at hbeval
-  simp at hbeval
-  let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
-  have hbeval_unfolded :
-      LeanPoison.beval mode fuel cfg₀ unfolded verbose w₀ =
-        EST.Out.ok (.success cfg₁ v) w₁ := by
-    simpa using hbeval
-  exact ih unfolded cfg₀ cfg₁ v hwf₀ w₀ w₁ hbeval_unfolded
 
 private lemma wfConfig_preservedW_vlet (mode : LeanPoison.EvalMode) (x : Name) (e1 e2 : Expr) (fuel : Nat)
     (cfg₀ cfg₁ : Config) (v : Value) (verbose : Bool) (w₀ w₁ : Void IO.RealWorld)
@@ -9272,8 +9099,6 @@ lemma wfConfig_preservedW (mode : LeanPoison.EvalMode) (w₀ w₁ : Void IO.Real
           exact wfConfig_preservedW_deref mode e1 fuel cfg₀ cfg₁ v verbose w₀ w₁ hbeval hwf₀ ih
       | seq e1 e2 =>
           exact wfConfig_preservedW_seq mode e1 e2 fuel cfg₀ cfg₁ v verbose w₀ w₁ hbeval hwf₀ ih
-      | kwhile e1 e2 =>
-          exact wfConfig_preservedW_kwhile mode e1 e2 fuel cfg₀ cfg₁ v verbose w₀ w₁ hbeval hwf₀ ih
       | vlet x e1 e2 =>
           exact wfConfig_preservedW_vlet mode x e1 e2 fuel cfg₀ cfg₁ v verbose w₀ w₁ hbeval hwf₀ ih
       | app e1 e2 =>

@@ -35,7 +35,6 @@ import LeanProofs.IOHelpers
 -- - Variables: if x is typed, runtimeInstantiatesCtx ensures x ∈ ρ
 -- - Operations: if operands have correct types, operations succeed
 -- - Dereference: if location is typed, runtimeInstantiatesCtx ensures it's in memory
--- - While loops: may diverge (.outOfFuel) but don't get stuck
 -- - Function application: requires induction hypothesis on the function body
 --
 -- Current Status:
@@ -243,10 +242,6 @@ theorem progress (e : Expr) (ctx : TypeContext) : Progress .normal e ctx := by
         sorry
       | seq e1 e2 =>
         -- Sequence: by IH, both e1 and e2 don't get stuck
-        sorry
-      | kwhile e1 e2 =>
-        -- While loops: can diverge (outOfFuel) but don't get stuck
-        -- The loop condition and body don't get stuck by IH
         sorry
       | vlet x e1 e2 =>
         -- Let binding: by IH, e1 and e2 don't get stuck

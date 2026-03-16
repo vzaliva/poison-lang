@@ -178,11 +178,6 @@ mutual
         | .runtimeError msg => return .runtimeError msg
         | .ioForbidden => return .ioForbidden
 
-      -- While (via if-expansion to mirror small-step rule)
-      | Expr.kwhile e1 e2 =>
-        let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
-        beval mode (fuel - 1) config unfolded verbose
-
       -- Let binding
       | Expr.vlet x e1 e2 => do
         match <- beval mode (fuel - 1) config e1 verbose with

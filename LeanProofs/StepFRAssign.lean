@@ -1740,49 +1740,6 @@ private lemma ioFree_guardClosure_pred_implies_tag_absent
           have hpredNo : res.qualType.pred = Predicate.noPred :=
             typecheckIf_ioFree_ok_pred_noPred ctx e1 e2 e3 fuel res htc'
           simp [hpredNo] at hpred
-      | kwhile e1 e2 =>
-          exfalso
-          have htc' : typecheckWhile .ioFree ctx e1 e2 fuel = .ok res := by
-            simpa [typecheckExpr] using htc
-          have hpredNo : res.qualType.pred = Predicate.noPred := by
-            cases fuel with
-            | zero =>
-                simp [typecheckWhile] at htc'
-            | succ fuel' =>
-                unfold typecheckWhile at htc'
-                cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
-                | ok kd =>
-                    rcases kd with ⟨k', deps⟩
-                    simp [hmatch] at htc'
-                    unfold typecheckWhileDepoison at htc'
-                    cases fuel' with
-                    | zero =>
-                        simp at htc'
-                    | succ fuel'' =>
-                        simp [bind, Except.bind, pure, Except.pure] at htc'
-                        cases hfix : runWhileFixpoint .ioFree ctx e1 e2 fuel'' true (some (k', deps)) with
-                        | error err =>
-                            simp [hfix] at htc'
-                        | ok v =>
-                            simp [hfix] at htc'
-                            cases htc'
-                            rfl
-                | error err =>
-                    simp [hmatch] at htc'
-                    unfold typecheckWhileStd at htc'
-                    cases fuel' with
-                    | zero =>
-                        simp at htc'
-                    | succ fuel'' =>
-                        simp [bind, Except.bind, pure, Except.pure] at htc'
-                        cases hfix : runWhileFixpoint .ioFree ctx e1 e2 fuel'' false none with
-                        | error err =>
-                            simp [hfix] at htc'
-                        | ok v =>
-                            simp [hfix] at htc'
-                            cases htc'
-                            rfl
-          simp [hpredNo] at hpred
       | var x =>
           have htcVar : typecheckVar ctx x = .ok res := by
             simpa [typecheckExpr] using htc

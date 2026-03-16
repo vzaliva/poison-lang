@@ -313,9 +313,6 @@ mutual
     | Expr.seq e1 e2 =>
         show (beqExpr e1 e1 && beqExpr e2 e2) = true from by
           rw [beqExpr_refl e1, beqExpr_refl e2]; rfl
-    | Expr.kwhile e1 e2 =>
-        show (beqExpr e1 e1 && beqExpr e2 e2) = true from by
-          rw [beqExpr_refl e1, beqExpr_refl e2]; rfl
     | Expr.vlet x e1 e2 =>
         show (x == x && beqExpr e1 e1 && beqExpr e2 e2) = true from by
           rw [beqExpr_refl e1, beqExpr_refl e2]; simp
@@ -461,14 +458,6 @@ mutual
         have : e1 = e1' := beqExpr_sound e1 e1' h_e1
         have : e2 = e2' := beqExpr_sound e2 e2' h_e2
         subst_vars; rfl
-    | Expr.kwhile e1 e2, Expr.kwhile e1' e2' => fun h => by
-        have heq : beqExpr (.kwhile e1 e2) (.kwhile e1' e2') =
-                   (beqExpr e1 e1' && beqExpr e2 e2') := rfl
-        rw [heq, Bool.and_eq_true] at h
-        obtain ⟨h_e1, h_e2⟩ := h
-        have : e1 = e1' := beqExpr_sound e1 e1' h_e1
-        have : e2 = e2' := beqExpr_sound e2 e2' h_e2
-        subst_vars; rfl
     | Expr.vlet x1 e1 e2, Expr.vlet x2 e1' e2' => fun h => by
         have heq : beqExpr (.vlet x1 e1 e2) (.vlet x2 e1' e2') =
                    (x1 == x2 && beqExpr e1 e1' && beqExpr e2 e2') := rfl
@@ -561,7 +550,6 @@ mutual
     | .unit, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .unit, .deref _ => fun h => by have : false = true := h; contradiction
     | .unit, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .unit, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .unit, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .unit, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .unit, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -584,7 +572,6 @@ mutual
     | .num _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .num _, .deref _ => fun h => by have : false = true := h; contradiction
     | .num _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .num _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .num _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .num _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .num _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -607,7 +594,6 @@ mutual
     | .bool _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .bool _, .deref _ => fun h => by have : false = true := h; contradiction
     | .bool _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .bool _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .bool _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .bool _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .bool _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -630,7 +616,6 @@ mutual
     | .str _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .str _, .deref _ => fun h => by have : false = true := h; contradiction
     | .str _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .str _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .str _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .str _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .str _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -653,7 +638,6 @@ mutual
     | .var _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .var _, .deref _ => fun h => by have : false = true := h; contradiction
     | .var _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .var _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .var _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .var _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .var _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -676,7 +660,6 @@ mutual
     | .op _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .op _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
     | .op _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .op _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .op _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .op _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .op _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -699,7 +682,6 @@ mutual
     | .unaryop _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .unaryop _ _, .deref _ => fun h => by have : false = true := h; contradiction
     | .unaryop _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .unaryop _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .unaryop _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .unaryop _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .unaryop _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -722,7 +704,6 @@ mutual
     | .ite _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .ite _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
     | .ite _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .ite _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .ite _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .ite _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .ite _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -745,7 +726,6 @@ mutual
     | .newRef _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .newRef _, .deref _ => fun h => by have : false = true := h; contradiction
     | .newRef _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .newRef _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .newRef _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .newRef _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .newRef _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -768,7 +748,6 @@ mutual
     | .assign _ _, .newRef _ => fun h => by have : false = true := h; contradiction
     | .assign _ _, .deref _ => fun h => by have : false = true := h; contradiction
     | .assign _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .assign _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .assign _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .assign _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .assign _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -791,7 +770,6 @@ mutual
     | .deref _, .newRef _ => fun h => by have : false = true := h; contradiction
     | .deref _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .deref _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .deref _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .deref _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .deref _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .deref _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -814,7 +792,6 @@ mutual
     | .seq _ _, .newRef _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .deref _ => fun h => by have : false = true := h; contradiction
-    | .seq _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -826,29 +803,6 @@ mutual
     | .seq _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .unit => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .num _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .bool _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .str _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .var _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .newRef _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .deref _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .printInt _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .kwhile _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .unit => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .num _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .bool _ => fun h => by have : false = true := h; contradiction
@@ -861,7 +815,6 @@ mutual
     | .vlet _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .vlet _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
@@ -884,7 +837,6 @@ mutual
     | .fn _ _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .fn _ _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
     | .fn _ _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .fn _ _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .fn _ _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .fn _ _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .fn _ _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
@@ -907,7 +859,6 @@ mutual
     | .pfn _ _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .pfn _ _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
     | .pfn _ _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .pfn _ _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .pfn _ _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .pfn _ _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .pfn _ _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
@@ -930,7 +881,6 @@ mutual
     | .app _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .app _ _, .deref _ => fun h => by have : false = true := h; contradiction
     | .app _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .app _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .app _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .app _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .app _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -953,7 +903,6 @@ mutual
     | .rand _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .rand _, .deref _ => fun h => by have : false = true := h; contradiction
     | .rand _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .rand _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .rand _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .rand _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -976,7 +925,6 @@ mutual
     | .frand _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .frand _, .deref _ => fun h => by have : false = true := h; contradiction
     | .frand _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .frand _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .frand _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .frand _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -999,7 +947,6 @@ mutual
     | .printString _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .printString _, .deref _ => fun h => by have : false = true := h; contradiction
     | .printString _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .printString _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .printString _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .printString _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -1022,7 +969,6 @@ mutual
     | .printInt _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .printInt _, .deref _ => fun h => by have : false = true := h; contradiction
     | .printInt _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .printInt _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .printInt _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .printInt _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -1045,7 +991,6 @@ mutual
     | .externVal _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .externVal _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -1068,7 +1013,6 @@ mutual
     | .externFn _ _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .externFn _ _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
     | .externFn _ _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .externFn _ _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .externFn _ _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .externFn _ _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externFn _ _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
@@ -1091,7 +1035,6 @@ mutual
     | .externPfn _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .externPfn _ _ _, .kwhile _ _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction

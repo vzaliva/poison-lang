@@ -23,9 +23,6 @@
  "let" @keyword
   "=" @symbol
   "in" @keyword)
-(while_expr
- "while" @keyword
-  "do" @keyword)
 (if_expr
  "if" @keyword
   "then" @keyword

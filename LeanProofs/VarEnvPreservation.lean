@@ -564,26 +564,6 @@ private lemma beval_preserves_varEnv_seq (mode : LeanPoison.EvalMode) (e1 e2 : E
       injection h_result
   · next h_error h_state => injection h_eq
 
-private lemma beval_preserves_varEnv_kwhile (mode : LeanPoison.EvalMode) (e1 e2 : Expr) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
-    (IH : ∀ m < fuel'.succ, ∀ (mode' : LeanPoison.EvalMode) (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
-      (∃ w₀ w₁, LeanPoison.beval mode' m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) → config₀.varEnv = config₁.varEnv)
-    (h_eval : ∃ w₀ w₁, LeanPoison.beval mode fuel'.succ config₀ (Expr.kwhile e1 e2) verbose w₀ = EST.Out.ok (.success config₁ v) w₁) :
-  config₀.varEnv = config₁.varEnv := by
-  -- kwhile expands to: ite e1 (seq e2 (kwhile e1 e2)) unit, then evaluates with fuel - 1
-  rcases h_eval with ⟨w₀, w₁, h_eq⟩
-  unfold LeanPoison.beval at h_eq
-  -- After unfold: let unfolded := Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit
-  --                beval (fuel'.succ - 1) config₀ unfolded verbose
-  simp at h_eq
-  -- After simp: the let binding is inlined and fuel'.succ - 1 simplifies to fuel'
-  -- So we have: beval mode fuel' config₀ (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit) verbose w₀ = Result.ok (.success config₁ v) w₁
-  have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-  -- Apply IH: since fuel' < fuel'.succ, we can use IH for the unfolded expression
-  -- The unfolded expression (ite) preserves varEnv by IH (which internally uses the ite proof)
-  exact
-    IH fuel' h_fuel mode (Expr.ite e1 (Expr.seq e2 (Expr.kwhile e1 e2)) Expr.unit)
-      verbose config₀ config₁ v ⟨w₀, w₁, h_eq⟩
-
 private lemma beval_preserves_varEnv_vlet (mode : LeanPoison.EvalMode) (x : Name) (e1 e2 : Expr) (fuel' : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value)
     (IH : ∀ m < fuel'.succ, ∀ (mode' : LeanPoison.EvalMode) (e : Expr) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
       (∃ w₀ w₁, LeanPoison.beval mode' m config₀ e verbose w₀ = EST.Out.ok (.success config₁ v) w₁) → config₀.varEnv = config₁.varEnv)
@@ -1000,8 +980,6 @@ lemma beval_preserves_varEnv (mode : LeanPoison.EvalMode) (e : Expr) (fuel : Nat
           exact beval_preserves_varEnv_deref mode e1 fuel' verbose config₀ config₁ v IH h_eval
         | seq e1 e2 =>
           exact beval_preserves_varEnv_seq mode e1 e2 fuel' verbose config₀ config₁ v IH h_eval
-        | kwhile e1 e2 =>
-          exact beval_preserves_varEnv_kwhile mode e1 e2 fuel' verbose config₀ config₁ v IH h_eval
         | vlet x e1 e2 =>
           exact beval_preserves_varEnv_vlet mode x e1 e2 fuel' verbose config₀ config₁ v IH h_eval
         | fn x paramType body returnType =>

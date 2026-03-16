@@ -33,20 +33,6 @@ locset, LS :: 'LS_' ::= {{ com location sets }}
   | { l }                    ::   :: singleton
   | LS1 U LS2                ::   :: union {{ com union (dedup) }} {{ tex [[LS1]] \cup [[LS2]] }}
 
-% Index expressions for use in formulas (primarily for while-loop iteration)
-% These indices are used to express fixpoint semantics: sequences G_0, G_1, ..., G_n
-% where the sequence stabilizes at iteration n (G_{n+1} = G_n).
-idx :: 'IDX_' ::=              {{ com index expressions }}
-  | 0                          ::   :: zero
-  | 1                          ::   :: one
-  | 2                          ::   :: two
-  | i                          ::   :: var {{ com iteration variable }}
-  | n                          ::   :: nat {{ com fixpoint count }}
-  | idx1 + idx2                ::   :: plus
-  | idx1 - idx2                ::   :: minus
-  | idx1 * idx2                ::   :: mult
-  | ( idx )                    :: M :: paren  {{ ichlo ([[idx]]) }}
-
 b :: 'B_' ::=              {{ com booleans }}  {{ phantom }} {{ coq bool }}
   | true                    ::   :: true      {{ coq true }}
   | false                   ::   :: false     {{ coq false }}
@@ -93,7 +79,6 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | e1 := e2                ::   :: assign
   | ! e                     ::   :: deref
   | e1 ; e2                 ::   :: sequence
-  | while e1 do e2          ::   :: while
   | let x = e1 in e2        ::   :: let
   | fn x : ST1 => e : ST2        ::   :: fn   {{ com fn with return type }}
   | pfn x : ST1 => pe : ST2      ::   :: pfn  {{ com pure fn with return type }}
@@ -171,7 +156,6 @@ predicate, P :: 'P_' ::= {{ com predicate }}
   | guard k                   ::   :: guard_only {{ com guard tag only }} {{tex \mathsf{guard}\,[[k]] }}
   | no_pred                   ::   :: no_pred {{ com no predicate }} {{tex \bot }}
   | AppPred p P              ::   :: app_pred {{ com provenance gate }} {{ tex \mathrm{AppPred}([[p]], [[P]]) }}
-  | indexedP P idx1 idx2    :: M :: indexedP_pred {{ com doubly-indexed predicate }} {{ tex [[P]]_{[[idx1]]}^{[[idx2]]} }}
 
 qualified_type, Q :: 'Q_' ::= {{ com qualified type }}
   | T :> p                  ::   :: qualified {{ tex [[T]] \triangleright [[p]] }}
@@ -191,8 +175,6 @@ G {{ tex \Gamma }} :: G_ ::=     {{ com memory typing environments }} {{ phantom
   | JoinRestrict G1 G2      ::   :: JoinRestrict {{ com JoinG with 2nd restricted to dom(G1) }} {{ tex [[G1]] \sqcup \bigl([[G2]] \mathbin{\restriction} \mathrm{dom}([[G1]])\bigr) }}
   | G [ l |-> me ]          ::   :: UpdateG {{ tex [[G]] [ l \mapsto [[me]] ] }}
   | G [ LS |-> me ]         ::   :: UpdateGSet {{ com update LS with me }} {{ tex [[G]] [ [[LS]] \mapsto [[me]] ] }}
-  | indexG G idx            ::   :: indexG   {{ com indexed env for fixpoint }} {{ tex [[G]]^{[[idx]]} }}
-  | indexedG G idx1 idx2    ::   :: indexedG {{ com doubly-indexed env }} {{ tex [[G]]_{[[idx1]]}^{[[idx2]]} }}                  
 
 % Variable environment for let bindings
 var_type_assumption, va :: 'VA_' ::= {{ com variable type assumption }}
@@ -210,8 +192,6 @@ L {{ tex \mathcal{L} }} :: L_ ::=     {{ com logical environment (tag valuation)
   | empty                   ::   :: empty {{ coq [] }}
   | L [ k |-> b using LS ] ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] \text{ using } [[LS]] ] }}
   | JoinL L1 L2             ::   :: JoinL {{ com agreement-only tag join }} {{ tex [[L1]] \sqcup [[L2]] }}
-  | indexL L idx            ::   :: indexL   {{ com indexed tag env }} {{ tex [[L]]^{[[idx]]} }}
-  | indexedL L idx1 idx2    ::   :: indexedL {{ com doubly-indexed tag env }} {{ tex [[L]]_{[[idx1]]}^{[[idx2]]} }}                  
 
 % Regime (partial map from tags to booleans)
 % R is both input and output of typing; propagates like L (thread through sequencing, join at branches, invalidate on write)
@@ -219,16 +199,12 @@ R {{ tex \mathcal{R} }} :: R_ ::= {{ com regime (partial map from tags to boolea
   | empty                   ::   :: empty {{ coq [] }}
   | R [ k |-> b ]           ::   :: extend {{ tex [[R]] [ k \rightharpoonup [[b]] ] }}
   | JoinR R1 R2             ::   :: JoinR {{ com agreement-only regime join }} {{ tex [[R1]] \sqcup [[R2]] }}
-  | indexR R idx            ::   :: indexR   {{ com indexed regime }} {{ tex [[R]]^{[[idx]]} }}
-  | indexedR R idx1 idx2    ::   :: indexedR {{ com doubly-indexed regime }} {{ tex [[R]]_{[[idx1]]}^{[[idx2]]} }}
 
 poison, p, pc :: 'p_' ::= {{ com poison status }}
   | clean                    ::   :: clean
   | poisoned                 ::   :: poisoned
   | join p1 p2               ::   :: join {{ com poison join }} {{ tex [[p1]] \sqcup [[p2]] }}
-  | indexP p idx             ::   :: indexP   {{ com indexed poison }} {{ tex [[p]]^{[[idx]]} }}
-  | indexedP p idx1 idx2     ::   :: indexedP_poison {{ com doubly-indexed poison }} {{ tex [[p]]_{[[idx1]]}^{[[idx2]]} }}                  
-  
+
 % Variable substitution environment for operational semantics
 var_binding, vb :: 'VB_' ::= {{ com variable binding }}
   | x |-> v                  ::   :: binding
@@ -476,11 +452,6 @@ m1(a) = n
 <pm, e2, m1, r1> ==> < v, m2, r2>
 ---------------------------------------------- :: b_if_false
 < pm, if e then e1 else e2, m, r > ==> < v, m2, r2 >
-
-% While via if-expansion (keeps close to small step rule)
-< pm, if e1 then ( e2 ; while e1 do e2 ) else unit, m, r > ==> < unit, m1, r1 >
---------------------------------------------------------------------------- :: b_while
-< pm, while e1 do e2, m, r> ==> < unit, m1, r1 >
 
 % Let binding
 % Note: The final environment r1 excludes the let-bound variable x (lexical scoping)
@@ -1255,54 +1226,3 @@ pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
 ----------------------------------  :: if_std
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
-
-%  Flow‑sensitive WHILE à la Hunt & Sands 2006 https://doi.org/10.1145/1111037.1111045
-
-% JoinL (logical environment join) — agreement-only meet used in the while fixpoint:
-%   For each tag k:
-%     - if both operands map k to the same boolean b with dependency locsets LS1, LS2,
-%       keep k with deps = LS1 ∪ LS2;
-%     - otherwise (k absent on some side, or booleans disagree), drop k (unknown).
-%   Rationale: prevents branch-/iteration-local facts from leaking across iterations,
-%   composes with invalidate_deps, and ensures the sequence Li+1 = JoinL(Li, L2,i)
-%   is descending and stabilises. A union that preserves single-sided or
-%   contradictory facts would be unsound for de-poisoning.
-
-% Predicate-based while typing rule (when matching predicate found)
-match_guard e1 G S = k with LS
-pure ; R ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexL L i ; indexR R i
-pm ; indexR R i [ k |-> true ] ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexL L i [ k |-> true using LS ] |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i ; indexedR R 2 i
-indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
-% NOTE(join-policy-while): the memory fixpoint currently uses JoinRestrict
-% (implemented via restrict + JoinG / joinMemEnvs). We may later switch this
-% to a stronger predicate-dropping join, but we defer that semantic decision.
-indexG G 0 = G AND indexG G i+1 = JoinRestrict indexG G i indexedG G 2 i
-indexL L 0 = L AND indexL L i+1 = JoinL indexL L i indexedL L 2 i
-indexR R 0 = R AND indexR R i+1 = JoinR indexR R i indexedR R 2 i
-%  "where n is the smallest natural number satisfying the two equalities above."
-indexP p n+1 = indexP p n
-indexG G n+1 = indexG G n
-indexL L n+1 = indexL L n
-indexR R n+1 = indexR R n
----------------------------------------------------------------------------  :: while_depoison
-pm ; R ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n[k |-> false using LS] ; indexR R n
-
-% Standard while typing rule (when no matching predicate found) (used as a
-% fallback when match_guard fails) 
-% Unlike while_depoison, `e1` is not pure and can modify G and L
-pm ; indexR R i ; indexP p i ; indexG G i ; S ; indexL L i |- e1 : bool :> indexedP p 1 i { P1 }  -| indexedG G 1 i ; indexedL L 1 i ; indexedR R 1 i
-pm ; indexedR R 1 i ; join indexP p i indexedP p 1 i ; indexedG G 1 i ; S ; indexedL L 1 i |- e2 : unit :> indexedP p 2 i { P2 }  -| indexedG G 2 i ; indexedL L 2 i ; indexedR R 2 i
-indexP p 0 = pc AND indexP p i+1 = join indexP p i indexedP p 2 i
-% NOTE(join-policy-while): the memory fixpoint currently uses JoinRestrict
-% (implemented via restrict + JoinG / joinMemEnvs). We may later switch this
-% to a stronger predicate-dropping join, but we defer that semantic decision.
-indexG G 0 = G AND indexG G i+1 = JoinRestrict indexG G i indexedG G 2 i
-indexL L 0 = L AND indexL L i+1 = JoinL indexL L i indexedL L 2 i
-indexR R 0 = R AND indexR R i+1 = JoinR indexR R i indexedR R 2 i
-%  "where n is the smallest natural number satisfying the two equalities above."
-indexP p n+1 = indexP p n 
-indexG G n+1 = indexG G n
-indexL L n+1 = indexL L n
-indexR R n+1 = indexR R n
----------------------------------------------------------------------------  :: while_std
-pm ; R ; pc ; G ; S ; L |- while e1 do e2  : unit :> indexP p n { no_pred }  -| indexG G n ; indexL L n ; indexR R n

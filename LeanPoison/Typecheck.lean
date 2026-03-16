@@ -435,7 +435,7 @@ def joinETyps (t1 t2 : ETyp) (_p1 _p2 : Poison) : ETyp :=
       -- For non-arrow types, types must be equal (checked via beqETypSignature)
       t1
 
-/-- Join two logical environments (agreement-only meet used in while fixpoint) -/
+/-- Join two logical environments (agreement-only meet used in if-then-else) -/
 def joinTagEnvs (env1 env2 : TagEnv) : TagEnv :=
   combineExtTreeMaps env1 env2 (fun _ otv1 otv2 =>
     match otv1, otv2 with
@@ -1017,7 +1017,6 @@ def typecheckExpr (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat) 
     | Expr.assign e1 e2 => typecheckAssign mode ctx e1 e2 fuel
     | Expr.deref e1 => typecheckDeref mode ctx e1 fuel
     | Expr.seq e1 e2 => typecheckSeq mode ctx e1 e2 fuel
-    | Expr.kwhile e1 e2 => typecheckWhile mode ctx e1 e2 fuel
     | Expr.vlet x e1 e2 => typecheckVlet mode ctx x e1 e2 fuel
     | Expr.fn x paramType body returnType => typecheckFn ctx x paramType body returnType
     | Expr.pfn x paramType body returnType => typecheckPfn ctx x paramType body returnType
@@ -1031,96 +1030,6 @@ def typecheckExpr (mode : EvalMode) (ctx : TypeContext) (e : Expr) (fuel : Nat) 
     | Expr.externVal typ poison pred => typecheckExternVal mode ctx typ poison pred
     | Expr.externFn arg argTyp retSpec effects => typecheckExternFn mode ctx arg argTyp retSpec effects
     | Expr.externPfn arg argTyp retSpec => typecheckExternPfn mode ctx arg argTyp retSpec
-termination_by fuel
-
-/-- Helper function to run proper fixpoint computation for while loops.
-    Re-types the guard each iteration, threads pc := pc ⊔ poison(guard),
-    and joins Γ/ℒ from the body as in the Ott recurrences.
-    Also tracks fresh location and tag counters through the fixpoint. -/
-def runWhileFixpoint (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (pureGuard : Bool) (guardOpt : Option (Tag × Deps)) : TypecheckM (Poison × MemoryTypeEnv × TagEnv × Regime × Loc × Tag) :=
-  match fuel with
-  | 0 => throw "Out of fuel"
-  | fuel + 1 => do
-    -- (1) Typecheck the guard for this iteration
-    let ctxForGuard := if pureGuard then { ctx with pureCtx := true } else ctx
-    let guardRes ← typecheckExpr mode ctxForGuard e1 fuel
-    let ⟨etyp1, p1, _⟩ := guardRes.qualType
-    if etyp1 != ETyp.bool then throw "Condition of while must be bool"
-
-    -- (2) Build body context: pc includes guard poison; take Γ from guard
-    -- For pure guards (while_depoison): use Γ from guard but preserve ℒ (per Ott spec line 806)
-    -- For impure guards (while_std): use both Γ and ℒ from guard (per Ott spec line 821)
-    let bodyPcCtx : TypeContext := { ctx with pc := joinPoison ctx.pc p1 }
-    -- strictly speaking this is not necessary because pure expressions do not modify envs,
-    -- but we add it as extra precasion and to exactly match the Ott spec.
-    let bodyTagEnv := if pureGuard then ctx.tagEnv else guardRes.tagEnv'
-    let bodyRegime := if pureGuard then ctx.regime else guardRes.regime'
-    let bodyEnvCtx : TypeContext := { bodyPcCtx with memEnv := guardRes.memEnv', tagEnv := bodyTagEnv, regime := bodyRegime }
-    -- Body is typed in mode pm from outer context (per Ott spec)
-    -- In practice, while loops can't appear in pure contexts, but we preserve ctx.pureCtx for correctness
-    let bodyCtxBase : TypeContext := { bodyEnvCtx with nextLoc := guardRes.nextLoc', nextTag := guardRes.nextTag', pureCtx := ctx.pureCtx }
-    let bodyCtx := match guardOpt with
-      | some (k, deps) =>
-          { bodyCtxBase with
-            tagEnv := bodyCtxBase.tagEnv.insert k (TagVal.mk true deps),
-            regime := { bodyCtxBase.regime with map := bodyCtxBase.regime.map.insert k true } }
-      | none => bodyCtxBase
-
-    -- (3) Typecheck the body
-    let bodyRes ← typecheckExpr mode bodyCtx e2 fuel
-    let ⟨etyp2, p2, _⟩ := bodyRes.qualType
-    if etyp2 != ETyp.unit then throw "Body of while must have unit type"
-
-    -- (4) Recurrences: pc_{i+1} = pc_i ⊔ p_{2,i}; Γ/ℒ/R joins with the body results
-    let newPc := joinPoison ctx.pc p2
-    let restrictedBodyEnv := restrictMemEnv bodyRes.memEnv' ctx.memEnv
-    -- TODO(join-policy-while): reconsider whether while-fixpoint memory joins
-    -- should also use `joinMemEnvsStrong`. We defer that semantic change for
-    -- now and keep the current `JoinRestrict`/`joinMemEnvs` behavior.
-    let newMemEnv := joinMemEnvs ctx.memEnv restrictedBodyEnv
-    let newTagEnv := joinTagEnvs ctx.tagEnv bodyRes.tagEnv'
-    let newRegime := joinRegimes ctx.regime bodyRes.regime'
-
-    -- (5) Fixpoint check
-    if newMemEnv == ctx.memEnv && newPc == ctx.pc && newTagEnv == ctx.tagEnv && newRegime.bound == ctx.regime.bound then
-      return (newPc, newMemEnv, newTagEnv, newRegime, bodyRes.nextLoc', bodyRes.nextTag')
-    else
-      let nextCtx := { ctx with pc := newPc, memEnv := newMemEnv, tagEnv := newTagEnv, regime := newRegime, nextLoc := bodyRes.nextLoc', nextTag := bodyRes.nextTag' }
-      runWhileFixpoint mode nextCtx e1 e2 fuel pureGuard guardOpt
-termination_by fuel
-
-/-- Rule: while_depoison (Ott rule: while_depoison when matchGuard succeeds)
--- Implements flow-sensitive analysis with predicate-based de-poisoning
--- Condition e1 is pure (doesn't modify G or L)
---/
-def typecheckWhileDepoison (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (k : Tag) (deps : Deps) : TypecheckM TypeResult :=
-  match fuel with
-  | 0 => throw "Out of fuel"
-  | fuel + 1 => do
-    -- Run fixpoint computation with predicate-based de-poisoning (pure guard).
-    -- Guard is typed under L (without k); body under L[k↦true] handled inside runWhileFixpoint.
-    let (finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag) ← runWhileFixpoint mode ctx e1 e2 fuel true (some (k, deps))
-
-    -- After loop termination, set k to false in the output environment
-    let tagEnv' := finalTagEnv.insert k ⟨false, deps⟩
-
-    let qt : QTyp := ⟨ETyp.unit, finalPc, Predicate.noPred⟩
-    return { qualType := qt, memEnv' := finalMemEnv, tagEnv' := tagEnv', nextLoc' := finalNextLoc, nextTag' := finalNextTag, regime' := finalRegime }
-termination_by fuel
-
-/-- Rule: while_std (Ott rule: while_std when matchGuard fails)
--- Implements flow-sensitive analysis without predicate-based de-poisoning
--- Unlike while_depoison, e1 is not pure and can modify G and L
---/
-def typecheckWhileStd (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  match fuel with
-  | 0 => throw "Out of fuel"
-  | fuel + 1 => do
-    -- Run fixpoint computation (impure guard; re-types guard each iteration)
-    let (finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag) ← runWhileFixpoint mode ctx e1 e2 fuel false none
-
-    let qt : QTyp := ⟨ETyp.unit, finalPc, Predicate.noPred⟩
-    return { qualType := qt, memEnv' := finalMemEnv, tagEnv' := finalTagEnv, nextLoc' := finalNextLoc, nextTag' := finalNextTag, regime' := finalRegime }
 termination_by fuel
 
 
@@ -1827,25 +1736,6 @@ def typecheckUnaryOp (mode : EvalMode) (ctx : TypeContext) (op : UnaryOp) (e : E
         let qt : QTyp := ⟨r, poison, Predicate.noPred⟩
         return { result with qualType := qt }
     | none => throw s!"Operation argument types do not match.\n  Expression Type: {etyp}\n  UnaryOp: {op}"
-termination_by fuel
-
-
-
-/-- Rule: while_depoison and while_std (Ott rules: while_depoison when matchGuard succeeds, while_std when it fails)
--- Implements flow-sensitive analysis based on Hunt & Sands 2006
---/
-def typecheckWhile (mode : EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
-  match fuel with
-  | 0 => throw "Out of fuel"
-  | fuel + 1 => do
-    -- Step 1: Try matchGuard first (as in typecheckIf)
-    match matchGuard e1 ctx.memEnv ctx.varEnv fuel with
-    | .ok (k, deps) => do
-      -- Predicate-based case (while_depoison) - condition is pure
-      typecheckWhileDepoison mode ctx e1 e2 fuel k deps
-    | .error _ => do
-      -- Standard case (while_std) - condition can modify G and L
-      typecheckWhileStd mode ctx e1 e2 fuel
 termination_by fuel
 
 end

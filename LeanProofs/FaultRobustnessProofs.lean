@@ -16,7 +16,6 @@ import LeanProofs.StepFROp
 import LeanProofs.StepFRFnPfn
 import LeanProofs.StepFRIte
 import LeanProofs.StepFRDeref
-import LeanProofs.StepFRKWhile
 import LeanProofs.StepFRNewRef
 import LeanProofs.StepFRSeq
 import LeanProofs.StepFRVlet
@@ -1316,10 +1315,6 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         (fun m hm e' ctx' res' htc' =>
                           IH' m hm masked e' ctx' res' htc'))
                       htc
-          | kwhile e1 e2 =>
-              -- Deferred on this branch: `kwhile` proof work is intentionally
-              -- postponed for now and is out of scope for the current app effort.
-              sorry
           | vlet z e1 e2 =>
               cases fuel with
               | zero =>
@@ -1615,12 +1610,6 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                 simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
             | succ fuel' =>
                 exact stepFR_seq ctxᵢ predSat e1 e2 fuel' res tm (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH) htc
-        | kwhile e1 e2 =>
-            cases fuel with
-            | zero =>
-                simp [typecheck, typecheckExpr, typecheckWhile] at htc
-            | succ fuel' =>
-                exact stepFR_kwhile ctxᵢ predSat tm e1 e2 fuel' res (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH) htc
         | vlet z e1 e2 =>
             let vname := z
             cases fuel with

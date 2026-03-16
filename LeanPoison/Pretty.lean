@@ -158,8 +158,6 @@ partial def reprExpr : Expr → Nat → Std.Format
     | Expr.assign e1 e2 => atom e1 ++ Std.Format.text " := " ++ atom e2
     | Expr.deref e => Std.Format.text "!" ++ atom e
     | Expr.seq e1 e2 => atom e1 ++ Std.Format.text "; " ++ atom e2
-    | Expr.kwhile e1 e2 =>
-        Std.Format.text "while " ++ reprExpr e1 0 ++ Std.Format.text " do " ++ reprExpr e2 0
     | Expr.vlet x e1 e2 =>
         Std.Format.text "let " ++ Std.Format.text x ++ Std.Format.text " = " ++ reprExpr e1 0 ++
         Std.Format.text " in " ++ reprExpr e2 0

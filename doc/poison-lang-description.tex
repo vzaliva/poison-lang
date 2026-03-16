@@ -100,7 +100,6 @@ e ::= unit | n | b | s | x
     | if e1 then e2 else e3             (* conditionals *)
     | ref e | e1 := e2 | !e             (* references *)
     | e1 ; e2                           (* sequencing *)
-    | while e1 do e2                    (* loops *)
     | let x = e1 in e2                  (* local bindings *)
     | fn x : ST1 => e : ST2             (* impure functions with explicit types *)
     | pfn x : ST1 => pe : ST2           (* pure functions with explicit types *)
@@ -113,7 +112,7 @@ pe ::= n | b | s | x                    (* pure expressions *)
      | if pe1 then pe2 else pe3
      | !pe | unit
      | let x = pe1 in pe2 | pe1 pe2
-     (* Note: no ref, :=, while, fn, pfn, rand, frand, printInt, printString, or ; allowed *)
+     (* Note: no ref, :=, fn, pfn, rand, frand, printInt, printString, or ; allowed *)
 
 (* surface types for annotations *)     
 ST ::= int | bool | unit | string | ref ST | ST1 -> ST2  
@@ -281,7 +280,6 @@ The language includes a syntactic subset called \emph{pure expressions} (\texttt
 \begin{itemize}
     \item Create new references (\texttt{ref})
     \item Perform assignments (\texttt{:=})
-    \item Use \texttt{while} loops
     \item Define functions, including pure functions (\texttt{fn} or \texttt{pfn})
     \item Use sequencing (\texttt{;})
     \item Use non-deterministic primitives (\texttt{rand}, \texttt{frand})
@@ -431,7 +429,7 @@ a closure) cannot be matched via \texttt{match\_guard} because they lack the
 predicate body required for syntactic comparison. These predicates can only be
 de-poisoned when the guard tag \texttt{k} is already known to be true in the
 logical environment $\mathcal{L}$ (e.g., from a previous matched guard in an
-outer scope or from a while loop guard). This makes guard-only predicates
+outer scope or from an if-guard). This makes guard-only predicates
 suitable for propagating guard information without enabling new syntactic
 matches, and for relating validation of one value to de-poisoning of another via
 a shared tag. For instance, after \texttt{x = read buf}, a successful check such as
@@ -624,7 +622,7 @@ The qualified type $Q$ encapsulates both the base type, poison status, and any
 associated predicates. The logical environment $\mathcal{L}$ tracks the current
 valuation of predicate guards, enabling predicate-based typing decisions. The
 output logical environment $\mathcal{L}_1$ reflects any updates to guard
-valuations learned during typing (e.g., after a while loop terminates) or
+valuations learned during typing (e.g., after a predicate-matched conditional) or
 because of invalidation due to changed dependencies.
 
 \subsection{Key Typing Rules}
@@ -864,78 +862,6 @@ return $\mathcal{L}_1$ (the environment after evaluating $e_1$) rather than
 joining branch environments. This is sound because the branches contain
 contradictory valuations for $k$, and at run time the taken branch is unknown.
 
-\subsubsection*{While loops}
-
-While loop typing is flow-sensitive, following Hunt \& Sands 2006~\cite{DBLP:conf/popl/HuntS06}. We index by
-iteration $i$ the program-counter poison $p_i$, the memory typing environment $\Gamma_i$, and the
-logical environment $\mathcal{L}_i$. The least fixpoint is reached at the smallest $n$ such that
-\(p_{n+1}=p_n\), \(\Gamma_{n+1}=\Gamma_n\), and \(\mathcal{L}_{n+1}=\mathcal{L}_n\).
-
-The formal specification provides \emph{two} mutually exclusive typing rules for loops:
-\begin{itemize}
-  \item \textbf{\texttt{while\_depoison}}~-- applied when
-        \texttt{match\_guard}$(e_1,\Gamma,\sigma)=k$ with dependencies $LS$ detects that the loop
-        guard $e_1$ syntactically matches a predicate guard tagged $k$.
-        The guard expression $e_1$ is typed as a \emph{pure} expression (no effects),
-        so it does not modify $\Gamma$ or $\mathcal{L}$. The body $e_2$ is typed under
-        the logical environment $\mathcal{L}[k\mapsto{}\text{true using } LS]$, thereby treating
-        every value guarded by $k$ as \emph{clean} within the body. Allocations introduced while typing the body do not escape the loop (the loop returns \texttt{unit} and the heap stores no references), so before joining we discard loop-local locations and keep only the pre-loop domain. Across iterations we compute
-        the recurrences
-        \[
-          p_{i+1} = p_i \sqcup p_{2,i},\qquad
-          \Gamma_{i+1} = \text{JoinG}(\Gamma_i,\text{restrict}(\Gamma_{2,i},\mathrm{dom}(\Gamma_i))),\qquad
-          \mathcal{L}_{i+1} = \text{JoinL}(\mathcal{L}_i,\mathcal{L}_{2,i}),
-        \]
-        where $(\cdot)_{2,i}$ denotes the quantities produced by the $i$-th typing of the body.
-        At loop exit we just observed $e_1$ evaluate to \emph{false}, hence the output logical
-        environment sets $k\mapsto{}\text{false}$ (with the appropriate dependency set).
-
-  \item \textbf{\texttt{while\_std}}~-- the conservative fallback when no
-        suitable guard is found.  Here the guard $e_1$ may be impure and can modify both
-        $\Gamma$ and $\mathcal{L}$. The same fixpoint recurrences are used with the
-        \texttt{JoinG} and \texttt{JoinL} operators (with the same restriction of the body's $\Gamma$ to the pre-loop domain before joining).
-\end{itemize}
-
-\paragraph{Join on the logical environment.} The loop back-edge uses an \emph{agreement-only} join on
-$\mathcal{L}$ to prevent iteration-local facts from leaking:
-for each tag $k$,
-\[
-  \text{JoinL}(\mathcal{L}_1,\mathcal{L}_2)(k) =
-  \begin{cases}
-    (b,\; \text{deps}_1 \cup \text{deps}_2), & \text{if } \mathcal{L}_1(k)=(b,\text{deps}_1) \text{ and } \mathcal{L}_2(k)=(b,\text{deps}_2); \\
-    \text{unknown}, & \text{otherwise (absent on one side or booleans disagree).}
-  \end{cases}
-\]
-This definition is idempotent, commutative, and associative, composes with dependency invalidation
-on writes, and ensures the sequence $\mathcal{L}_{i+1}=\text{JoinL}(\mathcal{L}_i,\mathcal{L}_{2,i})$ is
-descending in information and stabilises. Using a union that preserves single-sided or contradictory
-facts would be unsound for de-poisoning.
-
-\paragraph{Join on predicates.} When qualified types are joined (for example in
-branch joins on $\Gamma$ or when combining closure alternatives), their
-predicates are combined by an agreement-only operator \texttt{JoinP}. If the
-predicates are syntactically equal, they are preserved. If they mention the
-same guard tag but differ in closure, they are downgraded to a guard-only
-predicate \texttt{guard k}. In all other cases the join yields
-\texttt{no\_pred}. This keeps only information that is stable across both
-paths while remaining conservative.
-
-\paragraph{Precision gained.} By exploiting syntactic matching against guard
-predicates, the \texttt{while\_depoison} rule can identify cases where a loop
-condition constitutes a run-time validity check.  Inside the loop body the
-associated data are thus considered reliable, enabling more precise reasoning
-about fault propagation compared with the standard rule.
-
-\paragraph{Loop termination handling.} When a loop terminates we have just observed
-the guard expression $e_1$ evaluate to \emph{false}.  Hence the matching tag
-$k$ is \textbf{known to be false at the loop exit}, and every value whose
-qualified type is guarded by $k$ ought to be marked \emph{poisoned}. The
-typing rule correctly updates the logical environment $\mathcal{L}$
-by setting $k$ to false in the output environment (i.e., $\mathcal{L}_n[k \mapsto \text{false using } LS]$ with
-merged dependencies), 
-allowing post-loop code to properly classify values guarded by $k$ as poisoned. 
-This provides precise fault tracking both during and after loop execution.
-
 \subsection{Location-Set Types}
 
 Reference types $\text{ref} @ LS$ track aliasing through logical location sets:
@@ -966,14 +892,12 @@ Memory typing environment $\Gamma$ evolves through:
     \item \textbf{Assignment}: Updates poison status and, under poisoned control, strips stored predicates to \texttt{no\_pred}
     \item \textbf{Control flow}: Joins environments from different branches (\texttt{if})
     \item \textbf{Sequencing/bindings}: Threads the updated $\Gamma$ through subexpressions (\texttt{;}, \texttt{let})
-    \item \textbf{Loops}: Iterative fixpoint computation for flow-sensitive analysis (\texttt{while})
 \end{itemize}
 
 Logical environment $\mathcal{L}$ evolves through:
 \begin{itemize}
     \item \textbf{Sequencing and let}: Chained through expressions -- the first subexpression produces $\mathcal{L}_1$, which is used to type the second; the result is the second subexpression's $\mathcal{L}_2$ (\texttt{;}, \texttt{let}).
     \item \textbf{Conditionals}: In the standard case (no predicate match), the result is the logical environment produced by typing the guard (\texttt{if\_std\_*} returns $\mathcal{L}_1$). In the predicate-matched case, branch-local facts are discarded at the merge (\texttt{if\_depoison\_*} returns the pre-conditional $\mathcal{L}$).
-    \item \textbf{While loops}: After a predicate-matched loop terminates, the guard tag is set to false in the output logical environment.
     \item \textbf{Assignment}: Invalidates entries whose dependencies include the written location set.
     \item \textbf{Most other constructs}: Pass through unchanged.
 \end{itemize}
@@ -998,7 +922,7 @@ For any well-typed expression $e$ with typing judgment:
 and runtime state $\langle \pi, e, \mu, \rho \rangle$ where $\mu$ and $\rho$ are consistent with the typing environments $\Gamma$ and $\sigma$ respectively, then $e$ is not stuck. That is, either:
 \begin{itemize}
     \item \textbf{Termination}: there exist values $v$, memory $\mu'$, and variable environment $\rho'$ such that $\langle \pi, e, \mu, \rho \rangle \Downarrow \langle v, \mu', \rho' \rangle$, or
-    \item \textbf{Divergence}: the evaluation runs indefinitely (e.g., \texttt{while true do unit}).
+    \item \textbf{Divergence}: the evaluation runs indefinitely (e.g., infinite recursion).
 \end{itemize}
 \end{definition}
 

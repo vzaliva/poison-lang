@@ -304,17 +304,6 @@ mutual
               return Expr.deref (<- xmlToExpr element)
         | _ => .error s!"Invalid deref_expr structure: {contents}"
 
-    | Element.Element "while_expr" _ contents => do
-        let elems := contents.filterMap fun
-          | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
-          | Content.Element el => some el
-          | _ => none
-
-          match elems.toList with
-          | [condition,body] =>
-                return Expr.kwhile (<- xmlToExpr condition) (<- xmlToExpr body)
-          | _ => .error s!"Invalid while_expr structure: {contents}"
-
     | Element.Element "fn_expr" _ contents => do
     let elems := contents.filterMap fun
       | Content.Element (Element.Element "comment" _ _) => none  -- skip comments

@@ -25,7 +25,6 @@ module.exports = grammar({
       $.seq_expr,
       $.if_expr,
       $.let_expr,
-      $.while_expr,
       $.fn_expr,
       $.pfn_expr,
       $.ref_expr,
@@ -161,15 +160,6 @@ module.exports = grammar({
       "true",
       "false",
       "unit"
-    )),
-
-    // WHILE LOOP: while e1 do e2
-    while_expr: $ => prec.left(2, seq(
-      "while",
-      field("cond", $.expr),
-      "do",
-      field("body", $.expr),
-      "done"
     )),
 
     // ASSIGNMENT: id := e2

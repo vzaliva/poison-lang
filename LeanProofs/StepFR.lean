@@ -6187,7 +6187,6 @@ lemma PExpr_toExpr_of_toPExpr?_some : ∀ (e : Expr) (pe : PExpr),
   | .newRef _, _, h => by simp [Expr.toPExpr?] at h
   | .assign _ _, _, h => by simp [Expr.toPExpr?] at h
   | .seq _ _, _, h => by simp [Expr.toPExpr?] at h
-  | .kwhile _ _, _, h => by simp [Expr.toPExpr?] at h
   | .fn _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
   | .pfn _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
   | .rand _, _, h => by simp [Expr.toPExpr?] at h
@@ -6705,149 +6704,6 @@ private lemma joinTypeResults_regimeConsistentWithCtxMasked
     simp [ctxAfter]
     exact Nat.le_trans (Nat.le_trans hbound_le_first hfirst_bound) hfirst_le_res
 
-private lemma runWhileFixpoint_preserves_tagEnvNotTrueAt :
-    ∀ (fuel : Nat) (ctx : TypeContext) (e1 e2 : Expr) (pureGuard : Bool)
-      (guardOpt : Option (Tag × Deps))
-      (pc : Poison) (memEnv : MemoryTypeEnv) (tagEnv : TagEnv) (regime : Regime)
-      (nextLoc : Loc) (nextTag : Tag) (k : Tag),
-      tagEnvNotTrueAt ctx.tagEnv k →
-      ctx.regime.lookup? k ≠ some true →
-      runWhileFixpoint .ioFree ctx e1 e2 fuel pureGuard guardOpt =
-        .ok (pc, memEnv, tagEnv, regime, nextLoc, nextTag) →
-      tagEnvNotTrueAt tagEnv k := by
-  intro fuel
-  induction fuel with
-  | zero =>
-      intro ctx e1 e2 pureGuard guardOpt pc memEnv tagEnv regime nextLoc nextTag k
-        hnotTag hnotReg hfix
-      simp [runWhileFixpoint] at hfix
-  | succ fuel ih =>
-      intro ctx e1 e2 pureGuard guardOpt pc memEnv tagEnv regime nextLoc nextTag k
-        hnotTag hnotReg hfix
-      simp [runWhileFixpoint, bind, Except.bind] at hfix
-      set ctxForGuard : TypeContext := if pureGuard then { ctx with pureCtx := true } else ctx with hctxForGuard
-      cases hguard : typecheckExpr .ioFree ctxForGuard e1 fuel with
-      | error err =>
-          simp [hguard] at hfix
-      | ok guardRes =>
-          simp [hguard] at hfix
-          cases hq1 : guardRes.qualType with
-          | mk etyp1 p1 pred1 =>
-              simp [hq1] at hfix
-              by_cases hbool : etyp1 = ETyp.bool
-              · simp [hbool] at hfix
-                cases hbody : typecheckExpr .ioFree _ e2 fuel with
-                | error err =>
-                    simp [pure, Except.pure] at hfix
-                    erw [hbody] at hfix
-                    simp at hfix
-                | ok bodyRes =>
-                    simp [hbody] at hfix
-                    cases hq2 : bodyRes.qualType with
-                    | mk etyp2 p2 pred2 =>
-                        simp [hq2] at hfix
-                        by_cases hunit : etyp2 = ETyp.unit
-                        · simp [hunit] at hfix
-                          set newTagEnv : TagEnv := joinTagEnvs ctx.tagEnv bodyRes.tagEnv' with hnewTagEnv
-                          set newRegime : Regime := joinRegimes ctx.regime bodyRes.regime' with hnewRegime
-                          have hnewTag_not_true : tagEnvNotTrueAt newTagEnv k := by
-                            simpa [hnewTagEnv] using
-                              (tagEnvNotTrueAt_join_left ctx.tagEnv bodyRes.tagEnv' k hnotTag)
-                          have hnewReg_not_true : newRegime.lookup? k ≠ some true := by
-                            intro htrue
-                            exact hnotReg (joinRegimes_lookup_some_left ctx.regime bodyRes.regime' k true (by simpa [hnewRegime] using htrue))
-                          simp [pure, Except.pure] at hfix
-                          by_cases hfixpoint :
-                              (((joinMemEnvs ctx.memEnv (restrictMemEnv bodyRes.memEnv' ctx.memEnv) == ctx.memEnv) = true ∧
-                                  joinPoison ctx.pc p2 = ctx.pc) ∧
-                                (newTagEnv == ctx.tagEnv) = true) ∧
-                              newRegime.bound = ctx.regime.bound
-                          · rw [if_pos hfixpoint] at hfix
-                            simp at hfix
-                            have htagEq : joinTagEnvs ctx.tagEnv bodyRes.tagEnv' = tagEnv := hfix.2.2.1
-                            simpa [hnewTagEnv, htagEq] using hnewTag_not_true
-                          · set nextCtx : TypeContext :=
-                              { ctx with
-                                pc := joinPoison ctx.pc p2,
-                                memEnv := joinMemEnvs ctx.memEnv (restrictMemEnv bodyRes.memEnv' ctx.memEnv),
-                                tagEnv := newTagEnv,
-                                regime := newRegime,
-                                nextLoc := bodyRes.nextLoc',
-                                nextTag := bodyRes.nextTag' } with hnextCtx
-                            rw [if_neg hfixpoint] at hfix
-                            simp [hnextCtx] at hfix
-                            have := ih nextCtx e1 e2 pureGuard guardOpt pc memEnv tagEnv regime nextLoc nextTag k
-                              hnewTag_not_true hnewReg_not_true hfix
-                            simpa [hnextCtx] using this
-                        · exfalso
-                          rw [if_neg hunit] at hfix
-                          simp [pure, Except.pure] at hfix
-              · exfalso
-                rw [if_neg hbool] at hfix
-                simp at hfix
-
-private lemma typecheckWhile_preserves_tagEnvNotTrueAt
-    (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) (k : Tag)
-    (hnotTag : tagEnvNotTrueAt ctx.tagEnv k)
-    (hnotReg : ctx.regime.lookup? k ≠ some true)
-    (htc : typecheckWhile .ioFree ctx e1 e2 fuel = .ok res) :
-    tagEnvNotTrueAt res.tagEnv' k := by
-  cases fuel with
-  | zero =>
-      unfold typecheckWhile at htc
-      simp at htc
-  | succ fuel' =>
-      unfold typecheckWhile at htc
-      cases hguard : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
-      | ok g =>
-          rcases g with ⟨kWhile, deps⟩
-          simp [hguard] at htc
-          cases fuel' with
-          | zero =>
-              simp [typecheckWhileDepoison] at htc
-          | succ fuel'' =>
-              simp [typecheckWhileDepoison, bind, Except.bind] at htc
-              cases hfix :
-                  runWhileFixpoint .ioFree ctx e1 e2 fuel'' true (some (kWhile, deps)) with
-              | error err =>
-                  simp [hfix] at htc
-              | ok r =>
-                  rcases r with
-                    ⟨finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag⟩
-                  simp [hfix] at htc
-                  cases htc
-                  by_cases hkEq : k = kWhile
-                  · subst hkEq
-                    intro deps' hget
-                    simp [Std.ExtTreeMap.get?_eq_getElem?] at hget
-                  · have hfinal :
-                      tagEnvNotTrueAt finalTagEnv k := by
-                      exact
-                        runWhileFixpoint_preserves_tagEnvNotTrueAt fuel'' ctx e1 e2 true
-                          (some (kWhile, deps))
-                          finalPc finalMemEnv finalTagEnv finalRegime finalNextLoc finalNextTag
-                          k hnotTag hnotReg hfix
-                    exact tagEnvNotTrueAt_insert_false finalTagEnv k kWhile deps hfinal
-      | error err =>
-          simp [hguard] at htc
-          cases fuel' with
-          | zero =>
-              simp [typecheckWhileStd] at htc
-          | succ fuel'' =>
-              simp [typecheckWhileStd, bind, Except.bind] at htc
-              cases hfix : runWhileFixpoint .ioFree ctx e1 e2 fuel'' false none with
-              | error err =>
-                  simp [hfix] at htc
-              | ok r =>
-                  rcases r with
-                    ⟨finalPc, finalMemEnv, finalTagEnv, finalRegime, finalNextLoc, finalNextTag⟩
-                  simp [hfix] at htc
-                  cases htc
-                  exact
-                    runWhileFixpoint_preserves_tagEnvNotTrueAt fuel'' ctx e1 e2 false none
-                      finalPc finalMemEnv finalTagEnv finalRegime finalNextLoc finalNextTag
-                      k hnotTag hnotReg hfix
-
 private lemma monotoneStep_lookup_not_true_local
     {R R' : Regime} (h_mono : Regime.monotoneStep R R')
     {k : Tag}
@@ -7189,37 +7045,37 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
         | ite e1 e2 e3 =>
             have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
             rcases hstruct with h1 | h2 | h3 | h4
-            · rcases h1 with ⟨kWhile, deps, _, hRk, _, _, _, res2, htc2, _, htag, _, _, _, _⟩
-              have hkNe : k ≠ kWhile := by
+            · rcases h1 with ⟨kGuard, deps, _, hRk, _, _, _, res2, htc2, _, htag, _, _, _, _⟩
+              have hkNe : k ≠ kGuard := by
                 intro hkEq
                 subst hkEq
                 exact hnotReg hRk
-              have htc2' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert kWhile ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
+              have htc2' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
                 simpa using htc2
               have hIH2 := IH' (fuel' - 1) (by omega)
-                { ctx with tagEnv := ctx.tagEnv.insert kWhile ⟨true, deps⟩ } e2 res2
-                (tagEnvNotTrueAt_insert_true_of_ne ctx.tagEnv k kWhile deps hkNe hnotTag)
+                { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨true, deps⟩ } e2 res2
+                (tagEnvNotTrueAt_insert_true_of_ne ctx.tagEnv k kGuard deps hkNe hnotTag)
                 hnotReg htc2'
               rwa [htag]
-            · rcases h2 with ⟨kWhile, deps, _, _, _, _, _, res3, htc3, _, htag, _, _, _, _⟩
-              have htc3' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert kWhile ⟨false, deps⟩ } e3 (fuel' - 1) = .ok res3 := by
+            · rcases h2 with ⟨kGuard, deps, _, _, _, _, _, res3, htc3, _, htag, _, _, _, _⟩
+              have htc3' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨false, deps⟩ } e3 (fuel' - 1) = .ok res3 := by
                 simpa using htc3
               have hIH3 := IH' (fuel' - 1) (by omega)
-                { ctx with tagEnv := ctx.tagEnv.insert kWhile ⟨false, deps⟩ } e3 res3
-                (tagEnvNotTrueAt_insert_false ctx.tagEnv k kWhile deps hnotTag)
+                { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨false, deps⟩ } e3 res3
+                (tagEnvNotTrueAt_insert_false ctx.tagEnv k kGuard deps hnotTag)
                 hnotReg htc3'
               rwa [htag]
-            · rcases h3 with ⟨kWhile, deps, _, _, res1, htc1, _, res2, htc2, res3, htc3, _, htag, _, _, _, _, _⟩
+            · rcases h3 with ⟨kGuard, deps, _, _, res1, htc1, _, res2, htc2, res3, htc3, _, htag, _, _, _, _, _⟩
               set ctxFalse' : TypeContext :=
                 { pc := joinPoison ctx.pc res1.qualType.poison,
-                  regime := { ctx.regime with map := ctx.regime.map.insert kWhile false },
+                  regime := { ctx.regime with map := ctx.regime.map.insert kGuard false },
                   memEnv := ctx.memEnv, varEnv := ctx.varEnv,
-                  tagEnv := ctx.tagEnv.insert kWhile ⟨false, deps⟩,
+                  tagEnv := ctx.tagEnv.insert kGuard ⟨false, deps⟩,
                   nextLoc := res2.nextLoc', nextTag := res2.nextTag', pureCtx := ctx.pureCtx }
               have htc3' : typecheck .ioFree ctxFalse' e3 (fuel' - 1) = .ok res3 := by
                 simpa [ctxFalse'] using htc3
               have hIH3 := IH' (fuel' - 1) (by omega) ctxFalse' e3 res3
-                (by simpa [ctxFalse'] using tagEnvNotTrueAt_insert_false ctx.tagEnv k kWhile deps hnotTag)
+                (by simpa [ctxFalse'] using tagEnvNotTrueAt_insert_false ctx.tagEnv k kGuard deps hnotTag)
                 (by simpa [ctxFalse'] using regime_lookup_insert_false_not_true_local hnotReg) htc3'
               rw [htag]
               exact tagEnvNotTrueAt_join_right res2.tagEnv' res3.tagEnv' k hIH3
@@ -7319,9 +7175,6 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
                 · subst hresults
                   have hfirst : tagEnvNotTrueAt first.tagEnv' k := h_pfn_closure_not_true st1 st2 p p1 tcls (first :: rest) hmap first (by simp)
                   exact joinTypeResults_tagEnvNotTrueAt ctx first rest res k h_join hfirst
-        | kwhile e1 e2 =>
-            simp at htc
-            exact typecheckWhile_preserves_tagEnvNotTrueAt ctx e1 e2 fuel' res k hnotTag hnotReg htc
 
 private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
     ∀ (fuel : Nat) (masked : Tag → Prop) (ctx : TypeContext) (e : Expr) (res : TypeResult),
@@ -7888,9 +7741,6 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                   exact joinTypeResults_regimeConsistentWithCtxMasked masked ctx first rest res h_join
                     (h_all_reg first (List.mem_cons_self ..))
                     (fun r hr => h_all_reg r (List.mem_cons_of_mem _ hr))
-        | kwhile e1 e2 =>
-            simp at htc
-            sorry -- permanently postponed: kwhile proofs are out of active scope
 
 lemma typecheckExpr_preserves_regimeConsistentWithCtx_main :
     ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult),
@@ -9496,7 +9346,7 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                         ⟨joinETyps e2' e3' p2 p3, joinPoison p2 p3, joinPredicates pred2 pred3⟩
                         res.qualType hjoin_qt hetyp_res hpred_res hinq hgd
         -- notExpr is not a constructor of Expr; it desugars during parsing
-        -- ===== App and kwhile cases =====
+        -- ===== App case =====
         | app e1 e2 =>
             cases fuel' with
             | zero =>
@@ -9619,8 +9469,6 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                       ⟨ join_transport_wfTagMeaningCtx_byFirst tm ctx first rest res h_join h_first_tm
                       , joinTypeResults_QTypRespectsTagMeaning_byMembers tm ctx first rest res
                           h_join h_first_qtm h_rest_qtm ⟩
-        | kwhile e1 e2 =>
-            sorry -- permanently postponed: kwhile proofs are out of active scope
 
 lemma typecheckExpr_preserves_wfTagMeaningCtx
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
@@ -10859,21 +10707,6 @@ lemma joinMemEnvsStrong_lookup_cleanUnder_left_or_right
         exact ⟨qt2, hlookup2, qtypCleanUnder.guard k htag2 hk2 hnotfun2⟩
 
 
-private lemma typecheckExpr_lookup_origin_of_pc_true_split_kwhile
-  (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
-  (htc : typecheckExpr .ioFree ctx (.kwhile e1 e2) fuel = .ok res)
-  (hpc : ctx.pc = true) :
-  ∀ (l : Loc) (qt_out : QTyp),
-    res.memEnv'.lookup l = some qt_out →
-    (qt_out.poison = false → ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qt_in.poison = false) ∧
-    (∀ k, qtypGuardTag qt_out = some k → res.regime'.lookup? k = some true →
-      qt_out.etyp.isFunctionType = false →
-      ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧
-        qtypGuardTag qt_in = some k ∧
-        ctx.regime.lookup? k = some true ∧
-        qt_in.etyp.isFunctionType = false) := by
-  sorry
-
 private lemma typecheckExpr_lookup_origin_of_pc_true_split
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
@@ -11946,8 +11779,6 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       hhead | ⟨srcRes, hsrc_rest, hsrc_contains⟩
                     · exact hmember_origin first (by simp) hhead
                     · exact hmember_origin srcRes (List.mem_cons_of_mem _ hsrc_rest) hsrc_contains
-      | kwhile e1 e2 =>
-          exact typecheckExpr_lookup_origin_of_pc_true_split_kwhile ctx e1 e2 (Nat.succ fuel') res htc hpc l qt_out hlookup_out
       | rand e1 =>
           have htcRand : typecheckRand .ioFree ctx e1 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
