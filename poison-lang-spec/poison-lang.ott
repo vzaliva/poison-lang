@@ -1,5 +1,96 @@
 % Derived from `examples/1Bsemantics/l1.ott` in Ott distribution
 
+embed
+ {{ tex-preamble
+\geometry{landscape}
+\title{Appendix A: Poison Language Specification}
+\AtBeginDocument{%
+  \maketitle
+  \tableofcontents
+  \newcommand{\ottlanguagesyntax}{\ottgrammartabular{%
+    \ottb\ottinterrule
+    \ottoperations\ottinterrule
+    \ottunaryXXop\ottinterrule
+    \ottstyp\ottinterrule
+    \otte\ottinterrule
+    \ottpe\ottinterrule
+    \ottv\ottafterlastrule
+  } 
+  }
+  \newcommand{\ottsemanticdomains}{\ottgrammartabular{%
+    \ottlocset\ottinterrule
+    \otttyp\ottinterrule
+    \ottqualifiedXXtype\ottinterrule
+    \ottpredicate\ottinterrule
+    \ottpcl\ottinterrule
+    \otttcl\ottinterrule
+    \ottptcl\ottinterrule
+    \otttcls\ottinterrule
+    \ottptcls\ottinterrule
+    \ottmemXXentry\ottinterrule
+    \ottmemXXtypeXXassumption\ottinterrule
+    \ottG\ottinterrule
+    \ottvarXXtypeXXassumption\ottinterrule
+    \ottS\ottinterrule
+    \otttagXXvaluation\ottinterrule
+    \ottL\ottinterrule
+    \ottR\ottinterrule
+    \ottpoison\ottinterrule
+    \ottmemory\ottinterrule
+    \ottvarXXbinding\ottinterrule
+    \ottvarXXenv\ottinterrule
+    \ottpureXXmode\ottinterrule
+    \ottexprXXorXXvalue\ottafterlastrule
+  } 
+  }
+  \newcommand{\ottrulesyntax}{\ottgrammartabular{%
+    \ottidx\ottinterrule
+    \ottterminals\ottinterrule
+    \ottformula\ottinterrule
+    \ottJop\ottinterrule
+    \ottjudgement\ottinterrule
+    \ottuserXXsyntax\ottafterlastrule
+  } 
+  }
+  \renewcommand{\ottall}{%
+    \clearpage
+    \section{Metavariables}%
+    The following metavariables range over the syntactic and semantic
+    categories of the language.\par\bigskip
+    \ottmetavars
+    \clearpage
+    \section{Language syntax}%
+    This section presents the grammar of the Poison language.\par\bigskip
+    \ottlanguagesyntax
+    \clearpage
+    \section{Types and environments}%
+    This section defines the types, typing contexts, and runtime
+    state used in the semantics and typing rules.\par\bigskip
+    \ottsemanticdomains
+    \clearpage
+    \section{Auxiliary definitions}%
+    This section defines the auxiliary notation used in
+    inference rule premises.\par\bigskip
+    \ottrulesyntax
+    \clearpage
+    \section{Semantics}%
+    The operational semantics is given by a big-step evaluation relation.
+    A configuration $\langle \pi, e, \mu, \rho \rangle$ evaluates to a
+    result $\langle v, \mu', \rho' \rangle$, where $\pi$ is the purity
+    mode, $e$ the expression, $\mu$ the memory, and $\rho$ the variable
+    environment.\par\bigskip
+    \ottdefnbeval{}%
+    \clearpage
+    \section{Typing rules}%
+    The type system tracks poison propagation through a flow-sensitive
+    analysis. The typing judgement threads memory typing environments,
+    variable typing environments, tag valuations, and regimes, producing
+    a qualified type that records both the underlying type and its poison
+    status.\par\bigskip
+    \ottdefntyping{}
+  }
+}
+ }}
 
 metavar n, i ::=
   {{ com Numeric literals }}
@@ -24,10 +115,10 @@ metavar tag, k ::=
 
 grammar 
 
-locset, LS :: 'LS_' ::= {{ com sets of logical locations }}
+locset, LS :: 'LS_' ::= {{ com location sets }}
   | { }                      ::   :: empty
   | { l }                    ::   :: singleton
-  | LS1 U LS2                ::   :: union {{ com union with deduplication }} {{ tex [[LS1]] \cup [[LS2]] }}
+  | LS1 U LS2                ::   :: union {{ com union (dedup) }} {{ tex [[LS1]] \cup [[LS2]] }}
 
 % Index expressions for use in formulas (primarily for while-loop iteration)
 % These indices are used to express fixpoint semantics: sequences G_0, G_1, ..., G_n
@@ -37,7 +128,7 @@ idx :: 'IDX_' ::=              {{ com index expressions }}
   | 1                          ::   :: one
   | 2                          ::   :: two
   | i                          ::   :: var {{ com iteration variable }}
-  | n                          ::   :: nat {{ com fixpoint iteration count }}
+  | n                          ::   :: nat {{ com fixpoint count }}
   | idx1 + idx2                ::   :: plus
   | idx1 - idx2                ::   :: minus
   | idx1 * idx2                ::   :: mult
@@ -66,7 +157,7 @@ unary_op :: 'UnaryOp_' ::=      {{ com operations }}
   | not                     ::   :: not 
 
 % Surface types for annotations (no runtime info)
-styp, ST :: 'ST_' ::=      {{ com surface types (for annotations) }}
+styp, ST :: 'ST_' ::=      {{ com surface types }}
   | int                    ::   :: int
   | bool                   ::   :: bool
   | unit                   ::   :: unit
@@ -91,17 +182,17 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | e1 ; e2                 ::   :: sequence
   | while e1 do e2          ::   :: while
   | let x = e1 in e2        ::   :: let
-  | fn x : ST1 => e : ST2        ::   :: fn   {{ com function with return type annotation }}
-  | pfn x : ST1 => pe : ST2      ::   :: pfn  {{ com pure function with return type annotation }}
+  | fn x : ST1 => e : ST2        ::   :: fn   {{ com fn with return type }}
+  | pfn x : ST1 => pe : ST2      ::   :: pfn  {{ com pure fn with return type }}
   | e1 e2                   ::   :: app
   | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
-  | rand e                  ::   :: rand_app   {{ com random integer generation }}
-  | frand e                 ::   :: frand_app  {{ com random float generation }}
+  | rand e                  ::   :: rand_app   {{ com random int }}
+  | frand e                 ::   :: frand_app  {{ com random float }}
   | printInt e              ::   :: printInt_app
   | printString e           ::   :: printString_app
 
 
-pe :: 'PE_' ::=            {{ com pure expressions (subset of expressions) }}
+pe :: 'PE_' ::=            {{ com pure expressions }}
   | n                       ::   :: num
   | b                       ::   :: bool
   | x                       ::   :: var
@@ -145,35 +236,35 @@ pcl :: 'PCL_' ::= {{ com predicate closure }}
   | ( x , pe , S )          ::   :: pred_closure
 
 % Typing closures (separate for impure fn and pure pfn)
-tcl :: 'TCL_' ::= {{ com typing closure for impure functions }}
+tcl :: 'TCL_' ::= {{ com impure fn closure }}
   | ( x , e , S )           ::   :: fn_closure
 
-ptcl :: 'PTCL_' ::= {{ com typing closure for pure functions }}
+ptcl :: 'PTCL_' ::= {{ com pure fn closure }}
   | ( x , pe , S )          ::   :: pfn_closure
 
 % Merged typing closures (non-empty lists treated as sets)
-tcls :: 'TCLS_' ::= {{ com merged typing closures for impure functions }}
+tcls :: 'TCLS_' ::= {{ com impure closure set }}
   | tcl                     ::   :: singleton {{ tex \{ [[tcl]] \} }}
   | tcl , tcls              ::   :: cons {{ tex \{ [[tcl]] \} \cup [[tcls]] }}
-  | tcls1 U tcls2           ::   :: union {{ com union of two closure sets (with deduplication) }} {{ tex [[tcls1]] \cup [[tcls2]] }}
+  | tcls1 U tcls2           ::   :: union {{ com closure set union }} {{ tex [[tcls1]] \cup [[tcls2]] }}
 
-ptcls :: 'PTCLS_' ::= {{ com merged typing closures for pure functions }}
+ptcls :: 'PTCLS_' ::= {{ com pure closure set }}
   | ptcl                    ::   :: singleton {{ tex \{ [[ptcl]] \} }}
   | ptcl , ptcls            ::   :: cons {{ tex \{ [[ptcl]] \} \cup [[ptcls]] }}
-  | ptcls1 U ptcls2         ::   :: union {{ com union of two closure sets (with deduplication) }} {{ tex [[ptcls1]] \cup [[ptcls2]] }}
+  | ptcls1 U ptcls2         ::   :: union {{ com closure set union }} {{ tex [[ptcls1]] \cup [[ptcls2]] }}
 
-predicate, P :: 'P_' ::= {{ com predicate (pure function from T to bool) }}
+predicate, P :: 'P_' ::= {{ com predicate }}
   | guard k pred_closure pcl ::   :: pred_closure {{ com predicate as pure closure }} {{tex \mathsf{guard}\,[[k]]\,\mathsf{pred\_closure}\,[[pcl]] }}
   | guard k                   ::   :: guard_only {{ com guard tag only }} {{tex \mathsf{guard}\,[[k]] }}
   | no_pred                   ::   :: no_pred {{ com no predicate }} {{tex \bot }}
-  | AppPred p P              ::   :: app_pred {{ com provenance gate: if p (join of outer and internal poison) is poisoned, result is no predicate; otherwise P }} {{ tex \mathrm{AppPred}([[p]], [[P]]) }}
-  | indexedP P idx1 idx2    :: M :: indexedP_pred {{ com doubly-indexed predicate for while-loop }} {{ tex [[P]]_{[[idx1]]}^{[[idx2]]} }}
+  | AppPred p P              ::   :: app_pred {{ com provenance gate }} {{ tex \mathrm{AppPred}([[p]], [[P]]) }}
+  | indexedP P idx1 idx2    :: M :: indexedP_pred {{ com doubly-indexed predicate }} {{ tex [[P]]_{[[idx1]]}^{[[idx2]]} }}
 
-qualified_type, Q :: 'Q_' ::= {{ com qualified type (type with poison and optional predicate) }}
+qualified_type, Q :: 'Q_' ::= {{ com qualified type }}
   | T :> p                  ::   :: qualified {{ tex [[T]] \triangleright [[p]] }}
   | T :> p { P }            ::   :: qualified_pred {{ tex [[T]] \triangleright [[p]]\, \{ [[P]] \} }}
 
-mem_entry, me :: 'ME_' ::= {{ com memory entry: poison and predicate only (stored type is always int) }}
+mem_entry, me :: 'ME_' ::= {{ com mem entry (poison+pred) }}
   | p { P }                 ::   :: entry {{ tex [[p]]\, \{ [[P]] \} }}
 
 mem_type_assumption, ta :: 'TA_' ::= {{ com memory type assumption }}
@@ -182,13 +273,13 @@ mem_type_assumption, ta :: 'TA_' ::= {{ com memory type assumption }}
 G {{ tex \Gamma }} :: G_ ::=     {{ com memory typing environments }} {{ phantom }} {{ coq list mem_type_assumption }}
   | empty                   ::   :: empty {{ coq [] }}
   | G , ta                  ::   :: extend {{ coq ([[ta]]::[[G]]) }}
-  | JoinG G1 G2             ::   :: JoinG {{ com flow-insensitive join of memory type environments: unions the environments, taking the join of poisons for any location present in both }} {{ tex [[G1]] \sqcup [[G2]] }}
-  | JoinGStrong G1 G2       ::   :: JoinGStrong {{ com like JoinG but drops predicates for single-sided entries; used for unknown-branch if joins }} {{ tex [[G1]] \sqcup^{\!*} [[G2]] }}
-  | JoinRestrict G1 G2      ::   :: JoinRestrict {{ com JoinG where the second operand is first restricted to dom(G1) }} {{ tex [[G1]] \sqcup \bigl([[G2]] \mathbin{\restriction} \mathrm{dom}([[G1]])\bigr) }}
+  | JoinG G1 G2             ::   :: JoinG {{ com flow-insensitive env join }} {{ tex [[G1]] \sqcup [[G2]] }}
+  | JoinGStrong G1 G2       ::   :: JoinGStrong {{ com JoinG for unknown-branch }} {{ tex [[G1]] \sqcup^{\!*} [[G2]] }}
+  | JoinRestrict G1 G2      ::   :: JoinRestrict {{ com JoinG with 2nd restricted to dom(G1) }} {{ tex [[G1]] \sqcup \bigl([[G2]] \mathbin{\restriction} \mathrm{dom}([[G1]])\bigr) }}
   | G [ l |-> me ]          ::   :: UpdateG {{ tex [[G]] [ l \mapsto [[me]] ] }}
-  | G [ LS |-> me ]         ::   :: UpdateGSet {{ com update all logical locations in LS with me }} {{ tex [[G]] [ [[LS]] \mapsto [[me]] ] }}
-  | indexG G idx            ::   :: indexG   {{ com indexed environment sequence for while-loop fixpoint }} {{ tex [[G]]^{[[idx]]} }}
-  | indexedG G idx1 idx2    ::   :: indexedG {{ com doubly-indexed environment for while-loop }} {{ tex [[G]]_{[[idx1]]}^{[[idx2]]} }}                  
+  | G [ LS |-> me ]         ::   :: UpdateGSet {{ com update LS with me }} {{ tex [[G]] [ [[LS]] \mapsto [[me]] ] }}
+  | indexG G idx            ::   :: indexG   {{ com indexed env for fixpoint }} {{ tex [[G]]^{[[idx]]} }}
+  | indexedG G idx1 idx2    ::   :: indexedG {{ com doubly-indexed env }} {{ tex [[G]]_{[[idx1]]}^{[[idx2]]} }}                  
 
 % Variable environment for let bindings
 var_type_assumption, va :: 'VA_' ::= {{ com variable type assumption }}
@@ -200,30 +291,30 @@ S {{ tex \sigma }} :: S_ ::=     {{ com variable typing environments }} {{ phant
 
 % Tag valuation environment
 tag_valuation, tv :: 'TV_' ::= {{ com tag valuation }}
-  | k : b using LS     ::   :: tag_deps {{ com tag with boolean value and dependency locset }}
+  | k : b using LS     ::   :: tag_deps {{ com tag with deps }}
 
 L {{ tex \mathcal{L} }} :: L_ ::=     {{ com logical environment (tag valuation) }} {{ phantom }} {{ coq list tag_valuation }}
   | empty                   ::   :: empty {{ coq [] }}
   | L [ k |-> b using LS ] ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] \text{ using } [[LS]] ] }}
-  | JoinL L1 L2             ::   :: JoinL {{ com agreement-only join of tag environments: for each tag k, if both L1 and L2 map k to the same boolean b with dependency locsets LS1, LS2, keep k with deps = LS1 U LS2; otherwise (k absent on some side, or booleans disagree), drop k }} {{ tex [[L1]] \sqcup [[L2]] }}
-  | indexL L idx            ::   :: indexL   {{ com indexed tag environment sequence for while-loop fixpoint }} {{ tex [[L]]^{[[idx]]} }}
-  | indexedL L idx1 idx2    ::   :: indexedL {{ com doubly-indexed tag environment for while-loop }} {{ tex [[L]]_{[[idx1]]}^{[[idx2]]} }}                  
+  | JoinL L1 L2             ::   :: JoinL {{ com agreement-only tag join }} {{ tex [[L1]] \sqcup [[L2]] }}
+  | indexL L idx            ::   :: indexL   {{ com indexed tag env }} {{ tex [[L]]^{[[idx]]} }}
+  | indexedL L idx1 idx2    ::   :: indexedL {{ com doubly-indexed tag env }} {{ tex [[L]]_{[[idx1]]}^{[[idx2]]} }}                  
 
 % Regime (partial map from tags to booleans)
 % R is both input and output of typing; propagates like L (thread through sequencing, join at branches, invalidate on write)
 R {{ tex \mathcal{R} }} :: R_ ::= {{ com regime (partial map from tags to booleans) }}
   | empty                   ::   :: empty {{ coq [] }}
   | R [ k |-> b ]           ::   :: extend {{ tex [[R]] [ k \rightharpoonup [[b]] ] }}
-  | JoinR R1 R2             ::   :: JoinR {{ com agreement-only join of regimes: keep only entries that agree in both R1 and R2 }} {{ tex [[R1]] \sqcup [[R2]] }}
-  | indexR R idx            ::   :: indexR   {{ com indexed regime sequence for while-loop fixpoint }} {{ tex [[R]]^{[[idx]]} }}
-  | indexedR R idx1 idx2    ::   :: indexedR {{ com doubly-indexed regime for while-loop }} {{ tex [[R]]_{[[idx1]]}^{[[idx2]]} }}
+  | JoinR R1 R2             ::   :: JoinR {{ com agreement-only regime join }} {{ tex [[R1]] \sqcup [[R2]] }}
+  | indexR R idx            ::   :: indexR   {{ com indexed regime }} {{ tex [[R]]^{[[idx]]} }}
+  | indexedR R idx1 idx2    ::   :: indexedR {{ com doubly-indexed regime }} {{ tex [[R]]_{[[idx1]]}^{[[idx2]]} }}
 
 poison, p, pc :: 'p_' ::= {{ com poison status }}
   | clean                    ::   :: clean
   | poisoned                 ::   :: poisoned
-  | join p1 p2               ::   :: join {{ com conservative join of poison flags: poisoned if either p1 or p2 is poisoned, clean only if both are clean }} {{ tex [[p1]] \sqcup [[p2]] }}
-  | indexP p idx             ::   :: indexP   {{ com indexed poison sequence for while-loop fixpoint }} {{ tex [[p]]^{[[idx]]} }}
-  | indexedP p idx1 idx2     ::   :: indexedP_poison {{ com doubly-indexed poison for while-loop }} {{ tex [[p]]_{[[idx1]]}^{[[idx2]]} }}                  
+  | join p1 p2               ::   :: join {{ com poison join }} {{ tex [[p1]] \sqcup [[p2]] }}
+  | indexP p idx             ::   :: indexP   {{ com indexed poison }} {{ tex [[p]]^{[[idx]]} }}
+  | indexedP p idx1 idx2     ::   :: indexedP_poison {{ com doubly-indexed poison }} {{ tex [[p]]_{[[idx1]]}^{[[idx2]]} }}                  
   
 % Variable substitution environment for operational semantics
 var_binding, vb :: 'VB_' ::= {{ com variable binding }}
@@ -304,25 +395,25 @@ formula :: formula_ ::=
   | fresh k                :: :: fresh_tag       {{ com k is fresh }}
   | fresh x S              :: :: fresh_var       {{ com x is fresh in S }}
   | n0 = random n1         :: :: random_gen     {{ com n0 is a random number in [0, n1] range }}
-  | match_guard e G S = k with LS  :: :: match_guard  {{ com match\_guard(e, G, S) merges predicates for the relevant logical location sets (per MergePreds), scans heap cells and variables, and if it finds exactly one guard k whose test expression, when applied to its owning value, is syntactically identical to condition e, it returns that k with dependency locset LS; otherwise it returns "none" }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] \text{ with } [[LS]] }}
-  | invalidate_deps L LS = L1 :: :: invalidate_deps {{ com invalidate\_deps(L, LS) removes from L all entries whose deps intersect LS; view L as a partial map and restrict its domain accordingly }}  {{ tex [[L1]] = [[L]] \mathbin{\restriction} \bigl(\mathrm{dom}([[L]]) \setminus [[LS]]\bigr) }}
-  | invalidate_regime_deps R L LS = R1 :: :: invalidate_regime_deps {{ com invalidate\_regime\_deps(R, L, LS) removes from R all entries for tags whose dependency set in L intersects LS; mirrors invalidate\_deps for L }}  {{ tex [[R1]] = \mathrm{invalidate\_regime}([[R]], [[L]], [[LS]]) }}
+  | match_guard e G S = k with LS  :: :: match_guard  {{ com find guard k with deps LS for condition e }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] \text{ with } [[LS]] }}
+  | invalidate_deps L LS = L1 :: :: invalidate_deps {{ com remove from L entries whose deps intersect LS }}  {{ tex [[L1]] = [[L]] \mathbin{\restriction} \bigl(\mathrm{dom}([[L]]) \setminus [[LS]]\bigr) }}
+  | invalidate_regime_deps R L LS = R1 :: :: invalidate_regime_deps {{ com remove from R tags whose deps in L intersect LS }}  {{ tex [[R1]] = \mathrm{invalidate\_regime}([[R]], [[L]], [[LS]]) }}
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
-  | T1 ≈ T2                :: :: sig_comp     {{ com T1 and T2 are signature-compatible: same shape ignoring poisons and closures. For base types: exact match. For references: both are ref (location sets may differ). For arrows: same surface types (ST1, ST2) and same purity, but poisons and closure sets may differ }} {{ tex [[T1]] \approx [[T2]] }}
+  | T1 ≈ T2                :: :: sig_comp     {{ com T1 and T2 signature-compatible }} {{ tex [[T1]] \approx [[T2]] }}
   | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
-  | tcl in tcls            :: :: tcl_member  {{ com typing closure tcl is a member of the merged closure set tcls }} {{ tex [[tcl]] \in [[tcls]] }}
-  | ptcl in ptcls          :: :: ptcl_member {{ com typing closure ptcl is a member of the merged closure set ptcls }} {{ tex [[ptcl]] \in [[ptcls]] }}
+  | tcl in tcls            :: :: tcl_member  {{ com tcl member of tcls }} {{ tex [[tcl]] \in [[tcls]] }}
+  | ptcl in ptcls          :: :: ptcl_member {{ com ptcl member of ptcls }} {{ tex [[ptcl]] \in [[ptcls]] }}
   | l in LS                 :: :: loc_member {{ com logical location membership }} {{ tex [[l]] \in [[LS]] }}
   | LS = LS1 U LS2          :: :: ls_union {{ com locset union binding }} {{ tex [[LS]] = [[LS1]] \cup [[LS2]] }}
-  | T = ST1 -> ST2 # p tclosures tcls   :: :: type_eq_arrow  {{ com T is an impure arrow type with the given components }} {{ tex [[T]] = [[ST1]] \rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tclosures}\, [[tcls]] }}
+  | T = ST1 -> ST2 # p tclosures tcls   :: :: type_eq_arrow  {{ com impure arrow type }} {{ tex [[T]] = [[ST1]] \rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tclosures}\, [[tcls]] }}
   | T = ST1 -> ST2 # p tpclosures ptcls :: :: type_eq_parrow {{ com T is a pure arrow type with the given components }} {{ tex [[T]] = [[ST1]] \Rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tpclosures}\, [[ptcls]] }}
-  | T = ref @ LS                   :: :: type_eq_ref {{ com T is a reference type with locset LS (memory stores only integers) }} {{ tex [[T]] = \mathsf{ref}\,@\,[[LS]] }}
-  | tcls = tcls1 U tcls2  :: :: tcls_union  {{ com union formula for binding the result of closure set union }} {{ tex [[tcls]] = [[tcls1]] \cup [[tcls2]] }}
-  | ptcls = ptcls1 U ptcls2 :: :: ptcls_union {{ com union formula for binding the result of closure set union }} {{ tex [[ptcls]] = [[ptcls1]] \cup [[ptcls2]] }}
+  | T = ref @ LS                   :: :: type_eq_ref {{ com ref type with locset LS }} {{ tex [[T]] = \mathsf{ref}\,@\,[[LS]] }}
+  | tcls = tcls1 U tcls2  :: :: tcls_union  {{ com closure set union binding }} {{ tex [[tcls]] = [[tcls1]] \cup [[tcls2]] }}
+  | ptcls = ptcls1 U ptcls2 :: :: ptcls_union {{ com closure set union binding }} {{ tex [[ptcls]] = [[ptcls1]] \cup [[ptcls2]] }}
   | JoinP P1 P2 = P3       :: :: join_pred {{ com tag-aware, conservative pred join }} {{ tex [[P1]] \sqcup [[P2]] = [[P3]] }}
-  | MergePreds G LS = P     :: :: merge_preds {{ com merges predicates for all logical locations in LS using conservative pred join. Uses the predicate projection of memory entries. }} {{ tex \bigsqcup_{\,l \in [[LS]]} \mathrm{pred}([[G]](l)) = [[P]] }}
-  | JoinPoisons G LS = p    :: :: join_poisons {{ com join of poison flags for all logical locations in LS (projection of memory entries). }} {{ tex [[p]] = \bigsqcup_{\,l \in [[LS]]} \mathrm{poison}([[G]](l)) }}
-  | not_harmful_shadow x S R :: :: not_harmful_shadow {{ com x is not in dom(S), or S(x) does not have guardClosure k with R(k) != none }} {{ tex \neg\mathrm{harmful\_shadow}([[x]], [[S]], [[R]]) }}
+  | MergePreds G LS = P     :: :: merge_preds {{ com merge predicates for LS in G }} {{ tex \bigsqcup_{\,l \in [[LS]]} \mathrm{pred}([[G]](l)) = [[P]] }}
+  | JoinPoisons G LS = p    :: :: join_poisons {{ com join poisons for LS in G }} {{ tex [[p]] = \bigsqcup_{\,l \in [[LS]]} \mathrm{poison}([[G]](l)) }}
+  | not_harmful_shadow x S R :: :: not_harmful_shadow {{ com no harmful shadow of x in S,R }} {{ tex \neg\mathrm{harmful\_shadow}([[x]], [[S]], [[R]]) }}
   | not_fun T :: :: not_fun {{ com T is not function type }} {{ tex [[T]] \neq \_ \rightarrow \_}}
 
 
