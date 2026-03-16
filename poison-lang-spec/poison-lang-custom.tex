@@ -1,0 +1,105 @@
+% Custom LaTeX for poison-lang spec: layout, structure, and rule-level zebra striping
+\usepackage{xcolor}
+\geometry{landscape}
+\title{Appendix A: Poison Language Specification}
+
+\newcounter{rulecount}
+\renewcommand{\ottusedrule}[1]{%
+  \par
+  \stepcounter{rulecount}%
+  \noindent
+  \ifodd\value{rulecount}%
+    \colorbox{gray!25}{\hbox to \dimexpr\linewidth-2\fboxsep{\hss$\displaystyle #1$\hss}}%
+  \else
+    \colorbox{white}{\hbox to \dimexpr\linewidth-2\fboxsep{\hss$\displaystyle #1$\hss}}%
+  \fi
+  \par\vspace{0.6em}%
+}
+
+\AtBeginDocument{%
+  \maketitle
+  \tableofcontents
+  \newcommand{\ottlanguagesyntax}{\ottgrammartabular{%
+    \ottb\ottinterrule
+    \ottoperations\ottinterrule
+    \ottunaryXXop\ottinterrule
+    \ottstyp\ottinterrule
+    \otte\ottinterrule
+    \ottpe\ottinterrule
+    \ottv\ottafterlastrule
+  }
+  }
+  \newcommand{\ottsemanticdomains}{\ottgrammartabular{%
+    \ottlocset\ottinterrule
+    \otttyp\ottinterrule
+    \ottqualifiedXXtype\ottinterrule
+    \ottpredicate\ottinterrule
+    \ottpcl\ottinterrule
+    \otttcl\ottinterrule
+    \ottptcl\ottinterrule
+    \otttcls\ottinterrule
+    \ottptcls\ottinterrule
+    \ottmemXXentry\ottinterrule
+    \ottmemXXtypeXXassumption\ottinterrule
+    \ottG\ottinterrule
+    \ottvarXXtypeXXassumption\ottinterrule
+    \ottS\ottinterrule
+    \otttagXXvaluation\ottinterrule
+    \ottL\ottinterrule
+    \ottR\ottinterrule
+    \ottpoison\ottinterrule
+    \ottmemory\ottinterrule
+    \ottvarXXbinding\ottinterrule
+    \ottvarXXenv\ottinterrule
+    \ottpureXXmode\ottinterrule
+    \ottexprXXorXXvalue\ottafterlastrule
+  }
+  }
+  \newcommand{\ottrulesyntax}{\ottgrammartabular{%
+    \ottidx\ottinterrule
+    \ottterminals\ottinterrule
+    \ottformula\ottinterrule
+    \ottJop\ottinterrule
+    \ottjudgement\ottinterrule
+    \ottuserXXsyntax\ottafterlastrule
+  }
+  }
+  \renewcommand{\ottall}{%
+    \clearpage
+    \section{Metavariables}%
+    The following metavariables range over the syntactic and semantic
+    categories of the language.\par\bigskip
+    \ottmetavars
+    \clearpage
+    \section{Language syntax}%
+    This section presents the grammar of the Poison language.\par\bigskip
+    \ottlanguagesyntax
+    \clearpage
+    \section{Types and environments}%
+    This section defines the types, typing contexts, and runtime
+    state used in the semantics and typing rules.\par\bigskip
+    \ottsemanticdomains
+    \clearpage
+    \section{Auxiliary definitions}%
+    This section defines the auxiliary notation used in
+    inference rule premises.\par\bigskip
+    \ottrulesyntax
+    \clearpage
+    \section{Semantics}%
+    The operational semantics is given by a big-step evaluation relation.
+    A configuration $\langle \pi, e, \mu, \rho \rangle$ evaluates to a
+    result $\langle v, \mu', \rho' \rangle$, where $\pi$ is the purity
+    mode, $e$ the expression, $\mu$ the memory, and $\rho$ the variable
+    environment.\par\bigskip
+    \ottdefnbeval{}%
+    \clearpage
+    \setcounter{rulecount}{0}%
+    \section{Typing rules}%
+    The type system tracks poison propagation through a flow-sensitive
+    analysis. The typing judgement threads memory typing environments,
+    variable typing environments, tag valuations, and regimes, producing
+    a qualified type that records both the underlying type and its poison
+    status.\par\bigskip
+    \ottdefntyping{}
+  }
+}
