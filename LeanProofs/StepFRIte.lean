@@ -3452,7 +3452,56 @@ private lemma stepFR_ite_mode2
       hres_agree3' hclean3
     exact agreeValueUnder_transport_clean hclean hetyp hpoison_imp hagree3'
 
--- Mode 3: R(k) = none (conservative join)
+-- Mode 3 (single-run): R(k) = none (conservative join)
+lemma stepFRSingleRun_ite_mode3_maskedReg
+  (masked : Tag → Prop)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : ∀ m < Nat.succ (Nat.succ fuel'),
+    ∀ (masked' : Tag → Prop) (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck .ioFree ctx' e' m = .ok res' →
+        StepFRSingleRunFinalCleanPcTrueMaskedRegParam masked'
+          (fun ctx μ ρ θ => consistentWithRegimeMasked masked' predSat ctx.regime ctx μ ρ θ)
+          (fun R qt μ θ v => valueConsistentWithRegimeMasked masked' predSat R qt μ θ v)
+          .ioFree ctx' e' res' predSat tm)
+  (k : Tag) (deps : Deps)
+  (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
+  (hregime_none : ctxᵢ.regime.lookup? k = none)
+  (res1 : TypeResult)
+  (htc1 : typecheckExpr .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
+  (hbool : res1.qualType.etyp = ETyp.bool)
+  (res2 : TypeResult)
+  (htc2 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
+          let ctxTrue := { ctxᵢ with
+            tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩
+            pc := branchPc
+            regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k true } }
+          typecheckExpr .ioFree ctxTrue e2 fuel' = .ok res2)
+  (res3 : TypeResult)
+  (htc3 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
+          let ctxFalse := { ctxᵢ with
+            tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩
+            pc := branchPc
+            regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k false } }
+          let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+          typecheckExpr .ioFree ctxFalse' e3 fuel' = .ok res3)
+  (hmemEnv : res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv')
+  (htagEnv : res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv')
+  (hnextLoc : res.nextLoc' = max res2.nextLoc' res3.nextLoc')
+  (hnextTag : res.nextTag' = max res2.nextTag' res3.nextTag')
+  (hregime' : res.regime' = joinRegimes res2.regime' res3.regime')
+  (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc (joinPoison res1.qualType.poison
+                          (joinPoison res2.qualType.poison res3.qualType.poison)))
+  (hetyp : res.qualType.etyp = joinETyps res2.qualType.etyp res3.qualType.etyp
+              res2.qualType.poison res3.qualType.poison)
+  (hpred : res.qualType.pred = Predicate.noPred) :
+  StepFRSingleRunFinalCleanPcTrueMaskedRegParam masked
+    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+    .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
+  sorry
+
+-- Mode 3 (two-run): R(k) = none (conservative join)
 private lemma stepFR_ite_mode3
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)

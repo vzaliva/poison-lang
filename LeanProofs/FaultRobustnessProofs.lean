@@ -588,7 +588,16 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                               (qt := res3.qualType) (qt' := res.qualType)
                               hetyp.symm hcap2'
                     · rcases hrest with h3 | h4
-                      · sorry
+                      · obtain ⟨k, deps, hmatch, hregime_none, res1, htc1, hbool, res2, htc2, res3, htc3,
+                          hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp, hpred⟩ := h3
+                        exact
+                          stepFRSingleRun_ite_mode3_maskedReg
+                            masked ctxᵢ predSat tm e1 e2 e3 fuel' res IH'
+                            k deps (by simpa [Nat.succ_sub_one] using hmatch) hregime_none
+                            res1 (by simpa [Nat.succ_sub_one] using htc1) hbool
+                            res2 (by simpa [Nat.succ_sub_one] using htc2)
+                            res3 (by simpa [Nat.succ_sub_one] using htc3)
+                            hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison hetyp hpred
                       · rcases h4 with
                           ⟨⟨err, hmatch_fail⟩, res1, htc1, hbool, res2, htc2, res3, htc3,
                             hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp, _hpred⟩
