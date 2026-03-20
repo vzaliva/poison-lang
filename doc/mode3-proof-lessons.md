@@ -1,111 +1,97 @@
-# Mode 3: Analysis, Counterexample, and Repair Options
+# Mode 3: Analysis, Counterexample, and Repair
 
-This document consolidates three earlier analyses into a single self-contained
-reference for understanding and resolving the mode-3 `if` soundness problem.
-It does not assume access to the abandoned `issue-128-rebase-invariant` branch.
+This document is a self-contained reference for understanding and resolving
+the mode-3 `if` soundness problem.
 
-**Terminology used throughout:**
+**Terminology:**
 
-- **tag-only** (`guardOnly k`): a guard tag with no attached predicate closure.
-  Purely logical; the carrier value does not matter for `matchGuard`.
-- **tag+predicate** (`guardClosure k arg body cap`): a guard tag with an
-  attached predicate closure.  The carrier value participates in `predSat`.
+- **tag-only** (`guardOnly k`): a guard tag with no predicate closure.
+  Cannot be matched by `matchGuard`.
+- **tag+predicate** (`guardClosure k arg body cap`): a guard tag with a
+  predicate closure.  Can be matched by `matchGuard`.
 - **mode 1 / mode 2**: `R.lookup? k = some true` / `some false`.
-- **mode 3**: `R.lookup? k = none` (regime-unknown; the focus of this document).
-- **mode 4**: `matchGuard` fails entirely; standard `if`.
+- **mode 3**: `R.lookup? k = none` (regime-unknown; the focus of this
+  document).
+- **mode 4**: `matchGuard` fails; standard `if`.
 
 ---
 
-## 1. Background: What Mode 3 Does
+## 1. What Mode 3 Does
 
-Mode 3 is the case of `typecheckIf` (`Typecheck.lean:1648`) where:
+Mode 3 is the case of `typecheckIf` where `matchGuard` succeeds with tag `k`
+but the outer regime has no entry for it (`R.lookup? k = none`).
 
-- `matchGuard e1 ctx.memEnv ctx.varEnv fuel = .ok (k, deps)` — a guard match
-  succeeds
-- `ctx.regime.lookup? k = none` — the outer regime has no entry for tag `k`
-
-The typechecker then:
+The typechecker:
 
 1. Types `e1` under `pureCtx := true` (the condition is pure).
-2. Types the true branch `e2` under `tagEnv[k := (true, deps)]` and
-   `regime.map[k := true]`.
-3. Types the false branch `e3` under `tagEnv[k := (false, deps)]` and
-   `regime.map[k := false]`.
-4. Joins results conservatively: `joinMemEnvsStrong`, `joinTagEnvs`,
-   `joinRegimes`, `joinETyps`, with `poison = join pc (join p1 (join p2 p3))`
-   and `pred = noPred`.
+2. Sets `branchPc := join ctx.pc p1` (condition poison flows into both
+   branches).
+3. Types the true branch under `tagEnv[k := (true, deps)]`,
+   `regime.map[k := true]`, and `pc := branchPc`.
+4. Types the false branch under `tagEnv[k := (false, deps)]`,
+   `regime.map[k := false]`, and `pc := branchPc`.
+5. Joins results conservatively with `pred = noPred`.
 
-Crucially, the regime inserts **do not bump `regime.bound`**:
-
-```lean
-def lookup? (R : Regime) (k : Tag) : Option Bool :=
-  if k < R.bound then R.map.get? k else none
-```
-
-So the insert into `regime.map` is visible through `lookup?` only when
-`k < regime.bound`.  This creates a fundamental split between the `k < bound`
-(visible) and `k >= bound` (invisible) subcases.
+The regime inserts **do not bump `regime.bound`**.  Since
+`Regime.lookup?` returns `none` when `k >= bound`, the insert is visible
+only when `k < regime.bound`.  This creates a fundamental `k < bound` vs
+`k >= bound` split in the proof (§3.4).
 
 ### 1.1. The two sorrys on `main`
 
-- `stepFRSingleRun_ite_mode3_maskedReg` (`StepFRIte.lean:3502`) — single-run
-  variant proving `StepFRSingleRunFinalCleanPcTrueMaskedRegParam` with masked
-  regime.
-- `stepFR_ite_mode3` (`StepFRIte.lean:3560`) — two-run variant proving `StepFR`
-  (the full fault-robustness comparison).
+- `stepFRSingleRun_ite_mode3_maskedReg` — single-run variant.  What remains
+  is proving the masked-regime result for the taken branch.
+- `stepFR_ite_mode3` — two-run variant.  What remains is handling the four
+  branch-selection combinations (`b₀, b₁ ∈ {true, false}`) and proving
+  agreement on the joined output.
 
-Both are after inverting the `ite` evaluation via `terminatesTo_ite_inv'` and
-applying the IH to `e1`.  What remains is handling the four combinations of
-branch selection (`b₀ ∈ {true, false}`, `b₁ ∈ {true, false}`) and proving
-agreement on the joined output.
+Both are in `StepFRIte.lean`, after the IH has been applied to `e1`.
 
 ---
 
 ## 2. The Soundness Problem
 
-### 2.1. The theorem is false, not merely unfinished
+The mode-3 sorry is **not just missing proof work** — `StepFR` is false under
+the current invariant.  This section constructs the counterexample and
+explains why.
 
-The remaining mode-3 sorry is **not just missing proof work** — the `StepFR`
-statement under the current invariant is false.  A formal counterexample was
-proved on the `issue-128-rebase-invariant` branch (not on `main`).
+### 2.1. Counterexample
 
-### 2.2. Counterexample construction
+The counterexample is a proof-level construction: an assumed initial typing
+context fed to `StepFR`, not a source-language program.  Two variables share
+guard tag `0`:
 
-The counterexample uses two variables with the same tag:
+- `x`: clean `bool`, `guardClosure 0 "a" a []` (tag+predicate)
+- `y`: dirty `int`, `guardOnly 0` (tag-only)
 
-- `x`: clean, carries `Predicate.guardClosure 0 "a" (a == a) []`
-- `y`: dirty (poison = true), carries the same predicate
-
-Expression:
+This models the linked-value pattern where a checkable status value is linked
+to some other data via a shared tag (for example, `ok = validate(buf)` where
+`ok` is a boolean and `buf` is linked to it).
 
 ```text
-if (x == x) then y else 0
+if x then y else 0
 ```
 
-Outer regime: `bound = 1`, empty map.  So `R.lookup? 0 = none` — exactly
-mode 3.
+Initial `pc = false` (clean).  Regime: `bound = 1`, empty map — so
+`R.lookup? 0 = none`, exactly mode 3.
 
-**Why `matchGuard` matches `x` but not `y`:**  The predicate body `a == a`
-is parameterised by argument name `"a"`.  During `matchGuard`, the body is
-instantiated at the owner:
+`matchGuard` skips tag-only predicates, so `y` is never a match candidate.
+For `x`, the predicate body instantiates to `x`, matching the condition.
+Exactly one match; mode 3 fires.
 
-- For `x`: instantiated body is `x == x`, which matches the condition.
-- For `y`: instantiated body is `y == y`, which does **not** match `x == x`.
+Two runs: `x = true` in both (clean, must agree); `y = 1` vs `y = 2` (dirty,
+may differ).
 
-So exactly one owner (`x`) matches, and mode 3 is triggered.
+The counterexample works for any guarded predicate on `y` sharing tag `0`
+— whether `guardOnly 0` or any `guardClosure 0 ...`.  The de-poisoning is
+driven by the tag alone.
 
-**The two runs:**
+### 2.2. Why it typechecks as clean
 
-- Run 0: `x = 0`, `y = 1`
-- Run 1: `x = 0`, `y = 2`
-
-Both runs agree on every clean input (`x` is clean and equal; `y` is dirty,
-so it may differ).
-
-### 2.3. Why the expression typechecks as clean
-
-The true-branch context uses `R[0 |-> true]`.  Inside that context,
-`typecheckVar` reads `y` and finds:
+The true-branch context inserts into both `tagEnv` and `regime.map`.  The
+de-poisoning comes from `tagEnv`: `typecheckVar` inspects `ctx.tagEnv.get? k`
+and finds `(true, deps)` for tag `0`.  Both tag-only and tag+predicate
+carriers share the same match arm:
 
 ```lean
 | Predicate.guardOnly k | Predicate.guardClosure k _ _ _ =>
@@ -114,258 +100,247 @@ The true-branch context uses `R[0 |-> true]`.  Inside that context,
         let qt' : QTyp := ⟨etyp, ctx.pc, Predicate.noPred⟩
 ```
 
-Because `y` carries tag `0` and `tagEnv[0] = (true, deps)`, `y` is de-poisoned
-to `⟨int, pc, noPred⟩`.  The else branch returns `0 : int :> clean`.  The
-joined result is `int :> clean :> noPred` — classified as clean.
+So `y` is de-poisoned to `⟨int, branchPc, noPred⟩`.  Since `x` is clean,
+`p1 = false`, so `branchPc = ctx.pc`.  The else branch returns
+`0 : int :> clean`.  The joined result is typed clean.
 
-### 2.4. Why the runtime outputs disagree
+### 2.3. Why the outputs disagree
 
-Both runs evaluate `x == x` to `true` (since `x` is clean and equal across
-runs), so both take the true branch, returning `y`.
+Both runs evaluate `x` to `true`, take the true branch, and return `y`.
+Run 0 returns `1`; run 1 returns `2`.  But the result is typed clean, so
+`StepFR` would require `1 = 2` — a contradiction.
 
-- Run 0 returns `1`
-- Run 1 returns `2`
+All `StepFR` premises are satisfiable: regime consistency is trivial (the
+regime has no entry at `k`), and `agreeOnClean` only requires agreement on
+clean inputs (`y` is dirty, so it is unconstrained).
 
-The outputs differ, but the typechecker classified the result as clean.
-`StepFR` would then require `Value.num 1 = Value.num 2`, which is absurd.
+### 2.4. Why the join does not help
 
-### 2.5. The formal contradiction
+The final branch join drops the temporary `tagEnv`/regime entry for `k`.
+But the unsoundness already happened: `y` was de-poisoned inside the true
+branch via `tagEnv`, and the clean output type survived the join.
 
-The formal proof (on the abandoned branch) instantiated the full `StepFR`
-premises — well-formed realization maps, runtime instantiation, regime
-consistency, agreement on clean inputs, successful evaluation — then used the
-`StepFR` conclusion to obtain `resultAgreesIfClean` for `Value.num 1` and
-`Value.num 2`.  Since the result type is a clean non-reference non-function
-`int`, `agreeValueUnder_nonref_eq_of_clean` forces `Value.num 1 = Value.num 2`,
-a contradiction.
+### 2.5. What the counterexample really shows
 
-### 2.6. Why the final join does not save the rule
+Fault robustness says poisoned *values* must not leak into clean outputs.
+De-poisoning a value declares it clean — the FR theorem then requires both
+runs to agree on it.
 
-One might hope: "the final branch join drops the temporary regime entry for
-`k`, so the output regime is conservative again."  That is true but irrelevant.
-The unsoundness already happened while typing the true branch — `y` was
-de-poisoned under `R[k |-> true]`, and the clean output type survived the join.
-Dropping `k` from the joined regime afterward does not retroactively justify the
-de-poisoning of `y`.
+`matchGuard` success does not force a branch in mode 3.  The regime is still
+unknown, so either branch may be taken.  In the FR proof, it justifies a
+**same-branch fact for a particular pair of runs**: if the checked owner
+agrees across runs, then both runs evaluate the condition the same way and
+take the same branch.
 
-### 2.7. What the counterexample really shows
+But taking the same branch is still not enough to make the result clean.  A
+clean result requires the value actually returned by that branch to agree
+across runs.
 
-The counterexample does not say that every branch-local regime update is wrong.
-It says something more specific:
+In the counterexample, `x` is clean so branch selection works.  The leak is
+through `y`: mode 3 de-poisons every carrier of tag `k` without evidence of
+cross-run agreement.
 
-> A successful `matchGuard` on one owner is not enough to activate the same
-> tag for every other tag+predicate carrier of that tag.
+Returning the checked owner itself is not the bug: if the owner is dirty,
+its poison flows into the condition, then into `branchPc`, and the result
+stays poisoned.  The bug is that a check on `x` causes mode 3 to de-poison
+a *different* same-tag value `y` whose content may differ across runs.
 
-The unsoundness is about same-tag tag+predicate carriers.  Tag-only carriers
-are purely logical and carry no value-dependent `predSat` obligation — they
-are not the source of the gap.
+### 2.6. Follow-up stress case: same-type exact-closure sharing
+
+This subsection is not needed to establish unsoundness — §2.1 already does
+that.  It is a narrower follow-up case that explains why older
+coherence-style repairs looked tempting, and tests whether a fix for the
+basic boolean/tag-only problem is actually strong enough.
+
+Consider this variant:
+
+- `x`: clean `int`, `guardClosure 0 "a" (a == a) []`
+- `z`: dirty `int`, `guardClosure 0 "a" (a == a) []`
+
+```text
+if (x == x) then z else 0
+```
+
+Two runs:
+
+- Run 0: `x = 0`, `z = 1`
+- Run 1: `x = 0`, `z = 2`
+
+This is also unsound on `main` by the same mechanism:
+
+- `x` is clean, so both runs agree on the condition and `branchPc` stays clean.
+- Mode 3 then de-poisons `z` by tag.
+- The result is typed clean, but the runs return `1` and `2`.
+
+Unlike §2.1, the checked owner and the returned carrier have the same type and
+the same exact guard descriptor.  That makes it plausible to rescue with a
+stronger coherence invariant saying such carriers agree on their runtime
+value.  `main` does not have such an invariant.  So §2.6 is not a second root
+problem; it is a stress case for evaluating whether a proposed repair to the
+basic cross-type/tag-only bug is really complete.
 
 ---
 
-## 3. Root Cause Analysis
+## 3. Root Causes
 
 ### 3.1. De-poisoning by tag, not by owner
 
-`matchGuard` proves that one specific owner with tag `k` matched the condition.
-But in mode 3, once the branch context inserts `k := true` or `k := false`,
-`typecheckVar` and `typecheckDeref` treat **every** carrier with guard tag `k`
-as affected — both `guardClosure k d` and `guardOnly k` share the same match
-arm (`Typecheck.lean:729`).
+`matchGuard` returns only `(k, deps)` — it does not retain the matched
+owner's identity.  But mode 3 inserts `k := true` into `tagEnv`, causing
+`typecheckVar` and `typecheckDeref` to de-poison **every** carrier with tag
+`k`.  Both tag+predicate and tag-only share the same code path.
 
-The typechecker implicitly needs a **transfer principle**: if `matchGuard`
-proves the predicate for one owner with tag `k`, then every other carrier
-cleaned by tag `k` is semantically compatible.  No such transfer principle
-exists on `main`.
+This tag-based de-poisoning is intentional: it is the linked-value mechanism
+that shared tags were designed to support.  The soundness gap is not that mode
+3 de-poisons by tag, but that the current FR invariant does not justify
+extending evidence obtained from the matched owner to other same-tag carriers.
 
-### 3.2. `agreeOnClean` is too weak before the branch
+### 3.2. `agreeOnClean` does not cover newly activated tags
 
-`agreeOnClean` only constrains entries that are already clean under the
-pre-branch regime.  In mode 3, the interesting tag satisfies `R.lookup? k =
-none`, so the relevant carriers are **not** clean yet.  The pre-branch two-run
-hypothesis gives no cross-run agreement for them.
+`agreeOnClean` constrains entries already clean under the pre-branch regime.
+In mode 3, `R.lookup? k = none`, so tag-`k` carriers are not yet clean and
+the two-run hypothesis says nothing about them.
 
-Even if each run is internally coherent, that does not imply the two runs agree
-on the newly activated `k`-carriers.
+### 3.3. The tag-only gap
 
-### 3.3. The `guardOnly` gap
+Tag-only carriers are doubly unprotected:
 
-`guardOnly k` carriers are an independent soundness gap:
+1. De-poisoned by tag alone — their value is never checked.
+2. `locsRegime.guardOnly_ok` and `varsRegime.guardOnly_ok` impose zero
+   semantic constraint, so even in modes 1/2 they have no `predSat`-based
+   protection.
 
-1. `typecheckVar` treats `guardOnly k` and `guardClosure k d` identically —
-   both de-poison when `tagEnv[k] = (true, _)`.
-2. `joinPredicates` creates `guardOnly k` from different `guardClosure k d1`
-   and `guardClosure k d2` (`Typecheck.lean:342`).
-3. `locsRegime.guardOnly_ok` and `varsRegime.guardOnly_ok` impose **zero
-   semantic constraint** — no predicate-holds, no regime alignment, nothing.
-4. But `qtypCleanUnder R qt` considers `guardOnly k` clean when
-   `R.lookup? k = some true`.
-
-So the mode-3 counterexample survives even with `guardOnly k` carriers.
-
-`guardOnly` is **not** merely a join artifact.  It deliberately models linked
-values — e.g., after `x = read buf`, a successful check on `x` (via
-`matchGuard`) can also de-poison a separately-tagged `buf` via a shared tag.
-**Do not try to fix the soundness gap by disabling `guardOnly` de-poisoning.**
+Tag-only predicates model linked values (e.g., `ok = validate(buf)` where
+`buf` carries `guardOnly k`).  Disabling their de-poisoning would remove a
+core language capability.
 
 ### 3.4. `Regime.bound` and visibility
 
-When `k >= ctx.regime.bound`, the branch-local insert into `regime.map` is
-invisible through `Regime.lookup?`.  This creates a mismatch:
-
-- `tagEnv[k] = true` or `false` in the branch context
-- but `regime.lookup? k = none`
-
-This breaks `tagEnvConsistentWithRegime` (`StepFR.lean:49`):
+When `k >= regime.bound`, the `regime.map` insert is invisible through
+`Regime.lookup?`.  This breaks `tagEnvConsistentWithRegime`:
 
 ```lean
-def tagEnvConsistentWithRegime (tagEnv : TagEnv) (regime : Regime) : Prop :=
-  ∀ k deps, tagEnv.get? k = some ⟨true, deps⟩ → regime.lookup? k = some true
+∀ k deps, tagEnv.get? k = some ⟨true, deps⟩ → regime.lookup? k = some true
 ```
 
-Neither `StepFR_IH` nor any guard-coherent IH can be applied to the branch
-context when this invariant fails.
+The branch context has `tagEnv[k] = true` but `regime.lookup? k = none`, so
+neither `StepFR_IH` nor any guard-coherent IH can be applied.  The
+`k < bound` vs `k >= bound` split is unavoidable.
 
-The case split `k < bound` vs `k >= bound` is unavoidable and forms the
-structural skeleton of the mode-3 proof.
+### 3.5. `wfTagMeaningCtx` says nothing about tag-only entries
 
-### 3.5. `wfTagMeaningCtx` is vacuous for `guardOnly`
+`wfTagMeaningCtx` ensures that all tag+predicate entries sharing tag `k`
+carry the same predicate closure.  This makes each tag have a single
+unambiguous meaning.  It says nothing about tag-only entries.
 
-`wfTagMeaningCtx` only constrains `guardClosure`-style entries.  The chain
-`wfTagMeaningCtx → EnvRespectsTagMeaning → GuardDescInEnvsDeep →
-qtypGuardDesc?` never fires for `guardOnly`.
+A tag-only entry for tag `k` can exist even if no predicate for `k` is
+registered.  Any transfer principle that needs to know what predicate `k`
+refers to cannot get that from `wfTagMeaningCtx` — a separate invariant
+is needed.
 
-So a context can contain `guardOnly k'` with `tm.lookup k' = none` and still
-satisfy `wfTagMeaningCtx`.  Any repair that needs a descriptor behind
-`guardOnly k` must add that fact explicitly elsewhere.
-
-The preservation proof at `StepFR.lean` actively exploits this vacuity.
-**Do not try to make `wfTagMeaningCtx` track `guardOnly`** — it would break
-existing proofs.
-
-### 3.6. Deep closure depth matters
+### 3.6. Deep closures can surface arbitrary tags
 
 A top-level invariant about tags in `ctx.varEnv` and `ctx.memEnv` is not
-enough.  Closure application can expose captured environments that were not
-top-level before, and `newRef` can copy their guard tags into memory.
+enough.  Closure application exposes captured environments, and `newRef` can
+copy their guard tags into memory.  A captured `guardOnly 5` can surface as
+a top-level memory cell while `regime.bound` is still `0`.
 
-Concrete obstruction found on the abandoned branch:
-
-- Start with `regime.bound = 0`.
-- Keep a function in the context whose captured environment contains
-  `guardOnly 5`.
-- Apply the function so the captured variable becomes visible in the body.
-- Then `newRef` that value.
-
-The result contains a guard-tagged memory cell with tag `5`, but the regime
-bound is still `0`.
-
-Any successful invariant must account for deep captured values, not only
-top-level bindings.
+Any invariant must account for deep captured values, not only top-level
+bindings.
 
 ### 3.7. Separate deep facts do not compose after joins
 
-After `joinETyps`, the same apparent closure shape may be represented by
-multiple `FnTClosure.regular` entries with different captured environments
-(`σcap`).  Two separately-produced deep properties can choose different captured
-environments and fail to line up.
+After `joinETyps`, the same closure shape may have multiple
+`FnTClosure.regular` entries with different captured environments.  Two
+separately-produced deep properties can pick different entries and fail to
+line up.
 
-In practice, this killed attempts to prove one deep fact for regime reasoning
-and another for canonical/coherence reasoning and then combine them later.
-Progress resumed only after those facts were bundled into a single combined
-deep property.
+The only successful approach was bundling regime and coherence facts into a
+single combined deep property from the start.
 
 ---
 
 ## 4. Dead Ends
 
-These consumed significant time on the abandoned branch and should not be
-retried blindly.
+This section documents approaches that were tried on the abandoned branch and
+failed.  It is kept as a reference so that future repair attempts do not
+repeat the same mistakes.  The entries are technical and assume familiarity
+with the proof infrastructure.
 
-### 4.1. `predTagsBoundedInCtx` preservation is FALSE
+### 4.1. `predTagsBoundedInCtx` — FALSE
 
-**Idea:** Thread an invariant asserting all top-level guard tags in the context
-are below `regime.bound`, letting us derive `k < bound` from `matchGuard`
-success.
+**Idea:** Assert all guard tags in the context are below `regime.bound`.
 
-**Why false:** Closure application (`applyFnTClosure`) exposes captured
-environments as the body context's `varEnv`.  `typecheckNewRef` can copy a
-guard tag from a captured env into the output `memEnv`.  The guard tag can be
-arbitrarily large (from deep captures) while `regime.bound` stays at 0.
-
-**Do not build a new plan around preserving `predTagsBoundedInCtx`.**
+**Why false:** Closure application exposes deep captures; `newRef` can copy
+them into memory.  Tags can be arbitrarily large while `regime.bound`
+stays at 0.
 
 ### 4.2. Bumping `regime.bound` in mode 3
 
-**Idea:** When entering a mode-3 branch, also raise the bound so the insert is
-always visible.
+**Idea:** Raise the bound so the insert is always visible.
 
-**Why rejected:** Breaks `Regime.monotoneStep` (`Typecheck.lean:188`), a true
-structural invariant with 326+ uses across proof files.  `monotoneStep` asserts
-`R'.bound = R.bound`.  Changing this cascades through all proofs that depend on
-bound equality.
+**Why rejected:** Breaks `Regime.monotoneStep`, which requires
+`R'.bound = R.bound` and is used extensively across the proof files.
 
 ### 4.3. Strengthening `locsRegime.guardOnly_ok`
 
-**Idea:** Require θ-realization and memory-lookup evidence for `guardOnly_ok`,
-paralleling `locsRegime.withPred_ok`.
+**Idea:** Require θ-realization evidence for tag-only entries.
 
-**Why rejected:** `consistentRegimeSpec` (`FaultRobustness.lean:390`) is an
-unconditional `List.Forall` over all memory entries.  In the two-run proof, the
-typechecker types both `if`-branches but only one executes at runtime.  The
-joined `memEnv` may reference cells whose realization depends on which branch
-was taken.  Requiring θ-realization on all entries conflicts with the two-run
-comparison architecture.
+**Why rejected:** `consistentWithRegime` requires `locsRegime`/`varsRegime`
+evidence for every entry whose guard tag is active in the regime
+(`R.lookup? k ≠ none`).  Strengthening `guardOnly_ok` to require
+θ-realization would make this evidence mandatory for all active tag-only
+entries.  In the two-run proof, the joined `memEnv` may reference cells
+whose realization depends on which branch was taken, making this obligation
+unsatisfiable.
 
-**Lesson:** Keep `locsRegime.guardOnly_ok` zero-obligation.  Put value
-constraints for `guardOnly` in a separate coherence predicate.
+**Lesson:** Keep `guardOnly_ok` zero-obligation; put value constraints in
+a separate coherence predicate.
 
-### 4.4. Separate `guardOnlyTagsInTagMeaning` bridge predicate
+### 4.4. `guardOnlyTagsInTagMeaning` bridge predicate
 
-**Idea:** New predicate asserting every `guardOnly k` tag has a backing
-`tm.lookup k = some d` entry.
+**Idea:** Assert every tag-only entry has a backing `tm.lookup k = some d`.
 
-**Why rejected:** Cannot be derived from current premises.
-`wfTagMeaningCtx` is vacuous for `guardOnly` (§3.5).  The predicate only
-relocates the gap.
+**Why rejected:** Cannot be derived from current premises —
+`wfTagMeaningCtx` ignores tag-only entries (§3.5).  Fold the requirement
+into the coherence predicate instead.
 
-**Fix:** Fold the `tm.lookup k` requirement directly into the coherence
-predicate (§6.2).
+### 4.5. Extending `wfTagMeaningCtx` to cover tag-only entries
 
-### 4.5. Direct projection from canonical single-run theorem into old single-run
+**Idea:** Require tag-only entries to have a registered meaning.
 
-**Idea:** Replace the old `singleIH` in
-`TypeSystemEnforcesFaultRobustness_step_IOFree` with a call to a stronger
-canonical single-run theorem, projecting the output.
+**Why rejected:** Existing preservation proofs rely on tag-only entries
+being unconstrained.  Changing this cascades through them.
 
-**Why rejected:** Blocked on the INPUT side.  The canonical single-run requires
-`guardClosureCoherentWith` and `guardTaggedMemRealized` as input.  The two-run
-step theorem's IH (`StepFR_IH`) does not carry these.  Cannot construct
-canonical inputs from weak premises.
+### 4.6. Projection from canonical single-run into old single-run
 
-### 4.6. Combined dispatcher with universal `singleIH`
+**Idea:** Replace `singleIH` with a call to a stronger canonical single-run
+theorem.
 
-**Idea:** Inside the combined dispatcher, construct `singleIH` by calling the
-canonical single-run and projecting.
+**Why rejected:** The canonical theorem requires `guardClosureCoherentWith`
+and `guardTaggedMemRealized` as input.  `StepFR_IH` does not carry these;
+cannot construct strong inputs from weak premises.
 
-**Why rejected:** `singleIH : StepFRSingleRunFinalCleanPcTrue_IH` is
-universally quantified over ALL runtime states (`∀ μ ρ θ, ...`).  The canonical
-single-run needs canonical-witness inputs for each SPECIFIC state.  You cannot
-build a universally-quantified function from state-specific evidence.
+### 4.7. Combined dispatcher with universal `singleIH`
 
-**Lesson:** The consumers (`stepFR_ite_mode4`, `stepFR_app`) call `singleIH` at
-specific states — they do not need full universality.  The fix is to upgrade the
-`singleIH` parameter TYPE to require strong inputs (§7.3).
+**Idea:** Build `singleIH` inside the combined dispatcher by calling the
+canonical single-run.
 
-### 4.7. Per-run coherence without a shared witness
+**Why rejected:** `singleIH` is universally quantified over all runtime
+states.  The canonical single-run needs state-specific coherence inputs.
+Cannot build a universal function from specific evidence.
 
-**Idea:** Independent per-run existentials (`∃ canon₀, ...` and `∃ canon₁, ...`).
+**Lesson:** Upgrade the `singleIH` parameter type to require strong inputs
+(§6.3).
 
-**Why rejected:** Allows `canon₀ k d ≠ canon₁ k d`.  Even though both runs
-satisfy coherence internally, the transfer principle needs values to agree
-**across** runs.  This was not just inconvenient — it directly fails in the
-two-run setting.
+### 4.8. Per-run coherence without a shared witness
 
-### 4.8. Output-side deep-property fan-out
+**Idea:** Independent per-run witnesses (`∃ canon₀` and `∃ canon₁`).
+
+**Why rejected:** Allows `canon₀ k d ≠ canon₁ k d`.  The transfer principle
+needs cross-run agreement; per-run witnesses do not provide it.
+
+### 4.9. Output-side deep-property fan-out
 
 **Idea:** Add the combined deep property to the OUTPUT of `StepFR`.
 
@@ -376,93 +351,42 @@ it without additional parameter changes.
 **Lesson:** Restrict deep property threading to the INPUT side during initial
 construction.  Output-side should be deferred to the combined dispatcher.
 
+### 4.10. Restrict de-poisoning to the matched owner only
+
+**Idea:** Stop mode 3 from de-poisoning arbitrary same-tag carriers and only
+clean the matched owner (variable or dereferenced reference).
+
+**Why rejected:** This eliminates the linked-value mechanism that tag-only
+predicates were designed for.  The core use case — checking a status value
+(e.g., `ok`) to de-poison linked data (e.g., `buf`) via a
+shared tag — would no longer work.  Tag-only carriers can never be matched
+owners (since `matchGuard` skips them), so they could never be de-poisoned
+through mode 3 at all.  This is not a minor precision loss; it removes a
+fundamental language capability.
+
+### 4.11. Naive transfer principle
+
+**Idea:** Justify tag-based mode-3 de-poisoning by a general transfer
+principle: if one owner with tag `k` was checked, transfer that value-level
+reasoning to other same-tag carriers.
+
+**Why rejected:** Shared tags are not type-indexed.  The same tag can link
+carriers of different types (for example, an `int` and a `bool`).  In that
+setting there is no general value-equality or value-transport principle to
+transfer from one carrier to another.  Any such argument only makes sense in
+same-type cases, so a naive global transfer principle is not viable.
+
 ---
 
-## 5. Candidate Solutions
+## 5. Proposed Solution: Coherence Invariant
 
 The counterexample shows that one of the following must change: the theorem
 statement, the typing rule, the underlying tag discipline, or the semantic
-invariants.  Two candidate repairs are under consideration.
+invariants.
 
-### 5.1. Option A: Restrict de-poisoning to the matched owner
-
-The simplest sound repair: stop mode 3 from de-poisoning arbitrary same-tag
-carriers.  Only the specific variable that `matchGuard` matched would be
-cleaned.
-
-#### Current behavior
-
-`matchGuard` returns `Tag × Deps` and discards the identity of the matched
-owner.  Mode 3 inserts `k |-> true/false` into both the tag environment and the
-regime map, causing `typecheckVar` and `typecheckDeref` to de-poison every
-carrier of tag `k`.
-
-#### Required changes
-
-**1. Extend `matchGuard` to return the matched owner identity.**  For variable
-owners, the identity is the variable name.  This information is already
-available at `Typecheck.lean:646` but is currently discarded before the return
-at line 694.
-
-**2. Replace the global tag/regime insertion with a local context rewrite.**
-Instead of inserting `k |-> true` into the tag environment and regime map,
-mode 3 directly updates the matched owner's type in the branch context:
-
-- True branch: `ctxTrue.varEnv[x] := ⟨etyp, ctx.pc, noPred⟩` (de-poisoned,
-  predicate consumed)
-- False branch: `ctxFalse.varEnv[x] := ⟨etyp, true, noPred⟩` (forced
-  poisoned)
-
-All other variables with tag `k` keep their existing types.  The tag
-environment and regime stay unchanged (`R.lookup? k = none`).
-
-**3. Reference owners are more complex.**  A naive approach — rewriting memory
-type entries at the owner's `LocSet` — is unsound as an "owner only" mechanism:
-any variable whose `LocSet` overlaps would also see the rewrite.  A correct
-mechanism needs an owner token that `typecheckDeref` checks before de-poisoning.
-A simpler initial version restricts owner-only de-poisoning to variable owners
-and leaves reference owners conservatively dirty (falling through to mode 4).
-
-#### Implementation staging: variable owners first
-
-**Step 1:** Restrict `matchGuard` to variable owners.  Skip the reference
-matching loop (`Typecheck.lean:651–690`).  If the only match was through a
-reference, `matchGuard` returns an error, and `typecheckIf` falls through to
-mode 4.
-
-**Step 2:** Return the matched variable name alongside `Tag × Deps`.
-
-**Step 3:** Rewrite the matched variable instead of inserting into the regime.
-
-#### Precision impact
-
-| Scenario | Option A | Current (unsound) | Notes |
-|----------|----------|-------------------|-------|
-| Single variable owner | clean | clean | Most common case; identical |
-| Copy of matched owner | **dirty** | clean | Copy shares value but is not the matched owner |
-| Reference owner | **dirty** | clean | Ref matching unsupported without owner-token |
-| Inner re-check on same owner | **dirty** | clean | Predicate consumed to `noPred` at branch entry |
-| Unrelated same-tag carrier | dirty | "clean" | Option A correct; current rule unsound |
-
-The predicate-consumption issue deserves emphasis.  Under Option A, the matched
-owner's type is rewritten to `noPred`.  An inner `if` cannot rematch the same
-owner because `matchGuard` needs a `guardClosure` predicate.  The current rule
-preserves the original `guardClosure` in the environment and only adds
-tag/regime knowledge.
-
-#### Engineering cost
-
-- Changes to `Typecheck.lean`: `matchGuard` signature and mode-3 rewrite
-- Changes to proof lemmas about mode-3 typing structure
-- **No new runtime invariant**, no changes to `consistentWithRegime` (71 use
-  sites untouched), no preservation proofs
-- No changes to `FaultRobustnessSpec` or the top-level theorem statement
-- Significantly cheaper than Option B
-
-### 5.2. Option B: Coherence invariant — strengthen the semantics
-
-Preserve the current mode-3 typing power by adding a semantic invariant that
-justifies the global de-poisoning.  This requires two complementary pieces.
+The proposed repair preserves the current mode-3 typing power by adding a
+semantic invariant that justifies the global de-poisoning.  This requires two
+complementary pieces.
 
 #### The invariant
 
@@ -475,16 +399,18 @@ Here "same exact tag+predicate combination" means the same tag and the same
 structural predicate closure, not merely the same tag.  Tag-only occurrences
 are outside this invariant.
 
-This directly blocks the counterexample: `x` and `y` both carry
+By itself this does not block the primary counterexample from §2.1, because
+that leak goes through a tag-only carrier.  It does directly block the
+narrower same-type variant from §2.6: `x` and `z` both carry
 `guardClosure 0 "a" (a == a) []`, so the invariant forces them to have the
 same runtime value whenever both are live with that exact tag+predicate.
 
-The proof argument for mode 3 would then be: when mode 3 inserts `k |-> true`,
-every same-tag carrier that gets de-poisoned either (a) is a tag-only carrier,
-which is purely logical, or (b) is a tag+predicate carrier with the same exact
-closure as the matched owner.  In case (b), the coherence invariant guarantees
-value equality, so the `predSat` fact established by `PredSatLaws.match_iff`
-for the owner transfers to the carrier.
+For same-type exact-closure carriers, the proof argument for mode 3 would
+then be: when mode 3 inserts `k |-> true`, a same-tag tag+predicate carrier
+with the same exact closure as the matched owner is forced by the coherence
+invariant to have the same runtime value.  Then the `predSat` fact
+established by `PredSatLaws.match_iff` for the owner transfers to that
+carrier.  Tag-only carriers still need the additional story discussed below.
 
 #### Companion same-tag discipline
 
@@ -497,19 +423,18 @@ structurally different predicate closures.  Mode 3 would clean both, but the
 equality invariant only relates carriers with the same exact closure.
 
 The preferred enforcement mechanism is **downgrading to tag-only**: whenever a
-typing rule would introduce a `guardClosure` for tag `k` into a context that
-already contains a structurally different `guardClosure` for the same `k`, both
-entries collapse to `guardOnly k`.  This already happens at join points
-(`joinPredicates`, `Typecheck.lean:342`).  The remaining work is extending this
+typing rule would introduce a tag+predicate entry for tag `k` into a context
+that already contains a structurally different tag+predicate for the same `k`,
+both entries collapse to tag-only.  This already happens at join points
+(`joinPredicates`).  The remaining work is extending this
 discipline to assignment, function capture, and sequential composition.
 
 **Structural equality is brittle.**  Closures capture full typing-environment
 snapshots via `VarTypeEnv.toCaptured`.  Semantically "the same guard" created
 at two different program points will often compare structurally unequal because
 the surrounding context grew or changed.  When this happens frequently, the
-companion discipline fires often, downgrading to `guardOnly` and losing future
-`matchGuard` ability (since `matchGuard` skips `guardOnly` at
-`Typecheck.lean:630`).
+companion discipline fires often, downgrading to tag-only and losing future
+`matchGuard` ability (since `matchGuard` skips tag-only predicates).
 
 #### The witness must be shared across the two runs
 
@@ -536,7 +461,7 @@ The proof repeatedly needs: if `ctx.memEnv` says a memory cell carries guard
 tag `k`, then `θ` already realizes that cell.  This is not derivable from
 existing premises.  `runtimeInstantiatesCtx` is one-way on memory (`θ →
 memEnv`, not the reverse).  When `R.lookup? k = none`,
-`consistentRegimeSpec` is vacuous at tag `k`.
+`consistentRegimeSpec` imposes no constraint at tag `k`.
 
 A repair that keeps the current typing rule needs a new explicit premise:
 
@@ -559,7 +484,7 @@ def MonotoneCanonicalWitness (canon canon' : GuardClosureCanonical) : Prop :=
 
 #### Precision impact
 
-| Scenario | Option B | Current (unsound) | Notes |
+| Scenario | With coherence | Current (unsound) | Notes |
 |----------|----------|-------------------|-------|
 | Coherent same-tag family | clean | clean | Preserved by the invariant |
 | Same tag, different closure (after downgrade) | tag-only | guardClosure | Companion discipline fires; `matchGuard` can no longer match this tag |
@@ -575,48 +500,12 @@ def MonotoneCanonicalWitness (canon canon' : GuardClosureCanonical) : Prop :=
 - Risk that the invariant turns out to be unprovable if the type system does
   not actually enforce the required same-tag discipline
 
-### 5.3. Comparison and staging
-
-The two approaches are not mutually exclusive.  A pragmatic path is:
-
-1. Implement Option A first to obtain a sound mode 3 with minimal proof
-   disruption.
-2. If the precision loss proves limiting, upgrade to Option B later by adding
-   the coherence invariant and restoring the global de-poisoning rule.
-
-**Head-to-head:**
-
-| Scenario | Option A | Option B |
-|----------|----------|----------|
-| Single variable owner | clean | clean |
-| Coherent copy/alias | **dirty** | clean |
-| Reference owner | **dirty** | clean |
-| Inner re-check on same owner | **dirty** | clean |
-| After companion-discipline downgrade | n/a | **tag-only** (loses future matching) |
-
-The single-owner case is the most common pattern.  Both approaches are identical
-there.
-
-**Engineering trade-off:**
-
-| Dimension | Option A | Option B |
-|-----------|----------|----------|
-| De-poisoning power | Matched variable only | Coherent same-tag family (minus downgrades) |
-| Reference owners | Dirty (or needs owner-token) | Clean |
-| Inner re-matching | Lost (predicate consumed) | Preserved |
-| Future matching after conflict | n/a | Lost (downgrade to `guardOnly`) |
-| Proof cost | Low | High |
-| Changes to `Typecheck.lean` | Yes (`matchGuard` + mode 3) | Companion discipline rules |
-| Changes to proof infrastructure | Local (mode-3 lemmas) | Global (new invariant everywhere) |
-| Risk | Low | Moderate (invariant may be unprovable) |
-| Top-level theorem statement | Unchanged | Likely strengthened |
-
 ---
 
-## 6. Required Infrastructure for Option B
+## 6. Required Infrastructure
 
-This section details the proof-side changes needed if the current mode-3 typing
-rule is kept and the coherence-invariant approach (Option B) is pursued.
+This section details the proof-side changes needed to implement the coherence
+invariant approach.
 
 ### 6.1. New definitions (in `RegimeConsistency.lean`)
 
@@ -748,18 +637,18 @@ def InitialGuardClosureCoherence tm ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ :=
   guardTaggedMemRealized ctx θ₁
 ```
 
-For fresh initial states (empty heap, no guard-tagged variables): vacuously
+For fresh initial states (empty heap, no guard-tagged variables): trivially
 true.  For specification-conforming states: natural well-formedness condition.
 
 ### 6.7. No further typechecker changes needed
 
 The `vlet` shadowing rejection fix is already on `main`.  No further
-typechecker changes are required for Option B.  The fix is entirely on the
+typechecker changes are required.  The fix is entirely on the
 proof side.
 
 ---
 
-## 7. Proof Strategy for Option B
+## 7. Proof Strategy
 
 ### 7.1. Overall structure
 
@@ -805,7 +694,7 @@ When the regime insert is invisible:
 2. Verify masking premise: `masked' t → t ≥ bound` (either old mask, or
    `t = k → k ≥ bound`).
 3. `tagEnvConsistentWithRegimeMasked`: tag `k` is masked → ok.
-4. `consistentWithRegimeMasked`: `R.lookup? k = none` → vacuous at `k`.
+4. `consistentWithRegimeMasked`: `R.lookup? k = none` → no constraint at `k`.
 5. Call `IH_any_mask` with `masked'` on the branch.
 6. At the join: unmask (drop `k` from mask).
 
@@ -853,7 +742,7 @@ separate masked and unmasked variants.
 ### 8.3. Incremental approach: prove `k < bound` first
 
 The `k < bound` case requires the transfer principle but not masking.  The
-`k >= bound` case requires masking but the transfer principle is vacuous.
+`k >= bound` case requires masking but the transfer principle is not needed.
 Prove them independently, starting with the conceptually harder `k < bound`.
 
 ### 8.4. Require `k < regime.bound` as a mode-3 precondition
@@ -870,32 +759,32 @@ for those cases.
 
 | Lemma/Definition | File | Purpose |
 |---|---|---|
-| `StepFR` | StepFR.lean:984 | Two-run FR step theorem type |
-| `StepFR_IH` | StepFR.lean:5578 | Inductive hypothesis for StepFR |
-| `consistentWithRegime` | RegimeConsistency.lean:818 | Regime consistency predicate |
-| `locsRegime` constructors | RegimeConsistency.lean:843 | Per-entry regime evidence (locs) |
-| `varsRegime` constructors | RegimeConsistency.lean:863 | Per-entry regime evidence (vars) |
-| `qtypGuardTag` | TypeSafety.lean:777 | Extract tag from any guard predicate |
-| `qtypGuardDesc?` | RegimeConsistency.lean:36 | Extract (tag, desc) from guardClosure |
-| `closureCapturedVarsRegime` | RegimeConsistency.lean:~888 | Deep regime property for closures |
-| `deepValueQTypProperty` | RegimeConsistency.lean:888 | Generic deep recursion through closures |
-| `deepValueQTypProperty_mono` | RegimeConsistency.lean:~935 | Monotonicity under P strengthening |
-| `capturedVarsRegimeProperty` | RegimeConsistency.lean:~940 | Property at each closure level |
-| `capturedVarsTypingProperty` | RegimeConsistency.lean:~960 | Typing evidence at each closure level |
-| `wfTagMeaningCtx` | RegimeConsistency.lean:119 | Tag meaning well-formedness |
-| `GuardDescInEnvsDeep` | RegimeConsistency.lean:107 | Deep guard descriptor extraction |
-| `EnvRespectsTagMeaning` | RegimeConsistency.lean:113 | Envs respect tag meaning |
-| `tagEnvConsistentWithRegime` | StepFR.lean:49 | tagEnv/regime agreement |
-| `regimeConsistentWithCtx` | StepFR.lean:58 | Full context/regime consistency |
-| `Regime.lookup?` | Typecheck.lean:154 | Bounded regime lookup |
-| `Regime.monotoneStep` | Typecheck.lean:188 | Regime monotonicity invariant |
-| `matchGuard` | Typecheck.lean:~620 | Guard condition matcher |
-| `joinPredicates` | Typecheck.lean:331 | Predicate join (creates guardOnly) |
+| `StepFR` | StepFR.lean | Two-run FR step theorem type |
+| `StepFR_IH` | StepFR.lean | Inductive hypothesis for StepFR |
+| `consistentWithRegime` | RegimeConsistency.lean | Regime consistency predicate |
+| `locsRegime` constructors | RegimeConsistency.lean | Per-entry regime evidence (locs) |
+| `varsRegime` constructors | RegimeConsistency.lean | Per-entry regime evidence (vars) |
+| `qtypGuardTag` | TypeSafety.lean | Extract tag from any guard predicate |
+| `qtypGuardDesc?` | RegimeConsistency.lean | Extract (tag, desc) from guardClosure |
+| `closureCapturedVarsRegime` | RegimeConsistency.lean | Deep regime property for closures |
+| `deepValueQTypProperty` | RegimeConsistency.lean | Generic deep recursion through closures |
+| `deepValueQTypProperty_mono` | RegimeConsistency.lean | Monotonicity under P strengthening |
+| `capturedVarsRegimeProperty` | RegimeConsistency.lean | Property at each closure level |
+| `capturedVarsTypingProperty` | RegimeConsistency.lean | Typing evidence at each closure level |
+| `wfTagMeaningCtx` | RegimeConsistency.lean | Tag meaning well-formedness |
+| `GuardDescInEnvsDeep` | RegimeConsistency.lean | Deep guard descriptor extraction |
+| `EnvRespectsTagMeaning` | RegimeConsistency.lean | Envs respect tag meaning |
+| `tagEnvConsistentWithRegime` | StepFR.lean | tagEnv/regime agreement |
+| `regimeConsistentWithCtx` | StepFR.lean | Full context/regime consistency |
+| `Regime.lookup?` | Typecheck.lean | Bounded regime lookup |
+| `Regime.monotoneStep` | Typecheck.lean | Regime monotonicity invariant |
+| `matchGuard` | Typecheck.lean | Guard condition matcher |
+| `joinPredicates` | Typecheck.lean | Predicate join (creates guardOnly) |
 | `terminatesTo_ite_inv'` | SemanticsProperties.lean | Ite evaluation inversion |
 | `joinMemEnvsStrong` | Typecheck.lean | Strong memory join |
-| `joinRegimes` | Typecheck.lean:~175 | Conservative regime join |
-| `consistentRegimeSpec` | FaultRobustness.lean:390 | Top-level spec regime consistency |
-| `FaultRobustnessSpec` | FaultRobustness.lean:707 | Top-level fault-robustness property |
+| `joinRegimes` | Typecheck.lean | Conservative regime join |
+| `consistentRegimeSpec` | FaultRobustness.lean | Top-level spec regime consistency |
+| `FaultRobustnessSpec` | FaultRobustness.lean | Top-level fault-robustness property |
 
 ---
 
@@ -903,7 +792,7 @@ for those cases.
 
 ### What the abandoned branch achieved
 
-- The strong-invariant route (Option B) is not obviously impossible.  With
+- The coherence-invariant route is not obviously impossible.  With
   enough extra structure, the branch proved the stronger canonical single-run
   mode-3 case.
 - The two-run proof reduces naturally to four subcases (§7.1).
@@ -914,21 +803,19 @@ for those cases.
 
 ### Practical takeaways for a clean restart
 
-If keeping the current mode-3 typing rule (Option B):
+Restricting de-poisoning to the matched owner was rejected because it
+eliminates the linked-value mechanism (§4.10).  The coherence-invariant
+approach is the remaining path:
 
 - Expect to strengthen proof interfaces, not just fill the existing holes.
 - Expect a new semantic/coherence premise at the top level.
-- Treat `guardOnly`, `k >= bound`, and deep captured environments as
+- Treat tag-only entries, `k >= bound`, and deep captured environments as
   first-class concerns from the start.
 - Do not spend time trying to rescue `predTagsBoundedInCtx`.
 - Do not assume the old single-run theorem is salvageable without interface
   changes.
 
-If those costs are unacceptable, Option A (restrict de-poisoning to matched
-owner) is significantly cheaper and removes the soundness problem entirely,
-at the cost of losing same-tag de-poisoning for non-owner carriers.
-
-### Minimum changes from `main` (Option B)
+### Minimum changes from `main`
 
 1. New definitions in `RegimeConsistency.lean` (§6.1)
 2. Strengthen `StepFR` with shared canonical witness and combined deep property
@@ -938,12 +825,3 @@ at the cost of losing same-tag de-poisoning for non-owner carriers.
 5. New top-level premise in `FaultRobustnessSpec` (§6.6)
 6. Mode-3 proof body: 4-case skeleton with transfer principle and mask
    extension (§7)
-
-### Minimum changes from `main` (Option A)
-
-1. Extend `matchGuard` to return matched owner identity
-2. Rewrite mode-3 to update matched variable only (no regime/tagEnv insert)
-3. Adapt mode-3 proof lemmas (substantially simpler)
-4. No changes to `StepFR`, `consistentWithRegime`, `FaultRobustnessSpec`,
-   `Regime.monotoneStep`, `locsRegime`, `varsRegime`, or
-   `consistentRegimeSpec`
