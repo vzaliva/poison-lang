@@ -3544,7 +3544,12 @@ private lemma stepFR_ite_mode3
   (hnextTag : res.nextTag' = max res2.nextTag' res3.nextTag')
   (hregime' : res.regime' = joinRegimes res2.regime' res3.regime')
   (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc (joinPoison res1.qualType.poison
-                          (joinPoison res2.qualType.poison res3.qualType.poison))) :
+                          (joinPoison res2.qualType.poison res3.qualType.poison)))
+  (hcompat : beqETypSignature res2.qualType.etyp res3.qualType.etyp = true)
+  (hetyp : res.qualType.etyp =
+            joinETyps res2.qualType.etyp res3.qualType.etyp
+              res2.qualType.poison res3.qualType.poison)
+  (hpredNo : res.qualType.pred = Predicate.noPred) :
   StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
   classical
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
@@ -3574,6 +3579,92 @@ private lemma stepFR_ite_mode3
   -- In mode 3, we don't know which branch each run takes - need to handle all cases
   -- The key is that the joined result is conservative over both branches
   sorry -- Mode 3: complex proof with branch case analysis
+
+private lemma mode3_stepFR_compat_from_existing_hyps
+    (ctxᵢ : TypeContext) (e1 e2 e3 : Expr) (fuel' : Nat)
+    (res res1 res2 res3 : TypeResult) (k : Tag) (deps : Deps)
+    (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
+    (hregime_none : ctxᵢ.regime.lookup? k = none)
+    (htc1 : typecheckExpr .ioFree { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
+    (hbool : res1.qualType.etyp = ETyp.bool)
+    (htc2 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
+            let ctxTrue := { ctxᵢ with
+              tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩
+              pc := branchPc
+              regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k true } }
+            typecheckExpr .ioFree ctxTrue e2 fuel' = .ok res2)
+    (htc3 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
+            let ctxFalse := { ctxᵢ with
+              tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩
+              pc := branchPc
+              regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k false } }
+            let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+            typecheckExpr .ioFree ctxFalse' e3 fuel' = .ok res3)
+    (htcIf : typecheckIf .ioFree ctxᵢ e1 e2 e3 (Nat.succ fuel') = .ok res) :
+    beqETypSignature res2.qualType.etyp res3.qualType.etyp = true := by
+  by_contra hcompat_ne
+  have hcompat_false : beqETypSignature res2.qualType.etyp res3.qualType.etyp = false := by
+    cases hbeq : beqETypSignature res2.qualType.etyp res3.qualType.etyp <;> simp_all
+  unfold typecheckIf at htcIf
+  simp only [bind, Except.bind, hmatch, hregime_none] at htcIf
+  cases htc1' : typecheckExpr .ioFree { ctxᵢ with pureCtx := true } e1 fuel' with
+  | error _ =>
+      simp [htc1'] at htcIf
+  | ok result1 =>
+      simp [htc1'] at htcIf
+      have hres1 : result1 = res1 := by
+        rw [htc1] at htc1'
+        injection htc1' with hEq
+        exact hEq.symm
+      subst result1
+      cases hq1 : res1.qualType with
+      | mk etyp1 p1 pred1 =>
+          have hbool' : etyp1 = ETyp.bool := by
+            simpa [hq1] using hbool
+          simp [hq1, hbool'] at htcIf
+          let branchPc := joinPoison ctxᵢ.pc p1
+          let ctxTrue := { ctxᵢ with
+            tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩
+            pc := branchPc
+            regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k true } }
+          cases htc2' : typecheckExpr .ioFree ctxTrue e2 fuel' with
+          | error _ =>
+              rw [htc2'] at htcIf
+              cases htcIf
+          | ok result2 =>
+              rw [htc2'] at htcIf
+              simp at htcIf
+              have hres2 : result2 = res2 := by
+                have htc2'' : typecheckExpr .ioFree ctxTrue e2 fuel' = .ok res2 := by
+                  simpa [ctxTrue, branchPc, hq1] using htc2
+                rw [htc2''] at htc2'
+                injection htc2' with hEq
+                exact hEq.symm
+              subst result2
+              cases hq2 : res2.qualType with
+              | mk etyp2 p2 pred2 =>
+                  let ctxFalse := { ctxᵢ with
+                    tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩
+                    pc := branchPc
+                    regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k false } }
+                  let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                  cases htc3' : typecheckExpr .ioFree ctxFalse' e3 fuel' with
+                  | error err3 =>
+                      rw [htc3'] at htcIf
+                      simp [hq2, pure, Except.pure] at htcIf
+                  | ok result3 =>
+                      rw [htc3'] at htcIf
+                      have hres3 : result3 = res3 := by
+                        have htc3'' : typecheckExpr .ioFree ctxFalse' e3 fuel' = .ok res3 := by
+                          simpa [ctxFalse', ctxFalse, branchPc, hq1] using htc3
+                        rw [htc3''] at htc3'
+                        injection htc3' with hEq
+                        exact hEq.symm
+                      subst result3
+                      cases hq3 : res3.qualType with
+                      | mk etyp3 p3 pred3 =>
+                          simp [hq2, hq3] at hcompat_false
+                          simp [hq2, hq3, pure, Except.pure, hcompat_false] at htcIf
 
 private lemma mode4_stepFR_res_qualType_shape_from_existing_hyps
     (ctxᵢ : TypeContext) (e1 e2 e3 : Expr) (fuel' : Nat)
@@ -6080,9 +6171,15 @@ lemma stepFR_ite
       | inl h_mode3 =>
         -- Mode 3: R(k) = none (conservative join)
         obtain ⟨k, deps, hmatch, hregime_none, res1, htc1, hbool, res2, htc2, res3, htc3,
-                hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, _hetyp, _hpred⟩ := h_mode3
+                hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp_mode3, hpredNo_mode3⟩ := h_mode3
+        have hcompat_mode3 :
+            beqETypSignature res2.qualType.etyp res3.qualType.etyp = true :=
+          mode3_stepFR_compat_from_existing_hyps
+            ctxᵢ e1 e2 e3 fuel' res res1 res2 res3 k deps
+            hmatch hregime_none htc1 hbool htc2 htc3 htc'
         exact stepFR_ite_mode3 ctxᵢ predSat tm e1 e2 e3 fuel' res hinv IH k deps hmatch hregime_none
           res1 res2 res3 htc1 hbool htc2 htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison
+          hcompat_mode3 hetyp_mode3 hpredNo_mode3
       | inr h_mode4 =>
         -- Mode 4: matchGuard fails (standard join)
         obtain ⟨⟨err, hmatch_fail⟩, res1, htc1, hbool, res2, htc2, res3, htc3,
