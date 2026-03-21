@@ -695,8 +695,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
   (masked : Tag → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
+  (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
   (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamInv_IH
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
@@ -722,7 +723,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hRbound hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ hwfTm res1 htc1'
+    e ctxᵢ hwfTm res1 htc1' hinv
   have hstruct := terminatesTo_deref_inv' e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg', a', n, ht_e, hlookup, ho, hmem, hvar, _hnext, _hpm, _hpm_e⟩
@@ -797,7 +798,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref
 lemma stepFR_deref
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
+  (IH : StepFRInv_IH predSat tm (Nat.succ (Nat.succ fuel')))
   (htc : typecheck .ioFree ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ (Expr.deref e) res predSat tm := by
   classical
@@ -812,7 +814,7 @@ lemma stepFR_deref
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ hwfTm res1 htc1'
+    e ctxᵢ hwfTm hinv res1 htc1'
   -- Invert deref evaluation (world-free)
   have hstruct₀ := terminatesTo_deref_inv' e
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀

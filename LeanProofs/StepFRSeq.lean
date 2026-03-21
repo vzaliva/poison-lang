@@ -173,8 +173,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
   (masked : Tag → Prop)
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (hinv : predOnlyOnPoisonedNonRefCtx ctx)
   (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamInv_IH
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
@@ -200,7 +201,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg1, v1, ht_e1, ht_e2, _hpm1, _hpm2⟩
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctx hwfTm res1 htc1'
+    e1 ctx hwfTm res1 htc1' hinv
   have hTm1 : wfTagMeaningCtx tm (ctxAfter ctx res1) :=
     typecheckExpr_preserves_wfTagMeaningCtx tm ctx e1 fuel' res1 hwfTm htc1'
   have hwf1 : wfTypeContext (ctxAfter ctx res1) :=
@@ -238,13 +239,17 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
   have hmasked_none1' : ∀ k, masked k → ctx'.regime.lookup? k = none := by
     intro k hk
     simpa [hctx', updateCtxFromResult, ctxAfter] using hmasked_none1 k hk
+  have hinv1 : predOnlyOnPoisonedNonRefCtx (ctxAfter ctx res1) :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef ctx e1 fuel' res1 hwf hinv htc1').2
+  have hinv1' : predOnlyOnPoisonedNonRefCtx ctx' := by
+    simpa [hctx', updateCtxFromResult, ctxAfter, predOnlyOnPoisonedNonRefCtx] using hinv1
   have hctxCons1' :
       consistentWithRegimeMasked masked predSat ctx'.regime ctx' cfg1.memory cfg1.varEnv θ1 := by
     simpa [hctx', updateCtxFromResult, ctxAfter] using hctxCons1
   have hwf1' : wfTypeContext ctx' := by
     simpa [hctx', ctxAfter] using hwf1
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hwfTm' res htc2'
+    e2 ctx' hwfTm' res htc2' hinv1'
   rcases
     hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
       hθ1wf hwf1' hric1' hreg1' hmasked_none1' hRbound1 hctxCons1'
@@ -302,7 +307,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq
 lemma stepFR_seq
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (tm : TagMeaning) (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
+  (IH : StepFRInv_IH predSat tm (Nat.succ (Nat.succ fuel')))
   (htc : typecheck .ioFree ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ (Expr.seq e1 e2) res predSat tm := by
   -- Parse typecheck result
@@ -316,7 +322,7 @@ lemma stepFR_seq
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ hwfTm res1 htc1'
+    e1 ctxᵢ hwfTm hinv res1 htc1'
   -- Use world-free inversion lemma for seq
   have hstruct₀ := terminatesTo_seq_inv' e1 e2
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -331,8 +337,12 @@ lemma stepFR_seq
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
   rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, _hval_consist₀1, _hval_consist₁1, hres_agree1⟩
   have hwfTm' : wfTagMeaningCtx tm ctx' := by simpa [hctx', ctxAfter] using _hTm1
+  have hinv1 : predOnlyOnPoisonedNonRefCtx (ctxAfter ctxᵢ res1) :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef ctxᵢ e1 fuel' res1 hwf hinv htc1').2
+  have hinv1' : predOnlyOnPoisonedNonRefCtx ctx' := by
+    simpa [hctx', ctxAfter] using hinv1
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hwfTm' res htc2'
+    e2 ctx' hwfTm' hinv1' res htc2'
   -- Prepare for IH2
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁

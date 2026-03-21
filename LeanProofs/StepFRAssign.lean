@@ -2265,7 +2265,8 @@ private lemma assign_write_step_preserves_inherited_final_clean_pc_true
 lemma stepFR_assign
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
+  (IH : StepFRInv_IH predSat tm (Nat.succ (Nat.succ fuel')))
   (htc : typecheck .ioFree ctxᵢ (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ (Expr.assign e1 e2) res predSat tm := by
   classical
@@ -2303,7 +2304,7 @@ lemma stepFR_assign
   have hinv₁ := terminatesTo_assign_inv' e1 e2 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   rcases hinv₁ with ⟨cfg₁1, cfg₁2, a₁w, n₁, ht₁_e1, ht₁_e2, ho₁, hmem₁, hvar₁, hnext₁, hpm₁⟩
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ hwfTm res1 htc1'
+    e1 ctxᵢ hwfTm hinv res1 htc1'
   have hstep_e1 :=
     hIH1 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.loc a₀w) (Value.loc a₁w)
       hθ₀ hθ₁ hwf hric₀ hric₁ hregCtx hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
@@ -2311,8 +2312,12 @@ lemma stepFR_assign
   rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, hregCtx1, hcwr₀1, hcwr₁1, hagree1, hvc₀1, hvc₁1, hres_agree1⟩
   have hwfTm' : wfTagMeaningCtx tm ctx' := by
     simpa [ctx', ctxAfter] using hTm1
+  have hinv1 : predOnlyOnPoisonedNonRefCtx (ctxAfter ctxᵢ res1) :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef ctxᵢ e1 fuel' res1 hwf hinv htc1').2
+  have hinv1' : predOnlyOnPoisonedNonRefCtx ctx' := by
+    simpa [ctx', ctxAfter] using hinv1
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hwfTm' res2 htc2'
+    e2 ctx' hwfTm' hinv1' res2 htc2'
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
   have hwf_ctx' : wfTypeContext ctx' := by
@@ -6394,8 +6399,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
   (masked : Tag → Prop)
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (hinv : predOnlyOnPoisonedNonRefCtx ctx)
   (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamInv_IH
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
@@ -6434,7 +6440,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hinv with ⟨cfg1, cfg2, aw, n, ht_e1, ht_e2, ho, hmem, hvar, _hnext, _hpm⟩
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctx hwfTm result1 htc1'
+    e1 ctx hwfTm result1 htc1' hinv
   have hTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1) :=
     typecheckExpr_preserves_wfTagMeaningCtx tm ctx e1 fuel' result1 hwfTm htc1'
   have hwf1 : wfTypeContext (ctxAfter ctx result1) :=
@@ -6463,8 +6469,10 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
       regimeBounded_of_monotoneStep ctx.regime result1.regime' hRbound hmono1
   have hpc1 : (ctxAfter ctx result1).pc = true := by
     simpa [ctxAfter] using hpc
+  have hinv1 : predOnlyOnPoisonedNonRefCtx (ctxAfter ctx result1) :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef ctx e1 fuel' result1 hwf hinv htc1').2
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 (ctxAfter ctx result1) hTm1 result2 htc2'
+    e2 (ctxAfter ctx result1) hTm1 result2 htc2' hinv1
   rcases
     hIH2 hpredlaws hTm1 cfg1.memory cfg1.varEnv θ1 cfg2 (Value.num n)
       hθ1wf hwf1 hric1 hreg1 hmasked_none1 hRbound1 hctxCons1

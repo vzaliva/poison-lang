@@ -54,6 +54,82 @@ private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
       StepFRSingleRunFinalCleanPcTrueWithCtxValCons
         CtxCons ValCons .ioFree ctx e res predSat tm
 
+private lemma predOnlyOnPoisonedNonRefQTyp_poison_mono_app
+    (qt : QTyp) (p : Poison) :
+    predOnlyOnPoisonedNonRefQTyp qt →
+    predOnlyOnPoisonedNonRefQTyp { qt with poison := joinPoison p qt.poison } := by
+  intro h hbad
+  have hpoison : qt.poison = true := h hbad
+  cases p <;> simp [joinPoison, hpoison]
+
+private lemma predOnlyOnPoisonedNonRefDeepQTyp_poison_mono_app
+    (qt : QTyp) (p : Poison) :
+    predOnlyOnPoisonedNonRefDeepQTyp qt →
+    predOnlyOnPoisonedNonRefDeepQTyp { qt with poison := joinPoison p qt.poison } := by
+  intro h
+  cases h with
+  | arrow qt st1 st2 p0 tcls hroot hetyp hcaps =>
+      refine predOnlyOnPoisonedNonRefDeepQTyp.arrow
+        { qt with poison := joinPoison p qt.poison } st1 st2 p0 tcls ?_ ?_ ?_
+      · exact predOnlyOnPoisonedNonRefQTyp_poison_mono_app qt p hroot
+      · simp [hetyp]
+      · simpa using hcaps
+  | parrow qt st1 st2 p0 tcls hroot hetyp hcaps =>
+      refine predOnlyOnPoisonedNonRefDeepQTyp.parrow
+        { qt with poison := joinPoison p qt.poison } st1 st2 p0 tcls ?_ ?_ ?_
+      · exact predOnlyOnPoisonedNonRefQTyp_poison_mono_app qt p hroot
+      · simp [hetyp]
+      · simpa using hcaps
+  | other qt hroot hnf =>
+      exact predOnlyOnPoisonedNonRefDeepQTyp.other
+        { qt with poison := joinPoison p qt.poison }
+        (predOnlyOnPoisonedNonRefQTyp_poison_mono_app qt p hroot)
+        (by simpa using hnf)
+
+private lemma predOnlyOnPoisonedNonRefDeepQTyp_arrow_closure_mem_app
+    {qt : QTyp} {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
+    {x : Name} {body : Expr} {σcap : CapturedVarEnv} :
+    predOnlyOnPoisonedNonRefDeepQTyp qt →
+    qt.etyp = ETyp.arrow st1 st2 p tcls →
+    FnTClosure.regular x body σcap ∈ tcls →
+    predOnlyOnPoisonedNonRefDeepVarEnv (VarTypeEnv.ofCaptured σcap) := by
+  intro h hqt hmem
+  cases h with
+  | arrow qt' st1' st2' p' tcls' _ hetyp hcaps =>
+      have heq :
+          ETyp.arrow st1' st2' p' tcls' =
+            ETyp.arrow st1 st2 p tcls := by
+        simpa [hetyp] using hqt
+      injection heq with hst1 hst2 hp htcls
+      subst hst1 hst2 hp htcls
+      simpa using hcaps (FnTClosure.regular x body σcap) hmem
+  | parrow _ _ _ _ _ _ hetyp _ =>
+      simp [hetyp] at hqt
+  | other _ _ hnf =>
+      simp [hqt, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnf
+
+private lemma predOnlyOnPoisonedNonRefDeepQTyp_parrow_closure_mem_app
+    {qt : QTyp} {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
+    {x : Name} {pbody : PExpr} {σcap : CapturedVarEnv} :
+    predOnlyOnPoisonedNonRefDeepQTyp qt →
+    qt.etyp = ETyp.parrow st1 st2 p tcls →
+    PFnTClosure.regular x pbody σcap ∈ tcls →
+    predOnlyOnPoisonedNonRefDeepVarEnv (VarTypeEnv.ofCaptured σcap) := by
+  intro h hqt hmem
+  cases h with
+  | arrow _ _ _ _ _ _ hetyp _ =>
+      simp [hetyp] at hqt
+  | parrow qt' st1' st2' p' tcls' _ hetyp hcaps =>
+      have heq :
+          ETyp.parrow st1' st2' p' tcls' =
+            ETyp.parrow st1 st2 p tcls := by
+        simpa [hetyp] using hqt
+      injection heq with hst1 hst2 hp htcls
+      subst hst1 hst2 hp htcls
+      simpa using hcaps (PFnTClosure.regular x pbody σcap) hmem
+  | other _ _ hnf =>
+      simp [hqt, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnf
+
 private def AppClosureBodyStart
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
@@ -8405,8 +8481,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     AppJoinValConsFromMember ValCons)
   (e1 e2 : Expr) (fuel' : Nat) (res result2 result1 : TypeResult)
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
+  (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
   (singleIH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamInv_IH
       masked CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
   (hqt2 : result2.qualType = ⟨etyp2, p2, pred2⟩)
   (htc2' : typecheck .ioFree ctxᵢ e2 fuel' = .ok result2)
@@ -8424,7 +8501,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht hpc
   let cinit : Config := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-    e2 ctxᵢ hwfTm result2 htc2'
+    e2 ctxᵢ hwfTm result2 htc2' hinv
+  have hres2 : predOnlyOnPoisonedNonRefResult result2 :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+      ctxᵢ e2 fuel' result2 hwf hinv htc2').1
+  have hinv2 : predOnlyOnPoisonedNonRefCtx (ctxAfter ctxᵢ result2) :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+      ctxᵢ e2 fuel' result2 hwf hinv htc2').2
   have hstruct := terminatesTo_app_inv' e1 e2 cinit cf o ht
   rcases hstruct with h_clo | h_peclo
   · rcases h_clo with
@@ -8459,7 +8542,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
       rw [show pm = c₂'.pureMode from hpm2.symm]
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1' hinv2
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hRbound2 hcwr2 c₂'.nextAddr pm
@@ -8486,6 +8569,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hRbound1 : regimeBounded (ctxAfter (ctxAfter ctxᵢ result2) result1).regime := by
       simpa [ctxAfter] using
         regimeBounded_of_monotoneStep (ctxAfter ctxᵢ result2).regime result1.regime' hRbound2 hmono1
+    have hres1 : predOnlyOnPoisonedNonRefResult result1 :=
+      (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+        (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 hinv2 htc1').1
     have hv₁_arrow : valueHasETyp θ1 (Value.closure x body env) (ETyp.arrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
     cases hv₁_arrow with
@@ -8542,6 +8628,22 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         simpa [bodyCtx, typecheck] using htc_bodyA
       have hwfBody : wfTypeContext bodyCtx := by
         simpa [bodyCtx, ctxAfter, wfTypeContext] using hwf1
+      have hargInv :
+          predOnlyOnPoisonedNonRefDeepQTyp
+            ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ := by
+        simpa [hqt2] using
+          predOnlyOnPoisonedNonRefDeepQTyp_poison_mono_app result2.qualType ctxᵢ.pc hres2.1
+      have hcapInv : predOnlyOnPoisonedNonRefDeepVarEnv (VarTypeEnv.ofCaptured σcap) := by
+        exact
+          predOnlyOnPoisonedNonRefDeepQTyp_arrow_closure_mem_app
+            hres1.1 hetyp1 hσcap_mem
+      have hinvBody : predOnlyOnPoisonedNonRefCtx bodyCtx := by
+        refine ⟨?_, ?_⟩
+        · simpa [bodyCtx] using
+            predOnlyOnPoisonedNonRefDeepVarEnv_update
+              (VarTypeEnv.ofCaptured σcap) x
+              ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ hcapInv hargInv
+        · simpa [bodyCtx] using hres1.2
       have harg_typed : valueHasETyp θ1 v₂ etyp2 := by
         simpa [hqt2] using valueHasETyp_extends hθext1.1 hv₂_typed
       have hric_body :
@@ -8613,7 +8715,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       have hfuel_lt : fuelBody < Nat.succ (Nat.succ fuel') := by
         have : fuelBody < fuel' := by rw [hfuelA]; exact Nat.lt_succ_self _
         exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-      have hSingle_body := singleIH fuelBody hfuel_lt body bodyCtx hTmBody result3 htcBody'
+      have hSingle_body := singleIH fuelBody hfuel_lt body bodyCtx hTmBody result3 htcBody' hinvBody
       have hpc_body : bodyCtx.pc = true := by
         simp [bodyCtx, hpc, joinPoison]
       rcases
@@ -8826,7 +8928,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved .ioFree e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1' hinv2
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.peClosure x body env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hRbound2 hcwr2 c₂'.nextAddr pm
@@ -8854,8 +8956,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     AppJoinValConsFromMember ValCons)
   (e1 e2 : Expr) (fuel' : Nat) (res result2 result1 : TypeResult)
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
+  (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
   (singleIH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamInv_IH
       masked CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
   (hqt2 : result2.qualType = ⟨etyp2, p2, pred2⟩)
   (htc2' : typecheck .ioFree ctxᵢ e2 fuel' = .ok result2)
@@ -8873,7 +8976,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht hpc
   let cinit : Config := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-    e2 ctxᵢ hwfTm result2 htc2'
+    e2 ctxᵢ hwfTm result2 htc2' hinv
+  have hres2 : predOnlyOnPoisonedNonRefResult result2 :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+      ctxᵢ e2 fuel' result2 hwf hinv htc2').1
+  have hinv2 : predOnlyOnPoisonedNonRefCtx (ctxAfter ctxᵢ result2) :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+      ctxᵢ e2 fuel' result2 hwf hinv htc2').2
   have hstruct := terminatesTo_app_inv' e1 e2 cinit cf o ht
   rcases hstruct with h_clo | h_peclo
   · rcases h_clo with
@@ -8910,7 +9019,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved .ioFree e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1' hinv2
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hRbound2 hcwr2 c₂'.nextAddr pm
@@ -8954,7 +9063,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved .ioFree e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1' hinv2
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.peClosure x body env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hRbound2 hcwr2 c₂'.nextAddr pm
@@ -8981,6 +9090,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hRbound1 : regimeBounded (ctxAfter (ctxAfter ctxᵢ result2) result1).regime := by
       simpa [ctxAfter] using
         regimeBounded_of_monotoneStep (ctxAfter ctxᵢ result2).regime result1.regime' hRbound2 hmono1
+    have hres1 : predOnlyOnPoisonedNonRefResult result1 :=
+      (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+        (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 hinv2 htc1').1
     have hv₁_parrow : valueHasETyp θ1 (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
     cases hv₁_parrow with
@@ -9043,6 +9155,22 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         exact htcBody'
       have hwfBody : wfTypeContext bodyCtx := by
         simpa [bodyCtx, ctxAfter, wfTypeContext] using hwf1
+      have hargInv :
+          predOnlyOnPoisonedNonRefDeepQTyp
+            ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ := by
+        simpa [hqt2] using
+          predOnlyOnPoisonedNonRefDeepQTyp_poison_mono_app result2.qualType ctxᵢ.pc hres2.1
+      have hcapInv : predOnlyOnPoisonedNonRefDeepVarEnv (VarTypeEnv.ofCaptured σcap) := by
+        exact
+          predOnlyOnPoisonedNonRefDeepQTyp_parrow_closure_mem_app
+            hres1.1 hetyp1 hσcap_mem
+      have hinvBody : predOnlyOnPoisonedNonRefCtx bodyCtx := by
+        refine ⟨?_, ?_⟩
+        · simpa [bodyCtx] using
+            predOnlyOnPoisonedNonRefDeepVarEnv_update
+              (VarTypeEnv.ofCaptured σcap) x
+              ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ hcapInv hargInv
+        · simpa [bodyCtx] using hres1.2
       have harg_typed : valueHasETyp θ1 v₂ etyp2 := by
         simpa [hqt2] using valueHasETyp_extends hθext1.1 hv₂_typed
       have hric_body :
@@ -9120,7 +9248,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       have hfuel_lt : fuelBody < Nat.succ (Nat.succ fuel') := by
         have : fuelBody < fuel' := by rw [hfuelA]; exact Nat.lt_succ_self _
         exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-      have hSingle_body := singleIH fuelBody hfuel_lt body bodyCtx hTmBody result3 htcBody_body
+      have hSingle_body := singleIH fuelBody hfuel_lt body bodyCtx hTmBody result3 htcBody_body hinvBody
       have hpc_body : bodyCtx.pc = true := by
         simp [bodyCtx, hpc, joinPoison]
       rcases
@@ -9327,8 +9455,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
   (valJoinMember :
     AppJoinValConsFromMember ValCons)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
   (singleIH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamInv_IH
       masked CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
   (htc : typecheck .ioFree ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
@@ -9352,7 +9481,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
           masked CtxCons ValCons ctxᵢ predSat tm
           ctxClosureBodyStart ctxMember ctxJoinMember valBodyResult valJoinMember
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
-          singleIH hqt2 htc2' htc1'
+          hinv singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest hetyp1 hmap heq_results h_join
   | inr h_parrow =>
       obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, _hp1,
@@ -9362,15 +9491,16 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
           masked CtxCons ValCons ctxᵢ predSat tm
           ctxPClosureBodyStart ctxMember ctxJoinMember valBodyResult valJoinMember
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
-          singleIH hqt2 htc2' htc1'
+          hinv singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest hetyp1 hmap heq_results h_join
 
 lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
   (masked : Tag → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
   (singleIH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamInv_IH
       masked
       (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
@@ -9393,15 +9523,15 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
       (stepFRApp_joinCtxConsFromMember_masked masked predSat)
       (stepFRApp_bodyResultValCons_masked masked predSat)
       (stepFRApp_joinValConsFromMember_masked masked predSat)
-      e1 e2 fuel' res
-      singleIH htc
+      e1 e2 fuel' res hinv singleIH htc
 
 -- Function application case: reduces to helper lemmas for closure/closure and peClosure branches
 lemma stepFR_app
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
+  (IH : StepFRInv_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (singleIH : StepFRSingleRunFinalCleanPcTrueInv_IH predSat tm (Nat.succ (Nat.succ fuel')))
   (htc : typecheck .ioFree ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ (Expr.app e1 e2) res predSat tm := by
   -- Phase 1: Typecheck decomposition (typecheck = typecheckExpr; app case reduces to typecheckApp)
@@ -9421,8 +9551,20 @@ lemma stepFR_app
       simp [ctxAfter] at htc1 ⊢
       exact htc1
     intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+    have hres2 : predOnlyOnPoisonedNonRefResult result2 :=
+      (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+        ctxᵢ e2 fuel' result2 hwf hinv htc2').1
+    have hinv2 : predOnlyOnPoisonedNonRefCtx (ctxAfter ctxᵢ result2) :=
+      (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+        ctxᵢ e2 fuel' result2 hwf hinv htc2').2
+    have hres2 : predOnlyOnPoisonedNonRefResult result2 :=
+      (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+        ctxᵢ e2 fuel' result2 hwf hinv htc2').1
+    have hinv2 : predOnlyOnPoisonedNonRefCtx (ctxAfter ctxᵢ result2) :=
+      (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+        ctxᵢ e2 fuel' result2 hwf hinv htc2').2
     -- Phase 2: IH for e2 (e1 IH defined after we have hTm2 from e2)
-    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm result2 htc2'
+    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm hinv result2 htc2'
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
     let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
@@ -9440,7 +9582,7 @@ lemma stepFR_app
         rcases hstep_e2 with ⟨hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         -- Phase B: Apply IH for e1
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 hinv2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -9902,8 +10044,29 @@ lemma stepFR_app
               constructor
               · intro a ha; exact hwfcf₁₀.1 a ha
               · simpa [VarEnv.update] using wfVarEnv.cons x₀ v₂₀ env₀ hv₂₀_wf henv₀_wf
+            have hres1 : predOnlyOnPoisonedNonRefResult result1 :=
+              (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+                (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 hinv2 htc1').1
+            have hargInv :
+                predOnlyOnPoisonedNonRefDeepQTyp
+                  ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ := by
+              simpa [hqt2] using
+                predOnlyOnPoisonedNonRefDeepQTyp_poison_mono_app
+                  result2.qualType ctxᵢ.pc hres2.1
+            have hcapInvA₀ :
+                predOnlyOnPoisonedNonRefDeepVarEnv (VarTypeEnv.ofCaptured σcapA₀) := by
+              exact
+                predOnlyOnPoisonedNonRefDeepQTyp_arrow_closure_mem_app
+                  hres1.1 hetyp1 hσcapA₀_mem
+            have hinvBodyA₀ : predOnlyOnPoisonedNonRefCtx bodyCtxA₀ := by
+              refine ⟨?_, ?_⟩
+              · simpa [bodyCtxA₀] using
+                  predOnlyOnPoisonedNonRefDeepVarEnv_update
+                    (VarTypeEnv.ofCaptured σcapA₀) x₀
+                    ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ hcapInvA₀ hargInv
+              · simpa [bodyCtxA₀] using hres1.2
             have hSingle_bodyA₀ :=
-              singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀ hTmBodyA₀ result3A₀ htcBodyA₀'
+              singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀ hTmBodyA₀ result3A₀ htcBodyA₀' hinvBodyA₀
             have hpc_bodyA₀_run : bodyCtxA₀.pc = true := by
               simp [bodyCtxA₀, joinPoison] at h_p1p ⊢
               cases p1 <;> cases p <;> simp at h_p1p ⊢
@@ -10072,8 +10235,20 @@ lemma stepFR_app
               constructor
               · intro a ha; exact hwfcf₁₁.1 a ha
               · simpa [VarEnv.update] using wfVarEnv.cons x₁ v₂₁ env₁ hv₂₁_wf henv₁_wf
+            have hcapInvA₁ :
+                predOnlyOnPoisonedNonRefDeepVarEnv (VarTypeEnv.ofCaptured σcapA₁) := by
+              exact
+                predOnlyOnPoisonedNonRefDeepQTyp_arrow_closure_mem_app
+                  hres1.1 hetyp1 hσcapA₁_mem
+            have hinvBodyA₁ : predOnlyOnPoisonedNonRefCtx bodyCtxA₁ := by
+              refine ⟨?_, ?_⟩
+              · simpa [bodyCtxA₁] using
+                  predOnlyOnPoisonedNonRefDeepVarEnv_update
+                    (VarTypeEnv.ofCaptured σcapA₁) x₁
+                    ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ hcapInvA₁ hargInv
+              · simpa [bodyCtxA₁] using hres1.2
             have hSingle_bodyA₁ :=
-              singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁ hTmBodyA₁ result3A₁ htcBodyA₁'
+              singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁ hTmBodyA₁ result3A₁ htcBodyA₁' hinvBodyA₁
             have hpc_bodyA₁_run : bodyCtxA₁.pc = true := by
               simp [bodyCtxA₁, joinPoison] at h_p1p ⊢
               cases p1 <;> cases p <;> simp at h_p1p ⊢
@@ -10698,8 +10873,29 @@ lemma stepFR_app
                 simpa [bodyCtx, ctxAfter] using hTmBody'
               have htcBody' : typecheck .ioFree bodyCtx body₀ fuelBody = .ok result3Shared := by
                 simpa [bodyCtx, typecheck] using htcBody
+              have hres1 : predOnlyOnPoisonedNonRefResult result1 :=
+                (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+                  (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 hinv2 htc1').1
+              have hargInv :
+                  predOnlyOnPoisonedNonRefDeepQTyp
+                    ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ := by
+                simpa [hqt2] using
+                  predOnlyOnPoisonedNonRefDeepQTyp_poison_mono_app
+                    result2.qualType ctxᵢ.pc hres2.1
+              have hcapInv :
+                  predOnlyOnPoisonedNonRefDeepVarEnv (VarTypeEnv.ofCaptured σcap) := by
+                exact
+                  predOnlyOnPoisonedNonRefDeepQTyp_arrow_closure_mem_app
+                    hres1.1 hetyp1 hmem
+              have hinvBody : predOnlyOnPoisonedNonRefCtx bodyCtx := by
+                refine ⟨?_, ?_⟩
+                · simpa [bodyCtx] using
+                    predOnlyOnPoisonedNonRefDeepVarEnv_update
+                      (VarTypeEnv.ofCaptured σcap) x₀
+                      ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ hcapInv hargInv
+                · simpa [bodyCtx] using hres1.2
               have hIH_body :=
-                IH fuelBody hfuel_lt body₀ bodyCtx hTmBody result3Shared htcBody'
+                IH fuelBody hfuel_lt body₀ bodyCtx hTmBody hinvBody result3Shared htcBody'
               have hwfBodyCtx : wfTypeContext bodyCtx := by
                 simpa [bodyCtx, ctxAfter, wfTypeContext] using hwf1
               have hric_body₀ :
@@ -11946,7 +12142,7 @@ lemma stepFR_app
           hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 hinv2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -11977,7 +12173,7 @@ lemma stepFR_app
           hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 hinv2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12007,7 +12203,7 @@ lemma stepFR_app
           hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 hinv2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12040,8 +12236,14 @@ lemma stepFR_app
       simp [ctxAfter] at htc1 ⊢
       exact htc1
     intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+    have hres2 : predOnlyOnPoisonedNonRefResult result2 :=
+      (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+        ctxᵢ e2 fuel' result2 hwf hinv htc2').1
+    have hinv2 : predOnlyOnPoisonedNonRefCtx (ctxAfter ctxᵢ result2) :=
+      (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+        ctxᵢ e2 fuel' result2 hwf hinv htc2').2
     -- Phase 2: IH for e2
-    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm result2 htc2'
+    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm hinv result2 htc2'
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
     let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
@@ -12057,7 +12259,7 @@ lemma stepFR_app
           hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 hinv2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12087,7 +12289,7 @@ lemma stepFR_app
           hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 hinv2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12118,7 +12320,7 @@ lemma stepFR_app
           hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 hinv2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12150,7 +12352,7 @@ lemma stepFR_app
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         -- Phase B: Apply IH for e1
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 hinv2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12692,8 +12894,29 @@ lemma stepFR_app
           have ht₀_body' : terminatesTo .ioFree body₀
               { memory := cf₀.memory, varEnv := env₀.update x₀ v₂₀,
                 nextAddr := cf₀.nextAddr, pureMode := true } evalCfg₀ o₀ := ht₀_body
+          have hres1 : predOnlyOnPoisonedNonRefResult result1 :=
+            (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+              (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 hinv2 htc1').1
+          have hargInv :
+              predOnlyOnPoisonedNonRefDeepQTyp
+                ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ := by
+            simpa [hqt2] using
+              predOnlyOnPoisonedNonRefDeepQTyp_poison_mono_app
+                result2.qualType ctxᵢ.pc hres2.1
+          have hcapInvA₀ :
+              predOnlyOnPoisonedNonRefDeepVarEnv (VarTypeEnv.ofCaptured σcapA₀) := by
+            exact
+              predOnlyOnPoisonedNonRefDeepQTyp_parrow_closure_mem_app
+                hres1.1 hetyp1 hσcapA₀_mem
+          have hinvBodyA₀ : predOnlyOnPoisonedNonRefCtx bodyCtxA₀ := by
+            refine ⟨?_, ?_⟩
+            · simpa [bodyCtxA₀] using
+                predOnlyOnPoisonedNonRefDeepVarEnv_update
+                  (VarTypeEnv.ofCaptured σcapA₀) x₀
+                  ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ hcapInvA₀ hargInv
+            · simpa [bodyCtxA₀] using hres1.2
           have hSingle_bodyA₀ :=
-            singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀ hTmBodyA₀ result3A₀ htcBodyA₀_body₀
+            singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀ hTmBodyA₀ result3A₀ htcBodyA₀_body₀ hinvBodyA₀
           have hpc_bodyA₀_run : bodyCtxA₀.pc = true := by
             simp [bodyCtxA₀, joinPoison] at h_p1p ⊢
             cases p1 <;> cases p <;> simp at h_p1p ⊢
@@ -12867,8 +13090,20 @@ lemma stepFR_app
           have ht₁_body' : terminatesTo .ioFree body₁
               { memory := cf₁.memory, varEnv := env₁.update x₁ v₂₁,
                 nextAddr := cf₁.nextAddr, pureMode := true } evalCfg₁ o₁ := ht₁_body
+          have hcapInvA₁ :
+              predOnlyOnPoisonedNonRefDeepVarEnv (VarTypeEnv.ofCaptured σcapA₁) := by
+            exact
+              predOnlyOnPoisonedNonRefDeepQTyp_parrow_closure_mem_app
+                hres1.1 hetyp1 hσcapA₁_mem
+          have hinvBodyA₁ : predOnlyOnPoisonedNonRefCtx bodyCtxA₁ := by
+            refine ⟨?_, ?_⟩
+            · simpa [bodyCtxA₁] using
+                predOnlyOnPoisonedNonRefDeepVarEnv_update
+                  (VarTypeEnv.ofCaptured σcapA₁) x₁
+                  ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ hcapInvA₁ hargInv
+            · simpa [bodyCtxA₁] using hres1.2
           have hSingle_bodyA₁ :=
-            singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁ hTmBodyA₁ result3A₁ htcBodyA₁_body₁
+            singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁ hTmBodyA₁ result3A₁ htcBodyA₁_body₁ hinvBodyA₁
           have hpc_bodyA₁_run : bodyCtxA₁.pc = true := by
             simp [bodyCtxA₁, joinPoison] at h_p1p ⊢
             cases p1 <;> cases p <;> simp at h_p1p ⊢
@@ -13453,8 +13688,29 @@ lemma stepFR_app
             have htcBody' : typecheck .ioFree bodyCtx (PExpr.toExpr pbody) fuelBody = .ok result3Shared := by
               simp only [bodyCtx, typecheck, hx₀]
               exact htcBody
+            have hres1 : predOnlyOnPoisonedNonRefResult result1 :=
+              (typecheckExpr_preserves_predOnlyOnPoisonedNonRef
+                (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 hinv2 htc1').1
+            have hargInv :
+                predOnlyOnPoisonedNonRefDeepQTyp
+                  ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ := by
+              simpa [hqt2] using
+                predOnlyOnPoisonedNonRefDeepQTyp_poison_mono_app
+                  result2.qualType ctxᵢ.pc hres2.1
+            have hcapInv :
+                predOnlyOnPoisonedNonRefDeepVarEnv (VarTypeEnv.ofCaptured σcap) := by
+              exact
+                predOnlyOnPoisonedNonRefDeepQTyp_parrow_closure_mem_app
+                  hres1.1 hetyp1 hmem
+            have hinvBody : predOnlyOnPoisonedNonRefCtx bodyCtx := by
+              refine ⟨?_, ?_⟩
+              · simpa [bodyCtx] using
+                  predOnlyOnPoisonedNonRefDeepVarEnv_update
+                    (VarTypeEnv.ofCaptured σcap) x₀
+                    ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ hcapInv hargInv
+              · simpa [bodyCtx] using hres1.2
             have hIH_body :=
-              IH fuelBody hfuel_lt (PExpr.toExpr pbody) bodyCtx hTmBody result3Shared htcBody'
+              IH fuelBody hfuel_lt (PExpr.toExpr pbody) bodyCtx hTmBody hinvBody result3Shared htcBody'
             have hwfBodyCtx : wfTypeContext bodyCtx := by
               simpa [bodyCtx, ctxAfter, wfTypeContext] using hwf1
             -- Phase 2: runtimeInstantiatesCtx for both runs

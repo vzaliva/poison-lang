@@ -1127,8 +1127,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
   (masked : Tag → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
+  (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
   (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamInv_IH
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
@@ -1150,7 +1151,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hRbound hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ hwfTm res1 htc1'
+    e ctxᵢ hwfTm res1 htc1' hinv
   have hstruct := terminatesTo_newRef_inv' .ioFree e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o rfl ht
   rcases hstruct with ⟨cfg', n, ht_e, ho, hmem, _hnext, hvar, _hpm⟩
@@ -1404,7 +1405,8 @@ private lemma joinMemEnvsStrong_lookup_cleanUnder_right_of_contains
 lemma stepFR_newRef
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (tm : TagMeaning) (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
+  (IH : StepFRInv_IH predSat tm (Nat.succ (Nat.succ fuel')))
   (htc : typecheck .ioFree ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ (Expr.newRef e) res predSat tm := by
   -- Parse typecheck result
@@ -1416,7 +1418,7 @@ lemma stepFR_newRef
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ hwfTm res1 htc1'
+    e ctxᵢ hwfTm hinv res1 htc1'
   -- Use world-free inversion lemma for newRef
   have hstruct₀ := terminatesTo_newRef_inv' .ioFree e
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ rfl ht₀

@@ -472,7 +472,8 @@ private lemma valueConsistentWithRegimeMasked_vlet_finish
 lemma stepFR_vlet
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (tm : TagMeaning) (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
+  (IH : StepFRInv_IH predSat tm (Nat.succ (Nat.succ fuel')))
   (htc : typecheck .ioFree ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR .ioFree ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
   -- Parse typecheck result
@@ -487,7 +488,7 @@ lemma stepFR_vlet
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ hwfTm res1 htc1'
+    e1 ctxᵢ hwfTm hinv res1 htc1'
   -- Use world-free inversion lemma for vlet
   have hstruct₀ := terminatesTo_vlet_inv' vname e1 e2
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -513,8 +514,19 @@ lemma stepFR_vlet
   have hwfTm' : wfTagMeaningCtx tm ctx' := by
     simp only [hctx']
     exact wfTagMeaningCtx_varEnv_ext tm (ctxAfter ctxᵢ res1) vname res1.qualType _hTm1 hres1_desc
+  have hinv1 : predOnlyOnPoisonedNonRefCtx (ctxAfter ctxᵢ res1) :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef ctxᵢ e1 fuel' res1 hwf hinv htc1').2
+  have hresInv1 : predOnlyOnPoisonedNonRefResult res1 :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef ctxᵢ e1 fuel' res1 hwf hinv htc1').1
+  have hinv1' : predOnlyOnPoisonedNonRefCtx ctx' := by
+    rcases hinv1 with ⟨hvar1, hmem1⟩
+    refine ⟨?_, ?_⟩
+    · simpa [hctx'] using
+        predOnlyOnPoisonedNonRefDeepVarEnv_update ctxᵢ.varEnv vname res1.qualType
+          hvar1 hresInv1.1
+    · simpa [hctx', ctxAfter, updateCtxFromResult] using hmem1
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hwfTm' res2 htc2'
+    e2 ctx' hwfTm' hinv1' res2 htc2'
   -- Prepare for IH2
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
@@ -1949,8 +1961,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   (masked : Tag → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (hinv : predOnlyOnPoisonedNonRefCtx ctxᵢ)
   (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamInv_IH
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
@@ -1978,7 +1991,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   rcases hstruct with ⟨cfg1, v1, cfg3, ht_e1, ht_e2, hcf_eq, _hpm1, _hpm_final⟩
   let cfg2 : Config := { cfg1 with varEnv := cfg1.varEnv.update vname v1 }
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ hwfTm res1 htc1'
+    e1 ctxᵢ hwfTm res1 htc1' hinv
   have hTm1 : wfTagMeaningCtx tm (ctxAfter ctxᵢ res1) :=
     typecheckExpr_preserves_wfTagMeaningCtx tm ctxᵢ e1 fuel' res1 hwfTm htc1'
   have hresTm1 : QTypRespectsTagMeaning tm res1.qualType :=
@@ -2022,6 +2035,17 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   have hmasked_none1' : ∀ k, masked k → ctx'.regime.lookup? k = none := by
     intro k hk
     simpa [hctx', ctxAfter, updateCtxFromResult] using hmasked_none1 k hk
+  have hinv1 : predOnlyOnPoisonedNonRefCtx (ctxAfter ctxᵢ res1) :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef ctxᵢ e1 fuel' res1 hwf hinv htc1').2
+  have hresInv1 : predOnlyOnPoisonedNonRefResult res1 :=
+    (typecheckExpr_preserves_predOnlyOnPoisonedNonRef ctxᵢ e1 fuel' res1 hwf hinv htc1').1
+  have hinv1' : predOnlyOnPoisonedNonRefCtx ctx' := by
+    rcases hinv1 with ⟨hvar1, hmem1⟩
+    refine ⟨?_, ?_⟩
+    · simpa [hctx'] using
+        predOnlyOnPoisonedNonRefDeepVarEnv_update ctxᵢ.varEnv vname res1.qualType
+          hvar1 hresInv1.1
+    · simpa [hctx', ctxAfter, updateCtxFromResult] using hmem1
   have hctxCons1' :
       consistentWithRegimeMasked masked predSat ctx'.regime ctx' cfg2.memory cfg2.varEnv θ1 := by
     simpa [cfg2, hctx', ctxAfter] using
@@ -2041,7 +2065,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
         wfVarEnv.cons vname v1 cfg1.varEnv hv1_wf hwfenv1
       simpa [cfg2, VarEnv.update] using hwfenv2
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hwfTm' res2 htc2'
+    e2 ctx' hwfTm' res2 htc2' hinv1'
   rcases
     hIH2 hpredlaws hwfTm' cfg2.memory cfg2.varEnv θ1 cfg3 o
       hθ1wf hwf1' hric1' hreg1' hmasked_none1' hRbound1 hctxCons1'

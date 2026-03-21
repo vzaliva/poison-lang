@@ -10317,7 +10317,7 @@ private lemma list_lookup_of_ofCaptured_lookup
     exact Option.some.inj this
   simpa [hqt] using hlist
 
-private lemma predOnlyOnPoisonedNonRefDeepVarEnv_ofCaptured_toCaptured
+lemma predOnlyOnPoisonedNonRefDeepVarEnv_ofCaptured_toCaptured
     (env : VarTypeEnv) :
     predOnlyOnPoisonedNonRefDeepVarEnv env →
     predOnlyOnPoisonedNonRefDeepVarEnv (VarTypeEnv.ofCaptured (VarTypeEnv.toCaptured env)) := by
@@ -10332,7 +10332,7 @@ private lemma predOnlyOnPoisonedNonRefDeepVarEnv_ofCaptured_toCaptured
         exact VarTypeEnv_lookup_of_toCaptured_lookup env x qt hlist
       exact hlookup x qt hx'
 
-private lemma predOnlyOnPoisonedNonRefDeepVarEnv_update
+lemma predOnlyOnPoisonedNonRefDeepVarEnv_update
     (env : VarTypeEnv) (x : Name) (qt : QTyp) :
     predOnlyOnPoisonedNonRefDeepVarEnv env →
     predOnlyOnPoisonedNonRefDeepQTyp qt →
