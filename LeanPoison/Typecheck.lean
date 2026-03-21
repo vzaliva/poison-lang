@@ -826,6 +826,17 @@ def attachVarEnvToPredicate (pred : SyntaxPredicate) (varEnv : VarTypeEnv) : Typ
   | SyntaxPredicate.guardOnly k => pure (Predicate.guardOnly k)
   | SyntaxPredicate.noPred => pure Predicate.noPred
 
+/-- Reject clean non-reference specs that still carry a predicate.
+    This is enforced for surface parsing and extern values already; keep the
+    core helper constructors aligned so programmatic callers cannot bypass it. -/
+def rejectCleanPredicate (poison : Bool) (pred : SyntaxPredicate) : TypecheckM Unit := do
+  match poison, pred with
+  | false, SyntaxPredicate.guardOnly _
+  | false, SyntaxPredicate.guardClosure _ _ _ =>
+      throw "Clean types cannot have predicates"
+  | _, _ =>
+      pure ()
+
 /-- Convert (Typ, Bool, SyntaxPredicate) to QTyp for EXTERN VALUES.
     Used only for extern val declarations at definition time.
     May allocate fresh locations for reference types and update Γ.
@@ -860,6 +871,7 @@ def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
 -/
 def effectSpecToQTyp (poison : Bool) (pred : SyntaxPredicate)
     (varEnv : VarTypeEnv) : TypecheckM QTyp := do
+  rejectCleanPredicate poison pred
   let pred' ← attachVarEnvToPredicate pred varEnv
   return ⟨ETyp.int, poison, pred'⟩
 
@@ -882,6 +894,7 @@ def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     | Typ.ref _ => throw "Extern functions cannot return reference types"
     | Typ.arrow _ _ => throw "Arrow types not expected in extern specs" : TypecheckM (ETyp × Loc))
 
+  rejectCleanPredicate poison pred
   let pred' ← attachVarEnvToPredicate pred varEnv
   return (⟨etyp, poison, pred'⟩, nextLoc')
 
