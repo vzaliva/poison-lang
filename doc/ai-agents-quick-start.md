@@ -150,13 +150,28 @@ Commit frequently (every few minutes during active sessions) for fine-grained ro
 ### Check available agents
 ```bash
 ai-agent-jailed
-# Shows: Usage: ai-agent-jailed <agent> [agent-args...]
+# Shows usage including optional workspace, --replace, and "--" pass-through
 ```
 
 ### Check agent version
 ```bash
 ai-agent-jailed claude --version
 ai-agent-jailed codex --version
+```
+
+### Resume a session (pass-through after `--`)
+
+The wrapper adds default flags for convenience (`--continue` for Claude, `resume --last` for Codex). To pass options to `claude` or `codex` yourself—such as resuming a session—use `--` and put those arguments after it:
+
+```bash
+claude-jailed -- -r <session-uuid>
+codex-jailed -- resume <session-id>
+```
+
+Optional workspace and `--replace` still go **before** `--`:
+
+```bash
+ai-agent-jailed claude ~/src/poison-lang-worktree --replace -- -r <session-uuid>
 ```
 
 ### Get help
@@ -204,7 +219,7 @@ podman volume create ai_agent_cache_lake
 podman volume create ai_agent_config
 ```
 
-### "Usage: ai-agent-jailed <agent> [agent-args...]"
+### "Usage: ai-agent-jailed <agent> ..."
 You must specify which agent to run:
 ```bash
 ai-agent-jailed claude    # Not just: ai-agent-jailed

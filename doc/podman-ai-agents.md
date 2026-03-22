@@ -146,12 +146,30 @@ This starts an interactive session with:
 ### Passing arguments to agents
 
 ```bash
-# Claude with arguments
+# Claude with arguments (wrapper adds --continue before your args)
 ai-agent-jailed claude --help
 ai-agent-jailed claude --version
 
-# Codex with arguments
+# Codex with arguments (wrapper adds resume --last before your args)
 ai-agent-jailed codex --help
+ai-agent-jailed codex --version
+```
+
+### Pass-through after `--` (resume sessions, full control)
+
+By default, the wrapper injects convenience flags after its fixed prefix (for example Claude adds `--continue`, Codex adds `resume --last`). To pass **only** what you want to the underlying `claude` or `codex` command after that prefix, put a bare `--` in the argument list. Everything after `--` is forwarded verbatim; nothing extra is appended by the wrapper.
+
+Only the workspace directory (if used) and `--replace` may appear **before** `--`.
+
+```bash
+# Resume a Claude session (example session UUID)
+claude-jailed -- -r 52ea7f53-2b6a-4732-9eb7-f7292bd85d36
+
+# Resume a Codex session (example session id)
+codex-jailed -- resume 019d0c58-596c-7d11-9d9f-75370b031212
+
+# Same with an explicit workspace checkout
+ai-agent-jailed claude ~/src/poison-lang-issue-70 -- -r 52ea7f53-2b6a-4732-9eb7-f7292bd85d36
 ```
 
 ### Running against a specific workspace/checkout

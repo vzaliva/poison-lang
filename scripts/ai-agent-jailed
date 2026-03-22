@@ -6,9 +6,14 @@ set -euo pipefail
 #
 # Uses dedicated volumes (ai_agent_*) that are independent from the poison-dev environment.
 #
-# Usage: ai-agent-jailed <agent> [workspace-dir] [agent-args...]
-#        claude-jailed [workspace-dir] [claude-args...]    (via symlink)
-#        codex-jailed [workspace-dir] [codex-args...]      (via symlink)
+# Usage: ai-agent-jailed <agent> [workspace-dir] [--replace] [--] [agent-args...]
+#        claude-jailed [workspace-dir] [--replace] [--] [claude-args...]    (via symlink)
+#        codex-jailed [workspace-dir] [--replace] [--] [codex-args...]      (via symlink)
+#
+# Use "--" so everything after it is passed verbatim to claude/codex (wrapper does not
+# add default flags like --continue or "resume --last" after those args). Example:
+#   claude-jailed -- -r 52ea7f53-2b6a-4732-9eb7-f7292bd85d36
+#   codex-jailed -- resume 019d0c58-596c-7d11-9d9f-75370b031212
 #
 # Agents:
 #   claude   - Anthropic Claude Code
@@ -26,6 +31,8 @@ set -euo pipefail
 #   claude-jailed ~/src/poison-lang-worktree
 #   codex-jailed --help     # If symlinked
 #   codex-jailed --replace  # Replace existing container with same name (Podman)
+#   claude-jailed -- -r <session-uuid>   # Resume Claude session (pass-through after --)
+#   codex-jailed -- resume <session-id>  # Resume Codex session
 #
 # Environment variables:
 #   POISON_PROJECT_DIR       - Override default project directory (default: ~/src/poison-lang or git root)
@@ -50,7 +57,7 @@ case "$SCRIPT_NAME" in
   *)
     # Not a recognized symlink name, expect agent as first argument
     if [ $# -eq 0 ]; then
-      echo "Usage: ai-agent-jailed <agent> [workspace-dir] [agent-args...]" >&2
+      echo "Usage: ai-agent-jailed <agent> [workspace-dir] [--replace] [--] [agent-args...]" >&2
       echo "" >&2
       echo "Available agents:" >&2
       echo "  claude   - Anthropic Claude Code" >&2
@@ -76,18 +83,48 @@ if [ $# -gt 0 ] && [ -d "$1" ]; then
 fi
 
 # Parse --replace: instruct Podman to replace an existing container with the same name.
+# Split on "--": after "--", arguments are passed verbatim to claude/codex (no wrapper defaults
+# like --continue or "resume --last" appended after the fixed prefix).
 PODMAN_REPLACE=""
-NEW_ARGS=()
+REMAINING_ARGS=()
 for a in "$@"; do
   if [ "$a" = "--replace" ]; then
     PODMAN_REPLACE="--replace"
   else
-    NEW_ARGS+=("$a")
+    REMAINING_ARGS+=("$a")
   fi
 done
-set -- "${NEW_ARGS[@]}"
 
-# Map agent name to actual command and arguments
+USE_AGENT_PASSTHROUGH=0
+PASS_ARGS=()
+BEFORE_DD=()
+DD_IDX=-1
+for i in "${!REMAINING_ARGS[@]}"; do
+  if [ "${REMAINING_ARGS[$i]}" = "--" ]; then
+    DD_IDX="$i"
+    break
+  fi
+done
+
+if [ "$DD_IDX" -ge 0 ]; then
+  USE_AGENT_PASSTHROUGH=1
+  for i in "${!REMAINING_ARGS[@]}"; do
+    if [ "$i" -lt "$DD_IDX" ]; then
+      BEFORE_DD+=("${REMAINING_ARGS[$i]}")
+    elif [ "$i" -gt "$DD_IDX" ]; then
+      PASS_ARGS+=("${REMAINING_ARGS[$i]}")
+    fi
+  done
+  if [ "${#BEFORE_DD[@]}" -gt 0 ]; then
+    echo "Error: Unknown arguments before '--' (only workspace dir and --replace are allowed there): ${BEFORE_DD[*]}" >&2
+    echo "Hint: pass claude/codex options after '--', e.g. codex-jailed -- resume <session-id>" >&2
+    exit 1
+  fi
+else
+  PASS_ARGS=("${REMAINING_ARGS[@]}")
+fi
+
+# Map agent name to actual command and fixed prefix arguments (arrays for safe quoting).
 case "$AGENT" in
   claude)
     CMD="claude"
@@ -97,7 +134,11 @@ case "$AGENT" in
     # Add --dangerously-skip-permissions for smoother operation
     # Also load a persisted MCP config that preconfigures lean-lsp.
     # Claude ignores CLAUDE_CONFIG_DIR for plugins (hardcodes ~/.claude); load lean4 explicitly.
-    AGENT_ARGS="--dangerously-skip-permissions --mcp-config ${CLAUDE_CONFIG_DIR}/mcp.json --plugin-dir /opt/lean4-skills-seed/plugins/lean4 --continue"
+    AGENT_PREFIX_ARGS=(
+      --dangerously-skip-permissions
+      --mcp-config "${CLAUDE_CONFIG_DIR}/mcp.json"
+      --plugin-dir /opt/lean4-skills-seed/plugins/lean4
+    )
     ;;
   codex)
     CMD="codex"
@@ -108,17 +149,40 @@ case "$AGENT" in
     # if logs end up on stdout). Also pin the Lean project root explicitly.
     LEAN_PROJECT_PATH="/work"
     LEAN_LOG_LEVEL="NONE"
-    # Add --yolo for smoother operation
-    AGENT_ARGS="-c cli_auth_credentials_store=file --yolo resume --last"
+    AGENT_PREFIX_ARGS=( -c cli_auth_credentials_store=file --yolo )
     ;;
   bash|sh)
     CMD="$AGENT"
-    AGENT_ARGS=""
+    AGENT_PREFIX_ARGS=()
     ;;
   *)
     echo "Error: Unknown agent '$AGENT'" >&2
     echo "Available agents: claude, codex, bash" >&2
     exit 1
+    ;;
+esac
+
+# Build final argv for the agent inside the container.
+FINAL_AGENT_ARGS=()
+case "$AGENT" in
+  claude)
+    FINAL_AGENT_ARGS=( "${AGENT_PREFIX_ARGS[@]}" )
+    if [ "$USE_AGENT_PASSTHROUGH" -eq 1 ]; then
+      FINAL_AGENT_ARGS+=( "${PASS_ARGS[@]}" )
+    else
+      FINAL_AGENT_ARGS+=( --continue "${PASS_ARGS[@]}" )
+    fi
+    ;;
+  codex)
+    FINAL_AGENT_ARGS=( "${AGENT_PREFIX_ARGS[@]}" )
+    if [ "$USE_AGENT_PASSTHROUGH" -eq 1 ]; then
+      FINAL_AGENT_ARGS+=( "${PASS_ARGS[@]}" )
+    else
+      FINAL_AGENT_ARGS+=( resume --last "${PASS_ARGS[@]}" )
+    fi
+    ;;
+  bash|sh)
+    FINAL_AGENT_ARGS=( "${PASS_ARGS[@]}" )
     ;;
 esac
 
@@ -293,12 +357,6 @@ PODMAN_ARGS+=(
   "$CMD"
 )
 
-# Add agent-specific arguments
-if [ -n "$AGENT_ARGS" ]; then
-  PODMAN_ARGS+=($AGENT_ARGS)
-fi
-
-# Add user-provided arguments
-PODMAN_ARGS+=("$@")
+PODMAN_ARGS+=( "${FINAL_AGENT_ARGS[@]}" )
 
 exec podman "${PODMAN_ARGS[@]}"
