@@ -176,30 +176,30 @@ if [ ! -f "${CCSTATUSLINE_DIR}/settings.json" ]; then
   if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "${CCSTATUSLINE_DIR}/settings.json" 2>/dev/null || true; fi
 fi
 
-# Seed Claude settings.json with statusLine config.
-# Claude Code reads user settings from ~/.claude/settings.json (not CLAUDE_CONFIG_DIR).
-# ~/.claude is not a volume, so seed on every run.
-mkdir -p "/home/user/.claude"
-if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "/home/user/.claude" 2>/dev/null || true; fi
-if [ ! -f "/home/user/.claude/settings.json" ]; then
+# Ensure Claude settings.json has statusLine config.
+# Claude Code reads user settings from $CLAUDE_CONFIG_DIR/settings.json.
+if [ -f "${CLAUDE_CONFIG_DIR}/settings.json" ]; then
+  if ! jq -e '.statusLine' "${CLAUDE_CONFIG_DIR}/settings.json" >/dev/null 2>&1; then
+    jq '. + {
+      statusLine: {
+        type: "command",
+        command: "npx -y ccstatusline@latest",
+        padding: 0
+      }
+    }' "${CLAUDE_CONFIG_DIR}/settings.json" > "${CLAUDE_CONFIG_DIR}/settings.json.tmp" \
+      && mv "${CLAUDE_CONFIG_DIR}/settings.json.tmp" "${CLAUDE_CONFIG_DIR}/settings.json"
+    if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_CONFIG_DIR}/settings.json" 2>/dev/null || true; fi
+  fi
+else
   jq -n '{
     statusLine: {
       type: "command",
       command: "npx -y ccstatusline@latest",
       padding: 0
     }
-  }' > "/home/user/.claude/settings.json"
-elif ! jq -e '.statusLine' "/home/user/.claude/settings.json" >/dev/null 2>&1; then
-  jq '. + {
-    statusLine: {
-      type: "command",
-      command: "npx -y ccstatusline@latest",
-      padding: 0
-    }
-  }' "/home/user/.claude/settings.json" > "/home/user/.claude/settings.json.tmp" \
-    && mv "/home/user/.claude/settings.json.tmp" "/home/user/.claude/settings.json"
+  }' > "${CLAUDE_CONFIG_DIR}/settings.json"
+  if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_CONFIG_DIR}/settings.json" 2>/dev/null || true; fi
 fi
-if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "/home/user/.claude/settings.json" 2>/dev/null || true; fi
 
 # Seed a minimal Codex config in CODEX_HOME (first run only).
 mkdir -p "${CODEX_HOME}"
