@@ -194,6 +194,9 @@ RUN : "${PROOF_SKILLS_UPDATE}" && mkdir -p "${PROOF_SKILLS_SEED}"
 COPY .build-cache/proof-skills/ "${PROOF_SKILLS_SEED}/"
 RUN chmod -R a+rX "${PROOF_SKILLS_SEED}"
 
+# --- ccstatusline: pre-built config for Claude Code status line ---
+COPY --chmod=0644 claude-statusline.json /opt/ccstatusline-seed/settings.json
+
 # --- Seed Elan into a read-only location in the image ---
 # Do not hardcode a Lean toolchain here; projects specify it via /work/lean-toolchain.
 ARG ELAN_TOOLCHAIN=none

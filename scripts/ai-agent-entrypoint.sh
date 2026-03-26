@@ -167,6 +167,40 @@ if [ ! -f "${CLAUDE_CONFIG_DIR}/mcp.json" ]; then
   if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "${CLAUDE_CONFIG_DIR}/mcp.json" 2>/dev/null || true; fi
 fi
 
+# ccstatusline: seed display config for Claude Code status line (first run only).
+CCSTATUSLINE_DIR="/home/user/.config/ccstatusline"
+mkdir -p "${CCSTATUSLINE_DIR}"
+if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "${CCSTATUSLINE_DIR}" 2>/dev/null || true; fi
+if [ ! -f "${CCSTATUSLINE_DIR}/settings.json" ]; then
+  cp /opt/ccstatusline-seed/settings.json "${CCSTATUSLINE_DIR}/settings.json"
+  if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "${CCSTATUSLINE_DIR}/settings.json" 2>/dev/null || true; fi
+fi
+
+# Seed Claude settings.json with statusLine config.
+# Claude Code reads user settings from ~/.claude/settings.json (not CLAUDE_CONFIG_DIR).
+# ~/.claude is not a volume, so seed on every run.
+mkdir -p "/home/user/.claude"
+if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "/home/user/.claude" 2>/dev/null || true; fi
+if [ ! -f "/home/user/.claude/settings.json" ]; then
+  jq -n '{
+    statusLine: {
+      type: "command",
+      command: "npx -y ccstatusline@latest",
+      padding: 0
+    }
+  }' > "/home/user/.claude/settings.json"
+elif ! jq -e '.statusLine' "/home/user/.claude/settings.json" >/dev/null 2>&1; then
+  jq '. + {
+    statusLine: {
+      type: "command",
+      command: "npx -y ccstatusline@latest",
+      padding: 0
+    }
+  }' "/home/user/.claude/settings.json" > "/home/user/.claude/settings.json.tmp" \
+    && mv "/home/user/.claude/settings.json.tmp" "/home/user/.claude/settings.json"
+fi
+if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "/home/user/.claude/settings.json" 2>/dev/null || true; fi
+
 # Seed a minimal Codex config in CODEX_HOME (first run only).
 mkdir -p "${CODEX_HOME}"
 if [ "${AM_ROOT}" -eq 1 ]; then chown "${HOST_UID}:${HOST_GID}" "${CODEX_HOME}" 2>/dev/null || true; fi
