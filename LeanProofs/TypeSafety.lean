@@ -1899,10 +1899,10 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
          res1.qualType.etyp = ETyp.bool ∧
          ∃ res2 : TypeResult,
            let branchPc := joinPoison ctx.pc res1.qualType.poison
-           let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+           let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := ctx.regime.insert k true }
            typecheckExpr .ioFree ctxTrue e2 (fuel - 1) = .ok res2 ∧
            ∃ res3 : TypeResult,
-             let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k false } }
+             let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := ctx.regime.insert k false }
              let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
              typecheckExpr .ioFree ctxFalse' e3 (fuel - 1) = .ok res3 ∧
             res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv' ∧
@@ -2036,7 +2036,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
           · constructor; exact hbool
             simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at htc
             let branchPc := joinPoison ctx.pc p1
-            let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+            let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := ctx.regime.insert k true }
             cases htc2 : typecheckExpr .ioFree ctxTrue e2 fuel' with
             | error e => rw [htc2] at htc; simp at htc
             | ok result2 =>
@@ -2045,7 +2045,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
               match hq2 : result2.qualType with
               | ⟨etyp2, p2, pred2⟩ =>
               simp only [hq2] at htc
-              let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k false } }
+              let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := ctx.regime.insert k false }
               let ctxFalse' := { ctxFalse with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
               cases htc3 : typecheckExpr .ioFree ctxFalse' e3 fuel' with
               | error e => rw [htc3] at htc; cases htc
@@ -2964,32 +2964,32 @@ private lemma joinRegimes_lookup_of_some_some
     (h1 : R1.lookup? k = some b)
     (h2 : R2.lookup? k = some b) :
     (joinRegimes R1 R2).lookup? k = some b := by
-  have hmap1 : R1.map.get? k = some b := h1
-  have hmap2 : R2.map.get? k = some b := h2
-  have hmap1' : R1.map[k]? = some b := by
+  have hmap1 : R1.get? k = some b := h1
+  have hmap2 : R2.get? k = some b := h2
+  have hmap1' : R1[k]? = some b := by
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap1
-  have hmap2' : R2.map[k]? = some b := by
+  have hmap2' : R2[k]? = some b := by
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap2
   have hcombine :
-      (combineExtTreeMaps R1.map R2.map
+      (combineExtTreeMaps R1 R2
         (fun _ ob1 ob2 =>
           match ob1, ob2 with
           | some b1, some b2 => if b1 == b2 then some b1 else none
           | _, _ => none)).get? k = some b := by
-    have hcombine0 := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
+    have hcombine0 := combineExtTreeMaps_getElem?_of_none_none R1 R2
       (fun _ ob1 ob2 =>
         match ob1, ob2 with
         | some b1, some b2 => if b1 = b2 then some b1 else none
         | _, _ => none) k rfl
     have hcombine0s :
-        (combineExtTreeMaps R1.map R2.map
+        (combineExtTreeMaps R1 R2
           (fun _ ob1 ob2 =>
             match ob1, ob2 with
             | some b1, some b2 => if b1 = b2 then some b1 else none
             | _, _ => none))[k]? = some b := by
       simpa [hmap1', hmap2'] using hcombine0
     have hcombine0' :
-        (combineExtTreeMaps R1.map R2.map
+        (combineExtTreeMaps R1 R2
           (fun _ ob1 ob2 =>
             match ob1, ob2 with
             | some b1, some b2 => if b1 == b2 then some b1 else none
@@ -3004,14 +3004,14 @@ private lemma joinRegimes_lookup_of_some_disagree
     (h1 : R1.lookup? k = some false)
     (h2 : R2.lookup? k = some true) :
     (joinRegimes R1 R2).lookup? k = none := by
-  have hmap1 : R1.map[k]? = some false := by
+  have hmap1 : R1[k]? = some false := by
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using h1
-  have hmap2 : R2.map[k]? = some true := by
+  have hmap2 : R2[k]? = some true := by
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using h2
-  have hcombine := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
+  have hcombine := combineExtTreeMaps_getElem?_of_none_none R1 R2
     (fun _ ob1 ob2 => match ob1, ob2 with | some b1, some b2 => if b1 == b2 then some b1 else none | _, _ => none)
     k rfl
-  have hcombine' : (joinRegimes R1 R2).map.get? k = none := by
+  have hcombine' : (joinRegimes R1 R2).get? k = none := by
     unfold joinRegimes
     have h := hcombine
     simp [hmap1, hmap2] at h
@@ -3025,14 +3025,14 @@ private lemma joinRegimes_lookup_of_some_disagree_symm
     (h1 : R1.lookup? k = some true)
     (h2 : R2.lookup? k = some false) :
     (joinRegimes R1 R2).lookup? k = none := by
-  have hmap1 : R1.map[k]? = some true := by
+  have hmap1 : R1[k]? = some true := by
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using h1
-  have hmap2 : R2.map[k]? = some false := by
+  have hmap2 : R2[k]? = some false := by
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using h2
-  have hcombine := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
+  have hcombine := combineExtTreeMaps_getElem?_of_none_none R1 R2
     (fun _ ob1 ob2 => match ob1, ob2 with | some b1, some b2 => if b1 == b2 then some b1 else none | _, _ => none)
     k rfl
-  have hcombine' : (joinRegimes R1 R2).map.get? k = none := by
+  have hcombine' : (joinRegimes R1 R2).get? k = none := by
     unfold joinRegimes
     have h := hcombine
     simp [hmap1, hmap2] at h
@@ -3045,29 +3045,29 @@ private lemma joinRegimes_lookup_of_left_none
     (R1 R2 : Regime) (k : Tag)
     (h1 : R1.lookup? k = none) :
     (joinRegimes R1 R2).lookup? k = none := by
-  have hmap1 : R1.map.get? k = none := h1
-  have hmap1' : R1.map[k]? = none := by
+  have hmap1 : R1.get? k = none := h1
+  have hmap1' : R1[k]? = none := by
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap1
   have hcombine :
-      (combineExtTreeMaps R1.map R2.map
+      (combineExtTreeMaps R1 R2
         (fun _ ob1 ob2 =>
           match ob1, ob2 with
           | some b1, some b2 => if b1 == b2 then some b1 else none
           | _, _ => none)).get? k = none := by
-    have hcombine0 := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
+    have hcombine0 := combineExtTreeMaps_getElem?_of_none_none R1 R2
       (fun _ ob1 ob2 =>
         match ob1, ob2 with
         | some b1, some b2 => if b1 = b2 then some b1 else none
         | _, _ => none) k rfl
     have hcombine0s :
-        (combineExtTreeMaps R1.map R2.map
+        (combineExtTreeMaps R1 R2
           (fun _ ob1 ob2 =>
             match ob1, ob2 with
             | some b1, some b2 => if b1 = b2 then some b1 else none
             | _, _ => none))[k]? = none := by
       simpa [hmap1'] using hcombine0
     have hcombine0' :
-        (combineExtTreeMaps R1.map R2.map
+        (combineExtTreeMaps R1 R2
           (fun _ ob1 ob2 =>
             match ob1, ob2 with
             | some b1, some b2 => if b1 == b2 then some b1 else none
@@ -3081,29 +3081,29 @@ private lemma joinRegimes_lookup_of_right_none
     (R1 R2 : Regime) (k : Tag)
     (h2 : R2.lookup? k = none) :
     (joinRegimes R1 R2).lookup? k = none := by
-  have hmap2 : R2.map.get? k = none := h2
-  have hmap2' : R2.map[k]? = none := by
+  have hmap2 : R2.get? k = none := h2
+  have hmap2' : R2[k]? = none := by
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap2
   have hcombine :
-      (combineExtTreeMaps R1.map R2.map
+      (combineExtTreeMaps R1 R2
         (fun _ ob1 ob2 =>
           match ob1, ob2 with
           | some b1, some b2 => if b1 == b2 then some b1 else none
           | _, _ => none)).get? k = none := by
-    have hcombine0 := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
+    have hcombine0 := combineExtTreeMaps_getElem?_of_none_none R1 R2
       (fun _ ob1 ob2 =>
         match ob1, ob2 with
         | some b1, some b2 => if b1 = b2 then some b1 else none
         | _, _ => none) k rfl
     have hcombine0s :
-        (combineExtTreeMaps R1.map R2.map
+        (combineExtTreeMaps R1 R2
           (fun _ ob1 ob2 =>
             match ob1, ob2 with
             | some b1, some b2 => if b1 = b2 then some b1 else none
             | _, _ => none))[k]? = none := by
       simpa [hmap2'] using hcombine0
     have hcombine0' :
-        (combineExtTreeMaps R1.map R2.map
+        (combineExtTreeMaps R1 R2
           (fun _ ob1 ob2 =>
             match ob1, ob2 with
             | some b1, some b2 => if b1 == b2 then some b1 else none
@@ -3147,34 +3147,34 @@ lemma joinRegimes_lookup_some_left
     match ob1, ob2 with
     | some b1, some b2 => if b1 = b2 then some b1 else none
     | _, _ => none
-  have hcombine : (combineExtTreeMaps R1.map R2.map f).get? k = some b := by
+  have hcombine : (combineExtTreeMaps R1 R2 f).get? k = some b := by
     unfold Regime.lookup? at hjoin
     simp [joinRegimes] at hjoin
     exact hjoin
   simp only [combineExtTreeMaps] at hcombine
-  have hk_mem : k ∈ (R1.map.keys ++ R2.map.keys).eraseDups := by
+  have hk_mem : k ∈ (R1.keys ++ R2.keys).eraseDups := by
     by_contra hnot
     have hgo_not :=
-      combineExtTreeMaps_go_get_not_mem R1.map R2.map f
-        (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hnot
+      combineExtTreeMaps_go_get_not_mem R1 R2 f
+        (R1.keys ++ R2.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hnot
     have hempty : (({} : ExtTreeMap Tag Bool)[k]?) = none := by
       rfl
     rw [hempty] at hgo_not
-    have hcombine_get : (combineExtTreeMaps.go R1.map R2.map f (R1.map.keys ++ R2.map.keys).eraseDups
+    have hcombine_get : (combineExtTreeMaps.go R1 R2 f (R1.keys ++ R2.keys).eraseDups
         ({} : ExtTreeMap Tag Bool))[k]? = some b := by
       simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine
     rw [hgo_not] at hcombine_get
     simp at hcombine_get
   have hgo :=
-    combineExtTreeMaps_go_get_mem R1.map R2.map f
-      (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem
+    combineExtTreeMaps_go_get_mem R1 R2 f
+      (R1.keys ++ R2.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem
   have hcombine_get :
-      (combineExtTreeMaps.go R1.map R2.map f (R1.map.keys ++ R2.map.keys).eraseDups
+      (combineExtTreeMaps.go R1 R2 f (R1.keys ++ R2.keys).eraseDups
         ({} : ExtTreeMap Tag Bool))[k]? = some b := by
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine
   rw [hcombine_get] at hgo
   simp only [f] at hgo
-  cases h1 : R1.map[k]? <;> cases h2 : R2.map[k]? <;> simp [h1, h2] at hgo
+  cases h1 : R1[k]? <;> cases h2 : R2[k]? <;> simp [h1, h2] at hgo
   rename_i b1 b2
   by_cases hbeq : b1 = b2
   · simp [hbeq] at hgo
@@ -3183,8 +3183,8 @@ lemma joinRegimes_lookup_some_left
       calc
         b = b2 := hb2
         _ = b1 := hbeq.symm
-    have hmap1 : R1.map.get? k = some b := by
-      have hmap1' : R1.map[k]? = some b := by simpa [hb1] using h1
+    have hmap1 : R1.get? k = some b := by
+      have hmap1' : R1[k]? = some b := by simpa [hb1] using h1
       simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap1'
     exact hmap1
   · simp [hbeq] at hgo
@@ -3198,41 +3198,41 @@ lemma joinRegimes_lookup_some_right
     match ob1, ob2 with
     | some b1, some b2 => if b1 = b2 then some b1 else none
     | _, _ => none
-  have hcombine : (combineExtTreeMaps R1.map R2.map f).get? k = some b := by
+  have hcombine : (combineExtTreeMaps R1 R2 f).get? k = some b := by
     unfold Regime.lookup? at hjoin
     simp [joinRegimes] at hjoin
     exact hjoin
   simp only [combineExtTreeMaps] at hcombine
-  have hk_mem : k ∈ (R1.map.keys ++ R2.map.keys).eraseDups := by
+  have hk_mem : k ∈ (R1.keys ++ R2.keys).eraseDups := by
     by_contra hnot
     have hgo_not :=
-      combineExtTreeMaps_go_get_not_mem R1.map R2.map f
-        (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hnot
+      combineExtTreeMaps_go_get_not_mem R1 R2 f
+        (R1.keys ++ R2.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hnot
     have hempty : (({} : ExtTreeMap Tag Bool)[k]?) = none := by
       rfl
     rw [hempty] at hgo_not
     have hcombine_get :
-        (combineExtTreeMaps.go R1.map R2.map f (R1.map.keys ++ R2.map.keys).eraseDups
+        (combineExtTreeMaps.go R1 R2 f (R1.keys ++ R2.keys).eraseDups
           ({} : ExtTreeMap Tag Bool))[k]? = some b := by
       simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine
     rw [hgo_not] at hcombine_get
     simp at hcombine_get
   have hgo :=
-    combineExtTreeMaps_go_get_mem R1.map R2.map f
-      (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem
+    combineExtTreeMaps_go_get_mem R1 R2 f
+      (R1.keys ++ R2.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem
   have hcombine_get :
-      (combineExtTreeMaps.go R1.map R2.map f (R1.map.keys ++ R2.map.keys).eraseDups
+      (combineExtTreeMaps.go R1 R2 f (R1.keys ++ R2.keys).eraseDups
         ({} : ExtTreeMap Tag Bool))[k]? = some b := by
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine
   rw [hcombine_get] at hgo
   simp only [f] at hgo
-  cases h1 : R1.map[k]? <;> cases h2 : R2.map[k]? <;> simp [h1, h2] at hgo
+  cases h1 : R1[k]? <;> cases h2 : R2[k]? <;> simp [h1, h2] at hgo
   rename_i b1 b2
   by_cases hbeq : b1 = b2
   · simp [hbeq] at hgo
     have hb2 : b = b2 := by simpa using hgo
-    have hmap2 : R2.map.get? k = some b := by
-      have hmap2' : R2.map[k]? = some b := by simpa [hb2] using h2
+    have hmap2 : R2.get? k = some b := by
+      have hmap2' : R2[k]? = some b := by simpa [hb2] using h2
       simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap2'
     exact hmap2
   · simp [hbeq] at hgo
@@ -3250,8 +3250,8 @@ private lemma joinRegimes_no_new_left
 private lemma joinRegimes_monotone_mode3
     (R R2 R3 : Regime) (k : Tag)
     (hk_none : R.lookup? k = none)
-    (hm2 : Regime.monotoneStep { R with map := R.map.insert k true } R2)
-    (hm3 : Regime.monotoneStep { R with map := R.map.insert k false } R3) :
+    (hm2 : Regime.monotoneStep (R.insert k true) R2)
+    (hm3 : Regime.monotoneStep (R.insert k false) R3) :
     Regime.monotoneStep R (joinRegimes R2 R3) := by
   refine ⟨?_, ?_⟩
   · intro k' b hkR
@@ -3259,10 +3259,10 @@ private lemma joinRegimes_monotone_mode3
     · subst k'
       exact absurd (hk_none.symm.trans hkR) (fun heq => Option.some_ne_none b heq.symm)
     · have hcmp : compare k k' ≠ Ordering.eq := fun heq => hk'_eq ((Nat.compare_eq_eq).1 heq).symm
-      have hk_ext : ({ R with map := R.map.insert k true }).lookup? k' = some b := by
+      have hk_ext : Regime.lookup? (R.insert k true) k' = some b := by
         simp only [Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]; exact hkR
       have hk2 := hm2.1 k' b hk_ext
-      have hk_ext' : ({ R with map := R.map.insert k false }).lookup? k' = some b := by
+      have hk_ext' : Regime.lookup? (R.insert k false) k' = some b := by
         simp only [Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]; exact hkR
       have hk3 := hm3.1 k' b hk_ext'
       cases hk2 with
@@ -3277,9 +3277,9 @@ private lemma joinRegimes_monotone_mode3
     by_cases hk'_eq : k' = k
     · subst k'
       -- Extended regime has lookup? k = some true/false via insert.
-      have hk2 : ({ R with map := R.map.insert k true }).lookup? k = some true := by
+      have hk2 : Regime.lookup? (R.insert k true) k = some true := by
         unfold Regime.lookup?; simp
-      have hk3 : ({ R with map := R.map.insert k false }).lookup? k = some false := by
+      have hk3 : Regime.lookup? (R.insert k false) k = some false := by
         unfold Regime.lookup?; simp
       have hr2 := hm2.1 k true hk2
       have hr3 := hm3.1 k false hk3
@@ -3291,7 +3291,7 @@ private lemma joinRegimes_monotone_mode3
             | inr h3 => exact joinRegimes_lookup_of_right_none R2 R3 k h3
         | inr h2 => exact joinRegimes_lookup_of_left_none R2 R3 k h2
       exact absurd hjoin_none hkjoin
-    · have hk_ext_eq : ({ R with map := R.map.insert k true }).lookup? k' = R.lookup? k' := by
+    · have hk_ext_eq : Regime.lookup? (R.insert k true) k' = R.lookup? k' := by
         have hcmp : compare k k' ≠ Ordering.eq := fun heq => hk'_eq ((Nat.compare_eq_eq).1 heq).symm
         unfold Regime.lookup?
         simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]
@@ -3330,10 +3330,10 @@ lemma invalidateRegimeDeps_monotone
     Regime.monotoneStep R (invalidateRegimeDeps R env ls) := by
   refine ⟨?_, ?_⟩
   · intro k b hkR
-    have hkmap : R.map[k]? = some b := by
+    have hkmap : R[k]? = some b := by
       simpa [Std.ExtTreeMap.get?_eq_getElem?] using hkR
     have hmapFiltered :
-        (R.map.filter (fun k _ =>
+        (R.filter (fun k _ =>
           (ExtTreeMap.filter (fun x tv => !tv.deps.any (ExtTreeSet.contains ls)) env).contains k))[k]? =
         Option.filter
           (fun _ =>
@@ -3347,10 +3347,10 @@ lemma invalidateRegimeDeps_monotone
   · intro k hkInv
     by_contra hkRnone
     have hnone : (invalidateRegimeDeps R env ls).lookup? k = none := by
-      have hkmapNone : R.map[k]? = none := by
+      have hkmapNone : R[k]? = none := by
         rw [← Std.ExtTreeMap.get?_eq_getElem?]; exact hkRnone
       have hmapFilteredNone :
-          (R.map.filter (fun k _ =>
+          (R.filter (fun k _ =>
             (ExtTreeMap.filter (fun x tv => !tv.deps.any (ExtTreeSet.contains ls)) env).contains k))[k]? =
           Option.filter
             (fun _ =>
@@ -3849,8 +3849,8 @@ private lemma typecheckIf_regime_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fue
               · -- Mode 3: regime.lookup? k = none (first disjunct)
                 obtain ⟨k, deps, _, hR_none, res1, _htc1, _hbool, res2, htc2, res3, htc3, _hmem, _htag, _hloc, _hnexttag, hregime, _hpoison⟩ := hmode3
                 let branchPc := joinPoison ctx.pc res1.qualType.poison
-                let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k true } }
-                let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k false } }
+                let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := ctx.regime.insert k true }
+                let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := ctx.regime.insert k false }
                 let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
                 have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by
                   simpa [typecheck, ctxTrue, branchPc] using htc2
@@ -4799,8 +4799,8 @@ private lemma typecheckIf_preserves_nextTag (ctx : TypeContext) (e1 e2 e3 : Expr
               · -- Mode 3: regime.lookup? k = none (first disjunct)
                 obtain ⟨k, deps, _hmatch, _hreg, res1, _htc1, _hbool, res2, htc2, res3, htc3, _hmem, _htag, _hloc, hnexttag, _hregime, _hpoison⟩ := hmode3
                 let branchPc := joinPoison ctx.pc res1.qualType.poison
-                let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k true } }
-                let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k false } }
+                let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := ctx.regime.insert k true }
+                let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩, pc := branchPc, regime := ctx.regime.insert k false }
                 let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
                 have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by
                   simpa [typecheck, ctxTrue, branchPc] using htc2
@@ -6166,8 +6166,8 @@ private lemma typecheckIf_nextTag_mono_normal (ctx : TypeContext) (e1 e2 e3 : Ex
                 | none =>
                     simp [hreg] at htc
                     let branchPc := joinPoison ctx.pc p1
-                    let regimeTrue := { ctx.regime with map := ctx.regime.map.insert k true }
-                    let regimeFalse := { ctx.regime with map := ctx.regime.map.insert k false }
+                    let regimeTrue := ctx.regime.insert k true
+                    let regimeFalse := ctx.regime.insert k false
                     let ctxTruePoisoned := { ctxTrue with pc := branchPc, regime := regimeTrue }
                     let ctxFalsePoisoned := { ctxFalse with pc := branchPc, regime := regimeFalse }
                     cases hte2 : typecheckExpr .normal ctxTruePoisoned e2 fuel' with
@@ -6650,7 +6650,7 @@ private lemma typecheckIf_nextLoc_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fu
           · -- R(k) = none
             obtain ⟨k, deps, _, _, res1, htc1, _, res2, htc2, res3, htc3, _, _, hnextloc, _hnexttag, _⟩ := hmode3
             let branchPc := joinPoison ctx.pc res1.qualType.poison
-            let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+            let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, pc := branchPc, regime := ctx.regime.insert k true }
             have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by simpa [typecheck, ctxTrue, branchPc] using htc2
             have IH2 := IH fuel' h_fuel e2 ctxTrue res2 htc2'
             calc ctx.nextLoc
@@ -9313,12 +9313,12 @@ private lemma typecheckIf_wfTypeResult
         { ctx with
           tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
           pc := branchPc
-          regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+          regime := ctx.regime.insert k true }
       let ctxFalse : TypeContext :=
         { ctx with
           tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩
           pc := branchPc
-          regime := { ctx.regime with map := ctx.regime.map.insert k false } }
+          regime := ctx.regime.insert k false }
       let ctxFalse' : TypeContext := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
       have htc2' : typecheck .ioFree ctxTrue e2 fuel' = .ok res2 := by simpa [ctxTrue, branchPc] using htc2
       have htc3' : typecheck .ioFree ctxFalse' e3 fuel' = .ok res3 := by simpa [ctxFalse', ctxFalse, branchPc] using htc3
@@ -10344,7 +10344,7 @@ private lemma typecheckIf_mem_contains_preserved
           { ctx with
             tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
             pc := joinPoison ctx.pc res1.qualType.poison
-            regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+            regime := ctx.regime.insert k true }
         have hcontains2 : res2.memEnv'.contains l :=
           IH fuel' h_fuel e2 ctxTrue res2
             (by simpa [typecheck, ctxTrue] using htc2) l
@@ -11503,12 +11503,12 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
-                          regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+                          regime := ctx.regime.insert k true }
                       let ctxFalse' : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
-                          regime := { ctx.regime with map := ctx.regime.map.insert k false }
+                          regime := ctx.regime.insert k false
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag' }
                       have htc2' :
@@ -11984,12 +11984,12 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
-                          regime := { ctx.regime with map := ctx.regime.map.insert k' true } }
+                          regime := ctx.regime.insert k' true }
                       let ctxFalse' : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
-                          regime := { ctx.regime with map := ctx.regime.map.insert k' false }
+                          regime := ctx.regime.insert k' false
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag' }
                       have htc2' :
@@ -12468,12 +12468,12 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
-                          regime := { ctx.regime with map := ctx.regime.map.insert k' true } }
+                          regime := ctx.regime.insert k' true }
                       let ctxFalse' : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
-                          regime := { ctx.regime with map := ctx.regime.map.insert k' false }
+                          regime := ctx.regime.insert k' false
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag' }
                       have htc2' :
@@ -12999,12 +12999,12 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
-                          regime := { ctx.regime with map := ctx.regime.map.insert k' true } }
+                          regime := ctx.regime.insert k' true }
                       let ctxFalse' : TypeContext :=
                         { ctx with
                           tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩
                           pc := joinPoison ctx.pc res1.qualType.poison
-                          regime := { ctx.regime with map := ctx.regime.map.insert k' false }
+                          regime := ctx.regime.insert k' false
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag' }
                       have htc2' :

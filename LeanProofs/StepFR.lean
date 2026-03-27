@@ -107,7 +107,7 @@ private lemma tagEnvConsistentWithRegime_insert_true_with_regime
     (h : tagEnvConsistentWithRegime tagEnv R) :
     tagEnvConsistentWithRegime
       (tagEnv.insert k ⟨true, deps⟩)
-      { R with map := R.map.insert k true } := by
+      (R.insert k true) := by
   intro k' deps' hget
   by_cases hkk' : k' = k
   · subst hkk'
@@ -130,7 +130,7 @@ private lemma tagEnvConsistentWithRegime_insert_false_with_regime
     (h : tagEnvConsistentWithRegime tagEnv R) :
     tagEnvConsistentWithRegime
       (tagEnv.insert k ⟨false, deps⟩)
-      { R with map := R.map.insert k false } := by
+      (R.insert k false) := by
   intro k' deps' hget
   by_cases hkk' : k' = k
   · subst hkk'
@@ -270,7 +270,7 @@ private lemma tagEnvConsistentWithRegimeMasked_insert_true_with_regime
     (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
     tagEnvConsistentWithRegimeMasked masked
       (tagEnv.insert k ⟨true, deps⟩)
-      { R with map := R.map.insert k true } := by
+      (R.insert k true) := by
   intro k' deps' hget
   by_cases hkk' : k' = k
   · subst hkk'
@@ -300,7 +300,7 @@ private lemma tagEnvConsistentWithRegimeMasked_insert_false_with_regime
     (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
     tagEnvConsistentWithRegimeMasked masked
       (tagEnv.insert k ⟨false, deps⟩)
-      { R with map := R.map.insert k false } := by
+      (R.insert k false) := by
   intro k' deps' hget
   by_cases hkk' : k' = k
   · subst hkk'
@@ -386,7 +386,7 @@ lemma invalidateRegimeDeps_preserves_true
     exact h k deps hkeep
   -- Now show the invalidated regime still maps `k ↦ true`.
   unfold invalidateRegimeDeps
-  -- `lookup?` is just `R.map.get? k`, so `hkR : R.map.get? k = some true` directly.
+  -- `lookup?` is just `R.get? k`, so `hkR : R.get? k = some true` directly.
   dsimp [Regime.lookup?] at hkR
   -- We need to show the filtered map still has `k ↦ true`.
   dsimp only [invalidateTagDeps]
@@ -397,12 +397,12 @@ lemma invalidateRegimeDeps_preserves_true
     rw [← Std.ExtTreeMap.get?_eq_getElem?, hget]
     rfl
   -- Use `getElem?_filter'` for the map filter.
-  have hmap : (R.map.filter (fun k _ => (invalidateTagDeps tagEnv ls).contains k)).get? k = some true := by
+  have hmap : (R.filter (fun k _ => (invalidateTagDeps tagEnv ls).contains k)).get? k = some true := by
     -- Filter keeps `k` because `hcontains` is true.
     -- `get?` on the filtered map is `Option.filter` on the original get?.
     simp [Std.ExtTreeMap.get?_eq_getElem?, hcontains, hkR]
   -- Finally, discharge the `lookup?` of the new regime.
-  -- `Regime.lookup?` is just `.map.get? k`, so simp reduces to the filtered map lookup.
+  -- `Regime.lookup?` is just `.get? k`, so simp reduces to the filtered map lookup.
   simp [Regime.lookup?]
   exact ⟨hkR, hcontains⟩
 
@@ -437,7 +437,7 @@ private lemma invalidateRegimeDeps_preserves_true_masked
         rw [← Std.ExtTreeMap.get?_eq_getElem?, hget]
         rfl
       have hmap :
-          (R.map.filter (fun k _ => (invalidateTagDeps tagEnv ls).contains k)).get? k = some true := by
+          (R.filter (fun k _ => (invalidateTagDeps tagEnv ls).contains k)).get? k = some true := by
         simp [Std.ExtTreeMap.get?_eq_getElem?, hcontains, hkR]
       simp [Regime.lookup?]
       exact ⟨hkR, hcontains⟩
@@ -500,34 +500,34 @@ lemma tagEnvConsistentWithRegime_join
       have hkR2 : R₂.lookup? k = some true := h₂ k deps2 h2
       -- Now compute `joinRegimes R₁ R₂`.lookup? k.
       unfold joinRegimes
-      -- Extract the underlying map lookups (lookup? is just R.map.get? k).
-      have hkmap1 : R₁.map.get? k = some true := by
+      -- Extract the underlying map lookups (lookup? is just R.get? k).
+      have hkmap1 : R₁.get? k = some true := by
         dsimp [Regime.lookup?] at hkR1
         exact hkR1
-      have hkmap2 : R₂.map.get? k = some true := by
+      have hkmap2 : R₂.get? k = some true := by
         dsimp [Regime.lookup?] at hkR2
         exact hkR2
       -- Show the joined map contains `k ↦ true`.
       -- Use the same approach as for TagEnv
-      have hkjoined : (combineExtTreeMaps R₁.map R₂.map (fun _ ob1 ob2 =>
+      have hkjoined : (combineExtTreeMaps R₁ R₂ (fun _ ob1 ob2 =>
         match ob1, ob2 with
         | some b1, some b2 => if b1 == b2 then some b1 else none
         | _, _ => none)).get? k = some true := by
         simp only [combineExtTreeMaps]
-        have hk_mem_regime : k ∈ (R₁.map.keys ++ R₂.map.keys).eraseDups := by
-          have hk_contains : R₁.map.contains k := by
+        have hk_mem_regime : k ∈ (R₁.keys ++ R₂.keys).eraseDups := by
+          have hk_contains : R₁.contains k := by
             rw [Std.ExtTreeMap.contains_eq_isSome_getElem?, ← Std.ExtTreeMap.get?_eq_getElem?, hkmap1]
             rfl
-          have hk_in_keys : k ∈ R₁.map.keys := ExtTreeMap.mem_keys.2 hk_contains
-          have hmem_append : k ∈ R₁.map.keys ++ R₂.map.keys := List.mem_append_left R₂.map.keys hk_in_keys
+          have hk_in_keys : k ∈ R₁.keys := ExtTreeMap.mem_keys.2 hk_contains
+          have hmem_append : k ∈ R₁.keys ++ R₂.keys := List.mem_append_left R₂.keys hk_in_keys
           exact List.mem_eraseDups_of_mem hmem_append
-        have hgo_regime := combineExtTreeMaps_go_get_mem R₁.map R₂.map
+        have hgo_regime := combineExtTreeMaps_go_get_mem R₁ R₂
                            (fun _ ob1 ob2 => match ob1, ob2 with
                              | some b1, some b2 => if b1 == b2 then some b1 else none
                              | _, _ => none)
-                           (R₁.map.keys ++ R₂.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem_regime
-        -- hgo_regime: (combineExtTreeMaps.go ...)[k]? = match f k (R₁.map[k]?) (R₂.map[k]?) with ...
-        -- We know R₁.map.get? k = some true and R₂.map.get? k = some true
+                           (R₁.keys ++ R₂.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem_regime
+        -- hgo_regime: (combineExtTreeMaps.go ...)[k]? = match f k (R₁[k]?) (R₂[k]?) with ...
+        -- We know R₁.get? k = some true and R₂.get? k = some true
         -- So f k (some true) (some true) = if (true == true) then some true else none = some true
         simp only [← Std.ExtTreeMap.get?_eq_getElem?, hkmap1, hkmap2] at hgo_regime
         -- Now the match simplifies: true == true = true, so we get some true
@@ -596,32 +596,32 @@ private lemma joinRegimes_lookup_true_of_both_true
     (hkR1 : R₁.lookup? k = some true)
     (hkR2 : R₂.lookup? k = some true) :
     (joinRegimes R₁ R₂).lookup? k = some true := by
-  -- Extract the underlying map lookups (lookup? is just R.map.get? k).
-  have hkmap1 : R₁.map.get? k = some true := by
+  -- Extract the underlying map lookups (lookup? is just R.get? k).
+  have hkmap1 : R₁.get? k = some true := by
     dsimp [Regime.lookup?] at hkR1
     exact hkR1
-  have hkmap2 : R₂.map.get? k = some true := by
+  have hkmap2 : R₂.get? k = some true := by
     dsimp [Regime.lookup?] at hkR2
     exact hkR2
   have hkjoined :
-      (combineExtTreeMaps R₁.map R₂.map
+      (combineExtTreeMaps R₁ R₂
         (fun _ ob1 ob2 =>
           match ob1, ob2 with
           | some b1, some b2 => if b1 = b2 then some b1 else none
           | _, _ => none)).get? k = some true := by
     simp only [combineExtTreeMaps]
-    have hk_mem_regime : k ∈ (R₁.map.keys ++ R₂.map.keys).eraseDups := by
-      have hk_contains : R₁.map.contains k := by
+    have hk_mem_regime : k ∈ (R₁.keys ++ R₂.keys).eraseDups := by
+      have hk_contains : R₁.contains k := by
         rw [Std.ExtTreeMap.contains_eq_isSome_getElem?, ← Std.ExtTreeMap.get?_eq_getElem?, hkmap1]
         rfl
-      have hk_in_keys : k ∈ R₁.map.keys := ExtTreeMap.mem_keys.2 hk_contains
-      exact List.mem_eraseDups_of_mem (List.mem_append_left R₂.map.keys hk_in_keys)
-    have hgo_regime := combineExtTreeMaps_go_get_mem R₁.map R₂.map
+      have hk_in_keys : k ∈ R₁.keys := ExtTreeMap.mem_keys.2 hk_contains
+      exact List.mem_eraseDups_of_mem (List.mem_append_left R₂.keys hk_in_keys)
+    have hgo_regime := combineExtTreeMaps_go_get_mem R₁ R₂
       (fun _ ob1 ob2 =>
         match ob1, ob2 with
         | some b1, some b2 => if b1 = b2 then some b1 else none
         | _, _ => none)
-      (R₁.map.keys ++ R₂.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem_regime
+      (R₁.keys ++ R₂.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem_regime
     simp only [← Std.ExtTreeMap.get?_eq_getElem?, hkmap1, hkmap2] at hgo_regime
     simp only [↓reduceIte] at hgo_regime
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using hgo_regime
@@ -6614,8 +6614,8 @@ private lemma monotoneStep_lookup_not_true_local
 private lemma regime_lookup_insert_false_not_true_local
     {R : Regime} {k k' : Tag}
     (hnot : R.lookup? k' ≠ some true) :
-    ({ R with map := R.map.insert k false }).lookup? k' ≠ some true := by
-  have hnot' : R.map.get? k' ≠ some true := by
+    Regime.lookup? (R.insert k false) k' ≠ some true := by
+  have hnot' : R.get? k' ≠ some true := by
     simpa [Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?] using hnot
   by_cases hEq : k' = k
   · subst hEq
@@ -6952,7 +6952,7 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
             · rcases h3 with ⟨kGuard, deps, _, _, res1, htc1, _, res2, htc2, res3, htc3, _, htag, _, _, _, _, _⟩
               set ctxFalse' : TypeContext :=
                 { pc := joinPoison ctx.pc res1.qualType.poison,
-                  regime := { ctx.regime with map := ctx.regime.map.insert kGuard false },
+                  regime := ctx.regime.insert kGuard false,
                   memEnv := ctx.memEnv, varEnv := ctx.varEnv,
                   tagEnv := ctx.tagEnv.insert kGuard ⟨false, deps⟩,
                   nextLoc := res2.nextLoc', nextTag := res2.nextTag', pureCtx := ctx.pureCtx }
@@ -7360,12 +7360,12 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                 { ctx with
                   tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
                   pc := branchPc
-                  regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+                  regime := ctx.regime.insert k true }
               let ctxFalse : TypeContext :=
                 { ctx with
                   tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩
                   pc := branchPc
-                  regime := { ctx.regime with map := ctx.regime.map.insert k false } }
+                  regime := ctx.regime.insert k false }
               have htag_masked' : tagEnvConsistentWithRegimeMasked masked' ctx.tagEnv ctx.regime := by
                 exact tagEnvConsistentWithRegimeMasked_weaken masked masked' ctx.tagEnv ctx.regime
                   (fun t ht => Or.inl ht) hreg
@@ -9098,7 +9098,7 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                       { ctx with
                         tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
                         pc := branchPc
-                        regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+                        regime := ctx.regime.insert k true }
                     have htc2' : typecheck .ioFree ctxTrue e2 (fuel' - 1) = .ok res2 := by
                       simpa [typecheck, ctxTrue, branchPc] using htc2
                     have hwf_true : wfTagMeaningCtx tm ctxTrue := by
@@ -9111,7 +9111,7 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                       { ctx with
                         tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩
                         pc := branchPc
-                        regime := { ctx.regime with map := ctx.regime.map.insert k false } }
+                        regime := ctx.regime.insert k false }
                     have htc3' : typecheck .ioFree { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' } e3 (fuel' - 1) = .ok res3 := by
                       simpa [typecheck, ctxFalse, branchPc] using htc3_raw
                     have hwf_false : wfTagMeaningCtx tm { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' } := by
@@ -9483,7 +9483,7 @@ private lemma monotoneStep_lookup_not_true
 
 lemma regime_lookup_insert_ne {R : Regime} {k k' : Tag} {b : Bool}
     (hneq : k' ≠ k) :
-    ({ R with map := R.map.insert k b }).lookup? k' = R.lookup? k' := by
+    Regime.lookup? (R.insert k b) k' = R.lookup? k' := by
   unfold Regime.lookup?
   have hneq' : k ≠ k' := by
     intro hkEq
@@ -9493,7 +9493,7 @@ lemma regime_lookup_insert_ne {R : Regime} {k k' : Tag} {b : Bool}
 private lemma regime_lookup_insert_false_not_true
     {R : Regime} {k k' : Tag}
     (hnot : R.lookup? k' ≠ some true) :
-    ({ R with map := R.map.insert k false }).lookup? k' ≠ some true := by
+    Regime.lookup? (R.insert k false) k' ≠ some true := by
   by_cases hEq : k' = k
   · subst hEq
     simp [Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?]
@@ -9504,7 +9504,7 @@ private lemma regime_lookup_insert_true_not_true_of_ne
     {R : Regime} {k k' : Tag}
     (hneq : k' ≠ k)
     (hnot : R.lookup? k' ≠ some true) :
-    ({ R with map := R.map.insert k true }).lookup? k' ≠ some true := by
+    Regime.lookup? (R.insert k true) k' ≠ some true := by
   rw [regime_lookup_insert_ne hneq]
   exact hnot
 
@@ -11024,12 +11024,12 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               { ctx with
                 tagEnv := ctx.tagEnv.insert kMode3 ⟨true, deps⟩
                 pc := branchPc
-                regime := { ctx.regime with map := ctx.regime.map.insert kMode3 true } }
+                regime := ctx.regime.insert kMode3 true }
             let ctxFalse : TypeContext :=
               { ctx with
                 tagEnv := ctx.tagEnv.insert kMode3 ⟨false, deps⟩
                 pc := branchPc
-                regime := { ctx.regime with map := ctx.regime.map.insert kMode3 false } }
+                regime := ctx.regime.insert kMode3 false }
             let ctxFalse' : TypeContext := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
             have hpcBranch : branchPc = true := by
               simp [branchPc, hpc, joinPoison]

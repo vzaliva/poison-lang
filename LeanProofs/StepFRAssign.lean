@@ -149,7 +149,7 @@ private lemma invalidateRegimeDeps_preserves_lookup_of_surviving_tag
   unfold invalidateRegimeDeps
   unfold invalidateTagDeps at hkeep
   have hmap' :
-      (R.map.filter (fun k _ => (env.filter (fun _ tv => !tv.deps.any ls.contains)).contains k)).get? k = some b := by
+      (R.filter (fun k _ => (env.filter (fun _ tv => !tv.deps.any ls.contains)).contains k)).get? k = some b := by
     rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter']
     rw [← Std.ExtTreeMap.get?_eq_getElem?, hR]
     simp [hkeep]
@@ -185,8 +185,8 @@ private lemma invalidateRegimeDeps_lookup_eq_lookup_of_surviving_tag
   | none =>
       unfold invalidateRegimeDeps Regime.lookup? at ⊢
       unfold Regime.lookup? at hR
-      have hmapNone : R.map.get? k = none := hR
-      have : (R.map.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k = none := by
+      have hmapNone : R.get? k = none := hR
+      have : (R.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k = none := by
         rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter']
         rw [← Std.ExtTreeMap.get?_eq_getElem?, hmapNone]
         simp
@@ -202,15 +202,15 @@ private lemma invalidateRegimeDeps_survives_of_lookup_ne_none
     (hlookup : (invalidateRegimeDeps R env ls).lookup? k ≠ none) :
     (invalidateTagDeps env ls).contains k = true := by
   unfold invalidateRegimeDeps Regime.lookup? at hlookup
-  have hmap : (R.map.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k ≠ none := by
+  have hmap : (R.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k ≠ none := by
     simpa using hlookup
   by_contra hkeep
   have hmapEq :
-      (R.map.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k =
-        Option.filter (fun _ => (invalidateTagDeps env ls).contains k) (R.map.get? k) := by
+      (R.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k =
+        Option.filter (fun _ => (invalidateTagDeps env ls).contains k) (R.get? k) := by
     rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter']
     rw [← Std.ExtTreeMap.get?_eq_getElem?]
-  have : (R.map.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k = none := by
+  have : (R.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k = none := by
     rw [hmapEq]
     simp [hkeep]
   exact hmap this
@@ -702,7 +702,7 @@ private lemma typecheckIf_ioFree_ok_pred_noPred
                           { ctx with
                             tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩
                             pc := branchPc
-                            regime := { ctx.regime with map := ctx.regime.map.insert k true } }
+                            regime := ctx.regime.insert k true }
                         cases htc2 : typecheckExpr .ioFree ctxTrue e2 fuel' with
                         | error err =>
                             rw [htc2] at htc
@@ -717,7 +717,7 @@ private lemma typecheckIf_ioFree_ok_pred_noPred
                                   { ctx with
                                     tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩
                                     pc := branchPc
-                                    regime := { ctx.regime with map := ctx.regime.map.insert k false } }
+                                    regime := ctx.regime.insert k false }
                                 let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
                                 cases htc3 : typecheckExpr .ioFree ctxFalse' e3 fuel' with
                                 | error err =>

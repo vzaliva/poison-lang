@@ -142,37 +142,31 @@ def invalidateTagDeps (env : TagEnv) (ls : LocSet) : TagEnv :=
     not <| tv.deps.any ls.contains)
 
 /-- Regime: partial mapping from guard tags to their truth values. -/
-structure Regime where
-  map : ExtTreeMap Tag Bool
+abbrev Regime := ExtTreeMap Tag Bool
 
 namespace Regime
 
 /-- Lookup a tag in the regime map. -/
 def lookup? (R : Regime) (k : Tag) : Option Bool :=
-  R.map.get? k
+  R.get? k
 
 end Regime
 
 /-- Empty regime: all tags return none (regime-agnostic typing) -/
-def emptyRegime : Regime := {
-  map := {}
-}
+def emptyRegime : Regime := {}
 
 /-- Invalidate regime entries for tags whose dependencies intersect written locations
     (mirrors invalidateTagDeps behaviour) -/
 def invalidateRegimeDeps (R : Regime) (env : TagEnv) (ls : LocSet) : Regime :=
   let invalidated := env.filter (fun _ tv => not <| tv.deps.any ls.contains)
-  let invalidatedMap := R.map.filter (fun k _ => invalidated.contains k)
-  { map := invalidatedMap }
+  R.filter (fun k _ => invalidated.contains k)
 
 /-- Join two regimes (conservative intersection: keep only entries that agree) -/
 def joinRegimes (R1 R2 : Regime) : Regime :=
-  let joinedMap :=
-    combineExtTreeMaps R1.map R2.map (fun _ ob1 ob2 =>
-      match ob1, ob2 with
-      | some b1, some b2 => if b1 == b2 then some b1 else none
-      | _, _ => none)
-  { map := joinedMap }
+  combineExtTreeMaps R1 R2 (fun _ ob1 ob2 =>
+    match ob1, ob2 with
+    | some b1, some b2 => if b1 == b2 then some b1 else none
+    | _, _ => none)
 
 namespace Regime
 
@@ -1644,8 +1638,8 @@ def typecheckIf (mode : EvalMode) (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : 
         -- Branch pc is poisoned by guard poison
         -- Sync R.map with L (Issue #128): insert k |-> true/false when branching
         let branchPc := joinPoison ctx.pc p1
-        let regimeTrue := { ctx.regime with map := ctx.regime.map.insert k true }
-        let regimeFalse := { ctx.regime with map := ctx.regime.map.insert k false }
+        let regimeTrue := ctx.regime.insert k true
+        let regimeFalse := ctx.regime.insert k false
         let ctxTruePoisoned := { ctxTrue with pc := branchPc, regime := regimeTrue }
         let ctxFalsePoisoned := { ctxFalse with pc := branchPc, regime := regimeFalse }
 

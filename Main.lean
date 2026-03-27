@@ -129,7 +129,7 @@ def parseRegimeSpec (spec : String) : Except String Regime := do
     | _ => throw s!"Invalid --regime assignment: {trimmed}"
   if not hasEntry then
     throw "Invalid --regime: no assignments provided"
-  return { map := map }
+  return map
 
 partial def parseArgs (args : List String) (opts : CliOptions := {}) : Except String CliOptions :=
   match args with

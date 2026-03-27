@@ -3453,14 +3453,14 @@ lemma stepFRSingleRun_ite_mode3_maskedReg
           let ctxTrue := { ctxᵢ with
             tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩
             pc := branchPc
-            regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k true } }
+            regime := ctxᵢ.regime.insert k true }
           typecheckExpr .ioFree ctxTrue e2 fuel' = .ok res2)
   (res3 : TypeResult)
   (htc3 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
           let ctxFalse := { ctxᵢ with
             tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩
             pc := branchPc
-            regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k false } }
+            regime := ctxᵢ.regime.insert k false }
           let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
           typecheckExpr .ioFree ctxFalse' e3 fuel' = .ok res3)
   (hmemEnv : res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv')
@@ -3493,13 +3493,13 @@ private lemma stepFR_ite_mode3
           let ctxTrue := { ctxᵢ with
             tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩
             pc := branchPc
-            regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k true } }
+            regime := ctxᵢ.regime.insert k true }
           typecheckExpr .ioFree ctxTrue e2 fuel' = .ok res2)
   (htc3 : let branchPc := joinPoison ctxᵢ.pc res1.qualType.poison
           let ctxFalse := { ctxᵢ with
             tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩
             pc := branchPc
-            regime := { ctxᵢ.regime with map := ctxᵢ.regime.map.insert k false } }
+            regime := ctxᵢ.regime.insert k false }
           let ctxFalse' := { ctxFalse with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
           typecheckExpr .ioFree ctxFalse' e3 fuel' = .ok res3)
   (hmemEnv : res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv')
