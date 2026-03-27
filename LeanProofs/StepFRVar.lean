@@ -25,7 +25,6 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ ρ θ →
       regimeConsistentWithCtx ctx →
-      regimeBounded ctx.regime →
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
@@ -515,7 +514,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_var_parametric
       typecheckVar_preserves_nextLoc ctxᵢ name res htc',
       typecheckVar_preserves_nextTag ctxᵢ name res htc',
       typecheckVar_preserves_regime ctxᵢ name res htc']
-  intro _hpredlaws _hwfTm μ ρ θ cf o hθwf _hwf hric _hreg _hRbound hctxCons a pm hwfcfg ht _hpc
+  intro _hpredlaws _hwfTm μ ρ θ cf o hθwf _hwf hric _hreg hctxCons a pm hwfcfg ht _hpc
   rcases
     terminatesTo_var_inv' mode name
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
@@ -605,7 +604,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
       typecheckVar_preserves_nextLoc ctxᵢ name res htc',
       typecheckVar_preserves_nextTag ctxᵢ name res htc',
       typecheckVar_preserves_regime ctxᵢ name res htc']
-  intro _hpredlaws _hwfTm μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none _hRbound hctxCons a pm hwfcfg ht _hpc
+  intro _hpredlaws _hwfTm μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none hctxCons a pm hwfcfg ht _hpc
   rcases
     terminatesTo_var_inv' mode name
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
@@ -658,8 +657,8 @@ lemma stepFR_var
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck .ioFree ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
   StepFR mode ctxᵢ (Expr.var name) res predSat tm := by
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv ctxᵢ.regime := hreg.1
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv ctxᵢ.regime := hreg
   -- Use inversion lemma to extract config and value
   have hinv₀ := terminatesTo_var_inv' mode name
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀

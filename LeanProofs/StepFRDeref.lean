@@ -25,7 +25,6 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ ρ θ →
       regimeConsistentWithCtx ctx →
-      regimeBounded ctx.regime →
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
@@ -599,7 +598,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_deref_parametric
     simpa [Nat.succ_sub_one] using htc1
   have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   have hstruct := terminatesTo_deref_inv' e
@@ -607,7 +606,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_deref_parametric
   rcases hstruct with ⟨cfg', a', n, ht_e, hlookup, ho, hmem, hvar, _hnext, _hpm, _hpm_e⟩
   rcases
     hIH hpredlaws hwfTm μ ρ θ cfg' (Value.loc a')
-      hθwf hwf hric hregCtx hRbound hcwr a pm hwfcfg ht_e hpc
+      hθwf hwf hric hregCtx hcwr a pm hwfcfg ht_e hpc
     with ⟨θ', hθext, hvloc, hric', hctxCons', _hvalc', hpres'⟩
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
     simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime]
@@ -720,7 +719,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
     simpa [Nat.succ_sub_one] using htc1
   have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hRbound hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   have hstruct := terminatesTo_deref_inv' e
@@ -728,7 +727,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
   rcases hstruct with ⟨cfg', a', n, ht_e, hlookup, ho, hmem, hvar, _hnext, _hpm, _hpm_e⟩
   rcases
     hIH hpredlaws hwfTm μ ρ θ cfg' (Value.loc a')
-      hθwf hwf hric hregCtx hmasked_none hRbound hcwr a pm hwfcfg ht_e hpc
+      hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht_e hpc
     with ⟨θ', hθext, hvloc, hric', hctxCons', _hvalc', hpres'⟩
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
     simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime]
@@ -810,7 +809,7 @@ lemma stepFR_deref
     simpa [Nat.succ_sub_one] using htc1
   have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   -- Invert deref evaluation (world-free)
@@ -823,7 +822,7 @@ lemma stepFR_deref
   -- Apply IH for sub-expression
   have hstep_e :=
     hIH hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.loc a₀') (Value.loc a₁')
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
   rcases hstep_e with ⟨hresTm_e, hstep_e⟩
   rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, _hvtyp₀, _hvtyp₁, _hTm', hwf', hwfcfg₀', hwfcfg₁', hric₀', hric₁', hreg', hcwr₀', hcwr₁', hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩
   -- Post-context is unchanged by deref (only result type changes)
@@ -1683,7 +1682,7 @@ lemma stepFR_deref
                                   simpa [ctxAfter] using htagEnv
                                 -- hreg' uses output regime (ctxAfter ctxᵢ res1).regime
                                 have hreg_k' : (ctxAfter ctxᵢ res1).regime.lookup? k = some true :=
-                                  (hreg'.1 k deps htagEnv')
+                                  (hreg' k deps htagEnv')
                                 have hreg_k : (ctxAfter ctxᵢ res1).regime.lookup? k = some true := hreg_k'
                                 have hguard : predGuardTag (v_3.2.getD Predicate.noPred) = some k := by
                                   simp [hpred]
@@ -1749,7 +1748,7 @@ lemma stepFR_deref
                                   simpa [ctxAfter] using htagEnv
                                 -- hreg' uses output regime (ctxAfter ctxᵢ res1).regime
                                 have hreg_k' : (ctxAfter ctxᵢ res1).regime.lookup? k = some true :=
-                                  (hreg'.1 k deps htagEnv')
+                                  (hreg' k deps htagEnv')
                                 have hreg_k : (ctxAfter ctxᵢ res1).regime.lookup? k = some true := hreg_k'
                                 have hguard : predGuardTag (v_3.2.getD Predicate.noPred) = some k := by
                                   simp [hpred, predGuardTag]

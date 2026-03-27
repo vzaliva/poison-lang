@@ -1055,13 +1055,9 @@ Outputs consist of a final memory $\mu_f$ and a program return value $v$. Observ
 Let $K_S$ be the finite set of guard tags that occur in predicates attached to
 entries of $S$.
 
-A \emph{guard regime} is a bounded partial mapping $\mathcal{R} : \text{Tag} \rightharpoonup
-\{\text{true},\text{false}\}$ with an associated bound $b \in \text{Tag}$. The regime
-is defined exactly on $K_S$ (assigning a truth value to each tag in $K_S$) and satisfies
-\emph{boundedness}: for all tags $k \geq b$, $\mathcal{R}(k)$ is undefined. The bound $b$ is set
-to the initial tag supply of the typing context, ensuring that regimes classify only
-input/spec tags whilst excluding fresh internal tags introduced during typing (which
-are allocated from the tag supply and thus have tags $\geq b$).
+A \emph{guard regime} is a partial mapping $\mathcal{R} : \text{Tag} \rightharpoonup
+\{\text{true},\text{false}\}$ defined exactly on $K_S$ (assigning a truth value to each
+tag in $K_S$).
 
 For a single run, we say that $\mathcal{R}$ is \emph{consistent} with the critical inputs when:
 \begin{itemize}
@@ -1108,7 +1104,7 @@ instantiated).
 \begin{definition}[Fault Robustness Property]
 A program $e$ satisfies fault robustness with respect to the critical-input specification $S$, an observable specification $\text{obs}$, and an abstract predicate satisfaction relation, if for each guard regime $\mathcal{R}$ and any two runs with initial states $(\mu_1,\rho_1,\theta_1)$ and $(\mu_2,\rho_2,\theta_2)$:
 \begin{itemize}
-    \item \textbf{Well-formedness of the regime:} $\mathcal{R}$ is well-formed for $S$ and bounded by the initial tag supply, so it classifies only tags that occur in $S$.
+    \item \textbf{Well-formedness of the regime:} $\mathcal{R}$ is well-formed for $S$, i.e.\ it is defined exactly on the tags that occur in $S$.
     \item \textbf{Well-formed realisations and configurations:} Both realisation maps are well-formed, and both initial runtime configurations are well-formed.
     \item \textbf{Input conformance:} The two initial states conform to the specification $S$ (critical variables match the specified types, and any critical logical location realised in a run is backed by memory).
     \item \textbf{Context instantiation:} The initial runtime states instantiate the typing context used to check $e$.

@@ -29,7 +29,6 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ ρ θ →
       regimeConsistentWithCtx ctx →
-      regimeBounded ctx.regime →
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
@@ -234,19 +233,11 @@ private lemma join_transport_wfTypeContext
 private lemma join_transport_regimeConsistentWithCtx
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (_h_join : joinTypeResults ctx first rest = .ok res)
-  (h_regime_bound_le : res.regime'.bound ≤ first.regime'.bound)
   (h_tag_join : tagEnvConsistentWithRegime (ctxAfter ctx res).tagEnv (ctxAfter ctx res).regime)
-  (h_first : regimeConsistentWithCtx (ctxAfter ctx first)) :
+  (_h_first : regimeConsistentWithCtx (ctxAfter ctx first)) :
   regimeConsistentWithCtx (ctxAfter ctx res) := by
   simp only [regimeConsistentWithCtx, ctxAfter]
-  constructor
-  · exact h_tag_join
-  · have h_first_bound := h_first.2
-    rw [joinTypeResults_nextTag_eq_max _ _ _ _ _h_join]
-    have hle : first.nextTag' ≤ List.max (first.nextTag' :: rest.map TypeResult.nextTag') (by intro h; cases h) := by
-      apply List.le_max_of_mem
-      simp
-    exact Nat.le_trans h_regime_bound_le (Nat.le_trans h_first_bound hle)
+  exact h_tag_join
 
 private lemma join_transport_valueConsistentWithRegime
   (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -2350,14 +2341,14 @@ private lemma join_transport_consistentWithRegime
   constructor
   · intro l qt k hlookup hguard hR'def
     have hlookup_first := h_mem_guarded_from_first l qt k hlookup hguard hR'def
-    have hRdef : first.regime'.lookup? k ≠ none := h_regime_mono.2.2 k hR'def
+    have hRdef : first.regime'.lookup? k ≠ none := h_regime_mono.2 k hR'def
     cases hk' : res.regime'.lookup? k with
     | none => exact absurd hk' hR'def
     | some b =>
         cases hk : first.regime'.lookup? k with
         | none => exact absurd hk hRdef
         | some b' =>
-            have h_eq := h_regime_mono.2.1 k b' hk
+            have h_eq := h_regime_mono.1 k b' hk
             cases h_eq with
             | inl heq =>
                 have hb : b' = b := Option.some.inj (heq.symm.trans hk')
@@ -2366,14 +2357,14 @@ private lemma join_transport_consistentWithRegime
             | inr h_none => simp [h_none] at hk'
   constructor
   · intro x qt k hlookup hguard hR'def
-    have hRdef : first.regime'.lookup? k ≠ none := h_regime_mono.2.2 k hR'def
+    have hRdef : first.regime'.lookup? k ≠ none := h_regime_mono.2 k hR'def
     cases hk' : res.regime'.lookup? k with
     | none => exact absurd hk' hR'def
     | some b =>
         cases hk : first.regime'.lookup? k with
         | none => exact absurd hk hRdef
         | some b' =>
-            have h_eq := h_regime_mono.2.1 k b' hk
+            have h_eq := h_regime_mono.1 k b' hk
             cases h_eq with
             | inl heq =>
                 have hb : b' = b := Option.some.inj (heq.symm.trans hk')
@@ -7263,7 +7254,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
   (h_join : joinTypeResults ctxᵢ first rest = .ok res) :
   StepFRSingleRunFinalCleanPcTrueWithCtxValCons
     CtxCons ValCons .ioFree ctxᵢ (Expr.app e1 e2) res predSat tm := by
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hRbound hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hcwr a pm hwfcfg ht hpc
   let cinit : Config := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
     e2 ctxᵢ hwfTm result2 htc2'
@@ -7273,7 +7264,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
       ⟨c₂', v₂, c₁, x, body, env, evalCfg, ht_e2, ht_e1, _hpm1, ht_body, heq_cfg, hpm_e2, _⟩
     rcases
       hIH_e2 hpredlaws hwfTm μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hRbound hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hTm2 : wfTagMeaningCtx tm (ctxAfter ctxᵢ result2) :=
@@ -7285,8 +7276,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
       typecheckExpr_preserves_regimeConsistentWithCtx ctxᵢ e2 fuel' result2 htagR htc2'
     have hmono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' :=
       regime_monotone ctxᵢ e2 fuel' result2 htc2'
-    have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-      simpa [ctxAfter] using regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound hmono2
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hpm2 : c₂'.pureMode = pm := by
@@ -7298,7 +7287,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
       e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
-        hθ2wf hwf2 hric2 htagR2 hRbound2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hcwr2 c₂'.nextAddr pm
         ((wfConfig_preserved .ioFree e2 _ c₂' _ ht_e2 hwfcfg).1) (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1⟩
     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθ2wf
@@ -7311,9 +7300,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
       typecheckExpr_preserves_regimeConsistentWithCtx (ctxAfter ctxᵢ result2) e1 fuel' result1 htagR2 htc1'
     have hmono1 : Regime.monotoneStep (ctxAfter ctxᵢ result2).regime result1.regime' :=
       regime_monotone (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
-    have hRbound1 : regimeBounded (ctxAfter (ctxAfter ctxᵢ result2) result1).regime := by
-      simpa [ctxAfter] using
-        regimeBounded_of_monotoneStep (ctxAfter ctxᵢ result2).regime result1.regime' hRbound2 hmono1
     have hv₁_arrow : valueHasETyp θ1 (Value.closure x body env) (ETyp.arrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
     cases hv₁_arrow with
@@ -7410,8 +7396,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
         simpa [runtimeInstantiatesCtx, bodyCtx, ctxCapBase, ctxAfter] using hric_body'
       have htagR_body : regimeConsistentWithCtx bodyCtx := by
         simpa [bodyCtx, ctxAfter, regimeConsistentWithCtx] using htagR1
-      have hRbound_body : regimeBounded bodyCtx.regime := by
-        simpa [bodyCtx, ctxAfter] using hRbound1
       have hwfcfg_body_init :
           wfConfig
             { memory := c₁.memory
@@ -7444,7 +7428,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
       rcases
         hSingle_body hpredlaws hTmBody
           c₁.memory (env.update x v₂) θ1 evalCfg o
-          hθ1wf hwfBody hric_body htagR_body hRbound_body hcwr_body
+          hθ1wf hwfBody hric_body htagR_body hcwr_body
           c₁.nextAddr false hwfcfg_body_init ht_body hpc_body
         with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body⟩
       have hθext : wfExtendsMap θ θ_body :=
@@ -7472,12 +7456,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
           intro hnone; rw [hk_src] at hnone; contradiction
         have hRdef_res1 :
             (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-          hres1_to_firstA_mono.2.2 k hRdef_src
+          hres1_to_firstA_mono.2 k hRdef_src
         cases hk_res1 :
             (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
         | none => exact False.elim (hRdef_res1 hk_res1)
         | some b1 =>
-            rcases hres1_to_firstA_mono.2.1 k b1 hk_res1 with hk_src' | hnone_src
+            rcases hres1_to_firstA_mono.1 k b1 hk_res1 with hk_src' | hnone_src
             · have : some b1 = some b := hk_src'.symm.trans hk_src
               simpa using Option.some.inj this
             · rw [hnone_src] at hk_src
@@ -7621,7 +7605,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
       ⟨c₂', v₂, c₁, x, body, env, _evalCfg, ht_e2, ht_e1, _htoPExpr, _ht_body, _hcf, hpm_e2, _⟩
     rcases
       hIH_e2 hpredlaws hwfTm μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hRbound hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hTm2 : wfTagMeaningCtx tm (ctxAfter ctxᵢ result2) :=
@@ -7633,8 +7617,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
       typecheckExpr_preserves_regimeConsistentWithCtx ctxᵢ e2 fuel' result2 htagR htc2'
     have hmono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' :=
       regime_monotone ctxᵢ e2 fuel' result2 htc2'
-    have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-      simpa [ctxAfter] using regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound hmono2
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hpm2 : c₂'.pureMode = pm := by
@@ -7648,7 +7630,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
       e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.peClosure x body env)
-        hθ2wf hwf2 hric2 htagR2 hRbound2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1⟩
     rcases valueHasETyp_peClosure_etyp_parrow_inv hv₁_typed with
@@ -7688,7 +7670,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
   (h_join : joinTypeResults ctxᵢ first rest = .ok res) :
   StepFRSingleRunFinalCleanPcTrueWithCtxValCons
     CtxCons ValCons .ioFree ctxᵢ (Expr.app e1 e2) res predSat tm := by
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hRbound hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hcwr a pm hwfcfg ht hpc
   let cinit : Config := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
     e2 ctxᵢ hwfTm result2 htc2'
@@ -7698,7 +7680,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
       ⟨c₂', v₂, c₁, x, body, env, _evalCfg, ht_e2, ht_e1, _hpm1, _ht_body, _hcf, hpm_e2, _⟩
     rcases
       hIH_e2 hpredlaws hwfTm μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hRbound hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hTm2 : wfTagMeaningCtx tm (ctxAfter ctxᵢ result2) :=
@@ -7710,8 +7692,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
       typecheckExpr_preserves_regimeConsistentWithCtx ctxᵢ e2 fuel' result2 htagR htc2'
     have hmono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' :=
       regime_monotone ctxᵢ e2 fuel' result2 htc2'
-    have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-      simpa [ctxAfter] using regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound hmono2
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hpm2 : c₂'.pureMode = pm := by
@@ -7725,7 +7705,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
       e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
-        hθ2wf hwf2 hric2 htagR2 hRbound2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1⟩
     rcases valueHasETyp_closure_etyp_arrow_inv hv₁_typed with
@@ -7736,7 +7716,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
       ⟨c₂', v₂, c₁, x, body, env, evalCfg, ht_e2, ht_e1, _htoPExpr_body, ht_body, hcf, hpm_e2, _⟩
     rcases
       hIH_e2 hpredlaws hwfTm μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hRbound hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hTm2 : wfTagMeaningCtx tm (ctxAfter ctxᵢ result2) :=
@@ -7748,8 +7728,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
       typecheckExpr_preserves_regimeConsistentWithCtx ctxᵢ e2 fuel' result2 htagR htc2'
     have hmono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' :=
       regime_monotone ctxᵢ e2 fuel' result2 htc2'
-    have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-      simpa [ctxAfter] using regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound hmono2
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hpm2 : c₂'.pureMode = pm := by
@@ -7763,7 +7741,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
       e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.peClosure x body env)
-        hθ2wf hwf2 hric2 htagR2 hRbound2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1⟩
     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθ2wf
@@ -7776,9 +7754,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
       typecheckExpr_preserves_regimeConsistentWithCtx (ctxAfter ctxᵢ result2) e1 fuel' result1 htagR2 htc1'
     have hmono1 : Regime.monotoneStep (ctxAfter ctxᵢ result2).regime result1.regime' :=
       regime_monotone (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
-    have hRbound1 : regimeBounded (ctxAfter (ctxAfter ctxᵢ result2) result1).regime := by
-      simpa [ctxAfter] using
-        regimeBounded_of_monotoneStep (ctxAfter ctxᵢ result2).regime result1.regime' hRbound2 hmono1
     have hv₁_parrow : valueHasETyp θ1 (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
     cases hv₁_parrow with
@@ -7882,8 +7857,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
         simpa [runtimeInstantiatesCtx, bodyCtx, ctxCapBase, ctxAfter] using hric_body'
       have htagR_body : regimeConsistentWithCtx bodyCtx := by
         simpa [bodyCtx, ctxAfter, regimeConsistentWithCtx] using htagR1
-      have hRbound_body : regimeBounded bodyCtx.regime := by
-        simpa [bodyCtx, ctxAfter] using hRbound1
       have hwfcfg1 : wfConfig cf := by
         simpa [hcf] using (wfConfig_preserved .ioFree e1 _ c₁ _ ht_e1 hwfcfg2).1
       have hwfcfg_body_init :
@@ -7921,7 +7894,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
       rcases
         hSingle_body hpredlaws hTmBody
           cf.memory (env.update x v₂) θ1 evalCfg o
-          hθ1wf hwfBody hric_body htagR_body hRbound_body hcwr_body
+          hθ1wf hwfBody hric_body htagR_body hcwr_body
           cf.nextAddr true hwfcfg_body_init ht_body' hpc_body
         with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body⟩
       have hθext : wfExtendsMap θ θ_body :=
@@ -7945,12 +7918,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
           intro hnone; rw [hk_src] at hnone; contradiction
         have hRdef_res1 :
             (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-          hres1_to_firstA_mono.2.2 k hRdef_src
+          hres1_to_firstA_mono.2 k hRdef_src
         cases hk_res1 :
             (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
         | none => exact False.elim (hRdef_res1 hk_res1)
         | some b1 =>
-            rcases hres1_to_firstA_mono.2.1 k b1 hk_res1 with hk_src' | hnone_src
+            rcases hres1_to_firstA_mono.1 k b1 hk_res1 with hk_src' | hnone_src
             · have : some b1 = some b := hk_src'.symm.trans hk_src
               simpa using Option.some.inj this
             · rw [hnone_src] at hk_src
@@ -8421,7 +8394,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (h_join : joinTypeResults ctxᵢ first rest = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked CtxCons ValCons .ioFree ctxᵢ (Expr.app e1 e2) res predSat tm := by
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
   let cinit : Config := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
     e2 ctxᵢ hwfTm result2 htc2'
@@ -8431,7 +8404,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       ⟨c₂', v₂, c₁, x, body, env, evalCfg, ht_e2, ht_e1, _hpm1, ht_body, heq_cfg, hpm_e2, _⟩
     rcases
       hIH_e2 hpredlaws hwfTm μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hTm2 : wfTagMeaningCtx tm (ctxAfter ctxᵢ result2) :=
@@ -8449,8 +8422,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
-    have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-      simpa [ctxAfter] using regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound hmono2
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hpm2 : c₂'.pureMode = pm := by
@@ -8462,7 +8433,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hRbound2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
         ((wfConfig_preserved .ioFree e2 _ c₂' _ ht_e2 hwfcfg).1) (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1⟩
     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθ2wf
@@ -8483,9 +8454,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := (ctxAfter ctxᵢ result2).regime) (R' := result1.regime')
           hmasked_none2 hmono1 k hk
-    have hRbound1 : regimeBounded (ctxAfter (ctxAfter ctxᵢ result2) result1).regime := by
-      simpa [ctxAfter] using
-        regimeBounded_of_monotoneStep (ctxAfter ctxᵢ result2).regime result1.regime' hRbound2 hmono1
     have hv₁_arrow : valueHasETyp θ1 (Value.closure x body env) (ETyp.arrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
     cases hv₁_arrow with
@@ -8585,8 +8553,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       have hmasked_none_body : ∀ k, masked k → bodyCtx.regime.lookup? k = none := by
         intro k hk
         simpa [bodyCtx, ctxAfter] using hmasked_none1 k hk
-      have hRbound_body : regimeBounded bodyCtx.regime := by
-        simpa [bodyCtx, ctxAfter] using hRbound1
       have hwfcfg_body_init :
           wfConfig
             { memory := c₁.memory
@@ -8619,7 +8585,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       rcases
         hSingle_body hpredlaws hTmBody
           c₁.memory (env.update x v₂) θ1 evalCfg o
-          hθ1wf hwfBody hric_body htagR_body hmasked_none_body hRbound_body hcwr_body
+          hθ1wf hwfBody hric_body htagR_body hmasked_none_body hcwr_body
           c₁.nextAddr false hwfcfg_body_init ht_body hpc_body
         with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body⟩
       have hθext : wfExtendsMap θ θ_body :=
@@ -8647,12 +8613,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           intro hnone; rw [hk_src] at hnone; contradiction
         have hRdef_res1 :
             (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-          hres1_to_firstA_mono.2.2 k hRdef_src
+          hres1_to_firstA_mono.2 k hRdef_src
         cases hk_res1 :
             (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
         | none => exact False.elim (hRdef_res1 hk_res1)
         | some b1 =>
-            rcases hres1_to_firstA_mono.2.1 k b1 hk_res1 with hk_src' | hnone_src
+            rcases hres1_to_firstA_mono.1 k b1 hk_res1 with hk_src' | hnone_src
             · have : some b1 = some b := hk_src'.symm.trans hk_src
               simpa using Option.some.inj this
             · rw [hnone_src] at hk_src
@@ -8796,7 +8762,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       ⟨c₂', v₂, c₁, x, body, env, _evalCfg, ht_e2, ht_e1, _htoPExpr, _ht_body, _hcf, hpm_e2, _⟩
     rcases
       hIH_e2 hpredlaws hwfTm μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hTm2 : wfTagMeaningCtx tm (ctxAfter ctxᵢ result2) :=
@@ -8814,8 +8780,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
-    have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-      simpa [ctxAfter] using regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound hmono2
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hpm2 : c₂'.pureMode = pm := by
@@ -8829,7 +8793,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.peClosure x body env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hRbound2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1⟩
     rcases valueHasETyp_peClosure_etyp_parrow_inv hv₁_typed with
@@ -8870,7 +8834,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   (h_join : joinTypeResults ctxᵢ first rest = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked CtxCons ValCons .ioFree ctxᵢ (Expr.app e1 e2) res predSat tm := by
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
   let cinit : Config := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
     e2 ctxᵢ hwfTm result2 htc2'
@@ -8880,7 +8844,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       ⟨c₂', v₂, c₁, x, body, env, _evalCfg, ht_e2, ht_e1, _hpm1, _ht_body, _heq_cfg, hpm_e2, _⟩
     rcases
       hIH_e2 hpredlaws hwfTm μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hTm2 : wfTagMeaningCtx tm (ctxAfter ctxᵢ result2) :=
@@ -8898,8 +8862,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
-    have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-      simpa [ctxAfter] using regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound hmono2
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hpm2 : c₂'.pureMode = pm := by
@@ -8913,7 +8875,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hRbound2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1⟩
     rcases valueHasETyp_closure_etyp_arrow_inv hv₁_typed with
@@ -8924,7 +8886,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       ⟨c₂', v₂, c₁, x, body, env, evalCfg, ht_e2, ht_e1, _htoPExpr_body, ht_body, hcf, hpm_e2, _⟩
     rcases
       hIH_e2 hpredlaws hwfTm μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hTm2 : wfTagMeaningCtx tm (ctxAfter ctxᵢ result2) :=
@@ -8942,8 +8904,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
-    have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-      simpa [ctxAfter] using regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound hmono2
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hpm2 : c₂'.pureMode = pm := by
@@ -8957,7 +8917,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
     rcases
       hIH_e1 hpredlaws hTm2 c₂'.memory c₂'.varEnv θ2 c₁ (Value.peClosure x body env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hRbound2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1⟩
     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθ2wf
@@ -8978,9 +8938,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := (ctxAfter ctxᵢ result2).regime) (R' := result1.regime')
           hmasked_none2 hmono1 k hk
-    have hRbound1 : regimeBounded (ctxAfter (ctxAfter ctxᵢ result2) result1).regime := by
-      simpa [ctxAfter] using
-        regimeBounded_of_monotoneStep (ctxAfter ctxᵢ result2).regime result1.regime' hRbound2 hmono1
     have hv₁_parrow : valueHasETyp θ1 (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
     cases hv₁_parrow with
@@ -9087,8 +9044,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       have hmasked_none_body : ∀ k, masked k → bodyCtx.regime.lookup? k = none := by
         intro k hk
         simpa [bodyCtx, ctxAfter] using hmasked_none1 k hk
-      have hRbound_body : regimeBounded bodyCtx.regime := by
-        simpa [bodyCtx, ctxAfter] using hRbound1
       have hwfcfg1 : wfConfig cf := by
         simpa [hcf] using (wfConfig_preserved .ioFree e1 _ c₁ _ ht_e1 hwfcfg2).1
       have hwfcfg_body_init :
@@ -9126,7 +9081,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       rcases
         hSingle_body hpredlaws hTmBody
           cf.memory (env.update x v₂) θ1 evalCfg o
-          hθ1wf hwfBody hric_body htagR_body hmasked_none_body hRbound_body hcwr_body
+          hθ1wf hwfBody hric_body htagR_body hmasked_none_body hcwr_body
           cf.nextAddr true hwfcfg_body_init ht_body' hpc_body
         with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body⟩
       have hθext : wfExtendsMap θ θ_body :=
@@ -9150,12 +9105,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           intro hnone; rw [hk_src] at hnone; contradiction
         have hRdef_res1 :
             (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-          hres1_to_firstA_mono.2.2 k hRdef_src
+          hres1_to_firstA_mono.2 k hRdef_src
         cases hk_res1 :
             (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
         | none => exact False.elim (hRdef_res1 hk_res1)
         | some b1 =>
-            rcases hres1_to_firstA_mono.2.1 k b1 hk_res1 with hk_src' | hnone_src
+            rcases hres1_to_firstA_mono.1 k b1 hk_res1 with hk_src' | hnone_src
             · have : some b1 = some b := hk_src'.symm.trans hk_src
               simpa using Option.some.inj this
             · rw [hnone_src] at hk_src
@@ -9420,7 +9375,7 @@ lemma stepFR_app
     have htc1' : typecheck .ioFree (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1 := by
       simp [ctxAfter] at htc1 ⊢
       exact htc1
-    intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+    intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
     -- Phase 2: IH for e2 (e1 IH defined after we have hTm2 from e2)
     have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm result2 htc2'
     -- Phase 3: Runtime evaluation inversion
@@ -9436,7 +9391,7 @@ lemma stepFR_app
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
         -- Phase A: Apply IH for e2
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         -- Phase B: Apply IH for e1
@@ -9444,9 +9399,6 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-          simp only [ctxAfter]
-          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
         have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
         have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
@@ -9456,7 +9408,7 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
         rcases hstep_e1 with ⟨hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
@@ -9808,8 +9760,6 @@ lemma stepFR_app
                 using hric_bodyA₀'
             have htagR_bodyA₀ : regimeConsistentWithCtx bodyCtxA₀ := by
               simpa [bodyCtxA₀, ctxAfter, regimeConsistentWithCtx] using htagR1
-            have hRbound_bodyA₀ : regimeBounded bodyCtxA₀.regime :=
-              regimeBounded_of_monotoneStep _ _ hRbound2 h_mono1
             have hcwr_bodyA₀ :
                 consistentWithRegime predSat bodyCtxA₀.regime bodyCtxA₀
                   c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 := by
@@ -9910,7 +9860,7 @@ lemma stepFR_app
             have hsr₀ :=
               hSingle_bodyA₀ hpredlaws hTmBodyA₀
                 c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 evalCfg₀ o₀
-                hθ₀1wf hwfBodyCtxA₀ hric_bodyA₀ htagR_bodyA₀ hRbound_bodyA₀
+                hθ₀1wf hwfBodyCtxA₀ hric_bodyA₀ htagR_bodyA₀
                 hcwr_bodyA₀ c₁₀.nextAddr false hwfcfg_body_initA₀ ht₀_body
                 hpc_bodyA₀_run
             rcases hsr₀ with
@@ -9978,8 +9928,6 @@ lemma stepFR_app
                 using hric_bodyA₁'
             have htagR_bodyA₁ : regimeConsistentWithCtx bodyCtxA₁ := by
               simpa [bodyCtxA₁, ctxAfter, regimeConsistentWithCtx] using htagR1
-            have hRbound_bodyA₁ : regimeBounded bodyCtxA₁.regime :=
-              regimeBounded_of_monotoneStep _ _ hRbound2 h_mono1
             have hcwr_bodyA₁ :
                 consistentWithRegime predSat bodyCtxA₁.regime bodyCtxA₁
                   c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 := by
@@ -10080,7 +10028,7 @@ lemma stepFR_app
             have hsr₁ :=
               hSingle_bodyA₁ hpredlaws hTmBodyA₁
                 c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 evalCfg₁ o₁
-                hθ₁1wf hwfBodyCtxA₁ hric_bodyA₁ htagR_bodyA₁ hRbound_bodyA₁
+                hθ₁1wf hwfBodyCtxA₁ hric_bodyA₁ htagR_bodyA₁
                 hcwr_bodyA₁ c₁₁.nextAddr false hwfcfg_body_initA₁ ht₁_body
                 hpc_bodyA₁_run
             rcases hsr₁ with
@@ -10115,12 +10063,12 @@ lemma stepFR_app
                 intro hnone; rw [hk_src] at hnone; contradiction
               have hRdef_res1 :
                   (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-                hres1_to_firstA₀_mono.2.2 k hRdef_src
+                hres1_to_firstA₀_mono.2 k hRdef_src
               cases hk_res1 :
                   (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
               | none => exact False.elim (hRdef_res1 hk_res1)
               | some b1 =>
-                  rcases hres1_to_firstA₀_mono.2.1 k b1 hk_res1 with hk_src' | hnone_src
+                  rcases hres1_to_firstA₀_mono.1 k b1 hk_res1 with hk_src' | hnone_src
                   · have : some b1 = some b := hk_src'.symm.trans hk_src
                     simp [Option.some.inj this]
                   · rw [hnone_src] at hk_src; cases hk_src
@@ -10133,12 +10081,12 @@ lemma stepFR_app
                 intro hnone; rw [hk_src] at hnone; contradiction
               have hRdef_res1 :
                   (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-                hres1_to_firstA₁_mono.2.2 k hRdef_src
+                hres1_to_firstA₁_mono.2 k hRdef_src
               cases hk_res1 :
                   (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
               | none => exact False.elim (hRdef_res1 hk_res1)
               | some b1 =>
-                  rcases hres1_to_firstA₁_mono.2.1 k b1 hk_res1 with hk_src' | hnone_src
+                  rcases hres1_to_firstA₁_mono.1 k b1 hk_res1 with hk_src' | hnone_src
                   · have : some b1 = some b := hk_src'.symm.trans hk_src
                     simp [Option.some.inj this]
                   · rw [hnone_src] at hk_src; cases hk_src
@@ -10778,11 +10726,6 @@ lemma stepFR_app
                 regime_monotone (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
               have htagR_body : regimeConsistentWithCtx bodyCtx := by
                 simpa [bodyCtx, ctxAfter, regimeConsistentWithCtx] using htagR1
-              have hRbound_body : regimeBounded bodyCtx.regime := by
-                exact
-                  regimeBounded_of_monotoneStep
-                    (ctxAfter ctxᵢ result2).regime result1.regime'
-                    hRbound2 h_mono1
               have hcwr_body₀ :
                   consistentWithRegime predSat bodyCtx.regime bodyCtx
                     c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 := by
@@ -11161,7 +11104,7 @@ lemma stepFR_app
               have hstep_body := hIH_body hpredlaws hTmBody
                 c₁₀.memory c₁₁.memory (env₀.update x₀ v₂₀) (env₁.update x₁ v₂₁) θ₀1 θ₁1
                 evalCfg₀ evalCfg₁ o₀ o₁
-                hθ₀1wf hθ₁1wf hwfBodyCtx hric_body₀ hric_body₁ htagR_body hRbound_body
+                hθ₀1wf hθ₁1wf hwfBodyCtx hric_body₀ hric_body₁ htagR_body
                 hcwr_body₀ hcwr_body₁ hagree_body_start
                 c₁₀.nextAddr c₁₁.nextAddr false
                 hwfcfg_body_init₀ hwfcfg_body_init₁ ht₀_body' ht₁_body'
@@ -11448,12 +11391,12 @@ lemma stepFR_app
                     contradiction
                   have hRdef_res1 :
                       (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-                    hres1_to_src_mono.2.2 k hRdef_src
+                    hres1_to_src_mono.2 k hRdef_src
                   cases hk_res1 : (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
                   | none =>
                       exact False.elim (hRdef_res1 hk_res1)
                   | some b1 =>
-                      have hcases := hres1_to_src_mono.2.1 k b1 hk_res1
+                      have hcases := hres1_to_src_mono.1 k b1 hk_res1
                       cases hcases with
                       | inl hk_src' =>
                           have hb_eq : b1 = b := by
@@ -11876,9 +11819,6 @@ lemma stepFR_app
             ∀ l, res.memEnv'.contains l → first.memEnv'.contains l ∨ ∃ r ∈ rest, r.memEnv'.contains l :=
           joinTypeResults_mem_contains_head_or_rest
             (ctx := ctxᵢ) (first := first) (rest := rest) (res := res) h_join
-        have h_regime_bound_le_join : res.regime'.bound ≤ first.regime'.bound :=
-          joinTypeResults_regime_bound_le_head
-            (ctx := ctxᵢ) (first := first) (rest := rest) (res := res) h_join
         have h_tag_join :
             tagEnvConsistentWithRegime (ctxAfter ctxᵢ res).tagEnv (ctxAfter ctxᵢ res).regime :=
           joinTypeResults_tagEnvConsistentWithRegime
@@ -11926,7 +11866,7 @@ lemma stepFR_app
           exact
             join_transport_regimeConsistentWithCtx
               (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
-              h_join h_regime_bound_le_join h_tag_join h_first_regime
+              h_join h_tag_join h_first_regime
         · -- consistentWithRegime ... cf₀
           exact hcwr_out₀
         · -- consistentWithRegime ... cf₁
@@ -11943,16 +11883,13 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-          simp only [ctxAfter]
-          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
         have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
         have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
@@ -11962,7 +11899,7 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
         rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
@@ -11974,16 +11911,13 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-          simp only [ctxAfter]
-          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
         have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
         have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
@@ -11993,7 +11927,7 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
         rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
@@ -12004,16 +11938,13 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-          simp only [ctxAfter]
-          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
         have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
         have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
@@ -12023,7 +11954,7 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
         rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
@@ -12039,7 +11970,7 @@ lemma stepFR_app
     have htc1' : typecheck .ioFree (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1 := by
       simp [ctxAfter] at htc1 ⊢
       exact htc1
-    intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+    intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
     -- Phase 2: IH for e2
     have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm result2 htc2'
     -- Phase 3: Runtime evaluation inversion
@@ -12054,16 +11985,13 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-          simp only [ctxAfter]
-          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
         have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
         have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
@@ -12073,7 +12001,7 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
         rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
@@ -12084,16 +12012,13 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-          simp only [ctxAfter]
-          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
         have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
         have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
@@ -12103,7 +12028,7 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
         rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
@@ -12115,16 +12040,13 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-          simp only [ctxAfter]
-          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
         have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
         have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
@@ -12134,7 +12056,7 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
         rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
@@ -12146,7 +12068,7 @@ lemma stepFR_app
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
         -- Phase A: Apply IH for e2
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
         rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         -- Phase B: Apply IH for e1
@@ -12154,9 +12076,6 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hRbound2 : regimeBounded (ctxAfter ctxᵢ result2).regime := by
-          simp only [ctxAfter]
-          exact regimeBounded_of_monotoneStep ctxᵢ.regime result2.regime' hRbound h_mono2
         have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
         have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
@@ -12166,7 +12085,7 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hRbound2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
         rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
@@ -12401,9 +12320,6 @@ lemma stepFR_app
             ∀ l, res.memEnv'.contains l → first.memEnv'.contains l ∨ ∃ r ∈ rest, r.memEnv'.contains l :=
           joinTypeResults_mem_contains_head_or_rest
             (ctx := ctxᵢ) (first := first) (rest := rest) (res := res) h_join
-        have h_regime_bound_le_join : res.regime'.bound ≤ first.regime'.bound :=
-          joinTypeResults_regime_bound_le_head
-            (ctx := ctxᵢ) (first := first) (rest := rest) (res := res) h_join
         have h_tag_join :
             tagEnvConsistentWithRegime (ctxAfter ctxᵢ res).tagEnv (ctxAfter ctxᵢ res).regime :=
           joinTypeResults_tagEnvConsistentWithRegime
@@ -12594,8 +12510,6 @@ lemma stepFR_app
               using hric_bodyA₀'
           have htagR_bodyA₀ : regimeConsistentWithCtx bodyCtxA₀ := by
             simpa [bodyCtxA₀, ctxAfter, regimeConsistentWithCtx] using htagR1
-          have hRbound_bodyA₀ : regimeBounded bodyCtxA₀.regime :=
-            regimeBounded_of_monotoneStep _ _ hRbound2 h_mono1
           have hcwr_bodyA₀ :
               consistentWithRegime predSat bodyCtxA₀.regime bodyCtxA₀
                 cf₀.memory (env₀.update x₀ v₂₀) θ₀1 := by
@@ -12700,7 +12614,7 @@ lemma stepFR_app
           have hsr₀ :=
             hSingle_bodyA₀ hpredlaws hTmBodyA₀
               cf₀.memory (env₀.update x₀ v₂₀) θ₀1 evalCfg₀ o₀
-              hθ₀1wf hwfBodyCtxA₀ hric_bodyA₀ htagR_bodyA₀ hRbound_bodyA₀
+              hθ₀1wf hwfBodyCtxA₀ hric_bodyA₀ htagR_bodyA₀
               hcwr_bodyA₀ cf₀.nextAddr true hwfcfg_body_initA₀ ht₀_body'
               hpc_bodyA₀_run
           rcases hsr₀ with
@@ -12770,8 +12684,6 @@ lemma stepFR_app
               using hric_bodyA₁'
           have htagR_bodyA₁ : regimeConsistentWithCtx bodyCtxA₁ := by
             simpa [bodyCtxA₁, ctxAfter, regimeConsistentWithCtx] using htagR1
-          have hRbound_bodyA₁ : regimeBounded bodyCtxA₁.regime :=
-            regimeBounded_of_monotoneStep _ _ hRbound2 h_mono1
           have hcwr_bodyA₁ :
               consistentWithRegime predSat bodyCtxA₁.regime bodyCtxA₁
                 cf₁.memory (env₁.update x₁ v₂₁) θ₁1 := by
@@ -12875,7 +12787,7 @@ lemma stepFR_app
           have hsr₁ :=
             hSingle_bodyA₁ hpredlaws hTmBodyA₁
               cf₁.memory (env₁.update x₁ v₂₁) θ₁1 evalCfg₁ o₁
-              hθ₁1wf hwfBodyCtxA₁ hric_bodyA₁ htagR_bodyA₁ hRbound_bodyA₁
+              hθ₁1wf hwfBodyCtxA₁ hric_bodyA₁ htagR_bodyA₁
               hcwr_bodyA₁ cf₁.nextAddr true hwfcfg_body_initA₁ ht₁_body'
               hpc_bodyA₁_run
           rcases hsr₁ with
@@ -12910,12 +12822,12 @@ lemma stepFR_app
               intro hnone; rw [hk_src] at hnone; contradiction
             have hRdef_res1 :
                 (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-              hres1_to_firstA₀_mono.2.2 k hRdef_src
+              hres1_to_firstA₀_mono.2 k hRdef_src
             cases hk_res1 :
                 (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
             | none => exact False.elim (hRdef_res1 hk_res1)
             | some b1 =>
-                rcases hres1_to_firstA₀_mono.2.1 k b1 hk_res1 with hk_src' | hnone_src
+                rcases hres1_to_firstA₀_mono.1 k b1 hk_res1 with hk_src' | hnone_src
                 · have : some b1 = some b := hk_src'.symm.trans hk_src
                   simp [Option.some.inj this]
                 · rw [hnone_src] at hk_src; cases hk_src
@@ -12928,12 +12840,12 @@ lemma stepFR_app
               intro hnone; rw [hk_src] at hnone; contradiction
             have hRdef_res1 :
                 (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-              hres1_to_firstA₁_mono.2.2 k hRdef_src
+              hres1_to_firstA₁_mono.2 k hRdef_src
             cases hk_res1 :
                 (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
             | none => exact False.elim (hRdef_res1 hk_res1)
             | some b1 =>
-                rcases hres1_to_firstA₁_mono.2.1 k b1 hk_res1 with hk_src' | hnone_src
+                rcases hres1_to_firstA₁_mono.1 k b1 hk_res1 with hk_src' | hnone_src
                 · have : some b1 = some b := hk_src'.symm.trans hk_src
                   simp [Option.some.inj this]
                 · rw [hnone_src] at hk_src; cases hk_src
@@ -13031,7 +12943,7 @@ lemma stepFR_app
                   valueHasETyp_extends hθext₁_body.1 hv_typ⟩,
             -- regimeConsistentWithCtx (ctxAfter ctxᵢ res)
             join_transport_regimeConsistentWithCtx ctxᵢ first rest res h_join
-              h_regime_bound_le_join h_tag_join h_first_regime,
+              h_tag_join h_first_regime,
             -- consistentWithRegime run 0
             by
               have hcwr_src₀ :
@@ -13535,11 +13447,6 @@ lemma stepFR_app
               regime_monotone (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
             have htagR_body : regimeConsistentWithCtx bodyCtx := by
               simpa [bodyCtx, ctxAfter, regimeConsistentWithCtx] using htagR1
-            have hRbound_body : regimeBounded bodyCtx.regime := by
-              exact
-                regimeBounded_of_monotoneStep
-                  (ctxAfter ctxᵢ result2).regime result1.regime'
-                  hRbound2 h_mono1
             -- Phase 4: consistentWithRegime for both runs
             have hcwr_body₀ :
                 consistentWithRegime predSat bodyCtx.regime bodyCtx
@@ -13917,7 +13824,7 @@ lemma stepFR_app
             have hstep_body := hIH_body hpredlaws hTmBody
               cf₀.memory cf₁.memory (env₀.update x₀ v₂₀) (env₁.update x₁ v₂₁) θ₀1 θ₁1
               evalCfg₀ evalCfg₁ o₀ o₁
-              hθ₀1wf hθ₁1wf hwfBodyCtx hric_body₀ hric_body₁ htagR_body hRbound_body
+              hθ₀1wf hθ₁1wf hwfBodyCtx hric_body₀ hric_body₁ htagR_body
               hcwr_body₀ hcwr_body₁ hagree_body_start
               cf₀.nextAddr cf₁.nextAddr true
               hwfcfg_body_init₀ hwfcfg_body_init₁ ht₀_body' ht₁_body'
@@ -14220,12 +14127,12 @@ lemma stepFR_app
                   contradiction
                 have hRdef_res1 :
                     (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-                  hres1_to_src_mono.2.2 k hRdef_src
+                  hres1_to_src_mono.2 k hRdef_src
                 cases hk_res1 : (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
                 | none =>
                     exact False.elim (hRdef_res1 hk_res1)
                 | some b1 =>
-                    have hcases := hres1_to_src_mono.2.1 k b1 hk_res1
+                    have hcases := hres1_to_src_mono.1 k b1 hk_res1
                     cases hcases with
                     | inl hk_src' =>
                         have hb_eq : b1 = b := by
@@ -14327,7 +14234,7 @@ lemma stepFR_app
                 exact
                   join_transport_regimeConsistentWithCtx
                     (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
-                    h_join h_regime_bound_le_join h_tag_join h_first_regime
+                    h_join h_tag_join h_first_regime
               · -- shared-member consistentWithRegime -> joined consistentWithRegime (run 0).
                 have hmem₀_eq : cf₀.memory = evalCfg₀.memory := hmem₀_eq
                 have hvar₀_eq : cf₀.varEnv = cf₀.varEnv := rfl

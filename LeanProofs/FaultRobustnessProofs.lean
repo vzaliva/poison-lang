@@ -218,7 +218,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   · rcases h1 with
                       ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, htc2,
                         hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', _hpoison, hetyp⟩
-                    intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht hpc
+                    intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
                     let ctxPure : TypeContext := { ctxᵢ with pureCtx := true }
                     let ctxTrue : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
                     have htc1' : typecheck .ioFree ctxPure e1 fuel' = .ok res1 := by
@@ -232,8 +232,6 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have hmasked_none_pure :
                         ∀ t, masked t → ctxPure.regime.lookup? t = none := by
                       simpa [ctxPure] using hmasked_none
-                    have hRbound_pure : regimeBounded ctxPure.regime := by
-                      simpa [ctxPure] using hRbound
                     have hcwr_pure :
                         consistentWithRegimeMasked masked predSat ctxPure.regime ctxPure μ ρ θ := by
                       simpa [ctxPure, consistentWithRegimeMasked] using hcwr
@@ -245,7 +243,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     rcases hstruct_rt with ⟨cfg1, b, ht_e1, hbranch, _hpm1, _hpmf⟩
                     rcases
                         hIH_e1 hpredlaws hwfTm_pure μ ρ θ cfg1 (Value.bool b)
-                          hθwf hwf_pure hric htagR_pure hmasked_none_pure hRbound_pure hcwr_pure
+                          hθwf hwf_pure hric htagR_pure hmasked_none_pure hcwr_pure
                           a pm hwfcfg ht_e1 hpc_pure
                       with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1⟩
                     have hcwr_unmasked :
@@ -279,16 +277,12 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have hwf_true : wfTypeContext ctxTrue := by
                       simpa [ctxTrue, wfTypeContext] using hwf
                     have htagR_true : regimeConsistentWithCtxMasked masked ctxTrue := by
-                      constructor
-                      · exact
-                          tagEnvConsistentWithRegimeMasked_insert_true
-                            masked ctxᵢ.tagEnv ctxᵢ.regime k deps htagR.1 hregime_true
-                      · simpa [ctxTrue] using htagR.2
+                      exact
+                        tagEnvConsistentWithRegimeMasked_insert_true
+                          masked ctxᵢ.tagEnv ctxᵢ.regime k deps htagR hregime_true
                     have hmasked_none_true :
                         ∀ t, masked t → ctxTrue.regime.lookup? t = none := by
                       simpa [ctxTrue] using hmasked_none
-                    have hRbound_true : regimeBounded ctxTrue.regime := by
-                      simpa [ctxTrue] using hRbound
                     rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
                     have hric1' : runtimeInstantiatesCtx ctxTrue cfg1.memory cfg1.varEnv θ1 := by
                       have hsub : ∀ l, res1.memEnv'.contains l → ctxᵢ.memEnv.contains l := by
@@ -328,7 +322,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     rcases
                         hIH_e2 hpredlaws hwfTm_true
                           cfg1.memory cfg1.varEnv θ1 cf o
-                          hθ1wf hwf_true hric1' htagR_true hmasked_none_true hRbound_true hcwr1'
+                          hθ1wf hwf_true hric1' htagR_true hmasked_none_true hcwr1'
                           cfg1.nextAddr cfg1.pureMode hwfcfg1
                           ht_e2 hpc_true
                       with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2⟩
@@ -399,7 +393,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     · rcases h2 with
                         ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, res3, htc3,
                           hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', _hpoison, hetyp⟩
-                      intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht hpc
+                      intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
                       let ctxPure : TypeContext := { ctxᵢ with pureCtx := true }
                       let ctxFalse : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩ }
                       have htc1' : typecheck .ioFree ctxPure e1 fuel' = .ok res1 := by
@@ -413,8 +407,6 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       have hmasked_none_pure :
                           ∀ t, masked t → ctxPure.regime.lookup? t = none := by
                         simpa [ctxPure] using hmasked_none
-                      have hRbound_pure : regimeBounded ctxPure.regime := by
-                        simpa [ctxPure] using hRbound
                       have hcwr_pure :
                           consistentWithRegimeMasked masked predSat ctxPure.regime ctxPure μ ρ θ := by
                         simpa [ctxPure, consistentWithRegimeMasked] using hcwr
@@ -426,7 +418,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       rcases hstruct_rt with ⟨cfg1, b, ht_e1, hbranch, _hpm1, _hpmf⟩
                       rcases
                           hIH_e1 hpredlaws hwfTm_pure μ ρ θ cfg1 (Value.bool b)
-                            hθwf hwf_pure hric htagR_pure hmasked_none_pure hRbound_pure hcwr_pure
+                            hθwf hwf_pure hric htagR_pure hmasked_none_pure hcwr_pure
                             a pm hwfcfg ht_e1 hpc_pure
                         with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1⟩
                       have hcwr_unmasked :
@@ -460,16 +452,12 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       have hwf_false : wfTypeContext ctxFalse := by
                         simpa [ctxFalse, wfTypeContext] using hwf
                       have htagR_false : regimeConsistentWithCtxMasked masked ctxFalse := by
-                        constructor
-                        · exact
-                            tagEnvConsistentWithRegimeMasked_insert_false
-                              masked ctxᵢ.tagEnv ctxᵢ.regime k deps htagR.1
-                        · simpa [ctxFalse] using htagR.2
+                        exact
+                          tagEnvConsistentWithRegimeMasked_insert_false
+                            masked ctxᵢ.tagEnv ctxᵢ.regime k deps htagR
                       have hmasked_none_false :
                           ∀ t, masked t → ctxFalse.regime.lookup? t = none := by
                         simpa [ctxFalse] using hmasked_none
-                      have hRbound_false : regimeBounded ctxFalse.regime := by
-                        simpa [ctxFalse] using hRbound
                       rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
                       have hric1' : runtimeInstantiatesCtx ctxFalse cfg1.memory cfg1.varEnv θ1 := by
                         have hsub : ∀ l, res1.memEnv'.contains l → ctxᵢ.memEnv.contains l := by
@@ -520,7 +508,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       rcases
                           hIH_e3 hpredlaws hwfTm_false
                             cfg1.memory cfg1.varEnv θ1 cf o
-                            hθ1wf hwf_false hric1' htagR_false hmasked_none_false hRbound_false hcwr1'
+                            hθ1wf hwf_false hric1' htagR_false hmasked_none_false hcwr1'
                             cfg1.nextAddr cfg1.pureMode hwfcfg1
                             ht_e3 hpc_false
                         with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2⟩
@@ -601,7 +589,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       · rcases h4 with
                           ⟨⟨err, hmatch_fail⟩, res1, htc1, hbool, res2, htc2, res3, htc3,
                             hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp, _hpred⟩
-                        intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht hpc
+                        intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
                         let ctx' : TypeContext := ctxAfter ctxᵢ res1
                         let pc' := joinPoison ctxᵢ.pc res1.qualType.poison
                         let ctx'' : TypeContext := { ctx' with pc := pc' }
@@ -614,7 +602,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         rcases hstruct_rt with ⟨cfg1, b, ht_e1, hbranch, _hpm1, _hpmf⟩
                         rcases
                             hIH_e1 hpredlaws hwfTm μ ρ θ cfg1 (Value.bool b)
-                              hθwf hwf hric htagR hmasked_none hRbound hcwr
+                              hθwf hwf hric htagR hmasked_none hcwr
                               a pm hwfcfg ht_e1 hpc
                           with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1⟩
                         have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
@@ -630,10 +618,6 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         have hmasked_none1 :
                             ∀ t, masked t → (ctxAfter ctxᵢ res1).regime.lookup? t = none :=
                           masked_lookup_none_of_monotoneStep hmasked_none hmono1
-                        have hRbound1 :
-                            regimeBounded (ctxAfter ctxᵢ res1).regime :=
-                          regimeBounded_of_monotoneStep ctxᵢ.regime (ctxAfter ctxᵢ res1).regime
-                            hRbound hmono1
                         have hwfTm1 : wfTagMeaningCtx tm (ctxAfter ctxᵢ res1) := by
                           exact
                             typecheckExpr_preserves_wfTagMeaningCtx
@@ -658,8 +642,6 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         have hmasked_none_ctx'' :
                             ∀ t, masked t → ctx''.regime.lookup? t = none := by
                           simpa [ctx'', ctx', pc', ctxAfter] using hmasked_none1
-                        have hRbound_ctx'' : regimeBounded ctx''.regime := by
-                          simpa [ctx'', ctx', pc', ctxAfter] using hRbound1
                         have hpc'' : ctx''.pc = true := by
                           simp [ctx'', pc', hpc, joinPoison]
                         have hnextLoc_mono :
@@ -688,16 +670,11 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                               cfg1.memory cfg1.varEnv θ1 := by
                           simpa [ctxForE3, ctx'', ctx', pc', ctxAfter, consistentWithRegimeMasked] using hcwr1
                         have htagR_ctxForE3 : regimeConsistentWithCtxMasked masked ctxForE3 := by
-                          constructor
-                          · show tagEnvConsistentWithRegimeMasked masked ctxForE3.tagEnv ctxForE3.regime
-                            simpa [ctxForE3, ctx'', ctx', pc', regimeConsistentWithCtxMasked] using htagR1.1
-                          · show ctxForE3.regime.bound ≤ ctxForE3.nextTag
-                            simpa [ctxForE3, ctx'', ctx', pc'] using Nat.le_trans htagR1.2 hnextTag_mono
+                          show tagEnvConsistentWithRegimeMasked masked ctxForE3.tagEnv ctxForE3.regime
+                          simpa [ctxForE3, ctx'', ctx', pc', regimeConsistentWithCtxMasked] using htagR1
                         have hmasked_none_ctxForE3 :
                             ∀ t, masked t → ctxForE3.regime.lookup? t = none := by
                           simpa [ctxForE3, ctx'', ctx', pc', ctxAfter] using hmasked_none1
-                        have hRbound_ctxForE3 : regimeBounded ctxForE3.regime := by
-                          simpa [ctxForE3, ctx'', ctx', pc', ctxAfter] using hRbound1
                         have hpcForE3 : ctxForE3.pc = true := by
                           simp [ctxForE3, ctx'', pc', hpc, joinPoison]
                         have htc2' : typecheck .ioFree ctx'' e2 fuel' = .ok res2 := by
@@ -872,7 +849,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                             have hIH_e2 := IH' fuel' (by omega) masked e2 ctx'' res2 htc2'
                             rcases
                                 hIH_e2 hpredlaws hwfTm_ctx'' cfg1.memory cfg1.varEnv θ1 cf o
-                                  hθ1wf hwf_ctx'' hric1_ctx'' htagR_ctx'' hmasked_none_ctx'' hRbound_ctx'' hcwr1_ctx''
+                                  hθ1wf hwf_ctx'' hric1_ctx'' htagR_ctx'' hmasked_none_ctx'' hcwr1_ctx''
                                   cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc''
                               with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2⟩
                             have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
@@ -1065,7 +1042,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                 hIH_e3 hpredlaws hwfTm_ctxForE3
                                   cfg1.memory cfg1.varEnv θ1 cf o
                                   hθ1wf hwf_ctxForE3 hric1_ctxForE3
-                                  htagR_ctxForE3 hmasked_none_ctxForE3 hRbound_ctxForE3 hcwr1_ctxForE3
+                                  htagR_ctxForE3 hmasked_none_ctxForE3 hcwr1_ctxForE3
                                   cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e3 hpcForE3
                               with ⟨θ3, hθext3, hv3, hric3, hcwr3, hvalc3, hpres3⟩
                             have hθext : wfExtendsMap θ θ3 := wfExtendsMap_trans hθext1 hθext3
@@ -1370,7 +1347,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       htc
           | rand _ | frand _ | printString _ | printInt _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
               unfold StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-              intro _hpredlaws _hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hRbound hcwr a pm hwfcfg ht hpc
+              intro _hpredlaws _hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
               have : False := by
                 obtain ⟨fuelT, verboseT, heq⟩ := ht
                 have h_world := congrArg (fun f => f LeanProofs.defaultWorld) heq
@@ -1392,13 +1369,11 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFr
   have hmasked :=
     TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree
       (masked := fun _ => False) e ctxᵢ predSat tm fuel res htc
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hRbound hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg ht hpc
   have hreg_masked :
       regimeConsistentWithCtxMasked (fun _ => False) ctxᵢ := by
-    constructor
-    · intro k deps hlookup
-      exact Or.inr (hreg.1 k deps hlookup)
-    · exact hreg.2
+    intro k deps hlookup
+    exact Or.inr (hreg k deps hlookup)
   have hcwr_masked :
       consistentWithRegimeMasked (fun _ => False) predSat ctxᵢ.regime ctxᵢ μ ρ θ := by
     rcases hcwr with ⟨hlocs, hvars, hclos⟩
@@ -1422,7 +1397,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFr
     intro k hk
     cases hk
   rcases
-      hmasked hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg_masked hmasked_none_init hRbound hcwr_masked a pm hwfcfg ht hpc
+      hmasked hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg_masked hmasked_none_init hcwr_masked a pm hwfcfg ht hpc
     with ⟨θ', hθext, hvaltyp, hric', hcwr_masked', hvalc_masked', hpres⟩
   have hmasked_none :
       ∀ k, (fun _ => False) k → (ctxAfter ctxᵢ res).regime.lookup? k = none := by
@@ -1644,7 +1619,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                     hsingleIH htc
         | rand _ | frand _ | printString _ | printInt _ | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
             -- In `.ioFree` mode, I/O constructs cannot terminate, so StepFR is vacuous.
-            intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+            intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
             have : False := by
               obtain ⟨fuelT, verboseT, heq⟩ := ht₀
               -- In `.ioFree` mode, evaluation yields `ioForbidden`, never `.success`.
@@ -1665,9 +1640,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
 def FaultRobustnessSpec_ioFree (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) : Prop :=
   ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool),
     ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
-    ctx.regime.bound = ctx.nextTag →  -- regime bounded by initial tag supply
     wfRegime ctx.regime s →
-    regimeBounded ctx.regime →
     wfRealizationMap θ₁ →  wfRealizationMap θ₂ →
     wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →
     wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } →
@@ -1726,7 +1699,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
   intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm
   have hstep' := hstep e ctx predSat tm
   have hstep' := hstep' fuel res htc
-  intro cf₁ cf₂ o₁ o₂ hR hRbound hregBounded hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ htrustedInit₁ htrustedInit₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
+  intro cf₁ cf₂ o₁ o₂ hWfRegime hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ htrustedInit₁ htrustedInit₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
   set R := ctx.regime with hRdef
   have hagree_clean :
       agreeOnClean predSat R ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ :=
@@ -1738,35 +1711,27 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
     have hempty : ctx.tagEnv.get? k = none := by simp [hte]
     rw [hempty] at hlookup
     cases hlookup
-  -- regimeConsistentWithCtx is now a conjunction: tagEnvConsistentWithRegime ∧ R.bound ≤ nextTag
-  have hreg : regimeConsistentWithCtx ctx := by
-    constructor
-    · exact htagR
-    · exact Nat.le_of_eq hR
+  have hreg : regimeConsistentWithCtx ctx := htagR
   -- Need consistentWithRegime for both runs (derived from bridge lemma)
   have hcwr₁ : consistentWithRegime predSat R ctx μ₁ ρ₁ θ₁ := by
     have hcrs₁' : consistentRegimeSpec predSat R s μ₁ ρ₁ θ₁ := by
       simpa [hRdef] using hcrs₁
-    have hRbound' : wfRegime R s := by
-      simpa [hRdef] using hRbound
-    have hregBounded' : regimeBounded R := by
-      simpa [hRdef] using hregBounded
+    have hWfRegime' : wfRegime R s := by
+      simpa [hRdef] using hWfRegime
     exact
       consistentRegimeSpec_implies_consistentWithRegime
-        predSat R s ctx μ₁ ρ₁ θ₁ hcrs₁' hric₁ (by simpa [hRdef] using htrustedInit₁) his hctx hRbound' hregBounded'
+        predSat R s ctx μ₁ ρ₁ θ₁ hcrs₁' hric₁ (by simpa [hRdef] using htrustedInit₁) his hctx hWfRegime'
   have hcwr₂ : consistentWithRegime predSat R ctx μ₂ ρ₂ θ₂ := by
     have hcrs₂' : consistentRegimeSpec predSat R s μ₂ ρ₂ θ₂ := by
       simpa [hRdef] using hcrs₂
-    have hRbound' : wfRegime R s := by
-      simpa [hRdef] using hRbound
-    have hregBounded' : regimeBounded R := by
-      simpa [hRdef] using hregBounded
+    have hWfRegime' : wfRegime R s := by
+      simpa [hRdef] using hWfRegime
     exact
       consistentRegimeSpec_implies_consistentWithRegime
-        predSat R s ctx μ₂ ρ₂ θ₂ hcrs₂' hric₂ (by simpa [hRdef] using htrustedInit₂) his hctx hRbound' hregBounded'
+        predSat R s ctx μ₂ ρ₂ θ₂ hcrs₂' hric₂ (by simpa [hRdef] using htrustedInit₂) his hctx hWfRegime'
   have hstep_fr :=
     hstep' hps hwfTm μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂
-      hθ₁ hθ₂ hwf hric₁ hric₂ hreg hregBounded hcwr₁ hcwr₂ hagree_clean
+      hθ₁ hθ₂ hwf hric₁ hric₂ hreg hcwr₁ hcwr₂ hagree_clean
       a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
   -- StepFR result structure: ∃ θ₁' θ₂', wfExtendsMap ∧ wfExtendsMap ∧ valueHasETyp ∧ valueHasETyp ∧
   --   wfTagMeaningCtx ∧ wfTypeContext ∧ wfConfig ∧ wfConfig ∧ ... ∧ agreeOnClean ∧ resultAgreesIfClean

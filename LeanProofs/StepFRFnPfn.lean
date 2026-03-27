@@ -37,7 +37,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn
     rfl
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg _hRbound hcwr a pm hwfcfg ht _hpc
+  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_fn_inv' mode x paramType body returnType
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   subst hcf
@@ -136,7 +136,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_masked
     rfl
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg _hRbound hcwr a pm hwfcfg ht _hpc
+  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_fn_inv' mode x paramType body returnType
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   subst hcf
@@ -243,7 +243,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
     rfl
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none _hRbound hcwr a pm hwfcfg ht _hpc
+  intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_fn_inv' mode x paramType body returnType
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   subst hcf
@@ -351,7 +351,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg _hRbound hcwr a pm hwfcfg ht _hpc
+      intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg ht _hpc
       have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
       subst hcf
@@ -458,7 +458,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_masked
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg _hRbound hcwr a pm hwfcfg ht _hpc
+      intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg ht _hpc
       have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
       subst hcf
@@ -573,7 +573,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none _hRbound hcwr a pm hwfcfg ht _hpc
+      intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
       have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
       subst hcf
@@ -682,7 +682,7 @@ lemma stepFR_fn
     rfl
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma
   have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' mode x paramType body returnType
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -936,7 +936,7 @@ lemma stepFR_pfn
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+      intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
       -- Use world-free inversion lemma
       have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀

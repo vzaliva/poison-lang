@@ -29,7 +29,6 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ ρ θ →
       regimeConsistentWithCtx ctx →
-      regimeBounded ctx.regime →
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
@@ -149,16 +148,12 @@ private lemma invalidateRegimeDeps_preserves_lookup_of_surviving_tag
   unfold Regime.lookup? at hR ⊢
   unfold invalidateRegimeDeps
   unfold invalidateTagDeps at hkeep
-  split_ifs with hk
-  · have hmap : R.map.get? k = some b := by
-      simpa [hk] using hR
-    have hmap' :
-        (R.map.filter (fun k _ => (env.filter (fun _ tv => !tv.deps.any ls.contains)).contains k)).get? k = some b := by
-      rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter']
-      rw [← Std.ExtTreeMap.get?_eq_getElem?, hmap]
-      simp [hkeep]
-    simpa [Regime.lookup?, hk] using hmap'
-  · simp [hk] at hR
+  have hmap' :
+      (R.map.filter (fun k _ => (env.filter (fun _ tv => !tv.deps.any ls.contains)).contains k)).get? k = some b := by
+    rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter']
+    rw [← Std.ExtTreeMap.get?_eq_getElem?, hR]
+    simp [hkeep]
+  simpa [Regime.lookup?] using hmap'
 
 private lemma invalidateTagDeps_contains_true_implies_lookup_some_and_disjoint
     (env : TagEnv) (ls : LocSet) (k : Tag)
@@ -188,13 +183,14 @@ private lemma invalidateRegimeDeps_lookup_eq_lookup_of_surviving_tag
     (invalidateRegimeDeps R env ls).lookup? k = R.lookup? k := by
   cases hR : R.lookup? k with
   | none =>
-      by_cases hklt : k < R.bound
-      · unfold Regime.lookup? at hR
-        simp [hklt] at hR
-        unfold invalidateRegimeDeps Regime.lookup?
-        simp [hklt, hR]
-      · unfold invalidateRegimeDeps Regime.lookup?
-        simp [hklt]
+      unfold invalidateRegimeDeps Regime.lookup? at ⊢
+      unfold Regime.lookup? at hR
+      have hmapNone : R.map.get? k = none := hR
+      have : (R.map.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k = none := by
+        rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter']
+        rw [← Std.ExtTreeMap.get?_eq_getElem?, hmapNone]
+        simp
+      exact this
   | some b =>
       have hkeepLookup :
           (invalidateRegimeDeps R env ls).lookup? k = some b :=
@@ -205,22 +201,19 @@ private lemma invalidateRegimeDeps_survives_of_lookup_ne_none
     (R : Regime) (env : TagEnv) (ls : LocSet) (k : Tag)
     (hlookup : (invalidateRegimeDeps R env ls).lookup? k ≠ none) :
     (invalidateTagDeps env ls).contains k = true := by
-  by_cases hklt : k < R.bound
-  · unfold invalidateRegimeDeps Regime.lookup? at hlookup
-    have hmap : (R.map.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k ≠ none := by
-      simpa [hklt] using hlookup
-    by_contra hkeep
-    have hmapEq :
-        (R.map.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k =
-          Option.filter (fun _ => (invalidateTagDeps env ls).contains k) (R.map.get? k) := by
-      rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter']
-      rw [← Std.ExtTreeMap.get?_eq_getElem?]
-    have : (R.map.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k = none := by
-      rw [hmapEq]
-      simp [hkeep]
-    exact hmap this
-  · unfold invalidateRegimeDeps Regime.lookup? at hlookup
-    simp [hklt] at hlookup
+  unfold invalidateRegimeDeps Regime.lookup? at hlookup
+  have hmap : (R.map.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k ≠ none := by
+    simpa using hlookup
+  by_contra hkeep
+  have hmapEq :
+      (R.map.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k =
+        Option.filter (fun _ => (invalidateTagDeps env ls).contains k) (R.map.get? k) := by
+    rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter']
+    rw [← Std.ExtTreeMap.get?_eq_getElem?]
+  have : (R.map.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k = none := by
+    rw [hmapEq]
+    simp [hkeep]
+  exact hmap this
 
 private lemma invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
     (R : Regime) (env : TagEnv) (ls : LocSet) (k : Tag)
@@ -265,12 +258,12 @@ private lemma qtypCleanUnder_of_monotone
   | clean hpoison =>
       exact qtypCleanUnder.clean hpoison
   | guard k htag hreg hnotfun =>
-      have hkR : R.lookup? k ≠ none := hmono.2.2 k (by simp [hreg])
+      have hkR : R.lookup? k ≠ none := hmono.2 k (by simp [hreg])
       cases hk : R.lookup? k with
       | none =>
           exact (hkR hk).elim
       | some b =>
-          have hcases : R'.lookup? k = some b ∨ R'.lookup? k = none := hmono.2.1 k b hk
+          have hcases : R'.lookup? k = some b ∨ R'.lookup? k = none := hmono.1 k b hk
           cases hcases with
           | inl hk' =>
               have hb : b = true := by
@@ -550,20 +543,11 @@ private lemma tagEnvConsistentWithRegime_invalidateRegimeDeps
           simp at hget
           rw [hget.1]
     exact h k deps hkeep
-  unfold invalidateRegimeDeps
-  dsimp [Regime.lookup?] at hkR
-  split_ifs at hkR with hklt
-  · have hcontains : (invalidateTagDeps tagEnv ls).contains k = true := by
-      simp only [Std.ExtTreeMap.contains_eq_isSome_getElem?]
-      rw [← Std.ExtTreeMap.get?_eq_getElem?, hget]
-      rfl
-    have hmap :
-        (R.map.filter (fun k _ => (invalidateTagDeps tagEnv ls).contains k)).get? k = some true := by
-      simp [Std.ExtTreeMap.get?_eq_getElem?, hcontains, hkR]
-    simp [Regime.lookup?, hklt]
-    constructor
-    · exact hkR
-    · exact hcontains
+  have hcontains : (invalidateTagDeps tagEnv ls).contains k = true := by
+    simp only [Std.ExtTreeMap.contains_eq_isSome_getElem?]
+    rw [← Std.ExtTreeMap.get?_eq_getElem?, hget]
+    rfl
+  exact invalidateRegimeDeps_preserves_lookup_of_surviving_tag R tagEnv ls k true hkR hcontains
 
 private lemma tagEnvConsistentWithRegimeMasked_invalidateRegimeDeps
     (masked : Tag → Prop)
@@ -2297,7 +2281,7 @@ lemma stepFR_assign
   }
   have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res2 := by
     simpa [ctx', typecheck, Nat.succ_sub_one] using htc2
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hregCtx hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hregCtx hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hinv₀ := terminatesTo_assign_inv' e1 e2 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
   rcases hinv₀ with ⟨cfg₀1, cfg₀2, a₀w, n₀, ht₀_e1, ht₀_e2, ho₀, hmem₀, hvar₀, hnext₀, hpm₀⟩
   have hinv₁ := terminatesTo_assign_inv' e1 e2 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
@@ -2306,7 +2290,7 @@ lemma stepFR_assign
     e1 ctxᵢ hwfTm res1 htc1'
   have hstep_e1 :=
     hIH1 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.loc a₀w) (Value.loc a₁w)
-      hθ₀ hθ₁ hwf hric₀ hric₁ hregCtx hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+      hθ₀ hθ₁ hwf hric₀ hric₁ hregCtx hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
   rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, hregCtx1, hcwr₀1, hcwr₁1, hagree1, hvc₀1, hvc₁1, hres_agree1⟩
   have hwfTm' : wfTagMeaningCtx tm ctx' := by
@@ -2330,8 +2314,6 @@ lemma stepFR_assign
   have hagree1' : agreeOnClean predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctx', ctxAfter] using hagree1
   have hmono1 : Regime.monotoneStep ctxᵢ.regime res1.regime' := regime_monotone ctxᵢ e1 fuel' res1 htc1'
-  have hRbound' : regimeBounded ctx'.regime := by
-    exact regimeBounded_of_monotoneStep ctxᵢ.regime res1.regime' hRbound hmono1
   have hpm₀1 : cfg₀1.pureMode = pm := by
     simpa using
       (terminatesTo_IOFree_preserves_pureMode e1
@@ -2359,7 +2341,7 @@ lemma stepFR_assign
     hIH2 hpredlaws hwfTm'
       cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cfg₀2 cfg₁2 (Value.num n₀) (Value.num n₁)
-      hθ₀1wf hθ₁1wf hwf_ctx' hric₀1' hric₁1' hregCtx1' hRbound' hcwr₀1' hcwr₁1' hagree1'
+      hθ₀1wf hθ₁1wf hwf_ctx' hric₀1' hric₁1' hregCtx1' hcwr₀1' hcwr₁1' hagree1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1' ht₀_e2 ht₁_e2'
   rcases hstep_e2 with ⟨hresTm2, hstep_e2⟩
   rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₀2, hv₁2, hTm2, hwf2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, hregCtx2, hcwr₀2, hcwr₁2, hagree2, hvc₀2, hvc₁2, hres_agree2⟩
@@ -2577,19 +2559,13 @@ lemma stepFR_assign
         refine ⟨v, ?_, hvtyp⟩
         simpa [hvar₁] using hvlookup
     · unfold regimeConsistentWithCtx at hregCtx2 ⊢
-      constructor
-      · have htag_res2_R2 : tagEnvConsistentWithRegime res2.tagEnv' res2.regime' := by
-          simpa [ctxAfter, ctx'] using hregCtx2.1
-        have htag_inv :
-            tagEnvConsistentWithRegime (invalidateTagDeps res2.tagEnv' ls)
-              (invalidateRegimeDeps res2.regime' res2.tagEnv' ls) :=
-          tagEnvConsistentWithRegime_invalidateRegimeDeps res2.tagEnv' res2.regime' ls htag_res2_R2
-        simpa [ctxAfter, htag_res, hRegime] using htag_inv
-      · have hbound2 : res2.regime'.bound ≤ res2.nextTag' := by
-          simpa [ctxAfter, ctx'] using hregCtx2.2
-        have hbound_res2 : (invalidateRegimeDeps res2.regime' res2.tagEnv' ls).bound ≤ res2.nextTag' := by
-          simpa [invalidateRegimeDeps] using hbound2
-        simpa [ctxAfter, hRegime, hNextTag] using hbound_res2
+      have htag_res2_R2 : tagEnvConsistentWithRegime res2.tagEnv' res2.regime' := by
+        simpa [ctxAfter, ctx'] using hregCtx2
+      have htag_inv :
+          tagEnvConsistentWithRegime (invalidateTagDeps res2.tagEnv' ls)
+            (invalidateRegimeDeps res2.regime' res2.tagEnv' ls) :=
+        tagEnvConsistentWithRegime_invalidateRegimeDeps res2.tagEnv' res2.regime' ls htag_res2_R2
+      simpa [ctxAfter, htag_res, hRegime] using htag_inv
     · unfold consistentWithRegime
       constructor
       · intro l qt k hlookup hguard hkR
@@ -2625,7 +2601,7 @@ lemma stepFR_assign
           have hkR_res2 : res2.regime'.lookup? k ≠ none :=
             invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
               res2.regime' res2.tagEnv' ls k hkR_res'
-          exact hmono12.2.2 k hkR_res2
+          exact hmono12.2 k hkR_res2
         cases hsplit with
         | inl hOld =>
             by_cases hIn : l ∈ ls
@@ -2743,13 +2719,13 @@ lemma stepFR_assign
                     simpa [ctxAfter, ctx', hk_eq] using hreg
                   have hk_ctxi : ctxᵢ.regime.lookup? k = some b := by
                     have hk_ctxi_not_none : ctxᵢ.regime.lookup? k ≠ none := by
-                      exact hmono12.2.2 k (by simp [hreg_res2])
+                      exact hmono12.2 k (by simp [hreg_res2])
                     cases hk0 : ctxᵢ.regime.lookup? k with
                     | none =>
                         exact (hk_ctxi_not_none hk0).elim
                     | some b0 =>
                         have hmono_keep : res2.regime'.lookup? k = some b0 ∨ res2.regime'.lookup? k = none :=
-                          hmono12.2.1 k b0 hk0
+                          hmono12.1 k b0 hk0
                         cases hmono_keep with
                         | inl hk_keep =>
                             have hb : b0 = b := by
@@ -2894,7 +2870,7 @@ lemma stepFR_assign
             have hkR_res2 : res2.regime'.lookup? k ≠ none :=
               invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
                 res2.regime' res2.tagEnv' ls k hkR_res'
-            exact hmono12.2.2 k hkR_res2
+            exact hmono12.2 k hkR_res2
           have hvars := hcwr₀.2.1 x qt k hlookup_ctxi hguard hkR_ctxi
           have hPredSat_mem :
               ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
@@ -2956,7 +2932,7 @@ lemma stepFR_assign
                   res2.regime' res2.tagEnv' ls k hkR_res'
               have hreg_res2 : res2.regime'.lookup? k = some b := by
                 have hmono_keep : res2.regime'.lookup? k = some b ∨ res2.regime'.lookup? k = none :=
-                  hmono12.2.1 k b hreg
+                  hmono12.1 k b hreg
                 cases hmono_keep with
                 | inl hk_keep =>
                     exact hk_keep
@@ -3018,7 +2994,7 @@ lemma stepFR_assign
           have hkR_res2 : res2.regime'.lookup? k ≠ none :=
             invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
               res2.regime' res2.tagEnv' ls k hkR_res'
-          exact hmono12.2.2 k hkR_res2
+          exact hmono12.2 k hkR_res2
         have hlookup_res : res.memEnv'.lookup l = some qt := by
           simpa [ctxAfter] using hlookup
         have hcontains_res : res.memEnv'.contains l = true := by
@@ -3295,7 +3271,7 @@ lemma stepFR_assign
             have hkR_res2 : res2.regime'.lookup? k ≠ none :=
               invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
                 res2.regime' res2.tagEnv' ls k hkR_res'
-            exact hmono12.2.2 k hkR_res2
+            exact hmono12.2 k hkR_res2
           have hvars := hcwr₁.2.1 x qt k hlookup_ctxi hguard hkR_ctxi
           have hPredSat_mem :
               ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
@@ -3357,7 +3333,7 @@ lemma stepFR_assign
                   res2.regime' res2.tagEnv' ls k hkR_res'
               have hreg_res2 : res2.regime'.lookup? k = some b := by
                 have hmono_keep : res2.regime'.lookup? k = some b ∨ res2.regime'.lookup? k = none :=
-                  hmono12.2.1 k b hreg
+                  hmono12.1 k b hreg
                 cases hmono_keep with
                 | inl hk_keep =>
                     exact hk_keep
@@ -3499,7 +3475,7 @@ lemma stepFR_assign
               ∃ deps, res2.tagEnv'.get? k = some ⟨false, deps⟩ := by
         intro k hkR
         have htag_res2 : tagEnvConsistentWithRegime res2.tagEnv' res2.regime' := by
-          simpa [ctxAfter, ctx'] using hregCtx2.1
+          simpa [ctxAfter, ctx'] using hregCtx2
         have hkR_inv : (invalidateRegimeDeps res2.regime' res2.tagEnv' ls).lookup? k ≠ none := by
           simpa [ctxAfter, hRegime] using hkR
         exact
@@ -4866,7 +4842,7 @@ private lemma assign_single_run_post_transport_common
   (hmem : cf.memory = Std.ExtTreeMap.insert cfg2.memory a_w n)
   (hvar : cf.varEnv = cfg2.varEnv)
   (hNextLoc : res.nextLoc' = ls.fold result2.nextLoc' (fun acc l => max acc (l + 1)))
-  (hNextTag : res.nextTag' = result2.nextTag')
+  (_hNextTag : res.nextTag' = result2.nextTag')
   (hRegime : res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls)
   (hmem_res :
     res.memEnv' =
@@ -5001,19 +4977,13 @@ private lemma assign_single_run_post_transport_common
       refine ⟨v, ?_, hvtyp⟩
       simpa [hvar] using hvlookup
   · unfold regimeConsistentWithCtx at hreg2 ⊢
-    constructor
-    · have htag_res2_R2 : tagEnvConsistentWithRegime result2.tagEnv' result2.regime' := by
-        simpa [ctxAfter] using hreg2.1
-      have htag_inv :
-          tagEnvConsistentWithRegime (invalidateTagDeps result2.tagEnv' ls)
-            (invalidateRegimeDeps result2.regime' result2.tagEnv' ls) :=
-        tagEnvConsistentWithRegime_invalidateRegimeDeps result2.tagEnv' result2.regime' ls htag_res2_R2
-      simpa [ctxAfter, htag_res, hRegime] using htag_inv
-    · have hbound2 : result2.regime'.bound ≤ result2.nextTag' := by
-        simpa [ctxAfter] using hreg2.2
-      have hbound_res2 : (invalidateRegimeDeps result2.regime' result2.tagEnv' ls).bound ≤ result2.nextTag' := by
-        simpa [invalidateRegimeDeps] using hbound2
-      simpa [ctxAfter, hRegime, hNextTag] using hbound_res2
+    have htag_res2_R2 : tagEnvConsistentWithRegime result2.tagEnv' result2.regime' := by
+      simpa [ctxAfter] using hreg2
+    have htag_inv :
+        tagEnvConsistentWithRegime (invalidateTagDeps result2.tagEnv' ls)
+          (invalidateRegimeDeps result2.regime' result2.tagEnv' ls) :=
+      tagEnvConsistentWithRegime_invalidateRegimeDeps result2.tagEnv' result2.regime' ls htag_res2_R2
+    simpa [ctxAfter, htag_res, hRegime] using htag_inv
 
 private lemma assign_single_run_post_transport_common_maskedReg
   (masked : Tag → Prop)
@@ -5031,7 +5001,7 @@ private lemma assign_single_run_post_transport_common_maskedReg
   (hmem : cf.memory = Std.ExtTreeMap.insert cfg2.memory a_w n)
   (hvar : cf.varEnv = cfg2.varEnv)
   (hNextLoc : res.nextLoc' = ls.fold result2.nextLoc' (fun acc l => max acc (l + 1)))
-  (hNextTag : res.nextTag' = result2.nextTag')
+  (_hNextTag : res.nextTag' = result2.nextTag')
   (hRegime : res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls)
   (hmem_res :
     res.memEnv' =
@@ -5166,21 +5136,15 @@ private lemma assign_single_run_post_transport_common_maskedReg
       refine ⟨v, ?_, hvtyp⟩
       simpa [hvar] using hvlookup
   · unfold regimeConsistentWithCtxMasked at hreg2 ⊢
-    constructor
-    · have htag_res2_R2 :
-          tagEnvConsistentWithRegimeMasked masked result2.tagEnv' result2.regime' := by
-        simpa [ctxAfter] using hreg2.1
-      have htag_inv :
-          tagEnvConsistentWithRegimeMasked masked (invalidateTagDeps result2.tagEnv' ls)
-            (invalidateRegimeDeps result2.regime' result2.tagEnv' ls) :=
-        tagEnvConsistentWithRegimeMasked_invalidateRegimeDeps
-          masked result2.tagEnv' result2.regime' ls htag_res2_R2
-      simpa [ctxAfter, htag_res, hRegime] using htag_inv
-    · have hbound2 : result2.regime'.bound ≤ result2.nextTag' := by
-        simpa [ctxAfter] using hreg2.2
-      have hbound_res2 : (invalidateRegimeDeps result2.regime' result2.tagEnv' ls).bound ≤ result2.nextTag' := by
-        simpa [invalidateRegimeDeps] using hbound2
-      simpa [ctxAfter, hRegime, hNextTag] using hbound_res2
+    have htag_res2_R2 :
+        tagEnvConsistentWithRegimeMasked masked result2.tagEnv' result2.regime' := by
+      simpa [ctxAfter] using hreg2
+    have htag_inv :
+        tagEnvConsistentWithRegimeMasked masked (invalidateTagDeps result2.tagEnv' ls)
+          (invalidateRegimeDeps result2.regime' result2.tagEnv' ls) :=
+      tagEnvConsistentWithRegimeMasked_invalidateRegimeDeps
+        masked result2.tagEnv' result2.regime' ls htag_res2_R2
+    simpa [ctxAfter, htag_res, hRegime] using htag_inv
 
 private lemma assign_single_run_post_transport_pc_true
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
@@ -5202,7 +5166,7 @@ private lemma assign_single_run_post_transport_pc_true
   (hmem : cf.memory = Std.ExtTreeMap.insert cfg2.memory a_w n)
   (hvar : cf.varEnv = cfg2.varEnv)
   (hNextLoc : res.nextLoc' = ls.fold result2.nextLoc' (fun acc l => max acc (l + 1)))
-  (hNextTag : res.nextTag' = result2.nextTag')
+  (_hNextTag : res.nextTag' = result2.nextTag')
   (hRegime : res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls)
   (hmem_res :
     res.memEnv' =
@@ -5350,19 +5314,13 @@ private lemma assign_single_run_post_transport_pc_true
       refine ⟨v, ?_, hvtyp⟩
       simpa [hvar] using hvlookup
   · unfold regimeConsistentWithCtx at hreg2 ⊢
-    constructor
-    · have htag_res2_R2 : tagEnvConsistentWithRegime result2.tagEnv' result2.regime' := by
-        simpa [ctxAfter] using hreg2.1
-      have htag_inv :
-          tagEnvConsistentWithRegime (invalidateTagDeps result2.tagEnv' ls)
-            (invalidateRegimeDeps result2.regime' result2.tagEnv' ls) :=
-        tagEnvConsistentWithRegime_invalidateRegimeDeps result2.tagEnv' result2.regime' ls htag_res2_R2
-      simpa [ctxAfter, htag_res, hRegime] using htag_inv
-    · have hbound2 : result2.regime'.bound ≤ result2.nextTag' := by
-        simpa [ctxAfter] using hreg2.2
-      have hbound_res2 : (invalidateRegimeDeps result2.regime' result2.tagEnv' ls).bound ≤ result2.nextTag' := by
-        simpa [invalidateRegimeDeps] using hbound2
-      simpa [ctxAfter, hRegime, hNextTag] using hbound_res2
+    have htag_res2_R2 : tagEnvConsistentWithRegime result2.tagEnv' result2.regime' := by
+      simpa [ctxAfter] using hreg2
+    have htag_inv :
+        tagEnvConsistentWithRegime (invalidateTagDeps result2.tagEnv' ls)
+          (invalidateRegimeDeps result2.regime' result2.tagEnv' ls) :=
+      tagEnvConsistentWithRegime_invalidateRegimeDeps result2.tagEnv' result2.regime' ls htag_res2_R2
+    simpa [ctxAfter, htag_res, hRegime] using htag_inv
   · unfold consistentWithRegime
     constructor
     · intro l qt k hlookup hguard hkR
@@ -6172,7 +6130,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck .ioFree (ctxAfter ctx result1) e2 fuel' = .ok result2 := by
     simpa [typecheck, ctxAfter] using htc2_expr_raw
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hRbound hctxCons a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht hpc
   have hinv := terminatesTo_assign_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hinv with ⟨cfg1, cfg2, aw, n, ht_e1, ht_e2, ho, hmem, hvar, _hnext, _hpm⟩
@@ -6189,21 +6147,18 @@ private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
     exact (wfConfig_preserved .ioFree e1 _ cfg1 (Value.loc aw) ht_e1 hwfcfg).1
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 (Value.loc aw)
-      hθwf hwf hric hregCtx hRbound hctxCons a pm hwfcfg ht_e1 hpc
+      hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht_e1 hpc
     with ⟨θ1, hθext1, hvloc1, hric1, hctxCons1, _hvalc1, hpres1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hmono1 : Regime.monotoneStep ctx.regime result1.regime' :=
     regime_monotone ctx e1 fuel' result1 htc1'
-  have hRbound1 : regimeBounded (ctxAfter ctx result1).regime := by
-    simpa [ctxAfter] using
-      regimeBounded_of_monotoneStep ctx.regime result1.regime' hRbound hmono1
   have hpc1 : (ctxAfter ctx result1).pc = true := by
     simpa [ctxAfter] using hpc
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 (ctxAfter ctx result1) hTm1 result2 htc2'
   rcases
     hIH2 hpredlaws hTm1 cfg1.memory cfg1.varEnv θ1 cfg2 (Value.num n)
-      hθ1wf hwf1 hric1 hreg1 hRbound1 hctxCons1
+      hθ1wf hwf1 hric1 hreg1 hctxCons1
       cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
     with ⟨θ2, hθext2, hvnum2, hric2, hctxCons2, _hvalc2, hpres2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
@@ -6429,7 +6384,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck .ioFree (ctxAfter ctx result1) e2 fuel' = .ok result2 := by
     simpa [typecheck, ctxAfter] using htc2_expr_raw
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hRbound hctxCons a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht hpc
   have hinv := terminatesTo_assign_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hinv with ⟨cfg1, cfg2, aw, n, ht_e1, ht_e2, ho, hmem, hvar, _hnext, _hpm⟩
@@ -6447,7 +6402,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
     exact (wfConfig_preserved .ioFree e1 _ cfg1 (Value.loc aw) ht_e1 hwfcfg).1
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 (Value.loc aw)
-      hθwf hwf hric hregCtx hmasked_none hRbound hctxCons a pm hwfcfg ht_e1 hpc
+      hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht_e1 hpc
     with ⟨θ1, hθext1, hvloc1, hric1, hctxCons1, _hvalc1, hpres1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hmono1 : Regime.monotoneStep ctx.regime result1.regime' :=
@@ -6458,16 +6413,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
       masked_lookup_none_of_monotoneStep
         (R := ctx.regime) (R' := result1.regime')
         hmasked_none hmono1 k hk
-  have hRbound1 : regimeBounded (ctxAfter ctx result1).regime := by
-    simpa [ctxAfter] using
-      regimeBounded_of_monotoneStep ctx.regime result1.regime' hRbound hmono1
   have hpc1 : (ctxAfter ctx result1).pc = true := by
     simpa [ctxAfter] using hpc
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 (ctxAfter ctx result1) hTm1 result2 htc2'
   rcases
     hIH2 hpredlaws hTm1 cfg1.memory cfg1.varEnv θ1 cfg2 (Value.num n)
-      hθ1wf hwf1 hric1 hreg1 hmasked_none1 hRbound1 hctxCons1
+      hθ1wf hwf1 hric1 hreg1 hmasked_none1 hctxCons1
       cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
     with ⟨θ2, hθext2, hvnum2, hric2, hctxCons2, _hvalc2, hpres2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2

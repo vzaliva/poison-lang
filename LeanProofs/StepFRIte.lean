@@ -2305,20 +2305,6 @@ lemma matchGuard_ok_tag_from_ctx
     right
     exact ⟨l, memQt, hlookupMem, by simp [qtypGuardTag, hpredMem]⟩
 
-/-- In a context where all top-level guard tags lie below the regime bound,
-    `matchGuard` returns a tag below that bound. -/
-lemma matchGuard_tag_in_bound
-    (ctx : TypeContext) (cond : Expr) (k : Tag) (deps : Deps)
-    {fuel : Nat}
-    (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps))
-    (hbounded : predTagsBoundedInCtx ctx) :
-    k < ctx.regime.bound := by
-  rcases hbounded with ⟨hvar_bounded, hmem_bounded⟩
-  rcases matchGuard_ok_tag_from_ctx ctx cond k deps hmatch with
-    ⟨x, qt, hlookup, htag⟩ | ⟨l, qt, hlookup, htag⟩
-  · exact hvar_bounded x qt k hlookup htag
-  · exact hmem_bounded l qt k hlookup htag
-
 /-- Optional local helper for the `ite` FR modes.
     Shows the guard evaluation boolean is aligned with the regime value once
     `matchGuard` succeeds and an owner witness is available.
@@ -2662,7 +2648,7 @@ private lemma stepFR_ite_mode1
   (hetyp : res.qualType.etyp = res2.qualType.etyp) :
   StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
   classical
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
@@ -2680,7 +2666,7 @@ private lemma stepFR_ite_mode1
     exact hwf
   have hstep_e1 :=
     hIH_e1 hpredlaws hwfTm_pure μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
-      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
   rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hwfTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
@@ -2773,12 +2759,8 @@ private lemma stepFR_ite_mode1
         hsub₁ hric₁1
   have htagR_true : regimeConsistentWithCtx ctxTrue := by
     unfold regimeConsistentWithCtx at htagR ⊢
-    constructor
-    · exact tagEnvConsistentWithRegime_insert_true
-        ctxᵢ.tagEnv ctxᵢ.regime k deps htagR.1 hregime_true
-    · simpa [ctxTrue] using htagR.2
-  have hRbound_true : regimeBounded ctxTrue.regime := by
-    simpa [ctxTrue] using hRbound
+    exact tagEnvConsistentWithRegime_insert_true
+        ctxᵢ.tagEnv ctxᵢ.regime k deps htagR hregime_true
   have hcwr₀1' : consistentWithRegime predSat ctxTrue.regime ctxTrue cfg₀1.memory cfg₀1.varEnv θ₀1 := by
     refine
       consistentWithRegime_transport_ctxAfter_pure_to_ctx_insert_true
@@ -2948,7 +2930,7 @@ private lemma stepFR_ite_mode1
     hIH_e2 hpredlaws hwfTm_true
       cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ o₀ o₁
-      hθ₀1wf hθ₁1wf hwf_true hric₀1' hric₁1' htagR_true hRbound_true
+      hθ₀1wf hθ₁1wf hwf_true hric₀1' hric₁1' htagR_true
       hcwr₀1' hcwr₁1' hagree1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
       ht₀_e2 ht₁_e2'
@@ -3057,7 +3039,7 @@ private lemma stepFR_ite_mode2
   (hetyp : res.qualType.etyp = res3.qualType.etyp) :
   StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
   classical
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
@@ -3075,7 +3057,7 @@ private lemma stepFR_ite_mode2
     exact hwf
   have hstep_e1 :=
     hIH_e1 hpredlaws hwfTm_pure μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
-      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
   rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hwfTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
@@ -3178,12 +3160,8 @@ private lemma stepFR_ite_mode2
     simpa [runtimeInstantiatesCtx, ctxFalse] using hric₁1_true
   have htagR_false : regimeConsistentWithCtx ctxFalse := by
     unfold regimeConsistentWithCtx at htagR ⊢
-    constructor
-    · exact tagEnvConsistentWithRegime_insert_false
-        ctxᵢ.tagEnv ctxᵢ.regime k deps htagR.1
-    · simpa [ctxFalse] using htagR.2
-  have hRbound_false : regimeBounded ctxFalse.regime := by
-    simpa [ctxFalse] using hRbound
+    exact tagEnvConsistentWithRegime_insert_false
+        ctxᵢ.tagEnv ctxᵢ.regime k deps htagR
   have hcwr₀1' : consistentWithRegime predSat ctxFalse.regime ctxFalse cfg₀1.memory cfg₀1.varEnv θ₀1 := by
     have hcwr₀1_true :
         consistentWithRegime predSat
@@ -3365,7 +3343,7 @@ private lemma stepFR_ite_mode2
     hIH_e3 hpredlaws hwfTm_false
       cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ o₀ o₁
-      hθ₀1wf hθ₁1wf hwf_false hric₀1' hric₁1' htagR_false hRbound_false
+      hθ₀1wf hθ₁1wf hwf_false hric₀1' hric₁1' htagR_false
       hcwr₀1' hcwr₁1' hagree1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
       ht₀_e3 ht₁_e3'
@@ -3533,7 +3511,7 @@ private lemma stepFR_ite_mode3
                           (joinPoison res2.qualType.poison res3.qualType.poison))) :
   StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
   classical
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Invert ite evaluation (world-free)
   have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -3551,7 +3529,7 @@ private lemma stepFR_ite_mode3
     simp [wfTypeContext] at hwf ⊢; exact hwf
   have hstep_e1 :=
     hIH_e1 hpredlaws hwfTm_pure μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
-      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      hθ₀ hθ₁ hwf_pure hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
   rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hwf1, hwfcf₀1, hwfcf₁1, _hric₀1, _hric₁1, _htagR1, _hcwr₀1, _hcwr₁1, _hagree1, _hvalc₀1, _hvalc₁1, hres_agree1⟩
@@ -3736,7 +3714,7 @@ private lemma stepFR_ite_mode4
   (hpredNo : res.qualType.pred = Predicate.noPred) :
   StepFR .ioFree ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
   classical
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Invert ite evaluation (world-free)
   have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -3751,7 +3729,7 @@ private lemma stepFR_ite_mode4
     e1 ctxᵢ hwfTm res1 htc1'
   have hstep_e1 :=
     hIH_e1 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
   rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, hwfTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, hvalc₀1, hvalc₁1, hres_agree1⟩
@@ -3805,9 +3783,6 @@ private lemma stepFR_ite_mode4
     simpa [ctxAfter, ctx'', ctx', pc'] using regime_monotone ctx'' e2 fuel' res2 htc2'
   have hmono3 : Regime.monotoneStep res1.regime' res3.regime' := by
     simpa [ctxAfter, ctxForE3, ctx'', ctx', pc'] using regime_monotone ctxForE3 e3 fuel' res3 htc3'
-  have hRbound1 :
-      regimeBounded (ctxAfter ctxᵢ res1).regime :=
-    regimeBounded_of_monotoneStep ctxᵢ.regime (ctxAfter ctxᵢ res1).regime hRbound hmono1
   have hwf_ctx'' : wfTypeContext ctx'' := by
     simpa [ctx'', ctx', pc', ctxAfter, wfTypeContext] using hwf1
   have hwfTm_ctx'' : wfTagMeaningCtx tm ctx'' := by
@@ -3826,8 +3801,6 @@ private lemma stepFR_ite_mode4
     simpa [ctx'', ctx', pc', ctxAfter, consistentWithRegime] using hcwr₁1
   have htagR_ctx'' : regimeConsistentWithCtx ctx'' := by
     simpa [ctx'', ctx', pc', ctxAfter, regimeConsistentWithCtx] using htagR1
-  have hRbound_ctx'' : regimeBounded ctx''.regime := by
-    simpa [ctx'', ctx', pc', ctxAfter] using hRbound1
   have hagree1_ctx'' :
       agreeOnClean predSat ctx''.regime ctx''
         cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
@@ -3836,12 +3809,6 @@ private lemma stepFR_ite_mode4
       res1.nextLoc' ≤ res2.nextLoc' := by
     have : ctx''.nextLoc ≤ res2.nextLoc' :=
       typecheck_nextLoc_mono ctx'' e2 fuel' res2
-        (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
-    simpa [ctx'', ctx'] using this
-  have hnextTag_mono :
-      res1.nextTag' ≤ res2.nextTag' := by
-    have : ctx''.nextTag ≤ res2.nextTag' :=
-      typecheck_nextTag_mono .ioFree ctx'' e2 fuel' res2
         (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
     simpa [ctx'', ctx'] using this
   have hwfTm_ctxForE3 : wfTagMeaningCtx tm ctxForE3 := by
@@ -3865,13 +3832,8 @@ private lemma stepFR_ite_mode4
         cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctxForE3, ctx'', ctx', pc', ctxAfter, consistentWithRegime] using hcwr₁1
   have htagR_ctxForE3 : regimeConsistentWithCtx ctxForE3 := by
-    constructor
-    · show tagEnvConsistentWithRegime ctxForE3.tagEnv ctxForE3.regime
-      simpa [ctxForE3, ctx'', ctx', pc', regimeConsistentWithCtx] using htagR1.1
-    · show ctxForE3.regime.bound ≤ ctxForE3.nextTag
-      simpa [ctxForE3, ctx'', ctx', pc'] using Nat.le_trans htagR1.2 hnextTag_mono
-  have hRbound_ctxForE3 : regimeBounded ctxForE3.regime := by
-    simpa [ctxForE3, ctx'', ctx', pc', ctxAfter] using hRbound1
+    unfold regimeConsistentWithCtx at htagR1 ⊢
+    simpa [ctxForE3, ctx'', ctx', pc', regimeConsistentWithCtx] using htagR1
   cases hbranch₀ with
   | inl hbranch₀_true =>
       cases hbranch₁ with
@@ -3911,7 +3873,7 @@ private lemma stepFR_ite_mode4
             hIH_e2 hpredlaws hwfTm_ctx''
               cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
               cf₀ cf₁ o₀ o₁
-              hθ₀1wf hθ₁1wf hwf_ctx'' hric₀1_ctx'' hric₁1_ctx'' htagR_ctx'' hRbound_ctx''
+              hθ₀1wf hθ₁1wf hwf_ctx'' hric₀1_ctx'' hric₁1_ctx'' htagR_ctx''
               hcwr₀1_ctx'' hcwr₁1_ctx'' hagree1_ctx''
               cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
               ht₀_e2 ht₁_e2'
@@ -4295,13 +4257,13 @@ private lemma stepFR_ite_mode4
           rcases
               hsingle_e2 hpredlaws hwfTm_ctx''
                 cfg₀1.memory cfg₀1.varEnv θ₀1 cf₀ o₀
-                hθ₀1wf hwf_ctx'' hric₀1_ctx'' htagR_ctx'' hRbound_ctx''
+                hθ₀1wf hwf_ctx'' hric₀1_ctx'' htagR_ctx''
                 hcwr₀1_ctx'' cfg₀1.nextAddr cfg₀1.pureMode hwfcf₀1 ht₀_e2 hpc''
             with ⟨θ₀2, hθext₀2, hvtyp₀2, hric₀2, hcwr₀2, hvalc₀2, hpres₂⟩
           rcases
               hsingle_e3 hpredlaws hwfTm_ctxForE3
                 cfg₁1.memory cfg₁1.varEnv θ₁1 cf₁ o₁
-                hθ₁1wf hwf_ctxForE3 hric₁1_ctxForE3 htagR_ctxForE3 hRbound_ctxForE3
+                hθ₁1wf hwf_ctxForE3 hric₁1_ctxForE3 htagR_ctxForE3
                 hcwr₁1_ctxForE3 cfg₁1.nextAddr cfg₁1.pureMode hwfcf₁1 ht₁_e3 hpcForE3
             with ⟨θ₁3, hθext₁3, hvtyp₁3, hric₁3, hcwr₁3, hvalc₁3, hpres₃⟩
           have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
@@ -4962,13 +4924,13 @@ private lemma stepFR_ite_mode4
           rcases
               hsingle_e3 hpredlaws hwfTm_ctxForE3
                 cfg₀1.memory cfg₀1.varEnv θ₀1 cf₀ o₀
-                hθ₀1wf hwf_ctxForE3 hric₀1_ctxForE3 htagR_ctxForE3 hRbound_ctxForE3
+                hθ₀1wf hwf_ctxForE3 hric₀1_ctxForE3 htagR_ctxForE3
                 hcwr₀1_ctxForE3 cfg₀1.nextAddr cfg₀1.pureMode hwfcf₀1 ht₀_e3 hpcForE3
             with ⟨θ₀3, hθext₀3, hvtyp₀3, hric₀3, hcwr₀3, hvalc₀3, hpres₃⟩
           rcases
               hsingle_e2 hpredlaws hwfTm_ctx''
                 cfg₁1.memory cfg₁1.varEnv θ₁1 cf₁ o₁
-                hθ₁1wf hwf_ctx'' hric₁1_ctx'' htagR_ctx'' hRbound_ctx''
+                hθ₁1wf hwf_ctx'' hric₁1_ctx'' htagR_ctx''
                 hcwr₁1_ctx'' cfg₁1.nextAddr cfg₁1.pureMode hwfcf₁1 ht₁_e2 hpc''
             with ⟨θ₁2, hθext₁2, hvtyp₁2, hric₁2, hcwr₁2, hvalc₁2, hpres₂⟩
           have hθext₀ : wfExtendsMap θ₀ θ₀3 := wfExtendsMap_trans hθext₀1 hθext₀3
@@ -5625,7 +5587,7 @@ private lemma stepFR_ite_mode4
             hIH_e3 hpredlaws hwfTm_ctxForE3
               cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
               cf₀ cf₁ o₀ o₁
-              hθ₀1wf hθ₁1wf hwf_ctxForE3 hric₀1_ctxForE3 hric₁1_ctxForE3 htagR_ctxForE3 hRbound_ctxForE3
+              hθ₀1wf hθ₁1wf hwf_ctxForE3 hric₀1_ctxForE3 hric₁1_ctxForE3 htagR_ctxForE3
               hcwr₀1_ctxForE3 hcwr₁1_ctxForE3
               (by simpa [ctxForE3, ctx'', ctx', pc', ctxAfter] using hagree1)
               cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'

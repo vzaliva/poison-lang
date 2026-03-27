@@ -2841,7 +2841,7 @@ section regime_monotone_proof
 
 private lemma regimeMonotone_refl (R : Regime) :
     Regime.monotoneStep R R := by
-  refine ⟨rfl, ?_, ?_⟩
+  refine ⟨?_, ?_⟩
   · intro k b hk
     exact Or.inl hk
   · intro k hk
@@ -2851,24 +2851,21 @@ lemma regimeMonotone_trans {R R' R'' : Regime}
     (h₁ : Regime.monotoneStep R R')
     (h₂ : Regime.monotoneStep R' R'') :
     Regime.monotoneStep R R'' := by
-  refine ⟨?_, ?_, ?_⟩
-  · calc
-      R''.bound = R'.bound := h₂.1
-      _ = R.bound := h₁.1
+  refine ⟨?_, ?_⟩
   · intro k b hkR
-    have hR' : R'.lookup? k = some b ∨ R'.lookup? k = none := h₁.2.1 k b hkR
+    have hR' : R'.lookup? k = some b ∨ R'.lookup? k = none := h₁.1 k b hkR
     cases hR' with
     | inl hkR' =>
-        exact h₂.2.1 k b hkR'
+        exact h₂.1 k b hkR'
     | inr hkR'_none =>
         exact Or.inr (by
           by_contra hkR''_not_none
           exact hkR''_not_none (by
-            have hkR'_not_none : R'.lookup? k ≠ none := h₂.2.2 k hkR''_not_none
+            have hkR'_not_none : R'.lookup? k ≠ none := h₂.2 k hkR''_not_none
             exact False.elim (hkR'_not_none hkR'_none)))
   · intro k hkR''_not_none
-    have hkR'_not_none : R'.lookup? k ≠ none := h₂.2.2 k hkR''_not_none
-    exact h₁.2.2 k hkR'_not_none
+    have hkR'_not_none : R'.lookup? k ≠ none := h₂.2 k hkR''_not_none
+    exact h₁.2 k hkR'_not_none
 
 private lemma list_mem_eraseDups_of_mem {α : Type} [BEq α] [LawfulBEq α]
     {x : α} {l : List α} (h : x ∈ l) : x ∈ l.eraseDups := by
@@ -2967,27 +2964,8 @@ private lemma joinRegimes_lookup_of_some_some
     (h1 : R1.lookup? k = some b)
     (h2 : R2.lookup? k = some b) :
     (joinRegimes R1 R2).lookup? k = some b := by
-  have hk1 : k < R1.bound := by
-    by_cases hk : k < R1.bound
-    · exact hk
-    · unfold Regime.lookup? at h1
-      simp [hk] at h1
-  have hk2 : k < R2.bound := by
-    by_cases hk : k < R2.bound
-    · exact hk
-    · unfold Regime.lookup? at h2
-      simp [hk] at h2
-  have hkmin : k < min R1.bound R2.bound := Nat.lt_min.2 ⟨hk1, hk2⟩
-  have hmap1 : R1.map.get? k = some b := by
-    unfold Regime.lookup? at h1
-    simp [hk1] at h1
-    exact h1
-  have hmap2 : R2.map.get? k = some b := by
-    unfold Regime.lookup? at h2
-    simp [hk2] at h2
-    exact h2
-  have hkjoin : k < (joinRegimes R1 R2).bound := by
-    simpa [joinRegimes] using hkmin
+  have hmap1 : R1.map.get? k = some b := h1
+  have hmap2 : R2.map.get? k = some b := h2
   have hmap1' : R1.map[k]? = some b := by
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap1
   have hmap2' : R2.map[k]? = some b := by
@@ -3019,7 +2997,6 @@ private lemma joinRegimes_lookup_of_some_some
       simpa [joinRegimes_combine_fun_eq] using hcombine0s
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine0'
   unfold Regime.lookup?
-  rw [if_pos hkjoin]
   simpa [joinRegimes] using hcombine
 
 private lemma joinRegimes_lookup_of_some_disagree
@@ -3027,29 +3004,19 @@ private lemma joinRegimes_lookup_of_some_disagree
     (h1 : R1.lookup? k = some false)
     (h2 : R2.lookup? k = some true) :
     (joinRegimes R1 R2).lookup? k = none := by
-  have hk1 : k < R1.bound := by
-    by_contra h
-    unfold Regime.lookup? at h1; simp [h] at h1
-  have hk2 : k < R2.bound := by
-    by_contra h
-    unfold Regime.lookup? at h2; simp [h] at h2
-  have hkmin : k < min R1.bound R2.bound := Nat.lt_min.2 ⟨hk1, hk2⟩
   have hmap1 : R1.map[k]? = some false := by
-    unfold Regime.lookup? at h1; simp [hk1] at h1; simpa [Std.ExtTreeMap.get?_eq_getElem?] using h1
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using h1
   have hmap2 : R2.map[k]? = some true := by
-    unfold Regime.lookup? at h2; simp [hk2] at h2; simpa [Std.ExtTreeMap.get?_eq_getElem?] using h2
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using h2
   have hcombine := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
     (fun _ ob1 ob2 => match ob1, ob2 with | some b1, some b2 => if b1 == b2 then some b1 else none | _, _ => none)
     k rfl
-  have hf : (fun _ ob1 ob2 => match ob1, ob2 with | some b1, some b2 => if b1 == b2 then some b1 else none | _, _ => none)
-      k (some false) (some true) = none := rfl
   have hcombine' : (joinRegimes R1 R2).map.get? k = none := by
     unfold joinRegimes
     have h := hcombine
     simp [hmap1, hmap2] at h
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using h
   unfold Regime.lookup?
-  rw [if_pos (by simpa [joinRegimes] using hkmin)]
   simp only [joinRegimes]
   exact hcombine'
 
@@ -3058,17 +3025,10 @@ private lemma joinRegimes_lookup_of_some_disagree_symm
     (h1 : R1.lookup? k = some true)
     (h2 : R2.lookup? k = some false) :
     (joinRegimes R1 R2).lookup? k = none := by
-  have hk1 : k < R1.bound := by
-    by_contra h
-    unfold Regime.lookup? at h1; simp [h] at h1
-  have hk2 : k < R2.bound := by
-    by_contra h
-    unfold Regime.lookup? at h2; simp [h] at h2
-  have hkmin : k < min R1.bound R2.bound := Nat.lt_min.2 ⟨hk1, hk2⟩
   have hmap1 : R1.map[k]? = some true := by
-    unfold Regime.lookup? at h1; simp [hk1] at h1; simpa [Std.ExtTreeMap.get?_eq_getElem?] using h1
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using h1
   have hmap2 : R2.map[k]? = some false := by
-    unfold Regime.lookup? at h2; simp [hk2] at h2; simpa [Std.ExtTreeMap.get?_eq_getElem?] using h2
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using h2
   have hcombine := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
     (fun _ ob1 ob2 => match ob1, ob2 with | some b1, some b2 => if b1 == b2 then some b1 else none | _, _ => none)
     k rfl
@@ -3078,7 +3038,6 @@ private lemma joinRegimes_lookup_of_some_disagree_symm
     simp [hmap1, hmap2] at h
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using h
   unfold Regime.lookup?
-  rw [if_pos (by simpa [joinRegimes] using hkmin)]
   simp only [joinRegimes]
   exact hcombine'
 
@@ -3086,97 +3045,73 @@ private lemma joinRegimes_lookup_of_left_none
     (R1 R2 : Regime) (k : Tag)
     (h1 : R1.lookup? k = none) :
     (joinRegimes R1 R2).lookup? k = none := by
-  by_cases hkmin : k < min R1.bound R2.bound
-  · have hk1 : k < R1.bound := Nat.lt_of_lt_of_le hkmin (Nat.min_le_left _ _)
-    have hmap1 : R1.map.get? k = none := by
-      unfold Regime.lookup? at h1
-      rw [if_pos hk1] at h1
-      exact h1
-    have hkjoin : k < (joinRegimes R1 R2).bound := by
-      simpa [joinRegimes] using hkmin
-    have hmap1' : R1.map[k]? = none := by
-      simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap1
-    have hcombine :
+  have hmap1 : R1.map.get? k = none := h1
+  have hmap1' : R1.map[k]? = none := by
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap1
+  have hcombine :
+      (combineExtTreeMaps R1.map R2.map
+        (fun _ ob1 ob2 =>
+          match ob1, ob2 with
+          | some b1, some b2 => if b1 == b2 then some b1 else none
+          | _, _ => none)).get? k = none := by
+    have hcombine0 := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
+      (fun _ ob1 ob2 =>
+        match ob1, ob2 with
+        | some b1, some b2 => if b1 = b2 then some b1 else none
+        | _, _ => none) k rfl
+    have hcombine0s :
+        (combineExtTreeMaps R1.map R2.map
+          (fun _ ob1 ob2 =>
+            match ob1, ob2 with
+            | some b1, some b2 => if b1 = b2 then some b1 else none
+            | _, _ => none))[k]? = none := by
+      simpa [hmap1'] using hcombine0
+    have hcombine0' :
         (combineExtTreeMaps R1.map R2.map
           (fun _ ob1 ob2 =>
             match ob1, ob2 with
             | some b1, some b2 => if b1 == b2 then some b1 else none
-            | _, _ => none)).get? k = none := by
-      have hcombine0 := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
-        (fun _ ob1 ob2 =>
-          match ob1, ob2 with
-          | some b1, some b2 => if b1 = b2 then some b1 else none
-          | _, _ => none) k rfl
-      have hcombine0s :
-          (combineExtTreeMaps R1.map R2.map
-            (fun _ ob1 ob2 =>
-              match ob1, ob2 with
-              | some b1, some b2 => if b1 = b2 then some b1 else none
-              | _, _ => none))[k]? = none := by
-        simpa [hmap1'] using hcombine0
-      have hcombine0' :
-          (combineExtTreeMaps R1.map R2.map
-            (fun _ ob1 ob2 =>
-              match ob1, ob2 with
-              | some b1, some b2 => if b1 == b2 then some b1 else none
-              | _, _ => none))[k]? = none := by
-        simpa [joinRegimes_combine_fun_eq] using hcombine0s
-      simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine0'
-    unfold Regime.lookup?
-    rw [if_pos hkjoin]
-    simpa [joinRegimes] using hcombine
-  · have hk_join : ¬ k < (joinRegimes R1 R2).bound := by
-      simpa [joinRegimes] using hkmin
-    unfold Regime.lookup?
-    simp [hk_join]
+            | _, _ => none))[k]? = none := by
+      simpa [joinRegimes_combine_fun_eq] using hcombine0s
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine0'
+  unfold Regime.lookup?
+  simpa [joinRegimes] using hcombine
 
 private lemma joinRegimes_lookup_of_right_none
     (R1 R2 : Regime) (k : Tag)
     (h2 : R2.lookup? k = none) :
     (joinRegimes R1 R2).lookup? k = none := by
-  by_cases hkmin : k < min R1.bound R2.bound
-  · have hk2 : k < R2.bound := Nat.lt_of_lt_of_le hkmin (Nat.min_le_right _ _)
-    have hmap2 : R2.map.get? k = none := by
-      unfold Regime.lookup? at h2
-      rw [if_pos hk2] at h2
-      exact h2
-    have hkjoin : k < (joinRegimes R1 R2).bound := by
-      simpa [joinRegimes] using hkmin
-    have hmap2' : R2.map[k]? = none := by
-      simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap2
-    have hcombine :
+  have hmap2 : R2.map.get? k = none := h2
+  have hmap2' : R2.map[k]? = none := by
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap2
+  have hcombine :
+      (combineExtTreeMaps R1.map R2.map
+        (fun _ ob1 ob2 =>
+          match ob1, ob2 with
+          | some b1, some b2 => if b1 == b2 then some b1 else none
+          | _, _ => none)).get? k = none := by
+    have hcombine0 := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
+      (fun _ ob1 ob2 =>
+        match ob1, ob2 with
+        | some b1, some b2 => if b1 = b2 then some b1 else none
+        | _, _ => none) k rfl
+    have hcombine0s :
+        (combineExtTreeMaps R1.map R2.map
+          (fun _ ob1 ob2 =>
+            match ob1, ob2 with
+            | some b1, some b2 => if b1 = b2 then some b1 else none
+            | _, _ => none))[k]? = none := by
+      simpa [hmap2'] using hcombine0
+    have hcombine0' :
         (combineExtTreeMaps R1.map R2.map
           (fun _ ob1 ob2 =>
             match ob1, ob2 with
             | some b1, some b2 => if b1 == b2 then some b1 else none
-            | _, _ => none)).get? k = none := by
-      have hcombine0 := combineExtTreeMaps_getElem?_of_none_none R1.map R2.map
-        (fun _ ob1 ob2 =>
-          match ob1, ob2 with
-          | some b1, some b2 => if b1 = b2 then some b1 else none
-          | _, _ => none) k rfl
-      have hcombine0s :
-          (combineExtTreeMaps R1.map R2.map
-            (fun _ ob1 ob2 =>
-              match ob1, ob2 with
-              | some b1, some b2 => if b1 = b2 then some b1 else none
-              | _, _ => none))[k]? = none := by
-        simpa [hmap2'] using hcombine0
-      have hcombine0' :
-          (combineExtTreeMaps R1.map R2.map
-            (fun _ ob1 ob2 =>
-              match ob1, ob2 with
-              | some b1, some b2 => if b1 == b2 then some b1 else none
-              | _, _ => none))[k]? = none := by
-        simpa [joinRegimes_combine_fun_eq] using hcombine0s
-      simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine0'
-    unfold Regime.lookup?
-    rw [if_pos hkjoin]
-    simpa [joinRegimes] using hcombine
-  · have hk_join : ¬ k < (joinRegimes R1 R2).bound := by
-      simpa [joinRegimes] using hkmin
-    unfold Regime.lookup?
-    simp [hk_join]
+            | _, _ => none))[k]? = none := by
+      simpa [joinRegimes_combine_fun_eq] using hcombine0s
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine0'
+  unfold Regime.lookup?
+  simpa [joinRegimes] using hcombine
 
 private lemma joinRegimes_lookup_comm (R1 R2 : Regime) (k : Tag) :
     (joinRegimes R1 R2).lookup? k = (joinRegimes R2 R1).lookup? k := by
@@ -3208,117 +3143,99 @@ lemma joinRegimes_lookup_some_left
     (joinRegimes R1 R2).lookup? k = some b →
     R1.lookup? k = some b := by
   intro hjoin
-  by_cases hkmin : k < min R1.bound R2.bound
-  · have hk1 : k < R1.bound := Nat.lt_of_lt_of_le hkmin (Nat.min_le_left _ _)
-    let f : Tag → Option Bool → Option Bool → Option Bool := fun _ ob1 ob2 =>
-      match ob1, ob2 with
-      | some b1, some b2 => if b1 = b2 then some b1 else none
-      | _, _ => none
-    have hcombine : (combineExtTreeMaps R1.map R2.map f).get? k = some b := by
-      unfold Regime.lookup? at hjoin
-      simp [joinRegimes, hkmin] at hjoin
-      exact hjoin
-    simp only [combineExtTreeMaps] at hcombine
-    have hk_mem : k ∈ (R1.map.keys ++ R2.map.keys).eraseDups := by
-      by_contra hnot
-      have hgo_not :=
-        combineExtTreeMaps_go_get_not_mem R1.map R2.map f
-          (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hnot
-      have hempty : (({} : ExtTreeMap Tag Bool)[k]?) = none := by
-        rfl
-      rw [hempty] at hgo_not
-      have hcombine_get : (combineExtTreeMaps.go R1.map R2.map f (R1.map.keys ++ R2.map.keys).eraseDups
-          ({} : ExtTreeMap Tag Bool))[k]? = some b := by
-        simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine
-      rw [hgo_not] at hcombine_get
-      simp at hcombine_get
-    have hgo :=
-      combineExtTreeMaps_go_get_mem R1.map R2.map f
-        (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem
-    have hcombine_get :
-        (combineExtTreeMaps.go R1.map R2.map f (R1.map.keys ++ R2.map.keys).eraseDups
-          ({} : ExtTreeMap Tag Bool))[k]? = some b := by
+  let f : Tag → Option Bool → Option Bool → Option Bool := fun _ ob1 ob2 =>
+    match ob1, ob2 with
+    | some b1, some b2 => if b1 = b2 then some b1 else none
+    | _, _ => none
+  have hcombine : (combineExtTreeMaps R1.map R2.map f).get? k = some b := by
+    unfold Regime.lookup? at hjoin
+    simp [joinRegimes] at hjoin
+    exact hjoin
+  simp only [combineExtTreeMaps] at hcombine
+  have hk_mem : k ∈ (R1.map.keys ++ R2.map.keys).eraseDups := by
+    by_contra hnot
+    have hgo_not :=
+      combineExtTreeMaps_go_get_not_mem R1.map R2.map f
+        (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hnot
+    have hempty : (({} : ExtTreeMap Tag Bool)[k]?) = none := by
+      rfl
+    rw [hempty] at hgo_not
+    have hcombine_get : (combineExtTreeMaps.go R1.map R2.map f (R1.map.keys ++ R2.map.keys).eraseDups
+        ({} : ExtTreeMap Tag Bool))[k]? = some b := by
       simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine
-    rw [hcombine_get] at hgo
-    simp only [f] at hgo
-    cases h1 : R1.map[k]? <;> cases h2 : R2.map[k]? <;> simp [h1, h2] at hgo
-    rename_i b1 b2
-    by_cases hbeq : b1 = b2
-    · simp [hbeq] at hgo
-      have hb2 : b = b2 := by simpa using hgo
-      have hb1 : b = b1 := by
-        calc
-          b = b2 := hb2
-          _ = b1 := hbeq.symm
-      have hmap1 : R1.map.get? k = some b := by
-        have hmap1' : R1.map[k]? = some b := by simpa [hb1] using h1
-        simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap1'
-      unfold Regime.lookup?
-      rw [if_pos hk1]
-      exact hmap1
-    · simp [hbeq] at hgo
-  · have hjoin_none : (joinRegimes R1 R2).lookup? k = none := by
-      unfold Regime.lookup?
-      simp [joinRegimes, hkmin]
-    rw [hjoin_none] at hjoin
-    simp at hjoin
+    rw [hgo_not] at hcombine_get
+    simp at hcombine_get
+  have hgo :=
+    combineExtTreeMaps_go_get_mem R1.map R2.map f
+      (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem
+  have hcombine_get :
+      (combineExtTreeMaps.go R1.map R2.map f (R1.map.keys ++ R2.map.keys).eraseDups
+        ({} : ExtTreeMap Tag Bool))[k]? = some b := by
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine
+  rw [hcombine_get] at hgo
+  simp only [f] at hgo
+  cases h1 : R1.map[k]? <;> cases h2 : R2.map[k]? <;> simp [h1, h2] at hgo
+  rename_i b1 b2
+  by_cases hbeq : b1 = b2
+  · simp [hbeq] at hgo
+    have hb2 : b = b2 := by simpa using hgo
+    have hb1 : b = b1 := by
+      calc
+        b = b2 := hb2
+        _ = b1 := hbeq.symm
+    have hmap1 : R1.map.get? k = some b := by
+      have hmap1' : R1.map[k]? = some b := by simpa [hb1] using h1
+      simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap1'
+    exact hmap1
+  · simp [hbeq] at hgo
 
 lemma joinRegimes_lookup_some_right
     (R1 R2 : Regime) (k : Tag) (b : Bool) :
     (joinRegimes R1 R2).lookup? k = some b →
     R2.lookup? k = some b := by
   intro hjoin
-  by_cases hkmin : k < min R1.bound R2.bound
-  · have hk2 : k < R2.bound := Nat.lt_of_lt_of_le hkmin (Nat.min_le_right _ _)
-    let f : Tag → Option Bool → Option Bool → Option Bool := fun _ ob1 ob2 =>
-      match ob1, ob2 with
-      | some b1, some b2 => if b1 = b2 then some b1 else none
-      | _, _ => none
-    have hcombine : (combineExtTreeMaps R1.map R2.map f).get? k = some b := by
-      unfold Regime.lookup? at hjoin
-      simp [joinRegimes, hkmin] at hjoin
-      exact hjoin
-    simp only [combineExtTreeMaps] at hcombine
-    have hk_mem : k ∈ (R1.map.keys ++ R2.map.keys).eraseDups := by
-      by_contra hnot
-      have hgo_not :=
-        combineExtTreeMaps_go_get_not_mem R1.map R2.map f
-          (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hnot
-      have hempty : (({} : ExtTreeMap Tag Bool)[k]?) = none := by
-        rfl
-      rw [hempty] at hgo_not
-      have hcombine_get :
-          (combineExtTreeMaps.go R1.map R2.map f (R1.map.keys ++ R2.map.keys).eraseDups
-            ({} : ExtTreeMap Tag Bool))[k]? = some b := by
-        simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine
-      rw [hgo_not] at hcombine_get
-      simp at hcombine_get
-    have hgo :=
-      combineExtTreeMaps_go_get_mem R1.map R2.map f
-        (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem
+  let f : Tag → Option Bool → Option Bool → Option Bool := fun _ ob1 ob2 =>
+    match ob1, ob2 with
+    | some b1, some b2 => if b1 = b2 then some b1 else none
+    | _, _ => none
+  have hcombine : (combineExtTreeMaps R1.map R2.map f).get? k = some b := by
+    unfold Regime.lookup? at hjoin
+    simp [joinRegimes] at hjoin
+    exact hjoin
+  simp only [combineExtTreeMaps] at hcombine
+  have hk_mem : k ∈ (R1.map.keys ++ R2.map.keys).eraseDups := by
+    by_contra hnot
+    have hgo_not :=
+      combineExtTreeMaps_go_get_not_mem R1.map R2.map f
+        (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hnot
+    have hempty : (({} : ExtTreeMap Tag Bool)[k]?) = none := by
+      rfl
+    rw [hempty] at hgo_not
     have hcombine_get :
         (combineExtTreeMaps.go R1.map R2.map f (R1.map.keys ++ R2.map.keys).eraseDups
           ({} : ExtTreeMap Tag Bool))[k]? = some b := by
       simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine
-    rw [hcombine_get] at hgo
-    simp only [f] at hgo
-    cases h1 : R1.map[k]? <;> cases h2 : R2.map[k]? <;> simp [h1, h2] at hgo
-    rename_i b1 b2
-    by_cases hbeq : b1 = b2
-    · simp [hbeq] at hgo
-      have hb2 : b = b2 := by simpa using hgo
-      have hmap2 : R2.map.get? k = some b := by
-        have hmap2' : R2.map[k]? = some b := by simpa [hb2] using h2
-        simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap2'
-      unfold Regime.lookup?
-      rw [if_pos hk2]
-      exact hmap2
-    · simp [hbeq] at hgo
-  · have hjoin_none : (joinRegimes R1 R2).lookup? k = none := by
-      unfold Regime.lookup?
-      simp [joinRegimes, hkmin]
-    rw [hjoin_none] at hjoin
-    simp at hjoin
+    rw [hgo_not] at hcombine_get
+    simp at hcombine_get
+  have hgo :=
+    combineExtTreeMaps_go_get_mem R1.map R2.map f
+      (R1.map.keys ++ R2.map.keys).eraseDups ({} : ExtTreeMap Tag Bool) k hk_mem
+  have hcombine_get :
+      (combineExtTreeMaps.go R1.map R2.map f (R1.map.keys ++ R2.map.keys).eraseDups
+        ({} : ExtTreeMap Tag Bool))[k]? = some b := by
+    simpa [Std.ExtTreeMap.get?_eq_getElem?] using hcombine
+  rw [hcombine_get] at hgo
+  simp only [f] at hgo
+  cases h1 : R1.map[k]? <;> cases h2 : R2.map[k]? <;> simp [h1, h2] at hgo
+  rename_i b1 b2
+  by_cases hbeq : b1 = b2
+  · simp [hbeq] at hgo
+    have hb2 : b = b2 := by simpa using hgo
+    have hmap2 : R2.map.get? k = some b := by
+      have hmap2' : R2.map[k]? = some b := by simpa [hb2] using h2
+      simpa [Std.ExtTreeMap.get?_eq_getElem?] using hmap2'
+    exact hmap2
+  · simp [hbeq] at hgo
 
 private lemma joinRegimes_no_new_left
     (R1 R2 : Regime) (k : Tag)
@@ -3336,8 +3253,7 @@ private lemma joinRegimes_monotone_mode3
     (hm2 : Regime.monotoneStep { R with map := R.map.insert k true } R2)
     (hm3 : Regime.monotoneStep { R with map := R.map.insert k false } R3) :
     Regime.monotoneStep R (joinRegimes R2 R3) := by
-  refine ⟨?_, ?_, ?_⟩
-  · rw [joinRegimes, hm2.1, hm3.1, Nat.min_self]
+  refine ⟨?_, ?_⟩
   · intro k' b hkR
     by_cases hk'_eq : k' = k
     · subst k'
@@ -3345,10 +3261,10 @@ private lemma joinRegimes_monotone_mode3
     · have hcmp : compare k k' ≠ Ordering.eq := fun heq => hk'_eq ((Nat.compare_eq_eq).1 heq).symm
       have hk_ext : ({ R with map := R.map.insert k true }).lookup? k' = some b := by
         simp only [Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]; exact hkR
-      have hk2 := hm2.2.1 k' b hk_ext
+      have hk2 := hm2.1 k' b hk_ext
       have hk_ext' : ({ R with map := R.map.insert k false }).lookup? k' = some b := by
         simp only [Regime.lookup?, Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp]; exact hkR
-      have hk3 := hm3.2.1 k' b hk_ext'
+      have hk3 := hm3.1 k' b hk_ext'
       cases hk2 with
       | inl h2 =>
           cases hk3 with
@@ -3360,32 +3276,21 @@ private lemma joinRegimes_monotone_mode3
     have hk1 : R2.lookup? k' ≠ none := joinRegimes_no_new_left R2 R3 k' hkjoin
     by_cases hk'_eq : k' = k
     · subst k'
-      -- Extended regime has lookup? k = none when k >= R.bound; else some true/false.
-      -- By monotone 2.2: R2.lookup? k ≠ none → extended.lookup? k ≠ none.
-      -- If k >= R.bound, extended.lookup? k = none, so R2.lookup? k = none.
-      by_cases hk_bound : k < R.bound
-      · have hk2 : ({ R with map := R.map.insert k true }).lookup? k = some true := by
-          unfold Regime.lookup?; simp [hk_bound]
-        have hk3 : ({ R with map := R.map.insert k false }).lookup? k = some false := by
-          unfold Regime.lookup?; simp [hk_bound]
-        have hr2 := hm2.2.1 k true hk2
-        have hr3 := hm3.2.1 k false hk3
-        have hjoin_none : (joinRegimes R2 R3).lookup? k = none := by
-          cases hr2 with
-          | inl h2 =>
-              cases hr3 with
-              | inl h3 => rw [joinRegimes_lookup_comm R2 R3 k]; exact joinRegimes_lookup_of_some_disagree R3 R2 k h3 h2
-              | inr h3 => exact joinRegimes_lookup_of_right_none R2 R3 k h3
-          | inr h2 => exact joinRegimes_lookup_of_left_none R2 R3 k h2
-        exact absurd hjoin_none hkjoin
-      · have hR2_none : R2.lookup? k = none := by
-          by_contra h
-          have := hm2.2.2 k h
-          have hext : ({ R with map := R.map.insert k true }).lookup? k = none := by
-            unfold Regime.lookup?; simp [hk_bound]
-          rw [hext] at this
-          exact this rfl
-        exact absurd (joinRegimes_lookup_of_left_none R2 R3 k hR2_none) hkjoin
+      -- Extended regime has lookup? k = some true/false via insert.
+      have hk2 : ({ R with map := R.map.insert k true }).lookup? k = some true := by
+        unfold Regime.lookup?; simp
+      have hk3 : ({ R with map := R.map.insert k false }).lookup? k = some false := by
+        unfold Regime.lookup?; simp
+      have hr2 := hm2.1 k true hk2
+      have hr3 := hm3.1 k false hk3
+      have hjoin_none : (joinRegimes R2 R3).lookup? k = none := by
+        cases hr2 with
+        | inl h2 =>
+            cases hr3 with
+            | inl h3 => rw [joinRegimes_lookup_comm R2 R3 k]; exact joinRegimes_lookup_of_some_disagree R3 R2 k h3 h2
+            | inr h3 => exact joinRegimes_lookup_of_right_none R2 R3 k h3
+        | inr h2 => exact joinRegimes_lookup_of_left_none R2 R3 k h2
+      exact absurd hjoin_none hkjoin
     · have hk_ext_eq : ({ R with map := R.map.insert k true }).lookup? k' = R.lookup? k' := by
         have hcmp : compare k k' ≠ Ordering.eq := fun heq => hk'_eq ((Nat.compare_eq_eq).1 heq).symm
         unfold Regime.lookup?
@@ -3393,7 +3298,7 @@ private lemma joinRegimes_monotone_mode3
         simp
       have hkR : R.lookup? k' ≠ none := by
         intro h
-        have := hm2.2.2 k' hk1
+        have := hm2.2 k' hk1
         rw [hk_ext_eq, h] at this
         simp at this
       exact hkR
@@ -3403,11 +3308,10 @@ private lemma joinRegimes_monotone_of_monotone
     (h1 : Regime.monotoneStep R R1)
     (h2 : Regime.monotoneStep R R2) :
     Regime.monotoneStep R (joinRegimes R1 R2) := by
-  refine ⟨?_, ?_, ?_⟩
-  · rw [joinRegimes, h1.1, h2.1, Nat.min_self]
+  refine ⟨?_, ?_⟩
   · intro k b hkR
-    have hk1 := h1.2.1 k b hkR
-    have hk2 := h2.2.1 k b hkR
+    have hk1 := h1.1 k b hkR
+    have hk2 := h2.1 k b hkR
     cases hk1 with
     | inl hk1some =>
         cases hk2 with
@@ -3419,22 +3323,15 @@ private lemma joinRegimes_monotone_of_monotone
         exact Or.inr (joinRegimes_lookup_of_left_none R1 R2 k hk1none)
   · intro k hkjoin
     have hk1 : R1.lookup? k ≠ none := joinRegimes_no_new_left R1 R2 k hkjoin
-    exact h1.2.2 k hk1
+    exact h1.2 k hk1
 
 lemma invalidateRegimeDeps_monotone
     (R : Regime) (env : TagEnv) (ls : LocSet) :
     Regime.monotoneStep R (invalidateRegimeDeps R env ls) := by
-  refine ⟨rfl, ?_, ?_⟩
+  refine ⟨?_, ?_⟩
   · intro k b hkR
-    have hklt : k < R.bound := by
-      by_cases hk : k < R.bound
-      · exact hk
-      · unfold Regime.lookup? at hkR
-        simp [hk] at hkR
     have hkmap : R.map[k]? = some b := by
-      unfold Regime.lookup? at hkR
-      simp [hklt] at hkR
-      exact hkR
+      simpa [Std.ExtTreeMap.get?_eq_getElem?] using hkR
     have hmapFiltered :
         (R.map.filter (fun k _ =>
           (ExtTreeMap.filter (fun x tv => !tv.deps.any (ExtTreeSet.contains ls)) env).contains k))[k]? =
@@ -3445,29 +3342,24 @@ lemma invalidateRegimeDeps_monotone
       rw [Std.ExtTreeMap.getElem?_filter']
       simp [hkmap]
     unfold invalidateRegimeDeps Regime.lookup?
-    simp [hklt, hmapFiltered]
+    simp [hmapFiltered]
     exact em (k ∈ ExtTreeMap.filter (fun x tv => !tv.deps.any (ExtTreeSet.contains ls)) env)
   · intro k hkInv
     by_contra hkRnone
     have hnone : (invalidateRegimeDeps R env ls).lookup? k = none := by
-      by_cases hklt : k < R.bound
-      · have hkmapNone : R.map[k]? = none := by
-          unfold Regime.lookup? at hkRnone
-          simp [hklt] at hkRnone
-          exact ExtTreeMap.getElem?_eq_none hkRnone
-        have hmapFilteredNone :
-            (R.map.filter (fun k _ =>
-              (ExtTreeMap.filter (fun x tv => !tv.deps.any (ExtTreeSet.contains ls)) env).contains k))[k]? =
-            Option.filter
-              (fun _ =>
-                (ExtTreeMap.filter (fun x tv => !tv.deps.any (ExtTreeSet.contains ls)) env).contains k)
-              (none : Option Bool) := by
-          rw [Std.ExtTreeMap.getElem?_filter']
-          simp [hkmapNone]
-        unfold invalidateRegimeDeps Regime.lookup?
-        simp [hklt, hmapFilteredNone]
-      · unfold invalidateRegimeDeps Regime.lookup?
-        simp [hklt]
+      have hkmapNone : R.map[k]? = none := by
+        rw [← Std.ExtTreeMap.get?_eq_getElem?]; exact hkRnone
+      have hmapFilteredNone :
+          (R.map.filter (fun k _ =>
+            (ExtTreeMap.filter (fun x tv => !tv.deps.any (ExtTreeSet.contains ls)) env).contains k))[k]? =
+          Option.filter
+            (fun _ =>
+              (ExtTreeMap.filter (fun x tv => !tv.deps.any (ExtTreeSet.contains ls)) env).contains k)
+            (none : Option Bool) := by
+        rw [Std.ExtTreeMap.getElem?_filter']
+        simp [hkmapNone]
+      unfold invalidateRegimeDeps Regime.lookup?
+      simp [hmapFilteredNone]
     exact hkInv hnone
 
 lemma joinTypeResults_regime_monotone
@@ -10703,95 +10595,6 @@ lemma typecheckExpr_ioFree_mem_contains_preserved
   typecheckExpr_ioFree_mem_contains_preserved_main fuel ctx e res (by simpa [typecheck] using htc) l hcontains
 
 end memEnv_contains_preservation
-
-lemma joinTypeResults_regime_bound_le_head
-  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (h_join : joinTypeResults ctx first rest = .ok res) :
-  res.regime'.bound ≤ first.regime'.bound := by
-  let joinStep :
-      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
-        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
-    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
-      match result.qualType with
-      | ⟨resEtyp, resPoison, resPred⟩ =>
-          Except.ok
-            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-              joinMemEnvsStrong acc.2.1 result.memEnv',
-              joinPoison acc.2.2.1 resPoison,
-              joinPredicates acc.2.2.2.1 resPred,
-              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
-              joinRegimes acc.2.2.2.2.2.1 result.regime',
-              max acc.2.2.2.2.2.2.1 result.nextLoc',
-              max acc.2.2.2.2.2.2.2 result.nextTag')
-  have h_fold_bound :
-      ∀ (rs' : List TypeResult)
-        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
-        List.foldlM joinStep acc rs' = .ok acc' →
-        acc'.2.2.2.2.2.1.bound ≤ acc.2.2.2.2.2.1.bound := by
-    intro rs' acc acc' hfold
-    induction rs' generalizing acc with
-    | nil =>
-        simp [List.foldlM_nil, pure, Except.pure] at hfold
-        cases hfold
-        exact Nat.le_refl _
-    | cons x xs ih =>
-        cases hqx : x.qualType with
-        | mk resEtyp resPoison resPred =>
-            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
-            let acc1 :
-                ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
-              (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-                joinMemEnvsStrong acc.2.1 x.memEnv',
-                joinPoison acc.2.2.1 resPoison,
-                joinPredicates acc.2.2.2.1 resPred,
-                joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
-                joinRegimes acc.2.2.2.2.2.1 x.regime',
-                max acc.2.2.2.2.2.2.1 x.nextLoc',
-                max acc.2.2.2.2.2.2.2 x.nextTag')
-            have hfold_tail : List.foldlM joinStep acc1 xs = .ok acc' := by
-              simpa [acc1] using hfold
-            have htail : acc'.2.2.2.2.2.1.bound ≤ acc1.2.2.2.2.2.1.bound :=
-              ih (acc := acc1) hfold_tail
-            have hacc1 : acc1.2.2.2.2.2.1.bound ≤ acc.2.2.2.2.2.1.bound := by
-              simp [acc1, joinRegimes]
-            exact Nat.le_trans htail hacc1
-  cases hqt : first.qualType with
-  | mk etyp poison pred =>
-      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
-        MonadExceptOf.throw, TypecheckM] at h_join
-      cases hcheck :
-          (List.foldlM
-            (fun x result =>
-              match result.qualType with
-              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                if beqETypSignature etyp resEtyp = false then
-                  Except.error
-                    (toString "Closure alternatives produced incompatible result types: " ++
-                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                else Except.ok ())
-            () rest : Except String Unit) with
-      | error err =>
-          erw [hcheck] at h_join
-          simp at h_join
-      | ok _ =>
-          erw [hcheck] at h_join
-          simp at h_join
-          cases hfold :
-              List.foldlM joinStep
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
-                  first.nextLoc', first.nextTag') rest with
-          | error err =>
-              erw [hfold] at h_join
-              simp at h_join
-          | ok a =>
-              erw [hfold] at h_join
-              simp at h_join
-              subst res
-              exact
-                h_fold_bound rest
-                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
-                    first.nextLoc', first.nextTag')
-                  a hfold
 
 lemma joinTypeResults_transport_valueHasETyp_from_member
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)

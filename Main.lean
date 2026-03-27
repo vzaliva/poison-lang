@@ -103,7 +103,6 @@ private def formatTypecheckError (msg : String) : Std.Format :=
 def parseRegimeSpec (spec : String) : Except String Regime := do
   let parts := spec.splitOn ","
   let mut map : ExtTreeMap Nat Bool := {}
-  let mut maxTag : Nat := 0
   let mut hasEntry := false
   for entry in parts do
     let trimmed := entry.trim
@@ -126,14 +125,11 @@ def parseRegimeSpec (spec : String) : Except String Regime := do
             | none => throw s!"Invalid --regime value for tag {tag}: {valStr}"
             | some b =>
                 map := map.insert tag b
-                if tag > maxTag then
-                  maxTag := tag
                 hasEntry := true
     | _ => throw s!"Invalid --regime assignment: {trimmed}"
   if not hasEntry then
     throw "Invalid --regime: no assignments provided"
-  let bound := maxTag + 1
-  return { bound := bound, map := map }
+  return { map := map }
 
 partial def parseArgs (args : List String) (opts : CliOptions := {}) : Except String CliOptions :=
   match args with

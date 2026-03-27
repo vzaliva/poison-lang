@@ -141,24 +141,20 @@ def invalidateTagDeps (env : TagEnv) (ls : LocSet) : TagEnv :=
   env.filter (fun _ tv =>
     not <| tv.deps.any ls.contains)
 
-/-- Regime: bounded partial mapping from guard tags to their truth values.
-    The `bound` field ensures regimes only interpret input/spec tags (tags < bound),
-    excluding fresh internal tags introduced during typing (tags ≥ bound). -/
+/-- Regime: partial mapping from guard tags to their truth values. -/
 structure Regime where
-  bound : Tag
   map : ExtTreeMap Tag Bool
 
 namespace Regime
 
-/-- Lookup a tag in the regime map, respecting the bound. -/
+/-- Lookup a tag in the regime map. -/
 def lookup? (R : Regime) (k : Tag) : Option Bool :=
-  if k < R.bound then R.map.get? k else none
+  R.map.get? k
 
 end Regime
 
 /-- Empty regime: all tags return none (regime-agnostic typing) -/
 def emptyRegime : Regime := {
-  bound := 0
   map := {}
 }
 
@@ -167,7 +163,7 @@ def emptyRegime : Regime := {
 def invalidateRegimeDeps (R : Regime) (env : TagEnv) (ls : LocSet) : Regime :=
   let invalidated := env.filter (fun _ tv => not <| tv.deps.any ls.contains)
   let invalidatedMap := R.map.filter (fun k _ => invalidated.contains k)
-  { bound := R.bound, map := invalidatedMap }
+  { map := invalidatedMap }
 
 /-- Join two regimes (conservative intersection: keep only entries that agree) -/
 def joinRegimes (R1 R2 : Regime) : Regime :=
@@ -176,17 +172,15 @@ def joinRegimes (R1 R2 : Regime) : Regime :=
       match ob1, ob2 with
       | some b1, some b2 => if b1 == b2 then some b1 else none
       | _, _ => none)
-  { bound := min R1.bound R2.bound, map := joinedMap }
+  { map := joinedMap }
 
 namespace Regime
 
 -- Regime monotonicity: R' can only drop entries (never change values or add new entries)
--- Three constraints:
---   1. bounds are equal
---   2. preserved entries keep their values
---   3. R' can't have entries that R doesn't have (no new entries)
+-- Two constraints:
+--   1. preserved entries keep their values
+--   2. R' can't have entries that R doesn't have (no new entries)
 def monotoneStep (R R' : Regime) : Prop :=
-  R'.bound = R.bound ∧
   (∀ k b, R.lookup? k = some b → (R'.lookup? k = some b ∨ R'.lookup? k = none)) ∧
   (∀ k, R'.lookup? k ≠ none → R.lookup? k ≠ none)
 

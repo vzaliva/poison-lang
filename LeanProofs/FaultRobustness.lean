@@ -65,11 +65,6 @@ def inputKeysUnique (vars : VarTypeEnv) : Prop :=
   vars.keys.Nodup
   -- `vars` is an ExtTreeMap, so keys are already unique
 
--- Regime boundedness: tags at or above the bound are outside the regime's domain.
--- Intended reading: `R` models fault injection choices for *input tags only*.
-def regimeBounded (R : Regime) : Prop :=
-  ∀ k, k ≥ R.bound → R.lookup? k = none
-
 -- Extract all guard tags from the input specification (functional version for wfRegime)
 def inputSpecTags (s : InputSpec) : List Tag :=
   let locTags := s.locs.toList.filterMap (fun (_, e) => qtypGuardTag ⟨ETyp.int, e.poison, e.pred⟩)
@@ -85,18 +80,9 @@ def isGuardOnly (qt : QTyp) : Prop :=
   ∃ k, qt.pred = Predicate.guardOnly k
 
 -- Regime is well-formed with respect to spec S if it's defined exactly for tags in S.
--- Additionally, all spec tags must be below the regime's bound.
 def wfRegime (R : Regime) (s : InputSpec) : Prop :=
   let tags := inputSpecTags s
-  (∀ k, k ∈ tags → k < R.bound) ∧
   (∀ k, k ∈ tags → (R.lookup? k).isSome) ∧
-  (∀ k, (R.lookup? k).isSome → k ∈ tags)
-
--- Weaker regime well-formedness that holds after invalidation
--- (drops the "R defined for all spec tags" conjunct)
-def wfRegimePartial (R : Regime) (s : InputSpec) : Prop :=
-  let tags := inputSpecTags s
-  (∀ k, k ∈ tags → k < R.bound) ∧
   (∀ k, (R.lookup? k).isSome → k ∈ tags)
 
 inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
@@ -347,7 +333,7 @@ lemma locsRegime_monotone {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ 
         simp only [qtypGuardTag, hclos] at hguard
         exact Option.some.inj hguard
       -- By monotoneStep.entries_preserved: R.lookup? k' = some b' → R'.lookup? k' = some b' ∨ R'.lookup? k' = none
-      have h_cases := h_mono.2.1 k' b' hregime
+      have h_cases := h_mono.1 k' b' hregime
       cases h_cases with
       | inl h_eq =>
           -- R'.lookup? k' = some b', can construct the R' version
@@ -374,7 +360,7 @@ lemma varsRegime_monotone {predSat : PredSat} {R R' : Regime} {μ : Memory} {ρ 
       have hk_eq : k' = k := by
         simp only [qtypGuardTag, hclos] at hguard
         exact Option.some.inj hguard
-      have h_cases := h_mono.2.1 k' b' hregime
+      have h_cases := h_mono.1 k' b' hregime
       cases h_cases with
       | inl h_eq =>
           exact varsRegime.withPred_ok entry k' arg_name pred_body var_env v b' hclos h_eq hvar hconsist
@@ -707,9 +693,7 @@ inductive trustedVarsClosureRegimeInit
 def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) : Prop :=
   ∀ (mode : LeanPoison.EvalMode) (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool),
     ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
-    ctx.regime.bound = ctx.nextTag →  -- regime bounded by initial tag supply
     wfRegime ctx.regime s →
-    regimeBounded ctx.regime →
     wfRealizationMap θ₁ →  wfRealizationMap θ₂ →
     wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →  -- initial config₁ well-formed
     wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } →  -- initial config₂ well-formed

@@ -27,7 +27,6 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       wfTypeContext ctx →
       runtimeInstantiatesCtx ctx μ ρ θ →
       regimeConsistentWithCtx ctx →
-      regimeBounded ctx.regime →
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
@@ -71,7 +70,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hRbound hctxCons a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht hpc
   have hstruct := terminatesTo_seq_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg1, v1, ht_e1, ht_e2, _hpm1, _hpm2⟩
@@ -87,7 +86,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
   have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved .ioFree e1 _ cfg1 v1 ht_e1 hwfcfg).1
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
-      hθwf hwf hric hregCtx hRbound hctxCons a pm hwfcfg ht_e1 hpc
+      hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht_e1 hpc
     with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwfTm' : wfTagMeaningCtx tm ctx' := by
@@ -96,11 +95,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
     simpa [hctx', updateCtxFromResult, ctxAfter] using hpc
   have hmono1 : Regime.monotoneStep ctx.regime res1.regime' :=
     regime_monotone ctx e1 fuel' res1 htc1'
-  have hRbound1 : regimeBounded ctx'.regime := by
-    have hctx'_regime : ctx'.regime = res1.regime' := by
-      simp [hctx', updateCtxFromResult]
-    rw [hctx'_regime]
-    exact regimeBounded_of_monotoneStep ctx.regime res1.regime' hRbound hmono1
   have hric1' : runtimeInstantiatesCtx ctx' cfg1.memory cfg1.varEnv θ1 := by
     simpa [hctx', ctxAfter] using hric1
   have hreg1' : regimeConsistentWithCtx ctx' := by
@@ -113,7 +107,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
     e2 ctx' hwfTm' res htc2'
   rcases
     hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
-      hθ1wf hwf1' hric1' hreg1' hRbound1 hctxCons1'
+      hθ1wf hwf1' hric1' hreg1' hctxCons1'
       cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
     with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
@@ -195,7 +189,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hRbound hctxCons a pm hwfcfg ht hpc
+  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht hpc
   have hstruct := terminatesTo_seq_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg1, v1, ht_e1, ht_e2, _hpm1, _hpm2⟩
@@ -211,7 +205,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
   have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved .ioFree e1 _ cfg1 v1 ht_e1 hwfcfg).1
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
-      hθwf hwf hric hregCtx hmasked_none hRbound hctxCons a pm hwfcfg ht_e1 hpc
+      hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht_e1 hpc
     with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwfTm' : wfTagMeaningCtx tm ctx' := by
@@ -226,11 +220,6 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
       masked_lookup_none_of_monotoneStep
         (R := ctx.regime) (R' := res1.regime')
         hmasked_none hmono1 k hk
-  have hRbound1 : regimeBounded ctx'.regime := by
-    have hctx'_regime : ctx'.regime = res1.regime' := by
-      simp [hctx', updateCtxFromResult]
-    rw [hctx'_regime]
-    exact regimeBounded_of_monotoneStep ctx.regime res1.regime' hRbound hmono1
   have hric1' : runtimeInstantiatesCtx ctx' cfg1.memory cfg1.varEnv θ1 := by
     simpa [hctx', ctxAfter] using hric1
   have hreg1' : regimeConsistentWithCtxMasked masked ctx' := by
@@ -247,7 +236,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
     e2 ctx' hwfTm' res htc2'
   rcases
     hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
-      hθ1wf hwf1' hric1' hreg1' hmasked_none1' hRbound1 hctxCons1'
+      hθ1wf hwf1' hric1' hreg1' hmasked_none1' hctxCons1'
       cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
     with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
@@ -314,7 +303,7 @@ lemma stepFR_seq
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e1 ctxᵢ hwfTm res1 htc1'
   -- Use world-free inversion lemma for seq
@@ -327,7 +316,7 @@ lemma stepFR_seq
   -- Apply IH for e1
   have hstep_e1 :=
     hIH1 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
-      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hRbound hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+      hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
   rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, _hval_consist₀1, _hval_consist₁1, hres_agree1⟩
   have hwfTm' : wfTagMeaningCtx tm ctx' := by simpa [hctx', ctxAfter] using _hTm1
@@ -366,14 +355,10 @@ lemma stepFR_seq
   -- Note: ctx'.regime = res1.regime' which may differ from ctxᵢ.regime
   -- Use regime monotonicity to relate them
   have h_mono : Regime.monotoneStep ctxᵢ.regime res1.regime' := regime_monotone ctxᵢ e1 fuel' res1 htc1'
-  have hRbound' : regimeBounded ctx'.regime := by
-    have hctx'_regime : ctx'.regime = res1.regime' := by simp [hctx', updateCtxFromResult]
-    rw [hctx'_regime]
-    exact regimeBounded_of_monotoneStep ctxᵢ.regime res1.regime' hRbound h_mono
   have hstep_e2 :=
     hIH2 hpredlaws hwfTm' cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ o₀ o₁
-      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR1' hRbound' hcwr₀1' hcwr₁1' hagree_clean1'
+      hθ₀1wf hθ₁1wf hwf1' hric₀1' hric₁1' htagR1' hcwr₀1' hcwr₁1' hagree_clean1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
       ht₀_e2 ht₁_e2'
   rcases hstep_e2 with ⟨hresTm2, hstep_e2⟩
