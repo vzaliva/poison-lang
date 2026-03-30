@@ -16,7 +16,7 @@ the mode-3 `if` soundness problem.
 
 ---
 
-## 1. What Mode 3 Does
+## 1. Background
 
 Mode 3 is the case of `typecheckIf` where `matchGuard` succeeds with tag `k`
 but the outer regime has no entry for it (`R.lookup? k = none`).
@@ -32,123 +32,66 @@ The typechecker:
    `regime.map[k := false]`, and `pc := branchPc`.
 5. Joins results conservatively with `pred = noPred`.
 
-The regime inserts are always visible since `Regime.lookup?` is an
-unconditional map lookup (`regime.bound` was removed in §3.4).
+The regime inserts are always visible because `Regime.lookup?` is an
+unconditional map lookup.
 
-### 1.1. The two sorrys on `main`
+### 1.1. Scope Assumption
+
+This document assumes the current `.ioFree` fault-robustness theorem setting
+throughout.  In particular, the discussion below is about the proof environment
+in which no fresh guard tags are generated during execution.
+
+### 1.2. The Two Remaining Mode-3 Sorries
 
 - `stepFRSingleRun_ite_mode3_maskedReg` — single-run variant.  What remains
   is proving the masked-regime result for the taken branch.
-- `stepFR_ite_mode3` — two-run variant.  What remains is handling the four
-  branch-selection combinations (`b₀, b₁ ∈ {true, false}`) and proving
-  agreement on the joined output.
+- `stepFR_ite_mode3` — two-run variant.  At the theorem level this is still
+  one remaining lemma, but the current script has been refined into six local
+  branch-case holes after the condition-poison split.
 
 Both are in `StepFRIte.lean`, after the IH has been applied to `e1`.
 
----
-
-## 2. Analysis Under the "Only Poisoned Values Carry Predicates" Invariant
-
-### 2.1. The proposed invariant
-
-We consider a design discipline:
-
-> **Only poisoned non-reference values carry predicates.**  For any
-> non-reference qualified type in `varEnv` or `memEnv`, if `pred ≠ noPred`,
-> then `poison = true`.
-
-Reference types are excluded: `typecheckLocation` returns a clean reference
-that preserves the stored predicate from `memEnv`, so clean references with
-predicates are a normal part of the type system.
-
-This invariant is **partially enforced** today: `typecheckExternVal` rejects
-clean values with predicates, and the parser rejects them in extern effects
-and return specs.  However, the core `effectSpecToQTyp` and
-`returnSpecToQTyp` paths do not enforce it, so it is not currently
-maintained end-to-end.  Adopting this discipline would require:
-
-- Adding the missing checks in the core typechecker.
-- Verifying that no other typing rule produces clean non-reference values
-  with predicates.
-- Formalizing the invariant and proving it is preserved by all typing rules.
-- Threading the invariant through `StepFR` and `StepFR_IH`.
-
-### 2.2. Consequence: mode 3 always produces poisoned results
-
-Under this invariant, mode 3 can never produce a clean result — neither as
-a return value nor through memory side effects.  The argument covers the two
-kinds of `matchGuard` owners:
-
-**Variable owners.**  `matchGuard` matches a variable carrying a
-tag+predicate.  By the invariant, the variable is poisoned.  `matchGuard`
-requires the predicate to use its argument (`usesArg` check), so the
-poisoned variable appears in the condition, making `p1 = true`.
-
-**Reference owners.**  `matchGuard` matches through a dereference `!r`,
-merging predicates across the reference's locset.  The reference `r` itself
-may be clean, but `matchGuard` skips poisoned references.  For a clean
-reference, the merged predicate comes from the memory cells, which are
-non-reference `int` entries in `memEnv`.  By the invariant, those cells are
-poisoned if they carry predicates.  Typing `!r` joins `ctx.pc` with the
-cell's poison, giving a poisoned deref result.  The condition then includes
-this poisoned operand, making `p1 = true`.
-
-In both cases, `p1 = true`.  Then:
-
-1. Mode 3 sets `branchPc := join ctx.pc p1 = join ctx.pc true = true`.
-
-2. Inside the branch, `typecheckVar` de-poisons carriers to
-   `⟨etyp, branchPc, noPred⟩ = ⟨etyp, true, noPred⟩` — still poisoned.
-
-3. Memory writes use `join branchPc (value poison)`, which is at least
-   `true` — stored cells stay poisoned.
-
-4. The final result poison includes `branchPc = true` — the result is
-   poisoned.
-
-Since the result has `poison = true` and `pred = noPred`, it is not
-`qtypCleanUnder` any regime, so `resultAgreesIfClean` is trivially satisfied.
-
-### 2.3. Mode 3 produces no clean outputs
-
-Under this invariant, mode 3 never produces a clean return value or a clean
-memory write.  The tag-based de-poisoning inside mode 3's branches changes
-individual carrier poisons to `branchPc`, but `branchPc` is already `true`,
-so nothing gets cleaner.
+### 1.3. When Mode 3 Arises In FR
 
 The mode-3 machinery — `tagEnv` inserts, `regime.map` inserts, branch
-joins — does real work inside the branches, but the poisoned `branchPc`
-ensures none of it survives into the output as clean.
+joins — does real work inside the branches.
 
-Mode 3 fires whenever `R.lookup? k = none`.  Three sources:
+At the raw `StepFR` level, mode 3 arises exactly when `match_guard` succeeds on
+tag `k` but the current regime has no entry for it (`R(k) = none`).
 
-1. **`frand`** creates fresh tags not in the spec.  (`frand` is planned for
-   removal from the language.)
-2. **Extern specs with fresh tags**: extern functions and values can mention
-   tag numbers not in `InputSpec`.  Later externs can also reuse spec tags
-   (the typechecker does not require freshness — only
-   `nextTag := max nextTag (k+1)`).
-3. **Regime invalidation**: `invalidateRegimeDeps` drops regime entries when
-   their dependency locations are written.  A spec tag can lose its regime
-   entry and fall back to mode 3.
+In the top-level FR theorem setting considered here, this can happen in the
+following ways:
 
-The FR precision impact: guard-based de-poisoning only works for tags that
-have an active regime entry at the point of the `if`.  Any tag without one
-falls into mode 3, which under this invariant produces only poisoned
-results — no better than not matching at all.
+1. **Initial absence for non-spec tags already present in the context.**
+   `wfRegime` constrains the regime exactly on the tags coming from
+   `InputSpec`, while `ctxMatchesInputSpec` allows extra non-spec entries in the
+   initial context as long as they do not reuse spec tags.  Such extra tags may
+   therefore start with `R(k) = none`.
 
-Modes 1/2 handle guards with active regime entries, and mode 3 was supposed
-to handle the rest conservatively.  But "conservatively" turns out to mean
-"identically to not matching at all."
+2. **Regime invalidation after assignment.**  `invalidateRegimeDeps` drops
+   regime entries when their dependency locations are written.  A previously
+   known tag can therefore lose its regime entry before a later guarded `if`.
 
-Under a disciplined usage model — where `frand` is dropped, all meaningful
-guard tags come from `InputSpec`, later externs reuse those same tags, and
-invalidating writes are avoided before guard checks — the precision impact
-is small because most guards stay in modes 1/2.  But it is not zero: extern
-specs that introduce fresh tags and regime invalidation after writes remain
-as sources of mode-3 fallback.
+3. **Regime loss at joins.**  `joinRegimes` is only a conservative merge: it
+   keeps a tag exactly when both incoming branch regimes already contain the
+   same entry for it.  So after earlier control flow, a later join can make a
+   tag unknown whenever the incoming branch regimes differ for that tag, for
+   example because one branch invalidated it or because an earlier mode-3 split
+   gave the two branches different branch-local values.
 
-### 2.4. Contrast with modes 1 and 2
+For tags that come from `InputSpec`, initial absence is ruled out by
+`wfRegime` together with `ctxMatchesInputSpec`.  So within the top-level
+theorem setting considered here, a spec tag can reach mode 3 only by later invalidation or
+join-loss.
+
+The FR precision impact is that guard-based de-poisoning only works for tags
+that still have an active regime entry at the point of the `if`.  When a tag
+reaches mode 3 by any of the routes above, the poisoned half of the current
+proof shape is as conservative as not matching at all; the clean half is
+narrower, but it still does not give the straightforward linked-value
+de-poisoning behaviour available in modes 1/2.
+
+### 1.4. Contrast With Modes 1 And 2
 
 Modes 1 and 2 (`R.lookup? k = some true/false`) are different: they do NOT
 flow `p1` into `branchPc`.  Mode 1 uses `poison := join ctx.pc p2` (only
@@ -162,236 +105,341 @@ both runs to agree on those carriers in the initial context.
 
 Mode 3 cannot use this argument because the regime has no entry for `k`.
 
-### 2.5. Implications
+### 1.5. Departures from `main` Branch
 
-If this invariant is adopted as a global discipline:
+Relative to `main`, this work assumes two substantive proof-environment
+changes:
 
-- **The mode-3 proof strategy simplifies** to showing the result is always
-  poisoned.  The argument: derive `p1 = true` from the invariant plus
-  `matchGuard` success, then `branchPc = true`, then the joined result is
-  poisoned.  No coherence invariant or transfer principle is needed.
+These are intended as non-controversial proof-engineering changes: they are
+fully proved here and are meant to make explicit facts that
+were already implicitly relied on in `main`, rather than to change the intended
+fault-robustness story.
 
-- **This is not a local patch.**  The invariant must be formalized, threaded
-  through `StepFR` and `StepFR_IH`, and proved preserved by every typing
-  rule.  The core typechecker needs missing enforcement checks (in
-  `effectSpecToQTyp` and `returnSpecToQTyp`).  This is real work, but
-  substantially less than the coherence-invariant approach.
+1. **New invariant added and proved.**
+   The development now includes the `predOnlyOnPoisonedNonRefCtx` /
+   `predOnlyOnPoisonedNonRefResult` invariant and its preservation lemmas, and
+   the relevant `StepFR` interfaces have been updated to thread it through the
+   recursive proof.  This just exposes, in a proved form, the discipline that
+   clean non-reference predicate-carrying values were not supposed to arise in
+   the first place.
 
-- **Mode 3 produces no clean outputs** under this discipline.  The
-  linked-value de-poisoning pattern (e.g., `ok = validate(buf)`) does not
-  work in mode 3 — it only works in mode 1, where the regime determines
-  the branch.
+2. **`R.bound` removed.**
+   `Regime` no longer carries a `bound` field.  `Regime.lookup?` is now an
+   unconditional map lookup, so mode-3 branch inserts are always visible.  This
+   does not add new semantic power; it removes an artificial bookkeeping device
+   that was not part of the intended FR reasoning model.
 
-- **This is a language-level design choice**, not just a proof observation.
-  It says: predicates are for fault-sensitive (poisoned) values only.  This
-  is already partially reflected in `wfInputSpec` for critical inputs.
-  Adopting it globally makes the restriction explicit and uniform.
+---
 
+## 2. Current Proof State
 
-- split `stepFR_ite_mode3` on `res1.qualType.poison`;
-- do not reintroduce the deleted bridge theorem;
-- do not pursue a bounded-tags theorem/interface route.
+### 2.1. Current Proof Environment
 
-History §4.4.1 already records that `predTagsBoundedInCtx` preservation is
-false in this project, so the `k < bound` / `k >= bound` split must be handled
-without relying on a global bounded-tags invariant.
+The mode-3 proof still runs inside the current `StepFR` environment with the
+new invariant package in place.  So the present question is no longer whether
+we have enough proof infrastructure to reason about poisoned predicate-carrying
+non-reference values.  We do.
 
-Next target:
+The active local proof shape for `stepFR_ite_mode3` is still a split on the
+condition poison `res1.qualType.poison`, and that split remains useful.
 
-1. Read the current decision point in §3.3.
-2. Decide the concrete handling plan for the `k >= bound` case.
-3. Only then resume proof implementation in `LeanProofs/StepFRIte.lean`.
+**Poisoned-condition branch.**  If `res1.qualType.poison = true`, then
+`branchPc = true`, the final result poison is true, and the final clean-output
+agreement obligation is vacuous because the result has `pred = noPred`.
+This part of the story is understood, but the case is not fully proved.
 
-Done condition for this step:
+**Clean-condition branch.**  If `res1.qualType.poison = false`, then the current
+invariant forces the condition predicate to be `noPred`, so the condition is
+genuinely clean.  The two runs must therefore agree on the boolean result of
+the condition, which rules out the mixed-branch executions.  This also is only
+partially proved: the same-branch cases remain open.
 
-- the document records the current blocker and the live options accurately;
-- we have chosen a concrete handling plan for the `k >= bound` case;
-- the chosen route is consistent with History §4.4 and §4.5.
+So the poison split is still the right outer organisation, but it is no longer
+the centre of the design question.
 
-### 3.2. Current Status
-The invariant work is now in place:
+### 2.2. Unknown-Regime Ott Rules
 
-- `predOnlyOnPoisonedNonRefCtx` / `predOnlyOnPoisonedNonRefResult` are defined;
-- `typecheckExpr_preserves_predOnlyOnPoisonedNonRef` is proved;
-- the core spec constructors enforce the restriction on clean predicate-carrying
-  non-reference values;
-- invariant-carrying IH interfaces have been threaded through the relevant
-  `StepFR` infrastructure.
+For reference, the general unknown-regime rule captures the conceptual mode-3
+shape we care about here.  The reference and function variants have the same
+branch-local `R[k |-> ...]` / `L[k |-> ... using LS]` structure and differ only
+in result-type plumbing, so we omit them in this section.
 
-Since then, the local mode-3 proof strategy has changed:
+```text
+match_guard e1 G S = k with LS
+R(k) = none
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
+pm ; R[k |-> true] ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R[k |-> false] ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
+----------------------------------  :: if_depoison_R_unknown
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+```
 
-- the earlier bridge-theorem approach has been dropped;
-- `stepFR_ite_mode3` now splits on `res1.qualType.poison`;
-- in the poisoned-condition branch, the result agreement is vacuous;
-- in the clean-condition branch, clean agreement on the condition yields
-  `b₀ = b₁`, eliminating the mixed-branch cases there.
-- the bounded-tags route is no longer under consideration, because History
-  §4.4.1 already rules out `predTagsBoundedInCtx` preservation.
+The omitted variants share the same branch-local shape:
 
-The remaining work is now local to the two mode-3 proof bodies in
-`StepFRIte.lean`.
+- in the `then` premise, branch-local reasoning proceeds as if the matched tag
+  were true;
+- in the `else` premise, branch-local reasoning proceeds as if the matched tag
+  were false.
 
-### 3.3. Current Decision Point
+### 2.3. High-Level Diagnosis
 
-The active design question is now:
+The root problem is now best understood semantically rather than as a missing
+transport lemma.
 
-> How should `stepFR_ite_mode3` handle the `k >= bound` branch-context case,
-> given that global bounded-tags routes are already ruled out by History §4.4.1?
+As currently written, this is a **tag-wide** branch-local effect.  Once the
+rule commits to one of those premises, every carrier with that tag is treated
+as affected inside the branch, not just the carrier whose successful
+`match_guard` justified entering the `if_depoison_*` family in the first place.
 
-When `k >= bound`, mode 3 can produce branch contexts where:
+This is exactly where the remaining fault-robustness problem comes from.
 
-- `tagEnv.get? k = some ⟨true, deps⟩`;
-- `regime.lookup? k = none`.
+At the point where mode 3 arises, the outer regime explicitly says that the tag
+is unknown.  So linked values with that tag are still allowed to differ across
+the two runs.  But the current unknown-regime rules can still give
+branch-local consequences to all same-tag carriers.
 
-So ordinary branch-local `regimeConsistentWithCtx` can fail, which blocks the
-standard two-run IH even in same-branch cases.
+This needs to be split carefully by branch and by predicate form.
 
-The bounded-tags theorem/interface route is no longer a live option.
+**`Then` branch.**  This is still where the `agreeOnClean` problem is most
+visible.  Under the current unknown-regime rules, a successful guard check can
+de-poison all carriers with the matched tag in the `then` premise.  That is
+too strong for fault robustness when the outer regime still says the tag is
+unknown: the proof is then asked to show agreement for arbitrary linked
+same-tag values, even though only the checked carrier was actually justified by
+the guard test.
 
-The live proof-engineering tools are:
+**`Else` branch.**  The false side is less problematic for `agreeOnClean`, but
+it is not obligation-free.  For `guardOnly k` entries, the false side is
+indeed comparatively benign: `guardOnly_ok` imposes no regime-consistency
+obligation.  But for `guardClosure k` entries, `R[k := false]` still activates
+tag-wide `consistentWithRegime` obligations: every same-tag carrier must now
+justify the negative predicate direction, and a single successful guard check
+on one carrier does not provide that evidence for arbitrary other same-tag
+closures.
 
-1. **Masked/single-run helper route.**
-   Finish `stepFRSingleRun_ite_mode3_maskedReg` and reuse it, or use
-   `singleIH` directly, for the difficult `k >= bound` branch-context cases.
+In simple terms:
 
-2. **Smaller local helper route.**
-   Introduce a more targeted local helper for the `k >= bound` same-branch
-   branch-context case, without trying to restore full ordinary
-   `regimeConsistentWithCtx` on `ctxTrue` / `ctxFalse`.
+- `guardOnly k` entries are genuinely asymmetric: the main blocker is the
+  `then`-side clean-agreement obligation;
+- `guardClosure k` entries are blocked on both sides: `then` by
+  `agreeOnClean` plus regime consistency, `else` by regime consistency alone;
+- the common structural mistake is the same in both cases: a per-carrier check
+  is being turned into tag-wide branch facts.
 
-These routes are likely complementary rather than competing:
+So the present blocker should be read as a design mismatch:
 
-- masked/single-run reasoning is the natural tool for the poisoned-condition
-  mixed-branch cases, where `branchPc = true`;
-- a smaller local helper is the natural tool for the subtle
-  clean-condition, same-branch, `k >= bound` case, where the regime insert is
-  invisible and `branchPc` may still be false.
+- the current unknown-regime Ott rules are symmetric and tag-wide;
+- the proof obligations are only partly asymmetric: `guardOnly` is mostly a
+  `then`-side problem, but `guardClosure` creates blockers on both sides.
 
-### 3.4. Completed: `regime.bound` Removed
+### 2.4. Current Direction
 
-**Executed on 2026-03-27.**  Route 1 from the original analysis was chosen and
-implemented: `regime.bound` was removed entirely from the `Regime` struct.
+Introducing a masked two-run branch interface is not the primary direction
+here.  It may still be usable as a proof device, but it does not address the
+semantic tension exposed by mode 3.
 
-#### Background (historical)
+The analysis separates two questions:
 
-`Regime.bound` was introduced on 2026-01-05 (commits 4c1b9a9-cda525d) for the
-full-IO FR proof to handle `frand`, which creates fresh guard tags from the
-`nextTag` supply.  Under `forall R`, an adversarial regime could mark a fresh
-tag `true`, making the result `qtypCleanUnder` and requiring two independent
-random draws to agree.  The bound prevented this by making `Regime.lookup?`
-return `none` for tags `>= bound`.
+1. **Then-side de-poisoning strategy.**  What special benefit, if any, should a
+   successful unknown-regime check give to the checked carrier?
+2. **Else-side regime strategy.**  What false-side facts, if any, may be
+   asserted tag-wide for `guardClosure` entries?
 
-The `.ioFree` pivot (2026-01-20) made this unnecessary: `frand`, `rand`, and
-externs cannot terminate in `.ioFree`, so their StepFR cases are vacuous
-regardless of `regime.bound`.
+The then-side diagnosis is stable: tag-wide de-poisoning is too strong, so any
+live repair must stop using a successful check on one carrier as justification
+for de-poisoning arbitrary other same-tag carriers.
 
-#### What was removed
+The false side needs a more explicit statement than before.  What may still be
+preservable is the conservative *effect* of making data less trusted in the
+`else` branch, but that does not automatically justify the current tag-wide
+`R[k := false]` story for arbitrary `guardClosure` entries.  So a then-only
+repair is incomplete unless it also says what happens to the false-side regime
+obligations.
 
-- `Regime.bound` field from the `Regime` struct
-- `Regime.lookup?` bound guard (`if k < R.bound then ... else none`)
-- `regimeBounded` predicate, `predTagsBoundedInCtx` predicate, `wfRegimePartial`
-- Bound-equality conjunct from `Regime.monotoneStep` (3 -> 2 conjuncts)
-- Bound conjunct from `regimeConsistentWithCtx` (pair -> plain Prop)
-- Bound conjunct from `regimeConsistentWithCtxMasked` (pair -> plain Prop)
-- Bound conjunct from `wfRegime` (3 -> 2 conjuncts)
-- `regimeBounded_of_monotoneStep`, `joinTypeResults_regime_bound_le_head` lemmas
-- All `k < bound` / `k >= bound` case splits in mode-3 ite proofs
-- Bound premises from `FaultRobustnessSpec` and `FaultRobustnessSpec_ioFree`
+This is a semantics question first and a proof question second.  The current
+proof failure is useful because it pinpoints that the unknown-regime rule needs
+an explicit story for both sides of the branch, not just for the then-side
+de-poisoning behaviour.
 
-This eliminated the artificial `k < bound` / `k >= bound` split that was the
-main obstacle in mode-3 transport proofs.
+### 2.5. Owner-Sensitive `Then`-Branch De-Poisoning
 
-### 3.5. Longer-Term Direction
+This subsection lays out the current design space.
 
-The longer-term direction remains:
+One clarification matters up front.  The dead end in §4.4.10 rejected
+**global** per-owner de-poisoning, because that would destroy the main
+tag-linked de-poisoning mechanism of the language.  The present question is
+narrower: whether the unknown-regime `then` premise alone should become
+owner-sensitive, while ordinary modes 1/2 remain tag-wide and the false side
+still needs some explicit conservative story of its own.
 
-- keep the invariant from PR #133;
-- keep the clean/poisoned condition split in `stepFR_ite_mode3`;
-- the `k >= bound` subcase is now moot (§3.4 Route 1 executed: `regime.bound`
-  removed), so the proof simplifies to standard two-run IH everywhere.
+Any live idea must say something about both branches.  The then-side de-poisoning question and the false-side regime
+question are separable.  A candidate that changes only the `then` side still
+needs a separate explanation of what happens to the `guardClosure` obligations
+created by `R[k := false]` in the `else` branch.
 
-Within that direction, the remaining work is local to `StepFRIte.lean`.
+#### Idea A. Remove the `then`-branch `R`/`L` updates entirely
 
-### 3.6. Proof Strategy For The Remaining Mode-3 Bodies
+The most direct weakening would be to stop updating `R` and `L` in the
+unknown-regime `then` premise at all, and simply type the `then` branch under
+the original branch context.
 
-For `stepFRSingleRun_ite_mode3_maskedReg`:
+Taken by itself, this is incomplete rather than merely "too weak":
+changing only the `then` side leaves the false-side `guardClosure`
+`consistentWithRegime` blocker untouched.
 
-- treat it as a helper lemma, not as evidence about the invariant;
-- use the fact that its theorem already assumes `ctx.pc = true`;
-- focus on taken-branch IH application and masked-regime transport.
+The stronger variant is to drop branch-local regime participation in mode 3
+altogether, pushing mode 3 much closer to mode 4.  Concretely, this means
+dropping both the branch-local `tagEnv` updates and the branch-local `R`
+updates in the unknown-regime case, so that once `R(k) = none` is discovered,
+the typing rule falls through to ordinary conservative `if` typing rather than
+carrying any remembered branch-local tag fact.  That would sacrifice even the
+checked-carrier benefit and any remembered local fact for nested checks, but it
+would also avoid both the then-side clean-agreement problem and the false-side
+`guardClosure` regime problem with minimal proof-engineering cost.
 
-For `stepFR_ite_mode3`:
+**Provisional judgement:** weak then-only form is incomplete; strong "collapse
+toward mode 4" form is a live pragmatic baseline.
 
-- split first on `res1.qualType.poison`.
+#### Idea B. Introduce a branch-local checked-carrier environment
 
-Poisoned-condition branch:
+A more targeted option is to add a temporary branch-scoped structure recording
+that a specific carrier was successfully checked on the `then` side.  Lookup
+rules would consult this structure before the ordinary tag-wide `R`/`L`
+machinery, so the checked carrier could receive special treatment without
+activating all same-tag carriers.
 
-- conclude `branchPc = true`;
-- conclude the final result poison is `true`;
-- derive `res.qualType.pred = Predicate.noPred` using the existing
-  `typecheckIf_pred_noPred` lemma;
-- conclude `resultAgreesIfClean` is vacuous using
-  `resultAgreesIfClean_of_poison_noPred`;
-- then split on the four runtime branch combinations.
+This is the most direct owner-sensitive implementation idea.  It keeps the
+branch-local fact reusable inside the branch, which matters for later reads and
+for nested mode-3 cases.  A nested mode-3 check could simply extend the
+temporary structure in stack discipline, and the whole structure would be
+dropped again at the branch join.
 
-  The regime insert is always visible (no `k >= bound` obstruction since
-  `regime.bound` was removed in §3.4), so same-branch cases can use the
-  ordinary two-run IH on `e2` / `e3`.
+The cost is architectural and presentational.  A new temporary structure must
+be threaded through the Ott rules, the Lean typechecker, and the FR proof
+interfaces.  That would likely force new invariants and broad proof changes
+throughout the FR development.  We would also need a precise representation of
+the "checked carrier" that works not only for variables but also for
+dereference-based and function-based matches.
 
-  In the mixed-branch poisoned-condition cases, the natural route is masked or
-  single-run reasoning, since `branchPc = true` makes those tools applicable.
+This makes the rule harder to present and explain as part of the language
+itself.  So although it is concrete, it currently looks like an unattractive
+way to realise the intended semantics.
 
-Clean-condition branch:
+It also still needs a separate false-side regime story for `guardClosure`
+entries.  By itself, it only addresses the then-side precision problem.
 
-- preserve the invariant across typing `e1`;
-- use `res1.qualType.etyp = bool` plus `res1.qualType.poison = false` to force
-  `res1.qualType.pred = Predicate.noPred`;
-- conclude `res1` is `qtypCleanUnder`;
-- apply `resultAgreesIfClean` on `e1` to obtain `b₀ = b₁`;
-- eliminate the mixed-branch cases as impossible;
-- handle only the same-branch cases.
+**Provisional judgement:** technically possible, but least preferable.
 
-  The regime insert is always visible (no bound obstruction), so the ordinary
-  two-run IH on the branch context applies directly.
+#### Idea C. Shadow-tag or local tag-renumbering
 
-For the same-branch cases, establishing
-`predOnlyOnPoisonedNonRefCtx` for `ctxTrue` / `ctxFalse` should be routine:
-this is already handled elsewhere in the codebase by `simpa` from the incoming
-`hinv`.
+Another possibility is to preserve the existing tag-based machinery, but split
+the checked carrier away from the rest of its tag-class only inside the
+`then` branch.  Conceptually, the branch would allocate a fresh shadow tag
+`k_then` for the checked carrier, set that shadow tag to true, and leave the
+other original `k`-tagged carriers untouched.
 
-For the mixed-branch cases, choose one of two routes explicitly:
+This is appealing because it keeps the implementation tag-driven.  It also has
+a plausible story for nested mode-3 cases: each nested successful check could
+introduce another fresh shadow tag.
 
-- either prove and reuse `stepFRSingleRun_ite_mode3_maskedReg` as the helper;
-- or call `singleIH` directly on the taken branch contexts and avoid depending
-  on the masked wrapper.
+But the semantic and engineering costs look high.  We would need a coherent
+branch-local re-tagging operation, a precise rule for what gets re-tagged, and
+a proof that joins discard the shadow tags in the right way.  Alias-sensitive
+cases, captured closures, and repeated checks on the "same" carrier all look
+delicate here.  It also feels conceptually odd to repair an owner-sensitive
+problem by changing tag identity.
 
-The transport obligations in these cases should follow the same patterns as the
-existing mode-4 proof infrastructure.
+It also does not yet answer the false-side `guardClosure` question.  Even if a
+shadow-tag story solved the then-side identity problem, it would still need a
+companion account of what the `else` branch is allowed to assert regime-wise.
 
-### 3.7. Optional Cleanup After Mode 3 Closes
+**Provisional judgement:** plausible backup idea, but high risk.
 
-Once both mode-3 `sorry`s are gone:
+#### Idea D. Deep de-poisoned view of the checked carrier
 
-1. Decide whether the proof stack should continue to expose the broad invariant
-   `predOnlyOnPoisonedNonRefCtx`, or whether the local clean/poisoned condition
-   split should simply remain the mode-3 proof interface.
-2. If repeated transport code emerges across mode 3 and mode 4, extract shared
-   helpers rather than leaving the structure duplicated.
+Instead of mutating branch environments at the tag level, we could define the
+unknown-regime `then` premise semantically in terms of a de-poisoned **view**
+of the checked carrier itself.  The branch would then benefit only from facts
+that flow from that checked carrier, not from mere tag equality with unrelated
+carriers.
 
-### 3.8. Exit Criteria
+In intuitive terms: after a successful mode-3 check, the `then` branch should
+act as if "the thing I just checked is trustworthy here", not as if "every
+other thing with the same tag is now trustworthy too".  So the branch-local
+special treatment follows the checked carrier itself, rather than the whole tag.
 
-This line of work is complete when:
+This has the right flavour semantically: trust what was actually checked, not
+the whole same-tag population.  It may also describe more accurately what we
+want the language rule to mean than any particular environment trick.
 
-- `stepFRSingleRun_ite_mode3_maskedReg` is proved;
-- `stepFR_ite_mode3` is proved;
-- no temporary axioms are needed;
-- the project builds cleanly;
-- the documentation reflects the merged invariant work rather than the old
-  pre-merge validation plan.
+The difficulty is making "deep" precise.  For a variable owner, the checked
+carrier is fairly concrete.  For dereference-based matches, aliased locations,
+or function values with captured state, the identity of the checked carrier is
+less obvious.  There is also a design choice about how much downstream data
+derived from the checked carrier should inherit the benefit.
+
+So this may be the right **semantic** formulation, but not yet a concrete
+implementation plan.  If adopted, it would still need a lighter operational
+realisation; Idea B is one obvious possibility, but not a preferred one.
+
+It also only explains the then-side trust story.  It still needs a separate
+false-side regime strategy for `guardClosure` entries.
+
+**Provisional judgement:** promising semantic direction; implementation still
+open.
+
+#### Current short-list
+
+Two options deserve explicit attention for different reasons:
+
+- the strong form of Idea A is the clearest low-engineering complete repair;
+- Idea D is the cleanest higher-precision semantic target, but only if it is
+  paired with an explicit false-side regime strategy;
+- Idea C remains a speculative tag-based fallback;
+- Idea B remains a last-resort engineering fallback.
+
+### 2.6. Semantic Impact On De-Poisoning Precision
+
+All live repairs agree on the broad direction, but they do not all lose
+exactly the same precision.
+
+On the `else` side, the semantic goal is still conservative: mode 3 should not
+gain any new false-side trust that is not justified.  The open design question
+is whether the current user-facing poisoning effect can be preserved without
+keeping the present tag-wide `R[k := false]` obligations for `guardClosure`
+entries.
+
+On the `then` side, higher-precision variants keep some special benefit for the
+checked carrier while removing tag-wide de-poisoning of arbitrary linked
+same-tag carriers.  The stronger conservative variant instead collapses mode 3
+much closer to mode 4 and loses even that checked-carrier benefit.
+
+The practical precision loss is therefore narrow.  It matters only when one of
+the routes in §1.3 puts a tag into mode 3 and, inside the `then` branch, the
+program wants to rely not just on the checked carrier, but on other linked
+same-tag carriers as well.
+
+For spec tags in the theorem setting considered here, this means: the tag was
+initially known in the regime, later became unknown by invalidation or join
+loss, and a later mode-3 branch wants branch-local benefits that go beyond
+what the checked carrier itself can justify.
+
+That is the point where the revised mode-3 rule gives up precision.
+Outside those cases, the ordinary modes still provide the original tag-wide
+de-poisoning behaviour.
+
+---
+
+## 3. Plan
+
+_To be filled._
 
 ---
 
 ## 4. History
+
+This section is retrospective context.  The main conclusions for current use
+are collected in §2.
 
 ### 4.1. Axiom validation experiment (discarded)
 
@@ -587,6 +635,16 @@ These approaches consumed significant time and should not be retried.
 
 **Source:** commit 306a760 ("new approach") of this document.
 
+**The discipline introduced in this phase.**
+
+> **Only poisoned non-reference values carry predicates.**  For any
+> non-reference qualified type in `varEnv` or `memEnv`, if `pred ≠ noPred`,
+> then `poison = true`.
+
+Reference types were excluded from this discipline: `typecheckLocation`
+returns a clean reference that preserves the stored predicate from `memEnv`,
+so clean references with predicates remain a normal part of the type system.
+
 **Key insight.**  Instead of strengthening the proof interfaces to justify
 mode-3 de-poisoning for all same-tag carriers (the coherence-invariant
 approach), we observed that under a simpler discipline — only poisoned
@@ -600,14 +658,143 @@ poisoned.  So `x.poison = true`, which forces `p1 = true` and
 the result is poisoned with `pred = noPred`.  `resultAgreesIfClean` is
 vacuous.
 
+What this repair did **not** do was remove the later branch-local obligations
+that appear once the proof tries to reason inside a mode-3 branch under
+branch-local tag facts.  In particular, it blocks the old clean-`guardClosure`
+counterexample, but it does not by itself solve the then-side `agreeOnClean`
+problem for `guardOnly` entries or the regime-consistency problem that later
+appears for branch-local `guardClosure` reasoning.
+
 This was a dramatically simpler repair than the coherence-invariant route:
 define the invariant, prove preservation across all typing rules, enforce
 in the spec constructors, thread through StepFR.  PR #133 implemented
 this and landed on 2026-03-26.
+
+**Initial expectation from the new invariant.**  The first hope was:
+
+> if the matched carrier is forced to be poisoned by the invariant, then the
+> condition itself should be poisoned, hence `branchPc = true`, hence the mode-3
+> result should be poisoned with `pred = noPred`.
+
+The owner-side reasoning behind that expectation was:
+
+- **Variable owners.**  `matchGuard` matches a variable carrying a
+  `guardClosure`.  By the new invariant, the variable is poisoned.  Since
+  `matchGuard` also requires the predicate to use its argument (`usesArg`),
+  the carrier seemed likely to force poison into the condition.
+- **Reference owners.**  `matchGuard` can also match through `!r`, where the
+  merged predicate comes from the referenced memory cells.  Those cells are
+  non-reference `int` entries in `memEnv`, so under the new invariant they are
+  poisoned whenever they carry predicates, and typing `!r` joins that poison
+  into the dereference result.
+
+This expectation motivated the bridge-theorem attempt later discarded in
+§4.1.
 
 **Limitation discovered later.**  The invariant ensures the carrier is
 poisoned, but a poisoned carrier does not always force the *condition
 expression* to be poisoned (see §4.1 — `usesArg` is syntactic, not
 semantic).  The final proof strategy avoids this gap entirely by
 case-splitting on the condition's poison rather than asserting it is always
-true.
+true.  In other words, the global bridge theorem is false, but the local
+clean/poisoned split remains viable.
+
+### 4.6. Removal of `regime.bound`
+
+After the condition-poison case split was adopted, the next blocker was the
+artificial `k < bound` / `k >= bound` split in mode-3 branch contexts.  The
+current line of work removed `regime.bound` from `Regime`, making `Regime.lookup?`
+an unconditional map lookup.
+
+This does **not** revive the dead ends in §4.4:
+
+- it is not a new bounded-tags invariant (ruled out by §4.4.1);
+- it is not a local "bump the bound in mode 3" patch (ruled out by §4.4.2).
+
+Instead, it removes the mechanism entirely.  In the FR setting considered here, the
+original reason for the bound — protecting the full-IO proof from fresh runtime
+tags — is not relevant.
+
+The immediate practical effect is that the old *hidden insert* branch-context
+split disappears: mode-3 regime inserts are always visible.
+
+**What we later learned.**  This removed the old *invisible insert* problem, but
+it did **not** make same-branch mode-3 transport ordinary.  Visibility is
+exactly what activates the fresh `consistentWithRegime` and `agreeOnClean`
+obligations for `k`-tagged carriers.  So the old branch-context inconsistency
+changed shape rather than disappearing; see §4.7.
+
+### 4.7. Current blocker after the no-bound change
+
+**Date:** 2026-03-27, while executing an earlier proof plan for mode 3.
+
+**What we tried.**  We attempted the first same-branch `sorry` in
+`stepFR_ite_mode3` under the post-`regime.bound` proof plan, expecting it to be
+mode-4-analogous transport.  The only code change made in the file was to
+rename underscore-prefixed IH outputs (`_hwfTm1`, `_hcwr₀1`, `_hcwr₁1`, etc.)
+so the branch proof could refer to them directly.
+
+**What failed.**  The ordinary two-run IH on the branch context does **not**
+apply directly.  Two preconditions become unprovable at
+`ctxᵢ.regime.insert k true` / `ctxᵢ.regime.insert k false`:
+
+1. `consistentWithRegime`.
+   Activating `k` adds fresh obligations for every `k`-tagged location or
+   variable in the context.  The incoming `hcwr₀1` / `hcwr₁1` never established
+   those facts, because before the insert the regime still had `k ↦ none`.
+   For `guardClosure k` entries this specifically needs new realization and
+   predicate-consistency evidence; `guardOnly k` entries avoid that sub-obligation
+   but are still newly activated regime entries.
+
+2. `agreeOnClean`.
+   `qtypCleanUnder.guard` makes non-function `k`-tagged entries clean as soon as
+   the branch inserts `k = true`.  Under the invariant package introduced in
+   §4.5 those carriers are
+   typically poisoned non-reference values, and the current guarded agreement
+   constructor `withPred_true_eq` then asks for literal equality of dirty
+   values across runs.  That is exactly the case mode 3 was supposed to leave
+   unconstrained.  This hits both `guardClosure k` and `guardOnly k` entries.
+
+This blocks all four same-branch `sorry`s:
+
+- true/true in the poisoned-condition branch;
+- false/false in the poisoned-condition branch;
+- true/true in the clean-condition branch;
+- false/false in the clean-condition branch.
+
+**What this means for the proof strategy.**
+
+- The outer clean/poisoned split is still correct and should stay.
+- The single-run masked theorem remains relevant for mixed poisoned cases.
+- The same-branch cases need a new relational interface; they are not routine
+  mode-4 transport.
+
+**Assessment of candidate resolutions.**
+
+- **Historical Route 1: unary masked reasoning for all mode-3 cases.**
+  Useful for mixed poisoned cases, but insufficient by itself for same-branch
+  cases because unary results do not reconstruct the missing cross-run branch
+  agreement for newly produced outputs.
+
+- **Historical Route 2: add a vacuous guarded-poisoned agreement
+  constructor.**
+  This would attack only the `agreeOnClean` half of the blocker, leaving
+  `consistentWithRegime` untouched.  It would also weaken the meaning of
+  guard-based clean agreement in the ordinary modes.
+
+- **Historical Route 3: weaken `qtypCleanUnder.guard` to require
+  `poison = false`.**
+  This also attacks only the `agreeOnClean` half and would globally change the
+  meaning of guard-based de-poisoning, collapsing legitimate mode-1 / mode-2
+  clean agreement on linked carriers.
+
+- **Historical Route 4: add masked two-run branch-local infrastructure.**
+  Mask `k` while proving the branch-local relational theorem, then transport the
+  resulting obligations through the final join, where `k` disappears again
+  because the true and false branch regimes disagree on it.  This aligns with
+  the existing masked single-run machinery and avoids changing the language- or
+  theorem-level semantics.
+
+  The cost is real: no masked two-run theorem currently exists.  The existing
+  masked infrastructure is single-run only, so this route requires a new
+  theorem-level relational interface rather than just one more transport lemma.
