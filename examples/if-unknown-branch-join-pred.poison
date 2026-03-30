@@ -1,5 +1,5 @@
--- Test: if_depoison_*_R_unknown path - joinMemEnvsStrong drops single-sided predicates
--- frand creates guard tag; empty regime => R(k) = none => unknown-branch path
+-- Test: standard if path from matched guard with unknown regime.
+-- frand creates a guard tag; empty regime => R(k) = none => conservative std path.
 -- Then-branch allocates a ref; else-branch does not.
 -- After join, the single-sided location should have noPred.
 let sensor = frand 0 in

@@ -897,7 +897,7 @@ Memory typing environment $\Gamma$ evolves through:
 Logical environment $\mathcal{L}$ evolves through:
 \begin{itemize}
     \item \textbf{Sequencing and let}: Chained through expressions -- the first subexpression produces $\mathcal{L}_1$, which is used to type the second; the result is the second subexpression's $\mathcal{L}_2$ (\texttt{;}, \texttt{let}).
-    \item \textbf{Conditionals}: In the standard case (no predicate match), the result is the logical environment produced by typing the guard (\texttt{if\_std\_*} returns $\mathcal{L}_1$). In the predicate-matched case, branch-local facts are discarded at the merge (\texttt{if\_depoison\_*} returns the pre-conditional $\mathcal{L}$).
+    \item \textbf{Conditionals}: In the standard case, the result is the logical environment produced by typing the guard (\texttt{if\_std\_*} returns $\mathcal{L}_1$). This standard case covers both ``no predicate match'' and ``predicate match with $\mathcal{R}(k)$ unknown''. In the regime-deterministic predicate-matched cases, branch-local facts are discarded outside the selected branch (\texttt{if\_depoison\_*} returns the pre-conditional $\mathcal{L}$).
     \item \textbf{Assignment}: Invalidates entries whose dependencies include the written location set.
     \item \textbf{Most other constructs}: Pass through unchanged.
 \end{itemize}
@@ -1085,16 +1085,16 @@ regime for the two-run scenario, enabling the type system to exploit
 regime-deterministic guard outcomes.
 
 \paragraph{Regime-aware conditional typing.}
-When typechecking a conditional \texttt{if e1 then e2 else e3} where \texttt{match\_guard} recognises a guard tag $k$, the type system consults $\mathcal{R}(k)$:
+When typechecking a conditional \texttt{if e1 then e2 else e3}, the type system has three proof-relevant cases:
 \begin{itemize}
-  \item \textbf{$\mathcal{R}(k) = \text{true}$} (regime-deterministic true): The conditional is treated as effectively selecting the then-branch. The result type and output environments come from the then-branch, and the program counter is not poisoned by the condition. This reflects that in the fault-robustness scenario, both runs are guaranteed to take the then-branch.
-  \item \textbf{$\mathcal{R}(k) = \text{false}$} (regime-deterministic false): Symmetrically, the conditional effectively selects the else-branch, with the result type and environments from the else-branch.
-  \item \textbf{$\mathcal{R}(k) = \text{none}$} (regime-unknown): The regime does not fix the guard outcome, so both branches may be taken in different fault-robustness runs. The type system conservatively poisons the branch program counter with the condition's poison (as in standard conditionals) and joins the branch results. This ensures that any writes in divergent branches are typed poisoned, preventing violations of the fault-robustness agreement invariant.
+  \item \textbf{Known true}: \texttt{match\_guard} recognises a guard tag $k$ and $\mathcal{R}(k) = \text{true}$. The conditional is treated as effectively selecting the then-branch. The result type and output environments come from the then-branch, and the program counter is not poisoned by the condition. This reflects that in the fault-robustness scenario, both runs are guaranteed to take the then-branch.
+  \item \textbf{Known false}: \texttt{match\_guard} recognises a guard tag $k$ and $\mathcal{R}(k) = \text{false}$. Symmetrically, the conditional effectively selects the else-branch, with the result type and environments from the else-branch.
+  \item \textbf{Standard}: Either \texttt{match\_guard} fails, or it succeeds but $\mathcal{R}(k)$ is absent. In both situations the type system conservatively poisons the branch program counter with the condition's poison and joins the branch results. No branch-local tag fact is introduced, and no de-poisoning is performed from the matched guard alone. This ensures that any writes in divergent branches are typed poisoned, preventing violations of the fault-robustness agreement invariant.
 \end{itemize}
 
-For standard conditionals (where \texttt{match\_guard} fails), the regime is not
-consulted: both branches are typechecked with a program counter poisoned by the
-condition, and results are joined.
+The standard case is therefore the single conservative path for both ``no
+guard match'' and ``guard matched but the regime does not determine its truth
+value''.
 
 This regime-aware approach resolves the mismatch between flow-insensitive typing
 and regime-specific fault-robustness reasoning, enabling the type system to be

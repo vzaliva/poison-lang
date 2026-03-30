@@ -1563,10 +1563,10 @@ termination_by fuel
 
 
 /-- Rule: if_depoison_* and if_std_* (Ott rules with regime awareness)
--- When matchGuard succeeds: consult R(k) for regime-aware typing
--- When matchGuard fails: use standard conservative typing
--- In ioFree mode with known regime, skip typechecking the untaken branch
--- Implements all if_* rules from poison-lang.ott faithfully
+-- When matchGuard succeeds: consult R(k) for regime-aware typing.
+-- If the regime is unknown, fall back to the same conservative typing path
+-- used by the standard if rules; no branch-local tag or regime fact is added.
+-- In ioFree mode with known regime, skip typechecking the untaken branch.
 --/
 def typecheckIf (mode : EvalMode) (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
@@ -1634,26 +1634,26 @@ def typecheckIf (mode : EvalMode) (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : 
                  nextLoc' := max result2.nextLoc' result3.nextLoc', nextTag' := max result2.nextTag' result3.nextTag', regime' := result3.regime' }
 
       | none => do
-        -- R(k) = none: conservative fallback (if_depoison_*_R_unknown rules)
-        -- Branch pc is poisoned by guard poison
-        -- Sync R.map with L (Issue #128): insert k |-> true/false when branching
+        -- R(k) = none: use the ordinary conservative if typing path.
+        let result1 ← typecheckExpr mode ctx e1 fuel
+        let ⟨etyp1, p1, _⟩ := result1.qualType
+        if etyp1 != ETyp.bool then throw "Condition of if must be bool"
+
+        let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
+                               nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+
         let branchPc := joinPoison ctx.pc p1
-        let regimeTrue := ctx.regime.insert k true
-        let regimeFalse := ctx.regime.insert k false
-        let ctxTruePoisoned := { ctxTrue with pc := branchPc, regime := regimeTrue }
-        let ctxFalsePoisoned := { ctxFalse with pc := branchPc, regime := regimeFalse }
+        let ctx'' := { ctx' with pc := branchPc }
 
-        let result2 ← typecheckExpr mode ctxTruePoisoned e2 fuel
-        let ⟨etyp2, p2, _pred2⟩ := result2.qualType
+        let result2 ← typecheckExpr mode ctx'' e2 fuel
+        let ⟨etyp2, p2, _⟩ := result2.qualType
 
-        let ctxFalse' := { ctxFalsePoisoned with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
-        let result3 ← typecheckExpr mode ctxFalse' e3 fuel
-        let ⟨etyp3, p3, _pred3⟩ := result3.qualType
+        let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+        let result3 ← typecheckExpr mode ctxForE3 e3 fuel
+        let ⟨etyp3, p3, _⟩ := result3.qualType
 
-        -- Check type compatibility
-        if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type (etyp2: {etyp2}, etyp3: {etyp3})"
+        if not (beqETypSignature etyp2 etyp3) then throw s!"Branches of if must have same type"
 
-        -- Join both branches (conservative)
         let joinedEtyp := joinETyps etyp2 etyp3 p2 p3
         let poison := joinPoison ctx.pc (joinPoison p1 (joinPoison p2 p3))
         let qt : QTyp := ⟨joinedEtyp, poison, Predicate.noPred⟩
