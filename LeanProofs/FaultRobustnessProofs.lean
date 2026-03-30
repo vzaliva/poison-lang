@@ -574,175 +574,106 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                             hetyp.symm hcap2'
                   · obtain ⟨hstdCase, res1, htc1, hbool, res2, htc2, res3, htc3,
                       hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp, hpred⟩ := hstd
-                    cases hstdCase with
-                    | inl h3 =>
-                        obtain ⟨k, deps, hmatch, hregime_none⟩ := h3
-                        exact
-                          stepFRSingleRun_ite_mode3_maskedReg
-                            masked ctxᵢ predSat tm e1 e2 e3 fuel' res IH'
-                            k deps (by simpa [Nat.succ_sub_one] using hmatch) hregime_none
-                            res1 (by simpa [Nat.succ_sub_one] using htc1) hbool
-                            res2 (by simpa [Nat.succ_sub_one] using htc2)
-                            res3 (by simpa [Nat.succ_sub_one] using htc3)
-                            hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison hetyp hpred
-                    | inr h4 =>
-                        obtain ⟨err, hmatch_fail⟩ := h4
-                        intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
-                        let ctx' : TypeContext := ctxAfter ctxᵢ res1
-                        let pc' := joinPoison ctxᵢ.pc res1.qualType.poison
-                        let ctx'' : TypeContext := { ctx' with pc := pc' }
-                        let ctxForE3 : TypeContext := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
-                        have htc1' : typecheck .ioFree ctxᵢ e1 fuel' = .ok res1 := by
-                          simpa [typecheck, Nat.succ_sub_one] using htc1
-                        have hIH_e1 := IH' fuel' (by omega) masked e1 ctxᵢ res1 htc1'
-                        have hstruct_rt := terminatesTo_ite_inv' e1 e2 e3
-                          { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
-                        rcases hstruct_rt with ⟨cfg1, b, ht_e1, hbranch, _hpm1, _hpmf⟩
-                        rcases
-                            hIH_e1 hpredlaws hwfTm μ ρ θ cfg1 (Value.bool b)
-                              hθwf hwf hric htagR hmasked_none hcwr
-                              a pm hwfcfg ht_e1 hpc
-                          with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1⟩
-                        have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
-                        have hwfcfg1 : wfConfig cfg1 :=
-                          (wfConfig_preserved .ioFree e1 _ cfg1 (Value.bool b) ht_e1 hwfcfg).1
-                        have hmono1 :
-                            Regime.monotoneStep ctxᵢ.regime (ctxAfter ctxᵢ res1).regime :=
-                          regime_monotone ctxᵢ e1 fuel' res1 htc1'
-                        have htagR1 :
-                            regimeConsistentWithCtxMasked masked (ctxAfter ctxᵢ res1) :=
-                          typecheckExpr_preserves_regimeConsistentWithCtxMasked
-                            masked ctxᵢ e1 fuel' res1 htagR htc1'
-                        have hmasked_none1 :
-                            ∀ t, masked t → (ctxAfter ctxᵢ res1).regime.lookup? t = none :=
-                          masked_lookup_none_of_monotoneStep hmasked_none hmono1
-                        have hwfTm1 : wfTagMeaningCtx tm (ctxAfter ctxᵢ res1) := by
-                          exact
-                            typecheckExpr_preserves_wfTagMeaningCtx
-                              tm ctxᵢ e1 fuel' res1 hwfTm htc1'
-                        have hwf1 : wfTypeResult res1 :=
-                          typecheckExpr_preserves_wfTypeResult ctxᵢ e1 fuel' res1 hwf htc1'
-                        have hwf_ctx' : wfTypeContext ctx' := by
-                          simpa [ctx'] using wfTypeContext_of_wfTypeResult ctxᵢ res1 hwf1
-                        have hwfTm_ctx'' : wfTagMeaningCtx tm ctx'' := by
-                          simpa [ctx'', ctx', pc'] using hwfTm1
-                        have hwf_ctx'' : wfTypeContext ctx'' := by
-                          simpa [ctx'', ctx', pc', wfTypeContext] using hwf_ctx'
-                        have hric1_ctx'' :
-                            runtimeInstantiatesCtx ctx'' cfg1.memory cfg1.varEnv θ1 := by
-                          simpa [ctx'', ctx', pc', ctxAfter, runtimeInstantiatesCtx] using hric1
-                        have hcwr1_ctx'' :
-                            consistentWithRegimeMasked masked predSat ctx''.regime ctx''
-                              cfg1.memory cfg1.varEnv θ1 := by
-                          simpa [ctx'', ctx', pc', ctxAfter, consistentWithRegimeMasked] using hcwr1
-                        have htagR_ctx'' : regimeConsistentWithCtxMasked masked ctx'' := by
-                          simpa [ctx'', ctx', pc', regimeConsistentWithCtxMasked] using htagR1
-                        have hmasked_none_ctx'' :
-                            ∀ t, masked t → ctx''.regime.lookup? t = none := by
-                          simpa [ctx'', ctx', pc', ctxAfter] using hmasked_none1
-                        have hpc'' : ctx''.pc = true := by
-                          simp [ctx'', pc', hpc, joinPoison]
-                        have hnextLoc_mono :
-                            res1.nextLoc' ≤ res2.nextLoc' := by
-                          have : ctx''.nextLoc ≤ res2.nextLoc' :=
-                            typecheck_nextLoc_mono ctx'' e2 fuel' res2
-                              (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
-                          simpa [ctx'', ctx'] using this
-                        have hnextTag_mono :
-                            res1.nextTag' ≤ res2.nextTag' := by
-                          have : ctx''.nextTag ≤ res2.nextTag' :=
-                            typecheck_nextTag_mono .ioFree ctx'' e2 fuel' res2
-                              (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
-                          simpa [ctx'', ctx'] using this
-                        have hwfTm_ctxForE3 : wfTagMeaningCtx tm ctxForE3 := by
-                          simpa [ctxForE3, ctx'', ctx', pc'] using hwfTm1
-                        have hwf_ctxForE3 : wfTypeContext ctxForE3 := by
-                          intro l hl
-                          simp only [ctxForE3, ctx'', ctx', ctxAfter] at hl ⊢
-                          exact Nat.lt_of_lt_of_le (hwf_ctx' l hl) hnextLoc_mono
-                        have hric1_ctxForE3 :
-                            runtimeInstantiatesCtx ctxForE3 cfg1.memory cfg1.varEnv θ1 := by
-                          simpa [ctxForE3, ctx'', ctx', pc', ctxAfter, runtimeInstantiatesCtx] using hric1
-                        have hcwr1_ctxForE3 :
-                            consistentWithRegimeMasked masked predSat ctxForE3.regime ctxForE3
-                              cfg1.memory cfg1.varEnv θ1 := by
-                          simpa [ctxForE3, ctx'', ctx', pc', ctxAfter, consistentWithRegimeMasked] using hcwr1
-                        have htagR_ctxForE3 : regimeConsistentWithCtxMasked masked ctxForE3 := by
-                          show tagEnvConsistentWithRegimeMasked masked ctxForE3.tagEnv ctxForE3.regime
-                          simpa [ctxForE3, ctx'', ctx', pc', regimeConsistentWithCtxMasked] using htagR1
-                        have hmasked_none_ctxForE3 :
-                            ∀ t, masked t → ctxForE3.regime.lookup? t = none := by
-                          simpa [ctxForE3, ctx'', ctx', pc', ctxAfter] using hmasked_none1
-                        have hpcForE3 : ctxForE3.pc = true := by
-                          simp [ctxForE3, ctx'', pc', hpc, joinPoison]
-                        have htc2' : typecheck .ioFree ctx'' e2 fuel' = .ok res2 := by
-                          simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2
-                        have htc3' : typecheck .ioFree ctxForE3 e3 fuel' = .ok res3 := by
-                          simpa [ctxForE3, ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc3
-                        have hpredNo : res.qualType.pred = Predicate.noPred := by
-                          exact typecheckIf_pred_noPred ctxᵢ e1 e2 e3 (Nat.succ fuel') res htcIf
-                        have hcompat23 : beqETypSignature res2.qualType.etyp res3.qualType.etyp = true := by
-                          by_contra hcompat
-                          have hcompat' : beqETypSignature res2.qualType.etyp res3.qualType.etyp = false := by
-                            cases h : beqETypSignature res2.qualType.etyp res3.qualType.etyp <;> simp_all
-                          have hmatch_fail' :
-                              matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .error err := by
-                            simpa [Nat.succ_sub_one] using hmatch_fail
-                          have htc1_expr :
-                              typecheckExpr .ioFree ctxᵢ e1 fuel' = .ok res1 := by
-                            simpa [Nat.succ_sub_one] using htc1
-                          have htc2_expr :
-                              typecheckExpr .ioFree ctx'' e2 fuel' = .ok res2 := by
-                            simpa [ctx'', ctx', pc', Nat.succ_sub_one] using htc2
-                          have htc3_expr :
-                              typecheckExpr .ioFree ctxForE3 e3 fuel' = .ok res3 := by
-                            simpa [ctxForE3, ctx'', ctx', pc', Nat.succ_sub_one] using htc3
-                          have htcIf_err :
-                              typecheckIf .ioFree ctxᵢ e1 e2 e3 (Nat.succ fuel') =
-                                .error s!"Branches of if must have same type" := by
-                            cases hq1 : res1.qualType with
-                            | mk etyp1 p1 pred1 =>
-                                have hbool1 : etyp1 = ETyp.bool := by
-                                  simpa [hq1] using hbool
-                                subst etyp1
-                                have htc2_raw :
-                                    typecheckExpr .ioFree
-                                      { pc := joinPoison ctxᵢ.pc p1
-                                      , regime := res1.regime'
-                                      , memEnv := res1.memEnv'
-                                      , varEnv := ctxᵢ.varEnv
-                                      , tagEnv := res1.tagEnv'
-                                      , nextLoc := res1.nextLoc'
-                                      , nextTag := res1.nextTag'
-                                      , pureCtx := ctxᵢ.pureCtx } e2 fuel' = .ok res2 := by
-                                  simpa [ctx'', ctx', pc', hq1] using htc2_expr
-                                have htc3_raw :
-                                    typecheckExpr .ioFree
-                                      { pc := joinPoison ctxᵢ.pc p1
-                                      , regime := res1.regime'
-                                      , memEnv := res1.memEnv'
-                                      , varEnv := ctxᵢ.varEnv
-                                      , tagEnv := res1.tagEnv'
-                                      , nextLoc := res2.nextLoc'
-                                      , nextTag := res2.nextTag'
-                                      , pureCtx := ctxᵢ.pureCtx } e3 fuel' = .ok res3 := by
-                                  simpa [ctxForE3, ctx'', ctx', pc', hq1] using htc3_expr
-                                unfold typecheckIf
-                                rw [hmatch_fail', htc1_expr]
-                                simp only [bind, Except.bind]
-                                simp [hq1]
-                                rw [htc2_raw]
-                                simp
-                                rw [htc3_raw]
-                                cases hq2 : res2.qualType with
-                                | mk etyp2 p2 pred2 =>
-                                    cases hq3 : res3.qualType with
-                                    | mk etyp3 p3 pred3 =>
-                                        have hcompat'' : beqETypSignature etyp2 etyp3 = false := by
-                                          simpa [hq2, hq3] using hcompat'
-                                        simp [Except.pure, hq3, hcompat'', pure]
-                          rw [htcIf_err] at htcIf
-                          cases htcIf
+                    intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
+                    let ctx' : TypeContext := ctxAfter ctxᵢ res1
+                    let pc' := joinPoison ctxᵢ.pc res1.qualType.poison
+                    let ctx'' : TypeContext := { ctx' with pc := pc' }
+                    let ctxForE3 : TypeContext := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                    have htc1' : typecheck .ioFree ctxᵢ e1 fuel' = .ok res1 := by
+                      simpa [typecheck, Nat.succ_sub_one] using htc1
+                    have hIH_e1 := IH' fuel' (by omega) masked e1 ctxᵢ res1 htc1'
+                    have hstruct_rt := terminatesTo_ite_inv' e1 e2 e3
+                      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+                    rcases hstruct_rt with ⟨cfg1, b, ht_e1, hbranch, _hpm1, _hpmf⟩
+                    rcases
+                        hIH_e1 hpredlaws hwfTm μ ρ θ cfg1 (Value.bool b)
+                          hθwf hwf hric htagR hmasked_none hcwr
+                          a pm hwfcfg ht_e1 hpc
+                      with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1⟩
+                    have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
+                    have hwfcfg1 : wfConfig cfg1 :=
+                      (wfConfig_preserved .ioFree e1 _ cfg1 (Value.bool b) ht_e1 hwfcfg).1
+                    have hmono1 :
+                        Regime.monotoneStep ctxᵢ.regime (ctxAfter ctxᵢ res1).regime :=
+                      regime_monotone ctxᵢ e1 fuel' res1 htc1'
+                    have htagR1 :
+                        regimeConsistentWithCtxMasked masked (ctxAfter ctxᵢ res1) :=
+                      typecheckExpr_preserves_regimeConsistentWithCtxMasked
+                        masked ctxᵢ e1 fuel' res1 htagR htc1'
+                    have hmasked_none1 :
+                        ∀ t, masked t → (ctxAfter ctxᵢ res1).regime.lookup? t = none :=
+                      masked_lookup_none_of_monotoneStep hmasked_none hmono1
+                    have hwfTm1 : wfTagMeaningCtx tm (ctxAfter ctxᵢ res1) := by
+                      exact
+                        typecheckExpr_preserves_wfTagMeaningCtx
+                          tm ctxᵢ e1 fuel' res1 hwfTm htc1'
+                    have hwf1 : wfTypeResult res1 :=
+                      typecheckExpr_preserves_wfTypeResult ctxᵢ e1 fuel' res1 hwf htc1'
+                    have hwf_ctx' : wfTypeContext ctx' := by
+                      simpa [ctx'] using wfTypeContext_of_wfTypeResult ctxᵢ res1 hwf1
+                    have hwfTm_ctx'' : wfTagMeaningCtx tm ctx'' := by
+                      simpa [ctx'', ctx', pc'] using hwfTm1
+                    have hwf_ctx'' : wfTypeContext ctx'' := by
+                      simpa [ctx'', ctx', pc', wfTypeContext] using hwf_ctx'
+                    have hric1_ctx'' :
+                        runtimeInstantiatesCtx ctx'' cfg1.memory cfg1.varEnv θ1 := by
+                      simpa [ctx'', ctx', pc', ctxAfter, runtimeInstantiatesCtx] using hric1
+                    have hcwr1_ctx'' :
+                        consistentWithRegimeMasked masked predSat ctx''.regime ctx''
+                          cfg1.memory cfg1.varEnv θ1 := by
+                      simpa [ctx'', ctx', pc', ctxAfter, consistentWithRegimeMasked] using hcwr1
+                    have htagR_ctx'' : regimeConsistentWithCtxMasked masked ctx'' := by
+                      simpa [ctx'', ctx', pc', regimeConsistentWithCtxMasked] using htagR1
+                    have hmasked_none_ctx'' :
+                        ∀ t, masked t → ctx''.regime.lookup? t = none := by
+                      simpa [ctx'', ctx', pc', ctxAfter] using hmasked_none1
+                    have hpc'' : ctx''.pc = true := by
+                      simp [ctx'', pc', hpc, joinPoison]
+                    have hnextLoc_mono :
+                        res1.nextLoc' ≤ res2.nextLoc' := by
+                      have : ctx''.nextLoc ≤ res2.nextLoc' :=
+                        typecheck_nextLoc_mono ctx'' e2 fuel' res2
+                          (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
+                      simpa [ctx'', ctx'] using this
+                    have hnextTag_mono :
+                        res1.nextTag' ≤ res2.nextTag' := by
+                      have : ctx''.nextTag ≤ res2.nextTag' :=
+                        typecheck_nextTag_mono .ioFree ctx'' e2 fuel' res2
+                          (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
+                      simpa [ctx'', ctx'] using this
+                    have hwfTm_ctxForE3 : wfTagMeaningCtx tm ctxForE3 := by
+                      simpa [ctxForE3, ctx'', ctx', pc'] using hwfTm1
+                    have hwf_ctxForE3 : wfTypeContext ctxForE3 := by
+                      intro l hl
+                      simp only [ctxForE3, ctx'', ctx', ctxAfter] at hl ⊢
+                      exact Nat.lt_of_lt_of_le (hwf_ctx' l hl) hnextLoc_mono
+                    have hric1_ctxForE3 :
+                        runtimeInstantiatesCtx ctxForE3 cfg1.memory cfg1.varEnv θ1 := by
+                      simpa [ctxForE3, ctx'', ctx', pc', ctxAfter, runtimeInstantiatesCtx] using hric1
+                    have hcwr1_ctxForE3 :
+                        consistentWithRegimeMasked masked predSat ctxForE3.regime ctxForE3
+                          cfg1.memory cfg1.varEnv θ1 := by
+                      simpa [ctxForE3, ctx'', ctx', pc', ctxAfter, consistentWithRegimeMasked] using hcwr1
+                    have htagR_ctxForE3 : regimeConsistentWithCtxMasked masked ctxForE3 := by
+                      show tagEnvConsistentWithRegimeMasked masked ctxForE3.tagEnv ctxForE3.regime
+                      simpa [ctxForE3, ctx'', ctx', pc', regimeConsistentWithCtxMasked] using htagR1
+                    have hmasked_none_ctxForE3 :
+                        ∀ t, masked t → ctxForE3.regime.lookup? t = none := by
+                      simpa [ctxForE3, ctx'', ctx', pc', ctxAfter] using hmasked_none1
+                    have hpcForE3 : ctxForE3.pc = true := by
+                      simp [ctxForE3, ctx'', pc', hpc, joinPoison]
+                    have htc2' : typecheck .ioFree ctx'' e2 fuel' = .ok res2 := by
+                      simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2
+                    have htc3' : typecheck .ioFree ctxForE3 e3 fuel' = .ok res3 := by
+                      simpa [ctxForE3, ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc3
+                    have hpredNo : res.qualType.pred = Predicate.noPred := by
+                      exact typecheckIf_pred_noPred ctxᵢ e1 e2 e3 (Nat.succ fuel') res htcIf
+                    have hcompat23 : beqETypSignature res2.qualType.etyp res3.qualType.etyp = true :=
+                      typecheckIf_standard_compat_from_existing_hyps
+                        ctxᵢ e1 e2 e3 fuel' res res1 res2 res3
+                        hstdCase htc1 hbool htc2 htc3 htcIf
+                    match (show True from trivial) with
+                    | _ =>
                         have hclean_back_mid :
                             ∀ l qt_in qt_out,
                               ctxᵢ.memEnv.lookup l = some qt_in →
