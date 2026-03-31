@@ -1,0 +1,4 @@
+Evaluating file: examples/print-int-func.poison (verbose mode)
+
+Type checking error: Variable printInt not found in environment
+

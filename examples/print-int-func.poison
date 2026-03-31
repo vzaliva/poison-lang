@@ -1,0 +1,1 @@
+let f = fn i : int => i * 2 : int in printInt (f 10)

@@ -1,2 +1,2 @@
-let masked = 31 & 63 in
-masked + (-12 & 46)
+printInt (31 & 63);
+-12 & 46
