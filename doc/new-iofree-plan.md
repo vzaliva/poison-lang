@@ -241,7 +241,41 @@ than copied wholesale.
 
 ## Migration Strategy
 
-### Phase 1: Create the branch
+## Current Status
+
+Completed on `new-iofree`:
+
+- Phase 1 complete: branch created from `main`
+- Phase 2 complete: implementation-side IO removal ported
+- Phase 3 complete: extern symbolic-tag surface and typechecker ported
+- Phase 4 complete for semantics-facing scope: examples, interpreter docs, and
+  Ott/spec text updated
+- legacy negative examples from `iofree` restored exactly
+- semantics-facing checkpoint committed as:
+  - `29f4eaa` `Port pure semantics and extern-based examples`
+  - `bbf2bab` `Restore exact legacy negative examples from iofree`
+
+Completed validation for the semantics-facing checkpoint:
+
+- `make parser`
+- `bash ./scripts/update-tests.sh`
+- `bash ./scripts/run_tests.sh` with `Passed: 76`, `Failed: 0`
+- `make poison-lang-spec`
+- `latexmk -pdf doc/poison-lang-description.tex`
+
+Not started yet:
+
+- Phase 5 proof adaptation
+- full `lake build` with `LeanProofs/` updated to the new semantics
+
+Current intentional state:
+
+- `LeanProofs/` remains at the `main` baseline for now
+- `new-iofree` keeps `main`'s no-`R.bound` / no-`mode3` direction
+- current `iofree` is still used only as reference material for semantics-facing
+  files and examples
+
+### Phase 1: Create the branch [completed]
 
 Create `new-iofree` from current `main`.
 
@@ -257,7 +291,7 @@ Recommended checkpoint discipline:
 
 This matters because rollback from a selective transplant is otherwise awkward.
 
-### Phase 2: Port implementation-side IO removal
+### Phase 2: Port implementation-side IO removal [completed]
 
 Primary files to inspect and selectively transplant:
 
@@ -282,7 +316,7 @@ Execution note:
 - do not leave the branch in that state for long
 - port in micro-slices and restore `lake build` before declaring a checkpoint
 
-### Phase 3: Port extern surface and typechecker changes
+### Phase 3: Port extern surface and typechecker changes [completed]
 
 Primary items to transplant:
 
@@ -308,7 +342,7 @@ Important constraint:
 - expect immediate downstream proof fallout in `TypeSafety`, `StepFR`, and
   related files
 
-### Phase 4: Port tests and docs
+### Phase 4: Port tests and docs [completed for semantics-facing scope]
 
 Primary files:
 
@@ -326,7 +360,7 @@ Goal:
 This phase should also bring the axiom design document into place before the
 proof-adaptation phase, so that the extern-only assumption boundary is explicit.
 
-### Phase 5: Reintroduce extern-only proof assumptions
+### Phase 5: Reintroduce extern-only proof assumptions [not started]
 
 Use `main` as the proof authority for all non-extern reasoning.
 
@@ -370,7 +404,7 @@ That means:
 This avoids a situation where the implementation is fully ported but the proof
 stack is too broken to reason about incrementally.
 
-### Phase 6: Validation
+### Phase 6: Validation [partially completed]
 
 At each checkpoint:
 
