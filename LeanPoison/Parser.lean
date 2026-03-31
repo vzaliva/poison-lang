@@ -373,50 +373,6 @@ mutual
 
       | _ => .error s!"Invalid pfn_expr structure: {contents}"
 
-    | Element.Element "rand_expr" _ contents => do
-    let elems := contents.filterMap fun
-      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-      | Content.Element el => some el
-      | _ => none
-
-
-      match elems.toList with
-      | [e1] => return Expr.rand (<- xmlToExpr e1)
-      | _ => .error "Invalid argument to rand"
-
-    | Element.Element "frand_expr" _ contents => do
-    let elems := contents.filterMap fun
-      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-      | Content.Element el => some el
-      | _ => none
-
-
-      match elems.toList with
-      | [e1] => return Expr.frand (<- xmlToExpr e1)
-      | _ => .error "Invalid argument to frand"
-
-    | Element.Element "printStr_expr" _ contents => do
-    let elems := contents.filterMap fun
-      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-      | Content.Element el => some el
-      | _ => none
-
-
-      match elems.toList with
-      | [e1] => return Expr.printString (<- xmlToExpr e1)
-      | _ => .error "Invalid argument to frand"
-
-    | Element.Element "printInt_expr" _ contents => do
-    let elems := contents.filterMap fun
-      | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
-      | Content.Element el => some el
-      | _ => none
-
-
-      match elems.toList with
-      | [e1] => return Expr.printInt (<- xmlToExpr e1)
-      | _ => .error "Invalid argument to frand"
-
     | Element.Element "group_expr" _ contents => do
       let elements := contents.filterMap (fun
             | Content.Element (Element.Element "comment" _ _) => none  -- discard comment elements
@@ -580,13 +536,13 @@ mutual
           | some n =>
               -- Here we would parse the pexprContents into a Pexpr, but for now we use a placeholder
               let (name,pexpr) <- parsePExpr (pexprContents)
-              return SyntaxPredicate.guardClosure n name pexpr
+              return SyntaxPredicate.guardClosure ⟨n⟩ name pexpr
           | none => .error s!"Invalid guard : {tag}"
       | [Element.Element "number" _ #[Content.Character tag]] =>
           let guardNumOpt := tag.trim.toNat?
           match guardNumOpt with
           | some n =>
-              return SyntaxPredicate.guardOnly n
+              return SyntaxPredicate.guardOnly ⟨n⟩
           | none => .error s!"Invalid guard number: {tag}"
       | [] =>
           return SyntaxPredicate.noPred
@@ -665,7 +621,6 @@ mutual
 
 /-inductive EffectTarget where
   | namedVar : Name → EffectTarget      -- !varname
-  | returnValue : EffectTarget           -- return (special keyword)
   deriving Repr, BEq
 
   structure Effect where

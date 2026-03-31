@@ -1,5 +1,5 @@
-let get_sensor = fn x : unit => frand 0 : int in
-let get_corrupted_ptr = fn x_unit : unit => ref (frand 0) : (ref int) in
+let get_sensor = fn x : unit => extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) : int in
+let get_corrupted_ptr = fn x_unit : unit => ref (extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) })) : (ref int) in
 
 -- Demonstrates poison propagation from multiple unreliable inputs
 

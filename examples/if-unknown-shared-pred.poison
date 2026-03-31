@@ -1,9 +1,9 @@
--- Test: standard if path from matched guard with unknown regime.
+-- Test: if_depoison_*_R_unknown path - both-sided location preserves predicate
 -- Ref allocated before if with frand value, so location 0 exists in both branch
 -- memEnvs with the same guardClosure predicate. joinMemEnvsStrong should use
 -- joinPredicates (both-sided case), preserving guardClosure -- not dropping to noPred.
-let val = frand 0 in
-let cond = frand 0 in
+let val = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
+let cond = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
 let r = ref val in
 let tmp = if (cond >= 0) && (cond <= 0) then
   1

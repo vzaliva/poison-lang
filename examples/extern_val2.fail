@@ -1,5 +1,0 @@
-Evaluating file: examples/extern_val2.poison (verbose mode)
-
-Type checking passed: Type: {type=bool, poison=true, pred={3}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
-
-Runtime error: Cannot execute extern value – no implementation provided

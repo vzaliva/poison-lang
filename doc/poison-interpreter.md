@@ -10,7 +10,9 @@ poison-interpreter - typecheck and evaluate Poison programs
 
 ## DESCRIPTION
 `poison-interpreter` parses a `.poison` file, typechecks it, and (if typechecking
-passes) evaluates it. In verbose mode it prints the full typing result.
+passes) evaluates it with a pure interpreter. In verbose mode it prints the full
+typing result. Extern placeholders may typecheck, but execution stops with a
+runtime error if evaluation reaches one.
 
 ## OPTIONS
 `--verbose`
@@ -18,8 +20,7 @@ Typecheck and evaluate with verbose output.
 
 `--regime "k=true,..."`  
 Seed the regime used for FR-aware typing. Each assignment maps a guard tag to a
-truth value. Duplicate tags use last-one-wins. The bound is inferred from the
-maximum tag in the list.
+truth value. Duplicate tags use last-one-wins.
 
 `--repl`
 Start a REPL.

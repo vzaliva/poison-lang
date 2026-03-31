@@ -1,0 +1,9 @@
+Evaluating file: examples/reference-poison2.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=unit, poison=false, pred={}},
+  MemoryTypeEnv: { 0 := (false, {}) },
+  tagEnv: {},
+  nextLoc: 1
+
+Runtime error: Cannot execute extern value – no implementation provided

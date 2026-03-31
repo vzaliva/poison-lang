@@ -1,6 +1,6 @@
 -- Function defined in poisoned environment is poisoned even if applied in clean add_one
 
-let sensor1 = frand 0 in
+let sensor1 = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
 -- add_some is poisoned as both `if` branches depend on poisoned condition
 let add_some = 
     (if sensor1 > 0 then

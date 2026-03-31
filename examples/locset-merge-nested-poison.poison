@@ -21,7 +21,7 @@
 --   - r1, r2, r3 : ref int @ singleton locsets {l1}, {l2}, {l3}
 --   - firstChoice : ref int @ {l1, l2}
 --   - secondChoice : ref int @ {l1, l2, l3}
---   - After `secondChoice := frand 0`, every l in {l1, l2, l3} is poisoned in Γ
+--   - After `secondChoice := extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) })`, every l in {l1, l2, l3} is poisoned in Γ
 --   - `!secondChoice` must therefore be typed as `int` with `poison = true`.
 
 let r1 = ref 0 in              -- r1 : ref int @ {l1}, cell at l1 is clean
@@ -48,12 +48,12 @@ let secondChoice =
     r3
 in
 
--- Write through the merged locset reference using `frand 0`.
+-- Write through the merged locset reference using `extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) })`.
 -- Typing rule for assignment updates *all* locations in the locset of
 -- `secondChoice`, so l1, l2, and l3 all become poisoned in Γ.
 -- The random value is deterministic for argument 0, but the important
 -- property is that its qualified type is poisoned with a guard predicate.
-(secondChoice := frand 0;
+(secondChoice := extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) });
 
  -- Dereference the merged reference.
  -- Dereference joins poisons from *all* referenced logical locations, so this

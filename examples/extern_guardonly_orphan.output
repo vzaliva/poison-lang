@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_guardonly_orphan.poison (verbose mode)
+
+Type checking error: guardOnly tag index 5 has no matching guardClosure in this extern spec
+

@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_val2.poison (verbose mode)
+
+Type checking error: guardOnly tag index 3 has no matching guardClosure in this extern spec
+

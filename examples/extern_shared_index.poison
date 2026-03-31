@@ -1,0 +1,8 @@
+-- Test: Same TagIndex in effect and return maps to same concrete tag.
+-- When the same symbolic tag index appears in both the return pred and an
+-- effect pred, they should resolve to the same concrete tag (shared map).
+let s = ref 0 in
+let readSensor =
+  extern fn x : (int) -> ( (int :> poisoned { 7, v => v >= 0 }) ) ,
+    effects: { !s :> (int :> poisoned { 7 }) }
+in readSensor 1

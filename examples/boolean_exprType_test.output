@@ -1,9 +1,8 @@
 Evaluating file: examples/boolean_exprType_test.poison (verbose mode)
 
-Type checking passed: Type: {type=unit, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
+Type checking passed: Type: {type=string, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
 
-"New parsing works"
-Result: unit
+Result: "New parsing works"
 Final state:
 Variable environment: []
   Memory: []

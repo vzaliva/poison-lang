@@ -1,0 +1,12 @@
+Evaluating file: examples/extern_shared_index.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int,
+   poison=true,
+   pred={1, pfn v -> v >= 0, deps: [s : {type=ref @ [0], poison=false, pred={}},
+     x : {type=int, poison=false, pred={}}]}},
+  MemoryTypeEnv: { 0 := (true, {1}) },
+  tagEnv: {},
+  nextLoc: 1
+
+Runtime error: Cannot execute extern function – no implementation provided

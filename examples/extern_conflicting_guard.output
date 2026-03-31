@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_conflicting_guard.poison (verbose mode)
+
+Type checking error: Conflicting guardClosure definitions for tag index 7
+

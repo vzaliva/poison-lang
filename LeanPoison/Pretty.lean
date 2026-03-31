@@ -59,12 +59,12 @@ mutual
 
 private partial def syntaxPredCore : SyntaxPredicate → Std.Format
   | .guardClosure tag arg body =>
-      repr tag ++
+      repr tag.val ++
       Std.Format.text ", pfn " ++
       Std.Format.text arg ++
       Std.Format.text " -> " ++
       reprExpr body 0
-  | .guardOnly tag => repr tag
+  | .guardOnly tag => repr tag.val
   | .noPred => Std.Format.nil
 
 private partial def syntaxPredInline (pred : SyntaxPredicate) : Std.Format :=
@@ -75,7 +75,6 @@ private partial def effectInline : Effect → Std.Format
       let targetFmt :=
         match target with
         | .namedVar x => Std.Format.text "!" ++ Std.Format.text x
-        | .returnValue => Std.Format.text "return"
       targetFmt ++
       Std.Format.text " :> " ++
       Std.Format.paren (
@@ -168,10 +167,6 @@ partial def reprExpr : Expr → Nat → Std.Format
         Std.Format.text "pfn " ++ Std.Format.text x ++ Std.Format.text " : " ++ formatTypSurface t1 ++
         Std.Format.text " => " ++ reprExpr e 0 ++ Std.Format.text " : " ++ formatTypSurface t2
     | Expr.app e1 e2 => atom e1 ++ Std.Format.text " " ++ atom e2
-    | Expr.rand e => Std.Format.text "rand " ++ atom e
-    | Expr.frand e => Std.Format.text "frand " ++ atom e
-    | Expr.printString e => Std.Format.text "printString " ++ atom e
-    | Expr.printInt e => Std.Format.text "printInt " ++ atom e
     | Expr.externVal t p pred =>
       Std.Format.text "extern val (" ++
       reprTyp t 0 ++

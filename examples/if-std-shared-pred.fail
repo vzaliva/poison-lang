@@ -1,0 +1,9 @@
+Evaluating file: examples/if-std-shared-pred.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=true, pred={1, pfn v -> (v >= 0) && (v <= 0)}},
+  MemoryTypeEnv: { 0 := (true, {1, pfn v -> (v >= 0) && (v <= 0)}) },
+  tagEnv: {},
+  nextLoc: 1
+
+Runtime error: Cannot execute extern value – no implementation provided

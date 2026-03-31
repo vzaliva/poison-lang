@@ -1,7 +1,7 @@
 Evaluating file: examples/extern_val1.poison (verbose mode)
 
 Type checking passed:
-  Type: {type=bool, poison=true, pred={3, pfn a -> a >= 0}},
+  Type: {type=bool, poison=true, pred={1, pfn a -> a >= 0}},
   MemoryTypeEnv: {},
   tagEnv: {},
   nextLoc: 0

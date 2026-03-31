@@ -1,8 +1,0 @@
-Evaluating file: examples/app-poison-literal.poison (verbose mode)
-
-Type checking passed: Type: {type=int, poison=true, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
-
-Result: 4
-Final state:
-Variable environment: []
-  Memory: []

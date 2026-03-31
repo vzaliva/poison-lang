@@ -1,9 +1,0 @@
-Evaluating file: examples/print-string-literal.poison (verbose mode)
-
-Type checking passed: Type: {type=unit, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
-
-"Hello World!"
-Result: unit
-Final state:
-Variable environment: []
-  Memory: []

@@ -1,9 +1,0 @@
-Evaluating file: examples/print-int-literal.poison (verbose mode)
-
-Type checking passed: Type: {type=unit, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
-
-12
-Result: unit
-Final state:
-Variable environment: []
-  Memory: []

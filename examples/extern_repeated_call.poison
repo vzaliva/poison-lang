@@ -1,0 +1,10 @@
+-- Test: Same extern fn called twice should get distinct tags per call.
+-- Two applications of the same extern fn should each allocate independent
+-- fresh tags. We store both results into refs so both tags appear in the
+-- final MemoryTypeEnv, making them observable.
+let f =
+  extern fn x : (int) -> ( (int :> poisoned { 1, v => v >= 0 }) )
+in
+let a = ref (f 1) in
+let b = ref (f 2) in
+!a + !b

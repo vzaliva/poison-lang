@@ -1,8 +1,0 @@
-Evaluating file: examples/iofree-pure-ok.poison (verbose mode)
-
-Type checking passed: Type: {type=bool, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
-
-Result: true
-Final state:
-Variable environment: []
-  Memory: []

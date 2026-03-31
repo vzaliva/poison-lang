@@ -1,0 +1,4 @@
+-- Test: guardOnly with no matching guardClosure should produce a type error.
+-- A bare guardOnly tag index must reference a guardClosure in the same
+-- extern spec. Without one, there is no closure to define the guard.
+let x = extern val : (int :> poisoned { 5 }) in x

@@ -1,9 +1,0 @@
-Evaluating file: examples/print-string-var.poison (verbose mode)
-
-Type checking passed: Type: {type=unit, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
-
-" Poison lang "
-Result: unit
-Final state:
-Variable environment: []
-  Memory: []

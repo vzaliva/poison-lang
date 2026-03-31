@@ -1,5 +1,5 @@
 -- Function composition poison example
-let get_sensor = fn x : unit => frand 0 : int in
+let get_sensor = fn x : unit => extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) : int in
 let f = fn x : int => x + 1 : int in
 let g = fn x : int => x + x : int in
 let poisoned_input = get_sensor unit in

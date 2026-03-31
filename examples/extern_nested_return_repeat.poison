@@ -1,0 +1,13 @@
+-- Test: Returned nested extern called twice should get independent tags.
+-- The outer call returns a nested function; calling that nested function
+-- twice should allocate independent tags each time. We store both results
+-- into refs so both tags appear in the final MemoryTypeEnv.
+let outer =
+  extern fn x : (int) -> (
+    extern pfn y : (int) -> ( (int :> poisoned { 5, v => v >= 0 }) )
+  )
+in
+let inner = outer 1 in
+let a = ref (inner 10) in
+let b = ref (inner 20) in
+!a + !b

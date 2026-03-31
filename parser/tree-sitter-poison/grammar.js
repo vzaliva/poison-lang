@@ -35,10 +35,6 @@ module.exports = grammar({
       $.atom,
       $.identifier,
       $.group_expr,
-      $.rand_expr,
-      $.frand_expr,
-      $.printStr_expr,
-      $.printInt_expr,
       $.unary_expr,
       $.boolean_expr,
       $.extern_expr
@@ -168,26 +164,6 @@ module.exports = grammar({
       ":=",
       field("value", $.expr)
     )),
-
-    //rand expr (rand e)
-    rand_expr: $ => prec.left(3, seq(
-      "rand",
-      choice($.atom, $.group_expr, $.identifier, $.deref_expr))
-    ),
-
-    //frand_expr  
-    frand_expr: $ => prec.left(3, seq(
-      "frand",
-      choice($.atom, $.group_expr, $.identifier, $.deref_expr))
-    ),
-    printStr_expr: $ => prec.left(3, seq(
-      "printString",
-      choice($.atom, $.group_expr, $.identifier))
-    ),
-    printInt_expr: $ => prec.left(3, seq(
-      "printInt",
-      choice($.atom, $.group_expr, $.identifier, $.deref_expr))
-    ),
 
     /*Grammar additions:
  

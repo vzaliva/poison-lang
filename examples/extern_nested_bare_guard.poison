@@ -1,0 +1,15 @@
+-- Test: bare guardOnly in nested spec triggers error even if the same
+-- TagIndex has a guardClosure in the outer spec. Tag index scopes are
+-- independent per extern spec — the inner spec's tag index 7 is resolved
+-- separately from the outer spec's tag index 7.
+-- The error triggers when the inner function is CALLED (not when returned),
+-- because inner tag resolution is deferred until application.
+let s = ref 0 in
+let f =
+  extern fn x : (int) -> (
+    extern pfn y : (int) -> ( (int :> poisoned { 7 }) )
+  ) ,
+    effects: { !s :> (int :> poisoned { 7, v => v >= 0 }) }
+in
+let inner = f 1 in
+inner 10

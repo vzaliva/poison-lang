@@ -2,8 +2,7 @@ Evaluating file: examples/bitwise-and.poison (verbose mode)
 
 Type checking passed: Type: {type=int, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
 
-31
-Result: 36
+Result: 67
 Final state:
 Variable environment: []
   Memory: []

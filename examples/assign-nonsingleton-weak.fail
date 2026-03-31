@@ -1,0 +1,9 @@
+Evaluating file: examples/assign-nonsingleton-weak.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=true, pred={}},
+  MemoryTypeEnv: { 0 := (true, {}), 1 := (true, {}) },
+  tagEnv: {},
+  nextLoc: 2
+
+Runtime error: Cannot execute extern value – no implementation provided

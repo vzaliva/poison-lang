@@ -3,7 +3,7 @@ Evaluating file: examples/lp55xx-read.poison (verbose mode)
 Type checking passed:
   Type: {type=int, poison=false, pred={}},
   MemoryTypeEnv: { 0 := (false, {}), 1 := (false, {}) },
-  tagEnv: { 100 := { value := true, deps := [] } },
+  tagEnv: { 1 := { value := true, deps := [] } },
   nextLoc: 2
 
 Runtime error: Cannot execute extern value – no implementation provided

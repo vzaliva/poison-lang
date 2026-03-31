@@ -1,8 +1,0 @@
-Evaluating file: examples/basic-poison-flow1.poison (verbose mode)
-
-Type checking passed: Type: {type=int, poison=true, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
-
-Result: 1
-Final state:
-Variable environment: []
-  Memory: []

@@ -1,0 +1,5 @@
+Evaluating file: examples/pred-parameterised-var.poison (verbose mode)
+
+Type checking passed: Type: {type=int, poison=true, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
+
+Runtime error: Cannot execute extern value – no implementation provided

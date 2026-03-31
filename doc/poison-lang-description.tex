@@ -104,15 +104,13 @@ e ::= unit | n | b | s | x
     | fn x : ST1 => e : ST2             (* impure functions with explicit types *)
     | pfn x : ST1 => pe : ST2           (* pure functions with explicit types *)
     | e1 e2                             (* application *)
-    | rand e | frand e                  (* random primitives *)
-    | printInt e | printString e        (* I/O primitives *)
 
 pe ::= n | b | s | x                    (* pure expressions *)
      | pe1 op pe2 | unary_op pe
      | if pe1 then pe2 else pe3
      | !pe | unit
      | let x = pe1 in pe2 | pe1 pe2
-     (* Note: no ref, :=, fn, pfn, rand, frand, printInt, printString, or ; allowed *)
+     (* Note: no ref, :=, fn, pfn, or ; allowed *)
 
 (* surface types for annotations *)     
 ST ::= int | bool | unit | string | ref ST | ST1 -> ST2  
@@ -238,7 +236,6 @@ the scenes.
     \item \textbf{Functions}: \texttt{fn x : ST1 => e : ST2} creates functions with explicit parameter and return type annotations, \texttt{e1 e2} applies, with closures
     \item \textbf{Pure functions}: \texttt{pfn x : ST1 => pe : ST2} creates pure functions with explicit parameter and return type annotations that cannot have side effects (no nested pure functions)
     \item \textbf{Strings}: literals of type \texttt{string}
-    \item \textbf{Built-in primitives}: \texttt{rand}, \texttt{frand}, \texttt{printInt}, \texttt{printString} are impure
     \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings.
       Shadowing a variable that carries an active guard predicate (a \texttt{guardClosure}
       whose tag is interpreted by the current regime) is rejected by the typechecker.
@@ -267,12 +264,20 @@ syntax.
 \subsection{Implementation-specific extensions}
 
 The Lean implementation includes extern placeholders (\texttt{extern val},
-\texttt{extern fn}, \texttt{extern pfn}) for external code and I/O in tests. These
-constructs are not part of the Ott specification and are excluded from the formal
-typing and semantics presented here. The evaluator treats them as I/O operations;
-in \texttt{ioFree} mode they yield \texttt{ioForbidden}. The type checker rejects
-extern functions that return references, but it permits reference parameters and
-explicit effect specifications on referenced locations.
+\texttt{extern fn}, \texttt{extern pfn}) for external code and specification-driven
+test scenarios. The Ott specification includes typing rules for these constructs.
+The interpreter is pure and does not execute externs: reaching one at runtime
+yields a runtime error. The type checker rejects extern functions that return
+references, but it permits reference parameters and explicit effect specifications
+on referenced locations.
+
+Extern specifications use \emph{symbolic tag indices} rather than globally
+meaningful concrete tags. Each extern definition has its own local symbolic tag
+namespace. At each extern use site, the type checker allocates fresh concrete
+tags from the current \texttt{nextTag} counter and resolves the symbolic
+predicates to concrete predicates for that use only. Nested returned externs
+remain symbolic until they are themselves applied, ensuring separate calls get
+independent tags.
 
 \subsection{Pure Expressions}
 
@@ -282,8 +287,6 @@ The language includes a syntactic subset called \emph{pure expressions} (\texttt
     \item Perform assignments (\texttt{:=})
     \item Define functions, including pure functions (\texttt{fn} or \texttt{pfn})
     \item Use sequencing (\texttt{;})
-    \item Use non-deterministic primitives (\texttt{rand}, \texttt{frand})
-    \item Perform I/O (\texttt{printInt}, \texttt{printString})
 \end{itemize}
 
 Pure expressions can still dereference existing references, perform arithmetic and
@@ -929,44 +932,39 @@ and runtime state $\langle \pi, e, \mu, \rho \rangle$ where $\mu$ and $\rho$ are
 \paragraph{Fuel-based formulation in Lean.} Our Lean implementation uses a
 fuel-based approach where both the typechecker and evaluator are parameterised
 by a natural number \texttt{fuel} that decreases with each recursive call. The
-big-step evaluator \texttt{beval} is parameterised by an evaluation mode
-(\texttt{normal} or \texttt{ioFree}) and returns \texttt{IO EvalResult}:
+big-step evaluator \texttt{beval} is a pure function returning \texttt{EvalResult}:
 
 \begin{lstlisting}[language=caml]
 inductive EvalResult : Type where
   | success : Config -> Value -> EvalResult
   | outOfFuel : EvalResult
   | runtimeError : String -> EvalResult
-  | ioForbidden : EvalResult
 \end{lstlisting}
 
-These constructors directly correspond to termination, divergence, stuck states,
-and attempted I/O in \texttt{ioFree} mode. In normal mode, the progress property
-states that for well-typed programs, \texttt{beval} returns either
-\texttt{.success} or \texttt{.outOfFuel}, but never \texttt{.runtimeError}. In
-\texttt{ioFree} mode, \texttt{.ioForbidden} arises only when evaluation reaches
-an I/O primitive.
+These constructors directly correspond to termination, divergence, and stuck
+states. For well-typed programs, the progress property states that
+\texttt{beval} returns either \texttt{.success} or \texttt{.outOfFuel}, but
+never \texttt{.runtimeError}.
 
 \paragraph{Formal definition in Lean.} The progress property is formally defined
 in \texttt{LeanProofs/Progress.lean} using three auxiliary relations:
 
-The relations are parameterised by the evaluation mode:
 \begin{itemize}
-    \item $\mathsf{terminatesTo}(\text{mode}, e, c_0, c_1, v)$ - expression $e$ evaluates from initial config $c_0$ to final config $c_1$ producing value $v$
-    \item $\mathsf{diverges}(\text{mode}, e, c_0)$ - expression $e$ runs out of fuel for all fuel amounts (infinite loop)
-    \item $\mathsf{stuck}(\text{mode}, e, c_0)$ - expression $e$ encounters a runtime error
+    \item $\mathsf{terminatesTo}(e, c_0, c_1, v)$ - expression $e$ evaluates from initial config $c_0$ to final config $c_1$ producing value $v$
+    \item $\mathsf{diverges}(e, c_0)$ - expression $e$ runs out of fuel for all fuel amounts (infinite loop)
+    \item $\mathsf{stuck}(e, c_0)$ - expression $e$ encounters a runtime error
 \end{itemize}
 
 The main progress property is then stated as:
 
 \begin{lstlisting}[language=caml,mathescape=true]
-def Progress (mode : LeanPoison.EvalMode) (e : Expr) (ctx : TypeContext) : Prop :=
+def Progress (e : Expr) (ctx : TypeContext) : Prop :=
   ($\exists$ (fuel : Nat) (res : TypeResult),
     typecheck ctx e fuel = .ok res) $\rightarrow$
   $\forall$ ($\mu$ : Memory) ($\rho$ : VarEnv) ($\theta$ : RealizationMap) (a : Address) (pm : Bool),
     wfRealizationMap $\theta$ $\rightarrow$
     runtimeInstantiatesCtx ctx $\mu$ $\rho$ $\theta$ $\rightarrow$
-    $\neg$ (stuck mode e { memory := $\mu$, varEnv := $\rho$, nextAddr := a, pureMode := pm })
+    $\neg$ (stuck e { memory := $\mu$, varEnv := $\rho$, nextAddr := a, pureMode := pm })
 \end{lstlisting}
 
 This states that if an expression typechecks and the runtime properly instantiates
@@ -1166,15 +1164,15 @@ and on trusted clean inputs) imply the initial hypothesis required by
 The specification is stated for arbitrary evaluation modes, but the proof
 establishes the property only for the I/O-free fragment.
 
-\subsubsection*{IO-free evaluation mode}
+\subsubsection*{Pure Evaluation}
 \label{subsec:fr-iofree}
 
-The evaluator is parameterised by an evaluation mode. In \texttt{normal} mode,
-I/O primitives are executed. In \texttt{ioFree} mode, any attempt to execute
-\texttt{rand}, \texttt{frand}, \texttt{printInt}, \texttt{printString}, or extern
-constructs (\texttt{externVal}, \texttt{externFn}, \texttt{externPfn}) yields
-\texttt{ioForbidden}. The fault-robustness development is stated for successful
-evaluations in \texttt{ioFree} mode.
+The evaluator is pure. Extern constructs (\texttt{externVal}, \texttt{externFn},
+\texttt{externPfn}) are part of the typing surface but are not executable: if
+evaluation reaches one, it yields \texttt{runtimeError}. The fault-robustness
+development therefore ranges over successful evaluations of the pure evaluator,
+with extern behavior handled through the typing and proof assumptions rather
+than through runtime execution.
 
 \paragraph{Structural agreement for closures.}
 Agreement in the fault-robustness step theorem is \emph{type-directed}: for clean
@@ -1260,7 +1258,7 @@ These axioms are parameterised by a \texttt{TagMeaning} map that fixes the
 interpretation of each tag (guard descriptor) across the derivation, ensuring
 consistent tag meaning and blocking contradictory instantiations.
 These axioms apply to all tags, including those in the initial specification and
-those generated during execution (e.g., by \texttt{frand} or extern functions).
+those generated during execution (e.g., by extern functions).
 
 \paragraph{Why package these assumptions as \texttt{PredSatLaws}?}
 The proof does not need a concrete implementation of predicate evaluation.

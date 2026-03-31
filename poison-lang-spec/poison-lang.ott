@@ -26,7 +26,11 @@ metavar tag, k ::=
   {{ phantom }}
   {{ coq string }}
 
-grammar 
+metavar tag_index, ki ::=
+  {{ com Symbolic tag indices (local to extern specs) }}
+  {{ phantom }}
+
+grammar
 
 locset, LS :: 'LS_' ::= {{ com location sets }}
   | { }                      ::   :: empty
@@ -84,10 +88,9 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | pfn x : ST1 => pe : ST2      ::   :: pfn  {{ com pure fn with return type }}
   | e1 e2                   ::   :: app
   | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
-  | rand e                  ::   :: rand_app   {{ com random int }}
-  | frand e                 ::   :: frand_app  {{ com random float }}
-  | printInt e              ::   :: printInt_app
-  | printString e           ::   :: printString_app
+  | extern_val ST p SP      ::   :: extern_val {{ com extern value }}
+  | extern_fn x ST ER ESL   ::   :: extern_fn {{ com extern impure function }}
+  | extern_pfn x ST ER      ::   :: extern_pfn {{ com extern pure function }}
 
 
 pe :: 'PE_' ::=            {{ com pure expressions }}
@@ -136,9 +139,11 @@ pcl :: 'PCL_' ::= {{ com predicate closure }}
 % Typing closures (separate for impure fn and pure pfn)
 tcl :: 'TCL_' ::= {{ com impure fn closure }}
   | ( x , e , S )           ::   :: fn_closure
+  | extern_tcl ( x , ER , ESL , S ) ::   :: extern_closure {{ com extern impure closure }} {{ tex \mathsf{extern}([[x]], [[ER]], [[ESL]], [[S]]) }}
 
 ptcl :: 'PTCL_' ::= {{ com pure fn closure }}
   | ( x , pe , S )          ::   :: pfn_closure
+  | extern_ptcl ( x , ER , S ) ::   :: extern_closure {{ com extern pure closure }} {{ tex \mathsf{extern}([[x]], [[ER]], [[S]]) }}
 
 % Merged typing closures (non-empty lists treated as sets)
 tcls :: 'TCLS_' ::= {{ com impure closure set }}
@@ -215,7 +220,33 @@ var_env, r {{ tex \rho }} :: 'VE_' ::=     {{ com variable substitution environm
 
 pure_mode, pm :: 'PM_' ::= {{ com pure mode }} {{ tex \pi }}
   | pure                     ::   :: pure
-  | impure                   ::   :: impure                  
+  | impure                   ::   :: impure
+
+% Syntax-level predicate (symbolic tags, before resolution)
+syntax_predicate, SP :: 'SP_' ::= {{ com syntax predicate (symbolic) }}
+  | guard_closure ki x pe    ::   :: guard_closure {{ com symbolic guard closure }} {{ tex \mathsf{guard}\,[[ki]]\,\mathsf{closure}\,([[x]],[[pe]]) }}
+  | guard_only ki            ::   :: guard_only {{ com symbolic guard only }} {{ tex \mathsf{guard}\,[[ki]] }}
+  | no_pred                  ::   :: no_pred {{ com no predicate }} {{ tex \bot }}
+
+% Effect specification (target is always a named variable reference)
+effect_spec, ES :: 'ES_' ::= {{ com effect specification }}
+  | ! x :> p { SP }          ::   :: effect {{ tex ![[x]] \triangleright [[p]]\, \{ [[SP]] \} }}
+
+% Effect list
+effect_list, ESL :: 'ESL_' ::= {{ com effect list }}
+  | empty                    ::   :: empty
+  | ES , ESL                 ::   :: cons
+
+% Extern return specification
+extern_return, ER :: 'ER_' ::= {{ com extern return spec }}
+  | simple ST p SP           ::   :: simple {{ com simple return }} {{ tex ([[ST]] \triangleright [[p]]\, \{ [[SP]] \}) }}
+  | nested_fn x ST ER ESL    ::   :: nested_fn {{ com nested impure fn return }} {{ tex \mathsf{fn}\,[[x]]:[[ST]] \to [[ER]]\,;\,[[ESL]] }}
+  | nested_pfn x ST ER       ::   :: nested_pfn {{ com nested pure fn return }} {{ tex \mathsf{pfn}\,[[x]]:[[ST]] \Rightarrow [[ER]] }}
+
+% Tag resolution map (symbolic index -> concrete tag)
+tag_map, TM :: 'TM_' ::= {{ com tag resolution map }}
+  | empty                    ::   :: empty
+  | TM [ ki |-> k ]          ::   :: extend {{ tex [[TM]] [ [[ki]] \mapsto [[k]] ] }}
 
 terminals :: terminals_ ::=
   | +    :: :: plus
@@ -285,9 +316,6 @@ formula :: formula_ ::=
   | fresh x S              :: :: fresh_var       {{ com x is fresh in S }}
   | n0 = random n1         :: :: random_gen     {{ com n0 is a random number in [0, n1] range }}
   | match_guard e G S = k with LS  :: :: match_guard  {{ com find guard k with deps LS for condition e }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] \text{ with } [[LS]] }}
-  | if_guard_case e G S R = true  :: :: if_guard_case_true  {{ com conditional guard case is known true }}  {{ tex \mathrm{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{true\_case} }}
-  | if_guard_case e G S R = false :: :: if_guard_case_false {{ com conditional guard case is known false }} {{ tex \mathrm{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{false\_case} }}
-  | if_guard_case e G S R = none  :: :: if_guard_case_std   {{ com conditional guard case is standard: no match or unknown regime }} {{ tex \mathrm{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{std} }}
   | invalidate_deps L LS = L1 :: :: invalidate_deps {{ com remove from L entries whose deps intersect LS }}  {{ tex [[L1]] = [[L]] \mathbin{\restriction} \bigl(\mathrm{dom}([[L]]) \setminus [[LS]]\bigr) }}
   | invalidate_regime_deps R L LS = R1 :: :: invalidate_regime_deps {{ com remove from R tags whose deps in L intersect LS }}  {{ tex [[R1]] = \mathrm{invalidate\_regime}([[R]], [[L]], [[LS]]) }}
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
@@ -307,6 +335,17 @@ formula :: formula_ ::=
   | JoinPoisons G LS = p    :: :: join_poisons {{ com join poisons for LS in G }} {{ tex [[p]] = \bigsqcup_{\,l \in [[LS]]} \mathrm{poison}([[G]](l)) }}
   | not_harmful_shadow x S R :: :: not_harmful_shadow {{ com no harmful shadow of x in S,R }} {{ tex \neg\mathrm{harmful\_shadow}([[x]], [[S]], [[R]]) }}
   | not_fun T :: :: not_fun {{ com T is not function type }} {{ tex [[T]] \neq \_ \rightarrow \_}}
+  | freshTags SP k = k' TM  :: :: fresh_tags {{ com allocate fresh tags for symbolic indices in SP }} {{ tex \mathrm{freshTags}([[SP]], [[k]]) = ([[k']], [[TM]]) }}
+  | resolve TM SP S = P     :: :: resolve_pred {{ com resolve symbolic predicate via tag map }} {{ tex \mathrm{resolve}([[TM]], [[SP]], [[S]]) = [[P]] }}
+  | TM ( ki ) = k           :: :: tag_map_lookup {{ com tag map lookup }} {{ tex [[TM]]([[ki]]) = [[k]] }}
+  | returnType ER = ST      :: :: return_type {{ com extract surface return type from extern spec }} {{ tex \mathrm{returnType}([[ER]]) = [[ST]] }}
+  | extern_wf p SP :: :: extern_pred_wf {{ com clean types cannot carry predicates }} {{ tex [[p]] = \mathsf{poisoned} \lor [[SP]] = \bot }}
+  | extern_spec_wf ER ESL :: :: extern_spec_wf {{ com all (p, SP) pairs satisfy extern\_wf; simple return types are base types }} {{ tex \mathrm{specWf}([[ER]], [[ESL]]) }}
+  | base_extern_type ST :: :: base_extern_type {{ com ST is a base type (int, bool, unit, string) }} {{ tex [[ST]] \in \{ \mathsf{int}, \mathsf{bool}, \mathsf{unit}, \mathsf{string} \} }}
+  | externValConvert ST G = T G' :: :: extern_val_convert {{ com convert surface type to enriched type, possibly allocating fresh loc }} {{ tex \mathrm{externValConvert}([[ST]], [[G]]) = ([[T]], [[G']]) }}
+  | allocReturnEffectTags SP ESL k = k' TM :: :: alloc_return_effect_tags {{ com allocate fresh tags for return pred SP and all effect preds in ESL }} {{ tex \mathrm{allocTags}([[SP]], [[ESL]], [[k]]) = ([[k']], [[TM]]) }}
+  | allocEffectTags ESL k = k' TM :: :: alloc_effect_tags {{ com allocate fresh tags for effect preds only }} {{ tex \mathrm{allocEffectTags}([[ESL]], [[k]]) = ([[k']], [[TM]]) }}
+  | resolveEffects ESL TM S G = G' :: :: resolve_effects {{ com resolve effect preds via TM and apply memory updates }} {{ tex \mathrm{resolveEffects}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
 
 
 defns
@@ -484,28 +523,6 @@ m1(a) = n
 < pure , pe , m , r1 [ x |-> v ] > ==> < v0 , m , r >
 --------------------------------------------------------------- :: b_app_pure_closure
 < pm , pe1 pe2 , m , r > ==> < v0 , m , r >
-
-% Random integer
-<pm, e, m, r> ==> < n, m1, r1>
-n1 = random n
---------------------------------------------------------------- :: b_rand
-<pm, rand e, m, r> ==> < n1, m1, r1>
-
-% Faulty random (same extensional behaviour; typing distinguishes it)
-<pm, e, m, r> ==> < n, m1, r1>
-n1 = random n
---------------------------------------------------------------- :: b_frand
-<pm, frand e, m, r> ==> < n1, m1, r1>
-
-% printInt
-<pm, e, m, r> ==> < n, m1, r1>
---------------------------------------------------------------- :: b_printInt
-<pm, printInt e, m, r> ==> < unit, m1, r1>
-
-% printString
-<pm, e, m, r> ==> < s, m1, r1>
---------------------------------------------------------------- :: b_printString
-<pm, printString e, m, r> ==> < unit, m1, r1>
 
 %% --- Typing rules below ---
 
@@ -990,30 +1007,6 @@ p6 = join p1 p
 ----------------------------------------------------------------------  :: app_pfn_cons
 pm ; R ; pc ; G ; S ; L |- e1 e2 : T' :> join pc join p1 join p join p' p'' { AppPred p6 P3 } -| JoinGStrong G' G'' ; JoinL L' L'' ; JoinR R' R''
 
-% Typing for rand - takes integer argument, returns random integer
-pm ; R ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1 ; R1
-----------------------------------------------------------------------  :: rand_typing
-pm ; R ; pc ; G ; S ; L |- rand e : int :> join pc p { no_pred } -| G1 ; L1 ; R1
-
-% Typing for frand - takes integer argument n, returns faulty random integer with predicate
-% the argument is a pure expression, so typechking it does not affect the typing environment
-pm ; R ; pc ; G ; S ; L |- pe : int :> p { P } -| G ; L ; R
-fresh k
-fresh x S
-pcl = range x pe S
-----------------------------------------------------------------------  :: frand_typing
-pm ; R ; pc ; G ; S ; L |- frand pe : int :> poisoned { guard k pred_closure pcl } -| G ; L ; R
-
-% Typing for printInt - takes integer argument, returns unit 
-pm ; R ; pc ; G ; S ; L |- e : int :> p { P } -| G1 ; L1 ; R1
-----------------------------------------------------------------------  :: printInt_typing
-pm ; R ; pc ; G ; S ; L |- printInt e : unit :> join pc p { no_pred } -| G1 ; L1 ; R1
-
-% Typing for printString - takes string argument, returns unit 
-pm ; R ; pc ; G ; S ; L |- e : string :> p { P } -| G1 ; L1 ; R1
-----------------------------------------------------------------------  :: printString_typing
-pm ; R ; pc ; G ; S ; L |- printString e : unit :> join pc p { no_pred } -| G1 ; L1 ; R1
-
 
 % Typing for Let Bindings
 
@@ -1038,10 +1031,25 @@ pm ; R1 ; pc ; G1 ; S[x |-> T :> p1  { P1 }] ; L1 |- e2 : T2 :> p2 { P2 } -| G2 
 ----------------------------------------------------------------------  :: let
 pm ; R ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G2 ; L2 ; R2
 
+
+% Conditional typing with predicate-based de-poisoning - impure function result - R(k) unknown
+% When R does not fix the guard outcome, use conservative fallback (poison branch pc, join results)
+match_guard e1 G S = k with LS
+R(k) = none
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
+pm ; R[k |-> true] ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R[k |-> false] ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
+T2 = ST1 -> ST2 # p' tclosures tcls2
+T3 = ST1 -> ST2 # p'' tclosures tcls3
+p = join p' p''
+tcls = tcls2 U tcls3
+----------------------------------  :: if_depoison_fn_R_unknown
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+
 % Conditional typing with predicate-based de-poisoning - impure function result - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
 match_guard e1 G S = k with LS
-if_guard_case e1 G S R = true
+R(k) = true
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
 pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
@@ -1053,7 +1061,7 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p' tclosures tcl
 % Conditional typing with predicate-based de-poisoning - impure function result - R(k) = false
 % When R fixes the guard outcome to false, only the else-branch is effective
 match_guard e1 G S = k with LS
-if_guard_case e1 G S R = false
+R(k) = false
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
 pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
@@ -1062,10 +1070,24 @@ T3 = ST1 -> ST2 # p'' tclosures tcls3
 ----------------------------------  :: if_depoison_fn_R_false
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p'' tclosures tcls3 :> join pc p3 { no_pred } -| G3 ; L3 ; R3
 
+% Conditional typing with predicate-based de-poisoning - pure function result - R(k) unknown
+% When R does not fix the guard outcome, use conservative fallback (poison branch pc, join results)
+match_guard e1 G S = k with LS
+R(k) = none
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
+pm ; R[k |-> true] ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R[k |-> false] ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
+T2 = ST1 -> ST2 # p' tpclosures ptcls2
+T3 = ST1 -> ST2 # p'' tpclosures ptcls3
+p = join p' p''
+ptcls = ptcls2 U ptcls3
+----------------------------------  :: if_depoison_pfn_R_unknown
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+
 % Conditional typing with predicate-based de-poisoning - pure function result - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
 match_guard e1 G S = k with LS
-if_guard_case e1 G S R = true
+R(k) = true
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
 pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
@@ -1077,7 +1099,7 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p' tpclosures pt
 % Conditional typing with predicate-based de-poisoning - pure function result - R(k) = false
 % When R fixes the guard outcome to false, only the else-branch is effective
 match_guard e1 G S = k with LS
-if_guard_case e1 G S R = false
+R(k) = false
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
 pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
@@ -1086,10 +1108,21 @@ T3 = ST1 -> ST2 # p'' tpclosures ptcls3
 ----------------------------------  :: if_depoison_pfn_R_false
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p'' tpclosures ptcls3 :> join pc p3 { no_pred } -| G3 ; L3 ; R3
 
+% Conditional typing with predicate-based de-poisoning - reference result - R(k) unknown
+% When R does not fix the guard outcome, use conservative fallback (poison branch pc, join results)
+match_guard e1 G S = k with LS
+R(k) = none
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
+pm ; R[k |-> true] ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : ref @ LS1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R[k |-> false] ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : ref @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
+LS = LS1 U LS2
+----------------------------------  :: if_depoison_ref_R_unknown
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref @ LS :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+
 % Conditional typing with predicate-based de-poisoning - reference result - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
 match_guard e1 G S = k with LS
-if_guard_case e1 G S R = true
+R(k) = true
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
 pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : ref @ LS1 :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : ref @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
@@ -1099,17 +1132,27 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref @ LS1 :> join pc p2 { no_
 % Conditional typing with predicate-based de-poisoning - reference result - R(k) = false
 % When R fixes the guard outcome to false, only the else-branch is effective
 match_guard e1 G S = k with LS
-if_guard_case e1 G S R = false
+R(k) = false
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
 pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : ref @ LS1 :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : ref @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
 ----------------------------------  :: if_depoison_ref_R_false
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref @ LS2 :> join pc p3 { no_pred } -| G3 ; L3 ; R3
 
+% Conditional typing with predicate-based de-poisoning - general non-reference case - R(k) unknown
+% When R does not fix the guard outcome, use conservative fallback (poison branch pc, join results)
+match_guard e1 G S = k with LS
+R(k) = none
+pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
+pm ; R[k |-> true] ; join pc p1 ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R[k |-> false] ; join pc p1 ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
+----------------------------------  :: if_depoison_R_unknown
+pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+
 % Conditional typing with predicate-based de-poisoning - general non-reference case - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
 match_guard e1 G S = k with LS
-if_guard_case e1 G S R = true
+R(k) = true
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
 pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
@@ -1119,7 +1162,7 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc p2 { no_pred } -
 % Conditional typing with predicate-based de-poisoning - general non-reference case - R(k) = false
 % When R fixes the guard outcome to false, only the else-branch is effective
 match_guard e1 G S = k with LS
-if_guard_case e1 G S R = false
+R(k) = false
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
 pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
@@ -1127,7 +1170,7 @@ pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3 
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc p3 { no_pred } -| G3 ; L3 ; R3
 
 % Standard conditional typing rule - impure function result
-% (used in the standard case: either no matching predicate is found, or match_guard succeeds but R(k) is unknown)
+% (used when no matching predicate found)
 % When both branches return impure function types with matching surface types (ST1, ST2):
 %   - Branch types T2 and T3 are both impure arrow types with the same surface types
 %   - Arrow-internal poisons p' and p'' are joined
@@ -1135,7 +1178,6 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc p3 { no_pred } -
 %   - Closure sets tcls2 and tcls3 are merged via union (deduplicating closures)
 %   - Guard poison p1 is also included in result poison
 %   - Result: (ST1 -> ST2 # (p' ⊔ p'') tclosures (tcls2 ∪ tcls3)) :> (pc ⊔ p1 ⊔ p2 ⊔ p3)
-if_guard_case e1 G S R = none
 pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
@@ -1147,7 +1189,7 @@ tcls = tcls2 U tcls3
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
 % Standard conditional typing rule - pure function result
-% (used in the standard case: either no matching predicate is found, or match_guard succeeds but R(k) is unknown)
+% (used when no matching predicate found)
 % When both branches return pure function types with matching surface types (ST1, ST2):
 %   - Branch types T2 and T3 are both pure arrow types with the same surface types
 %   - Arrow-internal poisons p' and p'' are joined
@@ -1155,7 +1197,6 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tclosures tcls
 %   - Closure sets ptcls2 and ptcls3 are merged via union (deduplicating closures)
 %   - Guard poison p1 is also included in result poison
 %   - Result: (ST1 -> ST2 # (p' ⊔ p'') tpclosures (ptcls2 ∪ ptcls3)) :> (pc ⊔ p1 ⊔ p2 ⊔ p3)
-if_guard_case e1 G S R = none
 pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
@@ -1166,9 +1207,7 @@ ptcls = ptcls2 U ptcls3
 ----------------------------------  :: if_std_pfn
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p tpclosures ptcls :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
-% Standard conditional typing rule - reference result (standard case)
-% Used when no matching predicate is found, or match_guard succeeds but R(k) is unknown.
-if_guard_case e1 G S R = none
+% Standard conditional typing rule - reference result (no predicate match)
 pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e2 : ref @ LS1 :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e3 : ref @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
@@ -1176,11 +1215,141 @@ LS = LS1 U LS2
 ----------------------------------  :: if_std_ref
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref @ LS :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
 
-% Standard conditional typing rule - general non-reference case (standard case)
-% Used when no matching predicate is found, or match_guard succeeds but R(k) is unknown.
-if_guard_case e1 G S R = none
+% Standard conditional typing rule - general non-reference case (no predicate match)
 pm ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G1 ; L1 ; R1
 pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
 pm ; R1 ; join pc p1 ; G1 ; S ; L1 |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
 ----------------------------------  :: if_std
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 p3 { no_pred } -| JoinGStrong G2 G3 ; JoinL L2 L3 ; JoinR R2 R3
+
+% --- Extern typing rules ---
+% Extern expressions use symbolic tag indices (ki) in their SyntaxPredicates.
+% At each use site, freshTags collects distinct ki values and allocates fresh
+% concrete tags k starting from the current next-tag counter. The resolve
+% operation then maps each symbolic predicate to a concrete Predicate using
+% the tag map TM and the current variable typing environment S.
+%
+% This ensures that two calls to the same extern function get independent
+% tags, preventing one validation from incorrectly de-poisoning the other.
+
+% Extern value (base type): let x = extern val : (ST :> p { SP })
+% ST must be a base type (int, bool, unit, string). Arrow types and non-int refs are rejected.
+% Allocate fresh tags for SP, resolve to concrete predicate P.
+% externValConvert maps the surface type ST to the enriched type T and possibly
+% updated memory environment G'. For base types (int, bool, unit, string), T = ST
+% and G' = G. For ref int, T = ref @ {l} with a fresh l, and G' = G[l |-> clean {no_pred}].
+% Arrow types and ref T where T != int have no derivation (rejected).
+extern_wf p SP
+externValConvert ST G = T G'
+freshTags SP k = k' TM
+resolve TM SP S = P
+----------------------------------------------------------------------  :: extern_val
+pm ; R ; pc ; G ; S ; L |- extern_val ST p SP : T :> p { P } -| G' ; L ; R
+
+% Extern impure function: extern fn x : (ST1) -> ER , effects: ESL
+% The function is wrapped in an extern typing closure containing the unresolved
+% return spec ER, effect list ESL, and captured environment S.
+% Tag resolution is deferred to application time (each call gets fresh tags).
+% returnType extracts the surface return type from ER (recursively for nested specs).
+% extern_spec_wf ensures all (poison, SP) pairs in ER and ESL satisfy extern_wf
+% (clean types cannot carry predicates). This is enforced at parse time.
+extern_spec_wf ER ESL
+returnType ER = ST2
+----------------------------------------------------------------------  :: extern_fn
+pm ; R ; pc ; G ; S ; L |- extern_fn x ST1 ER ESL : ST1 -> ST2 # pc tclosures extern_tcl ( x , ER , ESL , S ) :> pc { no_pred } -| G ; L ; R
+
+% Extern pure function: extern pfn x : (ST1) -> ER
+% The function is wrapped in an extern pure typing closure.
+% Tag resolution is deferred to application time (each call gets fresh tags).
+% extern_spec_wf ensures all predicates in ER satisfy extern_wf.
+extern_spec_wf ER empty
+returnType ER = ST2
+----------------------------------------------------------------------  :: extern_pfn
+pm ; R ; pc ; G ; S ; L |- extern_pfn x ST1 ER : ST1 -> ST2 # pc tpclosures extern_ptcl ( x , ER , S ) :> pc { no_pred } -| G ; L ; R
+
+% --- Extern closure application rules ---
+% When an extern typing closure is applied, tags are resolved fresh at each call site.
+%
+% For simple returns: allocReturnEffectTags collects the return pred SP together
+% with all effect preds from ESL, allocates fresh tags from k in a single pass,
+% producing one shared tag map TM. Both resolve and resolveEffects use this TM.
+%
+% For nested returns: only the outer effect preds are allocated via allocEffectTags.
+% The inner return spec ER' is NOT touched — it is wrapped unchanged into a new
+% extern closure, ensuring deferred resolution at the next application.
+%
+% resolveEffects resolves each effect's predicate via TM and applies the resulting
+% memory updates to G.
+
+% Extern impure function application - simple return
+% allocReturnEffectTags produces one shared TM for both the return pred SP and effects.
+% base_extern_type: extern functions cannot return ref or arrow types.
+% ST2 <: T2 converts the surface return type to enriched type (identity for base types).
+impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , simple ST2 p3 SP , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+ST1 <: T1
+base_extern_type ST2
+ST2 <: T2
+allocReturnEffectTags SP ESL k = k' TM
+resolve TM SP S1 [ x |-> T1 :> join pc p2 { P2 } ] = P
+resolveEffects ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
+p6 = join p1 p
+----------------------------------------------------------------------  :: app_extern_fn_simple
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L1 ; R1
+
+% Extern impure function application - nested impure fn return
+% Only outer effect preds in ESL are allocated via allocEffectTags.
+% The inner return spec ER' is NOT resolved; it is wrapped in a new extern_tcl
+% with the updated captured environment (deferred inner resolution).
+impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , nested_fn x1 ST3 ER' ESL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+ST1 <: T1
+allocEffectTags ESL k = k' TM
+resolveEffects ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
+returnType ER' = ST4
+----------------------------------------------------------------------  :: app_extern_fn_nested_fn
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl ( x1 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R1
+
+% Extern impure function application - nested pure fn return
+% Same pattern: only outer ESL preds allocated; inner ER' deferred in extern_ptcl.
+impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , nested_pfn x1 ST3 ER' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+ST1 <: T1
+allocEffectTags ESL k = k' TM
+resolveEffects ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
+returnType ER' = ST4
+----------------------------------------------------------------------  :: app_extern_fn_nested_pfn
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl ( x1 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R1
+
+% Extern pure function application - simple return
+% Pure extern closures have no effects. Fresh tags allocated for return pred only.
+% base_extern_type: extern functions cannot return ref or arrow types.
+% ST2 <: T2 converts the surface return type to enriched type (identity for base types).
+pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl ( x , simple ST2 p3 SP , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+ST1 <: T1
+base_extern_type ST2
+ST2 <: T2
+freshTags SP k = k' TM
+resolve TM SP S1 [ x |-> T1 :> join pc p2 { P2 } ] = P
+p6 = join p1 p
+----------------------------------------------------------------------  :: app_extern_pfn_simple
+pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1 ; L1 ; R1
+
+% Extern pure function application - nested impure fn return
+% No effects to resolve (pure context). Inner spec ER' deferred in new extern_tcl.
+pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl ( x , nested_fn x1 ST3 ER' ESL' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+ST1 <: T1
+returnType ER' = ST4
+----------------------------------------------------------------------  :: app_extern_pfn_nested_fn
+pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl ( x1 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1 ; L1 ; R1
+
+% Extern pure function application - nested pure fn return
+% No effects to resolve (pure context). Inner spec ER' deferred in new extern_ptcl.
+pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl ( x , nested_pfn x1 ST3 ER' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+ST1 <: T1
+returnType ER' = ST4
+----------------------------------------------------------------------  :: app_extern_pfn_nested_pfn
+pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl ( x1 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1 ; L1 ; R1

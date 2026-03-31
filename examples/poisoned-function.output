@@ -1,8 +1,0 @@
-Evaluating file: examples/poisoned-function.poison (verbose mode)
-
-Type checking passed: Type: {type=int, poison=true, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
-
-Result: 2
-Final state:
-Variable environment: []
-  Memory: []

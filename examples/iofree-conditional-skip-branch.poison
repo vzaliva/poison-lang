@@ -1,9 +1,0 @@
---! poison-interpreter --regime "3=true"
--- Test: Conditional branch skipping with known regime (acceptance criterion 3).
--- In .ioFree with known regime, conditionals skip typechecking the untaken branch.
--- The untaken else has printInt (IO) which would fail in ioFree if typechecked.
--- Limitation: matchGuard requires a guard from extern or frand; both forbidden in
--- ioFree. This test exercises the regime path in normal mode. Expect: runtime
--- fails (extern has no implementation).
-let ret = extern val : (int :> poisoned { 3 }) in
-if ret >= 0 then 42 else (printInt 99; 42)

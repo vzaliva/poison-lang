@@ -15,13 +15,13 @@ let outer_fn =
         : (int -> int)
     else
       -- Inner branch 1.2: b is poisoned (unexecuted but kept for merge)
-      let b = frand 0 in
+      let b = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
       fn x : int =>
         fn y : int => (x + a) + (y + b) : int
         : (int -> int)
   else
     -- Outer branch 2: a is poisoned
-    let a = frand 1 in
+    let a = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 1) }) in
     if true then
       -- Inner branch 2.1: b is clean
       let b = 20 in
@@ -30,7 +30,7 @@ let outer_fn =
         : (int -> int)
     else
       -- Inner branch 2.2: b is poisoned
-      let b = frand 2 in
+      let b = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 2) }) in
       fn x : int =>
         fn y : int => (x + a) + (y + b) : int
         : (int -> int)

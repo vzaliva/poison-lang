@@ -1,0 +1,20 @@
+Error: Unknown option: --io-free
+Usage:
+  poison-interpreter --repl
+  poison-interpreter [--verbose] [--regime "100=true,101=false"] <file>
+  poison-interpreter --help
+
+Exit Codes:
+  0  Success (including successful detection of type errors)
+  1  Usage error (wrong command-line arguments)
+  2  Parse error (syntax error in source)
+  3  AST construction error (internal parser error)
+  4  Type checker out of fuel (analysis couldn't complete)
+  5  File I/O error (can't read file)
+  6  Runtime error (evaluation failed)
+  7  Evaluation out of fuel (divergence)
+
+Note: Exit code 0 indicates that the analysis tool itself worked correctly,
+regardless of whether the program being analyzed is well-typed. This follows
+the convention of compilers that return 0 even when reporting type errors,
+since successfully finding errors is a success for the tool.

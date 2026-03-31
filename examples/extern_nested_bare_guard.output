@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_nested_bare_guard.poison (verbose mode)
+
+Type checking error: guardOnly tag index 7 has no matching guardClosure in this extern spec
+

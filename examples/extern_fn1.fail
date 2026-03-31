@@ -3,14 +3,14 @@ Evaluating file: examples/extern_fn1.poison (verbose mode)
 Type checking passed:
   Type: {type=int,
    poison=true,
-   pred={100, pfn v -> (v >= 0) && (v <= 255), deps: [s : {type=ref @ [0], poison=false, pred={}},
+   pred={2, pfn v -> (v >= 0) && (v <= 255), deps: [s : {type=ref @ [0], poison=false, pred={}},
      x : {type=int, poison=false, pred={}},
      y : {type=ref @ [1], poison=false, pred={}}]}},
   MemoryTypeEnv: {
-    0 := (true, {200, pfn u -> (u >= 0) && (u <= 255), deps: [s : {type=ref @ [0], poison=false, pred={}},
+    0 := (true, {3, pfn u -> (u >= 0) && (u <= 255), deps: [s : {type=ref @ [0], poison=false, pred={}},
       x : {type=int, poison=false, pred={}},
       y : {type=ref @ [1], poison=false, pred={}}]}), 1 := (false, {}) },
   tagEnv: {},
   nextLoc: 2
 
-Runtime error: Cannot execute extern function – no implementation provided
+Runtime error: Cannot execute extern value – no implementation provided

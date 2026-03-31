@@ -47,12 +47,6 @@ abbrev Name := String
 
 namespace LeanPoison
 
-/-- Evaluation mode: controls whether IO operations are permitted (shared with typechecker). -/
-inductive EvalMode where
-  | normal : EvalMode   -- IO operations allowed (default)
-  | ioFree : EvalMode   -- IO operations forbidden (return ioForbidden in beval)
-  deriving Repr, BEq, DecidableEq
-
 end LeanPoison
 
 -- Surface types (corresponds to typ, ST in Ott)
@@ -102,10 +96,45 @@ inductive UnaryOp : Type where
 -- Predicate tags (moved here for use in SyntaxPredicate)
 abbrev Tag := Nat
 
--- Effect target: either a named variable or the return value
+
+-- TagIndex definitions and instaces requiered for ExtTreeMap TagIndex Tag
+section TagIndex
+
+/-- Symbolic tag index used in extern specifications.
+    At each extern use site, `TagIndex` values are collected and mapped to fresh
+    concrete `Tag`s, ensuring that distinct calls get independent tags. -/
+structure TagIndex where
+  val : Nat
+  deriving Repr, DecidableEq, Hashable
+
+-- BEq via DecidableEq so that of_decide_eq_true works in proofs
+instance : BEq TagIndex where
+  beq a b := decide (a = b)
+
+instance : LawfulBEq TagIndex where
+  eq_of_beq h := of_decide_eq_true h
+  rfl := decide_eq_true rfl
+
+/-- Ord instance for TagIndex delegating to Nat's comparison. -/
+@[reducible] instance : Ord TagIndex where
+  compare a b := compare a.val b.val
+
+instance : OrientedCmp (compare : TagIndex → TagIndex → Ordering) where
+  eq_swap {a b} := by
+    show compare a.val b.val = (compare b.val a.val).swap
+    exact OrientedCmp.eq_swap (α := Nat)
+
+instance : TransCmp (compare : TagIndex → TagIndex → Ordering) where
+  isLE_trans {a b c} (h1 : (compare a.val b.val).isLE = true)
+      (h2 : (compare b.val c.val).isLE = true) := by
+    show (compare a.val c.val).isLE = true
+    exact TransCmp.isLE_trans (α := Nat) h1 h2
+
+end TagIndex
+
+-- Effect target: a named variable whose memory location is affected
 inductive EffectTarget where
   | namedVar : Name → EffectTarget      -- !varname
-  | returnValue : EffectTarget           -- return (special keyword)
   deriving Repr, BEq
 
 
@@ -113,10 +142,12 @@ inductive EffectTarget where
 mutual
 
 -- Syntax-level predicate (simplified, no captured environment)
--- Parser creates these, typechecker converts to full Predicate
+-- Parser creates these with symbolic TagIndex values.
+-- At each extern use site, the typechecker allocates fresh concrete Tags
+-- and resolves TagIndex → Tag, ensuring independent tags per call.
 inductive SyntaxPredicate : Type where
-  | guardClosure: Tag → Name → Expr → SyntaxPredicate  -- tag, arg name, predicate body (as Expr)
-  | guardOnly : Tag → SyntaxPredicate
+  | guardClosure: TagIndex → Name → Expr → SyntaxPredicate  -- symbolic tag index, arg name, predicate body (as Expr)
+  | guardOnly : TagIndex → SyntaxPredicate
   | noPred : SyntaxPredicate
 
 -- Effect specification for impure externs (uses SyntaxPredicate)
@@ -151,11 +182,6 @@ inductive Expr : Type where
   | fn : Name → Typ → Expr → Typ → Expr         -- fn x : ST1 => e : ST2
   | pfn : Name → Typ → Expr → Typ → Expr        -- pfn x : ST1 => pe : ST2
   | app : Expr → Expr → Expr                    -- e1 e2
-  /- built-in expressions -/
-  | rand  : Expr -> Expr
-  | frand : Expr -> Expr
-  | printString  : Expr -> Expr
-  | printInt  : Expr -> Expr
   /- extern placeholders -/
   | externVal : Typ → Bool → SyntaxPredicate → Expr
   | externFn : Name → Typ → ExternReturn → List Effect → Expr
@@ -215,10 +241,6 @@ def beqExpr : Expr → Expr → Bool
   | Expr.fn x1 t1 e1 t1', Expr.fn x2 t2 e2 t2' => x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2'
   | Expr.pfn x1 t1 e1 t1', Expr.pfn x2 t2 e2 t2' => x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2'
   | Expr.app e1 e2, Expr.app e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
-  | Expr.rand e1, Expr.rand e2 => beqExpr e1 e2
-  | Expr.frand e1, Expr.frand e2 => beqExpr e1 e2
-  | Expr.printString e1, Expr.printString e2 => beqExpr e1 e2
-  | Expr.printInt e1, Expr.printInt e2 => beqExpr e1 e2
   | Expr.externVal t1 p1 pred1, Expr.externVal t2 p2 pred2 =>
       t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
   | Expr.externFn x1 t1 ret1 eff1, Expr.externFn x2 t2 ret2 eff2 =>

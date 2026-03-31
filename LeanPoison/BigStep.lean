@@ -14,7 +14,6 @@ inductive EvalResult : Type where
   | success : Config → Value → EvalResult      -- Termination: successful evaluation
   | outOfFuel : EvalResult                     -- Divergence: fuel exhausted
   | runtimeError : String → EvalResult         -- Stuck state: runtime error
-  | ioForbidden : EvalResult                   -- IO attempted in ioFree mode
 
 -- Lightweight debug entry trace for big-step
 def bsTraceEnter (fuel : Nat) (verbose : Bool) (_config : Config) (expr : Expr) : Unit :=
@@ -45,298 +44,204 @@ def evalUnaryOp (op : UnaryOp) (v : Value) : Option Value :=
 mutual
 
   /-- Big-step evaluation: evaluates an expression to a value using fuel.
-      Returns EvalResult distinguishing success, divergence, and runtime errors.
-      In ioFree mode, IO operations return ioForbidden instead of executing. -/
-  def beval (mode : EvalMode) (fuel : Nat) (config : Config) (expr : Expr) (verbose : Bool) : IO EvalResult := do
+      Returns EvalResult distinguishing success, divergence, and runtime errors. -/
+  def beval (fuel : Nat) (config : Config) (expr : Expr) (verbose : Bool) : EvalResult :=
     let _ := bsTraceEnter fuel verbose config expr
     if fuel = 0 then
-      return .outOfFuel
+      .outOfFuel
     else
       match expr with
       -- Literals
       | Expr.num n =>
-        return .success config (Value.num n)
+        .success config (Value.num n)
       | Expr.bool b =>
-        return .success config (Value.bool b)
+        .success config (Value.bool b)
       | Expr.unit =>
-        return .success config Value.unit
+        .success config Value.unit
       | Expr.str s =>
-        return .success config (Value.str s)
+        .success config (Value.str s)
 
       -- Variables
       | Expr.var x =>
         match config.varEnv.lookup x with
-        | some v => return .success config v
-        | none   => return .runtimeError s!"var {x} not found"
+        | some v => .success config v
+        | none   => .runtimeError s!"var {x} not found"
 
       -- Binary operations (evaluate operands then compute)
-      | Expr.op e1 op e2 => do
-        match <- beval mode (fuel - 1) config e1 verbose with
+      | Expr.op e1 op e2 =>
+        match beval (fuel - 1) config e1 verbose with
         | .success config' v1 =>
-          match <- beval mode (fuel - 1) config' e2 verbose with
+          match beval (fuel - 1) config' e2 verbose with
           | .success config'' v2 =>
             match evalOp op v1 v2 with
-            | some v => return .success config'' v
+            | some v => .success config'' v
             | none =>
               let v1Str := ValueToTypeString v1
               let v2Str := ValueToTypeString v2
               let opStr := toString op
-              return .runtimeError s!"Runtime type error: cannot apply operation {opStr} to {v1Str} and {v2Str}"
-          | .outOfFuel => return .outOfFuel
-          | .runtimeError msg => return .runtimeError msg
-          | .ioForbidden => return .ioForbidden
-        | .outOfFuel => return .outOfFuel
-        | .runtimeError msg => return .runtimeError msg
-        | .ioForbidden => return .ioForbidden
+              .runtimeError s!"Runtime type error: cannot apply operation {opStr} to {v1Str} and {v2Str}"
+          | .outOfFuel => .outOfFuel
+          | .runtimeError msg => .runtimeError msg
+        | .outOfFuel => .outOfFuel
+        | .runtimeError msg => .runtimeError msg
 
       -- Unary operations
-      | Expr.unaryop op e => do
-        match <- beval mode (fuel - 1) config e verbose with
+      | Expr.unaryop op e =>
+        match beval (fuel - 1) config e verbose with
          | .success config' v =>
             match evalUnaryOp op v with
-            | some v' => return .success config' v'
+            | some v' => .success config' v'
             | none =>
               let vStr := ValueToTypeString v
               let opStr := toString op
-              return .runtimeError s!"Runtime type error: cannot apply operation {opStr} to {vStr}"
-         | .outOfFuel => return .outOfFuel
-         | .runtimeError msg => return .runtimeError msg
-         | .ioForbidden => return .ioForbidden
+              .runtimeError s!"Runtime type error: cannot apply operation {opStr} to {vStr}"
+         | .outOfFuel => .outOfFuel
+         | .runtimeError msg => .runtimeError msg
 
 
       -- References
-      | Expr.newRef e => do
-        match <- beval mode (fuel - 1) config e verbose with
+      | Expr.newRef e =>
+        match beval (fuel - 1) config e verbose with
         | .success config' (Value.num n) =>
           let (l, config'') := freshAddr config'
           let config''' := { config'' with memory := config''.memory.update l n }
-          return .success config''' (Value.loc l)
-        | .success _ _ => return .runtimeError "Runtime type error: ref expects a number"
-        | .outOfFuel => return .outOfFuel
-        | .runtimeError msg => return .runtimeError msg
-        | .ioForbidden => return .ioForbidden
+          .success config''' (Value.loc l)
+        | .success _ _ => .runtimeError "Runtime type error: ref expects a number"
+        | .outOfFuel => .outOfFuel
+        | .runtimeError msg => .runtimeError msg
 
       -- Dereference
-      | Expr.deref e => do
-        match <- beval mode (fuel - 1) config e verbose with
+      | Expr.deref e =>
+        match beval (fuel - 1) config e verbose with
         | .success config' (Value.loc l) =>
           match config'.memory.get? l with
-          | some n => return .success config' (Value.num n)
-          | none   => return .runtimeError s!"Runtime type error: deref uninitialized location {l}"
-        | .success _ v => return .runtimeError s!"Runtime type error: deref expects a location but got {v}"
-        | .outOfFuel => return .outOfFuel
-        | .runtimeError msg => return .runtimeError msg
-        | .ioForbidden => return .ioForbidden
+          | some n => .success config' (Value.num n)
+          | none   => .runtimeError s!"Runtime type error: deref uninitialized location {l}"
+        | .success _ v => .runtimeError s!"Runtime type error: deref expects a location but got {v}"
+        | .outOfFuel => .outOfFuel
+        | .runtimeError msg => .runtimeError msg
 
       -- Assignment
-      | Expr.assign e1 e2 => do
-        match <- beval mode (fuel - 1) config e1 verbose with
+      | Expr.assign e1 e2 =>
+        match beval (fuel - 1) config e1 verbose with
         | .success config' (Value.loc l) =>
-          match <- beval mode (fuel - 1) config' e2 verbose with
+          match beval (fuel - 1) config' e2 verbose with
           | .success config'' (Value.num n) =>
             let config''' := { config'' with memory := config''.memory.update l n }
-            return .success config''' Value.unit
-          | .success _ _ => return .runtimeError "Runtime type error: assignment expects number on right side"
-          | .outOfFuel => return .outOfFuel
-          | .runtimeError msg => return .runtimeError msg
-          | .ioForbidden => return .ioForbidden
-        | .success _ _ => return .runtimeError "Runtime type error: assignment expects location on left side"
-        | .outOfFuel => return .outOfFuel
-        | .runtimeError msg => return .runtimeError msg
-        | .ioForbidden => return .ioForbidden
+            .success config''' Value.unit
+          | .success _ _ => .runtimeError "Runtime type error: assignment expects number on right side"
+          | .outOfFuel => .outOfFuel
+          | .runtimeError msg => .runtimeError msg
+        | .success _ _ => .runtimeError "Runtime type error: assignment expects location on left side"
+        | .outOfFuel => .outOfFuel
+        | .runtimeError msg => .runtimeError msg
 
       -- Sequencing
-      | Expr.seq e1 e2 => do
-        match <- beval mode (fuel - 1) config e1 verbose with
+      | Expr.seq e1 e2 =>
+        match beval (fuel - 1) config e1 verbose with
         | .success config' _v1 =>
-          match <- beval mode (fuel - 1) config' e2 verbose with
-          | .success config'' v2 => return .success config'' v2
-          | .outOfFuel => return .outOfFuel
-          | .runtimeError msg => return .runtimeError msg
-          | .ioForbidden => return .ioForbidden
-        | .outOfFuel => return .outOfFuel
-        | .runtimeError msg => return .runtimeError msg
-        | .ioForbidden => return .ioForbidden
+          match beval (fuel - 1) config' e2 verbose with
+          | .success config'' v2 => .success config'' v2
+          | .outOfFuel => .outOfFuel
+          | .runtimeError msg => .runtimeError msg
+        | .outOfFuel => .outOfFuel
+        | .runtimeError msg => .runtimeError msg
 
       -- Conditionals
-      | Expr.ite e1 e2 e3 => do
-        match <- beval mode (fuel - 1) config e1 verbose with
+      | Expr.ite e1 e2 e3 =>
+        match beval (fuel - 1) config e1 verbose with
         | .success config' (Value.bool true) =>
-          match <- beval mode (fuel - 1) config' e2 verbose with
-          | .success config'' v => return .success config'' v
-          | .outOfFuel => return .outOfFuel
-          | .runtimeError msg => return .runtimeError msg
-          | .ioForbidden => return .ioForbidden
+          match beval (fuel - 1) config' e2 verbose with
+          | .success config'' v => .success config'' v
+          | .outOfFuel => .outOfFuel
+          | .runtimeError msg => .runtimeError msg
         | .success config' (Value.bool false) =>
-          match <- beval mode (fuel - 1) config' e3 verbose with
-          | .success config'' v => return .success config'' v
-          | .outOfFuel => return .outOfFuel
-          | .runtimeError msg => return .runtimeError msg
-          | .ioForbidden => return .ioForbidden
-        | .success _ _ => return .runtimeError "Runtime type error: condition must be boolean"
-        | .outOfFuel => return .outOfFuel
-        | .runtimeError msg => return .runtimeError msg
-        | .ioForbidden => return .ioForbidden
+          match beval (fuel - 1) config' e3 verbose with
+          | .success config'' v => .success config'' v
+          | .outOfFuel => .outOfFuel
+          | .runtimeError msg => .runtimeError msg
+        | .success _ _ => .runtimeError "Runtime type error: condition must be boolean"
+        | .outOfFuel => .outOfFuel
+        | .runtimeError msg => .runtimeError msg
 
       -- Let binding
-      | Expr.vlet x e1 e2 => do
-        match <- beval mode (fuel - 1) config e1 verbose with
+      | Expr.vlet x e1 e2 =>
+        match beval (fuel - 1) config e1 verbose with
         | .success config' v =>
           let config'' := { config' with varEnv := config'.varEnv.update x v }
-          match <- beval mode (fuel - 1) config'' e2 verbose with
+          match beval (fuel - 1) config'' e2 verbose with
           | .success config''' v2 =>
             -- Restore original variable environment, keeping memory changes
             -- According to OTT semantics, let-bound variables should not escape their scope
             let finalConfig := { config''' with varEnv := config'.varEnv }
-            return .success finalConfig v2
-          | .outOfFuel => return .outOfFuel
-          | .runtimeError msg => return .runtimeError msg
-          | .ioForbidden => return .ioForbidden
-        | .outOfFuel => return .outOfFuel
-        | .runtimeError msg => return .runtimeError msg
-        | .ioForbidden => return .ioForbidden
+            .success finalConfig v2
+          | .outOfFuel => .outOfFuel
+          | .runtimeError msg => .runtimeError msg
+        | .outOfFuel => .outOfFuel
+        | .runtimeError msg => .runtimeError msg
 
       -- Function abstractions
       | Expr.fn x _ body _ =>
         let closure := Value.closure x body config.varEnv
-        return .success config closure
+        .success config closure
       | Expr.pfn x _ body _ =>
         let closure := Value.peClosure x body config.varEnv
-        return .success config closure
+        .success config closure
 
       -- Application (call-by-value: evaluate argument first, then function)
-      | Expr.app e1 e2 => do
-        match <- beval mode (fuel - 1) config e2 verbose with
+      | Expr.app e1 e2 =>
+        match beval (fuel - 1) config e2 verbose with
         | .success config' v2 =>
-          match <- beval mode (fuel - 1) config' e1 verbose with
+          match beval (fuel - 1) config' e1 verbose with
           | .success config'' (Value.closure x body env) =>
             if config''.pureMode then
-              return .runtimeError "Pure function cannot apply impure closure"
+              .runtimeError "Pure function cannot apply impure closure"
             else
-              bevalFunctionBody mode (fuel - 1) verbose config'' env x v2 body false
+              bevalFunctionBody (fuel - 1) verbose config'' env x v2 body false
           | .success config'' (Value.peClosure x body env) =>
             match Expr.toPExpr? body with
-            | some _ => bevalFunctionBody mode (fuel - 1) verbose config'' env x v2 body true
-            | none => return .runtimeError "Pure closure body is not pure"
-          | .success _ _ => return .runtimeError "Runtime type error: expected function in application"
-          | .outOfFuel => return .outOfFuel
-          | .runtimeError msg => return .runtimeError msg
-          | .ioForbidden => return .ioForbidden
-        | .outOfFuel => return .outOfFuel
-        | .runtimeError msg => return .runtimeError msg
-        | .ioForbidden => return .ioForbidden
+            | some _ => bevalFunctionBody (fuel - 1) verbose config'' env x v2 body true
+            | none => .runtimeError "Pure closure body is not pure"
+          | .success _ _ => .runtimeError "Runtime type error: expected function in application"
+          | .outOfFuel => .outOfFuel
+          | .runtimeError msg => .runtimeError msg
+        | .outOfFuel => .outOfFuel
+        | .runtimeError msg => .runtimeError msg
 
-      -- Extern placeholders (cannot be executed; forbidden in ioFree mode)
+      -- Extern placeholders (cannot be executed)
       | Expr.externVal _ _ _ =>
-        match mode with
-        | .ioFree => return .ioForbidden
-        | .normal => return .runtimeError "Cannot execute extern value – no implementation provided"
+        .runtimeError "Cannot execute extern value – no implementation provided"
       | Expr.externFn _ _ _ _ =>
-        match mode with
-        | .ioFree => return .ioForbidden
-        | .normal => return .runtimeError "Cannot execute extern function – no implementation provided"
+        .runtimeError "Cannot execute extern function – no implementation provided"
       | Expr.externPfn _ _ _ =>
-        match mode with
-        | .ioFree => return .ioForbidden
-        | .normal => return .runtimeError "Cannot execute extern pure function – no implementation provided"
-
-      -- Built-ins (IO operations forbidden in ioFree mode)
-      | Expr.rand e => do
-        match mode with
-        | .ioFree => return .ioForbidden
-        | .normal =>
-          match <- beval mode (fuel - 1) config e verbose with
-          | .success config' (Value.num n) =>
-            if n >= 0 then
-              let r ← (IO.rand 0 n.toNat).toIO
-              let randomNo := Int.ofNat r
-              return .success config' (Value.num randomNo)
-            else
-              IO.println "Argument to rand must evaluate to non negative integer"
-              return .runtimeError "Argument to rand must evaluate to non negative integer"
-          | .success _ _ => return .runtimeError "Runtime type error: rand expects a number"
-          | .outOfFuel => return .outOfFuel
-          | .runtimeError msg => return .runtimeError msg
-          | .ioForbidden => return .ioForbidden
-
-      | Expr.frand e => do
-        match mode with
-        | .ioFree => return .ioForbidden
-        | .normal =>
-          match <- beval mode (fuel - 1) config e verbose with
-          | .success config' (Value.num n) =>
-            if n >= 0 then
-              let maxRange : Nat := 4 * (n.toNat)
-              let r ← (IO.rand 0 maxRange).toIO   -- 0 ≤ r ≤ 4n
-              let randomNo : Int := (Int.ofNat r) - (2 * n)  -- -2n ≤ randomNo ≤ 2n
-              return .success config' (Value.num randomNo)
-            else
-              IO.println "Argument to frand must evaluate to non negative integer"
-              return .runtimeError "Argument to frand must evaluate to non negative integer"
-          | .success _ _ => return .runtimeError "Runtime type error: frand expects a number"
-          | .outOfFuel => return .outOfFuel
-          | .runtimeError msg => return .runtimeError msg
-          | .ioForbidden => return .ioForbidden
-
-      | Expr.printInt e => do
-        match mode with
-        | .ioFree => return .ioForbidden
-        | .normal =>
-          match <- beval mode (fuel - 1) config e verbose with
-          | .success config' (Value.num n) =>
-            IO.println n
-            return .success config' Value.unit
-          | .success _ _ => return .runtimeError "printInt expects argument to evaluate to an integer."
-          | .outOfFuel => return .outOfFuel
-          | .runtimeError msg => return .runtimeError msg
-          | .ioForbidden => return .ioForbidden
-
-      | Expr.printString e => do
-        match mode with
-        | .ioFree => return .ioForbidden
-        | .normal =>
-          match <- beval mode (fuel - 1) config e verbose with
-          | .success config' (Value.str s) =>
-            IO.println s
-            return .success config' Value.unit
-          | .success _ _ => return .runtimeError "printString expects argument to evaluate to a string."
-          | .outOfFuel => return .outOfFuel
-          | .runtimeError msg => return .runtimeError msg
-          | .ioForbidden => return .ioForbidden
+        .runtimeError "Cannot execute extern pure function – no implementation provided"
 
   /-- Helper for evaluating function bodies (impure vs pure) -/
-  def bevalFunctionBody (mode : EvalMode) (fuel : Nat) (verbose : Bool)
+  def bevalFunctionBody (fuel : Nat) (verbose : Bool)
                         (currentConfig : Config) (closureEnv : VarEnv)
                         (paramName : Name) (argValue : Value) (body : Expr)
-                        (isPure : Bool) : IO EvalResult := do
+                        (isPure : Bool) : EvalResult :=
     match fuel with
-    | 0 => return .outOfFuel
+    | 0 => .outOfFuel
     | fuel' + 1 =>
       let updatedEnv := VarEnv.update closureEnv paramName argValue
       let bodyConfig := { currentConfig with varEnv := updatedEnv, pureMode := isPure }
-      match <- beval mode fuel' bodyConfig body verbose with
+      match beval fuel' bodyConfig body verbose with
       | .success evalConfig v =>
         if isPure then
           -- Restore caller's pureMode (pure bodies stay pure when caller is pure)
-          return .success ({ currentConfig with pureMode := currentConfig.pureMode }) v
+          .success ({ currentConfig with pureMode := currentConfig.pureMode }) v
         else
           let finalConfig := { currentConfig with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr, pureMode := currentConfig.pureMode }
-          return .success finalConfig v
-      | .outOfFuel => return .outOfFuel
-      | .runtimeError msg => return .runtimeError msg
-      | .ioForbidden => return .ioForbidden
+          .success finalConfig v
+      | .outOfFuel => .outOfFuel
+      | .runtimeError msg => .runtimeError msg
 
 end -- mutual
 
-/- Convenience runner that prints errors and returns EvalResult -/
-def runBig (fuel : Nat) (expr : Expr) (verbose : Bool := false) (mode : EvalMode := .normal) : IO EvalResult := do
+/- Convenience runner that returns EvalResult from an empty initial state. -/
+def runBig (fuel : Nat) (expr : Expr) (verbose : Bool := false) : EvalResult :=
   let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
-  let result <- beval mode fuel initialConfig expr verbose
-  match result with
-  | .outOfFuel => IO.println "Error: out of fuel"
-  | .runtimeError msg => IO.println s!"Error: {msg}"
-  | .ioForbidden => IO.println "Error: IO operation attempted in ioFree mode"
-  | .success _ _ => pure ()
-  return result
+  beval fuel initialConfig expr verbose
 
 end LeanPoison

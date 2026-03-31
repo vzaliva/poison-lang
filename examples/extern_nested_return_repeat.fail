@@ -1,0 +1,12 @@
+Evaluating file: examples/extern_nested_return_repeat.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=true, pred={}},
+  MemoryTypeEnv: {
+    0 := (true, {1, pfn v -> v >= 0, deps: [x : {type=int, poison=false, pred={}}, y : {type=int, poison=false, pred={}}]}),
+    1 := (true, {2, pfn v -> v >= 0, deps: [x : {type=int, poison=false, pred={}}, y : {type=int, poison=false, pred={}}]})
+  },
+  tagEnv: {},
+  nextLoc: 2
+
+Runtime error: Cannot execute extern function – no implementation provided

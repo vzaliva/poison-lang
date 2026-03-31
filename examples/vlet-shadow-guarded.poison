@@ -1,4 +1,4 @@
---! poison-interpreter --regime "3=true"
+--! poison-interpreter --regime "1=true"
 -- Test: shadowing a variable with guardClosure predicate whose tag is interpreted
 -- This should be rejected by the typechecker
 

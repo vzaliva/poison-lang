@@ -1,8 +1,0 @@
-Evaluating file: examples/app-provenance-gate.poison (verbose mode)
-
-Type checking passed: Type: {type=int, poison=true, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
-
-Result: 0
-Final state:
-Variable environment: []
-  Memory: []

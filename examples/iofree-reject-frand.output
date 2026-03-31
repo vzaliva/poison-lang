@@ -1,4 +1,0 @@
-Evaluating file: examples/iofree-reject-frand.poison (verbose mode)
-
-Type checking error: IO operation (frand) forbidden in ioFree mode
-
