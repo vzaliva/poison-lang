@@ -2627,7 +2627,7 @@ theorem matchGuard_runtime_branch_alignment
     guard_branch_alignment predSat tm mode ctx μ ρ θ a pm
       hwfTm hpred hcwr cond k deps b b' cfg' howner hmatch hregime hterm
 
-private lemma stepFR_ite_mode1
+private lemma stepFR_ite_true
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
@@ -3017,8 +3017,8 @@ private lemma stepFR_ite_mode1
       hres_agree2' hclean2
     exact agreeValueUnder_transport_clean hclean hetyp hpoison_imp hagree2'
 
--- Mode 2: R(k) = some false (else-branch effective)
-private lemma stepFR_ite_mode2
+-- Known false case: R(k) = some false (else-branch effective)
+private lemma stepFR_ite_false
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
@@ -5911,19 +5911,19 @@ lemma stepFR_ite
   have hstruct := typecheckIf_structure ctxᵢ e1 e2 e3 (Nat.succ fuel') res htc'
   -- Case split on typecheck structure (known true / known false / standard)
   cases hstruct with
-  | inl h_mode1 =>
-    -- Mode 1: R(k) = some true (then-branch effective)
+  | inl h_true =>
+    -- Known true case: the then-branch is the only proof-relevant path.
     obtain ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, htc2,
-            hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp⟩ := h_mode1
-    exact stepFR_ite_mode1 ctxᵢ predSat tm e1 e2 e3 fuel' res IH htc k deps hmatch hregime_true
+            hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp⟩ := h_true
+    exact stepFR_ite_true ctxᵢ predSat tm e1 e2 e3 fuel' res IH htc k deps hmatch hregime_true
       res1 res2 htc1 hbool htc2 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison hetyp
   | inr h_rest =>
     cases h_rest with
-    | inl h_mode2 =>
-      -- Mode 2: R(k) = some false (else-branch effective)
+    | inl h_false =>
+      -- Known false case: the else-branch is the only proof-relevant path.
       obtain ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, res3, htc3,
-              hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp⟩ := h_mode2
-      exact stepFR_ite_mode2 ctxᵢ predSat tm e1 e2 e3 fuel' res IH htc k deps hmatch hregime_false
+              hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp⟩ := h_false
+      exact stepFR_ite_false ctxᵢ predSat tm e1 e2 e3 fuel' res IH htc k deps hmatch hregime_false
         res1 res3 htc1 hbool htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison hetyp
     | inr h_std =>
       obtain ⟨h_std_case, res1, htc1, hbool, res2, htc2, res3, htc3,

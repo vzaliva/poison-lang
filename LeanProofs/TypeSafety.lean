@@ -10169,11 +10169,11 @@ private lemma typecheckIf_mem_contains_preserved
   | succ fuel' =>
       have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
       rcases typecheckIf_structure ctx e1 e2 e3 (fuel' + 1) res htc with
-        hmode1 | hmode2 | hstd
-      · rcases hmode1 with
-          ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, hmode1tail⟩
-        simp at hmode1tail
-        rcases hmode1tail with
+        htrue | hfalse | hstd
+      · rcases htrue with
+          ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, htrueTail⟩
+        simp at htrueTail
+        rcases htrueTail with
           ⟨htc2, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
         let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
         have hcontains2 : res2.memEnv'.contains l :=
@@ -10181,10 +10181,10 @@ private lemma typecheckIf_mem_contains_preserved
             (by simpa [typecheck, ctxTrue] using htc2) l
             (by simpa [ctxTrue] using hcontains)
         simpa [h_mem] using hcontains2
-      · rcases hmode2 with
-          ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, res3, hmode2tail⟩
-        simp at hmode2tail
-        rcases hmode2tail with
+      · rcases hfalse with
+          ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, res3, hfalseTail⟩
+        simp at hfalseTail
+        rcases hfalseTail with
           ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
         let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
         have hcontains3 : res3.memEnv'.contains l :=
@@ -11297,11 +11297,11 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                         typecheckIf .ioFree { ctx with pureCtx := true } e1 e2 e3 fuel' = .ok res := by
                       simpa [typecheckExpr] using htc
                     rcases typecheckIf_structure { ctx with pureCtx := true } e1 e2 e3 fuel' res htcIf with
-                      hmode1 | hmode2 | hstd
-                    · rcases hmode1 with
-                        ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, hmode1tail⟩
-                      simp at hmode1tail
-                      rcases hmode1tail with
+                      htrue | hfalse | hstd
+                    · rcases htrue with
+                        ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, htrueTail⟩
+                      simp at htrueTail
+                      rcases htrueTail with
                         ⟨htc2, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
                       let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
                       have htc2' :
@@ -11314,10 +11314,10 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                         simpa [h_mem] using hl
                       have hctxTrue : ctxTrue.memEnv.contains l := hsub2 l hl2
                       simpa [ctxTrue] using hctxTrue
-                    · rcases hmode2 with
-                        ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, res3, hmode2tail⟩
-                      simp at hmode2tail
-                      rcases hmode2tail with
+                    · rcases hfalse with
+                        ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, res3, hfalseTail⟩
+                      simp at hfalseTail
+                      rcases hfalseTail with
                         ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
                       let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
                       have htc3' :
@@ -11740,11 +11740,11 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                         typecheckIf .ioFree { ctx with pureCtx := true } e1 e2 e3 fuel' = .ok res := by
                       simpa [typecheckExpr] using htc
                     rcases typecheckIf_structure { ctx with pureCtx := true } e1 e2 e3 fuel' res htcIf with
-                      hmode1 | hmode2 | hstd
-                    · rcases hmode1 with
-                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, hmode1tail⟩
-                      simp at hmode1tail
-                      rcases hmode1tail with
+                      htrue | hfalse | hstd
+                    · rcases htrue with
+                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, htrueTail⟩
+                      simp at htrueTail
+                      rcases htrueTail with
                         ⟨htc2, _h_mem, _h_tag, _h_loc, _h_ntag, h_regime, _h_poison, _h_etyp⟩
                       let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩ }
                       have htc2' :
@@ -11756,10 +11756,10 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                           res2.regime'.lookup? k = some b :=
                         ih (fuel' - 1) hltSub ctxTrue e2 pe2 res2 hpe2 htc2' k b hk2
                       simpa [h_regime] using hreg2
-                    · rcases hmode2 with
-                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res3, hmode2tail⟩
-                      simp at hmode2tail
-                      rcases hmode2tail with
+                    · rcases hfalse with
+                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res3, hfalseTail⟩
+                      simp at hfalseTail
+                      rcases hfalseTail with
                         ⟨htc3, _h_mem, _h_tag, _h_loc, _h_ntag, h_regime, _h_poison, _h_etyp⟩
                       let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩ }
                       have htc3' :
@@ -12176,11 +12176,11 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                         typecheckIf .ioFree { ctx with pureCtx := true } e1 e2 e3 fuel' = .ok res := by
                       simpa [typecheckExpr] using htc
                     rcases typecheckIf_structure { ctx with pureCtx := true } e1 e2 e3 fuel' res htcIf with
-                      hmode1 | hmode2 | hstd
-                    · rcases hmode1 with
-                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, hmode1tail⟩
-                      simp at hmode1tail
-                      rcases hmode1tail with
+                      htrue | hfalse | hstd
+                    · rcases htrue with
+                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, htrueTail⟩
+                      simp at htrueTail
+                      rcases htrueTail with
                         ⟨htc2, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
                       let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩ }
                       have htc2' :
@@ -12192,10 +12192,10 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                           res2.memEnv'.lookup l = some qt :=
                         ih (fuel' - 1) hltSub ctxTrue e2 pe2 res2 hpe2 htc2' l qt hlookupCtxTrue
                       simpa [h_mem] using hlookup2
-                    · rcases hmode2 with
-                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res3, hmode2tail⟩
-                      simp at hmode2tail
-                      rcases hmode2tail with
+                    · rcases hfalse with
+                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res3, hfalseTail⟩
+                      simp at hfalseTail
+                      rcases hfalseTail with
                         ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
                       let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩ }
                       have htc3' :
@@ -12665,11 +12665,11 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                         typecheckIf .ioFree { ctx with pureCtx := true } e1 e2 e3 fuel' = .ok res := by
                       simpa [typecheckExpr] using htc
                     rcases typecheckIf_structure { ctx with pureCtx := true } e1 e2 e3 fuel' res htcIf with
-                      hmode1 | hmode2 | hstd
-                    · rcases hmode1 with
-                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, hmode1tail⟩
-                      simp at hmode1tail
-                      rcases hmode1tail with
+                      htrue | hfalse | hstd
+                    · rcases htrue with
+                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, htrueTail⟩
+                      simp at htrueTail
+                      rcases htrueTail with
                         ⟨htc2, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
                       let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩ }
                       have htc2' :
@@ -12683,10 +12683,10 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                           res2.memEnv'.lookup l = some qt :=
                         ih (fuel' - 1) hltSub ctxTrue e2 pe2 res2 hpe2 htc2' l qt k hlookupCtxTrue hguard hRdefTrue
                       simpa [h_mem] using hlookup2
-                    · rcases hmode2 with
-                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res3, hmode2tail⟩
-                      simp at hmode2tail
-                      rcases hmode2tail with
+                    · rcases hfalse with
+                        ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res3, hfalseTail⟩
+                      simp at hfalseTail
+                      rcases hfalseTail with
                         ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
                       let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩ }
                       have htc3' :
