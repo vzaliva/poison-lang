@@ -641,19 +641,6 @@ def StepFRDerefCtxToValCons
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   DerefCtxToValCons CtxCons ValCons
 
-theorem stepFRDeref_ctxToValCons_unmasked
-  (predSat : PredSat) :
-  StepFRDerefCtxToValCons
-    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
-    (fun R qt μ θ v => valueConsistentWithRegime predSat R qt μ θ v) := by
-  intro ctx e' res' res1 fuel'' cf θ a' n htc' htc1' hmemEq hvloc hlookup_cf hctxCons
-  simpa [StepFRDerefCtxToValCons] using
-    deref_valueConsistentWithRegime_of_typecheck
-      (ctxᵢ := ctx) (predSat := predSat)
-      (e := e') (res := res') (res1 := res1) (fuel' := fuel'')
-      (cf := cf) (θ' := θ) (a' := a') (n := n)
-      htc' htc1' hmemEq hvloc hlookup_cf hctxCons
-
 theorem stepFRDeref_ctxToValCons_masked
   (masked : Tag → Prop) (predSat : PredSat) :
   StepFRDerefCtxToValCons
@@ -668,27 +655,6 @@ theorem stepFRDeref_ctxToValCons_masked
       (e := e') (res := res') (res1 := res1) (fuel' := fuel'')
       (cf := cf) (θ' := θ) (a' := a') (n := n)
       htc' htc1' hmemEq hvloc hlookup_cf hctxCons
-
-theorem stepFRSingleRunFinalCleanPcTrue_deref_param
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (hCtxToVal : StepFRDerefCtxToValCons CtxCons ValCons)
-  (IH : StepFRSingleRunFinalCleanPcTrueParam_IH
-    CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrueParam
-    CtxCons ValCons .ioFree ctxᵢ (Expr.deref e) res predSat tm := by
-  change
-    StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-      CtxCons ValCons .ioFree ctxᵢ (Expr.deref e) res predSat tm
-  exact
-    stepFRSingleRunFinalCleanPcTrue_deref_parametric
-      (CtxCons := CtxCons) (ValCons := ValCons)
-      (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
-      (e := e) (fuel' := fuel') (res := res)
-      hCtxToVal IH htc
 
 lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
   (masked : Tag → Prop)
@@ -762,36 +728,6 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
           simpa [h_regime] using hclean_out
         simpa [hmem] using hpres_fn l qt_in qt_out hlookup_in hlookup_out1 hclean_out1
   refine ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final⟩
-
-lemma stepFRSingleRunFinalCleanPcTrue_deref
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ (Expr.deref e) res predSat tm := by
-  let CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop :=
-    fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ
-  let ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop :=
-    fun R qt μ θ v => valueConsistentWithRegime predSat R qt μ θ v
-  have hIH : StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
-      CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')) := by
-    intro m hm e' ctx hwfTm' res' htc'
-    simpa [StepFRSingleRunFinalCleanPcTrue, StepFRSingleRunFinalCleanPcTrueWithCtxValCons, CtxCons, ValCons] using
-      IH m hm e' ctx hwfTm' res' htc'
-  have hCtxToVal : DerefCtxToValCons CtxCons ValCons := by
-    intro ctx e' res' res1 fuel'' cf θ a' n htc' htc1' hmemEq hvloc hlookup_cf hctxCons
-    simpa [CtxCons, ValCons] using
-      deref_valueConsistentWithRegime_of_typecheck
-        (ctxᵢ := ctx) (predSat := predSat)
-        (e := e') (res := res') (res1 := res1) (fuel' := fuel'')
-        (cf := cf) (θ' := θ) (a' := a') (n := n)
-        htc' htc1' hmemEq hvloc hlookup_cf hctxCons
-  simpa [StepFRSingleRunFinalCleanPcTrue, StepFRSingleRunFinalCleanPcTrueWithCtxValCons, CtxCons, ValCons] using
-    stepFRSingleRunFinalCleanPcTrue_deref_parametric
-      (CtxCons := CtxCons) (ValCons := ValCons)
-      (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
-      (e := e) (fuel' := fuel') (res := res)
-      hCtxToVal hIH htc
 
 lemma stepFR_deref
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)

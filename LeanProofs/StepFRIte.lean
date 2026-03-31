@@ -2280,47 +2280,6 @@ lemma matchGuard_ok_runtime_owner
 
 /-- Successful `matchGuard` implies the returned guard tag appears as
     `qtypGuardTag` in the context's `varEnv` or `memEnv`. -/
-lemma matchGuard_ok_tag_from_ctx
-    (ctx : TypeContext) (cond : Expr) (k : Tag) (deps : Deps)
-    {fuel : Nat}
-    (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps)) :
-    (∃ x qt, ctx.varEnv.lookup x = some qt ∧ qtypGuardTag qt = some k) ∨
-    (∃ l qt, ctx.memEnv.lookup l = some qt ∧ qtypGuardTag qt = some k) := by
-  have howner := matchGuard_ok_extract_owner_in_ctx ctx cond k deps hmatch
-  rcases howner with hvar | href
-  · rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred⟩
-    left
-    exact ⟨x, qt, hlookup, by simp [qtypGuardTag, hpred]⟩
-  · rcases href with ⟨x, qt, ls, arg_name, pred_body, var_env, _hlookup, _hetyp, hlsNonempty, hall⟩
-    have hne : ls ≠ (∅ : LocSet) := by
-      exact (Std.ExtTreeSet.isEmpty_eq_false_iff).1 hlsNonempty
-    have hexists : ∃ l, l ∈ ls := by
-      by_contra hno
-      apply hne
-      exact (Std.ExtTreeSet.eq_empty_iff_forall_not_mem).2 (by
-        intro l
-        exact fun hl => hno ⟨l, hl⟩)
-    rcases hexists with ⟨l, hl⟩
-    rcases hall l hl with ⟨memQt, hlookupMem, hpredMem⟩
-    right
-    exact ⟨l, memQt, hlookupMem, by simp [qtypGuardTag, hpredMem]⟩
-
-/-- Optional local helper for the `ite` FR modes.
-    Shows the guard evaluation boolean is aligned with the regime value once
-    `matchGuard` succeeds and an owner witness is available.
-
-    NOTE: `howner` is the runtime owner-witness needed by `PredSatLaws.match_iff`
-    (premise (iii)). At intended call sites, derive it via bridge lemmas:
-    `matchGuard_ok_owner_in_ctx` then `owner_in_ctx_to_runtime`.
-    Sketch:
-    `matchGuard_ok_owner_in_ctx`:
-      `matchGuard cond ctx.memEnv ctx.varEnv = .ok (k,deps) →`
-      `∃ owner, ownerHasGuardTagInCtx ctx cond k owner`
-    `owner_in_ctx_to_runtime`:
-      `runtimeInstantiatesCtx ctx μ ρ θ → ownerHasGuardTagInCtx ctx cond k owner →`
-      `∃ v, ownerWitnessAtRuntime owner μ ρ θ v`
-    This helper itself does not need `runtimeInstantiatesCtx`; that premise
-    is expected while constructing `howner` via the bridge lemmas. -/
 lemma guard_branch_alignment
     (predSat : PredSat) (tm : TagMeaning) (mode : LeanPoison.EvalMode)
     (ctx : TypeContext) (μ₀ : Memory) (ρ₀ : VarEnv) (θ₀ : RealizationMap)

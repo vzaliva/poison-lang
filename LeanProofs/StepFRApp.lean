@@ -178,30 +178,6 @@ private def AppJoinValConsFromMember
 -- properties from `(ctxAfter ctx first)` to `(ctxAfter ctx res)`. Used by both peClosure
 -- and closure branches.
 
-lemma join_transport_runtimeInstantiatesCtx
-  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (_h_join : joinTypeResults ctx first rest = .ok res)
-  (h_mem : ∀ l, first.memEnv'.contains l → res.memEnv'.contains l)
-  (h_first : runtimeInstantiatesCtx (ctxAfter ctx first) μ ρ θ) :
-  runtimeInstantiatesCtx (ctxAfter ctx res) μ ρ θ := by
-  unfold runtimeInstantiatesCtx at h_first ⊢
-  simp only [ctxAfter]
-  constructor
-  · intro l a hθ
-    have ⟨hcontains, hμ⟩ := h_first.1 l a hθ
-    exact ⟨h_mem l hcontains, hμ⟩
-  · exact h_first.2
-
-theorem stepFRApp_join_transport_runtimeInstantiatesCtx
-  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (h_join : joinTypeResults ctx first rest = .ok res)
-  (h_mem : ∀ l, first.memEnv'.contains l → res.memEnv'.contains l)
-  (h_first : runtimeInstantiatesCtx (ctxAfter ctx first) μ ρ θ) :
-  runtimeInstantiatesCtx (ctxAfter ctx res) μ ρ θ :=
-  join_transport_runtimeInstantiatesCtx ctx first rest res μ ρ θ h_join h_mem h_first
-
 private lemma join_transport_wfTypeContext
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (_h_join : joinTypeResults ctx first rest = .ok res)
@@ -3200,53 +3176,6 @@ lemma join_transport_agreeOnClean_from_member
             hmemberVars₁_transport hmemberCvcr₁_transport
             hclean hagree
         exact agreeVarUnder.agree_values x qt v₀ v₁ hlookup₀ hlookup₁ hagree'
-
-theorem stepFRApp_join_transport_agreeOnClean_from_member
-  (predSat : PredSat) (ctx : TypeContext)
-  (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
-  (h_join : joinTypeResults ctx first rest = .ok res)
-  (hmem_src : src ∈ first :: rest)
-  (h_src :
-    agreeOnClean predSat (ctxAfter ctx src).regime (ctxAfter ctx src)
-      μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁)
-  (h_clean_res_to_src :
-    ∀ qt,
-      qtypCleanUnder (ctxAfter ctx res).regime qt →
-      qtypCleanUnder (ctxAfter ctx src).regime qt)
-  (h_mem_from_src_or_unrealized :
-    ∀ l qt,
-      (ctxAfter ctx res).memEnv.lookup l = some qt →
-      qtypCleanUnder (ctxAfter ctx res).regime qt →
-      ((∃ qt_src,
-          (ctxAfter ctx src).memEnv.lookup l = some qt_src ∧
-          qtypCleanUnder (ctxAfter ctx src).regime qt_src ∧
-          qt.etyp = qt_src.etyp ∧
-          (qt.poison = false → qt_src.poison = false)) ∨
-        (θ₀.lookup l = none ∧ θ₁.lookup l = none)))
-  (hmemberVars₀_transport :
-    ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-      MemberVarsRegimeEvidence predSat src.regime' μ₀ σcap ρcap →
-        MemberVarsRegimeEvidence predSat res.regime' μ₀ σcap ρcap)
-  (hmemberCvcr₀_transport :
-    ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-      MemberCvcrEvidence predSat src.regime' μ₀ θ₀ σcap ρcap →
-        MemberCvcrEvidence predSat res.regime' μ₀ θ₀ σcap ρcap)
-  (hmemberVars₁_transport :
-    ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-      MemberVarsRegimeEvidence predSat src.regime' μ₁ σcap ρcap →
-        MemberVarsRegimeEvidence predSat res.regime' μ₁ σcap ρcap)
-  (hmemberCvcr₁_transport :
-    ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-      MemberCvcrEvidence predSat src.regime' μ₁ θ₁ σcap ρcap →
-        MemberCvcrEvidence predSat res.regime' μ₁ θ₁ σcap ρcap) :
-  agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
-    μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ :=
-  join_transport_agreeOnClean_from_member
-    predSat ctx first src rest res μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
-    h_join hmem_src h_src h_clean_res_to_src h_mem_from_src_or_unrealized
-    hmemberVars₀_transport hmemberCvcr₀_transport hmemberVars₁_transport hmemberCvcr₁_transport
-
 
 private lemma join_transport_resultAgreesIfClean
   (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -8132,40 +8061,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric
           singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest hetyp1 hmap heq_results h_join
 
-lemma stepFRSingleRunFinalCleanPcTrue_app
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ (Expr.app e1 e2) res predSat tm := by
-  exact
-    stepFRSingleRunFinalCleanPcTrue_app_parametric
-      (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
-      (valueConsistentWithRegime predSat)
-      ctxᵢ predSat tm
-      (fun ctx result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg =>
-        consistentWithRegime_app_arrow_body_start ctx predSat tm result2 result1 etyp2 p2 pred2
-          st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg)
-      (fun ctx result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg =>
-        consistentWithRegime_app_parrow_body_start ctx predSat tm result2 result1 etyp2 p2 pred2
-          st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg)
-      (fun ctx bodyCtx result2 result1 src result3 qtSrc cpre cbody cfinal θpre θfinal =>
-        consistentWithRegime_app_member_from_body predSat ctx bodyCtx result2 result1 src result3
-          qtSrc cpre cbody cfinal θpre θfinal)
-      (fun ctx first src rest res μ ρ θ =>
-        joinTypeResults_transport_consistentWithRegime_from_member
-          (predSat := predSat) (ctx := ctx) (first := first) (src := src)
-          (rest := rest) (res := res) (μ := μ) (ρ := ρ) (θ := θ))
-      (fun ctx bodyCtx src result3 p p1 μ_src μ_body θ v =>
-        valueConsistentWithRegime_app_body_result_member predSat ctx bodyCtx src result3
-          p p1 μ_src μ_body θ v)
-      (fun ctx first src rest res μ θ v =>
-        joinTypeResults_transport_valueConsistentWithRegime_from_member
-          (predSat := predSat) (ctx := ctx) (first := first) (src := src)
-          (rest := rest) (res := res) (μ := μ) (θ := θ) (v := v))
-      e1 e2 fuel' res
-      singleIH htc
-
 def StepFRAppClosureBodyStart
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
@@ -8195,18 +8090,6 @@ def StepFRAppJoinValConsFromMember
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   AppJoinValConsFromMember ValCons
 
-theorem stepFRApp_closureBodyStart_unmasked
-  (predSat : PredSat) (tm : TagMeaning) :
-  StepFRAppClosureBodyStart
-    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
-    (valueConsistentWithRegime predSat) predSat tm := by
-  intro ctx result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg
-    hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure
-  simpa [StepFRAppClosureBodyStart] using
-    consistentWithRegime_app_arrow_body_start ctx predSat tm result2 result1 etyp2 p2 pred2
-      st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg
-      hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure
-
 theorem stepFRApp_closureBodyStart_masked
   (masked : Tag → Prop) (predSat : PredSat) (tm : TagMeaning) :
   StepFRAppClosureBodyStart
@@ -8217,18 +8100,6 @@ theorem stepFRApp_closureBodyStart_masked
     hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure
   simpa [StepFRAppClosureBodyStart] using
     consistentWithRegimeMasked_app_arrow_body_start masked ctx predSat tm result2 result1 etyp2 p2 pred2
-      st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg
-      hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure
-
-theorem stepFRApp_pClosureBodyStart_unmasked
-  (predSat : PredSat) (tm : TagMeaning) :
-  StepFRAppPClosureBodyStart
-    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
-    (valueConsistentWithRegime predSat) predSat tm := by
-  intro ctx result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg
-    hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure
-  simpa [StepFRAppPClosureBodyStart] using
-    consistentWithRegime_app_parrow_body_start ctx predSat tm result2 result1 etyp2 p2 pred2
       st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg
       hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure
 
@@ -8245,18 +8116,6 @@ theorem stepFRApp_pClosureBodyStart_masked
       st1 st2 p p1 tcls x body ρpre ρcap μ_arg μ θ_arg θ vArg
       hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure
 
-theorem stepFRApp_memberCtxCons_unmasked
-  (predSat : PredSat) :
-  StepFRAppMemberCtxCons
-    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
-    predSat := by
-  intro ctx bodyCtx result2 result1 src result3 qtSrc cpre cbody cfinal θpre θfinal
-    hpred_mem srcEq hmem hvar hreg hθext hctxCons_pre hctxCons_body
-  simpa [StepFRAppMemberCtxCons] using
-    consistentWithRegime_app_member_from_body predSat ctx bodyCtx result2 result1 src result3
-      qtSrc cpre cbody cfinal θpre θfinal
-      hpred_mem srcEq hmem hvar hreg hθext hctxCons_pre hctxCons_body
-
 theorem stepFRApp_memberCtxCons_masked
   (masked : Tag → Prop) (predSat : PredSat) :
   StepFRAppMemberCtxCons
@@ -8269,17 +8128,6 @@ theorem stepFRApp_memberCtxCons_masked
       qtSrc cpre cbody cfinal θpre θfinal
       hpred_mem srcEq hmem hvar hreg hθext hctxCons_pre hctxCons_body
 
-theorem stepFRApp_joinCtxConsFromMember_unmasked
-  (predSat : PredSat) :
-  StepFRAppJoinCtxConsFromMember
-    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ) := by
-  intro ctx first src rest res μ ρ θ h_join h_src hctxCons
-  simpa [StepFRAppJoinCtxConsFromMember] using
-    joinTypeResults_transport_consistentWithRegime_from_member
-      (predSat := predSat) (ctx := ctx) (first := first) (src := src)
-      (rest := rest) (res := res) (μ := μ) (ρ := ρ) (θ := θ)
-      h_join h_src hctxCons
-
 theorem stepFRApp_joinCtxConsFromMember_masked
   (masked : Tag → Prop) (predSat : PredSat) :
   StepFRAppJoinCtxConsFromMember
@@ -8291,14 +8139,6 @@ theorem stepFRApp_joinCtxConsFromMember_masked
       (rest := rest) (res := res) (μ := μ) (ρ := ρ) (θ := θ)
       h_join h_src hctxCons
 
-theorem stepFRApp_bodyResultValCons_unmasked
-  (predSat : PredSat) :
-  StepFRAppBodyResultValCons (valueConsistentWithRegime predSat) := by
-  intro ctx bodyCtx src result3 p p1 μ_src μ_body θ v hsrc hμ hval
-  simpa [StepFRAppBodyResultValCons] using
-    valueConsistentWithRegime_app_body_result_member predSat ctx bodyCtx src result3
-      p p1 μ_src μ_body θ v hsrc hμ hval
-
 theorem stepFRApp_bodyResultValCons_masked
   (masked : Tag → Prop) (predSat : PredSat) :
   StepFRAppBodyResultValCons
@@ -8307,16 +8147,6 @@ theorem stepFRApp_bodyResultValCons_masked
   simpa [StepFRAppBodyResultValCons] using
     valueConsistentWithRegimeMasked_app_body_result_member masked predSat ctx bodyCtx src result3
       p p1 μ_src μ_body θ v hsrc hμ hval
-
-theorem stepFRApp_joinValConsFromMember_unmasked
-  (predSat : PredSat) :
-  StepFRAppJoinValConsFromMember (valueConsistentWithRegime predSat) := by
-  intro ctx first src rest res μ θ v h_join h_src hval
-  simpa [StepFRAppJoinValConsFromMember] using
-    joinTypeResults_transport_valueConsistentWithRegime_from_member
-      (predSat := predSat) (ctx := ctx) (first := first) (src := src)
-      (rest := rest) (res := res) (μ := μ) (θ := θ) (v := v)
-      h_join h_src hval
 
 theorem stepFRApp_joinValConsFromMember_masked
   (masked : Tag → Prop) (predSat : PredSat) :
@@ -8328,38 +8158,6 @@ theorem stepFRApp_joinValConsFromMember_masked
       (masked := masked) (predSat := predSat) (ctx := ctx) (first := first) (src := src)
       (rest := rest) (res := res) (μ := μ) (θ := θ) (v := v)
       h_join h_src hval
-
-theorem stepFRSingleRunFinalCleanPcTrue_app_param
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (ctxClosureBodyStart :
-    StepFRAppClosureBodyStart CtxCons ValCons predSat tm)
-  (ctxPClosureBodyStart :
-    StepFRAppPClosureBodyStart CtxCons ValCons predSat tm)
-  (ctxMember :
-    StepFRAppMemberCtxCons CtxCons predSat)
-  (ctxJoinMember :
-    StepFRAppJoinCtxConsFromMember CtxCons)
-  (valBodyResult :
-    StepFRAppBodyResultValCons ValCons)
-  (valJoinMember :
-    StepFRAppJoinValConsFromMember ValCons)
-  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (singleIH :
-    StepFRSingleRunFinalCleanPcTrueParam_IH
-      CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrueParam
-    CtxCons ValCons .ioFree ctxᵢ (Expr.app e1 e2) res predSat tm := by
-  change
-    StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-      CtxCons ValCons .ioFree ctxᵢ (Expr.app e1 e2) res predSat tm
-  exact
-    stepFRSingleRunFinalCleanPcTrue_app_parametric
-      CtxCons ValCons ctxᵢ predSat tm
-      ctxClosureBodyStart ctxPClosureBodyStart ctxMember ctxJoinMember valBodyResult valJoinMember
-      e1 e2 fuel' res singleIH htc
 
 private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (masked : Tag → Prop)

@@ -1428,68 +1428,6 @@ lemma PreservesInheritedFinalCleanLocsOneRun.compose
       hclean_out
   exact PreservesInheritedCleanLocOneRun.trans hpres_mid hpres_final
 
-lemma singleRunFinalCleanWitness_of_same_state
-  {ctx : TypeContext} {res : TypeResult}
-  {predSat : PredSat} {tm : TagMeaning}
-  {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
-  {cf : Config} {o : Value}
-  {a : Address} {pm : Bool}
-  (hctxAfter : ctxAfter ctx res = ctx)
-  (hcf : cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
-  (hvaltyp : valueHasETyp θ o res.qualType.etyp)
-  (hvalc : valueConsistentWithRegime predSat ctx.regime res.qualType μ θ o)
-  (_hwfTm : wfTagMeaningCtx tm ctx)
-  (_hwf : wfTypeContext ctx)
-  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
-  (_hreg : regimeConsistentWithCtx ctx)
-  (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ)
-  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }) :
-  ∃ (θ' : RealizationMap),
-    wfExtendsMap θ θ' ∧
-    valueHasETyp θ' o res.qualType.etyp ∧
-    runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
-    consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
-    valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-    PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' := by
-  refine ⟨θ, ?_, hvaltyp, ?_, ?_, ?_, ?_⟩
-  · exact ⟨fun _ _ hlookup => hlookup, fun hθwf => hθwf⟩
-  · simpa [hctxAfter, hcf] using hric
-  · simpa [hctxAfter, hcf] using hcwr
-  · simpa [hctxAfter, hcf] using hvalc
-  · simpa [hcf] using (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctx) (res := res) (ρ := ρ) hric)
-
-lemma singleRunFinalCleanWitness_of_same_state_param
-  {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
-  {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
-  {ctx : TypeContext} {res : TypeResult}
-  {_predSat : PredSat} {tm : TagMeaning}
-  {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
-  {cf : Config} {o : Value}
-  {a : Address} {pm : Bool}
-  (hctxAfter : ctxAfter ctx res = ctx)
-  (hcf : cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
-  (hvaltyp : valueHasETyp θ o res.qualType.etyp)
-  (hctxCons : CtxCons ctx μ ρ θ)
-  (hvalc : ValCons ctx.regime res.qualType μ θ o)
-  (_hwfTm : wfTagMeaningCtx tm ctx)
-  (_hwf : wfTypeContext ctx)
-  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
-  (_hreg : regimeConsistentWithCtx ctx)
-  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }) :
-  ∃ (θ' : RealizationMap),
-    wfExtendsMap θ θ' ∧
-    valueHasETyp θ' o res.qualType.etyp ∧
-    runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
-    CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
-    ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-    PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' := by
-  refine ⟨θ, ?_, hvaltyp, ?_, ?_, ?_, ?_⟩
-  · exact ⟨fun _ _ hlookup => hlookup, fun hθwf => hθwf⟩
-  · simpa [hctxAfter, hcf] using hric
-  · simpa [hctxAfter, hcf] using hctxCons
-  · simpa [hctxAfter, hcf] using hvalc
-  · simpa [hcf] using (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctx) (res := res) (ρ := ρ) hric)
-
 lemma singleRunFinalCleanWitness_of_same_state_maskedReg_param
   {masked : Tag → Prop}
   {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
@@ -3407,15 +3345,6 @@ lemma typecheckDeref_etyp_int
 -- If result is clean, condition must be clean (for standard mode ite)
 -- From h_poison: res.qualType.poison = joinPoison ctx.pc (joinPoison res1.poison (joinPoison res2.poison res3.poison))
 -- If res is clean, then the join is false, so all components are false
-lemma ite_clean_implies_cond_clean {ctx_pc res1_poison res2_poison res3_poison : Poison} :
-  joinPoison ctx_pc (joinPoison res1_poison (joinPoison res2_poison res3_poison)) = false →
-  res1_poison = false := by
-  intro h
-  have ⟨h1, h2⟩ := joinPoison_eq_false h
-  have ⟨h3, _h4⟩ := joinPoison_eq_false h2
-  exact h3
-
--- Extract guard tag directly from a predicate (helper for deref foldM lemmas).
 def predGuardTag (p : Predicate) : Option Tag :=
   match p with
   | Predicate.guardClosure k _ _ _ => some k
@@ -5534,25 +5463,6 @@ lemma StepFR_IH_of_induction
   StepFR_IH predSat tm k :=
   fun m hm e ctxᵢ _hwfTm res htc => IH m hm e ctxᵢ res htc
 
-lemma StepFRSingleRunFinalCleanPcTrue_IH_of_induction
-  (predSat : PredSat) (tm : TagMeaning) (k : Nat)
-  (IH : ∀ m < k, ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck .ioFree ctxᵢ e m = .ok res →
-      StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ e res predSat tm) :
-  StepFRSingleRunFinalCleanPcTrue_IH predSat tm k :=
-  fun m hm e ctxᵢ _hwfTm res htc => IH m hm e ctxᵢ res htc
-
-lemma StepFRSingleRunFinalCleanPcTrueParam_IH_of_induction
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (predSat : PredSat) (tm : TagMeaning) (k : Nat)
-  (IH : ∀ m < k, ∀ (e : Expr) (ctx : TypeContext) (res : TypeResult),
-    typecheck .ioFree ctx e m = .ok res →
-      StepFRSingleRunFinalCleanPcTrueParam
-        CtxCons ValCons .ioFree ctx e res predSat tm) :
-  StepFRSingleRunFinalCleanPcTrueParam_IH CtxCons ValCons predSat tm k :=
-  fun m hm e ctx _hwfTm res htc => IH m hm e ctx res htc
-
 lemma StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
   (masked : Tag → Prop)
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -6373,14 +6283,6 @@ lemma joinTypeResults_tagEnvConsistentWithRegime'
                 (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
                   first.nextLoc', first.nextTag')
                   a hfold h_first_tag h_rest
-
-lemma joinTypeResults_regimeConsistentWithCtx
-  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (h_join : joinTypeResults ctx first rest = .ok res)
-  (h_first : regimeConsistentWithCtx (ctxAfter ctx first))
-  (h_rest : ∀ r ∈ rest, regimeConsistentWithCtx (ctxAfter ctx r)) :
-  regimeConsistentWithCtx (ctxAfter ctx res) := by
-  exact joinTypeResults_tagEnvConsistentWithRegime' ctx first rest res h_join h_first h_rest
 
 private lemma joinTypeResults_tagEnvNotTrueAt
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -8470,12 +8372,6 @@ lemma join_transport_wfTagMeaningCtx_byFirst
                 (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag')
                 a hfold h_first_env
 
-lemma QTypRespectsTagMeaning_sub_byJoin
-    (tm : TagMeaning) {qt qt' : QTyp}
-    (h : QTypRespectsTagMeaning tm qt) (hinq : QTypInQTyp qt' qt) :
-    QTypRespectsTagMeaning tm qt' :=
-  fun hinq'' hqd => h (QTypInQTyp.trans _ qt' qt hinq'' hinq) hqd
-
 lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
   (tm : TagMeaning)
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -10378,67 +10274,6 @@ lemma applyPFnTClosure_preserves_memEnv_lookup
             applyPFnTClosure_ioFree_extern_fails
               ctx st1 st2 p p1 argEtyp argPoison argPred result2
               (Nat.succ fuelBody) x retSpec capturedEnv r happly
-
-lemma clean_lookup_origin_of_same_qt
-  {R R' : Regime} {Γ Γ' : MemoryTypeEnv} {l : Loc} {qt : QTyp}
-  (hlookup_in : Γ.lookup l = some qt)
-  (_hlookup_out : Γ'.lookup l = some qt)
-  (hmono : Regime.monotoneStep R R') :
-  qtypCleanUnder R' qt →
-  ∃ qt_in, Γ.lookup l = some qt_in ∧ qtypCleanUnder R qt_in := by
-  intro hclean
-  exact ⟨qt, hlookup_in, cleanUnder_of_monotone hmono hclean⟩
-
-lemma joinMemEnvsStrong_lookup_cleanUnder_left_or_right
-  (env1 env2 : MemoryTypeEnv) (R1 R2 : Regime) (l : Loc) (qt : QTyp)
-  (hlookup_join : (joinMemEnvsStrong env1 env2).lookup l = some qt)
-  (hclean_join : qtypCleanUnder (joinRegimes R1 R2) qt) :
-  (∃ qt1, env1.lookup l = some qt1 ∧ qtypCleanUnder R1 qt1) ∨
-  (∃ qt2, env2.lookup l = some qt2 ∧ qtypCleanUnder R2 qt2) := by
-  have hcontains_join : (joinMemEnvsStrong env1 env2).contains l :=
-    memEnv_contains_of_lookup_some (joinMemEnvsStrong env1 env2) l qt hlookup_join
-  rcases joinMemEnvsStrong_contains_implies_or env1 env2 l hcontains_join with hcontains1 | hcontains2
-  · rcases memEnv_lookup_some_of_contains env1 l hcontains1 with ⟨qt1, hlookup1⟩
-    left
-    cases hclean_join with
-    | clean hpoison =>
-        have henv1 : env1.lookup l ≠ none := by
-          intro hnone
-          rw [hlookup1] at hnone
-          contradiction
-        rcases joinMemEnvsStrong_lookup_clean_left env1 env2 l qt hlookup_join hpoison henv1 with
-          ⟨qt1', hlookup1', _hetyp, hpoison1'⟩
-        exact ⟨qt1', hlookup1', qtypCleanUnder.clean hpoison1'⟩
-    | guard k htag hk hnotfun =>
-        have htag1 : qtypGuardTag qt1 = some k :=
-          joinMemEnvsStrong_lookup_guardTag_left env1 env2 l qt qt1 k hlookup_join hlookup1 htag
-        have hk1 : R1.lookup? k = some true :=
-          joinRegimes_lookup_some_left R1 R2 k true hk
-        have hnotfun1 : qt1.etyp.isFunctionType = false := by
-          rw [memEnv_lookup_etyp_int env1 l qt1 hlookup1]
-          native_decide
-        exact ⟨qt1, hlookup1, qtypCleanUnder.guard k htag1 hk1 hnotfun1⟩
-  · rcases memEnv_lookup_some_of_contains env2 l hcontains2 with ⟨qt2, hlookup2⟩
-    right
-    cases hclean_join with
-    | clean hpoison =>
-        have henv2 : env2.lookup l ≠ none := by
-          intro hnone
-          rw [hlookup2] at hnone
-          contradiction
-        rcases joinMemEnvsStrong_lookup_clean_right env1 env2 l qt hlookup_join hpoison henv2 with
-          ⟨qt2', hlookup2', _hetyp, hpoison2'⟩
-        exact ⟨qt2', hlookup2', qtypCleanUnder.clean hpoison2'⟩
-    | guard k htag hk hnotfun =>
-        have htag2 : qtypGuardTag qt2 = some k :=
-          joinMemEnvsStrong_lookup_guardTag_right env1 env2 l qt qt2 k hlookup_join hlookup2 htag
-        have hk2 : R2.lookup? k = some true :=
-          joinRegimes_lookup_some_right R1 R2 k true hk
-        have hnotfun2 : qt2.etyp.isFunctionType = false := by
-          rw [memEnv_lookup_etyp_int env2 l qt2 hlookup2]
-          native_decide
-        exact ⟨qt2, hlookup2, qtypCleanUnder.guard k htag2 hk2 hnotfun2⟩
-
 
 private lemma typecheckExpr_lookup_origin_of_pc_true_split
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)

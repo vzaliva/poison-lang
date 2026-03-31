@@ -6130,36 +6130,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
   simpa [hEtyp] using valueHasETyp.unit (θ := θ2)
 
 
-lemma stepFRSingleRunFinalCleanPcTrue_assign
-  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctx (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrue .ioFree ctx (Expr.assign e1 e2) res predSat tm := by
-  let CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop :=
-    fun ctx' μ' ρ' θ' => consistentWithRegime predSat ctx'.regime ctx' μ' ρ' θ'
-  let ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop :=
-    valueConsistentWithRegime predSat
-  have hIH' :
-      StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
-        CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')) := by
-    intro m hm e ctx' hwfTm' res' htc'
-    simpa [CtxCons, ValCons] using IH m hm e ctx' hwfTm' res' htc'
-  have hCtxConsPost : AssignCtxConsPostTransport CtxCons predSat tm := by
-    simpa [CtxCons] using consistentWithRegime_assign_post_transport (predSat := predSat) (tm := tm)
-  have hValConsResult : AssignResultValCons ValCons := by
-    intro ctx' res' cf' θ' hPred hEtyp
-    simpa [ValCons] using
-      assign_result_valueConsistentWithRegime
-        (ctx := ctx') (predSat := predSat) (res := res') (cf := cf') (θ := θ')
-        hPred hEtyp
-  simpa [CtxCons, ValCons] using
-    stepFRSingleRunFinalCleanPcTrue_assign_parametric
-      (CtxCons := CtxCons) (ValCons := ValCons)
-      (ctx := ctx) (predSat := predSat) (tm := tm)
-      (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res)
-      hIH' hCtxConsPost hValConsResult htc
-
 def StepFRAssignCtxConsPostTransport
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (predSat : PredSat) (tm : TagMeaning) : Prop :=
@@ -6168,66 +6138,6 @@ def StepFRAssignCtxConsPostTransport
 def StepFRAssignResultValCons
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   AssignResultValCons ValCons
-
-theorem stepFRAssign_ctxConsPostTransport_unmasked
-  (predSat : PredSat) (tm : TagMeaning) :
-  StepFRAssignCtxConsPostTransport
-    (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
-    predSat tm := by
-  simpa [StepFRAssignCtxConsPostTransport] using
-    consistentWithRegime_assign_post_transport (predSat := predSat) (tm := tm)
-
-theorem stepFRAssign_ctxConsPostTransport_masked
-  (masked : Tag → Prop) (predSat : PredSat) (tm : TagMeaning) :
-  StepFRAssignCtxConsPostTransport
-    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-    predSat tm := by
-  simpa [StepFRAssignCtxConsPostTransport] using
-    consistentWithRegimeMasked_assign_post_transport
-      (masked := masked) (predSat := predSat) (tm := tm)
-
-theorem stepFRAssign_resultValCons_unmasked
-  (predSat : PredSat) :
-  StepFRAssignResultValCons (valueConsistentWithRegime predSat) := by
-  intro ctx res cf θ hPred hEtyp
-  simpa [StepFRAssignResultValCons] using
-    assign_result_valueConsistentWithRegime
-      (ctx := ctx) (predSat := predSat) (res := res) (cf := cf) (θ := θ)
-      hPred hEtyp
-
-theorem stepFRAssign_resultValCons_masked
-  (masked : Tag → Prop) (predSat : PredSat) :
-  StepFRAssignResultValCons
-    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v) := by
-  intro ctx res cf θ hPred hEtyp
-  simpa [StepFRAssignResultValCons] using
-    assign_result_valueConsistentWithRegimeMasked
-      (masked := masked)
-      (ctx := ctx) (predSat := predSat) (res := res) (cf := cf) (θ := θ)
-      hPred hEtyp
-
-theorem stepFRSingleRunFinalCleanPcTrue_assign_param
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH :
-    StepFRSingleRunFinalCleanPcTrueParam_IH
-      CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
-  (hCtxConsPost : StepFRAssignCtxConsPostTransport CtxCons predSat tm)
-  (hValConsResult : StepFRAssignResultValCons ValCons)
-  (htc : typecheck .ioFree ctx (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrueParam
-    CtxCons ValCons .ioFree ctx (Expr.assign e1 e2) res predSat tm := by
-  change
-    StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-      CtxCons ValCons .ioFree ctx (Expr.assign e1 e2) res predSat tm
-  exact
-    stepFRSingleRunFinalCleanPcTrue_assign_parametric
-      (CtxCons := CtxCons) (ValCons := ValCons)
-      (ctx := ctx) (predSat := predSat) (tm := tm)
-      (e1 := e1) (e2 := e2) (fuel' := fuel') (res := res)
-      (IH := IH) hCtxConsPost hValConsResult htc
 
 lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
   (masked : Tag → Prop)

@@ -547,26 +547,6 @@ lemma Expr_toPExpr?_eq_some_of_toPExpr_ok (e : Expr) (pe : PExpr) :
       cases h
       rfl
 
-lemma typecheckPfn_ok_body_toPExpr?
-  (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) (res : TypeResult) :
-  typecheckPfn ctx x st1 body st2 = .ok res →
-  ∃ pbody,
-    Expr.toPExpr? body = some pbody ∧
-    res.qualType.etyp = ETyp.parrow st1 st2 ctx.pc [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctx.varEnv)] := by
-  intro htc
-  cases hbody : body.toPExpr with
-  | error err => simp [typecheckPfn, hbody] at htc
-  | ok pbody =>
-      have hto : Expr.toPExpr? body = some pbody :=
-        Expr_toPExpr?_eq_some_of_toPExpr_ok body pbody hbody
-      have hres :
-          res.qualType.etyp =
-            ETyp.parrow st1 st2 ctx.pc [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctx.varEnv)] := by
-        simp [typecheckPfn, hbody] at htc
-        cases htc
-        rfl
-      exact ⟨pbody, hto, hres⟩
-
 lemma typecheckExpr_op_succ (mode : LeanPoison.EvalMode) (ctx : TypeContext) (e1 e2 : Expr) (op : Op) (fuel : Nat) :
   typecheckExpr mode ctx (Expr.op e1 op e2) (fuel + 1) = typecheckOp mode ctx e1 e2 fuel op := by
   simp [typecheckExpr]
@@ -2089,68 +2069,6 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
         · simp only [hbool, bne_iff_ne, ne_eq] at htc; cases htc
 
 /-- In standard mode (when matchGuard fails), typecheckIf produces a result with noPred. -/
-lemma typecheckIf_standard_pred_noPred (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult) :
-    typecheckIf .ioFree ctx e1 e2 e3 fuel = .ok res →
-    (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .error err) →
-    res.qualType.pred = Predicate.noPred := by
-  intro htc hmatch_fail
-  obtain ⟨err, hmatch_err⟩ := hmatch_fail
-  cases fuel with
-  | zero =>
-    simp [typecheckIf] at htc
-  | succ fuel' =>
-    have hmatch_err' : matchGuard e1 ctx.memEnv ctx.varEnv fuel' = .error err := by
-      simpa [Nat.succ_sub_one] using hmatch_err
-    unfold typecheckIf at htc
-    simp only [bind, Except.bind, hmatch_err'] at htc
-    -- Now we're in the standard mode path
-    cases htc1 : typecheckExpr .ioFree ctx e1 fuel' with
-    | error e =>
-      simp only [htc1] at htc
-      cases htc
-    | ok result1 =>
-      simp only [htc1] at htc
-      match hq1 : result1.qualType with
-      | ⟨etyp1, p1, pred1⟩ =>
-        simp only [hq1] at htc
-        by_cases hbool : etyp1 = ETyp.bool
-        · simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at htc
-          -- Extract result2
-          let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-                                 nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
-          let pc' := joinPoison ctx.pc p1
-          let ctx'' := { ctx' with pc := pc' }
-          cases htc2 : typecheckExpr .ioFree ctx'' e2 fuel' with
-          | error e =>
-            rw [htc2] at htc
-            cases htc
-          | ok result2 =>
-            rw [htc2] at htc
-            match hq2 : result2.qualType with
-            | ⟨etyp2, p2, pred2⟩ =>
-              simp only [hq2] at htc
-              let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
-              cases htc3 : typecheckExpr .ioFree ctxForE3 e3 fuel' with
-              | error e =>
-                rw [htc3] at htc
-                cases htc
-              | ok result3 =>
-                rw [htc3] at htc
-                match hq3 : result3.qualType with
-                | ⟨etyp3, p3, pred3⟩ =>
-                  simp only [hq3] at htc
-                  by_cases hcompat : beqETypSignature etyp2 etyp3 = false
-                  · simp only [hcompat, Bool.not_eq_true', ↓reduceIte] at htc
-                    cases htc
-                  · have hcompat' : beqETypSignature etyp2 etyp3 = true := by
-                      cases h : beqETypSignature etyp2 etyp3 <;> simp_all
-                    simp only [hcompat', Bool.not_true, Bool.false_eq_true, ↓reduceIte,
-                               pure, Except.pure, Except.ok.injEq] at htc
-                    simp [← htc]
-        · simp only [hbool, bne_iff_ne, ne_eq] at htc
-          cases htc
-
-/-- In standard mode, typecheckIf produces etyp = joinETyps res2.etyp res3.etyp. -/
 lemma typecheckIf_standard_etyp (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult) :
     typecheckIf .ioFree ctx e1 e2 e3 fuel = .ok res →
     (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .error err) →
@@ -7149,57 +7067,6 @@ private lemma surfaceSpecToQTyp_nextLoc_mono
       simp [bind, Except.bind] at h
 
 -- Helper lemma for typecheckExternVal: nextLoc is monotone.
-lemma typecheckExternVal_nextLoc_mono (mode : LeanPoison.EvalMode) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) (res : TypeResult) :
-  typecheckExternVal mode ctx typ poison pred = .ok res →
-  ctx.nextLoc ≤ res.nextLoc' := by
-  intro htc
-  unfold typecheckExternVal at htc
-  split_ifs at htc with _h
-  · simp only [bind, Except.bind] at htc
-    exact absurd htc (Except.error_ne_ok "IO operation (externVal) forbidden in ioFree mode" res)
-  · split at htc
-    · simp only [bind, Except.bind] at htc
-      exact absurd htc (Except.error_ne_ok "Clean types cannot have predicates" res)
-    · simp only [bind, Except.bind] at htc
-      exact absurd htc (Except.error_ne_ok "Clean types cannot have predicates" res)
-    · simp [bind, Except.bind] at htc
-      cases hsurf : surfaceSpecToQTyp typ poison pred ctx.varEnv ctx with
-      | error err => simp [hsurf] at htc; exact absurd htc (Except.error_ne_ok err res)
-      | ok result =>
-          have hmono : ctx.nextLoc ≤ result.2.nextLoc :=
-            surfaceSpecToQTyp_nextLoc_mono typ poison pred ctx.varEnv ctx result hsurf
-          simp [hsurf, pure, Except.pure] at htc
-          cases htc
-          simpa using hmono
-
--- Helper lemma for typecheckExternFn: always preserves nextLoc (vacuous for ioFree)
-lemma typecheckExternFn_preserves_nextLoc (mode : LeanPoison.EvalMode) (ctx : TypeContext) (arg : Name) (argTyp : Typ)
-    (retSpec : ExternReturn) (effects : List Effect) (res : TypeResult) :
-  typecheckExternFn mode ctx arg argTyp retSpec effects = .ok res →
-  res.nextLoc' = ctx.nextLoc := by
-  intro htc
-  unfold typecheckExternFn at htc
-  split_ifs at htc with _h
-  · simp only [bind, Except.bind] at htc
-    exact absurd htc (Except.error_ne_ok "IO operation (externFn) forbidden in ioFree mode" res)
-  · simp [pure, Except.pure] at htc
-    cases htc
-    rfl
-
--- Helper lemma for typecheckExternPfn: always preserves nextLoc (vacuous for ioFree)
-lemma typecheckExternPfn_preserves_nextLoc (mode : LeanPoison.EvalMode) (ctx : TypeContext) (arg : Name) (argTyp : Typ)
-    (retSpec : ExternReturn) (res : TypeResult) :
-  typecheckExternPfn mode ctx arg argTyp retSpec = .ok res →
-  res.nextLoc' = ctx.nextLoc := by
-  intro htc
-  unfold typecheckExternPfn at htc
-  split_ifs at htc with _h
-  · simp only [bind, Except.bind] at htc
-    exact absurd htc (Except.error_ne_ok "IO operation (externPfn) forbidden in ioFree mode" res)
-  · simp [pure, Except.pure] at htc
-    cases htc
-    rfl
-
 private lemma typecheck_nextLoc_mono_main : ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
   typecheck .ioFree ctx e fuel = .ok res →
   ctx.nextLoc ≤ res.nextLoc' := by
@@ -7372,77 +7239,7 @@ lemma joinPoison_true_right {p1 p2 : Poison} :
 -- joinETyps Properties
 -- ================================================================
 
-/-- joinETyps preserves non-function property from first argument
-    when first argument is not an arrow or ref type. -/
-lemma joinETyps_isFunctionType_false_of_left {t1 t2 : ETyp} {p1 p2 : Poison} :
-    t1.isFunctionType = false → ¬ (∃ ls, t1 = ETyp.ref ls) →
-    (joinETyps t1 t2 p1 p2).isFunctionType = false := by
-  intro hnotfun hnotref
-  unfold joinETyps
-  cases t1 with
-  | bool | int | unit | string => simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-  | ref ls =>
-      -- Contradiction: t1 is ref
-      exfalso
-      exact hnotref ⟨ls, rfl⟩
-  | arrow _ _ _ _ | parrow _ _ _ _ =>
-      -- Contradiction: t1 is function type
-      simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
-
-/-- joinETyps preserves non-ref property from first argument
-    when first argument is not an arrow or ref type. -/
-lemma joinETyps_notRef_of_left_simple {t1 t2 : ETyp} {p1 p2 : Poison} :
-    t1.isFunctionType = false → ¬ (∃ ls, t1 = ETyp.ref ls) →
-    ¬ (∃ ls, (joinETyps t1 t2 p1 p2) = ETyp.ref ls) := by
-  intro hnotfun hnotref
-  unfold joinETyps
-  cases t1 with
-  | bool => simp
-  | int => simp
-  | unit => simp
-  | string => simp
-  | ref ls =>
-      exfalso
-      exact hnotref ⟨ls, rfl⟩
-  | arrow _ _ _ _ | parrow _ _ _ _ =>
-      simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
-
 /-- joinETyps preserves non-function property when BOTH args are non-function/non-ref. -/
-lemma joinETyps_isFunctionType_false_of_both {t1 t2 : ETyp} {p1 p2 : Poison} :
-    t1.isFunctionType = false → ¬ (∃ ls, t1 = ETyp.ref ls) →
-    t2.isFunctionType = false → ¬ (∃ ls, t2 = ETyp.ref ls) →
-    (joinETyps t1 t2 p1 p2).isFunctionType = false := by
-  intro hnotfun1 hnotref1 _ _
-  -- Uses the left version since joinETyps returns left for simple types
-  exact joinETyps_isFunctionType_false_of_left hnotfun1 hnotref1
-
-/-- joinETyps preserves non-ref property when BOTH args are non-function/non-ref. -/
-lemma joinETyps_notRef_of_both_simple {t1 t2 : ETyp} {p1 p2 : Poison} :
-    t1.isFunctionType = false → ¬ (∃ ls, t1 = ETyp.ref ls) →
-    t2.isFunctionType = false → ¬ (∃ ls, t2 = ETyp.ref ls) →
-    ¬ (∃ ls, (joinETyps t1 t2 p1 p2) = ETyp.ref ls) := by
-  intro hnotfun1 hnotref1 _ _
-  exact joinETyps_notRef_of_left_simple hnotfun1 hnotref1
-
-/-- When t2 is non-function/non-ref and joinETyps result is non-function/non-ref,
-    it follows from t1 also being non-function/non-ref. -/
-lemma joinETyps_isFunctionType_false_of_right {t1 t2 : ETyp} {p1 p2 : Poison} :
-    t2.isFunctionType = false → ¬ (∃ ls, t2 = ETyp.ref ls) →
-    t1.isFunctionType = false → ¬ (∃ ls, t1 = ETyp.ref ls) →
-    (joinETyps t1 t2 p1 p2).isFunctionType = false := by
-  intro _ _ hnotfun1 hnotref1
-  exact joinETyps_isFunctionType_false_of_left hnotfun1 hnotref1
-
-/-- When t2 is non-function/non-ref and joinETyps result is non-ref,
-    it follows from t1 also being non-function/non-ref. -/
-lemma joinETyps_notRef_of_right_simple {t1 t2 : ETyp} {p1 p2 : Poison} :
-    t2.isFunctionType = false → ¬ (∃ ls, t2 = ETyp.ref ls) →
-    t1.isFunctionType = false → ¬ (∃ ls, t1 = ETyp.ref ls) →
-    ¬ (∃ ls, (joinETyps t1 t2 p1 p2) = ETyp.ref ls) := by
-  intro _ _ hnotfun1 hnotref1
-  exact joinETyps_notRef_of_left_simple hnotfun1 hnotref1
-
-/-- Helper: adding unique elements preserves membership from accumulator. -/
 private lemma foldl_addUnique_mem_of_acc {α : Type} [BEq α] [LawfulBEq α]
     (xs : List α) (acc : List α) (x : α) :
     x ∈ acc → x ∈ xs.foldl (fun acc' y => if acc'.contains y then acc' else acc' ++ [y]) acc := by
@@ -7789,20 +7586,6 @@ lemma beqETypSignature_joinETyps_left {t1 t2 t3 : ETyp} {p1 p2 : Poison}
       | _ => simp [beqETypSignature] at h
 
 /-- joinETyps for ref types with compatible signatures produces a ref type. -/
-lemma joinETyps_ref_structure {ls1 : LocSet} {t2 : ETyp} {p1' p2' : Poison} :
-    (∃ ls2, t2 = ETyp.ref ls2) →
-    beqETypSignature (ETyp.ref ls1) t2 →
-    ∃ ls', joinETyps (ETyp.ref ls1) t2 p1' p2' = ETyp.ref ls' := by
-  intro ⟨ls2, ht2⟩ _hcompat
-  subst ht2
-  simp only [joinETyps]
-  exact ⟨LocSet.union ls1 ls2, rfl⟩
-
--- ================================================================
--- joinMemEnvs Properties
--- ================================================================
-
-/-- If a location is in joinMemEnvs, it was in at least one of the inputs. -/
 lemma joinMemEnvs_contains_implies_or (env1 env2 : MemoryTypeEnv) (l : Loc) :
   (joinMemEnvs env1 env2).contains l → env1.contains l ∨ env2.contains l := by
   intro hcontains
@@ -8431,22 +8214,6 @@ lemma joinMemEnvs_lookup_clean_right (env1 env2 : MemoryTypeEnv) (l : Loc) (qt :
         exact Option.noConfusion hgo
 
 /-- wfTypeContext property is preserved under joinMemEnvs with max nextLoc. -/
-lemma wfTypeContext_joinMemEnvs_max
-  (env1 env2 : MemoryTypeEnv) (nl1 nl2 : Nat)
-  (hwf1 : ∀ l, env1.contains l → l < nl1)
-  (hwf2 : ∀ l, env2.contains l → l < nl2) :
-  ∀ l, (joinMemEnvs env1 env2).contains l → l < max nl1 nl2 := by
-  intro l hcontains
-  have hor := joinMemEnvs_contains_implies_or env1 env2 l hcontains
-  cases hor with
-  | inl h1 =>
-    have hlt1 : l < nl1 := hwf1 l h1
-    exact Nat.lt_of_lt_of_le hlt1 (Nat.le_max_left nl1 nl2)
-  | inr h2 =>
-    have hlt2 : l < nl2 := hwf2 l h2
-    exact Nat.lt_of_lt_of_le hlt2 (Nat.le_max_right nl1 nl2)
-
-
 lemma typecheckVar_preserves_memEnv (ctx : TypeContext) (x : Name) (res : TypeResult) :
   typecheckVar ctx x = .ok res →
   res.memEnv' = ctx.memEnv := by
