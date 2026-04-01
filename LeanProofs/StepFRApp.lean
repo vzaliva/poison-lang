@@ -1292,7 +1292,13 @@ private lemma applyFnTClosure_ok_regimeConsistentWithCtx
           · simp [ctxAfter]
           · exact hIH
   | extern x retSpec effects capturedEnv =>
-    sorry -- extern FnTClosure: regimeConsistentWithCtx
+    have htag := applyFnTClosure_extern_tagEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred
+      result1 r fuel x retSpec effects capturedEnv happly
+    have hreg := applyFnTClosure_extern_regime_eq ctx st1 st2 p p1 argEtyp argPoison argPred
+      result1 r fuel x retSpec effects capturedEnv happly
+    simp only [regimeConsistentWithCtx, ctxAfter]
+    rw [htag, hreg]
+    exact hreg1
 
 private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
   (tm : TagMeaning)
@@ -1749,7 +1755,65 @@ private lemma applyPFnTClosure_ok_wfTypeResult
       rw [hfirst]
       exact hwf3
     | extern x retSpec capturedEnv =>
-      sorry -- extern PFnTClosure: wfTypeResult preservation
+      -- For PFnTClosure.extern, memEnv' is unchanged; nextLoc' = result1.nextLoc' in all branches
+      unfold applyPFnTClosure at happly
+      simp only [bind, Except.bind] at happly
+      split at happly
+      · -- ExternReturn.simple: collectAndAllocExternTags, resolveSyntaxPred, returnSpecToQTyp
+        split at happly
+        · simp at happly
+        · split at happly
+          · simp at happly
+          · -- returnSpecToQTyp result is in scope as the innermost match
+            -- use simp to propagate; we need nextLoc' from returnSpecToQTyp = result1.nextLoc'
+            split at happly
+            · simp at happly
+            · simp only [pure, Except.pure] at happly
+              -- happly: Except.ok { memEnv' = result1.memEnv', nextLoc' = retQtPair.2 } = Except.ok r
+              -- Extract r = { ... } from happly, then use returnSpecToQTyp to get nextLoc'
+              have hr := Except.ok.inj happly
+              -- Get the returnSpecToQTyp equation from the split context
+              -- It's in context as something like heq✝ : returnSpecToQTyp typ₀ poi pred nextLoc' = ok retQtPair
+              -- Use 'next' with wildcards to find the right hypothesis name
+              -- and show retQtPair.2 = result1.nextLoc'
+              simp only [wfTypeResult] at hwf1 ⊢
+              intro l hl
+              -- r.memEnv' = result1.memEnv' (from hr, since both sides have result1.memEnv')
+              have hmemr : r.memEnv' = result1.memEnv' := by
+                have := congrArg TypeResult.memEnv' hr.symm; simpa using this
+              -- r.nextLoc' = retQtPair.2 (from hr.symm)
+              have hnlocr : r.nextLoc' = _ := congrArg TypeResult.nextLoc' hr.symm
+              -- retQtPair.2 = result1.nextLoc' from the returnSpecToQTyp equation
+              -- All equations in scope; use simp_all after case-split on Typ
+              rw [← hr]; simp only []
+              -- Now goal is l < retQtPair.2; use hwf1 l and hnloc
+              -- We need: forall non-ref Typ, returnSpecToQTyp returns nextLoc unchanged
+              -- Derive this by case-splitting on the actual return type Typ in scope
+              -- rename_i to get the returnSpecToQTyp equation
+              rename_i _ _ _ _ _ _ _ _ _ retQtPair hrsq
+              -- hrsq : returnSpecToQTyp a✝¹ a✝ v✝ result1.nextLoc' = Except.ok retQtPair
+              have hnloc : retQtPair.2 = result1.nextLoc' := by
+                unfold returnSpecToQTyp at hrsq
+                split at hrsq
+                · simp only [pure, Except.pure, bind, Except.bind] at hrsq
+                  exact (congrArg Prod.snd (Except.ok.inj hrsq)).symm
+                · simp only [pure, Except.pure, bind, Except.bind] at hrsq
+                  exact (congrArg Prod.snd (Except.ok.inj hrsq)).symm
+                · simp only [pure, Except.pure, bind, Except.bind] at hrsq
+                  exact (congrArg Prod.snd (Except.ok.inj hrsq)).symm
+                · simp only [pure, Except.pure, bind, Except.bind] at hrsq
+                  exact (congrArg Prod.snd (Except.ok.inj hrsq)).symm
+                · simp [Functor.map, Except.map] at hrsq
+                · simp [Functor.map, Except.map] at hrsq
+              rw [hnloc]; exact hwf1 l (by rwa [hmemr] at hl)
+      · -- ExternReturn.nestedFn: nextLoc' = result1.nextLoc', memEnv' = result1.memEnv'
+        simp only [pure, Except.pure] at happly
+        cases happly
+        exact hwf1
+      · -- ExternReturn.nestedPfn: nextLoc' = result1.nextLoc', memEnv' = result1.memEnv'
+        simp only [pure, Except.pure] at happly
+        cases happly
+        exact hwf1
 
 private lemma applyPFnTClosure_ok_wfTagMeaningCtx
   (tm : TagMeaning)
@@ -1853,7 +1917,13 @@ private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
           · simp [ctxAfter]
           · exact hIH
   | extern x retSpec capturedEnv =>
-    sorry -- extern PFnTClosure: regimeConsistentWithCtx
+    have htag := applyPFnTClosure_extern_tagEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred
+      result1 r fuel x retSpec capturedEnv happly
+    have hreg := applyPFnTClosure_extern_regime_eq ctx st1 st2 p p1 argEtyp argPoison argPred
+      result1 r fuel x retSpec capturedEnv happly
+    simp only [regimeConsistentWithCtx, ctxAfter]
+    rw [htag, hreg]
+    exact hreg1
 
 private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning
   (tm : TagMeaning)
@@ -6502,7 +6572,24 @@ private lemma applyPFnTClosure_ok_poison_pred_of_p1_true
                       subst hr
                       simp
       | extern x retSpec capturedEnv =>
-          sorry
+          -- normalizeAppResultByProvenance (joinPoison true p) = { poison := true, pred := noPred }
+          -- since joinPoison true p = true || p = true
+          simp only [normalizeAppResultByProvenance, joinPoison, Bool.true_or, ite_true,
+            bind, Except.bind, pure, Except.pure] at happly
+          -- happly: match retSpec with ... (each branch has poison := true, pred := noPred)
+          split at happly
+          · -- ExternReturn.simple: bind chain; innermost Except.ok has poison := true, pred := noPred
+            split at happly
+            · simp at happly
+            · split at happly
+              · simp at happly
+              · split at happly
+                · simp at happly
+                · have hr := Except.ok.inj happly; subst hr; simp
+          · -- ExternReturn.nestedFn: Except.ok { poison := true, pred := noPred }
+            have hr := Except.ok.inj happly; subst hr; simp
+          · -- ExternReturn.nestedPfn: Except.ok { poison := true, pred := noPred }
+            have hr := Except.ok.inj happly; subst hr; simp
 
 -- Generalized variants: when joinPoison p1 p = true (covers both p1=true and p=true cases).
 -- After the app-typing fix (AppPred (join p1 p) P3), normalizeAppResultByProvenance
@@ -6569,7 +6656,29 @@ private lemma applyFnTClosure_ok_poison_pred_of_p1p_true
                       subst hr
                       simp
       | extern x retSpec effects capturedEnv =>
-          sorry
+          -- normalizeAppResultByProvenance (joinPoison p1 p) = { poison := true, pred := noPred }
+          -- since h_p1p : joinPoison p1 p = true
+          simp only [normalizeAppResultByProvenance, h_p1p, ite_true,
+            bind, Except.bind, pure, Except.pure] at happly
+          -- after simp, happly: match retSpec with ... (after effects, each branch has poison := true)
+          split at happly
+          · -- collectAndAllocExternTags error case
+            simp at happly
+          · -- collectAndAllocExternTags ok; now forIn effects loop (can error or succeed)
+            split at happly
+            · simp at happly
+            · -- forIn ok; now match retSpec
+              split at happly
+              · -- ExternReturn.simple: bind chain
+                split at happly
+                · simp at happly
+                · split at happly
+                  · simp at happly
+                  · have hr := Except.ok.inj happly; subst hr; simp
+              · -- ExternReturn.nestedFn
+                have hr := Except.ok.inj happly; subst hr; simp
+              · -- ExternReturn.nestedPfn
+                have hr := Except.ok.inj happly; subst hr; simp
 
 private lemma applyPFnTClosure_ok_poison_pred_of_p1p_true
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -6633,7 +6742,24 @@ private lemma applyPFnTClosure_ok_poison_pred_of_p1p_true
                       subst hr
                       simp
       | extern x retSpec capturedEnv =>
-          sorry
+          -- normalizeAppResultByProvenance (joinPoison p1 p) = { poison := true, pred := noPred }
+          -- since h_p1p : joinPoison p1 p = true
+          simp only [normalizeAppResultByProvenance, h_p1p, ite_true,
+            bind, Except.bind, pure, Except.pure] at happly
+          -- happly: match retSpec with ... (each branch has poison := true, pred := noPred)
+          split at happly
+          · -- ExternReturn.simple: bind chain
+            split at happly
+            · simp at happly
+            · split at happly
+              · simp at happly
+              · split at happly
+                · simp at happly
+                · have hr := Except.ok.inj happly; subst hr; simp
+          · -- ExternReturn.nestedFn
+            have hr := Except.ok.inj happly; subst hr; simp
+          · -- ExternReturn.nestedPfn
+            have hr := Except.ok.inj happly; subst hr; simp
 
 
 

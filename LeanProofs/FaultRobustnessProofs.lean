@@ -27,6 +27,25 @@ open scoped MemoryTypeEnv
 
 
 
+-- beval returns .runtimeError for extern expressions, making terminatesTo contradictory.
+private lemma terminatesTo_externVal_absurd (t : Typ) (p : Bool) (pr : SyntaxPredicate)
+    (c₀ c₁ : Config) (o : Value) (hterm : terminatesTo (Expr.externVal t p pr) c₀ c₁ o) :
+    False := by
+  obtain ⟨fuel, verbose, heval⟩ := hterm
+  cases fuel <;> simp [LeanPoison.beval] at heval
+
+private lemma terminatesTo_externFn_absurd (n : Name) (t : Typ) (r : ExternReturn) (eff : List Effect)
+    (c₀ c₁ : Config) (o : Value) (hterm : terminatesTo (Expr.externFn n t r eff) c₀ c₁ o) :
+    False := by
+  obtain ⟨fuel, verbose, heval⟩ := hterm
+  cases fuel <;> simp [LeanPoison.beval] at heval
+
+private lemma terminatesTo_externPfn_absurd (n : Name) (t : Typ) (r : ExternReturn)
+    (c₀ c₁ : Config) (o : Value) (hterm : terminatesTo (Expr.externPfn n t r) c₀ c₁ o) :
+    False := by
+  obtain ⟨fuel, verbose, heval⟩ := hterm
+  cases fuel <;> simp [LeanPoison.beval] at heval
+
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree
   (masked : Tag → Prop)
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
@@ -1315,8 +1334,15 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         (fun m hm e' ctx' res' htc' =>
                           IH' m hm masked e' ctx' res' htc'))
                       htc
-          | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
-              sorry -- extern cases: no longer contradictory without ioFree mode
+          | externVal t p pr =>
+              unfold StepFRSingleRunFinalCleanPcTrueMaskedRegParam; intros; exfalso
+              rename_i hterm _; exact terminatesTo_externVal_absurd t p pr _ _ _ hterm
+          | externFn n t r eff =>
+              unfold StepFRSingleRunFinalCleanPcTrueMaskedRegParam; intros; exfalso
+              rename_i hterm _; exact terminatesTo_externFn_absurd n t r eff _ _ _ hterm
+          | externPfn n t r =>
+              unfold StepFRSingleRunFinalCleanPcTrueMaskedRegParam; intros; exfalso
+              rename_i hterm _; exact terminatesTo_externPfn_absurd n t r _ _ _ hterm
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
@@ -1575,8 +1601,15 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
                   stepFR_app ctxᵢ predSat tm e1 e2 fuel' res
                     (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH)
                     hsingleIH htc
-        | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
-            sorry -- extern cases: no longer contradictory without ioFree mode
+        | externVal t p pr =>
+            unfold StepFR; intros; exfalso
+            rename_i hterm _; exact terminatesTo_externVal_absurd t p pr _ _ _ hterm
+        | externFn n t r eff =>
+            unfold StepFR; intros; exfalso
+            rename_i hterm _; exact terminatesTo_externFn_absurd n t r eff _ _ _ hterm
+        | externPfn n t r =>
+            unfold StepFR; intros; exfalso
+            rename_i hterm _; exact terminatesTo_externPfn_absurd n t r _ _ _ hterm
 
 -- Bridges from step theorem to full specification
 -- FaultRobustnessSpec specialized to ioFree mode (implied by FaultRobustnessSpec)

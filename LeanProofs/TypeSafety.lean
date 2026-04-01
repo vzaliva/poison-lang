@@ -3818,9 +3818,23 @@ private lemma typecheck_regime_mono_main : ∀ (ctx : TypeContext) (e : Expr) (f
                   injection htc with h_eq
                   subst h_eq
                   exact regimeMonotone_refl ctx.regime
-          | externVal typ poison pred => sorry
-          | externFn arg argTyp retSpec effects => sorry
-          | externPfn arg argTyp retSpec => sorry
+          | externVal typ poison pred =>
+              simp only [typecheckExternVal] at htc
+              simp [Bind.bind, Except.bind, pure, Except.pure] at htc
+              split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+              split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+              split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+              split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+              cases htc
+              exact regimeMonotone_refl ctx.regime
+          | externFn arg argTyp retSpec effects =>
+              simp only [typecheckExternFn, pure, Except.pure] at htc
+              cases htc
+              exact regimeMonotone_refl ctx.regime
+          | externPfn arg argTyp retSpec =>
+              simp only [typecheckExternPfn, pure, Except.pure] at htc
+              cases htc
+              exact regimeMonotone_refl ctx.regime
           | op e1 op e2 =>
               simp at htc
               exact typecheckOp_regime_mono ctx e1 e2 fuel' op res IH_fuel' htc
@@ -4777,6 +4791,132 @@ lemma typecheck_ioFree_preserves_nextTag (ctx : TypeContext) (e : Expr) (fuel : 
   exact typecheck_nextTag_eq_main ctx e fuel res htc
 
 end typecheck_ioFree_preserves_nextTag_proof
+
+-- ==========================================================================
+-- PFnTClosure.extern structural lemmas
+-- All branches of applyPFnTClosure for PFnTClosure.extern set
+-- memEnv'/tagEnv'/regime' = result2.memEnv'/tagEnv'/regime'.
+-- ==========================================================================
+
+private lemma applyPFnTClosure_extern_field_eq_aux
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (r1 r2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
+  (happly : applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
+  r2.memEnv' = r1.memEnv' ∧ r2.tagEnv' = r1.tagEnv' ∧ r2.regime' = r1.regime' := by
+  unfold applyPFnTClosure at happly
+  cases fuel with
+  | zero => simp at happly
+  | succ n =>
+      simp only [bind, Except.bind] at happly
+      split at happly
+      · -- ExternReturn.simple: 3 monadic binds then pure return
+        split at happly
+        · exact Except.noConfusion happly
+        · split at happly
+          · exact Except.noConfusion happly
+          · split at happly
+            · exact Except.noConfusion happly
+            · simp only [pure, Except.pure] at happly; cases happly; exact ⟨rfl, rfl, rfl⟩
+      · -- ExternReturn.nestedFn: pure return
+        simp only [pure, Except.pure] at happly; cases happly; exact ⟨rfl, rfl, rfl⟩
+      · -- ExternReturn.nestedPfn: pure return
+        simp only [pure, Except.pure] at happly; cases happly; exact ⟨rfl, rfl, rfl⟩
+
+lemma applyPFnTClosure_extern_memEnv_eq
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (r1 r2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
+  (happly : applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
+  r2.memEnv' = r1.memEnv' :=
+  (applyPFnTClosure_extern_field_eq_aux ctx st1 st2 p p1 argEtyp argPoison argPred r1 r2
+    fuel x retSpec capturedEnv happly).1
+
+lemma applyPFnTClosure_extern_tagEnv_eq
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (r1 r2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
+  (happly : applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
+  r2.tagEnv' = r1.tagEnv' :=
+  (applyPFnTClosure_extern_field_eq_aux ctx st1 st2 p p1 argEtyp argPoison argPred r1 r2
+    fuel x retSpec capturedEnv happly).2.1
+
+lemma applyPFnTClosure_extern_regime_eq
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (r1 r2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
+  (happly : applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
+  r2.regime' = r1.regime' :=
+  (applyPFnTClosure_extern_field_eq_aux ctx st1 st2 p p1 argEtyp argPoison argPred r1 r2
+    fuel x retSpec capturedEnv happly).2.2
+
+-- ==========================================================================
+-- FnTClosure.extern structural lemmas
+-- tagEnv and regime are preserved (all return branches use result2's values).
+-- memEnv may differ due to the effects loop.
+-- ==========================================================================
+
+private lemma applyFnTClosure_extern_field_eq_aux
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (r1 r2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
+  r2.tagEnv' = r1.tagEnv' ∧ r2.regime' = r1.regime' := by
+  unfold applyFnTClosure at happly
+  cases fuel with
+  | zero => simp at happly
+  | succ n =>
+      simp only [bind, Except.bind] at happly
+      -- collectAndAllocExternTags
+      split at happly
+      · exact Except.noConfusion happly
+      · -- effects loop result
+        split at happly
+        · exact Except.noConfusion happly
+        · -- match retSpec
+          split at happly
+          · -- ExternReturn.simple: resolveSyntaxPred + returnSpecToQTyp
+            split at happly
+            · exact Except.noConfusion happly
+            · split at happly
+              · exact Except.noConfusion happly
+              · simp only [pure, Except.pure] at happly; cases happly; exact ⟨rfl, rfl⟩
+          · -- ExternReturn.nestedFn
+            simp only [pure, Except.pure] at happly; cases happly; exact ⟨rfl, rfl⟩
+          · -- ExternReturn.nestedPfn
+            simp only [pure, Except.pure] at happly; cases happly; exact ⟨rfl, rfl⟩
+
+lemma applyFnTClosure_extern_tagEnv_eq
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (r1 r2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
+  r2.tagEnv' = r1.tagEnv' :=
+  (applyFnTClosure_extern_field_eq_aux ctx st1 st2 p p1 argEtyp argPoison argPred r1 r2
+    fuel x retSpec effects capturedEnv happly).1
+
+lemma applyFnTClosure_extern_regime_eq
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (r1 r2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
+  r2.regime' = r1.regime' :=
+  (applyFnTClosure_extern_field_eq_aux ctx st1 st2 p p1 argEtyp argPoison argPred r1 r2
+    fuel x retSpec effects capturedEnv happly).2
 
 /-- Helper: the tag-allocating forIn loop in collectAndAllocExternTags never decreases the tag counter. -/
 private lemma forIn_tag_incr_ge
@@ -6795,7 +6935,29 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                       simpa using IH_body
           | extern x retSpec capturedEnv =>
               simp [bind, Except.bind] at happly
-              sorry
+              split at happly
+              · -- simple case
+                split at happly
+                · simp at happly
+                · split at happly
+                  · simp at happly
+                  · unfold returnSpecToQTyp at happly
+                    split at happly
+                    · simp at happly
+                    · simp only [pure, Except.pure] at happly
+                      injection happly with happly
+                      cases happly
+                      rename_i _v _heqRet
+                      have hnl : _v.2 = res1.nextLoc' := by
+                        have h : returnSpecToQTyp _ _ _ res1.nextLoc' = Except.ok _v := _heqRet
+                        exact returnSpecToQTyp_preserves_nextLoc _ _ _ _ _ h
+                      exact le_of_eq hnl.symm
+              · -- nestedFn case
+                simp only [pure, Except.pure] at happly
+                injection happly with happly; cases happly; simp
+              · -- nestedPfn case
+                simp only [pure, Except.pure] at happly
+                injection happly with happly; cases happly; simp
     have h_join :
         res.nextLoc' =
           List.max (r.nextLoc' :: rs'.map TypeResult.nextLoc') (by intro h; cases h) :=
@@ -6932,9 +7094,24 @@ private lemma typecheck_nextLoc_mono_main : ∀ (ctx : TypeContext) (e : Expr) (
                 injection htc with h_eq
                 subst h_eq
                 exact le_rfl
-        | externVal typ poison pred => sorry
-        | externFn arg argTyp retSpec effects => sorry
-        | externPfn arg argTyp retSpec => sorry
+        | externVal typ poison pred =>
+            simp only [typecheckExternVal] at htc
+            simp [Bind.bind, Except.bind, pure, Except.pure] at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            cases htc
+            rename_i _surf _heqSurf
+            exact surfaceSpecToQTyp_nextLoc_mono _ _ _ _ _ _heqSurf
+        | externFn arg argTyp retSpec effects =>
+            simp only [typecheckExternFn, pure, Except.pure] at htc
+            cases htc
+            exact le_rfl
+        | externPfn arg argTyp retSpec =>
+            simp only [typecheckExternPfn, pure, Except.pure] at htc
+            cases htc
+            exact le_rfl
         | op e1 op e2 =>
             simp at htc
             exact typecheckOp_nextLoc_mono ctx e1 e2 fuel' op res IH_fuel' htc
@@ -8883,7 +9060,19 @@ private lemma applyPFnTClosure_ioFree_wfTypeResult
     | extern x retSpec capturedEnv =>
       unfold applyPFnTClosure at htc
       simp only [bind, Except.bind] at htc
-      sorry
+      split at htc
+      · split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+        split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+        split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+        rename_i hret
+        simp only [pure, Except.pure, Except.ok.injEq] at htc
+        have hnl := returnSpecToQTyp_preserves_nextLoc _ _ _ _ _ hret
+        cases htc
+        intro l hl; exact hnl ▸ hwf_fn l hl
+      · simp [pure, Except.pure] at htc
+        subst htc; exact hwf_fn
+      · simp [pure, Except.pure] at htc
+        subst htc; exact hwf_fn
 
 /-- mapM of applyFnTClosure gives wfTypeResult for all results -/
 lemma mapM_applyFnTClosure_forall_wfTypeResult
@@ -9125,9 +9314,42 @@ private lemma typecheckExpr_preserves_wfTypeResult_main :
             cases h_topexpr : body.toPExpr with
             | error _ => simp [h_topexpr] at htc
             | ok _ => simp [h_topexpr, pure, Except.pure] at htc; cases htc; exact hwf
-        | externVal _ _ _ => sorry
-        | externFn _ _ _ _ => sorry
-        | externPfn _ _ _ => sorry
+        | externVal _ _ _ =>
+            simp only [typecheckExternVal] at htc
+            simp [Bind.bind, Except.bind, pure, Except.pure] at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            cases htc
+            rename_i _surf _heqSurf
+            unfold wfTypeResult
+            unfold surfaceSpecToQTyp at _heqSurf
+            split at _heqSurf <;> simp [freshTLoc, bind, Except.bind, pure, Except.pure] at _heqSurf
+            · intro l hl; cases _heqSurf; exact hwf l hl
+            · intro l hl; cases _heqSurf; exact hwf l hl
+            · intro l hl; cases _heqSurf; exact hwf l hl
+            · intro l hl; cases _heqSurf; exact hwf l hl
+            · split at _heqSurf <;> simp (config := { failIfUnchanged := false }) at _heqSurf
+              subst _heqSurf
+              rename_i _v _hcond
+              split at _hcond
+              · simp only [Except.ok.injEq] at _hcond
+                cases _hcond
+                intro l' hl
+                have hor := updateMemEnv_contains_eq_or_old ctx.memEnv ctx.nextLoc l' _ hl
+                cases hor with
+                | inl hEq => rw [hEq]; exact Nat.lt_succ_self ctx.nextLoc
+                | inr hOld => exact Nat.lt_of_lt_of_le (hwf l' hOld) (Nat.le_succ _)
+              · simp at _hcond
+        | externFn _ _ _ _ =>
+            simp only [typecheckExternFn, pure, Except.pure] at htc
+            cases htc
+            exact hwf
+        | externPfn _ _ _ =>
+            simp only [typecheckExternPfn, pure, Except.pure] at htc
+            cases htc
+            exact hwf
         | op e1 op e2 =>
             simp at htc
             exact typecheckOp_wfTypeResult ctx e1 e2 op fuel' res hwf IH_fuel' htc
@@ -9429,7 +9651,16 @@ private lemma applyPFnTClosure_ioFree_mem_contains_preserved
       | extern x retSpec capturedEnv =>
           unfold applyPFnTClosure at htc
           simp only [bind, Except.bind] at htc
-          sorry
+          split at htc
+          · split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            simp [pure, Except.pure, Except.ok.injEq] at htc
+            cases htc; intro l hl; exact hl
+          · simp [pure, Except.pure] at htc
+            subst htc; intro l hl; exact hl
+          · simp [pure, Except.pure] at htc
+            subst htc; intro l hl; exact hl
 
 private lemma typecheckApp_mem_contains_preserved
     (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
@@ -9807,9 +10038,38 @@ private lemma typecheckExpr_ioFree_mem_contains_preserved_main :
                   simp [h_topexpr, pure, Except.pure] at htc
                   cases htc
                   simpa using hcontains
-          | externVal typ poison pred => sorry
-          | externFn arg argTyp retSpec effects => sorry
-          | externPfn arg argTyp retSpec => sorry
+          | externVal typ poison pred =>
+              simp only [typecheckExternVal] at htc
+              simp [Bind.bind, Except.bind, pure, Except.pure] at htc
+              split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+              split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+              split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+              split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+              cases htc
+              rename_i _surf _heqSurf
+              simp only [TypeResult.memEnv']
+              unfold surfaceSpecToQTyp at _heqSurf
+              split at _heqSurf <;> simp [freshTLoc, bind, Except.bind, pure, Except.pure] at _heqSurf
+              · cases _heqSurf; exact hcontains
+              · cases _heqSurf; exact hcontains
+              · cases _heqSurf; exact hcontains
+              · cases _heqSurf; exact hcontains
+              · split at _heqSurf <;> simp (config := { failIfUnchanged := false }) at _heqSurf
+                subst _heqSurf
+                rename_i _v _hcond
+                split at _hcond
+                · simp only [Except.ok.injEq] at _hcond
+                  cases _hcond
+                  exact updateMemEnv_contains_of_contains ctx.memEnv ctx.nextLoc l _ hcontains
+                · simp at _hcond
+          | externFn arg argTyp retSpec effects =>
+              simp only [typecheckExternFn, pure, Except.pure] at htc
+              cases htc
+              exact hcontains
+          | externPfn arg argTyp retSpec =>
+              simp only [typecheckExternPfn, pure, Except.pure] at htc
+              cases htc
+              exact hcontains
           | op e1 bop e2 =>
               have htcOp : typecheckOp ctx e1 e2 fuel' bop = .ok res := by
                 simpa [typecheckExpr] using htc
@@ -10732,7 +10992,10 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                                                           simpa [ctxBody] using hctxBody
                                                         exact hsub_fun l hl1
                                         | extern x retSpec capturedEnv =>
-                                            sorry -- extern applyPFnTClosure case: no longer contradictory without ioFree mode
+                                            have hmemEq := applyPFnTClosure_extern_memEnv_eq
+                                              _ _ _ _ _ _ _ _ result1 r fuelApp x retSpec capturedEnv happly
+                                            rw [hmemEq] at hrl
+                                            exact hsub_fun l hrl
                                       have hfirst_sub :
                                           ∀ l, first.memEnv'.contains l →
                                             ({ ctx with pureCtx := true }).memEnv.contains l := by
@@ -11186,7 +11449,10 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                                                                   simp [hrEq]
                                                             simpa [hrReg] using hregBody
                                             | extern x retSpec capturedEnv =>
-                                                sorry -- extern applyPFnTClosure case: no longer contradictory without ioFree mode
+                                                have hregEq := applyPFnTClosure_extern_regime_eq
+                                                  _ _ _ _ _ _ _ _ result1 r fuelApp x retSpec capturedEnv happly
+                                                rw [hregEq]
+                                                exact hreg_fun
                                           have hfirstReg : first.regime'.lookup? k = some b :=
                                             hres_reg first (by simp)
                                           have hrestReg : ∀ r ∈ rest, r.regime'.lookup? k = some b := by
@@ -11618,7 +11884,10 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                                                                   simp [hrEq]
                                                             simpa [hrMem] using hlookupBody
                                             | extern x retSpec capturedEnv =>
-                                                sorry -- extern applyPFnTClosure case: no longer contradictory without ioFree mode
+                                                have hmemEq := applyPFnTClosure_extern_memEnv_eq
+                                                  _ _ _ _ _ _ _ _ result1 r fuelApp x retSpec capturedEnv happly
+                                                rw [hmemEq]
+                                                exact hlookup_fun
                                           have hfirstMem : first.memEnv'.lookup l = some qt :=
                                             hres_mem first (by simp)
                                           have hrestMem : ∀ r ∈ rest, r.memEnv'.lookup l = some qt := by
@@ -12103,7 +12372,10 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                                                                   simp [hrEq]
                                                             simpa [hrMem] using hlookupBody
                                             | extern x retSpec capturedEnv =>
-                                                sorry -- extern applyPFnTClosure case: no longer contradictory without ioFree mode
+                                                have hmemEq := applyPFnTClosure_extern_memEnv_eq
+                                                  _ _ _ _ _ _ _ _ result1 r fuelApp x retSpec capturedEnv happly
+                                                rw [hmemEq]
+                                                exact hlookup_fun
                                           have hfirstMem : first.memEnv'.lookup l = some qt :=
                                             hres_mem first (by simp)
                                           have hrestMem : ∀ r ∈ rest, r.memEnv'.lookup l = some qt := by
