@@ -265,7 +265,6 @@ private theorem EffectTarget_beq_refl (t : EffectTarget) : (t == t) = true := by
       simp only [BEq.beq]
       have : decide (x = x) = true := decide_eq_true rfl
       exact this
-  | returnValue => rfl
 
 private theorem EffectTarget_beq_sound (a b : EffectTarget) : (a == b) = true → a = b := by
   intro h
@@ -274,7 +273,6 @@ private theorem EffectTarget_beq_sound (a b : EffectTarget) : (a == b) = true �
     have : x1 = x2 := of_decide_eq_true h
     subst this
     rfl
-  case returnValue.returnValue => rfl
 
 instance : LawfulBEq EffectTarget where
   eq_of_beq {a b} := EffectTarget_beq_sound a b
@@ -325,10 +323,6 @@ mutual
     | Expr.app e1 e2 =>
         show (beqExpr e1 e1 && beqExpr e2 e2) = true from by
           rw [beqExpr_refl e1, beqExpr_refl e2]; rfl
-    | Expr.rand e => beqExpr_refl e
-    | Expr.frand e => beqExpr_refl e
-    | Expr.printString e => beqExpr_refl e
-    | Expr.printInt e => beqExpr_refl e
     | Expr.externVal typ poison pred =>
         show (typ == typ && poison == poison && beqSyntaxPredicate pred pred) = true from by
           rw [Typ_beq_refl typ, beqSyntaxPredicate_refl pred]; simp
@@ -495,22 +489,6 @@ mutual
         have : e1 = e1' := beqExpr_sound e1 e1' h_e1
         have : e2 = e2' := beqExpr_sound e2 e2' h_e2
         subst_vars; rfl
-    | Expr.rand e1, Expr.rand e2 => fun h => by
-        -- beqExpr matches already
-        have : e1 = e2 := beqExpr_sound e1 e2 h
-        subst this; rfl
-    | Expr.frand e1, Expr.frand e2 => fun h => by
-        -- beqExpr matches already
-        have : e1 = e2 := beqExpr_sound e1 e2 h
-        subst this; rfl
-    | Expr.printString e1, Expr.printString e2 => fun h => by
-        -- beqExpr matches already
-        have : e1 = e2 := beqExpr_sound e1 e2 h
-        subst this; rfl
-    | Expr.printInt e1, Expr.printInt e2 => fun h => by
-        -- beqExpr matches already
-        have : e1 = e2 := beqExpr_sound e1 e2 h
-        subst this; rfl
     | Expr.externVal typ1 poison1 pred1, Expr.externVal typ2 poison2 pred2 => fun h => by
         change (typ1 == typ2 && poison1 == poison2 && beqSyntaxPredicate pred1 pred2) = true at h
         rw [Bool.and_eq_true] at h; obtain ⟨h_left, h_pred⟩ := h
@@ -554,10 +532,6 @@ mutual
     | .unit, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .unit, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .unit, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .unit, .rand _ => fun h => by have : false = true := h; contradiction
-    | .unit, .frand _ => fun h => by have : false = true := h; contradiction
-    | .unit, .printString _ => fun h => by have : false = true := h; contradiction
-    | .unit, .printInt _ => fun h => by have : false = true := h; contradiction
     | .unit, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .unit, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .unit, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -576,10 +550,6 @@ mutual
     | .num _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .num _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .num _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .num _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .num _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .num _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .num _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .num _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .num _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .num _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -598,10 +568,6 @@ mutual
     | .bool _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .bool _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .bool _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .bool _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .bool _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .bool _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .bool _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .bool _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .bool _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .bool _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -620,10 +586,6 @@ mutual
     | .str _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .str _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .str _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .str _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .str _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .str _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .str _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .str _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .str _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .str _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -642,10 +604,6 @@ mutual
     | .var _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .var _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .var _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .var _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .var _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .var _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .var _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .var _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .var _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .var _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -664,10 +622,6 @@ mutual
     | .op _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .op _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .op _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .op _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .op _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .op _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .op _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .op _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .op _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .op _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -686,10 +640,6 @@ mutual
     | .unaryop _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .unaryop _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .unaryop _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .unaryop _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .unaryop _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .unaryop _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .unaryop _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .unaryop _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .unaryop _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .unaryop _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -708,10 +658,6 @@ mutual
     | .ite _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .ite _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .ite _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .ite _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .ite _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .ite _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .ite _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .ite _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .ite _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .ite _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -730,10 +676,6 @@ mutual
     | .newRef _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .newRef _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .newRef _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .newRef _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .newRef _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .newRef _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .newRef _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .newRef _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .newRef _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .newRef _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -752,10 +694,6 @@ mutual
     | .assign _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .assign _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .assign _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .assign _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .assign _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .assign _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .assign _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .assign _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .assign _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .assign _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -774,10 +712,6 @@ mutual
     | .deref _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .deref _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .deref _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .deref _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .deref _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .deref _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .deref _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .deref _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .deref _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .deref _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -796,10 +730,6 @@ mutual
     | .seq _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .seq _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .seq _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .seq _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .seq _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .seq _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -818,10 +748,6 @@ mutual
     | .vlet _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .vlet _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .vlet _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .vlet _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .vlet _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .vlet _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -840,10 +766,6 @@ mutual
     | .fn _ _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .fn _ _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .fn _ _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .fn _ _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .fn _ _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .fn _ _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .fn _ _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .fn _ _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .fn _ _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .fn _ _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -862,10 +784,6 @@ mutual
     | .pfn _ _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .pfn _ _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .pfn _ _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .pfn _ _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .pfn _ _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .pfn _ _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .pfn _ _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .pfn _ _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .pfn _ _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .pfn _ _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
@@ -884,101 +802,9 @@ mutual
     | .app _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
     | .app _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .app _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .app _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .app _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .app _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .app _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .app _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .app _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .app _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .unit => fun h => by have : false = true := h; contradiction
-    | .rand _, .num _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .bool _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .str _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .var _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .op _ _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .newRef _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .assign _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .deref _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .printInt _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .rand _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .unit => fun h => by have : false = true := h; contradiction
-    | .frand _, .num _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .bool _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .str _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .var _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .op _ _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .newRef _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .assign _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .deref _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .printInt _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .frand _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .unit => fun h => by have : false = true := h; contradiction
-    | .printString _, .num _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .bool _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .str _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .var _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .op _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .newRef _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .assign _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .deref _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .printInt _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printString _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .unit => fun h => by have : false = true := h; contradiction
-    | .printInt _, .num _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .bool _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .str _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .var _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .op _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .newRef _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .assign _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .deref _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .seq _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
-    | .printInt _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .unit => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .num _ => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .bool _ => fun h => by have : false = true := h; contradiction
@@ -995,10 +821,6 @@ mutual
     | .externVal _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .externVal _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .externVal _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .externVal _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .externVal _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externVal _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
     | .externFn _ _ _ _, .unit => fun h => by have : false = true := h; contradiction
@@ -1017,10 +839,6 @@ mutual
     | .externFn _ _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externFn _ _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externFn _ _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .externFn _ _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .externFn _ _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .externFn _ _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .externFn _ _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .externFn _ _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .externFn _ _ _ _, .externPfn _ _ _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _, .unit => fun h => by have : false = true := h; contradiction
@@ -1039,10 +857,6 @@ mutual
     | .externPfn _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
-    | .externPfn _ _ _, .rand _ => fun h => by have : false = true := h; contradiction
-    | .externPfn _ _ _, .frand _ => fun h => by have : false = true := h; contradiction
-    | .externPfn _ _ _, .printString _ => fun h => by have : false = true := h; contradiction
-    | .externPfn _ _ _, .printInt _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _, .externVal _ _ _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _, .externFn _ _ _ _ => fun h => by have : false = true := h; contradiction
 

@@ -9,7 +9,7 @@ open Std
 open scoped MemoryTypeEnv
 
 lemma stepFR_literal
-  (mode : LeanPoison.EvalMode)
+  
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (res : TypeResult) (v : Value)
   (hval : Expr.toValue? e = some v)
@@ -19,12 +19,12 @@ lemma stepFR_literal
   (hnotref : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls)
   (hpredNo : res.qualType.pred = Predicate.noPred)
   (hctxAfter : ctxAfter ctx res = ctx) :
-  StepFR mode ctx e res predSat tm := by
+  StepFR ctx e res predSat tm := by
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for literals
-  have ⟨hcf₀, ho₀⟩ := terminatesTo_literal_inv' mode e v hval
+  have ⟨hcf₀, ho₀⟩ := terminatesTo_literal_inv' e v hval
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-  have ⟨hcf₁, ho₁⟩ := terminatesTo_literal_inv' mode e v hval
+  have ⟨hcf₁, ho₁⟩ := terminatesTo_literal_inv' e v hval
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   subst hcf₀ hcf₁
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
@@ -81,7 +81,7 @@ lemma stepFR_literal
 
 lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
   (masked : Tag → Prop)
-  (mode : LeanPoison.EvalMode)
+  
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (res : TypeResult) (v : Value)
   (hval : Expr.toValue? e = some v)
@@ -93,9 +93,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    mode ctx e res predSat tm := by
+    ctx e res predSat tm := by
   intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
-  have ⟨hcf, ho⟩ := terminatesTo_literal_inv' mode e v hval
+  have ⟨hcf, ho⟩ := terminatesTo_literal_inv' e v hval
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   subst hcf
   have hvalc :

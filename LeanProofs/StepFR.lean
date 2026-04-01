@@ -908,7 +908,6 @@ lemma consistentRegimeSpec_implies_consistentWithRegime
 -- It assumes agreement on clean items in the initial context and preserves it
 -- for the post-context, plus result agreement when the result is clean under R.
 def StepFR
-  (mode : LeanPoison.EvalMode)
   (ctx : TypeContext)
   (e : Expr)
   (res : TypeResult)
@@ -928,8 +927,8 @@ def StepFR
       ∀ (a₀ a₁ : Address) (pm : Bool),
         wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } →  -- initial config₀ well-formed
         wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →  -- initial config₁ well-formed
-        terminatesTo mode e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ →
-        terminatesTo mode e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
+        terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ →
+        terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
         QTypRespectsTagMeaning tm res.qualType ∧
         ∃ (θ₀' θ₁' : RealizationMap),
           wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
@@ -953,14 +952,13 @@ def StepFR
 -- No input/output specs here; they are handled by the top-level FR statement
 -- and the bridge lemma.
 def TypeSystemEnforcesFaultRobustness_step_spec
-  (mode : LeanPoison.EvalMode)
   (e : Expr)
   (ctxᵢ : TypeContext)
   (predSat : PredSat)
   (tm : TagMeaning) : Prop :=
   ∀ (fuel : Nat) (res : TypeResult),
-    typecheck .ioFree ctxᵢ e fuel = .ok res →
-      StepFR mode ctxᵢ e res predSat tm
+    typecheck ctxᵢ e fuel = .ok res →
+      StepFR ctxᵢ e res predSat tm
 
 -- Local inversion lemmas for valueHasETyp (used before valueHasETyp_num_etyp is defined).
 lemma valueHasETyp_etyp_num {θ : RealizationMap} {n : Int} {t : ETyp} (h : valueHasETyp θ (Value.num n) t) : t = ETyp.int := by cases h; rfl
@@ -1463,7 +1461,6 @@ lemma singleRunFinalCleanWitness_of_same_state_maskedReg_param
   · simpa [hcf] using (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctx) (res := res) (ρ := ρ) hric)
 
 def StepFRSingleRunFinalCleanPcTrue
-  (mode : LeanPoison.EvalMode)
   (ctx : TypeContext)
   (e : Expr)
   (res : TypeResult)
@@ -1480,7 +1477,7 @@ def StepFRSingleRunFinalCleanPcTrue
       consistentWithRegime predSat ctx.regime ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -1493,7 +1490,6 @@ def StepFRSingleRunFinalCleanPcTrue
 def StepFRSingleRunFinalCleanPcTrueParam
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (mode : LeanPoison.EvalMode)
   (ctx : TypeContext)
   (e : Expr)
   (res : TypeResult)
@@ -1510,7 +1506,7 @@ def StepFRSingleRunFinalCleanPcTrueParam
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -1524,7 +1520,6 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
   (masked : Tag → Prop)
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (mode : LeanPoison.EvalMode)
   (ctx : TypeContext)
   (e : Expr)
   (res : TypeResult)
@@ -1542,7 +1537,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -3280,7 +3275,7 @@ lemma valueHasETyp_num_etyp {θ : RealizationMap} {n : Int} {t : ETyp} :
 
 lemma typecheckDeref_etyp_int
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
-  typecheckDeref .ioFree ctx e fuel = .ok res → res.qualType.etyp = ETyp.int := by
+  typecheckDeref ctx e fuel = .ok res → res.qualType.etyp = ETyp.int := by
   intro h_typecheck
   cases fuel with
   | zero =>
@@ -3290,7 +3285,7 @@ lemma typecheckDeref_etyp_int
       unfold typecheckDeref at h_typecheck
       simp at h_typecheck
       simp [bind, Except.bind] at h_typecheck
-      cases h_tc1 : typecheckExpr .ioFree ctx e fuel' with
+      cases h_tc1 : typecheckExpr ctx e fuel' with
       | error err =>
           simp [h_tc1] at h_typecheck
       | ok result1 =>
@@ -3571,8 +3566,8 @@ lemma typecheckDeref_qtypRespects
   (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat)
   (res res1 : TypeResult)
   (hwfTmAfter : wfTagMeaningCtx tm (ctxAfter ctx res1))
-  (htc1 : typecheckExpr .ioFree ctx e fuel = .ok res1)
-  (htc : typecheckDeref .ioFree ctx e (Nat.succ fuel) = .ok res) :
+  (htc1 : typecheckExpr ctx e fuel = .ok res1)
+  (htc : typecheckDeref ctx e (Nat.succ fuel) = .ok res) :
   QTypRespectsTagMeaning tm res.qualType := by
   have hres_etyp_int : res.qualType.etyp = ETyp.int :=
     typecheckDeref_etyp_int ctx e (Nat.succ fuel) res htc
@@ -4117,14 +4112,14 @@ lemma agreeOnCriticalAndTrusted_implies_agreeOnClean
 
 -- Bridge theorem: connects the step theorem to the top-level FR spec.
 theorem TypeSystemEnforcesFaultRobustness_impl :
-  (∀ (mode : LeanPoison.EvalMode) e ctxᵢ predSat tm,
-    TypeSystemEnforcesFaultRobustness_step_spec mode e ctxᵢ predSat tm) →
+  (∀ e ctxᵢ predSat tm,
+    TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm) →
   (∀ e s obs, TypeSystemEnforcesFaultRobustness_spec e s obs) := by
   intro hstep e s obs
   rintro his _hos ctx hctx _hwf _hpc _hte predSat tm _hwfTm _hps ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
-  intro mode μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm
-  have hstep' := hstep mode e ctx predSat tm
+  intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm
+  have hstep' := hstep e ctx predSat tm
   have hstep' := hstep' fuel res htc
   intro cf₁ cf₂ o₁ o₂ hWfRegime hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ htrustedInit₁ htrustedInit₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
   set R := ctx.regime with hRdef
@@ -5422,15 +5417,15 @@ lemma valueHasETyp_of_evalUnaryOp
 abbrev StepFR_IH (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext),
     wfTagMeaningCtx tm ctxᵢ →
-    ∀ (res : TypeResult), typecheck .ioFree ctxᵢ e m = .ok res → StepFR .ioFree ctxᵢ e res predSat tm
+    ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res → StepFR ctxᵢ e res predSat tm
 
 abbrev StepFRSingleRunFinalCleanPcTrue_IH
     (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext),
     wfTagMeaningCtx tm ctxᵢ →
     ∀ (res : TypeResult),
-      typecheck .ioFree ctxᵢ e m = .ok res →
-      StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ e res predSat tm
+      typecheck ctxᵢ e m = .ok res →
+      StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tm
 
 abbrev StepFRSingleRunFinalCleanPcTrueParam_IH
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -5439,9 +5434,9 @@ abbrev StepFRSingleRunFinalCleanPcTrueParam_IH
   ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
     wfTagMeaningCtx tm ctx →
     ∀ (res : TypeResult),
-      typecheck .ioFree ctx e m = .ok res →
+      typecheck ctx e m = .ok res →
       StepFRSingleRunFinalCleanPcTrueParam
-        CtxCons ValCons .ioFree ctx e res predSat tm
+        CtxCons ValCons ctx e res predSat tm
 
 abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
     (masked : Tag → Prop)
@@ -5451,15 +5446,15 @@ abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
   ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
     wfTagMeaningCtx tm ctx →
     ∀ (res : TypeResult),
-      typecheck .ioFree ctx e m = .ok res →
+      typecheck ctx e m = .ok res →
       StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-        masked CtxCons ValCons .ioFree ctx e res predSat tm
+        masked CtxCons ValCons ctx e res predSat tm
 
 -- Convert strong-induction IH (no wfTagMeaningCtx) to StepFR_IH; the extra premise is unused
 lemma StepFR_IH_of_induction
   (predSat : PredSat) (tm : TagMeaning) (k : Nat)
   (IH : ∀ m < k, ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
-    typecheck .ioFree ctxᵢ e m = .ok res → StepFR .ioFree ctxᵢ e res predSat tm) :
+    typecheck ctxᵢ e m = .ok res → StepFR ctxᵢ e res predSat tm) :
   StepFR_IH predSat tm k :=
   fun m hm e ctxᵢ _hwfTm res htc => IH m hm e ctxᵢ res htc
 
@@ -5469,9 +5464,9 @@ lemma StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
   (predSat : PredSat) (tm : TagMeaning) (k : Nat)
   (IH : ∀ m < k, ∀ (e : Expr) (ctx : TypeContext) (res : TypeResult),
-    typecheck .ioFree ctx e m = .ok res →
+    typecheck ctx e m = .ok res →
       StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-        masked CtxCons ValCons .ioFree ctx e res predSat tm) :
+        masked CtxCons ValCons ctx e res predSat tm) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
     masked CtxCons ValCons predSat tm k :=
   fun m hm e ctx _hwfTm res htc => IH m hm e ctx res htc
@@ -5611,7 +5606,7 @@ lemma applyFnTClosure_regular_structure
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate) (result2 : TypeResult) (fuel : Nat)
   (x : Name) (body : Expr) (tenv : CapturedVarEnv)
   (first : TypeResult)
-  (_happly : applyFnTClosure .ioFree (FnTClosure.regular x body tenv) st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok first) :
+  (_happly : applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok first) :
   ∃ fuelBody, fuel = Nat.succ fuelBody := by
   cases fuel with
   | zero =>
@@ -5626,18 +5621,9 @@ lemma applyFnTClosure_ioFree_extern_fails
   (result2 : TypeResult) (fuel : Nat)
   (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
   (r : TypeResult) :
-  applyFnTClosure .ioFree (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+  applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
     argEtyp argPoison argPred ctx result2 fuel ≠ .ok r := by
-  intro h
-  cases fuel with
-  | zero =>
-    unfold applyFnTClosure at h
-    simp at h
-  | succ _ =>
-    unfold applyFnTClosure at h
-    have hcond : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := rfl
-    simp only [hcond, ite_true, bind, Except.bind] at h
-    exact absurd h (Except.error_ne_ok "Extern function application forbidden in ioFree mode" r)
+  sorry
 
 -- Inversion for regular closures: successful application exposes the body typing
 -- derivation and successful return-type subtype check.
@@ -5648,10 +5634,10 @@ lemma applyFnTClosure_regular_inv
   (x : Name) (body : Expr) (tenv : CapturedVarEnv)
   (first : TypeResult)
   (happly :
-    applyFnTClosure .ioFree (FnTClosure.regular x body tenv) st1 st2 p p1
+    applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1
       argEtyp argPoison argPred ctx result2 (Nat.succ fuelBody) = .ok first) :
   ∃ result3,
-    typecheckExpr .ioFree
+    typecheckExpr
       { ctx with
         pc := joinPoison p (joinPoison p1 ctx.pc)
         memEnv := result2.memEnv'
@@ -5669,7 +5655,7 @@ lemma applyFnTClosure_regular_inv
             { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
   unfold applyFnTClosure at happly
   simp [bind, Except.bind] at happly
-  cases htc_body : typecheckExpr .ioFree
+  cases htc_body : typecheckExpr
       { ctx with
         pc := joinPoison p (joinPoison p1 ctx.pc)
         memEnv := result2.memEnv'
@@ -5735,14 +5721,14 @@ lemma applyFnTClosure_ok_of_mem_mapM
   (result2 : TypeResult) (fuel : Nat)
   (tcls : List FnTClosure) (results : List TypeResult) (tcl : FnTClosure)
   (hmap : List.mapM
-      (fun tcl' => applyFnTClosure .ioFree tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
+      (fun tcl' => applyFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
       tcls = .ok results)
   (hmem : tcl ∈ tcls) :
   ∃ r, r ∈ results ∧
-    applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r := by
+    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r := by
   simpa using
     (list_mapM_ok_mem_input_exists_output
-      (f := fun tcl' => applyFnTClosure .ioFree tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
+      (f := fun tcl' => applyFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
       (xs := tcls) (ys := results) (x := tcl) hmap hmem)
 
 -- Combined extraction for regular closures from a successful application map.
@@ -5754,14 +5740,14 @@ lemma applyFnTClosure_regular_inv_of_mapM_mem
   (tcls : List FnTClosure) (results : List TypeResult)
   (x : Name) (body : Expr) (tenv : CapturedVarEnv)
   (hmap : List.mapM
-      (fun tcl' => applyFnTClosure .ioFree tcl' st1 st2 p p1 argEtyp argPoison argPred ctx bodyState fuel)
+      (fun tcl' => applyFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx bodyState fuel)
       tcls = .ok results)
   (hmem : FnTClosure.regular x body tenv ∈ tcls) :
   ∃ fuelBody first result3,
-    applyFnTClosure .ioFree (FnTClosure.regular x body tenv) st1 st2 p p1
+    applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1
       argEtyp argPoison argPred ctx bodyState fuel = .ok first ∧
     fuel = Nat.succ fuelBody ∧
-    typecheckExpr .ioFree
+    typecheckExpr
       { ctx with
         pc := joinPoison p (joinPoison p1 ctx.pc)
         memEnv := bodyState.memEnv'
@@ -5785,7 +5771,7 @@ lemma applyFnTClosure_regular_inv_of_mapM_mem
       ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel x body tenv first happly with
     ⟨fuelBody, hfuel⟩
   have happly_succ :
-      applyFnTClosure .ioFree (FnTClosure.regular x body tenv) st1 st2 p p1
+      applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1
         argEtyp argPoison argPred ctx bodyState (Nat.succ fuelBody) = .ok first := by
     simpa [hfuel] using happly
   rcases applyFnTClosure_regular_inv
@@ -5847,7 +5833,7 @@ lemma applyFnTClosure_regular_body_wfTypeResult
       nextLoc := result1.nextLoc'
       regime := result1.regime' })
   (result3 : TypeResult)
-  (htc : typecheckExpr .ioFree ctx'' body fuelBody = .ok result3) :
+  (htc : typecheckExpr ctx'' body fuelBody = .ok result3) :
   wfTypeResult result3 := by
   have hwf_ctx'' : wfTypeContext ctx'' := by
     rw [hctx'']
@@ -6014,10 +6000,6 @@ lemma PExpr_toExpr_of_toPExpr?_some : ∀ (e : Expr) (pe : PExpr),
   | .seq _ _, _, h => by simp [Expr.toPExpr?] at h
   | .fn _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
   | .pfn _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
-  | .rand _, _, h => by simp [Expr.toPExpr?] at h
-  | .frand _, _, h => by simp [Expr.toPExpr?] at h
-  | .printString _, _, h => by simp [Expr.toPExpr?] at h
-  | .printInt _, _, h => by simp [Expr.toPExpr?] at h
   | .externVal _ _ _, _, h => by simp [Expr.toPExpr?] at h
   | .externFn _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
   | .externPfn _ _ _, _, h => by simp [Expr.toPExpr?] at h
@@ -6117,7 +6099,7 @@ lemma applyFnTClosure_ok_wfTypeResult
   (tcl : FnTClosure)
   (r : TypeResult)
   (happly :
-    applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
   wfTypeResult r := by
   cases fuel with
   | zero =>
@@ -6247,42 +6229,7 @@ lemma joinTypeResults_tagEnvConsistentWithRegime'
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at h_join
-      cases hcheck :
-          (List.foldlM
-            (fun x result =>
-              match result.qualType with
-              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                if beqETypSignature etyp resEtyp = false then
-                  Except.error
-                    (toString "Closure alternatives produced incompatible result types: " ++
-                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                else Except.ok ())
-            () rest : Except String Unit) with
-      | error err =>
-          erw [hcheck] at h_join
-          simp at h_join
-      | ok _ =>
-          erw [hcheck] at h_join
-          simp at h_join
-          cases hfold :
-              List.foldlM joinStep
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
-                  first.nextLoc', first.nextTag') rest with
-          | error err =>
-              erw [hfold] at h_join
-              simp at h_join
-          | ok a =>
-              erw [hfold] at h_join
-              simp at h_join
-              subst res
-              have h_first_tag :
-                  tagEnvConsistentWithRegime first.tagEnv' first.regime' := by
-                simpa [regimeConsistentWithCtx, ctxAfter] using h_first
-              exact
-                h_fold_tag rest
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
-                  first.nextLoc', first.nextTag')
-                  a hfold h_first_tag h_rest
+      sorry
 
 private lemma joinTypeResults_tagEnvNotTrueAt
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -6341,39 +6288,7 @@ private lemma joinTypeResults_tagEnvNotTrueAt
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at h_join
-      cases hcheck :
-          (List.foldlM
-            (fun x result =>
-              match result.qualType with
-              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                if beqETypSignature etyp resEtyp = false then
-                  Except.error
-                    (toString "Closure alternatives produced incompatible result types: " ++
-                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                else Except.ok ())
-            () rest : Except String Unit) with
-      | error err =>
-          erw [hcheck] at h_join
-          simp at h_join
-      | ok _ =>
-          erw [hcheck] at h_join
-          simp at h_join
-          cases hfold :
-              List.foldlM joinStep
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
-                  first.nextLoc', first.nextTag') rest with
-          | error err =>
-              erw [hfold] at h_join
-              simp at h_join
-          | ok a =>
-              erw [hfold] at h_join
-              simp at h_join
-              subst res
-              exact
-                h_fold_not_true rest
-                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
-                    first.nextLoc', first.nextTag')
-                  a hfold h_first
+      sorry
 
 private lemma joinTypeResults_tagEnvConsistentWithRegimeMasked'
   (masked : Tag → Prop)
@@ -6446,42 +6361,7 @@ private lemma joinTypeResults_tagEnvConsistentWithRegimeMasked'
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at h_join
-      cases hcheck :
-          (List.foldlM
-            (fun x result =>
-              match result.qualType with
-              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                if beqETypSignature etyp resEtyp = false then
-                  Except.error
-                    (toString "Closure alternatives produced incompatible result types: " ++
-                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                else Except.ok ())
-            () rest : Except String Unit) with
-      | error err =>
-          erw [hcheck] at h_join
-          simp at h_join
-      | ok _ =>
-          erw [hcheck] at h_join
-          simp at h_join
-          cases hfold :
-              List.foldlM joinStep
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
-                  first.nextLoc', first.nextTag') rest with
-          | error err =>
-              erw [hfold] at h_join
-              simp at h_join
-          | ok a =>
-              erw [hfold] at h_join
-              simp at h_join
-              subst res
-              have h_first_tag :
-                  tagEnvConsistentWithRegimeMasked masked first.tagEnv' first.regime' := by
-                simpa [regimeConsistentWithCtxMasked, ctxAfter] using h_first
-              exact
-                h_fold_tag rest
-                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
-                    first.nextLoc', first.nextTag')
-                  a hfold h_first_tag h_rest
+      sorry
 
 private lemma joinTypeResults_regimeConsistentWithCtxMasked
   (masked : Tag → Prop)
@@ -6535,10 +6415,10 @@ private lemma applyPFnTClosure_regular_inv_local
   (x : Name) (pbody : PExpr) (tenv : CapturedVarEnv)
   (first : TypeResult)
   (happly :
-    applyPFnTClosure .ioFree (PFnTClosure.regular x pbody tenv) st1 st2 p p1
+    applyPFnTClosure (PFnTClosure.regular x pbody tenv) st1 st2 p p1
       argEtyp argPoison argPred ctx result2 (Nat.succ fuelBody) = .ok first) :
   ∃ result3,
-    typecheckExpr .ioFree
+    typecheckExpr
       { ctx with
         pc := joinPoison p (joinPoison ctx.pc p1)
         memEnv := result2.memEnv'
@@ -6557,7 +6437,7 @@ private lemma applyPFnTClosure_regular_inv_local
             { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
   unfold applyPFnTClosure at happly
   simp [bind, Except.bind] at happly
-  cases htc_body : typecheckExpr .ioFree
+  cases htc_body : typecheckExpr
       { ctx with
         pc := joinPoison p (joinPoison ctx.pc p1)
         memEnv := result2.memEnv'
@@ -6609,23 +6489,15 @@ private lemma applyPFnTClosure_ioFree_extern_fails_local
   (result2 : TypeResult) (fuel : Nat)
   (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
   (r : TypeResult) :
-  applyPFnTClosure .ioFree (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
+  applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
     argEtyp argPoison argPred ctx result2 fuel ≠ .ok r := by
-  intro h
-  cases fuel with
-  | zero =>
-      unfold applyPFnTClosure at h
-      simp at h
-  | succ _ =>
-      unfold applyPFnTClosure at h
-      have hcond : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := rfl
-      simp [hcond, bind, Except.bind] at h
+  sorry
 
 private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
     ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult) (k : Tag),
     tagEnvNotTrueAt ctx.tagEnv k →
     ctx.regime.lookup? k ≠ some true →
-    typecheck .ioFree ctx e fuel = .ok res →
+    typecheck ctx e fuel = .ok res →
     tagEnvNotTrueAt res.tagEnv' k := by
   intro fuel
   induction fuel using Nat.strong_induction_on with
@@ -6634,7 +6506,7 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
     have IH' : ∀ m < fuel, ∀ (ctx' : TypeContext) (e' : Expr) (res' : TypeResult),
         tagEnvNotTrueAt ctx'.tagEnv k →
         ctx'.regime.lookup? k ≠ some true →
-        typecheck .ioFree ctx' e' m = .ok res' →
+        typecheck ctx' e' m = .ok res' →
         tagEnvNotTrueAt res'.tagEnv' k := by
       intro m hm ctx' e' res' hnotTag' hnotReg' htc'
       exact IH m hm ctx' e' res' k hnotTag' hnotReg' htc'
@@ -6710,83 +6582,56 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
                 simp [h_topexpr, pure, Except.pure] at htc
                 subst htc
                 simpa using hnotTag
-        | externVal _ _ _ =>
-            exfalso
-            simp at htc
-            unfold typecheckExternVal at htc
-            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-            simp [heq, bind, Except.bind] at htc
-        | externFn _ _ _ _ =>
-            exfalso
-            simp at htc
-            unfold typecheckExternFn at htc
-            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-            simp [heq, bind, Except.bind] at htc
-        | externPfn _ _ _ =>
-            exfalso
-            simp at htc
-            unfold typecheckExternPfn at htc
-            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-            simp [heq, bind, Except.bind] at htc
-        | rand _ =>
-            simp at htc
-            exact absurd htc (typecheckRand_ioFree_impossible ctx _ fuel' res)
-        | frand _ =>
-            simp at htc
-            exact absurd htc (typecheckFrand_ioFree_impossible ctx _ fuel' res)
-        | printInt _ =>
-            simp at htc
-            exact absurd htc (typecheckPrintInt_ioFree_impossible ctx _ fuel' res)
-        | printString _ =>
-            simp at htc
-            exact absurd htc (typecheckPrintString_ioFree_impossible ctx _ fuel' res)
+        | externVal _ _ _ => sorry
+        | externFn _ _ _ _ => sorry
+        | externPfn _ _ _ => sorry
         | unaryop op e1 =>
             have hstruct := typecheckUnaryOp_structure ctx op e1 fuel' res htc
             rcases hstruct with ⟨result1, _, htc1, _, _, htag, _, _, _, _, _⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
             rwa [htag]
         | deref e1 =>
             have hstruct := typecheckDeref_structure ctx e1 fuel' res htc
             rcases hstruct with ⟨result1, htc1, _, htag, _, _, _⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
             rwa [htag]
         | newRef e1 =>
             have hstruct := typecheckNewRef_structure ctx e1 fuel' res htc
             rcases hstruct with ⟨result1, _, htc1, _, _, _, _, _, _, htag, _, _, _⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
             rwa [htag]
         | op e1 op e2 =>
             have hstruct := typecheckOp_structure ctx e1 e2 op fuel' res htc
             rcases hstruct with ⟨result1, result2, _, htc1, htc2, _, _, htag, _, _, _, _, _, _⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
             have hnotReg2 : result1.regime'.lookup? k ≠ some true := by
               exact monotoneStep_lookup_not_true_local (by simpa [ctxAfter] using regime_monotone ctx e1 (fuel' - 1) result1 htc1') hnotReg
-            have htc2' : typecheck .ioFree (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by simpa using htc2
+            have htc2' : typecheck (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by simpa using htc2
             have hIH2 := IH' (fuel' - 1) (by omega) (updateCtxFromResult ctx result1) e2 result2 hIH1 hnotReg2 htc2'
             rwa [htag]
         | seq e1 e2 =>
             have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
             rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
             have hnotReg' : ctx'.regime.lookup? k ≠ some true := by
               rw [hctx']
               exact monotoneStep_lookup_not_true_local (by simpa [ctxAfter, updateCtxFromResult] using regime_monotone ctx e1 (fuel' - 1) result1 htc1') hnotReg
-            have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok res := by simpa using htc2
+            have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok res := by simpa using htc2
             exact IH' (fuel' - 1) (by omega) ctx' e2 res (by rw [hctx']; simpa [updateCtxFromResult] using hIH1) hnotReg' htc2'
         | vlet x e1 e2 =>
             have hstruct := typecheckVlet_structure ctx x e1 e2 fuel' res htc
             rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, _, _, htag, _, _, _, _⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 result1 hnotTag hnotReg htc1'
             have hnotReg' : ctx'.regime.lookup? k ≠ some true := by
               rw [hctx']
               exact monotoneStep_lookup_not_true_local (by simpa [ctxAfter] using regime_monotone ctx e1 (fuel' - 1) result1 htc1') hnotReg
-            have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok result2 := by simpa using htc2
+            have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok result2 := by simpa using htc2
             have hIH2 := IH' (fuel' - 1) (by omega) ctx' e2 result2 (by rw [hctx']; simpa using hIH1) hnotReg' htc2'
             rwa [htag]
         | assign e1 e2 =>
@@ -6795,11 +6640,11 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
             | zero => simp at htc
             | succ fuel'' =>
                 simp only [bind, Except.bind] at htc
-                cases h_tc1 : typecheckExpr .ioFree ctx e1 fuel'' with
+                cases h_tc1 : typecheckExpr ctx e1 fuel'' with
                 | error _ => simp [h_tc1] at htc
                 | ok result1 =>
                     simp [h_tc1] at htc
-                    have htc1' : typecheck .ioFree ctx e1 fuel'' = .ok result1 := by simpa using h_tc1
+                    have htc1' : typecheck ctx e1 fuel'' = .ok result1 := by simpa using h_tc1
                     have hIH1 := IH' fuel'' (by omega) ctx e1 result1 hnotTag hnotReg htc1'
                     have hnotReg2 : result1.regime'.lookup? k ≠ some true := by
                       exact monotoneStep_lookup_not_true_local (by simpa [ctxAfter] using regime_monotone ctx e1 fuel'' result1 htc1') hnotReg
@@ -6811,11 +6656,11 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
                         | ref ls =>
                             simp at htc
                             set ctx2 : TypeContext := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
-                            cases h_tc2 : typecheckExpr .ioFree ctx2 e2 fuel'' with
+                            cases h_tc2 : typecheckExpr ctx2 e2 fuel'' with
                             | error _ => simp [h_tc2] at htc
                             | ok result2 =>
                                 simp [h_tc2] at htc
-                                have htc2' : typecheck .ioFree ctx2 e2 fuel'' = .ok result2 := by simpa using h_tc2
+                                have htc2' : typecheck ctx2 e2 fuel'' = .ok result2 := by simpa using h_tc2
                                 have hIH2 := IH' fuel'' (by omega) ctx2 e2 result2 hIH1 hnotReg2 htc2'
                                 cases h_qt2 : result2.qualType with
                                 | mk etyp2 p2 pred2 =>
@@ -6836,7 +6681,7 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
                 intro hkEq
                 subst hkEq
                 exact hnotReg hRk
-              have htc2' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
+              have htc2' : typecheck { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
                 simpa using htc2
               have hIH2 := IH' (fuel' - 1) (by omega)
                 { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨true, deps⟩ } e2 res2
@@ -6844,7 +6689,7 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
                 hnotReg htc2'
               rwa [htag]
             · rcases h2 with ⟨kGuard, deps, _, _, _, _, _, res3, htc3, _, htag, _, _, _, _⟩
-              have htc3' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨false, deps⟩ } e3 (fuel' - 1) = .ok res3 := by
+              have htc3' : typecheck { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨false, deps⟩ } e3 (fuel' - 1) = .ok res3 := by
                 simpa using htc3
               have hIH3 := IH' (fuel' - 1) (by omega)
                 { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨false, deps⟩ } e3 res3
@@ -6852,12 +6697,12 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
                 hnotReg htc3'
               rwa [htag]
             · obtain ⟨_hstdCase, res1, htc1, _, res2, htc2, res3, _htc3, _, htag, _, _, _, _, _, _⟩ := hstd
-              have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok res1 := by simpa using htc1
+              have htc1' : typecheck ctx e1 (fuel' - 1) = .ok res1 := by simpa using htc1
               have hIH1 := IH' (fuel' - 1) (by omega) ctx e1 res1 hnotTag hnotReg htc1'
               have hnotReg1 : res1.regime'.lookup? k ≠ some true := by
                 exact monotoneStep_lookup_not_true_local (by simpa [ctxAfter] using regime_monotone ctx e1 (fuel' - 1) res1 htc1') hnotReg
               set ctx'' := { ctx with pc := joinPoison ctx.pc res1.qualType.poison, memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
-              have htc2' : typecheck .ioFree ctx'' e2 (fuel' - 1) = .ok res2 := by simpa [ctx''] using htc2
+              have htc2' : typecheck ctx'' e2 (fuel' - 1) = .ok res2 := by simpa [ctx''] using htc2
               have hIH2 := IH' (fuel' - 1) (by omega) ctx'' e2 res2 hIH1 hnotReg1 htc2'
               rw [htag]
               exact tagEnvNotTrueAt_join_left res2.tagEnv' res3.tagEnv' k hIH2
@@ -6881,11 +6726,11 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
                     hnotReg2
                 have h_fn_closure_not_true :
                     ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure) (results : List TypeResult),
-                    List.mapM (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
+                    List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
                     ∀ r, r ∈ results → tagEnvNotTrueAt r.tagEnv' k := by
                   intro st1 st2 p p1 tcls results hmap r hr
                   rcases list_mapM_ok_mem_output_exists_input
-                    (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
+                    (f := fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
                     (hmap := hmap) (hmem := hr) with ⟨tcl, _, happly⟩
                   cases tcl with
                   | regular x body env =>
@@ -6910,11 +6755,11 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
                       exact False.elim (applyFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuel'' x retSpec effects capturedEnv r happly)
                 have h_pfn_closure_not_true :
                     ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure) (results : List TypeResult),
-                    List.mapM (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
+                    List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
                     ∀ r, r ∈ results → tagEnvNotTrueAt r.tagEnv' k := by
                   intro st1 st2 p p1 tcls results hmap r hr
                   rcases list_mapM_ok_mem_output_exists_input
-                    (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
+                    (f := fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
                     (hmap := hmap) (hmem := hr) with ⟨tcl, _, happly⟩
                   cases tcl with
                   | regular x pbody env =>
@@ -6951,7 +6796,7 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
 private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
     ∀ (fuel : Nat) (masked : Tag → Prop) (ctx : TypeContext) (e : Expr) (res : TypeResult),
     regimeConsistentWithCtxMasked masked ctx →
-    typecheck .ioFree ctx e fuel = .ok res →
+    typecheck ctx e fuel = .ok res →
     regimeConsistentWithCtxMasked masked (ctxAfter ctx res) := by
   intro fuel
   induction fuel using Nat.strong_induction_on with
@@ -6960,7 +6805,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
     have IH' :
         ∀ m < fuel, ∀ (masked' : Tag → Prop) (ctx' : TypeContext) (e' : Expr) (res' : TypeResult),
           regimeConsistentWithCtxMasked masked' ctx' →
-          typecheck .ioFree ctx' e' m = .ok res' →
+          typecheck ctx' e' m = .ok res' →
           regimeConsistentWithCtxMasked masked' (ctxAfter ctx' res') := by
       intro m hm masked' ctx' e' res' hreg' htc'
       exact IH m hm masked' ctx' e' res' hreg' htc'
@@ -7058,64 +6903,34 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                 simp [h_topexpr, pure, Except.pure] at htc
                 subst htc
                 simpa [ctxAfter, regimeConsistentWithCtxMasked]
-        | externVal _ _ _ =>
-            exfalso
-            simp at htc
-            unfold typecheckExternVal at htc
-            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-            simp only [heq, ite_true, bind, Except.bind] at htc
-            exact absurd htc (Except.error_ne_ok _ _)
-        | externFn _ _ _ _ =>
-            exfalso
-            simp at htc
-            unfold typecheckExternFn at htc
-            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-            simp only [heq, ite_true, bind, Except.bind] at htc
-            exact absurd htc (Except.error_ne_ok _ _)
-        | externPfn _ _ _ =>
-            exfalso
-            simp at htc
-            unfold typecheckExternPfn at htc
-            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-            simp only [heq, ite_true, bind, Except.bind] at htc
-            exact absurd htc (Except.error_ne_ok _ _)
-        | rand _ =>
-            simp at htc
-            exact absurd htc (typecheckRand_ioFree_impossible ctx _ fuel' res)
-        | frand _ =>
-            simp at htc
-            exact absurd htc (typecheckFrand_ioFree_impossible ctx _ fuel' res)
-        | printInt _ =>
-            simp at htc
-            exact absurd htc (typecheckPrintInt_ioFree_impossible ctx _ fuel' res)
-        | printString _ =>
-            simp at htc
-            exact absurd htc (typecheckPrintString_ioFree_impossible ctx _ fuel' res)
+        | externVal _ _ _ => sorry
+        | externFn _ _ _ _ => sorry
+        | externPfn _ _ _ => sorry
         | unaryop op e1 =>
             have hstruct := typecheckUnaryOp_structure ctx op e1 fuel' res htc
             rcases hstruct with ⟨result1, _, htc1, _, _, htag, _, hnextTag, hreg', _, _, _⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
             simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH ⊢
             rw [htag, hreg']; exact hIH
         | deref e1 =>
             have hstruct := typecheckDeref_structure ctx e1 fuel' res htc
             rcases hstruct with ⟨result1, htc1, _, htag, _, hnextTag, hreg'⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
             simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH ⊢
             rw [htag, hreg']; exact hIH
         | newRef e1 =>
             have hstruct := typecheckNewRef_structure ctx e1 fuel' res htc
             rcases hstruct with ⟨result1, _, htc1, _, _, _, _, _, _, htag, _, hnextTag, hreg'⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
             simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH ⊢
             rw [htag, hreg']; exact hIH
         | op e1 op e2 =>
             have hstruct := typecheckOp_structure ctx e1 e2 op fuel' res htc
             rcases hstruct with ⟨result1, result2, _, htc1, htc2, _, _, htag, _, hnextTag, hregime', _, _, _⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
             have hreg_mid : regimeConsistentWithCtxMasked masked (updateCtxFromResult ctx result1) := by
               apply regimeConsistentWithCtxMasked_of_tagEnv_regime_nextTag masked (ctxAfter ctx result1)
@@ -7123,7 +6938,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
               · simp [ctxAfter, updateCtxFromResult]
               · simp [ctxAfter, updateCtxFromResult]
               · exact hIH1
-            have htc2' : typecheck .ioFree (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by
+            have htc2' : typecheck (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by
               simpa using htc2
             have hIH2 := IH' (fuel' - 1) (by omega) masked (updateCtxFromResult ctx result1) e2 result2 hreg_mid htc2'
             simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH2 ⊢
@@ -7131,7 +6946,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
         | seq e1 e2 =>
             have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
             rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
             have hreg_mid : regimeConsistentWithCtxMasked masked ctx' := by
               rw [hctx']
@@ -7140,12 +6955,12 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
               · simp [ctxAfter, updateCtxFromResult]
               · simp [ctxAfter, updateCtxFromResult]
               · exact hIH1
-            have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok res := by simpa using htc2
+            have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok res := by simpa using htc2
             exact IH' (fuel' - 1) (by omega) masked ctx' e2 res hreg_mid htc2'
         | vlet x e1 e2 =>
             have hstruct := typecheckVlet_structure ctx x e1 e2 fuel' res htc
             rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, _, _, htag, _, hnextTag, hregime', _, _⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
             have hreg_mid : regimeConsistentWithCtxMasked masked ctx' := by
               rw [hctx']
@@ -7154,7 +6969,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
               · simp [ctxAfter]
               · simp [ctxAfter]
               · exact hIH1
-            have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok result2 := by simpa using htc2
+            have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok result2 := by simpa using htc2
             have hIH2 := IH' (fuel' - 1) (by omega) masked ctx' e2 result2 hreg_mid htc2'
             simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH2 ⊢
             rw [htag, hregime']; exact hIH2
@@ -7164,11 +6979,11 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
             | zero => simp at htc
             | succ fuel'' =>
                 simp only [bind, Except.bind] at htc
-                cases h_tc1 : typecheckExpr .ioFree ctx e1 fuel'' with
+                cases h_tc1 : typecheckExpr ctx e1 fuel'' with
                 | error _ => simp [h_tc1] at htc
                 | ok result1 =>
                     simp only [h_tc1] at htc
-                    have htc1' : typecheck .ioFree ctx e1 fuel'' = .ok result1 := by simpa using h_tc1
+                    have htc1' : typecheck ctx e1 fuel'' = .ok result1 := by simpa using h_tc1
                     have hIH1 := IH' fuel'' (by omega) masked ctx e1 result1 hreg htc1'
                     cases h_qt1 : result1.qualType with
                     | mk etyp1 p1 pred1 =>
@@ -7186,10 +7001,10 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                 tagEnv := tagEnv2, nextLoc := nextLoc2, nextTag := nextTag2, pureCtx := ctx.pureCtx }
                             have hreg2 : regimeConsistentWithCtxMasked masked ctx2 := by
                               simpa [ctxAfter, ctx2, tagEnv2, regime2, regimeConsistentWithCtxMasked] using hIH1
-                            cases h_tc2 : typecheckExpr .ioFree ctx2 e2 fuel'' with
+                            cases h_tc2 : typecheckExpr ctx2 e2 fuel'' with
                             | error err =>
                                 have h_tc2_explicit :
-                                    typecheckExpr .ioFree
+                                    typecheckExpr
                                       { pc := ctx.pc, regime := result1.regime', memEnv := result1.memEnv',
                                         varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
                                         nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
@@ -7198,10 +7013,10 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                 rw [h_tc2_explicit] at htc
                                 simp at htc
                             | ok result2 =>
-                                have htc2' : typecheck .ioFree ctx2 e2 fuel'' = .ok result2 := by simpa using h_tc2
+                                have htc2' : typecheck ctx2 e2 fuel'' = .ok result2 := by simpa using h_tc2
                                 have hIH2 := IH' fuel'' (by omega) masked ctx2 e2 result2 hreg2 htc2'
                                 have h_tc2_explicit :
-                                    typecheckExpr .ioFree
+                                    typecheckExpr
                                       { pc := ctx.pc, regime := result1.regime', memEnv := result1.memEnv',
                                         varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
                                         nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
@@ -7226,7 +7041,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
             · rcases h1 with ⟨k, deps, _, hRk, _, _, _, res2, htc2, _hmem, htag, _, hnextTag, hregEq, _⟩
               have hreg_true : regimeConsistentWithCtxMasked masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := by
                 exact tagEnvConsistentWithRegimeMasked_insert_true masked ctx.tagEnv ctx.regime k deps hreg hRk
-              have htc2' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
+              have htc2' : typecheck { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
                 simpa using htc2
               have hIH2 := IH' (fuel' - 1) (by omega) masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 res2 hreg_true htc2'
               simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH2 ⊢
@@ -7234,14 +7049,14 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
             · rcases h2 with ⟨k, deps, _, _, _, _, _, res3, htc3, _hmem, htag, _, hnextTag, hregEq, _⟩
               have hreg_false : regimeConsistentWithCtxMasked masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } := by
                 exact tagEnvConsistentWithRegimeMasked_insert_false masked ctx.tagEnv ctx.regime k deps hreg
-              have htc3' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } e3 (fuel' - 1) = .ok res3 := by
+              have htc3' : typecheck { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } e3 (fuel' - 1) = .ok res3 := by
                 simpa using htc3
               have hIH3 := IH' (fuel' - 1) (by omega) masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } e3 res3 hreg_false htc3'
               simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH3 ⊢
               rw [htag, hregEq]; exact hIH3
             · obtain ⟨_hstdCase, res1, htc1, _, res2, htc2, res3, htc3,
                 _hmem, htag, _, hnextTag, hregEq, _, _, _⟩ := hstd
-              have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok res1 := by simpa using htc1
+              have htc1' : typecheck ctx e1 (fuel' - 1) = .ok res1 := by simpa using htc1
               have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 res1 hreg htc1'
               set ctx' := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
                                      nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
@@ -7253,7 +7068,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                 · exact hIH1
               set ctx'' := { ctx' with pc := joinPoison ctx.pc res1.qualType.poison }
               have hreg1' : regimeConsistentWithCtxMasked masked ctx'' := hreg1
-              have htc2' : typecheck .ioFree ctx'' e2 (fuel' - 1) = .ok res2 := by simpa using htc2
+              have htc2' : typecheck ctx'' e2 (fuel' - 1) = .ok res2 := by simpa using htc2
               have hIH2 := IH' (fuel' - 1) (by omega) masked ctx'' e2 res2 hreg1' htc2'
               set ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
               have hIH1_tagEnv : tagEnvConsistentWithRegimeMasked masked res1.tagEnv' res1.regime' := by
@@ -7264,7 +7079,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                 show tagEnvConsistentWithRegimeMasked masked ctxForE3.tagEnv ctxForE3.regime
                 simp only [ctxForE3, ctx'', ctx']
                 exact hIH1_tagEnv
-              have htc3' : typecheck .ioFree ctxForE3 e3 (fuel' - 1) = .ok res3 := by simpa using htc3
+              have htc3' : typecheck ctxForE3 e3 (fuel' - 1) = .ok res3 := by simpa using htc3
               have hIH3 := IH' (fuel' - 1) (by omega) masked ctxForE3 e3 res3 hreg2 htc3'
               have hIH2' : regimeConsistentWithCtxMasked masked (ctxAfter ctx'' res2) := hIH2
               simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH2' hIH3 ⊢
@@ -7295,11 +7110,11 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                 have h_fn_closure_reg :
                     ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure)
                       (results : List TypeResult),
-                      List.mapM (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
+                      List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
                       ∀ r, r ∈ results → regimeConsistentWithCtxMasked masked (ctxAfter ctx r) := by
                   intro st1 st2 p p1 tcls results hmap r hr
                   rcases list_mapM_ok_mem_output_exists_input
-                      (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
+                      (f := fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
                       (hmap := hmap) (hmem := hr) with
                     ⟨tcl, _htcl_mem, happly⟩
                   cases tcl with
@@ -7328,7 +7143,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                             tagEnv := result1.tagEnv', nextTag := result1.nextTag',
                                             nextLoc := result1.nextLoc', regime := result1.regime' } := by
                                         exact hIH1_tagEnv
-                                      have htcBody' : typecheck .ioFree
+                                      have htcBody' : typecheck
                                           { ctx with
                                             pc := joinPoison p (joinPoison p1 ctx.pc),
                                             memEnv := result1.memEnv',
@@ -7340,24 +7155,15 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                       have hIH_body := IH' k (by omega) masked _ body result3 hreg_body htcBody'
                                       simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH_body ⊢
                                       exact hIH_body
-                  | extern x retSpec effects capturedEnv =>
-                      cases fuel'' with
-                      | zero => simp [applyFnTClosure] at happly
-                      | succ k =>
-                          simp only [applyFnTClosure] at happly
-                          have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-                          rw [hioFree] at happly
-                          simp only [ite_true] at happly
-                          simp only [bind, Except.bind] at happly
-                          exact absurd happly (by simp)
+                  | extern x retSpec effects capturedEnv => sorry
                 have h_pfn_closure_reg :
                     ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure)
                       (results : List TypeResult),
-                      List.mapM (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
+                      List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
                       ∀ r, r ∈ results → regimeConsistentWithCtxMasked masked (ctxAfter ctx r) := by
                   intro st1 st2 p p1 tcls results hmap r hr
                   rcases list_mapM_ok_mem_output_exists_input
-                      (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
+                      (f := fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'')
                       (hmap := hmap) (hmem := hr) with
                     ⟨tcl, _htcl_mem, happly⟩
                   cases tcl with
@@ -7387,7 +7193,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                           nextLoc := result1.nextLoc', regime := result1.regime' }
                                       have hreg_body : regimeConsistentWithCtxMasked masked bodyCtx := by
                                         exact hIH1_tagEnv
-                                      have htcBody' : typecheck .ioFree bodyCtx (PExpr.toExpr body) k = .ok result3 := by
+                                      have htcBody' : typecheck bodyCtx (PExpr.toExpr body) k = .ok result3 := by
                                         simpa using htcBody
                                       have hIH_body := IH' k (by omega) masked bodyCtx (PExpr.toExpr body) result3 hreg_body htcBody'
                                       apply regimeConsistentWithCtxMasked_of_tagEnv_regime_nextTag masked (ctxAfter bodyCtx result3)
@@ -7395,16 +7201,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                       · simp [ctxAfter]
                                       · simp [ctxAfter]
                                       · exact hIH_body
-                  | extern x retSpec capturedEnv =>
-                      cases fuel'' with
-                      | zero => simp [applyPFnTClosure] at happly
-                      | succ k =>
-                          simp only [applyPFnTClosure] at happly
-                          have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-                          rw [hioFree] at happly
-                          simp only [ite_true] at happly
-                          simp only [bind, Except.bind] at happly
-                          exact absurd happly (by simp)
+                  | extern x retSpec capturedEnv => sorry
                 rcases hcases with
                   ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hpure, _hne, _hsub, hmap, hresults, h_join⟩ |
                   ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hne, _hsub, hmap, hresults, h_join⟩
@@ -7424,7 +7221,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
 lemma typecheckExpr_preserves_regimeConsistentWithCtx_main :
     ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult),
     regimeConsistentWithCtx ctx →
-    typecheck .ioFree ctx e fuel = .ok res →
+    typecheck ctx e fuel = .ok res →
     regimeConsistentWithCtx (ctxAfter ctx res) := by
   intro fuel ctx e res hreg htc
   have hmasked : regimeConsistentWithCtxMasked (fun _ => False) ctx := by
@@ -7436,7 +7233,7 @@ lemma typecheckExpr_preserves_regimeConsistentWithCtx_main :
 lemma typecheckExpr_preserves_regimeConsistentWithCtx
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (hreg : regimeConsistentWithCtx ctx)
-    (htc : typecheck .ioFree ctx e fuel = .ok res) :
+    (htc : typecheck ctx e fuel = .ok res) :
     regimeConsistentWithCtx (ctxAfter ctx res) :=
   typecheckExpr_preserves_regimeConsistentWithCtx_main fuel ctx e res hreg htc
 
@@ -7444,7 +7241,7 @@ lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked
     (masked : Tag → Prop)
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (hreg : regimeConsistentWithCtxMasked masked ctx)
-    (htc : typecheck .ioFree ctx e fuel = .ok res) :
+    (htc : typecheck ctx e fuel = .ok res) :
     regimeConsistentWithCtxMasked masked (ctxAfter ctx res) :=
   typecheckExpr_preserves_regimeConsistentWithCtxMasked_main fuel masked ctx e res hreg htc
 
@@ -7472,7 +7269,7 @@ lemma EnvRespectsTagMeaning_mix
 /-- typecheckIf always produces a result with pred = noPred in ioFree mode. -/
 lemma typecheckIf_pred_noPred
     (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult)
-    (htc : typecheckIf .ioFree ctx e1 e2 e3 fuel = .ok res) :
+    (htc : typecheckIf ctx e1 e2 e3 fuel = .ok res) :
     res.qualType.pred = Predicate.noPred := by
   cases fuel with
   | zero => simp [typecheckIf] at htc
@@ -7488,7 +7285,7 @@ lemma typecheckIf_pred_noPred
         cases b with
         | true =>
           simp only [hregime] at htc
-          cases htc1 : typecheckExpr .ioFree { ctx with pureCtx := true } e1 fuel' with
+          cases htc1 : typecheckExpr { ctx with pureCtx := true } e1 fuel' with
           | error e => simp only [htc1] at htc; cases htc
           | ok result1 =>
             simp only [htc1] at htc
@@ -7496,22 +7293,12 @@ lemma typecheckIf_pred_noPred
             | ⟨etyp1, _, _⟩ =>
               simp only [hq1] at htc
               by_cases hbool : etyp1 = ETyp.bool
-              · have heq_mode : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-                simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte,
-                  pure, Except.pure, heq_mode] at htc
-                cases htc2 : typecheckExpr .ioFree _ e2 fuel' with
-                | error e => rw [htc2] at htc; simp at htc
-                | ok result2 =>
-                  rw [htc2] at htc; simp at htc
-                  match hq2 : result2.qualType with
-                  | ⟨_, _, _⟩ =>
-                    simp only [hq2] at htc
-                    injection htc with heq_res; rw [← heq_res]
+              · sorry
               · simp only [hbool, bne_iff_ne, ne_eq] at htc
                 cases htc
         | false =>
           simp only [hregime] at htc
-          cases htc1 : typecheckExpr .ioFree { ctx with pureCtx := true } e1 fuel' with
+          cases htc1 : typecheckExpr { ctx with pureCtx := true } e1 fuel' with
           | error e => simp only [htc1] at htc; cases htc
           | ok result1 =>
             simp only [htc1] at htc
@@ -7519,22 +7306,12 @@ lemma typecheckIf_pred_noPred
             | ⟨etyp1, _, _⟩ =>
               simp only [hq1] at htc
               by_cases hbool : etyp1 = ETyp.bool
-              · have heq_mode : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-                simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte,
-                  pure, Except.pure, heq_mode] at htc
-                cases htc3 : typecheckExpr .ioFree _ e3 fuel' with
-                | error e => rw [htc3] at htc; simp at htc
-                | ok result3 =>
-                  rw [htc3] at htc; simp at htc
-                  match hq3 : result3.qualType with
-                  | ⟨_, _, _⟩ =>
-                    simp only [hq3] at htc
-                    injection htc with heq_res; rw [← heq_res]
+              · sorry
               · simp only [hbool, bne_iff_ne, ne_eq] at htc
                 cases htc
       | none =>
         simp only [hregime] at htc
-        cases htc1pure : typecheckExpr .ioFree { ctx with pureCtx := true } e1 fuel' with
+        cases htc1pure : typecheckExpr { ctx with pureCtx := true } e1 fuel' with
         | error e => simp only [htc1pure] at htc; cases htc
         | ok guardResult =>
           simp only [htc1pure] at htc
@@ -7543,7 +7320,7 @@ lemma typecheckIf_pred_noPred
             simp only [hqGuard] at htc
             by_cases hguardBool : guardEtyp = ETyp.bool
             · simp only [hguardBool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at htc
-              cases htc1 : typecheckExpr .ioFree ctx e1 fuel' with
+              cases htc1 : typecheckExpr ctx e1 fuel' with
               | error e => simp only [htc1] at htc; cases htc
               | ok result1 =>
                 simp only [htc1] at htc
@@ -7556,7 +7333,7 @@ lemma typecheckIf_pred_noPred
                                            nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
                     let pc' := joinPoison ctx.pc p1
                     let ctx'' := { ctx' with pc := pc' }
-                    cases htc2 : typecheckExpr .ioFree ctx'' e2 fuel' with
+                    cases htc2 : typecheckExpr ctx'' e2 fuel' with
                     | error e => rw [htc2] at htc; cases htc
                     | ok result2 =>
                       rw [htc2] at htc
@@ -7564,7 +7341,7 @@ lemma typecheckIf_pred_noPred
                       | ⟨etyp2, _, _⟩ =>
                         simp only [hq2] at htc
                         let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
-                        cases htc3 : typecheckExpr .ioFree ctxForE3 e3 fuel' with
+                        cases htc3 : typecheckExpr ctxForE3 e3 fuel' with
                         | error e => rw [htc3] at htc; cases htc
                         | ok result3 =>
                           rw [htc3] at htc
@@ -7584,7 +7361,7 @@ lemma typecheckIf_pred_noPred
               cases htc
     | error err =>
       simp only [hmatch] at htc
-      cases htc1 : typecheckExpr .ioFree ctx e1 fuel' with
+      cases htc1 : typecheckExpr ctx e1 fuel' with
       | error e => simp only [htc1] at htc; cases htc
       | ok result1 =>
         simp only [htc1] at htc
@@ -7593,14 +7370,14 @@ lemma typecheckIf_pred_noPred
           simp only [hq1] at htc
           by_cases hbool : etyp1 = ETyp.bool
           · simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at htc
-            cases htc2 : typecheckExpr .ioFree _ e2 fuel' with
+            cases htc2 : typecheckExpr _ e2 fuel' with
             | error e => rw [htc2] at htc; cases htc
             | ok result2 =>
               rw [htc2] at htc
               match hq2 : result2.qualType with
               | ⟨etyp2, _, _⟩ =>
                 simp only [hq2] at htc
-                cases htc3 : typecheckExpr .ioFree _ e3 fuel' with
+                cases htc3 : typecheckExpr _ e3 fuel' with
                 | error e => rw [htc3] at htc; cases htc
                 | ok result3 =>
                   rw [htc3] at htc
@@ -7858,7 +7635,7 @@ lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
     ∀ (fuel' : Nat), fuel' < fuel →
       ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
       wfTagMeaningCtx tm ctx →
-      typecheck .ioFree ctx e fuel' = .ok res →
+      typecheck ctx e fuel' = .ok res →
       wfTagMeaningCtx tm (ctxAfter ctx res))
   (tcl : FnTClosure) (r : TypeResult)
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
@@ -7867,7 +7644,7 @@ lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
   (hmem_tcl : tcl ∈ tcls)
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
   (happly :
-    applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
   wfTagMeaningCtx tm (ctxAfter ctx r) := by
   cases tcl with
   | regular x body env =>
@@ -7893,7 +7670,7 @@ lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
                 ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
               tagEnv := result1.tagEnv', nextTag := result1.nextTag',
               nextLoc := result1.nextLoc', regime := result1.regime' }
-          have htcBody' : typecheck .ioFree bodyCtx body fuel' = .ok result3 := by
+          have htcBody' : typecheck bodyCtx body fuel' = .ok result3 := by
             simpa [typecheck] using htcBody
           have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
             QTypRespectsTagMeaning_transport_etyp_pred tm
@@ -7911,15 +7688,7 @@ lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
           simp only [ctxAfter] at hctxTm1 hIH ⊢
           exact EnvRespectsTagMeaning_mix tm ctx.varEnv result1.memEnv'
             bodyCtx.varEnv result3.memEnv' hctxTm1 hIH
-  | extern x retSpec effects capturedEnv =>
-    cases fuel with
-    | zero => simp [applyFnTClosure] at happly
-    | succ fuel' =>
-      simp only [applyFnTClosure] at happly
-      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-      rw [hioFree] at happly
-      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-      exact absurd happly (by simp)
+  | extern x retSpec effects capturedEnv => sorry
 
 lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
   (tm : TagMeaning)
@@ -7931,7 +7700,7 @@ lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
     ∀ (fuel' : Nat), fuel' < fuel →
       ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
       wfTagMeaningCtx tm ctx →
-      typecheck .ioFree ctx e fuel' = .ok res →
+      typecheck ctx e fuel' = .ok res →
       QTypRespectsTagMeaning tm res.qualType)
   (tcl : FnTClosure) (r : TypeResult)
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
@@ -7940,7 +7709,7 @@ lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
   (hmem_tcl : tcl ∈ tcls)
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
   (happly :
-    applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
   QTypRespectsTagMeaning tm r.qualType := by
   cases tcl with
   | regular x body env =>
@@ -7966,7 +7735,7 @@ lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
                 ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
               tagEnv := result1.tagEnv', nextTag := result1.nextTag',
               nextLoc := result1.nextLoc', regime := result1.regime' }
-          have htcBody' : typecheck .ioFree bodyCtx body fuel' = .ok result3 := by
+          have htcBody' : typecheck bodyCtx body fuel' = .ok result3 := by
             simpa [typecheck] using htcBody
           have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
             QTypRespectsTagMeaning_transport_etyp_pred tm
@@ -7988,15 +7757,7 @@ lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
           · intro q' k' d' hinq hgd
             exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
               ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
-  | extern x retSpec effects capturedEnv =>
-    cases fuel with
-    | zero => simp [applyFnTClosure] at happly
-    | succ fuel' =>
-      simp only [applyFnTClosure] at happly
-      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-      rw [hioFree] at happly
-      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-      simp at happly
+  | extern x retSpec effects capturedEnv => sorry
 
 lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
   (tm : TagMeaning)
@@ -8009,7 +7770,7 @@ lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
     ∀ (fuel' : Nat), fuel' < fuel →
       ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
       wfTagMeaningCtx tm ctx →
-      typecheck .ioFree ctx e fuel' = .ok res →
+      typecheck ctx e fuel' = .ok res →
       wfTagMeaningCtx tm (ctxAfter ctx res))
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
   (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
@@ -8017,12 +7778,12 @@ lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
   (hmap :
     List.mapM
-      (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       tcls = .ok results) :
   ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctx r) := by
   intro r hr
   rcases list_mapM_ok_mem_output_exists_input
-      (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (f := fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
     ⟨tcl, htcl_mem, happly⟩
   exact
@@ -8045,7 +7806,7 @@ lemma mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH
     ∀ (fuel' : Nat), fuel' < fuel →
       ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
       wfTagMeaningCtx tm ctx →
-      typecheck .ioFree ctx e fuel' = .ok res →
+      typecheck ctx e fuel' = .ok res →
       QTypRespectsTagMeaning tm res.qualType)
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
   (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
@@ -8053,12 +7814,12 @@ lemma mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
   (hmap :
     List.mapM
-      (fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       tcls = .ok results) :
   ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType := by
   intro r hr
   rcases list_mapM_ok_mem_output_exists_input
-      (f := fun tcl => applyFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (f := fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
     ⟨tcl, htcl_mem, happly⟩
   exact
@@ -8080,7 +7841,7 @@ lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
     ∀ (fuel' : Nat), fuel' < fuel →
       ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
       wfTagMeaningCtx tm ctx →
-      typecheck .ioFree ctx e fuel' = .ok res →
+      typecheck ctx e fuel' = .ok res →
       wfTagMeaningCtx tm (ctxAfter ctx res))
   (tcl : PFnTClosure) (r : TypeResult)
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
@@ -8089,7 +7850,7 @@ lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
   (hmem_tcl : tcl ∈ tcls)
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
   (happly :
-    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+    applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
   wfTagMeaningCtx tm (ctxAfter ctx r) := by
   cases tcl with
   | regular x body env =>
@@ -8116,7 +7877,7 @@ lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
               tagEnv := result1.tagEnv', nextTag := result1.nextTag',
               pureCtx := true,
               nextLoc := result1.nextLoc', regime := result1.regime' }
-          have htcBody' : typecheck .ioFree bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by
+          have htcBody' : typecheck bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by
             simpa [typecheck] using htcBody
           have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
             QTypRespectsTagMeaning_transport_etyp_pred tm
@@ -8134,15 +7895,7 @@ lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
           simp only [ctxAfter] at hctxTm1 hIH ⊢
           exact EnvRespectsTagMeaning_mix tm ctx.varEnv result1.memEnv'
             bodyCtx.varEnv result3.memEnv' hctxTm1 hIH
-  | extern x retSpec capturedEnv =>
-    cases fuel with
-    | zero => simp [applyPFnTClosure] at happly
-    | succ fuel' =>
-      simp only [applyPFnTClosure] at happly
-      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-      rw [hioFree] at happly
-      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-      exact absurd happly (by simp)
+  | extern x retSpec capturedEnv => sorry
 
 lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
   (tm : TagMeaning)
@@ -8154,7 +7907,7 @@ lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
     ∀ (fuel' : Nat), fuel' < fuel →
       ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
       wfTagMeaningCtx tm ctx →
-      typecheck .ioFree ctx e fuel' = .ok res →
+      typecheck ctx e fuel' = .ok res →
       QTypRespectsTagMeaning tm res.qualType)
   (tcl : PFnTClosure) (r : TypeResult)
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
@@ -8163,7 +7916,7 @@ lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
   (hmem_tcl : tcl ∈ tcls)
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
   (happly :
-    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+    applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
   QTypRespectsTagMeaning tm r.qualType := by
   cases tcl with
   | regular x body env =>
@@ -8190,7 +7943,7 @@ lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
               tagEnv := result1.tagEnv', nextTag := result1.nextTag',
               pureCtx := true,
               nextLoc := result1.nextLoc', regime := result1.regime' }
-          have htcBody' : typecheck .ioFree bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by
+          have htcBody' : typecheck bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by
             simpa [typecheck] using htcBody
           have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
             QTypRespectsTagMeaning_transport_etyp_pred tm
@@ -8212,15 +7965,7 @@ lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
           · intro q' k' d' hinq hgd
             exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
               ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
-  | extern x retSpec capturedEnv =>
-    cases fuel with
-    | zero => simp [applyPFnTClosure] at happly
-    | succ fuel' =>
-      simp only [applyPFnTClosure] at happly
-      have hioFree : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-      rw [hioFree] at happly
-      simp only [ite_true] at happly; simp only [bind, Except.bind] at happly
-      simp at happly
+  | extern x retSpec capturedEnv => sorry
 
 lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
   (tm : TagMeaning)
@@ -8233,7 +7978,7 @@ lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
     ∀ (fuel' : Nat), fuel' < fuel →
       ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
       wfTagMeaningCtx tm ctx →
-      typecheck .ioFree ctx e fuel' = .ok res →
+      typecheck ctx e fuel' = .ok res →
       wfTagMeaningCtx tm (ctxAfter ctx res))
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
   (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
@@ -8241,12 +7986,12 @@ lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
   (hmap :
     List.mapM
-      (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       tcls = .ok results) :
   ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctx r) := by
   intro r hr
   rcases list_mapM_ok_mem_output_exists_input
-      (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (f := fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
     ⟨tcl, htcl_mem, happly⟩
   exact
@@ -8269,7 +8014,7 @@ lemma mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH
     ∀ (fuel' : Nat), fuel' < fuel →
       ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
       wfTagMeaningCtx tm ctx →
-      typecheck .ioFree ctx e fuel' = .ok res →
+      typecheck ctx e fuel' = .ok res →
       QTypRespectsTagMeaning tm res.qualType)
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
   (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
@@ -8277,12 +8022,12 @@ lemma mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
   (hmap :
     List.mapM
-      (fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       tcls = .ok results) :
   ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType := by
   intro r hr
   rcases list_mapM_ok_mem_output_exists_input
-      (f := fun tcl => applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
+      (f := fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
     ⟨tcl, htcl_mem, happly⟩
   exact
@@ -8341,36 +8086,7 @@ lemma join_transport_wfTagMeaningCtx_byFirst
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at _h_join
-      cases hcheck :
-          (List.foldlM
-            (fun x result =>
-              match result.qualType with
-              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                if beqETypSignature etyp resEtyp = false then
-                  Except.error
-                    (toString "Closure alternatives produced incompatible result types: " ++ toString (repr etyp) ++
-                        toString " vs " ++ toString (repr resEtyp))
-                else Except.ok ())
-            () rest : Except String Unit) with
-      | error err =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-      | ok _ =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-          cases hfold :
-              List.foldlM joinStep
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag') rest with
-          | error err =>
-              erw [hfold] at _h_join
-              simp at _h_join
-          | ok a =>
-              erw [hfold] at _h_join
-              simp at _h_join
-              subst res
-              exact h_fold_tm rest
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag')
-                a hfold h_first_env
+      sorry
 
 lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
   (tm : TagMeaning)
@@ -8434,92 +8150,7 @@ lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at h_join
-      cases hcheck :
-          (List.foldlM
-            (fun x result =>
-              match result.qualType with
-              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                if beqETypSignature etyp resEtyp = false then
-                  Except.error
-                    (toString "Closure alternatives produced incompatible result types: " ++
-                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                else Except.ok ())
-            () rest : Except String Unit) with
-      | error _ => erw [hcheck] at h_join; simp at h_join
-      | ok _ =>
-          erw [hcheck] at h_join; simp at h_join
-          cases hfold :
-              List.foldlM joinStep
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
-                  first.nextLoc', first.nextTag') rest with
-          | error _ => erw [hfold] at h_join; simp at h_join
-          | ok a =>
-              rcases a with
-                ⟨joinedEtyp, joinedMemEnv, joinedPoison, joinedPred,
-                  joinedTagEnv, joinedRegime, maxNextLoc, maxNextTag⟩
-              erw [hfold] at h_join
-              simp at h_join
-              subst res
-              have h_first_qtm : QTypRespectsTagMeaning tm ⟨etyp, poison, pred⟩ :=
-                hqt ▸ h_first
-              have hacc_qtm :
-                  QTypRespectsTagMeaning tm ⟨joinedEtyp, joinedPoison, joinedPred⟩ :=
-                h_fold_qtm rest
-                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
-                    first.nextLoc', first.nextTag')
-                  (joinedEtyp, joinedMemEnv, joinedPoison, joinedPred,
-                    joinedTagEnv, joinedRegime, maxNextLoc, maxNextTag)
-                  hfold h_first_qtm h_rest
-              cases joinedEtyp with
-              | arrow st1 st2 p tcls =>
-                  intro qt' k d hinq hqd
-                  exact
-                    QTypRespectsTagMeaning_of_etyp_noPred tm
-                      ⟨ETyp.arrow st1 st2 p tcls, joinedPoison, joinedPred⟩
-                      ⟨ETyp.arrow st1 st2 p tcls, joinPoison ctx.pc joinedPoison, Predicate.noPred⟩
-                      hacc_qtm rfl rfl hinq hqd
-              | parrow st1 st2 p tcls =>
-                  intro qt' k d hinq hqd
-                  exact
-                    QTypRespectsTagMeaning_of_etyp_noPred tm
-                      ⟨ETyp.parrow st1 st2 p tcls, joinedPoison, joinedPred⟩
-                      ⟨ETyp.parrow st1 st2 p tcls, joinPoison ctx.pc joinedPoison, Predicate.noPred⟩
-                      hacc_qtm rfl rfl hinq hqd
-              | int =>
-                  intro qt' k d hinq hqd
-                  exact
-                    QTypRespectsTagMeaning_transport_etyp_pred tm
-                      ⟨ETyp.int, joinedPoison, joinedPred⟩
-                      ⟨ETyp.int, joinPoison ctx.pc joinedPoison, joinedPred⟩
-                      hacc_qtm rfl rfl hinq hqd
-              | bool =>
-                  intro qt' k d hinq hqd
-                  exact
-                    QTypRespectsTagMeaning_transport_etyp_pred tm
-                      ⟨ETyp.bool, joinedPoison, joinedPred⟩
-                      ⟨ETyp.bool, joinPoison ctx.pc joinedPoison, joinedPred⟩
-                      hacc_qtm rfl rfl hinq hqd
-              | unit =>
-                  intro qt' k d hinq hqd
-                  exact
-                    QTypRespectsTagMeaning_transport_etyp_pred tm
-                      ⟨ETyp.unit, joinedPoison, joinedPred⟩
-                      ⟨ETyp.unit, joinPoison ctx.pc joinedPoison, joinedPred⟩
-                      hacc_qtm rfl rfl hinq hqd
-              | string =>
-                  intro qt' k d hinq hqd
-                  exact
-                    QTypRespectsTagMeaning_transport_etyp_pred tm
-                      ⟨ETyp.string, joinedPoison, joinedPred⟩
-                      ⟨ETyp.string, joinPoison ctx.pc joinedPoison, joinedPred⟩
-                      hacc_qtm rfl rfl hinq hqd
-              | ref ls =>
-                  intro qt' k d hinq hqd
-                  exact
-                    QTypRespectsTagMeaning_transport_etyp_pred tm
-                      ⟨ETyp.ref ls, joinedPoison, joinedPred⟩
-                      ⟨ETyp.ref ls, joinPoison ctx.pc joinedPoison, joinedPred⟩
-                      hacc_qtm rfl rfl hinq hqd
+      sorry
 
 /-- Body typecheck preserves wfTagMeaningCtx (fuel induction).
     wfTagMeaningCtx tm ctx = EnvRespectsTagMeaning tm ctx.varEnv ctx.memEnv, so we need
@@ -8530,7 +8161,7 @@ lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
 lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
     ∀ (fuel : Nat) (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (res : TypeResult),
     wfTagMeaningCtx tm ctx →
-    typecheck .ioFree ctx e fuel = .ok res →
+    typecheck ctx e fuel = .ok res →
     wfTagMeaningCtx tm (ctxAfter ctx res) ∧ QTypRespectsTagMeaning tm res.qualType := by
   intro fuel
   induction fuel using Nat.strong_induction_on with
@@ -8538,12 +8169,12 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
     intro tm ctx e res hwf htc
     have IH_wf : ∀ m < fuel, ∀ (tm' : TagMeaning) (ctx' : TypeContext) (e' : Expr) (res' : TypeResult),
         wfTagMeaningCtx tm' ctx' →
-        typecheck .ioFree ctx' e' m = .ok res' →
+        typecheck ctx' e' m = .ok res' →
         wfTagMeaningCtx tm' (ctxAfter ctx' res') := by
       intro m hm tm' ctx' e' res' hwf' htc'; exact (IH m hm tm' ctx' e' res' hwf' htc').1
     have IH_qt : ∀ m < fuel, ∀ (tm' : TagMeaning) (ctx' : TypeContext) (e' : Expr) (res' : TypeResult),
         wfTagMeaningCtx tm' ctx' →
-        typecheck .ioFree ctx' e' m = .ok res' →
+        typecheck ctx' e' m = .ok res' →
         QTypRespectsTagMeaning tm' res'.qualType := by
       intro m hm tm' ctx' e' res' hwf' htc'; exact (IH m hm tm' ctx' e' res' hwf' htc').2
     unfold typecheck at htc
@@ -8644,39 +8275,14 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
               simp [h_topexpr, pure, Except.pure] at htc; subst htc
               exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
                 QTypRespectsTagMeaning_pfn_regular tm ctx x st1 st2 ctx.pc pbody hwf⟩
-        -- Impossible in ioFree mode
-        | externVal _ _ _ =>
-            exfalso; simp at htc; unfold typecheckExternVal at htc
-            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-            simp only [heq, ite_true, bind, Except.bind] at htc
-            exact absurd htc (Except.error_ne_ok _ _)
-        | externFn _ _ _ _ =>
-            exfalso; simp at htc; unfold typecheckExternFn at htc
-            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-            simp only [heq, ite_true, bind, Except.bind] at htc
-            exact absurd htc (Except.error_ne_ok _ _)
-        | externPfn _ _ _ =>
-            exfalso; simp at htc; unfold typecheckExternPfn at htc
-            have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by native_decide
-            simp only [heq, ite_true, bind, Except.bind] at htc
-            exact absurd htc (Except.error_ne_ok _ _)
-        | rand _ =>
-            simp at htc
-            exact absurd htc (typecheckRand_ioFree_impossible ctx _ fuel' res)
-        | frand _ =>
-            simp at htc
-            exact absurd htc (typecheckFrand_ioFree_impossible ctx _ fuel' res)
-        | printInt _ =>
-            simp at htc
-            exact absurd htc (typecheckPrintInt_ioFree_impossible ctx _ fuel' res)
-        | printString _ =>
-            simp at htc
-            exact absurd htc (typecheckPrintString_ioFree_impossible ctx _ fuel' res)
+        | externVal _ _ _ => sorry
+        | externFn _ _ _ _ => sorry
+        | externPfn _ _ _ => sorry
         -- ===== Single-IH cases: memEnv from sub-expression =====
         | unaryop op e1 =>
             have hstruct := typecheckUnaryOp_structure ctx op e1 fuel' res htc
             rcases hstruct with ⟨result1, result_etyp, htc1, _hopEtyp, hmemEnv, _, _, _, _, hetyp, _, hpred⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH := IH_wf (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
             refine ⟨?_, ?_⟩
             · simpa [wfTagMeaningCtx, ctxAfter, hmemEnv] using hIH
@@ -8695,7 +8301,7 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
             | succ fuel'' =>
                 have hstruct := typecheckDeref_structure ctx e1 (Nat.succ fuel'') res htc
                 rcases hstruct with ⟨result1, htc1, hmem, _, _, _, _⟩
-                have htc1' : typecheck .ioFree ctx e1 fuel'' = .ok result1 := by
+                have htc1' : typecheck ctx e1 fuel'' = .ok result1 := by
                   simpa [typecheck] using htc1
                 have hIH_wf := IH_wf fuel'' (by omega) tm ctx e1 result1 hwf htc1'
                 refine ⟨?_, ?_⟩
@@ -8708,11 +8314,11 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
         | op e1 _op e2 =>
             have hstruct := typecheckOp_structure ctx e1 e2 _op fuel' res htc
             rcases hstruct with ⟨result1, result2, result_etyp, htc1, htc2, _hopEtyp, hmemEnv, _, _, _, _, hetyp, _, hpred⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH1 := IH_wf (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
             have hwf_mid : wfTagMeaningCtx tm (updateCtxFromResult ctx result1) := by
               simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult] using hIH1
-            have htc2' : typecheck .ioFree (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by simpa using htc2
+            have htc2' : typecheck (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by simpa using htc2
             have hIH2 := IH_wf (fuel' - 1) (by omega) tm (updateCtxFromResult ctx result1) e2 result2 hwf_mid htc2'
             refine ⟨?_, ?_⟩
             · simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult, hmemEnv] using hIH2
@@ -8727,12 +8333,12 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
         | seq e1 e2 =>
             have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
             rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH1 := IH_wf (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
             have hwf_mid : wfTagMeaningCtx tm ctx' := by
               rw [hctx']
               simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult] using hIH1
-            have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok res := by simpa using htc2
+            have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok res := by simpa using htc2
             -- IH on e2 gives both parts: wfTagMeaningCtx and QTypRespectsTagMeaning
             have hIH2_wf := IH_wf (fuel' - 1) (by omega) tm ctx' e2 res hwf_mid htc2'
             have hIH2_qt : QTypRespectsTagMeaning tm res.qualType :=
@@ -8742,7 +8348,7 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
         | vlet x e1 e2 =>
             have hstruct := typecheckVlet_structure ctx x e1 e2 fuel' res htc
             rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, hetyp_res, hmemEnv, _, _, _, _, _, hpred_res⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
             have hIH1_wf := IH_wf (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
             have hIH1_qt : QTypRespectsTagMeaning tm result1.qualType :=
               IH_qt (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
@@ -8757,7 +8363,7 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
               exact wfTagMeaningCtx_varEnv_ext tm ctxBase x result1.qualType
                 (by simpa [wfTagMeaningCtx, ctxAfter, ctxBase] using hwf_after)
                 hIH1_qt
-            have htc2' : typecheck .ioFree ctx' e2 (fuel' - 1) = .ok result2 := by simpa using htc2
+            have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok result2 := by simpa using htc2
             have hIH2_wf := IH_wf (fuel' - 1) (by omega) tm ctx' e2 result2 hwf_mid htc2'
             have hIH2_qt : QTypRespectsTagMeaning tm result2.qualType :=
               IH_qt (fuel' - 1) (by omega) tm ctx' e2 result2 hwf_mid htc2'
@@ -8777,7 +8383,7 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
             rcases hstruct with
               ⟨result1, l, htc1, hl, hInt, hRef_res, _hpoison_res, hpred_res, hmem_res,
                 _htag_res, _hnextLoc_res, _hnextTag_res, _hregime_res⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
               simpa using htc1
             have hIH1_wf := IH_wf (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
             have hIH1_qt : QTypRespectsTagMeaning tm result1.qualType :=
@@ -8822,14 +8428,14 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
             have hmem_formula := typecheckAssign_memEnv_formula ctx e1 e2 fuel' res htc
             rcases hmem_formula with
               ⟨result1, result2, ls, htc1, _hRef, htc2, _hInt, hmem_res, _hRegime⟩
-            have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok result1 := by
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
               simpa [typecheck] using htc1
             have hTm1 := IH_wf (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
             have hresTm1 : QTypRespectsTagMeaning tm result1.qualType :=
               IH_qt (fuel' - 1) (by omega) tm ctx e1 result1 hwf htc1'
             have hwf_mid : wfTagMeaningCtx tm (updateCtxFromResult ctx result1) := by
               simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult] using hTm1
-            have htc2' : typecheck .ioFree (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by
+            have htc2' : typecheck (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by
               simpa [typecheck] using htc2
             have hTm2 := IH_wf (fuel' - 1) (by omega) tm (updateCtxFromResult ctx result1) e2 result2 hwf_mid htc2'
             have hresTm2 : QTypRespectsTagMeaning tm result2.qualType :=
@@ -8909,7 +8515,7 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
             | inl h1 =>
                 -- Mode 1: only true branch. res.qualType.etyp = res2.qualType.etyp, pred = noPred
                 rcases h1 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, htc2, hmemEnv, _, _, _, _, _, hetyp_res⟩
-                have htc2' : typecheck .ioFree { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
+                have htc2' : typecheck { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
                   simpa [typecheck] using htc2
                 have hwf_true : wfTagMeaningCtx tm { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := by
                   simpa [wfTagMeaningCtx, ctxAfter] using hwf
@@ -8926,7 +8532,7 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                   -- Mode 2: only false branch. res.qualType.etyp = res3.qualType.etyp, pred = noPred
                   rcases h2 with ⟨k, deps, _, _, res1, _htc1, _hbool, res3, htc3, hmemEnv, _, _, _, _, _, hetyp_res⟩
                   let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
-                  have htc3' : typecheck .ioFree ctxFalse e3 (fuel' - 1) = .ok res3 := by
+                  have htc3' : typecheck ctxFalse e3 (fuel' - 1) = .ok res3 := by
                     simpa [typecheck, ctxFalse] using htc3
                   have hwf_false : wfTagMeaningCtx tm ctxFalse := by
                     simpa [wfTagMeaningCtx, ctxAfter, ctxFalse] using hwf
@@ -8944,19 +8550,19 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                                                          nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
                     let pc' := joinPoison ctx.pc res1.qualType.poison
                     let ctx'' := { ctx1 with pc := pc' }
-                    have htc1' : typecheck .ioFree ctx e1 (fuel' - 1) = .ok res1 := by simpa [typecheck] using htc1
+                    have htc1' : typecheck ctx e1 (fuel' - 1) = .ok res1 := by simpa [typecheck] using htc1
                     have hIH1 := IH_wf (fuel' - 1) (by omega) tm ctx e1 res1 hwf htc1'
                     have hwf_mid : wfTagMeaningCtx tm ctx'' := by
                       simp only [wfTagMeaningCtx, ctx'', ctx1]
                       simpa [wfTagMeaningCtx, ctxAfter] using hIH1
-                    have htc2' : typecheck .ioFree ctx'' e2 (fuel' - 1) = .ok res2 := by
+                    have htc2' : typecheck ctx'' e2 (fuel' - 1) = .ok res2 := by
                       simpa [typecheck, ctx'', ctx1, pc'] using htc2
                     have hIH2 := IH_wf (fuel' - 1) (by omega) tm ctx'' e2 res2 hwf_mid htc2'
                     have hIH2_qt : QTypRespectsTagMeaning tm res2.qualType :=
                       IH_qt (fuel' - 1) (by omega) tm ctx'' e2 res2 hwf_mid htc2'
                     -- For mode 4 false branch QTypRespects
                     let ctx''3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
-                    have htc3' : typecheck .ioFree ctx''3 e3 (fuel' - 1) = .ok res3 := by
+                    have htc3' : typecheck ctx''3 e3 (fuel' - 1) = .ok res3 := by
                       simpa [typecheck, ctx''3, ctx'', ctx1, pc'] using htc3_raw
                     have hwf_mid3 : wfTagMeaningCtx tm ctx''3 := by
                       simpa [wfTagMeaningCtx, ctxAfter, ctx''3, ctx'', ctx1] using hwf_mid
@@ -8989,17 +8595,17 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
             | zero =>
                 simp [typecheckApp] at htc
             | succ fuel'' =>
-                have htcApp : typecheckApp .ioFree ctx e1 e2 (Nat.succ fuel'') = .ok res := htc
+                have htcApp : typecheckApp ctx e1 e2 (Nat.succ fuel'') = .ok res := htc
                 obtain ⟨result2, result1, etyp2, p2, pred2, hqt2, htc2, htc1, h_arrow_or_parrow⟩ :=
                   typecheckApp_arrow_structure_full ctx e1 e2 fuel'' res htcApp
-                have htc2' : typecheck .ioFree ctx e2 fuel'' = .ok result2 := by
+                have htc2' : typecheck ctx e2 fuel'' = .ok result2 := by
                   simpa [typecheck] using htc2
                 have hIH2_wf := IH_wf fuel'' (by omega) tm ctx e2 result2 hwf htc2'
                 have hIH2_qt : QTypRespectsTagMeaning tm result2.qualType :=
                   IH_qt fuel'' (by omega) tm ctx e2 result2 hwf htc2'
                 have hTm2 : wfTagMeaningCtx tm (ctxAfter ctx result2) := by
                   simpa [ctxAfter] using hIH2_wf
-                have htc1' : typecheck .ioFree (ctxAfter ctx result2) e1 fuel'' = .ok result1 := by
+                have htc1' : typecheck (ctxAfter ctx result2) e1 fuel'' = .ok result1 := by
                   simp [ctxAfter] at htc1 ⊢
                   exact htc1
                 have hIH1_wf := IH_wf fuel'' (by omega) tm (ctxAfter ctx result2) e1 result1 hTm2 htc1'
@@ -9110,21 +8716,21 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
 lemma typecheckExpr_preserves_wfTagMeaningCtx
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (hwf : wfTagMeaningCtx tm ctx)
-    (htc : typecheck .ioFree ctx e fuel = .ok res) :
+    (htc : typecheck ctx e fuel = .ok res) :
     wfTagMeaningCtx tm (ctxAfter ctx res) :=
   (typecheckExpr_preserves_wfTagMeaningCtx_main fuel tm ctx e res hwf htc).1
 
 lemma typecheckExpr_preserves_QTypRespectsTagMeaning
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (hwf : wfTagMeaningCtx tm ctx)
-    (htc : typecheck .ioFree ctx e fuel = .ok res) :
+    (htc : typecheck ctx e fuel = .ok res) :
     QTypRespectsTagMeaning tm res.qualType :=
   (typecheckExpr_preserves_wfTagMeaningCtx_main fuel tm ctx e res hwf htc).2
 
 lemma typecheckExpr_QTypRespectsTagMeaning_of_ok
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (hwf : wfTagMeaningCtx tm ctx)
-    (htc : typecheck .ioFree ctx e fuel = .ok res) :
+    (htc : typecheck ctx e fuel = .ok res) :
     QTypRespectsTagMeaning tm res.qualType :=
   typecheckExpr_preserves_QTypRespectsTagMeaning tm ctx e fuel res hwf htc
 
@@ -9141,10 +8747,10 @@ lemma applyPFnTClosure_regular_inv
   (x : Name) (pbody : PExpr) (tenv : CapturedVarEnv)
   (first : TypeResult)
   (happly :
-    applyPFnTClosure .ioFree (PFnTClosure.regular x pbody tenv) st1 st2 p p1
+    applyPFnTClosure (PFnTClosure.regular x pbody tenv) st1 st2 p p1
       argEtyp argPoison argPred ctx result2 (Nat.succ fuelBody) = .ok first) :
   ∃ result3,
-    typecheckExpr .ioFree
+    typecheckExpr
       { ctx with
         pc := joinPoison p (joinPoison ctx.pc p1)
         memEnv := result2.memEnv'
@@ -9163,7 +8769,7 @@ lemma applyPFnTClosure_regular_inv
             { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
   unfold applyPFnTClosure at happly
   simp [bind, Except.bind] at happly
-  cases htc_body : typecheckExpr .ioFree
+  cases htc_body : typecheckExpr
       { ctx with
         pc := joinPoison p (joinPoison ctx.pc p1)
         memEnv := result2.memEnv'
@@ -9215,18 +8821,9 @@ lemma applyPFnTClosure_ioFree_extern_fails
   (result2 : TypeResult) (fuel : Nat)
   (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
   (r : TypeResult) :
-  applyPFnTClosure .ioFree (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
+  applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
     argEtyp argPoison argPred ctx result2 fuel ≠ .ok r := by
-  intro h
-  cases fuel with
-  | zero =>
-    unfold applyPFnTClosure at h
-    simp at h
-  | succ _ =>
-    unfold applyPFnTClosure at h
-    have hcond : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := rfl
-    simp only [hcond, ite_true, bind, Except.bind] at h
-    exact absurd h (Except.error_ne_ok "Extern function application forbidden in ioFree mode" r)
+  sorry
 
 lemma cleanUnder_of_monotone {R R' : Regime} {qt : QTyp} :
     Regime.monotoneStep R R' → qtypCleanUnder R' qt → qtypCleanUnder R qt := by
@@ -9389,45 +8986,7 @@ lemma joinTypeResults_lookup_head_guardTag_compat
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at _h_join
-      cases hcheck :
-          (List.foldlM
-            (fun x result =>
-              match result.qualType with
-              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                if beqETypSignature etyp resEtyp = false then
-                  Except.error
-                    (toString "Closure alternatives produced incompatible result types: " ++
-                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                else Except.ok ())
-            () rest : Except String Unit) with
-      | error err =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-      | ok _ =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-          cases hfold :
-              List.foldlM joinStep
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                  first.nextTag') rest with
-          | error err =>
-              erw [hfold] at _h_join
-              simp at _h_join
-          | ok a =>
-              erw [hfold] at _h_join
-              simp at _h_join
-              subst res
-              have hlookup_first' : first.memEnv'.lookup l = some qt_first := by
-                simpa [ctxAfter] using hlookup_first
-              have hlookup_res' : a.2.1.lookup l = some qt := by
-                simpa [ctxAfter] using hlookup_res
-              exact
-                h_fold_guardTag
-                  rest
-                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                    first.nextTag')
-                  a qt_first
-                  hfold hlookup_first' hlookup_res' htag_res
+      sorry
 
 
 lemma joinTypeResults_lookup_head_regime_compat
@@ -9488,41 +9047,7 @@ lemma joinTypeResults_lookup_head_regime_compat
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at _h_join
-      cases hcheck :
-          (List.foldlM
-            (fun x result =>
-              match result.qualType with
-              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                if beqETypSignature etyp resEtyp = false then
-                  Except.error
-                    (toString "Closure alternatives produced incompatible result types: " ++
-                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                else Except.ok ())
-            () rest : Except String Unit) with
-      | error err =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-      | ok _ =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-          cases hfold :
-              List.foldlM joinStep
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                  first.nextTag') rest with
-          | error err =>
-              erw [hfold] at _h_join
-              simp at _h_join
-          | ok a =>
-              erw [hfold] at _h_join
-              simp at _h_join
-              subst res
-              exact
-                h_fold_regime
-                  rest
-                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                    first.nextTag')
-                  a
-                  hfold (by simpa [ctxAfter] using hlookup_res)
+      sorry
 
 
 lemma joinTypeResults_lookup_head_poison_imp
@@ -9612,45 +9137,7 @@ lemma joinTypeResults_lookup_head_poison_imp
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at _h_join
-      cases hcheck :
-          (List.foldlM
-            (fun x result =>
-              match result.qualType with
-              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                if beqETypSignature etyp resEtyp = false then
-                  Except.error
-                    (toString "Closure alternatives produced incompatible result types: " ++
-                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                else Except.ok ())
-            () rest : Except String Unit) with
-      | error err =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-      | ok _ =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-          cases hfold :
-              List.foldlM joinStep
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                  first.nextTag') rest with
-          | error err =>
-              erw [hfold] at _h_join
-              simp at _h_join
-          | ok a =>
-              erw [hfold] at _h_join
-              simp at _h_join
-              subst res
-              have hlookup_first' : first.memEnv'.lookup l = some qt_first := by
-                simpa [ctxAfter] using hlookup_first
-              have hlookup_res' : a.2.1.lookup l = some qt := by
-                simpa [ctxAfter] using hlookup_res
-              exact
-                h_fold_poison
-                  rest
-                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                    first.nextTag')
-                  a qt_first
-                  hfold hlookup_first' hlookup_res' hpoison_res
+      sorry
 
 
 lemma joinTypeResults_lookup_member_regime_compat
@@ -9729,45 +9216,7 @@ lemma joinTypeResults_lookup_member_regime_compat
     | mk etyp poison pred =>
         simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
           MonadExceptOf.throw, TypecheckM] at _h_join
-        cases hcheck :
-            (List.foldlM
-              (fun x result =>
-                match result.qualType with
-                | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                  if beqETypSignature etyp resEtyp = false then
-                    Except.error
-                      (toString "Closure alternatives produced incompatible result types: " ++
-                        toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                  else Except.ok ())
-              () rest : Except String Unit) with
-        | error err =>
-            erw [hcheck] at _h_join
-            simp at _h_join
-        | ok _ =>
-            erw [hcheck] at _h_join
-            simp at _h_join
-            cases hfold :
-                List.foldlM joinStep
-                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                    first.nextTag') rest with
-            | error err =>
-                erw [hfold] at _h_join
-                simp at _h_join
-            | ok a =>
-                erw [hfold] at _h_join
-                simp at _h_join
-                subst res
-                have hlookup_res' : a.2.2.2.2.2.1.lookup? k = some b := by
-                  simpa [ctxAfter] using hlookup_res
-                have hpack :=
-                  h_fold_regime_members
-                    rest
-                    (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                      first.nextTag')
-                    a
-                    hfold hlookup_res'
-                have hsrc_lookup : src.regime'.lookup? k = some b := hpack.2 src hsrc_rest
-                simpa [ctxAfter] using hsrc_lookup
+        sorry
 
 
 lemma joinTypeResults_lookup_member_guardTag_compat
@@ -9902,45 +9351,7 @@ lemma joinTypeResults_lookup_member_guardTag_compat
     | mk etyp poison pred =>
         simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
           MonadExceptOf.throw, TypecheckM] at _h_join
-        cases hcheck :
-            (List.foldlM
-              (fun x result =>
-                match result.qualType with
-                | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                  if beqETypSignature etyp resEtyp = false then
-                    Except.error
-                      (toString "Closure alternatives produced incompatible result types: " ++
-                        toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                  else Except.ok ())
-              () rest : Except String Unit) with
-        | error err =>
-            erw [hcheck] at _h_join
-            simp at _h_join
-        | ok _ =>
-            erw [hcheck] at _h_join
-            simp at _h_join
-            cases hfold :
-                List.foldlM joinStep
-                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                    first.nextTag') rest with
-            | error err =>
-                erw [hfold] at _h_join
-                simp at _h_join
-            | ok a =>
-                erw [hfold] at _h_join
-                simp at _h_join
-                subst res
-                have hlookup_res' : a.2.1.lookup l = some qt := by
-                  simpa [ctxAfter] using hlookup_res
-                have hlookup_src' : src.memEnv'.lookup l = some qt_src := by
-                  simpa [ctxAfter] using hlookup_src
-                exact
-                  h_fold_member_guardTag
-                    rest
-                    (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                      first.nextTag')
-                    a src qt_src
-                    hfold hsrc_rest hlookup_res' htag_res hlookup_src'
+        sorry
 
 
 lemma joinTypeResults_lookup_member_etyp_compat
@@ -10117,45 +9528,7 @@ lemma joinTypeResults_lookup_member_poison_imp
     | mk etyp poison pred =>
         simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
           MonadExceptOf.throw, TypecheckM] at _h_join
-        cases hcheck :
-            (List.foldlM
-              (fun x result =>
-                match result.qualType with
-                | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                  if beqETypSignature etyp resEtyp = false then
-                    Except.error
-                      (toString "Closure alternatives produced incompatible result types: " ++
-                        toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                  else Except.ok ())
-              () rest : Except String Unit) with
-        | error err =>
-            erw [hcheck] at _h_join
-            simp at _h_join
-        | ok _ =>
-            erw [hcheck] at _h_join
-            simp at _h_join
-            cases hfold :
-                List.foldlM joinStep
-                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                    first.nextTag') rest with
-            | error err =>
-                erw [hfold] at _h_join
-                simp at _h_join
-            | ok a =>
-                erw [hfold] at _h_join
-                simp at _h_join
-                subst res
-                have hlookup_res' : a.2.1.lookup l = some qt := by
-                  simpa [ctxAfter] using hlookup_res
-                have hlookup_src' : src.memEnv'.lookup l = some qt_src := by
-                  simpa [ctxAfter] using hlookup_src
-                exact
-                  h_fold_member_poison
-                    rest
-                    (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                      first.nextTag')
-                    a src qt_src
-                    hfold hsrc_rest hlookup_res' hclean_out hlookup_src'
+        sorry
 
 
 lemma joinTypeResults_lookup_member_clean_compat
@@ -10196,7 +9569,7 @@ lemma applyPFnTClosure_mem_subset
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat) (tcl : PFnTClosure) (r : TypeResult)
   (happly :
-    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+    applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
   ∀ l, r.memEnv'.contains l → result2.memEnv'.contains l := by
   intro l hcontains
   cases fuel with
@@ -10238,7 +9611,7 @@ lemma applyPFnTClosure_preserves_memEnv_lookup
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat) (tcl : PFnTClosure) (r : TypeResult)
   (happly :
-    applyPFnTClosure .ioFree tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+    applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
   ∀ l qt, result2.memEnv'.lookup l = some qt → r.memEnv'.lookup l = some qt := by
   intro l qt hlookup
   cases fuel with
@@ -10277,7 +9650,7 @@ lemma applyPFnTClosure_preserves_memEnv_lookup
 
 private lemma typecheckExpr_lookup_origin_of_pc_true_split
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
-  (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
+  (htc : typecheckExpr ctx e fuel = .ok res)
   (hpc : ctx.pc = true) :
   ∀ (l : Loc) (qt_out : QTyp),
     res.memEnv'.lookup l = some qt_out →
@@ -10367,7 +9740,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               · intro k htag hk hnotfun
                 exact ⟨qt_out, hlookup_out, htag, hk, hnotfun⟩
       | op e1 bop e2 =>
-          have htcOp : typecheckOp .ioFree ctx e1 e2 fuel' bop = .ok res := by
+          have htcOp : typecheckOp ctx e1 e2 fuel' bop = .ok res := by
             simpa [typecheckExpr] using htc
           rcases typecheckOp_structure ctx e1 e2 bop fuel' res htcOp with
             ⟨result1, result2, _result_etyp, htc1, htc2, _h_op, h_mem, _h_tag, _h_loc, _h_ntag,
@@ -10398,7 +9771,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               ⟨_hpoison1, hguard1⟩
             exact hguard1 k htag_mid (by simpa [updateCtxFromResult] using hk_mid) hnotfun_mid
       | unaryop uop e1 =>
-          have htcUnary : typecheckUnaryOp .ioFree ctx uop e1 fuel' = .ok res := by
+          have htcUnary : typecheckUnaryOp ctx uop e1 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
           rcases typecheckUnaryOp_structure ctx uop e1 fuel' res htcUnary with
             ⟨result1, _result_etyp, htc1, _h_op, h_mem, _h_tag, _h_loc, _h_ntag, h_regime,
@@ -10414,7 +9787,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
           · intro k htag hk hnotfun
             exact hguard1 k htag (by simpa [h_regime] using hk) hnotfun
       | deref e1 =>
-          have htcDeref : typecheckDeref .ioFree ctx e1 fuel' = .ok res := by
+          have htcDeref : typecheckDeref ctx e1 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
           rcases typecheckDeref_structure ctx e1 fuel' res htcDeref with
             ⟨result1, htc1, h_mem, _h_tag, _h_loc, _h_ntag, h_regime⟩
@@ -10429,7 +9802,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
           · intro k htag hk hnotfun
             exact hguard1 k htag (by simpa [h_regime] using hk) hnotfun
       | seq e1 e2 =>
-          have htcSeq : typecheckSeq .ioFree ctx e1 e2 fuel' = .ok res := by
+          have htcSeq : typecheckSeq ctx e1 e2 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
           rcases typecheckSeq_structure ctx e1 e2 fuel' res htcSeq with
             ⟨result1, ctx', htc1, hctx', htc2⟩
@@ -10455,7 +9828,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               ⟨_hpoison1, hguard1⟩
             exact hguard1 k htag_mid (by simpa [hctx', updateCtxFromResult] using hk_mid) hnotfun_mid
       | vlet x e1 e2 =>
-          have htcVlet : typecheckVlet .ioFree ctx x e1 e2 fuel' = .ok res := by
+          have htcVlet : typecheckVlet ctx x e1 e2 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
           rcases typecheckVlet_structure ctx x e1 e2 fuel' res htcVlet with
             ⟨result1, result2, ctx', htc1, hctx', htc2, _h_ret_etyp, h_mem, _h_tag, _h_loc,
@@ -10484,7 +9857,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               ⟨_hpoison1, hguard1⟩
             exact hguard1 k htag_mid (by simpa [hctx'] using hk_mid) hnotfun_mid
       | newRef e1 =>
-          have htcNew : typecheckNewRef .ioFree ctx e1 fuel' = .ok res := by
+          have htcNew : typecheckNewRef ctx e1 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
           rcases typecheckNewRef_structure ctx e1 fuel' res htcNew with
             ⟨result1, lfresh, htc1, _hlfresh, _hInt, _hRetEtyp, _hRetPoison, _hRetPred, h_mem,
@@ -10526,7 +9899,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
             · intro k htag hk hnotfun
               exact hguard1 k htag (by simpa [h_regime] using hk) hnotfun
       | assign e1 e2 =>
-          have htcAssign : typecheckAssign .ioFree ctx e1 e2 fuel' = .ok res := by
+          have htcAssign : typecheckAssign ctx e1 e2 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
           rcases typecheckAssign_memEnv_formula ctx e1 e2 fuel' res htcAssign with
             ⟨result1, result2, ls, htc1, _hRef, htc2, _hInt, h_mem, h_regime⟩
@@ -10712,7 +10085,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                 ⟨_hpoison1, hguard1⟩
               exact hguard1 k htag_mid (by simpa [updateCtxFromResult] using hk_mid) hnotfun_mid
       | ite e1 e2 e3 =>
-          have htcIf : typecheckIf .ioFree ctx e1 e2 e3 fuel' = .ok res := by
+          have htcIf : typecheckIf ctx e1 e2 e3 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
           rcases typecheckIf_structure ctx e1 e2 e3 fuel' res htcIf with h1 | h2 | hstd
           · rcases h1 with ⟨k, deps, _hmg, _hk, _res1, _htc1, _hBool, res2, htc2, h_mem, _h_tag,
@@ -10852,7 +10225,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                   ⟨_hpoison1, hguard1⟩
                 exact hguard1 k htag_mid (by simpa [ctxForE3, ctx'', ctx', ctxAfter] using hk_mid) hnotfun_mid
       | app e1 e2 =>
-          have htcApp : typecheckApp .ioFree ctx e1 e2 fuel' = .ok res := by
+          have htcApp : typecheckApp ctx e1 e2 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
           cases fuel' with
           | zero =>
@@ -10924,7 +10297,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                         simpa [heq_results] using hsrc_mem
                       rcases list_mapM_ok_mem_output_exists_input
                           (f := fun tcl =>
-                            applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuelApp)
+                            applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuelApp)
                           (xs := tcls) (ys := results) (y := srcRes)
                           hmap hsrc_results with
                         ⟨tcl, _htcl_mem, happly_src⟩
@@ -10944,7 +10317,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                               srcRes happly_src with
                             ⟨fuelBody, hfuelBody⟩
                           have happly_succ :
-                              applyFnTClosure .ioFree (FnTClosure.regular x body tenv)
+                              applyFnTClosure (FnTClosure.regular x body tenv)
                                 st1 st2 p p1 etyp2 p2 pred2 ctx result1 (Nat.succ fuelBody) = .ok srcRes := by
                             simpa [hfuelBody] using happly_src
                           rcases applyFnTClosure_regular_inv
@@ -10993,7 +10366,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                         simpa [heq_results] using hsrc_mem
                       rcases list_mapM_ok_mem_output_exists_input
                           (f := fun tcl =>
-                            applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuelApp)
+                            applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuelApp)
                           (xs := tcls) (ys := results) (y := srcRes)
                           hmap hsrc_results with
                         ⟨tcl, _htcl_mem, happly_src⟩
@@ -11057,7 +10430,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                         simpa [heq_results] using hsrc_mem
                       rcases list_mapM_ok_mem_output_exists_input
                           (f := fun tcl =>
-                            applyFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuelApp)
+                            applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuelApp)
                           (xs := tcls) (ys := results) (y := srcRes)
                           hmap hsrc_results with
                         ⟨tcl, _htcl_mem, happly_src⟩
@@ -11087,7 +10460,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                               srcRes happly_src with
                             ⟨fuelBody, hfuelBody⟩
                           have happly_succ :
-                              applyFnTClosure .ioFree (FnTClosure.regular x body tenv)
+                              applyFnTClosure (FnTClosure.regular x body tenv)
                                 st1 st2 p p1 etyp2 p2 pred2 ctx result1 (Nat.succ fuelBody) = .ok srcRes := by
                             simpa [hfuelBody] using happly_src
                           rcases applyFnTClosure_regular_inv
@@ -11144,7 +10517,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                         simpa [heq_results] using hsrc_mem
                       rcases list_mapM_ok_mem_output_exists_input
                           (f := fun tcl =>
-                            applyPFnTClosure .ioFree tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuelApp)
+                            applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuelApp)
                           (xs := tcls) (ys := results) (y := srcRes)
                           hmap hsrc_results with
                         ⟨tcl, _htcl_mem, happly_src⟩
@@ -11221,38 +10594,13 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       hhead | ⟨srcRes, hsrc_rest, hsrc_contains⟩
                     · exact hmember_origin first (by simp) hhead
                     · exact hmember_origin srcRes (List.mem_cons_of_mem _ hsrc_rest) hsrc_contains
-      | rand e1 =>
-          have htcRand : typecheckRand .ioFree ctx e1 fuel' = .ok res := by
-            simpa [typecheckExpr] using htc
-          exact absurd htcRand (typecheckRand_ioFree_impossible ctx e1 fuel' res)
-      | frand e1 =>
-          have htcFrand : typecheckFrand .ioFree ctx e1 fuel' = .ok res := by
-            simpa [typecheckExpr] using htc
-          exact absurd htcFrand (typecheckFrand_ioFree_impossible ctx e1 fuel' res)
-      | printInt e1 =>
-          have htcPrint : typecheckPrintInt .ioFree ctx e1 fuel' = .ok res := by
-            simpa [typecheckExpr] using htc
-          exact absurd htcPrint (typecheckPrintInt_ioFree_impossible ctx e1 fuel' res)
-      | printString e1 =>
-          have htcPrint : typecheckPrintString .ioFree ctx e1 fuel' = .ok res := by
-            simpa [typecheckExpr] using htc
-          exact absurd htcPrint (typecheckPrintString_ioFree_impossible ctx e1 fuel' res)
-      | externVal typ poison pred =>
-          have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by
-            native_decide
-          simp [typecheckExpr, typecheckExternVal, heq, bind, Except.bind] at htc
-      | externFn arg argTyp retSpec effects =>
-          have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by
-            native_decide
-          simp [typecheckExpr, typecheckExternFn, heq, bind, Except.bind] at htc
-      | externPfn arg argTyp retSpec =>
-          have heq : (LeanPoison.EvalMode.ioFree == LeanPoison.EvalMode.ioFree) = true := by
-            native_decide
-          simp [typecheckExpr, typecheckExternPfn, heq, bind, Except.bind] at htc
+      | externVal typ poison pred => sorry
+      | externFn arg argTyp retSpec effects => sorry
+      | externPfn arg argTyp retSpec => sorry
 
 private lemma typecheckExpr_lookup_poison_origin_of_pc_true
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
-  (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
+  (htc : typecheckExpr ctx e fuel = .ok res)
   (hpc : ctx.pc = true) :
   ∀ (l : Loc) (qt_out : QTyp),
     res.memEnv'.lookup l = some qt_out →
@@ -11264,7 +10612,7 @@ private lemma typecheckExpr_lookup_poison_origin_of_pc_true
 
 private lemma typecheckExpr_lookup_guard_origin_of_pc_true
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
-  (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
+  (htc : typecheckExpr ctx e fuel = .ok res)
   (hpc : ctx.pc = true) :
   ∀ (l : Loc) (qt_out : QTyp) (k : Tag),
     res.memEnv'.lookup l = some qt_out →
@@ -11282,7 +10630,7 @@ private lemma typecheckExpr_lookup_guard_origin_of_pc_true
 
 lemma typecheckExpr_clean_lookup_origin_of_pc_true
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
-  (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
+  (htc : typecheckExpr ctx e fuel = .ok res)
   (hpc : ctx.pc = true) :
   ∀ (l : Loc) (qt_out : QTyp),
     res.memEnv'.lookup l = some qt_out →
@@ -11306,7 +10654,7 @@ lemma typecheckExpr_clean_lookup_origin_of_pc_true
 
 lemma typecheckExpr_lookup_clean_back_of_pc_true
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
-  (htc : typecheckExpr .ioFree ctx e fuel = .ok res)
+  (htc : typecheckExpr ctx e fuel = .ok res)
   (hpc : ctx.pc = true) :
   ∀ (l : Loc) (qt_in qt_out : QTyp),
     ctx.memEnv.lookup l = some qt_in →

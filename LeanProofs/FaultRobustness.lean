@@ -691,7 +691,7 @@ inductive trustedVarsClosureRegimeInit
 -- Fault-Robustness property (top-level, spec-driven).
 -- Same shape as NI but with an extra premise requiring agreement on trusted inputs.
 def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) : Prop :=
-  ∀ (mode : LeanPoison.EvalMode) (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool),
+  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool),
     ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
     wfRegime ctx.regime s →
     wfRealizationMap θ₁ →  wfRealizationMap θ₂ →
@@ -704,8 +704,8 @@ def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx :
     consistentRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat ctx.regime s μ₂ ρ₂ θ₂ →
     agreeOnCriticalInputsUnderRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
     agreeOnTrustedInputs predSat ctx.regime s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
-    terminatesTo mode e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
-    terminatesTo mode e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } cf₂ o₂ →
+    terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
+    terminatesTo e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } cf₂ o₂ →
     ∃ (θ₁' θ₂' : RealizationMap),
       wfExtendsMap θ₁ θ₁' ∧
       wfExtendsMap θ₂ θ₂' ∧
@@ -725,6 +725,6 @@ def TypeSystemEnforcesFaultRobustness_spec
         wfTagMeaningCtx tm ctx →
         PredSatLaws predSat tm →
         ((∃ (fuel : Nat) (res : TypeResult),
-          typecheck .ioFree ctx e fuel = .ok res ∧
+          typecheck ctx e fuel = .ok res ∧
           ObsConstraints obs res) →
           FaultRobustnessSpec e s obs ctx predSat tm)

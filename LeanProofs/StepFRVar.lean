@@ -11,7 +11,7 @@ open scoped MemoryTypeEnv
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (mode : LeanPoison.EvalMode)
+  
   (ctx : TypeContext)
   (e : Expr)
   (res : TypeResult)
@@ -28,7 +28,7 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -498,13 +498,13 @@ private lemma var_valueConsistentWithRegimeMasked_of_typecheck
 private lemma stepFRSingleRunFinalCleanPcTrue_var_parametric
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (mode : LeanPoison.EvalMode)
+  
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (name : Name) (res : TypeResult) (fuel : Nat)
   (hCtxToVal : VarCtxToValCons CtxCons ValCons)
-  (htc : typecheck .ioFree ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
+  (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-    CtxCons ValCons mode ctxᵢ (Expr.var name) res predSat tm := by
+    CtxCons ValCons ctxᵢ (Expr.var name) res predSat tm := by
   have htc' : typecheckVar ctxᵢ name = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
@@ -516,7 +516,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_var_parametric
       typecheckVar_preserves_regime ctxᵢ name res htc']
   intro _hpredlaws _hwfTm μ ρ θ cf o hθwf _hwf hric _hreg hctxCons a pm hwfcfg ht _hpc
   rcases
-    terminatesTo_var_inv' mode name
+    terminatesTo_var_inv' name
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
     with ⟨v, hlookup, hcf, ho⟩
   subst hcf
@@ -552,17 +552,17 @@ theorem stepFRVar_ctxToValCons_masked
 
 lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
   (masked : Tag → Prop)
-  (mode : LeanPoison.EvalMode)
+  
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (name : Name) (res : TypeResult) (fuel : Nat)
-  (htc : typecheck .ioFree ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
+  (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
     (fun ctx μ ρ θ =>
       consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v =>
       valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    mode ctxᵢ (Expr.var name) res predSat tm := by
+    ctxᵢ (Expr.var name) res predSat tm := by
   have htc' : typecheckVar ctxᵢ name = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
@@ -574,7 +574,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
       typecheckVar_preserves_regime ctxᵢ name res htc']
   intro _hpredlaws _hwfTm μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none hctxCons a pm hwfcfg ht _hpc
   rcases
-    terminatesTo_var_inv' mode name
+    terminatesTo_var_inv' name
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
     with ⟨v, hlookup, hcf, ho⟩
   subst hcf
@@ -596,17 +596,17 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
       (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctxᵢ) (res := res) (ρ := ρ) hric)
 
 lemma stepFR_var
-  (mode : LeanPoison.EvalMode)
+  
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (name : Name) (res : TypeResult) (fuel : Nat)
-  (htc : typecheck .ioFree ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
-  StepFR mode ctxᵢ (Expr.var name) res predSat tm := by
+  (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
+  StepFR ctxᵢ (Expr.var name) res predSat tm := by
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv ctxᵢ.regime := hreg
   -- Use inversion lemma to extract config and value
-  have hinv₀ := terminatesTo_var_inv' mode name
+  have hinv₀ := terminatesTo_var_inv' name
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-  have hinv₁ := terminatesTo_var_inv' mode name
+  have hinv₁ := terminatesTo_var_inv' name
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   rcases hinv₀ with ⟨v₀', hlookup₀, hcf₀, hv₀⟩
   rcases hinv₁ with ⟨v₁', hlookup₁, hcf₁, hv₁⟩

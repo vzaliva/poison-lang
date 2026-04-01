@@ -10,16 +10,16 @@ open scoped MemoryTypeEnv
 
 lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
   (masked : Tag → Prop)
-  (mode : LeanPoison.EvalMode)
+  
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
-  (htc : typecheck .ioFree ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
+  (htc : typecheck ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    mode ctxᵢ (Expr.fn x paramType body returnType) res predSat tm := by
+    ctxᵢ (Expr.fn x paramType body returnType) res predSat tm := by
   have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
     simp [typecheck, typecheckExpr] at h
@@ -43,7 +43,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
   intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
-  have ⟨hcf, ho⟩ := terminatesTo_fn_inv' mode x paramType body returnType
+  have ⟨hcf, ho⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   subst hcf
   have hvaltyp : valueHasETyp θ o res.qualType.etyp := by
@@ -119,16 +119,16 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
 
 lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
   (masked : Tag → Prop)
-  (mode : LeanPoison.EvalMode)
+  
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
-  (htc : typecheck .ioFree ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
+  (htc : typecheck ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    mode ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm := by
+    ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm := by
   have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
     simp [typecheck, typecheckExpr] at h
@@ -156,7 +156,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
       intro _hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
-      have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
+      have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
       subst hcf
       have hto : Expr.toPExpr? body = some pbody :=
@@ -235,12 +235,12 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
 
 
 lemma stepFR_fn
-  (mode : LeanPoison.EvalMode)
+  
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
-  (htc : typecheck .ioFree ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFR mode ctxᵢ (Expr.fn x paramType body returnType) res predSat tm := by
+  (htc : typecheck ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
+  StepFR ctxᵢ (Expr.fn x paramType body returnType) res predSat tm := by
   -- Extract typecheck result
   have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
@@ -266,9 +266,9 @@ lemma stepFR_fn
     simp [ctxAfter, hres, res_expected]
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma
-  have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' mode x paramType body returnType
+  have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-  have ⟨hcf₁, ho₁⟩ := terminatesTo_fn_inv' mode x paramType body returnType
+  have ⟨hcf₁, ho₁⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   subst hcf₀ hcf₁
   have hcap' :
@@ -485,12 +485,12 @@ lemma stepFR_fn
 -- World-free version of stepFRW_pfn
 
 lemma stepFR_pfn
-  (mode : LeanPoison.EvalMode)
+  
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
-  (htc : typecheck .ioFree ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFR mode ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm := by
+  (htc : typecheck ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
+  StepFR ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm := by
   -- Extract typecheck result
   have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
@@ -520,9 +520,9 @@ lemma stepFR_pfn
         simp [ctxAfter, hres, res_expected]
       intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
       -- Use world-free inversion lemma
-      have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
+      have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-      have ⟨hcf₁, ho₁⟩ := terminatesTo_pfn_inv' mode x paramType body returnType
+      have ⟨hcf₁, ho₁⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
       subst hcf₀ hcf₁
       have hcap' :

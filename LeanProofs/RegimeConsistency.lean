@@ -796,14 +796,14 @@ lemma EnvRespectsTagMeaning_subbind (tm : TagMeaning) (x0 : Name) (σ σ' : VarT
 structure PredSatLaws (predSat : PredSat) (tm : TagMeaning) : Prop where
   -- Bidirectional match law: if match_guard recognizes the condition as tag k,
   -- then the condition's boolean result matches predSat on the owning value.
-  match_iff : ∀ (mode : LeanPoison.EvalMode) (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
+  match_iff : ∀ (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
                   (fuel : Nat)
                   (k : Tag) (deps : Deps)
                   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (addr : Address) (pm : Bool) (cfg : Config)
                   (v : Value) (b : Bool),
     EnvRespectsTagMeaning tm σ Γ →
     matchGuard condition Γ σ fuel = .ok (k, deps) →
-    terminatesTo mode condition { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm } cfg (Value.bool b) →
+    terminatesTo condition { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm } cfg (Value.bool b) →
     ( (∃ (x : Name) (qt : QTyp),
           σ.lookup x = some qt ∧
           qtypGuardTag qt = some k ∧

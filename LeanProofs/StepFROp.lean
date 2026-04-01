@@ -20,25 +20,25 @@ lemma stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg
       (fun R qt μ θ v =>
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctx (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  (htc : typecheck ctx (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    .ioFree ctx (Expr.unaryop op e) res predSat tm := by
-  have htc' : typecheckUnaryOp .ioFree ctx op e (Nat.succ fuel') = .ok res := by
+    ctx (Expr.unaryop op e) res predSat tm := by
+  have htc' : typecheckUnaryOp ctx op e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_unaryop_succ] at htc
     exact htc
   obtain ⟨res1, result_etyp, htc1, h_op, h_mem, h_tag, h_loc, h_ntag, h_regime,
       h_ret_etyp, _h_ret_poison, h_ret_pred⟩ :=
     typecheckUnaryOp_structure ctx op e (Nat.succ fuel') res htc'
-  have htc1' : typecheck .ioFree ctx e fuel' = .ok res1 := by
+  have htc1' : typecheck ctx e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctx hwfTm res1 htc1'
-  have hstruct := terminatesTo_unaryop_inv' .ioFree op e
-    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o rfl ht
+  have hstruct := terminatesTo_unaryop_inv' op e
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg', v', ht_e, h_evalop, hmem, hvar, _hnext, _hpure⟩
   rcases
     hIH hpredlaws hwfTm μ ρ θ cfg' v'
@@ -80,10 +80,10 @@ lemma stepFR_op
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
   (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR .ioFree ctxᵢ (Expr.op e1 op e2) res predSat tm := by
+  (htc : typecheck ctxᵢ (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFR ctxᵢ (Expr.op e1 op e2) res predSat tm := by
   -- Parse typecheck result
-  have htc' : typecheckOp .ioFree ctxᵢ e1 e2 (Nat.succ fuel') op = .ok res := by
+  have htc' : typecheckOp ctxᵢ e1 e2 (Nat.succ fuel') op = .ok res := by
     simp [typecheck, typecheckExpr_op_succ] at htc
     exact htc
   obtain ⟨res1, res2, result_etyp, htc1, htc2, h_op, h_mem, h_tag, h_loc, h_ntag, h_regime,
@@ -91,9 +91,9 @@ lemma stepFR_op
     typecheckOp_structure ctxᵢ e1 e2 op (Nat.succ fuel') res htc'
   let ctx' : TypeContext :=
     { ctxᵢ with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
-  have htc1' : typecheck .ioFree ctxᵢ e1 fuel' = .ok res1 := by
+  have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res2 := by
+  have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
     simpa [ctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
@@ -151,7 +151,7 @@ lemma stepFR_op
     cases cfg₁1
     simp only [Config.mk.injEq, true_and]
     exact hpm_eq
-  have ht₁_e2' : terminatesTo .ioFree e2
+  have ht₁_e2' : terminatesTo e2
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode }
       cf₁ v₁2 := by
     rw [← hcfg₁1_eq]
@@ -298,24 +298,24 @@ lemma stepFR_unaryop
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e : Expr) (op : UnaryOp) (fuel' : Nat) (res : TypeResult)
   (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR .ioFree ctxᵢ (Expr.unaryop op e) res predSat tm := by
-  have htc' : typecheckUnaryOp .ioFree ctxᵢ op e (Nat.succ fuel') = .ok res := by
+  (htc : typecheck ctxᵢ (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFR ctxᵢ (Expr.unaryop op e) res predSat tm := by
+  have htc' : typecheckUnaryOp ctxᵢ op e (Nat.succ fuel') = .ok res := by
     simp [typecheck, typecheckExpr_unaryop_succ] at htc
     exact htc
   obtain ⟨res1, result_etyp, htc1, h_op, h_mem, h_tag, h_loc, h_ntag, h_regime, h_ret_etyp, h_ret_poison, h_ret_pred⟩ :=
     typecheckUnaryOp_structure ctxᵢ op e (Nat.succ fuel') res htc'
-  have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
+  have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   -- Use world-free inversion lemma for unaryop
-  have hstruct₀ := terminatesTo_unaryop_inv' .ioFree op e
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ rfl ht₀
+  have hstruct₀ := terminatesTo_unaryop_inv' op e
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀', v₀', ht₀_e, h_evalop₀, hmem₀, hvar₀, _hnext₀, _hpure₀⟩
-  have hstruct₁ := terminatesTo_unaryop_inv' .ioFree op e
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ rfl ht₁
+  have hstruct₁ := terminatesTo_unaryop_inv' op e
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
   rcases hstruct₁ with ⟨cfg₁', v₁', ht₁_e, h_evalop₁, hmem₁, hvar₁, _hnext₁, _hpure₁⟩
   -- Apply IH for sub-expression
   have hstep_e :=
@@ -343,8 +343,8 @@ lemma stepFR_unaryop
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
     simpa [hctxAfter, hmem₁, hvar₁] using hcwr₁'
   -- Derive wfConfig for final configs using wfConfig_preserved
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.unaryop op e) _ cf₀ o₀ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved .ioFree (Expr.unaryop op e) _ cf₁ o₁ ht₁ hwfcfg₁).1
+  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.unaryop op e) _ cf₀ o₀ ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.unaryop op e) _ cf₁ o₁ ht₁ hwfcfg₁).1
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
     have hnonfun_arg :
         res1.qualType.etyp.isFunctionType = false ∧
@@ -450,13 +450,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
       (fun R qt μ θ v =>
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctx (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  (htc : typecheck ctx (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    .ioFree ctx (Expr.op e1 op e2) res predSat tm := by
-  have htc' : typecheckOp .ioFree ctx e1 e2 (Nat.succ fuel') op = .ok res := by
+    ctx (Expr.op e1 op e2) res predSat tm := by
+  have htc' : typecheckOp ctx e1 e2 (Nat.succ fuel') op = .ok res := by
     simp [typecheck, typecheckExpr_op_succ] at htc
     exact htc
   obtain ⟨res1, res2, result_etyp, htc1, htc2, h_op, h_mem, h_tag, h_loc, h_ntag,
@@ -470,9 +470,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
       nextTag := res1.nextTag'
       regime := res1.regime'
   }
-  have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by
+  have htc1' : typecheck ctx e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res2 := by
+  have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
     simpa [ctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht hpc
   have hstruct := terminatesTo_op_inv' e1 op e2
@@ -488,7 +488,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
   have hreg1 : regimeConsistentWithCtxMasked masked (ctxAfter ctx res1) :=
     typecheckExpr_preserves_regimeConsistentWithCtxMasked masked ctx e1 fuel' res1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg1 := by
-    exact (wfConfig_preserved .ioFree e1 _ cfg1 v1 ht_e1 hwfcfg).1
+    exact (wfConfig_preserved e1 _ cfg1 v1 ht_e1 hwfcfg).1
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht_e1 hpc

@@ -13,7 +13,7 @@ open scoped MemoryTypeEnv
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (mode : LeanPoison.EvalMode)
+  
   (ctx : TypeContext)
   (e : Expr)
   (res : TypeResult)
@@ -30,7 +30,7 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -47,9 +47,9 @@ private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
   ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
     wfTagMeaningCtx tm ctx →
     ∀ (res : TypeResult),
-      typecheck .ioFree ctx e m = .ok res →
+      typecheck ctx e m = .ok res →
       StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-        CtxCons ValCons .ioFree ctx e res predSat tm
+        CtxCons ValCons ctx e res predSat tm
 
 private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -59,16 +59,16 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
   (IH :
     StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
       CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  (htc : typecheck ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-    CtxCons ValCons .ioFree ctx (Expr.seq e1 e2) res predSat tm := by
-  have htc' : typecheckSeq .ioFree ctx e1 e2 (Nat.succ fuel') = .ok res := by
+    CtxCons ValCons ctx (Expr.seq e1 e2) res predSat tm := by
+  have htc' : typecheckSeq ctx e1 e2 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr_seq_succ] using htc
   obtain ⟨res1, ctx', htc1, hctx', htc2⟩ :=
     typecheckSeq_structure ctx e1 e2 (Nat.succ fuel') res htc'
-  have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by
+  have htc1' : typecheck ctx e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res := by
+  have htc2' : typecheck ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht hpc
   have hstruct := terminatesTo_seq_inv' e1 e2
@@ -83,7 +83,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
       (typecheckExpr_preserves_wfTypeResult ctx e1 fuel' res1 hwf htc1')
   have hreg1 : regimeConsistentWithCtx (ctxAfter ctx res1) :=
     typecheckExpr_preserves_regimeConsistentWithCtx ctx e1 fuel' res1 hregCtx htc1'
-  have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved .ioFree e1 _ cfg1 v1 ht_e1 hwfcfg).1
+  have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved e1 _ cfg1 v1 ht_e1 hwfcfg).1
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht_e1 hpc
@@ -154,19 +154,19 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
       (fun R qt μ θ v =>
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  (htc : typecheck ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    .ioFree ctx (Expr.seq e1 e2) res predSat tm := by
-  have htc' : typecheckSeq .ioFree ctx e1 e2 (Nat.succ fuel') = .ok res := by
+    ctx (Expr.seq e1 e2) res predSat tm := by
+  have htc' : typecheckSeq ctx e1 e2 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr_seq_succ] using htc
   obtain ⟨res1, ctx', htc1, hctx', htc2⟩ :=
     typecheckSeq_structure ctx e1 e2 (Nat.succ fuel') res htc'
-  have htc1' : typecheck .ioFree ctx e1 fuel' = .ok res1 := by
+  have htc1' : typecheck ctx e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res := by
+  have htc2' : typecheck ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht hpc
   have hstruct := terminatesTo_seq_inv' e1 e2
@@ -181,7 +181,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
       (typecheckExpr_preserves_wfTypeResult ctx e1 fuel' res1 hwf htc1')
   have hreg1 : regimeConsistentWithCtxMasked masked (ctxAfter ctx res1) :=
     typecheckExpr_preserves_regimeConsistentWithCtxMasked masked ctx e1 fuel' res1 hregCtx htc1'
-  have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved .ioFree e1 _ cfg1 v1 ht_e1 hwfcfg).1
+  have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved e1 _ cfg1 v1 ht_e1 hwfcfg).1
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht_e1 hpc
@@ -254,8 +254,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrue .ioFree ctx (Expr.seq e1 e2) res predSat tm := by
+  (htc : typecheck ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrue ctx (Expr.seq e1 e2) res predSat tm := by
   exact
     stepFRSingleRunFinalCleanPcTrue_seq_parametric
       (CtxCons := fun ctx' μ' ρ' θ' =>
@@ -271,16 +271,16 @@ lemma stepFR_seq
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR .ioFree ctxᵢ (Expr.seq e1 e2) res predSat tm := by
+  (htc : typecheck ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFR ctxᵢ (Expr.seq e1 e2) res predSat tm := by
   -- Parse typecheck result
-  have htc' : typecheckSeq .ioFree ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
+  have htc' : typecheckSeq ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr_seq_succ] using htc
   obtain ⟨res1, ctx', htc1, hctx', htc2⟩ :=
     typecheckSeq_structure ctxᵢ e1 e2 (Nat.succ fuel') res htc'
-  have htc1' : typecheck .ioFree ctxᵢ e1 fuel' = .ok res1 := by
+  have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res := by
+  have htc2' : typecheck ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
@@ -324,7 +324,7 @@ lemma stepFR_seq
   have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
   have hcfg₁1_eq : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
     cases cfg₁1; simp only [Config.mk.injEq, true_and]; exact hpm_eq
-  have ht₁_e2' : terminatesTo .ioFree e2
+  have ht₁_e2' : terminatesTo e2
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode }
       cf₁ o₁ := by rw [← hcfg₁1_eq]; exact ht₁_e2
   have hwfcf₁1' : wfConfig

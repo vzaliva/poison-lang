@@ -14,7 +14,7 @@ open scoped MemoryTypeEnv
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (mode : LeanPoison.EvalMode)
+  
   (ctx : TypeContext)
   (e : Expr)
   (res : TypeResult)
@@ -31,7 +31,7 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -48,9 +48,9 @@ private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
   ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
     wfTagMeaningCtx tm ctx →
     ∀ (res : TypeResult),
-      typecheck .ioFree ctx e m = .ok res →
+      typecheck ctx e m = .ok res →
       StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-        CtxCons ValCons .ioFree ctx e res predSat tm
+        CtxCons ValCons ctx e res predSat tm
 
 private def VletCtxConsBodyStart
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -472,17 +472,17 @@ lemma stepFR_vlet
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR .ioFree ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
+  (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFR ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
   -- Parse typecheck result
-  have htc' : typecheckVlet .ioFree ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
+  have htc' : typecheckVlet ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr_vlet_succ] using htc
   obtain ⟨res1, res2, ctx', htc1, hctx', htc2, h_ret_etyp, h_mem, h_tag, h_loc, h_ntag,
           h_ret_regime, h_ret_poison, h_ret_pred⟩ :=
     typecheckVlet_structure ctxᵢ vname e1 e2 (Nat.succ fuel') res htc'
-  have htc1' : typecheck .ioFree ctxᵢ e1 fuel' = .ok res1 := by
+  have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res2 := by
+  have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
@@ -523,20 +523,15 @@ lemma stepFR_vlet
   have hric₁1_mem : runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctxAfter] using hric₁1
   -- hv₀1_typed, hv₁1_typed come from IH1 (StepFR now includes valueHasETyp)
-  -- wfValue from wfConfig_preservedW (needs terminatesToW)
-  let w_default := LeanProofs.defaultWorld
-  have ht₀_e1_w : terminatesToW .ioFree w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 := by
-    rcases ht₀_e1 with ⟨fuel₀, verbose₀, hpure₀⟩
-    have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₀
-    exact ⟨fuel₀, verbose₀, by simpa [pure] using h_eq⟩
-  have ht₁_e1_w : terminatesToW .ioFree w_default w_default e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 := by
-    rcases ht₁_e1 with ⟨fuel₁, verbose₁, hpure₁⟩
-    have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₁
-    exact ⟨fuel₁, verbose₁, by simpa [pure] using h_eq⟩
+  -- wfValue from wfConfig_preserved (needs terminatesTo)
+  have ht₀_e1_w : terminatesTo e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 :=
+    ht₀_e1
+  have ht₁_e1_w : terminatesTo e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 :=
+    ht₁_e1
   have hv₀1_wf : wfValue cfg₀1.nextAddr v₀1 :=
-    (wfConfig_preservedW .ioFree w_default w_default e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1_w hwfcfg₀).2
+    (wfConfig_preserved e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1_w hwfcfg₀).2
   have hv₁1_wf : wfValue cfg₁1.nextAddr v₁1 :=
-    (wfConfig_preservedW .ioFree w_default w_default e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1_w hwfcfg₁).2
+    (wfConfig_preserved e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1_w hwfcfg₁).2
   have hreg_ctx' : regimeConsistentWithCtx ctx' := by
     -- ctx'.regime = res1.regime', need to derive from htagR1 and regime_monotone
     unfold regimeConsistentWithCtx at htagR1 ⊢
@@ -689,7 +684,7 @@ lemma stepFR_vlet
   have hcfg₀2_eq : cfg₀2 = { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 } := rfl
   have hcfg₁2_eq : cfg₁2 = { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 } := rfl
   -- Convert ht₁_e2 to have matching pureMode
-  have ht₁_e2' : terminatesTo .ioFree e2 { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1, pureMode := cfg₀1.pureMode } cfg₁3 o₁ := by
+  have ht₁_e2' : terminatesTo e2 { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1, pureMode := cfg₀1.pureMode } cfg₁3 o₁ := by
     have hcfg_eq : ({ cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 } : Config) =
                    { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1, pureMode := cfg₀1.pureMode } := by
       simp [hpm_eq]
@@ -1066,22 +1061,16 @@ lemma stepFR_vlet
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
   -- VarEnv preservation through e2
-  have ht₀_e2_w : terminatesToW .ioFree w_default w_default e2 cfg₀2 cfg₀3 o₀ := by
-    rcases ht₀_e2 with ⟨fuel₀, verbose₀, hpure₀⟩
-    have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₀
-    exact ⟨fuel₀, verbose₀, by simpa [pure] using h_eq⟩
-  have ht₁_e2_w : terminatesToW .ioFree w_default w_default e2 cfg₁2 cfg₁3 o₁ := by
-    rcases ht₁_e2 with ⟨fuel₁, verbose₁, hpure₁⟩
-    have h_eq := LeanProofs.evalAtWorld_eq w_default hpure₁
-    exact ⟨fuel₁, verbose₁, by simpa [pure] using h_eq⟩
+  have ht₀_e2_w : terminatesTo e2 cfg₀2 cfg₀3 o₀ := ht₀_e2
+  have ht₁_e2_w : terminatesTo e2 cfg₁2 cfg₁3 o₁ := ht₁_e2
   have hvar_pres₀ : cfg₀3.varEnv = cfg₀2.varEnv := by
     symm
     rcases ht₀_e2_w with ⟨fuel₀', verbose₀', heval₀⟩
-    exact beval_preserves_varEnv .ioFree e2 fuel₀' verbose₀' cfg₀2 cfg₀3 o₀ ⟨w_default, w_default, heval₀⟩
+    exact beval_preserves_varEnv e2 fuel₀' verbose₀' cfg₀2 cfg₀3 o₀ heval₀
   have hvar_pres₁ : cfg₁3.varEnv = cfg₁2.varEnv := by
     symm
     rcases ht₁_e2_w with ⟨fuel₁', verbose₁', heval₁⟩
-    exact beval_preserves_varEnv .ioFree e2 fuel₁' verbose₁' cfg₁2 cfg₁3 o₁ ⟨w_default, w_default, heval₁⟩
+    exact beval_preserves_varEnv e2 fuel₁' verbose₁' cfg₁2 cfg₁3 o₁ heval₁
   -- Final runtimeInstantiatesCtx
   have hric₀'' : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     unfold runtimeInstantiatesCtx
@@ -1360,9 +1349,9 @@ lemma stepFR_vlet
               simpa [h_mem₀_eq, h_mem₁_eq, h_regime_eq] using hagree_val
   -- Final wfConfig
   have hwfcf₀_final : wfConfig cf₀ :=
-    (wfConfig_preserved .ioFree (Expr.vlet vname e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
+    (wfConfig_preserved (Expr.vlet vname e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ :=
-    (wfConfig_preserved .ioFree (Expr.vlet vname e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
+    (wfConfig_preserved (Expr.vlet vname e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
   -- Need consistentWithRegime for both runs
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀2 := by
     have h_mem₀_eq : cf₀.memory = cfg₀3.memory := by simp [hcf₀_eq]
@@ -1453,7 +1442,7 @@ lemma stepFR_vlet
           simpa [ctxAfter] using hlookup
         have h_varEnv_pres₀ : ρ₀ = cfg₀1.varEnv := by
           rcases ht₀_e1_w with ⟨fuel_w, verbose_w, h_beval_w⟩
-          exact beval_preserves_varEnv .ioFree e1 fuel_w verbose_w _ _ _ ⟨w_default, w_default, h_beval_w⟩
+          exact beval_preserves_varEnv e1 fuel_w verbose_w _ _ _ h_beval_w
         have hlookup_v_ρ₀ : ρ₀.lookup vname = some v := by
           rw [h_varEnv_pres₀]; simpa [h_var₀_eq] using hlookup_v
         have hcap₀ := hcwr₀.2.2 vname qt v hlookup_ctxᵢ hlookup_v_ρ₀
@@ -1589,7 +1578,7 @@ lemma stepFR_vlet
           simpa [ctxAfter] using hlookup
         have h_varEnv_pres₁ : ρ₁ = cfg₁1.varEnv := by
           rcases ht₁_e1_w with ⟨fuel_w, verbose_w, h_beval_w⟩
-          exact beval_preserves_varEnv .ioFree e1 fuel_w verbose_w _ _ _ ⟨w_default, w_default, h_beval_w⟩
+          exact beval_preserves_varEnv e1 fuel_w verbose_w _ _ _ h_beval_w
         have hlookup_v_ρ₁ : ρ₁.lookup vname = some v := by
           rw [h_varEnv_pres₁]; simpa [h_var₁_eq] using hlookup_v
         have hcap₀ := hcwr₁.2.2 vname qt v hlookup_ctxᵢ hlookup_v_ρ₁
@@ -1745,17 +1734,17 @@ private lemma stepFRSingleRunFinalCleanPcTrue_vlet_parametric
   (IH :
     StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
       CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-    CtxCons ValCons .ioFree ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
-  have htc' : typecheckVlet .ioFree ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
+    CtxCons ValCons ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
+  have htc' : typecheckVlet ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr_vlet_succ] using htc
   obtain ⟨res1, res2, ctx', htc1, hctx', htc2, h_ret_etyp, h_mem, h_tag, h_loc, h_ntag,
       h_ret_regime, h_ret_poison, h_ret_pred⟩ :=
     typecheckVlet_structure ctxᵢ vname e1 e2 (Nat.succ fuel') res htc'
-  have htc1' : typecheck .ioFree ctxᵢ e1 fuel' = .ok res1 := by
+  have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res2 := by
+  have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht hpc
   have hstruct := terminatesTo_vlet_inv' vname e1 e2
@@ -1775,7 +1764,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_vlet_parametric
   have hreg1 : regimeConsistentWithCtx (ctxAfter ctxᵢ res1) :=
     typecheckExpr_preserves_regimeConsistentWithCtx ctxᵢ e1 fuel' res1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg1 := by
-    exact (wfConfig_preserved .ioFree e1 _ cfg1 _ ht_e1 hwfcfg).1
+    exact (wfConfig_preserved e1 _ cfg1 _ ht_e1 hwfcfg).1
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht_e1 hpc
@@ -1799,7 +1788,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_vlet_parametric
   have hwf1' : wfTypeContext ctx' := by
     simpa [hctx', ctxAfter] using hwf1
   have hv1_wf : wfValue cfg1.nextAddr v1 := by
-    exact (wfConfig_preserved .ioFree e1 _ cfg1 _ ht_e1 hwfcfg).2
+    exact (wfConfig_preserved e1 _ cfg1 _ ht_e1 hwfcfg).2
   have hwfcfg2 : wfConfig cfg2 := by
     rcases hwfcfg1 with ⟨hwfmem1, hwfenv1⟩
     refine ⟨?_, ?_⟩
@@ -1903,8 +1892,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrue .ioFree ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
+  (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrue ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
   exact
     stepFRSingleRunFinalCleanPcTrue_vlet_parametric
       (CtxCons := fun ctx μ ρ θ =>
@@ -1931,20 +1920,20 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
       (fun R qt μ θ v =>
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    .ioFree ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
-  have htc' : typecheckVlet .ioFree ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
+    ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
+  have htc' : typecheckVlet ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr_vlet_succ] using htc
   obtain ⟨res1, res2, ctx', htc1, hctx', htc2, h_ret_etyp, h_mem, _h_tag, _h_loc, _h_ntag,
       h_ret_regime, _h_ret_poison, h_ret_pred⟩ :=
     typecheckVlet_structure ctxᵢ vname e1 e2 (Nat.succ fuel') res htc'
-  have htc1' : typecheck .ioFree ctxᵢ e1 fuel' = .ok res1 := by
+  have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  have htc2' : typecheck .ioFree ctx' e2 fuel' = .ok res2 := by
+  have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht hpc
   have hstruct := terminatesTo_vlet_inv' vname e1 e2
@@ -1964,7 +1953,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
     typecheckExpr_preserves_regimeConsistentWithCtxMasked
       (masked := masked) ctxᵢ e1 fuel' res1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg1 := by
-    exact (wfConfig_preserved .ioFree e1 _ cfg1 _ ht_e1 hwfcfg).1
+    exact (wfConfig_preserved e1 _ cfg1 _ ht_e1 hwfcfg).1
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht_e1 hpc
@@ -2000,7 +1989,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   have hwf1' : wfTypeContext ctx' := by
     simpa [hctx', ctxAfter] using hwf1
   have hv1_wf : wfValue cfg1.nextAddr v1 := by
-    exact (wfConfig_preserved .ioFree e1 _ cfg1 _ ht_e1 hwfcfg).2
+    exact (wfConfig_preserved e1 _ cfg1 _ ht_e1 hwfcfg).2
   have hwfcfg2 : wfConfig cfg2 := by
     rcases hwfcfg1 with ⟨hwfmem1, hwfenv1⟩
     refine ⟨?_, ?_⟩

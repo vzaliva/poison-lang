@@ -11,7 +11,7 @@ open scoped MemoryTypeEnv
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (mode : LeanPoison.EvalMode)
+  
   (ctx : TypeContext)
   (e : Expr)
   (res : TypeResult)
@@ -28,7 +28,7 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo mode e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -45,17 +45,17 @@ private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
   ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
     wfTagMeaningCtx tm ctx →
     ∀ (res : TypeResult),
-      typecheck .ioFree ctx e m = .ok res →
+      typecheck ctx e m = .ok res →
       StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-        CtxCons ValCons .ioFree ctx e res predSat tm
+        CtxCons ValCons ctx e res predSat tm
 
 private def DerefCtxToValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   ∀ (ctx : TypeContext) (e : Expr) (res res1 : TypeResult) (fuel' : Nat)
     (cf : Config) (θ : RealizationMap) (a' : Address) (n : Int),
-    typecheckDeref .ioFree ctx e (Nat.succ fuel') = .ok res →
-    typecheck .ioFree ctx e fuel' = .ok res1 →
+    typecheckDeref ctx e (Nat.succ fuel') = .ok res →
+    typecheck ctx e fuel' = .ok res1 →
     res.memEnv' = res1.memEnv' →
     valueHasETyp θ (Value.loc a') res1.qualType.etyp →
     cf.memory.lookup a' = some n →
@@ -66,8 +66,8 @@ private lemma deref_valueConsistentWithRegime_of_typecheck
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e : Expr) (res res1 : TypeResult) (fuel' : Nat)
   (cf : Config) (θ' : RealizationMap) (a' : Address) (n : Int)
-  (htc : typecheckDeref .ioFree ctxᵢ e (Nat.succ fuel') = .ok res)
-  (htc1 : typecheck .ioFree ctxᵢ e fuel' = .ok res1)
+  (htc : typecheckDeref ctxᵢ e (Nat.succ fuel') = .ok res)
+  (htc1 : typecheck ctxᵢ e fuel' = .ok res1)
   (hmemEq : res.memEnv' = res1.memEnv')
   (hvloc : valueHasETyp θ' (Value.loc a') res1.qualType.etyp)
   (hlookup_cf : cf.memory.lookup a' = some n)
@@ -76,7 +76,7 @@ private lemma deref_valueConsistentWithRegime_of_typecheck
       cf.memory cf.varEnv θ') :
   valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
     res.qualType cf.memory θ' (Value.num n) := by
-  have htc1_expr : typecheckExpr .ioFree ctxᵢ e fuel' = .ok res1 := by
+  have htc1_expr : typecheckExpr ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck] using htc1
   have hderef_etyp_int : res.qualType.etyp = ETyp.int :=
     typecheckDeref_etyp_int ctxᵢ e (Nat.succ fuel') res htc
@@ -322,8 +322,8 @@ private lemma deref_valueConsistentWithRegimeMasked_of_typecheck
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e : Expr) (res res1 : TypeResult) (fuel' : Nat)
   (cf : Config) (θ' : RealizationMap) (a' : Address) (n : Int)
-  (htc : typecheckDeref .ioFree ctxᵢ e (Nat.succ fuel') = .ok res)
-  (htc1 : typecheck .ioFree ctxᵢ e fuel' = .ok res1)
+  (htc : typecheckDeref ctxᵢ e (Nat.succ fuel') = .ok res)
+  (htc1 : typecheck ctxᵢ e fuel' = .ok res1)
   (hmemEq : res.memEnv' = res1.memEnv')
   (hvloc : valueHasETyp θ' (Value.loc a') res1.qualType.etyp)
   (hlookup_cf : cf.memory.lookup a' = some n)
@@ -332,7 +332,7 @@ private lemma deref_valueConsistentWithRegimeMasked_of_typecheck
       cf.memory cf.varEnv θ') :
   valueConsistentWithRegimeMasked masked predSat (ctxAfter ctxᵢ res).regime
     res.qualType cf.memory θ' (Value.num n) := by
-  have htc1_expr : typecheckExpr .ioFree ctxᵢ e fuel' = .ok res1 := by
+  have htc1_expr : typecheckExpr ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck] using htc1
   have hderef_etyp_int : res.qualType.etyp = ETyp.int :=
     typecheckDeref_etyp_int ctxᵢ e (Nat.succ fuel') res htc
@@ -586,24 +586,24 @@ private lemma stepFRSingleRunFinalCleanPcTrue_deref_parametric
   (hCtxToVal : DerefCtxToValCons CtxCons ValCons)
   (IH : StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
     CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-    CtxCons ValCons .ioFree ctxᵢ (Expr.deref e) res predSat tm := by
+    CtxCons ValCons ctxᵢ (Expr.deref e) res predSat tm := by
   classical
-  have htc' : typecheckDeref .ioFree ctxᵢ e (Nat.succ fuel') = .ok res := by
+  have htc' : typecheckDeref ctxᵢ e (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
   obtain ⟨res1, htc1, h_mem, h_tag, h_loc, h_ntag, h_regime⟩ :=
     typecheckDeref_structure ctxᵢ e (Nat.succ fuel') res htc'
-  have htc1_expr : typecheckExpr .ioFree ctxᵢ e fuel' = .ok res1 := by
+  have htc1_expr : typecheckExpr ctxᵢ e fuel' = .ok res1 := by
     simpa [Nat.succ_sub_one] using htc1
-  have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
+  have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   have hstruct := terminatesTo_deref_inv' e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
-  rcases hstruct with ⟨cfg', a', n, ht_e, hlookup, ho, hmem, hvar, _hnext, _hpm, _hpm_e⟩
+  rcases hstruct with ⟨cfg', a', n, ht_e, hlookup, ho, hmem, hvar, _hnext, _hpm⟩
   rcases
     hIH hpredlaws hwfTm μ ρ θ cfg' (Value.loc a')
       hθwf hwf hric hregCtx hcwr a pm hwfcfg ht_e hpc
@@ -668,29 +668,29 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
       (fun R qt μ θ v =>
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
     (fun ctx μ ρ θ =>
       consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v =>
       valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    .ioFree ctxᵢ (Expr.deref e) res predSat tm := by
+    ctxᵢ (Expr.deref e) res predSat tm := by
   classical
-  have htc' : typecheckDeref .ioFree ctxᵢ e (Nat.succ fuel') = .ok res := by
+  have htc' : typecheckDeref ctxᵢ e (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
   obtain ⟨res1, htc1, h_mem, h_tag, h_loc, h_ntag, h_regime⟩ :=
     typecheckDeref_structure ctxᵢ e (Nat.succ fuel') res htc'
-  have htc1_expr : typecheckExpr .ioFree ctxᵢ e fuel' = .ok res1 := by
+  have htc1_expr : typecheckExpr ctxᵢ e fuel' = .ok res1 := by
     simpa [Nat.succ_sub_one] using htc1
-  have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
+  have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   have hstruct := terminatesTo_deref_inv' e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
-  rcases hstruct with ⟨cfg', a', n, ht_e, hlookup, ho, hmem, hvar, _hnext, _hpm, _hpm_e⟩
+  rcases hstruct with ⟨cfg', a', n, ht_e, hlookup, ho, hmem, hvar, _hnext, _hpm⟩
   rcases
     hIH hpredlaws hwfTm μ ρ θ cfg' (Value.loc a')
       hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht_e hpc
@@ -733,17 +733,17 @@ lemma stepFR_deref
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (htc : typecheck .ioFree ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR .ioFree ctxᵢ (Expr.deref e) res predSat tm := by
+  (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFR ctxᵢ (Expr.deref e) res predSat tm := by
   classical
   -- Parse typecheck result
-  have htc' : typecheckDeref .ioFree ctxᵢ e (Nat.succ fuel') = .ok res := by
+  have htc' : typecheckDeref ctxᵢ e (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
   obtain ⟨res1, htc1, h_mem, h_tag, h_loc, h_ntag, h_regime⟩ :=
     typecheckDeref_structure ctxᵢ e (Nat.succ fuel') res htc'
-  have htc1_expr : typecheckExpr .ioFree ctxᵢ e fuel' = .ok res1 := by
+  have htc1_expr : typecheckExpr ctxᵢ e fuel' = .ok res1 := by
     simpa [Nat.succ_sub_one] using htc1
-  have htc1' : typecheck .ioFree ctxᵢ e fuel' = .ok res1 := by
+  have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
@@ -751,10 +751,10 @@ lemma stepFR_deref
   -- Invert deref evaluation (world-free)
   have hstruct₀ := terminatesTo_deref_inv' e
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
-  rcases hstruct₀ with ⟨cfg₀', a₀', n₀, ht₀_e, hlookup₀, hv₀, hmem₀, hvar₀, hnext₀, hpm₀, hpm_e₀⟩
+  rcases hstruct₀ with ⟨cfg₀', a₀', n₀, ht₀_e, hlookup₀, hv₀, hmem₀, hvar₀, hnext₀, hpm₀⟩
   have hstruct₁ := terminatesTo_deref_inv' e
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
-  rcases hstruct₁ with ⟨cfg₁', a₁', n₁, ht₁_e, hlookup₁, hv₁, hmem₁, hvar₁, hnext₁, hpm₁, hpm_e₁⟩
+  rcases hstruct₁ with ⟨cfg₁', a₁', n₁, ht₁_e, hlookup₁, hv₁, hmem₁, hvar₁, hnext₁, hpm₁⟩
   -- Apply IH for sub-expression
   have hstep_e :=
     hIH hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.loc a₀') (Value.loc a₁')
@@ -778,8 +778,8 @@ lemma stepFR_deref
   have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
     simpa [hctxAfter] using hreg'
   -- Derive wfConfig for final configs using wfConfig_preserved
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved .ioFree (Expr.deref e) _ cf₀ o₀ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved .ioFree (Expr.deref e) _ cf₁ o₁ ht₁ hwfcfg₁).1
+  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.deref e) _ cf₀ o₀ ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.deref e) _ cf₁ o₁ ht₁ hwfcfg₁).1
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
     simpa [hctxAfter, hmem₀, hvar₀] using hcwr₀'
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
@@ -1533,7 +1533,7 @@ lemma stepFR_deref
                     throw
                       (toString "Location " ++ toString l ++ toString " not found in memory environment")) with
           | error err =>
-              have htc_bad : typecheckDeref .ioFree ctxᵢ e (Nat.succ fuel') = Except.error err := by
+              have htc_bad : typecheckDeref ctxᵢ e (Nat.succ fuel') = Except.error err := by
                 simp [typecheckDeref, htc1_expr, hq, h_etyp, h_poison, hls,
                   bind, Except.bind, pure, Except.pure]
                 erw [hfold]
