@@ -6229,7 +6229,42 @@ lemma joinTypeResults_tagEnvConsistentWithRegime'
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at h_join
-      sorry
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at h_join
+          simp at h_join
+      | ok _ =>
+          erw [hcheck] at h_join
+          simp at h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at h_join
+              simp at h_join
+          | ok a =>
+              erw [hfold] at h_join
+              simp at h_join
+              subst res
+              have h_first_tag :
+                  tagEnvConsistentWithRegime first.tagEnv' first.regime' := by
+                simpa [regimeConsistentWithCtx, ctxAfter] using h_first
+              exact
+                h_fold_tag rest
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag')
+                  a hfold h_first_tag h_rest
 
 private lemma joinTypeResults_tagEnvNotTrueAt
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -6288,7 +6323,39 @@ private lemma joinTypeResults_tagEnvNotTrueAt
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at h_join
-      sorry
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at h_join
+          simp at h_join
+      | ok _ =>
+          erw [hcheck] at h_join
+          simp at h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at h_join
+              simp at h_join
+          | ok a =>
+              erw [hfold] at h_join
+              simp at h_join
+              subst res
+              exact
+                h_fold_not_true rest
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag')
+                  a hfold h_first
 
 private lemma joinTypeResults_tagEnvConsistentWithRegimeMasked'
   (masked : Tag → Prop)
@@ -6361,7 +6428,42 @@ private lemma joinTypeResults_tagEnvConsistentWithRegimeMasked'
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at h_join
-      sorry
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at h_join
+          simp at h_join
+      | ok _ =>
+          erw [hcheck] at h_join
+          simp at h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at h_join
+              simp at h_join
+          | ok a =>
+              erw [hfold] at h_join
+              simp at h_join
+              subst res
+              have h_first_tag :
+                  tagEnvConsistentWithRegimeMasked masked first.tagEnv' first.regime' := by
+                simpa [regimeConsistentWithCtxMasked, ctxAfter] using h_first
+              exact
+                h_fold_tag rest
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag')
+                  a hfold h_first_tag h_rest
 
 private lemma joinTypeResults_regimeConsistentWithCtxMasked
   (masked : Tag → Prop)
@@ -7294,7 +7396,26 @@ lemma typecheckIf_pred_noPred
             | ⟨etyp1, _, _⟩ =>
               simp only [hq1] at htc
               by_cases hbool : etyp1 = ETyp.bool
-              · sorry
+              · simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte,
+                    pure, Except.pure] at htc
+                cases htc2 : typecheckExpr _ e2 fuel' with
+                | error e => rw [htc2] at htc; simp at htc
+                | ok result2 =>
+                  rw [htc2] at htc; simp at htc
+                  match hq2 : result2.qualType with
+                  | ⟨_, _, _⟩ =>
+                    simp only [hq2] at htc
+                    cases htc3 : typecheckExpr _ e3 fuel' with
+                    | error e => rw [htc3] at htc; simp at htc
+                    | ok result3 =>
+                      rw [htc3] at htc; simp at htc
+                      match hq3 : result3.qualType with
+                      | ⟨_, _, _⟩ =>
+                        simp only [hq3] at htc
+                        split at htc
+                        · simp at htc
+                        · simp at htc
+                          cases htc; simp
               · simp only [hbool, bne_iff_ne, ne_eq] at htc
                 cases htc
         | false =>
@@ -7307,7 +7428,26 @@ lemma typecheckIf_pred_noPred
             | ⟨etyp1, _, _⟩ =>
               simp only [hq1] at htc
               by_cases hbool : etyp1 = ETyp.bool
-              · sorry
+              · simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte,
+                    pure, Except.pure] at htc
+                cases htc2 : typecheckExpr _ e2 fuel' with
+                | error e => rw [htc2] at htc; simp at htc
+                | ok result2 =>
+                  rw [htc2] at htc; simp at htc
+                  match hq2 : result2.qualType with
+                  | ⟨etyp2, _, _⟩ =>
+                    simp only [hq2] at htc
+                    cases htc3 : typecheckExpr _ e3 fuel' with
+                    | error e => rw [htc3] at htc; simp at htc
+                    | ok result3 =>
+                      rw [htc3] at htc; simp at htc
+                      match hq3 : result3.qualType with
+                      | ⟨_, _, _⟩ =>
+                        simp only [hq3] at htc
+                        split at htc
+                        · simp at htc
+                        · simp at htc
+                          cases htc; simp
               · simp only [hbool, bne_iff_ne, ne_eq] at htc
                 cases htc
       | none =>
@@ -8087,7 +8227,38 @@ lemma join_transport_wfTagMeaningCtx_byFirst
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at _h_join
-      sorry
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+      | ok _ =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at _h_join
+              simp at _h_join
+          | ok a =>
+              erw [hfold] at _h_join
+              simp at _h_join
+              subst res
+              exact h_fold_tm rest
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag')
+                a hfold h_first_env
 
 lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
   (tm : TagMeaning)
@@ -8151,7 +8322,92 @@ lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at h_join
-      sorry
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error _ => erw [hcheck] at h_join; simp at h_join
+      | ok _ =>
+          erw [hcheck] at h_join; simp at h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error _ => erw [hfold] at h_join; simp at h_join
+          | ok a =>
+              rcases a with
+                ⟨joinedEtyp, joinedMemEnv, joinedPoison, joinedPred,
+                  joinedTagEnv, joinedRegime, maxNextLoc, maxNextTag⟩
+              erw [hfold] at h_join
+              simp at h_join
+              subst res
+              have h_first_qtm : QTypRespectsTagMeaning tm ⟨etyp, poison, pred⟩ :=
+                hqt ▸ h_first
+              have hacc_qtm :
+                  QTypRespectsTagMeaning tm ⟨joinedEtyp, joinedPoison, joinedPred⟩ :=
+                h_fold_qtm rest
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag')
+                  (joinedEtyp, joinedMemEnv, joinedPoison, joinedPred,
+                    joinedTagEnv, joinedRegime, maxNextLoc, maxNextTag)
+                  hfold h_first_qtm h_rest
+              cases joinedEtyp with
+              | arrow st1 st2 p tcls =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_of_etyp_noPred tm
+                      ⟨ETyp.arrow st1 st2 p tcls, joinedPoison, joinedPred⟩
+                      ⟨ETyp.arrow st1 st2 p tcls, joinPoison ctx.pc joinedPoison, Predicate.noPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | parrow st1 st2 p tcls =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_of_etyp_noPred tm
+                      ⟨ETyp.parrow st1 st2 p tcls, joinedPoison, joinedPred⟩
+                      ⟨ETyp.parrow st1 st2 p tcls, joinPoison ctx.pc joinedPoison, Predicate.noPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | int =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_transport_etyp_pred tm
+                      ⟨ETyp.int, joinedPoison, joinedPred⟩
+                      ⟨ETyp.int, joinPoison ctx.pc joinedPoison, joinedPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | bool =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_transport_etyp_pred tm
+                      ⟨ETyp.bool, joinedPoison, joinedPred⟩
+                      ⟨ETyp.bool, joinPoison ctx.pc joinedPoison, joinedPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | unit =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_transport_etyp_pred tm
+                      ⟨ETyp.unit, joinedPoison, joinedPred⟩
+                      ⟨ETyp.unit, joinPoison ctx.pc joinedPoison, joinedPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | string =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_transport_etyp_pred tm
+                      ⟨ETyp.string, joinedPoison, joinedPred⟩
+                      ⟨ETyp.string, joinPoison ctx.pc joinedPoison, joinedPred⟩
+                      hacc_qtm rfl rfl hinq hqd
+              | ref ls =>
+                  intro qt' k d hinq hqd
+                  exact
+                    QTypRespectsTagMeaning_transport_etyp_pred tm
+                      ⟨ETyp.ref ls, joinedPoison, joinedPred⟩
+                      ⟨ETyp.ref ls, joinPoison ctx.pc joinedPoison, joinedPred⟩
+                      hacc_qtm rfl rfl hinq hqd
 
 /-- Body typecheck preserves wfTagMeaningCtx (fuel induction).
     wfTagMeaningCtx tm ctx = EnvRespectsTagMeaning tm ctx.varEnv ctx.memEnv, so we need
@@ -8988,7 +9244,45 @@ lemma joinTypeResults_lookup_head_guardTag_compat
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at _h_join
-      sorry
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+      | ok _ =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at _h_join
+              simp at _h_join
+          | ok a =>
+              erw [hfold] at _h_join
+              simp at _h_join
+              subst res
+              have hlookup_first' : first.memEnv'.lookup l = some qt_first := by
+                simpa [ctxAfter] using hlookup_first
+              have hlookup_res' : a.2.1.lookup l = some qt := by
+                simpa [ctxAfter] using hlookup_res
+              exact
+                h_fold_guardTag
+                  rest
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag')
+                  a qt_first
+                  hfold hlookup_first' hlookup_res' htag_res
 
 
 lemma joinTypeResults_lookup_head_regime_compat
@@ -9049,7 +9343,41 @@ lemma joinTypeResults_lookup_head_regime_compat
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at _h_join
-      sorry
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+      | ok _ =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at _h_join
+              simp at _h_join
+          | ok a =>
+              erw [hfold] at _h_join
+              simp at _h_join
+              subst res
+              exact
+                h_fold_regime
+                  rest
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag')
+                  a
+                  hfold (by simpa [ctxAfter] using hlookup_res)
 
 
 lemma joinTypeResults_lookup_head_poison_imp
@@ -9139,7 +9467,45 @@ lemma joinTypeResults_lookup_head_poison_imp
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw, TypecheckM] at _h_join
-      sorry
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+      | ok _ =>
+          erw [hcheck] at _h_join
+          simp at _h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at _h_join
+              simp at _h_join
+          | ok a =>
+              erw [hfold] at _h_join
+              simp at _h_join
+              subst res
+              have hlookup_first' : first.memEnv'.lookup l = some qt_first := by
+                simpa [ctxAfter] using hlookup_first
+              have hlookup_res' : a.2.1.lookup l = some qt := by
+                simpa [ctxAfter] using hlookup_res
+              exact
+                h_fold_poison
+                  rest
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag')
+                  a qt_first
+                  hfold hlookup_first' hlookup_res' hpoison_res
 
 
 lemma joinTypeResults_lookup_member_regime_compat
@@ -9218,7 +9584,45 @@ lemma joinTypeResults_lookup_member_regime_compat
     | mk etyp poison pred =>
         simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
           MonadExceptOf.throw, TypecheckM] at _h_join
-        sorry
+        cases hcheck :
+            (List.foldlM
+              (fun x result =>
+                match result.qualType with
+                | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                  if beqETypSignature etyp resEtyp = false then
+                    Except.error
+                      (toString "Closure alternatives produced incompatible result types: " ++
+                        toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                  else Except.ok ())
+              () rest : Except String Unit) with
+        | error err =>
+            erw [hcheck] at _h_join
+            simp at _h_join
+        | ok _ =>
+            erw [hcheck] at _h_join
+            simp at _h_join
+            cases hfold :
+                List.foldlM joinStep
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag') rest with
+            | error err =>
+                erw [hfold] at _h_join
+                simp at _h_join
+            | ok a =>
+                erw [hfold] at _h_join
+                simp at _h_join
+                subst res
+                have hlookup_res' : a.2.2.2.2.2.1.lookup? k = some b := by
+                  simpa [ctxAfter] using hlookup_res
+                have hpack :=
+                  h_fold_regime_members
+                    rest
+                    (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                      first.nextLoc', first.nextTag')
+                    a
+                    hfold hlookup_res'
+                have hsrc_lookup : src.regime'.lookup? k = some b := hpack.2 src hsrc_rest
+                simpa [ctxAfter] using hsrc_lookup
 
 
 lemma joinTypeResults_lookup_member_guardTag_compat
@@ -9353,7 +9757,45 @@ lemma joinTypeResults_lookup_member_guardTag_compat
     | mk etyp poison pred =>
         simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
           MonadExceptOf.throw, TypecheckM] at _h_join
-        sorry
+        cases hcheck :
+            (List.foldlM
+              (fun x result =>
+                match result.qualType with
+                | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                  if beqETypSignature etyp resEtyp = false then
+                    Except.error
+                      (toString "Closure alternatives produced incompatible result types: " ++
+                        toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                  else Except.ok ())
+              () rest : Except String Unit) with
+        | error err =>
+            erw [hcheck] at _h_join
+            simp at _h_join
+        | ok _ =>
+            erw [hcheck] at _h_join
+            simp at _h_join
+            cases hfold :
+                List.foldlM joinStep
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag') rest with
+            | error err =>
+                erw [hfold] at _h_join
+                simp at _h_join
+            | ok a =>
+                erw [hfold] at _h_join
+                simp at _h_join
+                subst res
+                have hlookup_res' : a.2.1.lookup l = some qt := by
+                  simpa [ctxAfter] using hlookup_res
+                have hlookup_src' : src.memEnv'.lookup l = some qt_src := by
+                  simpa [ctxAfter] using hlookup_src
+                exact
+                  h_fold_member_guardTag
+                    rest
+                    (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                      first.nextLoc', first.nextTag')
+                    a src qt_src
+                    hfold hsrc_rest hlookup_res' htag_res hlookup_src'
 
 
 lemma joinTypeResults_lookup_member_etyp_compat
@@ -9530,7 +9972,45 @@ lemma joinTypeResults_lookup_member_poison_imp
     | mk etyp poison pred =>
         simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
           MonadExceptOf.throw, TypecheckM] at _h_join
-        sorry
+        cases hcheck :
+            (List.foldlM
+              (fun x result =>
+                match result.qualType with
+                | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                  if beqETypSignature etyp resEtyp = false then
+                    Except.error
+                      (toString "Closure alternatives produced incompatible result types: " ++
+                        toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                  else Except.ok ())
+              () rest : Except String Unit) with
+        | error err =>
+            erw [hcheck] at _h_join
+            simp at _h_join
+        | ok _ =>
+            erw [hcheck] at _h_join
+            simp at _h_join
+            cases hfold :
+                List.foldlM joinStep
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag') rest with
+            | error err =>
+                erw [hfold] at _h_join
+                simp at _h_join
+            | ok a =>
+                erw [hfold] at _h_join
+                simp at _h_join
+                subst res
+                have hlookup_res' : a.2.1.lookup l = some qt := by
+                  simpa [ctxAfter] using hlookup_res
+                have hlookup_src' : src.memEnv'.lookup l = some qt_src := by
+                  simpa [ctxAfter] using hlookup_src
+                exact
+                  h_fold_member_poison
+                    rest
+                    (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                      first.nextLoc', first.nextTag')
+                    a src qt_src
+                    hfold hsrc_rest hlookup_res' hclean_out hlookup_src'
 
 
 lemma joinTypeResults_lookup_member_clean_compat
