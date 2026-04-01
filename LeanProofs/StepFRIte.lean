@@ -2595,7 +2595,7 @@ private lemma stepFR_ite_true
   (hregime_true : ctxᵢ.regime.lookup? k = some true)
   (res1 res2 : TypeResult)
   (htc1 : typecheckExpr { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
-  (hbool : res1.qualType.etyp = ETyp.bool)
+  (_hbool : res1.qualType.etyp = ETyp.bool)
   (htc2 : let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
           typecheckExpr ctxTrue e2 fuel' = .ok res2)
   (_res3 : TypeResult)
@@ -2605,7 +2605,7 @@ private lemma stepFR_ite_true
   (hmemEnv : res.memEnv' = res2.memEnv')
   (htagEnv : res.tagEnv' = res2.tagEnv')
   (hnextLoc : res.nextLoc' = max res2.nextLoc' _res3.nextLoc')
-  (hnextTag : res.nextTag' = max res2.nextTag' _res3.nextTag')
+  (_hnextTag : res.nextTag' = max res2.nextTag' _res3.nextTag')
   (hregime' : res.regime' = res2.regime')
   (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc res2.qualType.poison)
   (hetyp : res.qualType.etyp = res2.qualType.etyp) :
@@ -2991,7 +2991,7 @@ private lemma stepFR_ite_false
   (hregime_false : ctxᵢ.regime.lookup? k = some false)
   (res1 : TypeResult)
   (htc1 : typecheckExpr { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1)
-  (hbool : res1.qualType.etyp = ETyp.bool)
+  (_hbool : res1.qualType.etyp = ETyp.bool)
   (_res2 : TypeResult)
   (_htc2 : let ctxTrue := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
            typecheckExpr ctxTrue e2 fuel' = .ok _res2)
@@ -3002,7 +3002,7 @@ private lemma stepFR_ite_false
   (hmemEnv : res.memEnv' = res3.memEnv')
   (htagEnv : res.tagEnv' = res3.tagEnv')
   (hnextLoc : res.nextLoc' = max _res2.nextLoc' res3.nextLoc')
-  (hnextTag : res.nextTag' = max _res2.nextTag' res3.nextTag')
+  (_hnextTag : res.nextTag' = max _res2.nextTag' res3.nextTag')
   (hregime' : res.regime' = res3.regime')
   (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc res3.qualType.poison)
   (hetyp : res.qualType.etyp = res3.qualType.etyp) :
