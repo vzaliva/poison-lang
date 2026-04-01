@@ -3298,7 +3298,24 @@ lemma applyFnTClosure_regime_mono
       exact IH
   · simp [bind, Except.bind] at happly
     rename_i argName retSpec effects capturedEnv
-    sorry
+    -- Extern case: all return paths set regime' := r1.regime'
+    split at happly
+    · simp at happly
+    · split at happly
+      · simp at happly
+      · split at happly
+        · -- simple case: after resolveSyntaxPred ok, happly has (<$> returnSpecToQTyp) form
+          split at happly
+          · simp at happly
+          · simp only [Functor.map, Except.map] at happly
+            split at happly
+            · simp at happly
+            · simp only [Except.ok.injEq] at happly
+              rw [← happly]; exact regimeMonotone_refl r1.regime'
+        · simp only [pure, Except.pure, Except.ok.injEq] at happly
+          rw [← happly]; exact regimeMonotone_refl r1.regime'
+        · simp only [pure, Except.pure, Except.ok.injEq] at happly
+          rw [← happly]; exact regimeMonotone_refl r1.regime'
 
 lemma applyPFnTClosure_regime_mono
     (tcl : PFnTClosure) (ctx : TypeContext)
@@ -3334,7 +3351,26 @@ lemma applyPFnTClosure_regime_mono
           exact IH
   | extern x retSpec capturedEnv =>
       simp at happly
-      sorry
+      -- Extern case: all return paths set regime' := r1.regime'
+      -- split on retSpec: simple / nestedFn / nestedPfn
+      split at happly
+      · -- simple case: do-block → unfold bind, then split on collectAndAllocExternTags
+        simp only [bind, Except.bind] at happly
+        split at happly
+        · simp at happly
+        · split at happly
+          · simp at happly
+          · simp only [Functor.map, Except.map] at happly
+            split at happly
+            · simp at happly
+            · simp only [Except.ok.injEq] at happly
+              rw [← happly]; exact regimeMonotone_refl r1.regime'
+      · -- nestedFn case: pure {regime' := r1.regime'}
+        simp only [pure, Except.pure, Except.ok.injEq] at happly
+        rw [← happly]; exact regimeMonotone_refl r1.regime'
+      · -- nestedPfn case: pure {regime' := r1.regime'}
+        simp only [pure, Except.pure, Except.ok.injEq] at happly
+        rw [← happly]; exact regimeMonotone_refl r1.regime'
 
 private lemma typecheckVar_regime_mono (ctx : TypeContext) (x : Name) (res : TypeResult) :
     typecheckVar ctx x = .ok res →
@@ -4733,6 +4769,46 @@ lemma typecheck_ioFree_preserves_nextTag (ctx : TypeContext) (e : Expr) (fuel : 
 
 end typecheck_ioFree_preserves_nextTag_proof
 
+/-- Helper: the tag-allocating forIn loop in collectAndAllocExternTags never decreases the tag counter. -/
+private lemma forIn_tag_incr_ge
+    (L : List (TagIndex × Name × Expr))
+    (init_map : ExtTreeMap TagIndex Tag compare) (init_tag : Tag)
+    (r : MProd (ExtTreeMap TagIndex Tag compare) Tag)
+    (h : (forIn L ⟨init_map, init_tag⟩
+      (fun (x : TagIndex × Name × Expr) (r : MProd (ExtTreeMap TagIndex Tag compare) Tag) =>
+        (Except.ok (ForInStep.yield ⟨r.fst.insert x.1 r.snd, r.snd + 1⟩) : Except String _))
+      = Except.ok r)) :
+    init_tag ≤ r.snd := by
+  induction L generalizing init_map init_tag with
+  | nil =>
+    simp only [forIn, List.forIn'_nil, pure, Except.pure, Except.ok.injEq] at h
+    cases h; exact Nat.le_refl _
+  | cons hd tl ih =>
+    simp only [forIn, List.forIn'_cons, bind, Except.bind] at h
+    exact Nat.le_trans (Nat.le_succ _) (ih _ _ h)
+
+/-- collectAndAllocExternTags never decreases nextTag: the returned nextTag' ≥ input nextTag. -/
+lemma collectAndAllocExternTags_nextTag_ge (preds : List SyntaxPredicate) (t : Tag)
+    (map : ExtTreeMap TagIndex Tag) (t' : Tag) :
+    collectAndAllocExternTags preds t = .ok (map, t') → t ≤ t' := by
+  intro h
+  unfold collectAndAllocExternTags at h
+  simp only [bind, Except.bind, pure, Except.pure] at h
+  revert h
+  split
+  · intro h; exact absurd h Except.noConfusion
+  · rename_i v _
+    split
+    · intro h; exact absurd h Except.noConfusion
+    · split
+      · intro h; exact absurd h Except.noConfusion
+      · rename_i result hpass3
+        intro h
+        have heq := Except.ok.inj h
+        have htagEq := (Prod.mk.inj heq).2
+        rw [← htagEq]
+        exact forIn_tag_incr_ge v.snd ∅ t result hpass3
+
 section typecheck_nextTag_normal_mono_proof
 
 lemma typecheckExternVal_nextTag_mono
@@ -4742,7 +4818,24 @@ lemma typecheckExternVal_nextTag_mono
     ctx.nextTag ≤ res.nextTag' := by
   intro htc
   unfold typecheckExternVal at htc
-  sorry
+  split at htc
+  · simp at htc
+  · simp at htc
+  · simp only [bind, Except.bind, pure, Except.pure] at htc
+    cases halloc : collectAndAllocExternTags [pred] ctx.nextTag with
+    | error err => simp [halloc] at htc
+    | ok result =>
+      rcases result with ⟨tagMapping, nextTag'⟩
+      simp only [halloc] at htc
+      cases hresolve : resolveSyntaxPred pred ctx.varEnv tagMapping with
+      | error err => simp [hresolve] at htc
+      | ok resolvedPred =>
+        simp only [hresolve] at htc
+        cases hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx with
+        | error err => simp [hsurf] at htc
+        | ok surfResult =>
+          simp only [hsurf, Except.ok.injEq] at htc; cases htc
+          exact collectAndAllocExternTags_nextTag_ge [pred] ctx.nextTag tagMapping nextTag' halloc
 
 lemma typecheckExternFn_preserves_nextTag
     (ctx : TypeContext) (arg : Name) (argTyp : Typ)
@@ -4817,7 +4910,21 @@ private lemma applyFnTClosure_nextTag_mono_normal
               simpa [hctx'] using hmono
       | extern x retSpec effects capturedEnv =>
           simp [bind, Except.bind, pure, Except.pure] at happly
-          sorry
+          -- Extern case: r2.nextTag' = v.2 from collectAndAllocExternTags, and v.2 ≥ r1.nextTag'
+          split at happly
+          · simp at happly
+          · rename_i heq'
+            have htag := collectAndAllocExternTags_nextTag_ge _ _ _ _ heq'
+            split at happly
+            · simp at happly
+            · split at happly
+              · split at happly
+                · simp at happly
+                · split at happly
+                  · simp at happly
+                  · simp only [Except.ok.injEq] at happly; rw [← happly]; exact htag
+              · simp only [Except.ok.injEq] at happly; rw [← happly]; exact htag
+              · simp only [Except.ok.injEq] at happly; rw [← happly]; exact htag
 
 private lemma applyPFnTClosure_nextTag_mono_normal
   (tcl : PFnTClosure) (ctx : TypeContext)
@@ -4866,7 +4973,22 @@ private lemma applyPFnTClosure_nextTag_mono_normal
               simpa [hctx'] using hmono
       | extern x retSpec capturedEnv =>
           simp [bind, Except.bind] at happly
-          sorry
+          -- Extern case: simple uses collectAndAllocExternTags (≥ r1.nextTag');
+          -- nestedFn/nestedPfn use r1.nextTag' directly (le_refl)
+          split at happly
+          · -- simple case: allocates tags
+            split at happly
+            · simp at happly
+            · rename_i heq'
+              have htag := collectAndAllocExternTags_nextTag_ge _ _ _ _ heq'
+              split at happly
+              · simp at happly
+              · split at happly
+                · simp at happly
+                · simp only [pure, Except.pure, Except.ok.injEq] at happly
+                  rw [← happly]; exact htag
+          · simp only [pure, Except.pure, Except.ok.injEq] at happly; rw [← happly]
+          · simp only [pure, Except.pure, Except.ok.injEq] at happly; rw [← happly]
 
 private lemma foldl_max_ge_init (a : Nat) (xs : List Nat) :
     a ≤ List.foldl max a xs := by
@@ -6465,7 +6587,28 @@ private lemma applyFnTClosure_nextLoc_mono
       simp at IH
       exact IH
   · simp [bind, Except.bind] at happly
-    sorry
+    -- Extern case: nestedFn/nestedPfn set nextLoc' := r1.nextLoc' (le_refl);
+    -- simple uses returnSpecToQTyp which preserves nextLoc (equality → le_refl)
+    split at happly
+    · simp at happly
+    · split at happly
+      · simp at happly
+      · split at happly
+        · -- simple case: nextLoc' from returnSpecToQTyp which preserves nextLoc
+          split at happly
+          · simp at happly
+          · -- happly now: (fun a => {nextLoc' := a.2, ...}) <$> returnSpecToQTyp ... = ok r2
+            simp only [Functor.map, Except.map] at happly
+            split at happly
+            · simp at happly
+            · -- ok case: r2 = {nextLoc' := v.2, ...}, and v.2 = r1.nextLoc' by preservation
+              rename_i v hret
+              simp only [Except.ok.injEq] at happly
+              rw [← happly]
+              have := returnSpecToQTyp_preserves_nextLoc _ _ _ r1.nextLoc' v hret
+              simp [this]
+        · simp only [pure, Except.pure, Except.ok.injEq] at happly; rw [← happly]
+        · simp only [pure, Except.pure, Except.ok.injEq] at happly; rw [← happly]
 
 private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),

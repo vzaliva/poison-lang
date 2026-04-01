@@ -218,9 +218,6 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   · rcases h1 with
                       ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, _res3, htc2, _htc3,
                         hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', _hpoison, hetyp⟩
-                    -- TODO: Replace with StepFR monotonicity for nextLoc/nextTag
-                    have hnextLoc : res.nextLoc' = res2.nextLoc' := by rw [hnextLoc_max]; sorry
-                    have hnextTag : res.nextTag' = res2.nextTag' := by rw [hnextTag_max]; sorry
                     intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
                     let ctxPure : TypeContext := { ctxᵢ with pureCtx := true }
                     let ctxTrue : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
@@ -330,8 +327,12 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           ht_e2 hpc_true
                       with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2⟩
                     have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
-                    have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxTrue res2 := by
-                      simp [ctxAfter, ctxTrue, hmemEnv, htagEnv, hnextLoc, hnextTag, hregime']
+                    have hctxAfter_memEnv : (ctxAfter ctxᵢ res).memEnv = (ctxAfter ctxTrue res2).memEnv := by
+                      simp [ctxAfter, hmemEnv]
+                    have hctxAfter_varEnv : (ctxAfter ctxᵢ res).varEnv = (ctxAfter ctxTrue res2).varEnv := by
+                      simp [ctxAfter, ctxTrue]
+                    have hctxAfter_regime : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxTrue res2).regime := by
+                      simp [ctxAfter, hregime']
                     have hpres_final :
                         PreservesInheritedFinalCleanLocsOneRun ctxᵢ res μ cf.memory θ θ2 := by
                       refine ⟨?_⟩
@@ -373,8 +374,11 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       exact PreservesInheritedCleanLocOneRun.trans hpres_mid hpres_last
                     refine ⟨θ2, hθext, ?_, ?_, ?_, ?_, hpres_final⟩
                     · simpa [hetyp] using hv2
-                    · simpa [hctxAfter] using hric2
-                    · simpa [hctxAfter] using hcwr2
+                    · simp only [runtimeInstantiatesCtx, hctxAfter_memEnv, hctxAfter_varEnv]
+                      exact hric2
+                    · simp only [consistentWithRegimeMasked, hctxAfter_regime,
+                        hctxAfter_memEnv, hctxAfter_varEnv]
+                      exact hcwr2
                     · refine valueConsistentWithRegimeMasked.noTag ?_ ?_
                       · simp [qtypGuardTag, hpredNo]
                       ·
@@ -387,7 +391,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                             closureCapturedVarsRegimeMasked masked predSat
                               (ctxAfter ctxᵢ res).regime
                               res2.qualType cf.memory θ2 o := by
-                          simpa [hctxAfter] using hcap2
+                          rwa [hctxAfter_regime]
                         exact
                           closureCapturedVarsRegimeMasked_transport_etyp
                             (qt := res2.qualType) (qt' := res.qualType)
@@ -395,12 +399,11 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   · rcases h2 with
                       ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, _res2, res3, _htc2, htc3,
                         hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', _hpoison, hetyp⟩
-                    -- TODO: Replace with StepFR monotonicity for nextLoc/nextTag
-                    have hnextLoc : res.nextLoc' = res3.nextLoc' := by rw [hnextLoc_max]; sorry
-                    have hnextTag : res.nextTag' = res3.nextTag' := by rw [hnextTag_max]; sorry
                     intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
                     let ctxPure : TypeContext := { ctxᵢ with pureCtx := true }
                     let ctxFalse : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩ }
+                    let ctxFalse' : TypeContext :=
+                      { ctxFalse with nextLoc := _res2.nextLoc', nextTag := _res2.nextTag' }
                     have htc1' : typecheck ctxPure e1 fuel' = .ok res1 := by
                       simpa [ctxPure, typecheck, Nat.succ_sub_one] using htc1
                     have hwfTm_pure : wfTagMeaningCtx tm ctxPure := by
@@ -450,23 +453,33 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
                     have hwfcfg1 : wfConfig cfg1 :=
                       (wfConfig_preserved e1 _ cfg1 (Value.bool b) ht_e1 hwfcfg).1
-                    -- TODO: htc3 has ctxFalse with nextLoc/nextTag from res2.
-                    -- Need context nextLoc/nextTag irrelevance lemma.
-                    have htc3_old :
-                        typecheckExpr ctxFalse e3 fuel' = .ok res3 := by sorry
-                    have htc3' : typecheck ctxFalse e3 fuel' = .ok res3 := by
-                      simpa [ctxFalse, typecheck, Nat.succ_sub_one] using htc3_old
-                    have hwfTm_false : wfTagMeaningCtx tm ctxFalse := by
-                      simpa [ctxFalse, wfTagMeaningCtx] using hwfTm
+                    have htc3' : typecheck ctxFalse' e3 fuel' = .ok res3 := by
+                      simpa [ctxFalse', ctxFalse, typecheck, Nat.succ_sub_one] using htc3
+                    have hwfTm_false : wfTagMeaningCtx tm ctxFalse' := by
+                      simpa [ctxFalse', ctxFalse, wfTagMeaningCtx] using hwfTm
                     have hwf_false : wfTypeContext ctxFalse := by
                       simpa [ctxFalse, wfTypeContext] using hwf
+                    have hwf_false' : wfTypeContext ctxFalse' := by
+                      intro l hl
+                      simp only [ctxFalse', ctxFalse] at hl ⊢
+                      have hle : ctxᵢ.nextLoc ≤ _res2.nextLoc' := by
+                        have htc2_tc : typecheck { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' = .ok _res2 := by
+                          simpa [typecheck] using _htc2
+                        have := typecheck_nextLoc_mono { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' _res2 htc2_tc
+                        simpa using this
+                      exact Nat.lt_of_lt_of_le (hwf_false l hl) hle
                     have htagR_false : regimeConsistentWithCtxMasked masked ctxFalse := by
                       exact
                         tagEnvConsistentWithRegimeMasked_insert_false
                           masked ctxᵢ.tagEnv ctxᵢ.regime k deps htagR
+                    have htagR_false' : regimeConsistentWithCtxMasked masked ctxFalse' := by
+                      simpa [ctxFalse', regimeConsistentWithCtxMasked] using htagR_false
                     have hmasked_none_false :
                         ∀ t, masked t → ctxFalse.regime.lookup? t = none := by
                       simpa [ctxFalse] using hmasked_none
+                    have hmasked_none_false' :
+                        ∀ t, masked t → ctxFalse'.regime.lookup? t = none := by
+                      simpa [ctxFalse'] using hmasked_none_false
                     rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
                     have hric1' : runtimeInstantiatesCtx ctxFalse cfg1.memory cfg1.varEnv θ1 := by
                       have hsub : ∀ l, res1.memEnv'.contains l → ctxᵢ.memEnv.contains l := by
@@ -484,6 +497,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                             (k := k) (deps := deps)
                             hsub hric1
                       simpa [ctxFalse, runtimeInstantiatesCtx] using hric_true
+                    have hric1'_f : runtimeInstantiatesCtx ctxFalse' cfg1.memory cfg1.varEnv θ1 := by
+                      simp only [runtimeInstantiatesCtx, ctxFalse', ctxFalse] at hric1' ⊢; exact hric1'
                     have hcwr1' :
                         consistentWithRegimeMasked masked predSat ctxFalse.regime ctxFalse
                           cfg1.memory cfg1.varEnv θ1 := by
@@ -509,26 +524,39 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                               (ctx := ctxᵢ) (e := e1) (pe := pe1) (fuel := fuel') (res := res1)
                               hpe1 htc1 l qt k' hlookup hguard hRdef
                       simpa [ctxFalse, consistentWithRegimeMasked] using hcwr_true
+                    have hcwr1'_f :
+                        consistentWithRegimeMasked masked predSat ctxFalse'.regime ctxFalse'
+                          cfg1.memory cfg1.varEnv θ1 := by
+                      simp only [consistentWithRegimeMasked, ctxFalse', ctxFalse] at hcwr1' ⊢; exact hcwr1'
+                    have hpc_false' : ctxFalse'.pc = true := by
+                      simpa [ctxFalse'] using hpc_false
                     have hpredNo : res.qualType.pred = Predicate.noPred := by
                       exact typecheckIf_pred_noPred ctxᵢ e1 e2 e3 (Nat.succ fuel') res htcIf
-                    have hIH_e3 := IH' fuel' (by omega) masked e3 ctxFalse res3 htc3'
+                    have hIH_e3 := IH' fuel' (by omega) masked e3 ctxFalse' res3 htc3'
                     rcases
                         hIH_e3 hpredlaws hwfTm_false
                           cfg1.memory cfg1.varEnv θ1 cf o
-                          hθ1wf hwf_false hric1' htagR_false hmasked_none_false hcwr1'
+                          hθ1wf hwf_false' hric1'_f htagR_false' hmasked_none_false' hcwr1'_f
                           cfg1.nextAddr cfg1.pureMode hwfcfg1
-                          ht_e3 hpc_false
+                          ht_e3 hpc_false'
                       with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2⟩
                     have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
-                    have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxFalse res3 := by
-                      simp [ctxAfter, ctxFalse, hmemEnv, htagEnv, hnextLoc, hnextTag, hregime']
+                    have hctxAfter_memEnv : (ctxAfter ctxᵢ res).memEnv = (ctxAfter ctxFalse' res3).memEnv := by
+                      simp [ctxAfter, hmemEnv]
+                    have hctxAfter_varEnv : (ctxAfter ctxᵢ res).varEnv = (ctxAfter ctxFalse' res3).varEnv := by
+                      simp [ctxAfter, ctxFalse', ctxFalse]
+                    have hctxAfter_regime : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxFalse' res3).regime := by
+                      simp [ctxAfter, hregime']
+                    have htc3_for_pres :
+                        typecheckExpr ctxFalse' e3 fuel' = .ok res3 := by
+                      simpa [ctxFalse', ctxFalse] using htc3
                     have hpres_final :
                         PreservesInheritedFinalCleanLocsOneRun ctxᵢ res μ cf.memory θ θ2 := by
                       refine ⟨?_⟩
                       intro l qt_in qt_out hlookup_in hlookup_out hclean_out
                       rcases
                           typecheckExpr_clean_lookup_origin_of_pc_true
-                            ctxFalse e3 fuel' res3 htc3_old hpc_false
+                            ctxFalse' e3 fuel' res3 htc3_for_pres hpc_false'
                             l qt_out (by simpa [hmemEnv] using hlookup_out)
                             (by simpa [hregime'] using hclean_out)
                         with ⟨qt_mid, hlookup_mid_false, hclean_mid_false⟩
@@ -554,7 +582,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       have hpres_last :
                           PreservesInheritedCleanLocOneRun cfg1.memory cf.memory θ1 θ2 l :=
                         PreservesInheritedFinalCleanLocsOneRun.apply
-                          (ctx := ctxFalse) (res := res3)
+                          (ctx := ctxFalse') (res := res3)
                           (μ_in := cfg1.memory) (μ_out := cf.memory) (θ_in := θ1) (θ_out := θ2)
                           hpres2
                           hlookup_mid_false
@@ -563,21 +591,24 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       exact PreservesInheritedCleanLocOneRun.trans hpres_mid hpres_last
                     refine ⟨θ2, hθext, ?_, ?_, ?_, ?_, hpres_final⟩
                     · simpa [hetyp] using hv2
-                    · simpa [hctxAfter] using hric2
-                    · simpa [hctxAfter] using hcwr2
+                    · simp only [runtimeInstantiatesCtx, hctxAfter_memEnv, hctxAfter_varEnv]
+                      exact hric2
+                    · simp only [consistentWithRegimeMasked, hctxAfter_regime, hctxAfter_memEnv,
+                        hctxAfter_varEnv]
+                      exact hcwr2
                     · refine valueConsistentWithRegimeMasked.noTag ?_ ?_
                       · simp [qtypGuardTag, hpredNo]
                       ·
                         have hcap2 :
                             closureCapturedVarsRegimeMasked masked predSat
-                              (ctxAfter ctxFalse res3).regime
+                              (ctxAfter ctxFalse' res3).regime
                               res3.qualType cf.memory θ2 o :=
                           valueConsistentWithRegimeMasked_closureCapturedVarsRegime hvalc2
                         have hcap2' :
                             closureCapturedVarsRegimeMasked masked predSat
                               (ctxAfter ctxᵢ res).regime
                               res3.qualType cf.memory θ2 o := by
-                          simpa [hctxAfter] using hcap2
+                          rwa [hctxAfter_regime]
                         exact
                           closureCapturedVarsRegimeMasked_transport_etyp
                             (qt := res3.qualType) (qt' := res.qualType)
