@@ -268,7 +268,7 @@ private theorem EffectTarget_beq_refl (t : EffectTarget) : (t == t) = true := by
 
 private theorem EffectTarget_beq_sound (a b : EffectTarget) : (a == b) = true → a = b := by
   intro h
-  cases a <;> cases b <;> simp only [BEq.beq] at h <;> try contradiction
+  cases a; cases b; simp only [BEq.beq] at h; try contradiction
   case namedVar.namedVar x1 x2 =>
     have : x1 = x2 := of_decide_eq_true h
     subst this

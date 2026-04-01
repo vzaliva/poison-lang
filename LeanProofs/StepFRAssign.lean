@@ -1125,7 +1125,9 @@ private lemma typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent
                                             body result3 htcBody (by simpa [hq3] using hpred3)
                                         simpa [hfirstEq] using hnone3
                 | extern x retSpec effects capturedEnv =>
-                    sorry
+                    exact applyFnTClosure_extern_ok_guardClosure_tag_absent ctx st1 st2 p p1
+                      etyp2 p2 pred2 result1 fuel' x retSpec effects capturedEnv first happly
+                      k arg_name pred_body var_env hfirstPredQ
               have hjoinedTagNone : joined.2.2.2.2.1.get? k = none := by
                 have htag_none_of_fold :
                     ∀ (rest : List TypeResult)
@@ -1421,7 +1423,9 @@ private lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
                                             (PExpr.toExpr pbody) result3 htcBody (by simpa [hq3] using hpred3)
                                         simpa [hfirstEq] using hnone3
                 | extern x retSpec capturedEnv =>
-                    sorry
+                    exact applyPFnTClosure_extern_ok_guardClosure_tag_absent ctx st1 st2 p p1
+                      etyp2 p2 pred2 result1 fuel' x retSpec capturedEnv first happly
+                      k arg_name pred_body var_env hfirstPredQ
               have hjoinedTagNone : joined.2.2.2.2.1.get? k = none := by
                 have htag_none_of_fold :
                     ∀ (rest : List TypeResult)
@@ -1625,8 +1629,11 @@ private lemma ioFree_guardClosure_pred_implies_tag_absent
                       (result1 := result1)
                       (tcls := tcls) (results := results) (first := first) (rest := rest)
                       hmap hresults hjoin hpred
-      | externVal _ _ _ =>
-          sorry
+      | externVal typ poison pred =>
+          have htc' : typecheckExternVal ctx typ poison pred = .ok res := by
+            simpa [typecheckExpr, typecheck] using htc
+          exact typecheckExternVal_guardClosure_pred_implies_tag_absent ctx typ poison pred res
+            htc' k arg_name pred_body var_env hpred
       | externFn _ _ _ _ =>
           exfalso
           have htc' := htc

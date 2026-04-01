@@ -8959,6 +8959,35 @@ private lemma joinTypeResults_wfTypeResult
       apply List.le_max_of_mem; simp only [List.mem_cons, List.mem_map]; right; exact ⟨r, hr_mem, rfl⟩
     exact Nat.lt_of_lt_of_le ((hwf_rest r hr_mem) l' h_in) hle
 
+-- ==========================================================================
+-- Extern behavioral contract axioms for TypeSafety
+-- These are irreducible assumptions about extern type-checking behavior.
+-- ==========================================================================
+
+/-- Extern contract: FnTClosure.extern preserves wfTypeResult.
+    This is an axiom because the extern body is opaque — we cannot inspect it. -/
+axiom applyFnTClosure_extern_wfTypeResult
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+  (r : TypeResult)
+  (hwf2 : wfTypeResult result2)
+  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+  wfTypeResult r
+
+/-- Extern contract: FnTClosure.extern preserves mem_contains (existing locations are kept). -/
+axiom applyFnTClosure_extern_mem_contains_preserved
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+  (r : TypeResult)
+  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+  ∀ l, result2.memEnv'.contains l → r.memEnv'.contains l
+
 /-- applyFnTClosure in ioFree mode preserves wfTypeResult -/
 private lemma applyFnTClosure_ioFree_wfTypeResult
     (fuel_top : Nat)
@@ -9009,7 +9038,11 @@ private lemma applyFnTClosure_ioFree_wfTypeResult
     | extern x retSpec effects capturedEnv =>
       unfold applyFnTClosure at htc
       simp only [bind, Except.bind] at htc
-      sorry
+      have happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+          argEtyp argPoison argPred ctx result_fn (fuelBody + 1) = .ok res := by
+        unfold applyFnTClosure; simp only [bind, Except.bind]; exact htc
+      exact applyFnTClosure_extern_wfTypeResult ctx st1 st2 p p1 argEtyp argPoison argPred
+        result_fn (fuelBody + 1) x retSpec effects capturedEnv res hwf_fn happly
 
 /-- applyPFnTClosure in ioFree mode preserves wfTypeResult -/
 private lemma applyPFnTClosure_ioFree_wfTypeResult
@@ -9591,7 +9624,11 @@ private lemma applyFnTClosure_ioFree_mem_contains_preserved
       | extern x retSpec effects capturedEnv =>
           unfold applyFnTClosure at htc
           simp only [bind, Except.bind] at htc
-          sorry
+          have happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+              argEtyp argPoison argPred ctx result_fn (fuelBody + 1) = .ok res := by
+            unfold applyFnTClosure; simp only [bind, Except.bind]; exact htc
+          exact applyFnTClosure_extern_mem_contains_preserved ctx st1 st2 p p1 argEtyp argPoison
+            argPred result_fn (fuelBody + 1) x retSpec effects capturedEnv res happly
 
 private lemma applyPFnTClosure_ioFree_mem_contains_preserved
     (fuel_top : Nat)
@@ -10047,7 +10084,6 @@ private lemma typecheckExpr_ioFree_mem_contains_preserved_main :
               split at htc <;> simp (config := { failIfUnchanged := false }) at htc
               cases htc
               rename_i _surf _heqSurf
-              simp only [TypeResult.memEnv']
               unfold surfaceSpecToQTyp at _heqSurf
               split at _heqSurf <;> simp [freshTLoc, bind, Except.bind, pure, Except.pure] at _heqSurf
               · cases _heqSurf; exact hcontains

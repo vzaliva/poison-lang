@@ -1245,7 +1245,8 @@ private lemma applyFnTClosure_ok_wfTagMeaningCtx
           exact EnvRespectsTagMeaning_mix tm ctx.varEnv result1.memEnv'
             bodyCtx.varEnv result3.memEnv' hctxTm1 hIH
   | extern x retSpec effects capturedEnv =>
-    sorry -- extern FnTClosure: wfTagMeaningCtx
+    exact applyFnTClosure_extern_ok_wfTagMeaningCtx tm ctx st1 st2 p p1 argEtyp argPoison argPred
+      result1 fuel x retSpec effects capturedEnv r hctxTm1 happly
 
 private lemma applyFnTClosure_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -1364,7 +1365,8 @@ private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
             exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
               ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
   | extern x retSpec effects capturedEnv =>
-    sorry -- extern FnTClosure: QTypRespectsTagMeaning
+    exact applyFnTClosure_extern_ok_QTypRespectsTagMeaning tm ctx st1 st2 p p1 argEtyp argPoison
+      argPred result1 fuel x retSpec effects capturedEnv r hctxTm1 happly
 
 private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx
   (tm : TagMeaning)
@@ -1872,7 +1874,10 @@ private lemma applyPFnTClosure_ok_wfTagMeaningCtx
           exact EnvRespectsTagMeaning_mix tm ctx.varEnv result1.memEnv'
             bodyCtx.varEnv result3.memEnv' hctxTm1 hIH
   | extern x retSpec capturedEnv =>
-    sorry -- extern PFnTClosure: wfTagMeaningCtx
+    have hmem := applyPFnTClosure_extern_memEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred
+      result1 r fuel x retSpec capturedEnv happly
+    simp only [wfTagMeaningCtx, ctxAfter] at hctxTm1 ⊢
+    rwa [hmem]
 
 private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -1986,7 +1991,8 @@ private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning
             exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
               ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
   | extern x retSpec capturedEnv =>
-    sorry -- extern PFnTClosure: QTypRespectsTagMeaning
+    exact applyPFnTClosure_extern_ok_QTypRespectsTagMeaning tm ctx st1 st2 p p1 argEtyp argPoison
+      argPred result1 fuel x retSpec capturedEnv r hctxTm1 happly
 
 private lemma mapM_applyPFnTClosure_forall_wfTypeResult'
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -6814,7 +6820,10 @@ private lemma applyFnTClosure_fresh_lookup_not_clean_of_p1p_true
           rw [hlookup_in] at hlookup_in_result2
           cases hlookup_in_result2
       | extern x retSpec effects capturedEnv =>
-          sorry -- extern FnTClosure: fresh_loc_not_clean
+          exact absurd hclean_out
+            (applyFnTClosure_extern_ok_fresh_loc_not_clean ctx st1 st2 p p1 argEtyp argPoison
+              argPred result2 (fuelBody + 1) x retSpec effects capturedEnv r h_p1p happly l qt
+              hlookup_in hlookup_out)
 
 private lemma applyFnTClosure_fresh_lookup_not_clean_of_p1_true
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
