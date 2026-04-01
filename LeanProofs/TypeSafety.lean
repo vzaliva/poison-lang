@@ -8238,7 +8238,12 @@ private lemma joinTypeResults_wfTypeResult
 -- ==========================================================================
 
 /-- Extern contract: FnTClosure.extern preserves wfTypeResult.
-    This is an axiom because the extern body is opaque — we cannot inspect it. -/
+    Remains an axiom: the proof would require a well-formedness invariant on the
+    captured environment (i.e., all LocSet locations in `ETyp.ref ls` types in
+    `capturedEnv` are already keys in `result2.memEnv'`, hence bounded by
+    `result2.nextLoc'`). This invariant is maintained by the type system but not
+    captured by `wfTypeResult result2` alone, which only bounds keys in `memEnv'`
+    without relating them to LocSets appearing in type annotations. -/
 axiom applyFnTClosure_extern_wfTypeResult
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -8250,8 +8255,10 @@ axiom applyFnTClosure_extern_wfTypeResult
     argEtyp argPoison argPred ctx result2 fuel = .ok r) :
   wfTypeResult r
 
-/-- Extern contract: FnTClosure.extern preserves mem_contains (existing locations are kept). -/
-axiom applyFnTClosure_extern_mem_contains_preserved
+/-- Extern contract: FnTClosure.extern preserves mem_contains (existing locations are kept).
+    Proved: the effects loop applies `LocSet.fold ... updateMemEnv` which only inserts/updates
+    entries (never removes), so containment is monotone. -/
+lemma applyFnTClosure_extern_mem_contains_preserved
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat)
@@ -8259,7 +8266,76 @@ axiom applyFnTClosure_extern_mem_contains_preserved
   (r : TypeResult)
   (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
     argEtyp argPoison argPred ctx result2 fuel = .ok r) :
-  ∀ l, result2.memEnv'.contains l → r.memEnv'.contains l
+  ∀ l, result2.memEnv'.contains l → r.memEnv'.contains l := by
+  cases fuel with
+  | zero => unfold applyFnTClosure at happly; simp at happly
+  | succ fuel =>
+    intro l hl
+    unfold applyFnTClosure at happly
+    simp only [bind, Except.bind] at happly
+    split at happly
+    · simp at happly
+    · rename_i tagInfo _
+      rw [List.forIn_eq_foldlM] at happly
+      simp only [Functor.map, Except.map] at happly
+      split at happly
+      · simp at happly
+      · rename_i foldResult _hfoldOuter
+        split at _hfoldOuter
+        · simp at _hfoldOuter
+        · rename_i foldStep hfoldStep
+          simp only [Except.ok.injEq] at _hfoldOuter
+          -- The effects loop preserves containment: foldResult.contains l
+          have hContains : foldResult.contains l = true := by
+            rw [← _hfoldOuter]
+            apply List.foldlM_Except_preserves_property effects (ForInStep.yield result2.memEnv') _
+              (fun s => (ForInStep.value s).contains l = true) hl ?_ foldStep hfoldStep
+            intro acc effect hP
+            cases acc with
+            | done b =>
+              intro acc' hg
+              simp only [pure, Except.pure, Except.ok.injEq] at hg
+              exact hg ▸ hP
+            | yield b =>
+              intro acc' hg
+              split at hg
+              · -- yield = yield b' case
+                rename_i b' _heq
+                have hbeq : b = b' := ForInStep.yield.inj _heq; subst hbeq
+                split at hg
+                · -- lookup = some qt
+                  rename_i qt _hlookup
+                  split at hg
+                  · -- etyp = ETyp.ref ls: apply LocSet.fold contains preservation
+                    rename_i ls _hls
+                    split at hg
+                    · -- resolveSyntaxPred error
+                      exact absurd hg (by simp)
+                    · -- resolveSyntaxPred ok v'
+                      rename_i v' _hresolve
+                      simp only [pure, Except.pure, Except.ok.injEq] at hg
+                      cases hg; simp only [ForInStep.value]
+                      unfold LocSet.fold; rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+                      exact list_fold_updateMemEnv_contains_of_contains _ b l _ hP
+                  · -- non-ref etyp: error
+                    exact absurd hg (by simp)
+                · -- lookup = none: error
+                  exact absurd hg (by simp)
+              · -- yield = done: impossible
+                rename_i b' _hdone
+                exact absurd _hdone (by simp)
+          -- r.memEnv' = foldResult in all retSpec cases
+          split at happly
+          · split at happly
+            · simp at happly
+            · split at happly
+              · simp at happly
+              · simp only [pure, Except.pure, Except.ok.injEq] at happly
+                cases happly; exact hContains
+          · simp only [pure, Except.pure, Except.ok.injEq] at happly
+            cases happly; exact hContains
+          · simp only [pure, Except.pure, Except.ok.injEq] at happly
+            cases happly; exact hContains
 
 /-- applyFnTClosure in ioFree mode preserves wfTypeResult -/
 private lemma applyFnTClosure_ioFree_wfTypeResult
