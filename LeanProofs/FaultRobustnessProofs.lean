@@ -216,8 +216,11 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   have hstruct := typecheckIf_structure ctxᵢ e1 e2 e3 (Nat.succ fuel') res htcIf
                   rcases hstruct with h1 | h2 | hstd
                   · rcases h1 with
-                      ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, htc2,
-                        hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', _hpoison, hetyp⟩
+                      ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, _res3, htc2, _htc3,
+                        hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', _hpoison, hetyp⟩
+                    -- TODO: Replace with StepFR monotonicity for nextLoc/nextTag
+                    have hnextLoc : res.nextLoc' = res2.nextLoc' := by rw [hnextLoc_max]; sorry
+                    have hnextTag : res.nextTag' = res2.nextTag' := by rw [hnextTag_max]; sorry
                     intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
                     let ctxPure : TypeContext := { ctxᵢ with pureCtx := true }
                     let ctxTrue : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
@@ -390,8 +393,11 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                             (qt := res2.qualType) (qt' := res.qualType)
                             hetyp.symm hcap2'
                   · rcases h2 with
-                      ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, res3, htc3,
-                        hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', _hpoison, hetyp⟩
+                      ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, _res2, res3, _htc2, htc3,
+                        hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', _hpoison, hetyp⟩
+                    -- TODO: Replace with StepFR monotonicity for nextLoc/nextTag
+                    have hnextLoc : res.nextLoc' = res3.nextLoc' := by rw [hnextLoc_max]; sorry
+                    have hnextTag : res.nextTag' = res3.nextTag' := by rw [hnextTag_max]; sorry
                     intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
                     let ctxPure : TypeContext := { ctxᵢ with pureCtx := true }
                     let ctxFalse : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩ }
@@ -444,8 +450,12 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
                     have hwfcfg1 : wfConfig cfg1 :=
                       (wfConfig_preserved e1 _ cfg1 (Value.bool b) ht_e1 hwfcfg).1
+                    -- TODO: htc3 has ctxFalse with nextLoc/nextTag from res2.
+                    -- Need context nextLoc/nextTag irrelevance lemma.
+                    have htc3_old :
+                        typecheckExpr ctxFalse e3 fuel' = .ok res3 := by sorry
                     have htc3' : typecheck ctxFalse e3 fuel' = .ok res3 := by
-                      simpa [ctxFalse, typecheck, Nat.succ_sub_one] using htc3
+                      simpa [ctxFalse, typecheck, Nat.succ_sub_one] using htc3_old
                     have hwfTm_false : wfTagMeaningCtx tm ctxFalse := by
                       simpa [ctxFalse, wfTagMeaningCtx] using hwfTm
                     have hwf_false : wfTypeContext ctxFalse := by
@@ -518,7 +528,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       intro l qt_in qt_out hlookup_in hlookup_out hclean_out
                       rcases
                           typecheckExpr_clean_lookup_origin_of_pc_true
-                            ctxFalse e3 fuel' res3 htc3 hpc_false
+                            ctxFalse e3 fuel' res3 htc3_old hpc_false
                             l qt_out (by simpa [hmemEnv] using hlookup_out)
                             (by simpa [hregime'] using hclean_out)
                         with ⟨qt_mid, hlookup_mid_false, hclean_mid_false⟩

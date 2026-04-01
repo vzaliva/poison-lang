@@ -6676,7 +6676,7 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
         | ite e1 e2 e3 =>
             have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
             rcases hstruct with h1 | h2 | hstd
-            · rcases h1 with ⟨kGuard, deps, _, hRk, _, _, _, res2, htc2, _, htag, _, _, _, _⟩
+            · rcases h1 with ⟨kGuard, deps, _, hRk, _, _, _, res2, _, htc2, _, _, htag, _, _, _, _, _⟩
               have hkNe : k ≠ kGuard := by
                 intro hkEq
                 subst hkEq
@@ -6688,11 +6688,11 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
                 (tagEnvNotTrueAt_insert_true_of_ne ctx.tagEnv k kGuard deps hkNe hnotTag)
                 hnotReg htc2'
               rwa [htag]
-            · rcases h2 with ⟨kGuard, deps, _, _, _, _, _, res3, htc3, _, htag, _, _, _, _⟩
-              have htc3' : typecheck { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨false, deps⟩ } e3 (fuel' - 1) = .ok res3 := by
-                simpa using htc3
-              have hIH3 := IH' (fuel' - 1) (by omega)
-                { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨false, deps⟩ } e3 res3
+            · rcases h2 with ⟨kGuard, deps, _, _, _, _, _, res2, res3, _, htc3, _, htag, _, _, _, _, _⟩
+              let ctxF := { ctx with tagEnv := ctx.tagEnv.insert kGuard ⟨false, deps⟩,
+                                     nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+              have htc3' : typecheck ctxF e3 (fuel' - 1) = .ok res3 := by simpa [ctxF] using htc3
+              have hIH3 := IH' (fuel' - 1) (by omega) ctxF e3 res3
                 (tagEnvNotTrueAt_insert_false ctx.tagEnv k kGuard deps hnotTag)
                 hnotReg htc3'
               rwa [htag]
@@ -7038,7 +7038,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
         | ite e1 e2 e3 =>
             have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
             rcases hstruct with h1 | h2 | hstd
-            · rcases h1 with ⟨k, deps, _, hRk, _, _, _, res2, htc2, _hmem, htag, _, hnextTag, hregEq, _⟩
+            · rcases h1 with ⟨k, deps, _, hRk, _, _, _, res2, _, htc2, _, _hmem, htag, _, _, hregEq, _, _⟩
               have hreg_true : regimeConsistentWithCtxMasked masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := by
                 exact tagEnvConsistentWithRegimeMasked_insert_true masked ctx.tagEnv ctx.regime k deps hreg hRk
               have htc2' : typecheck { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
@@ -7046,12 +7046,13 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
               have hIH2 := IH' (fuel' - 1) (by omega) masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 res2 hreg_true htc2'
               simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH2 ⊢
               rw [htag, hregEq]; exact hIH2
-            · rcases h2 with ⟨k, deps, _, _, _, _, _, res3, htc3, _hmem, htag, _, hnextTag, hregEq, _⟩
+            · rcases h2 with ⟨k, deps, _, _, _, _, _, res2, res3, _, htc3, _hmem, htag, _, _, hregEq, _, _⟩
               have hreg_false : regimeConsistentWithCtxMasked masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } := by
                 exact tagEnvConsistentWithRegimeMasked_insert_false masked ctx.tagEnv ctx.regime k deps hreg
-              have htc3' : typecheck { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } e3 (fuel' - 1) = .ok res3 := by
-                simpa using htc3
-              have hIH3 := IH' (fuel' - 1) (by omega) masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } e3 res3 hreg_false htc3'
+              let ctxF := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
+                                     nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+              have htc3' : typecheck ctxF e3 (fuel' - 1) = .ok res3 := by simpa [ctxF] using htc3
+              have hIH3 := IH' (fuel' - 1) (by omega) masked ctxF e3 res3 hreg_false htc3'
               simp only [ctxAfter, regimeConsistentWithCtxMasked] at hIH3 ⊢
               rw [htag, hregEq]; exact hIH3
             · obtain ⟨_hstdCase, res1, htc1, _, res2, htc2, res3, htc3,
@@ -8514,7 +8515,7 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
             cases hstruct with
             | inl h1 =>
                 -- Mode 1: only true branch. res.qualType.etyp = res2.qualType.etyp, pred = noPred
-                rcases h1 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, htc2, hmemEnv, _, _, _, _, _, hetyp_res⟩
+                rcases h1 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, _, htc2, _, hmemEnv, _, _, _, _, _, hetyp_res⟩
                 have htc2' : typecheck { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
                   simpa [typecheck] using htc2
                 have hwf_true : wfTagMeaningCtx tm { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := by
@@ -8530,8 +8531,9 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
               cases h_rest with
               | inl h2 =>
                   -- Mode 2: only false branch. res.qualType.etyp = res3.qualType.etyp, pred = noPred
-                  rcases h2 with ⟨k, deps, _, _, res1, _htc1, _hbool, res3, htc3, hmemEnv, _, _, _, _, _, hetyp_res⟩
-                  let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
+                  rcases h2 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, res3, _, htc3, hmemEnv, _, _, _, _, _, hetyp_res⟩
+                  let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
+                                             nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
                   have htc3' : typecheck ctxFalse e3 (fuel' - 1) = .ok res3 := by
                     simpa [typecheck, ctxFalse] using htc3
                   have hwf_false : wfTagMeaningCtx tm ctxFalse := by
@@ -10088,7 +10090,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
           have htcIf : typecheckIf ctx e1 e2 e3 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
           rcases typecheckIf_structure ctx e1 e2 e3 fuel' res htcIf with h1 | h2 | hstd
-          · rcases h1 with ⟨k, deps, _hmg, _hk, _res1, _htc1, _hBool, res2, htc2, h_mem, _h_tag,
+          · rcases h1 with ⟨k, deps, _hmg, _hk, _res1, _htc1, _hBool, res2, _, htc2, _, h_mem, _h_tag,
               _h_nextLoc, _h_nextTag, h_regime, _h_poison, _h_etyp⟩
             let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
             have hpcTrue : ctxTrue.pc = true := by
@@ -10106,9 +10108,10 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                 ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
               exact ⟨qt_in, by simpa [ctxTrue] using hlookup_in, htag_in,
                 by simpa [ctxTrue] using hk_in, hnotfun_in⟩
-          · rcases h2 with ⟨k, deps, _hmg, _hk, _res1, _htc1, _hBool, res3, htc3, h_mem, _h_tag,
+          · rcases h2 with ⟨k, deps, _hmg, _hk, _res1, _htc1, _hBool, res2, res3, _, htc3, h_mem, _h_tag,
               _h_nextLoc, _h_nextTag, h_regime, _h_poison, _h_etyp⟩
-            let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
+            let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
+                                                     nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
             have hpcFalse : ctxFalse.pc = true := by
               simpa [ctxFalse] using hpc
             rcases ih (fuel' - 1) hltSub ctxFalse e3 res3

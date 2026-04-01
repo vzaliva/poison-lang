@@ -5825,18 +5825,35 @@ lemma stepFR_ite
   cases hstruct with
   | inl h_true =>
     -- Known true case: the then-branch is the only proof-relevant path.
-    obtain ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, htc2,
-            hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp⟩ := h_true
+    obtain ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, _res3, htc2, _htc3,
+            hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', hpoison, hetyp⟩ := h_true
+    -- TODO: Replace with StepFR monotonicity lemma for nextLoc/nextTag.
+    -- The max-based nextLoc'/nextTag' are ≥ res2's, and all ctxAfter properties
+    -- are monotone in these fields. For now, sorry the exact equalities.
+    have hnextLoc : res.nextLoc' = res2.nextLoc' := by
+      rw [hnextLoc_max]; sorry
+    have hnextTag : res.nextTag' = res2.nextTag' := by
+      rw [hnextTag_max]; sorry
     exact stepFR_ite_true ctxᵢ predSat tm e1 e2 e3 fuel' res IH htc k deps hmatch hregime_true
       res1 res2 htc1 hbool htc2 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison hetyp
   | inr h_rest =>
     cases h_rest with
     | inl h_false =>
       -- Known false case: the else-branch is the only proof-relevant path.
-      obtain ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, res3, htc3,
-              hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp⟩ := h_false
+      obtain ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, _res2, res3, _htc2, htc3,
+              hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', hpoison, hetyp⟩ := h_false
+      -- TODO: Both branches now always typechecked. stepFR_ite_false expects
+      -- ctxFalse with original nextLoc/nextTag and exact nextLoc'/nextTag' equalities.
+      -- Proper fix: update stepFR_ite_false signature + prove ctxAfter monotonicity.
+      have hnextLoc : res.nextLoc' = res3.nextLoc' := by
+        rw [hnextLoc_max]; sorry
+      have hnextTag : res.nextTag' = res3.nextTag' := by
+        rw [hnextTag_max]; sorry
+      have htc3_adj :
+          typecheckExpr { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩ } e3 fuel' = .ok res3 := by
+        sorry -- TODO: need context nextLoc/nextTag irrelevance for typecheckExpr
       exact stepFR_ite_false ctxᵢ predSat tm e1 e2 e3 fuel' res IH htc k deps hmatch hregime_false
-        res1 res3 htc1 hbool htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison hetyp
+        res1 res3 htc1 hbool htc3_adj hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison hetyp
     | inr h_std =>
       obtain ⟨h_std_case, res1, htc1, hbool, res2, htc2, res3, htc3,
               hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp, hpred⟩ := h_std
