@@ -5614,17 +5614,6 @@ lemma applyFnTClosure_regular_structure
   | succ fuelBody =>
       exact ⟨fuelBody, rfl⟩
 
--- In ioFree mode, extern closure application always throws (so cannot occur in stepFR_app).
-lemma applyFnTClosure_ioFree_extern_fails
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult) :
-  applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel ≠ .ok r := by
-  sorry
-
 -- Inversion for regular closures: successful application exposes the body typing
 -- derivation and successful return-type subtype check.
 lemma applyFnTClosure_regular_inv
@@ -6126,9 +6115,7 @@ lemma applyFnTClosure_ok_wfTypeResult
       rw [hfirst]
       exact hwf3
     | extern x retSpec effects capturedEnv =>
-      exfalso
-      exact applyFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 argEtyp argPoison argPred result1
-        (Nat.succ fuelBody) x retSpec effects capturedEnv r happly
+      sorry -- extern FnTClosure: wfTypeResult preservation
 
 -- ==========================================================================
 -- typecheckExpr preserves regimeConsistentWithCtx
@@ -6585,16 +6572,6 @@ private lemma applyPFnTClosure_regular_inv_local
                 injection happly' with hEq
               exact ⟨result3, rfl, hsub, hfirst⟩
 
-private lemma applyPFnTClosure_ioFree_extern_fails_local
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult) :
-  applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel ≠ .ok r := by
-  sorry
-
 private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
     ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult) (k : Tag),
     tagEnvNotTrueAt ctx.tagEnv k →
@@ -6854,7 +6831,7 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
                             body result3 hIH1 hnotReg1 (by simpa [typecheck] using hbody)
                           simpa [hrEq]
                   | extern x retSpec effects capturedEnv =>
-                      exact False.elim (applyFnTClosure_ioFree_extern_fails ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuel'' x retSpec effects capturedEnv r happly)
+                      sorry -- extern FnTClosure: tagEnvNotTrueAt preservation
                 have h_pfn_closure_not_true :
                     ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure) (results : List TypeResult),
                     List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel'') tcls = .ok results →
@@ -6884,7 +6861,7 @@ private lemma typecheckExpr_preserves_tagEnvNotTrueAt_main :
                             (PExpr.toExpr pbody) result3 hIH1 hnotReg1 (by simpa [typecheck] using hbody)
                           simpa [hrEq]
                   | extern x retSpec capturedEnv =>
-                      exact False.elim (applyPFnTClosure_ioFree_extern_fails_local ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuel'' x retSpec capturedEnv r happly)
+                      sorry -- extern PFnTClosure: tagEnvNotTrueAt preservation
                 rcases hcases with
                   ⟨st1, st2, p, p1, tcls, results, first, rest, _, _, _, _, _, hmap, hresults, h_join⟩ |
                   ⟨st1, st2, p, p1, tcls, results, first, rest, _, _, _, _, hmap, hresults, h_join⟩
@@ -9073,16 +9050,6 @@ lemma applyPFnTClosure_regular_inv
                 injection happly' with hEq
               exact ⟨result3, rfl, hsub, hfirst⟩
 
-lemma applyPFnTClosure_ioFree_extern_fails
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult) :
-  applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel ≠ .ok r := by
-  sorry
-
 lemma cleanUnder_of_monotone {R R' : Regime} {qt : QTyp} :
     Regime.monotoneStep R R' → qtypCleanUnder R' qt → qtypCleanUnder R qt := by
   intro h_mono h_clean
@@ -10083,10 +10050,7 @@ lemma applyPFnTClosure_mem_subset
               (htc := by simpa [bodyCtx] using htcBody)
           simpa [bodyCtx] using hsub_body l hcontains
       | extern x retSpec capturedEnv =>
-          exact False.elim <|
-            applyPFnTClosure_ioFree_extern_fails
-              ctx st1 st2 p p1 argEtyp argPoison argPred result2
-              (Nat.succ fuelBody) x retSpec capturedEnv r happly
+          sorry -- extern PFnTClosure: mem_contains preservation
 
 lemma applyPFnTClosure_preserves_memEnv_lookup
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -10125,10 +10089,7 @@ lemma applyPFnTClosure_preserves_memEnv_lookup
               (htc := by simpa [bodyCtx] using htcBody)
           simpa [bodyCtx] using hpres_body l qt hlookup
       | extern x retSpec capturedEnv =>
-          exact False.elim <|
-            applyPFnTClosure_ioFree_extern_fails
-              ctx st1 st2 p p1 argEtyp argPoison argPred result2
-              (Nat.succ fuelBody) x retSpec capturedEnv r happly
+          sorry -- extern PFnTClosure: memEnv lookup preservation
 
 private lemma typecheckExpr_lookup_origin_of_pc_true_split
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
@@ -10829,10 +10790,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                               (by simpa [bodyCtx] using hlookup_mid_body)
                               hpoison_mid
                       | extern x retSpec effects capturedEnv =>
-                          exact False.elim <|
-                            applyFnTClosure_ioFree_extern_fails
-                              ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuelApp
-                              x retSpec effects capturedEnv srcRes happly_src
+                          sorry -- extern FnTClosure: lookup_origin (poison branch)
                     rcases joinTypeResults_mem_contains_head_or_rest
                         ctx first rest res h_join l hcontains_res with
                       hhead | ⟨srcRes, hsrc_rest, hsrc_contains⟩
@@ -10888,10 +10846,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                             exact Option.some.inj hlookup_preserved
                           exact hbackToCtx_poison qt_mid hlookup_mid (by simpa [hqt_mid] using hpoison_src)
                       | extern x retSpec capturedEnv =>
-                          exact False.elim <|
-                            applyPFnTClosure_ioFree_extern_fails
-                              ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuelApp
-                              x retSpec capturedEnv srcRes happly_src
+                          sorry -- extern PFnTClosure: lookup_origin (poison branch)
                     rcases joinTypeResults_mem_contains_head_or_rest
                         ctx first rest res h_join l hcontains_res with
                       hhead | ⟨srcRes, hsrc_rest, hsrc_contains⟩
@@ -10977,10 +10932,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                               (by simpa [bodyCtx] using hk_mid)
                               hnotfun_mid
                       | extern x retSpec effects capturedEnv =>
-                          exact False.elim <|
-                            applyFnTClosure_ioFree_extern_fails
-                              ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuelApp
-                              x retSpec effects capturedEnv srcRes happly_src
+                          sorry -- extern FnTClosure: lookup_origin (guard branch)
                     rcases joinTypeResults_mem_contains_head_or_rest
                         ctx first rest res h_join l hcontains_res with
                       hhead | ⟨srcRes, hsrc_rest, hsrc_contains⟩
@@ -11068,10 +11020,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                             simpa [hqt_mid] using hnotfun_src
                           exact hbackToCtx_guard qt_mid k hlookup_mid htag_mid hreg_mid hnotfun_mid
                       | extern x retSpec capturedEnv =>
-                          exact False.elim <|
-                            applyPFnTClosure_ioFree_extern_fails
-                              ctx st1 st2 p p1 etyp2 p2 pred2 result1 fuelApp
-                              x retSpec capturedEnv srcRes happly_src
+                          sorry -- extern PFnTClosure: lookup_origin
                     rcases joinTypeResults_mem_contains_head_or_rest
                         ctx first rest res h_join l hcontains_res with
                       hhead | ⟨srcRes, hsrc_rest, hsrc_contains⟩

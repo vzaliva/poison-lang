@@ -4046,6 +4046,9 @@ private lemma mapM_ok_forall
   unfold List.mapM at hmap
   exact hloop_forall xs [] ys hmap (by intro z hz; cases hz)
 
+-- STALE: Statement is false for FnTClosure.extern — extern closure application
+-- allocates fresh tags via collectAndAllocExternTags, so nextTag increases.
+-- Needs rewriting to monotonicity (r1.nextTag' ≤ r2.nextTag') in Phase 2.
 private lemma applyFnTClosure_preserves_nextTag
   (tcl : FnTClosure) (ctx : TypeContext)
   (st1 st2 : Typ) (p p1 : Poison)
@@ -4095,6 +4098,8 @@ private lemma applyFnTClosure_preserves_nextTag
           simp [bind, Except.bind] at happly
           sorry
 
+-- STALE: Statement is false for PFnTClosure.extern — same reason as FnTClosure above.
+-- Needs rewriting to monotonicity in Phase 2.
 private lemma applyPFnTClosure_preserves_nextTag
   (tcl : PFnTClosure) (ctx : TypeContext)
   (st1 st2 : Typ) (p p1 : Poison)
@@ -4659,6 +4664,8 @@ private lemma typecheckUnaryOp_preserves_nextTag (ctx : TypeContext) (op : Unary
         res.nextTag' = result1.nextTag' := hnexttag
         _ = ctx.nextTag := h1
 
+-- STALE: Statement is false for Expr.externVal/externFn/externPfn — extern tag
+-- allocation advances nextTag. Needs rewriting to monotonicity in Phase 2.
 private lemma typecheck_nextTag_eq_main : ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
   typecheck ctx e fuel = .ok res →
   res.nextTag' = ctx.nextTag := by
@@ -4761,6 +4768,8 @@ private lemma typecheck_nextTag_eq_main : ∀ (ctx : TypeContext) (e : Expr) (fu
               simp at htc
               exact typecheckApp_preserves_nextTag ctx e1 e2 fuel' res IH_fuel' htc
 
+-- STALE: Public interface for typecheck_nextTag_eq_main. Statement is false for
+-- extern expressions. Currently unused. Needs rewriting to monotonicity in Phase 2.
 lemma typecheck_ioFree_preserves_nextTag (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
   typecheck ctx e fuel = .ok res →
   res.nextTag' = ctx.nextTag := by
