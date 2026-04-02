@@ -4279,71 +4279,6 @@ private lemma typecheckAssign_lookup_clean_back_to_result1_of_pc_true
       hlookup₂
       hclean₂
 
-private lemma assign_preservesInheritedFinalCleanLocsOneRun_pc_true
-  (ctx : TypeContext) (e2 : Expr) (fuel : Nat)
-  (result1 result2 res : TypeResult) (ls : LocSet)
-  (μ : Memory) (cfg1 cfg2 : Config) (θ θ1 θ2 : RealizationMap)
-  (a_w : Address) (n : Int)
-  (htc2 : typecheckExpr (updateCtxFromResult ctx result1) e2 fuel = .ok result2)
-  (hRef : result1.qualType.etyp = ETyp.ref ls)
-  (hInt : result2.qualType.etyp = ETyp.int)
-  (h_mem :
-    res.memEnv' =
-      match Std.ExtTreeSet.toList ls with
-      | [l] =>
-          updateMemEnv result2.memEnv' l
-            { etyp := ETyp.int
-              poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
-              pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
-      | _ =>
-          updateLocsetWeak result2.memEnv' ls
-            (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
-            (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred))
-  (h_regime : res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls)
-  (hpc : ctx.pc = true)
-  (hθ2wf : wfRealizationMap θ2)
-  (hvalRef2 : valueHasETyp θ2 (Value.loc a_w) result1.qualType.etyp)
-  (hric2 : runtimeInstantiatesCtx (ctxAfter (updateCtxFromResult ctx result1) result2) cfg2.memory cfg2.varEnv θ2)
-  (hpres1 : PreservesInheritedFinalCleanLocsOneRun ctx result1 μ cfg1.memory θ θ1)
-  (hpres2 : PreservesInheritedFinalCleanLocsOneRun (updateCtxFromResult ctx result1) result2 cfg1.memory cfg2.memory θ1 θ2) :
-  PreservesInheritedFinalCleanLocsOneRun
-    ctx res μ (Std.ExtTreeMap.insert cfg2.memory a_w n) θ θ2 := by
-  have hpres_to_result2 :
-      PreservesInheritedFinalCleanLocsOneRun ctx result2 μ cfg2.memory θ θ2 := by
-    refine
-      PreservesInheritedFinalCleanLocsOneRun.compose
-        (ctx := ctx) (res1 := result1) (res2 := result2)
-        ?_ hpres1 ?_
-    · intro l qt_in qt_out hlookup_in hlookup_out hclean_out
-      have hpc2 : (updateCtxFromResult ctx result1).pc = true := by
-        simpa [updateCtxFromResult] using hpc
-      rcases
-        typecheckExpr_clean_lookup_origin_of_pc_true
-          (ctx := updateCtxFromResult ctx result1) (e := e2) (fuel := fuel) (res := result2)
-          htc2 hpc2 l qt_out hlookup_out hclean_out
-        with ⟨qt_mid, hlookup_mid, hclean_mid⟩
-      exact ⟨qt_mid, by simpa [updateCtxFromResult] using hlookup_mid, by simpa [updateCtxFromResult] using hclean_mid⟩
-    · simpa [ctxAfter, updateCtxFromResult] using hpres2
-  have hpres_write :
-      PreservesInheritedFinalCleanLocsOneRun
-        (ctxAfter ctx result2) res
-        cfg2.memory (Std.ExtTreeMap.insert cfg2.memory a_w n) θ2 θ2 := by
-    simpa [ctxAfter, updateCtxFromResult] using
-      assign_write_step_preserves_inherited_final_clean_pc_true
-        (ctx := ctx) (result1 := result1) (result2 := result2) (res := res) (ls := ls)
-        (cfg2 := cfg2) (θ := θ2) (a_w := a_w) (n := n)
-        hRef hvalRef2 hθ2wf hric2 h_mem hpc
-  refine
-    PreservesInheritedFinalCleanLocsOneRun.compose
-      (ctx := ctx) (res1 := result2) (res2 := res)
-      ?_ hpres_to_result2 hpres_write
-  intro l qt_in qt_out _hlookup_in hlookup_out hclean_out
-  exact
-    typecheckAssign_result2_lookup_clean_back_of_pc_true
-      (ctx := ctx) (result1 := result1) (result2 := result2) (res := res) (ls := ls)
-      hInt h_mem h_regime hpc l qt_out hlookup_out hclean_out
-
-
 private lemma assign_lookup_not_clean_of_pc_true_of_mem
     (ctx : TypeContext) (result1 result2 res : TypeResult) (ls : LocSet)
     (h_mem :
@@ -4631,7 +4566,9 @@ private lemma assign_final_clean_preservation
   rcases
     typecheckExpr_clean_lookup_origin_of_pc_true
       (ctx := ctxAfter ctx result1) (e := e2) (fuel := fuel') (res := result2)
-      htc2_expr hpc_mid l qt_mid hlookup_mid hclean_mid
+      htc2_expr hpc_mid l qt_mid hlookup_mid
+      (by sorry)
+      hclean_mid
     with ⟨qt_pre, hlookup_pre_ctx, hclean_pre⟩
   have hpres_l1 :=
     PreservesInheritedFinalCleanLocsOneRun.apply

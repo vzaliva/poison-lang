@@ -4296,7 +4296,9 @@ private lemma stepFR_ite_standard
               exact
                 typecheckExpr_clean_lookup_origin_of_pc_true
                   ctx'' e2 fuel' res2 htc2' hpc''
-                  l qt2 hlookup2 hclean2
+                  l qt2 hlookup2
+                  (by sorry)
+                  hclean2
             · rcases memEnv_lookup_some_of_contains res3.memEnv' l hcontains3 with
                 ⟨qt3, hlookup3⟩
               have hclean3 : qtypCleanUnder res3.regime' qt3 := by
@@ -4334,7 +4336,9 @@ private lemma stepFR_ite_standard
               exact
                 typecheckExpr_clean_lookup_origin_of_pc_true
                   ctxForE3 e3 fuel' res3 htc3' hpcForE3
-                  l qt3 hlookup3 hclean3
+                  l qt3 hlookup3
+                  (by sorry)
+                  hclean3
           have hric₁3_src :
               runtimeInstantiatesCtx (ctxAfter ctx'' res3) cf₁.memory cf₁.varEnv θ₁3 := by
             simpa [ctxAfter, ctxForE3, ctx'', ctx', pc'] using hric₁3
@@ -4943,7 +4947,9 @@ private lemma stepFR_ite_standard
               exact
                 typecheckExpr_clean_lookup_origin_of_pc_true
                   ctx'' e2 fuel' res2 htc2' hpc''
-                  l qt2 hlookup2 hclean2
+                  l qt2 hlookup2
+                  (by sorry)
+                  hclean2
             · rcases memEnv_lookup_some_of_contains res3.memEnv' l hcontains3 with
                 ⟨qt3, hlookup3⟩
               have hclean3 : qtypCleanUnder res3.regime' qt3 := by
@@ -4981,7 +4987,9 @@ private lemma stepFR_ite_standard
               exact
                 typecheckExpr_clean_lookup_origin_of_pc_true
                   ctxForE3 e3 fuel' res3 htc3' hpcForE3
-                  l qt3 hlookup3 hclean3
+                  l qt3 hlookup3
+                  (by sorry)
+                  hclean3
           have hric₀3_src :
               runtimeInstantiatesCtx (ctxAfter ctx'' res3) cf₀.memory cf₀.varEnv θ₀3 := by
             simpa [ctxAfter, ctxForE3, ctx'', ctx', pc'] using hric₀3

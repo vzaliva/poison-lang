@@ -546,6 +546,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
         (by simpa [ctxAfter] using hpc)
         l qt_out
         (by simpa using hlookup_out)
+        (by simpa [ctxAfter] using typecheckExpr_mem_contains_preserved ctx e1 fuel' res1 htc1' l (memEnv_contains_of_lookup_some ctx.memEnv l _qt_in _hlookup_in))
         (by simpa using hclean_out)
       with ⟨qt_mid, hlookup_mid, hclean_mid⟩
     exact ⟨qt_mid, by simpa [ctxAfter] using hlookup_mid, by simpa [ctxAfter] using hclean_mid⟩

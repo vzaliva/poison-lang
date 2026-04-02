@@ -128,7 +128,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
         (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
         (by simpa [hctx', ctxAfter] using htc2')
         (by simpa [ctxAfter] using hpc)
-        l qt_out hlookup_out hclean_out
+        l qt_out hlookup_out
+        (by simpa [ctxAfter] using typecheckExpr_mem_contains_preserved ctx e1 fuel' res1 htc1' l (memEnv_contains_of_lookup_some ctx.memEnv l _qt_in _hlookup_in))
+        hclean_out
       with ⟨qt_mid, hlookup_mid, hclean_mid⟩
     exact ⟨qt_mid, by simpa [ctxAfter] using hlookup_mid, by simpa [ctxAfter] using hclean_mid⟩
   have hpres_final :
@@ -236,7 +238,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
         (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
         (by simpa [hctx', ctxAfter] using htc2')
         (by simpa [ctxAfter] using hpc)
-        l qt_out hlookup_out hclean_out
+        l qt_out hlookup_out
+        (by simpa [ctxAfter] using typecheckExpr_mem_contains_preserved ctx e1 fuel' res1 htc1' l (memEnv_contains_of_lookup_some ctx.memEnv l _qt_in _hlookup_in))
+        hclean_out
       with ⟨qt_mid, hlookup_mid, hclean_mid⟩
     exact ⟨qt_mid, by simpa [ctxAfter] using hlookup_mid, by simpa [ctxAfter] using hclean_mid⟩
   have hpres_final :

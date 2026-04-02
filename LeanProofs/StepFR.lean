@@ -6185,13 +6185,107 @@ axiom applyPFnTClosure_extern_ok_guardClosure_tag_absent
   (hpred : r.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
   r.tagEnv'.get? k = none
 
-/-- Extern contract: typecheckExternVal preserves wfTagMeaningCtx and QTypRespectsTagMeaning. -/
-axiom typecheckExternVal_preserves_wfTagMeaningCtx_axiom
+/-- Foundational semantic extern contract: typecheckExternVal result QTyp respects tag meaning.
+    This is the irreducible semantic content: when extern typing resolves a guardClosure
+    predicate, the resulting concrete tag must map to the right GuardDesc in tm. -/
+axiom typecheckExternVal_QTypRespectsTagMeaning_axiom
   (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
   (res : TypeResult)
   (hwf : wfTagMeaningCtx tm ctx)
   (htc : typecheckExternVal ctx typ poison pred = .ok res) :
-  wfTagMeaningCtx tm (ctxAfter ctx res) ∧ QTypRespectsTagMeaning tm res.qualType
+  QTypRespectsTagMeaning tm res.qualType
+
+/-- Helper: surfaceSpecToQTyp preserves EnvRespectsTagMeaning (only adds noPred int cell). -/
+private lemma surfaceSpecToQTyp_preserves_EnvRespectsTagMeaning
+    (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : Predicate)
+    (qt : QTyp) (ctx' : TypeContext)
+    (hwf : EnvRespectsTagMeaning tm ctx.varEnv ctx.memEnv)
+    (hsurface : surfaceSpecToQTyp typ poison pred ctx = .ok (qt, ctx')) :
+    EnvRespectsTagMeaning tm ctx.varEnv ctx'.memEnv := by
+  cases typ with
+  | int =>
+    unfold surfaceSpecToQTyp at hsurface
+    simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hsurface
+    rw [← hsurface.2]; exact hwf
+  | bool =>
+    unfold surfaceSpecToQTyp at hsurface
+    simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hsurface
+    rw [← hsurface.2]; exact hwf
+  | unit =>
+    unfold surfaceSpecToQTyp at hsurface
+    simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hsurface
+    rw [← hsurface.2]; exact hwf
+  | string =>
+    unfold surfaceSpecToQTyp at hsurface
+    simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hsurface
+    rw [← hsurface.2]; exact hwf
+  | ref t =>
+    cases t with
+    | int =>
+      -- Allocates fresh location ctx.nextLoc with ⟨ETyp.int, false, noPred⟩ — trivially respects tm
+      unfold surfaceSpecToQTyp freshTLoc at hsurface
+      simp only [show (Typ.int != Typ.int) = false from by decide,
+                 Bool.false_eq_true, ite_false, bind, Except.bind, pure, Except.pure,
+                 Except.ok.injEq, Prod.mk.injEq] at hsurface
+      rw [← hsurface.2]; simp only
+      apply EnvRespectsTagMeaning_updateMemEnv (hqt_int := rfl) (hEnv := hwf)
+      exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm ⟨ETyp.int, false, Predicate.noPred⟩
+        (by rfl) (by simp [qtypGuardDesc?])
+    | bool =>
+      unfold surfaceSpecToQTyp at hsurface
+      simp [bind, Except.bind, show (Typ.bool != Typ.int) = true from by decide] at hsurface
+    | unit =>
+      unfold surfaceSpecToQTyp at hsurface
+      simp [bind, Except.bind, show (Typ.unit != Typ.int) = true from by decide] at hsurface
+    | string =>
+      unfold surfaceSpecToQTyp at hsurface
+      simp [bind, Except.bind, show (Typ.string != Typ.int) = true from by decide] at hsurface
+    | ref t' =>
+      have hbne : (Typ.ref t' != Typ.int) = true := by simp [bne]
+      unfold surfaceSpecToQTyp at hsurface
+      simp [bind, Except.bind, hbne] at hsurface
+    | arrow t1 t2 =>
+      have hbne : (Typ.arrow t1 t2 != Typ.int) = true := by simp [bne]
+      unfold surfaceSpecToQTyp at hsurface
+      simp [bind, Except.bind, hbne] at hsurface
+  | arrow _ _ =>
+    unfold surfaceSpecToQTyp at hsurface
+    simp [Except.map, Functor.map] at hsurface
+
+/-- Structural preservation: typecheckExternVal preserves wfTagMeaningCtx.
+    This follows from the fact that surfaceSpecToQTyp only modifies memEnv
+    by inserting a noPred cell (for ref int), which trivially respects any TagMeaning. -/
+lemma typecheckExternVal_preserves_wfTagMeaningCtx
+  (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
+  (res : TypeResult)
+  (hwf : wfTagMeaningCtx tm ctx)
+  (htc : typecheckExternVal ctx typ poison pred = .ok res) :
+  wfTagMeaningCtx tm (ctxAfter ctx res) := by
+  simp only [wfTagMeaningCtx, ctxAfter]
+  simp only [typecheckExternVal] at htc
+  rcases hp : (poison, pred) with ⟨p, pr⟩
+  simp only [hp] at htc
+  split at htc
+  · simp at htc
+  · simp at htc
+  · cases hcollect : collectAndAllocExternTags [pred] ctx.nextTag with
+    | error e => simp [hcollect, bind, Except.bind] at htc
+    | ok tagres =>
+      obtain ⟨tagMapping, nextTag'⟩ := tagres
+      cases hresolved : resolveSyntaxPred pred ctx.varEnv tagMapping with
+      | error e =>
+        simp only [hcollect, hresolved, bind, Except.bind] at htc; simp at htc
+      | ok resolvedPred =>
+        cases hsurface : surfaceSpecToQTyp typ poison resolvedPred ctx with
+        | error e =>
+          simp only [hcollect, hresolved, hsurface, bind, Except.bind] at htc; simp at htc
+        | ok qctx =>
+          obtain ⟨qt, ctx'⟩ := qctx
+          simp only [hcollect, hresolved, hsurface, bind, Except.bind, pure, Except.pure,
+                     Except.ok.injEq] at htc
+          subst htc; simp only
+          exact surfaceSpecToQTyp_preserves_EnvRespectsTagMeaning
+            tm ctx typ poison resolvedPred qt ctx' hwf hsurface
 
 /-- Extern contract: typecheckExternVal preserves lookup origin. -/
 axiom typecheckExternVal_preserves_lookup_origin_axiom
@@ -6199,6 +6293,7 @@ axiom typecheckExternVal_preserves_lookup_origin_axiom
   (res : TypeResult)
   (htc : typecheckExternVal ctx typ poison pred = .ok res)
   (hpc : ctx.pc = true) (l : Loc) (qt_out : QTyp)
+  (hpre : ctx.memEnv.contains l)
   (hlookup : res.memEnv'.lookup l = some qt_out) :
   (qt_out.poison = false → ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qt_in.poison = false) ∧
   ∀ (k : Tag),
@@ -8718,8 +8813,9 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                 QTypRespectsTagMeaning_pfn_regular tm ctx x st1 st2 ctx.pc pbody hwf⟩
         | externVal typ poison pred =>
             simp only [] at htc
-            exact typecheckExternVal_preserves_wfTagMeaningCtx_axiom tm ctx typ poison pred res hwf
-              (by simpa using htc)
+            have htc' := by simpa using htc
+            exact ⟨typecheckExternVal_preserves_wfTagMeaningCtx tm ctx typ poison pred res hwf htc',
+                   typecheckExternVal_QTypRespectsTagMeaning_axiom tm ctx typ poison pred res hwf htc'⟩
         | externFn _ _ _ _ =>
             simp only [typecheckExternFn, pure, Except.pure] at htc; cases htc
             exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
@@ -10319,6 +10415,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
   (hpc : ctx.pc = true) :
   ∀ (l : Loc) (qt_out : QTyp),
     res.memEnv'.lookup l = some qt_out →
+    ctx.memEnv.contains l →
     (qt_out.poison = false → ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qt_in.poison = false) ∧
     (∀ k, qtypGuardTag qt_out = some k → res.regime'.lookup? k = some true →
       qt_out.etyp.isFunctionType = false →
@@ -10329,7 +10426,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
   classical
   revert ctx e res htc hpc
   refine Nat.strong_induction_on fuel ?_
-  intro fuel ih ctx e res htc hpc l qt_out hlookup_out
+  intro fuel ih ctx e res htc hpc l qt_out hlookup_out hpre
   cases fuel with
   | zero =>
       simp [typecheckExpr] at htc
@@ -10414,17 +10511,19 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
             simpa [h_mem] using hlookup_out
           have hpc2 : (updateCtxFromResult ctx result1).pc = true := by
             simpa [updateCtxFromResult] using hpc
+          have hpre_r1 : result1.memEnv'.contains l :=
+            typecheckExpr_mem_contains_preserved ctx e1 (fuel' - 1) result1 (by simpa using htc1) l hpre
           rcases ih (fuel' - 1) hltSub
               (updateCtxFromResult ctx result1) e2 result2
               (by simpa [updateCtxFromResult] using htc2)
-              hpc2 l qt_out hlookup2 with
+              hpc2 l qt_out hlookup2 (by simpa [updateCtxFromResult] using hpre_r1) with
             ⟨hpoison2, hguard2⟩
           refine ⟨?_, ?_⟩
           · intro hpoison
             rcases hpoison2 hpoison with ⟨qt_mid, hlookup_mid, hpoison_mid⟩
             rcases ih (fuel' - 1) hltSub ctx e1 result1
                 (by simpa using htc1) hpc l qt_mid
-                (by simpa [updateCtxFromResult] using hlookup_mid) with
+                (by simpa [updateCtxFromResult] using hlookup_mid) hpre with
               ⟨hpoison1, _hguard1⟩
             exact hpoison1 hpoison_mid
           · intro k htag hk hnotfun
@@ -10432,7 +10531,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               ⟨qt_mid, hlookup_mid, htag_mid, hk_mid, hnotfun_mid⟩
             rcases ih (fuel' - 1) hltSub ctx e1 result1
                 (by simpa using htc1) hpc l qt_mid
-                (by simpa [updateCtxFromResult] using hlookup_mid) with
+                (by simpa [updateCtxFromResult] using hlookup_mid) hpre with
               ⟨_hpoison1, hguard1⟩
             exact hguard1 k htag_mid (by simpa [updateCtxFromResult] using hk_mid) hnotfun_mid
       | unaryop uop e1 =>
@@ -10444,7 +10543,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
           have hlookup1 : result1.memEnv'.lookup l = some qt_out := by
             simpa [h_mem] using hlookup_out
           rcases ih (fuel' - 1) hltSub ctx e1 result1
-              (by simpa using htc1) hpc l qt_out hlookup1 with
+              (by simpa using htc1) hpc l qt_out hlookup1 hpre with
             ⟨hpoison1, hguard1⟩
           refine ⟨?_, ?_⟩
           · intro hpoison
@@ -10459,7 +10558,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
           have hlookup1 : result1.memEnv'.lookup l = some qt_out := by
             simpa [h_mem] using hlookup_out
           rcases ih (fuel' - 1) hltSub ctx e1 result1
-              (by simpa using htc1) hpc l qt_out hlookup1 with
+              (by simpa using htc1) hpc l qt_out hlookup1 hpre with
             ⟨hpoison1, hguard1⟩
           refine ⟨?_, ?_⟩
           · intro hpoison
@@ -10473,15 +10572,18 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
             ⟨result1, ctx', htc1, hctx', htc2⟩
           have hpc2 : ctx'.pc = true := by
             simpa [hctx', updateCtxFromResult] using hpc
+          have hpre' : ctx'.memEnv.contains l := by
+            simpa [hctx', updateCtxFromResult] using
+              typecheckExpr_mem_contains_preserved ctx e1 (fuel' - 1) result1 (by simpa using htc1) l hpre
           rcases ih (fuel' - 1) hltSub ctx' e2 res
-              (by simpa [hctx'] using htc2) hpc2 l qt_out hlookup_out with
+              (by simpa [hctx'] using htc2) hpc2 l qt_out hlookup_out hpre' with
             ⟨hpoison2, hguard2⟩
           refine ⟨?_, ?_⟩
           · intro hpoison
             rcases hpoison2 hpoison with ⟨qt_mid, hlookup_mid, hpoison_mid⟩
             rcases ih (fuel' - 1) hltSub ctx e1 result1
                 (by simpa using htc1) hpc l qt_mid
-                (by simpa [hctx', updateCtxFromResult] using hlookup_mid) with
+                (by simpa [hctx', updateCtxFromResult] using hlookup_mid) hpre with
               ⟨hpoison1, _hguard1⟩
             exact hpoison1 hpoison_mid
           · intro k htag hk hnotfun
@@ -10489,7 +10591,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               ⟨qt_mid, hlookup_mid, htag_mid, hk_mid, hnotfun_mid⟩
             rcases ih (fuel' - 1) hltSub ctx e1 result1
                 (by simpa using htc1) hpc l qt_mid
-                (by simpa [hctx', updateCtxFromResult] using hlookup_mid) with
+                (by simpa [hctx', updateCtxFromResult] using hlookup_mid) hpre with
               ⟨_hpoison1, hguard1⟩
             exact hguard1 k htag_mid (by simpa [hctx', updateCtxFromResult] using hk_mid) hnotfun_mid
       | vlet x e1 e2 =>
@@ -10502,15 +10604,18 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
             simpa [h_mem] using hlookup_out
           have hpc2 : ctx'.pc = true := by
             simpa [hctx'] using hpc
+          have hpre_vlet : ctx'.memEnv.contains l := by
+            simpa [hctx'] using
+              typecheckExpr_mem_contains_preserved ctx e1 (fuel' - 1) result1 (by simpa using htc1) l hpre
           rcases ih (fuel' - 1) hltSub ctx' e2 result2
-              (by simpa [hctx'] using htc2) hpc2 l qt_out hlookup2 with
+              (by simpa [hctx'] using htc2) hpc2 l qt_out hlookup2 hpre_vlet with
             ⟨hpoison2, hguard2⟩
           refine ⟨?_, ?_⟩
           · intro hpoison
             rcases hpoison2 hpoison with ⟨qt_mid, hlookup_mid, hpoison_mid⟩
             rcases ih (fuel' - 1) hltSub ctx e1 result1
                 (by simpa using htc1) hpc l qt_mid
-                (by simpa [hctx'] using hlookup_mid) with
+                (by simpa [hctx'] using hlookup_mid) hpre with
               ⟨hpoison1, _hguard1⟩
             exact hpoison1 hpoison_mid
           · intro k htag hk hnotfun
@@ -10518,7 +10623,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               ⟨qt_mid, hlookup_mid, htag_mid, hk_mid, hnotfun_mid⟩
             rcases ih (fuel' - 1) hltSub ctx e1 result1
                 (by simpa using htc1) hpc l qt_mid
-                (by simpa [hctx'] using hlookup_mid) with
+                (by simpa [hctx'] using hlookup_mid) hpre with
               ⟨_hpoison1, hguard1⟩
             exact hguard1 k htag_mid (by simpa [hctx'] using hk_mid) hnotfun_mid
       | newRef e1 =>
@@ -10556,7 +10661,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                              pred := if ctx.pc then Predicate.noPred else result1.qualType.pred }) hEq] at hlookup_out
               exact hlookup_out
             rcases ih (fuel' - 1) hltSub ctx e1 result1
-                (by simpa using htc1) hpc l qt_out hlookup1 with
+                (by simpa using htc1) hpc l qt_out hlookup1 hpre with
               ⟨hpoison1, hguard1⟩
             refine ⟨?_, ?_⟩
             · intro hpoison
@@ -10723,17 +10828,19 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                 _ = some qt_out := hlookup_formula
             have hpc2 : (updateCtxFromResult ctx result1).pc = true := by
               simpa [updateCtxFromResult] using hpc
+            have hpre_asgn : result1.memEnv'.contains l :=
+              typecheckExpr_mem_contains_preserved ctx e1 (fuel' - 1) result1 (by simpa using htc1) l hpre
             rcases ih (fuel' - 1) hltSub
                 (updateCtxFromResult ctx result1) e2 result2
                 (by simpa [updateCtxFromResult] using htc2)
-                hpc2 l qt_out hlookup2 with
+                hpc2 l qt_out hlookup2 (by simpa [updateCtxFromResult] using hpre_asgn) with
               ⟨hpoison2, hguard2⟩
             refine ⟨?_, ?_⟩
             · intro hpoison
               rcases hpoison2 hpoison with ⟨qt_mid, hlookup_mid, hpoison_mid⟩
               rcases ih (fuel' - 1) hltSub ctx e1 result1
                   (by simpa using htc1) hpc l qt_mid
-                  (by simpa [updateCtxFromResult] using hlookup_mid) with
+                  (by simpa [updateCtxFromResult] using hlookup_mid) hpre with
                 ⟨hpoison1, _hguard1⟩
               exact hpoison1 hpoison_mid
             · intro k htag hk hnotfun
@@ -10746,7 +10853,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                 ⟨qt_mid, hlookup_mid, htag_mid, hk_mid, hnotfun_mid⟩
               rcases ih (fuel' - 1) hltSub ctx e1 result1
                   (by simpa using htc1) hpc l qt_mid
-                  (by simpa [updateCtxFromResult] using hlookup_mid) with
+                  (by simpa [updateCtxFromResult] using hlookup_mid) hpre with
                 ⟨_hpoison1, hguard1⟩
               exact hguard1 k htag_mid (by simpa [updateCtxFromResult] using hk_mid) hnotfun_mid
       | ite e1 e2 e3 =>
@@ -10760,7 +10867,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               simpa [ctxTrue] using hpc
             rcases ih (fuel' - 1) hltSub ctxTrue e2 res2
                 (by simpa [ctxTrue] using htc2) hpcTrue l qt_out
-                (by simpa [h_mem] using hlookup_out) with
+                (by simpa [h_mem] using hlookup_out) (by simpa [ctxTrue] using hpre) with
               ⟨hpoison2, hguard2⟩
             refine ⟨?_, ?_⟩
             · intro hpoison
@@ -10779,7 +10886,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               simpa [ctxFalse] using hpc
             rcases ih (fuel' - 1) hltSub ctxFalse e3 res3
                 (by simpa [ctxFalse] using htc3) hpcFalse l qt_out
-                (by simpa [h_mem] using hlookup_out) with
+                (by simpa [h_mem] using hlookup_out) (by simpa [ctxFalse] using hpre) with
               ⟨hpoison3, hguard3⟩
             refine ⟨?_, ?_⟩
             · intro hpoison
@@ -10801,6 +10908,8 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
             let ctxForE3 : TypeContext := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
             have hpc'' : ctx''.pc = true := by
               simp [ctx'', pc', hpc, joinPoison]
+            have hpre_r1 : res1.memEnv'.contains l :=
+              typecheckExpr_mem_contains_preserved ctx e1 (fuel' - 1) res1 (by simpa using htc1) l hpre
             refine ⟨?_, ?_⟩
             · intro hpoison
               have hcontains_join :
@@ -10817,12 +10926,13 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                     res2.memEnv' res3.memEnv' l qt_out hlookup_join hpoison henv2 with
                   ⟨qt2', hlookup2', _hetyp2, hpoison2⟩
                 rcases ih (fuel' - 1) hltSub ctx'' e2 res2
-                    (by simpa [ctx'', ctx', pc', ctxAfter] using htc2) hpc'' l qt2' hlookup2' with
+                    (by simpa [ctx'', ctx', pc', ctxAfter] using htc2) hpc'' l qt2' hlookup2'
+                    (by simpa [ctx'', ctx', ctxAfter] using hpre_r1) with
                   ⟨hpoison2', _hguard2⟩
                 rcases hpoison2' hpoison2 with ⟨qt_mid, hlookup_mid, hpoison_mid⟩
                 rcases ih (fuel' - 1) hltSub ctx e1 res1
                     (by simpa using htc1) hpc l qt_mid
-                    (by simpa [ctx'', ctx', ctxAfter] using hlookup_mid) with
+                    (by simpa [ctx'', ctx', ctxAfter] using hlookup_mid) hpre with
                   ⟨hpoison1, _hguard1⟩
                 exact hpoison1 hpoison_mid
               · rcases memEnv_lookup_some_of_contains res3.memEnv' l hcontains3 with ⟨qt3, hlookup3⟩
@@ -10835,12 +10945,13 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                   ⟨qt3', hlookup3', _hetyp3, hpoison3⟩
                 rcases ih (fuel' - 1) hltSub ctxForE3 e3 res3
                     (by simpa [ctxForE3, ctx'', ctx', pc', ctxAfter] using htc3)
-                    (by simp [ctxForE3, ctx'', pc', hpc, joinPoison]) l qt3' hlookup3' with
+                    (by simp [ctxForE3, ctx'', pc', hpc, joinPoison]) l qt3' hlookup3'
+                    (by simpa [ctxForE3, ctx'', ctx', ctxAfter] using hpre_r1) with
                   ⟨hpoison3', _hguard3⟩
                 rcases hpoison3' hpoison3 with ⟨qt_mid, hlookup_mid, hpoison_mid⟩
                 rcases ih (fuel' - 1) hltSub ctx e1 res1
                     (by simpa using htc1) hpc l qt_mid
-                    (by simpa [ctxForE3, ctx'', ctx', ctxAfter] using hlookup_mid) with
+                    (by simpa [ctxForE3, ctx'', ctx', ctxAfter] using hlookup_mid) hpre with
                   ⟨hpoison1, _hguard1⟩
                 exact hpoison1 hpoison_mid
             · intro k htag hk hnotfun
@@ -10861,13 +10972,14 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                   rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
                   native_decide
                 rcases ih (fuel' - 1) hltSub ctx'' e2 res2
-                    (by simpa [ctx'', ctx', pc', ctxAfter] using htc2) hpc'' l qt2 hlookup2 with
+                    (by simpa [ctx'', ctx', pc', ctxAfter] using htc2) hpc'' l qt2 hlookup2
+                    (by simpa [ctx'', ctx', ctxAfter] using hpre_r1) with
                   ⟨_hpoison2, hguard2⟩
                 rcases hguard2 k htag2 hk2 hnotfun2 with
                   ⟨qt_mid, hlookup_mid, htag_mid, hk_mid, hnotfun_mid⟩
                 rcases ih (fuel' - 1) hltSub ctx e1 res1
                     (by simpa using htc1) hpc l qt_mid
-                    (by simpa [ctx'', ctx', ctxAfter] using hlookup_mid) with
+                    (by simpa [ctx'', ctx', ctxAfter] using hlookup_mid) hpre with
                   ⟨_hpoison1, hguard1⟩
                 exact hguard1 k htag_mid (by simpa [ctx'', ctx', ctxAfter] using hk_mid) hnotfun_mid
               · rcases memEnv_lookup_some_of_contains res3.memEnv' l hcontains3 with ⟨qt3, hlookup3⟩
@@ -10881,13 +10993,14 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                   native_decide
                 rcases ih (fuel' - 1) hltSub ctxForE3 e3 res3
                     (by simpa [ctxForE3, ctx'', ctx', pc', ctxAfter] using htc3)
-                    (by simp [ctxForE3, ctx'', pc', hpc, joinPoison]) l qt3 hlookup3 with
+                    (by simp [ctxForE3, ctx'', pc', hpc, joinPoison]) l qt3 hlookup3
+                    (by simpa [ctxForE3, ctx'', ctx', ctxAfter] using hpre_r1) with
                   ⟨_hpoison3, hguard3⟩
                 rcases hguard3 k htag3 hk3 hnotfun3 with
                   ⟨qt_mid, hlookup_mid, htag_mid, hk_mid, hnotfun_mid⟩
                 rcases ih (fuel' - 1) hltSub ctx e1 res1
                     (by simpa using htc1) hpc l qt_mid
-                    (by simpa [ctxForE3, ctx'', ctx', ctxAfter] using hlookup_mid) with
+                    (by simpa [ctxForE3, ctx'', ctx', ctxAfter] using hlookup_mid) hpre with
                   ⟨_hpoison1, hguard1⟩
                 exact hguard1 k htag_mid (by simpa [ctxForE3, ctx'', ctx', ctxAfter] using hk_mid) hnotfun_mid
       | app e1 e2 =>
@@ -10908,6 +11021,11 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                   regime := result2.regime' }
               have hpcFun : ctxFun.pc = true := by
                 simpa [ctxFun] using hpc
+              have hpre_r2 : result2.memEnv'.contains l :=
+                typecheckExpr_mem_contains_preserved ctx e2 fuelApp result2 (by simpa using htc2) l hpre
+              have hpre_r1 : result1.memEnv'.contains l :=
+                typecheckExpr_mem_contains_preserved ctxFun e1 fuelApp result1
+                  (by simpa [ctxFun] using htc1) l (by simpa [ctxFun] using hpre_r2)
               have hbackToCtx_poison :
                   ∀ qt_mid,
                     result1.memEnv'.lookup l = some qt_mid →
@@ -10915,12 +11033,13 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                     ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qt_in.poison = false := by
                 intro qt_mid hlookup_mid hpoison_mid
                 rcases ih fuelApp (by omega) ctxFun e1 result1
-                    (by simpa [ctxFun] using htc1) hpcFun l qt_mid hlookup_mid with
+                    (by simpa [ctxFun] using htc1) hpcFun l qt_mid hlookup_mid
+                    (by simpa [ctxFun] using hpre_r2) with
                   ⟨hpoison1, _hguard1⟩
                 rcases hpoison1 hpoison_mid with ⟨qt_arg, hlookup_arg, hpoison_arg⟩
                 rcases ih fuelApp (by omega) ctx e2 result2
                     (by simpa using htc2) hpc l qt_arg
-                    (by simpa [ctxFun] using hlookup_arg) with
+                    (by simpa [ctxFun] using hlookup_arg) hpre with
                   ⟨hpoison2, _hguard2⟩
                 exact hpoison2 hpoison_arg
               have hbackToCtx_guard :
@@ -10935,13 +11054,14 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       qt_in.etyp.isFunctionType = false := by
                 intro qt_mid k hlookup_mid htag_mid hk_mid hnotfun_mid
                 rcases ih fuelApp (by omega) ctxFun e1 result1
-                    (by simpa [ctxFun] using htc1) hpcFun l qt_mid hlookup_mid with
+                    (by simpa [ctxFun] using htc1) hpcFun l qt_mid hlookup_mid
+                    (by simpa [ctxFun] using hpre_r2) with
                   ⟨_hpoison1, hguard1⟩
                 rcases hguard1 k htag_mid hk_mid hnotfun_mid with
                   ⟨qt_arg, hlookup_arg, htag_arg, hk_arg, hnotfun_arg⟩
                 rcases ih fuelApp (by omega) ctx e2 result2
                     (by simpa using htc2) hpc l qt_arg
-                    (by simpa [ctxFun] using hlookup_arg) with
+                    (by simpa [ctxFun] using hlookup_arg) hpre with
                   ⟨_hpoison2, hguard2⟩
                 exact hguard2 k htag_arg (by simpa [ctxFun] using hk_arg) hnotfun_arg
               have hcontains_res : res.memEnv'.contains l := by
@@ -11004,7 +11124,8 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                             simpa [hr] using hlookup_src
                           rcases ih fuelBody (by omega) bodyCtx body result3
                               (by simpa [bodyCtx] using htcBody)
-                              (by simp [bodyCtx, hpc, joinPoison]) l qt_src hlookup_result3 with
+                              (by simp [bodyCtx, hpc, joinPoison]) l qt_src hlookup_result3
+                              (by simpa [bodyCtx] using hpre_r1) with
                             ⟨hpoison3, _hguard3⟩
                           rcases hpoison3 hpoison_src with ⟨qt_mid, hlookup_mid_body, hpoison_mid⟩
                           exact
@@ -11152,7 +11273,8 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                             simpa [ctxAfter, hr] using hreg_src
                           rcases ih fuelBody (by omega) bodyCtx body result3
                               (by simpa [bodyCtx] using htcBody)
-                              (by simp [bodyCtx, hpc, joinPoison]) l qt_src hlookup_result3 with
+                              (by simp [bodyCtx, hpc, joinPoison]) l qt_src hlookup_result3
+                              (by simpa [bodyCtx] using hpre_r1) with
                             ⟨_hpoison3, hguard3⟩
                           rcases hguard3 k htag_src hreg_result3 hnotfun_src with
                             ⟨qt_mid, hlookup_mid_body, htag_mid, hk_mid, hnotfun_mid⟩
@@ -11278,7 +11400,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
           have htc' : typecheckExternVal ctx typ poison pred = .ok res := by
             simpa [typecheckExpr, typecheck] using htc
           exact typecheckExternVal_preserves_lookup_origin_axiom ctx typ poison pred res htc' hpc
-            l qt_out hlookup_out
+            l qt_out hpre hlookup_out
       | externFn arg argTyp retSpec effects =>
           unfold typecheckExpr at htc
           simp [typecheckExternFn, pure, Except.pure] at htc
@@ -11298,11 +11420,12 @@ private lemma typecheckExpr_lookup_poison_origin_of_pc_true
   (hpc : ctx.pc = true) :
   ∀ (l : Loc) (qt_out : QTyp),
     res.memEnv'.lookup l = some qt_out →
+    ctx.memEnv.contains l →
     qt_out.poison = false →
     ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qt_in.poison = false := by
-  intro l qt_out hlookup_out hpoison_out
+  intro l qt_out hlookup_out hpre hpoison_out
   exact (typecheckExpr_lookup_origin_of_pc_true_split
-      (ctx := ctx) (e := e) (fuel := fuel) (res := res) htc hpc l qt_out hlookup_out).1 hpoison_out
+      (ctx := ctx) (e := e) (fuel := fuel) (res := res) htc hpc l qt_out hlookup_out hpre).1 hpoison_out
 
 private lemma typecheckExpr_lookup_guard_origin_of_pc_true
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
@@ -11310,6 +11433,7 @@ private lemma typecheckExpr_lookup_guard_origin_of_pc_true
   (hpc : ctx.pc = true) :
   ∀ (l : Loc) (qt_out : QTyp) (k : Tag),
     res.memEnv'.lookup l = some qt_out →
+    ctx.memEnv.contains l →
     qtypGuardTag qt_out = some k →
     res.regime'.lookup? k = some true →
     qt_out.etyp.isFunctionType = false →
@@ -11317,9 +11441,9 @@ private lemma typecheckExpr_lookup_guard_origin_of_pc_true
       qtypGuardTag qt_in = some k ∧
       ctx.regime.lookup? k = some true ∧
       qt_in.etyp.isFunctionType = false := by
-  intro l qt_out k hlookup_out htag hk hnotfun
+  intro l qt_out k hlookup_out hpre htag hk hnotfun
   exact (typecheckExpr_lookup_origin_of_pc_true_split
-      (ctx := ctx) (e := e) (fuel := fuel) (res := res) htc hpc l qt_out hlookup_out).2
+      (ctx := ctx) (e := e) (fuel := fuel) (res := res) htc hpc l qt_out hlookup_out hpre).2
       k htag hk hnotfun
 
 lemma typecheckExpr_clean_lookup_origin_of_pc_true
@@ -11328,20 +11452,21 @@ lemma typecheckExpr_clean_lookup_origin_of_pc_true
   (hpc : ctx.pc = true) :
   ∀ (l : Loc) (qt_out : QTyp),
     res.memEnv'.lookup l = some qt_out →
+    ctx.memEnv.contains l →
     qtypCleanUnder res.regime' qt_out →
     ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qtypCleanUnder ctx.regime qt_in := by
-  intro l qt_out hlookup_out hclean_out
+  intro l qt_out hlookup_out hpre hclean_out
   cases hclean_out with
   | clean hpoison_out =>
       rcases typecheckExpr_lookup_poison_origin_of_pc_true
           (ctx := ctx) (e := e) (fuel := fuel) (res := res)
-          htc hpc l qt_out hlookup_out hpoison_out with
+          htc hpc l qt_out hlookup_out hpre hpoison_out with
         ⟨qt_in, hlookup_in, hpoison_in⟩
       exact ⟨qt_in, hlookup_in, qtypCleanUnder.clean hpoison_in⟩
   | guard k htag hk hnotfun =>
       rcases typecheckExpr_lookup_guard_origin_of_pc_true
           (ctx := ctx) (e := e) (fuel := fuel) (res := res)
-          htc hpc l qt_out k hlookup_out htag hk hnotfun with
+          htc hpc l qt_out k hlookup_out hpre htag hk hnotfun with
         ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
       exact ⟨qt_in, hlookup_in, qtypCleanUnder.guard k htag_in hk_in hnotfun_in⟩
 
@@ -11358,7 +11483,9 @@ lemma typecheckExpr_lookup_clean_back_of_pc_true
   intro l qt_in qt_out hlookup_in hlookup_out hclean_out
   rcases typecheckExpr_clean_lookup_origin_of_pc_true
       (ctx := ctx) (e := e) (fuel := fuel) (res := res)
-      htc hpc l qt_out hlookup_out hclean_out with
+      htc hpc l qt_out hlookup_out
+      (memEnv_contains_of_lookup_some ctx.memEnv l qt_in hlookup_in)
+      hclean_out with
     ⟨qt_in', hlookup_in', hclean_in'⟩
   have hqt : qt_in' = qt_in := by
     rw [hlookup_in] at hlookup_in'

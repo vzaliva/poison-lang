@@ -1863,7 +1863,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_vlet_parametric
       typecheckExpr_clean_lookup_origin_of_pc_true
         (ctx := ctx') (e := e2) (fuel := fuel') (res := res2)
         htc2' hpc1 l qt_out
-        hlookup_out hclean_out
+        hlookup_out
+        (by simpa [hctx'] using typecheckExpr_mem_contains_preserved ctxᵢ e1 fuel' res1 htc1' l (memEnv_contains_of_lookup_some ctxᵢ.memEnv l _qt_in _hlookup_in))
+        hclean_out
       with ⟨qt_mid, hlookup_mid, hclean_mid⟩
     exact ⟨qt_mid, by simpa [hctx', ctxAfter] using hlookup_mid, by simpa [hctx', ctxAfter] using hclean_mid⟩
   have hpres_final_cfg3 :
@@ -2069,7 +2071,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
       typecheckExpr_clean_lookup_origin_of_pc_true
         (ctx := ctx') (e := e2) (fuel := fuel') (res := res2)
         htc2' hpc1 l qt_out
-        hlookup_out hclean_out
+        hlookup_out
+        (by simpa [hctx'] using typecheckExpr_mem_contains_preserved ctxᵢ e1 fuel' res1 htc1' l (memEnv_contains_of_lookup_some ctxᵢ.memEnv l _qt_in _hlookup_in))
+        hclean_out
       with ⟨qt_mid, hlookup_mid, hclean_mid⟩
     exact ⟨qt_mid, by simpa [hctx', ctxAfter] using hlookup_mid, by simpa [hctx', ctxAfter] using hclean_mid⟩
   have hpres_final_cfg3 :

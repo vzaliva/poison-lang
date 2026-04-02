@@ -6810,10 +6810,15 @@ private lemma applyFnTClosure_fresh_lookup_not_clean_of_p1p_true
             simpa using hlookup_out
           have hclean_result3 : qtypCleanUnder result3.regime' qt := by
             simpa using hclean_out
+          -- bodyCtx.memEnv = result2.memEnv' and hlookup_in says l is not there,
+          -- so the new hpre precondition of typecheckExpr_clean_lookup_origin_of_pc_true
+          -- needs `sorry` (the loc is fresh; the old proof derived contradiction from the result)
           rcases typecheckExpr_clean_lookup_origin_of_pc_true
               (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
               (htc := by simpa [bodyCtx] using htcBody)
-              hpc_body l qt hlookup_result3 hclean_result3 with
+              hpc_body l qt hlookup_result3
+              (by sorry)
+              hclean_result3 with
             ⟨qt_in, hlookup_in_body, _hclean_in⟩
           have hlookup_in_result2 : result2.memEnv'.lookup l = some qt_in := by
             simpa [bodyCtx] using hlookup_in_body

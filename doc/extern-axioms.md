@@ -39,7 +39,7 @@ The current 11 axioms are:
 | `applyFnTClosure_extern_ok_fresh_loc_not_clean` | `StepFR.lean` | Likely provable or vacuous from LocSet allocation invariant |
 | `applyFnTClosure_extern_ok_guardClosure_tag_absent` | `StepFR.lean` | Likely provable from bounded-tags invariant |
 | `applyPFnTClosure_extern_ok_guardClosure_tag_absent` | `StepFR.lean` | Likely provable from bounded-tags invariant |
-| `typecheckExternVal_preserves_wfTagMeaningCtx_axiom` | `StepFR.lean` | Bundled; first half likely provable, second half foundational |
+| `typecheckExternVal_QTypRespectsTagMeaning_axiom` | `StepFR.lean` | Foundational semantic extern contract (split from bundled axiom) |
 | `typecheckExternVal_preserves_lookup_origin_axiom` | `StepFR.lean` | False as written for `ref int`; must be restated before proof work continues |
 | `typecheckExternVal_guardClosure_pred_implies_tag_absent` | `StepFR.lean` | Likely provable from bounded-tags invariant |
 | `applyFnTClosure_extern_wfTypeResult` | `TypeSafety.lean` | Likely provable from LocSet allocation invariant |
@@ -305,38 +305,33 @@ Useful `iofree` references:
 
 #### `typecheckExternVal_preserves_lookup_origin_axiom`
 
-This axiom should be treated as false as currently stated unless an additional
-side condition is intended. The concern is no longer merely speculative; the
-current implementation gives a direct source-level counterexample.
+**RESTATED**: This axiom now carries a pre-existence hypothesis
+`(hpre : ctx.memEnv.contains l)` that restricts the conclusion to locations
+already present in the input memory. Fresh locations allocated by
+`surfaceSpecToQTyp` for `ref int` extern values are exempt.
 
-`typecheckExternVal` calls `surfaceSpecToQTyp`, and `surfaceSpecToQTyp` can
-allocate a fresh location for `ref int` extern values and insert a clean
-`noPred` cell into memory. That makes the current first conjunct of the axiom
-fail for `ctx.pc = true`:
+The restatement required cascading changes through:
+- `typecheckExpr_lookup_origin_of_pc_true_split` (conclusion + all ~28 IH calls)
+- `typecheckExpr_lookup_poison_origin_of_pc_true`
+- `typecheckExpr_lookup_guard_origin_of_pc_true`
+- `typecheckExpr_clean_lookup_origin_of_pc_true`
+- ~18 consumer sites across FR proof files
 
-- choose `typecheckExternVal ctx (Typ.ref Typ.int) false SyntaxPredicate.noPred`
-  with `ctx.pc = true`
-- `surfaceSpecToQTyp` allocates a fresh location via `freshTLoc`
-- it inserts `updateMemEnv ... ⟨ETyp.int, false, Predicate.noPred⟩`
-- so `res.memEnv'.lookup l = some ⟨ETyp.int, false, Predicate.noPred⟩` for the
-  fresh location `l`
-- but `ctx.memEnv.lookup l = none`
+The `typecheckExpr_lookup_clean_back_of_pc_true` wrapper was unchanged (it
+already required `ctx.memEnv.lookup l = some qt_in`).
 
-So the first conjunct cannot hold as written for that fresh clean output cell.
+**Exposed sorry sites**: The restatement revealed 6 `sorry` in 3 declarations
+that previously relied on the false axiom's contrapositive (fresh locations
+can't be clean under `pc = true`), which is also false for `externVal ref int`:
+- `StepFRIte.lean`: 4 sorry in `hclean_back_to_res1` (no `htc1` available
+  to derive monotonicity for the contains precondition)
+- `StepFRAssign.lean`: 1 sorry in `assign_final_clean_preservation` (same issue)
+- `StepFRApp.lean`: 1 sorry in fresh-location contradiction branch (the location
+  provably does NOT pre-exist, so the old proof-by-contradiction via the
+  lemma no longer works)
 
-So this declaration is currently best viewed as:
-
-- **not yet classified as foundational**
-- **not provable as written**
-- **first in line for restatement**
-
-Possible outcomes:
-
-1. the statement is adjusted to exempt freshly allocated reference cells
-2. the statement is split into:
-   - a non-reference provenance lemma
-   - a reference-allocation lemma
-3. a more precise two-hop origin theorem replaces the current shape
+These are genuine proof gaps that were hidden by the false axiom, not new
+bugs introduced by the restatement.
 
 Useful `iofree` references:
 
