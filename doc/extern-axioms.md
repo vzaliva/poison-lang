@@ -353,25 +353,40 @@ Useful `iofree` references:
 
 ## Suggested Way Forward
 
-The highest-value next steps are:
+### Completed steps
 
-1. **Restate `typecheckExternVal_preserves_lookup_origin_axiom` first.**
-   In the current implementation it appears false as written for `ref int`
-   extern values, so proving around the current statement would be wasted
-   effort.
+1. **Restate `typecheckExternVal_preserves_lookup_origin_axiom`.** ✅
+   Added `(hpre : ctx.memEnv.contains l)` pre-existence hypothesis. Cascaded
+   through wrapper lemmas and ~18 consumer sites. Exposed 6 sorry in 3
+   declarations that relied on the false axiom's contrapositive.
 
-2. **Split `typecheckExternVal_preserves_wfTagMeaningCtx_axiom`.**
-   This should reduce the axiom surface even before the harder invariants are
-   developed.
+2. **Split `typecheckExternVal_preserves_wfTagMeaningCtx_axiom`.** ✅
+   Structural half proved as `typecheckExternVal_preserves_wfTagMeaningCtx`
+   using `EnvRespectsTagMeaning_updateMemEnv`. Semantic half isolated as
+   `typecheckExternVal_QTypRespectsTagMeaning_axiom`.
 
-3. **Prove the bounded-tags invariant.**
-   This should remove the three freshness axioms.
+3. **Prove the bounded-tags invariant.** ✅ (partially)
+   Three freshness axioms eliminated. Infrastructure:
+   - `tagEnvBounded` / `tagEnvBoundedInCtx` (TypeSafety.lean)
+   - `collectAndAllocExternTags_mapping_values_ge` (TypeSafety.lean)
+   - `tagEnvBounded_get_none_of_ge` bridge lemma
+   - `typecheckExpr_preserves_tagEnvBounded` preservation theorem
+     (sorry for ite/app cases — needs predicate-tag bound for matchGuard)
+   - Threading partially done through `ioFree_guardClosure_pred_implies_tag_absent`
 
-4. **Prove the LocSet allocation invariant.**
+### Remaining steps
+
+4. **Complete bounded-tags threading.**
+   - Prove ite/app cases of `typecheckExpr_preserves_tagEnvBounded` (requires
+     formalizing that matchGuard-extracted tags are < nextTag)
+   - Thread `tagEnvBounded` through the FR proof to eliminate the 5 sorry at
+     `stepFR_assign` call sites
+
+5. **Prove the LocSet allocation invariant.**
    This should attack `applyFnTClosure_extern_wfTypeResult` directly and likely
    also collapse `applyFnTClosure_extern_ok_fresh_loc_not_clean`.
 
-5. **Return to impure extern provenance.**
+6. **Return to impure extern provenance.**
    With the easier infrastructure in place, the remaining hard target becomes
    `applyFnTClosure_extern_ok_lookup_origin`.
 

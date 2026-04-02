@@ -1481,11 +1481,12 @@ private lemma ioFree_guardClosure_pred_implies_tag_absent
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
     (htc : typecheckExpr ctx e fuel = .ok res)
+    (hbound : tagEnvBoundedInCtx ctx)
     (hpred : res.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
     res.tagEnv'.get? k = none := by
-  revert ctx e res htc hpred
+  revert ctx e res htc hbound hpred
   refine Nat.strongRecOn fuel ?_
-  intro fuel ih ctx e res htc hpred
+  intro fuel ih ctx e res htc hbound hpred
   cases fuel with
   | zero =>
       simp [typecheckExpr] at htc
@@ -1560,7 +1561,11 @@ private lemma ioFree_guardClosure_pred_implies_tag_absent
           rcases typecheckSeq_structure ctx e1 e2 fuel res htc' with
             ⟨result1, ctx', htc1, hctx', htc2⟩
           have hlt : fuel - 1 < Nat.succ fuel := Nat.lt_succ_of_le (Nat.sub_le fuel 1)
-          exact ih (fuel - 1) hlt ctx' e2 res htc2 hpred
+          have hbound' : tagEnvBoundedInCtx ctx' := by
+            rw [hctx']
+            simp only [tagEnvBoundedInCtx]
+            exact typecheckExpr_preserves_tagEnvBounded ctx e1 (fuel - 1) result1 htc1 hbound
+          exact ih (fuel - 1) hlt ctx' e2 res htc2 hbound' hpred
       | vlet x e1 e2 =>
           have htc' : typecheckVlet ctx x e1 e2 fuel = .ok res := by
             simpa [typecheckExpr] using htc
@@ -1568,8 +1573,12 @@ private lemma ioFree_guardClosure_pred_implies_tag_absent
             ⟨result1, result2, ctx', htc1, hctx', htc2, hetyp, hmem, htag, hnextLoc, hnextTag, hreg, hpoison, hpredEq⟩
           have hpred2 : result2.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env := by
             simpa [hpredEq] using hpred
+          have hbound' : tagEnvBoundedInCtx ctx' := by
+            rw [hctx']
+            simp only [tagEnvBoundedInCtx]
+            exact typecheckExpr_preserves_tagEnvBounded ctx e1 (fuel - 1) result1 htc1 hbound
           have hnone2 : result2.tagEnv'.get? k = none :=
-            ih (fuel - 1) (Nat.lt_succ_of_le (Nat.sub_le fuel 1)) ctx' e2 result2 htc2 hpred2
+            ih (fuel - 1) (Nat.lt_succ_of_le (Nat.sub_le fuel 1)) ctx' e2 result2 htc2 hbound' hpred2
           simpa [htag] using hnone2
       | ite e1 e2 e3 =>
           exfalso
@@ -1610,7 +1619,7 @@ private lemma ioFree_guardClosure_pred_implies_tag_absent
                     typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent
                       (ctx := ctx) (res := res)
                       (k := k) (arg_name := arg_name) (pred_body := pred_body) (var_env := var_env)
-                      (fuel' := fuel') ih
+                      (fuel' := fuel') (fun m hm ctx'' e'' res'' htc'' hpred'' => ih m hm ctx'' e'' res'' htc'' (by sorry) hpred'')
                       (st1 := st1) (st2 := st2) (p := p) (p1 := p1) (etyp2 := etyp2) (p2 := p2) (pred2 := pred2)
                       (result1 := result1)
                       (tcls := tcls) (results := results) (first := first) (rest := rest)
@@ -1624,7 +1633,7 @@ private lemma ioFree_guardClosure_pred_implies_tag_absent
                     typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
                       (ctx := ctx) (res := res)
                       (k := k) (arg_name := arg_name) (pred_body := pred_body) (var_env := var_env)
-                      (fuel' := fuel') ih
+                      (fuel' := fuel') (fun m hm ctx'' e'' res'' htc'' hpred'' => ih m hm ctx'' e'' res'' htc'' (by sorry) hpred'')
                       (st1 := st1) (st2 := st2) (p := p) (p1 := p1) (etyp2 := etyp2) (p2 := p2) (pred2 := pred2)
                       (result1 := result1)
                       (tcls := tcls) (results := results) (first := first) (rest := rest)
@@ -1633,7 +1642,7 @@ private lemma ioFree_guardClosure_pred_implies_tag_absent
           have htc' : typecheckExternVal ctx typ poison pred = .ok res := by
             simpa [typecheckExpr, typecheck] using htc
           exact typecheckExternVal_guardClosure_pred_implies_tag_absent ctx typ poison pred res
-            htc' (by sorry) k arg_name pred_body var_env hpred
+            htc' hbound k arg_name pred_body var_env hpred
       | externFn _ _ _ _ =>
           exfalso
           have htc' := htc
@@ -2489,7 +2498,7 @@ lemma stepFR_assign
                           regime := res1.regime' })
                         (e := e2) (fuel := fuel') (res := res2)
                         (k := k') (arg_name := arg_name) (pred_body := pred_body) (var_env := var_env)
-                        htc2_expr hpred_res2
+                        htc2_expr (hbound := by sorry) hpred_res2
                   have htagInvalid :
                       ∀ tv, res2.tagEnv'.get? k' = some tv → tv.deps.any ls.contains = true := by
                     intro tv hget'
@@ -2690,7 +2699,7 @@ lemma stepFR_assign
                         regime := res1.regime' })
                       (e := e2) (fuel := fuel') (res := res2)
                       (k := k') (arg_name := arg_name) (pred_body := pred_body) (var_env := var_env)
-                      htc2_expr hpred_res2
+                      htc2_expr (hbound := by sorry) hpred_res2
                 have htagInvalid :
                     ∀ tv, res2.tagEnv'.get? k' = some tv → tv.deps.any ls.contains = true := by
                   intro tv hget'
@@ -2901,7 +2910,7 @@ lemma stepFR_assign
                           regime := res1.regime' })
                         (e := e2) (fuel := fuel') (res := res2)
                         (k := k') (arg_name := arg_name) (pred_body := pred_body) (var_env := var_env)
-                        htc2_expr hpred_res2
+                        htc2_expr (hbound := by sorry) hpred_res2
                   have htagInvalid :
                       ∀ tv, res2.tagEnv'.get? k' = some tv → tv.deps.any ls.contains = true := by
                     intro tv hget'
@@ -3086,7 +3095,7 @@ lemma stepFR_assign
                         regime := res1.regime' })
                       (e := e2) (fuel := fuel') (res := res2)
                       (k := k') (arg_name := arg_name) (pred_body := pred_body) (var_env := var_env)
-                      htc2_expr hpred_res2
+                      htc2_expr (hbound := by sorry) hpred_res2
                 have htagInvalid :
                     ∀ tv, res2.tagEnv'.get? k' = some tv → tv.deps.any ls.contains = true := by
                   intro tv hget'
@@ -3837,7 +3846,7 @@ lemma stepFR_assign
                                     regime := res1.regime' })
                                   (e := e2) (fuel := fuel') (res := res2)
                                   (k := k') (arg_name := arg_name) (pred_body := pred_body) (var_env := var_env)
-                                  htc2_expr hpred_res2
+                                  htc2_expr (hbound := by sorry) hpred_res2
                             have hkLive : (ctxAfter ctxᵢ res).regime.lookup? k' ≠ none := by
                               simp [hk, hreg]
                             rcases htag_entry_of_final_regime_lookup k' hkLive with ⟨tv, hgettv, _⟩
