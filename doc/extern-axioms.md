@@ -1,407 +1,564 @@
-# Extern Functions: Remaining Axioms on `new-iofree`
+# Extern Functions: FR Contract Surface on `new-iofree`
 
-## Purpose
+## 1. Goal
 
-This note records the current extern-related proof surface on the `new-iofree`
-branch, explains why the remaining axioms exist, and classifies each one as:
+This note records the extern-related assumptions currently used by the
+fault-robustness proof stack on `new-iofree`, separates principled extern
+contracts from proof obligations that should be discharged inside Lean, and
+outlines the implementation path to eliminate the non-contract axioms and
+`sorry`s.
 
-- a **foundational extern contract** obligation that is not expected to be
-  provable from the current typechecker alone, or
-- a **provable proof obligation** that should disappear once the right
-  infrastructure or theorem shape is in place.
+The target is:
 
-It is modeled on the older `iofree` branch document, but reflects the current
-state of this branch rather than the earlier migration attempt.
+- eliminate all `sorry` and all non-contract axioms
+- keep only the extern contracts that cannot be derived from the typechecker in
+  principle
+- do this **without** adding new invariants to `StepFR` or `StepFR_IH`
+- keep any new typing invariants **below** the `StepFR` abstraction boundary
 
-## Current Status
+More concretely, the intended boundary rule is:
 
-As of the current repository state:
+- acceptable: strengthen local `TypeSafety` lemmas, local helper lemmas, or
+  intermediate theorem shapes used only below `StepFR`
+- unacceptable: add new hypotheses to `StepFR`, `StepFR_IH`,
+  `FaultRobustnessSpec`, or the top-level FR theorem interface just to carry a
+  local typing invariant
 
-- `lake build` succeeds
-- `LeanProofs/` contains **8 `sorry`** statements in **4 declarations**
-- there are **11 explicit axiom declarations**
-  - 10 in `LeanProofs/StepFR.lean`
-  - 1 in `LeanProofs/TypeSafety.lean`
+The tactical convention for proof gaps is:
 
-### Axiom table
+- `sorry` = an obligation we expect to prove
+- `axiom` = an obligation we currently believe is unprovable in principle and
+  therefore part of the intended contract surface
 
-| # | Axiom | File | Group | Assessment |
-|---|-------|------|-------|------------|
-| 1 | `applyFnTClosure_extern_ok_wfTagMeaningCtx` | StepFR | 3 | Bundled effect-loop obligation |
-| 2 | `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` | StepFR | 1 | Foundational semantic extern contract |
-| 3 | `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | StepFR | 1 | Foundational semantic extern contract |
-| 4 | `applyFnTClosure_extern_ok_lookup_origin` | StepFR | 4 | Hard effect-loop provenance |
-| 5 | `applyFnTClosure_extern_ok_fresh_loc_not_clean` | StepFR | 3 | Likely collapses with LocSet invariant |
-| 6 | `applyFnTClosure_extern_ok_guardClosure_tag_absent` | StepFR | 2 | **Proved alternative exists** (`*_of_tagEnvBounded`) |
-| 7 | `applyPFnTClosure_extern_ok_guardClosure_tag_absent` | StepFR | 2 | **Proved alternative exists** (`*_of_tagEnvBounded`) |
-| 8 | `typecheckExternVal_QTypRespectsTagMeaning_axiom` | StepFR | 1 | Foundational (split from old bundled axiom) |
-| 9 | `typecheckExternVal_preserves_lookup_origin_axiom` | StepFR | 4 | **Restated** with `hpre : ctx.memEnv.contains l` |
-| 10 | `typecheckExternVal_guardClosure_pred_implies_tag_absent` | StepFR | 2 | **Proved alternative exists** (`*_of_tagEnvBounded`) |
-| 11 | `applyFnTClosure_extern_wfTypeResult` | TypeSafety | 3 | Likely provable from LocSet allocation invariant |
+So, in the current repository state, both `sorry` and `axiom` count as proof
+gaps. The distinction is about intended end state, not about severity.
 
-### Sorry table
+## 2. Scope
 
-| File | Declaration | Count | Cause |
-|------|------------|-------|-------|
-| TypeSafety.lean | `typecheckExpr_preserves_tagEnvBounded_main` | 2 | ite mode 1/2 (matchGuard predicate-tag bound) |
-| StepFRIte.lean | `stepFR_ite` (inside `hclean_back_to_res1`) | 4 | Phase 1: fresh-location contradiction |
-| StepFRAssign.lean | `assign_final_clean_preservation` | 1 | Phase 1: fresh-location contradiction |
-| StepFRApp.lean | `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true` | 1 | Phase 1: fresh-location contradiction |
-
-## Changes From Original State
-
-### 1. Restated `typecheckExternVal_preserves_lookup_origin_axiom` (was false)
-
-The original axiom was false for `ref int` extern values: `surfaceSpecToQTyp`
-allocates a fresh location with a clean `noPred` cell, violating the claim
-that clean output cells must have clean input origins.
-
-**Fix**: Added `(hpre : ctx.memEnv.contains l)` restricting the conclusion to
-pre-existing locations. Cascaded through:
-- `typecheckExpr_lookup_origin_of_pc_true_split` (conclusion + ~28 IH calls
-  threaded with `typecheckExpr_mem_contains_preserved` for monotonicity)
-- `typecheckExpr_lookup_poison_origin_of_pc_true`
-- `typecheckExpr_lookup_guard_origin_of_pc_true`
-- `typecheckExpr_clean_lookup_origin_of_pc_true`
-- ~18 consumer sites across `FaultRobustnessProofs.lean`, `StepFROp.lean`,
-  `StepFRSeq.lean`, `StepFRIte.lean`, `StepFRVlet.lean`, `StepFRAssign.lean`,
-  `StepFRApp.lean`
-- `typecheckExpr_lookup_clean_back_of_pc_true` was unchanged (already had
-  `ctx.memEnv.lookup l = some qt_in`)
-
-**Exposed 6 sorry** in 3 declarations that previously relied on the false
-axiom's contrapositive ("fresh locations can't be clean under `pc = true`"),
-which is also false for `externVal ref int`. These sorry are in
-fresh-location code paths where the old proof derived contradiction by calling
-`typecheckExpr_clean_lookup_origin_of_pc_true` on a location known to be absent
-from the input, then contradicting the result. With the `hpre` precondition,
-the lemma can't be called for absent locations. See "Design Decisions Needed"
-below for resolution options.
-
-### 2. Split `typecheckExternVal_preserves_wfTagMeaningCtx_axiom`
-
-The old axiom bundled two conjuncts:
-```
-wfTagMeaningCtx tm (ctxAfter ctx res) ∧ QTypRespectsTagMeaning tm res.qualType
-```
-
-Split into:
-- **Proved lemma** `typecheckExternVal_preserves_wfTagMeaningCtx` — the
-  structural half. Proof uses `EnvRespectsTagMeaning_updateMemEnv`: the only
-  memEnv change is inserting a `⟨ETyp.int, false, Predicate.noPred⟩` cell
-  (for `ref int`), which trivially satisfies `QTypRespectsTagMeaning`.
-  Helper: `surfaceSpecToQTyp_preserves_EnvRespectsTagMeaning`.
-- **Axiom** `typecheckExternVal_QTypRespectsTagMeaning_axiom` — the
-  foundational semantic half. This is irreducible: it asserts that the
-  resolved extern predicate's guard tags map to the right `GuardDesc` in `tm`.
-
-### 3. Bounded-tags invariant infrastructure (Group 2 axioms)
-
-All infrastructure lives in `TypeSafety.lean` (typechecker layer, no FR leak).
-The 3 Group 2 axioms are **NOT yet eliminated** — they remain as axioms used
-by the FR proofs. But proved alternative lemmas exist alongside them, ready
-for when the design decision on threading is made.
-
-#### Definitions
-
-- `tagEnvBounded (tagEnv : TagEnv) (nextTag : Tag) : Prop` — all keys in
-  tagEnv are < nextTag
-- `tagEnvBoundedInCtx (ctx : TypeContext) : Prop` — abbreviation for
-  `tagEnvBounded ctx.tagEnv ctx.nextTag`
-
-#### Key lemmas (TypeSafety.lean)
-
-| Lemma | Purpose |
-|-------|---------|
-| `tagEnvBounded_get_none_of_ge` | If `k ≥ nextTag` and tagEnv bounded, then `tagEnv.get? k = none` |
-| `tagEnvBounded_mono` | Bounded at `nt` implies bounded at `nt' ≥ nt` |
-| `collectAndAllocExternTags_mapping_values_ge` | All tags in the allocation mapping are ≥ input nextTag |
-| `forIn_tag_mapping_values_ge` | Helper: inductive core of the above |
-| `joinTagEnvs_preserves_tagEnvBounded` | `joinTagEnvs` produces a subset of keys → bounded preserved |
-| `joinTagEnvs_get_none_of_left_none` | Helper: join drops keys absent from left input |
-| `invalidateTagDeps_preserves_tagEnvBounded` | Filter-based assign helper |
-| `applyFnTClosure_tagEnvBounded_normal` | Closure application preserves bounded-tags |
-| `applyPFnTClosure_tagEnvBounded_normal` | Pure closure application preserves bounded-tags |
-| `joinTypeResults_tagEnvBounded` | joinTypeResults fold preserves bounded-tags |
-| `typecheckApp_tagEnvBounded_normal` | Full app case helper |
-| `typecheckExpr_preserves_tagEnvBounded` | **Preservation theorem** (sorry for ite mode 1/2 only) |
-
-#### Proved alternatives (StepFR.lean, alongside axioms)
-
-| Alternative lemma | Replaces axiom | Extra hypothesis |
-|-------------------|----------------|------------------|
-| `applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded` | axiom #6 | `tagEnvBounded result2.tagEnv' result2.nextTag'` |
-| `applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded` | axiom #7 | `tagEnvBounded result2.tagEnv' result2.nextTag'` |
-| `typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded` | axiom #10 | `tagEnvBoundedInCtx ctx` |
-
-These are fully proved. They use:
-1. Structural tagEnv equality (`applyFnTClosure_extern_tagEnv_eq` etc.)
-2. `collectAndAllocExternTags_mapping_values_ge` to show `k ≥ nextTag`
-3. `tagEnvBounded_get_none_of_ge` to conclude absence
-
-Helper lemmas used by the proofs:
-- `resolveSyntaxPred_guardClosure_tag_from_mapping` — if `resolveSyntaxPred`
-  produces `guardClosure k ...`, then `k` came from the mapping
-- `returnSpecToQTyp_pred_eq` — `returnSpecToQTyp` preserves the predicate
-- `surfaceSpecToQTyp_pred_eq` — `surfaceSpecToQTyp` preserves the predicate
-
-## Why Extern Obligations Remain
-
-Raw extern syntax is still vacuous on the **runtime** side of fault-robustness:
+Raw extern syntax is operationally unreachable in the current evaluator:
 
 - `Expr.externVal`
 - `Expr.externFn`
 - `Expr.externPfn`
 
-all evaluate to runtime errors in `LeanPoison/BigStep.lean`.
+all produce runtime errors in `LeanPoison/BigStep.lean`.
 
-So the top-level FR theorem still treats raw extern expressions as unreachable
-runtime cases. The remaining proof obligations come from the **typing**
-machinery instead:
+So the remaining extern proof surface is entirely on the **typing** side:
 
 1. `typecheckExternVal`
 2. `applyFnTClosure` on `FnTClosure.extern`
 3. `applyPFnTClosure` on `PFnTClosure.extern`
 
-These functions resolve symbolic extern predicates, allocate fresh tags, thread
-captured environments, and in the impure extern case update memory through the
-effects loop. Those typing-side artifacts must satisfy the same internal proof
-invariants that regular closures satisfy by induction on their bodies.
+These typing functions:
 
-## Grouped Analysis
+- resolve syntax-level predicates to fresh concrete tags
+- thread captured environments
+- allocate fresh tags
+- and, for impure externs, update memory through the declared effects
 
-### Group 1: Foundational semantic extern contract
+The FR proof must therefore reason about the typing artifacts created by extern
+specs even though the runtime never evaluates raw extern expressions.
 
-| Axiom | Status |
-|-------|--------|
-| `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` | Foundational |
-| `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | Foundational |
-| `typecheckExternVal_QTypRespectsTagMeaning_axiom` | Foundational (split from old bundled axiom) |
+No eval-side extern contract is currently required. All remaining extern
+assumptions on this branch are about the **typing summary layer**, not about
+`beval` behavior of actual extern execution.
 
-The irreducible semantic content: when extern typing resolves a
-`SyntaxPredicate.guardClosure idx arg body`, the resulting concrete tag must
-map to the right `GuardDesc` in `tm`. This is a statement about the intended
-meaning of the extern spec, not about a structural property of the typechecker.
+This note therefore does **not** try to solve:
 
-The old bundled `typecheckExternVal_preserves_wfTagMeaningCtx_axiom` has been
-**split**: its `wfTagMeaningCtx` conjunct is now a proved lemma
-(`typecheckExternVal_preserves_wfTagMeaningCtx`), and the semantic conjunct
-is isolated as `typecheckExternVal_QTypRespectsTagMeaning_axiom`.
+- executable semantics for externs
+- semantic adequacy of extern summaries with respect to future runtime behavior
 
-### Group 2: Tag freshness via bounded-tags invariant
+It only addresses the contracts needed for the current FR proof stack.
 
-| Axiom | Status |
-|-------|--------|
-| `applyFnTClosure_extern_ok_guardClosure_tag_absent` | **Proved alternative exists** |
-| `applyPFnTClosure_extern_ok_guardClosure_tag_absent` | **Proved alternative exists** |
-| `typecheckExternVal_guardClosure_pred_implies_tag_absent` | **Proved alternative exists** |
+## 3. Current State
 
-These axioms are logically redundant given `tagEnvBounded`. Proved alternative
-lemmas (`*_of_tagEnvBounded`) exist in `StepFR.lean`. The axioms remain only
-because `tagEnvBounded` has not yet been threaded to the consumption sites in
-the FR proofs. See "Design Decisions Needed" for options.
+As of **2026-04-02** on `new-iofree`:
 
-### Group 3: Impure extern effect-loop infrastructure
+- `lake build` succeeds
+- the current proof-gap inventory is:
+  - **8 `sorry`** statements in **4 declarations**
+  - **11 explicit `axiom`** declarations
+    - 10 in `LeanProofs/StepFR.lean`
+    - 1 in `LeanProofs/TypeSafety.lean`
+- so the branch currently has **19 proof gaps** total
+- only a small subset of the 11 axioms should survive as actual axioms; the
+  rest should be treated as provisional proof gaps that still need proofs
+- the current build warnings point at exactly these declarations:
+  - `typecheckExpr_preserves_tagEnvBounded_main`
+  - `assign_final_clean_preservation`
+  - `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
+  - `stepFR_ite_standard`
+- this is a snapshot of the branch at that date; the counts should be re-checked
+  after proof edits
 
-| Axiom | Status |
-|-------|--------|
-| `applyFnTClosure_extern_ok_wfTagMeaningCtx` | Bundled effect-loop obligation |
-| `applyFnTClosure_extern_ok_fresh_loc_not_clean` | Likely collapses with LocSet invariant |
-| `applyFnTClosure_extern_wfTypeResult` | Likely provable from LocSet allocation invariant |
+Build warnings only report the `sorry` declarations. The `axiom` declarations
+must therefore be tracked separately in the document.
 
-These require formalizing the LocSet allocation invariant (captured reference
-LocSets only contain allocated locations) and reasoning through the effects
-loop. See the original analysis (preserved below in the appendix) for detailed
-proof routes and `iofree` references.
+### 3.1 Current axiom inventory
 
-### Group 4: Provenance obligations
+The `Status` column below uses this convention:
 
-| Axiom | Status |
-|-------|--------|
-| `applyFnTClosure_extern_ok_lookup_origin` | Hard effect-loop provenance |
-| `typecheckExternVal_preserves_lookup_origin_axiom` | **Restated** with pre-existence |
+- `Transitional bundle` = currently axiomatized wrapper that is planned to be
+  replaced by a smaller contract plus an internal theorem
+- `Candidate contract` = plausible permanent extern assumption
+- `Provisional proof gap` = currently axiomatized, but intended to become a
+  theorem
 
-The `typecheckExternVal` axiom has been restated (no longer false). The
-`applyFnTClosure` provenance axiom requires dedicated effect-loop reasoning.
+| Axiom | File | Status |
+|------|------|--------|
+| `applyFnTClosure_extern_ok_wfTagMeaningCtx` | `StepFR` | Transitional bundle; planned to be split into a small contract plus internal theorem |
+| `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` | `StepFR` | Candidate contract |
+| `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | `StepFR` | Candidate contract |
+| `applyFnTClosure_extern_ok_lookup_origin` | `StepFR` | Provisional proof gap |
+| `applyFnTClosure_extern_ok_fresh_loc_not_clean` | `StepFR` | Provisional proof gap |
+| `applyFnTClosure_extern_ok_guardClosure_tag_absent` | `StepFR` | Provisional proof gap |
+| `applyPFnTClosure_extern_ok_guardClosure_tag_absent` | `StepFR` | Provisional proof gap |
+| `typecheckExternVal_QTypRespectsTagMeaning_axiom` | `StepFR` | Candidate contract |
+| `typecheckExternVal_preserves_lookup_origin_axiom` | `StepFR` | Provisional proof gap |
+| `typecheckExternVal_guardClosure_pred_implies_tag_absent` | `StepFR` | Provisional proof gap |
+| `applyFnTClosure_extern_wfTypeResult` | `TypeSafety` | Provisional proof gap |
 
-## Design Decisions Needed
+### 3.2 Current `sorry` inventory
 
-### Decision 1: How to eliminate Group 2 axioms
+| File | Declaration | Count | Assessment |
+|------|-------------|-------|------------|
+| `TypeSafety.lean` | `typecheckExpr_preserves_tagEnvBounded_main` | 2 | Real proof gap in `ite` mode 1/2; the public theorem `typecheckExpr_preserves_tagEnvBounded` delegates to this `_main` proof |
+| `StepFRIte.lean` | `stepFR_ite_standard` | 4 | Current local helper route is likely too strong |
+| `StepFRAssign.lean` | `assign_final_clean_preservation` | 1 | Likely ordinary plumbing |
+| `StepFRApp.lean` | `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true` | 1 | Current theorem shape is false |
 
-The three freshness axioms have proved alternatives that require `tagEnvBounded`
-as a hypothesis. The question is how to deliver this hypothesis at the
-consumption sites (inside `ioFree_guardClosure_pred_implies_tag_absent` and
-two app-branch helpers in `StepFRAssign.lean`).
+## 4. What Must Be Assumed About Extern Functions For FR
 
-**Option A: Thread through the typechecker-level lemma only.**
-`ioFree_guardClosure_pred_implies_tag_absent` is a standalone typechecker
-lemma (not part of `StepFR_IH`). It does its own strong induction on fuel.
-Add `tagEnvBoundedInCtx ctx` as a hypothesis, thread through the ~2 IH calls
-using `typecheckExpr_preserves_tagEnvBounded`, and pass it to the proved
-alternatives at the extern cases. The 5 callers in `stepFR_assign` would
-then need to provide `tagEnvBounded` — which could be derived from the
-initial context (empty tagEnv, nextTag = 1) plus the preservation theorem,
-without modifying `StepFR_IH`.
+The typechecker can manipulate an extern specification, but it cannot prove
+from ordinary typing structure alone that the resolved tags introduced by that
+summary have the intended interpretation in `TagMeaning`. That summary-opacity
+is the principled source of extern contracts on the current branch.
 
-*Advantage*: No changes to `StepFR_IH` or the FR proof structure.
-*Difficulty*: The 5 callers need `tagEnvBounded` for intermediate contexts
-derived from the FR proof. This requires proving that the initial context
-satisfies `tagEnvBounded` (trivial: empty tagEnv) and that the preservation
-theorem delivers it at the right point. May need the FR proof to carry
-`tagEnvBounded` anyway, at least for the assign case.
+### 4.1 FR interpretation of resolved return predicates
 
-**Option B: Add `tagEnvBounded` to `StepFR_IH`.**
-Thread the invariant through the FR proof's inductive hypothesis. This makes
-`tagEnvBounded` available at all consumption sites automatically.
+When an extern spec resolves a syntax predicate to a fresh concrete tag `k`,
+FR needs to know that `k` really carries the intended guard interpretation in
+`TagMeaning`.
 
-*Advantage*: Clean and uniform. All Group 2 axioms eliminated at once.
-*Difficulty*: Very invasive. `StepFR_IH` is referenced throughout the FR
-proof stack. Every case proof would need to thread the invariant.
+This is the content of:
 
-**Option C: Prove `tagEnvBounded` is a consequence of `typecheckExpr` success.**
-If we could prove `typecheckExpr ctx e fuel = .ok res → tagEnvBoundedInCtx ctx`
-(i.e., any context that successfully typechecks an expression is bounded), then
-no threading is needed — the hypothesis is free. This would require showing
-that the initial context is bounded and that only bounded contexts reach the
-typechecker.
+- `typecheckExternVal_QTypRespectsTagMeaning_axiom`
+- `applyFnTClosure_extern_ok_QTypRespectsTagMeaning`
+- `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning`
 
-*Advantage*: No threading at all. The hypothesis would be derivable on-the-fly.
-*Difficulty*: Requires a separate argument about the initial context and the
-call chain. May not hold for all intermediate contexts (e.g., ite mode 1/2
-inserts matchGuard tags).
+These are the clearest examples of axioms that are unavoidable in principle on
+the current branch. They state that the resolved guard tag attached to an
+extern result has the intended `TagMeaning` interpretation.
 
-**Recommendation**: Option A is the most surgical. The ite mode 1/2 sorry in
-the preservation theorem is the only blocker; it requires formalizing that
-matchGuard-extracted tags are < nextTag (a predicate-tag-bound invariant).
-The `iofree` branch already had `matchGuard_tag_in_bound` as a template.
+### 4.2 FR interpretation of predicates introduced by impure extern effect summaries
 
-### Decision 2: How to fix the Phase 1 sorry (fresh-location contradiction)
+Impure externs can write predicates into memory through their declared
+`effects` at the **typechecking** level. FR needs to know that those written
+predicates are well-interpreted in `TagMeaning`.
 
-The 6 sorry exposed by the `lookup_origin` restatement are in fresh-location
-code paths. The old proofs used `typecheckExpr_clean_lookup_origin_of_pc_true`
-by contrapositive: "location not in input → contradiction with the lemma's
-output." With the `hpre` precondition, this contrapositive is blocked.
+This is **not** an eval-side contract about actual runtime extern execution.
+Because raw extern syntax does not execute on this branch, FR does not need any
+assumption of the form:
 
-The underlying issue: `externVal ref int` can create fresh clean locations
-under `pc = true`. The old axiom (which was false) hid this.
+- "the runtime writes exactly these cells"
+- "the runtime produces exactly these effects"
+- "the runtime return value matches the extern spec"
 
-**Option A: Prove fresh locations under `pc = true` are tainted for non-extern expressions.**
-If the body/branch expression doesn't contain `externVal`, fresh locations
-are always tainted. Add a predicate `noExternVal e` or use the existing
-`pureCtx` flag to restrict.
+What FR does need is weaker and purely typing-side:
 
-*Difficulty*: Requires reasoning about expression structure, not just typing.
+- if extern typing writes a resolved predicate into the post-typing memory
+  summary, the introduced tag must be interpretable enough for
+  `wfTagMeaningCtx`-style reasoning to continue
 
-**Option B: Derive `ctx.memEnv.contains l` from the FR context.**
-The FR proofs reason about locations that exist in the pre-body memory. If
-the location was inherited from the pre-body context, it exists there. For
-truly fresh locations, the FR proof should handle them differently.
+Today that FR-side interpretation requirement is bundled together with
+structural reasoning in:
 
-*Difficulty*: Site-specific. Some sites (StepFRIte) need `res1.memEnv'.contains l`
-which requires `typecheckExpr_mem_contains_preserved` plus `htc1`. The helper
-`hclean_back_to_res1` currently lacks `htc1`.
+- `applyFnTClosure_extern_ok_wfTagMeaningCtx`
 
-**Option C: Restructure the fresh-location proofs.**
-Instead of deriving contradiction, handle the fresh-location case positively:
-show that fresh clean extern-allocated cells satisfy the FR spec directly.
+Conceptually this mixes two pieces:
 
-*Difficulty*: Requires understanding what the FR spec needs for fresh locations.
+1. a **typing-summary interpretation** contract: the resolved effect predicates
+   introduced into the post-typing context have the intended `TagMeaning`
+2. a **structural** proof obligation: once those interpretation facts are
+   assumed, the
+   `LocSet.fold ... updateMemEnv` loop preserves `wfTagMeaningCtx`
 
-**Recommendation**: Option B for StepFRIte and StepFRAssign (thread `htc1`
-through the helpers). Option C may be needed for StepFRApp where the location
-provably doesn't pre-exist.
+Only the first part is principled extern opacity for the current FR proof. The
+second part should be provable.
 
-## Preservation Theorem Status
+### 4.3 Contract floor
 
-`typecheckExpr_preserves_tagEnvBounded` in `TypeSafety.lean` proves that
-`tagEnvBounded` is preserved by the typechecker. Current case coverage:
+After the planned split of the impure-effect bundle, the most defensible
+permanent contract surface is:
 
-| Expression type | Status |
-|----------------|--------|
-| num, bool, unit, str | Proved (tagEnv/nextTag unchanged) |
-| var | Proved |
-| fn, pfn | Proved (tagEnv/nextTag unchanged) |
-| externVal | Proved (tagEnv unchanged, nextTag grows) |
-| externFn, externPfn | Proved (tagEnv/nextTag unchanged) |
-| unaryop, deref | Proved (single sub-expression IH) |
-| op, seq | Proved (two sub-expressions IH) |
-| vlet | Proved |
-| newRef | Proved |
-| assign | Proved (uses `invalidateTagDeps_preserves_tagEnvBounded`) |
-| ite mode 3/4 (standard) | Proved (uses `joinTagEnvs_preserves_tagEnvBounded`) |
-| ite mode 1/2 (guard) | **sorry** — needs `k < ctx.nextTag` for matchGuard tag |
-| app | Proved (uses `typecheckApp_tagEnvBounded_normal`) |
+- definitely the 3 result-side `QTypRespectsTagMeaning` contracts above
+- plus the smaller FR-interpretation contract for impure extern effect
+  predicates that will remain after splitting the current bundle
 
-The 2 remaining sorry both need the same thing: a proof that `matchGuard`
-returns a tag `k < ctx.nextTag`. This requires either:
-- A predicate-tag-bound invariant (all tags in predicates in varEnv/memEnv
-  are < nextTag), or
-- A direct lemma about matchGuard extracting only bounded tags.
+So the likely permanent floor is:
 
-The `iofree` branch had `matchGuard_tag_in_bound` in `StepFRIte.lean` as a
-template for this.
+- **3 core result-side contracts**
+- **plus 1 impure-effect interpretation contract** after splitting the current
+  bundle
 
-## Expected End State
+No parallel `PFnTClosure.extern` effect contract is expected, because the pure
+extern path has no effect list and no memory-summary update loop.
 
-The most plausible long-term outcome is:
+## 5. What Should Be Provable Rather Than Assumed
 
-- the current 11 axioms do **not** represent the true minimum
-- the likely permanent floor is the semantic tag-meaning contract:
-  - `applyFnTClosure_extern_ok_QTypRespectsTagMeaning`
-  - `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning`
-  - `typecheckExternVal_QTypRespectsTagMeaning_axiom`
+Everything below looks like proof engineering, missing local invariants, or
+theorem-shape cleanup, not principled extern opacity.
 
-Everything else should be treated as either:
+These are FR / typing theorems about the summary artifacts created by extern
+typing. They are not claims about executable extern semantics.
 
-- a proof-engineering obligation
-- a missing invariant
-- or a theorem-shape issue that still needs to be restated cleanly
+### 5.1 Guard-tag absence / freshness
 
-## Appendix: Detailed Proof Routes (from original analysis)
+These should be provable from boundedness of the typing context rather than
+axiomatized:
 
-### Effect-loop infrastructure
+- `applyFnTClosure_extern_ok_guardClosure_tag_absent`
+- `applyPFnTClosure_extern_ok_guardClosure_tag_absent`
+- `typecheckExternVal_guardClosure_pred_implies_tag_absent`
 
-`applyFnTClosure_extern_ok_wfTagMeaningCtx`: The semantic split is only the
-first step. The real work is the impure extern effects loop: one must reason
-through the resolved effect predicates written by `LocSet.fold ... updateMemEnv`,
-then lift those writes through the tag-meaning infrastructure. Once one assumes
-the relevant `QTypRespectsTagMeaning` facts for those effect predicates, the
-remaining proof should be structural. Use `EnvRespectsTagMeaning_updateMemEnv`
-and `EnvRespectsTagMeaning_list_fold_updateMemEnv` from `RegimeConsistency.lean`.
+The branch already contains proved replacements:
 
-`applyFnTClosure_extern_wfTypeResult`: Requires the LocSet allocation invariant
-linking captured reference LocSets to allocated memory locations. The `iofree`
-branch had `locset_fold_max_ge_init`, `locset_fold_max_succ_ge_of_mem`, and
-`locset_fold_updateMemEnv_preserves_contains` as local helpers.
+- `applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded`
+- `applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded`
+- `typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded`
 
-`applyFnTClosure_extern_ok_fresh_loc_not_clean`: Likely collapses once the
-LocSet invariant shows effect-loop writes only touch already-allocated
-locations. The regular-case template is
-`applyFnTClosure_fresh_lookup_not_clean_of_p1p_true` in `StepFRApp.lean`.
+The missing bridge is a proof that successful `matchGuard` returns a tag below
+`ctx.nextTag` once top-level predicate tags in the context are bounded.
 
-### Provenance
+### 5.2 Structural well-formedness for impure extern application
 
-`applyFnTClosure_extern_ok_lookup_origin`: Genuinely hard. The effects loop
-can update memory at multiple reference targets from the captured environment.
-Needs: "all writes come from these effect targets" + provenance back to
-already-originating memory. Better treated as a dedicated task after simpler
-invariants are in place.
+These should become structural consequences of an explicit captured-locset
+allocation invariant:
 
-`typecheckExternVal_preserves_lookup_origin_axiom`: Restated (no longer false).
-The `iofree` branch warned this was partly a theorem-shape issue. Further work
-should focus on the restated version.
+- `applyFnTClosure_extern_wfTypeResult`
+- `applyFnTClosure_extern_ok_fresh_loc_not_clean`
 
-### iofree branch references
+The key observation is that `returnSpecToQTyp` rejects reference returns for
+extern functions. So impure extern application can only affect memory through
+the effects loop. If all captured `ETyp.ref ls` locsets are already allocated
+in `result2.memEnv'`, then the effects loop does not introduce fresh keys.
 
-- `predTagsBoundedInCtx` in `iofree:LeanProofs/StepFR.lean` — old bounded-tags
-  invariant (architecture-specific, don't copy literally)
-- `matchGuard_tag_in_bound` in `iofree:LeanProofs/StepFRIte.lean` — bridge
-  from matchGuard to bounded tag
-- `collectAndAllocExternTags_nextTag_ge` and `typecheckExternVal_nextTag_mono`
-  in `iofree:LeanProofs/TypeSafety.lean` — fresh-tag monotonicity templates
-  (already ported to this branch)
-- `QTypRespectsTagMeaning_fn_extern` and `QTypRespectsTagMeaning_pfn_extern`
-  in `LeanProofs/RegimeConsistency.lean` — captured-environment tag-meaning
-  helpers (already available on this branch)
-- `EnvRespectsTagMeaning_updateMemEnv` in `RegimeConsistency.lean` — key
-  building block for effect-loop tag-meaning proofs (already available)
+This is one-sided because `PFnTClosure.extern` has no `effects` list. The pure
+extern path does not update `memEnv'`, and current structural lemmas such as
+`applyPFnTClosure_extern_memEnv_eq`, `applyPFnTClosure_extern_tagEnv_eq`, and
+`applyPFnTClosure_extern_regime_eq` already reflect that. So the effect-loop
+obligations appear only on the `FnTClosure.extern` side.
+
+### 5.3 Provenance / lookup-origin facts
+
+These should be proved from explicit freshness and type-level effect-loop provenance
+facts:
+
+- `typecheckExternVal_preserves_lookup_origin_axiom`
+- `applyFnTClosure_extern_ok_lookup_origin`
+
+The extern-value theorem needs a stronger statement than it currently has.
+Adding `hpre : ctx.memEnv.contains l` removed one false shape, but the theorem
+is still false on arbitrary contexts unless freshness of `ctx.nextLoc` is
+assumed. The natural premise is `wfTypeContext ctx`, or an equivalent
+fresh-location hypothesis.
+
+The impure-extern application theorem is harder: it needs a precise account of
+which effect targets may be written by the typing summary, plus provenance back
+to already-originating memory.
+
+## 6. Known Theorem-Shape Issues
+
+These are not merely unfinished proofs. The current statements are too strong.
+
+### 6.1 `StepFRApp`: regular closures may allocate fresh clean extern refs
+
+The theorem
+
+- `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
+
+is false for the regular-closure case. A concrete counterexample is:
+
+```lean
+FnTClosure.regular "x" (Expr.externVal (Typ.ref Typ.int) false SyntaxPredicate.noPred) []
+```
+
+applied with `joinPoison p1 p = true`.
+
+What happens:
+
+- the body context has `pc = true`
+- `typecheckExternVal` allocates a fresh memory cell `⟨ETyp.int, false, noPred⟩`
+- `normalizeAppResultByProvenance` poisons the result `qualType`, but it does
+  not poison that fresh memory cell
+
+So the theorem must be restated or split. This is not a proof-search problem.
+
+This is specifically an extern regression relative to `main`: on `main`, the
+`ioFree` typing path rejected externs, so FR never had to consider regular
+closure bodies that allocate fresh clean memory through `externVal ref int`.
+
+### 6.2 `StepFRIte`: branch-fresh clean extern refs can survive the join
+
+The local helper `hclean_back_to_res1` inside `stepFR_ite_standard` tries to send every
+clean final location back to `res1.memEnv'`.
+
+That is too strong in the standard join mode. Both branches may allocate fresh
+clean `externVal ref int` cells, and `joinMemEnvsStrong` preserves those
+single-sided cells with `noPred`.
+
+So the current helper should be replaced by a case split:
+
+- inherited locations: send them back through
+  `typecheckExpr_clean_lookup_origin_of_pc_true`
+- branch-fresh extern allocations: prove the FR obligation directly, without
+  forcing an origin in `res1`
+
+The four actual `sorry`s are not in the statement of `hclean_back_to_res1`
+itself. They occur in the downstream calls to
+`typecheckExpr_clean_lookup_origin_of_pc_true` inside the helper. The reason
+those calls become unprovable is exactly that the helper route is trying to send
+all clean final locations back through `res1`.
+
+Why this is specifically extern-related:
+
+- on `main`, the `ioFree` typing path rejected externs, so FR never had to
+  reason about fresh clean cells introduced by extern typing
+- before externs mattered on the FR path, fresh branch-local locations came
+  mainly from ordinary `newRef`
+- under `pc = true`, `newRef` stores a poisoned cell, so those fresh locations
+  were not clean
+- `externVal ref int` behaves differently: it allocates a fresh memory cell
+  `⟨ETyp.int, false, Predicate.noPred⟩`
+- the returned reference value may be control-poisoned, but the allocated
+  memory cell itself is clean
+- `joinMemEnvsStrong` can therefore preserve branch-fresh clean cells that do
+  not come from `res1.memEnv'`
+
+So the `stepFR_ite_standard` regression is a direct consequence of allowing extern
+typing summaries on the FR path.
+
+### 6.3 `typecheckExternVal_preserves_lookup_origin_axiom` still needs a freshness premise
+
+If `ctx.nextLoc` already collides with an existing memory key, then
+`externVal ref int` can overwrite that pre-existing key with a fresh clean
+cell. So the current statement is still false on arbitrary ill-formed contexts.
+
+This should be fixed by strengthening the theorem shape, not by adding more
+case-by-case proof plumbing downstream.
+
+### 6.4 `matchGuard` boundedness is about extern-allocated tags
+
+The remaining `matchGuard` proof gap is also extern-related, but through fresh
+tags rather than fresh locations.
+
+`matchGuard` does not invent tags. It only returns a tag already present in a
+predicate stored in:
+
+- `ctx.varEnv`, or
+- `ctx.memEnv`
+
+This is specifically an extern regression relative to `main`: on `main`, the
+`ioFree` typing path rejected externs, so FR never had to reason about fresh
+concrete tags allocated from extern syntax predicates.
+
+The fresh tags appearing in those predicates come from the extern typing
+pipeline:
+
+```lean
+collectAndAllocExternTags
+  -> resolveSyntaxPred
+  -> typecheckExternVal / applyFnTClosure extern / applyPFnTClosure extern
+```
+
+So the real missing fact is:
+
+- if a predicate tag currently appears in `ctx.varEnv` or `ctx.memEnv`, and
+  that tag originated from extern allocation, then it is still below
+  `ctx.nextTag`
+
+This is exactly what is needed to finish the `tagEnvBounded` route:
+
+- the proved `*_of_tagEnvBounded` lemmas show that tags `>= nextTag` are absent
+  from `tagEnv`
+- `matchGuard` returns a tag extracted from predicates in `varEnv` / `memEnv`
+- therefore we need a bridge from "returned by `matchGuard`" to
+  "`< ctx.nextTag`"
+
+That bridge became necessary only because extern typing now allocates fresh
+concrete tags on the FR path.
+
+The old `iofree` branch phrased a related result against `ctx.regime.bound`.
+The current branch instead needs a `< ctx.nextTag` bound, because the active
+proof route is based on:
+
+- `collectAndAllocExternTags_mapping_values_ge`
+- `tagEnvBounded_get_none_of_ge`
+
+Both are stated in terms of the fresh-tag supply `nextTag`. The current branch
+does not carry the old `regime.bound`-based interface.
+
+## 7. Implementation Constraints
+
+### 7.1 Boundary rule: no invariant leakage into FR
+
+The last failed direction on this branch was to make a useful local typing
+invariant available by threading it through FR-facing helper interfaces. That
+should not be repeated. The relevant rollback is commit `f43c3b8`
+("removed invariant leak to FR").
+
+For this document, the operative rule is:
+
+- local typing invariants may be introduced and proved inside `TypeSafety.lean`
+- they may be consumed by local helper lemmas in files such as
+  `StepFRAssign.lean`
+- they must **not** become part of:
+  - `StepFR`
+  - `StepFR_IH`
+  - `FaultRobustnessSpec`
+  - the statement of the top-level FR theorem
+
+So, for example, `tagEnvBounded` is acceptable as:
+
+- a premise to a proved replacement lemma such as
+  `*_of_tagEnvBounded`
+- a local hypothesis in a helper below `StepFR`
+
+but not as:
+
+- a new field in the main FR abstraction
+- a new hypothesis threaded through the step theorem interface
+
+Every proposed invariant should therefore be classified before implementation:
+
+1. Is it purely typechecker-local?
+2. Can it be derived on demand from existing typing results?
+3. Can it be consumed entirely below `StepFR`?
+
+If the answer to (3) is "no", the plan should be rejected or restated.
+
+## 8. Plan
+
+High-risk-first is the intended order.
+
+### 8.1 Phase 1. Repair theorem shapes first
+
+Before investing in more plumbing, repair the statements that are currently too
+strong:
+
+1. restate or split `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
+2. replace the `stepFR_ite_standard` back-to-`res1` route with an
+   inherited/fresh split
+3. strengthen `typecheckExternVal_preserves_lookup_origin_axiom` with
+   `wfTypeContext ctx` or an equivalent freshness premise
+4. finish `assign_final_clean_preservation` by deriving the required
+   pre-existence fact from the inherited input lookup together with
+   `typecheckExpr_mem_contains_preserved`
+
+This is the highest-risk work because it can invalidate later proof plans if
+left unresolved.
+
+### 8.2 Phase 2. Finish the `tagEnvBounded` path without touching `StepFR`
+
+The intended route is:
+
+1. prove a `matchGuard`-bound bridge usable from `TypeSafety.lean`
+2. add a local predicate-tag-bounded invariant at the typechecker level, with
+   shape
+   `((∀ x qt k, ctx.varEnv.lookup x = some qt → qtypGuardTag qt = some k → k < ctx.nextTag) ∧
+     (∀ l qt k, ctx.memEnv.lookup l = some qt → qtypGuardTag qt = some k → k < ctx.nextTag))`
+   and keep it entirely below `StepFR`
+3. finish the two `ite` mode 1/2 `sorry`s in
+   `typecheckExpr_preserves_tagEnvBounded_main`, thereby completing the public
+   theorem `typecheckExpr_preserves_tagEnvBounded`
+4. thread `tagEnvBounded` only through local helper lemmas such as:
+   - `ioFree_guardClosure_pred_implies_tag_absent`
+   - `typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent`
+   - `typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent`
+5. replace the three guard-tag-absence axioms with the existing proved
+   alternatives:
+   - `applyFnTClosure_extern_ok_guardClosure_tag_absent`
+   - `applyPFnTClosure_extern_ok_guardClosure_tag_absent`
+   - `typecheckExternVal_guardClosure_pred_implies_tag_absent`
+
+This stays within the user constraint: no new `StepFR` invariant.
+
+Phase dependencies inside this phase are:
+
+- 8.2.1 + 8.2.2 → 8.2.3
+- 8.2.3 → 8.2.4
+- 8.2.4 → 8.2.5
+
+### 8.3 Phase 3. Make the captured-locset allocation invariant explicit
+
+For impure externs, the key missing invariant is:
+
+- every location in a captured `ETyp.ref ls` is already present in
+  `result2.memEnv'`
+
+Once this is formalized, it should unlock:
+
+- `applyFnTClosure_extern_wfTypeResult`
+- vacuity of `applyFnTClosure_extern_ok_fresh_loc_not_clean`
+- a cleaner proof path for `applyFnTClosure_extern_ok_lookup_origin`
+
+Do not confuse the extern-only axiom
+`applyFnTClosure_extern_ok_fresh_loc_not_clean` with the broader
+`StepFRApp` theorem-shape issue
+`applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`. The former is an
+extern-only typing-summary obligation; the latter is a current false statement
+about all closure applications.
+
+### 8.4 Phase 4. Split the impure-effect extern bundle
+
+The current bundled axiom
+
+- `applyFnTClosure_extern_ok_wfTagMeaningCtx`
+
+should be split as planned into:
+
+1. FR-interpretation assumptions for effect predicates
+2. structural fold/update lemmas proving preservation of `wfTagMeaningCtx`
+
+This split is intended to be **internal** to the extern helper layer:
+
+- `StepFR`
+- `StepFR_IH`
+- `FaultRobustnessSpec`
+- the top-level FR theorem interface
+
+should remain unchanged. In other words, the split should live in lemmas below
+these interfaces, not in the interfaces themselves.
+
+The old shape of `applyFnTClosure_extern_ok_wfTagMeaningCtx` should then be
+recovered as a proved wrapper lemma from the smaller ingredients. That leaves
+the long-term extern contract surface closer to the true FR contract minimum
+without repeating the invariant-leak error.
+
+## 9. Useful References
+
+These `iofree` references are useful as proof templates, but the current branch
+should reuse only the specific lemma shapes it needs:
+
+These names exist only on the `iofree` branch; they will not appear in a grep
+of the current `new-iofree` checkout.
+
+- `iofree:LeanProofs/StepFRIte.lean`
+  - `matchGuard_tag_in_bound`
+- `iofree:LeanProofs/StepFR.lean`
+  - `predTagsBoundedInCtx`
+- `iofree:LeanProofs/TypeSafety.lean`
+  - `collectAndAllocExternTags_nextTag_ge`
+  - `typecheckExternVal_nextTag_mono`
+
+The old `predTagsBoundedInCtx` route was explicitly deleted on this branch in
+commit `2062907`. Phase 8.2 uses a different route: a local predicate-tag bound
+relative to `ctx.nextTag`, combined with `tagEnvBounded`.
+
+Current-branch helpers already available:
+
+- `LeanProofs/RegimeConsistency.lean`
+  - `EnvRespectsTagMeaning_updateMemEnv`
+  - `EnvRespectsTagMeaning_list_fold_updateMemEnv`
+  - `QTypRespectsTagMeaning_fn_extern`
+  - `QTypRespectsTagMeaning_pfn_extern`
