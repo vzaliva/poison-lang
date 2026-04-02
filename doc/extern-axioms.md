@@ -43,7 +43,8 @@ Raw extern syntax is operationally unreachable in the current evaluator:
 
 all produce runtime errors in `LeanPoison/BigStep.lean`.
 
-So the remaining extern proof surface is entirely on the **typing** side:
+So the remaining extern proof surface concerns **typing-layer artifacts and the
+FR witness maps built for them**, rather than runtime execution:
 
 1. `typecheckExternVal`
 2. `applyFnTClosure` on `FnTClosure.extern`
@@ -57,7 +58,8 @@ These typing functions:
 - and, for impure externs, update memory through the declared effects
 
 The FR proof must therefore reason about the typing artifacts created by extern
-specs even though the runtime never evaluates raw extern expressions.
+specs, and about how the single-run witness maps realize those artifacts, even
+though the runtime never evaluates raw extern expressions.
 
 No eval-side extern contract is currently required. All remaining extern
 assumptions on this branch are about the **typing summary layer**, not about
@@ -76,20 +78,20 @@ As of **2026-04-02** on `new-iofree`:
 
 - `lake build` succeeds
 - the current proof-gap inventory is:
-  - **8 `sorry`** statements in **4 declarations**
+  - **7 `sorry`** statements in **3 declarations**
   - **11 explicit `axiom`** declarations
     - 10 in `LeanProofs/StepFR.lean`
     - 1 in `LeanProofs/TypeSafety.lean`
-- so the branch currently has **19 proof gaps** total
+- so the branch currently has **18 proof gaps** total
 - only a small subset of the 11 axioms should survive as actual axioms; the
   rest should be treated as provisional proof gaps that still need proofs
 - the current build warnings point at exactly these declarations:
   - `typecheckExpr_preserves_tagEnvBounded_main`
-  - `assign_final_clean_preservation`
   - `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
   - `stepFR_ite_standard`
 - this is a snapshot of the branch at that date; the counts should be re-checked
   after proof edits
+- `assign_final_clean_preservation` is already resolved on the current branch
 
 Build warnings only report the `sorry` declarations. The `axiom` declarations
 must therefore be tracked separately in the document.
@@ -124,7 +126,6 @@ The `Status` column below uses this convention:
 |------|-------------|-------|------------|
 | `TypeSafety.lean` | `typecheckExpr_preserves_tagEnvBounded_main` | 2 | Real proof gap in `ite` mode 1/2; the public theorem `typecheckExpr_preserves_tagEnvBounded` delegates to this `_main` proof |
 | `StepFRIte.lean` | `stepFR_ite_standard` | 4 | Current local helper route is likely too strong |
-| `StepFRAssign.lean` | `assign_final_clean_preservation` | 1 | Likely ordinary plumbing |
 | `StepFRApp.lean` | `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true` | 1 | Current theorem shape is false |
 
 ## 4. What Must Be Assumed About Extern Functions For FR
@@ -210,7 +211,8 @@ Everything below looks like proof engineering, missing local invariants, or
 theorem-shape cleanup, not principled extern opacity.
 
 These are FR / typing theorems about the summary artifacts created by extern
-typing. They are not claims about executable extern semantics.
+typing, and about the witness maps chosen by the existing single-run FR
+theorem. They are not claims about executable extern semantics.
 
 ### 5.1 Guard-tag absence / freshness
 
@@ -338,7 +340,44 @@ Why this is specifically extern-related:
 So the `stepFR_ite_standard` regression is a direct consequence of allowing extern
 typing summaries on the FR path.
 
-### 6.3 `typecheckExternVal_preserves_lookup_origin_axiom` still needs a freshness premise
+### 6.3 The remaining issue-1 fix is not purely typing-local
+
+The obvious local replacement route for issue 1 was:
+
+- classify a clean post-typing logical location as either inherited, or
+  branch/body-fresh from `externVal ref int`
+- then handle the fresh case by showing it is unrealized on both runs
+
+That idea is still directionally correct, but it cannot be discharged by a
+purely typing-local lemma.
+
+Why:
+
+- the existing single-run theorem only gives
+  `PreservesInheritedFinalCleanLocsOneRun`
+- that relation talks only about clean locations that were already present in
+  the input typing context
+- it says nothing about fresh clean logical locations introduced by extern
+  typing summaries
+
+So the remaining `StepFRApp` / `StepFRIte` work needs a new **internal
+single-run sidecar theorem** below `StepFR`, describing how the chosen witness
+map `θ'` treats fresh clean extern-ref logical locations.
+
+The generic strengthening
+
+- "every fresh clean output location is unrealized in `θ'`"
+
+cannot be added to the global single-run theorem, because it is false for
+`newRef`: `newRef` intentionally creates and realizes a fresh logical location.
+
+So the required next theorem must be:
+
+- internal
+- specific to the extern-ref issue
+- and kept below `StepFR`, `StepFR_IH`, and the top-level FR interface
+
+### 6.4 `typecheckExternVal_preserves_lookup_origin_axiom` still needs a freshness premise
 
 If `ctx.nextLoc` already collides with an existing memory key, then
 `externVal ref int` can overwrite that pre-existing key with a fresh clean
@@ -347,7 +386,7 @@ cell. So the current statement is still false on arbitrary ill-formed contexts.
 This should be fixed by strengthening the theorem shape, not by adding more
 case-by-case proof plumbing downstream.
 
-### 6.4 `matchGuard` boundedness is about extern-allocated tags
+### 6.5 `matchGuard` boundedness is about extern-allocated tags
 
 The remaining `matchGuard` proof gap is also extern-related, but through fresh
 tags rather than fresh locations.
@@ -437,6 +476,11 @@ Every proposed invariant should therefore be classified before implementation:
 
 If the answer to (3) is "no", the plan should be rejected or restated.
 
+The same rule applies to single-run helper theorems:
+
+- strengthening the global single-run theorem interface is not acceptable
+- adding a new sidecar single-run theorem below `StepFR` is acceptable
+
 ## 8. Plan
 
 High-risk-first is the intended order.
@@ -449,11 +493,12 @@ strong:
 1. restate or split `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
 2. replace the `stepFR_ite_standard` back-to-`res1` route with an
    inherited/fresh split
-3. strengthen `typecheckExternVal_preserves_lookup_origin_axiom` with
+3. add an internal single-run sidecar theorem for the fresh extern-ref case:
+   fresh clean logical locations introduced by extern typing summaries are
+   handled by the chosen witness map `θ'` without changing the `StepFR`
+   interface
+4. strengthen `typecheckExternVal_preserves_lookup_origin_axiom` with
    `wfTypeContext ctx` or an equivalent freshness premise
-4. finish `assign_final_clean_preservation` by deriving the required
-   pre-existence fact from the inherited input lookup together with
-   `typecheckExpr_mem_contains_preserved`
 
 This is the highest-risk work because it can invalidate later proof plans if
 left unresolved.
