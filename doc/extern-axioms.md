@@ -18,10 +18,19 @@ state of this branch rather than the earlier migration attempt.
 As of the current repository state:
 
 - `lake build` succeeds
-- `LeanProofs/` contains **0** `sorry`
-- there are **11 explicit axiom declarations**
-  - 10 in `LeanProofs/StepFR.lean`
+- `LeanProofs/` contains **9** `sorry` statements (in 6 declarations)
+  - 6 exposed by the `typecheckExternVal_preserves_lookup_origin_axiom` restatement
+  - 3 providing `tagEnvBounded` at axiom-replacement consumption sites
+- there are **8 explicit axiom declarations**
+  - 7 in `LeanProofs/StepFR.lean`
   - 1 in `LeanProofs/TypeSafety.lean`
+- 3 former axioms have been **proved** as lemmas:
+  - `typecheckExternVal_guardClosure_pred_implies_tag_absent` (from `tagEnvBounded`)
+  - `applyFnTClosure_extern_ok_guardClosure_tag_absent` (from `tagEnvBounded`)
+  - `applyPFnTClosure_extern_ok_guardClosure_tag_absent` (from `tagEnvBounded`)
+- 1 former axiom has been **split** into a proved lemma + a foundational axiom:
+  - `typecheckExternVal_preserves_wfTagMeaningCtx` (proved structural half)
+  - `typecheckExternVal_QTypRespectsTagMeaning_axiom` (semantic axiom)
 
 This is a substantial improvement over the old `iofree` branch, which still had
 two `sorry`s in `StepFRIte.lean` plus a larger extern axiom surface. In
@@ -37,11 +46,11 @@ The current 11 axioms are:
 | `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | `StepFR.lean` | Foundational semantic extern contract |
 | `applyFnTClosure_extern_ok_lookup_origin` | `StepFR.lean` | Likely provable, but requires new effect-loop provenance reasoning |
 | `applyFnTClosure_extern_ok_fresh_loc_not_clean` | `StepFR.lean` | Likely provable or vacuous from LocSet allocation invariant |
-| `applyFnTClosure_extern_ok_guardClosure_tag_absent` | `StepFR.lean` | Likely provable from bounded-tags invariant |
-| `applyPFnTClosure_extern_ok_guardClosure_tag_absent` | `StepFR.lean` | Likely provable from bounded-tags invariant |
+| ~~`applyFnTClosure_extern_ok_guardClosure_tag_absent`~~ | `StepFR.lean` | **PROVED** from `tagEnvBounded` + `collectAndAllocExternTags_mapping_values_ge` |
+| ~~`applyPFnTClosure_extern_ok_guardClosure_tag_absent`~~ | `StepFR.lean` | **PROVED** from `tagEnvBounded` + `collectAndAllocExternTags_mapping_values_ge` |
 | `typecheckExternVal_QTypRespectsTagMeaning_axiom` | `StepFR.lean` | Foundational semantic extern contract (split from bundled axiom) |
 | `typecheckExternVal_preserves_lookup_origin_axiom` | `StepFR.lean` | False as written for `ref int`; must be restated before proof work continues |
-| `typecheckExternVal_guardClosure_pred_implies_tag_absent` | `StepFR.lean` | Likely provable from bounded-tags invariant |
+| ~~`typecheckExternVal_guardClosure_pred_implies_tag_absent`~~ | `StepFR.lean` | **PROVED** from `tagEnvBounded` + `collectAndAllocExternTags_mapping_values_ge` |
 | `applyFnTClosure_extern_wfTypeResult` | `TypeSafety.lean` | Likely provable from LocSet allocation invariant |
 
 ## Why Extern Obligations Remain

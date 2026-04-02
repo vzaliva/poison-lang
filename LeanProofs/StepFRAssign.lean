@@ -1126,8 +1126,8 @@ private lemma typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent
                                         simpa [hfirstEq] using hnone3
                 | extern x retSpec effects capturedEnv =>
                     exact applyFnTClosure_extern_ok_guardClosure_tag_absent ctx st1 st2 p p1
-                      etyp2 p2 pred2 result1 fuel' x retSpec effects capturedEnv first happly
-                      k arg_name pred_body var_env hfirstPredQ
+                      etyp2 p2 pred2 result1 fuel' x retSpec effects capturedEnv first
+                      (by sorry) happly k arg_name pred_body var_env hfirstPredQ
               have hjoinedTagNone : joined.2.2.2.2.1.get? k = none := by
                 have htag_none_of_fold :
                     ∀ (rest : List TypeResult)
@@ -1424,8 +1424,8 @@ private lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
                                         simpa [hfirstEq] using hnone3
                 | extern x retSpec capturedEnv =>
                     exact applyPFnTClosure_extern_ok_guardClosure_tag_absent ctx st1 st2 p p1
-                      etyp2 p2 pred2 result1 fuel' x retSpec capturedEnv first happly
-                      k arg_name pred_body var_env hfirstPredQ
+                      etyp2 p2 pred2 result1 fuel' x retSpec capturedEnv first
+                      (by sorry) happly k arg_name pred_body var_env hfirstPredQ
               have hjoinedTagNone : joined.2.2.2.2.1.get? k = none := by
                 have htag_none_of_fold :
                     ∀ (rest : List TypeResult)
@@ -1633,7 +1633,7 @@ private lemma ioFree_guardClosure_pred_implies_tag_absent
           have htc' : typecheckExternVal ctx typ poison pred = .ok res := by
             simpa [typecheckExpr, typecheck] using htc
           exact typecheckExternVal_guardClosure_pred_implies_tag_absent ctx typ poison pred res
-            htc' k arg_name pred_body var_env hpred
+            htc' (by sorry) k arg_name pred_body var_env hpred
       | externFn _ _ _ _ =>
           exfalso
           have htc' := htc

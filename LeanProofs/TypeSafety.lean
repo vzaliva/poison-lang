@@ -4191,6 +4191,26 @@ lemma applyFnTClosure_extern_regime_eq
   (applyFnTClosure_extern_field_eq_aux ctx st1 st2 p p1 argEtyp argPoison argPred r1 r2
     fuel x retSpec effects capturedEnv happly).2
 
+/-- All tags in the tagEnv are strictly below nextTag. This is a typechecker invariant
+    that ensures freshly allocated tags (from collectAndAllocExternTags) are absent from
+    the tagEnv. -/
+def tagEnvBounded (tagEnv : TagEnv) (nextTag : Tag) : Prop :=
+  ∀ k, tagEnv.get? k ≠ none → k < nextTag
+
+/-- Context-level version: the tagEnv is bounded by nextTag. -/
+abbrev tagEnvBoundedInCtx (ctx : TypeContext) : Prop :=
+  tagEnvBounded ctx.tagEnv ctx.nextTag
+
+/-- If all tags in tagEnv are < nextTag and k ≥ nextTag, then k is absent from tagEnv. -/
+lemma tagEnvBounded_get_none_of_ge
+    (tagEnv : TagEnv) (nextTag : Tag) (k : Tag)
+    (hbound : tagEnvBounded tagEnv nextTag)
+    (hge : k ≥ nextTag) :
+    tagEnv.get? k = none := by
+  by_contra h
+  have hlt := hbound k h
+  exact absurd hge (Nat.not_le.mpr hlt)
+
 /-- Helper: the tag-allocating forIn loop in collectAndAllocExternTags never decreases the tag counter. -/
 private lemma forIn_tag_incr_ge
     (L : List (TagIndex × Name × Expr))
@@ -4230,6 +4250,58 @@ lemma collectAndAllocExternTags_nextTag_ge (preds : List SyntaxPredicate) (t : T
         have htagEq := (Prod.mk.inj heq).2
         rw [← htagEq]
         exact forIn_tag_incr_ge v.snd ∅ t result hpass3
+
+/-- Helper: all values in the mapping produced by the forIn loop in
+    collectAndAllocExternTags are ≥ the base tag. -/
+private lemma forIn_tag_mapping_values_ge
+    (L : List (TagIndex × Name × Expr))
+    (init_map : ExtTreeMap TagIndex Tag compare) (init_tag base_tag : Tag)
+    (r : MProd (ExtTreeMap TagIndex Tag compare) Tag)
+    (hbase : base_tag ≤ init_tag)
+    (hinit : ∀ (idx : TagIndex) (tag : Tag), init_map.get? idx = some tag → base_tag ≤ tag)
+    (h : (forIn L ⟨init_map, init_tag⟩
+      (fun (x : TagIndex × Name × Expr) (r : MProd (ExtTreeMap TagIndex Tag compare) Tag) =>
+        (Except.ok (ForInStep.yield ⟨r.fst.insert x.1 r.snd, r.snd + 1⟩) : Except String _))
+      = Except.ok r)) :
+    ∀ (idx : TagIndex) (tag : Tag), r.fst.get? idx = some tag → base_tag ≤ tag := by
+  induction L generalizing init_map init_tag with
+  | nil =>
+    simp only [forIn, List.forIn'_nil, pure, Except.pure, Except.ok.injEq] at h
+    cases h; exact hinit
+  | cons hd tl ih =>
+    simp only [forIn, List.forIn'_cons, bind, Except.bind] at h
+    apply ih (init_map.insert hd.1 init_tag) (init_tag + 1) (Nat.le_trans hbase (Nat.le_succ _)) _ h
+    intro idx tag hget
+    rw [ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert] at hget
+    split at hget
+    · exact (Option.some.inj hget).symm ▸ hbase
+    · rw [← ExtTreeMap.get?_eq_getElem?] at hget; exact hinit idx tag hget
+
+/-- All concrete tags in the mapping produced by collectAndAllocExternTags are ≥ the input nextTag. -/
+lemma collectAndAllocExternTags_mapping_values_ge (preds : List SyntaxPredicate) (t : Tag)
+    (map : ExtTreeMap TagIndex Tag) (t' : Tag)
+    (htc : collectAndAllocExternTags preds t = .ok (map, t'))
+    (idx : TagIndex) (tag : Tag)
+    (hget : map.get? idx = some tag) :
+    t ≤ tag := by
+  unfold collectAndAllocExternTags at htc
+  simp only [bind, Except.bind, pure, Except.pure] at htc
+  revert htc
+  split
+  · intro h; exact absurd h Except.noConfusion
+  · rename_i v _
+    split
+    · intro h; exact absurd h Except.noConfusion
+    · split
+      · intro h; exact absurd h Except.noConfusion
+      · rename_i result hpass3
+        intro htc
+        have heq := Except.ok.inj htc
+        have hmapEq := (Prod.mk.inj heq).1
+        rw [← hmapEq] at hget
+        refine forIn_tag_mapping_values_ge v.snd ∅ t t result (Nat.le_refl _) ?_ hpass3 idx tag hget
+        intro idx' tag' hget'
+        simp [ExtTreeMap.get?_eq_getElem?] at hget'
 
 section typecheck_nextTag_normal_mono_proof
 

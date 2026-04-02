@@ -6159,31 +6159,179 @@ axiom applyFnTClosure_extern_ok_fresh_loc_not_clean
   (hlookup_out : r.memEnv'.lookup l = some qt) :
   ¬ qtypCleanUnder r.regime' qt
 
-/-- Extern contract: FnTClosure.extern guard tag is absent from tagEnv. -/
-axiom applyFnTClosure_extern_ok_guardClosure_tag_absent
+/-- Helper: if resolveSyntaxPred produces a guardClosure predicate, the tag came from the mapping. -/
+private lemma resolveSyntaxPred_guardClosure_tag_from_mapping
+    (pred : SyntaxPredicate) (varEnv : VarTypeEnv)
+    (mapping : Std.ExtTreeMap TagIndex Tag compare) (resolvedPred : Predicate)
+    (hresolve : resolveSyntaxPred pred varEnv mapping = .ok resolvedPred)
+    (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
+    (hpred : resolvedPred = Predicate.guardClosure k arg_name pred_body var_env) :
+    ∃ (idx : TagIndex), mapping.get? idx = some k := by
+  cases pred with
+  | noPred =>
+    simp [resolveSyntaxPred, pure, Except.pure] at hresolve
+    simp [← hresolve] at hpred
+  | guardOnly idx =>
+    simp only [resolveSyntaxPred] at hresolve
+    split at hresolve
+    · simp [pure, Except.pure] at hresolve; simp [← hresolve] at hpred
+    · simp at hresolve
+  | guardClosure idx arg body =>
+    simp only [resolveSyntaxPred, bind, Except.bind] at hresolve
+    split at hresolve
+    · rename_i tag htag
+      cases htoPExpr : body.toPExpr with
+      | error e => simp [htoPExpr] at hresolve
+      | ok pbody =>
+        simp only [htoPExpr, pure, Except.pure, Except.ok.injEq] at hresolve
+        rw [← hresolve] at hpred
+        have htageq : tag = k := ((Predicate.guardClosure.injEq _ _ _ _ _ _ _ _).mp hpred).1
+        exact ⟨idx, htageq ▸ htag⟩
+    · simp at hresolve
+
+/-- Helper: returnSpecToQTyp preserves the predicate of the result QTyp. -/
+private lemma returnSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (pred : Predicate)
+    (nextLoc : Loc) (qt : QTyp) (nextLoc' : Loc)
+    (h : returnSpecToQTyp typ poison pred nextLoc = .ok (qt, nextLoc')) :
+    qt.pred = pred := by
+  unfold returnSpecToQTyp at h
+  simp only [bind, Except.bind, pure, Except.pure] at h
+  cases typ with
+  | int => simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact h.1 ▸ rfl
+  | bool => simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact h.1 ▸ rfl
+  | unit => simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact h.1 ▸ rfl
+  | string => simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact h.1 ▸ rfl
+  | ref _ => simp at h
+  | arrow _ _ => simp at h
+
+/-- Extern contract: FnTClosure.extern guard tag is absent from tagEnv.
+    Requires tagEnvBounded result2.tagEnv' result2.nextTag', ensuring freshly allocated
+    tags (≥ result2.nextTag') are absent from the tagEnv. -/
+lemma applyFnTClosure_extern_ok_guardClosure_tag_absent
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat)
   (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
   (r : TypeResult)
+  (hbound : tagEnvBounded result2.tagEnv' result2.nextTag')
   (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
     argEtyp argPoison argPred ctx result2 fuel = .ok r)
   (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
   (hpred : r.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
-  r.tagEnv'.get? k = none
+  r.tagEnv'.get? k = none := by
+  have htagEq : r.tagEnv' = result2.tagEnv' :=
+    applyFnTClosure_extern_tagEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred result2 r fuel
+      x retSpec effects capturedEnv happly
+  rw [htagEq]
+  suffices hge : result2.nextTag' ≤ k from
+    tagEnvBounded_get_none_of_ge result2.tagEnv' result2.nextTag' k hbound hge
+  unfold applyFnTClosure at happly
+  cases fuel with
+  | zero => simp at happly
+  | succ n =>
+    simp only [bind, Except.bind] at happly
+    split at happly
+    · exact Except.noConfusion happly
+    · rename_i allocRes hcollect
+      split at happly
+      · exact Except.noConfusion happly
+      · rename_i memEnv' _
+        split at happly
+        · -- ExternReturn.simple
+          rename_i typ_ poison_ retpred_
+          split at happly
+          · exact Except.noConfusion happly
+          · rename_i resolvedPred hresolve
+            split at happly
+            · exact Except.noConfusion happly
+            · rename_i retQtPair hretQt
+              simp only [pure, Except.pure, Except.ok.injEq] at happly
+              rw [← happly] at hpred
+              simp only [normalizeAppResultByProvenance] at hpred
+              split at hpred
+              · simp at hpred
+              · obtain ⟨tagMapping, nextTag'⟩ := allocRes
+                have hretPred : retQtPair.1.pred = resolvedPred :=
+                  returnSpecToQTyp_pred_eq typ_ poison_ resolvedPred _ _ _ hretQt
+                rw [hretPred] at hpred
+                obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
+                  retpred_ _ tagMapping resolvedPred hresolve k arg_name pred_body var_env hpred
+                exact collectAndAllocExternTags_mapping_values_ge
+                  (collectExternPreds (ExternReturn.simple typ_ poison_ retpred_) effects)
+                  result2.nextTag' tagMapping nextTag' hcollect idx k hidx
+        · -- ExternReturn.nestedFn: predicate is always noPred
+          simp only [pure, Except.pure, Except.ok.injEq] at happly
+          rw [← happly] at hpred
+          simp only [normalizeAppResultByProvenance] at hpred
+          split at hpred <;> simp at hpred
+        · -- ExternReturn.nestedPfn: predicate is always noPred
+          simp only [pure, Except.pure, Except.ok.injEq] at happly
+          rw [← happly] at hpred
+          simp only [normalizeAppResultByProvenance] at hpred
+          split at hpred <;> simp at hpred
 
-/-- Extern contract: PFnTClosure.extern guard tag is absent from tagEnv. -/
-axiom applyPFnTClosure_extern_ok_guardClosure_tag_absent
+/-- Extern contract: PFnTClosure.extern guard tag is absent from tagEnv.
+    Requires tagEnvBounded result2.tagEnv' result2.nextTag', ensuring freshly allocated
+    tags (≥ result2.nextTag') are absent from the tagEnv. -/
+lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat)
   (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
   (r : TypeResult)
+  (hbound : tagEnvBounded result2.tagEnv' result2.nextTag')
   (happly : applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
     argEtyp argPoison argPred ctx result2 fuel = .ok r)
   (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
   (hpred : r.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
-  r.tagEnv'.get? k = none
+  r.tagEnv'.get? k = none := by
+  have htagEq : r.tagEnv' = result2.tagEnv' :=
+    applyPFnTClosure_extern_tagEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred result2 r fuel
+      x retSpec capturedEnv happly
+  rw [htagEq]
+  suffices hge : result2.nextTag' ≤ k from
+    tagEnvBounded_get_none_of_ge result2.tagEnv' result2.nextTag' k hbound hge
+  unfold applyPFnTClosure at happly
+  cases fuel with
+  | zero => simp at happly
+  | succ n =>
+    simp only [bind, Except.bind] at happly
+    split at happly
+    · -- ExternReturn.simple
+      rename_i typ_ poison_ retpred_
+      split at happly
+      · exact Except.noConfusion happly
+      · rename_i allocRes hcollect
+        split at happly
+        · exact Except.noConfusion happly
+        · rename_i resolvedPred hresolve
+          split at happly
+          · exact Except.noConfusion happly
+          · rename_i retQtPair hretQt
+            simp only [pure, Except.pure, Except.ok.injEq] at happly
+            rw [← happly] at hpred
+            simp only [normalizeAppResultByProvenance] at hpred
+            split at hpred
+            · simp at hpred
+            · obtain ⟨tagMapping, nextTag'⟩ := allocRes
+              have hretPred : retQtPair.1.pred = resolvedPred :=
+                returnSpecToQTyp_pred_eq typ_ poison_ resolvedPred _ _ _ hretQt
+              rw [hretPred] at hpred
+              obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
+                retpred_ _ tagMapping resolvedPred hresolve k arg_name pred_body var_env hpred
+              -- PFnTClosure.extern simple uses [retpred_] directly (not collectExternPreds)
+              exact collectAndAllocExternTags_mapping_values_ge
+                [retpred_] result2.nextTag' tagMapping nextTag' hcollect idx k hidx
+    · -- ExternReturn.nestedFn: predicate is always noPred
+      simp only [pure, Except.pure, Except.ok.injEq] at happly
+      rw [← happly] at hpred
+      simp only [normalizeAppResultByProvenance] at hpred
+      split at hpred <;> simp at hpred
+    · -- ExternReturn.nestedPfn: predicate is always noPred
+      simp only [pure, Except.pure, Except.ok.injEq] at happly
+      rw [← happly] at hpred
+      simp only [normalizeAppResultByProvenance] at hpred
+      split at hpred <;> simp at hpred
 
 /-- Foundational semantic extern contract: typecheckExternVal result QTyp respects tag meaning.
     This is the irreducible semantic content: when extern typing resolves a guardClosure
@@ -6306,14 +6454,85 @@ axiom typecheckExternVal_preserves_lookup_origin_axiom
       ctx.regime.lookup? k = some true ∧
       qt_in.etyp.isFunctionType = false
 
-/-- Extern contract: typecheckExternVal guard tag is absent from tagEnv. -/
-axiom typecheckExternVal_guardClosure_pred_implies_tag_absent
+/-- Helper: surfaceSpecToQTyp preserves the predicate in the first component. -/
+private lemma surfaceSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (resolvedPred : Predicate)
+    (ctx : TypeContext) (surfResult : QTyp × TypeContext)
+    (hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx = Except.ok surfResult) :
+    surfResult.1.pred = resolvedPred := by
+  unfold surfaceSpecToQTyp at hsurf
+  simp only [bind, Except.bind, pure, Except.pure] at hsurf
+  split at hsurf
+  all_goals first
+    | (simp only [Except.ok.injEq] at hsurf; exact (congrArg (·.1.pred) hsurf.symm))
+    | (simp at hsurf)
+
+/-- Extern contract: typecheckExternVal guard tag is absent from tagEnv.
+    Requires tagEnvBoundedInCtx ctx, i.e. all existing tags in ctx.tagEnv are < ctx.nextTag,
+    so freshly allocated tags (≥ ctx.nextTag) cannot already be present. -/
+lemma typecheckExternVal_guardClosure_pred_implies_tag_absent
   (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
   (res : TypeResult)
   (htc : typecheckExternVal ctx typ poison pred = .ok res)
+  (hbound : tagEnvBoundedInCtx ctx)
   (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
   (hpred : res.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
-  res.tagEnv'.get? k = none
+  res.tagEnv'.get? k = none := by
+  unfold typecheckExternVal at htc
+  split at htc
+  · simp at htc
+  · simp at htc
+  · simp only [bind, Except.bind, pure, Except.pure] at htc
+    cases halloc : collectAndAllocExternTags [pred] ctx.nextTag with
+    | error err => simp [halloc] at htc
+    | ok result =>
+      rcases result with ⟨tagMapping, nextTag'⟩
+      simp only [halloc] at htc
+      cases hresolve : resolveSyntaxPred pred ctx.varEnv tagMapping with
+      | error err => simp [hresolve] at htc
+      | ok resolvedPred =>
+        simp only [hresolve] at htc
+        cases hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx with
+        | error err => simp [hsurf] at htc
+        | ok surfResult =>
+          simp only [hsurf, Except.ok.injEq] at htc
+          cases htc
+          -- After destructuring, res.tagEnv' = ctx.tagEnv and
+          -- res.qualType.pred = surfResult.1.pred = resolvedPred.
+          have hsurfpred : surfResult.1.pred = resolvedPred :=
+            surfaceSpecToQTyp_pred_eq typ poison resolvedPred ctx surfResult hsurf
+          have hresolvedEq : resolvedPred = Predicate.guardClosure k arg_name pred_body var_env :=
+            hsurfpred ▸ hpred
+          -- The tag k was allocated by collectAndAllocExternTags: k ≥ ctx.nextTag.
+          have hge : ctx.nextTag ≤ k := by
+            cases pred with
+            | noPred =>
+                simp [resolveSyntaxPred, pure, Except.pure] at hresolve
+                simp [← hresolve] at hresolvedEq
+            | guardOnly idx =>
+                simp [resolveSyntaxPred] at hresolve
+                split at hresolve
+                · simp [pure, Except.pure] at hresolve; simp [← hresolve] at hresolvedEq
+                · simp at hresolve
+            | guardClosure idx arg body =>
+                simp only [resolveSyntaxPred, bind, Except.bind] at hresolve
+                split at hresolve
+                · rename_i tag htag
+                  cases htoPExpr : body.toPExpr with
+                  | error err => simp [htoPExpr] at hresolve
+                  | ok pbody =>
+                      simp only [htoPExpr, pure, Except.pure, Except.ok.injEq] at hresolve
+                      rw [← hresolve] at hresolvedEq
+                      have htageq : tag = k :=
+                        ((Predicate.guardClosure.injEq _ _ _ _ _ _ _ _).mp hresolvedEq).1
+                      rw [htageq] at htag
+                      exact collectAndAllocExternTags_mapping_values_ge
+                        [SyntaxPredicate.guardClosure idx arg body] ctx.nextTag
+                        tagMapping nextTag' halloc idx k htag
+                · simp at hresolve
+          -- res.tagEnv' = ctx.tagEnv (from the return struct literal).
+          -- By hbound, ctx.tagEnv.get? k = none since k ≥ ctx.nextTag.
+          show ctx.tagEnv.get? k = none
+          exact tagEnvBounded_get_none_of_ge ctx.tagEnv ctx.nextTag k hbound hge
 
 -- Layer A (per-member): static facts for successful closure-application typing.
 -- wfTypeResult for the body result comes from stepFR IH (StepFR for body → wfTypeResult).
