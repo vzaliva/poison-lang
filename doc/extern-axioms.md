@@ -33,7 +33,16 @@ As of the current repository state:
   - `typecheckExternVal_QTypRespectsTagMeaning_axiom` (semantic axiom)
 
 This is a substantial improvement over the old `iofree` branch, which still had
-two `sorry`s in `StepFRIte.lean` plus a larger extern axiom surface. In
+two `sorry`s in `StepFRIte.lean` plus a larger extern axiom surface.
+
+The 16 sorry statements break down as:
+- 3 in TypeSafety.lean: ite mode 1/2 and app cases of `typecheckExpr_preserves_tagEnvBounded`
+  (need matchGuard predicate-tag invariant for ite; complex fold for app)
+- 6 in StepFRIte.lean/StepFRAssign.lean/StepFRApp.lean: fresh-location cases exposed by
+  the `typecheckExternVal_preserves_lookup_origin_axiom` restatement
+  (old proofs relied on contrapositive of false axiom)
+- 7 in StepFRAssign.lean: `tagEnvBounded` threading at FR proof call sites
+  (need invariant threaded through `StepFR_IH` / `stepFR_assign`) In
 particular, the old `mode3` `if` proof debt is gone entirely on `new-iofree`;
 the remaining gaps are isolated to the extern contract.
 
