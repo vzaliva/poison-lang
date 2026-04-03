@@ -360,16 +360,148 @@ Why:
 - it says nothing about fresh clean logical locations introduced by extern
   typing summaries
 
-So the remaining `StepFRApp` / `StepFRIte` work needs a new **internal
-single-run sidecar theorem** below `StepFR`, describing how the chosen witness
-map `θ'` treats fresh clean extern-ref logical locations.
+So the remaining `StepFRApp` / `StepFRIte` work needs a strengthened
+**internal single-run theorem package** below `StepFR`, describing how the
+chosen witness map `θ'` treats fresh clean extern-ref logical locations.
+
+The concrete unresolved corner is narrower than section 6.2 by itself might
+suggest:
+
+- `StepFRApp`, arrow case, `p1 = true`, with different selected regular-closure
+  bodies on the two runs
+- `StepFRIte` standard mode, when the two runs take different branches
+
+What these sites have in common is:
+
+- there is no shared executed subexpression on which the two-run FR IH can be
+  applied
+- the proof therefore falls back to **one-run** witness theorems on each side
+- the current one-run package only exports
+  `PreservesInheritedFinalCleanLocsOneRun`
+
+That is enough for inherited locations, but not for locations that appear in
+the final typing result only because typing joined in non-executed
+alternatives.
+
+Two different "fresh" cases must be kept separate:
+
+1. a location is absent from the actually executed member/branch result
+2. a location is present in that executed result's `memEnv'`, but only because
+   the executed expression itself contains a nested `app` / `ite` whose typing
+   joined in non-executed extern summaries
+
+Case 1 is already under control:
+
+- `theta_not_contains_if_not_in_memEnv` applies directly once the selected
+  result context is known
+- the shared-body `StepFRApp` proof already uses exactly this
+  source-or-unrealized transport pattern via
+  `join_transport_agreeOnClean_from_member`
+
+Case 2 is the real blocker for issue 1:
+
+- absence lemmas do not apply, because the typing-only location is already in
+  the executed result's `memEnv'`
+- `runtimeInstantiatesCtx (ctxAfter ctx res) ... θ'` does not force such a
+  location either to be realized or to stay unrealized
+- `wfExtendsMap` constrains only old mappings
+- `PreservesInheritedFinalCleanLocsOneRun` constrains only locations already in
+  the input context
+
+So the missing ingredient is specifically a theorem about the **chosen witness
+construction**, not just about the final package of facts it satisfies.
+
+This also explains why the pure-function case is not the right template:
+
+- the `PFnTClosure` different-body branch already closes the fresh case by
+  contradiction using `applyPFnTClosure_mem_subset`
+- pure bodies cannot grow `memEnv'`
+- the remaining issue is therefore specific to the effectful arrow path, where
+  typing joins can add fresh locations even when the runtime path that produced
+  `θ'` never realizes them
+
+Re-evaluating the interface choice, the more realistic route is now:
+
+- strengthen the **global single-run theorem family**
+  (`StepFRSingleRunFinalCleanPcTrue`,
+  `StepFRSingleRunFinalCleanPcTrueParam`,
+  `StepFRSingleRunFinalCleanPcTrueMaskedRegParam`)
+- keep `StepFR` itself unchanged unless that stronger single-run proof later
+  reveals a genuinely missing input invariant
+
+Why the earlier "parallel theorem family used only by app/ite" idea is likely
+the wrong abstraction:
+
+- the stronger fact must compose through syntax such as `seq`, `vlet`, and
+  nested `app` / `ite`, not just be available at the outermost repair sites
+- composition of the fresh case depends on a mix of:
+  - the stronger fresh-clean postcondition from earlier subexpressions
+  - the existing `PreservesInheritedFinalCleanLocsOneRun` relation on later
+    subexpressions
+- so in practice the stronger invariant has to be threaded through the
+  single-run induction stack anyway
+
+The code structure supports that route:
+
+- `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` is proved
+  by a separate masked single-run induction, not extracted from `StepFR`
+- `stepFR_app` and `stepFR_ite` receive
+  `StepFRSingleRunFinalCleanPcTrue_IH` directly, independently of `StepFR_IH`
+- representative composition proofs such as `StepFRSeq` and `StepFRVlet`
+  already show the right shape: inherited-clean preservation composes across
+  subexpressions, so a fresh-clean-unrealized postcondition can piggyback on
+  that same structure
+
+The key composition bridge is already present in the existing infrastructure:
+
+- `PreservesInheritedCleanLocOneRun.both_unrealized` propagates
+  `θ.lookup l = none` through a later evaluation step
+- so once a stronger single-run theorem shows that a fresh clean location is
+  unrealized after an earlier subexpression, the existing inherited-clean
+  preservation relation can carry that unrealized status forward through later
+  subexpressions that inherit the location
+
+The plausible strengthened postcondition is unary and local to one run:
+
+- if `l` is absent from the input typing context
+- and the final output typing result contains a clean `qt` at `l`
+- then the chosen witness map satisfies `θ'.lookup l = none`
+
+At the FR use sites this is exactly the shape we want, because the fresh branch
+of `agreeLocUnder` only needs:
+
+- `θ₀'.lookup l = none`
+- `θ₁'.lookup l = none`
+
+not any stronger cross-run memory relation.
+
+Current assessment about whether `StepFR` itself must change:
+
+- there is currently no concrete reason to change `StepFR`
+- strengthening the single-run theorem family appears sufficient if the new
+  invariant is added as an extra **postcondition**, with no new input
+  hypotheses
+- `StepFR` should be reconsidered only if, during the strengthened single-run
+  proof, we discover that some operator case needs an additional **input**
+  invariant that is not derivable from the current single-run hypotheses
+  (`wfTypeContext`, `runtimeInstantiatesCtx`, regime consistency, and `pc=true`)
 
 The generic strengthening
 
 - "every fresh clean output location is unrealized in `θ'`"
 
-cannot be added to the global single-run theorem, because it is false for
-`newRef`: `newRef` intentionally creates and realizes a fresh logical location.
+still needs bounded falsification before committing to it as the new
+single-run theorem shape. The obvious quick checks are:
+
+- `newRef` under `pc = true`
+- nested `ite`
+- nested `app`
+
+If that candidate fails even in the pc-true setting, then the strengthened
+single-run postcondition must be
+phrased in a more provenance-sensitive way instead of as a blanket fresh-clean
+statement. But the first place to repair it should still be the single-run
+theorem family, not `StepFR`.
 
 So the required next theorem must be:
 
@@ -478,32 +610,112 @@ If the answer to (3) is "no", the plan should be rejected or restated.
 
 The same rule applies to single-run helper theorems:
 
-- strengthening the global single-run theorem interface is not acceptable
-- adding a new sidecar single-run theorem below `StepFR` is acceptable
+- strengthening the global single-run theorem family is acceptable
+  (`StepFRSingleRunFinalCleanPcTrue`,
+  `StepFRSingleRunFinalCleanPcTrueParam`,
+  `StepFRSingleRunFinalCleanPcTrueMaskedRegParam`)
+- extending `StepFR` itself is not acceptable unless the strengthened
+  single-run proof reveals a genuinely missing input invariant that cannot be
+  recovered below `StepFR`
 
 ## 8. Plan
 
 High-risk-first is the intended order.
 
-### 8.1 Phase 1. Repair theorem shapes first
+### 8.1 Phase 1. Validate the strengthened single-run postcondition
 
-Before investing in more plumbing, repair the statements that are currently too
-strong:
+Before changing interfaces, validate the candidate extra postcondition for the
+global single-run theorem family:
 
-1. restate or split `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
-2. replace the `stepFR_ite_standard` back-to-`res1` route with an
-   inherited/fresh split
-3. add an internal single-run sidecar theorem for the fresh extern-ref case:
-   fresh clean logical locations introduced by extern typing summaries are
-   handled by the chosen witness map `θ'` without changing the `StepFR`
-   interface
-4. strengthen `typecheckExternVal_preserves_lookup_origin_axiom` with
-   `wfTypeContext ctx` or an equivalent freshness premise
+1. define a standalone unary property expressing:
+   - `l` absent from input `ctx.memEnv`
+   - `l` clean in the final output typing result
+   - `θ'.lookup l = none`
+2. test the blanket pc-true candidate against:
+   - `newRef`
+   - nested `ite`
+   - nested `app`
+3. check one representative composition proof (`seq` is the best first target)
+   to confirm that the new postcondition composes using:
+   - the stronger single-run fact on the left
+   - `PreservesInheritedFinalCleanLocsOneRun` on the right
+   - explicitly test the `both_unrealized` propagation path where `e1`
+     introduces the location and `e2` merely inherits it
+4. if the proof attempt demands a **new input precondition** rather than just a
+   new postcondition, stop and reassess whether `StepFR` itself must be
+   extended
+5. otherwise freeze the strengthened single-run theorem shape and proceed
 
 This is the highest-risk work because it can invalidate later proof plans if
 left unresolved.
 
-### 8.2 Phase 2. Finish the `tagEnvBounded` path without touching `StepFR`
+### 8.2 Phase 2. Strengthen the global single-run theorem family
+
+Once the theorem shape is validated:
+
+1. strengthen the output package of:
+   - `StepFRSingleRunFinalCleanPcTrue`
+   - `StepFRSingleRunFinalCleanPcTrueParam`
+   - `StepFRSingleRunFinalCleanPcTrueMaskedRegParam`
+2. update the corresponding IH abbreviations and masked/unmasked bridges in
+   `FaultRobustnessProofs.lean`
+3. keep the change purely as an extra **postcondition**
+4. do **not** change:
+   - `StepFR`
+   - `StepFR_IH`
+   - `FaultRobustnessSpec`
+   - the top-level FR theorem interface
+
+This is an internal proof-interface change below `StepFR`, not an FR theorem
+change.
+
+### 8.3 Phase 3. Thread the stronger single-run invariant through syntax
+
+This is the broad but mostly routine phase. The strengthened single-run theorem
+must be carried through all operators that participate in the single-run
+induction, not just `app` and `ite`.
+
+Expected touch points include:
+
+- `FaultRobustnessProofs.lean`
+- `StepFRSeq.lean`
+- `StepFRVlet.lean`
+- `StepFRNewRef.lean`
+- `StepFRAssign.lean`
+- `StepFRDeref.lean`
+- `StepFRApp.lean`
+
+Representative proof shapes:
+
+1. literals / closures: immediate or vacuous
+2. `newRef`: fresh allocated cell is not clean under `pc = true`
+3. sequential composition (`seq`, `vlet`, `assign`-style pipelines):
+   combine:
+   - stronger fresh-clean postcondition from the first subexpression
+   - inherited-clean preservation for the second
+   - in particular, use `PreservesInheritedCleanLocOneRun.both_unrealized` to
+     propagate `θ.lookup l = none` when the later subexpression only inherits
+     the location
+4. `app` / `ite`: the high-risk cases, but now handled through the same
+   strengthened single-run API rather than an app/ite-specific auxiliary route
+
+### 8.4 Phase 4. Repair the current false / over-strong local routes
+
+Once the stronger single-run infrastructure is in place:
+
+1. restate or delete the false theorem
+   `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
+2. rewrite the arrow/different-body `StepFRApp` fresh-location case to use:
+   - inherited locations: existing `PreservesInheritedFinalCleanLocsOneRun`
+   - fresh clean locations: the strengthened single-run theorem giving
+     `θ.lookup l = none`
+3. rewrite `stepFR_ite_standard` to replace `hclean_back_to_res1` with an
+   inherited/fresh split
+4. use the existing shared-body / source-or-unrealized transport pattern as the
+   implementation template where possible, rather than inventing a second join
+   framework
+
+### 8.5 Phase 5. Finish the `tagEnvBounded` path without touching `StepFR`
 
 The intended route is:
 
@@ -530,11 +742,11 @@ This stays within the user constraint: no new `StepFR` invariant.
 
 Phase dependencies inside this phase are:
 
-- 8.2.1 + 8.2.2 → 8.2.3
-- 8.2.3 → 8.2.4
-- 8.2.4 → 8.2.5
+- 8.5.1 + 8.5.2 → 8.5.3
+- 8.5.3 → 8.5.4
+- 8.5.4 → 8.5.5
 
-### 8.3 Phase 3. Make the captured-locset allocation invariant explicit
+### 8.6 Phase 6. Make the captured-locset allocation invariant explicit
 
 For impure externs, the key missing invariant is:
 
@@ -554,7 +766,7 @@ Do not confuse the extern-only axiom
 extern-only typing-summary obligation; the latter is a current false statement
 about all closure applications.
 
-### 8.4 Phase 4. Split the impure-effect extern bundle
+### 8.7 Phase 7. Split the impure-effect extern bundle
 
 The current bundled axiom
 
@@ -580,7 +792,59 @@ recovered as a proved wrapper lemma from the smaller ingredients. That leaves
 the long-term extern contract surface closer to the true FR contract minimum
 without repeating the invariant-leak error.
 
-## 9. Useful References
+## 9. History
+
+### 9.1 Rejected local-only repair
+
+An earlier direction was to keep strengthening the local
+`typecheckExpr_clean_lookup_origin_of_pc_true` calls by threading more
+`contains` facts into the current helpers.
+
+That route is insufficient:
+
+- it only repairs the inherited-location case
+- it does not address locations that are present in the final typing result only
+  because non-executed extern summaries were joined in
+- it therefore cannot solve the remaining arrow/different-body app case
+
+### 9.2 Design pivot: do not isolate the new fact to app/ite only
+
+An earlier revision of this note preferred a "parallel theorem family" consumed
+only by `StepFRApp` and `StepFRIte`.
+
+After re-checking the induction structure, that is no longer the recommended
+route:
+
+- the stronger fact must compose through intermediate syntax such as `seq` and
+  `vlet`
+- the single-run theorem family is already proved by a separate induction stack
+- `stepFR_app` and `stepFR_ite` already consume that single-run IH directly
+
+So the more coherent design is to strengthen the **global single-run theorem
+family** and keep `StepFR` unchanged unless a new input precondition later
+proves unavoidable.
+
+### 9.3 Why the shared-body transport works
+
+The shared-body `StepFRApp` path already has the right high-level shape:
+
+- transport agreement from one selected member result
+- for locations missing from that selected result, prove both witness maps omit
+  them
+
+So the join transport itself is not the blocker. The blocker is only the lack
+of a corresponding omission theorem for the different-body / mixed-branch
+one-run setting.
+
+### 9.4 Why `PFnTClosure` is not the hard case
+
+The pure-function different-body branch closes the fresh-location case by
+contradiction because pure bodies do not grow `memEnv'`.
+
+That is useful as a sanity check, but it is not a template for the remaining
+problem. The unresolved issue is specific to effectful arrow bodies.
+
+## 10. Useful References
 
 These `iofree` references are useful as proof templates, but the current branch
 should reuse only the specific lemma shapes it needs:
@@ -597,7 +861,7 @@ of the current `new-iofree` checkout.
   - `typecheckExternVal_nextTag_mono`
 
 The old `predTagsBoundedInCtx` route was explicitly deleted on this branch in
-commit `2062907`. Phase 8.2 uses a different route: a local predicate-tag bound
+commit `2062907`. Phase 8.5 uses a different route: a local predicate-tag bound
 relative to `ctx.nextTag`, combined with `tagEnvBounded`.
 
 Current-branch helpers already available:
