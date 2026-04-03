@@ -78,30 +78,30 @@ As of **2026-04-03** on `new-iofree`:
 
 - `lake build` succeeds
 - the current proof-gap inventory is:
-  - **6 explicit `sorry` terms** in **2 declarations**
+  - **2 explicit `sorry` terms** in **1 declaration**
   - **11 explicit `axiom`** declarations
     - 10 in `LeanProofs/StepFR.lean`
     - 1 in `LeanProofs/TypeSafety.lean`
-- so the branch currently has **17 proof gaps** total
+- so the branch currently has **13 proof gaps** total
 - only a small subset of the 11 axioms should survive as actual axioms; the
   rest should be treated as provisional proof gaps that still need proofs
 - the current build warnings point at exactly these declarations:
   - `typecheckExpr_preserves_tagEnvBounded_main`
-  - `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`
 - this is a snapshot of the branch at that date; the counts should be re-checked
   after proof edits
 - `assign_final_clean_preservation` is already resolved on the current branch
 - the old local 6.3 blockers
   - `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
   - the four `stepFR_ite_standard` `sorry`s
-  are no longer the active proof surface; the remaining 6.3 work is now
-  concentrated in the strengthened single-run theorem stack
+  are resolved on the current branch
+- section 6.3 itself is now implemented; the only remaining `sorry`s are the
+  two `tagEnvBounded` obligations in `TypeSafety.lean`
 
 Build warnings report only the declarations containing `sorry`, not the raw
 number of `sorry` terms. So, on the current branch:
 
-- `scripts/sorry-count.py` reports **2** declarations with `sorry`
-- a raw token count reports **6** explicit `sorry` terms
+- `scripts/sorry-count.py` reports **1** declaration with `sorry`
+- a raw token count reports **2** explicit `sorry` terms
 
 The `axiom` declarations must therefore be tracked separately in the document.
 
@@ -134,7 +134,7 @@ The `Status` column below uses this convention:
 | File | Declaration | Count | Assessment |
 |------|-------------|-------|------------|
 | `TypeSafety.lean` | `typecheckExpr_preserves_tagEnvBounded_main` | 2 | Real proof gap in `ite` mode 1/2; the public theorem `typecheckExpr_preserves_tagEnvBounded` delegates to this `_main` proof |
-| `FaultRobustnessProofs.lean` | `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree` | 4 | New remaining 6.3 proof gap: the single-run theorem family has been strengthened and threaded through the low-risk constructor cases, but the fresh-clean postcondition is still admitted in four `ite` subcases inside the masked single-run induction |
+| `TypeSafety.lean` | `typecheckExpr_preserves_tagEnvBounded_main` | 2 | Remaining non-6.3 proof gap in `ite` mode 1/2: requires the matchGuard predicate-tag boundedness bridge |
 
 ## 4. What Must Be Assumed About Extern Functions For FR
 
@@ -630,13 +630,20 @@ The same rule applies to single-run helper theorems:
 
 High-risk-first is the intended order.
 
-Immediate status after the current 6.3 implementation:
+Status of section 6.3 implementation: **complete**.
 
-- the single-run theorem family has been strengthened and threaded through the
-  low-risk constructor cases
-- the immediate next target is to discharge the four remaining `ite`
-  fresh-postcondition `sorry`s in
-  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`
+- `FreshCleanLocsUnrealizedOneRun` added as the 7th conjunct to the single-run
+  theorem family (`StepFRSingleRunFinalCleanPcTrue*`)
+- proved for all 13 expression cases (literal, var, op, unaryop, fn, pfn,
+  deref, assign, newRef, seq, vlet, app, ite) including the induction
+  dispatcher in `FaultRobustnessProofs.lean`
+- the false lemma `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true` has been
+  deleted; its call sites replaced with `agreeLocUnder.both_unrealized`
+- the broken `hclean_back_to_res1` in `stepFR_ite_standard` has been deleted;
+  consumption sites replaced with inherited/fresh case splits
+- `StepFR`, `StepFR_IH`, and `FaultRobustnessSpec` unchanged
+- sorry count: 1 remaining (`typecheckExpr_preserves_tagEnvBounded_main` in
+  TypeSafety.lean, unrelated to section 6.3)
 
 ### 8.1 Phase 1. Validate the strengthened single-run postcondition
 
