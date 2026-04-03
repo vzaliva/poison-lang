@@ -43,7 +43,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg
   rcases
     hIH hpredlaws hwfTm μ ρ θ cfg' v'
       hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht_e hpc
-    with ⟨θ', hθext, hvtyp, hric', hcwr', hvalc', hpres'⟩
+    with ⟨θ', hθext, hvtyp, hric', hcwr', hvalc', hpres', _hfresh'⟩
   have hctxAfter : ctxAfter ctx res = ctxAfter ctx res1 := by
     simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime]
   have hvaltyp_final : valueHasETyp θ' o res.qualType.etyp := by
@@ -71,9 +71,11 @@ lemma stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg
         have hclean_out1 : qtypCleanUnder res1.regime' qt_out := by
           simpa [h_regime] using hclean_out
         simpa [hmem] using hpres_fn l qt_in qt_out hlookup_in hlookup_out1 hclean_out1
-  refine ⟨θ', hθext, hvaltyp_final, ?_, ?_, hvalc_final, hpres_final⟩
+  refine ⟨θ', hθext, hvaltyp_final, ?_, ?_, hvalc_final, hpres_final, ?_⟩
   · simpa [hctxAfter, hmem, hvar] using hric'
   · simpa [hctxAfter, hmem, hvar] using hcwr'
+  · intro l qt hnotIn hlookup hclean
+    exact _hfresh' l qt hnotIn (by rwa [h_mem] at hlookup) (by rwa [h_regime] at hclean)
 
 
 lemma stepFR_op
@@ -492,7 +494,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht_e1 hpc
-    with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1⟩
+    with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwfTm' : wfTagMeaningCtx tm ctx' := by
     simpa [ctx', ctxAfter] using hTm1
@@ -525,7 +527,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
     hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf v2
       hθ1wf hwf1' hric1' hreg1' hmasked_none1' hcwr1'
       cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
-    with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2⟩
+    with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
   have hctxAfter : ctxAfter ctx res = ctxAfter ctx' res2 := by
     simp [ctxAfter, ctx', h_mem, h_tag, h_loc, h_ntag, h_regime]
@@ -583,6 +585,28 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
           hvaltyp_final hnotfun_res)
   have hcfg_eq : cfg1.pureMode = pm := by
     simpa using hpm1
-  refine ⟨θ2, hθext, hvaltyp_final, ?_, ?_, hvalc_final, hpres_final⟩
+  have hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θ2 := by
+    intro l qt hnotIn hlookup hclean
+    have hlookup2 : res2.memEnv'.lookup l = some qt := by rwa [h_mem] at hlookup
+    have hclean2 : qtypCleanUnder res2.regime' qt := by rwa [h_regime] at hclean
+    by_cases hcontains_mid : (ctxAfter ctx res1).memEnv.contains l
+    · obtain ⟨qt_mid, hlookup_mid, hclean_mid⟩ :=
+        typecheckExpr_clean_lookup_origin_of_pc_true
+          (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res2)
+          (by simpa [ctx', ctxAfter] using htc2')
+          (by simpa [ctxAfter] using hpc)
+          l qt hlookup2 hcontains_mid hclean2
+      have hθ1_none := _hfresh1 l qt_mid hnotIn
+        (by simpa [ctxAfter] using hlookup_mid)
+        (by simpa [ctxAfter] using hclean_mid)
+      have hpres_loc := PreservesInheritedFinalCleanLocsOneRun.apply hpres2'
+        hlookup_mid hlookup2 hclean2
+      cases hpres_loc with
+      | both_unrealized _ hout => exact hout
+      | preserve_value a n hin _ _ _ => simp [hθ1_none] at hin
+    · have hfresh2' : FreshCleanLocsUnrealizedOneRun (ctxAfter ctx res1) res2 θ2 :=
+        by simpa [ctx', ctxAfter] using _hfresh2
+      exact hfresh2' l qt hcontains_mid hlookup2 hclean2
+  refine ⟨θ2, hθext, hvaltyp_final, ?_, ?_, hvalc_final, hpres_final, hfresh_final⟩
   · simpa [hctxAfter, hcfg_eq] using hric2
   · simpa [hctxAfter, hcfg_eq] using hcwr2

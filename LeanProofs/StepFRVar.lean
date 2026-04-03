@@ -36,7 +36,8 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
           runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
+          FreshCleanLocsUnrealizedOneRun ctx res θ'
 
 private def VarCtxToValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -526,12 +527,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_var_parametric
   have hvalc : ValCons (ctxAfter ctxᵢ res).regime res.qualType μ θ o := by
     rw [ho]
     exact hCtxToVal ctxᵢ name res μ ρ θ v htc' hlookup hctxCons
-  refine ⟨θ, ?_, hvaltyp, ?_, ?_, hvalc, ?_⟩
+  refine ⟨θ, ?_, hvaltyp, ?_, ?_, hvalc, ?_, ?_⟩
   · exact ⟨fun _ _ hlookup => hlookup, fun hθwf' => hθwf'⟩
   · simpa [hctxAfter] using hric
   · simpa [hctxAfter] using hctxCons
   · simpa [hctxAfter] using
       (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctxᵢ) (res := res) (ρ := ρ) hric)
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
 
 theorem stepFRVar_ctxToValCons_masked
   (masked : Tag → Prop) (predSat : PredSat) :
@@ -588,12 +590,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
     exact
       stepFRVar_ctxToValCons_masked masked predSat
         ctxᵢ name res μ ρ θ v htc' hlookup hctxCons
-  refine ⟨θ, ?_, hvaltyp, ?_, ?_, hvalc, ?_⟩
+  refine ⟨θ, ?_, hvaltyp, ?_, ?_, hvalc, ?_, ?_⟩
   · exact ⟨fun _ _ hlookup => hlookup, fun hθwf' => hθwf'⟩
   · simpa [hctxAfter] using hric
   · simpa [hctxAfter] using hctxCons
   · simpa [hctxAfter] using
       (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctxᵢ) (res := res) (ρ := ρ) hric)
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
 
 lemma stepFR_var
   

@@ -4167,13 +4167,13 @@ private lemma stepFR_ite_standard
                 cfg₀1.memory cfg₀1.varEnv θ₀1 cf₀ o₀
                 hθ₀1wf hwf_ctx'' hric₀1_ctx'' htagR_ctx''
                 hcwr₀1_ctx'' cfg₀1.nextAddr cfg₀1.pureMode hwfcf₀1 ht₀_e2 hpc''
-            with ⟨θ₀2, hθext₀2, hvtyp₀2, hric₀2, hcwr₀2, hvalc₀2, hpres₂⟩
+            with ⟨θ₀2, hθext₀2, hvtyp₀2, hric₀2, hcwr₀2, hvalc₀2, hpres₂, _hfresh₂⟩
           rcases
               hsingle_e3 hpredlaws hwfTm_ctxForE3
                 cfg₁1.memory cfg₁1.varEnv θ₁1 cf₁ o₁
                 hθ₁1wf hwf_ctxForE3 hric₁1_ctxForE3 htagR_ctxForE3
                 hcwr₁1_ctxForE3 cfg₁1.nextAddr cfg₁1.pureMode hwfcf₁1 ht₁_e3 hpcForE3
-            with ⟨θ₁3, hθext₁3, hvtyp₁3, hric₁3, hcwr₁3, hvalc₁3, hpres₃⟩
+            with ⟨θ₁3, hθext₁3, hvtyp₁3, hric₁3, hcwr₁3, hvalc₁3, hpres₃, _hfresh₃⟩
           have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
           have hθext₁ : wfExtendsMap θ₁ θ₁3 := wfExtendsMap_trans hθext₁1 hθext₁3
           have hlookup_back_final_to_res1 :
@@ -4240,105 +4240,6 @@ private lemma stepFR_ite_standard
                 (R := res1.regime') (R' := res.regime')
                 (μ := cf₁.memory)
                 hlookup_back_final_to_res1 h
-          have hclean_back_to_res1 :
-              ∀ l qt_out,
-                res.memEnv'.lookup l = some qt_out →
-                qtypCleanUnder res.regime' qt_out →
-                ∃ qt_mid,
-                  res1.memEnv'.lookup l = some qt_mid ∧
-                  qtypCleanUnder res1.regime' qt_mid := by
-            intro l qt_out hlookup_out hclean_out
-            have hlookup_join :
-                (joinMemEnvsStrong res2.memEnv' res3.memEnv').lookup l = some qt_out := by
-              simpa [hmemEnv] using hlookup_out
-            have hcontains_join :
-                (joinMemEnvsStrong res2.memEnv' res3.memEnv').contains l :=
-              memEnv_contains_of_lookup_some
-                (joinMemEnvsStrong res2.memEnv' res3.memEnv') l qt_out hlookup_join
-            rcases
-                joinMemEnvsStrong_contains_implies_or
-                  res2.memEnv' res3.memEnv' l hcontains_join
-              with hcontains2 | hcontains3
-            · rcases memEnv_lookup_some_of_contains res2.memEnv' l hcontains2 with
-                ⟨qt2, hlookup2⟩
-              have hclean2 : qtypCleanUnder res2.regime' qt2 := by
-                cases hclean_out with
-                | clean hpoison_out =>
-                    have henv2 : res2.memEnv'.lookup l ≠ none := by
-                      intro hnone
-                      rw [hlookup2] at hnone
-                      contradiction
-                    rcases
-                        joinMemEnvsStrong_lookup_clean_left
-                          res2.memEnv' res3.memEnv' l qt_out
-                          hlookup_join hpoison_out henv2
-                      with ⟨qt2', hlookup2', _hetyp2, hpoison2⟩
-                    have hqt2 : qt2 = qt2' := by
-                      rw [hlookup2] at hlookup2'
-                      injection hlookup2'
-                    cases hqt2
-                    exact qtypCleanUnder.clean hpoison2
-                | guard k htag hk hnotfun =>
-                    have hk_join :
-                        (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
-                      simpa [hregime'] using hk
-                    have htag2 : qtypGuardTag qt2 = some k :=
-                      joinMemEnvsStrong_lookup_guardTag_left
-                        res2.memEnv' res3.memEnv' l qt_out qt2 k
-                        hlookup_join hlookup2 htag
-                    have hk2 : res2.regime'.lookup? k = some true :=
-                      joinRegimes_lookup_some_left
-                        res2.regime' res3.regime' k true hk_join
-                    have hnotfun2 : qt2.etyp.isFunctionType = false := by
-                      rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                      native_decide
-                    exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
-              exact
-                typecheckExpr_clean_lookup_origin_of_pc_true
-                  ctx'' e2 fuel' res2 htc2' hpc''
-                  l qt2 hlookup2
-                  (by sorry)
-                  hclean2
-            · rcases memEnv_lookup_some_of_contains res3.memEnv' l hcontains3 with
-                ⟨qt3, hlookup3⟩
-              have hclean3 : qtypCleanUnder res3.regime' qt3 := by
-                cases hclean_out with
-                | clean hpoison_out =>
-                    have henv3 : res3.memEnv'.lookup l ≠ none := by
-                      intro hnone
-                      rw [hlookup3] at hnone
-                      contradiction
-                    rcases
-                        joinMemEnvsStrong_lookup_clean_right
-                          res2.memEnv' res3.memEnv' l qt_out
-                          hlookup_join hpoison_out henv3
-                      with ⟨qt3', hlookup3', _hetyp3, hpoison3⟩
-                    have hqt3 : qt3 = qt3' := by
-                      rw [hlookup3] at hlookup3'
-                      injection hlookup3'
-                    cases hqt3
-                    exact qtypCleanUnder.clean hpoison3
-                | guard k htag hk hnotfun =>
-                    have hk_join :
-                        (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
-                      simpa [hregime'] using hk
-                    have htag3 : qtypGuardTag qt3 = some k :=
-                      joinMemEnvsStrong_lookup_guardTag_right
-                        res2.memEnv' res3.memEnv' l qt_out qt3 k
-                        hlookup_join hlookup3 htag
-                    have hk3 : res3.regime'.lookup? k = some true :=
-                      joinRegimes_lookup_some_right
-                        res2.regime' res3.regime' k true hk_join
-                    have hnotfun3 : qt3.etyp.isFunctionType = false := by
-                      rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                      native_decide
-                    exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
-              exact
-                typecheckExpr_clean_lookup_origin_of_pc_true
-                  ctxForE3 e3 fuel' res3 htc3' hpcForE3
-                  l qt3 hlookup3
-                  (by sorry)
-                  hclean3
           have hric₁3_src :
               runtimeInstantiatesCtx (ctxAfter ctx'' res3) cf₁.memory cf₁.varEnv θ₁3 := by
             simpa [ctxAfter, ctxForE3, ctx'', ctx', pc'] using hric₁3
@@ -4478,182 +4379,314 @@ private lemma stepFR_ite_standard
               have hlookup_join :
                   (joinMemEnvsStrong res2.memEnv' res3.memEnv').lookup l = some qt := by
                 simpa [hmemEnv] using hlookup_res
-              rcases hclean_back_to_res1 l qt hlookup_res (by simpa [ctxAfter] using hclean) with
-                ⟨qt_mid, hlookup_mid, hclean_mid⟩
-              have hcontains_mid :
-                  res1.memEnv'.contains l :=
-                memEnv_contains_of_lookup_some res1.memEnv' l qt_mid hlookup_mid
-              have hcontains2 : res2.memEnv'.contains l :=
-                typecheckExpr_mem_contains_preserved
-                  ctx'' e2 fuel' res2
-                  (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
-                  l
-                  (by simpa [ctx'', ctx'] using hcontains_mid)
-              have hcontains3 : res3.memEnv'.contains l :=
-                typecheckExpr_mem_contains_preserved
-                  ctxForE3 e3 fuel' res3
-                  (by simpa [ctxForE3, ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc3)
-                  l
-                  (by simpa [ctxForE3, ctx'', ctx'] using hcontains_mid)
-              rcases memEnv_lookup_some_of_contains res2.memEnv' l hcontains2 with ⟨qt2, hlookup2⟩
-              rcases memEnv_lookup_some_of_contains res3.memEnv' l hcontains3 with ⟨qt3, hlookup3⟩
-              have hclean2 : qtypCleanUnder res2.regime' qt2 := by
-                cases hclean with
-                | clean hpoison_out =>
-                    have henv2 : res2.memEnv'.lookup l ≠ none := by
-                      intro hnone
-                      rw [hlookup2] at hnone
-                      contradiction
-                    rcases
-                        joinMemEnvsStrong_lookup_clean_left
-                          res2.memEnv' res3.memEnv' l qt
-                          hlookup_join hpoison_out henv2
-                      with ⟨qt2', hlookup2', _hetyp2, hpoison2⟩
-                    have hqt2 : qt2 = qt2' := by
-                      rw [hlookup2] at hlookup2'
-                      injection hlookup2'
-                    cases hqt2
-                    exact qtypCleanUnder.clean hpoison2
-                | guard k htag hk hnotfun =>
-                    have hk_join :
-                        (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
-                      simpa [ctxAfter, hregime'] using hk
-                    have htag2 : qtypGuardTag qt2 = some k :=
-                      joinMemEnvsStrong_lookup_guardTag_left
-                        res2.memEnv' res3.memEnv' l qt qt2 k
-                        hlookup_join hlookup2 htag
-                    have hk2 : res2.regime'.lookup? k = some true :=
-                      joinRegimes_lookup_some_left
-                        res2.regime' res3.regime' k true hk_join
-                    have hnotfun2 : qt2.etyp.isFunctionType = false := by
-                      rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                      native_decide
-                    exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
-              have hclean3 : qtypCleanUnder res3.regime' qt3 := by
-                cases hclean with
-                | clean hpoison_out =>
-                    have henv3 : res3.memEnv'.lookup l ≠ none := by
-                      intro hnone
-                      rw [hlookup3] at hnone
-                      contradiction
-                    rcases
-                        joinMemEnvsStrong_lookup_clean_right
-                          res2.memEnv' res3.memEnv' l qt
-                          hlookup_join hpoison_out henv3
-                      with ⟨qt3', hlookup3', _hetyp3, hpoison3⟩
-                    have hqt3 : qt3 = qt3' := by
-                      rw [hlookup3] at hlookup3'
-                      injection hlookup3'
-                    cases hqt3
-                    exact qtypCleanUnder.clean hpoison3
-                | guard k htag hk hnotfun =>
-                    have hk_join :
-                        (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
-                      simpa [ctxAfter, hregime'] using hk
-                    have htag3 : qtypGuardTag qt3 = some k :=
-                      joinMemEnvsStrong_lookup_guardTag_right
-                        res2.memEnv' res3.memEnv' l qt qt3 k
-                        hlookup_join hlookup3 htag
-                    have hk3 : res3.regime'.lookup? k = some true :=
-                      joinRegimes_lookup_some_right
-                        res2.regime' res3.regime' k true hk_join
-                    have hnotfun3 : qt3.etyp.isFunctionType = false := by
-                      rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                      native_decide
-                    exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
-              have hlookup_mid_ctx'' : ctx''.memEnv.lookup l = some qt_mid := by
-                simpa [ctx'', ctx'] using hlookup_mid
-              have hlookup_mid_ctxForE3 : ctxForE3.memEnv.lookup l = some qt_mid := by
-                simpa [ctxForE3, ctx'', ctx'] using hlookup_mid
-              have hpres_l₀ :
-                  PreservesInheritedCleanLocOneRun cfg₀1.memory cf₀.memory θ₀1 θ₀2 l :=
-                PreservesInheritedFinalCleanLocsOneRun.apply
-                  (ctx := ctx'') (res := res2)
-                  (μ_in := cfg₀1.memory) (μ_out := cf₀.memory)
-                  (θ_in := θ₀1) (θ_out := θ₀2)
-                  hpres₂ hlookup_mid_ctx'' hlookup2 hclean2
-              have hpres_l₁ :
-                  PreservesInheritedCleanLocOneRun cfg₁1.memory cf₁.memory θ₁1 θ₁3 l :=
-                PreservesInheritedFinalCleanLocsOneRun.apply
-                  (ctx := ctxForE3) (res := res3)
-                  (μ_in := cfg₁1.memory) (μ_out := cf₁.memory)
-                  (θ_in := θ₁1) (θ_out := θ₁3)
-                  hpres₃ hlookup_mid_ctxForE3 hlookup3 hclean3
-              have hagree_mid :
-                  agreeLocUnder predSat res1.regime'
-                    cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 (l, qt_mid) :=
-                hagree1.1 l qt_mid (by simpa [ctxAfter] using hlookup_mid) hclean_mid
-              cases hagree_mid with
-              | both_unrealized _ _ hnone₀ hnone₁ =>
-                  have hnone₀' : θ₀2.lookup l = none := by
-                    cases hpres_l₀ with
-                    | both_unrealized _ hnone_out =>
-                        exact hnone_out
-                    | preserve_value _ _ hsome_in _ _ _ =>
-                        exact False.elim (Option.noConfusion (hnone₀.symm.trans hsome_in))
-                  have hnone₁' : θ₁3.lookup l = none := by
-                    cases hpres_l₁ with
-                    | both_unrealized _ hnone_out =>
-                        exact hnone_out
-                    | preserve_value _ _ hsome_in _ _ _ =>
-                        exact False.elim (Option.noConfusion (hnone₁.symm.trans hsome_in))
-                  exact agreeLocUnder.both_unrealized l qt hnone₀' hnone₁'
-              | agree_values _ _ a₀m a₁m n₀ n₁ hreal₀m hreal₁m hmem₀m hmem₁m hagreeVmid =>
-                  cases hpres_l₀ with
-                  | both_unrealized hnone_in _ =>
-                      exact False.elim (Option.noConfusion (hreal₀m.symm.trans hnone_in))
-                  | preserve_value a₀' n₀' hθ₀in hμ₀in hθ₀out hμ₀out =>
+              -- Case split: l inherited from res1 vs. fresh
+              by_cases hcontains_mid : res1.memEnv'.contains l
+              · -- INHERITED: l ∈ res1.memEnv'
+                rcases memEnv_lookup_some_of_contains res1.memEnv' l hcontains_mid with
+                  ⟨qt_mid, hlookup_mid⟩
+                have hclean_mid : qtypCleanUnder res1.regime' qt_mid := by
+                  -- Trace clean back through e2 (which has ctx''.memEnv = res1.memEnv')
+                  have hcontains_ctx'' : ctx''.memEnv.contains l := by
+                    simpa [ctx'', ctx'] using hcontains_mid
+                  have hcontains2 : res2.memEnv'.contains l :=
+                    typecheckExpr_mem_contains_preserved
+                      ctx'' e2 fuel' res2
+                      (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
+                      l hcontains_ctx''
+                  -- l is in the join, so it's in at least one branch result
+                  -- Use e2 branch (which has the contains precondition satisfied)
+                  rcases memEnv_lookup_some_of_contains res2.memEnv' l hcontains2 with
+                    ⟨qt2, hlookup2⟩
+                  have hclean2 : qtypCleanUnder res2.regime' qt2 := by
+                    cases hclean with
+                    | clean hpoison_out =>
+                        have henv2 : res2.memEnv'.lookup l ≠ none := by
+                          intro hnone; rw [hlookup2] at hnone; contradiction
+                        rcases
+                            joinMemEnvsStrong_lookup_clean_left
+                              res2.memEnv' res3.memEnv' l qt
+                              hlookup_join hpoison_out henv2
+                          with ⟨qt2', hlookup2', _hetyp2, hpoison2⟩
+                        have hqt2 : qt2 = qt2' := by
+                          rw [hlookup2] at hlookup2'; injection hlookup2'
+                        cases hqt2
+                        exact qtypCleanUnder.clean hpoison2
+                    | guard k htag hk hnotfun =>
+                        have hk_join :
+                            (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
+                          simpa [ctxAfter, hregime'] using hk
+                        have htag2 : qtypGuardTag qt2 = some k :=
+                          joinMemEnvsStrong_lookup_guardTag_left
+                            res2.memEnv' res3.memEnv' l qt qt2 k
+                            hlookup_join hlookup2 htag
+                        have hk2 : res2.regime'.lookup? k = some true :=
+                          joinRegimes_lookup_some_left
+                            res2.regime' res3.regime' k true hk_join
+                        have hnotfun2 : qt2.etyp.isFunctionType = false := by
+                          rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
+                          native_decide
+                        exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
+                  rcases
+                      typecheckExpr_clean_lookup_origin_of_pc_true
+                        ctx'' e2 fuel' res2 htc2' hpc''
+                        l qt2 hlookup2 hcontains_ctx'' hclean2
+                    with ⟨qt_in, hlookup_in, hclean_in⟩
+                  have heq_qt : qt_mid = qt_in := by
+                    have : ctx''.memEnv.lookup l = some qt_mid := by
+                      simpa [ctx'', ctx'] using hlookup_mid
+                    rw [this] at hlookup_in; injection hlookup_in
+                  subst heq_qt
+                  exact hclean_in
+                have hcontains2 : res2.memEnv'.contains l :=
+                  typecheckExpr_mem_contains_preserved
+                    ctx'' e2 fuel' res2
+                    (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
+                    l
+                    (by simpa [ctx'', ctx'] using hcontains_mid)
+                have hcontains3 : res3.memEnv'.contains l :=
+                  typecheckExpr_mem_contains_preserved
+                    ctxForE3 e3 fuel' res3
+                    (by simpa [ctxForE3, ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc3)
+                    l
+                    (by simpa [ctxForE3, ctx'', ctx'] using hcontains_mid)
+                rcases memEnv_lookup_some_of_contains res2.memEnv' l hcontains2 with ⟨qt2, hlookup2⟩
+                rcases memEnv_lookup_some_of_contains res3.memEnv' l hcontains3 with ⟨qt3, hlookup3⟩
+                have hclean2 : qtypCleanUnder res2.regime' qt2 := by
+                  cases hclean with
+                  | clean hpoison_out =>
+                      have henv2 : res2.memEnv'.lookup l ≠ none := by
+                        intro hnone; rw [hlookup2] at hnone; contradiction
+                      rcases
+                          joinMemEnvsStrong_lookup_clean_left
+                            res2.memEnv' res3.memEnv' l qt
+                            hlookup_join hpoison_out henv2
+                        with ⟨qt2', hlookup2', _hetyp2, hpoison2⟩
+                      have hqt2 : qt2 = qt2' := by
+                        rw [hlookup2] at hlookup2'; injection hlookup2'
+                      cases hqt2
+                      exact qtypCleanUnder.clean hpoison2
+                  | guard k htag hk hnotfun =>
+                      have hk_join :
+                          (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
+                        simpa [ctxAfter, hregime'] using hk
+                      have htag2 : qtypGuardTag qt2 = some k :=
+                        joinMemEnvsStrong_lookup_guardTag_left
+                          res2.memEnv' res3.memEnv' l qt qt2 k
+                          hlookup_join hlookup2 htag
+                      have hk2 : res2.regime'.lookup? k = some true :=
+                        joinRegimes_lookup_some_left
+                          res2.regime' res3.regime' k true hk_join
+                      have hnotfun2 : qt2.etyp.isFunctionType = false := by
+                        rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
+                        native_decide
+                      exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
+                have hclean3 : qtypCleanUnder res3.regime' qt3 := by
+                  cases hclean with
+                  | clean hpoison_out =>
+                      have henv3 : res3.memEnv'.lookup l ≠ none := by
+                        intro hnone; rw [hlookup3] at hnone; contradiction
+                      rcases
+                          joinMemEnvsStrong_lookup_clean_right
+                            res2.memEnv' res3.memEnv' l qt
+                            hlookup_join hpoison_out henv3
+                        with ⟨qt3', hlookup3', _hetyp3, hpoison3⟩
+                      have hqt3 : qt3 = qt3' := by
+                        rw [hlookup3] at hlookup3'; injection hlookup3'
+                      cases hqt3
+                      exact qtypCleanUnder.clean hpoison3
+                  | guard k htag hk hnotfun =>
+                      have hk_join :
+                          (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
+                        simpa [ctxAfter, hregime'] using hk
+                      have htag3 : qtypGuardTag qt3 = some k :=
+                        joinMemEnvsStrong_lookup_guardTag_right
+                          res2.memEnv' res3.memEnv' l qt qt3 k
+                          hlookup_join hlookup3 htag
+                      have hk3 : res3.regime'.lookup? k = some true :=
+                        joinRegimes_lookup_some_right
+                          res2.regime' res3.regime' k true hk_join
+                      have hnotfun3 : qt3.etyp.isFunctionType = false := by
+                        rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
+                        native_decide
+                      exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
+                have hlookup_mid_ctx'' : ctx''.memEnv.lookup l = some qt_mid := by
+                  simpa [ctx'', ctx'] using hlookup_mid
+                have hlookup_mid_ctxForE3 : ctxForE3.memEnv.lookup l = some qt_mid := by
+                  simpa [ctxForE3, ctx'', ctx'] using hlookup_mid
+                have hpres_l₀ :
+                    PreservesInheritedCleanLocOneRun cfg₀1.memory cf₀.memory θ₀1 θ₀2 l :=
+                  PreservesInheritedFinalCleanLocsOneRun.apply
+                    (ctx := ctx'') (res := res2)
+                    (μ_in := cfg₀1.memory) (μ_out := cf₀.memory)
+                    (θ_in := θ₀1) (θ_out := θ₀2)
+                    hpres₂ hlookup_mid_ctx'' hlookup2 hclean2
+                have hpres_l₁ :
+                    PreservesInheritedCleanLocOneRun cfg₁1.memory cf₁.memory θ₁1 θ₁3 l :=
+                  PreservesInheritedFinalCleanLocsOneRun.apply
+                    (ctx := ctxForE3) (res := res3)
+                    (μ_in := cfg₁1.memory) (μ_out := cf₁.memory)
+                    (θ_in := θ₁1) (θ_out := θ₁3)
+                    hpres₃ hlookup_mid_ctxForE3 hlookup3 hclean3
+                have hagree_mid :
+                    agreeLocUnder predSat res1.regime'
+                      cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 (l, qt_mid) :=
+                  hagree1.1 l qt_mid (by simpa [ctxAfter] using hlookup_mid) hclean_mid
+                cases hagree_mid with
+                | both_unrealized _ _ hnone₀ hnone₁ =>
+                    have hnone₀' : θ₀2.lookup l = none := by
+                      cases hpres_l₀ with
+                      | both_unrealized _ hnone_out =>
+                          exact hnone_out
+                      | preserve_value _ _ hsome_in _ _ _ =>
+                          exact False.elim (Option.noConfusion (hnone₀.symm.trans hsome_in))
+                    have hnone₁' : θ₁3.lookup l = none := by
                       cases hpres_l₁ with
-                      | both_unrealized hnone_in _ =>
-                          exact False.elim (Option.noConfusion (hreal₁m.symm.trans hnone_in))
-                      | preserve_value a₁' n₁' hθ₁in hμ₁in hθ₁out hμ₁out =>
-                          have ha₀ : a₀' = a₀m := by
-                            exact Option.some.inj (hθ₀in.symm.trans hreal₀m)
-                          have hn₀ : n₀' = n₀ := by
-                            rw [ha₀] at hμ₀in
-                            exact Option.some.inj (hμ₀in.symm.trans hmem₀m)
-                          have ha₁ : a₁' = a₁m := by
-                            exact Option.some.inj (hθ₁in.symm.trans hreal₁m)
-                          have hn₁ : n₁' = n₁ := by
-                            rw [ha₁] at hμ₁in
-                            exact Option.some.inj (hμ₁in.symm.trans hmem₁m)
-                          cases ha₀
-                          cases hn₀
-                          cases ha₁
-                          cases hn₁
-                          have hnotref_mid : ¬ ∃ ls, qt_mid.etyp = ETyp.ref ls := by
-                            intro ⟨ls, hls⟩
-                            rw [memEnv_lookup_etyp_int res1.memEnv' l qt_mid hlookup_mid] at hls
-                            simp at hls
-                          have hnotfun_mid : qt_mid.etyp.isFunctionType = false := by
-                            rw [memEnv_lookup_etyp_int res1.memEnv' l qt_mid hlookup_mid]
+                      | both_unrealized _ hnone_out =>
+                          exact hnone_out
+                      | preserve_value _ _ hsome_in _ _ _ =>
+                          exact False.elim (Option.noConfusion (hnone₁.symm.trans hsome_in))
+                    exact agreeLocUnder.both_unrealized l qt hnone₀' hnone₁'
+                | agree_values _ _ a₀m a₁m n₀ n₁ hreal₀m hreal₁m hmem₀m hmem₁m hagreeVmid =>
+                    cases hpres_l₀ with
+                    | both_unrealized hnone_in _ =>
+                        exact False.elim (Option.noConfusion (hreal₀m.symm.trans hnone_in))
+                    | preserve_value a₀' n₀' hθ₀in hμ₀in hθ₀out hμ₀out =>
+                        cases hpres_l₁ with
+                        | both_unrealized hnone_in _ =>
+                            exact False.elim (Option.noConfusion (hreal₁m.symm.trans hnone_in))
+                        | preserve_value a₁' n₁' hθ₁in hμ₁in hθ₁out hμ₁out =>
+                            have ha₀ : a₀' = a₀m := by
+                              exact Option.some.inj (hθ₀in.symm.trans hreal₀m)
+                            have hn₀ : n₀' = n₀ := by
+                              rw [ha₀] at hμ₀in
+                              exact Option.some.inj (hμ₀in.symm.trans hmem₀m)
+                            have ha₁ : a₁' = a₁m := by
+                              exact Option.some.inj (hθ₁in.symm.trans hreal₁m)
+                            have hn₁ : n₁' = n₁ := by
+                              rw [ha₁] at hμ₁in
+                              exact Option.some.inj (hμ₁in.symm.trans hmem₁m)
+                            cases ha₀
+                            cases hn₀
+                            cases ha₁
+                            cases hn₁
+                            have hnotref_mid : ¬ ∃ ls, qt_mid.etyp = ETyp.ref ls := by
+                              intro ⟨ls, hls⟩
+                              rw [memEnv_lookup_etyp_int res1.memEnv' l qt_mid hlookup_mid] at hls
+                              simp at hls
+                            have hnotfun_mid : qt_mid.etyp.isFunctionType = false := by
+                              rw [memEnv_lookup_etyp_int res1.memEnv' l qt_mid hlookup_mid]
+                              native_decide
+                            have hEq_vals : Value.num n₀ = Value.num n₁ :=
+                              agreeValueUnder_nonref_eq_of_clean
+                                hclean_mid hnotref_mid hnotfun_mid hagreeVmid
+                            have hnotref_final : ¬ ∃ ls, qt.etyp = ETyp.ref ls := by
+                              intro ⟨ls, hls⟩
+                              rw [memEnv_lookup_etyp_int (ctxAfter ctxᵢ res).memEnv l qt hlookup] at hls
+                              simp at hls
+                            have hagreeV_final :
+                                agreeValueUnder predSat res.regime'
+                                  cf₀.memory cf₁.memory θ₀2 θ₁3 qt (Value.num n₀) (Value.num n₁) := by
+                              cases hclean with
+                              | clean hpoison =>
+                                  have hnotfun_final : qt.etyp.isFunctionType = false := by
+                                    rw [memEnv_lookup_etyp_int (ctxAfter ctxᵢ res).memEnv l qt hlookup]
+                                    native_decide
+                                  exact
+                                    agreeValueUnder.clean_eq_nonref_nonarrow
+                                      hpoison hnotfun_final hnotref_final hEq_vals
+                              | guard k htag hk hnotfun =>
+                                  exact
+                                    agreeValueUnder.withPred_true_eq
+                                      k htag hk hnotfun hnotref_final hEq_vals
+                            exact
+                              agreeLocUnder.agree_values
+                                l qt a₀m a₁m n₀ n₁
+                                hθ₀out hθ₁out hμ₀out hμ₁out hagreeV_final
+              · -- FRESH: l ∉ res1.memEnv' → both θ unrealized
+                have hnotContains_ctx'' : ¬ ctx''.memEnv.contains l := by
+                  simpa [ctx'', ctx'] using hcontains_mid
+                have hnotContains_ctxForE3 : ¬ ctxForE3.memEnv.contains l := by
+                  simpa [ctxForE3, ctx'', ctx'] using hcontains_mid
+                -- θ₀2: run 0 executes e2
+                have hθ₀2_none : θ₀2.lookup l = none := by
+                  by_cases hc2 : res2.memEnv'.contains l
+                  · -- l ∈ res2: use FreshCleanLocsUnrealizedOneRun
+                    rcases memEnv_lookup_some_of_contains res2.memEnv' l hc2 with ⟨qt2, hlookup2⟩
+                    have hclean2 : qtypCleanUnder res2.regime' qt2 := by
+                      cases hclean with
+                      | clean hpoison_out =>
+                          have henv2 : res2.memEnv'.lookup l ≠ none := by
+                            intro hnone; rw [hlookup2] at hnone; contradiction
+                          rcases
+                              joinMemEnvsStrong_lookup_clean_left
+                                res2.memEnv' res3.memEnv' l qt
+                                hlookup_join hpoison_out henv2
+                            with ⟨qt2', hlookup2', _hetyp2, hpoison2⟩
+                          have hqt2 : qt2 = qt2' := by
+                            rw [hlookup2] at hlookup2'; injection hlookup2'
+                          cases hqt2
+                          exact qtypCleanUnder.clean hpoison2
+                      | guard k htag hk hnotfun =>
+                          have hk_join :
+                              (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
+                            simpa [ctxAfter, hregime'] using hk
+                          have htag2 : qtypGuardTag qt2 = some k :=
+                            joinMemEnvsStrong_lookup_guardTag_left
+                              res2.memEnv' res3.memEnv' l qt qt2 k
+                              hlookup_join hlookup2 htag
+                          have hk2 : res2.regime'.lookup? k = some true :=
+                            joinRegimes_lookup_some_left
+                              res2.regime' res3.regime' k true hk_join
+                          have hnotfun2 : qt2.etyp.isFunctionType = false := by
+                            rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
                             native_decide
-                          have hEq_vals : Value.num n₀ = Value.num n₁ :=
-                            agreeValueUnder_nonref_eq_of_clean
-                              hclean_mid hnotref_mid hnotfun_mid hagreeVmid
-                          have hnotref_final : ¬ ∃ ls, qt.etyp = ETyp.ref ls := by
-                            intro ⟨ls, hls⟩
-                            rw [memEnv_lookup_etyp_int (ctxAfter ctxᵢ res).memEnv l qt hlookup] at hls
-                            simp at hls
-                          have hagreeV_final :
-                              agreeValueUnder predSat res.regime'
-                                cf₀.memory cf₁.memory θ₀2 θ₁3 qt (Value.num n₀) (Value.num n₁) := by
-                            cases hclean with
-                            | clean hpoison =>
-                                have hnotfun_final : qt.etyp.isFunctionType = false := by
-                                  rw [memEnv_lookup_etyp_int (ctxAfter ctxᵢ res).memEnv l qt hlookup]
-                                  native_decide
-                                exact
-                                  agreeValueUnder.clean_eq_nonref_nonarrow
-                                    hpoison hnotfun_final hnotref_final hEq_vals
-                            | guard k htag hk hnotfun =>
-                                exact
-                                  agreeValueUnder.withPred_true_eq
-                                    k htag hk hnotfun hnotref_final hEq_vals
-                          exact
-                            agreeLocUnder.agree_values
-                              l qt a₀m a₁m n₀ n₁
-                              hθ₀out hθ₁out hμ₀out hμ₁out hagreeV_final
+                          exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
+                    exact _hfresh₂ l qt2 hnotContains_ctx'' hlookup2 hclean2
+                  · -- l ∉ res2: θ₀2 can't map l
+                    exact theta_not_contains_if_not_in_memEnv
+                      (ctxAfter ctx'' res2) cf₀.memory cf₀.varEnv θ₀2 l
+                      hric₀2 (by simpa [ctxAfter] using hc2)
+                -- θ₁3: run 1 executes e3
+                have hθ₁3_none : θ₁3.lookup l = none := by
+                  by_cases hc3 : res3.memEnv'.contains l
+                  · -- l ∈ res3: use FreshCleanLocsUnrealizedOneRun
+                    rcases memEnv_lookup_some_of_contains res3.memEnv' l hc3 with ⟨qt3, hlookup3⟩
+                    have hclean3 : qtypCleanUnder res3.regime' qt3 := by
+                      cases hclean with
+                      | clean hpoison_out =>
+                          have henv3 : res3.memEnv'.lookup l ≠ none := by
+                            intro hnone; rw [hlookup3] at hnone; contradiction
+                          rcases
+                              joinMemEnvsStrong_lookup_clean_right
+                                res2.memEnv' res3.memEnv' l qt
+                                hlookup_join hpoison_out henv3
+                            with ⟨qt3', hlookup3', _hetyp3, hpoison3⟩
+                          have hqt3 : qt3 = qt3' := by
+                            rw [hlookup3] at hlookup3'; injection hlookup3'
+                          cases hqt3
+                          exact qtypCleanUnder.clean hpoison3
+                      | guard k htag hk hnotfun =>
+                          have hk_join :
+                              (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
+                            simpa [ctxAfter, hregime'] using hk
+                          have htag3 : qtypGuardTag qt3 = some k :=
+                            joinMemEnvsStrong_lookup_guardTag_right
+                              res2.memEnv' res3.memEnv' l qt qt3 k
+                              hlookup_join hlookup3 htag
+                          have hk3 : res3.regime'.lookup? k = some true :=
+                            joinRegimes_lookup_some_right
+                              res2.regime' res3.regime' k true hk_join
+                          have hnotfun3 : qt3.etyp.isFunctionType = false := by
+                            rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
+                            native_decide
+                          exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
+                    exact _hfresh₃ l qt3 hnotContains_ctxForE3 hlookup3 hclean3
+                  · -- l ∉ res3: θ₁3 can't map l
+                    exact theta_not_contains_if_not_in_memEnv
+                      (ctxAfter ctxForE3 res3) cf₁.memory cf₁.varEnv θ₁3 l
+                      (by simpa [ctxAfter, ctxForE3, ctx'', ctx', pc'] using hric₁3)
+                      (by simpa [ctxAfter] using hc3)
+                exact agreeLocUnder.both_unrealized l qt hθ₀2_none hθ₁3_none
             · intro x qt hlookup hclean
               have hclean_mid : qtypCleanUnder res1.regime' qt :=
                 hclean_final_to_res1 qt hclean
@@ -4818,13 +4851,13 @@ private lemma stepFR_ite_standard
                 cfg₀1.memory cfg₀1.varEnv θ₀1 cf₀ o₀
                 hθ₀1wf hwf_ctxForE3 hric₀1_ctxForE3 htagR_ctxForE3
                 hcwr₀1_ctxForE3 cfg₀1.nextAddr cfg₀1.pureMode hwfcf₀1 ht₀_e3 hpcForE3
-            with ⟨θ₀3, hθext₀3, hvtyp₀3, hric₀3, hcwr₀3, hvalc₀3, hpres₃⟩
+            with ⟨θ₀3, hθext₀3, hvtyp₀3, hric₀3, hcwr₀3, hvalc₀3, hpres₃, _hfresh₃⟩
           rcases
               hsingle_e2 hpredlaws hwfTm_ctx''
                 cfg₁1.memory cfg₁1.varEnv θ₁1 cf₁ o₁
                 hθ₁1wf hwf_ctx'' hric₁1_ctx'' htagR_ctx''
                 hcwr₁1_ctx'' cfg₁1.nextAddr cfg₁1.pureMode hwfcf₁1 ht₁_e2 hpc''
-            with ⟨θ₁2, hθext₁2, hvtyp₁2, hric₁2, hcwr₁2, hvalc₁2, hpres₂⟩
+            with ⟨θ₁2, hθext₁2, hvtyp₁2, hric₁2, hcwr₁2, hvalc₁2, hpres₂, _hfresh₂⟩
           have hθext₀ : wfExtendsMap θ₀ θ₀3 := wfExtendsMap_trans hθext₀1 hθext₀3
           have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
           have hlookup_back_final_to_res1 :
@@ -4891,105 +4924,6 @@ private lemma stepFR_ite_standard
                 (R := res1.regime') (R' := res.regime')
                 (μ := cf₁.memory)
                 hlookup_back_final_to_res1 h
-          have hclean_back_to_res1 :
-              ∀ l qt_out,
-                res.memEnv'.lookup l = some qt_out →
-                qtypCleanUnder res.regime' qt_out →
-                ∃ qt_mid,
-                  res1.memEnv'.lookup l = some qt_mid ∧
-                  qtypCleanUnder res1.regime' qt_mid := by
-            intro l qt_out hlookup_out hclean_out
-            have hlookup_join :
-                (joinMemEnvsStrong res2.memEnv' res3.memEnv').lookup l = some qt_out := by
-              simpa [hmemEnv] using hlookup_out
-            have hcontains_join :
-                (joinMemEnvsStrong res2.memEnv' res3.memEnv').contains l :=
-              memEnv_contains_of_lookup_some
-                (joinMemEnvsStrong res2.memEnv' res3.memEnv') l qt_out hlookup_join
-            rcases
-                joinMemEnvsStrong_contains_implies_or
-                  res2.memEnv' res3.memEnv' l hcontains_join
-              with hcontains2 | hcontains3
-            · rcases memEnv_lookup_some_of_contains res2.memEnv' l hcontains2 with
-                ⟨qt2, hlookup2⟩
-              have hclean2 : qtypCleanUnder res2.regime' qt2 := by
-                cases hclean_out with
-                | clean hpoison_out =>
-                    have henv2 : res2.memEnv'.lookup l ≠ none := by
-                      intro hnone
-                      rw [hlookup2] at hnone
-                      contradiction
-                    rcases
-                        joinMemEnvsStrong_lookup_clean_left
-                          res2.memEnv' res3.memEnv' l qt_out
-                          hlookup_join hpoison_out henv2
-                      with ⟨qt2', hlookup2', _hetyp2, hpoison2⟩
-                    have hqt2 : qt2 = qt2' := by
-                      rw [hlookup2] at hlookup2'
-                      injection hlookup2'
-                    cases hqt2
-                    exact qtypCleanUnder.clean hpoison2
-                | guard k htag hk hnotfun =>
-                    have hk_join :
-                        (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
-                      simpa [hregime'] using hk
-                    have htag2 : qtypGuardTag qt2 = some k :=
-                      joinMemEnvsStrong_lookup_guardTag_left
-                        res2.memEnv' res3.memEnv' l qt_out qt2 k
-                        hlookup_join hlookup2 htag
-                    have hk2 : res2.regime'.lookup? k = some true :=
-                      joinRegimes_lookup_some_left
-                        res2.regime' res3.regime' k true hk_join
-                    have hnotfun2 : qt2.etyp.isFunctionType = false := by
-                      rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                      native_decide
-                    exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
-              exact
-                typecheckExpr_clean_lookup_origin_of_pc_true
-                  ctx'' e2 fuel' res2 htc2' hpc''
-                  l qt2 hlookup2
-                  (by sorry)
-                  hclean2
-            · rcases memEnv_lookup_some_of_contains res3.memEnv' l hcontains3 with
-                ⟨qt3, hlookup3⟩
-              have hclean3 : qtypCleanUnder res3.regime' qt3 := by
-                cases hclean_out with
-                | clean hpoison_out =>
-                    have henv3 : res3.memEnv'.lookup l ≠ none := by
-                      intro hnone
-                      rw [hlookup3] at hnone
-                      contradiction
-                    rcases
-                        joinMemEnvsStrong_lookup_clean_right
-                          res2.memEnv' res3.memEnv' l qt_out
-                          hlookup_join hpoison_out henv3
-                      with ⟨qt3', hlookup3', _hetyp3, hpoison3⟩
-                    have hqt3 : qt3 = qt3' := by
-                      rw [hlookup3] at hlookup3'
-                      injection hlookup3'
-                    cases hqt3
-                    exact qtypCleanUnder.clean hpoison3
-                | guard k htag hk hnotfun =>
-                    have hk_join :
-                        (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
-                      simpa [hregime'] using hk
-                    have htag3 : qtypGuardTag qt3 = some k :=
-                      joinMemEnvsStrong_lookup_guardTag_right
-                        res2.memEnv' res3.memEnv' l qt_out qt3 k
-                        hlookup_join hlookup3 htag
-                    have hk3 : res3.regime'.lookup? k = some true :=
-                      joinRegimes_lookup_some_right
-                        res2.regime' res3.regime' k true hk_join
-                    have hnotfun3 : qt3.etyp.isFunctionType = false := by
-                      rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                      native_decide
-                    exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
-              exact
-                typecheckExpr_clean_lookup_origin_of_pc_true
-                  ctxForE3 e3 fuel' res3 htc3' hpcForE3
-                  l qt3 hlookup3
-                  (by sorry)
-                  hclean3
           have hric₀3_src :
               runtimeInstantiatesCtx (ctxAfter ctx'' res3) cf₀.memory cf₀.varEnv θ₀3 := by
             simpa [ctxAfter, ctxForE3, ctx'', ctx', pc'] using hric₀3
@@ -5129,182 +5063,311 @@ private lemma stepFR_ite_standard
               have hlookup_join :
                   (joinMemEnvsStrong res2.memEnv' res3.memEnv').lookup l = some qt := by
                 simpa [hmemEnv] using hlookup_res
-              rcases hclean_back_to_res1 l qt hlookup_res (by simpa [ctxAfter] using hclean) with
-                ⟨qt_mid, hlookup_mid, hclean_mid⟩
-              have hcontains_mid :
-                  res1.memEnv'.contains l :=
-                memEnv_contains_of_lookup_some res1.memEnv' l qt_mid hlookup_mid
-              have hcontains2 : res2.memEnv'.contains l :=
-                typecheckExpr_mem_contains_preserved
-                  ctx'' e2 fuel' res2
-                  (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
-                  l
-                  (by simpa [ctx'', ctx'] using hcontains_mid)
-              have hcontains3 : res3.memEnv'.contains l :=
-                typecheckExpr_mem_contains_preserved
-                  ctxForE3 e3 fuel' res3
-                  (by simpa [ctxForE3, ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc3)
-                  l
-                  (by simpa [ctxForE3, ctx'', ctx'] using hcontains_mid)
-              rcases memEnv_lookup_some_of_contains res2.memEnv' l hcontains2 with ⟨qt2, hlookup2⟩
-              rcases memEnv_lookup_some_of_contains res3.memEnv' l hcontains3 with ⟨qt3, hlookup3⟩
-              have hclean2 : qtypCleanUnder res2.regime' qt2 := by
-                cases hclean with
-                | clean hpoison_out =>
-                    have henv2 : res2.memEnv'.lookup l ≠ none := by
-                      intro hnone
-                      rw [hlookup2] at hnone
-                      contradiction
-                    rcases
-                        joinMemEnvsStrong_lookup_clean_left
-                          res2.memEnv' res3.memEnv' l qt
-                          hlookup_join hpoison_out henv2
-                      with ⟨qt2', hlookup2', _hetyp2, hpoison2⟩
-                    have hqt2 : qt2 = qt2' := by
-                      rw [hlookup2] at hlookup2'
-                      injection hlookup2'
-                    cases hqt2
-                    exact qtypCleanUnder.clean hpoison2
-                | guard k htag hk hnotfun =>
-                    have hk_join :
-                        (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
-                      simpa [ctxAfter, hregime'] using hk
-                    have htag2 : qtypGuardTag qt2 = some k :=
-                      joinMemEnvsStrong_lookup_guardTag_left
-                        res2.memEnv' res3.memEnv' l qt qt2 k
-                        hlookup_join hlookup2 htag
-                    have hk2 : res2.regime'.lookup? k = some true :=
-                      joinRegimes_lookup_some_left
-                        res2.regime' res3.regime' k true hk_join
-                    have hnotfun2 : qt2.etyp.isFunctionType = false := by
-                      rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                      native_decide
-                    exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
-              have hclean3 : qtypCleanUnder res3.regime' qt3 := by
-                cases hclean with
-                | clean hpoison_out =>
-                    have henv3 : res3.memEnv'.lookup l ≠ none := by
-                      intro hnone
-                      rw [hlookup3] at hnone
-                      contradiction
-                    rcases
-                        joinMemEnvsStrong_lookup_clean_right
-                          res2.memEnv' res3.memEnv' l qt
-                          hlookup_join hpoison_out henv3
-                      with ⟨qt3', hlookup3', _hetyp3, hpoison3⟩
-                    have hqt3 : qt3 = qt3' := by
-                      rw [hlookup3] at hlookup3'
-                      injection hlookup3'
-                    cases hqt3
-                    exact qtypCleanUnder.clean hpoison3
-                | guard k htag hk hnotfun =>
-                    have hk_join :
-                        (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
-                      simpa [ctxAfter, hregime'] using hk
-                    have htag3 : qtypGuardTag qt3 = some k :=
-                      joinMemEnvsStrong_lookup_guardTag_right
-                        res2.memEnv' res3.memEnv' l qt qt3 k
-                        hlookup_join hlookup3 htag
-                    have hk3 : res3.regime'.lookup? k = some true :=
-                      joinRegimes_lookup_some_right
-                        res2.regime' res3.regime' k true hk_join
-                    have hnotfun3 : qt3.etyp.isFunctionType = false := by
-                      rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                      native_decide
-                    exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
-              have hlookup_mid_ctx'' : ctx''.memEnv.lookup l = some qt_mid := by
-                simpa [ctx'', ctx'] using hlookup_mid
-              have hlookup_mid_ctxForE3 : ctxForE3.memEnv.lookup l = some qt_mid := by
-                simpa [ctxForE3, ctx'', ctx'] using hlookup_mid
-              have hpres_l₀ :
-                  PreservesInheritedCleanLocOneRun cfg₀1.memory cf₀.memory θ₀1 θ₀3 l :=
-                PreservesInheritedFinalCleanLocsOneRun.apply
-                  (ctx := ctxForE3) (res := res3)
-                  (μ_in := cfg₀1.memory) (μ_out := cf₀.memory)
-                  (θ_in := θ₀1) (θ_out := θ₀3)
-                  hpres₃ hlookup_mid_ctxForE3 hlookup3 hclean3
-              have hpres_l₁ :
-                  PreservesInheritedCleanLocOneRun cfg₁1.memory cf₁.memory θ₁1 θ₁2 l :=
-                PreservesInheritedFinalCleanLocsOneRun.apply
-                  (ctx := ctx'') (res := res2)
-                  (μ_in := cfg₁1.memory) (μ_out := cf₁.memory)
-                  (θ_in := θ₁1) (θ_out := θ₁2)
-                  hpres₂ hlookup_mid_ctx'' hlookup2 hclean2
-              have hagree_mid :
-                  agreeLocUnder predSat res1.regime'
-                    cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 (l, qt_mid) :=
-                hagree1.1 l qt_mid (by simpa [ctxAfter] using hlookup_mid) hclean_mid
-              cases hagree_mid with
-              | both_unrealized _ _ hnone₀ hnone₁ =>
-                  have hnone₀' : θ₀3.lookup l = none := by
-                    cases hpres_l₀ with
-                    | both_unrealized _ hnone_out =>
-                        exact hnone_out
-                    | preserve_value _ _ hsome_in _ _ _ =>
-                        exact False.elim (Option.noConfusion (hnone₀.symm.trans hsome_in))
-                  have hnone₁' : θ₁2.lookup l = none := by
-                    cases hpres_l₁ with
-                    | both_unrealized _ hnone_out =>
-                        exact hnone_out
-                    | preserve_value _ _ hsome_in _ _ _ =>
-                        exact False.elim (Option.noConfusion (hnone₁.symm.trans hsome_in))
-                  exact agreeLocUnder.both_unrealized l qt hnone₀' hnone₁'
-              | agree_values _ _ a₀m a₁m n₀ n₁ hreal₀m hreal₁m hmem₀m hmem₁m hagreeVmid =>
-                  cases hpres_l₀ with
-                  | both_unrealized hnone_in _ =>
-                      exact False.elim (Option.noConfusion (hreal₀m.symm.trans hnone_in))
-                  | preserve_value a₀' n₀' hθ₀in hμ₀in hθ₀out hμ₀out =>
+              -- Case split: l inherited from res1 vs. fresh
+              by_cases hcontains_mid : res1.memEnv'.contains l
+              · -- INHERITED: l ∈ res1.memEnv'
+                rcases memEnv_lookup_some_of_contains res1.memEnv' l hcontains_mid with
+                  ⟨qt_mid, hlookup_mid⟩
+                have hclean_mid : qtypCleanUnder res1.regime' qt_mid := by
+                  -- Trace clean back through e3 (which has ctxForE3.memEnv = res1.memEnv')
+                  have hcontains_ctxForE3 : ctxForE3.memEnv.contains l := by
+                    simpa [ctxForE3, ctx'', ctx'] using hcontains_mid
+                  have hcontains3 : res3.memEnv'.contains l :=
+                    typecheckExpr_mem_contains_preserved
+                      ctxForE3 e3 fuel' res3
+                      (by simpa [ctxForE3, ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc3)
+                      l hcontains_ctxForE3
+                  rcases memEnv_lookup_some_of_contains res3.memEnv' l hcontains3 with
+                    ⟨qt3, hlookup3⟩
+                  have hclean3 : qtypCleanUnder res3.regime' qt3 := by
+                    cases hclean with
+                    | clean hpoison_out =>
+                        have henv3 : res3.memEnv'.lookup l ≠ none := by
+                          intro hnone; rw [hlookup3] at hnone; contradiction
+                        rcases
+                            joinMemEnvsStrong_lookup_clean_right
+                              res2.memEnv' res3.memEnv' l qt
+                              hlookup_join hpoison_out henv3
+                          with ⟨qt3', hlookup3', _hetyp3, hpoison3⟩
+                        have hqt3 : qt3 = qt3' := by
+                          rw [hlookup3] at hlookup3'; injection hlookup3'
+                        cases hqt3
+                        exact qtypCleanUnder.clean hpoison3
+                    | guard k htag hk hnotfun =>
+                        have hk_join :
+                            (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
+                          simpa [ctxAfter, hregime'] using hk
+                        have htag3 : qtypGuardTag qt3 = some k :=
+                          joinMemEnvsStrong_lookup_guardTag_right
+                            res2.memEnv' res3.memEnv' l qt qt3 k
+                            hlookup_join hlookup3 htag
+                        have hk3 : res3.regime'.lookup? k = some true :=
+                          joinRegimes_lookup_some_right
+                            res2.regime' res3.regime' k true hk_join
+                        have hnotfun3 : qt3.etyp.isFunctionType = false := by
+                          rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
+                          native_decide
+                        exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
+                  rcases
+                      typecheckExpr_clean_lookup_origin_of_pc_true
+                        ctxForE3 e3 fuel' res3 htc3' hpcForE3
+                        l qt3 hlookup3 hcontains_ctxForE3 hclean3
+                    with ⟨qt_in, hlookup_in, hclean_in⟩
+                  have heq_qt : qt_mid = qt_in := by
+                    have : ctxForE3.memEnv.lookup l = some qt_mid := by
+                      simpa [ctxForE3, ctx'', ctx'] using hlookup_mid
+                    rw [this] at hlookup_in; injection hlookup_in
+                  subst heq_qt
+                  exact hclean_in
+                have hcontains2 : res2.memEnv'.contains l :=
+                  typecheckExpr_mem_contains_preserved
+                    ctx'' e2 fuel' res2
+                    (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
+                    l
+                    (by simpa [ctx'', ctx'] using hcontains_mid)
+                have hcontains3 : res3.memEnv'.contains l :=
+                  typecheckExpr_mem_contains_preserved
+                    ctxForE3 e3 fuel' res3
+                    (by simpa [ctxForE3, ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc3)
+                    l
+                    (by simpa [ctxForE3, ctx'', ctx'] using hcontains_mid)
+                rcases memEnv_lookup_some_of_contains res2.memEnv' l hcontains2 with ⟨qt2, hlookup2⟩
+                rcases memEnv_lookup_some_of_contains res3.memEnv' l hcontains3 with ⟨qt3, hlookup3⟩
+                have hclean2 : qtypCleanUnder res2.regime' qt2 := by
+                  cases hclean with
+                  | clean hpoison_out =>
+                      have henv2 : res2.memEnv'.lookup l ≠ none := by
+                        intro hnone; rw [hlookup2] at hnone; contradiction
+                      rcases
+                          joinMemEnvsStrong_lookup_clean_left
+                            res2.memEnv' res3.memEnv' l qt
+                            hlookup_join hpoison_out henv2
+                        with ⟨qt2', hlookup2', _hetyp2, hpoison2⟩
+                      have hqt2 : qt2 = qt2' := by
+                        rw [hlookup2] at hlookup2'; injection hlookup2'
+                      cases hqt2
+                      exact qtypCleanUnder.clean hpoison2
+                  | guard k htag hk hnotfun =>
+                      have hk_join :
+                          (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
+                        simpa [ctxAfter, hregime'] using hk
+                      have htag2 : qtypGuardTag qt2 = some k :=
+                        joinMemEnvsStrong_lookup_guardTag_left
+                          res2.memEnv' res3.memEnv' l qt qt2 k
+                          hlookup_join hlookup2 htag
+                      have hk2 : res2.regime'.lookup? k = some true :=
+                        joinRegimes_lookup_some_left
+                          res2.regime' res3.regime' k true hk_join
+                      have hnotfun2 : qt2.etyp.isFunctionType = false := by
+                        rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
+                        native_decide
+                      exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
+                have hclean3 : qtypCleanUnder res3.regime' qt3 := by
+                  cases hclean with
+                  | clean hpoison_out =>
+                      have henv3 : res3.memEnv'.lookup l ≠ none := by
+                        intro hnone; rw [hlookup3] at hnone; contradiction
+                      rcases
+                          joinMemEnvsStrong_lookup_clean_right
+                            res2.memEnv' res3.memEnv' l qt
+                            hlookup_join hpoison_out henv3
+                        with ⟨qt3', hlookup3', _hetyp3, hpoison3⟩
+                      have hqt3 : qt3 = qt3' := by
+                        rw [hlookup3] at hlookup3'; injection hlookup3'
+                      cases hqt3
+                      exact qtypCleanUnder.clean hpoison3
+                  | guard k htag hk hnotfun =>
+                      have hk_join :
+                          (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
+                        simpa [ctxAfter, hregime'] using hk
+                      have htag3 : qtypGuardTag qt3 = some k :=
+                        joinMemEnvsStrong_lookup_guardTag_right
+                          res2.memEnv' res3.memEnv' l qt qt3 k
+                          hlookup_join hlookup3 htag
+                      have hk3 : res3.regime'.lookup? k = some true :=
+                        joinRegimes_lookup_some_right
+                          res2.regime' res3.regime' k true hk_join
+                      have hnotfun3 : qt3.etyp.isFunctionType = false := by
+                        rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
+                        native_decide
+                      exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
+                have hlookup_mid_ctx'' : ctx''.memEnv.lookup l = some qt_mid := by
+                  simpa [ctx'', ctx'] using hlookup_mid
+                have hlookup_mid_ctxForE3 : ctxForE3.memEnv.lookup l = some qt_mid := by
+                  simpa [ctxForE3, ctx'', ctx'] using hlookup_mid
+                have hpres_l₀ :
+                    PreservesInheritedCleanLocOneRun cfg₀1.memory cf₀.memory θ₀1 θ₀3 l :=
+                  PreservesInheritedFinalCleanLocsOneRun.apply
+                    (ctx := ctxForE3) (res := res3)
+                    (μ_in := cfg₀1.memory) (μ_out := cf₀.memory)
+                    (θ_in := θ₀1) (θ_out := θ₀3)
+                    hpres₃ hlookup_mid_ctxForE3 hlookup3 hclean3
+                have hpres_l₁ :
+                    PreservesInheritedCleanLocOneRun cfg₁1.memory cf₁.memory θ₁1 θ₁2 l :=
+                  PreservesInheritedFinalCleanLocsOneRun.apply
+                    (ctx := ctx'') (res := res2)
+                    (μ_in := cfg₁1.memory) (μ_out := cf₁.memory)
+                    (θ_in := θ₁1) (θ_out := θ₁2)
+                    hpres₂ hlookup_mid_ctx'' hlookup2 hclean2
+                have hagree_mid :
+                    agreeLocUnder predSat res1.regime'
+                      cfg₀1.memory cfg₁1.memory θ₀1 θ₁1 (l, qt_mid) :=
+                  hagree1.1 l qt_mid (by simpa [ctxAfter] using hlookup_mid) hclean_mid
+                cases hagree_mid with
+                | both_unrealized _ _ hnone₀ hnone₁ =>
+                    have hnone₀' : θ₀3.lookup l = none := by
+                      cases hpres_l₀ with
+                      | both_unrealized _ hnone_out =>
+                          exact hnone_out
+                      | preserve_value _ _ hsome_in _ _ _ =>
+                          exact False.elim (Option.noConfusion (hnone₀.symm.trans hsome_in))
+                    have hnone₁' : θ₁2.lookup l = none := by
                       cases hpres_l₁ with
-                      | both_unrealized hnone_in _ =>
-                          exact False.elim (Option.noConfusion (hreal₁m.symm.trans hnone_in))
-                      | preserve_value a₁' n₁' hθ₁in hμ₁in hθ₁out hμ₁out =>
-                          have ha₀ : a₀' = a₀m := by
-                            exact Option.some.inj (hθ₀in.symm.trans hreal₀m)
-                          have hn₀ : n₀' = n₀ := by
-                            rw [ha₀] at hμ₀in
-                            exact Option.some.inj (hμ₀in.symm.trans hmem₀m)
-                          have ha₁ : a₁' = a₁m := by
-                            exact Option.some.inj (hθ₁in.symm.trans hreal₁m)
-                          have hn₁ : n₁' = n₁ := by
-                            rw [ha₁] at hμ₁in
-                            exact Option.some.inj (hμ₁in.symm.trans hmem₁m)
-                          cases ha₀
-                          cases hn₀
-                          cases ha₁
-                          cases hn₁
-                          have hnotref_mid : ¬ ∃ ls, qt_mid.etyp = ETyp.ref ls := by
-                            intro ⟨ls, hls⟩
-                            rw [memEnv_lookup_etyp_int res1.memEnv' l qt_mid hlookup_mid] at hls
-                            simp at hls
-                          have hnotfun_mid : qt_mid.etyp.isFunctionType = false := by
-                            rw [memEnv_lookup_etyp_int res1.memEnv' l qt_mid hlookup_mid]
+                      | both_unrealized _ hnone_out =>
+                          exact hnone_out
+                      | preserve_value _ _ hsome_in _ _ _ =>
+                          exact False.elim (Option.noConfusion (hnone₁.symm.trans hsome_in))
+                    exact agreeLocUnder.both_unrealized l qt hnone₀' hnone₁'
+                | agree_values _ _ a₀m a₁m n₀ n₁ hreal₀m hreal₁m hmem₀m hmem₁m hagreeVmid =>
+                    cases hpres_l₀ with
+                    | both_unrealized hnone_in _ =>
+                        exact False.elim (Option.noConfusion (hreal₀m.symm.trans hnone_in))
+                    | preserve_value a₀' n₀' hθ₀in hμ₀in hθ₀out hμ₀out =>
+                        cases hpres_l₁ with
+                        | both_unrealized hnone_in _ =>
+                            exact False.elim (Option.noConfusion (hreal₁m.symm.trans hnone_in))
+                        | preserve_value a₁' n₁' hθ₁in hμ₁in hθ₁out hμ₁out =>
+                            have ha₀ : a₀' = a₀m := by
+                              exact Option.some.inj (hθ₀in.symm.trans hreal₀m)
+                            have hn₀ : n₀' = n₀ := by
+                              rw [ha₀] at hμ₀in
+                              exact Option.some.inj (hμ₀in.symm.trans hmem₀m)
+                            have ha₁ : a₁' = a₁m := by
+                              exact Option.some.inj (hθ₁in.symm.trans hreal₁m)
+                            have hn₁ : n₁' = n₁ := by
+                              rw [ha₁] at hμ₁in
+                              exact Option.some.inj (hμ₁in.symm.trans hmem₁m)
+                            cases ha₀
+                            cases hn₀
+                            cases ha₁
+                            cases hn₁
+                            have hnotref_mid : ¬ ∃ ls, qt_mid.etyp = ETyp.ref ls := by
+                              intro ⟨ls, hls⟩
+                              rw [memEnv_lookup_etyp_int res1.memEnv' l qt_mid hlookup_mid] at hls
+                              simp at hls
+                            have hnotfun_mid : qt_mid.etyp.isFunctionType = false := by
+                              rw [memEnv_lookup_etyp_int res1.memEnv' l qt_mid hlookup_mid]
+                              native_decide
+                            have hEq_vals : Value.num n₀ = Value.num n₁ :=
+                              agreeValueUnder_nonref_eq_of_clean
+                                hclean_mid hnotref_mid hnotfun_mid hagreeVmid
+                            have hnotref_final : ¬ ∃ ls, qt.etyp = ETyp.ref ls := by
+                              intro ⟨ls, hls⟩
+                              rw [memEnv_lookup_etyp_int (ctxAfter ctxᵢ res).memEnv l qt hlookup] at hls
+                              simp at hls
+                            have hagreeV_final :
+                                agreeValueUnder predSat res.regime'
+                                  cf₀.memory cf₁.memory θ₀3 θ₁2 qt (Value.num n₀) (Value.num n₁) := by
+                              cases hclean with
+                              | clean hpoison =>
+                                  have hnotfun_final : qt.etyp.isFunctionType = false := by
+                                    rw [memEnv_lookup_etyp_int (ctxAfter ctxᵢ res).memEnv l qt hlookup]
+                                    native_decide
+                                  exact
+                                    agreeValueUnder.clean_eq_nonref_nonarrow
+                                      hpoison hnotfun_final hnotref_final hEq_vals
+                              | guard k htag hk hnotfun =>
+                                  exact
+                                    agreeValueUnder.withPred_true_eq
+                                      k htag hk hnotfun hnotref_final hEq_vals
+                            exact
+                              agreeLocUnder.agree_values
+                                l qt a₀m a₁m n₀ n₁
+                                hθ₀out hθ₁out hμ₀out hμ₁out hagreeV_final
+              · -- FRESH: l ∉ res1.memEnv' → both θ unrealized
+                have hnotContains_ctx'' : ¬ ctx''.memEnv.contains l := by
+                  simpa [ctx'', ctx'] using hcontains_mid
+                have hnotContains_ctxForE3 : ¬ ctxForE3.memEnv.contains l := by
+                  simpa [ctxForE3, ctx'', ctx'] using hcontains_mid
+                -- θ₀3: run 0 executes e3
+                have hθ₀3_none : θ₀3.lookup l = none := by
+                  by_cases hc3 : res3.memEnv'.contains l
+                  · -- l ∈ res3: use FreshCleanLocsUnrealizedOneRun
+                    rcases memEnv_lookup_some_of_contains res3.memEnv' l hc3 with ⟨qt3, hlookup3⟩
+                    have hclean3 : qtypCleanUnder res3.regime' qt3 := by
+                      cases hclean with
+                      | clean hpoison_out =>
+                          have henv3 : res3.memEnv'.lookup l ≠ none := by
+                            intro hnone; rw [hlookup3] at hnone; contradiction
+                          rcases
+                              joinMemEnvsStrong_lookup_clean_right
+                                res2.memEnv' res3.memEnv' l qt
+                                hlookup_join hpoison_out henv3
+                            with ⟨qt3', hlookup3', _hetyp3, hpoison3⟩
+                          have hqt3 : qt3 = qt3' := by
+                            rw [hlookup3] at hlookup3'; injection hlookup3'
+                          cases hqt3
+                          exact qtypCleanUnder.clean hpoison3
+                      | guard k htag hk hnotfun =>
+                          have hk_join :
+                              (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
+                            simpa [ctxAfter, hregime'] using hk
+                          have htag3 : qtypGuardTag qt3 = some k :=
+                            joinMemEnvsStrong_lookup_guardTag_right
+                              res2.memEnv' res3.memEnv' l qt qt3 k
+                              hlookup_join hlookup3 htag
+                          have hk3 : res3.regime'.lookup? k = some true :=
+                            joinRegimes_lookup_some_right
+                              res2.regime' res3.regime' k true hk_join
+                          have hnotfun3 : qt3.etyp.isFunctionType = false := by
+                            rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
                             native_decide
-                          have hEq_vals : Value.num n₀ = Value.num n₁ :=
-                            agreeValueUnder_nonref_eq_of_clean
-                              hclean_mid hnotref_mid hnotfun_mid hagreeVmid
-                          have hnotref_final : ¬ ∃ ls, qt.etyp = ETyp.ref ls := by
-                            intro ⟨ls, hls⟩
-                            rw [memEnv_lookup_etyp_int (ctxAfter ctxᵢ res).memEnv l qt hlookup] at hls
-                            simp at hls
-                          have hagreeV_final :
-                              agreeValueUnder predSat res.regime'
-                                cf₀.memory cf₁.memory θ₀3 θ₁2 qt (Value.num n₀) (Value.num n₁) := by
-                            cases hclean with
-                            | clean hpoison =>
-                                have hnotfun_final : qt.etyp.isFunctionType = false := by
-                                  rw [memEnv_lookup_etyp_int (ctxAfter ctxᵢ res).memEnv l qt hlookup]
-                                  native_decide
-                                exact
-                                  agreeValueUnder.clean_eq_nonref_nonarrow
-                                    hpoison hnotfun_final hnotref_final hEq_vals
-                            | guard k htag hk hnotfun =>
-                                exact
-                                  agreeValueUnder.withPred_true_eq
-                                    k htag hk hnotfun hnotref_final hEq_vals
-                          exact
-                            agreeLocUnder.agree_values
-                              l qt a₀m a₁m n₀ n₁
-                              hθ₀out hθ₁out hμ₀out hμ₁out hagreeV_final
+                          exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
+                    exact _hfresh₃ l qt3 hnotContains_ctxForE3 hlookup3 hclean3
+                  · -- l ∉ res3: θ₀3 can't map l
+                    exact theta_not_contains_if_not_in_memEnv
+                      (ctxAfter ctxForE3 res3) cf₀.memory cf₀.varEnv θ₀3 l
+                      hric₀3 (by simpa [ctxAfter] using hc3)
+                -- θ₁2: run 1 executes e2
+                have hθ₁2_none : θ₁2.lookup l = none := by
+                  by_cases hc2 : res2.memEnv'.contains l
+                  · -- l ∈ res2: use FreshCleanLocsUnrealizedOneRun
+                    rcases memEnv_lookup_some_of_contains res2.memEnv' l hc2 with ⟨qt2, hlookup2⟩
+                    have hclean2 : qtypCleanUnder res2.regime' qt2 := by
+                      cases hclean with
+                      | clean hpoison_out =>
+                          have henv2 : res2.memEnv'.lookup l ≠ none := by
+                            intro hnone; rw [hlookup2] at hnone; contradiction
+                          rcases
+                              joinMemEnvsStrong_lookup_clean_left
+                                res2.memEnv' res3.memEnv' l qt
+                                hlookup_join hpoison_out henv2
+                            with ⟨qt2', hlookup2', _hetyp2, hpoison2⟩
+                          have hqt2 : qt2 = qt2' := by
+                            rw [hlookup2] at hlookup2'; injection hlookup2'
+                          cases hqt2
+                          exact qtypCleanUnder.clean hpoison2
+                      | guard k htag hk hnotfun =>
+                          have hk_join :
+                              (joinRegimes res2.regime' res3.regime').lookup? k = some true := by
+                            simpa [ctxAfter, hregime'] using hk
+                          have htag2 : qtypGuardTag qt2 = some k :=
+                            joinMemEnvsStrong_lookup_guardTag_left
+                              res2.memEnv' res3.memEnv' l qt qt2 k
+                              hlookup_join hlookup2 htag
+                          have hk2 : res2.regime'.lookup? k = some true :=
+                            joinRegimes_lookup_some_left
+                              res2.regime' res3.regime' k true hk_join
+                          have hnotfun2 : qt2.etyp.isFunctionType = false := by
+                            rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
+                            native_decide
+                          exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
+                    exact _hfresh₂ l qt2 hnotContains_ctx'' hlookup2 hclean2
+                  · -- l ∉ res2: θ₁2 can't map l
+                    exact theta_not_contains_if_not_in_memEnv
+                      (ctxAfter ctx'' res2) cf₁.memory cf₁.varEnv θ₁2 l
+                      hric₁2 (by simpa [ctxAfter] using hc2)
+                exact agreeLocUnder.both_unrealized l qt hθ₀3_none hθ₁2_none
             · intro x qt hlookup hclean
               have hclean_mid : qtypCleanUnder res1.regime' qt :=
                 hclean_final_to_res1 qt hclean

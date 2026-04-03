@@ -36,7 +36,8 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
           runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
+          FreshCleanLocsUnrealizedOneRun ctx res θ'
 
 private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -607,7 +608,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_deref_parametric
   rcases
     hIH hpredlaws hwfTm μ ρ θ cfg' (Value.loc a')
       hθwf hwf hric hregCtx hcwr a pm hwfcfg ht_e hpc
-    with ⟨θ', hθext, hvloc, hric', hctxCons', _hvalc', hpres'⟩
+    with ⟨θ', hθext, hvloc, hric', hctxCons', _hvalc', hpres', _hfresh'⟩
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
     simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime]
   have hvaltyp_final : valueHasETyp θ' o res.qualType.etyp := by
@@ -634,7 +635,10 @@ private lemma stepFRSingleRunFinalCleanPcTrue_deref_parametric
         have hclean_out1 : qtypCleanUnder res1.regime' qt_out := by
           simpa [h_regime] using hclean_out
         simpa [hmem] using hpres_fn l qt_in qt_out hlookup_in hlookup_out1 hclean_out1
-  refine ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final⟩
+  have hfresh_final : FreshCleanLocsUnrealizedOneRun ctxᵢ res θ' := by
+    intro l qt hnotIn hlookup hclean
+    exact _hfresh' l qt hnotIn (by rwa [h_mem] at hlookup) (by rwa [h_regime] at hclean)
+  exact ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
 
 def StepFRDerefCtxToValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -694,7 +698,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
   rcases
     hIH hpredlaws hwfTm μ ρ θ cfg' (Value.loc a')
       hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht_e hpc
-    with ⟨θ', hθext, hvloc, hric', hctxCons', _hvalc', hpres'⟩
+    with ⟨θ', hθext, hvloc, hric', hctxCons', _hvalc', hpres', _hfresh'⟩
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
     simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime]
   have hvaltyp_final : valueHasETyp θ' o res.qualType.etyp := by
@@ -727,7 +731,10 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
         have hclean_out1 : qtypCleanUnder res1.regime' qt_out := by
           simpa [h_regime] using hclean_out
         simpa [hmem] using hpres_fn l qt_in qt_out hlookup_in hlookup_out1 hclean_out1
-  refine ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final⟩
+  have hfresh_final : FreshCleanLocsUnrealizedOneRun ctxᵢ res θ' := by
+    intro l qt hnotIn hlookup hclean
+    exact _hfresh' l qt hnotIn (by rwa [h_mem] at hlookup) (by rwa [h_regime] at hclean)
+  exact ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
 
 lemma stepFR_deref
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)

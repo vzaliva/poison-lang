@@ -74,27 +74,36 @@ It only addresses the contracts needed for the current FR proof stack.
 
 ## 3. Current State
 
-As of **2026-04-02** on `new-iofree`:
+As of **2026-04-03** on `new-iofree`:
 
 - `lake build` succeeds
 - the current proof-gap inventory is:
-  - **7 `sorry`** statements in **3 declarations**
+  - **6 explicit `sorry` terms** in **2 declarations**
   - **11 explicit `axiom`** declarations
     - 10 in `LeanProofs/StepFR.lean`
     - 1 in `LeanProofs/TypeSafety.lean`
-- so the branch currently has **18 proof gaps** total
+- so the branch currently has **17 proof gaps** total
 - only a small subset of the 11 axioms should survive as actual axioms; the
   rest should be treated as provisional proof gaps that still need proofs
 - the current build warnings point at exactly these declarations:
   - `typecheckExpr_preserves_tagEnvBounded_main`
-  - `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
-  - `stepFR_ite_standard`
+  - `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`
 - this is a snapshot of the branch at that date; the counts should be re-checked
   after proof edits
 - `assign_final_clean_preservation` is already resolved on the current branch
+- the old local 6.3 blockers
+  - `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
+  - the four `stepFR_ite_standard` `sorry`s
+  are no longer the active proof surface; the remaining 6.3 work is now
+  concentrated in the strengthened single-run theorem stack
 
-Build warnings only report the `sorry` declarations. The `axiom` declarations
-must therefore be tracked separately in the document.
+Build warnings report only the declarations containing `sorry`, not the raw
+number of `sorry` terms. So, on the current branch:
+
+- `scripts/sorry-count.py` reports **2** declarations with `sorry`
+- a raw token count reports **6** explicit `sorry` terms
+
+The `axiom` declarations must therefore be tracked separately in the document.
 
 ### 3.1 Current axiom inventory
 
@@ -125,8 +134,7 @@ The `Status` column below uses this convention:
 | File | Declaration | Count | Assessment |
 |------|-------------|-------|------------|
 | `TypeSafety.lean` | `typecheckExpr_preserves_tagEnvBounded_main` | 2 | Real proof gap in `ite` mode 1/2; the public theorem `typecheckExpr_preserves_tagEnvBounded` delegates to this `_main` proof |
-| `StepFRIte.lean` | `stepFR_ite_standard` | 4 | Current local helper route is likely too strong |
-| `StepFRApp.lean` | `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true` | 1 | Current theorem shape is false |
+| `FaultRobustnessProofs.lean` | `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree` | 4 | New remaining 6.3 proof gap: the single-run theorem family has been strengthened and threaded through the low-risk constructor cases, but the fresh-clean postcondition is still admitted in four `ite` subcases inside the masked single-run induction |
 
 ## 4. What Must Be Assumed About Extern Functions For FR
 
@@ -622,6 +630,14 @@ The same rule applies to single-run helper theorems:
 
 High-risk-first is the intended order.
 
+Immediate status after the current 6.3 implementation:
+
+- the single-run theorem family has been strengthened and threaded through the
+  low-risk constructor cases
+- the immediate next target is to discharge the four remaining `ite`
+  fresh-postcondition `sorry`s in
+  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`
+
 ### 8.1 Phase 1. Validate the strengthened single-run postcondition
 
 Before changing interfaces, validate the candidate extra postcondition for the
@@ -824,7 +840,33 @@ So the more coherent design is to strengthen the **global single-run theorem
 family** and keep `StepFR` unchanged unless a new input precondition later
 proves unavoidable.
 
-### 9.3 Why the shared-body transport works
+### 9.3 Current implementation status of the 6.3 repair
+
+The current branch has now implemented the architectural part of the 6.3 plan:
+
+- `FreshCleanLocsUnrealizedOneRun` has been added to the single-run theorem
+  package in `StepFR.lean`
+- the strengthened postcondition has been threaded through the low-risk
+  constructor families (`var`, `op`, `deref`, `seq`, `vlet`, `newRef`,
+  `assign`)
+- `StepFRApp.lean` and `StepFRIte.lean` now use the strengthened single-run
+  invariant at the fresh-location sites
+- the false theorem
+  `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
+  has been removed from the active proof path
+
+What remains open after this implementation is narrower:
+
+- four `sorry`s inside
+  `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree`
+  in `FaultRobustnessProofs.lean`
+- these are the remaining fresh-postcondition obligations for `ite` in the
+  masked single-run induction
+
+So the 6.3 repair has moved from "find the right theorem/interface shape" to
+"finish the four high-risk single-run `ite` proofs on the chosen shape."
+
+### 9.4 Why the shared-body transport works
 
 The shared-body `StepFRApp` path already has the right high-level shape:
 
@@ -836,7 +878,7 @@ So the join transport itself is not the blocker. The blocker is only the lack
 of a corresponding omission theorem for the different-body / mixed-branch
 one-run setting.
 
-### 9.4 Why `PFnTClosure` is not the hard case
+### 9.5 Why `PFnTClosure` is not the hard case
 
 The pure-function different-body branch closes the fresh-location case by
 contradiction because pure bodies do not grow `memEnv'`.

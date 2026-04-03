@@ -39,7 +39,8 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
           runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
+          FreshCleanLocsUnrealizedOneRun ctx res θ'
 
 private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -400,7 +401,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_newRef_parametric
   rcases
     hIH hpredlaws hwfTm μ ρ θ cfg' (Value.num n)
       hθwf hwf hric hregCtx hcwr a pm hwfcfg ht_e hpc
-    with ⟨θ1, hθext1, hvnum1, hric1, hctxCons1, _hvalc1, hpres1⟩
+    with ⟨θ1, hθext1, hvnum1, hric1, hctxCons1, _hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwf1 : wfTypeContext (ctxAfter ctxᵢ res1) :=
     wfTypeContext_of_wfTypeResult ctxᵢ res1
@@ -582,8 +583,46 @@ private lemma stepFRSingleRunFinalCleanPcTrue_newRef_parametric
       ValCons (ctxAfter ctxᵢ res).regime res.qualType cf.memory θ' o := by
     subst ho
     exact hValCons_result ctxᵢ res cf θ' cfg'.nextAddr h_pred
-  refine
-    ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final⟩
+  have hfresh_final : FreshCleanLocsUnrealizedOneRun ctxᵢ res θ' := by
+    intro l0 qt hnotIn hlookup hclean
+    by_cases h_eq : l0 = l
+    · -- l0 is the freshly allocated location; stored type has poison=true (pc=true),
+      -- so it cannot be clean → contradiction
+      subst l0
+      -- The fresh location l = res1.nextLoc' is not in res1.memEnv'
+      -- (since wfTypeResult guarantees all locs < nextLoc')
+      -- So _hfresh1 would apply if we had res1 cleanness, but more directly:
+      -- the storedQt has poison=true under pc=true, making cleanness impossible
+      have hpoison_true : qt.poison = true := by
+        -- qt is at l in res.memEnv' = updateMemEnv res1.memEnv' l storedQt
+        -- l is the freshly inserted key, so qt has storedQt's poison
+        rw [h_mem] at hlookup
+        simp only [updateMemEnv, MemoryTypeEnv.lookup, ExtTreeMap.get?_eq_getElem?,
+          Std.ExtTreeMap.getElem?_insert_self, Option.map] at hlookup
+        have hqt_eq := Option.some.inj hlookup
+        rw [← hqt_eq]
+        simp [joinPoison, hpc]
+      have hpred_noPred : qt.pred = Predicate.noPred := by
+        rw [h_mem] at hlookup
+        simp only [updateMemEnv, MemoryTypeEnv.lookup, ExtTreeMap.get?_eq_getElem?,
+          Std.ExtTreeMap.getElem?_insert_self, Option.map] at hlookup
+        have hqt_eq := Option.some.inj hlookup
+        rw [← hqt_eq]
+        simp [hpc]
+      cases hclean with
+      | clean hp => simp [hpoison_true] at hp
+      | guard k htag _ _ =>
+          simp [qtypGuardTag, hpred_noPred] at htag
+    · -- l0 ≠ l: lookup goes through to res1, and θ' agrees with θ1
+      have hlookup1 : res1.memEnv'.lookup l0 = some qt := by
+        rw [h_mem] at hlookup
+        rwa [MemoryTypeEnv_lookup_updateMemEnv_ne (Γ := res1.memEnv') (l := l) (l' := l0) (qt := storedQt) h_eq] at hlookup
+      have hclean1 : qtypCleanUnder res1.regime' qt := by
+        rwa [h_regime] at hclean
+      have hθ1_none := _hfresh1 l0 qt hnotIn hlookup1 hclean1
+      simpa [θ', RealizationMap_lookup_update_ne h_eq] using hθ1_none
+  exact
+    ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
 
 def StepFRNewRefCtxConsFinish
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -654,7 +693,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
   rcases
     hIH hpredlaws hwfTm μ ρ θ cfg' (Value.num n)
       hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht_e hpc
-    with ⟨θ1, hθext1, hvnum1, hric1, hctxCons1, _hvalc1, hpres1⟩
+    with ⟨θ1, hθext1, hvnum1, hric1, hctxCons1, _hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwf1 : wfTypeContext (ctxAfter ctxᵢ res1) :=
     wfTypeContext_of_wfTypeResult ctxᵢ res1
@@ -840,8 +879,37 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
         (ctxAfter ctxᵢ res).regime res.qualType cf.memory θ' o := by
     subst ho
     exact stepFRNewRef_resultValCons_masked masked predSat ctxᵢ res cf θ' cfg'.nextAddr h_pred
-  refine
-    ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final⟩
+  have hfresh_final : FreshCleanLocsUnrealizedOneRun ctxᵢ res θ' := by
+    intro l0 qt hnotIn hlookup hclean
+    by_cases h_eq : l0 = l
+    · subst l0
+      have hpoison_true : qt.poison = true := by
+        rw [h_mem] at hlookup
+        simp only [updateMemEnv, MemoryTypeEnv.lookup, ExtTreeMap.get?_eq_getElem?,
+          Std.ExtTreeMap.getElem?_insert_self, Option.map] at hlookup
+        have hqt_eq := Option.some.inj hlookup
+        rw [← hqt_eq]
+        simp [joinPoison, hpc]
+      have hpred_noPred : qt.pred = Predicate.noPred := by
+        rw [h_mem] at hlookup
+        simp only [updateMemEnv, MemoryTypeEnv.lookup, ExtTreeMap.get?_eq_getElem?,
+          Std.ExtTreeMap.getElem?_insert_self, Option.map] at hlookup
+        have hqt_eq := Option.some.inj hlookup
+        rw [← hqt_eq]
+        simp [hpc]
+      cases hclean with
+      | clean hp => simp [hpoison_true] at hp
+      | guard k htag _ _ =>
+          simp [qtypGuardTag, hpred_noPred] at htag
+    · have hlookup1 : res1.memEnv'.lookup l0 = some qt := by
+        rw [h_mem] at hlookup
+        rwa [MemoryTypeEnv_lookup_updateMemEnv_ne (Γ := res1.memEnv') (l := l) (l' := l0) (qt := storedQt) h_eq] at hlookup
+      have hclean1 : qtypCleanUnder res1.regime' qt := by
+        rwa [h_regime] at hclean
+      have hθ1_none := _hfresh1 l0 qt hnotIn hlookup1 hclean1
+      simpa [θ', RealizationMap_lookup_update_ne h_eq] using hθ1_none
+  exact
+    ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
 
 
 private lemma joinMemEnvsStrong_lookup_cleanUnder_left_of_contains

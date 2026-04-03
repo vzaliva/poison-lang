@@ -264,7 +264,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         hIH_e1 hpredlaws hwfTm_pure μ ρ θ cfg1 (Value.bool b)
                           hθwf hwf_pure hric htagR_pure hmasked_none_pure hcwr_pure
                           a pm hwfcfg ht_e1 hpc_pure
-                      with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1⟩
+                      with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1, _hfresh1⟩
                     have hcwr_unmasked :
                         consistentWithRegime predSat ctxᵢ.regime ctxᵢ μ ρ θ :=
                       consistentWithRegimeMasked_unmask
@@ -344,7 +344,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           hθ1wf hwf_true hric1' htagR_true hmasked_none_true hcwr1'
                           cfg1.nextAddr cfg1.pureMode hwfcfg1
                           ht_e2 hpc_true
-                      with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2⟩
+                      with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
                     have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
                     have hctxAfter_memEnv : (ctxAfter ctxᵢ res).memEnv = (ctxAfter ctxTrue res2).memEnv := by
                       simp [ctxAfter, hmemEnv]
@@ -392,7 +392,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           (by simpa [hmemEnv] using hlookup_out)
                           (by simpa [hregime'] using hclean_out)
                       exact PreservesInheritedCleanLocOneRun.trans hpres_mid hpres_last
-                    refine ⟨θ2, hθext, ?_, ?_, ?_, ?_, hpres_final⟩
+                    refine ⟨θ2, hθext, ?_, ?_, ?_, ?_, hpres_final, sorry⟩
                     · simpa [hetyp] using hv2
                     · simp only [runtimeInstantiatesCtx, hctxAfter_memEnv, hctxAfter_varEnv]
                       exact hric2
@@ -448,7 +448,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         hIH_e1 hpredlaws hwfTm_pure μ ρ θ cfg1 (Value.bool b)
                           hθwf hwf_pure hric htagR_pure hmasked_none_pure hcwr_pure
                           a pm hwfcfg ht_e1 hpc
-                      with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1⟩
+                      with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1, _hfresh1⟩
                     have hcwr_unmasked :
                         consistentWithRegime predSat ctxᵢ.regime ctxᵢ μ ρ θ :=
                       consistentWithRegimeMasked_unmask
@@ -559,7 +559,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           hθ1wf hwf_false' hric1'_f htagR_false' hmasked_none_false' hcwr1'_f
                           cfg1.nextAddr cfg1.pureMode hwfcfg1
                           ht_e3 hpc_false'
-                      with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2⟩
+                      with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
                     have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
                     have hctxAfter_memEnv : (ctxAfter ctxᵢ res).memEnv = (ctxAfter ctxFalse' res3).memEnv := by
                       simp [ctxAfter, hmemEnv]
@@ -610,7 +610,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           (by simpa [hmemEnv] using hlookup_out)
                           (by simpa [hregime'] using hclean_out)
                       exact PreservesInheritedCleanLocOneRun.trans hpres_mid hpres_last
-                    refine ⟨θ2, hθext, ?_, ?_, ?_, ?_, hpres_final⟩
+                    refine ⟨θ2, hθext, ?_, ?_, ?_, ?_, hpres_final, sorry⟩
                     · simpa [hetyp] using hv2
                     · simp only [runtimeInstantiatesCtx, hctxAfter_memEnv, hctxAfter_varEnv]
                       exact hric2
@@ -651,7 +651,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         hIH_e1 hpredlaws hwfTm μ ρ θ cfg1 (Value.bool b)
                           hθwf hwf hric htagR hmasked_none hcwr
                           a pm hwfcfg ht_e1 hpc
-                      with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1⟩
+                      with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1, _hfresh1⟩
                     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
                     have hwfcfg1 : wfConfig cfg1 :=
                       (wfConfig_preserved e1 _ cfg1 (Value.bool b) ht_e1 hwfcfg).1
@@ -848,7 +848,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                 hIH_e2 hpredlaws hwfTm_ctx'' cfg1.memory cfg1.varEnv θ1 cf o
                                   hθ1wf hwf_ctx'' hric1_ctx'' htagR_ctx'' hmasked_none_ctx'' hcwr1_ctx''
                                   cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc''
-                              with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2⟩
+                              with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
                             have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
                             have hcwr2_left :
                                 consistentWithRegimeMasked masked predSat
@@ -966,7 +966,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                   (ctx := ctxᵢ) (res1 := res1) (res2 := res)
                                   hclean_back_mid hpres1
                                   (by simpa [ctx'] using hpres_branch_final)
-                            refine ⟨θ2, hθext, ?_, hric_final, hcwr_final, ?_, hpres_final⟩
+                            refine ⟨θ2, hθext, ?_, hric_final, hcwr_final, ?_, hpres_final, sorry⟩
                             · simpa [hetyp] using valueHasETyp_joinETyps_left hv2
                             · refine valueConsistentWithRegimeMasked.noTag ?_ ?_
                               · simp [qtypGuardTag, hpredNo]
@@ -1041,7 +1041,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                   hθ1wf hwf_ctxForE3 hric1_ctxForE3
                                   htagR_ctxForE3 hmasked_none_ctxForE3 hcwr1_ctxForE3
                                   cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e3 hpcForE3
-                              with ⟨θ3, hθext3, hv3, hric3, hcwr3, hvalc3, hpres3⟩
+                              with ⟨θ3, hθext3, hv3, hric3, hcwr3, hvalc3, hpres3, _hfresh3⟩
                             have hθext : wfExtendsMap θ θ3 := wfExtendsMap_trans hθext1 hθext3
                             have hcwr3_right :
                                 consistentWithRegimeMasked masked predSat
@@ -1159,7 +1159,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                   (ctx := ctxᵢ) (res1 := res1) (res2 := res)
                                   hclean_back_mid hpres1
                                   (by simpa [ctx'] using hpres_branch_final)
-                            refine ⟨θ3, hθext, ?_, hric_final, hcwr_final, ?_, hpres_final⟩
+                            refine ⟨θ3, hθext, ?_, hric_final, hcwr_final, ?_, hpres_final, sorry⟩
                             · simpa [hetyp] using
                                 valueHasETyp_joinETyps_right hcompat23 hv3
                             · refine valueConsistentWithRegimeMasked.noTag ?_ ?_
@@ -1390,7 +1390,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFr
     cases hk
   rcases
       hmasked hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg_masked hmasked_none_init hcwr_masked a pm hwfcfg ht hpc
-    with ⟨θ', hθext, hvaltyp, hric', hcwr_masked', hvalc_masked', hpres⟩
+    with ⟨θ', hθext, hvaltyp, hric', hcwr_masked', hvalc_masked', hpres, hfresh⟩
   have hmasked_none :
       ∀ k, (fun _ => False) k → (ctxAfter ctxᵢ res).regime.lookup? k = none := by
     intro k hk
@@ -1411,7 +1411,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFr
       (R := (ctxAfter ctxᵢ res).regime) (qt := res.qualType)
       (μ := cf.memory) (θ := θ') (v := o)
       hmasked_none hvalc_masked'
-  exact ⟨θ', hθext, hvaltyp, hric', hcwr', hvalc', hpres⟩
+  exact ⟨θ', hθext, hvaltyp, hric', hcwr', hvalc', hpres, hfresh⟩
 
 
 -- I/O-free step theorem: proves StepFR directly (no world-threading)

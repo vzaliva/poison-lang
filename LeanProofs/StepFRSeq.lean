@@ -38,7 +38,8 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
           runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
+          FreshCleanLocsUnrealizedOneRun ctx res θ'
 
 private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -87,7 +88,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht_e1 hpc
-    with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1⟩
+    with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwfTm' : wfTagMeaningCtx tm ctx' := by
     simpa [hctx', ctxAfter] using hTm1
@@ -109,7 +110,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
     hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
       hθ1wf hwf1' hric1' hreg1' hctxCons1'
       cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
-    with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2⟩
+    with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2, _hfresh2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
   have hctxAfter : ctxAfter ctx res = ctxAfter ctx' res := by
     simp only [ctxAfter, hctx', updateCtxFromResult]
@@ -139,7 +140,29 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
       PreservesInheritedFinalCleanLocsOneRun.compose
         (ctx := ctx) (res1 := res1) (res2 := res)
         hclean_back hpres1 hpres2'
-  refine ⟨θ2, hθext, hv2, ?_, ?_, ?_, hpres_final⟩
+  have hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θ2 := by
+    intro l qt hnotIn hlookup hclean
+    by_cases hcontains_mid : (ctxAfter ctx res1).memEnv.contains l
+    · -- l introduced by e1's typing, inherited for e2
+      obtain ⟨qt_mid, hlookup_mid, hclean_mid⟩ :=
+        typecheckExpr_clean_lookup_origin_of_pc_true
+          (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
+          (by simpa [hctx', ctxAfter] using htc2')
+          (by simpa [ctxAfter] using hpc)
+          l qt hlookup hcontains_mid hclean
+      have hθ1_none := _hfresh1 l qt_mid hnotIn
+        (by simpa [ctxAfter] using hlookup_mid)
+        (by simpa [ctxAfter] using hclean_mid)
+      have hpres_loc := PreservesInheritedFinalCleanLocsOneRun.apply hpres2'
+        hlookup_mid hlookup hclean
+      cases hpres_loc with
+      | both_unrealized _ hout => exact hout
+      | preserve_value a n hin _ _ _ => simp [hθ1_none] at hin
+    · -- l not in intermediate context → also fresh for e2
+      have hfresh2' : FreshCleanLocsUnrealizedOneRun (ctxAfter ctx res1) res θ2 :=
+        by simpa [hctx', updateCtxFromResult, ctxAfter] using _hfresh2
+      exact hfresh2' l qt hcontains_mid hlookup hclean
+  refine ⟨θ2, hθext, hv2, ?_, ?_, ?_, hpres_final, hfresh_final⟩
   · simpa [hctxAfter] using hric2
   · simpa [hctxAfter] using hctxCons2
   · simpa [hctxAfter] using hvalc2
@@ -187,7 +210,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
   rcases
     hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht_e1 hpc
-    with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1⟩
+    with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwfTm' : wfTagMeaningCtx tm ctx' := by
     simpa [hctx', ctxAfter] using hTm1
@@ -219,7 +242,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
     hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
       hθ1wf hwf1' hric1' hreg1' hmasked_none1' hctxCons1'
       cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
-    with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2⟩
+    with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2, _hfresh2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
   have hctxAfter : ctxAfter ctx res = ctxAfter ctx' res := by
     simp only [ctxAfter, hctx', updateCtxFromResult]
@@ -249,7 +272,27 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
       PreservesInheritedFinalCleanLocsOneRun.compose
         (ctx := ctx) (res1 := res1) (res2 := res)
         hclean_back hpres1 hpres2'
-  refine ⟨θ2, hθext, hv2, ?_, ?_, ?_, hpres_final⟩
+  have hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θ2 := by
+    intro l qt hnotIn hlookup hclean
+    by_cases hcontains_mid : (ctxAfter ctx res1).memEnv.contains l
+    · obtain ⟨qt_mid, hlookup_mid, hclean_mid⟩ :=
+        typecheckExpr_clean_lookup_origin_of_pc_true
+          (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
+          (by simpa [hctx', ctxAfter] using htc2')
+          (by simpa [ctxAfter] using hpc)
+          l qt hlookup hcontains_mid hclean
+      have hθ1_none := _hfresh1 l qt_mid hnotIn
+        (by simpa [ctxAfter] using hlookup_mid)
+        (by simpa [ctxAfter] using hclean_mid)
+      have hpres_loc := PreservesInheritedFinalCleanLocsOneRun.apply hpres2'
+        hlookup_mid hlookup hclean
+      cases hpres_loc with
+      | both_unrealized _ hout => exact hout
+      | preserve_value a n hin _ _ _ => simp [hθ1_none] at hin
+    · have hfresh2' : FreshCleanLocsUnrealizedOneRun (ctxAfter ctx res1) res θ2 :=
+        by simpa [hctx', updateCtxFromResult, ctxAfter] using _hfresh2
+      exact hfresh2' l qt hcontains_mid hlookup hclean
+  refine ⟨θ2, hθext, hv2, ?_, ?_, ?_, hpres_final, hfresh_final⟩
   · simpa [hctxAfter] using hric2
   · simpa [hctxAfter] using hctxCons2
   · simpa [hctxAfter] using hvalc2

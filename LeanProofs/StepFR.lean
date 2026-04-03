@@ -1426,6 +1426,33 @@ lemma PreservesInheritedFinalCleanLocsOneRun.compose
       hclean_out
   exact PreservesInheritedCleanLocOneRun.trans hpres_mid hpres_final
 
+/-- If a location is absent from the input typing context and clean in the
+    output, then the chosen witness map does not realize it.
+    This captures the invariant that fresh clean locations arise only from
+    extern typing summaries that the runtime never executes. -/
+def FreshCleanLocsUnrealizedOneRun
+  (ctx : TypeContext) (res : TypeResult)
+  (θ_out : RealizationMap) : Prop :=
+  ∀ l qt,
+    ¬ ctx.memEnv.contains l →
+    res.memEnv'.lookup l = some qt →
+    qtypCleanUnder res.regime' qt →
+    θ_out.lookup l = none
+
+/-- When `ctxAfter ctx res = ctx`, the context is unchanged, so `res.memEnv' = ctx.memEnv`.
+    Any location absent from `ctx.memEnv` is also absent from `res.memEnv'`,
+    making the lookup hypothesis contradictory. -/
+lemma FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq
+  {ctx : TypeContext} {res : TypeResult} {θ : RealizationMap}
+  (hctxAfter : ctxAfter ctx res = ctx) :
+  FreshCleanLocsUnrealizedOneRun ctx res θ := by
+  intro l _qt hnotContains hlookup _hclean
+  have hmemEq : res.memEnv' = ctx.memEnv := by
+    have := congrArg TypeContext.memEnv hctxAfter
+    simpa [ctxAfter] using this
+  rw [hmemEq] at hlookup
+  exact absurd (memEnv_contains_of_lookup_some ctx.memEnv l _qt hlookup) hnotContains
+
 lemma singleRunFinalCleanWitness_of_same_state_maskedReg_param
   {masked : Tag → Prop}
   {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
@@ -1452,13 +1479,15 @@ lemma singleRunFinalCleanWitness_of_same_state_maskedReg_param
     runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
     CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
     ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-    PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' := by
-  refine ⟨θ, ?_, hvaltyp, ?_, ?_, ?_, ?_⟩
+    PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
+    FreshCleanLocsUnrealizedOneRun ctx res θ' := by
+  refine ⟨θ, ?_, hvaltyp, ?_, ?_, ?_, ?_, ?_⟩
   · exact ⟨fun _ _ hlookup => hlookup, fun hθwf => hθwf⟩
   · simpa [hctxAfter, hcf] using hric
   · simpa [hctxAfter, hcf] using hctxCons
   · simpa [hctxAfter, hcf] using hvalc
   · simpa [hcf] using (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctx) (res := res) (ρ := ρ) hric)
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
 
 def StepFRSingleRunFinalCleanPcTrue
   (ctx : TypeContext)
@@ -1485,7 +1514,8 @@ def StepFRSingleRunFinalCleanPcTrue
           runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
+          FreshCleanLocsUnrealizedOneRun ctx res θ'
 
 def StepFRSingleRunFinalCleanPcTrueParam
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -1514,7 +1544,8 @@ def StepFRSingleRunFinalCleanPcTrueParam
           runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
+          FreshCleanLocsUnrealizedOneRun ctx res θ'
 
 def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
   (masked : Tag → Prop)
@@ -1545,7 +1576,8 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
           runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
           ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ'
+          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
+          FreshCleanLocsUnrealizedOneRun ctx res θ'
 
 section TypeSystemEnforcesFaultRobustness_impl_proof
 
