@@ -40,7 +40,20 @@ fi
 # Ensure ~/.local/bin exists and is on PATH (some CLIs expect it).
 mkdir -p "/home/user/.local/bin"
 if [ "${AM_ROOT}" -eq 1 ]; then chown -R "${HOST_UID}:${HOST_GID}" "/home/user/.local" 2>/dev/null || true; fi
+# Podman occasionally supplies an empty or minimal PATH; image-installed CLIs live under
+# /usr/local/bin (tree-sitter, npm -g, arxiv-mcp-server, etc.). Keep Debian-ish defaults.
+if [ -z "${PATH:-}" ]; then
+  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+fi
 export PATH="/home/user/.local/bin:${PATH}"
+case ":${PATH}:" in
+  *":/usr/local/sbin:"*) ;;
+  *) export PATH="${PATH}:/usr/local/sbin" ;;
+esac
+case ":${PATH}:" in
+  *":/usr/local/bin:"*) ;;
+  *) export PATH="${PATH}:/usr/local/bin" ;;
+esac
 
 # First-run seed: gh extensions live under ~/.local/share/gh/extensions; copy from image seed so they persist with the home volume.
 GH_EXT_DIR="${XDG_DATA_HOME:-/home/user/.local/share}/gh/extensions"

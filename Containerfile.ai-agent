@@ -32,7 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     m4 \
     openssl \
-    python3 python3-pip \
+    python3 python3-pip python3-venv \
     diffutils \
     diffstat \
     # Common CLI tools for AI agents (incl. Batsov's Claude Code list)
@@ -53,6 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     netpbm \
     latexmk texlive-latex-extra texlive-fonts-recommended texlive-latex-recommended texlive-lang-english \
+    biber texlive-bibtex-extra lmodern \
     && rm -rf /var/lib/apt/lists/*
 
 # Install opam from the official binary installer (avoids outdated distro packages).
@@ -172,6 +173,16 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
     && install -m 0755 /root/.local/bin/uv /usr/local/bin/uv \
     && install -m 0755 /root/.local/bin/uvx /usr/local/bin/uvx \
     && rm -rf /root/.local/bin
+
+# arxiv-mcp-server: install via a fixed-prefix venv + PATH symlink instead of
+# `uv tool install`, which often fails under rootless Podman (tool home/isolation).
+# PyPI package matches https://github.com/blazickjp/arxiv-mcp-server; include [pdf] per upstream README.
+RUN python3 -m venv /opt/arxiv-mcp-venv \
+    && /opt/arxiv-mcp-venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/arxiv-mcp-venv/bin/pip install --no-cache-dir 'arxiv-mcp-server[pdf]' \
+    && ln -sf /opt/arxiv-mcp-venv/bin/arxiv-mcp-server /usr/local/bin/arxiv-mcp-server \
+    && chmod -R a+rX /opt/arxiv-mcp-venv \
+    && arxiv-mcp-server --help >/dev/null
 
 # Note: lean-lsp-mcp MCP tool (used by both Claude and Codex) will be
 # downloaded on first use via uvx. It will be cached in the ai_agent_config volume.
