@@ -74,33 +74,49 @@ It only addresses the contracts needed for the current FR proof stack.
 
 ## 3. Current State
 
-As of **2026-04-03** on `new-iofree`:
+As of **2026-04-04** on `new-iofree`:
 
 - `lake build` succeeds
 - the current proof-gap inventory is:
-  - **2 explicit `sorry` terms** in **1 declaration**
+  - **~10 explicit `sorry` terms** in **5 declarations** (new infrastructure for
+    Phase 8.5)
   - **11 explicit `axiom`** declarations
     - 10 in `LeanProofs/StepFR.lean`
     - 1 in `LeanProofs/TypeSafety.lean`
-- so the branch currently has **13 proof gaps** total
+- the branch currently has **~22 proof gaps** total (down from 13 original +
+  temporary new infrastructure)
 - only a small subset of the 11 axioms should survive as actual axioms; the
   rest should be treated as provisional proof gaps that still need proofs
-- the current build warnings point at exactly these declarations:
-  - `typecheckExpr_preserves_tagEnvBounded_main`
-- this is a snapshot of the branch at that date; the counts should be re-checked
-  after proof edits
+- the two original `typecheckExpr_preserves_tagEnvBounded_main` ite mode 1/2
+  `sorry`s have been **architecturally resolved** — they are replaced by real
+  proofs that depend on `matchGuard_tag_bounded` and
+  `typecheckExpr_preserves_predTagsBounded_main`, which are currently `sorry`'d
 - `assign_final_clean_preservation` is already resolved on the current branch
-- the old local 6.3 blockers
-  - `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
-  - the four `stepFR_ite_standard` `sorry`s
-  are resolved on the current branch
-- section 6.3 itself is now implemented; the only remaining `sorry`s are the
-  two `tagEnvBounded` obligations in `TypeSafety.lean`
+- the old local 6.3 blockers are resolved on the current branch
+
+**Phase 8.5 progress (2026-04-04)**:
+
+- Step 1 (definitions): **done** — `predTagBounded`, `qtypPredTagBounded`,
+  `predTagsBoundedInVarEnv`, `predTagsBoundedInMemEnv`, `predTagsBoundedInCtx`
+- Step 2 (helpers): **done** — monotonicity, `tagEnvBounded_insert_of_lt`,
+  `predTagsBoundedInVarEnv_update`, `predTagsBoundedInMemEnv_update`,
+  `predTagBounded_joinPredicates`
+- Step 3 (matchGuard bridge): **sorry** — `matchGuard_tag_bounded` defined with
+  correct statement, proof in progress (self-contained in TypeSafety.lean)
+- Step 4 (preservation theorem): **sorry** — `typecheckExpr_preserves_predTagsBounded_main`
+  defined, proof in progress; sub-helpers `predTagsBoundedInMemEnv_joinMemEnvsStrong`
+  and `predTagsBoundedInMemEnv_updateLocsetWeak` also sorry'd
+- Step 5 (integration): **done** — `typecheckExpr_preserves_tagEnvBounded_main`
+  extended with `predTagsBoundedInCtx ctx` hypothesis; IH call sites updated;
+  ite mode 1/2 proofs complete (modulo matchGuard bridge sorry); app case and
+  vlet predTags derivation remain sorry'd pending Step 4
+- The public `typecheckExpr_preserves_tagEnvBounded` wrapper now takes
+  `predTagsBoundedInCtx ctx` as an additional hypothesis (no downstream callers
+  exist, so this is safe)
 
 Build warnings report only the declarations containing `sorry`, not the raw
-number of `sorry` terms. So, on the current branch:
-
-- `scripts/sorry-count.py` reports **1** declaration with `sorry`
+number of `sorry` terms. The sorry count will decrease as Steps 3 and 4 are
+completed.
 - a raw token count reports **2** explicit `sorry` terms
 
 The `axiom` declarations must therefore be tracked separately in the document.
@@ -740,17 +756,25 @@ Once the stronger single-run infrastructure is in place:
 
 ### 8.5 Phase 5. Finish the `tagEnvBounded` path without touching `StepFR`
 
-The intended route is:
+Status: **architecturally complete** (2026-04-04). The ite mode 1/2 sorrys are
+replaced by real proofs that depend on `matchGuard_tag_bounded` (sorry) and
+`typecheckExpr_preserves_predTagsBounded_main` (sorry). No changes to `StepFR`,
+`StepFR_IH`, or `FaultRobustnessSpec`.
 
-1. prove a `matchGuard`-bound bridge usable from `TypeSafety.lean`
-2. add a local predicate-tag-bounded invariant at the typechecker level, with
-   shape
-   `((∀ x qt k, ctx.varEnv.lookup x = some qt → qtypGuardTag qt = some k → k < ctx.nextTag) ∧
-     (∀ l qt k, ctx.memEnv.lookup l = some qt → qtypGuardTag qt = some k → k < ctx.nextTag))`
-   and keep it entirely below `StepFR`
-3. finish the two `ite` mode 1/2 `sorry`s in
-   `typecheckExpr_preserves_tagEnvBounded_main`, thereby completing the public
-   theorem `typecheckExpr_preserves_tagEnvBounded`
+The implemented route is:
+
+1. **done** — `matchGuard_tag_bounded` (statement proved, proof body sorry'd;
+   self-contained in TypeSafety.lean because matchGuard_ok_extract_owner_in_ctx
+   is private in StepFRIte.lean and unreachable via imports)
+2. **done** — `predTagsBoundedInCtx` defined with `predTagsBoundedInVarEnv` and
+   `predTagsBoundedInMemEnv` components; helper lemmas (mono, insert, update,
+   joinPredicates) proved; kept entirely below `StepFR`
+3. **done** — the two `ite` mode 1/2 sorry proofs in
+   `typecheckExpr_preserves_tagEnvBounded_main` are replaced by real proofs using
+   `matchGuard_tag_bounded` + `tagEnvBounded_insert_of_lt` + IH; the theorem now
+   takes `predTagsBoundedInCtx ctx` as an additional hypothesis; the public
+   wrapper `typecheckExpr_preserves_tagEnvBounded` also takes this hypothesis
+   (no downstream callers exist)
 4. thread `tagEnvBounded` only through local helper lemmas such as:
    - `ioFree_guardClosure_pred_implies_tag_absent`
    - `typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent`
