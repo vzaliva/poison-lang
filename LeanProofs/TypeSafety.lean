@@ -5525,14 +5525,261 @@ private lemma predTagsBoundedInMemEnv_update {G : MemoryTypeEnv} {nt : Tag} {l :
   · simp at hlookup
     exact hb l' qt' (by simp [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
 
+/-- Generic: List.foldl preserves tag boundedness given a step invariant. -/
+private theorem foldl_tags_bounded {bound : Tag}
+    {f : List (Tag × Deps) → (Name × QTyp) → List (Tag × Deps)}
+    {init : List (Tag × Deps)} {xs : List (Name × QTyp)}
+    (hinit : ∀ kd ∈ init, kd.1 < bound)
+    (hstep : ∀ acc x, x ∈ xs → (∀ kd ∈ acc, kd.1 < bound) → ∀ kd ∈ f acc x, kd.1 < bound) :
+    ∀ kd ∈ List.foldl f init xs, kd.1 < bound := by
+  induction xs generalizing init with
+  | nil => exact hinit
+  | cons hd tl ih =>
+    intro kd hkd; simp only [List.foldl] at hkd
+    exact ih (hstep init hd (.head tl) hinit)
+      (fun acc x hx hacc => hstep acc x (.tail hd hx) hacc) kd hkd
+
+/-- Generic: List.foldlM (Except) preserves tag boundedness given a step invariant. -/
+private theorem foldlM_tags_bounded {bound : Tag}
+    {f : List (Tag × Deps) → (Name × QTyp) → Except String (List (Tag × Deps))}
+    {init : List (Tag × Deps)} {xs : List (Name × QTyp)} {result : List (Tag × Deps)}
+    (hfold : List.foldlM f init xs = .ok result)
+    (hinit : ∀ kd ∈ init, kd.1 < bound)
+    (hstep : ∀ acc x, x ∈ xs → (∀ kd ∈ acc, kd.1 < bound) →
+             ∀ res, f acc x = .ok res → ∀ kd ∈ res, kd.1 < bound) :
+    ∀ kd ∈ result, kd.1 < bound := by
+  induction xs generalizing init with
+  | nil => simp [List.foldlM, pure, Except.pure] at hfold; subst hfold; exact hinit
+  | cons hd tl ih =>
+    simp [List.foldlM, bind, Except.bind] at hfold
+    cases hsr : f init hd with
+    | error err => simp [hsr] at hfold
+    | ok mid =>
+      simp [hsr] at hfold
+      exact ih hfold (hstep init hd (.head tl) hinit mid hsr)
+        (fun acc x hx hacc => hstep acc x (.tail hd hx) hacc)
+
+/-- The pred-merge foldlM preserves predTagBounded from G.lookup entries. -/
+private lemma predMergeFold_bounded
+    (G : MemoryTypeEnv) (nt : Tag) (hmemG : predTagsBoundedInMemEnv G nt)
+    (ls : List Loc) (init : Option Predicate)
+    (hinit : ∀ p, init = some p → predTagBounded nt p)
+    (checkStep : QTyp → Except String Unit)
+    (result : Option Predicate)
+    (hfold : List.foldlM (fun accPred? l =>
+        match G.lookup l with
+        | some memQt =>
+          match checkStep memQt with
+          | Except.error err => Except.error err
+          | Except.ok _ => Except.ok (some (match accPred? with
+              | none => memQt.pred
+              | some p => joinPredicates p memQt.pred))
+        | none => Except.error "err") init ls = Except.ok result) :
+    ∀ p, result = some p → predTagBounded nt p := by
+  induction ls generalizing init with
+  | nil =>
+    simp [List.foldlM, pure, Except.pure] at hfold; subst hfold; exact hinit
+  | cons l tl ih =>
+    simp only [List.foldlM] at hfold
+    cases hlookup : G.lookup l with
+    | none => simp [hlookup, bind, Except.bind] at hfold
+    | some memQt =>
+      have hqt := hmemG l memQt hlookup
+      cases hcheck : checkStep memQt with
+      | error err => simp [hlookup, hcheck, bind, Except.bind] at hfold
+      | ok u =>
+        simp only [hlookup, hcheck, bind, Except.bind] at hfold
+        apply ih _ _ hfold
+        intro p hp; cases hp
+        cases init with
+        | none => exact hqt
+        | some q => exact predTagBounded_joinPredicates (hinit q rfl) hqt
+
 lemma matchGuard_tag_bounded
     (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) (fuel : Nat)
     (k : Tag) (deps : Deps) (nextTag : Tag)
     (hmatch : matchGuard e G S fuel = .ok (k, deps))
     (hvar : predTagsBoundedInVarEnv S nextTag)
-    (hmem : predTagsBoundedInMemEnv G nextTag) :
+    (hmemG : predTagsBoundedInMemEnv G nextTag) :
     k < nextTag := by
-  sorry
+  simp only [matchGuard, Bind.bind, Except.bind] at hmatch
+  cases htoPE : e.toPExpr with
+  | error err => simp [htoPE] at hmatch
+  | ok condPE =>
+    simp only [htoPE] at hmatch
+    -- hmatch : (match foldlM ... with error => error | ok refMs => match (foldl ... ++ refMs) with ...) = ok (k, deps)
+    -- Split on foldlM result for refMatches
+    split at hmatch
+    · exact absurd hmatch (by intro h; exact Except.noConfusion h)
+    · rename_i refMatches _heqRefM
+      -- Split on the match over allMatches = varMatches ++ refMatches
+      split at hmatch
+      · -- Singleton [hd] where hd = (k, deps) after the pure
+        rename_i hd heqAll
+        -- hmatch : pure hd = .ok (k, deps), i.e., hd = (k, deps)
+        simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hmatch
+        obtain ⟨hk_eq, hd_eq⟩ := hmatch
+        -- hk_eq : tag✝ = k, hd_eq : hd = deps
+        -- Suffices to show tag✝ < nextTag
+        rw [← hk_eq]
+        -- heqAll : varMatches ++ refMatches = [(tag✝, hd)]
+        -- Show: all tags in varMatches ++ refMatches are < nextTag
+        -- Then the singleton element's tag is < nextTag
+        -- First, generalize the varMatches expression
+        generalize hVM : VarTypeEnv.foldl _ _ S = varMatches at heqAll
+        -- Now heqAll : varMatches ++ refMatches = [(_, hd)]
+        -- Show all elements have bounded tags
+        suffices hall : ∀ kd ∈ varMatches ++ refMatches, kd.1 < nextTag by
+          exact hall _ (by rw [heqAll]; exact List.Mem.head _)
+        rw [List.forall_mem_append]
+        constructor
+        · -- All tags in varMatches are bounded
+          rw [← hVM, VarTypeEnv.foldl, Std.ExtTreeMap.foldl_eq_foldl_toList]
+          exact foldl_tags_bounded (fun _ h => nomatch h) (fun acc entry hmem hacc kd hkd => by
+            have hlookup : S[entry.1]? = some entry.2 :=
+              (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some).mp hmem
+            have hqt := hvar entry.1 entry.2
+              (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup])
+            -- The fold body: match checkPredicate with ok (some kd) => kd::acc | _ => acc
+            split at hkd
+            · -- ok (some kd_new): kd ∈ kd_new :: acc
+              rename_i kd_new heq_check
+              simp only [List.mem_cons] at hkd
+              rcases hkd with rfl | hkd
+              · -- kd = kd_new: extract tag from entry.2.pred = guardClosure tag ...
+                revert heq_check
+                simp only [bind, Except.bind, pure, Except.pure]
+                rcases entry with ⟨name, etyp, poison, pred⟩
+                simp only [] at hqt ⊢
+                cases pred with
+                | noPred => intro h; cases etyp <;> simp at h
+                | guardOnly _ => intro h; cases etyp <;> simp at h
+                | guardClosure tag _ _ _ =>
+                  change tag < nextTag at hqt
+                  intro heq_check
+                  cases etyp <;> simp only [] at heq_check
+                  all_goals first
+                    | exact absurd heq_check (by simp)
+                    | (split at heq_check
+                       · split at heq_check
+                         · split at heq_check
+                           · simp at heq_check
+                           · simp only [Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at heq_check
+                             rw [← heq_check.1]; exact hqt
+                         · simp at heq_check
+                       · simp at heq_check)
+              · exact hacc kd hkd
+            · exact hacc kd hkd  -- ok none
+            · exact hacc kd hkd  -- error
+          )
+        · -- All tags in refMatches are bounded
+          -- Convert VarTypeEnv.foldlM to List.foldlM on S.toList
+          rw [VarTypeEnv.foldlM, Std.ExtTreeMap.foldlM_eq_foldlM_toList] at _heqRefM
+          exact foldlM_tags_bounded _heqRefM (fun _ h => nomatch h)
+            (fun acc entry hmem hacc res hres kd hkd => by
+              -- entry ∈ S.toList. The fold step processes entry.2.etyp:
+              -- Non-ref etyp → pure acc (no change)
+              -- Ref with poison → pure acc
+              -- Ref with empty locset → error
+              -- Ref → merge preds from G, match merged pred, possibly add (tag, deps)
+              -- Case on entry.2.etyp
+              split at hres
+              · -- ETyp.ref ls
+                rename_i ls
+                split at hres
+                · -- poison = true → pure acc
+                  simp only [pure, Except.pure, Except.ok.injEq] at hres
+                  subst hres; exact hacc kd hkd
+                · -- poison ≠ true
+                  split at hres
+                  · simp at hres  -- empty locset → error
+                  · -- Non-empty locset: merge preds, match merged
+                    -- After the two LocSet.foldM calls, match on merged predicate
+                    split at hres
+                    · exact absurd hres (by intro h; exact Except.noConfusion h)  -- foldM error
+                    · rename_i merged_opt _
+                      split at hres
+                      · exact absurd hres (by intro h; exact Except.noConfusion h)  -- foldM error
+                      · rename_i depsMerged _
+                        -- Match on the merged predicate
+                        split at hres
+                        · -- guardClosure tag: possibly adds (tag, depsMerged)
+                          rename_i tag _ _ _
+                          split at hres
+                          · split at hres
+                            · -- Match success: res = (tag, depsMerged) :: acc
+                              simp only [pure, Except.pure, Except.ok.injEq] at hres
+                              subst hres
+                              simp only [List.mem_cons] at hkd
+                              rcases hkd with rfl | hkd
+                              · -- kd = (tag, depsMerged): need tag < nextTag
+                                -- tag came from the merged predicate which was guardClosure tag ...
+                                -- The merge (LocSet.foldM using joinPredicates) preserves the tag
+                                -- from individual G.lookup entries. By predTagBounded_joinPredicates
+                                -- and hmemG, the tag is bounded.
+                                -- Key: merged_opt.getD noPred = guardClosure tag ...
+                                -- merged_opt came from foldM over ls using G.lookup
+                                -- The first G.lookup l that has a predicate determines the initial tag
+                                -- By hmemG, that tag < nextTag
+                                -- merged_opt.getD noPred = guardClosure _tag✝ ...
+                                -- merged_opt ≠ none (since getD returns guardClosure)
+                                -- So merged_opt = some (guardClosure _tag✝ ...)
+                                -- This came from folding joinPredicates over G.lookup entries
+                                -- The fold preserves the tag from the first entry
+                                -- Use hmemG to get the bound
+                                -- merged_opt.getD noPred = guardClosure _tag✝ ...
+                                -- merged_opt must be some (not none, since getD noPred ≠ guardClosure)
+                                rename_i heqMergedPred _ _
+                                -- Name the pred-merge fold hypothesis BEFORE cases on merged_opt
+                                -- heq✝¹ is the pred-merge foldM hypothesis
+                                -- Apply LocSet.foldM_Except_preserves_property NOW while the fold hyp is accessible
+                                have hP : ∀ p, merged_opt = some p → predTagBounded nextTag p := by
+                                  apply LocSet.foldM_Except_preserves_property (init := none)
+                                    (P := fun opt => ∀ p, opt = some p → predTagBounded nextTag p)
+                                  -- Resolve the fold hypothesis FIRST to unify f
+                                  on_goal 3 => assumption
+                                  · -- h_init: P none
+                                    intro _ h; exact absurd h (by simp)
+                                  · -- h_preserve: step preserves P
+                                    intro acc_opt l hPacc acc_opt' hstep p hp
+                                    split at hstep
+                                    · rename_i memQt hlookup_l
+                                      have hqt_l := hmemG l memQt hlookup_l
+                                      split at hstep
+                                      · exact absurd hstep (by intro h; exact Except.noConfusion h)
+                                      · have h_eq := (@Except.ok.inj _ _ _ _ hstep).symm
+                                        rw [h_eq] at hp
+                                        have h_p := @Option.some.inj _ _ _ hp; subst h_p
+                                        cases acc_opt with
+                                        | none => exact hqt_l
+                                        | some q => exact predTagBounded_joinPredicates (hPacc q rfl) hqt_l
+                                    · exact absurd hstep (by intro h; exact Except.noConfusion h)
+                                cases hmo : merged_opt with
+                                | none => simp [Option.getD, hmo] at heqMergedPred
+                                | some mergedPred =>
+                                  simp [Option.getD] at heqMergedPred
+                                  have hbound := hP mergedPred hmo
+                                  -- heqMergedPred has `match merged_opt` form; simplify with hmo
+                                  simp [hmo] at heqMergedPred
+                                  -- heqMergedPred : mergedPred = guardClosure _tag✝ ...
+                                  rw [heqMergedPred] at hbound
+                                  exact hbound
+                              · exact hacc kd hkd
+                            · simp only [pure, Except.pure, Except.ok.injEq] at hres
+                              subst hres; exact hacc kd hkd
+                          · simp only [pure, Except.pure, Except.ok.injEq] at hres
+                            subst hres; exact hacc kd hkd
+                        · -- guardOnly: pure acc
+                          simp only [pure, Except.pure, Except.ok.injEq] at hres
+                          subst hres; exact hacc kd hkd
+                        · -- noPred: pure acc
+                          simp only [pure, Except.pure, Except.ok.injEq] at hres
+                          subst hres; exact hacc kd hkd
+              · -- Non-ref etyp → pure acc
+                simp only [pure, Except.pure, Except.ok.injEq] at hres
+                subst hres; exact hacc kd hkd)
+      · exact absurd hmatch (by intro h; exact Except.noConfusion h)
+      · exact absurd hmatch (by intro h; exact Except.noConfusion h)
 
 private lemma typecheckExpr_preserves_predTagsBounded_main :
     ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
