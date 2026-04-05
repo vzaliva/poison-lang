@@ -944,3 +944,39 @@ Current-branch helpers already available:
   - `EnvRespectsTagMeaning_list_fold_updateMemEnv`
   - `QTypRespectsTagMeaning_fn_extern`
   - `QTypRespectsTagMeaning_pfn_extern`
+
+### 9.6 Future refactoring: extract shared matchGuard analysis module
+
+The `matchGuard_tag_bounded` proof in `TypeSafety.lean` duplicates ~200 lines of
+fold analysis that already exists as ~600 lines in `StepFRIte.lean`
+(`matchGuard_varMatches`, `matchGuard_refMatches`, `var_match_from_varMatches`,
+`ref_match_from_refMatches`, `matchGuard_ok_extract_owner_in_ctx`, etc.).
+
+The duplication exists because:
+
+- `matchGuard_ok_extract_owner_in_ctx` is `private` in `StepFRIte.lean`
+- the import direction is `TypeSafety ← StepFR ← StepFRIte`, so `TypeSafety`
+  cannot import anything from `StepFRIte`
+
+**Proposed cleanup**: extract the matchGuard analysis lemmas into a shared module
+`LeanProofs/MatchGuardAnalysis.lean` that both `TypeSafety.lean` and
+`StepFRIte.lean` import. The extracted lemmas only depend on
+`LeanPoison.Typecheck` and `Std.ExtTreeMap` — no dependency on `StepFR` types.
+
+This would:
+
+1. eliminate the ~200 lines of duplicated fold analysis in `TypeSafety.lean`
+   (`foldl_tags_bounded`, `foldlM_tags_bounded`, `predMergeFold_bounded`, the
+   varMatches/refMatches fold proofs, and the
+   `LocSet.foldM_Except_preserves_property` application)
+2. make `matchGuard_ok_extract_owner_in_ctx` available to `TypeSafety.lean`
+3. simplify `matchGuard_tag_bounded` to a ~10-line proof:
+   - call `matchGuard_ok_extract_owner_in_ctx` to get the var/ref disjunction
+   - for the var case: `predTagsBoundedInVarEnv` gives the bound
+   - for the ref case: `predTagsBoundedInMemEnv` gives the bound
+4. the existing `StepFRIte.lean` code would re-import from the shared module
+   with no proof changes
+
+The shared module sits alongside `TypeSafety.lean` in the import graph (both
+below `StepFR`). No changes to `StepFR`, `StepFR_IH`, or `FaultRobustnessSpec`
+are needed.
