@@ -6411,6 +6411,15 @@ private lemma joinTypeResults_predTagsBounded_memEnv
               · -- finalPred: if function type → noPred, else joinedPred
                 split <;> first | exact predTagBounded_noPred _ | exact hbPred'
 
+/-- closureEnvBoundedInCtx is preserved through updateCtxFromResult (early version). -/
+private lemma closureEnvBoundedInCtx_of_update
+    (ctx : TypeContext) (e : Expr) (fuel : Nat) (r : TypeResult)
+    (htc : typecheckExpr ctx e fuel = .ok r)
+    (hclosure : closureEnvBoundedInCtx ctx) :
+    closureEnvBoundedInCtx (updateCtxFromResult ctx r) :=
+  varEnvClosuresCapturedBounded_mono hclosure
+    (typecheck_normal_nextTag_mono ctx e fuel r htc)
+
 private lemma typecheckExpr_preserves_predTagsBounded_main :
     ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
     typecheckExpr ctx e fuel = .ok res →
@@ -6546,7 +6555,7 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                           simp [hop, pure, Except.pure] at htc; cases htc
                           have h_lt : fuel'' < fuel' + 1 := by omega
                           have hIH := IH_fuel fuel'' h_lt e1 ctx r1
-                            (by simpa [typecheck] using hte1) hpred sorry
+                            (by simpa [typecheck] using hte1) hpred hclosure
 
                           exact ⟨hIH.1, predTagBounded_noPred _⟩
           | op e1 _op e2 =>
@@ -6577,13 +6586,13 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                               have h_lt : fuel'' < fuel' + 1 := by omega
                               have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by
                                 simpa [typecheck] using hte1
-                              have hIH1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hpred sorry
+                              have hIH1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hpred hclosure
 
                               have hpred' : predTagsBoundedInCtx ctx' :=
                                 ⟨predTagsBoundedInVarEnv_mono hpred.1
                                   (typecheck_normal_nextTag_mono ctx e1 fuel'' r1 hte1'), hIH1.1⟩
                               have hIH2 := IH_fuel fuel'' h_lt e2 ctx' r2
-                                (by simpa [typecheck, ctx'] using hte2) hpred' sorry
+                                (by simpa [typecheck, ctx'] using hte2) hpred' (closureEnvBoundedInCtx_of_update ctx e1 _ r1 (by simpa [typecheck] using hte1) hclosure)
 
                               exact ⟨hIH2.1, predTagBounded_noPred _⟩
           | seq e1 e2 =>
@@ -6606,13 +6615,13 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                           have h_lt : fuel'' < fuel' + 1 := by omega
                           have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by
                             simpa [typecheck] using hte1
-                          have hIH1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hpred sorry
+                          have hIH1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hpred hclosure
 
                           have hpred' : predTagsBoundedInCtx ctx' :=
                             ⟨predTagsBoundedInVarEnv_mono hpred.1
                               (typecheck_normal_nextTag_mono ctx e1 fuel'' r1 hte1'), hIH1.1⟩
                           have hIH2 := IH_fuel fuel'' h_lt e2 ctx' r2
-                            (by simpa [typecheck, ctx'] using hte2) hpred' sorry
+                            (by simpa [typecheck, ctx'] using hte2) hpred' (closureEnvBoundedInCtx_of_update ctx e1 _ r1 (by simpa [typecheck] using hte1) hclosure)
 
                           simpa [hres] using hIH2
           | vlet x e1 e2 =>
@@ -6628,7 +6637,7 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                         { updateCtxFromResult ctx r1 with varEnv := ctx.varEnv.update x r1.qualType } := by
                     intro r1 hte1
                     have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by simpa [typecheck] using hte1
-                    have hIH1 := IH_fuel fuel'' (by omega) e1 ctx r1 hte1' hpred sorry
+                    have hIH1 := IH_fuel fuel'' (by omega) e1 ctx r1 hte1' hpred hclosure
 
                     exact ⟨predTagsBoundedInVarEnv_update
                         (predTagsBoundedInVarEnv_mono hpred.1
@@ -6727,7 +6736,7 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
               rcases typecheckNewRef_structure ctx e1 fuel' res htcNew with
                 ⟨r1, l, hte1, hl, _hInt, _hrefTyp, _hpc, hpredNoPred, hmemEnv, _htagEnv, _hnextLoc, hnextTag, _hregime⟩
               have h_lt_raw : fuel' - 1 < fuel' + 1 := by omega
-              have hIH1 := IH_fuel (fuel' - 1) h_lt_raw e1 ctx r1 hte1 hpred sorry
+              have hIH1 := IH_fuel (fuel' - 1) h_lt_raw e1 ctx r1 hte1 hpred hclosure
 
               rw [hnextTag]
               constructor
@@ -6749,12 +6758,12 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                 ⟨r1, r2, ls, hte1, _hrefTyp, hte2, _hInt2, _hnextLoc, hnextTag, _hregime,
                  _hunit, _hpoison, hpredNoPred⟩
               have h_lt_raw : fuel' - 1 < fuel' + 1 := by omega
-              have hIH1 := IH_fuel (fuel' - 1) h_lt_raw e1 ctx r1 hte1 hpred sorry
+              have hIH1 := IH_fuel (fuel' - 1) h_lt_raw e1 ctx r1 hte1 hpred hclosure
 
               have hpred' : predTagsBoundedInCtx (updateCtxFromResult ctx r1) :=
                 ⟨predTagsBoundedInVarEnv_mono hpred.1
                   (typecheck_normal_nextTag_mono ctx e1 (fuel' - 1) r1 hte1), hIH1.1⟩
-              have hIH2 := IH_fuel (fuel' - 1) h_lt_raw e2 (updateCtxFromResult ctx r1) r2 hte2 hpred' sorry
+              have hIH2 := IH_fuel (fuel' - 1) h_lt_raw e2 (updateCtxFromResult ctx r1) r2 hte2 hpred' (closureEnvBoundedInCtx_of_update ctx e1 _ r1 (by simpa [typecheck] using hte1) hclosure)
 
               rw [hnextTag]
               constructor
@@ -6776,7 +6785,7 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                     typecheckDeref_structure ctx e1 (fuel'' + 1) res (by rwa [← hfuel])
                   simp only [Nat.add_sub_cancel] at hte1
                   have hIH1 := IH_fuel fuel'' h_lt e1 ctx r1
-                    (by simpa [typecheck] using hte1) hpred sorry
+                    (by simpa [typecheck] using hte1) hpred hclosure
 
                   rw [hmem_eq, hnt_eq]
                   constructor
@@ -6797,7 +6806,7 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                   hmemEnv, _, hresQT, hresNext, _, _, _⟩ := htrue
                 have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
                 have hIH2 := IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2
-                  ⟨hpred.1, hpred.2⟩ sorry
+                  ⟨hpred.1, hpred.2⟩ hclosure
                 rw [hresNext]
                 constructor
                 · -- memEnv' = res2.memEnv' (mode 1 uses true branch only)
@@ -6829,11 +6838,11 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                 constructor
                 · -- memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv'
                   rw [hmemEnv]
-                  have hIH1 := IH_fuel (fuel' - 1) h_fuelm1 e1 ctx res1 htc1 hpred sorry
+                  have hIH1 := IH_fuel (fuel' - 1) h_fuelm1 e1 ctx res1 htc1 hpred hclosure
 
                   have hIH2 := IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2 (by
                     exact ⟨predTagsBoundedInVarEnv_mono hpred.1
-                      (typecheck_normal_nextTag_mono ctx e1 _ res1 htc1), hIH1.1⟩) sorry
+                      (typecheck_normal_nextTag_mono ctx e1 _ res1 htc1), hIH1.1⟩) (closureEnvBoundedInCtx_of_update ctx e1 _ res1 htc1 hclosure)
                   have hmono1 := typecheck_normal_nextTag_mono ctx e1 _ res1 htc1
                   have hmono2 := typecheck_normal_nextTag_mono _ e2 _ res2 htc2
                   have hIH3 := IH_fuel (fuel' - 1) h_fuelm1 e3 _ res3 htc3 (by
@@ -6869,7 +6878,7 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                 simp [hq1] at htcApp
                 -- IH on e2 and e1
                 have h_fuel : fuel'' < fuel'' + 1 + 1 := by omega
-                have hIH2 := IH_fuel fuel'' h_fuel e2 ctx res2 hcte2 hpred sorry
+                have hIH2 := IH_fuel fuel'' h_fuel e2 ctx res2 hcte2 hpred hclosure
 
                 have hmono2 := typecheck_normal_nextTag_mono ctx e2 fuel'' res2 hcte2
                 have hpredCtx' : predTagsBoundedInCtx ctx' := by
