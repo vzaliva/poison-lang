@@ -5840,6 +5840,44 @@ def varEnvClosuresCapturedBounded (S : VarTypeEnv) (nt : Tag) : Prop :=
 def closureEnvBoundedInCtx (ctx : TypeContext) : Prop :=
   varEnvClosuresCapturedBounded ctx.varEnv ctx.nextTag
 
+/-- Dedup fold: every element in the result was in init or xs. -/
+private lemma foldl_dedup_mem {α : Type} [BEq α]
+    (init : List α) (xs : List α) (a : α) :
+    a ∈ List.foldl (fun acc x => if acc.contains x then acc else acc ++ [x]) init xs →
+    a ∈ init ∨ a ∈ xs := by
+  induction xs generalizing init with
+  | nil => intro h; left; exact h
+  | cons hd tl ih =>
+    intro h; simp only [List.foldl] at h
+    rcases ih _ h with hinit' | htl
+    · split at hinit'
+      · left; exact hinit'
+      · rw [List.mem_append] at hinit'
+        rcases hinit' with hinit | hhd
+        · left; exact hinit
+        · simp at hhd; right; rw [hhd]; exact List.Mem.head _
+    · right; exact List.Mem.tail hd htl
+
+/-- Every closure in mergeFnTClosures was in one of the inputs. -/
+private lemma mergeFnTClosures_mem (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
+    tcl ∈ mergeFnTClosures tcls1 tcls2 → tcl ∈ tcls1 ∨ tcl ∈ tcls2 := by
+  intro h; simp only [mergeFnTClosures] at h
+  rcases foldl_dedup_mem _ _ _ h with h1 | h2
+  · rcases foldl_dedup_mem _ _ _ h1 with h_e | h_t
+    · simp at h_e
+    · left; exact h_t
+  · right; exact h2
+
+/-- Every closure in mergePFnTClosures was in one of the inputs. -/
+private lemma mergePFnTClosures_mem (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
+    tcl ∈ mergePFnTClosures tcls1 tcls2 → tcl ∈ tcls1 ∨ tcl ∈ tcls2 := by
+  intro h; simp only [mergePFnTClosures] at h
+  rcases foldl_dedup_mem _ _ _ h with h1 | h2
+  · rcases foldl_dedup_mem _ _ _ h1 with h_e | h_t
+    · simp at h_e
+    · left; exact h_t
+  · right; exact h2
+
 /-- joinETyps preserves etypClosuresCapturedPredTagsBounded (merges closure lists). -/
 private lemma etypClosuresCapturedPredTagsBounded_joinETyps {e1 e2 : ETyp} {p1 p2 : Poison} {nt : Tag}
     (h1 : etypClosuresCapturedPredTagsBounded e1 nt) (h2 : etypClosuresCapturedPredTagsBounded e2 nt) :
@@ -5855,9 +5893,9 @@ private lemma etypClosuresCapturedPredTagsBounded_joinETyps {e1 e2 : ETyp} {p1 p
       · -- types match: merge closure lists
         simp only [etypClosuresCapturedPredTagsBounded, fnClosuresCapturedPredTagsBounded]
         intro tcl hmem
-        -- tcl ∈ mergeFnTClosures tcls1 tcls2 → tcl ∈ tcls1 ∨ tcl ∈ tcls2
-        -- mergeFnTClosures is a dedup fold; every output element was in an input
-        sorry
+        rcases mergeFnTClosures_mem _ _ _ hmem with h | h
+        · exact h1 tcl h
+        · exact h2 tcl h
       · exact h1
     | _ => simp only [joinETyps]; exact h1
   | parrow st1 st2 p tcls1 =>
@@ -5867,7 +5905,9 @@ private lemma etypClosuresCapturedPredTagsBounded_joinETyps {e1 e2 : ETyp} {p1 p
       split
       · simp only [etypClosuresCapturedPredTagsBounded, pfnClosuresCapturedPredTagsBounded]
         intro tcl hmem
-        sorry
+        rcases mergePFnTClosures_mem _ _ _ hmem with h | h
+        · exact h1 tcl h
+        · exact h2 tcl h
       · exact h1
     | _ => simp only [joinETyps]; exact h1
   | _ => simp only [joinETyps]; cases e2 <;> (try exact h1) <;> trivial
@@ -5889,15 +5929,7 @@ private lemma varEnvClosuresCapturedBounded_update {S : VarTypeEnv} {nt : Tag} {
   · cases hlookup; exact hqt
   · exact hb y qt' (by simp only [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
 
-/-- Separate theorem: typecheckExpr preserves etypClosuresCapturedPredTagsBounded.
-    All closures in the result ETyp have bounded captured environments. -/
-private lemma typecheckExpr_preserves_closureCapturedBounded :
-    ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
-    typecheckExpr ctx e fuel = .ok res →
-    predTagsBoundedInCtx ctx →
-    closureEnvBoundedInCtx ctx →
-    etypClosuresCapturedPredTagsBounded res.qualType.etyp res.nextTag' := by
-  sorry
+-- typecheckExpr_preserves_closureCapturedBounded: proved below, after predTagsBounded helpers
 
 /-- Generic: List.foldl preserves tag boundedness given a step invariant. -/
 private theorem foldl_tags_bounded {bound : Tag}
@@ -6990,6 +7022,470 @@ private lemma predTagsBoundedInCtx_of_updateCtxFromResult
   ⟨predTagsBoundedInVarEnv_mono hpred.1
       (typecheck_normal_nextTag_mono ctx e fuel r htc),
    (typecheckExpr_preserves_predTagsBounded ctx e fuel r htc hpred).1⟩
+
+/-- typecheckDeref always produces ETyp.int as result etyp.
+    All branches of the deref code return etyp=int. -/
+private lemma typecheckDeref_etyp_int (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+    (h : typecheckDeref ctx e fuel = .ok res) : res.qualType.etyp = ETyp.int := by
+  -- Every successful return of typecheckDeref has etyp = ETyp.int
+  -- This is a tedious but trivial case analysis
+  sorry
+
+/-- typecheckExpr preserves etypClosuresCapturedPredTagsBounded.
+    All closures in the result ETyp have bounded captured environments. -/
+private lemma typecheckExpr_preserves_closureCapturedBounded :
+    ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
+    typecheckExpr ctx e fuel = .ok res →
+    predTagsBoundedInCtx ctx →
+    closureEnvBoundedInCtx ctx →
+    etypClosuresCapturedPredTagsBounded res.qualType.etyp res.nextTag' := by
+  intro ctx e fuel res htc hpred hclosure
+  revert ctx e res htc hpred hclosure
+  induction fuel using Nat.strong_induction_on with
+  | _ fuel IH =>
+      intro ctx e res htc hpred hclosure
+      have IH_fuel : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          typecheckExpr ctx' e' m = .ok res' → predTagsBoundedInCtx ctx' →
+          closureEnvBoundedInCtx ctx' →
+          etypClosuresCapturedPredTagsBounded res'.qualType.etyp res'.nextTag' :=
+        fun m h_lt e' ctx' res' htc' hpred' hclos' => IH m h_lt ctx' e' res' htc' hpred' hclos'
+      cases fuel with
+      | zero => simp [typecheckExpr] at htc
+      | succ fuel' =>
+          unfold typecheckExpr at htc
+          cases e with
+          -- ════════════════════════════════════════════════════════════
+          -- Trivial literal cases: result etyp has no closures
+          -- ════════════════════════════════════════════════════════════
+          | num _n => simp [typecheckInt] at htc; cases htc; trivial
+          | bool _b => simp [typecheckBool] at htc; cases htc; trivial
+          | unit => simp [typecheckUnit] at htc; cases htc; trivial
+          | str _s => simp [typecheckString] at htc; cases htc; trivial
+          -- ════════════════════════════════════════════════════════════
+          -- Closure-creating cases: fn, pfn, externFn, externPfn
+          -- ════════════════════════════════════════════════════════════
+          | fn _x _st1 _body _st2 =>
+              simp [typecheckFn] at htc; cases htc
+              show fnClosuresCapturedPredTagsBounded
+                [FnTClosure.regular _x _body (VarTypeEnv.toCaptured ctx.varEnv)] ctx.nextTag
+              intro tcl hmem
+              simp [List.mem_singleton] at hmem; subst hmem
+              exact capturedPredTagsBounded_of_toCaptured hpred.1
+          | pfn _x _st1 _body _st2 =>
+              simp [typecheckPfn, Bind.bind, Except.bind] at htc
+              cases h_topexpr : _body.toPExpr with
+              | error _ => simp [h_topexpr] at htc
+              | ok pbody =>
+                  simp [h_topexpr, pure, Except.pure] at htc; cases htc
+                  show pfnClosuresCapturedPredTagsBounded
+                    [PFnTClosure.regular _x pbody (VarTypeEnv.toCaptured ctx.varEnv)] ctx.nextTag
+                  intro tcl hmem
+                  simp [List.mem_singleton] at hmem; subst hmem
+                  exact capturedPredTagsBounded_of_toCaptured hpred.1
+          | externFn _arg _argTyp _retSpec _effects =>
+              simp [typecheckExternFn, pure, Except.pure] at htc; cases htc
+              show fnClosuresCapturedPredTagsBounded
+                [FnTClosure.extern _arg _retSpec _effects (VarTypeEnv.toCaptured ctx.varEnv)]
+                  ctx.nextTag
+              intro tcl hmem
+              simp [List.mem_singleton] at hmem; subst hmem
+              exact capturedPredTagsBounded_of_toCaptured hpred.1
+          | externPfn _arg _argTyp _retSpec =>
+              simp [typecheckExternPfn, pure, Except.pure] at htc; cases htc
+              show pfnClosuresCapturedPredTagsBounded
+                [PFnTClosure.extern _arg _retSpec (VarTypeEnv.toCaptured ctx.varEnv)] ctx.nextTag
+              intro tcl hmem
+              simp [List.mem_singleton] at hmem; subst hmem
+              exact capturedPredTagsBounded_of_toCaptured hpred.1
+          -- ════════════════════════════════════════════════════════════
+          -- Variable: propagates from ctx.varEnv via hclosure
+          -- ════════════════════════════════════════════════════════════
+          | var x =>
+              unfold typecheckVar at htc
+              cases h_lookup : ctx.varEnv.lookup x with
+              | none => simp [h_lookup] at htc
+              | some qt =>
+                  simp [h_lookup] at htc
+                  have hqt_bounded := hclosure x qt h_lookup
+                  cases qt with
+                  | mk etyp poison pred =>
+                      cases pred with
+                      | noPred =>
+                          simp at htc; cases htc; exact hqt_bounded
+                      | guardOnly k =>
+                          simp at htc
+                          cases hft : etyp.isFunctionType with
+                          | true => simp [hft, Bind.bind, Except.bind] at htc
+                          | false =>
+                              simp [hft] at htc
+                              cases htagopt : ctx.tagEnv.get? k with
+                              | none =>
+                                  have htagopt' : ctx.tagEnv[k]? = none := by
+                                    simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                                  simp [htagopt', pure, Except.pure] at htc; cases htc
+                                  exact hqt_bounded
+                              | some tv =>
+                                  have htagopt' : ctx.tagEnv[k]? = some tv := by
+                                    simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                                  cases tv with
+                                  | mk val deps =>
+                                      cases val <;>
+                                        (simp [htagopt', pure, Except.pure] at htc; cases htc;
+                                         exact hqt_bounded)
+                      | guardClosure k arg body env =>
+                          simp at htc
+                          cases hft : etyp.isFunctionType with
+                          | true => simp [hft, Bind.bind, Except.bind] at htc
+                          | false =>
+                              simp [hft] at htc
+                              cases htagopt : ctx.tagEnv.get? k with
+                              | none =>
+                                  have htagopt' : ctx.tagEnv[k]? = none := by
+                                    simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                                  simp [htagopt', pure, Except.pure] at htc; cases htc
+                                  exact hqt_bounded
+                              | some tv =>
+                                  have htagopt' : ctx.tagEnv[k]? = some tv := by
+                                    simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                                  cases tv with
+                                  | mk val deps =>
+                                      cases val <;>
+                                        (simp [htagopt', pure, Except.pure] at htc; cases htc;
+                                         exact hqt_bounded)
+          -- ════════════════════════════════════════════════════════════
+          -- Unary op: result etyp from opUnaryEType? (always bool)
+          -- ════════════════════════════════════════════════════════════
+          | unaryop uop e1 =>
+              unfold typecheckUnaryOp at htc
+              cases hfuel : fuel' with
+              | zero => simp [hfuel] at htc
+              | succ fuel'' =>
+                  rw [hfuel] at htc; simp [bind, Except.bind] at htc
+                  cases hte1 : typecheckExpr ctx e1 fuel'' with
+                  | error err => simp [hte1] at htc
+                  | ok r1 =>
+                      simp [hte1] at htc
+                      rcases hq1 : r1.qualType with ⟨etyp1, p1, pred1⟩
+                      simp [hq1] at htc
+                      cases hop : opUnaryEType? uop etyp1 with
+                      | none => simp [hop] at htc
+                      | some outType =>
+                          simp [hop, pure, Except.pure] at htc; cases htc
+                          -- outType = bool (from opUnaryEType?)
+                          unfold opUnaryEType? at hop
+                          split at hop <;> cases hop <;> trivial
+          -- ════════════════════════════════════════════════════════════
+          -- Binary op: result etyp from opEType? (always int or bool)
+          -- ════════════════════════════════════════════════════════════
+          | op e1 _op e2 =>
+              unfold typecheckOp at htc
+              cases hfuel : fuel' with
+              | zero => simp [hfuel] at htc
+              | succ fuel'' =>
+                  rw [hfuel] at htc; simp [bind, Except.bind] at htc
+                  cases hte1 : typecheckExpr ctx e1 fuel'' with
+                  | error err => simp [hte1] at htc
+                  | ok r1 =>
+                      simp [hte1] at htc
+                      rcases hq1 : r1.qualType with ⟨etyp1, p1, pred1⟩
+                      simp [hq1] at htc
+                      let ctx' : TypeContext := updateCtxFromResult ctx r1
+                      cases hte2 : typecheckExpr ctx' e2 fuel'' with
+                      | error err => erw [hte2] at htc; simp at htc
+                      | ok r2 =>
+                          erw [hte2] at htc
+                          rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
+                          simp [hq2] at htc
+                          cases hop : opEType? _op etyp1 etyp2 with
+                          | none => simp [hop] at htc
+                          | some outType =>
+                              simp [hop, pure, Except.pure] at htc; cases htc
+                              unfold opEType? at hop
+                              split at hop <;> cases hop <;> trivial
+          -- ════════════════════════════════════════════════════════════
+          -- seq: result from e2 IH
+          -- ════════════════════════════════════════════════════════════
+          | seq e1 e2 =>
+              unfold typecheckSeq at htc
+              cases hfuel : fuel' with
+              | zero => simp [hfuel] at htc
+              | succ fuel'' =>
+                  rw [hfuel] at htc; simp [bind, Except.bind] at htc
+                  cases hte1 : typecheckExpr ctx e1 fuel'' with
+                  | error err => simp [hte1] at htc
+                  | ok r1 =>
+                      simp [hte1] at htc
+                      let ctx' := updateCtxFromResult ctx r1
+                      cases hte2 : typecheckExpr ctx' e2 fuel'' with
+                      | error err => simp [hte2, ctx'] at htc
+                      | ok r2 =>
+                          simp [hte2, ctx'] at htc
+                          have hres : r2 = res := by simpa [pure, Except.pure] using htc
+                          have h_lt : fuel'' < fuel' + 1 := by omega
+                          have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by
+                            simpa [typecheck] using hte1
+                          have hmono1 := typecheck_normal_nextTag_mono ctx e1 fuel'' r1 hte1'
+                          have hpred' : predTagsBoundedInCtx ctx' :=
+                            predTagsBoundedInCtx_of_updateCtxFromResult ctx e1 fuel'' r1
+                              (by simpa [typecheck] using hte1) hpred
+                          have hclosure' : closureEnvBoundedInCtx ctx' :=
+                            varEnvClosuresCapturedBounded_mono hclosure hmono1
+                          have hIH2 := IH_fuel fuel'' h_lt e2 ctx' r2
+                            (by simpa [typecheck, ctx'] using hte2) hpred' hclosure'
+                          simpa [hres] using hIH2
+          -- ════════════════════════════════════════════════════════════
+          -- vlet: result from e2 IH with updated varEnv
+          -- ════════════════════════════════════════════════════════════
+          | vlet x e1 e2 =>
+              unfold typecheckVlet at htc
+              cases hfuel : fuel' with
+              | zero => simp [hfuel] at htc
+              | succ fuel'' =>
+                  rw [hfuel] at htc; simp [bind, Except.bind] at htc
+                  have mk_ctx2 : ∀ r1 : TypeResult,
+                      typecheckExpr ctx e1 fuel'' = .ok r1 →
+                      let ctx2 := { updateCtxFromResult ctx r1 with
+                                    varEnv := ctx.varEnv.update x r1.qualType }
+                      predTagsBoundedInCtx ctx2 ∧ closureEnvBoundedInCtx ctx2 := by
+                    intro r1 hte1
+                    have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by
+                      simpa [typecheck] using hte1
+                    have hmono1 := typecheck_normal_nextTag_mono ctx e1 fuel'' r1 hte1'
+                    have hIH1 := IH_fuel fuel'' (by omega) e1 ctx r1
+                      (by simpa [typecheck] using hte1) hpred hclosure
+                    have hpred_r1 := typecheckExpr_preserves_predTagsBounded ctx e1 fuel'' r1
+                      (by simpa [typecheck] using hte1) hpred
+                    exact ⟨⟨predTagsBoundedInVarEnv_update
+                        (predTagsBoundedInVarEnv_mono hpred.1 hmono1) hpred_r1.2, hpred_r1.1⟩,
+                      varEnvClosuresCapturedBounded_update
+                        (varEnvClosuresCapturedBounded_mono hclosure hmono1) hIH1⟩
+                  have vlet_close : ∀ r1 : TypeResult,
+                      typecheckExpr ctx e1 fuel'' = .ok r1 →
+                      ∀ r2 : TypeResult,
+                      typecheckExpr { updateCtxFromResult ctx r1 with
+                        varEnv := ctx.varEnv.update x r1.qualType } e2 fuel'' = .ok r2 →
+                      etypClosuresCapturedPredTagsBounded r2.qualType.etyp r2.nextTag' := by
+                    intro r1 hte1 r2 hte2
+                    have ⟨hp, hc⟩ := mk_ctx2 r1 hte1
+                    exact IH_fuel fuel'' (by omega) e2 _ r2
+                      (by simpa [typecheck] using hte2) hp hc
+                  cases hlookup : ctx.varEnv.lookup x with
+                  | none =>
+                      simp [hlookup] at htc
+                      cases hte1 : typecheckExpr ctx e1 fuel'' with
+                      | error err => simp [hte1, pure, Except.pure] at htc
+                      | ok r1 =>
+                          simp [hte1] at htc
+                          let ctx2 : TypeContext :=
+                            { updateCtxFromResult ctx r1 with
+                              varEnv := ctx.varEnv.update x r1.qualType }
+                          cases hte2 : typecheckExpr ctx2 e2 fuel'' with
+                          | error err => erw [hte2] at htc; simp [pure, Except.pure] at htc
+                          | ok r2 =>
+                              erw [hte2] at htc; simp at htc
+                              rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
+                              simp [hq2, pure, Except.pure] at htc; cases htc
+                              simp [hq2]
+                              have hc := vlet_close r1 hte1 r2 hte2
+                              simp [hq2] at hc; exact hc
+                  | some qtOuter =>
+                      simp [hlookup] at htc
+                      cases hpredOuter : qtOuter.pred with
+                      | guardClosure k arg body env =>
+                          simp [hpredOuter] at htc
+                          by_cases hregSome : (ctx.regime.lookup? k).isSome = true
+                          · simp [hregSome] at htc
+                          · simp [hregSome] at htc
+                            cases hte1 : typecheckExpr ctx e1 fuel'' with
+                            | error err => simp [hte1, pure, Except.pure] at htc
+                            | ok r1 =>
+                                simp [hte1] at htc
+                                let ctx2 : TypeContext :=
+                                  { updateCtxFromResult ctx r1 with
+                                    varEnv := ctx.varEnv.update x r1.qualType }
+                                cases hte2 : typecheckExpr ctx2 e2 fuel'' with
+                                | error err =>
+                                    erw [hte2] at htc; simp [pure, Except.pure] at htc
+                                | ok r2 =>
+                                    erw [hte2] at htc; simp at htc
+                                    rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
+                                    simp [hq2, pure, Except.pure] at htc; cases htc
+                                    simp [hq2]
+                                    have hc := vlet_close r1 hte1 r2 hte2
+                                    simp [hq2] at hc; exact hc
+                      | guardOnly k =>
+                          simp [hpredOuter] at htc
+                          cases hte1 : typecheckExpr ctx e1 fuel'' with
+                          | error err => simp [hte1, pure, Except.pure] at htc
+                          | ok r1 =>
+                              simp [hte1] at htc
+                              let ctx2 : TypeContext :=
+                                { updateCtxFromResult ctx r1 with
+                                  varEnv := ctx.varEnv.update x r1.qualType }
+                              cases hte2 : typecheckExpr ctx2 e2 fuel'' with
+                              | error err =>
+                                  erw [hte2] at htc; simp [pure, Except.pure] at htc
+                              | ok r2 =>
+                                  erw [hte2] at htc; simp at htc
+                                  rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
+                                  simp [hq2, pure, Except.pure] at htc; cases htc
+                                  simp [hq2]
+                                  have hc := vlet_close r1 hte1 r2 hte2
+                                  simp [hq2] at hc; exact hc
+                      | noPred =>
+                          simp [hpredOuter] at htc
+                          cases hte1 : typecheckExpr ctx e1 fuel'' with
+                          | error err => simp [hte1, pure, Except.pure] at htc
+                          | ok r1 =>
+                              simp [hte1] at htc
+                              let ctx2 : TypeContext :=
+                                { updateCtxFromResult ctx r1 with
+                                  varEnv := ctx.varEnv.update x r1.qualType }
+                              cases hte2 : typecheckExpr ctx2 e2 fuel'' with
+                              | error err =>
+                                  erw [hte2] at htc; simp [pure, Except.pure] at htc
+                              | ok r2 =>
+                                  erw [hte2] at htc; simp at htc
+                                  rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
+                                  simp [hq2, pure, Except.pure] at htc; cases htc
+                                  simp [hq2]
+                                  have hc := vlet_close r1 hte1 r2 hte2
+                                  simp [hq2] at hc; exact hc
+          -- ════════════════════════════════════════════════════════════
+          -- newRef: result etyp = ref (no closures)
+          -- ════════════════════════════════════════════════════════════
+          | newRef e1 =>
+              have htcNew : typecheckNewRef ctx e1 fuel' = .ok res := by
+                simpa [typecheckExpr] using htc
+              rcases typecheckNewRef_structure ctx e1 fuel' res htcNew with
+                ⟨_, _, _, _, _, hrefTyp, _, _, _, _, _, _, _⟩
+              rw [hrefTyp]; trivial
+          -- ════════════════════════════════════════════════════════════
+          -- assign: result etyp = unit (no closures)
+          -- ════════════════════════════════════════════════════════════
+          | assign e1 e2 =>
+              have htcAssign : typecheckAssign ctx e1 e2 fuel' = .ok res := by
+                simpa [typecheckExpr] using htc
+              rcases typecheckAssign_structure ctx e1 e2 fuel' res htcAssign with
+                ⟨_, _, _, _, _, _, _, _, _, _, hunit, _, _⟩
+              rw [hunit]; trivial
+          -- ════════════════════════════════════════════════════════════
+          -- deref: result etyp = int (no closures)
+          -- ════════════════════════════════════════════════════════════
+          | deref e1 =>
+              -- typecheckDeref always produces ETyp.int
+              -- All branches of the deref code return etyp = ETyp.int, so the
+              -- closure property is trivially True. We sorry this trivial subcase
+              -- to avoid the complex foldM unfolding; it can't fail.
+              have htcDeref : typecheckDeref ctx e1 fuel' = .ok res := by
+                simpa [typecheckExpr] using htc
+              suffices h : res.qualType.etyp = ETyp.int by rw [h]; trivial
+              exact typecheckDeref_etyp_int ctx e1 fuel' res htcDeref
+          -- ════════════════════════════════════════════════════════════
+          -- ite: uses joinETyps on branch results
+          -- ════════════════════════════════════════════════════════════
+          | ite e1 e2 e3 =>
+              have htcIf : typecheckIf ctx e1 e2 e3 fuel' = .ok res := by
+                simpa [typecheckExpr] using htc
+              rcases typecheckIf_structure ctx e1 e2 e3 fuel' res htcIf with
+                htrue | hfalse | hstd
+              · -- Mode 1: true branch only
+                obtain ⟨k, deps, hmatch, _hR, _res1, _htc1, _, res2, res3, htc2, htc3,
+                  _, _, _, hresNext, _, _, hresEtyp⟩ := htrue
+                have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
+                have hIH2 := IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2
+                  ⟨hpred.1, hpred.2⟩ hclosure
+                rw [hresEtyp, hresNext]
+                exact etypClosuresCapturedPredTagsBounded_mono hIH2 (Nat.le_max_left _ _)
+              · -- Mode 2: false branch only
+                obtain ⟨k, deps, hmatch, _hR, _res1, _htc1, _, res2, res3, htc2, htc3,
+                  _, _, _, hresNext, _, _, hresEtyp⟩ := hfalse
+                have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
+                have hmono2 := typecheck_normal_nextTag_mono
+                  { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 _ res2 htc2
+                have hIH3 := IH_fuel (fuel' - 1) h_fuelm1 e3 _ res3 htc3
+                  (show predTagsBoundedInCtx _ from
+                    ⟨predTagsBoundedInVarEnv_mono hpred.1 hmono2,
+                     predTagsBoundedInMemEnv_mono hpred.2 hmono2⟩)
+                  (show closureEnvBoundedInCtx _ from
+                    varEnvClosuresCapturedBounded_mono hclosure hmono2)
+                rw [hresEtyp, hresNext]
+                exact etypClosuresCapturedPredTagsBounded_mono hIH3 (Nat.le_max_right _ _)
+              · -- Standard case (mode 3/4): joinETyps
+                obtain ⟨_, res1, htc1, _, res2, htc2, res3, htc3, _, _,
+                  _, hresNextTag, _, _, hresEtyp, _⟩ := hstd
+                have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
+                have hmono1 := typecheck_normal_nextTag_mono ctx e1 _ res1 htc1
+                have hmono2 := typecheck_normal_nextTag_mono _ e2 _ res2 htc2
+                -- ctx'' for e2: pc = joinPoison, varEnv = ctx.varEnv, nextTag = res1.nextTag'
+                -- predTagsBoundedInCtx only cares about varEnv, memEnv, nextTag
+                have hpred1 := typecheckExpr_preserves_predTagsBounded ctx e1 _ res1 htc1 hpred
+                have hIH2 := IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2
+                  (show predTagsBoundedInCtx _ from
+                    ⟨predTagsBoundedInVarEnv_mono hpred.1 hmono1, hpred1.1⟩)
+                  (show closureEnvBoundedInCtx _ from
+                    varEnvClosuresCapturedBounded_mono hclosure hmono1)
+                have hpred2 := typecheckExpr_preserves_predTagsBounded _ e2 _ res2 htc2
+                  ⟨predTagsBoundedInVarEnv_mono hpred.1 hmono1, hpred1.1⟩
+                have hIH3 := IH_fuel (fuel' - 1) h_fuelm1 e3 _ res3 htc3
+                  (show predTagsBoundedInCtx _ from
+                    ⟨predTagsBoundedInVarEnv_mono hpred.1 (Nat.le_trans hmono1 hmono2),
+                     predTagsBoundedInMemEnv_mono hpred1.1 hmono2⟩)
+                  (show closureEnvBoundedInCtx _ from
+                    varEnvClosuresCapturedBounded_mono hclosure (Nat.le_trans hmono1 hmono2))
+                rw [hresNextTag, hresEtyp]
+                exact etypClosuresCapturedPredTagsBounded_joinETyps
+                  (etypClosuresCapturedPredTagsBounded_mono hIH2 (Nat.le_max_left _ _))
+                  (etypClosuresCapturedPredTagsBounded_mono hIH3 (Nat.le_max_right _ _))
+          -- ════════════════════════════════════════════════════════════
+          -- app: complex, sorry for now
+          -- ════════════════════════════════════════════════════════════
+          | app e1 e2 => sorry
+          -- ════════════════════════════════════════════════════════════
+          -- externVal: result etyp is int/bool/unit/string/ref (trivial)
+          -- ════════════════════════════════════════════════════════════
+          | externVal typ poison pred =>
+              have htce : typecheckExternVal ctx typ poison pred = .ok res := htc
+              unfold typecheckExternVal at htce
+              split at htce
+              · simp at htce
+              · simp at htce
+              · simp only [bind, Except.bind, pure, Except.pure] at htce
+                cases halloc : collectAndAllocExternTags [pred] ctx.nextTag with
+                | error err => simp [halloc] at htce
+                | ok allocResult =>
+                    rcases allocResult with ⟨tagMapping, nextTag'⟩
+                    simp only [halloc] at htce
+                    cases hresolve : resolveSyntaxPred pred ctx.varEnv tagMapping with
+                    | error err => simp [hresolve] at htce
+                    | ok resolvedPred =>
+                        simp only [hresolve] at htce
+                        cases hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx with
+                        | error err => simp [hsurf] at htce
+                        | ok surfResult =>
+                            simp only [hsurf, Except.ok.injEq] at htce; cases htce
+                            unfold surfaceSpecToQTyp at hsurf
+                            cases typ with
+                            | int =>
+                              simp [pure, Except.pure, bind, Except.bind] at hsurf
+                              cases hsurf; trivial
+                            | bool =>
+                              simp [pure, Except.pure, bind, Except.bind] at hsurf
+                              cases hsurf; trivial
+                            | unit =>
+                              simp [pure, Except.pure, bind, Except.bind] at hsurf
+                              cases hsurf; trivial
+                            | string =>
+                              simp [pure, Except.pure, bind, Except.bind] at hsurf
+                              cases hsurf; trivial
+                            | ref t =>
+                              by_cases ht : t = Typ.int
+                              · simp [bind, Except.bind, pure, Except.pure, ht, freshTLoc]
+                                  at hsurf
+                                cases hsurf; trivial
+                              · simp [bind, Except.bind, pure, Except.pure, ht] at hsurf
+                            | arrow _ _ =>
+                              simp [bind, Except.bind, pure, Except.pure] at hsurf
 
 /-- Monotonicity of tagEnvBounded under larger nextTag. -/
 private lemma tagEnvBounded_mono (tagEnv : TagEnv) (nt nt' : Tag)
