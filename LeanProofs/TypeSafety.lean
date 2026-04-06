@@ -6823,7 +6823,10 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                       { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 _ res2 htc2),
                    predTagsBoundedInMemEnv_mono hpred.2
                     (typecheck_normal_nextTag_mono
-                      { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 _ res2 htc2)⟩ sorry
+                      { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 _ res2 htc2)⟩
+                  (varEnvClosuresCapturedBounded_mono hclosure
+                    (typecheck_normal_nextTag_mono
+                      { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 _ res2 htc2))
                 rw [hresNext]
                 constructor
                 · -- memEnv' = res3.memEnv' (mode 2 uses false branch only)
@@ -6848,7 +6851,8 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                   have hIH3 := IH_fuel (fuel' - 1) h_fuelm1 e3 _ res3 htc3 (by
                     exact ⟨predTagsBoundedInVarEnv_mono hpred.1
                       (Nat.le_trans hmono1 hmono2),
-                      predTagsBoundedInMemEnv_mono hIH1.1 hmono2⟩) sorry
+                      predTagsBoundedInMemEnv_mono hIH1.1 hmono2⟩)
+                    (varEnvClosuresCapturedBounded_mono hclosure (Nat.le_trans hmono1 hmono2))
                   exact predTagsBoundedInMemEnv_joinMemEnvsStrong
                     (predTagsBoundedInMemEnv_mono hIH2.1 (Nat.le_max_left _ _))
                     (predTagsBoundedInMemEnv_mono hIH3.1 (Nat.le_max_right _ _))
@@ -6884,7 +6888,7 @@ private lemma typecheckExpr_preserves_predTagsBounded_main :
                 have hpredCtx' : predTagsBoundedInCtx ctx' := by
                   simp only [predTagsBoundedInCtx, hctx']
                   exact ⟨predTagsBoundedInVarEnv_mono hpred.1 hmono2, hIH2.1⟩
-                have hIH1 := IH_fuel fuel'' h_fuel e1 ctx' res1 htce1 hpredCtx' sorry
+                have hIH1 := IH_fuel fuel'' h_fuel e1 ctx' res1 htce1 hpredCtx' (varEnvClosuresCapturedBounded_mono hclosure hmono2)
 
                 have hmono1 := typecheck_normal_nextTag_mono ctx' e1 fuel'' res1 htce1
                 -- IH for applyXTClosure (needs fuel < fuel''+1+1)
