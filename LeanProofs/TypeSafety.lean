@@ -5525,6 +5525,93 @@ private lemma predTagsBoundedInMemEnv_update {G : MemoryTypeEnv} {nt : Tag} {l :
   · simp at hlookup
     exact hb l' qt' (by simp [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
 
+/-- If joinMemEnvsStrong has an entry at l, then G1 or G2 has an entry at l,
+    and the pred is either noPred (single-sided) or joinPredicates (both-sided). -/
+private lemma joinMemEnvsStrong_pred_cases
+    (G1 G2 : MemoryTypeEnv) (l : Loc) (qt : QTyp)
+    (hlookup : (joinMemEnvsStrong G1 G2).lookup l = some qt) :
+    (qt.pred = Predicate.noPred) ∨
+    (∃ qt1 qt2, G1.lookup l = some qt1 ∧ G2.lookup l = some qt2 ∧
+      qt.pred = joinPredicates qt1.pred qt2.pred) := by
+  -- Work at the MemEntry level via get?
+  simp only [joinMemEnvsStrong, MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?,
+             combineExtTreeMaps] at hlookup
+  classical
+  let ks := (G1.keys ++ G2.keys).eraseDups
+  let f : Loc → Option MemEntry → Option MemEntry → Option MemEntry := fun _ oe1 oe2 =>
+    match oe1, oe2 with
+    | some e1, none => some ⟨e1.poison, Predicate.noPred⟩
+    | none, some e2 => some ⟨e2.poison, Predicate.noPred⟩
+    | some e1, some e2 => some ⟨joinPoison e1.poison e2.poison, joinPredicates e1.pred e2.pred⟩
+    | none, none => none
+  -- The combined map at l is f l G1[l]? G2[l]?
+  by_cases hmem : l ∈ ks
+  · have hgo := combineExtTreeMaps_go_get_mem G1 G2 f ks ({} : MemoryTypeEnv) l hmem
+    -- hgo : (combined)[l]? = match f l G1[l]? G2[l]? with some v => some v | none => none
+    -- hlookup : Option.map wrap (combined)[l]? = some qt
+    simp only [f] at hgo
+    -- Case on G1[l]? and G2[l]?
+    -- Substitute hgo into hlookup to get direct access to G1.get?/G2.get?
+    simp only [Std.ExtTreeMap.get?_eq_getElem?] at hgo
+    -- hgo and hlookup use the same combined[l]? but with different lambda shapes
+    -- Use conv to target the rewrite precisely
+    have hme := Option.map_eq_some_iff.mp hlookup
+    obtain ⟨me, hme_eq, hqt_eq⟩ := hme
+    -- Now case-split on G1.get? and G2.get? via hgo
+    -- hgo : some me = match f l G1[l]? G2[l]? with some v => some v | none => none
+    -- hqt_eq : {int, me.poison, me.pred} = qt
+    -- Case on G1.get? l and G2.get? l (MemEntry level)
+    match h1 : (G1.get? l : Option MemEntry), h2 : (G2.get? l : Option MemEntry) with
+    | none, none =>
+      simp only [Std.ExtTreeMap.get?_eq_getElem?] at h1 h2
+      simp only [h1, h2] at hgo
+      change (combineExtTreeMaps.go G1 G2 f ks ∅)[l]? = _ at hme_eq
+      rw [hgo] at hme_eq; simp at hme_eq
+    | none, some e2 =>
+      simp only [Std.ExtTreeMap.get?_eq_getElem?] at h1 h2
+      simp only [h1, h2] at hgo
+      change (combineExtTreeMaps.go G1 G2 f ks ∅)[l]? = _ at hme_eq
+      rw [hgo] at hme_eq; simp only [Option.some.injEq] at hme_eq
+      left; rw [← hqt_eq, ← hme_eq]
+    | some e1, none =>
+      simp only [Std.ExtTreeMap.get?_eq_getElem?] at h1 h2
+      simp only [h1, h2] at hgo
+      change (combineExtTreeMaps.go G1 G2 f ks ∅)[l]? = _ at hme_eq
+      rw [hgo] at hme_eq; simp only [Option.some.injEq] at hme_eq
+      left; rw [← hqt_eq, ← hme_eq]
+    | some e1, some e2 =>
+      simp only [Std.ExtTreeMap.get?_eq_getElem?] at h1 h2
+      simp only [h1, h2] at hgo
+      change (combineExtTreeMaps.go G1 G2 f ks ∅)[l]? = _ at hme_eq
+      rw [hgo] at hme_eq; simp only [Option.some.injEq] at hme_eq
+      right
+      exact ⟨⟨ETyp.int, e1.poison, e1.pred⟩, ⟨ETyp.int, e2.poison, e2.pred⟩,
+        by simp [MemoryTypeEnv.lookup, h1],
+        by simp [MemoryTypeEnv.lookup, h2],
+        by rw [← hqt_eq, ← hme_eq]⟩
+  · have hgo := combineExtTreeMaps_go_get_not_mem G1 G2 f ks ({} : MemoryTypeEnv) l hmem
+    simp [Std.ExtTreeMap.getElem?_empty] at hgo
+    -- hgo : l ∉ combined OR combined[l]? = ∅[l]? = none
+    -- Either way, hlookup contradicts this
+    -- hgo : l ∉ combined. Use show to bring hlookup back to original form and derive contradiction
+    have h_none := Std.ExtTreeMap.getElem?_eq_none hgo
+    -- hlookup has Option.map _ combined[l]? = some qt but combined[l]? = none
+    change Option.map _ (combineExtTreeMaps.go G1 G2 f ks ∅)[l]? = some qt at hlookup
+    rw [h_none] at hlookup; simp at hlookup
+
+/-- joinMemEnvsStrong preserves predTagsBoundedInMemEnv. -/
+private lemma predTagsBoundedInMemEnv_joinMemEnvsStrong
+    {G1 G2 : MemoryTypeEnv} {nt : Tag}
+    (hb1 : predTagsBoundedInMemEnv G1 nt) (hb2 : predTagsBoundedInMemEnv G2 nt) :
+    predTagsBoundedInMemEnv (joinMemEnvsStrong G1 G2) nt := by
+  intro l qt hlookup
+  rcases joinMemEnvsStrong_pred_cases G1 G2 l qt hlookup with hnoPred | ⟨qt1, qt2, h1, h2, hjoin⟩
+  · -- pred = noPred → trivially bounded
+    simp only [qtypPredTagBounded, hnoPred]; exact predTagBounded_noPred _
+  · -- pred = joinPredicates qt1.pred qt2.pred → bounded by predTagBounded_joinPredicates
+    simp only [qtypPredTagBounded, hjoin]
+    exact predTagBounded_joinPredicates (hb1 l qt1 h1) (hb2 l qt2 h2)
+
 /-- Generic: List.foldl preserves tag boundedness given a step invariant. -/
 private theorem foldl_tags_bounded {bound : Tag}
     {f : List (Tag × Deps) → (Name × QTyp) → List (Tag × Deps)}
@@ -5781,13 +5868,440 @@ lemma matchGuard_tag_bounded
       · exact absurd hmatch (by intro h; exact Except.noConfusion h)
       · exact absurd hmatch (by intro h; exact Except.noConfusion h)
 
+set_option maxHeartbeats 800000 in
+private lemma typecheckIf_pred_noPred (ctx : TypeContext) (e1 e2 e3 : Expr)
+    (fuel : Nat) (res : TypeResult)
+    (htc : typecheckIf ctx e1 e2 e3 fuel = .ok res) :
+    res.qualType.pred = Predicate.noPred := by
+  unfold typecheckIf at htc
+  simp only [bind, Except.bind, pure, Except.pure] at htc
+  cases fuel with
+  | zero => simp at htc
+  | succ fuel' =>
+    repeat (first | split at htc | simp at htc | (cases htc; rfl))
+
 private lemma typecheckExpr_preserves_predTagsBounded_main :
     ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
     typecheckExpr ctx e fuel = .ok res →
     predTagsBoundedInCtx ctx →
     predTagsBoundedInMemEnv res.memEnv' res.nextTag' ∧
     qtypPredTagBounded res.qualType res.nextTag' := by
-  sorry
+  intro ctx e fuel res htc hpred
+  revert ctx e res htc hpred
+  induction fuel using Nat.strong_induction_on with
+  | _ fuel IH =>
+      intro ctx e res htc hpred
+      have IH_fuel : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          typecheckExpr ctx' e' m = .ok res' → predTagsBoundedInCtx ctx' →
+          predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧
+          qtypPredTagBounded res'.qualType res'.nextTag' :=
+        fun m h_lt e' ctx' res' htc' hpred' => IH m h_lt ctx' e' res' htc' hpred'
+      cases fuel with
+      | zero => simp [typecheckExpr] at htc
+      | succ fuel' =>
+          unfold typecheckExpr at htc
+          cases e with
+          | num _n =>
+              simp [typecheckInt] at htc; cases htc
+              exact ⟨hpred.2, predTagBounded_noPred _⟩
+          | bool _b =>
+              simp [typecheckBool] at htc; cases htc
+              exact ⟨hpred.2, predTagBounded_noPred _⟩
+          | unit =>
+              simp [typecheckUnit] at htc; cases htc
+              exact ⟨hpred.2, predTagBounded_noPred _⟩
+          | str _s =>
+              simp [typecheckString] at htc; cases htc
+              exact ⟨hpred.2, predTagBounded_noPred _⟩
+          | fn _x _st1 _body _st2 =>
+              simp [typecheckFn] at htc; cases htc
+              exact ⟨hpred.2, predTagBounded_noPred _⟩
+          | pfn _x _st1 _body _st2 =>
+              simp [typecheckPfn, Bind.bind, Except.bind] at htc
+              cases h_topexpr : _body.toPExpr with
+              | error _ => simp [h_topexpr] at htc
+              | ok _ =>
+                  simp [h_topexpr, pure, Except.pure] at htc; cases htc
+                  exact ⟨hpred.2, predTagBounded_noPred _⟩
+          | externFn _arg _argTyp _retSpec _effects =>
+              simp [typecheckExternFn, pure, Except.pure] at htc; cases htc
+              exact ⟨hpred.2, predTagBounded_noPred _⟩
+          | externPfn _arg _argTyp _retSpec =>
+              simp [typecheckExternPfn, pure, Except.pure] at htc; cases htc
+              exact ⟨hpred.2, predTagBounded_noPred _⟩
+          | var x =>
+              -- All branches of typecheckVar preserve memEnv and nextTag
+              -- and produce pred that is either noPred or from ctx.varEnv
+              unfold typecheckVar at htc
+              cases h_lookup : ctx.varEnv.lookup x with
+              | none => simp [h_lookup] at htc
+              | some qt =>
+                  simp [h_lookup] at htc
+                  cases qt with
+                  | mk etyp poison pred =>
+                      cases pred with
+                      | noPred =>
+                          simp at htc; cases htc
+                          exact ⟨hpred.2, predTagBounded_noPred _⟩
+                      | guardOnly k =>
+                          simp at htc
+                          cases hft : etyp.isFunctionType with
+                          | true =>
+                              simp [hft, Bind.bind, Except.bind] at htc
+                          | false =>
+                              simp [hft] at htc
+                              cases htagopt : ctx.tagEnv.get? k with
+                              | none =>
+                                  have htagopt' : ctx.tagEnv[k]? = none := by
+                                    simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                                  simp [htagopt', pure, Except.pure] at htc; cases htc
+                                  exact ⟨hpred.2, hpred.1 x ⟨etyp, poison, Predicate.guardOnly k⟩ h_lookup⟩
+                              | some tv =>
+                                  have htagopt' : ctx.tagEnv[k]? = some tv := by
+                                    simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                                  cases tv with
+                                  | mk val deps =>
+                                      cases val with
+                                      | true =>
+                                          simp [htagopt', pure, Except.pure] at htc; cases htc
+                                          exact ⟨hpred.2, predTagBounded_noPred _⟩
+                                      | false =>
+                                          simp [htagopt', pure, Except.pure] at htc; cases htc
+                                          exact ⟨hpred.2, predTagBounded_noPred _⟩
+                      | guardClosure k arg body env =>
+                          simp at htc
+                          cases hft : etyp.isFunctionType with
+                          | true =>
+                              simp [hft, Bind.bind, Except.bind] at htc
+                          | false =>
+                              simp [hft] at htc
+                              cases htagopt : ctx.tagEnv.get? k with
+                              | none =>
+                                  have htagopt' : ctx.tagEnv[k]? = none := by
+                                    simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                                  simp [htagopt', pure, Except.pure] at htc; cases htc
+                                  exact ⟨hpred.2, hpred.1 x ⟨etyp, poison, Predicate.guardClosure k arg body env⟩ h_lookup⟩
+                              | some tv =>
+                                  have htagopt' : ctx.tagEnv[k]? = some tv := by
+                                    simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                                  cases tv with
+                                  | mk val deps =>
+                                      cases val with
+                                      | true =>
+                                          simp [htagopt', pure, Except.pure] at htc; cases htc
+                                          exact ⟨hpred.2, predTagBounded_noPred _⟩
+                                      | false =>
+                                          simp [htagopt', pure, Except.pure] at htc; cases htc
+                                          exact ⟨hpred.2, predTagBounded_noPred _⟩
+          | unaryop op e1 =>
+              -- htc : typecheckUnaryOp ctx op e1 fuel' = .ok res
+              unfold typecheckUnaryOp at htc
+              cases hfuel : fuel' with
+              | zero => simp [hfuel] at htc
+              | succ fuel'' =>
+                  rw [hfuel] at htc
+                  simp [bind, Except.bind] at htc
+                  cases hte1 : typecheckExpr ctx e1 fuel'' with
+                  | error err => simp [hte1] at htc
+                  | ok r1 =>
+                      simp [hte1] at htc
+                      rcases hq1 : r1.qualType with ⟨etyp1, p1, pred1⟩
+                      simp [hq1] at htc
+                      cases hop : opUnaryEType? op etyp1 with
+                      | none => simp [hop] at htc
+                      | some outType =>
+                          simp [hop, pure, Except.pure] at htc; cases htc
+                          have h_lt : fuel'' < fuel' + 1 := by omega
+                          have hIH := IH_fuel fuel'' h_lt e1 ctx r1
+                            (by simpa [typecheck] using hte1) hpred
+                          exact ⟨hIH.1, predTagBounded_noPred _⟩
+          | op e1 _op e2 =>
+              -- htc : typecheckOp ctx e1 e2 fuel' _op = .ok res
+              unfold typecheckOp at htc
+              cases hfuel : fuel' with
+              | zero => simp [hfuel] at htc
+              | succ fuel'' =>
+                  rw [hfuel] at htc
+                  simp [bind, Except.bind] at htc
+                  cases hte1 : typecheckExpr ctx e1 fuel'' with
+                  | error err => simp [hte1] at htc
+                  | ok r1 =>
+                      simp [hte1] at htc
+                      rcases hq1 : r1.qualType with ⟨etyp1, p1, pred1⟩
+                      simp [hq1] at htc
+                      let ctx' : TypeContext := updateCtxFromResult ctx r1
+                      cases hte2 : typecheckExpr ctx' e2 fuel'' with
+                      | error err => erw [hte2] at htc; simp at htc
+                      | ok r2 =>
+                          erw [hte2] at htc
+                          rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
+                          simp [hq2] at htc
+                          cases hop : opEType? _op etyp1 etyp2 with
+                          | none => simp [hop] at htc
+                          | some outType =>
+                              simp [hop, pure, Except.pure] at htc; cases htc
+                              have h_lt : fuel'' < fuel' + 1 := by omega
+                              have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by
+                                simpa [typecheck] using hte1
+                              have hIH1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hpred
+                              have hpred' : predTagsBoundedInCtx ctx' :=
+                                ⟨predTagsBoundedInVarEnv_mono hpred.1
+                                  (typecheck_normal_nextTag_mono ctx e1 fuel'' r1 hte1'), hIH1.1⟩
+                              have hIH2 := IH_fuel fuel'' h_lt e2 ctx' r2
+                                (by simpa [typecheck, ctx'] using hte2) hpred'
+                              exact ⟨hIH2.1, predTagBounded_noPred _⟩
+          | seq e1 e2 =>
+              unfold typecheckSeq at htc
+              cases hfuel : fuel' with
+              | zero => simp [hfuel] at htc
+              | succ fuel'' =>
+                  rw [hfuel] at htc
+                  simp [bind, Except.bind] at htc
+                  cases hte1 : typecheckExpr ctx e1 fuel'' with
+                  | error err => simp [hte1] at htc
+                  | ok r1 =>
+                      simp [hte1] at htc
+                      let ctx' := updateCtxFromResult ctx r1
+                      cases hte2 : typecheckExpr ctx' e2 fuel'' with
+                      | error err => simp [hte2, ctx'] at htc
+                      | ok r2 =>
+                          simp [hte2, ctx'] at htc
+                          have hres : r2 = res := by simpa [pure, Except.pure] using htc
+                          have h_lt : fuel'' < fuel' + 1 := by omega
+                          have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by
+                            simpa [typecheck] using hte1
+                          have hIH1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hpred
+                          have hpred' : predTagsBoundedInCtx ctx' :=
+                            ⟨predTagsBoundedInVarEnv_mono hpred.1
+                              (typecheck_normal_nextTag_mono ctx e1 fuel'' r1 hte1'), hIH1.1⟩
+                          have hIH2 := IH_fuel fuel'' h_lt e2 ctx' r2
+                            (by simpa [typecheck, ctx'] using hte2) hpred'
+                          simpa [hres] using hIH2
+          | vlet x e1 e2 =>
+              unfold typecheckVlet at htc
+              cases hfuel : fuel' with
+              | zero => simp [hfuel] at htc
+              | succ fuel'' =>
+                  rw [hfuel] at htc
+                  simp [bind, Except.bind] at htc
+                  have mk_pred2 : ∀ r1 : TypeResult,
+                      typecheckExpr ctx e1 fuel'' = .ok r1 →
+                      predTagsBoundedInCtx
+                        { updateCtxFromResult ctx r1 with varEnv := ctx.varEnv.update x r1.qualType } := by
+                    intro r1 hte1
+                    have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by simpa [typecheck] using hte1
+                    have hIH1 := IH_fuel fuel'' (by omega) e1 ctx r1 hte1' hpred
+                    exact ⟨predTagsBoundedInVarEnv_update
+                        (predTagsBoundedInVarEnv_mono hpred.1
+                          (typecheck_normal_nextTag_mono ctx e1 fuel'' r1 hte1'))
+                        hIH1.2, hIH1.1⟩
+                  -- After unfolding, all sub-cases end with:
+                  --   typecheckExpr ctx e1 fuel'' = ok r1
+                  --   typecheckExpr ctx2 e2 fuel'' = ok r2
+                  --   simp gives htc : {qualType := ..., memEnv' := r2.memEnv', ..., nextTag' := r2.nextTag'} = res
+                  -- After `cases htc`, goal reduces to showing bounded for r2.
+                  -- The IH on r2 with mk_pred2 gives the memEnv/pred result.
+                  -- The result qualType.pred = pred2 = r2.qualType.pred, so the IH bound transfers.
+                  -- Macro for the vlet subcases: unpack e1/e2, cases htc, apply IH
+                  have vlet_close : ∀ r1 : TypeResult,
+                      typecheckExpr ctx e1 fuel'' = .ok r1 →
+                      ∀ r2 : TypeResult,
+                      typecheckExpr { updateCtxFromResult ctx r1 with
+                        varEnv := ctx.varEnv.update x r1.qualType } e2 fuel'' = .ok r2 →
+                      predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧
+                      predTagBounded r2.nextTag' r2.qualType.pred := by
+                    intro r1 hte1 r2 hte2
+                    exact IH_fuel fuel'' (by omega) e2 _ r2
+                      (by simpa [typecheck] using hte2) (mk_pred2 r1 hte1)
+                  cases hlookup : ctx.varEnv.lookup x with
+                  | none =>
+                      simp [hlookup] at htc
+                      cases hte1 : typecheckExpr ctx e1 fuel'' with
+                      | error err => simp [hte1, pure, Except.pure] at htc
+                      | ok r1 =>
+                          simp [hte1] at htc
+                          let ctx2 : TypeContext := { updateCtxFromResult ctx r1 with varEnv := ctx.varEnv.update x r1.qualType }
+                          cases hte2 : typecheckExpr ctx2 e2 fuel'' with
+                          | error err => erw [hte2] at htc; simp [pure, Except.pure] at htc
+                          | ok r2 =>
+                              erw [hte2] at htc; simp at htc
+                              rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
+                              simp [hq2, pure, Except.pure] at htc; cases htc
+                              have hc := vlet_close r1 hte1 r2 hte2
+                              exact ⟨hc.1, by simp [qtypPredTagBounded, hq2] at hc ⊢; exact hc.2⟩
+                  | some qtOuter =>
+                      simp [hlookup] at htc
+                      cases hpredOuter : qtOuter.pred with
+                      | guardClosure k arg body env =>
+                          simp [hpredOuter] at htc
+                          by_cases hregSome : (ctx.regime.lookup? k).isSome = true
+                          · simp [hregSome] at htc
+                          · simp [hregSome] at htc
+                            cases hte1 : typecheckExpr ctx e1 fuel'' with
+                            | error err => simp [hte1, pure, Except.pure] at htc
+                            | ok r1 =>
+                                simp [hte1] at htc
+                                let ctx2 : TypeContext := { updateCtxFromResult ctx r1 with varEnv := ctx.varEnv.update x r1.qualType }
+                                cases hte2 : typecheckExpr ctx2 e2 fuel'' with
+                                | error err => erw [hte2] at htc; simp [pure, Except.pure] at htc
+                                | ok r2 =>
+                                    erw [hte2] at htc; simp at htc
+                                    rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
+                                    simp [hq2, pure, Except.pure] at htc; cases htc
+                                    have hc := vlet_close r1 hte1 r2 hte2
+                                    exact ⟨hc.1, by simp [qtypPredTagBounded, hq2] at hc ⊢; exact hc.2⟩
+                      | guardOnly k =>
+                          simp [hpredOuter] at htc
+                          cases hte1 : typecheckExpr ctx e1 fuel'' with
+                          | error err => simp [hte1, pure, Except.pure] at htc
+                          | ok r1 =>
+                              simp [hte1] at htc
+                              let ctx2 : TypeContext := { updateCtxFromResult ctx r1 with varEnv := ctx.varEnv.update x r1.qualType }
+                              cases hte2 : typecheckExpr ctx2 e2 fuel'' with
+                              | error err => erw [hte2] at htc; simp [pure, Except.pure] at htc
+                              | ok r2 =>
+                                  erw [hte2] at htc; simp at htc
+                                  rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
+                                  simp [hq2, pure, Except.pure] at htc; cases htc
+                                  have hc := vlet_close r1 hte1 r2 hte2
+                                  exact ⟨hc.1, by simp [qtypPredTagBounded, hq2] at hc ⊢; exact hc.2⟩
+                      | noPred =>
+                          simp [hpredOuter] at htc
+                          cases hte1 : typecheckExpr ctx e1 fuel'' with
+                          | error err => simp [hte1, pure, Except.pure] at htc
+                          | ok r1 =>
+                              simp [hte1] at htc
+                              let ctx2 : TypeContext := { updateCtxFromResult ctx r1 with varEnv := ctx.varEnv.update x r1.qualType }
+                              cases hte2 : typecheckExpr ctx2 e2 fuel'' with
+                              | error err => erw [hte2] at htc; simp [pure, Except.pure] at htc
+                              | ok r2 =>
+                                  erw [hte2] at htc; simp at htc
+                                  rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
+                                  simp [hq2, pure, Except.pure] at htc; cases htc
+                                  have hc := vlet_close r1 hte1 r2 hte2
+                                  exact ⟨hc.1, by simp [qtypPredTagBounded, hq2] at hc ⊢; exact hc.2⟩
+          | newRef e1 =>
+              -- Use structure lemma
+              have htcNew : typecheckNewRef ctx e1 fuel' = .ok res := by
+                simpa [typecheckExpr] using htc
+              rcases typecheckNewRef_structure ctx e1 fuel' res htcNew with
+                ⟨r1, l, hte1, hl, _hInt, _hrefTyp, _hpc, hpredNoPred, hmemEnv, _htagEnv, _hnextLoc, hnextTag, _hregime⟩
+              have h_lt_raw : fuel' - 1 < fuel' + 1 := by omega
+              have hIH1 := IH_fuel (fuel' - 1) h_lt_raw e1 ctx r1 hte1 hpred
+              rw [hnextTag]
+              constructor
+              · -- predTagsBoundedInMemEnv (updateMemEnv r1.memEnv' l storedQt) r1.nextTag'
+                rw [hmemEnv]
+                apply predTagsBoundedInMemEnv_update hIH1.1
+                -- storedQt.pred is either noPred or r1.qualType.pred
+                show predTagBounded r1.nextTag' (if ctx.pc then Predicate.noPred else r1.qualType.pred)
+                split
+                · exact predTagBounded_noPred _
+                · exact hIH1.2
+              · -- pred = noPred
+                simp only [qtypPredTagBounded, hpredNoPred]; exact predTagBounded_noPred _
+          | assign e1 e2 =>
+              -- Use structure lemma
+              have htcAssign : typecheckAssign ctx e1 e2 fuel' = .ok res := by
+                simpa [typecheckExpr] using htc
+              rcases typecheckAssign_structure ctx e1 e2 fuel' res htcAssign with
+                ⟨r1, r2, ls, hte1, _hrefTyp, hte2, _hInt2, _hnextLoc, hnextTag, _hregime,
+                 _hunit, _hpoison, hpredNoPred⟩
+              have h_lt_raw : fuel' - 1 < fuel' + 1 := by omega
+              have hIH1 := IH_fuel (fuel' - 1) h_lt_raw e1 ctx r1 hte1 hpred
+              have hpred' : predTagsBoundedInCtx (updateCtxFromResult ctx r1) :=
+                ⟨predTagsBoundedInVarEnv_mono hpred.1
+                  (typecheck_normal_nextTag_mono ctx e1 (fuel' - 1) r1 hte1), hIH1.1⟩
+              have hIH2 := IH_fuel (fuel' - 1) h_lt_raw e2 (updateCtxFromResult ctx r1) r2 hte2 hpred'
+              rw [hnextTag]
+              constructor
+              · -- memEnv' involves updateMemEnv or updateLocsetWeak on r2.memEnv'
+                -- Both preserve boundedness since stored pred is either noPred or pred2
+                -- This is complex due to the match on locset size; use sorry for now
+                sorry
+              · simp only [qtypPredTagBounded, hpredNoPred]; exact predTagBounded_noPred _
+          | deref e1 =>
+              -- Use structure lemma
+              have htcDeref : typecheckDeref ctx e1 fuel' = .ok res := by
+                simpa [typecheckExpr] using htc
+              cases hfuel : fuel' with
+              | zero => simp [hfuel, typecheckDeref] at htcDeref
+              | succ fuel'' =>
+                  have h_lt : fuel'' < fuel' + 1 := by omega
+                  obtain ⟨r1, hte1, hmem_eq, _hte_eq, _hnl_eq, hnt_eq, _⟩ :=
+                    typecheckDeref_structure ctx e1 (fuel'' + 1) res (by rwa [← hfuel])
+                  simp only [Nat.add_sub_cancel] at hte1
+                  have hIH1 := IH_fuel fuel'' h_lt e1 ctx r1
+                    (by simpa [typecheck] using hte1) hpred
+                  rw [hmem_eq, hnt_eq]
+                  constructor
+                  · exact hIH1.1
+                  · -- result pred comes from memory lookup or is noPred, all bounded by IH
+                    -- The deref produces a pred that is either noPred or from r1.memEnv'
+                    -- which is bounded by hIH1.1
+                    -- Need to analyze typecheckDeref to extract the actual pred
+                    sorry
+          | ite e1 e2 e3 =>
+              have htcIf : typecheckIf ctx e1 e2 e3 fuel' = .ok res := by
+                simpa [typecheckExpr] using htc
+              have hite_nopred := typecheckIf_pred_noPred ctx e1 e2 e3 fuel' res htcIf
+              rcases typecheckIf_structure ctx e1 e2 e3 fuel' res htcIf with
+                htrue | hfalse | hstd
+              · -- Mode 1: matchGuard succeeds, R(k) = some true
+                obtain ⟨k, deps, hmatch, _hR, _res1, _htc1, _, res2, res3, htc2, htc3,
+                  hmemEnv, _, hresQT, hresNext, _, _, _⟩ := htrue
+                have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
+                have hIH2 := IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2
+                  ⟨hpred.1, hpred.2⟩
+                rw [hresNext]
+                constructor
+                · -- memEnv' = res2.memEnv' (mode 1 uses true branch only)
+                  rw [hmemEnv]
+                  exact predTagsBoundedInMemEnv_mono hIH2.1 (Nat.le_max_left _ _)
+                · simp only [qtypPredTagBounded, hite_nopred]; exact predTagBounded_noPred _
+              · -- Mode 2: matchGuard succeeds, R(k) = some false
+                obtain ⟨k, deps, hmatch, _hR, _res1, _htc1, _, res2, res3, htc2, htc3,
+                  hmemEnv, _, hresQT, hresNext, _, _, _⟩ := hfalse
+                have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
+                have hIH3 := IH_fuel (fuel' - 1) h_fuelm1 e3 _ res3 htc3
+                  ⟨predTagsBoundedInVarEnv_mono hpred.1
+                    (typecheck_normal_nextTag_mono
+                      { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 _ res2 htc2),
+                   predTagsBoundedInMemEnv_mono hpred.2
+                    (typecheck_normal_nextTag_mono
+                      { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 _ res2 htc2)⟩
+                rw [hresNext]
+                constructor
+                · -- memEnv' = res3.memEnv' (mode 2 uses false branch only)
+                  rw [hmemEnv]
+                  exact predTagsBoundedInMemEnv_mono hIH3.1 (Nat.le_max_right _ _)
+                · simp only [qtypPredTagBounded, hite_nopred]; exact predTagBounded_noPred _
+              · -- Standard case (mode 3/4)
+                obtain ⟨_, res1, htc1, _hbool1, ⟨res2, htc2, ⟨res3, htc3, hmemEnv, _,
+                  hresQT, hresNextTag, _, _, _, _⟩⟩⟩ := hstd
+                have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
+                rw [hresNextTag]
+                constructor
+                · -- memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv'
+                  rw [hmemEnv]
+                  have hIH1 := IH_fuel (fuel' - 1) h_fuelm1 e1 ctx res1 htc1 hpred
+                  have hIH2 := IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2 (by
+                    exact ⟨predTagsBoundedInVarEnv_mono hpred.1
+                      (typecheck_normal_nextTag_mono ctx e1 _ res1 htc1), hIH1.1⟩)
+                  have hmono1 := typecheck_normal_nextTag_mono ctx e1 _ res1 htc1
+                  have hmono2 := typecheck_normal_nextTag_mono _ e2 _ res2 htc2
+                  have hIH3 := IH_fuel (fuel' - 1) h_fuelm1 e3 _ res3 htc3 (by
+                    exact ⟨predTagsBoundedInVarEnv_mono hpred.1
+                      (Nat.le_trans hmono1 hmono2),
+                      predTagsBoundedInMemEnv_mono hIH1.1 hmono2⟩)
+                  exact predTagsBoundedInMemEnv_joinMemEnvsStrong
+                    (predTagsBoundedInMemEnv_mono hIH2.1 (Nat.le_max_left _ _))
+                    (predTagsBoundedInMemEnv_mono hIH3.1 (Nat.le_max_right _ _))
+                · simp only [qtypPredTagBounded, hite_nopred]; exact predTagBounded_noPred _
+          | app e1 e2 =>
+              sorry
+          | externVal typ poison pred =>
+              sorry
 
 private lemma typecheckExpr_preserves_predTagsBounded
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
