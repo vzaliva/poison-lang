@@ -6120,12 +6120,79 @@ private lemma joinTypeResults_predTagsBounded_memEnv
     (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) (nt : Tag)
     (hjoin : joinTypeResults ctx r rs = .ok res)
     (hMemR : predTagsBoundedInMemEnv r.memEnv' nt)
-    (hPredR : predTagBounded nt r.qualType.pred) :
+    (hPredR : predTagBounded nt r.qualType.pred)
+    (hAllRs : ∀ r' ∈ rs, predTagsBoundedInMemEnv r'.memEnv' nt ∧ predTagBounded nt r'.qualType.pred) :
     predTagsBoundedInMemEnv res.memEnv' nt ∧ predTagBounded nt res.qualType.pred := by
-  -- The foldlM in joinTypeResults joins memEnvs via joinMemEnvsStrong (preserving memEnv bound)
-  -- and preds via joinPredicates (preserving pred bound). Then finalPred is either noPred or joined.
-  -- This is a fold invariant proof.
-  sorry
+  -- Follow the pattern of joinTypeResults_tagEnvBounded
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvsStrong acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
+  -- Fold invariant: memEnv bounded ∧ pred bounded, given all results are bounded
+  have h_fold_inv :
+      ∀ (rss : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
+        (∀ r' ∈ rss, predTagsBoundedInMemEnv r'.memEnv' nt ∧ predTagBounded nt r'.qualType.pred) →
+        List.foldlM joinStep acc rss = Except.ok acc' →
+        predTagsBoundedInMemEnv acc.2.1 nt →
+        predTagBounded nt acc.2.2.2.1 →
+        predTagsBoundedInMemEnv acc'.2.1 nt ∧ predTagBounded nt acc'.2.2.2.1 := by
+    intro rss acc acc' hAll h hbMem hbPred
+    induction rss generalizing acc with
+    | nil => simp [List.foldlM_nil, pure, Except.pure] at h; rw [← h]; exact ⟨hbMem, hbPred⟩
+    | cons x xs ih =>
+        cases hqx : x.qualType with
+        | mk resEtyp resPoison resPred =>
+            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at h
+            have hx := hAll x (.head xs)
+            have hAll_xs : ∀ r' ∈ xs, predTagsBoundedInMemEnv r'.memEnv' nt ∧ predTagBounded nt r'.qualType.pred :=
+              fun r' hr' => hAll r' (.tail x hr')
+            exact ih _ hAll_xs h
+              (predTagsBoundedInMemEnv_joinMemEnvsStrong hbMem hx.1)
+              (by rw [hqx] at hx; exact predTagBounded_joinPredicates hbPred hx.2)
+  -- Apply the fold invariant
+  cases hqt : r.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
+            MonadExceptOf.throw, TypecheckM] at hjoin
+      cases hcheck :
+          (List.foldlM
+      (fun x result =>
+        match result.qualType with
+        | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+          if beqETypSignature etyp resEtyp = false then
+            Except.error
+              (toString "Closure alternatives produced incompatible result types: " ++ toString (repr etyp) ++
+                  toString " vs " ++
+                toString (repr resEtyp))
+          else Except.ok ())
+      () rs : Except String Unit) with
+      | error err => erw [hcheck] at hjoin; simp at hjoin
+      | ok _ =>
+          erw [hcheck] at hjoin; simp at hjoin
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') rs with
+          | error err => erw [hfold] at hjoin; simp at hjoin
+          | ok a =>
+              erw [hfold] at hjoin; simp at hjoin
+              subst res; simp
+              have ⟨hbMem', hbPred'⟩ := h_fold_inv rs _ _ hAllRs hfold hMemR (by rw [hqt] at hPredR; exact hPredR)
+              constructor
+              · exact hbMem'
+              · -- finalPred: if function type → noPred, else joinedPred
+                split <;> first | exact predTagBounded_noPred _ | exact hbPred'
 
 private lemma typecheckExpr_preserves_predTagsBounded_main :
     ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
