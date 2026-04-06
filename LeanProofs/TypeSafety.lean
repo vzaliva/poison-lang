@@ -7450,7 +7450,13 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                               erw [hte2] at htc; simp at htc
                               rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
                               simp [hq2, pure, Except.pure] at htc
-                              exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl sorry r2 hte2
+                              have hpred_ctx2 : predTagsBoundedInCtx ctx' :=
+                                ⟨predTagsBoundedInVarEnv_update
+                                  (predTagsBoundedInVarEnv_mono hpred.1
+                                    (typecheck_normal_nextTag_mono _ e1 _ r1 (by simpa [typecheck] using hte1)))
+                                  ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).2),
+                                 (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).1⟩
+                              exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl hpred_ctx2 r2 hte2
                                 (by simpa using congrArg TypeResult.nextTag' htc)
                                 (by simpa using congrArg TypeResult.tagEnv' htc)
                   | some qtOuter =>
@@ -7473,7 +7479,13 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                                     erw [hte2] at htc; simp at htc
                                     rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
                                     simp [hq2, pure, Except.pure] at htc
-                                    exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl sorry r2 hte2
+                                    have hpred_ctx2 : predTagsBoundedInCtx ctx' :=
+                                      ⟨predTagsBoundedInVarEnv_update
+                                        (predTagsBoundedInVarEnv_mono hpred.1
+                                          (typecheck_normal_nextTag_mono _ e1 _ r1 (by simpa [typecheck] using hte1)))
+                                        ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).2),
+                                       (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).1⟩
+                                    exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl hpred_ctx2 r2 hte2
                                       (by simpa using congrArg TypeResult.nextTag' htc)
                                       (by simpa using congrArg TypeResult.tagEnv' htc)
                       | guardOnly k =>
@@ -7490,7 +7502,13 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                                   erw [hte2] at htc; simp at htc
                                   rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
                                   simp [hq2, pure, Except.pure] at htc
-                                  exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl sorry r2 hte2
+                                  have hpred_ctx2 : predTagsBoundedInCtx ctx' :=
+                                    ⟨predTagsBoundedInVarEnv_update
+                                      (predTagsBoundedInVarEnv_mono hpred.1
+                                        (typecheck_normal_nextTag_mono _ e1 _ r1 (by simpa [typecheck] using hte1)))
+                                      ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).2),
+                                     (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).1⟩
+                                  exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl hpred_ctx2 r2 hte2
                                     (by simpa using congrArg TypeResult.nextTag' htc)
                                     (by simpa using congrArg TypeResult.tagEnv' htc)
                       | noPred =>
@@ -7507,7 +7525,13 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                                   erw [hte2] at htc; simp at htc
                                   rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
                                   simp [hq2, pure, Except.pure] at htc
-                                  exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl sorry r2 hte2
+                                  have hpred_ctx2 : predTagsBoundedInCtx ctx' :=
+                                    ⟨predTagsBoundedInVarEnv_update
+                                      (predTagsBoundedInVarEnv_mono hpred.1
+                                        (typecheck_normal_nextTag_mono _ e1 _ r1 (by simpa [typecheck] using hte1)))
+                                      ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).2),
+                                     (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).1⟩
+                                  exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl hpred_ctx2 r2 hte2
                                     (by simpa using congrArg TypeResult.nextTag' htc)
                                     (by simpa using congrArg TypeResult.tagEnv' htc)
           | newRef e1 =>
@@ -7656,7 +7680,9 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                 have hbound2 : tagEnvBounded res2.tagEnv' res2.nextTag' := by
                   apply IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2
                   · simp only [tagEnvBoundedInCtx]; exact hbound1
-                  · exact sorry -- predTagsBoundedInCtx for ctx''  
+                  · exact ⟨predTagsBoundedInVarEnv_mono hpred.1
+                      (typecheck_normal_nextTag_mono ctx e1 _ res1 htc1),
+                    (typecheckExpr_preserves_predTagsBounded ctx e1 _ res1 htc1 hpred).1⟩
                 -- res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv'
                 -- joinTagEnvs is bounded by res2's bound ≤ max res2 res3
                 rw [hresTagEnv, hresNextTag]
