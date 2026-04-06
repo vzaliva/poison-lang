@@ -5828,6 +5828,77 @@ private lemma predTagsBoundedInMemEnv_updateLocsetWeak
   -- Non-ls entries are from env → bounded by hb
   sorry
 
+-- ═══════════════════════════════════════════════════════════════════
+-- Closure captured-env preservation
+-- ═══════════════════════════════════════════════════════════════════
+
+/-- All ETyp closures in a VarTypeEnv have bounded captured envs. -/
+def varEnvClosuresCapturedBounded (S : VarTypeEnv) (nt : Tag) : Prop :=
+  ∀ x qt, S.lookup x = some qt → etypClosuresCapturedPredTagsBounded qt.etyp nt
+
+/-- Combined input invariant for the closure-env preservation theorem. -/
+def closureEnvBoundedInCtx (ctx : TypeContext) : Prop :=
+  varEnvClosuresCapturedBounded ctx.varEnv ctx.nextTag
+
+/-- joinETyps preserves etypClosuresCapturedPredTagsBounded (merges closure lists). -/
+private lemma etypClosuresCapturedPredTagsBounded_joinETyps {e1 e2 : ETyp} {p1 p2 : Poison} {nt : Tag}
+    (h1 : etypClosuresCapturedPredTagsBounded e1 nt) (h2 : etypClosuresCapturedPredTagsBounded e2 nt) :
+    etypClosuresCapturedPredTagsBounded (joinETyps e1 e2 p1 p2) nt := by
+  -- joinETyps: for same-shaped arrow/parrow, merges closure lists; otherwise returns e1
+  -- All cases: result closures are subsets of e1 closures ∪ e2 closures (or e1 closures only)
+  cases e1 with
+  | arrow st1 st2 p tcls1 =>
+    cases e2 with
+    | arrow st1' st2' p' tcls2 =>
+      simp only [joinETyps]
+      split
+      · -- types match: merge closure lists
+        simp only [etypClosuresCapturedPredTagsBounded, fnClosuresCapturedPredTagsBounded]
+        intro tcl hmem
+        -- tcl ∈ mergeFnTClosures tcls1 tcls2 → tcl ∈ tcls1 ∨ tcl ∈ tcls2
+        -- mergeFnTClosures is a dedup fold; every output element was in an input
+        sorry
+      · exact h1
+    | _ => simp only [joinETyps]; exact h1
+  | parrow st1 st2 p tcls1 =>
+    cases e2 with
+    | parrow st1' st2' p' tcls2 =>
+      simp only [joinETyps]
+      split
+      · simp only [etypClosuresCapturedPredTagsBounded, pfnClosuresCapturedPredTagsBounded]
+        intro tcl hmem
+        sorry
+      · exact h1
+    | _ => simp only [joinETyps]; exact h1
+  | _ => simp only [joinETyps]; cases e2 <;> (try exact h1) <;> trivial
+
+/-- varEnvClosuresCapturedBounded is monotone in the bound. -/
+private lemma varEnvClosuresCapturedBounded_mono {S : VarTypeEnv} {nt nt' : Tag}
+    (hb : varEnvClosuresCapturedBounded S nt) (hle : nt ≤ nt') :
+    varEnvClosuresCapturedBounded S nt' :=
+  fun x qt hlookup => etypClosuresCapturedPredTagsBounded_mono (hb x qt hlookup) hle
+
+/-- varEnvClosuresCapturedBounded is preserved by VarTypeEnv.update. -/
+private lemma varEnvClosuresCapturedBounded_update {S : VarTypeEnv} {nt : Tag} {x : Name} {qt : QTyp}
+    (hb : varEnvClosuresCapturedBounded S nt) (hqt : etypClosuresCapturedPredTagsBounded qt.etyp nt) :
+    varEnvClosuresCapturedBounded (S.update x qt) nt := by
+  intro y qt' hlookup
+  simp only [VarTypeEnv.update, VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] at hlookup
+  rw [Std.ExtTreeMap.getElem?_insert] at hlookup
+  split at hlookup
+  · cases hlookup; exact hqt
+  · exact hb y qt' (by simp only [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
+
+/-- Separate theorem: typecheckExpr preserves etypClosuresCapturedPredTagsBounded.
+    All closures in the result ETyp have bounded captured environments. -/
+private lemma typecheckExpr_preserves_closureCapturedBounded :
+    ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
+    typecheckExpr ctx e fuel = .ok res →
+    predTagsBoundedInCtx ctx →
+    closureEnvBoundedInCtx ctx →
+    etypClosuresCapturedPredTagsBounded res.qualType.etyp res.nextTag' := by
+  sorry
+
 /-- Generic: List.foldl preserves tag boundedness given a step invariant. -/
 private theorem foldl_tags_bounded {bound : Tag}
     {f : List (Tag × Deps) → (Name × QTyp) → List (Tag × Deps)}
