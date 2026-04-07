@@ -5866,12 +5866,180 @@ private lemma predTagsBoundedInMemEnv_updateLocsetWeak
   exact this l qt (by convert hlookup using 2)
 
 -- ═══════════════════════════════════════════════════════════════════
+-- CapturedEnvFullBounded: recursive closure-env boundedness
+-- ═══════════════════════════════════════════════════════════════════
+
+/-- Depth-indexed captured-env boundedness. At depth 0, trivially true.
+    At depth n+1, each entry has bounded pred tags AND its closures' captured envs
+    are bounded at depth n. -/
+def capturedEnvBoundedN : Nat → List (Name × QTyp) → Tag → Prop
+  | 0, _, _ => True
+  | n + 1, env, nt =>
+    ∀ name qt, (name, qt) ∈ env →
+      qtypPredTagBounded qt nt ∧
+      match qt.etyp with
+      | .arrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
+          | .regular _ _ env' => capturedEnvBoundedN n env' nt
+          | .extern _ _ _ env' => capturedEnvBoundedN n env' nt
+      | .parrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
+          | .regular _ _ env' => capturedEnvBoundedN n env' nt
+          | .extern _ _ env' => capturedEnvBoundedN n env' nt
+      | _ => True
+
+/-- Recursive closure-env boundedness: the property holds at all depths. -/
+def CapturedEnvFullBounded (env : List (Name × QTyp)) (nt : Tag) : Prop :=
+  ∀ n, capturedEnvBoundedN n env nt
+
+/-- Combined closure boundedness for ETyp: each closure's captured env is fully bounded. -/
+def etypClosuresFullBounded (etyp : ETyp) (nt : Tag) : Prop :=
+  match etyp with
+  | .arrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
+      | .regular _ _ env => CapturedEnvFullBounded env nt
+      | .extern _ _ _ env => CapturedEnvFullBounded env nt
+  | .parrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
+      | .regular _ _ env => CapturedEnvFullBounded env nt
+      | .extern _ _ env => CapturedEnvFullBounded env nt
+  | _ => True
+
+/-- Monotonicity for capturedEnvBoundedN. -/
+private lemma capturedEnvBoundedN_mono : ∀ (n : Nat) {env : List (Name × QTyp)} {nt nt' : Tag},
+    capturedEnvBoundedN n env nt → nt ≤ nt' → capturedEnvBoundedN n env nt'
+  | 0, _, _, _, _, _ => trivial
+  | n + 1, env, nt, nt', h, hle => by
+    intro name qt hmem
+    obtain ⟨hp, hc⟩ := h name qt hmem
+    refine ⟨qtypPredTagBounded_mono hp hle, ?_⟩
+    revert hc; cases qt.etyp with
+    | arrow _ _ _ tcls =>
+      intro hc tcl hmem_tcl; have := hc tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' => exact capturedEnvBoundedN_mono n this hle
+      | extern _ _ _ env' => exact capturedEnvBoundedN_mono n this hle
+    | parrow _ _ _ tcls =>
+      intro hc tcl hmem_tcl; have := hc tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' => exact capturedEnvBoundedN_mono n this hle
+      | extern _ _ env' => exact capturedEnvBoundedN_mono n this hle
+    | _ => intro _; trivial
+
+/-- Monotonicity for CapturedEnvFullBounded. -/
+private lemma CapturedEnvFullBounded_mono {env : List (Name × QTyp)} {nt nt' : Tag}
+    (h : CapturedEnvFullBounded env nt) (hle : nt ≤ nt') :
+    CapturedEnvFullBounded env nt' :=
+  fun n => capturedEnvBoundedN_mono n (h n) hle
+
+/-- Monotonicity for etypClosuresFullBounded. -/
+private lemma etypClosuresFullBounded_mono {etyp : ETyp} {nt nt' : Tag}
+    (h : etypClosuresFullBounded etyp nt) (hle : nt ≤ nt') :
+    etypClosuresFullBounded etyp nt' := by
+  cases etyp with
+  | arrow _ _ _ tcls =>
+    intro tcl hmem; have hfull := h tcl hmem
+    cases tcl with
+    | regular _ _ env => exact CapturedEnvFullBounded_mono hfull hle
+    | extern _ _ _ env => exact CapturedEnvFullBounded_mono hfull hle
+  | parrow _ _ _ tcls =>
+    intro tcl hmem; have hfull := h tcl hmem
+    cases tcl with
+    | regular _ _ env => exact CapturedEnvFullBounded_mono hfull hle
+    | extern _ _ env => exact CapturedEnvFullBounded_mono hfull hle
+  | _ => trivial
+
+/-- Construct CapturedEnvFullBounded from per-entry evidence at a single bound. -/
+private lemma CapturedEnvFullBounded.mk'
+    {env : List (Name × QTyp)} {nt : Tag}
+    (h : ∀ name qt, (name, qt) ∈ env →
+         qtypPredTagBounded qt nt ∧ etypClosuresFullBounded qt.etyp nt) :
+    CapturedEnvFullBounded env nt := by
+  intro n; induction n with
+  | zero => trivial
+  | succ n ih =>
+    intro name qt hmem
+    obtain ⟨hp, he⟩ := h name qt hmem
+    refine ⟨hp, ?_⟩
+    revert he; cases qt.etyp with
+    | arrow _ _ _ tcls =>
+      intro he tcl hmem_tcl; have hfull := he tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' => exact hfull n
+      | extern _ _ _ env' => exact hfull n
+    | parrow _ _ _ tcls =>
+      intro he tcl hmem_tcl; have hfull := he tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' => exact hfull n
+      | extern _ _ env' => exact hfull n
+    | _ => intro _; trivial
+
+/-- Extract per-entry evidence from CapturedEnvFullBounded at the current bound. -/
+private lemma CapturedEnvFullBounded.get {env : List (Name × QTyp)} {nt : Tag}
+    (h : CapturedEnvFullBounded env nt) {name : Name} {qt : QTyp}
+    (hmem : (name, qt) ∈ env) :
+    qtypPredTagBounded qt nt ∧ etypClosuresFullBounded qt.etyp nt := by
+  constructor
+  · exact (h 1 name qt hmem).1
+  · cases hqe : qt.etyp with
+    | arrow _ _ _ tcls =>
+      intro tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' =>
+        show CapturedEnvFullBounded env' nt
+        intro n; have := h (n + 1) name qt hmem; simp [hqe] at this; exact this.2 _ hmem_tcl
+      | extern _ _ _ env' =>
+        show CapturedEnvFullBounded env' nt
+        intro n; have := h (n + 1) name qt hmem; simp [hqe] at this; exact this.2 _ hmem_tcl
+    | parrow _ _ _ tcls =>
+      intro tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' =>
+        show CapturedEnvFullBounded env' nt
+        intro n; have := h (n + 1) name qt hmem; simp [hqe] at this; exact this.2 _ hmem_tcl
+      | extern _ _ env' =>
+        show CapturedEnvFullBounded env' nt
+        intro n; have := h (n + 1) name qt hmem; simp [hqe] at this; exact this.2 _ hmem_tcl
+    | _ => trivial
+
+/-- Extract capturedPredTagsBounded from CapturedEnvFullBounded. -/
+private lemma capturedPredTagsBounded_of_fullBounded
+    {env : List (Name × QTyp)} {nt : Tag}
+    (h : CapturedEnvFullBounded env nt) : capturedPredTagsBounded env nt :=
+  fun name qt hmem => (h 1 name qt hmem).1
+
+/-- Extract etypClosuresCapturedPredTagsBounded from etypClosuresFullBounded. -/
+private lemma etypClosuresCapturedPredTagsBounded_of_fullBounded
+    {etyp : ETyp} {nt : Tag}
+    (h : etypClosuresFullBounded etyp nt) : etypClosuresCapturedPredTagsBounded etyp nt := by
+  cases etyp with
+  | arrow _ _ _ tcls =>
+    intro tcl hmem; have hfull := h tcl hmem
+    cases tcl with
+    | regular _ _ env => exact capturedPredTagsBounded_of_fullBounded hfull
+    | extern _ _ _ env => exact capturedPredTagsBounded_of_fullBounded hfull
+  | parrow _ _ _ tcls =>
+    intro tcl hmem; have hfull := h tcl hmem
+    cases tcl with
+    | regular _ _ env => exact capturedPredTagsBounded_of_fullBounded hfull
+    | extern _ _ env => exact capturedPredTagsBounded_of_fullBounded hfull
+  | _ => trivial
+
+-- ═══════════════════════════════════════════════════════════════════
 -- Closure captured-env preservation
 -- ═══════════════════════════════════════════════════════════════════
 
-/-- All ETyp closures in a VarTypeEnv have bounded captured envs. -/
+/-- All ETyp closures in a VarTypeEnv have fully bounded captured envs. -/
 def varEnvClosuresCapturedBounded (S : VarTypeEnv) (nt : Tag) : Prop :=
-  ∀ x qt, S.lookup x = some qt → etypClosuresCapturedPredTagsBounded qt.etyp nt
+  ∀ x qt, S.lookup x = some qt → etypClosuresFullBounded qt.etyp nt
+
+/-- From predTagsBoundedInVarEnv + varEnvClosuresCapturedBounded, derive
+    CapturedEnvFullBounded for toCaptured. -/
+private lemma capturedEnvFullBounded_of_toCaptured {S : VarTypeEnv} {nt : Tag}
+    (hpred : predTagsBoundedInVarEnv S nt) (hclosure : varEnvClosuresCapturedBounded S nt) :
+    CapturedEnvFullBounded (VarTypeEnv.toCaptured S) nt :=
+  CapturedEnvFullBounded.mk' fun name qt hmem => by
+    simp only [VarTypeEnv.toCaptured] at hmem
+    have hlookup : S[name]? = some qt := (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some).1 hmem
+    have hlookup' : S.lookup name = some qt := by
+      simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup]
+    exact ⟨hpred name qt hlookup', hclosure name qt hlookup'⟩
 
 /-- Combined input invariant for the closure-env preservation theorem. -/
 def closureEnvBoundedInCtx (ctx : TypeContext) : Prop :=
@@ -5915,6 +6083,35 @@ private lemma mergePFnTClosures_mem (tcls1 tcls2 : List PFnTClosure) (tcl : PFnT
     · left; exact h_t
   · right; exact h2
 
+/-- joinETyps preserves etypClosuresFullBounded (merges closure lists). -/
+private lemma etypClosuresFullBounded_joinETyps {e1 e2 : ETyp} {p1 p2 : Poison} {nt : Tag}
+    (h1 : etypClosuresFullBounded e1 nt) (h2 : etypClosuresFullBounded e2 nt) :
+    etypClosuresFullBounded (joinETyps e1 e2 p1 p2) nt := by
+  cases e1 with
+  | arrow st1 st2 p tcls1 =>
+    cases e2 with
+    | arrow st1' st2' p' tcls2 =>
+      simp only [joinETyps]
+      split
+      · intro tcl hmem
+        rcases mergeFnTClosures_mem _ _ _ hmem with hmem1 | hmem2
+        · exact h1 tcl hmem1
+        · exact h2 tcl hmem2
+      · exact h1
+    | _ => simp only [joinETyps]; exact h1
+  | parrow st1 st2 p tcls1 =>
+    cases e2 with
+    | parrow st1' st2' p' tcls2 =>
+      simp only [joinETyps]
+      split
+      · intro tcl hmem
+        rcases mergePFnTClosures_mem _ _ _ hmem with hmem1 | hmem2
+        · exact h1 tcl hmem1
+        · exact h2 tcl hmem2
+      · exact h1
+    | _ => simp only [joinETyps]; exact h1
+  | _ => simp only [joinETyps]; cases e2 <;> (try exact h1) <;> trivial
+
 /-- joinETyps preserves etypClosuresCapturedPredTagsBounded (merges closure lists). -/
 private lemma etypClosuresCapturedPredTagsBounded_joinETyps {e1 e2 : ETyp} {p1 p2 : Poison} {nt : Tag}
     (h1 : etypClosuresCapturedPredTagsBounded e1 nt) (h2 : etypClosuresCapturedPredTagsBounded e2 nt) :
@@ -5953,11 +6150,11 @@ private lemma etypClosuresCapturedPredTagsBounded_joinETyps {e1 e2 : ETyp} {p1 p
 private lemma varEnvClosuresCapturedBounded_mono {S : VarTypeEnv} {nt nt' : Tag}
     (hb : varEnvClosuresCapturedBounded S nt) (hle : nt ≤ nt') :
     varEnvClosuresCapturedBounded S nt' :=
-  fun x qt hlookup => etypClosuresCapturedPredTagsBounded_mono (hb x qt hlookup) hle
+  fun x qt hlookup => etypClosuresFullBounded_mono (hb x qt hlookup) hle
 
 /-- varEnvClosuresCapturedBounded is preserved by VarTypeEnv.update. -/
 private lemma varEnvClosuresCapturedBounded_update {S : VarTypeEnv} {nt : Tag} {x : Name} {qt : QTyp}
-    (hb : varEnvClosuresCapturedBounded S nt) (hqt : etypClosuresCapturedPredTagsBounded qt.etyp nt) :
+    (hb : varEnvClosuresCapturedBounded S nt) (hqt : etypClosuresFullBounded qt.etyp nt) :
     varEnvClosuresCapturedBounded (S.update x qt) nt := by
   intro y qt' hlookup
   simp only [VarTypeEnv.update, VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] at hlookup
@@ -6013,20 +6210,21 @@ private lemma capturedClosuresBounded_of_toCaptured {S : VarTypeEnv} {nt : Tag}
   intro name qt hmem
   simp only [VarTypeEnv.toCaptured] at hmem
   have hlookup : S[name]? = some qt := (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some).1 hmem
-  exact hb name qt (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup])
+  exact etypClosuresCapturedPredTagsBounded_of_fullBounded
+    (hb name qt (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup]))
 
-/-- From capturedClosuresBounded, derive varEnvClosuresCapturedBounded for ofCaptured. -/
+/-- From CapturedEnvFullBounded, derive varEnvClosuresCapturedBounded for ofCaptured. -/
 private lemma varEnvClosuresCapturedBounded_ofCaptured {env : CapturedVarEnv} {nt : Tag}
-    (hb : capturedClosuresBounded env nt) :
+    (hb : CapturedEnvFullBounded env nt) :
     varEnvClosuresCapturedBounded (VarTypeEnv.ofCaptured env) nt := by
   intro name qt hlookup
   simp only [VarTypeEnv.ofCaptured, VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] at hlookup
   suffices h : ∀ (entries : CapturedVarEnv) (acc : VarTypeEnv),
-      (∀ n q, (n, q) ∈ entries → etypClosuresCapturedPredTagsBounded q.etyp nt) →
-      (∀ n (q : QTyp), acc[n]? = some q → etypClosuresCapturedPredTagsBounded q.etyp nt) →
+      (∀ n q, (n, q) ∈ entries → etypClosuresFullBounded q.etyp nt) →
+      (∀ n (q : QTyp), acc[n]? = some q → etypClosuresFullBounded q.etyp nt) →
       (List.foldr (fun entry (acc : VarTypeEnv) => acc.insert entry.1 entry.2) acc entries)[name]? = some qt →
-      etypClosuresCapturedPredTagsBounded qt.etyp nt by
-    exact h env {} hb (fun n q hq => by
+      etypClosuresFullBounded qt.etyp nt by
+    exact h env {} (fun n q hmem => (hb.get hmem).2) (fun n q hq => by
       rw [Std.ExtTreeMap.getElem?_empty] at hq; exact absurd hq (by simp)) hlookup
   intro entries
   induction entries with
@@ -6298,14 +6496,11 @@ private lemma applyFnTClosure_predTagsBounded
           closureEnvBoundedInCtx ctx' →
           predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧ qtypPredTagBounded res'.qualType res'.nextTag')
     (hpred_r1_mem : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
-    (hpred_captured : match tcl with
-      | .regular _ _ env => capturedPredTagsBounded env r1.nextTag'
-      | .extern _ _ _ env => capturedPredTagsBounded env r1.nextTag')
-    (hclosure_captured : match tcl with
-      | .regular _ _ env => capturedClosuresBounded env r1.nextTag'
-      | .extern _ _ _ env => capturedClosuresBounded env r1.nextTag')
+    (henv_captured : match tcl with
+      | .regular _ _ env => CapturedEnvFullBounded env r1.nextTag'
+      | .extern _ _ _ env => CapturedEnvFullBounded env r1.nextTag')
     (hpred_argPred : predTagBounded r1.nextTag' argPred)
-    (hclosure_arg : etypClosuresCapturedPredTagsBounded argEtyp r1.nextTag') :
+    (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag') :
     applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
     predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧ qtypPredTagBounded r2.qualType r2.nextTag' := by
   intro happly
@@ -6339,8 +6534,9 @@ private lemma applyFnTClosure_predTagsBounded
             rw [Std.ExtTreeMap.getElem?_insert] at hlookup
             split at hlookup
             · simp at hlookup; subst qt'; exact hpred_argPred
-            · -- qt' comes from ofCaptured env — bounded by hpred_captured
-              exact predTagsBoundedInVarEnv_ofCaptured hpred_captured v qt'
+            · -- qt' comes from ofCaptured env — bounded by captured env
+              exact predTagsBoundedInVarEnv_ofCaptured
+                (capturedPredTagsBounded_of_fullBounded henv_captured) v qt'
                 (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
           · exact hpred_r1_mem
         have hclosureCtx' : varEnvClosuresCapturedBounded
@@ -6348,11 +6544,8 @@ private lemma applyFnTClosure_predTagsBounded
               { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred })
             r1.nextTag' :=
           varEnvClosuresCapturedBounded_update
-            (varEnvClosuresCapturedBounded_ofCaptured hclosure_captured) hclosure_arg
+            (varEnvClosuresCapturedBounded_ofCaptured henv_captured) hclosure_arg
         have hIH_body := IH fuel' h_lt body _ r htc hpredCtx' hclosureCtx'
-        -- The result pred is body pred (normalizeAppResultByProvenance preserves or sets noPred)
-        -- hIH_body.2 : qtypPredTagBounded r.qualType r.nextTag'
-        -- But result's qt may have different poison. pred is same though.
         have hpredBody : predTagBounded r.nextTag' pred := by
           have := hIH_body.2; simp [qtypPredTagBounded, hqt] at this; exact this
         simp [normalizeAppResultByProvenance]
@@ -6374,14 +6567,11 @@ private lemma applyPFnTClosure_predTagsBounded
           closureEnvBoundedInCtx ctx' →
           predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧ qtypPredTagBounded res'.qualType res'.nextTag')
     (hpred_r1_mem : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
-    (hpred_captured : match tcl with
-      | .regular _ _ env => capturedPredTagsBounded env r1.nextTag'
-      | .extern _ _ env => capturedPredTagsBounded env r1.nextTag')
-    (hclosure_captured : match tcl with
-      | .regular _ _ env => capturedClosuresBounded env r1.nextTag'
-      | .extern _ _ env => capturedClosuresBounded env r1.nextTag')
+    (henv_captured : match tcl with
+      | .regular _ _ env => CapturedEnvFullBounded env r1.nextTag'
+      | .extern _ _ env => CapturedEnvFullBounded env r1.nextTag')
     (hpred_argPred : predTagBounded r1.nextTag' argPred)
-    (hclosure_arg : etypClosuresCapturedPredTagsBounded argEtyp r1.nextTag') :
+    (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag') :
     applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
     predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧ qtypPredTagBounded r2.qualType r2.nextTag' := by
   intro happly
@@ -6414,7 +6604,8 @@ private lemma applyPFnTClosure_predTagsBounded
             rw [Std.ExtTreeMap.getElem?_insert] at hlookup
             split at hlookup
             · simp at hlookup; subst qt'; exact hpred_argPred
-            · exact predTagsBoundedInVarEnv_ofCaptured hpred_captured v qt'
+            · exact predTagsBoundedInVarEnv_ofCaptured
+                (capturedPredTagsBounded_of_fullBounded henv_captured) v qt'
                 (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
           · exact hpred_r1_mem
         have hclosureCtx' : varEnvClosuresCapturedBounded
@@ -6422,7 +6613,7 @@ private lemma applyPFnTClosure_predTagsBounded
               { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred })
             r1.nextTag' :=
           varEnvClosuresCapturedBounded_update
-            (varEnvClosuresCapturedBounded_ofCaptured hclosure_captured) hclosure_arg
+            (varEnvClosuresCapturedBounded_ofCaptured henv_captured) hclosure_arg
         have hIH_body := IH fuel' h_lt (PExpr.toExpr body) _ r htc hpredCtx' hclosureCtx'
         have hpredBody : predTagBounded r.nextTag' pred := by
           have := hIH_body.2; simp [qtypPredTagBounded, hqt] at this; exact this
@@ -6540,7 +6731,7 @@ private lemma typecheckExpr_preserves_combined_main :
     closureEnvBoundedInCtx ctx →
     predTagsBoundedInMemEnv res.memEnv' res.nextTag' ∧
     qtypPredTagBounded res.qualType res.nextTag' ∧
-    etypClosuresCapturedPredTagsBounded res.qualType.etyp res.nextTag' := by
+    etypClosuresFullBounded res.qualType.etyp res.nextTag' := by
   intro ctx e fuel res htc hpred hclosure
   revert ctx e res htc hpred hclosure
   induction fuel using Nat.strong_induction_on with
@@ -6551,7 +6742,7 @@ private lemma typecheckExpr_preserves_combined_main :
           closureEnvBoundedInCtx ctx' →
           predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧
           qtypPredTagBounded res'.qualType res'.nextTag' ∧
-          etypClosuresCapturedPredTagsBounded res'.qualType.etyp res'.nextTag' :=
+          etypClosuresFullBounded res'.qualType.etyp res'.nextTag' :=
         fun m h_lt e' ctx' res' htc' hpred' hclosure' => IH m h_lt ctx' e' res' htc' hpred' hclosure'
       cases fuel with
       | zero => simp [typecheckExpr] at htc
@@ -6573,11 +6764,11 @@ private lemma typecheckExpr_preserves_combined_main :
           | fn _x _st1 _body _st2 =>
               simp [typecheckFn] at htc; cases htc
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
-              show fnClosuresCapturedPredTagsBounded
-                [FnTClosure.regular _x _body (VarTypeEnv.toCaptured ctx.varEnv)] ctx.nextTag
+              show etypClosuresFullBounded
+                (ETyp.arrow _st1 _st2 false [FnTClosure.regular _x _body (VarTypeEnv.toCaptured ctx.varEnv)]) ctx.nextTag
               intro tcl hmem
               simp [List.mem_singleton] at hmem; subst hmem
-              exact capturedPredTagsBounded_of_toCaptured hpred.1
+              exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
           | pfn _x _st1 _body _st2 =>
               simp [typecheckPfn, Bind.bind, Except.bind] at htc
               cases h_topexpr : _body.toPExpr with
@@ -6585,28 +6776,28 @@ private lemma typecheckExpr_preserves_combined_main :
               | ok pbody =>
                   simp [h_topexpr, pure, Except.pure] at htc; cases htc
                   refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
-                  show pfnClosuresCapturedPredTagsBounded
-                    [PFnTClosure.regular _x pbody (VarTypeEnv.toCaptured ctx.varEnv)] ctx.nextTag
+                  show etypClosuresFullBounded
+                    (ETyp.parrow _st1 _st2 false [PFnTClosure.regular _x pbody (VarTypeEnv.toCaptured ctx.varEnv)]) ctx.nextTag
                   intro tcl hmem
                   simp [List.mem_singleton] at hmem; subst hmem
-                  exact capturedPredTagsBounded_of_toCaptured hpred.1
+                  exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
           | externFn _arg _argTyp _retSpec _effects =>
               simp [typecheckExternFn, pure, Except.pure] at htc; cases htc
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
-              show fnClosuresCapturedPredTagsBounded
-                [FnTClosure.extern _arg _retSpec _effects (VarTypeEnv.toCaptured ctx.varEnv)]
+              show etypClosuresFullBounded
+                (ETyp.arrow _argTyp (parseReturnType _retSpec) false [FnTClosure.extern _arg _retSpec _effects (VarTypeEnv.toCaptured ctx.varEnv)])
                   ctx.nextTag
               intro tcl hmem
               simp [List.mem_singleton] at hmem; subst hmem
-              exact capturedPredTagsBounded_of_toCaptured hpred.1
+              exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
           | externPfn _arg _argTyp _retSpec =>
               simp [typecheckExternPfn, pure, Except.pure] at htc; cases htc
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
-              show pfnClosuresCapturedPredTagsBounded
-                [PFnTClosure.extern _arg _retSpec (VarTypeEnv.toCaptured ctx.varEnv)] ctx.nextTag
+              show etypClosuresFullBounded
+                (ETyp.parrow _argTyp (parseReturnType _retSpec) false [PFnTClosure.extern _arg _retSpec (VarTypeEnv.toCaptured ctx.varEnv)]) ctx.nextTag
               intro tcl hmem
               simp [List.mem_singleton] at hmem; subst hmem
-              exact capturedPredTagsBounded_of_toCaptured hpred.1
+              exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
           | var x =>
               -- All branches of typecheckVar preserve memEnv and nextTag
               -- and produce pred that is either noPred or from ctx.varEnv
@@ -6793,7 +6984,7 @@ private lemma typecheckExpr_preserves_combined_main :
                         varEnv := ctx.varEnv.update x r1.qualType } e2 fuel'' = .ok r2 →
                       predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧
                       predTagBounded r2.nextTag' r2.qualType.pred ∧
-                      etypClosuresCapturedPredTagsBounded r2.qualType.etyp r2.nextTag' := by
+                      etypClosuresFullBounded r2.qualType.etyp r2.nextTag' := by
                     intro r1 hte1 r2 hte2
                     have ⟨hp, hc⟩ := mk_ctx2 r1 hte1
                     have hIH2 := IH_fuel fuel'' (by omega) e2 _ r2
@@ -6972,7 +7163,7 @@ private lemma typecheckExpr_preserves_combined_main :
                   exact predTagsBoundedInMemEnv_mono hIH2.1 (Nat.le_max_left _ _)
                 · simp only [qtypPredTagBounded, hite_nopred]; exact predTagBounded_noPred _
                 · rw [hresEtyp]
-                  exact etypClosuresCapturedPredTagsBounded_mono hIH2.2.2 (Nat.le_max_left _ _)
+                  exact etypClosuresFullBounded_mono hIH2.2.2 (Nat.le_max_left _ _)
               · -- Mode 2: matchGuard succeeds, R(k) = some false
                 obtain ⟨k, deps, hmatch, _hR, _res1, _htc1, _, res2, res3, htc2, htc3,
                   hmemEnv, _, _hresQT, hresNext, _, _, hresEtyp⟩ := hfalse
@@ -6990,7 +7181,7 @@ private lemma typecheckExpr_preserves_combined_main :
                   exact predTagsBoundedInMemEnv_mono hIH3.1 (Nat.le_max_right _ _)
                 · simp only [qtypPredTagBounded, hite_nopred]; exact predTagBounded_noPred _
                 · rw [hresEtyp]
-                  exact etypClosuresCapturedPredTagsBounded_mono hIH3.2.2 (Nat.le_max_right _ _)
+                  exact etypClosuresFullBounded_mono hIH3.2.2 (Nat.le_max_right _ _)
               · -- Standard case (mode 3/4)
                 obtain ⟨_, res1, htc1, _hbool1, ⟨res2, htc2, ⟨res3, htc3, hmemEnv, _,
                   _hresQT, hresNextTag, _, _, hresEtyp, _⟩⟩⟩ := hstd
@@ -7015,9 +7206,9 @@ private lemma typecheckExpr_preserves_combined_main :
                     (predTagsBoundedInMemEnv_mono hIH3.1 (Nat.le_max_right _ _))
                 · simp only [qtypPredTagBounded, hite_nopred]; exact predTagBounded_noPred _
                 · rw [hresEtyp]
-                  exact etypClosuresCapturedPredTagsBounded_joinETyps
-                    (etypClosuresCapturedPredTagsBounded_mono hIH2.2.2 (Nat.le_max_left _ _))
-                    (etypClosuresCapturedPredTagsBounded_mono hIH3.2.2 (Nat.le_max_right _ _))
+                  exact etypClosuresFullBounded_joinETyps
+                    (etypClosuresFullBounded_mono hIH2.2.2 (Nat.le_max_left _ _))
+                    (etypClosuresFullBounded_mono hIH3.2.2 (Nat.le_max_right _ _))
           | app e1 e2 =>
               -- Reduce to typecheckApp
               have htcApp : typecheckApp ctx e1 e2 fuel' = .ok res := by
@@ -7058,7 +7249,7 @@ private lemma typecheckExpr_preserves_combined_main :
                     closureEnvBoundedInCtx ctx'' →
                     predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧
                     qtypPredTagBounded res'.qualType res'.nextTag' ∧
-                    etypClosuresCapturedPredTagsBounded res'.qualType.etyp res'.nextTag' :=
+                    etypClosuresFullBounded res'.qualType.etyp res'.nextTag' :=
                   fun m hm e' ctx'' res' htc' hb hcl =>
                     IH_fuel m (by omega) e' ctx'' res' htc' hb hcl
                 -- Project 2-tuple version for applyXTClosure_predTagsBounded
@@ -7076,6 +7267,10 @@ private lemma typecheckExpr_preserves_combined_main :
                   have : predTagBounded res2.nextTag' pred2 := by
                     have := hIH2.2.1; simp [qtypPredTagBounded, hq2] at this; exact this
                   exact predTagBounded_mono this hmono1
+                -- Arg closures: from hIH2.2.2 + monotonicity
+                have hclosure_arg : etypClosuresFullBounded etyp2 res1.nextTag' := by
+                  have h2 := hIH2.2.2; simp [hq2] at h2
+                  exact etypClosuresFullBounded_mono h2 hmono1
                 -- Case split on etyp1 (arrow vs parrow vs other)
                 rcases etyp1 with _ | _ | _ | _ | _ | ⟨t1, t2, p, fs⟩ | _
                   <;> simp at htcApp
@@ -7088,11 +7283,7 @@ private lemma typecheckExpr_preserves_combined_main :
                   rcases happly : applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _
                     with _ | ⟨r⟩
                     <;> rw [happly] at htcApp <;> simp at htcApp
-                  -- Get predTags for first closure result r
-                  -- Need capturedPredTagsBounded for f's captured env
-                  -- This requires etypClosuresCapturedPredTagsBounded for r1.qualType.etyp
-                  -- which will come from a separate closure-env preservation theorem
-                  -- Get capturedPredTagsBounded for f from hIH1.2.2
+                  -- Get CapturedEnvFullBounded for f from hIH1.2.2
                   have hR : predTagsBoundedInMemEnv r.memEnv' r.nextTag' ∧
                       qtypPredTagBounded r.qualType r.nextTag' := by
                     have hIH1_clos := hIH1.2.2
@@ -7102,11 +7293,11 @@ private lemma typecheckExpr_preserves_combined_main :
                     | regular x body env =>
                       exact applyFnTClosure_predTagsBounded (.regular x body env) ctx t1 t2 p
                         poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
-                        hIH1.1 hcapt_f sorry hpred2 sorry happly
+                        hIH1.1 hcapt_f hpred2 hclosure_arg happly
                     | extern arg retSpec effects env =>
                       exact applyFnTClosure_predTagsBounded (.extern arg retSpec effects env) ctx
                         t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
-                        hIH1.1 hcapt_f sorry hpred2 sorry happly
+                        hIH1.1 hcapt_f hpred2 hclosure_arg happly
                   -- joinTypeResults: sorry for now (complex join)
                   rcases hcons :
                       List.cons r <$>
@@ -7126,7 +7317,7 @@ private lemma typecheckExpr_preserves_combined_main :
                   rcases happly : applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _
                     with _ | ⟨r⟩
                     <;> rw [happly] at htcApp <;> simp at htcApp
-                  -- Get capturedPredTagsBounded for f from hIH1.2.2
+                  -- Get CapturedEnvFullBounded for f from hIH1.2.2
                   have hR : predTagsBoundedInMemEnv r.memEnv' r.nextTag' ∧
                       qtypPredTagBounded r.qualType r.nextTag' := by
                     have hIH1_clos := hIH1.2.2
@@ -7136,11 +7327,11 @@ private lemma typecheckExpr_preserves_combined_main :
                     | regular x pbody env =>
                       exact applyPFnTClosure_predTagsBounded (.regular x pbody env) ctx st1 st2 p
                         poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
-                        hIH1.1 hcapt_f sorry hpred2 sorry happly
+                        hIH1.1 hcapt_f hpred2 hclosure_arg happly
                     | extern arg retSpec env =>
                       exact applyPFnTClosure_predTagsBounded (.extern arg retSpec env) ctx st1 st2
                         p poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
-                        hIH1.1 hcapt_f sorry hpred2 sorry happly
+                        hIH1.1 hcapt_f hpred2 hclosure_arg happly
                   rcases hcons :
                       List.cons r <$>
                         List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
@@ -7241,15 +7432,15 @@ private lemma predTagsBoundedInCtx_of_updateCtxFromResult
       (typecheck_normal_nextTag_mono ctx e fuel r htc),
    (typecheckExpr_preserves_predTagsBounded ctx e fuel r htc hpred hclosure).1⟩
 
-/-- typecheckExpr preserves etypClosuresCapturedPredTagsBounded.
-    All closures in the result ETyp have bounded captured environments.
+/-- typecheckExpr preserves etypClosuresFullBounded.
+    All closures in the result ETyp have fully bounded captured environments.
     Now a simple projection from the combined induction. -/
 private lemma typecheckExpr_preserves_closureCapturedBounded
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckExpr ctx e fuel = .ok res)
     (hpred : predTagsBoundedInCtx ctx)
     (hclosure : closureEnvBoundedInCtx ctx) :
-    etypClosuresCapturedPredTagsBounded res.qualType.etyp res.nextTag' :=
+    etypClosuresFullBounded res.qualType.etyp res.nextTag' :=
   (typecheckExpr_preserves_combined_main ctx e fuel res htc hpred hclosure).2.2
 
 /-- Monotonicity of tagEnvBounded under larger nextTag. -/
