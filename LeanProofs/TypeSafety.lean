@@ -6002,6 +6002,49 @@ private theorem foldlM_tags_bounded {bound : Tag}
       exact ih hfold (hstep init hd (.head tl) hinit mid hsr)
         (fun acc x hx hacc => hstep acc x (.tail hd hx) hacc)
 
+/-- All entries in a captured environment have bounded ETyp closures. -/
+def capturedClosuresBounded (env : CapturedVarEnv) (nt : Tag) : Prop :=
+  ∀ name qt, (name, qt) ∈ env → etypClosuresCapturedPredTagsBounded qt.etyp nt
+
+/-- From varEnvClosuresCapturedBounded, derive capturedClosuresBounded for toCaptured. -/
+private lemma capturedClosuresBounded_of_toCaptured {S : VarTypeEnv} {nt : Tag}
+    (hb : varEnvClosuresCapturedBounded S nt) :
+    capturedClosuresBounded (VarTypeEnv.toCaptured S) nt := by
+  intro name qt hmem
+  simp only [VarTypeEnv.toCaptured] at hmem
+  have hlookup : S[name]? = some qt := (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some).1 hmem
+  exact hb name qt (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup])
+
+/-- From capturedClosuresBounded, derive varEnvClosuresCapturedBounded for ofCaptured. -/
+private lemma varEnvClosuresCapturedBounded_ofCaptured {env : CapturedVarEnv} {nt : Tag}
+    (hb : capturedClosuresBounded env nt) :
+    varEnvClosuresCapturedBounded (VarTypeEnv.ofCaptured env) nt := by
+  intro name qt hlookup
+  simp only [VarTypeEnv.ofCaptured, VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?] at hlookup
+  suffices h : ∀ (entries : CapturedVarEnv) (acc : VarTypeEnv),
+      (∀ n q, (n, q) ∈ entries → etypClosuresCapturedPredTagsBounded q.etyp nt) →
+      (∀ n (q : QTyp), acc[n]? = some q → etypClosuresCapturedPredTagsBounded q.etyp nt) →
+      (List.foldr (fun entry (acc : VarTypeEnv) => acc.insert entry.1 entry.2) acc entries)[name]? = some qt →
+      etypClosuresCapturedPredTagsBounded qt.etyp nt by
+    exact h env {} hb (fun n q hq => by
+      rw [Std.ExtTreeMap.getElem?_empty] at hq; exact absurd hq (by simp)) hlookup
+  intro entries
+  induction entries with
+  | nil => intro acc _ hacc hlookup'; exact hacc _ _ hlookup'
+  | cons hd tl ih =>
+    intro acc hentries hacc hlookup'
+    simp only [List.foldr] at hlookup'
+    rw [Std.ExtTreeMap.getElem?_insert] at hlookup'
+    split at hlookup'
+    · simp at hlookup'; subst hlookup'; exact hentries hd.1 hd.2 (.head tl)
+    · exact ih acc (fun n q hmem => hentries n q (.tail hd hmem)) hacc hlookup'
+
+/-- capturedClosuresBounded is monotone. -/
+private lemma capturedClosuresBounded_mono {env : CapturedVarEnv} {nt nt' : Tag}
+    (hb : capturedClosuresBounded env nt) (hle : nt ≤ nt') :
+    capturedClosuresBounded env nt' :=
+  fun name qt hmem => etypClosuresCapturedPredTagsBounded_mono (hb name qt hmem) hle
+
 /-- The pred-merge foldlM preserves predTagBounded from G.lookup entries. -/
 private lemma predMergeFold_bounded
     (G : MemoryTypeEnv) (nt : Tag) (hmemG : predTagsBoundedInMemEnv G nt)
@@ -6258,7 +6301,11 @@ private lemma applyFnTClosure_predTagsBounded
     (hpred_captured : match tcl with
       | .regular _ _ env => capturedPredTagsBounded env r1.nextTag'
       | .extern _ _ _ env => capturedPredTagsBounded env r1.nextTag')
-    (hpred_argPred : predTagBounded r1.nextTag' argPred) :
+    (hclosure_captured : match tcl with
+      | .regular _ _ env => capturedClosuresBounded env r1.nextTag'
+      | .extern _ _ _ env => capturedClosuresBounded env r1.nextTag')
+    (hpred_argPred : predTagBounded r1.nextTag' argPred)
+    (hclosure_arg : etypClosuresCapturedPredTagsBounded argEtyp r1.nextTag') :
     applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
     predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧ qtypPredTagBounded r2.qualType r2.nextTag' := by
   intro happly
@@ -6296,7 +6343,13 @@ private lemma applyFnTClosure_predTagsBounded
               exact predTagsBoundedInVarEnv_ofCaptured hpred_captured v qt'
                 (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
           · exact hpred_r1_mem
-        have hIH_body := IH fuel' h_lt body _ r htc hpredCtx' sorry
+        have hclosureCtx' : varEnvClosuresCapturedBounded
+            ((VarTypeEnv.ofCaptured env).update x
+              { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred })
+            r1.nextTag' :=
+          varEnvClosuresCapturedBounded_update
+            (varEnvClosuresCapturedBounded_ofCaptured hclosure_captured) hclosure_arg
+        have hIH_body := IH fuel' h_lt body _ r htc hpredCtx' hclosureCtx'
         -- The result pred is body pred (normalizeAppResultByProvenance preserves or sets noPred)
         -- hIH_body.2 : qtypPredTagBounded r.qualType r.nextTag'
         -- But result's qt may have different poison. pred is same though.
@@ -6324,7 +6377,11 @@ private lemma applyPFnTClosure_predTagsBounded
     (hpred_captured : match tcl with
       | .regular _ _ env => capturedPredTagsBounded env r1.nextTag'
       | .extern _ _ env => capturedPredTagsBounded env r1.nextTag')
-    (hpred_argPred : predTagBounded r1.nextTag' argPred) :
+    (hclosure_captured : match tcl with
+      | .regular _ _ env => capturedClosuresBounded env r1.nextTag'
+      | .extern _ _ env => capturedClosuresBounded env r1.nextTag')
+    (hpred_argPred : predTagBounded r1.nextTag' argPred)
+    (hclosure_arg : etypClosuresCapturedPredTagsBounded argEtyp r1.nextTag') :
     applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
     predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧ qtypPredTagBounded r2.qualType r2.nextTag' := by
   intro happly
@@ -6360,7 +6417,13 @@ private lemma applyPFnTClosure_predTagsBounded
             · exact predTagsBoundedInVarEnv_ofCaptured hpred_captured v qt'
                 (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
           · exact hpred_r1_mem
-        have hIH_body := IH fuel' h_lt (PExpr.toExpr body) _ r htc hpredCtx' sorry
+        have hclosureCtx' : varEnvClosuresCapturedBounded
+            ((VarTypeEnv.ofCaptured env).update x
+              { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred })
+            r1.nextTag' :=
+          varEnvClosuresCapturedBounded_update
+            (varEnvClosuresCapturedBounded_ofCaptured hclosure_captured) hclosure_arg
+        have hIH_body := IH fuel' h_lt (PExpr.toExpr body) _ r htc hpredCtx' hclosureCtx'
         have hpredBody : predTagBounded r.nextTag' pred := by
           have := hIH_body.2; simp [qtypPredTagBounded, hqt] at this; exact this
         simp [normalizeAppResultByProvenance]
@@ -7039,11 +7102,11 @@ private lemma typecheckExpr_preserves_combined_main :
                     | regular x body env =>
                       exact applyFnTClosure_predTagsBounded (.regular x body env) ctx t1 t2 p
                         poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
-                        hIH1.1 hcapt_f hpred2 happly
+                        hIH1.1 hcapt_f sorry hpred2 sorry happly
                     | extern arg retSpec effects env =>
                       exact applyFnTClosure_predTagsBounded (.extern arg retSpec effects env) ctx
                         t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
-                        hIH1.1 hcapt_f hpred2 happly
+                        hIH1.1 hcapt_f sorry hpred2 sorry happly
                   -- joinTypeResults: sorry for now (complex join)
                   rcases hcons :
                       List.cons r <$>
@@ -7073,11 +7136,11 @@ private lemma typecheckExpr_preserves_combined_main :
                     | regular x pbody env =>
                       exact applyPFnTClosure_predTagsBounded (.regular x pbody env) ctx st1 st2 p
                         poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
-                        hIH1.1 hcapt_f hpred2 happly
+                        hIH1.1 hcapt_f sorry hpred2 sorry happly
                     | extern arg retSpec env =>
                       exact applyPFnTClosure_predTagsBounded (.extern arg retSpec env) ctx st1 st2
                         p poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
-                        hIH1.1 hcapt_f hpred2 happly
+                        hIH1.1 hcapt_f sorry hpred2 sorry happly
                   rcases hcons :
                       List.cons r <$>
                         List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
