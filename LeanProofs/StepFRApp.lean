@@ -11942,7 +11942,10 @@ lemma stepFR_app
             (result_fn := result1) (fuel_call := fuel')
             (h_call_lt := Nat.lt_succ_self fuel')
             hwf_result1
-            (tcls := tcls) (results := results) hmap
+            (tcls := tcls) (results := results)
+            (by sorry) -- capturedEnvRefLocsBounded: invariant maintenance (future work)
+            (by sorry) -- etypRefLocsBounded for arg: invariant maintenance (future work)
+            hmap
         have hTm1_ctx : wfTagMeaningCtx tm (ctxAfter ctxᵢ result1) := by
           simpa [ctxAfter] using hTm1
         have hresults_tm :

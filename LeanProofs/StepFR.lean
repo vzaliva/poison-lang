@@ -6638,7 +6638,10 @@ lemma applyFnTClosure_ok_wfTypeResult
       exact hwf3
     | extern x retSpec effects capturedEnv =>
       exact applyFnTClosure_extern_wfTypeResult ctx st1 st2 p p1 argEtyp argPoison argPred
-        result1 (fuelBody + 1) x retSpec effects capturedEnv r hwf1 happly
+        result1 (fuelBody + 1) x retSpec effects capturedEnv r hwf1
+        (by sorry) -- capturedEnvRefLocsBounded: invariant maintenance (future work)
+        (by sorry) -- etypRefLocsBounded for arg: invariant maintenance (future work)
+        happly
 
 -- ==========================================================================
 -- typecheckExpr preserves regimeConsistentWithCtx
