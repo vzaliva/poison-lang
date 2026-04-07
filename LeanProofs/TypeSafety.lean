@@ -6878,9 +6878,14 @@ private lemma typecheckExpr_preserves_combined_main :
                     -- which is bounded by hIH1.1
                     -- The deref pred is either noPred or from r1.memEnv' (bounded by hIH1.1)
                     -- Prove by showing res.qualType.pred is bounded using htcDeref + hIH1.1
-                    -- Since res.qualType.etyp = ETyp.int (proved by typecheckDeref_etyp_int),
-                    -- and the pred comes from the deref logic, it's bounded.
-                    -- Use sorry for now — needs typecheckDeref pred analysis
+                    -- The deref pred is either noPred or from the memory (bounded by hIH1.1)
+                    -- Unfold and trace through all branches
+                    unfold typecheckDeref at htcDeref
+                    rw [hfuel] at htcDeref
+                    simp only [bind, Except.bind, pure, Except.pure] at htcDeref
+                    -- The deref result pred is always either noPred or from r1.memEnv'
+                    -- After unfold, htcDeref has the full expanded form
+                    -- Use sorry — need to trace through all match branches
                     sorry
                   · -- closure: result etyp = int (no closures)
                     suffices h : res.qualType.etyp = ETyp.int by rw [hmem_eq, hnt_eq] at *; rw [h]; trivial
