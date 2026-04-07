@@ -2,37 +2,30 @@
 
 ## CURRENT STEP
 
-Strengthen the closure-list boundedness interface so app call sites no longer
-need paired recursive placeholder `sorry`s.
+Eliminate the 6 remaining `sorry` terms (3 identical pairs across
+`TypeSafety.lean`, `StepFR.lean`, `StepFRApp.lean`) that provide
+`capturedEnvRefLocsBounded` / `etypRefLocsBounded` at
+`applyFnTClosure_extern_wfTypeResult` call sites.
 
-Do this entirely inside `LeanProofs/TypeSafety.lean`:
+This requires:
 
-1. replace the split captured-env interface
-   (`capturedPredTagsBounded` plus `capturedClosuresBounded`) with a single
-   recursive captured-entry boundedness property, or strengthen the existing
-   closure-list predicates so each captured entry provides both:
-   - `qtypPredTagBounded qt nt`
-   - `etypClosuresCapturedPredTagsBounded qt.etyp nt`
-2. refactor `applyFnTClosure_predTagsBounded` and
-   `applyPFnTClosure_predTagsBounded` to consume that single recursive
-   property
-3. discharge the recursive app call-site placeholders currently at:
-   - `LeanProofs/TypeSafety.lean:7105`
-   - `LeanProofs/TypeSafety.lean:7109`
-   - `LeanProofs/TypeSafety.lean:7139`
-   - `LeanProofs/TypeSafety.lean:7143`
-4. then continue to the app join-result holes at:
-   - `LeanProofs/TypeSafety.lean:7119`
-   - `LeanProofs/TypeSafety.lean:7152`
+1. a new typing induction theorem that maintains `varEnvRefLocsBounded` and
+   closure-captured-ref-loc boundedness through all expression cases
+2. strengthening `wfTypeContext` to carry the new invariants so they are
+   available at FR call sites
+3. fixing the cascade from the `wfTypeContext` change using the induction
+   results from step 1
+
+**Constraint**: steps 1 and 2–3 must be committed together to avoid
+intermediate sorry inflation. See Section 9.10 for the failed attempt that
+violated this constraint.
 
 Done conditions:
 
-- the four recursive app call-site placeholder `sorry`s are gone
-- the split captured-env hypotheses at those call sites have been replaced by
-  the approved recursive interface
-- no new hypothesis escapes `TypeSafety.lean`
-- if possible, remove the two wrapper-default `sorry`s once callers no longer
-  rely on them
+- all 6 `capturedEnvRefLocsBounded` / `etypRefLocsBounded` sorrys are gone
+- no new `sorry` or `axiom` introduced
+- `applyFnTClosure_ok_wfTypeResult` in `StepFR.lean` (currently unused, 2 of
+  the 6 sorrys) either fixed or deleted
 
 ## 1. Goal
 
@@ -129,6 +122,10 @@ As of **2026-04-07** at commit `cbf2773` on `new-iofree`:
 - Phase 8.6 (captured-locset allocation invariant) is **partially complete** —
   `applyFnTClosure_extern_wfTypeResult` has been proved, but the invariant
   provision at call sites remains as sorrys
+- an attempt to fix the 6 sorrys by changing `wfTypeContext` first was
+  reverted after it introduced 21 new sorrys — see Section 9.10
+- the corrected implementation plan requires proving the typing induction
+  first, then changing `wfTypeContext` atomically — see Section 9.9
 - the new invariant family (`etypRefLocsBounded`, `capturedEnvRefLocsBounded`,
   `varEnvRefLocsBounded`) remains entirely below `StepFR` and has not leaked
   into `StepFR`, `StepFR_IH`, or the top-level FR theorem interface
@@ -902,8 +899,12 @@ These definitions are at `TypeSafety.lean:1279–1290`.
 
 - 3 call sites need `capturedEnvRefLocsBounded capturedEnv result.nextLoc'`
 - 3 call sites need `etypRefLocsBounded argEtyp result.nextLoc'`
-- These require maintaining `varEnvRefLocsBounded ctx.varEnv ctx.nextLoc`
-  through the `typecheckExpr_preserves_wfTypeResult_main` typing induction
+- These require a typing induction that maintains `varEnvRefLocsBounded` and
+  `varEnvClosuresCapturedRefLocsBounded` through all expression cases, plus
+  strengthening `wfTypeContext` to carry both invariants so they are available
+  at the FR call sites
+- See Section 9.9 for the corrected analysis and implementation plan, and
+  Section 9.10 for the failed attempt
 
 Still to unlock (once call-site sorrys are resolved):
 
@@ -1146,7 +1147,7 @@ The shared module sits alongside `TypeSafety.lean` in the import graph (both
 below `StepFR`). No changes to `StepFR`, `StepFR_IH`, or `FaultRobustnessSpec`
 are needed.
 
-### 9.9 Phase 8.6: call-site invariant provision analysis
+### 9.9 Phase 8.6: call-site invariant provision — corrected analysis
 
 As of commit `cbf2773`, the 6 remaining sorrys all have the same shape: they
 need to show that the typing context's variable environment has bounded ref-type
@@ -1161,109 +1162,242 @@ Concretely, the two obligations at each call site are:
 2. `etypRefLocsBounded argEtyp result.nextLoc'` — the argument's `ETyp` has
    ref-type locations below the current `nextLoc'`
 
-These are projections from a broader invariant:
+**Why no purely local fix exists**: obligation (2) is an output of the typing
+induction — it requires `varEnvRefLocsBounded ctx.varEnv ctx.nextLoc` as an
+input invariant. Obligation (1) additionally requires that closures in the
+varEnv have bounded captured environments. Both invariants must be available
+at the FR call sites (`StepFR.lean`, `StepFRApp.lean`), which receive
+`wfTypeContext ctx` from the `StepFR` interface. Since `wfTypeContext` currently
+only constrains `memEnv` (not `varEnv`), the invariants cannot be derived
+without strengthening `wfTypeContext`.
 
-- `varEnvRefLocsBounded ctx.varEnv ctx.nextLoc`
+Options 2 and 3 from the earlier analysis (Section 9.10) are therefore
+**insufficient**: they can fix the `TypeSafety.lean` sorrys internally, but
+the `StepFR.lean` and `StepFRApp.lean` call sites cannot provide
+`varEnvRefLocsBounded` because it is not derivable from the current
+`wfTypeContext`.
 
-The argument was typechecked in a context with `varEnv = ctx.varEnv`, so its
-result type's `ETyp` has ref-type locations bounded by `ctx.nextLoc`. After
-typechecking the function position, `nextLoc` only grows (monotonicity), so the
-bound still holds with `result1.nextLoc'`.
+**The only viable approach is Option 1: strengthen `wfTypeContext`**. This is a
+genuine missing input invariant (Section 7.1 escape clause). See Section 9.10
+for the failed attempt and the ordering constraint it revealed.
 
-The captured environment came from closure construction at an earlier point
-where the same `varEnvRefLocsBounded` invariant held for the enclosing context.
-At closure application time, `capturedEnv` was built from `VarTypeEnv.toCaptured`
-of that earlier bounded variable environment, and `nextLoc` has only grown since.
+#### Required input invariants (two new `wfTypeContext` conjuncts)
 
-**Three options for providing the invariant** (from the agent's report):
+The `var x` case of the typing induction returns the ETyp from the varEnv. If
+that ETyp is `ref ls`, the induction needs `etypRefLocsBounded` from the input.
+If that ETyp is `arrow _ _ _ tcls`, the induction needs the captured envs of
+those closures to be bounded. So `wfTypeContext` must include both:
 
-1. **Strengthen `wfTypeContext`** to include `varEnvRefLocsBounded` — adds a
-   field to `wfTypeContext`, cascades to 30+ external callers across 8 files.
-   Clean but invasive.
+1. `varEnvRefLocsBounded ctx.varEnv ctx.nextLoc` — ref-type locations in varEnv
+   entries are below `nextLoc`
+2. `varEnvClosuresCapturedRefLocsBounded ctx.varEnv ctx.nextLoc` — for all
+   closures in varEnv entries' ETyps, captured envs have ref-type locations
+   below `nextLoc`
 
-2. **Thread `varEnvRefLocsBounded` as a separate parameter** through
-   `typecheckExpr_preserves_wfTypeResult_main` — same mechanical pattern as
-   `closureEnvBoundedInCtx` threading in the combined theorem, ~150 lines of
-   internal case updates. Safe: no public API change.
+Both are natural well-formedness conditions maintained by the typechecker:
 
-3. **Prove a separate `typecheckExpr_preserves_refLocsBounded` lemma** by full
-   typing induction — avoids modifying the `wfTypeResult` proof but adds a
-   second full induction over all expression cases.
+- `vlet x e1 e2`: the new entry's properties come from the typing of `e1`
+  (etypRefLocsBounded + closures captured env from the IH output)
+- `fn` / `externFn`: closures capture `toCaptured ctx.varEnv`, which is
+  bounded because the varEnv is bounded
+- `ctxAfter` (seq, assign, op, etc.): preserves `varEnv`, monotone `nextLoc`
+- closure body: `VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x argQt`,
+  bounded because `tenv` comes from a bounded closure and `argQt` comes from
+  the typing IH
 
-**Assessment and recommendation**: Option 2.
+#### Required output properties (from typing induction)
 
-- Option 1 is conceptually cleaner (it makes `wfTypeContext` carry all its
-  natural invariants), but the cascade to 30+ callers is high-friction and
-  touches files outside `TypeSafety.lean`. It also risks the boundary rule
-  violation: callers in `StepFR.lean` / `StepFRApp.lean` would need to provide
-  the new `wfTypeContext` field, potentially leaking the invariant upward.
+The typing induction must produce three output conjuncts:
 
-- Option 3 avoids modifying existing proofs but duplicates the full typing
-  induction structure. This is wasteful when the invariant naturally piggybacks
-  on the same induction already present in `typecheckExpr_preserves_wfTypeResult_main`.
+1. `wfTypeResult res` (existing)
+2. `etypRefLocsBounded res.qualType.etyp res.nextLoc'`
+3. `etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc'` — for
+   ALL closures (regular + extern) in the result ETyp, their captured envs
+   have bounded ref-type locations
 
-- Option 2 matches the established pattern: `closureEnvBoundedInCtx` was
-  threaded through `typecheckExpr_preserves_combined_main` as a separate
-  parameter with ~150 lines of case updates. The same mechanical shape applies:
-  - `varEnvRefLocsBounded` is preserved trivially for non-binding cases
-    (varEnv unchanged, nextLoc monotone)
-  - `vlet` adds a var with bounded `ETyp` (from the sub-result's
-    `varEnvRefLocsBounded`)
-  - `newRef` allocates a location and bumps `nextLoc` — `update` preserves
-    the bound, `Nat.lt_succ` handles the new entry
-  - `fn`/`pfn`/`externFn`/`externPfn` closures: `toCaptured` of a bounded
-    varEnv is bounded
-  - `app` (the main consumer): the bounded varEnv is available for the extern
-    closure path
+#### Why both input conjuncts are needed
 
-  The key helper needed is:
+- Conjunct 1 (`varEnvRefLocsBounded`) is needed for: the `var` case when the
+  result is `ref ls`; the `vlet` case when updating the varEnv; the `externFn`
+  case for `capturedEnvRefLocsBounded (toCaptured ctx.varEnv)`; the `app` case
+  for `etypRefLocsBounded argEtyp`.
 
-  ```lean
-  lemma varEnvRefLocsBounded_of_updateCtxFromResult
-      (ctx : TypeContext) (r : TypeResult)
-      (h : varEnvRefLocsBounded ctx.varEnv ctx.nextLoc) :
-      varEnvRefLocsBounded ctx.varEnv r.nextLoc'
-  ```
+- Conjunct 2 (`varEnvClosuresCapturedRefLocsBounded`) is needed for: the `var`
+  case when the result is `arrow`/`parrow` — the closures in the returned type
+  came from the varEnv.
 
-  which follows from `varEnvRefLocsBounded` monotonicity plus
-  `typecheck_normal_nextLoc_mono`.
+Without conjunct 2, the `var` case cannot produce output property (3).
 
-**Implementation plan for Option 2**:
+#### Implementation plan
 
-1. Add `varEnvRefLocsBounded ctx.varEnv ctx.nextLoc` as an extra hypothesis to
-   `typecheckExpr_preserves_wfTypeResult_main` (and its wrapped IH).
+**Phase A — Typing induction (TypeSafety.lean, ~300 lines)**:
 
-2. For each expression case in the induction, provide the hypothesis to the
-   recursive calls. By expression type:
-   - **Trivial** (varEnv unchanged, nextLoc monotone): `num`, `bool`, `unit`,
-     `str`, `var`, `deref`, `unaryop`, `op`, `seq` (right sub-expr inherits
-     ctx.varEnv)
-   - **VarEnv update**: `vlet` — need
-     `varEnvRefLocsBounded_update` showing `VarTypeEnv.update` preserves
-     the property when the new entry's `ETyp` is bounded (which comes from
-     the IH on the first sub-expression)
-   - **Fresh location**: `newRef` — bumps `nextLoc`, varEnv unchanged,
-     so mono suffices
-   - **Closure capture**: `fn`, `pfn`, `externFn`, `externPfn` — varEnv
-     unchanged in result, closures capture `toCaptured` of current varEnv
-     (only relevant for eventual `capturedEnvRefLocsBounded`, not for the
-     main result's varEnv)
-   - **App** (the consumer): extract `capturedEnvRefLocsBounded` and
-     `etypRefLocsBounded` from the IH-maintained `varEnvRefLocsBounded`
-   - **Assign**: `seq`-like — varEnv unchanged
-   - **Ite**: 3 sub-calls, all with same varEnv, mono on nextLoc
+Define a combined theorem taking the two input invariants as separate
+parameters (NOT as part of `wfTypeContext` yet):
 
-3. Update `typecheckApp_wfTypeResult` to accept and thread the new hypothesis.
+```lean
+private lemma typecheckExpr_wfTypeResult_and_refLocs :
+    ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult),
+    (∀ l, ctx.memEnv.contains l → l < ctx.nextLoc) →
+    varEnvRefLocsBounded ctx.varEnv ctx.nextLoc →
+    varEnvClosuresCapturedRefLocsBounded ctx.varEnv ctx.nextLoc →
+    typecheck ctx e fuel = .ok res →
+    wfTypeResult res ∧
+    etypRefLocsBounded res.qualType.etyp res.nextLoc' ∧
+    etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc'
+```
 
-4. Discharge the 6 sorrys using the now-available hypothesis.
+Case analysis (most cases are trivial — non-function types):
 
-5. No changes to `StepFR`, `StepFR_IH`, `FaultRobustnessSpec`, or the
-   top-level FR theorem interface.
+- `num`, `bool`, `unit`, `str`, `externVal` (non-ref): result ETyp is
+  `int`/`unit`/`str` → all three outputs trivial
+- `externVal ref`: result ETyp is `ref {ctx.nextLoc}` → bounded by
+  `ctx.nextLoc + 1 = res.nextLoc'`; no closures → trivial
+- `var x`: output = input varEnv entry (both ref-loc bound and closure bound)
+- `fn x st1 body st2`: one regular closure with `toCaptured ctx.varEnv` →
+  `capturedEnvRefLocsBounded` from `varEnvRefLocsBounded`
+- `externFn`: one extern closure with `toCaptured ctx.varEnv` → same
+- `pfn`, `externPfn`: analogous to fn/externFn
+- `op`, `unaryop`, `deref`: result ETyp is `int` → trivial
+- `assign`: result ETyp is `unit` → trivial
+- `newRef`: result ETyp is `ref {ctx.nextLoc}` → bounded by `nextLoc + 1`
+- `seq e1 e2`: IH on `e2` (same varEnv, mono nextLoc)
+- `vlet x e1 e2`: IH on `e1` gives bounds for the new entry; IH on `e2`
+  with updated varEnv
+- `ite`: join of sub-results → need `joinETyps` preservation lemmas
+- `app`: join of closure results → IH gives `hcaptLocs` and `hargLocs`
+  for the extern case; body wfTypeResult for regular case
 
-**Estimated scope**: ~150–200 lines of internal changes in `TypeSafety.lean`,
-plus ~20 lines each in `StepFR.lean` and `StepFRApp.lean` for the call-site
-discharge. The `StepFR.lean` sorry at line 6642 is inside
-`applyFnTClosure_ioFree_wfTypeResult`, which is private to `StepFR.lean` and
-already receives `hwf1 : wfTypeResult result1`; the new hypothesis would come
-from the same IH that provides `hwf1`. The `StepFRApp.lean` sorry at line 11946
-is inside `stepFR_app` and similarly has access to the typing induction.
+**Phase B — wfTypeContext change + cascade (~200 lines across 8 files)**:
+
+Change `wfTypeContext` to include the two new conjuncts. Simultaneously fix all
+cascade sites using the Phase A theorem:
+
+- `ctxAfter`-like sites: `varEnv` unchanged → mono
+- `vlet` body sites: use `etypRefLocsBounded` + `etypClosuresCapturedRefLocsBounded`
+  from Phase A on `e1` to update varEnv
+- closure body sites: use `capturedEnvRefLocsBounded` from Phase A on the
+  function expression + `etypRefLocsBounded` for the arg
+- `wfTypeContext_of_wfTypeResult`: needs `ctx.nextLoc ≤ res.nextLoc'` for mono
+
+**Critical ordering constraint**: Phase A must be completed and verified
+*before* Phase B is committed. Changing `wfTypeContext` without the typing
+induction results creates unfillable cascade sorrys (see Section 9.10).
+
+In practice this means: prove the typing induction as a private lemma with
+explicit parameters, verify it compiles, then in a single pass change
+`wfTypeContext` + replace `typecheckExpr_preserves_wfTypeResult_main` + fix
+the cascade + fix the 6 sorrys.
+
+**Boundary rule**: this does change `StepFR` (strengthened `wfTypeContext`
+input/output). Justified by Section 7.1's escape clause: "StepFR should be
+reconsidered only if we discover that some operator case needs an additional
+input invariant that is not derivable from the current hypotheses." The
+`app` case genuinely needs `varEnvRefLocsBounded` and it is not derivable
+from the current `wfTypeContext`.
+
+**Estimated scope**: ~500 lines total. ~300 for the typing induction, ~200
+for the cascade. Net sorry change: −6 (all ref-loc sorrys eliminated).
+
+#### Helpers needed
+
+```lean
+-- Monotonicity
+etypRefLocsBounded_mono
+varEnvRefLocsBounded_mono
+capturedEnvRefLocsBounded_mono
+etypClosuresCapturedRefLocsBounded_mono
+varEnvClosuresCapturedRefLocsBounded_mono
+
+-- VarEnv update (for vlet)
+varEnvRefLocsBounded_update
+varEnvClosuresCapturedRefLocsBounded_update
+
+-- toCaptured / ofCaptured bridges (for fn/externFn/closure body)
+capturedEnvRefLocsBounded_of_varEnvRefLocsBounded_toCaptured
+varEnvRefLocsBounded_ofCaptured
+varEnvClosuresCapturedRefLocsBounded_ofCaptured
+
+-- ETyp join preservation (for ite/app)
+etypRefLocsBounded_joinETyps
+etypClosuresCapturedRefLocsBounded_joinETyps
+```
+
+#### Note on `applyFnTClosure_ok_wfTypeResult`
+
+The lemma `applyFnTClosure_ok_wfTypeResult` in `StepFR.lean` (2 of the 6
+sorrys) is defined but has **zero callers**. It should either be deleted or
+have `capturedEnvRefLocsBounded` / `etypRefLocsBounded` added as explicit
+parameters (shifting the obligation to future callers).
+
+### 9.10 Failed attempt: `wfTypeContext` change before typing induction (2026-04-07)
+
+An attempt was made to fix the 6 sorrys by changing `wfTypeContext` first
+and fixing the cascade afterward. This failed and was reverted.
+
+**What was tried**:
+
+1. Changed `wfTypeContext` from `∀ l, ctx.memEnv.contains l → l < ctx.nextLoc`
+   to `(∀ l, ctx.memEnv.contains l → l < ctx.nextLoc) ∧
+   varEnvRefLocsBounded ctx.varEnv ctx.nextLoc`
+
+2. Updated `wfTypeContext_of_wfTypeResult` to take
+   `varEnvRefLocsBounded ctx.varEnv res.nextLoc'` as an extra parameter
+
+3. Added helpers: `etypRefLocsBounded_mono`, `varEnvRefLocsBounded_mono`,
+   `varEnvRefLocsBounded_update`
+
+4. Fixed ~36 cascade sites across 10 files (TypeSafety.lean,
+   FaultRobustnessProofs.lean, StepFR.lean, StepFRApp.lean, StepFRIte.lean,
+   StepFRNewRef.lean, StepFRAssign.lean, StepFRVlet.lean, StepFRSeq.lean,
+   StepFROp.lean). Net change: +505/−294 lines.
+
+**Why it failed**: the cascade introduced **21 new sorrys**:
+
+- 14 for closure body contexts (`varEnv = VarTypeEnv.update
+  (VarTypeEnv.ofCaptured tenv) x argQt`): need
+  `capturedEnvRefLocsBounded tenv result1.nextLoc'` and
+  `etypRefLocsBounded argQt.etyp result1.nextLoc'`, which are outputs of the
+  typing induction that does not yet exist
+- 4 for vlet body contexts (`varEnv = ctx.varEnv.update x result1.qualType`):
+  need `etypRefLocsBounded result1.qualType.etyp result1.nextLoc'`, same issue
+- 3 for join first-result monotonicity through closure application
+
+The net effect was 6 → 27 sorrys: a **net increase of 21**. This violates the
+project guideline that "the goal is to decrease the number of sorry statements,
+not increase them."
+
+**Root cause**: the `wfTypeContext` change and the typing induction are
+**co-dependent**. Changing `wfTypeContext` creates obligations that require the
+induction results. But the induction is what produces those results. Doing the
+`wfTypeContext` change first creates an intermediate state where the obligations
+exist but the tools to fill them do not.
+
+**Lesson**: the two changes must be atomic. The typing induction must be proved
+first (as a private lemma with explicit inputs, not relying on `wfTypeContext`),
+verified to compile, and then applied simultaneously with the `wfTypeContext`
+change to avoid intermediate sorry inflation.
+
+**Additional discovery**: the initial analysis (Section 9.9 original, now
+superseded) was wrong about Options 2 and 3 being sufficient.
+`varEnvRefLocsBounded` alone cannot be threaded as a separate parameter through
+`typecheckExpr_preserves_wfTypeResult_main` because:
+
+- The public API `typecheckExpr_preserves_wfTypeResult` has ~30 callers across
+  8 FR proof files. Adding a `varEnvRefLocsBounded` parameter would cascade to
+  all of them.
+- Those callers receive `wfTypeContext ctx` from the `StepFR` interface. They
+  cannot derive `varEnvRefLocsBounded` from the current `wfTypeContext`.
+- Therefore Options 2 and 3 can fix only the `TypeSafety.lean` sorrys (2 of
+  6), not the `StepFR.lean` or `StepFRApp.lean` sorrys (4 of 6).
+
+The only approach that fixes all 6 is Option 1 (strengthen `wfTypeContext`),
+done atomically with the typing induction.
+
+A second discovery was that `varEnvRefLocsBounded` alone is insufficient as the
+new `wfTypeContext` conjunct. The `var x` case of the typing induction returns
+the ETyp from the varEnv. If that ETyp is `arrow _ _ _ tcls`, the induction
+must produce `etypClosuresCapturedRefLocsBounded` for the result, which requires
+knowing that the closures' captured envs are bounded. This information is not
+carried by `varEnvRefLocsBounded`. A second conjunct,
+`varEnvClosuresCapturedRefLocsBounded`, is therefore required.
