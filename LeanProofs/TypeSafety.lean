@@ -4613,6 +4613,11 @@ private lemma foldl_max_ge_init (a : Nat) (xs : List Nat) :
         a ≤ max a x := Nat.le_max_left a x
         _ ≤ List.foldl max (max a x) xs := ih (max a x)
 
+private lemma foldl_max_ge_elem : ∀ (a : Nat) (xs : List Nat) (x : Nat),
+    x ∈ xs → x ≤ List.foldl max a xs
+  | a, _ :: ys, _, .head _ => Nat.le_trans (Nat.le_max_right _ _) (foldl_max_ge_init _ _)
+  | a, z :: ys, x, .tail _ hmem => foldl_max_ge_elem (max a z) ys x hmem
+
 private lemma typecheckApp_nextTag_mono_normal (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
       typecheck ctx' e m = .ok res' →
@@ -6485,7 +6490,31 @@ private lemma normalizeAppResultByProvenance_predTagBounded {p1p : Poison} {qt :
   · exact trivial -- noPred case
   · exact hb
 
-/-- applyFnTClosure preserves predTagsBounded for the result. -/
+/-- If mapM f xs = ok ys, then for each y ∈ ys there exists x ∈ xs with f x = ok y. -/
+private lemma forall_mem_of_mapM {α β : Type} {ε : Type} {f : α → Except ε β}
+    {xs : List α} {ys : List β} {P : β → Prop}
+    (hmap : List.mapM f xs = Except.ok ys)
+    (hprop : ∀ x ∈ xs, ∀ y, f x = Except.ok y → P y) :
+    ∀ y ∈ ys, P y := by
+  induction xs generalizing ys with
+  | nil => simp [List.mapM_nil, pure, Except.pure] at hmap; subst ys; intro y hy; simp at hy
+  | cons hd tl ih =>
+    simp [List.mapM_cons, bind, Except.bind] at hmap
+    cases hhd : f hd with
+    | error err => rw [hhd] at hmap; simp at hmap
+    | ok b =>
+      rw [hhd] at hmap; simp at hmap
+      cases htl : List.mapM f tl with
+      | error err => rw [htl] at hmap; simp at hmap
+      | ok rest =>
+        rw [htl] at hmap; simp [pure, Except.pure] at hmap
+        subst ys
+        intro y hy
+        cases hy with
+        | head _ => exact hprop hd (.head _) b hhd
+        | tail _ hmem => exact ih htl (fun x hx y' hy' => hprop x (.tail _ hx) y' hy') y hmem
+
+/-- applyFnTClosure preserves the combined boundedness triple. -/
 private lemma applyFnTClosure_predTagsBounded
     (tcl : FnTClosure) (ctx : TypeContext)
     (st1 st2 : Typ) (p p1 : Poison)
@@ -6494,7 +6523,9 @@ private lemma applyFnTClosure_predTagsBounded
     (IH : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
           typecheckExpr ctx' e' m = .ok res' → predTagsBoundedInCtx ctx' →
           closureEnvBoundedInCtx ctx' →
-          predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧ qtypPredTagBounded res'.qualType res'.nextTag')
+          predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧
+          qtypPredTagBounded res'.qualType res'.nextTag' ∧
+          etypClosuresFullBounded res'.qualType.etyp res'.nextTag')
     (hpred_r1_mem : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
     (henv_captured : match tcl with
       | .regular _ _ env => CapturedEnvFullBounded env r1.nextTag'
@@ -6502,7 +6533,9 @@ private lemma applyFnTClosure_predTagsBounded
     (hpred_argPred : predTagBounded r1.nextTag' argPred)
     (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag') :
     applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
-    predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧ qtypPredTagBounded r2.qualType r2.nextTag' := by
+    predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧
+    qtypPredTagBounded r2.qualType r2.nextTag' ∧
+    etypClosuresFullBounded r2.qualType.etyp r2.nextTag' := by
   intro happly
   unfold applyFnTClosure at happly
   cases fuel with
@@ -6519,7 +6552,7 @@ private lemma applyFnTClosure_predTagsBounded
       | false => rw [hsub] at happly; simp at happly
       | true =>
         rw [hsub] at happly; simp [pure, Except.pure] at happly; subst r2
-        -- IH on the body gives predTagsBounded for r
+        -- IH on the body gives full 3-tuple for r
         have h_lt : fuel' < fuel' + 1 := Nat.lt_succ_self _
         have hpredCtx' : predTagsBoundedInCtx
             { ctx with pc := joinPoison p (joinPoison p1 ctx.pc),
@@ -6528,14 +6561,12 @@ private lemma applyFnTClosure_predTagsBounded
                        tagEnv := r1.tagEnv', nextTag := r1.nextTag',
                        nextLoc := r1.nextLoc', regime := r1.regime' } := by
           constructor
-          · -- varEnv bounded: ofCaptured env + update x argQt
-            intro v qt' hlookup
+          · intro v qt' hlookup
             simp [VarTypeEnv.update, VarTypeEnv.lookup] at hlookup
             rw [Std.ExtTreeMap.getElem?_insert] at hlookup
             split at hlookup
             · simp at hlookup; subst qt'; exact hpred_argPred
-            · -- qt' comes from ofCaptured env — bounded by captured env
-              exact predTagsBoundedInVarEnv_ofCaptured
+            · exact predTagsBoundedInVarEnv_ofCaptured
                 (capturedPredTagsBounded_of_fullBounded henv_captured) v qt'
                 (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
           · exact hpred_r1_mem
@@ -6547,16 +6578,18 @@ private lemma applyFnTClosure_predTagsBounded
             (varEnvClosuresCapturedBounded_ofCaptured henv_captured) hclosure_arg
         have hIH_body := IH fuel' h_lt body _ r htc hpredCtx' hclosureCtx'
         have hpredBody : predTagBounded r.nextTag' pred := by
-          have := hIH_body.2; simp [qtypPredTagBounded, hqt] at this; exact this
-        simp [normalizeAppResultByProvenance]
+          have := hIH_body.2.1; simp [qtypPredTagBounded, hqt] at this; exact this
+        -- normalizeAppResultByProvenance doesn't change etyp, so closures carry over
+        have hClosBody : etypClosuresFullBounded etyp r.nextTag' := by
+          have := hIH_body.2.2; simp [hqt] at this; exact this
+        simp [normalizeAppResultByProvenance, hqt]
         split
-        · exact ⟨hIH_body.1, trivial⟩
-        · exact ⟨hIH_body.1, hpredBody⟩
+        · exact ⟨hIH_body.1, trivial, hClosBody⟩
+        · exact ⟨hIH_body.1, hpredBody, hClosBody⟩
     | extern x retSpec effects capturedEnv =>
-      -- Extern case: tags from collectAndAllocExternTags
       sorry
 
-/-- applyPFnTClosure preserves predTagsBounded for the result. -/
+/-- applyPFnTClosure preserves the combined boundedness triple. -/
 private lemma applyPFnTClosure_predTagsBounded
     (tcl : PFnTClosure) (ctx : TypeContext)
     (st1 st2 : Typ) (p p1 : Poison)
@@ -6565,7 +6598,9 @@ private lemma applyPFnTClosure_predTagsBounded
     (IH : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
           typecheckExpr ctx' e' m = .ok res' → predTagsBoundedInCtx ctx' →
           closureEnvBoundedInCtx ctx' →
-          predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧ qtypPredTagBounded res'.qualType res'.nextTag')
+          predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧
+          qtypPredTagBounded res'.qualType res'.nextTag' ∧
+          etypClosuresFullBounded res'.qualType.etyp res'.nextTag')
     (hpred_r1_mem : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
     (henv_captured : match tcl with
       | .regular _ _ env => CapturedEnvFullBounded env r1.nextTag'
@@ -6573,7 +6608,9 @@ private lemma applyPFnTClosure_predTagsBounded
     (hpred_argPred : predTagBounded r1.nextTag' argPred)
     (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag') :
     applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
-    predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧ qtypPredTagBounded r2.qualType r2.nextTag' := by
+    predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧
+    qtypPredTagBounded r2.qualType r2.nextTag' ∧
+    etypClosuresFullBounded r2.qualType.etyp r2.nextTag' := by
   intro happly
   unfold applyPFnTClosure at happly
   cases fuel with
@@ -6590,7 +6627,6 @@ private lemma applyPFnTClosure_predTagsBounded
       | false => rw [hsub] at happly; simp at happly
       | true =>
         rw [hsub] at happly; simp [pure, Except.pure] at happly; subst r2
-        -- IH on the body
         have h_lt : fuel' < fuel' + 1 := Nat.lt_succ_self _
         have hpredCtx' : predTagsBoundedInCtx
             { ctx with pc := joinPoison p (joinPoison ctx.pc p1),
@@ -6616,11 +6652,13 @@ private lemma applyPFnTClosure_predTagsBounded
             (varEnvClosuresCapturedBounded_ofCaptured henv_captured) hclosure_arg
         have hIH_body := IH fuel' h_lt (PExpr.toExpr body) _ r htc hpredCtx' hclosureCtx'
         have hpredBody : predTagBounded r.nextTag' pred := by
-          have := hIH_body.2; simp [qtypPredTagBounded, hqt] at this; exact this
-        simp [normalizeAppResultByProvenance]
+          have := hIH_body.2.1; simp [qtypPredTagBounded, hqt] at this; exact this
+        have hClosBody : etypClosuresFullBounded etyp r.nextTag' := by
+          have := hIH_body.2.2; simp [hqt] at this; exact this
+        simp [normalizeAppResultByProvenance, hqt]
         split
-        · exact ⟨hIH_body.1, trivial⟩
-        · exact ⟨hIH_body.1, hpredBody⟩
+        · exact ⟨hIH_body.1, trivial, hClosBody⟩
+        · exact ⟨hIH_body.1, hpredBody, hClosBody⟩
     | extern x retSpec capturedEnv =>
       sorry
 
@@ -6704,6 +6742,79 @@ private lemma joinTypeResults_predTagsBounded_memEnv
               · -- finalPred: if function type → noPred, else joinedPred
                 split <;> first | exact predTagBounded_noPred _ | exact hbPred'
 
+/-- joinTypeResults preserves etypClosuresFullBounded through the ETyp join fold. -/
+private lemma joinTypeResults_etypClosuresFullBounded
+    (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) (nt : Tag)
+    (hjoin : joinTypeResults ctx r rs = .ok res)
+    (hClosR : etypClosuresFullBounded r.qualType.etyp nt)
+    (hAllRs : ∀ r' ∈ rs, etypClosuresFullBounded r'.qualType.etyp nt) :
+    etypClosuresFullBounded res.qualType.etyp nt := by
+  -- Same joinStep as in joinTypeResults_predTagsBounded_memEnv
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, _resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvsStrong acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 _resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
+  -- Fold invariant: etyp closure-bounded
+  have h_fold_inv :
+      ∀ (rss : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
+        (∀ r' ∈ rss, etypClosuresFullBounded r'.qualType.etyp nt) →
+        List.foldlM joinStep acc rss = Except.ok acc' →
+        etypClosuresFullBounded acc.1 nt →
+        etypClosuresFullBounded acc'.1 nt := by
+    intro rss acc acc' hAll h hbClos
+    induction rss generalizing acc with
+    | nil => simp [List.foldlM_nil, pure, Except.pure] at h; rw [← h]; exact hbClos
+    | cons x xs ih =>
+        cases hqx : x.qualType with
+        | mk resEtyp resPoison resPred =>
+            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at h
+            have hx := hAll x (.head xs)
+            have hAll_xs : ∀ r' ∈ xs, etypClosuresFullBounded r'.qualType.etyp nt :=
+              fun r' hr' => hAll r' (.tail x hr')
+            exact ih _ hAll_xs h
+              (by rw [hqx] at hx
+                  exact etypClosuresFullBounded_joinETyps (p1 := acc.2.2.1) (p2 := resPoison) hbClos hx)
+  -- Apply the fold invariant
+  cases hqt : r.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
+            MonadExceptOf.throw, TypecheckM] at hjoin
+      cases hcheck :
+          (List.foldlM
+      (fun x result =>
+        match result.qualType with
+        | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+          if beqETypSignature etyp resEtyp = false then
+            Except.error
+              (toString "Closure alternatives produced incompatible result types: " ++ toString (repr etyp) ++
+                  toString " vs " ++
+                toString (repr resEtyp))
+          else Except.ok ())
+      () rs : Except String Unit) with
+      | error err => erw [hcheck] at hjoin; simp at hjoin
+      | ok _ =>
+          erw [hcheck] at hjoin; simp at hjoin
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') rs with
+          | error err => erw [hfold] at hjoin; simp at hjoin
+          | ok a =>
+              erw [hfold] at hjoin; simp at hjoin
+              subst res; simp
+              exact h_fold_inv rs _ _ hAllRs hfold (by rw [hqt] at hClosR; exact hClosR)
+
 /-- closureEnvBoundedInCtx is preserved through updateCtxFromResult (early version). -/
 private lemma closureEnvBoundedInCtx_of_update
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (r : TypeResult)
@@ -6723,6 +6834,62 @@ private lemma typecheckDeref_etyp_int (ctx : TypeContext) (e : Expr) (fuel : Nat
   | succ fuel' =>
     simp only [bind, Except.bind, pure, Except.pure] at h
     repeat (first | split at h | simp at h | (cases h; rfl))
+
+/-- The LocSet fold in typecheckDeref produces a pred that is bounded.
+    Helper for typecheckDeref_pred_bounded. -/
+private lemma deref_fold_pred_bounded
+    (memEnv : MemoryTypeEnv) (nt : Tag)
+    (hMem : predTagsBoundedInMemEnv memEnv nt)
+    (init : Poison × Option Predicate) (result : Poison × Option Predicate)
+    (hinit : ∀ q, init.2 = some q → predTagBounded nt q)
+    (locs : List Loc)
+    (hfold : List.foldlM (fun (x : Poison × Option Predicate) (l : Loc) =>
+        match memEnv.lookup l with
+        | some qt => Except.ok (joinPoison x.1 qt.poison,
+            match x.2 with
+            | none => some qt.pred
+            | some p => some (joinPredicates p qt.pred))
+        | none => Except.error s!"Location {l} not found in memory environment") init locs = Except.ok result) :
+    ∀ q, result.2 = some q → predTagBounded nt q := by
+  induction locs generalizing init with
+  | nil => simp [List.foldlM_nil, pure, Except.pure] at hfold; rw [← hfold]; exact hinit
+  | cons l rest ih =>
+    simp [List.foldlM_cons, bind, Except.bind] at hfold
+    cases hlookup : memEnv.lookup l with
+    | none => rw [hlookup] at hfold; simp at hfold
+    | some qt =>
+      rw [hlookup] at hfold; simp at hfold
+      exact ih _ (by
+        intro q hq
+        cases hinit2 : init.2 with
+        | none => simp [hinit2] at hq; subst q; exact hMem l qt hlookup
+        | some p' => simp [hinit2] at hq; subst q
+                     exact predTagBounded_joinPredicates (hinit p' hinit2) (hMem l qt hlookup)) hfold
+
+/-- typecheckDeref result pred is bounded: it is either noPred (trivially bounded)
+    or a pred derived from memory cells (bounded by memEnv boundedness). -/
+private lemma typecheckDeref_pred_bounded (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+    (r1 : TypeResult)
+    (hte : typecheckExpr ctx e (fuel - 1) = .ok r1)
+    (hMem : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
+    (h : typecheckDeref ctx e fuel = .ok res) :
+    predTagBounded r1.nextTag' res.qualType.pred := by
+  unfold typecheckDeref at h
+  cases fuel with
+  | zero => simp at h
+  | succ fuel' =>
+    -- All deref branches produce noPred or a pred from memory cells (bounded).
+    -- The fold over memory cells produces bounded preds (by deref_fold_pred_bounded).
+    -- Brute-force through all branches.
+    simp only [bind, Except.bind, pure, Except.pure, Nat.add_sub_cancel] at h hte
+    rw [hte] at h; simp at h
+    rcases hqr : r1.qualType with ⟨etyp1, poisonRef, predRef⟩
+    rw [hqr] at h; simp at h
+    cases etyp1 <;> simp at h
+    -- Only ETyp.ref ls survives
+    -- Remaining proof: trace through fold + all pred branches
+    -- Uses deref_fold_pred_bounded for the tagEnv=none branches
+    sorry
 
 private lemma typecheckExpr_preserves_combined_main :
     ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
@@ -7127,20 +7294,9 @@ private lemma typecheckExpr_preserves_combined_main :
 
                   rw [hmem_eq, hnt_eq]
                   refine ⟨hIH1.1, ?_, ?_⟩
-                  · -- result pred comes from memory lookup or is noPred, all bounded by IH
-                    -- The deref produces a pred that is either noPred or from r1.memEnv'
-                    -- which is bounded by hIH1.1
-                    -- The deref pred is either noPred or from r1.memEnv' (bounded by hIH1.1)
-                    -- Prove by showing res.qualType.pred is bounded using htcDeref + hIH1.1
-                    -- The deref pred is either noPred or from the memory (bounded by hIH1.1)
-                    -- Unfold and trace through all branches
-                    unfold typecheckDeref at htcDeref
-                    rw [hfuel] at htcDeref
-                    simp only [bind, Except.bind, pure, Except.pure] at htcDeref
-                    -- The deref result pred is always either noPred or from r1.memEnv'
-                    -- After unfold, htcDeref has the full expanded form
-                    -- Use sorry — need to trace through all match branches
-                    sorry
+                  · -- Use standalone deref pred bounded lemma
+                    exact typecheckDeref_pred_bounded ctx e1 fuel' res r1
+                      (by rw [hfuel, Nat.add_sub_cancel]; exact hte1) hIH1.1 htcDeref
                   · -- closure: result etyp = int (no closures)
                     suffices h : res.qualType.etyp = ETyp.int by rw [hmem_eq, hnt_eq] at *; rw [h]; trivial
                     exact typecheckDeref_etyp_int ctx e1 fuel' res htcDeref
@@ -7252,16 +7408,6 @@ private lemma typecheckExpr_preserves_combined_main :
                     etypClosuresFullBounded res'.qualType.etyp res'.nextTag' :=
                   fun m hm e' ctx'' res' htc' hb hcl =>
                     IH_fuel m (by omega) e' ctx'' res' htc' hb hcl
-                -- Project 2-tuple version for applyXTClosure_predTagsBounded
-                have IH'2 : ∀ m < fuel'', ∀ (e' : Expr) (ctx'' : TypeContext) (res' : TypeResult),
-                    typecheckExpr ctx'' e' m = .ok res' → predTagsBoundedInCtx ctx'' →
-                    closureEnvBoundedInCtx ctx'' →
-                    predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧
-                    qtypPredTagBounded res'.qualType res'.nextTag' :=
-                  fun m hm e' ctx'' res' htc' hb hcl =>
-                    let h := IH' m hm e' ctx'' res' htc' hb hcl
-                    ⟨h.1, h.2.1⟩
-
                 -- Pred of e2 result is bounded
                 have hpred2 : predTagBounded res1.nextTag' pred2 := by
                   have : predTagBounded res2.nextTag' pred2 := by
@@ -7283,22 +7429,23 @@ private lemma typecheckExpr_preserves_combined_main :
                   rcases happly : applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _
                     with _ | ⟨r⟩
                     <;> rw [happly] at htcApp <;> simp at htcApp
-                  -- Get CapturedEnvFullBounded for f from hIH1.2.2
+                  -- Get full 3-tuple for first closure result r
+                  have hIH1_clos := hIH1.2.2
+                  simp [hq1] at hIH1_clos
                   have hR : predTagsBoundedInMemEnv r.memEnv' r.nextTag' ∧
-                      qtypPredTagBounded r.qualType r.nextTag' := by
-                    have hIH1_clos := hIH1.2.2
-                    simp [hq1] at hIH1_clos
+                      qtypPredTagBounded r.qualType r.nextTag' ∧
+                      etypClosuresFullBounded r.qualType.etyp r.nextTag' := by
                     have hcapt_f := hIH1_clos f (List.Mem.head _)
                     cases f with
                     | regular x body env =>
                       exact applyFnTClosure_predTagsBounded (.regular x body env) ctx t1 t2 p
-                        poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
+                        poison1 etyp2 poison2 pred2 res1 r fuel'' IH'
                         hIH1.1 hcapt_f hpred2 hclosure_arg happly
                     | extern arg retSpec effects env =>
                       exact applyFnTClosure_predTagsBounded (.extern arg retSpec effects env) ctx
-                        t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
+                        t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel'' IH'
                         hIH1.1 hcapt_f hpred2 hclosure_arg happly
-                  -- joinTypeResults: sorry for now (complex join)
+                  -- Process remaining closures via mapM
                   rcases hcons :
                       List.cons r <$>
                         List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
@@ -7307,7 +7454,61 @@ private lemma typecheckExpr_preserves_combined_main :
                   rcases hrs : rs with _ | ⟨r1, rs'⟩
                     <;> rw [hrs] at htcApp <;> simp at htcApp
                   subst rs
-                  sorry
+                  -- Extract mapM from hcons: r = r1, mapM gives rs'
+                  have hmap : List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 fuel'') fs'
+                      = Except.ok rs' := by
+                    simp [Functor.map, Except.map] at hcons
+                    split at hcons <;> simp_all
+                  have hr_eq : r = r1 := by
+                    simp [Functor.map, Except.map] at hcons
+                    split at hcons <;> simp_all
+                  -- All rs' elements are bounded (via mapM + applyFnTClosure_predTagsBounded)
+                  have hAllRs' : ∀ ri ∈ rs', predTagsBoundedInMemEnv ri.memEnv' ri.nextTag' ∧
+                      qtypPredTagBounded ri.qualType ri.nextTag' ∧
+                      etypClosuresFullBounded ri.qualType.etyp ri.nextTag' :=
+                    forall_mem_of_mapM hmap fun tcl hmem ri happly_i => by
+                      have hcapt := hIH1_clos tcl (.tail _ hmem)
+                      cases tcl with
+                      | regular x body env =>
+                        exact applyFnTClosure_predTagsBounded (.regular x body env) ctx t1 t2 p
+                          poison1 etyp2 poison2 pred2 res1 ri fuel'' IH'
+                          hIH1.1 hcapt hpred2 hclosure_arg happly_i
+                      | extern arg retSpec effects env =>
+                        exact applyFnTClosure_predTagsBounded (.extern arg retSpec effects env) ctx
+                          t1 t2 p poison1 etyp2 poison2 pred2 res1 ri fuel'' IH'
+                          hIH1.1 hcapt hpred2 hclosure_arg happly_i
+                  -- Use join lemmas: all results bounded, mono up to res.nextTag' = max
+                  rw [hr_eq] at hR
+                  -- res.nextTag' is the max of all nextTag' values
+                  have hntmax := joinTypeResults_nextTag_eq_max ctx r1 rs' res htcApp
+                  -- Each result bounded at its own nextTag'; mono up to res.nextTag'
+                  -- r1.nextTag' ≤ res.nextTag' (first of max list)
+                  have hr1_le : r1.nextTag' ≤ res.nextTag' := by
+                    rw [hntmax]; simpa [List.max] using foldl_max_ge_init r1.nextTag' _
+                  -- Each ri.nextTag' ≤ res.nextTag' (member of max list)
+                  have hAllRs_at_nt : ∀ ri ∈ rs',
+                      predTagsBoundedInMemEnv ri.memEnv' res.nextTag' ∧
+                      predTagBounded res.nextTag' ri.qualType.pred := by
+                    intro ri hri
+                    have hb := hAllRs' ri hri
+                    have hri_le : ri.nextTag' ≤ res.nextTag' := by
+                      rw [hntmax]; simp [List.max]
+                      exact foldl_max_ge_elem _ _ _ (List.mem_map.mpr ⟨ri, hri, rfl⟩)
+                    exact ⟨predTagsBoundedInMemEnv_mono hb.1 hri_le,
+                           predTagBounded_mono hb.2.1 hri_le⟩
+                  have hjPT := joinTypeResults_predTagsBounded_memEnv ctx r1 rs' res res.nextTag'
+                    htcApp (predTagsBoundedInMemEnv_mono hR.1 hr1_le) (predTagBounded_mono hR.2.1 hr1_le)
+                    hAllRs_at_nt
+                  -- Closure part
+                  have hAllRs_clos : ∀ ri ∈ rs', etypClosuresFullBounded ri.qualType.etyp res.nextTag' := by
+                    intro ri hri
+                    have hri_le : ri.nextTag' ≤ res.nextTag' := by
+                      rw [hntmax]; simp [List.max]
+                      exact foldl_max_ge_elem _ _ _ (List.mem_map.mpr ⟨ri, hri, rfl⟩)
+                    exact etypClosuresFullBounded_mono (hAllRs' ri hri).2.2 hri_le
+                  exact ⟨hjPT.1,
+                    ⟨hjPT.2, joinTypeResults_etypClosuresFullBounded ctx r1 rs' res res.nextTag'
+                      htcApp (etypClosuresFullBounded_mono hR.2.2 hr1_le) hAllRs_clos⟩⟩
                 · -- parrow case
                   rename_i st1 st2 p tcls
                   rcases tcls with _ | ⟨f, fs'⟩ <;> simp at htcApp
@@ -7317,21 +7518,23 @@ private lemma typecheckExpr_preserves_combined_main :
                   rcases happly : applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _
                     with _ | ⟨r⟩
                     <;> rw [happly] at htcApp <;> simp at htcApp
-                  -- Get CapturedEnvFullBounded for f from hIH1.2.2
+                  -- Get full 3-tuple for first closure result r
+                  have hIH1_clos := hIH1.2.2
+                  simp [hq1] at hIH1_clos
                   have hR : predTagsBoundedInMemEnv r.memEnv' r.nextTag' ∧
-                      qtypPredTagBounded r.qualType r.nextTag' := by
-                    have hIH1_clos := hIH1.2.2
-                    simp [hq1] at hIH1_clos
+                      qtypPredTagBounded r.qualType r.nextTag' ∧
+                      etypClosuresFullBounded r.qualType.etyp r.nextTag' := by
                     have hcapt_f := hIH1_clos f (List.Mem.head _)
                     cases f with
                     | regular x pbody env =>
                       exact applyPFnTClosure_predTagsBounded (.regular x pbody env) ctx st1 st2 p
-                        poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
+                        poison1 etyp2 poison2 pred2 res1 r fuel'' IH'
                         hIH1.1 hcapt_f hpred2 hclosure_arg happly
                     | extern arg retSpec env =>
                       exact applyPFnTClosure_predTagsBounded (.extern arg retSpec env) ctx st1 st2
-                        p poison1 etyp2 poison2 pred2 res1 r fuel'' IH'2
+                        p poison1 etyp2 poison2 pred2 res1 r fuel'' IH'
                         hIH1.1 hcapt_f hpred2 hclosure_arg happly
+                  -- Process remaining closures via mapM
                   rcases hcons :
                       List.cons r <$>
                         List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
@@ -7340,7 +7543,56 @@ private lemma typecheckExpr_preserves_combined_main :
                   rcases hrs : rs with _ | ⟨r1, rs'⟩
                     <;> rw [hrs] at htcApp <;> simp at htcApp
                   subst rs
-                  sorry
+                  -- Extract mapM from hcons
+                  have hmap : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 fuel'') fs'
+                      = Except.ok rs' := by
+                    simp [Functor.map, Except.map] at hcons
+                    split at hcons <;> simp_all
+                  have hr_eq : r = r1 := by
+                    simp [Functor.map, Except.map] at hcons
+                    split at hcons <;> simp_all
+                  -- All rs' elements are bounded
+                  have hAllRs' : ∀ ri ∈ rs', predTagsBoundedInMemEnv ri.memEnv' ri.nextTag' ∧
+                      qtypPredTagBounded ri.qualType ri.nextTag' ∧
+                      etypClosuresFullBounded ri.qualType.etyp ri.nextTag' :=
+                    forall_mem_of_mapM hmap fun tcl hmem ri happly_i => by
+                      have hcapt := hIH1_clos tcl (.tail _ hmem)
+                      cases tcl with
+                      | regular x pbody env =>
+                        exact applyPFnTClosure_predTagsBounded (.regular x pbody env) ctx st1 st2 p
+                          poison1 etyp2 poison2 pred2 res1 ri fuel'' IH'
+                          hIH1.1 hcapt hpred2 hclosure_arg happly_i
+                      | extern arg retSpec env =>
+                        exact applyPFnTClosure_predTagsBounded (.extern arg retSpec env) ctx st1 st2
+                          p poison1 etyp2 poison2 pred2 res1 ri fuel'' IH'
+                          hIH1.1 hcapt hpred2 hclosure_arg happly_i
+                  -- Join: mono everything up to res.nextTag' = max of all nextTag'
+                  rw [hr_eq] at hR
+                  have hntmax := joinTypeResults_nextTag_eq_max ctx r1 rs' res htcApp
+                  have hr1_le : r1.nextTag' ≤ res.nextTag' := by
+                    rw [hntmax]; simpa [List.max] using foldl_max_ge_init r1.nextTag' _
+                  have hAllRs_at_nt : ∀ ri ∈ rs',
+                      predTagsBoundedInMemEnv ri.memEnv' res.nextTag' ∧
+                      predTagBounded res.nextTag' ri.qualType.pred := by
+                    intro ri hri
+                    have hb := hAllRs' ri hri
+                    have hri_le : ri.nextTag' ≤ res.nextTag' := by
+                      rw [hntmax]; simp [List.max]
+                      exact foldl_max_ge_elem _ _ _ (List.mem_map.mpr ⟨ri, hri, rfl⟩)
+                    exact ⟨predTagsBoundedInMemEnv_mono hb.1 hri_le,
+                           predTagBounded_mono hb.2.1 hri_le⟩
+                  have hjPT := joinTypeResults_predTagsBounded_memEnv ctx r1 rs' res res.nextTag'
+                    htcApp (predTagsBoundedInMemEnv_mono hR.1 hr1_le) (predTagBounded_mono hR.2.1 hr1_le)
+                    hAllRs_at_nt
+                  have hAllRs_clos : ∀ ri ∈ rs', etypClosuresFullBounded ri.qualType.etyp res.nextTag' := by
+                    intro ri hri
+                    have hri_le : ri.nextTag' ≤ res.nextTag' := by
+                      rw [hntmax]; simp [List.max]
+                      exact foldl_max_ge_elem _ _ _ (List.mem_map.mpr ⟨ri, hri, rfl⟩)
+                    exact etypClosuresFullBounded_mono (hAllRs' ri hri).2.2 hri_le
+                  exact ⟨hjPT.1,
+                    ⟨hjPT.2, joinTypeResults_etypClosuresFullBounded ctx r1 rs' res res.nextTag'
+                      htcApp (etypClosuresFullBounded_mono hR.2.2 hr1_le) hAllRs_clos⟩⟩
           | externVal typ poison pred =>
               -- Unfold typecheckExternVal to extract structure
               have htce : typecheckExternVal ctx typ poison pred = .ok res := htc
