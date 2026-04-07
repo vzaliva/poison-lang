@@ -5820,12 +5820,13 @@ private lemma predTagsBoundedInMemEnv_updateLocsetWeak
     {env : MemoryTypeEnv} {nt : Tag} {ls : LocSet} {storedPoison : Poison} {storedPred : Predicate}
     (hb : predTagsBoundedInMemEnv env nt) (hpred : predTagBounded nt storedPred) :
     predTagsBoundedInMemEnv (updateLocsetWeak env ls storedPoison storedPred) nt := by
-  -- updateLocsetWeak does two folds:
-  -- 1. Compute (joinedPoison, joinedPred) from existing entries + stored
-  -- 2. Insert ⟨joinedPoison, joinedPred⟩ at every l ∈ ls
-  -- The joinedPred is bounded (by joinPredicates preservation)
-  -- All inserted entries share this pred → bounded
-  -- Non-ls entries are from env → bounded by hb
+  unfold updateLocsetWeak
+  -- Step 1: Show joinedPred is bounded
+  -- joinedPred comes from: LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l => ...)
+  -- Each step applies joinPredicates with an env entry pred (bounded by hb) or returns acc
+  -- Step 2: The second fold inserts ⟨joinedPoison, joinedPred⟩ at every l ∈ ls
+  -- Result: entries in ls have joinedPred (bounded), others from env (bounded by hb)
+  -- Both steps are pure LocSet.fold — need fold invariants
   sorry
 
 -- ═══════════════════════════════════════════════════════════════════
