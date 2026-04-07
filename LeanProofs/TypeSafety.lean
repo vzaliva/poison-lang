@@ -6215,6 +6215,7 @@ private lemma applyFnTClosure_predTagsBounded
     (r1 r2 : TypeResult) (fuel : Nat)
     (IH : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
           typecheckExpr ctx' e' m = .ok res' → predTagsBoundedInCtx ctx' →
+          closureEnvBoundedInCtx ctx' →
           predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧ qtypPredTagBounded res'.qualType res'.nextTag')
     (hpred_r1_mem : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
     (hpred_captured : match tcl with
@@ -6258,7 +6259,7 @@ private lemma applyFnTClosure_predTagsBounded
               exact predTagsBoundedInVarEnv_ofCaptured hpred_captured v qt'
                 (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
           · exact hpred_r1_mem
-        have hIH_body := IH fuel' h_lt body _ r htc hpredCtx'
+        have hIH_body := IH fuel' h_lt body _ r htc hpredCtx' sorry
         -- The result pred is body pred (normalizeAppResultByProvenance preserves or sets noPred)
         -- hIH_body.2 : qtypPredTagBounded r.qualType r.nextTag'
         -- But result's qt may have different poison. pred is same though.
@@ -6280,6 +6281,7 @@ private lemma applyPFnTClosure_predTagsBounded
     (r1 r2 : TypeResult) (fuel : Nat)
     (IH : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
           typecheckExpr ctx' e' m = .ok res' → predTagsBoundedInCtx ctx' →
+          closureEnvBoundedInCtx ctx' →
           predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧ qtypPredTagBounded res'.qualType res'.nextTag')
     (hpred_r1_mem : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
     (hpred_captured : match tcl with
@@ -6321,7 +6323,7 @@ private lemma applyPFnTClosure_predTagsBounded
             · exact predTagsBoundedInVarEnv_ofCaptured hpred_captured v qt'
                 (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
           · exact hpred_r1_mem
-        have hIH_body := IH fuel' h_lt (PExpr.toExpr body) _ r htc hpredCtx'
+        have hIH_body := IH fuel' h_lt (PExpr.toExpr body) _ r htc hpredCtx' sorry
         have hpredBody : predTagBounded r.nextTag' pred := by
           have := hIH_body.2; simp [qtypPredTagBounded, hqt] at this; exact this
         simp [normalizeAppResultByProvenance]
@@ -6424,9 +6426,12 @@ private lemma closureEnvBoundedInCtx_of_update
     All branches of the deref code return etyp=int. -/
 private lemma typecheckDeref_etyp_int (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (h : typecheckDeref ctx e fuel = .ok res) : res.qualType.etyp = ETyp.int := by
-  -- Every successful return of typecheckDeref has etyp = ETyp.int
-  -- This is a tedious but trivial case analysis
-  sorry
+  unfold typecheckDeref at h
+  cases fuel with
+  | zero => simp at h
+  | succ fuel' =>
+    simp only [bind, Except.bind, pure, Except.pure] at h
+    repeat (first | split at h | simp at h | (cases h; rfl))
 
 private lemma typecheckExpr_preserves_combined_main :
     ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
@@ -6950,10 +6955,11 @@ private lemma typecheckExpr_preserves_combined_main :
                 -- Project 2-tuple version for applyXTClosure_predTagsBounded
                 have IH'2 : ∀ m < fuel'', ∀ (e' : Expr) (ctx'' : TypeContext) (res' : TypeResult),
                     typecheckExpr ctx'' e' m = .ok res' → predTagsBoundedInCtx ctx'' →
+                    closureEnvBoundedInCtx ctx'' →
                     predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧
                     qtypPredTagBounded res'.qualType res'.nextTag' :=
-                  fun m hm e' ctx'' res' htc' hb =>
-                    let h := IH' m hm e' ctx'' res' htc' hb sorry
+                  fun m hm e' ctx'' res' htc' hb hcl =>
+                    let h := IH' m hm e' ctx'' res' htc' hb hcl
                     ⟨h.1, h.2.1⟩
 
                 -- Pred of e2 result is bounded
