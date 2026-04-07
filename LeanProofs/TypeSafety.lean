@@ -6886,10 +6886,94 @@ private lemma typecheckDeref_pred_bounded (ctx : TypeContext) (e : Expr) (fuel :
     rcases hqr : r1.qualType with ⟨etyp1, poisonRef, predRef⟩
     rw [hqr] at h; simp at h
     cases etyp1 <;> simp at h
-    -- Only ETyp.ref ls survives
-    -- Remaining proof: trace through fold + all pred branches
-    -- Uses deref_fold_pred_bounded for the tagEnv=none branches
-    sorry
+    -- Only ETyp.ref ls survives. Exhaust all branches.
+    rename_i ls
+    split at h
+    · simp at h -- ls empty → error
+    · -- ls non-empty. Case on foldM result.
+      split at h
+      · simp at h -- fold error
+      · -- fold ok. Case on poisonRef.
+        rename_i hne v
+        split at h
+        · cases h; exact predTagBounded_noPred _ -- poisonRef true → noPred
+        · -- poisonRef false. Case on merged pred.
+          -- Context: hne : Bool × Option Predicate (fold result value)
+          --          v : ls.foldM ... = ok hne (fold equation)
+          -- First establish that the fold result pred is bounded.
+          have hfold_list := v
+          simp [LocSet.foldM, Std.ExtTreeSet.foldlM_eq_foldlM_toList] at hfold_list
+          have hv_bounded : ∀ p, hne.2 = some p → predTagBounded r1.nextTag' p :=
+            deref_fold_pred_bounded r1.memEnv' r1.nextTag' hMem
+              (false, none) hne (by intro q hq; simp at hq) ls.toList hfold_list
+          -- Exhaust all remaining branches via repeat split
+          repeat (first | split at h | simp at h)
+          -- Close goals: h_1 is noPred (subst), h_2/h_3 need split on tagEnv
+          all_goals first
+            | exact predTagBounded_noPred _
+            | (subst h; exact predTagBounded_noPred _)
+            | -- h_2 or h_3: h has match on tagEnv[k]?
+              (repeat (first | split at h | simp at h)
+               all_goals (try simp at h)
+               all_goals first
+                 | exact predTagBounded_noPred _
+                 | (subst h; exact predTagBounded_noPred _)
+                 | (subst h; simp [Option.getD]
+                    cases hv2 : hne.2 with
+                    | none => exact predTagBounded_noPred _
+                    | some p' => simp [Option.getD]; exact hv_bounded p' hv2))
+
+/-- typecheckAssign memEnv is bounded: the result memEnv' is r2.memEnv' updated at locations
+    in ls with a pred that is either noPred or pred2 (both bounded). -/
+private lemma typecheckAssign_memEnv_bounded (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
+    (r1 r2 : TypeResult) (ls : LocSet)
+    (hte1 : typecheckExpr ctx e1 (fuel - 1) = .ok r1)
+    (hrefTyp : r1.qualType.etyp = ETyp.ref ls)
+    (hte2 : typecheckExpr (updateCtxFromResult ctx r1) e2 (fuel - 1) = .ok r2)
+    (hInt2 : r2.qualType.etyp = ETyp.int)
+    (hMemR2 : predTagsBoundedInMemEnv r2.memEnv' r2.nextTag')
+    (hPredR2 : predTagBounded r2.nextTag' r2.qualType.pred)
+    (h : typecheckAssign ctx e1 e2 fuel = .ok res) :
+    predTagsBoundedInMemEnv res.memEnv' r2.nextTag' := by
+  unfold typecheckAssign at h
+  cases fuel with
+  | zero => simp at h
+  | succ fuel' =>
+    simp only [bind, Except.bind, pure, Except.pure, Nat.add_sub_cancel] at h hte1 hte2
+    rw [hte1] at h; simp at h
+    rcases hqr : r1.qualType with ⟨etyp1, p1, pred1⟩
+    rw [hqr] at h; simp at h
+    rw [hqr] at hrefTyp; simp at hrefTyp; subst hrefTyp
+    simp at h
+    -- Now h has the e2 evaluation
+    rw [show typecheckExpr (updateCtxFromResult ctx r1) e2 fuel' = typecheckExpr
+        ⟨ctx.pc, r1.regime', r1.memEnv', ctx.varEnv, r1.tagEnv', r1.nextLoc', r1.nextTag', ctx.pureCtx⟩
+        e2 fuel' from by simp [updateCtxFromResult]] at hte2
+    rw [hte2] at h; simp at h
+    rcases hqr2 : r2.qualType with ⟨etyp2, p2, pred2⟩
+    rw [hqr2] at h; simp at h
+    rw [hqr2] at hInt2; simp at hInt2; subst hInt2
+    simp at h
+    -- h now has the memEnv computation
+    -- storedPred = if p1 || ctx.pc then noPred else pred2
+    -- memEnv' = match ls.toList with | [l] => updateMemEnv ... | _ => updateLocsetWeak ...
+    cases h; simp
+    -- Goal: predTagsBoundedInMemEnv (match ...) r2.nextTag'
+    -- The stored pred is bounded (either noPred or pred2 from IH)
+    have hStoredPred : predTagBounded r2.nextTag'
+        (if p1 = true ∨ ctx.pc = true then Predicate.noPred else pred2) := by
+      split
+      · exact predTagBounded_noPred _
+      · rw [hqr2] at hPredR2; exact hPredR2
+    cases hls : ExtTreeSet.toList ls with
+    | nil => simp [hls]
+             exact predTagsBoundedInMemEnv_updateLocsetWeak hMemR2 hStoredPred
+    | cons l rest =>
+      cases rest with
+      | nil => -- singleton: match [l] with | [l] => updateMemEnv
+        simp; exact predTagsBoundedInMemEnv_update hMemR2 hStoredPred
+      | cons l2 rest' => -- non-singleton: updateLocsetWeak
+        simp; exact predTagsBoundedInMemEnv_updateLocsetWeak hMemR2 hStoredPred
 
 private lemma typecheckExpr_preserves_combined_main :
     ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
@@ -7268,11 +7352,11 @@ private lemma typecheckExpr_preserves_combined_main :
 
               rw [hnextTag]
               refine ⟨?_, ?_, ?_⟩
-              · -- memEnv' involves updateMemEnv or updateLocsetWeak on r2.memEnv'
-                -- The stored pred is noPred (if pc/p1 true) or pred2 (bounded by IH)
-                -- Both updateMemEnv and updateLocsetWeak preserve boundedness
-                -- For now sorry — needs memEnv equation from typecheckAssign internals
-                sorry
+              · -- memEnv bounded via typecheckAssign_memEnv_bounded
+                have hPredR2 : predTagBounded r2.nextTag' r2.qualType.pred := by
+                  have := hIH2.2.1; simp [qtypPredTagBounded] at this; exact this
+                exact typecheckAssign_memEnv_bounded ctx e1 e2 fuel' res r1 r2 ls
+                  hte1 _hrefTyp hte2 _hInt2 hIH2.1 hPredR2 htcAssign
               · simp only [qtypPredTagBounded, hpredNoPred]; exact predTagBounded_noPred _
               · -- closure: result etyp is unit (no closures)
                 rcases typecheckAssign_structure ctx e1 e2 fuel' res htcAssign with
