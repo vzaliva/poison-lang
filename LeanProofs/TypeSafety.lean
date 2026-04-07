@@ -5821,13 +5821,49 @@ private lemma predTagsBoundedInMemEnv_updateLocsetWeak
     (hb : predTagsBoundedInMemEnv env nt) (hpred : predTagBounded nt storedPred) :
     predTagsBoundedInMemEnv (updateLocsetWeak env ls storedPoison storedPred) nt := by
   unfold updateLocsetWeak
-  -- Step 1: Show joinedPred is bounded
-  -- joinedPred comes from: LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l => ...)
-  -- Each step applies joinPredicates with an env entry pred (bounded by hb) or returns acc
-  -- Step 2: The second fold inserts ⟨joinedPoison, joinedPred⟩ at every l ∈ ls
-  -- Result: entries in ls have joinedPred (bounded), others from env (bounded by hb)
-  -- Both steps are pure LocSet.fold — need fold invariants
-  sorry
+  -- Helper: pure LocSet.fold preserves a property
+  have fold_pres : ∀ {β : Type} (s : LocSet) (init : β) (f : β → Loc → β)
+      (P : β → Prop), P init → (∀ acc l, P acc → P (f acc l)) → P (LocSet.fold s init f) := by
+    intro β s init f P hinit hstep
+    simp only [LocSet.fold]; rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+    induction s.toList generalizing init with
+    | nil => exact hinit
+    | cons hd tl ih => simp only [List.foldl]; exact ih (f init hd) (hstep init hd hinit)
+  -- Step 1: joinedPred is bounded
+  -- The first fold returns (joinedPoison, joinedPred); we need joinedPred bounded
+  set foldResult := LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l =>
+    match env.get? l with
+    | some e => (joinPoison accP e.poison, joinPredicates accPred e.pred)
+    | none => (accP, accPred))
+  have hJoinedBounded : predTagBounded nt foldResult.2 := by
+    simp only [foldResult]
+    apply fold_pres (β := Poison × Predicate) ls _ _ (fun p => predTagBounded nt p.2) hpred
+    intro ⟨accP, accPred⟩ l hPacc; simp only []
+    cases hget : env.get? l with
+    | none => exact hPacc
+    | some e =>
+      have hlookup : env.lookup l = some ⟨ETyp.int, e.poison, e.pred⟩ := by
+        simp only [MemoryTypeEnv.lookup]
+        rw [Std.ExtTreeMap.get?_eq_getElem?] at hget
+        simp [hget]
+      exact predTagBounded_joinPredicates hPacc (hb l _ hlookup)
+  -- Step 2: inserting the same bounded entry everywhere preserves the bound
+  -- The entry is ⟨foldResult.1, foldResult.2⟩, pred = foldResult.2 (bounded by hJoinedBounded)
+  -- After let-matching foldResult, the fold inserts this entry at all ls locations
+  -- Use intro/cases to handle the let-match
+  intro l qt hlookup
+  -- hlookup is in the result of the second fold
+  -- Use fold_pres to show all entries in the result are bounded
+  have : predTagsBoundedInMemEnv
+      (LocSet.fold ls env (fun acc l => acc.insert l ⟨foldResult.1, foldResult.2⟩)) nt := by
+    apply fold_pres ls env _ (fun acc => predTagsBoundedInMemEnv acc nt) hb
+    intro acc l' hacc
+    -- acc.insert l' entry where entry = ⟨joinedPoison, joinedPred⟩
+    -- This is the same as MemoryTypeEnv.update acc l' ⟨int, joinedPoison, joinedPred⟩
+    show predTagsBoundedInMemEnv (acc.insert l' ⟨foldResult.1, foldResult.2⟩) nt
+    rw [show acc.insert l' ⟨foldResult.1, foldResult.2⟩ = MemoryTypeEnv.update acc l' ⟨ETyp.int, foldResult.1, foldResult.2⟩ from rfl]
+    exact predTagsBoundedInMemEnv_update hacc hJoinedBounded
+  exact this l qt (by convert hlookup using 2)
 
 -- ═══════════════════════════════════════════════════════════════════
 -- Closure captured-env preservation
