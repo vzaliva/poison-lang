@@ -7752,7 +7752,7 @@ private lemma typecheckExpr_preserves_predTagsBounded
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckExpr ctx e fuel = .ok res)
     (hpred : predTagsBoundedInCtx ctx)
-    (hclosure : closureEnvBoundedInCtx ctx := by exact sorry) :
+    (hclosure : closureEnvBoundedInCtx ctx) :
     predTagsBoundedInMemEnv res.memEnv' res.nextTag' ∧
     qtypPredTagBounded res.qualType res.nextTag' :=
   let h := typecheckExpr_preserves_combined_main ctx e fuel res htc hpred hclosure
@@ -7762,7 +7762,7 @@ private lemma predTagsBoundedInCtx_of_updateCtxFromResult
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (r : TypeResult)
     (htc : typecheckExpr ctx e fuel = .ok r)
     (hpred : predTagsBoundedInCtx ctx)
-    (hclosure : closureEnvBoundedInCtx ctx := by exact sorry) :
+    (hclosure : closureEnvBoundedInCtx ctx) :
     predTagsBoundedInCtx (updateCtxFromResult ctx r) :=
   ⟨predTagsBoundedInVarEnv_mono hpred.1
       (typecheck_normal_nextTag_mono ctx e fuel r htc),
@@ -7908,8 +7908,16 @@ private lemma applyFnTClosure_tagEnvBounded_normal
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (r1 r2 : TypeResult) (fuel : Nat)
   (IH : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-        typecheckExpr ctx' e' m = .ok res' → tagEnvBoundedInCtx ctx' → tagEnvBounded res'.tagEnv' res'.nextTag')
-  (hbound_r1 : tagEnvBounded r1.tagEnv' r1.nextTag') :
+        typecheckExpr ctx' e' m = .ok res' → tagEnvBoundedInCtx ctx' →
+        predTagsBoundedInCtx ctx' → closureEnvBoundedInCtx ctx' →
+        tagEnvBounded res'.tagEnv' res'.nextTag')
+  (hbound_r1 : tagEnvBounded r1.tagEnv' r1.nextTag')
+  (hpred_r1 : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
+  (henv_captured : match tcl with
+    | .regular _ _ env => CapturedEnvFullBounded env r1.nextTag'
+    | .extern _ _ _ env => CapturedEnvFullBounded env r1.nextTag')
+  (hpred_argPred : predTagBounded r1.nextTag' argPred)
+  (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag') :
   applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
   tagEnvBounded r2.tagEnv' r2.nextTag' := by
   intro happly
@@ -7943,6 +7951,20 @@ private lemma applyFnTClosure_tagEnvBounded_normal
             have htc' : typecheckExpr ctx'' body fuel' = .ok r := by simpa [hctx''] using htc
             exact IH fuel' (Nat.lt_succ_self fuel') body ctx'' r htc'
               (by simp only [tagEnvBoundedInCtx, hctx'']; exact hbound_r1)
+              (by simp only [predTagsBoundedInCtx, hctx'']
+                  constructor
+                  · intro v qt' hlookup
+                    simp [VarTypeEnv.update, VarTypeEnv.lookup] at hlookup
+                    rw [Std.ExtTreeMap.getElem?_insert] at hlookup
+                    split at hlookup
+                    · simp at hlookup; subst qt'; exact hpred_argPred
+                    · exact predTagsBoundedInVarEnv_ofCaptured
+                        (capturedPredTagsBounded_of_fullBounded henv_captured) v qt'
+                        (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
+                  · exact hpred_r1)
+              (by simp only [closureEnvBoundedInCtx, hctx'']
+                  exact varEnvClosuresCapturedBounded_update
+                    (varEnvClosuresCapturedBounded_ofCaptured henv_captured) hclosure_arg)
     | extern x retSpec effects capturedEnv =>
         simp [bind, Except.bind, pure, Except.pure] at happly
         split at happly
@@ -7971,8 +7993,16 @@ private lemma applyPFnTClosure_tagEnvBounded_normal
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (r1 r2 : TypeResult) (fuel : Nat)
   (IH : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
-        typecheckExpr ctx' e' m = .ok res' → tagEnvBoundedInCtx ctx' → tagEnvBounded res'.tagEnv' res'.nextTag')
-  (hbound_r1 : tagEnvBounded r1.tagEnv' r1.nextTag') :
+        typecheckExpr ctx' e' m = .ok res' → tagEnvBoundedInCtx ctx' →
+        predTagsBoundedInCtx ctx' → closureEnvBoundedInCtx ctx' →
+        tagEnvBounded res'.tagEnv' res'.nextTag')
+  (hbound_r1 : tagEnvBounded r1.tagEnv' r1.nextTag')
+  (hpred_r1 : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
+  (henv_captured : match tcl with
+    | .regular _ _ env => CapturedEnvFullBounded env r1.nextTag'
+    | .extern _ _ env => CapturedEnvFullBounded env r1.nextTag')
+  (hpred_argPred : predTagBounded r1.nextTag' argPred)
+  (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag') :
   applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
   tagEnvBounded r2.tagEnv' r2.nextTag' := by
   intro happly
@@ -8006,6 +8036,20 @@ private lemma applyPFnTClosure_tagEnvBounded_normal
             have htc' : typecheckExpr ctx'' body.toExpr fuel' = .ok r := by simpa [hctx''] using htc
             exact IH fuel' (Nat.lt_succ_self fuel') body.toExpr ctx'' r htc'
               (by simp only [tagEnvBoundedInCtx, hctx'']; exact hbound_r1)
+              (by simp only [predTagsBoundedInCtx, hctx'']
+                  constructor
+                  · intro v qt' hlookup
+                    simp [VarTypeEnv.update, VarTypeEnv.lookup] at hlookup
+                    rw [Std.ExtTreeMap.getElem?_insert] at hlookup
+                    split at hlookup
+                    · simp at hlookup; subst qt'; exact hpred_argPred
+                    · exact predTagsBoundedInVarEnv_ofCaptured
+                        (capturedPredTagsBounded_of_fullBounded henv_captured) v qt'
+                        (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
+                  · exact hpred_r1)
+              (by simp only [closureEnvBoundedInCtx, hctx'']
+                  exact varEnvClosuresCapturedBounded_update
+                    (varEnvClosuresCapturedBounded_ofCaptured henv_captured) hclosure_arg)
     | extern x retSpec capturedEnv =>
         simp [bind, Except.bind] at happly
         split at happly
@@ -8109,8 +8153,11 @@ private lemma joinTypeResults_tagEnvBounded
 /-- typecheckApp preserves tagEnvBounded. Takes an IH to avoid forward reference. -/
 private lemma typecheckApp_tagEnvBounded_normal (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat)
     (res : TypeResult) (hbound : tagEnvBoundedInCtx ctx)
+    (hpred : predTagsBoundedInCtx ctx)
+    (hclosure : closureEnvBoundedInCtx ctx)
     (IH : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
           typecheckExpr ctx' e' m = .ok res' → tagEnvBoundedInCtx ctx' →
+          predTagsBoundedInCtx ctx' → closureEnvBoundedInCtx ctx' →
           tagEnvBounded res'.tagEnv' res'.nextTag') :
     typecheckApp ctx e1 e2 fuel = .ok res →
     tagEnvBounded res.tagEnv' res.nextTag' := by
@@ -8139,13 +8186,22 @@ private lemma typecheckApp_tagEnvBounded_normal (ctx : TypeContext) (e1 e2 : Exp
   have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
   have IH' : ∀ m < fuel', ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
       typecheckExpr ctx' e' m = .ok res' → tagEnvBoundedInCtx ctx' →
+      predTagsBoundedInCtx ctx' → closureEnvBoundedInCtx ctx' →
       tagEnvBounded res'.tagEnv' res'.nextTag' :=
-    fun m hm e' ctx'' res' htc' hb => IH m (Nat.lt_trans hm h_fuel) e' ctx'' res' htc' hb
+    fun m hm e' ctx'' res' htc' hb hp hc => IH m (Nat.lt_trans hm h_fuel) e' ctx'' res' htc' hb hp hc
   have hbound2 : tagEnvBounded res2.tagEnv' res2.nextTag' :=
-    IH fuel' h_fuel e2 ctx res2 hcte2 hbound
+    IH fuel' h_fuel e2 ctx res2 hcte2 hbound hpred hclosure
+  have hmono2 := typecheck_normal_nextTag_mono ctx e2 fuel' res2 hcte2
+  have hpredCtx' : predTagsBoundedInCtx ctx' := by
+    simp only [predTagsBoundedInCtx, hctx']
+    exact ⟨predTagsBoundedInVarEnv_mono hpred.1 hmono2,
+           (typecheckExpr_preserves_predTagsBounded ctx e2 fuel' res2 hcte2 hpred hclosure).1⟩
+  have hclosureCtx' : closureEnvBoundedInCtx ctx' :=
+    by simp only [closureEnvBoundedInCtx, hctx']; exact varEnvClosuresCapturedBounded_mono hclosure hmono2
   have hbound1 : tagEnvBounded res1.tagEnv' res1.nextTag' :=
     IH fuel' h_fuel e1 ctx' res1 htce1
       (by simp only [tagEnvBoundedInCtx, hctx']; exact hbound2)
+      hpredCtx' hclosureCtx'
   rcases etyp1 with _ | _ | _ | _ | _ | ⟨t1, t2, p, fs⟩ | _
     <;> simp at htc
   · rcases hctxPure : ctx.pureCtx <;> simp [hctxPure] at htc
@@ -8169,8 +8225,20 @@ private lemma typecheckApp_tagEnvBounded_normal (ctx : TypeContext) (e1 e2 : Exp
         with _ | ⟨rs''⟩
       <;> rw [hmap] at hcons <;> simp at hcons
     rcases hcons with ⟨_, heq2⟩; subst r1; subst rs''
+    -- Get combined IH results for closure/pred evidence
+    have hIH1_combined := typecheckExpr_preserves_combined_main ctx' e1 fuel' res1 htce1 hpredCtx' hclosureCtx'
+    have hIH2_combined := typecheckExpr_preserves_combined_main ctx e2 fuel' res2 hcte2 hpred hclosure
+    have hIH1_clos := hIH1_combined.2.2; simp [hq1] at hIH1_clos
+    have hcapt_f := hIH1_clos f (List.Mem.head _)
+    have hpred2_bound : predTagBounded res1.nextTag' pred2 := by
+      have := hIH2_combined.2.1; simp [qtypPredTagBounded, hq2] at this
+      exact predTagBounded_mono this (typecheck_normal_nextTag_mono ctx' e1 fuel' res1 htce1)
+    have hclosure_arg : etypClosuresFullBounded etyp2 res1.nextTag' := by
+      have h2 := hIH2_combined.2.2; simp [hq2] at h2
+      exact etypClosuresFullBounded_mono h2 (typecheck_normal_nextTag_mono ctx' e1 fuel' res1 htce1)
     have hbound_r : tagEnvBounded r.tagEnv' r.nextTag' :=
-      applyFnTClosure_tagEnvBounded_normal f ctx t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' hbound1 happly
+      applyFnTClosure_tagEnvBounded_normal f ctx t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH'
+        hbound1 hIH1_combined.1 hcapt_f hpred2_bound hclosure_arg happly
     have hboundJoin : tagEnvBounded res.tagEnv' r.nextTag' :=
       joinTypeResults_tagEnvBounded ctx r rs' res r.nextTag' htc hbound_r
     have h_join_next : res.nextTag' =
@@ -8203,7 +8271,19 @@ private lemma typecheckApp_tagEnvBounded_normal (ctx : TypeContext) (e1 e2 : Exp
       <;> rw [hmap] at hcons <;> simp at hcons
     rcases hcons with ⟨_, heq2⟩; subst r1; subst rs''
     have hbound_r : tagEnvBounded r.tagEnv' r.nextTag' :=
-      applyPFnTClosure_tagEnvBounded_normal f ctx st1 st2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' hbound1 happly
+      by
+        have hIH1_combined := typecheckExpr_preserves_combined_main ctx' e1 fuel' res1 htce1 hpredCtx' hclosureCtx'
+        have hIH2_combined := typecheckExpr_preserves_combined_main ctx e2 fuel' res2 hcte2 hpred hclosure
+        have hIH1_clos := hIH1_combined.2.2; simp [hq1] at hIH1_clos
+        have hcapt_f := hIH1_clos f (List.Mem.head _)
+        have hpred2_bound : predTagBounded res1.nextTag' pred2 := by
+          have := hIH2_combined.2.1; simp [qtypPredTagBounded, hq2] at this
+          exact predTagBounded_mono this (typecheck_normal_nextTag_mono ctx' e1 fuel' res1 htce1)
+        have hclosure_arg : etypClosuresFullBounded etyp2 res1.nextTag' := by
+          have h2 := hIH2_combined.2.2; simp [hq2] at h2
+          exact etypClosuresFullBounded_mono h2 (typecheck_normal_nextTag_mono ctx' e1 fuel' res1 htce1)
+        exact applyPFnTClosure_tagEnvBounded_normal f ctx st1 st2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH'
+          hbound1 hIH1_combined.1 hcapt_f hpred2_bound hclosure_arg happly
     have hboundJoin : tagEnvBounded res.tagEnv' r.nextTag' :=
       joinTypeResults_tagEnvBounded ctx r rs' res r.nextTag' htc hbound_r
     have h_join_next : res.nextTag' =
@@ -8221,18 +8301,20 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
     typecheckExpr ctx e fuel = .ok res →
     tagEnvBoundedInCtx ctx →
     predTagsBoundedInCtx ctx →
+    closureEnvBoundedInCtx ctx →
     tagEnvBounded res.tagEnv' res.nextTag' := by
-  intro ctx e fuel res htc hbound hpred
-  revert ctx e res htc hbound hpred
+  intro ctx e fuel res htc hbound hpred hclosure
+  revert ctx e res htc hbound hpred hclosure
   induction fuel using Nat.strong_induction_on with
   | _ fuel IH =>
-      intro ctx e res htc hbound hpred
+      intro ctx e res htc hbound hpred hclosure
       have IH_fuel : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
           typecheckExpr ctx' e' m = .ok res' →
           tagEnvBoundedInCtx ctx' →
           predTagsBoundedInCtx ctx' →
+          closureEnvBoundedInCtx ctx' →
           tagEnvBounded res'.tagEnv' res'.nextTag' :=
-        fun m h_lt e' ctx' res' htc' hbound' hpred' => IH m h_lt ctx' e' res' htc' hbound' hpred'
+        fun m h_lt e' ctx' res' htc' hbound' hpred' hclosure' => IH m h_lt ctx' e' res' htc' hbound' hpred' hclosure'
       cases fuel with
       | zero => simp [typecheckExpr] at htc
       | succ fuel' =>
@@ -8318,7 +8400,7 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                           have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by
                             simpa [typecheck] using hte1
                           have h_lt : fuel'' < fuel' + 1 := by omega
-                          exact IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred
+                          exact IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred hclosure
           | op e1 _op e2 =>
               -- htc : typecheckOp ctx e1 e2 fuel' _op = .ok res
               unfold typecheckOp at htc
@@ -8347,13 +8429,14 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                               have h_lt : fuel'' < fuel' + 1 := by omega
                               have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by
                                 simpa [typecheck] using hte1
-                              have hbound1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred
+                              have hbound1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred hclosure
                               have hte2' : typecheck ctx' e2 fuel'' = .ok r2 := by
                                 simpa [typecheck, ctx'] using hte2
                               exact IH_fuel fuel'' h_lt e2 ctx' r2 hte2'
                                 (by simp only [tagEnvBoundedInCtx, updateCtxFromResult, ctx']; exact hbound1)
                                 (predTagsBoundedInCtx_of_updateCtxFromResult ctx e1 fuel'' r1
-                                  (by simpa [typecheck] using hte1) hpred)
+                                  (by simpa [typecheck] using hte1) hpred hclosure)
+                                (closureEnvBoundedInCtx_of_update ctx e1 _ r1 (by simpa [typecheck] using hte1) hclosure)
           | seq e1 e2 =>
               unfold typecheckSeq at htc
               cases hfuel : fuel' with
@@ -8374,13 +8457,14 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                           have h_lt : fuel'' < fuel' + 1 := by omega
                           have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by
                             simpa [typecheck] using hte1
-                          have hbound1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred
+                          have hbound1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred hclosure
                           have hte2' : typecheck ctx' e2 fuel'' = .ok r2 := by
                             simpa [typecheck, ctx'] using hte2
                           have hbound2 := IH_fuel fuel'' h_lt e2 ctx' r2 hte2'
                             (by simp only [tagEnvBoundedInCtx, updateCtxFromResult, ctx']; exact hbound1)
                             (predTagsBoundedInCtx_of_updateCtxFromResult ctx e1 fuel'' r1
-                              (by simpa [typecheck] using hte1) hpred)
+                              (by simpa [typecheck] using hte1) hpred hclosure)
+                            (closureEnvBoundedInCtx_of_update ctx e1 _ r1 (by simpa [typecheck] using hte1) hclosure)
                           simpa [hres] using hbound2
           | vlet x e1 e2 =>
               unfold typecheckVlet at htc
@@ -8394,24 +8478,26 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                   have step_e1_e2 : ∀ (ctx1 : TypeContext),
                       ctx1.tagEnv = ctx.tagEnv → ctx1.nextTag = ctx.nextTag →
                       predTagsBoundedInCtx ctx1 →
+                      closureEnvBoundedInCtx ctx1 →
                       ∀ r1 : TypeResult, typecheckExpr ctx1 e1 fuel'' = .ok r1 →
                       ∀ (ctx2 : TypeContext),
                       ctx2.tagEnv = r1.tagEnv' → ctx2.nextTag = r1.nextTag' →
                       predTagsBoundedInCtx ctx2 →
+                      closureEnvBoundedInCtx ctx2 →
                       ∀ r2 : TypeResult, typecheckExpr ctx2 e2 fuel'' = .ok r2 →
                       r2.nextTag' = res.nextTag' → r2.tagEnv' = res.tagEnv' →
                       tagEnvBounded res.tagEnv' res.nextTag' := by
-                    intro ctx1 hctx1Tag hctx1Next hpred1 r1 hte1
-                      ctx2 hctx2Tag hctx2Next hpred2 r2 hte2 hresnext hresTag
+                    intro ctx1 hctx1Tag hctx1Next hpred1 hclosure1 r1 hte1
+                      ctx2 hctx2Tag hctx2Next hpred2 hclosure2 r2 hte2 hresnext hresTag
                     have h_lt : fuel'' < fuel' + 1 := by omega
                     have hte1' : typecheck ctx1 e1 fuel'' = .ok r1 := by
                       simpa [typecheck] using hte1
                     have hbound1 := IH_fuel fuel'' h_lt e1 ctx1 r1 hte1'
-                      (by simp only [tagEnvBoundedInCtx, hctx1Tag, hctx1Next]; exact hbound) hpred1
+                      (by simp only [tagEnvBoundedInCtx, hctx1Tag, hctx1Next]; exact hbound) hpred1 hclosure1
                     have hte2' : typecheck ctx2 e2 fuel'' = .ok r2 := by
                       simpa [typecheck] using hte2
                     have hbound2 := IH_fuel fuel'' h_lt e2 ctx2 r2 hte2'
-                      (by simp only [tagEnvBoundedInCtx, hctx2Tag, hctx2Next]; exact hbound1) hpred2
+                      (by simp only [tagEnvBoundedInCtx, hctx2Tag, hctx2Next]; exact hbound1) hpred2 hclosure2
                     simpa [hresnext, hresTag] using hbound2
                   cases hlookup : ctx.varEnv.lookup x with
                   | none =>
@@ -8432,9 +8518,13 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                                 ⟨predTagsBoundedInVarEnv_update
                                   (predTagsBoundedInVarEnv_mono hpred.1
                                     (typecheck_normal_nextTag_mono _ e1 _ r1 (by simpa [typecheck] using hte1)))
-                                  ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).2),
-                                 (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).1⟩
-                              exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl hpred_ctx2 r2 hte2
+                                  ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred hclosure).2),
+                                 (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred hclosure).1⟩
+                              have hclosure_ctx2 : closureEnvBoundedInCtx ctx' :=
+                                varEnvClosuresCapturedBounded_update
+                                  (closureEnvBoundedInCtx_of_update ctx e1 _ r1 hte1 hclosure)
+                                  (typecheckExpr_preserves_closureCapturedBounded ctx e1 _ r1 hte1 hpred hclosure)
+                              exact step_e1_e2 ctx rfl rfl hpred hclosure r1 hte1 ctx' rfl rfl hpred_ctx2 hclosure_ctx2 r2 hte2
                                 (by simpa using congrArg TypeResult.nextTag' htc)
                                 (by simpa using congrArg TypeResult.tagEnv' htc)
                   | some qtOuter =>
@@ -8461,9 +8551,13 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                                       ⟨predTagsBoundedInVarEnv_update
                                         (predTagsBoundedInVarEnv_mono hpred.1
                                           (typecheck_normal_nextTag_mono _ e1 _ r1 (by simpa [typecheck] using hte1)))
-                                        ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).2),
-                                       (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).1⟩
-                                    exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl hpred_ctx2 r2 hte2
+                                        ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred hclosure).2),
+                                       (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred hclosure).1⟩
+                                    have hclosure_ctx2 : closureEnvBoundedInCtx ctx' :=
+                                      varEnvClosuresCapturedBounded_update
+                                        (closureEnvBoundedInCtx_of_update ctx e1 _ r1 hte1 hclosure)
+                                        (typecheckExpr_preserves_closureCapturedBounded ctx e1 _ r1 hte1 hpred hclosure)
+                                    exact step_e1_e2 ctx rfl rfl hpred hclosure r1 hte1 ctx' rfl rfl hpred_ctx2 hclosure_ctx2 r2 hte2
                                       (by simpa using congrArg TypeResult.nextTag' htc)
                                       (by simpa using congrArg TypeResult.tagEnv' htc)
                       | guardOnly k =>
@@ -8484,9 +8578,13 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                                     ⟨predTagsBoundedInVarEnv_update
                                       (predTagsBoundedInVarEnv_mono hpred.1
                                         (typecheck_normal_nextTag_mono _ e1 _ r1 (by simpa [typecheck] using hte1)))
-                                      ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).2),
-                                     (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).1⟩
-                                  exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl hpred_ctx2 r2 hte2
+                                      ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred hclosure).2),
+                                     (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred hclosure).1⟩
+                                  have hclosure_ctx2 : closureEnvBoundedInCtx ctx' :=
+                                    varEnvClosuresCapturedBounded_update
+                                      (closureEnvBoundedInCtx_of_update ctx e1 _ r1 hte1 hclosure)
+                                      (typecheckExpr_preserves_closureCapturedBounded ctx e1 _ r1 hte1 hpred hclosure)
+                                  exact step_e1_e2 ctx rfl rfl hpred hclosure r1 hte1 ctx' rfl rfl hpred_ctx2 hclosure_ctx2 r2 hte2
                                     (by simpa using congrArg TypeResult.nextTag' htc)
                                     (by simpa using congrArg TypeResult.tagEnv' htc)
                       | noPred =>
@@ -8507,9 +8605,13 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                                     ⟨predTagsBoundedInVarEnv_update
                                       (predTagsBoundedInVarEnv_mono hpred.1
                                         (typecheck_normal_nextTag_mono _ e1 _ r1 (by simpa [typecheck] using hte1)))
-                                      ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).2),
-                                     (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred).1⟩
-                                  exact step_e1_e2 ctx rfl rfl hpred r1 hte1 ctx' rfl rfl hpred_ctx2 r2 hte2
+                                      ((typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred hclosure).2),
+                                     (typecheckExpr_preserves_predTagsBounded _ e1 _ r1 hte1 hpred hclosure).1⟩
+                                  have hclosure_ctx2 : closureEnvBoundedInCtx ctx' :=
+                                    varEnvClosuresCapturedBounded_update
+                                      (closureEnvBoundedInCtx_of_update ctx e1 _ r1 hte1 hclosure)
+                                      (typecheckExpr_preserves_closureCapturedBounded ctx e1 _ r1 hte1 hpred hclosure)
+                                  exact step_e1_e2 ctx rfl rfl hpred hclosure r1 hte1 ctx' rfl rfl hpred_ctx2 hclosure_ctx2 r2 hte2
                                     (by simpa using congrArg TypeResult.nextTag' htc)
                                     (by simpa using congrArg TypeResult.tagEnv' htc)
           | newRef e1 =>
@@ -8530,7 +8632,7 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                         have h_lt : fuel'' < fuel' + 1 := by omega
                         have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by
                           simpa [typecheck] using hte1
-                        exact IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred
+                        exact IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred hclosure
                       · exfalso; simp [hInt] at htc
           | assign e1 e2 =>
               unfold typecheckAssign at htc
@@ -8570,13 +8672,14 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                                 have h_lt : fuel'' < fuel' + 1 := by omega
                                 have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by
                                   simpa [typecheck] using hte1
-                                have hbound1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred
+                                have hbound1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred hclosure
                                 have hte2' : typecheck ctx' e2 fuel'' = .ok r2 := by
                                   simpa [typecheck, ctx'] using hte2
                                 have hbound2 := IH_fuel fuel'' h_lt e2 ctx' r2 hte2'
                                   (by simp only [tagEnvBoundedInCtx, updateCtxFromResult, ctx']; exact hbound1)
                                   (predTagsBoundedInCtx_of_updateCtxFromResult ctx e1 fuel'' r1
-                                    (by simpa [typecheck] using hte1) hpred)
+                                    (by simpa [typecheck] using hte1) hpred hclosure)
+                                  (closureEnvBoundedInCtx_of_update ctx e1 _ r1 (by simpa [typecheck] using hte1) hclosure)
                                 have hboundInv := invalidateTagDeps_preserves_tagEnvBounded
                                   r2.tagEnv' ls r2.nextTag' hbound2
                                 rw [← hresTagInv, ← hresnext]; exact hboundInv
@@ -8594,7 +8697,7 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                     typecheckDeref_structure ctx e1 (fuel'' + 1) res (by rwa [← hfuel])
                   simp only [Nat.add_sub_cancel] at hte1
                   have hte1' : typecheck ctx e1 fuel'' = .ok r1 := by simpa [typecheck] using hte1
-                  have hbound1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred
+                  have hbound1 := IH_fuel fuel'' h_lt e1 ctx r1 hte1' hbound hpred hclosure
                   rw [hte_eq, hnt_eq]; exact hbound1
           | ite e1 e2 e3 =>
               -- Convert htc to typecheckIf form
@@ -8615,7 +8718,9 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                 have hpredTrue : predTagsBoundedInCtx
                     { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := hpred
                 have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
-                have hbound2 := IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2 hboundTrue hpredTrue
+                have hclosureTrue : closureEnvBoundedInCtx
+                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := hclosure
+                have hbound2 := IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2 hboundTrue hpredTrue hclosureTrue
                 rw [hresTag, hresNext]
                 exact tagEnvBounded_mono _ res2.nextTag' _ hbound2 (Nat.le_max_left _ _)
               · -- Mode 2: matchGuard succeeds, R(k) = some false
@@ -8639,8 +8744,12 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                                nextLoc := res2.nextLoc', nextTag := res2.nextTag' } :=
                   ⟨predTagsBoundedInVarEnv_mono hpred.1 hmono2,
                    predTagsBoundedInMemEnv_mono hpred.2 hmono2⟩
+                have hclosureFalse : closureEnvBoundedInCtx
+                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
+                               nextLoc := res2.nextLoc', nextTag := res2.nextTag' } :=
+                  varEnvClosuresCapturedBounded_mono hclosure hmono2
                 have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
-                have hbound3 := IH_fuel (fuel' - 1) h_fuelm1 e3 _ res3 htc3 hboundFalse hpredFalse
+                have hbound3 := IH_fuel (fuel' - 1) h_fuelm1 e3 _ res3 htc3 hboundFalse hpredFalse hclosureFalse
                 rw [hresTag, hresNext]
                 exact tagEnvBounded_mono _ res3.nextTag' _ hbound3 (Nat.le_max_right _ _)
               · -- Standard case: no known regime value, conservative join
@@ -8653,14 +8762,15 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                 have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
                 -- Bound for res1 from ctx
                 have hbound1 : tagEnvBounded res1.tagEnv' res1.nextTag' :=
-                  IH_fuel (fuel' - 1) h_fuelm1 e1 ctx res1 htc1 hbound hpred
+                  IH_fuel (fuel' - 1) h_fuelm1 e1 ctx res1 htc1 hbound hpred hclosure
                 -- Bound for res2: the context for e2 has tagEnv = res1.tagEnv', nextTag = res1.nextTag'
                 have hbound2 : tagEnvBounded res2.tagEnv' res2.nextTag' := by
                   apply IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2
                   · simp only [tagEnvBoundedInCtx]; exact hbound1
                   · exact ⟨predTagsBoundedInVarEnv_mono hpred.1
                       (typecheck_normal_nextTag_mono ctx e1 _ res1 htc1),
-                    (typecheckExpr_preserves_predTagsBounded ctx e1 _ res1 htc1 hpred).1⟩
+                    (typecheckExpr_preserves_predTagsBounded ctx e1 _ res1 htc1 hpred hclosure).1⟩
+                  · exact closureEnvBoundedInCtx_of_update ctx e1 _ res1 htc1 hclosure
                 -- res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv'
                 -- joinTagEnvs is bounded by res2's bound ≤ max res2 res3
                 rw [hresTagEnv, hresNextTag]
@@ -8673,19 +8783,20 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
               have IH_fuel' : ∀ m < fuel', ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
                   typecheckExpr ctx' e' m = .ok res' → tagEnvBoundedInCtx ctx' →
                   predTagsBoundedInCtx ctx' →
+                  closureEnvBoundedInCtx ctx' →
                   tagEnvBounded res'.tagEnv' res'.nextTag' :=
-                fun m hm e' ctx' res' htc' hb hp =>
-                  IH_fuel m (Nat.lt_trans hm (Nat.lt_succ_self fuel')) e' ctx' res' htc' hb hp
-              -- TODO: typecheckApp_tagEnvBounded_normal needs predTags hypothesis
-              sorry
+                fun m hm e' ctx' res' htc' hb hp hc =>
+                  IH_fuel m (Nat.lt_trans hm (Nat.lt_succ_self fuel')) e' ctx' res' htc' hb hp hc
+              exact typecheckApp_tagEnvBounded_normal ctx e1 e2 fuel' res hbound hpred hclosure IH_fuel' htcApp
 
 lemma typecheckExpr_preserves_tagEnvBounded
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckExpr ctx e fuel = .ok res)
     (hbound : tagEnvBoundedInCtx ctx)
-    (hpred : predTagsBoundedInCtx ctx) :
+    (hpred : predTagsBoundedInCtx ctx)
+    (hclosure : closureEnvBoundedInCtx ctx) :
     tagEnvBounded res.tagEnv' res.nextTag' :=
-  typecheckExpr_preserves_tagEnvBounded_main ctx e fuel res htc hbound hpred
+  typecheckExpr_preserves_tagEnvBounded_main ctx e fuel res htc hbound hpred hclosure
 
 end typecheck_tagEnvBounded_proof
 
