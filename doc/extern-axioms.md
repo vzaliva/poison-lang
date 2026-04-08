@@ -1,1239 +1,406 @@
 # Extern Functions: FR Contract Surface on `new-iofree`
 
-## CURRENT STEP
+**Current status (2026-04-08, branch `new-iofree`, commit `f6b3c7f`)**
 
-Eliminate the 6 remaining `sorry` terms (3 identical pairs across
-`TypeSafety.lean`, `StepFR.lean`, `StepFRApp.lean`) that provide
-`capturedEnvRefLocsBounded` / `etypRefLocsBounded` at
-`applyFnTClosure_extern_wfTypeResult` call sites.
+- worktree clean
+- `lake build` succeeds
+- the branch still has the same **6 explicit `sorry` terms** in **3 declarations**
+  and **10 explicit `axiom` declarations** in `StepFR.lean`
+- the active blocker is providing
+  `capturedEnvRefLocsBounded` / `etypRefLocsBounded` at the extern-closure
+  `wfTypeResult` call sites
+- the proposed solution is to strengthen `wfTypeContext` from a shallow
+  memEnv-only bound to a **deep nextLoc-boundedness property** that also covers
+  ref locations mentioned inside `varEnv` entries and recursively inside
+  captured closures
+- the recommended next move is to prove the ref-location typing induction
+  first, then atomically switch `wfTypeContext` to that deeper property and fix
+  the callers
+- this requires one explicit design decision: allow a semantic strengthening of
+  `wfTypeContext` as the single justified exception to the "keep new invariants
+  below `StepFR`" rule
 
-This requires:
+## 1. Problem
 
-1. a new typing induction theorem that maintains `varEnvRefLocsBounded` and
-   closure-captured-ref-loc boundedness through all expression cases
-2. strengthening `wfTypeContext` to carry the new invariants so they are
-   available at FR call sites
-3. fixing the cascade from the `wfTypeContext` change using the induction
-   results from step 1
+This note tracks the remaining extern-related proof gaps on `new-iofree`,
+separates principled extern contracts from obligations that should be proved in
+Lean, and records the implementation plan for removing the non-contract gaps.
 
-**Constraint**: steps 1 and 2–3 must be committed together to avoid
-intermediate sorry inflation. See Section 9.10 for the failed attempt that
-violated this constraint.
+The end-state goal is:
 
-Done conditions:
+- eliminate all `sorry`
+- eliminate all non-contract `axiom`
+- keep only the extern contracts that are unavoidable in principle
+- avoid adding new standalone hypotheses to `StepFR`, `StepFR_IH`,
+  `FaultRobustnessSpec`, or the top-level FR theorem interface unless a real
+  proof obstruction forces that change
 
-- all 6 `capturedEnvRefLocsBounded` / `etypRefLocsBounded` sorrys are gone
-- no new `sorry` or `axiom` introduced
-- `applyFnTClosure_ok_wfTypeResult` in `StepFR.lean` (currently unused, 2 of
-  the 6 sorrys) either fixed or deleted
+The immediate blocker is the last **6 `sorry` terms**, all of the same shape:
 
-## 1. Goal
+1. `capturedEnvRefLocsBounded capturedEnv result.nextLoc'`
+2. `etypRefLocsBounded argEtyp result.nextLoc'`
 
-This note records the extern-related assumptions currently used by the
-fault-robustness proof stack on `new-iofree`, separates principled extern
-contracts from proof obligations that should be discharged inside Lean, and
-outlines the implementation path to eliminate the non-contract axioms and
-`sorry`s.
+These are needed at call sites of `applyFnTClosure_extern_wfTypeResult` or
+`mapM_applyFnTClosure_forall_wfTypeResult` in:
 
-The target is:
+- `LeanProofs/TypeSafety.lean`
+- `LeanProofs/StepFR.lean`
+- `LeanProofs/StepFRApp.lean`
 
-- eliminate all `sorry` and all non-contract axioms
-- keep only the extern contracts that cannot be derived from the typechecker in
-  principle
-- do this **without** adding new invariants to `StepFR` or `StepFR_IH`
-- keep any new typing invariants **below** the `StepFR` abstraction boundary
+Operational constraint:
 
-More concretely, the intended boundary rule is:
+- the typing-induction work and the `wfTypeContext` change must land
+  together
+- changing `wfTypeContext` first creates more holes than it closes
+- no plan step is acceptable if it causes net `sorry` inflation without a
+  clearly staged removal path
 
-- acceptable: strengthen local `TypeSafety` lemmas, local helper lemmas, or
-  intermediate theorem shapes used only below `StepFR`
-- unacceptable: add new hypotheses to `StepFR`, `StepFR_IH`,
-  `FaultRobustnessSpec`, or the top-level FR theorem interface just to carry a
-  local typing invariant
+Done conditions for the active blocker:
 
-The tactical convention for proof gaps is:
+- all 6 ref-location `sorry`s are removed
+- no new `sorry` or `axiom` is introduced
+- the unused helper `applyFnTClosure_ok_wfTypeResult` is either deleted or
+  repaired without leaving latent proof debt
 
-- `sorry` = an obligation we expect to prove
-- `axiom` = an obligation we currently believe is unprovable in principle and
-  therefore part of the intended contract surface
+## 2. Analysis
 
-So, in the current repository state, both `sorry` and `axiom` count as proof
-gaps. The distinction is about intended end state, not about severity.
+### 2.1 Scope of the extern proof surface
 
-## 2. Scope
-
-Raw extern syntax is operationally unreachable in the current evaluator:
+Raw extern syntax is operationally unreachable on this branch:
 
 - `Expr.externVal`
 - `Expr.externFn`
 - `Expr.externPfn`
 
-all produce runtime errors in `LeanPoison/BigStep.lean`.
+all fail at runtime in `LeanPoison/BigStep.lean`.
 
-So the remaining extern proof surface concerns **typing-layer artifacts and the
-FR witness maps built for them**, rather than runtime execution:
+So the remaining extern proof surface is entirely about the **typing summary
+layer** and the FR witness maps built for it:
 
 1. `typecheckExternVal`
 2. `applyFnTClosure` on `FnTClosure.extern`
 3. `applyPFnTClosure` on `PFnTClosure.extern`
 
-These typing functions:
-
-- resolve syntax-level predicates to fresh concrete tags
-- thread captured environments
-- allocate fresh tags
-- and, for impure externs, update memory through the declared effects
-
-The FR proof must therefore reason about the typing artifacts created by extern
-specs, and about how the single-run witness maps realize those artifacts, even
-though the runtime never evaluates raw extern expressions.
-
-No eval-side extern contract is currently required. All remaining extern
-assumptions on this branch are about the **typing summary layer**, not about
-`beval` behavior of actual extern execution.
-
-This note therefore does **not** try to solve:
-
-- executable semantics for externs
-- semantic adequacy of extern summaries with respect to future runtime behavior
-
-It only addresses the contracts needed for the current FR proof stack.
-
-## 3. Current State
-
-As of **2026-04-07** at commit `cbf2773` on `new-iofree`:
-
-- the worktree is clean
-- the full project builds cleanly (zero errors, zero non-sorry warnings)
-- the current proof-gap inventory is:
-  - **6 explicit `sorry` terms** in **3 declarations** across 3 files
-    (`TypeSafety.lean`, `StepFR.lean`, `StepFRApp.lean`)
-  - **10 explicit `axiom` declarations** in `StepFR.lean`
-  - **0 axioms** in `TypeSafety.lean` (previously 1, now proved)
-- the branch therefore has **16 explicit proof gaps** by raw count
-- all 6 sorrys are identical in nature: providing
-  `capturedEnvRefLocsBounded` / `etypRefLocsBounded` at call sites where
-  `applyFnTClosure_extern_wfTypeResult` or its `mapM` wrapper is invoked
-- the section 6.3 work remains complete on the branch: the strengthened
-  single-run infrastructure is in place, `StepFR` / `StepFR_IH` are unchanged,
-  and the old local 6.3 blockers are resolved
-- Phase 8.5 (predicate-tag + closure-captured boundedness) is **complete** —
-  all 16 sorrys from the previous Phase 8.5 status have been eliminated
-- Phase 8.6 (captured-locset allocation invariant) is **partially complete** —
-  `applyFnTClosure_extern_wfTypeResult` has been proved, but the invariant
-  provision at call sites remains as sorrys
-- an attempt to fix the 6 sorrys by changing `wfTypeContext` first was
-  reverted after it introduced 21 new sorrys — see Section 9.10
-- the corrected implementation plan requires proving the typing induction
-  first, then changing `wfTypeContext` atomically — see Section 9.9
-- the new invariant family (`etypRefLocsBounded`, `capturedEnvRefLocsBounded`,
-  `varEnvRefLocsBounded`) remains entirely below `StepFR` and has not leaked
-  into `StepFR`, `StepFR_IH`, or the top-level FR theorem interface
-
-**Phase 8.5 progress: COMPLETE (2026-04-07, `cbf2773`)**:
-
-- Steps 1–7: all **done**
-- The combined induction (`typecheckExpr_preserves_combined_main`) is fully
-  proved with no remaining sorrys
-- `typecheckExpr_preserves_tagEnvBounded_main` is fully proved
-- All `predTagsBounded`, `closureEnvBoundedInCtx`, and `tagEnvBounded`
-  obligations are discharged
-
-**Phase 8.6 progress (2026-04-07, `cbf2773`)**:
-
-- Definitions: **done** — `etypRefLocsBounded`, `capturedEnvRefLocsBounded`,
-  `varEnvRefLocsBounded` defined at `TypeSafety.lean:1279–1290`
-- Axiom proof: **done** — `applyFnTClosure_extern_wfTypeResult` proved with
-  3 helper lemmas (`locset_fold_updateMemEnv_wf`, `ofCaptured_refLocsBounded`,
-  `effects_forIn_wfMemEnv`)
-- Caller threading: **not started** — 6 sorrys remain at call sites that need
-  `capturedEnvRefLocsBounded`/`etypRefLocsBounded` maintained through the
-  typing induction
-
-The current blocker is threading `varEnvRefLocsBounded ctx.varEnv ctx.nextLoc`
-through the `typecheckExpr_preserves_wfTypeResult_main` induction so that it
-can be provided at the extern-closure call sites.
-
-The `axiom` declarations must therefore be tracked separately in the document.
-
-### 3.1 Current axiom inventory
-
-The `Status` column below uses this convention:
-
-- `Transitional bundle` = currently axiomatized wrapper that is planned to be
-  replaced by a smaller contract plus an internal theorem
-- `Candidate contract` = plausible permanent extern assumption
-- `Provisional proof gap` = currently axiomatized, but intended to become a
-  theorem
-
-| Axiom | File | Status |
-|------|------|--------|
-| `applyFnTClosure_extern_ok_wfTagMeaningCtx` | `StepFR` | Transitional bundle; planned to be split into a small contract plus internal theorem |
-| `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` | `StepFR` | Candidate contract |
-| `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | `StepFR` | Candidate contract |
-| `applyFnTClosure_extern_ok_lookup_origin` | `StepFR` | Provisional proof gap |
-| `applyFnTClosure_extern_ok_fresh_loc_not_clean` | `StepFR` | Provisional proof gap |
-| `applyFnTClosure_extern_ok_guardClosure_tag_absent` | `StepFR` | Provisional proof gap |
-| `applyPFnTClosure_extern_ok_guardClosure_tag_absent` | `StepFR` | Provisional proof gap |
-| `typecheckExternVal_QTypRespectsTagMeaning_axiom` | `StepFR` | Candidate contract |
-| `typecheckExternVal_preserves_lookup_origin_axiom` | `StepFR` | Provisional proof gap |
-| `typecheckExternVal_guardClosure_pred_implies_tag_absent` | `StepFR` | Provisional proof gap |
+No eval-side extern contract is currently needed. The open obligations are
+about typing artifacts, not executable extern behavior.
 
-Note: `applyFnTClosure_extern_wfTypeResult` was previously an axiom in
-`TypeSafety.lean`. As of commit `cbf2773`, it has been **proved** — the
-axiom is eliminated. The proof uses a captured-locset allocation invariant
-(`capturedEnvRefLocsBounded`, `etypRefLocsBounded`) and three helper lemmas
-(`locset_fold_updateMemEnv_wf`, `ofCaptured_refLocsBounded`,
-`effects_forIn_wfMemEnv`).
+### 2.2 Current proof-gap inventory
 
-### 3.2 Current `sorry` inventory
+Verified on 2026-04-08 at `f6b3c7f`:
 
-| File | Declaration | Count | Assessment |
-|------|-------------|-------|------------|
-| `TypeSafety.lean` | `typecheckApp_wfTypeResult` | 2 | `capturedEnvRefLocsBounded` + `etypRefLocsBounded` at `mapM_applyFnTClosure_forall_wfTypeResult` call (line ~12581–12582) |
-| `StepFR.lean` | `applyFnTClosure_ioFree_wfTypeResult` | 2 | Same pair: `capturedEnvRefLocsBounded` + `etypRefLocsBounded` at extern branch (line ~6642–6643) |
-| `StepFRApp.lean` | anonymous app wfTypeResult proof | 2 | Same pair: `capturedEnvRefLocsBounded` + `etypRefLocsBounded` at `mapM_applyFnTClosure_forall_wfTypeResult` call (line ~11946–11947) |
+- `lake build` completes successfully
+- the only proof warnings are the known declarations containing the 6
+  remaining `sorry`s
+- the branch still contains 10 explicit `axiom` declarations in
+  `LeanProofs/StepFR.lean`
 
-All 6 sorrys are **identical in nature**: they require providing
-`capturedEnvRefLocsBounded capturedEnv result.nextLoc'` and
-`etypRefLocsBounded argEtyp result.nextLoc'` at call sites where
-`applyFnTClosure_extern_wfTypeResult` (or its `mapM` wrapper) is invoked.
-The invariant must be maintained through the typing induction.
+Current `sorry` inventory:
 
-## 4. What Must Be Assumed About Extern Functions For FR
+| File | Declaration | Count | Shape |
+|------|-------------|-------|-------|
+| `TypeSafety.lean` | `typecheckApp_wfTypeResult` | 2 | `capturedEnvRefLocsBounded` + `etypRefLocsBounded` at `mapM_applyFnTClosure_forall_wfTypeResult` |
+| `StepFR.lean` | `applyFnTClosure_ok_wfTypeResult` | 2 | same pair at the extern branch |
+| `StepFRApp.lean` | app-side `mapM_applyFnTClosure_forall_wfTypeResult` call | 2 | same pair |
 
-The typechecker can manipulate an extern specification, but it cannot prove
-from ordinary typing structure alone that the resolved tags introduced by that
-summary have the intended interpretation in `TagMeaning`. That summary-opacity
-is the principled source of extern contracts on the current branch.
+Current axiom inventory:
 
-### 4.1 FR interpretation of resolved return predicates
+| Axiom | Status |
+|------|--------|
+| `applyFnTClosure_extern_ok_wfTagMeaningCtx` | Transitional bundle; should be split into a smaller contract plus an internal theorem |
+| `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` | Candidate permanent contract |
+| `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | Candidate permanent contract |
+| `applyFnTClosure_extern_ok_lookup_origin` | Provisional proof gap |
+| `applyFnTClosure_extern_ok_fresh_loc_not_clean` | Provisional proof gap |
+| `applyFnTClosure_extern_ok_guardClosure_tag_absent` | Provisional proof gap |
+| `applyPFnTClosure_extern_ok_guardClosure_tag_absent` | Provisional proof gap |
+| `typecheckExternVal_QTypRespectsTagMeaning_axiom` | Candidate permanent contract |
+| `typecheckExternVal_preserves_lookup_origin_axiom` | Provisional proof gap |
+| `typecheckExternVal_guardClosure_pred_implies_tag_absent` | Provisional proof gap |
 
-When an extern spec resolves a syntax predicate to a fresh concrete tag `k`,
-FR needs to know that `k` really carries the intended guard interpretation in
-`TagMeaning`.
+Progress state by major line of work:
 
-This is the content of:
+- single-run strengthening for fresh clean locations: **complete**
+- predicate-tag / captured-env boundedness work: **complete**
+- captured-locset allocation work: **partially complete**
+  - definitions proved
+  - `applyFnTClosure_extern_wfTypeResult` proved
+  - caller-side invariant provision still open
 
-- `typecheckExternVal_QTypRespectsTagMeaning_axiom`
-- `applyFnTClosure_extern_ok_QTypRespectsTagMeaning`
-- `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning`
+### 2.3 Contract floor versus proof obligations
 
-These are the clearest examples of axioms that are unavoidable in principle on
-the current branch. They state that the resolved guard tag attached to an
-extern result has the intended `TagMeaning` interpretation.
+The principled extern opacity on this branch is narrow.
 
-### 4.2 FR interpretation of predicates introduced by impure extern effect summaries
+What likely remains as permanent contract surface:
 
-Impure externs can write predicates into memory through their declared
-`effects` at the **typechecking** level. FR needs to know that those written
-predicates are well-interpreted in `TagMeaning`.
+- the 3 result-side `QTypRespectsTagMeaning` contracts
+- a smaller FR-interpretation contract for effect predicates introduced by
+  impure extern summaries, after splitting the current
+  `applyFnTClosure_extern_ok_wfTagMeaningCtx` bundle
 
-This is **not** an eval-side contract about actual runtime extern execution.
-Because raw extern syntax does not execute on this branch, FR does not need any
-assumption of the form:
+What should be proved, not assumed:
 
-- "the runtime writes exactly these cells"
-- "the runtime produces exactly these effects"
-- "the runtime return value matches the extern spec"
+- guard-tag absence / freshness
+- structural `wfTypeResult` preservation for extern application
+- lookup-origin / provenance facts
+- local boundedness facts needed to feed those proofs
 
-What FR does need is weaker and purely typing-side:
+This means the active blocker is a proof-engineering issue, not a
+new permanent extern contract.
 
-- if extern typing writes a resolved predicate into the post-typing memory
-  summary, the introduced tag must be interpretable enough for
-  `wfTagMeaningCtx`-style reasoning to continue
+### 2.4 Simple intuition for the blocker
 
-Today that FR-side interpretation requirement is bundled together with
-structural reasoning in:
+In plain terms, the proof currently knows how to say:
 
-- `applyFnTClosure_extern_ok_wfTagMeaningCtx`
+- every location already present in the memory summary is below `nextLoc`
 
-Conceptually this mixes two pieces:
+But the extern application proof also needs to know something stronger:
 
-1. a **typing-summary interpretation** contract: the resolved effect predicates
-   introduced into the post-typing context have the intended `TagMeaning`
-2. a **structural** proof obligation: once those interpretation facts are
-   assumed, the
-   `LocSet.fold ... updateMemEnv` loop preserves `wfTagMeaningCtx`
+- every location mentioned *inside types* is below `nextLoc`
+- that includes locations hidden inside the argument type
+- and locations hidden inside closures captured in the environment
 
-Only the first part is principled extern opacity for the current FR proof. The
-second part should be provable.
+That is the gap.
 
-### 4.3 Contract floor
+The current well-formedness invariant only watches the memory summary. It does
+not watch references that are stored indirectly inside `varEnv` entries or
+inside closure payloads. So when the extern proof tries to show that its
+typing-side memory updates stay within bounds, it lacks a global guarantee that
+those already-mentioned locations are old enough to be safe.
 
-After the planned split of the impure-effect bundle, the most defensible
-permanent contract surface is:
+Why existing runtime facts do not fix this:
 
-- definitely the 3 result-side `QTypRespectsTagMeaning` contracts above
-- plus the smaller FR-interpretation contract for impure extern effect
-  predicates that will remain after splitting the current bundle
+- runtime instantiation tells us that a typed variable has some runtime value
+- for a reference-typed value, that only exposes one realized location at a
+  time
+- but the type-level proof needs a bound on *all* logical locations mentioned
+  in the type annotation, not just the one runtime witness we happen to see
 
-So the likely permanent floor is:
+Why the proposed approach fixes it:
 
-- **3 core result-side contracts**
-- **plus 1 impure-effect interpretation contract** after splitting the current
-  bundle
+- the new typing induction proves that successful typechecking preserves these
+  hidden location bounds for results, arguments, and captured closures
+- strengthening `wfTypeContext` packages those bounds into the existing notion
+  of context well-formedness, so the context tracks not only memory locations
+  but also locations buried inside types and closures
+- after that, the extern call sites can obtain the exact boundedness facts they
+  need from the same `wfTypeContext` premise they already carry
 
-No parallel `PFnTClosure.extern` effect contract is expected, because the pure
-extern path has no effect list and no memory-summary update loop.
+### 2.5 Why the blocker is real
 
-## 5. What Should Be Provable Rather Than Assumed
+`applyFnTClosure_extern_wfTypeResult` needs **static** bounds on all logical
+locations that may appear in:
 
-Everything below looks like proof engineering, missing local invariants, or
-theorem-shape cleanup, not principled extern opacity.
+- the captured environment of an extern closure
+- the argument `ETyp`
 
-These are FR / typing theorems about the summary artifacts created by extern
-typing, and about the witness maps chosen by the existing single-run FR
-theorem. They are not claims about executable extern semantics.
+The existing exported theorem stack only gives `wfTypeResult`, which bounds
+`memEnv'` against `nextLoc'`. It does **not** bound ref-location sets stored in
+`varEnv` or inside function-valued `ETyp`s.
 
-### 5.1 Guard-tag absence / freshness
+Existing FR-side runtime facts are not enough to recover the missing static
+bound:
 
-These should be provable from boundedness of the typing context rather than
-axiomatized:
+- `runtimeInstantiatesCtx` gives one runtime witness value per typed variable
+- `valueHasETyp` for `ETyp.ref ls` only witnesses that **some** `l ∈ ls` is
+  realized in `θ`
+- but `etypRefLocsBounded` needs **all** `l ∈ ls` to satisfy `l < nextLoc`
 
-- `applyFnTClosure_extern_ok_guardClosure_tag_absent`
-- `applyPFnTClosure_extern_ok_guardClosure_tag_absent`
-- `typecheckExternVal_guardClosure_pred_implies_tag_absent`
+So the missing fact cannot be reconstructed from the current `StepFR`
+hypotheses. This is exactly why the 4 holes outside `TypeSafety.lean` do not
+admit a purely local repair.
 
-The branch already contains proved replacements:
+Consequences:
 
-- `applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded`
-- `applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded`
-- `typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded`
+- fixing only the `TypeSafety.lean` proof is insufficient
+- threading a separate local invariant below `StepFR` is insufficient for the
+  4 external call sites
+- the real missing input invariant is static well-formedness of `varEnv`
 
-That bridge is now proved in `TypeSafety.lean` as `matchGuard_tag_bounded`.
-The remaining work is downstream: finish the local predicate-tag preservation
-plumbing so the three `_of_tagEnvBounded` lemmas can replace the corresponding
-axioms in `StepFR.lean`.
+### 2.6 Exact shape of the proposed strengthening
 
-### 5.2 Structural well-formedness for impure extern application
+The intended blocker fix is:
 
-Status update: `applyFnTClosure_extern_wfTypeResult` is now **proved** (commit
-`cbf2773`). The remaining item is:
+- **yes**: strengthen `wfTypeContext` from the current shallow property
+  ("all locations in `memEnv` are below `nextLoc`")
+- to a **deep nextLoc-boundedness property**
+- where "deep" means:
+  - memory locations in `memEnv` are below `nextLoc`
+  - locations mentioned in ref-typed `varEnv` entries are below `nextLoc`
+  - if a `varEnv` entry is a function type, then the captured environment of
+    each closure it contains also satisfies the same location-boundedness
+    condition recursively
 
-- `applyFnTClosure_extern_ok_fresh_loc_not_clean`
+So the answer to the design question is:
 
-The proof of `applyFnTClosure_extern_wfTypeResult` established the key
-observation: `returnSpecToQTyp` rejects reference returns for extern functions,
-so impure extern application can only affect memory through the effects loop.
-The proof uses `capturedEnvRefLocsBounded` and `etypRefLocsBounded` to show
-that the effects loop does not introduce locations beyond `result2.nextLoc'`.
+- the fix is **not** just "add one more shallow `varEnvRefLocsBounded`
+  conjunct"
+- the fix **does** need the recursive closure-aware part as well
 
-This is one-sided because `PFnTClosure.extern` has no `effects` list. The pure
-extern path does not update `memEnv'`, and current structural lemmas such as
-`applyPFnTClosure_extern_memEnv_eq`, `applyPFnTClosure_extern_tagEnv_eq`, and
-`applyPFnTClosure_extern_regime_eq` already reflect that. So the effect-loop
-obligations appear only on the `FnTClosure.extern` side.
+The document currently exposes that deep property through two top-level
+ingredients:
 
-### 5.3 Provenance / lookup-origin facts
+1. `varEnvRefLocsBounded`
+2. `varEnvClosuresCapturedRefLocsBounded`
 
-These should be proved from explicit freshness and type-level effect-loop provenance
-facts:
+but the implementation should use recursive helper machinery internally rather
+than treating those as unrelated facts.
 
-- `typecheckExternVal_preserves_lookup_origin_axiom`
-- `applyFnTClosure_extern_ok_lookup_origin`
+Recommended style for the implementation:
 
-The extern-value theorem needs a stronger statement than it currently has.
-Adding `hpre : ctx.memEnv.contains l` removed one false shape, but the theorem
-is still false on arbitrary contexts unless freshness of `ctx.nextLoc` is
-assumed. The natural premise is `wfTypeContext ctx`, or an equivalent
-fresh-location hypothesis.
+- follow the same pattern already used for recursive tag-boundedness in
+  `TypeSafety.lean`, where the proof uses helper notions like
+  `CapturedEnvFullBounded` and `etypClosuresFullBounded`
+- for ref-location boundedness, introduce the analogous recursive helper layer
+  if that keeps the proof cleaner
+- keep the public theorem-level interface simple: externally the change is
+  "stronger `wfTypeContext`", internally the proof may use a deeper recursive
+  property to derive the two concrete facts needed at call sites
 
-The impure-extern application theorem is harder: it needs a precise account of
-which effect targets may be written by the typing summary, plus provenance back
-to already-originating memory.
+### 2.7 Impact assessment
 
-## 6. Known Theorem-Shape Issues
+Recommended change: strengthen the *meaning* of `wfTypeContext` so it carries
+the needed static `varEnv` bounds.
 
-These are not merely unfinished proofs. The current statements are too strong.
+Impact on the proof stack:
 
-### 6.1 `StepFRApp`: regular closures may allocate fresh clean extern refs
+- **Top-level fault-robustness theorem:** no intended statement change
+- **`StepFR` / `StepFR_IH`:** no new standalone parameters, but the existing
+  `wfTypeContext` premise becomes semantically stronger
+- **`FaultRobustnessSpec`:** no intended change
 
-The theorem
+Semantic impact on the language:
 
-- `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
+- **Soundness:** none; this is proof-only strengthening of a well-formedness
+  invariant
+- **Precision:** none
+- **Language scope:** none
+- **Operational semantics:** none
 
-is false for the regular-closure case. A concrete counterexample is:
+This is still a serious design decision, because it is the one place where the
+proof appears to need a justified boundary exception rather than a purely local
+repair.
+
+## 3. Approach
+
+I agree with the corrected blocker analysis and with the proposed repair
+strategy, with one explicit qualification:
+
+- the semantic strengthening of `wfTypeContext` should be treated as an
+  approved design pivot, not as an incidental local refactor
+
+**Explicit statement of the blocker solution:**
+
+- change `wfTypeContext` from the current shallow memEnv-only invariant to a
+  deep nextLoc-boundedness invariant
+- use recursive closure-aware helper machinery internally so that the new
+  `wfTypeContext` really covers captured environments, not only the top-level
+  `varEnv`
+- continue exposing only `wfTypeContext` at the `StepFR` boundary, rather than
+  adding a new separate parameter bundle there
+
+Recommended approach:
+
+1. prove a **private combined typing-induction theorem** with the required
+   deep ref-location invariants supplied explicitly, without changing
+   `wfTypeContext` yet
+2. once that theorem is complete, **atomically** strengthen `wfTypeContext`
+   to the deep version and update the downstream callers
+3. do not add new separate hypotheses to `StepFR`, `StepFR_IH`, or the
+   top-level FR theorem; keep the change packaged inside the existing
+   `wfTypeContext` premise
+
+At the level of immediately usable facts, the induction needs:
+
+1. `varEnvRefLocsBounded ctx.varEnv ctx.nextLoc`
+2. `varEnvClosuresCapturedRefLocsBounded ctx.varEnv ctx.nextLoc`
+
+These are the concrete projections the call sites need, but conceptually they
+come from one deeper recursive nextLoc-boundedness story.
+
+Preferred implementation strategy:
+
+- do **not** build a completely independent second syntax induction if it can
+  be avoided
+- instead, extend the existing combined `TypeSafety` induction machinery in
+  the style of `typecheckExpr_preserves_combined_main`
+- the new ref-location outputs should become additional projections from that
+  same static induction stack, just as the existing combined theorem already
+  feeds the predicate-tag and closure-boundedness projections
+
+Sketch of the deep helper layer Step 1 should use internally:
 
 ```lean
-FnTClosure.regular "x" (Expr.externVal (Typ.ref Typ.int) false SyntaxPredicate.noPred) []
+-- Shallow: the ETyp itself mentions only locations < nl.
+def etypRefLocsBounded (etyp : ETyp) (nl : Loc) : Prop := ...
+
+-- Deep: every closure inside the ETyp has a captured env whose entries are
+-- themselves deep-bounded at nl.
+def etypClosuresRefLocsFullBounded (etyp : ETyp) (nl : Loc) : Prop := ...
+
+-- Deep captured-env boundedness, recursive through closure-valued entries.
+def CapturedEnvRefLocsFullBounded (env : CapturedVarEnv) (nl : Loc) : Prop := ...
+
+-- Top-level projection for the current varEnv.
+def varEnvClosuresCapturedRefLocsBounded (S : VarTypeEnv) (nl : Loc) : Prop := ...
 ```
 
-applied with `joinPoison p1 p = true`.
+The intended relationship is:
 
-What happens:
+- `etypRefLocsBounded` gives the shallow fact needed at the extern effect loop
+- `etypClosuresRefLocsFullBounded` / `CapturedEnvRefLocsFullBounded` supply the
+  recursive closure part
+- `varEnvRefLocsBounded` and `varEnvClosuresCapturedRefLocsBounded` are the
+  concrete top-level projections exposed at the call sites
 
-- the body context has `pc = true`
-- `typecheckExternVal` allocates a fresh memory cell `⟨ETyp.int, false, noPred⟩`
-- `normalizeAppResultByProvenance` poisons the result `qualType`, but it does
-  not poison that fresh memory cell
+So Step 1 is not “prove one isolated lemma and move on”. It is:
 
-So the theorem must be restated or split. This is not a proof-search problem.
+1. introduce or identify the deep recursive nextLoc-boundedness predicates
+2. extend the existing combined static induction so it preserves them
+3. expose the two concrete projections the extern `wfTypeResult` callers need
 
-This is specifically an extern regression relative to `main`: on `main`, the
-`ioFree` typing path rejected externs, so FR never had to consider regular
-closure bodies that allocate fresh clean memory through `externVal ref int`.
+Recommended handling of the active `StepFR.lean` helper:
 
-### 6.2 `StepFRIte`: branch-fresh clean extern refs can survive the join
+- `applyFnTClosure_ok_wfTypeResult` currently has zero callers
+- prefer deleting it rather than threading the new obligations through an
+  unused wrapper
+- only keep it if a real caller appears and the wrapper still earns its place
 
-The local helper `hclean_back_to_res1` inside `stepFR_ite_standard` tries to send every
-clean final location back to `res1.memEnv'`.
+Secondary implementation guideline:
 
-That is too strong in the standard join mode. Both branches may allocate fresh
-clean `externVal ref int` cells, and `joinMemEnvsStrong` preserves those
-single-sided cells with `noPred`.
+- if the paired `*_RefLocsBounded` /
+  `*_ClosuresCapturedRefLocsBounded` lemmas start to proliferate badly, then
+  consider collapsing them to one recursive predicate
+- do **not** start with that refactor; first try the minimal proof that unlocks
+  the 6 remaining holes
 
-So the current helper should be replaced by a case split:
+## 4. Plan
 
-- inherited locations: send them back through
-  `typecheckExpr_clean_lookup_origin_of_pc_true`
-- branch-fresh extern allocations: prove the FR obligation directly, without
-  forcing an origin in `res1`
+High-risk-first. This section is forward-looking only.
 
-The four actual `sorry`s are not in the statement of `hclean_back_to_res1`
-itself. They occur in the downstream calls to
-`typecheckExpr_clean_lookup_origin_of_pc_true` inside the helper. The reason
-those calls become unprovable is exactly that the helper route is trying to send
-all clean final locations back through `res1`.
+**Current plan status:** blocked on the ref-location invariant gap described
+above. The next blocker is the
+`wfTypeContext` strengthening route described above.
 
-Why this is specifically extern-related:
+### Step 1. Define and prove `typecheckExpr_wfTypeResult_and_refLocs`
 
-- on `main`, the `ioFree` typing path rejected externs, so FR never had to
-  reason about fresh clean cells introduced by extern typing
-- before externs mattered on the FR path, fresh branch-local locations came
-  mainly from ordinary `newRef`
-- under `pc = true`, `newRef` stores a poisoned cell, so those fresh locations
-  were not clean
-- `externVal ref int` behaves differently: it allocates a fresh memory cell
-  `⟨ETyp.int, false, Predicate.noPred⟩`
-- the returned reference value may be control-poisoned, but the allocated
-  memory cell itself is clean
-- `joinMemEnvsStrong` can therefore preserve branch-fresh clean cells that do
-  not come from `res1.memEnv'`
+**Status:** next step
 
-So the `stepFR_ite_standard` regression is a direct consequence of allowing extern
-typing summaries on the FR path.
+Files:
 
-### 6.3 The remaining issue-1 fix is not purely typing-local
+- `LeanProofs/TypeSafety.lean`
 
-The obvious local replacement route for issue 1 was:
+Goals:
 
-- classify a clean post-typing logical location as either inherited, or
-  branch/body-fresh from `externVal ref int`
-- then handle the fresh case by showing it is unrealized on both runs
+- define or extend the deep recursive nextLoc-boundedness helper layer
+- define and prove the combined typing-induction theorem
+  `typecheckExpr_wfTypeResult_and_refLocs`
+- prove the core helper lemmas it needs
+- if helpful, introduce recursive helper machinery for ref-location
+  boundedness, analogous to the existing recursive closure-boundedness
+  machinery used for tag reasoning
+- keep the theorem private and independent of the new `wfTypeContext` shape
 
-That idea is still directionally correct, but it cannot be discharged by a
-purely typing-local lemma.
-
-Why:
-
-- the existing single-run theorem only gives
-  `PreservesInheritedFinalCleanLocsOneRun`
-- that relation talks only about clean locations that were already present in
-  the input typing context
-- it says nothing about fresh clean logical locations introduced by extern
-  typing summaries
-
-So the remaining `StepFRApp` / `StepFRIte` work needs a strengthened
-**internal single-run theorem package** below `StepFR`, describing how the
-chosen witness map `θ'` treats fresh clean extern-ref logical locations.
-
-The concrete unresolved corner is narrower than section 6.2 by itself might
-suggest:
-
-- `StepFRApp`, arrow case, `p1 = true`, with different selected regular-closure
-  bodies on the two runs
-- `StepFRIte` standard mode, when the two runs take different branches
-
-What these sites have in common is:
-
-- there is no shared executed subexpression on which the two-run FR IH can be
-  applied
-- the proof therefore falls back to **one-run** witness theorems on each side
-- the current one-run package only exports
-  `PreservesInheritedFinalCleanLocsOneRun`
-
-That is enough for inherited locations, but not for locations that appear in
-the final typing result only because typing joined in non-executed
-alternatives.
-
-Two different "fresh" cases must be kept separate:
-
-1. a location is absent from the actually executed member/branch result
-2. a location is present in that executed result's `memEnv'`, but only because
-   the executed expression itself contains a nested `app` / `ite` whose typing
-   joined in non-executed extern summaries
-
-Case 1 is already under control:
-
-- `theta_not_contains_if_not_in_memEnv` applies directly once the selected
-  result context is known
-- the shared-body `StepFRApp` proof already uses exactly this
-  source-or-unrealized transport pattern via
-  `join_transport_agreeOnClean_from_member`
-
-Case 2 is the real blocker for issue 1:
-
-- absence lemmas do not apply, because the typing-only location is already in
-  the executed result's `memEnv'`
-- `runtimeInstantiatesCtx (ctxAfter ctx res) ... θ'` does not force such a
-  location either to be realized or to stay unrealized
-- `wfExtendsMap` constrains only old mappings
-- `PreservesInheritedFinalCleanLocsOneRun` constrains only locations already in
-  the input context
-
-So the missing ingredient is specifically a theorem about the **chosen witness
-construction**, not just about the final package of facts it satisfies.
-
-This also explains why the pure-function case is not the right template:
-
-- the `PFnTClosure` different-body branch already closes the fresh case by
-  contradiction using `applyPFnTClosure_mem_subset`
-- pure bodies cannot grow `memEnv'`
-- the remaining issue is therefore specific to the effectful arrow path, where
-  typing joins can add fresh locations even when the runtime path that produced
-  `θ'` never realizes them
-
-Re-evaluating the interface choice, the more realistic route is now:
-
-- strengthen the **global single-run theorem family**
-  (`StepFRSingleRunFinalCleanPcTrue`,
-  `StepFRSingleRunFinalCleanPcTrueParam`,
-  `StepFRSingleRunFinalCleanPcTrueMaskedRegParam`)
-- keep `StepFR` itself unchanged unless that stronger single-run proof later
-  reveals a genuinely missing input invariant
-
-Why the earlier "parallel theorem family used only by app/ite" idea is likely
-the wrong abstraction:
-
-- the stronger fact must compose through syntax such as `seq`, `vlet`, and
-  nested `app` / `ite`, not just be available at the outermost repair sites
-- composition of the fresh case depends on a mix of:
-  - the stronger fresh-clean postcondition from earlier subexpressions
-  - the existing `PreservesInheritedFinalCleanLocsOneRun` relation on later
-    subexpressions
-- so in practice the stronger invariant has to be threaded through the
-  single-run induction stack anyway
-
-The code structure supports that route:
-
-- `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree` is proved
-  by a separate masked single-run induction, not extracted from `StepFR`
-- `stepFR_app` and `stepFR_ite` receive
-  `StepFRSingleRunFinalCleanPcTrue_IH` directly, independently of `StepFR_IH`
-- representative composition proofs such as `StepFRSeq` and `StepFRVlet`
-  already show the right shape: inherited-clean preservation composes across
-  subexpressions, so a fresh-clean-unrealized postcondition can piggyback on
-  that same structure
-
-The key composition bridge is already present in the existing infrastructure:
-
-- `PreservesInheritedCleanLocOneRun.both_unrealized` propagates
-  `θ.lookup l = none` through a later evaluation step
-- so once a stronger single-run theorem shows that a fresh clean location is
-  unrealized after an earlier subexpression, the existing inherited-clean
-  preservation relation can carry that unrealized status forward through later
-  subexpressions that inherit the location
-
-The plausible strengthened postcondition is unary and local to one run:
-
-- if `l` is absent from the input typing context
-- and the final output typing result contains a clean `qt` at `l`
-- then the chosen witness map satisfies `θ'.lookup l = none`
-
-At the FR use sites this is exactly the shape we want, because the fresh branch
-of `agreeLocUnder` only needs:
-
-- `θ₀'.lookup l = none`
-- `θ₁'.lookup l = none`
-
-not any stronger cross-run memory relation.
-
-Current assessment about whether `StepFR` itself must change:
-
-- there is currently no concrete reason to change `StepFR`
-- strengthening the single-run theorem family appears sufficient if the new
-  invariant is added as an extra **postcondition**, with no new input
-  hypotheses
-- `StepFR` should be reconsidered only if, during the strengthened single-run
-  proof, we discover that some operator case needs an additional **input**
-  invariant that is not derivable from the current single-run hypotheses
-  (`wfTypeContext`, `runtimeInstantiatesCtx`, regime consistency, and `pc=true`)
-
-The generic strengthening
-
-- "every fresh clean output location is unrealized in `θ'`"
-
-still needs bounded falsification before committing to it as the new
-single-run theorem shape. The obvious quick checks are:
-
-- `newRef` under `pc = true`
-- nested `ite`
-- nested `app`
-
-If that candidate fails even in the pc-true setting, then the strengthened
-single-run postcondition must be
-phrased in a more provenance-sensitive way instead of as a blanket fresh-clean
-statement. But the first place to repair it should still be the single-run
-theorem family, not `StepFR`.
-
-So the required next theorem must be:
-
-- internal
-- specific to the extern-ref issue
-- and kept below `StepFR`, `StepFR_IH`, and the top-level FR interface
-
-### 6.4 `typecheckExternVal_preserves_lookup_origin_axiom` still needs a freshness premise
-
-If `ctx.nextLoc` already collides with an existing memory key, then
-`externVal ref int` can overwrite that pre-existing key with a fresh clean
-cell. So the current statement is still false on arbitrary ill-formed contexts.
-
-This should be fixed by strengthening the theorem shape, not by adding more
-case-by-case proof plumbing downstream.
-
-### 6.5 `matchGuard` boundedness is about extern-allocated tags
-
-This extern-related fresh-tag bridge is now proved in `TypeSafety.lean` as
-`matchGuard_tag_bounded`. The remaining work is to thread that proved bridge
-through the local `tagEnvBounded` helper path and then switch the three
-guard-tag-absence axioms in `StepFR.lean` over to their proved
-`_of_tagEnvBounded` replacements.
-
-`matchGuard` does not invent tags. It only returns a tag already present in a
-predicate stored in:
-
-- `ctx.varEnv`, or
-- `ctx.memEnv`
-
-This is specifically an extern regression relative to `main`: on `main`, the
-`ioFree` typing path rejected externs, so FR never had to reason about fresh
-concrete tags allocated from extern syntax predicates.
-
-The fresh tags appearing in those predicates come from the extern typing
-pipeline:
-
-```lean
-collectAndAllocExternTags
-  -> resolveSyntaxPred
-  -> typecheckExternVal / applyFnTClosure extern / applyPFnTClosure extern
-```
-
-The key fact is:
-
-- if a predicate tag currently appears in `ctx.varEnv` or `ctx.memEnv`, and
-  that tag originated from extern allocation, then it is still below
-  `ctx.nextTag`
-
-This is exactly what the `tagEnvBounded` route needs:
-
-- the proved `*_of_tagEnvBounded` lemmas show that tags `>= nextTag` are absent
-  from `tagEnv`
-- `matchGuard` returns a tag extracted from predicates in `varEnv` / `memEnv`
-- therefore we need a bridge from "returned by `matchGuard`" to
-  "`< ctx.nextTag`"
-
-That bridge became necessary only because extern typing now allocates fresh
-concrete tags on the FR path.
-
-The old `iofree` branch phrased a related result against `ctx.regime.bound`.
-The current branch instead needs a `< ctx.nextTag` bound, because the active
-proof route is based on:
-
-- `collectAndAllocExternTags_mapping_values_ge`
-- `tagEnvBounded_get_none_of_ge`
-
-Both are stated in terms of the fresh-tag supply `nextTag`. The current branch
-does not carry the old `regime.bound`-based interface.
-
-## 7. Implementation Constraints
-
-### 7.1 Boundary rule: no invariant leakage into FR
-
-The last failed direction on this branch was to make a useful local typing
-invariant available by threading it through FR-facing helper interfaces. That
-should not be repeated. The relevant rollback is commit `f43c3b8`
-("removed invariant leak to FR").
-
-For this document, the operative rule is:
-
-- local typing invariants may be introduced and proved inside `TypeSafety.lean`
-- they may be consumed by local helper lemmas in files such as
-  `StepFRAssign.lean`
-- they must **not** become part of:
-  - `StepFR`
-  - `StepFR_IH`
-  - `FaultRobustnessSpec`
-  - the statement of the top-level FR theorem
-
-So, for example, `tagEnvBounded` is acceptable as:
-
-- a premise to a proved replacement lemma such as
-  `*_of_tagEnvBounded`
-- a local hypothesis in a helper below `StepFR`
-
-but not as:
-
-- a new field in the main FR abstraction
-- a new hypothesis threaded through the step theorem interface
-
-Every proposed invariant should therefore be classified before implementation:
-
-1. Is it purely typechecker-local?
-2. Can it be derived on demand from existing typing results?
-3. Can it be consumed entirely below `StepFR`?
-
-If the answer to (3) is "no", the plan should be rejected or restated.
-
-The same rule applies to single-run helper theorems:
-
-- strengthening the global single-run theorem family is acceptable
-  (`StepFRSingleRunFinalCleanPcTrue`,
-  `StepFRSingleRunFinalCleanPcTrueParam`,
-  `StepFRSingleRunFinalCleanPcTrueMaskedRegParam`)
-- extending `StepFR` itself is not acceptable unless the strengthened
-  single-run proof reveals a genuinely missing input invariant that cannot be
-  recovered below `StepFR`
-
-## 8. Plan
-
-High-risk-first is the intended order.
-
-Status of section 6.3 implementation: **complete**.
-
-- `FreshCleanLocsUnrealizedOneRun` added as the 7th conjunct to the single-run
-  theorem family (`StepFRSingleRunFinalCleanPcTrue*`)
-- proved for all 13 expression cases (literal, var, op, unaryop, fn, pfn,
-  deref, assign, newRef, seq, vlet, app, ite) including the induction
-  dispatcher in `FaultRobustnessProofs.lean`
-- the false lemma `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true` has been
-  deleted; its call sites replaced with `agreeLocUnder.both_unrealized`
-- the broken `hclean_back_to_res1` in `stepFR_ite_standard` has been deleted;
-  consumption sites replaced with inherited/fresh case splits
-- `StepFR`, `StepFR_IH`, and `FaultRobustnessSpec` unchanged
-- current sorry count: **10 explicit `sorry` terms** in **2 declarations**
-  (`typecheckExpr_preserves_predTagsBounded_main` and
-  `typecheckExpr_preserves_tagEnvBounded_main` in `TypeSafety.lean`), all local
-  to Phase 8.5 and unrelated to section 6.3
-
-### 8.1 Phase 1. Validate the strengthened single-run postcondition
-
-Before changing interfaces, validate the candidate extra postcondition for the
-global single-run theorem family:
-
-1. define a standalone unary property expressing:
-   - `l` absent from input `ctx.memEnv`
-   - `l` clean in the final output typing result
-   - `θ'.lookup l = none`
-2. test the blanket pc-true candidate against:
-   - `newRef`
-   - nested `ite`
-   - nested `app`
-3. check one representative composition proof (`seq` is the best first target)
-   to confirm that the new postcondition composes using:
-   - the stronger single-run fact on the left
-   - `PreservesInheritedFinalCleanLocsOneRun` on the right
-   - explicitly test the `both_unrealized` propagation path where `e1`
-     introduces the location and `e2` merely inherits it
-4. if the proof attempt demands a **new input precondition** rather than just a
-   new postcondition, stop and reassess whether `StepFR` itself must be
-   extended
-5. otherwise freeze the strengthened single-run theorem shape and proceed
-
-This is the highest-risk work because it can invalidate later proof plans if
-left unresolved.
-
-### 8.2 Phase 2. Strengthen the global single-run theorem family
-
-Once the theorem shape is validated:
-
-1. strengthen the output package of:
-   - `StepFRSingleRunFinalCleanPcTrue`
-   - `StepFRSingleRunFinalCleanPcTrueParam`
-   - `StepFRSingleRunFinalCleanPcTrueMaskedRegParam`
-2. update the corresponding IH abbreviations and masked/unmasked bridges in
-   `FaultRobustnessProofs.lean`
-3. keep the change purely as an extra **postcondition**
-4. do **not** change:
-   - `StepFR`
-   - `StepFR_IH`
-   - `FaultRobustnessSpec`
-   - the top-level FR theorem interface
-
-This is an internal proof-interface change below `StepFR`, not an FR theorem
-change.
-
-### 8.3 Phase 3. Thread the stronger single-run invariant through syntax
-
-This is the broad but mostly routine phase. The strengthened single-run theorem
-must be carried through all operators that participate in the single-run
-induction, not just `app` and `ite`.
-
-Expected touch points include:
-
-- `FaultRobustnessProofs.lean`
-- `StepFRSeq.lean`
-- `StepFRVlet.lean`
-- `StepFRNewRef.lean`
-- `StepFRAssign.lean`
-- `StepFRDeref.lean`
-- `StepFRApp.lean`
-
-Representative proof shapes:
-
-1. literals / closures: immediate or vacuous
-2. `newRef`: fresh allocated cell is not clean under `pc = true`
-3. sequential composition (`seq`, `vlet`, `assign`-style pipelines):
-   combine:
-   - stronger fresh-clean postcondition from the first subexpression
-   - inherited-clean preservation for the second
-   - in particular, use `PreservesInheritedCleanLocOneRun.both_unrealized` to
-     propagate `θ.lookup l = none` when the later subexpression only inherits
-     the location
-4. `app` / `ite`: the high-risk cases, but now handled through the same
-   strengthened single-run API rather than an app/ite-specific auxiliary route
-
-### 8.4 Phase 4. Repair the current false / over-strong local routes
-
-Once the stronger single-run infrastructure is in place:
-
-1. restate or delete the false theorem
-   `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
-2. rewrite the arrow/different-body `StepFRApp` fresh-location case to use:
-   - inherited locations: existing `PreservesInheritedFinalCleanLocsOneRun`
-   - fresh clean locations: the strengthened single-run theorem giving
-     `θ.lookup l = none`
-3. rewrite `stepFR_ite_standard` to replace `hclean_back_to_res1` with an
-   inherited/fresh split
-4. use the existing shared-body / source-or-unrealized transport pattern as the
-   implementation template where possible, rather than inventing a second join
-   framework
-
-### 8.5 Phase 5. Finish the `tagEnvBounded` path without touching `StepFR`
-
-Status: **in progress** (2026-04-06, `a062e59`). The `matchGuard` bridge is
-proved, the `ite` mode 1/2 `tagEnvBounded` proofs are real, and the active
-front is still local `TypeSafety.lean` plumbing. The one important update to
-the original plan is that the `app` case revealed a genuine missing local fact:
-`predTagsBoundedInCtx` bounds the **current** typing context, but closure
-application types bodies under `VarTypeEnv.ofCaptured env`, so the proof also
-needs boundedness for closure-captured environments nested inside function
-types. This has been addressed by introducing a second local invariant family
-entirely below `StepFR`. No changes to `StepFR`, `StepFR_IH`, or
-`FaultRobustnessSpec`.
-
-The implemented route is:
-
-1. **done** — `matchGuard_tag_bounded` is proved in `TypeSafety.lean`
-2. **done** — `predTagsBoundedInCtx` defined with `predTagsBoundedInVarEnv` and
-   `predTagsBoundedInMemEnv` components; helper lemmas (mono, insert, update,
-   joinPredicates) proved; `predTagsBoundedInMemEnv_joinMemEnvsStrong` and
-   `typecheckIf_pred_noPred` are also now proved; kept entirely below `StepFR`
-3. **done** — closure-captured boundedness definitions and bridges are in place:
-   - `capturedPredTagsBounded`
-   - `etypClosuresCapturedPredTagsBounded`
-   - `varEnvClosuresCapturedBounded`
-   - `closureEnvBoundedInCtx`
-   together with local monotonicity/update/`toCaptured`/`ofCaptured` lemmas
-4. **in progress** — `typecheckExpr_preserves_closureCapturedBounded` is proved
-   for all non-`app` cases; the `app` case is now the main local blocker
-5. **in progress** — `typecheckExpr_preserves_predTagsBounded_main` now carries
-   `closureEnvBoundedInCtx ctx`; the remaining local holes are:
-   - `assign`
-   - `deref`
-   - `app`
-   - extern closure helper cases
-   - repeated inline `closureEnvBoundedInCtx` derivations that should collapse
-     once the closure theorem is finished
-6. **in progress** — `typecheckExpr_preserves_tagEnvBounded_main` is reduced to
-   the `app` helper/app case. The earlier `vlet` and `ite` local holes are
-   resolved.
-7. still to do — thread `tagEnvBounded` only through local helper lemmas such
-   as:
-   - `ioFree_guardClosure_pred_implies_tag_absent`
-   - `typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent`
-   - `typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent`
-8. still to do — replace the three guard-tag-absence axioms with the existing
-   proved alternatives:
-   - `applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded`
-   - `applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded`
-   - `typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded`
-
-This stays within the user constraint: no new `StepFR` invariant.
-
-Phase dependencies inside this phase are now:
-
-- bullets 1-2 are done and unlocked the original current-context predicate route
-- bullet 3 was added after the `app` case exposed the captured-env gap; it stays
-  entirely below `StepFR`
-- finish bullet 4 → discharge most of the inline `closureEnvBoundedInCtx`
-  placeholders in bullet 5
-- finish bullet 5 → bullet 6
-- finish bullet 6 → bullets 7-8
-
-### 8.6 Phase 6. Make the captured-locset allocation invariant explicit
-
-Status: **partially complete** (2026-04-07, `cbf2773`).
-
-The captured-locset allocation invariant has been formalized and the main axiom
-has been proved:
-
-- `etypRefLocsBounded etyp nl` — ref-type locations in an ETyp are `< nl`
-- `capturedEnvRefLocsBounded env nl` — all ref-type locations in a captured
-  environment are `< nl`
-- `varEnvRefLocsBounded S nl` — all ref-type locations in a variable
-  environment are `< nl`
-
-These definitions are at `TypeSafety.lean:1279–1290`.
-
-**Completed**:
-
-- `applyFnTClosure_extern_wfTypeResult` — **proved** (was previously an axiom)
-- Helper lemmas: `locset_fold_updateMemEnv_wf`, `ofCaptured_refLocsBounded`,
-  `effects_forIn_wfMemEnv`
-- Caller signatures updated: `applyFnTClosure_ioFree_wfTypeResult` and
-  `mapM_applyFnTClosure_forall_wfTypeResult` now take `hcaptLocs`/`hargLocs`
-  parameters
-
-**Remaining** (6 sorrys):
-
-- 3 call sites need `capturedEnvRefLocsBounded capturedEnv result.nextLoc'`
-- 3 call sites need `etypRefLocsBounded argEtyp result.nextLoc'`
-- These require a typing induction that maintains `varEnvRefLocsBounded` and
-  `varEnvClosuresCapturedRefLocsBounded` through all expression cases, plus
-  strengthening `wfTypeContext` to carry both invariants so they are available
-  at the FR call sites
-- See Section 9.9 for the corrected analysis and implementation plan, and
-  Section 9.10 for the failed attempt
-
-Still to unlock (once call-site sorrys are resolved):
-
-- vacuity of `applyFnTClosure_extern_ok_fresh_loc_not_clean`
-- a cleaner proof path for `applyFnTClosure_extern_ok_lookup_origin`
-
-Do not confuse the extern-only axiom
-`applyFnTClosure_extern_ok_fresh_loc_not_clean` with the broader
-`StepFRApp` theorem-shape issue
-`applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`. The former is an
-extern-only typing-summary obligation; the latter is a current false statement
-about all closure applications.
-
-### 8.7 Phase 7. Split the impure-effect extern bundle
-
-The current bundled axiom
-
-- `applyFnTClosure_extern_ok_wfTagMeaningCtx`
-
-should be split as planned into:
-
-1. FR-interpretation assumptions for effect predicates
-2. structural fold/update lemmas proving preservation of `wfTagMeaningCtx`
-
-This split is intended to be **internal** to the extern helper layer:
-
-- `StepFR`
-- `StepFR_IH`
-- `FaultRobustnessSpec`
-- the top-level FR theorem interface
-
-should remain unchanged. In other words, the split should live in lemmas below
-these interfaces, not in the interfaces themselves.
-
-The old shape of `applyFnTClosure_extern_ok_wfTagMeaningCtx` should then be
-recovered as a proved wrapper lemma from the smaller ingredients. That leaves
-the long-term extern contract surface closer to the true FR contract minimum
-without repeating the invariant-leak error.
-
-## 9. History
-
-### 9.1 Rejected local-only repair
-
-An earlier direction was to keep strengthening the local
-`typecheckExpr_clean_lookup_origin_of_pc_true` calls by threading more
-`contains` facts into the current helpers.
-
-That route is insufficient:
-
-- it only repairs the inherited-location case
-- it does not address locations that are present in the final typing result only
-  because non-executed extern summaries were joined in
-- it therefore cannot solve the remaining arrow/different-body app case
-
-### 9.2 Design pivot: do not isolate the new fact to app/ite only
-
-An earlier revision of this note preferred a "parallel theorem family" consumed
-only by `StepFRApp` and `StepFRIte`.
-
-After re-checking the induction structure, that is no longer the recommended
-route:
-
-- the stronger fact must compose through intermediate syntax such as `seq` and
-  `vlet`
-- the single-run theorem family is already proved by a separate induction stack
-- `stepFR_app` and `stepFR_ite` already consume that single-run IH directly
-
-So the more coherent design is to strengthen the **global single-run theorem
-family** and keep `StepFR` unchanged unless a new input precondition later
-proves unavoidable.
-
-### 9.3 Current implementation status of the 6.3 repair
-
-The current branch has now implemented the 6.3 repair completely:
-
-- `FreshCleanLocsUnrealizedOneRun` has been added to the single-run theorem
-  package in `StepFR.lean`
-- the strengthened postcondition has been threaded through the low-risk
-  constructor families (`var`, `op`, `deref`, `seq`, `vlet`, `newRef`,
-  `assign`)
-- `StepFRApp.lean` and `StepFRIte.lean` now use the strengthened single-run
-  invariant at the fresh-location sites
-- the false theorem
-  `applyFnTClosure_fresh_lookup_not_clean_of_p1p_true`
-  has been removed from the active proof path
-- there are no remaining `sorry`s in the single-run repair stack
-
-So section 6.3 is no longer an active source of proof-shape uncertainty. The
-remaining work has moved back to local typing infrastructure in
-`TypeSafety.lean`.
-
-### 9.4 Why the shared-body transport works
-
-The shared-body `StepFRApp` path already has the right high-level shape:
-
-- transport agreement from one selected member result
-- for locations missing from that selected result, prove both witness maps omit
-  them
-
-So the join transport itself is not the blocker. The blocker is only the lack
-of a corresponding omission theorem for the different-body / mixed-branch
-one-run setting.
-
-### 9.5 Design note: the new closure invariant is justified
-
-The recent growth in local invariants inside `TypeSafety.lean` is not a sign
-that the branch is fighting the wrong high-level strategy. It comes from one
-specific real gap:
-
-- `predTagsBoundedInCtx` constrains the **current** typing context
-- but `applyFnTClosure` and `applyPFnTClosure` type regular bodies under
-  `VarTypeEnv.ofCaptured env`
-- so the `app` proof needs boundedness of **captured** environments nested
-  inside function-valued result types, not just boundedness of the caller's
-  `ctx.varEnv`
-
-That is why the branch introduced the local family:
-
-- `capturedPredTagsBounded`
-- `etypClosuresCapturedPredTagsBounded`
-- `varEnvClosuresCapturedBounded`
-- `closureEnvBoundedInCtx`
-
-Current assessment of this move:
-
-- it is a real typing-local repair, not an arbitrary invariant leak
-- it stays entirely below `StepFR`
-- it does **not** currently require any new `StepFR` or FR-theorem hypotheses
-- it is the correct local fix unless a second, unrelated invariant family is
-  later needed
-
-That last point is the main strategic watch item going forward. If more new
-invariant families appear after closure-captured boundedness is finished, the
-approach should be re-evaluated. At present, there is no evidence that this is
-necessary.
-
-### 9.6 Design pivot: recursive captured-entry boundedness
-
-The next local design adjustment, approved after commit `78a54c0`, is to
-strengthen the closure-list boundedness interface one final time.
-
-Why the previous split is still underpowered:
-
-- closure app call sites can now obtain `capturedPredTagsBounded` for the
-  selected closure's captured environment
-- they can also obtain `capturedClosuresBounded`
-- but the helper signatures still require carrying these as parallel facts
-  through `applyFnTClosure_predTagsBounded` / `applyPFnTClosure_predTagsBounded`
-- the app call sites therefore accumulate paired placeholder `sorry`s for the
-  same underlying recursive obligation
-
-Approved direction:
-
-- replace the split closure-list interface with a single recursive
-  captured-entry boundedness property, or strengthen the existing closure-list
-  predicates so each captured entry carries both:
-  - `qtypPredTagBounded qt nt`
-  - `etypClosuresCapturedPredTagsBounded qt.etyp nt`
-
-Impact assessment:
-
-- top-level theorem impact: **none**
-- `StepFR` / `StepFR_IH` / `FaultRobustnessSpec` impact: **none**
-- soundness / precision / language-scope / operational-semantics impact:
-  **none** — this is a proof-only local refactor in `TypeSafety.lean`
-
-This is still the same invariant family, not a third unrelated family. The
-goal is to reduce local hypothesis proliferation, not to grow the interface
-surface.
-
-### 9.7 Why `PFnTClosure` is not the hard case
-
-The pure-function different-body branch closes the fresh-location case by
-contradiction because pure bodies do not grow `memEnv'`.
-
-That is useful as a sanity check, but it is not a template for the remaining
-problem. The unresolved issue is specific to effectful arrow bodies.
-
-## 10. Useful References
-
-These `iofree` references are useful as proof templates, but the current branch
-should reuse only the specific lemma shapes it needs:
-
-These names exist only on the `iofree` branch; they will not appear in a grep
-of the current `new-iofree` checkout.
-
-- `iofree:LeanProofs/StepFRIte.lean`
-  - `matchGuard_tag_in_bound`
-- `iofree:LeanProofs/StepFR.lean`
-  - `predTagsBoundedInCtx`
-- `iofree:LeanProofs/TypeSafety.lean`
-  - `collectAndAllocExternTags_nextTag_ge`
-  - `typecheckExternVal_nextTag_mono`
-
-The old `predTagsBoundedInCtx` route was explicitly deleted on this branch in
-commit `2062907`. Phase 8.5 uses a different route: a local predicate-tag bound
-relative to `ctx.nextTag`, combined with `tagEnvBounded`.
-
-Current-branch helpers already available:
-
-- `LeanProofs/RegimeConsistency.lean`
-  - `EnvRespectsTagMeaning_updateMemEnv`
-  - `EnvRespectsTagMeaning_list_fold_updateMemEnv`
-  - `QTypRespectsTagMeaning_fn_extern`
-  - `QTypRespectsTagMeaning_pfn_extern`
-
-### 9.8 Future refactoring: extract shared matchGuard analysis module
-
-The `matchGuard_tag_bounded` proof in `TypeSafety.lean` duplicates ~200 lines of
-fold analysis that already exists as ~600 lines in `StepFRIte.lean`
-(`matchGuard_varMatches`, `matchGuard_refMatches`, `var_match_from_varMatches`,
-`ref_match_from_refMatches`, `matchGuard_ok_extract_owner_in_ctx`, etc.).
-
-The duplication exists because:
-
-- `matchGuard_ok_extract_owner_in_ctx` is `private` in `StepFRIte.lean`
-- the import direction is `TypeSafety ← StepFR ← StepFRIte`, so `TypeSafety`
-  cannot import anything from `StepFRIte`
-
-**Proposed cleanup**: extract the matchGuard analysis lemmas into a shared module
-`LeanProofs/MatchGuardAnalysis.lean` that both `TypeSafety.lean` and
-`StepFRIte.lean` import. The extracted lemmas only depend on
-`LeanPoison.Typecheck` and `Std.ExtTreeMap` — no dependency on `StepFR` types.
-
-This would:
-
-1. eliminate the ~200 lines of duplicated fold analysis in `TypeSafety.lean`
-   (`foldl_tags_bounded`, `foldlM_tags_bounded`, `predMergeFold_bounded`, the
-   varMatches/refMatches fold proofs, and the
-   `LocSet.foldM_Except_preserves_property` application)
-2. make `matchGuard_ok_extract_owner_in_ctx` available to `TypeSafety.lean`
-3. simplify `matchGuard_tag_bounded` to a ~10-line proof:
-   - call `matchGuard_ok_extract_owner_in_ctx` to get the var/ref disjunction
-   - for the var case: `predTagsBoundedInVarEnv` gives the bound
-   - for the ref case: `predTagsBoundedInMemEnv` gives the bound
-4. the existing `StepFRIte.lean` code would re-import from the shared module
-   with no proof changes
-
-The shared module sits alongside `TypeSafety.lean` in the import graph (both
-below `StepFR`). No changes to `StepFR`, `StepFR_IH`, or `FaultRobustnessSpec`
-are needed.
-
-### 9.9 Phase 8.6: call-site invariant provision — corrected analysis
-
-As of commit `cbf2773`, the 6 remaining sorrys all have the same shape: they
-need to show that the typing context's variable environment has bounded ref-type
-locations at the point where `applyFnTClosure_extern_wfTypeResult` (or its
-`mapM` wrapper) is called.
-
-Concretely, the two obligations at each call site are:
-
-1. `capturedEnvRefLocsBounded capturedEnv result.nextLoc'` — the extern
-   closure's captured environment has ref-type locations below the current
-   `nextLoc'`
-2. `etypRefLocsBounded argEtyp result.nextLoc'` — the argument's `ETyp` has
-   ref-type locations below the current `nextLoc'`
-
-**Why no purely local fix exists**: obligation (2) is an output of the typing
-induction — it requires `varEnvRefLocsBounded ctx.varEnv ctx.nextLoc` as an
-input invariant. Obligation (1) additionally requires that closures in the
-varEnv have bounded captured environments. Both invariants must be available
-at the FR call sites (`StepFR.lean`, `StepFRApp.lean`), which receive
-`wfTypeContext ctx` from the `StepFR` interface. Since `wfTypeContext` currently
-only constrains `memEnv` (not `varEnv`), the invariants cannot be derived
-without strengthening `wfTypeContext`.
-
-Options 2 and 3 from the earlier analysis (Section 9.10) are therefore
-**insufficient**: they can fix the `TypeSafety.lean` sorrys internally, but
-the `StepFR.lean` and `StepFRApp.lean` call sites cannot provide
-`varEnvRefLocsBounded` because it is not derivable from the current
-`wfTypeContext`.
-
-**The only viable approach is Option 1: strengthen `wfTypeContext`**. This is a
-genuine missing input invariant (Section 7.1 escape clause). See Section 9.10
-for the failed attempt and the ordering constraint it revealed.
-
-#### Required input invariants (two new `wfTypeContext` conjuncts)
-
-The `var x` case of the typing induction returns the ETyp from the varEnv. If
-that ETyp is `ref ls`, the induction needs `etypRefLocsBounded` from the input.
-If that ETyp is `arrow _ _ _ tcls`, the induction needs the captured envs of
-those closures to be bounded. So `wfTypeContext` must include both:
-
-1. `varEnvRefLocsBounded ctx.varEnv ctx.nextLoc` — ref-type locations in varEnv
-   entries are below `nextLoc`
-2. `varEnvClosuresCapturedRefLocsBounded ctx.varEnv ctx.nextLoc` — for all
-   closures in varEnv entries' ETyps, captured envs have ref-type locations
-   below `nextLoc`
-
-Both are natural well-formedness conditions maintained by the typechecker:
-
-- `vlet x e1 e2`: the new entry's properties come from the typing of `e1`
-  (etypRefLocsBounded + closures captured env from the IH output)
-- `fn` / `externFn`: closures capture `toCaptured ctx.varEnv`, which is
-  bounded because the varEnv is bounded
-- `ctxAfter` (seq, assign, op, etc.): preserves `varEnv`, monotone `nextLoc`
-- closure body: `VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x argQt`,
-  bounded because `tenv` comes from a bounded closure and `argQt` comes from
-  the typing IH
-
-#### Required output properties (from typing induction)
-
-The typing induction must produce three output conjuncts:
-
-1. `wfTypeResult res` (existing)
-2. `etypRefLocsBounded res.qualType.etyp res.nextLoc'`
-3. `etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc'` — for
-   ALL closures (regular + extern) in the result ETyp, their captured envs
-   have bounded ref-type locations
-
-#### Why both input conjuncts are needed
-
-- Conjunct 1 (`varEnvRefLocsBounded`) is needed for: the `var` case when the
-  result is `ref ls`; the `vlet` case when updating the varEnv; the `externFn`
-  case for `capturedEnvRefLocsBounded (toCaptured ctx.varEnv)`; the `app` case
-  for `etypRefLocsBounded argEtyp`.
-
-- Conjunct 2 (`varEnvClosuresCapturedRefLocsBounded`) is needed for: the `var`
-  case when the result is `arrow`/`parrow` — the closures in the returned type
-  came from the varEnv.
-
-Without conjunct 2, the `var` case cannot produce output property (3).
-
-#### Implementation plan
-
-**Phase A — Typing induction (TypeSafety.lean, ~300 lines)**:
-
-Define a combined theorem taking the two input invariants as separate
-parameters (NOT as part of `wfTypeContext` yet):
+Target theorem sketch:
 
 ```lean
 private lemma typecheckExpr_wfTypeResult_and_refLocs :
@@ -1247,157 +414,192 @@ private lemma typecheckExpr_wfTypeResult_and_refLocs :
     etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc'
 ```
 
-Case analysis (most cases are trivial — non-function types):
+What this theorem should give us:
 
-- `num`, `bool`, `unit`, `str`, `externVal` (non-ref): result ETyp is
-  `int`/`unit`/`str` → all three outputs trivial
-- `externVal ref`: result ETyp is `ref {ctx.nextLoc}` → bounded by
-  `ctx.nextLoc + 1 = res.nextLoc'`; no closures → trivial
-- `var x`: output = input varEnv entry (both ref-loc bound and closure bound)
-- `fn x st1 body st2`: one regular closure with `toCaptured ctx.varEnv` →
-  `capturedEnvRefLocsBounded` from `varEnvRefLocsBounded`
-- `externFn`: one extern closure with `toCaptured ctx.varEnv` → same
-- `pfn`, `externPfn`: analogous to fn/externFn
-- `op`, `unaryop`, `deref`: result ETyp is `int` → trivial
-- `assign`: result ETyp is `unit` → trivial
-- `newRef`: result ETyp is `ref {ctx.nextLoc}` → bounded by `nextLoc + 1`
-- `seq e1 e2`: IH on `e2` (same varEnv, mono nextLoc)
-- `vlet x e1 e2`: IH on `e1` gives bounds for the new entry; IH on `e2`
-  with updated varEnv
-- `ite`: join of sub-results → need `joinETyps` preservation lemmas
-- `app`: join of closure results → IH gives `hcaptLocs` and `hargLocs`
-  for the extern case; body wfTypeResult for regular case
+1. the existing shallow result fact: `wfTypeResult res`
+2. the shallow ref-location fact needed directly at extern effect loops
+3. the recursive closure-captured ref-location fact needed to rebuild stronger
+   context well-formedness after inserts, captures, and body typing
 
-**Phase B — wfTypeContext change + cascade (~200 lines across 8 files)**:
+Expected helper families:
 
-Change `wfTypeContext` to include the two new conjuncts. Simultaneously fix all
-cascade sites using the Phase A theorem:
+- monotonicity:
+  - `etypRefLocsBounded_mono`
+  - `varEnvRefLocsBounded_mono`
+  - `capturedEnvRefLocsBounded_mono`
+  - `etypClosuresCapturedRefLocsBounded_mono`
+  - `varEnvClosuresCapturedRefLocsBounded_mono`
+- environment update:
+  - `varEnvRefLocsBounded_update`
+  - `varEnvClosuresCapturedRefLocsBounded_update`
+- captured-env bridges:
+  - `capturedEnvRefLocsBounded_of_varEnvRefLocsBounded_toCaptured`
+  - `varEnvRefLocsBounded_ofCaptured`
+  - `varEnvClosuresCapturedRefLocsBounded_ofCaptured`
+- join preservation:
+  - `etypRefLocsBounded_joinETyps`
+  - `etypClosuresCapturedRefLocsBounded_joinETyps`
 
-- `ctxAfter`-like sites: `varEnv` unchanged → mono
-- `vlet` body sites: use `etypRefLocsBounded` + `etypClosuresCapturedRefLocsBounded`
-  from Phase A on `e1` to update varEnv
-- closure body sites: use `capturedEnvRefLocsBounded` from Phase A on the
-  function expression + `etypRefLocsBounded` for the arg
-- `wfTypeContext_of_wfTypeResult`: needs `ctx.nextLoc ≤ res.nextLoc'` for mono
+Done means:
 
-**Critical ordering constraint**: Phase A must be completed and verified
-*before* Phase B is committed. Changing `wfTypeContext` without the typing
-induction results creates unfillable cascade sorrys (see Section 9.10).
+- the private theorem compiles without changing `wfTypeContext`
+- the theorem is clearly a projection/extension of the existing static
+  induction stack, not an unrelated duplicate induction unless duplication
+  turned out to be strictly simpler
+- the hard cases (`var`, `fn`/`externFn`, `vlet`, `app`, `ite`) are all closed
+- no downstream file has been changed yet
 
-In practice this means: prove the typing induction as a private lemma with
-explicit parameters, verify it compiles, then in a single pass change
-`wfTypeContext` + replace `typecheckExpr_preserves_wfTypeResult_main` + fix
-the cascade + fix the 6 sorrys.
+### Step 2. Atomically strengthen `wfTypeContext` and eliminate the 6 `sorry`s
 
-**Boundary rule**: this does change `StepFR` (strengthened `wfTypeContext`
-input/output). Justified by Section 7.1's escape clause: "StepFR should be
-reconsidered only if we discover that some operator case needs an additional
-input invariant that is not derivable from the current hypotheses." The
-`app` case genuinely needs `varEnvRefLocsBounded` and it is not derivable
-from the current `wfTypeContext`.
+**Status:** blocked on Step 1
 
-**Estimated scope**: ~500 lines total. ~300 for the typing induction, ~200
-for the cascade. Net sorry change: −6 (all ref-loc sorrys eliminated).
+Files:
 
-#### Helpers needed
+- `LeanProofs/TypeSafety.lean`
+- `LeanProofs/StepFR.lean`
+- `LeanProofs/StepFRApp.lean`
+- any downstream FR files touched by `wfTypeContext_of_wfTypeResult`
 
-```lean
--- Monotonicity
-etypRefLocsBounded_mono
-varEnvRefLocsBounded_mono
-capturedEnvRefLocsBounded_mono
-etypClosuresCapturedRefLocsBounded_mono
-varEnvClosuresCapturedRefLocsBounded_mono
+Changes:
 
--- VarEnv update (for vlet)
-varEnvRefLocsBounded_update
-varEnvClosuresCapturedRefLocsBounded_update
+- strengthen `wfTypeContext` from the shallow memEnv-only property to the deep
+  nextLoc-boundedness property, exposing at least:
+  - `varEnvRefLocsBounded ctx.varEnv ctx.nextLoc`
+  - `varEnvClosuresCapturedRefLocsBounded ctx.varEnv ctx.nextLoc`
+- update `wfTypeContext_of_wfTypeResult`
+- replace `typecheckExpr_preserves_wfTypeResult_main` with the strengthened
+  result coming from Step 1
+- repair the caller chain in one pass
+- delete `applyFnTClosure_ok_wfTypeResult` if it is still unused; otherwise
+  update it with the new inputs and discharge its branch-local proof
 
--- toCaptured / ofCaptured bridges (for fn/externFn/closure body)
-capturedEnvRefLocsBounded_of_varEnvRefLocsBounded_toCaptured
-varEnvRefLocsBounded_ofCaptured
-varEnvClosuresCapturedRefLocsBounded_ofCaptured
+Done means:
 
--- ETyp join preservation (for ite/app)
-etypRefLocsBounded_joinETyps
-etypClosuresCapturedRefLocsBounded_joinETyps
-```
+- all 6 remaining ref-location `sorry`s are gone
+- there is no net increase in `sorry` or `axiom`
+- `lake build` succeeds
 
-#### Note on `applyFnTClosure_ok_wfTypeResult`
+### Step 3. Revisit the extern-only axioms unlocked by Step 2
 
-The lemma `applyFnTClosure_ok_wfTypeResult` in `StepFR.lean` (2 of the 6
-sorrys) is defined but has **zero callers**. It should either be deleted or
-have `capturedEnvRefLocsBounded` / `etypRefLocsBounded` added as explicit
-parameters (shifting the obligation to future callers).
+**Status:** pending
 
-### 9.10 Failed attempt: `wfTypeContext` change before typing induction (2026-04-07)
+Files:
 
-An attempt was made to fix the 6 sorrys by changing `wfTypeContext` first
-and fixing the cascade afterward. This failed and was reverted.
+- `LeanProofs/StepFR.lean`
+- `LeanProofs/TypeSafety.lean`
 
-**What was tried**:
+Targets:
 
-1. Changed `wfTypeContext` from `∀ l, ctx.memEnv.contains l → l < ctx.nextLoc`
-   to `(∀ l, ctx.memEnv.contains l → l < ctx.nextLoc) ∧
-   varEnvRefLocsBounded ctx.varEnv ctx.nextLoc`
+- reassess `applyFnTClosure_extern_ok_fresh_loc_not_clean`
+- reassess `applyFnTClosure_extern_ok_lookup_origin`
 
-2. Updated `wfTypeContext_of_wfTypeResult` to take
-   `varEnvRefLocsBounded ctx.varEnv res.nextLoc'` as an extra parameter
+Rationale:
 
-3. Added helpers: `etypRefLocsBounded_mono`, `varEnvRefLocsBounded_mono`,
-   `varEnvRefLocsBounded_update`
+- both proofs should become cleaner once caller-side ref-location boundedness is
+  available
+- do not over-invest in these before Step 2 is complete
 
-4. Fixed ~36 cascade sites across 10 files (TypeSafety.lean,
-   FaultRobustnessProofs.lean, StepFR.lean, StepFRApp.lean, StepFRIte.lean,
-   StepFRNewRef.lean, StepFRAssign.lean, StepFRVlet.lean, StepFRSeq.lean,
-   StepFROp.lean). Net change: +505/−294 lines.
+### Step 4. Resume axiom reduction on the remaining extern surface
 
-**Why it failed**: the cascade introduced **21 new sorrys**:
+**Status:** pending
 
-- 14 for closure body contexts (`varEnv = VarTypeEnv.update
-  (VarTypeEnv.ofCaptured tenv) x argQt`): need
-  `capturedEnvRefLocsBounded tenv result1.nextLoc'` and
-  `etypRefLocsBounded argQt.etyp result1.nextLoc'`, which are outputs of the
-  typing induction that does not yet exist
-- 4 for vlet body contexts (`varEnv = ctx.varEnv.update x result1.qualType`):
-  need `etypRefLocsBounded result1.qualType.etyp result1.nextLoc'`, same issue
-- 3 for join first-result monotonicity through closure application
+Targets:
 
-The net effect was 6 → 27 sorrys: a **net increase of 21**. This violates the
-project guideline that "the goal is to decrease the number of sorry statements,
-not increase them."
+1. finish the `tagEnvBounded` replacement route and switch the three
+   guard-tag-absence axioms to their proved `_of_tagEnvBounded` variants
+2. split `applyFnTClosure_extern_ok_wfTagMeaningCtx` into:
+   - a smaller effect-predicate interpretation contract
+   - proved structural `wfTagMeaningCtx` preservation lemmas
 
-**Root cause**: the `wfTypeContext` change and the typing induction are
-**co-dependent**. Changing `wfTypeContext` creates obligations that require the
-induction results. But the induction is what produces those results. Doing the
-`wfTypeContext` change first creates an intermediate state where the obligations
-exist but the tools to fill them do not.
+Done means:
 
-**Lesson**: the two changes must be atomic. The typing induction must be proved
-first (as a private lemma with explicit inputs, not relying on `wfTypeContext`),
-verified to compile, and then applied simultaneously with the `wfTypeContext`
-change to avoid intermediate sorry inflation.
+- the provisional proof-gap axioms shrink further
+- the long-term contract floor is reduced to the genuinely opaque extern facts
 
-**Additional discovery**: the initial analysis (Section 9.9 original, now
-superseded) was wrong about Options 2 and 3 being sufficient.
-`varEnvRefLocsBounded` alone cannot be threaded as a separate parameter through
-`typecheckExpr_preserves_wfTypeResult_main` because:
+## 5. History
 
-- The public API `typecheckExpr_preserves_wfTypeResult` has ~30 callers across
-  8 FR proof files. Adding a `varEnvRefLocsBounded` parameter would cascade to
-  all of them.
-- Those callers receive `wfTypeContext ctx` from the `StepFR` interface. They
-  cannot derive `varEnvRefLocsBounded` from the current `wfTypeContext`.
-- Therefore Options 2 and 3 can fix only the `TypeSafety.lean` sorrys (2 of
-  6), not the `StepFR.lean` or `StepFRApp.lean` sorrys (4 of 6).
+### 5.1 Completed work that is no longer on the critical path
 
-The only approach that fixes all 6 is Option 1 (strengthen `wfTypeContext`),
-done atomically with the typing induction.
+- The single-run repair for fresh clean locations is complete.
+  - `FreshCleanLocsUnrealizedOneRun` was added to the single-run theorem family.
+  - The false local routes in `StepFRApp` / `StepFRIte` were removed.
+  - That work no longer blocks extern progress.
 
-A second discovery was that `varEnvRefLocsBounded` alone is insufficient as the
-new `wfTypeContext` conjunct. The `var x` case of the typing induction returns
-the ETyp from the varEnv. If that ETyp is `arrow _ _ _ tcls`, the induction
-must produce `etypClosuresCapturedRefLocsBounded` for the result, which requires
-knowing that the closures' captured envs are bounded. This information is not
-carried by `varEnvRefLocsBounded`. A second conjunct,
-`varEnvClosuresCapturedRefLocsBounded`, is therefore required.
+- The predicate-tag / captured-env boundedness work is complete.
+  - predicate-tag boundedness and closure-captured boundedness are in place
+  - `matchGuard_tag_bounded` is proved
+  - the old local blockers in that stack are resolved
+
+- The captured-locset allocation work is partially complete.
+  - `etypRefLocsBounded`, `capturedEnvRefLocsBounded`, and
+    `varEnvRefLocsBounded` are already defined
+  - `applyFnTClosure_extern_wfTypeResult` is already proved
+  - only the caller-side invariant provision remains
+
+### 5.2 Design decisions already made
+
+- Rejected the old "repair app/ite only with a parallel theorem family" idea.
+  The stronger fact needed to compose through `seq`, `vlet`, nested `app`, and
+  nested `ite`, so the right home was the global single-run theorem family.
+
+- Approved the local closure-captured boundedness family in `TypeSafety.lean`.
+  This stayed below `StepFR` and solved a real gap exposed by the `app` case.
+
+- Approved the recursive captured-entry boundedness direction for the
+  predicate-tag work, to reduce duplicated paired hypotheses in closure
+  reasoning.
+
+### 5.3 Rejected routes and lessons
+
+- Rejected local-only repair via stronger `contains` plumbing.
+  That route only addresses inherited locations and does not solve typing-only
+  locations introduced by extern summaries.
+
+- Rejected `wfTypeContext`-first implementation order.
+  A prior attempt changed `wfTypeContext` before the supporting induction
+  existed and turned 6 holes into 27.
+
+  Verified lesson from that failed attempt:
+
+  - the `wfTypeContext` change and the typing induction are co-dependent
+  - the induction must be proved first as a private lemma with explicit inputs
+  - only then should the public `wfTypeContext` meaning be changed
+
+### 5.4 Why the `wfTypeContext` change is now considered justified
+
+The earlier boundary rule was:
+
+- keep new invariants below `StepFR`
+- do not strengthen the FR-facing interface unless there is a genuine missing
+  input invariant
+
+The current blocker is the first place where that escape clause appears to
+apply:
+
+- the missing fact is static boundedness of ref-location sets in `varEnv`
+- it is not derivable from the current `wfTypeContext`
+- it is not reconstructible from runtime instantiation or witness-map facts
+
+So the recommended pivot is not "leak every useful local invariant into FR".
+It is a single, narrow strengthening of the existing notion of type-context
+well-formedness.
+
+### 5.5 Reference points
+
+Historical references that may still be useful during implementation:
+
+- `iofree:LeanProofs/StepFRIte.lean`
+  - `matchGuard_tag_in_bound`
+- `iofree:LeanProofs/StepFR.lean`
+  - old `predTagsBoundedInCtx`
+- `iofree:LeanProofs/TypeSafety.lean`
+  - `collectAndAllocExternTags_nextTag_ge`
+  - `typecheckExternVal_nextTag_mono`
+
+Current-branch helpers already available:
+
+- `LeanProofs/RegimeConsistency.lean`
+  - `EnvRespectsTagMeaning_updateMemEnv`
+  - `EnvRespectsTagMeaning_list_fold_updateMemEnv`
+  - `QTypRespectsTagMeaning_fn_extern`
+  - `QTypRespectsTagMeaning_pfn_extern`
