@@ -1265,11 +1265,6 @@ theorem LocSet.foldM_Except_preserves_property
 -- TypeContext Well-formedness
 -- ================================================================
 
-/-- A TypeContext is well-formed if all locations in memEnv are below nextLoc.
-    This captures that nextLoc is the "high-water mark" for allocated logical locations. -/
-def wfTypeContext (ctx : TypeContext) : Prop :=
-  ∀ l, ctx.memEnv.contains l → l < ctx.nextLoc
-
 /-- The typing result is well-formed if all locations in memEnv' are below nextLoc'. -/
 def wfTypeResult (res : TypeResult) : Prop :=
   ∀ l, res.memEnv'.contains l → l < res.nextLoc'
@@ -1289,16 +1284,57 @@ def capturedEnvRefLocsBounded (env : CapturedVarEnv) (nl : Loc) : Prop :=
 def varEnvRefLocsBounded (S : VarTypeEnv) (nl : Loc) : Prop :=
   ∀ x qt, S.lookup x = some qt → etypRefLocsBounded qt.etyp nl
 
+-- ═══════════════════════════════════════════════════════════════════
+-- Deep recursive ref-location boundedness (analogous to CapturedEnvFullBounded for tags)
+-- ═══════════════════════════════════════════════════════════════════
+
+/-- Depth-indexed captured-env ref-location boundedness. At depth 0, trivially true.
+    At depth n+1, each entry has bounded ref locations AND its closures' captured envs
+    are recursively bounded at depth n. -/
+def CapturedEnvRefLocsBoundedN : Nat → List (Name × QTyp) → Loc → Prop
+  | 0, _, _ => True
+  | n + 1, env, nl =>
+    ∀ name qt, (name, qt) ∈ env →
+      etypRefLocsBounded qt.etyp nl ∧
+      match qt.etyp with
+      | .arrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
+          | .regular _ _ env' => CapturedEnvRefLocsBoundedN n env' nl
+          | .extern _ _ _ env' => CapturedEnvRefLocsBoundedN n env' nl
+      | .parrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
+          | .regular _ _ env' => CapturedEnvRefLocsBoundedN n env' nl
+          | .extern _ _ env' => CapturedEnvRefLocsBoundedN n env' nl
+      | _ => True
+
+/-- Recursive captured-env ref-location boundedness: the property holds at all depths. -/
+def CapturedEnvRefLocsFullBounded (env : List (Name × QTyp)) (nl : Loc) : Prop :=
+  ∀ n, CapturedEnvRefLocsBoundedN n env nl
+
+/-- Combined closure ref-location boundedness for ETyp: each closure's captured env
+    is fully ref-location bounded. -/
+def etypClosuresCapturedRefLocsBounded (etyp : ETyp) (nl : Loc) : Prop :=
+  match etyp with
+  | .arrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env nl
+      | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env nl
+  | .parrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env nl
+      | .extern _ _ env => CapturedEnvRefLocsFullBounded env nl
+  | _ => True
+
+/-- All ETyp closures in a VarTypeEnv have fully bounded captured env ref-locations. -/
+def varEnvClosuresCapturedRefLocsBounded (S : VarTypeEnv) (nl : Loc) : Prop :=
+  ∀ x qt, S.lookup x = some qt → etypClosuresCapturedRefLocsBounded qt.etyp nl
+
+/-- The typing context is well-formed: all locations in memEnv are below nextLoc,
+    and all ref-type locations in varEnv entries and their closures are bounded by nextLoc. -/
+def wfTypeContext (ctx : TypeContext) : Prop :=
+  (∀ l, ctx.memEnv.contains l → l < ctx.nextLoc) ∧
+  varEnvRefLocsBounded ctx.varEnv ctx.nextLoc ∧
+  varEnvClosuresCapturedRefLocsBounded ctx.varEnv ctx.nextLoc
+
 /-- Post-context derived from typing result. -/
 def ctxAfter (ctx : TypeContext) (res : TypeResult) : TypeContext :=
   { ctx with memEnv := res.memEnv', tagEnv := res.tagEnv', nextLoc := res.nextLoc', nextTag := res.nextTag', regime := res.regime' }
-
-/-- wfTypeResult implies wfTypeContext for the post-context. -/
-lemma wfTypeContext_of_wfTypeResult (ctx : TypeContext) (res : TypeResult) :
-    wfTypeResult res → wfTypeContext (ctxAfter ctx res) := by
-  intro hwf l hcontains
-  simp only [ctxAfter] at hcontains ⊢
-  exact hwf l hcontains
 
 /-- A location at or above ctx.nextLoc is not realized in θ if runtimeInstantiatesCtx holds. -/
 lemma freshLoc_not_realized (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (l : Loc) :
@@ -1311,7 +1347,7 @@ lemma freshLoc_not_realized (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ 
   push_neg at hne
   obtain ⟨a, ha⟩ := Option.ne_none_iff_exists'.mp hne
   have ⟨hmem, _⟩ := hric.1 l a ha
-  have hlt := hwf l hmem
+  have hlt := hwf.1 l hmem
   exact Nat.lt_irrefl l (Nat.lt_of_lt_of_le hlt hge)
 
 
@@ -6042,6 +6078,254 @@ private lemma etypClosuresCapturedPredTagsBounded_of_fullBounded
   | _ => trivial
 
 -- ═══════════════════════════════════════════════════════════════════
+-- Ref-location boundedness: monotonicity, constructors, and helpers
+-- ═══════════════════════════════════════════════════════════════════
+
+/-- Monotonicity for etypRefLocsBounded. -/
+lemma etypRefLocsBounded_mono {etyp : ETyp} {nl nl' : Loc}
+    (h : etypRefLocsBounded etyp nl) (hle : nl ≤ nl') :
+    etypRefLocsBounded etyp nl' := by
+  cases etyp with
+  | ref ls => intro l hmem; exact Nat.lt_of_lt_of_le (h l hmem) hle
+  | _ => trivial
+
+/-- Monotonicity for capturedEnvRefLocsBounded. -/
+private lemma capturedEnvRefLocsBounded_mono {env : List (Name × QTyp)} {nl nl' : Loc}
+    (h : capturedEnvRefLocsBounded env nl) (hle : nl ≤ nl') :
+    capturedEnvRefLocsBounded env nl' :=
+  fun name qt hmem => etypRefLocsBounded_mono (h name qt hmem) hle
+
+/-- Monotonicity for varEnvRefLocsBounded. -/
+lemma varEnvRefLocsBounded_mono {S : VarTypeEnv} {nl nl' : Loc}
+    (h : varEnvRefLocsBounded S nl) (hle : nl ≤ nl') :
+    varEnvRefLocsBounded S nl' :=
+  fun x qt hlookup => etypRefLocsBounded_mono (h x qt hlookup) hle
+
+/-- Monotonicity for CapturedEnvRefLocsBoundedN. -/
+private lemma CapturedEnvRefLocsBoundedN_mono :
+    ∀ (n : Nat) {env : List (Name × QTyp)} {nl nl' : Loc},
+    CapturedEnvRefLocsBoundedN n env nl → nl ≤ nl' → CapturedEnvRefLocsBoundedN n env nl'
+  | 0, _, _, _, _, _ => trivial
+  | n + 1, env, nl, nl', h, hle => by
+    intro name qt hmem
+    obtain ⟨hrl, hc⟩ := h name qt hmem
+    refine ⟨etypRefLocsBounded_mono hrl hle, ?_⟩
+    revert hc; cases qt.etyp with
+    | arrow _ _ _ tcls =>
+      intro hc tcl hmem_tcl; have := hc tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' => exact CapturedEnvRefLocsBoundedN_mono n this hle
+      | extern _ _ _ env' => exact CapturedEnvRefLocsBoundedN_mono n this hle
+    | parrow _ _ _ tcls =>
+      intro hc tcl hmem_tcl; have := hc tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' => exact CapturedEnvRefLocsBoundedN_mono n this hle
+      | extern _ _ env' => exact CapturedEnvRefLocsBoundedN_mono n this hle
+    | _ => intro _; trivial
+
+/-- Monotonicity for CapturedEnvRefLocsFullBounded. -/
+private lemma CapturedEnvRefLocsFullBounded_mono {env : List (Name × QTyp)} {nl nl' : Loc}
+    (h : CapturedEnvRefLocsFullBounded env nl) (hle : nl ≤ nl') :
+    CapturedEnvRefLocsFullBounded env nl' :=
+  fun n => CapturedEnvRefLocsBoundedN_mono n (h n) hle
+
+/-- Monotonicity for etypClosuresCapturedRefLocsBounded. -/
+lemma etypClosuresCapturedRefLocsBounded_mono {etyp : ETyp} {nl nl' : Loc}
+    (h : etypClosuresCapturedRefLocsBounded etyp nl) (hle : nl ≤ nl') :
+    etypClosuresCapturedRefLocsBounded etyp nl' := by
+  cases etyp with
+  | arrow _ _ _ tcls =>
+    intro tcl hmem; have hfull := h tcl hmem
+    cases tcl with
+    | regular _ _ env => exact CapturedEnvRefLocsFullBounded_mono hfull hle
+    | extern _ _ _ env => exact CapturedEnvRefLocsFullBounded_mono hfull hle
+  | parrow _ _ _ tcls =>
+    intro tcl hmem; have hfull := h tcl hmem
+    cases tcl with
+    | regular _ _ env => exact CapturedEnvRefLocsFullBounded_mono hfull hle
+    | extern _ _ env => exact CapturedEnvRefLocsFullBounded_mono hfull hle
+  | _ => trivial
+
+/-- Monotonicity for varEnvClosuresCapturedRefLocsBounded. -/
+lemma varEnvClosuresCapturedRefLocsBounded_mono {S : VarTypeEnv} {nl nl' : Loc}
+    (h : varEnvClosuresCapturedRefLocsBounded S nl) (hle : nl ≤ nl') :
+    varEnvClosuresCapturedRefLocsBounded S nl' :=
+  fun x qt hlookup => etypClosuresCapturedRefLocsBounded_mono (h x qt hlookup) hle
+
+/-- wfTypeResult implies wfTypeContext for the post-context (ctxAfter preserves varEnv from ctx). -/
+lemma wfTypeContext_of_wfTypeResult (ctx : TypeContext) (res : TypeResult)
+    (hwfRes : wfTypeResult res)
+    (hwfCtx : wfTypeContext ctx)
+    (hmono : ctx.nextLoc ≤ res.nextLoc') :
+    wfTypeContext (ctxAfter ctx res) := by
+  simp only [wfTypeContext, ctxAfter]
+  exact ⟨hwfRes,
+         varEnvRefLocsBounded_mono hwfCtx.2.1 hmono,
+         varEnvClosuresCapturedRefLocsBounded_mono hwfCtx.2.2 hmono⟩
+
+/-- Construct CapturedEnvRefLocsFullBounded from per-entry evidence at a single bound. -/
+private lemma CapturedEnvRefLocsFullBounded.mk'
+    {env : List (Name × QTyp)} {nl : Loc}
+    (h : ∀ name qt, (name, qt) ∈ env →
+         etypRefLocsBounded qt.etyp nl ∧ etypClosuresCapturedRefLocsBounded qt.etyp nl) :
+    CapturedEnvRefLocsFullBounded env nl := by
+  intro n; induction n with
+  | zero => trivial
+  | succ n ih =>
+    intro name qt hmem
+    obtain ⟨hrl, he⟩ := h name qt hmem
+    refine ⟨hrl, ?_⟩
+    revert he; cases qt.etyp with
+    | arrow _ _ _ tcls =>
+      intro he tcl hmem_tcl; have hfull := he tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' => exact hfull n
+      | extern _ _ _ env' => exact hfull n
+    | parrow _ _ _ tcls =>
+      intro he tcl hmem_tcl; have hfull := he tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' => exact hfull n
+      | extern _ _ env' => exact hfull n
+    | _ => intro _; trivial
+
+/-- Extract per-entry ref-loc evidence from CapturedEnvRefLocsFullBounded. -/
+private lemma CapturedEnvRefLocsFullBounded.get {env : List (Name × QTyp)} {nl : Loc}
+    (h : CapturedEnvRefLocsFullBounded env nl) {name : Name} {qt : QTyp}
+    (hmem : (name, qt) ∈ env) :
+    etypRefLocsBounded qt.etyp nl ∧ etypClosuresCapturedRefLocsBounded qt.etyp nl := by
+  constructor
+  · exact (h 1 name qt hmem).1
+  · cases hqe : qt.etyp with
+    | arrow _ _ _ tcls =>
+      intro tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' =>
+        show CapturedEnvRefLocsFullBounded env' nl
+        intro n; have := h (n + 1) name qt hmem; simp [hqe] at this; exact this.2 _ hmem_tcl
+      | extern _ _ _ env' =>
+        show CapturedEnvRefLocsFullBounded env' nl
+        intro n; have := h (n + 1) name qt hmem; simp [hqe] at this; exact this.2 _ hmem_tcl
+    | parrow _ _ _ tcls =>
+      intro tcl hmem_tcl
+      cases tcl with
+      | regular _ _ env' =>
+        show CapturedEnvRefLocsFullBounded env' nl
+        intro n; have := h (n + 1) name qt hmem; simp [hqe] at this; exact this.2 _ hmem_tcl
+      | extern _ _ env' =>
+        show CapturedEnvRefLocsFullBounded env' nl
+        intro n; have := h (n + 1) name qt hmem; simp [hqe] at this; exact this.2 _ hmem_tcl
+    | _ => trivial
+
+/-- Extract capturedEnvRefLocsBounded from CapturedEnvRefLocsFullBounded. -/
+private lemma capturedEnvRefLocsBounded_of_fullBounded_refLocs
+    {env : List (Name × QTyp)} {nl : Loc}
+    (h : CapturedEnvRefLocsFullBounded env nl) : capturedEnvRefLocsBounded env nl :=
+  fun name qt hmem => (h 1 name qt hmem).1
+
+/-- varEnvRefLocsBounded for VarTypeEnv.update. -/
+lemma varEnvRefLocsBounded_update {S : VarTypeEnv} {nl : Loc} {x : Name} {qt : QTyp}
+    (hS : varEnvRefLocsBounded S nl) (hqt : etypRefLocsBounded qt.etyp nl) :
+    varEnvRefLocsBounded (VarTypeEnv.update S x qt) nl := by
+  intro y qt' hlookup
+  simp only [VarTypeEnv.update, VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?,
+    Std.ExtTreeMap.getElem?_insert] at hlookup
+  by_cases hEq : compare x y = Ordering.eq
+  · simp [hEq] at hlookup; subst hlookup; exact hqt
+  · simp [hEq] at hlookup
+    exact hS y qt' (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup])
+
+/-- varEnvClosuresCapturedRefLocsBounded for VarTypeEnv.update. -/
+lemma varEnvClosuresCapturedRefLocsBounded_update
+    {S : VarTypeEnv} {nl : Loc} {x : Name} {qt : QTyp}
+    (hS : varEnvClosuresCapturedRefLocsBounded S nl)
+    (hqt : etypClosuresCapturedRefLocsBounded qt.etyp nl) :
+    varEnvClosuresCapturedRefLocsBounded (VarTypeEnv.update S x qt) nl := by
+  intro y qt' hlookup
+  simp only [VarTypeEnv.update, VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?,
+    Std.ExtTreeMap.getElem?_insert] at hlookup
+  by_cases hEq : compare x y = Ordering.eq
+  · simp [hEq] at hlookup; subst hlookup; exact hqt
+  · simp [hEq] at hlookup
+    exact hS y qt' (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup])
+
+/-- Bridge: varEnvRefLocsBounded → capturedEnvRefLocsBounded for toCaptured. -/
+private lemma capturedEnvRefLocsBounded_of_toCaptured {S : VarTypeEnv} {nl : Loc}
+    (h : varEnvRefLocsBounded S nl) :
+    capturedEnvRefLocsBounded (VarTypeEnv.toCaptured S) nl := by
+  intro name qt hmem
+  simp only [VarTypeEnv.toCaptured] at hmem
+  have hlookup : S[name]? = some qt := (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some).1 hmem
+  exact h name qt (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup])
+
+/-- Bridge: varEnvRefLocsBounded + varEnvClosuresCapturedRefLocsBounded →
+    CapturedEnvRefLocsFullBounded for toCaptured. -/
+private lemma CapturedEnvRefLocsFullBounded_of_toCaptured {S : VarTypeEnv} {nl : Loc}
+    (hrl : varEnvRefLocsBounded S nl)
+    (hcl : varEnvClosuresCapturedRefLocsBounded S nl) :
+    CapturedEnvRefLocsFullBounded (VarTypeEnv.toCaptured S) nl :=
+  CapturedEnvRefLocsFullBounded.mk' fun name qt hmem => by
+    simp only [VarTypeEnv.toCaptured] at hmem
+    have hlookup : S[name]? = some qt := (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some).1 hmem
+    have hlookup' : S.lookup name = some qt := by
+      simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup]
+    exact ⟨hrl name qt hlookup', hcl name qt hlookup'⟩
+
+/-- Bridge: capturedEnvRefLocsBounded → varEnvRefLocsBounded for ofCaptured. -/
+private lemma varEnvRefLocsBounded_ofCaptured {env : CapturedVarEnv} {nl : Loc}
+    (h : capturedEnvRefLocsBounded env nl) :
+    varEnvRefLocsBounded (VarTypeEnv.ofCaptured env) nl := by
+  induction env with
+  | nil =>
+    intro x qt hlookup
+    simp [VarTypeEnv.ofCaptured, VarTypeEnv.lookup] at hlookup
+  | cons entry tl ih =>
+    have hh : capturedEnvRefLocsBounded tl nl :=
+      fun name qt' hmem => h name qt' (List.Mem.tail _ hmem)
+    intro x qt hlookup
+    simp only [VarTypeEnv.ofCaptured, List.foldr] at hlookup
+    simp only [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?,
+      Std.ExtTreeMap.getElem?_insert] at hlookup
+    by_cases hEq : compare entry.1 x = Ordering.eq
+    · simp [hEq] at hlookup
+      subst hlookup
+      exact h entry.1 entry.2 (List.Mem.head _)
+    · simp [hEq] at hlookup
+      have hlookup' : (VarTypeEnv.ofCaptured tl).lookup x = some qt := by
+        simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup
+      exact ih hh x qt hlookup'
+
+/-- CapturedEnvRefLocsFullBounded for a sublist (tail). -/
+private lemma CapturedEnvRefLocsFullBounded_tail {entry : Name × QTyp}
+    {tl : List (Name × QTyp)} {nl : Loc}
+    (h : CapturedEnvRefLocsFullBounded (entry :: tl) nl) :
+    CapturedEnvRefLocsFullBounded tl nl := fun n => by
+  cases n with
+  | zero => trivial
+  | succ n => intro name qt hmem; exact h (n + 1) name qt (List.Mem.tail _ hmem)
+
+/-- Bridge: CapturedEnvRefLocsFullBounded → varEnvClosuresCapturedRefLocsBounded for ofCaptured. -/
+private lemma varEnvClosuresCapturedRefLocsBounded_ofCaptured {env : CapturedVarEnv} {nl : Loc}
+    (h : CapturedEnvRefLocsFullBounded env nl) :
+    varEnvClosuresCapturedRefLocsBounded (VarTypeEnv.ofCaptured env) nl := by
+  induction env with
+  | nil =>
+    intro x qt hlookup
+    simp [VarTypeEnv.ofCaptured, VarTypeEnv.lookup] at hlookup
+  | cons entry tl ih =>
+    have htl : CapturedEnvRefLocsFullBounded tl nl := CapturedEnvRefLocsFullBounded_tail h
+    intro x qt hlookup
+    simp only [VarTypeEnv.ofCaptured, List.foldr] at hlookup
+    simp only [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?,
+      Std.ExtTreeMap.getElem?_insert] at hlookup
+    by_cases hEq : compare entry.1 x = Ordering.eq
+    · simp [hEq] at hlookup; subst hlookup
+      exact (CapturedEnvRefLocsFullBounded.get h (List.Mem.head _)).2
+    · simp [hEq] at hlookup
+      have hlookup' : (VarTypeEnv.ofCaptured tl).lookup x = some qt := by
+        simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup
+      exact ih htl x qt hlookup'
+
+-- ═══════════════════════════════════════════════════════════════════
 -- Closure captured-env preservation
 -- ═══════════════════════════════════════════════════════════════════
 
@@ -6102,6 +6386,68 @@ private lemma mergePFnTClosures_mem (tcls1 tcls2 : List PFnTClosure) (tcl : PFnT
     · simp at h_e
     · left; exact h_t
   · right; exact h2
+
+/-- joinETyps preserves etypRefLocsBounded. -/
+private lemma etypRefLocsBounded_joinETyps {e1 e2 : ETyp} {p1 p2 : Poison} {nl : Loc}
+    (h1 : etypRefLocsBounded e1 nl) (h2 : etypRefLocsBounded e2 nl) :
+    etypRefLocsBounded (joinETyps e1 e2 p1 p2) nl := by
+  cases e1 with
+  | ref ls1 =>
+    cases e2 with
+    | ref ls2 =>
+      simp only [joinETyps, etypRefLocsBounded, LocSet.union]
+      intro l hmem
+      rcases Std.ExtTreeSet.mem_union_iff.mp hmem with h | h
+      · exact h1 l h
+      · exact h2 l h
+    | _ => exact h1
+  | int => cases e2 <;> simp [joinETyps, etypRefLocsBounded]
+  | bool => cases e2 <;> simp [joinETyps, etypRefLocsBounded]
+  | unit => cases e2 <;> simp [joinETyps, etypRefLocsBounded]
+  | string => cases e2 <;> simp [joinETyps, etypRefLocsBounded]
+  | arrow st1 st2 p tcls1 =>
+    cases e2 with
+    | arrow _ _ _ _ => simp only [joinETyps]; split <;> simp [etypRefLocsBounded]
+    | _ => simp [joinETyps, etypRefLocsBounded]
+  | parrow st1 st2 p tcls1 =>
+    cases e2 with
+    | parrow _ _ _ _ => simp only [joinETyps]; split <;> simp [etypRefLocsBounded]
+    | _ => simp [joinETyps, etypRefLocsBounded]
+
+/-- joinETyps preserves etypClosuresCapturedRefLocsBounded (merges closure lists). -/
+private lemma etypClosuresCapturedRefLocsBounded_joinETyps {e1 e2 : ETyp} {p1 p2 : Poison} {nl : Loc}
+    (h1 : etypClosuresCapturedRefLocsBounded e1 nl)
+    (h2 : etypClosuresCapturedRefLocsBounded e2 nl) :
+    etypClosuresCapturedRefLocsBounded (joinETyps e1 e2 p1 p2) nl := by
+  cases e1 with
+  | arrow st1 st2 p tcls1 =>
+    cases e2 with
+    | arrow st1' st2' p' tcls2 =>
+      simp only [joinETyps]
+      split
+      · intro tcl hmem
+        rcases mergeFnTClosures_mem _ _ _ hmem with hmem1 | hmem2
+        · exact h1 tcl hmem1
+        · exact h2 tcl hmem2
+      · exact h1
+    | _ => simp only [joinETyps]; exact h1
+  | parrow st1 st2 p tcls1 =>
+    cases e2 with
+    | parrow st1' st2' p' tcls2 =>
+      simp only [joinETyps]
+      split
+      · intro tcl hmem
+        rcases mergePFnTClosures_mem _ _ _ hmem with hmem1 | hmem2
+        · exact h1 tcl hmem1
+        · exact h2 tcl hmem2
+      · exact h1
+    | _ => simp only [joinETyps]; exact h1
+  | int => cases e2 <;> simp [joinETyps, etypClosuresCapturedRefLocsBounded]
+  | bool => cases e2 <;> simp [joinETyps, etypClosuresCapturedRefLocsBounded]
+  | unit => cases e2 <;> simp [joinETyps, etypClosuresCapturedRefLocsBounded]
+  | string => cases e2 <;> simp [joinETyps, etypClosuresCapturedRefLocsBounded]
+  | ref ls =>
+    cases e2 <;> simp [joinETyps, etypClosuresCapturedRefLocsBounded]
 
 /-- joinETyps preserves etypClosuresFullBounded (merges closure lists). -/
 private lemma etypClosuresFullBounded_joinETyps {e1 e2 : ETyp} {p1 p2 : Poison} {nt : Tag}
@@ -9586,9 +9932,21 @@ lemma joinTypeResults_nextLoc_eq_max
               -- List.max on a non-empty list is foldl max.
               simpa [List.max] using h_fold
 
-/-- joinTypeResults preserves arrow/parrow structure: if first result is arrow st1 st2, result is arrow st1 st2.
-    TODO: this is not a good way to prove this. We need to define helper lemma on FoldM which holds a pairwise property and proves that it holds for the resut!
--/
+/-- Every member's nextLoc' ≤ the joined result's nextLoc' (consequence of max fold). -/
+lemma joinTypeResults_member_nextLoc_le
+    (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult)
+    (hjoin : joinTypeResults ctx r rs = .ok res)
+    (member : TypeResult) (hmem : member ∈ r :: rs) :
+    member.nextLoc' ≤ res.nextLoc' := by
+  have hmax := joinTypeResults_nextLoc_eq_max ctx r rs res hjoin
+  rw [hmax]
+  apply List.le_max_of_mem
+  simp at hmem ⊢
+  rcases hmem with rfl | hmem
+  · exact .inl rfl
+  · exact .inr ⟨member, hmem, rfl⟩
+
+/-- joinTypeResults preserves arrow/parrow structure: if first result is arrow st1 st2, result is arrow st1 st2. -/
 private lemma joinTypeResults_preserves_arrow_structure_nextLoc
   (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult)
   (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure) :
@@ -9801,7 +10159,7 @@ private lemma returnSpecToQTyp_preserves_nextLoc
       simp [bind, Except.bind] at h
 
 
-private lemma applyFnTClosure_nextLoc_mono
+lemma applyFnTClosure_nextLoc_mono
   (tcl : FnTClosure) (ctx : TypeContext)
   (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -11763,7 +12121,7 @@ private lemma restrictMemEnv_contains_implies_base (env base : MemoryTypeEnv) (l
   exact h_neg h_base
 
 /-- LocSet.fold for nextLoc computation is ≥ initial value -/
-private lemma locset_fold_max_ge_init (ls : LocSet) (n : Nat) :
+lemma locset_fold_max_ge_init (ls : LocSet) (n : Nat) :
     n ≤ LocSet.fold ls n (fun acc l => max acc (l + 1)) := by
   unfold LocSet.fold; rw [ExtTreeSet.foldl_eq_foldl_toList]
   induction ls.toList generalizing n with
@@ -11825,7 +12183,9 @@ private lemma typecheckAssign_wfTypeResult
         | ref ls =>
           simp at htc
           set ctx2 : TypeContext := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
-          have hwf2_ctx : wfTypeContext ctx2 := wfTypeContext_of_wfTypeResult ctx result1 hwf1
+          have hmono1 : ctx.nextLoc ≤ result1.nextLoc' :=
+            typecheck_nextLoc_mono ctx e1 fuel' result1 htc1'
+          have hwf2_ctx : wfTypeContext ctx2 := wfTypeContext_of_wfTypeResult ctx result1 hwf1 hwf hmono1
           cases h_tc2 : typecheckExpr ctx2 e2 fuel' with
           | error _ => simp [h_tc2] at htc
           | ok result2 =>
@@ -11888,36 +12248,13 @@ private lemma typecheckSeq_wfTypeResult
     rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
     have htc1' : typecheck ctx e1 fuel' = .ok result1 := by simpa using htc1
     have hwf1 : wfTypeResult result1 := IH fuel' h_fuel e1 ctx result1 hwf htc1'
+    have hmono1 : ctx.nextLoc ≤ result1.nextLoc' := typecheck_nextLoc_mono ctx e1 fuel' result1 htc1'
     have hwf_ctx' : wfTypeContext ctx' := by
-      rw [hctx']; simp only [updateCtxFromResult, wfTypeContext]; exact hwf1
+      rw [hctx']; simp only [updateCtxFromResult, wfTypeContext]
+      exact ⟨hwf1, varEnvRefLocsBounded_mono hwf.2.1 hmono1,
+             varEnvClosuresCapturedRefLocsBounded_mono hwf.2.2 hmono1⟩
     have htc2' : typecheck ctx' e2 fuel' = .ok res := by simpa using htc2
     exact IH fuel' h_fuel e2 ctx' res hwf_ctx' htc2'
-
-/-- typecheckVlet preserves wfTypeResult -/
-private lemma typecheckVlet_wfTypeResult
-    (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
-    (hwf : wfTypeContext ctx)
-    (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
-        wfTypeContext ctx' →
-        typecheck ctx' e m = .ok res' → wfTypeResult res') :
-    typecheckVlet ctx x e1 e2 fuel = .ok res → wfTypeResult res := by
-  intro htc
-  cases fuel with
-  | zero => simp [typecheckVlet] at htc
-  | succ fuel' =>
-    have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-    have hstruct := typecheckVlet_structure ctx x e1 e2 fuel'.succ res htc
-    rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, _, hmem, _, hnextloc, _, _, _, _⟩
-    have htc1' : typecheck ctx e1 fuel' = .ok result1 := by simpa using htc1
-    have hwf1 : wfTypeResult result1 := IH fuel' h_fuel e1 ctx result1 hwf htc1'
-    have hwf_ctx' : wfTypeContext ctx' := by
-      rw [hctx']; simp only [wfTypeContext]; exact hwf1
-    have htc2' : typecheck ctx' e2 fuel' = .ok result2 := by simpa using htc2
-    have hwf2 : wfTypeResult result2 := IH fuel' h_fuel e2 ctx' result2 hwf_ctx' htc2'
-    -- res inherits memEnv'/nextLoc' from result2
-    intro l' hcontains
-    rw [hmem] at hcontains; rw [hnextloc]
-    exact hwf2 l' hcontains
 
 /-- typecheckOp preserves wfTypeResult -/
 private lemma typecheckOp_wfTypeResult
@@ -11936,8 +12273,11 @@ private lemma typecheckOp_wfTypeResult
     rcases hstruct with ⟨result1, result2, _, htc1, htc2, _, hmem, _, hnextloc, _, _, _, _, _⟩
     have htc1' : typecheck ctx e1 fuel' = .ok result1 := by simpa using htc1
     have hwf1 : wfTypeResult result1 := IH fuel' h_fuel e1 ctx result1 hwf htc1'
+    have hmono1 : ctx.nextLoc ≤ result1.nextLoc' := typecheck_nextLoc_mono ctx e1 fuel' result1 htc1'
     have hwf_ctx2 : wfTypeContext (updateCtxFromResult ctx result1) := by
-      simp only [updateCtxFromResult, wfTypeContext]; exact hwf1
+      simp only [updateCtxFromResult, wfTypeContext]
+      exact ⟨hwf1, varEnvRefLocsBounded_mono hwf.2.1 hmono1,
+             varEnvClosuresCapturedRefLocsBounded_mono hwf.2.2 hmono1⟩
     have htc2' : typecheck (updateCtxFromResult ctx result1) e2 fuel' = .ok result2 := by simpa using htc2
     have hwf2 : wfTypeResult result2 := IH fuel' h_fuel e2 (updateCtxFromResult ctx result1) result2 hwf_ctx2 htc2'
     intro l' hcontains
@@ -11999,9 +12339,10 @@ private lemma typecheckIf_wfTypeResult
         have := typecheck_nextLoc_mono ctxTrue e2 fuel' res2 htc2'; simpa [ctxTrue] using this
       have htc3' : typecheck ctxFalse e3 fuel' = .ok res3 := by simpa [ctxFalse] using htc3
       have hwf_ctxF : wfTypeContext ctxFalse := by
-        intro l' hl'
-        simp only [ctxFalse] at hl'
-        exact Nat.lt_of_lt_of_le (hwf l' hl') hmono2
+        simp only [ctxFalse, wfTypeContext]
+        exact ⟨fun l' hl' => Nat.lt_of_lt_of_le (hwf.1 l' hl') hmono2,
+               varEnvRefLocsBounded_mono hwf.2.1 hmono2,
+               varEnvClosuresCapturedRefLocsBounded_mono hwf.2.2 hmono2⟩
       have hwf3 : wfTypeResult res3 := IH fuel' h_fuel e3 ctxFalse res3 hwf_ctxF htc3'
       intro l' hcontains
       rw [hmem] at hcontains
@@ -12013,7 +12354,8 @@ private lemma typecheckIf_wfTypeResult
       let ctx' : TypeContext := ctxAfter ctx res1
       let pc' := joinPoison ctx.pc res1.qualType.poison
       let ctx'' : TypeContext := { ctx' with pc := pc' }
-      have hwf_ctx' : wfTypeContext ctx' := wfTypeContext_of_wfTypeResult ctx res1 hwf1
+      have hmono1 : ctx.nextLoc ≤ res1.nextLoc' := typecheck_nextLoc_mono ctx e1 fuel' res1 htc1'
+      have hwf_ctx' : wfTypeContext ctx' := wfTypeContext_of_wfTypeResult ctx res1 hwf1 hwf hmono1
       have hwf_ctx'' : wfTypeContext ctx'' := by simp only [ctx'', wfTypeContext]; exact hwf_ctx'
       have htc2' : typecheck ctx'' e2 fuel' = .ok res2 := by simpa [ctx'', ctx', pc', ctxAfter] using htc2
       have hwf2 : wfTypeResult res2 := IH fuel' h_fuel e2 ctx'' res2 hwf_ctx'' htc2'
@@ -12022,9 +12364,10 @@ private lemma typecheckIf_wfTypeResult
         simp [ctx'', ctx', ctxAfter] at this; exact this
       let ctxForE3 : TypeContext := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
       have hwf_ctxE3 : wfTypeContext ctxForE3 := by
-        intro l hl
-        simp only [ctxForE3, ctx'', ctx', ctxAfter] at hl ⊢
-        exact Nat.lt_of_lt_of_le (hwf_ctx' l hl) h_mono2
+        simp only [ctxForE3, ctx'', ctx', ctxAfter, wfTypeContext]
+        exact ⟨fun l hl => Nat.lt_of_lt_of_le (hwf_ctx'.1 l hl) h_mono2,
+               varEnvRefLocsBounded_mono hwf_ctx'.2.1 h_mono2,
+               varEnvClosuresCapturedRefLocsBounded_mono hwf_ctx'.2.2 h_mono2⟩
       have htc3' : typecheck ctxForE3 e3 fuel' = .ok res3 := by
         simpa [ctxForE3, ctx'', ctx', pc', ctxAfter] using htc3
       have hwf3 : wfTypeResult res3 := IH fuel' h_fuel e3 ctxForE3 res3 hwf_ctxE3 htc3'
@@ -12329,9 +12672,10 @@ private lemma applyFnTClosure_ioFree_wfTypeResult
     (tcl : FnTClosure) (res : TypeResult)
     (hwf_fn : wfTypeResult result_fn)
     (hcaptLocs : match tcl with
-      | .regular _ _ _ => True
-      | .extern _ _ _ capturedEnv => capturedEnvRefLocsBounded capturedEnv result_fn.nextLoc')
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
+      | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
     (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
     (htc : applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call = .ok res) :
     wfTypeResult res := by
   cases fuel_call with
@@ -12354,7 +12698,14 @@ private lemma applyFnTClosure_ioFree_wfTypeResult
       | ok result3 =>
         dsimp only [ctx''] at htc_body
         simp only [htc_body] at htc
-        have hwf_ctx'' : wfTypeContext ctx'' := by simp only [ctx'', wfTypeContext]; exact hwf_fn
+        have hwf_ctx'' : wfTypeContext ctx'' := by
+          simp only [ctx'', wfTypeContext]
+          exact ⟨hwf_fn,
+                 varEnvRefLocsBounded_update
+                   (varEnvRefLocsBounded_ofCaptured (capturedEnvRefLocsBounded_of_fullBounded_refLocs hcaptLocs))
+                   hargLocs,
+                 varEnvClosuresCapturedRefLocsBounded_update
+                   (varEnvClosuresCapturedRefLocsBounded_ofCaptured hcaptLocs) hargClosLocs⟩
         have h_body_lt : fuelBody < fuel_top :=
           Nat.lt_trans (Nat.lt_succ_self fuelBody) h_call_lt
         have htc_body' : typecheck ctx'' body fuelBody = .ok result3 := by simpa [ctx''] using htc_body
@@ -12375,7 +12726,8 @@ private lemma applyFnTClosure_ioFree_wfTypeResult
           argEtyp argPoison argPred ctx result_fn (fuelBody + 1) = .ok res := by
         unfold applyFnTClosure; simp only [bind, Except.bind]; exact htc
       exact applyFnTClosure_extern_wfTypeResult ctx st1 st2 p p1 argEtyp argPoison argPred
-        result_fn (fuelBody + 1) x retSpec effects capturedEnv res hwf_fn hcaptLocs hargLocs happly
+        result_fn (fuelBody + 1) x retSpec effects capturedEnv res hwf_fn
+        (capturedEnvRefLocsBounded_of_fullBounded_refLocs hcaptLocs) hargLocs happly
 
 /-- applyPFnTClosure in ioFree mode preserves wfTypeResult -/
 private lemma applyPFnTClosure_ioFree_wfTypeResult
@@ -12388,6 +12740,11 @@ private lemma applyPFnTClosure_ioFree_wfTypeResult
     (h_call_lt : fuel_call < fuel_top)
     (tcl : PFnTClosure) (res : TypeResult)
     (hwf_fn : wfTypeResult result_fn)
+    (hcaptLocs : match tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
+      | .extern _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+    (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
     (htc : applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call = .ok res) :
     wfTypeResult res := by
   cases fuel_call with
@@ -12411,7 +12768,14 @@ private lemma applyPFnTClosure_ioFree_wfTypeResult
       | ok result3 =>
         dsimp only [ctx''] at htc_body
         simp only [htc_body] at htc
-        have hwf_ctx'' : wfTypeContext ctx'' := by simp only [ctx'', wfTypeContext]; exact hwf_fn
+        have hwf_ctx'' : wfTypeContext ctx'' := by
+          simp only [ctx'', wfTypeContext]
+          exact ⟨hwf_fn,
+                 varEnvRefLocsBounded_update
+                   (varEnvRefLocsBounded_ofCaptured (capturedEnvRefLocsBounded_of_fullBounded_refLocs hcaptLocs))
+                   hargLocs,
+                 varEnvClosuresCapturedRefLocsBounded_update
+                   (varEnvClosuresCapturedRefLocsBounded_ofCaptured hcaptLocs) hargClosLocs⟩
         have h_body_lt : fuelBody < fuel_top := Nat.lt_trans (Nat.lt_succ_self fuelBody) h_call_lt
         have htc_body' : typecheck ctx'' (PExpr.toExpr body) fuelBody = .ok result3 := by simpa [ctx''] using htc_body
         have hwf3 : wfTypeResult result3 := IH fuelBody h_body_lt (PExpr.toExpr body) ctx'' result3 hwf_ctx'' htc_body'
@@ -12451,9 +12815,10 @@ lemma mapM_applyFnTClosure_forall_wfTypeResult
     (h_call_lt : fuel_call < fuel_top) (hwf_fn : wfTypeResult result_fn)
     (tcls : List FnTClosure) (results : List TypeResult)
     (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
-      | .regular _ _ _ => True
-      | .extern _ _ _ capturedEnv => capturedEnvRefLocsBounded capturedEnv result_fn.nextLoc')
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
+      | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
     (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
     (hmapM : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call) tcls = .ok results) :
     ∀ r ∈ results, wfTypeResult r := by
   induction tcls generalizing results with
@@ -12476,22 +12841,400 @@ lemma mapM_applyFnTClosure_forall_wfTypeResult
         cases hr with
         | inl heq =>
           subst heq
-          exact applyFnTClosure_ioFree_wfTypeResult fuel_top IH st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call h_call_lt tcl _ hwf_fn (hcaptLocs tcl (.head tcls')) hargLocs h1
+          exact applyFnTClosure_ioFree_wfTypeResult fuel_top IH st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call h_call_lt tcl _ hwf_fn (hcaptLocs tcl (.head tcls')) hargLocs hargClosLocs h1
         | inr htail =>
           exact ih rs' (fun t ht => hcaptLocs t (.tail tcl ht)) h2 r htail
 
-/-- mapM of applyPFnTClosure gives wfTypeResult for all results -/
-private lemma mapM_applyPFnTClosure_forall_wfTypeResult
+-- typecheckExpr_preserves_wfTypeResult_main and public API moved to after refLocs_preservation section
+
+end wfTypeResult_preservation
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Combined ref-location boundedness preservation
+-- ═══════════════════════════════════════════════════════════════════
+
+/-- joinTypeResults preserves etypRefLocsBounded through the ETyp join fold. -/
+private lemma joinTypeResults_etypRefLocsBounded
+    (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult)
+    (hjoin : joinTypeResults ctx r rs = .ok res)
+    (hRl : etypRefLocsBounded r.qualType.etyp res.nextLoc')
+    (hAllRs : ∀ r' ∈ rs, etypRefLocsBounded r'.qualType.etyp res.nextLoc') :
+    etypRefLocsBounded res.qualType.etyp res.nextLoc' := by
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, _resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvsStrong acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 _resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
+  have h_fold_inv :
+      ∀ (rss : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
+        (∀ r' ∈ rss, etypRefLocsBounded r'.qualType.etyp res.nextLoc') →
+        List.foldlM joinStep acc rss = Except.ok acc' →
+        etypRefLocsBounded acc.1 res.nextLoc' →
+        etypRefLocsBounded acc'.1 res.nextLoc' := by
+    intro rss acc acc' hAll h hbClos
+    induction rss generalizing acc with
+    | nil => simp [List.foldlM_nil, pure, Except.pure] at h; rw [← h]; exact hbClos
+    | cons x xs ih =>
+        cases hqx : x.qualType with
+        | mk resEtyp resPoison resPred =>
+            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at h
+            have hx := hAll x (.head xs)
+            have hAll_xs : ∀ r' ∈ xs, etypRefLocsBounded r'.qualType.etyp res.nextLoc' :=
+              fun r' hr' => hAll r' (.tail x hr')
+            exact ih _ hAll_xs h
+              (by rw [hqx] at hx
+                  exact etypRefLocsBounded_joinETyps (p1 := acc.2.2.1) (p2 := resPoison) hbClos hx)
+  cases hqt : r.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
+            MonadExceptOf.throw, TypecheckM] at hjoin
+      cases hcheck :
+          (List.foldlM
+        (fun x result =>
+          match result.qualType with
+          | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+            if beqETypSignature etyp resEtyp = false then
+              Except.error
+                (toString "Closure alternatives produced incompatible result types: " ++ toString (repr etyp) ++
+                    toString " vs " ++ toString (repr resEtyp))
+            else Except.ok ())
+        () rs : Except String Unit) with
+      | error err => erw [hcheck] at hjoin; simp at hjoin
+      | ok _ =>
+          erw [hcheck] at hjoin; simp at hjoin
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') rs with
+          | error err => erw [hfold] at hjoin; simp at hjoin
+          | ok a =>
+              erw [hfold] at hjoin; simp at hjoin
+              subst res; simp
+              exact h_fold_inv rs _ _ hAllRs hfold (by rw [hqt] at hRl; exact hRl)
+
+/-- joinTypeResults preserves etypClosuresCapturedRefLocsBounded through the ETyp join fold. -/
+private lemma joinTypeResults_etypClosuresCapturedRefLocsBounded
+    (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult)
+    (hjoin : joinTypeResults ctx r rs = .ok res)
+    (hRl : etypClosuresCapturedRefLocsBounded r.qualType.etyp res.nextLoc')
+    (hAllRs : ∀ r' ∈ rs, etypClosuresCapturedRefLocsBounded r'.qualType.etyp res.nextLoc') :
+    etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc' := by
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, _resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvsStrong acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 _resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
+  have h_fold_inv :
+      ∀ (rss : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
+        (∀ r' ∈ rss, etypClosuresCapturedRefLocsBounded r'.qualType.etyp res.nextLoc') →
+        List.foldlM joinStep acc rss = Except.ok acc' →
+        etypClosuresCapturedRefLocsBounded acc.1 res.nextLoc' →
+        etypClosuresCapturedRefLocsBounded acc'.1 res.nextLoc' := by
+    intro rss acc acc' hAll h hbClos
+    induction rss generalizing acc with
+    | nil => simp [List.foldlM_nil, pure, Except.pure] at h; rw [← h]; exact hbClos
+    | cons x xs ih =>
+        cases hqx : x.qualType with
+        | mk resEtyp resPoison resPred =>
+            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at h
+            have hx := hAll x (.head xs)
+            have hAll_xs : ∀ r' ∈ xs, etypClosuresCapturedRefLocsBounded r'.qualType.etyp res.nextLoc' :=
+              fun r' hr' => hAll r' (.tail x hr')
+            exact ih _ hAll_xs h
+              (by rw [hqx] at hx
+                  exact etypClosuresCapturedRefLocsBounded_joinETyps (p1 := acc.2.2.1) (p2 := resPoison) hbClos hx)
+  cases hqt : r.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
+            MonadExceptOf.throw, TypecheckM] at hjoin
+      cases hcheck :
+          (List.foldlM
+        (fun x result =>
+          match result.qualType with
+          | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+            if beqETypSignature etyp resEtyp = false then
+              Except.error
+                (toString "Closure alternatives produced incompatible result types: " ++ toString (repr etyp) ++
+                    toString " vs " ++ toString (repr resEtyp))
+            else Except.ok ())
+        () rs : Except String Unit) with
+      | error err => erw [hcheck] at hjoin; simp at hjoin
+      | ok _ =>
+          erw [hcheck] at hjoin; simp at hjoin
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') rs with
+          | error err => erw [hfold] at hjoin; simp at hjoin
+          | ok a =>
+              erw [hfold] at hjoin; simp at hjoin
+              subst res; simp
+              exact h_fold_inv rs _ _ hAllRs hfold (by rw [hqt] at hRl; exact hRl)
+
+/-- Abbreviation for the three-part result outputs:
+    wfTypeResult + ref-location boundedness for result etyp. -/
+private abbrev refLocsResultOutputs (res : TypeResult) : Prop :=
+  wfTypeResult res ∧
+  etypRefLocsBounded res.qualType.etyp res.nextLoc' ∧
+  etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc'
+
+/-- Per-closure ref-locs: applyFnTClosure with combined IH gives refLocsResultOutputs. -/
+private lemma applyFnTClosure_refLocsResultOutputs
     (fuel_top : Nat)
     (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
-        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → wfTypeResult res')
+        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → refLocsResultOutputs res')
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result_fn : TypeResult) (fuel_call : Nat)
+    (h_call_lt : fuel_call < fuel_top)
+    (tcl : FnTClosure) (res : TypeResult)
+    (hwf_fn : wfTypeResult result_fn)
+    (hcaptLocs : match tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
+      | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+    (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
+    (htc : applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call = .ok res) :
+    refLocsResultOutputs res := by
+  -- wfTypeResult comes from the existing helper
+  have hwfRes : wfTypeResult res :=
+    applyFnTClosure_ioFree_wfTypeResult fuel_top
+      (fun m hm e' c r' hwfc htc' => (IH m hm e' c r' hwfc htc').1)
+      st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call h_call_lt tcl res
+      hwf_fn hcaptLocs hargLocs hargClosLocs htc
+  -- For ref-locs: dispatch on closure type. Build all three parts together.
+  suffices h : etypRefLocsBounded res.qualType.etyp res.nextLoc' ∧
+               etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc' from
+    ⟨hwfRes, h.1, h.2⟩
+  cases fuel_call with
+  | zero => unfold applyFnTClosure at htc; simp at htc
+  | succ fuelBody =>
+    cases tcl with
+    | regular x body tenv =>
+      unfold applyFnTClosure at htc
+      simp only [bind, Except.bind] at htc
+      let ctx'' : TypeContext := { ctx with
+        pc := joinPoison p (joinPoison p1 ctx.pc),
+        memEnv := result_fn.memEnv', varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
+        tagEnv := result_fn.tagEnv', nextTag := result_fn.nextTag',
+        nextLoc := result_fn.nextLoc', regime := result_fn.regime' }
+      cases htc_body : typecheckExpr ctx'' body fuelBody with
+      | error _ => dsimp only [ctx''] at htc_body; simp [htc_body] at htc
+      | ok result3 =>
+        dsimp only [ctx''] at htc_body; simp only [htc_body] at htc
+        have hwf_ctx'' : wfTypeContext ctx'' := ⟨hwf_fn,
+          varEnvRefLocsBounded_update
+            (varEnvRefLocsBounded_ofCaptured (capturedEnvRefLocsBounded_of_fullBounded_refLocs hcaptLocs))
+            hargLocs,
+          varEnvClosuresCapturedRefLocsBounded_update
+            (varEnvClosuresCapturedRefLocsBounded_ofCaptured hcaptLocs) hargClosLocs⟩
+        have hIH3 := IH fuelBody (Nat.lt_trans (Nat.lt_succ_self _) h_call_lt) body ctx'' result3
+          hwf_ctx'' htc_body
+        -- normalizeAppResultByProvenance preserves etyp/nextLoc' → ref-locs carry through
+        cases hqt3 : result3.qualType with
+        | mk etyp3 p3 pred3 =>
+          simp [hqt3] at htc hIH3
+          simp [normalizeAppResultByProvenance] at htc
+          split at htc
+          · simp at htc  -- isSubtype fails → error → contradiction
+          · simp [pure, Except.pure] at htc
+            have hrl3 : etypRefLocsBounded etyp3 result3.nextLoc' := by
+              have := hIH3.2.1; rw [hqt3] at this; exact this
+            have hcl3 : etypClosuresCapturedRefLocsBounded etyp3 result3.nextLoc' := by
+              have := hIH3.2.2; rw [hqt3] at this; exact this
+            split at htc <;> (subst htc; exact ⟨hrl3, hcl3⟩)
+    | extern x retSpec effects capturedEnv =>
+      have hcapt : CapturedEnvRefLocsFullBounded capturedEnv result_fn.nextLoc' := hcaptLocs
+      unfold applyFnTClosure at htc
+      simp only [bind, Except.bind] at htc
+      repeat (first | split at htc | simp [pure, Except.pure] at htc)
+      -- Helper for nested cases (closure bounded from unified env)
+      -- Apply to all goals since have scopes to first goal only
+      all_goals (try (
+        have hUEF : CapturedEnvRefLocsFullBounded
+              ((VarTypeEnv.ofCaptured capturedEnv).update x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩).toCaptured result_fn.nextLoc' :=
+          CapturedEnvRefLocsFullBounded_of_toCaptured
+            (varEnvRefLocsBounded_update
+              (varEnvRefLocsBounded_ofCaptured (capturedEnvRefLocsBounded_of_fullBounded_refLocs hcapt)) hargLocs)
+            (varEnvClosuresCapturedRefLocsBounded_update
+              (varEnvClosuresCapturedRefLocsBounded_ofCaptured hcapt) hargClosLocs)
+        -- Try nested: subst, unfold normalizeApp, split, closure proof
+        try simp [pure, Except.pure] at htc
+        subst htc; unfold normalizeAppResultByProvenance; split <;>
+          exact ⟨trivial, fun tcl hmem => by simp at hmem; subst hmem; exact hUEF⟩))
+      -- Handle remaining simple return goal
+      subst htc; rename_i hRetSpec; revert hRetSpec; unfold returnSpecToQTyp
+      split <;> simp [bind, Except.bind, pure, Except.pure, normalizeAppResultByProvenance]
+        <;> intro h <;> (try rcases h with ⟨rfl, rfl⟩) <;> split <;> exact ⟨trivial, trivial⟩
+
+/-- mapM of applyFnTClosure gives refLocsResultOutputs for all results -/
+private lemma mapM_applyFnTClosure_forall_refLocs
+    (fuel_top : Nat)
+    (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → refLocsResultOutputs res')
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result_fn : TypeResult) (fuel_call : Nat)
+    (h_call_lt : fuel_call < fuel_top) (hwf_fn : wfTypeResult result_fn)
+    (tcls : List FnTClosure) (results : List TypeResult)
+    (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
+      | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+    (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
+    (hmapM : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call) tcls = .ok results) :
+    ∀ r ∈ results, refLocsResultOutputs r := by
+  induction tcls generalizing results with
+  | nil =>
+    simp [List.mapM_nil, pure, Except.pure] at hmapM
+    cases hmapM; intro r hr; cases hr
+  | cons tcl tcls' ih =>
+    simp [List.mapM_cons, bind, Except.bind] at hmapM
+    cases h1 : applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call with
+    | error _ => simp [h1] at hmapM
+    | ok r1 =>
+      simp [h1] at hmapM
+      cases h2 : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call) tcls' with
+      | error _ => simp [h2] at hmapM
+      | ok rs' =>
+        simp [h2, pure, Except.pure] at hmapM
+        cases hmapM
+        intro r hr; simp at hr
+        cases hr with
+        | inl heq =>
+          subst heq
+          exact applyFnTClosure_refLocsResultOutputs fuel_top IH st1 st2 p p1 argEtyp argPoison argPred
+            ctx result_fn fuel_call h_call_lt tcl _ hwf_fn (hcaptLocs tcl (.head tcls'))
+            hargLocs hargClosLocs h1
+        | inr htail =>
+          exact ih rs' (fun t ht => hcaptLocs t (.tail tcl ht)) h2 r htail
+
+/-- Per-PFnTClosure ref-locs: applyPFnTClosure with combined IH gives refLocsResultOutputs. -/
+private lemma applyPFnTClosure_refLocsResultOutputs
+    (fuel_top : Nat)
+    (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → refLocsResultOutputs res')
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result_fn : TypeResult) (fuel_call : Nat)
+    (h_call_lt : fuel_call < fuel_top)
+    (tcl : PFnTClosure) (res : TypeResult)
+    (hwf_fn : wfTypeResult result_fn)
+    (hcaptLocs : match tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
+      | .extern _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+    (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
+    (htc : applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call = .ok res) :
+    refLocsResultOutputs res := by
+  have hwfRes : wfTypeResult res :=
+    applyPFnTClosure_ioFree_wfTypeResult fuel_top
+      (fun m hm e' c r' hwfc htc' => (IH m hm e' c r' hwfc htc').1)
+      st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call h_call_lt tcl res hwf_fn
+      hcaptLocs hargLocs hargClosLocs htc
+  suffices h : etypRefLocsBounded res.qualType.etyp res.nextLoc' ∧
+               etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc' from
+    ⟨hwfRes, h.1, h.2⟩
+  cases fuel_call with
+  | zero => unfold applyPFnTClosure at htc; simp at htc
+  | succ fuelBody =>
+    cases tcl with
+    | regular x body tenv =>
+      unfold applyPFnTClosure at htc
+      simp only [bind, Except.bind] at htc
+      -- Body is typechecked as a PExpr → uses typecheckExpr via IH
+      let ctx'' : TypeContext := { ctx with
+        pc := joinPoison p (joinPoison ctx.pc p1),
+        memEnv := result_fn.memEnv', varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
+        tagEnv := result_fn.tagEnv', nextTag := result_fn.nextTag',
+        nextLoc := result_fn.nextLoc', regime := result_fn.regime', pureCtx := true }
+      cases htc_body : typecheckExpr ctx'' (PExpr.toExpr body) fuelBody with
+      | error _ => simp only [ctx''] at htc_body; simp [htc_body] at htc
+      | ok result3 =>
+        simp only [ctx''] at htc_body; simp only [htc_body] at htc
+        have hwf_ctx'' : wfTypeContext ctx'' := ⟨hwf_fn,
+          varEnvRefLocsBounded_update
+            (varEnvRefLocsBounded_ofCaptured (capturedEnvRefLocsBounded_of_fullBounded_refLocs hcaptLocs))
+            hargLocs,
+          varEnvClosuresCapturedRefLocsBounded_update
+            (varEnvClosuresCapturedRefLocsBounded_ofCaptured hcaptLocs) hargClosLocs⟩
+        have hIH3 := IH fuelBody (Nat.lt_trans (Nat.lt_succ_self _) h_call_lt)
+          (PExpr.toExpr body) ctx'' result3 hwf_ctx'' htc_body
+        -- normalizeAppResultByProvenance preserves etyp/nextLoc'
+        cases hqt3 : result3.qualType with
+        | mk etyp3 p3 pred3 =>
+          simp [hqt3] at htc hIH3
+          have hrl3 : etypRefLocsBounded etyp3 result3.nextLoc' := by
+            have := hIH3.2.1; rw [hqt3] at this; exact this
+          have hcl3 : etypClosuresCapturedRefLocsBounded etyp3 result3.nextLoc' := by
+            have := hIH3.2.2; rw [hqt3] at this; exact this
+          simp [normalizeAppResultByProvenance] at htc
+          split at htc
+          · simp at htc  -- isSubtype false → error
+          · simp [pure, Except.pure] at htc
+            split at htc <;> (subst htc; exact ⟨hrl3, hcl3⟩)
+    | extern x retSpec capturedEnv =>
+      have hcapt : CapturedEnvRefLocsFullBounded capturedEnv result_fn.nextLoc' := hcaptLocs
+      unfold applyPFnTClosure at htc
+      simp only [bind, Except.bind] at htc
+      repeat (first | split at htc | simp [pure, Except.pure] at htc)
+      all_goals (try (
+        have hUEF : CapturedEnvRefLocsFullBounded
+              ((VarTypeEnv.ofCaptured capturedEnv).update x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩).toCaptured result_fn.nextLoc' :=
+          CapturedEnvRefLocsFullBounded_of_toCaptured
+            (varEnvRefLocsBounded_update
+              (varEnvRefLocsBounded_ofCaptured (capturedEnvRefLocsBounded_of_fullBounded_refLocs hcapt)) hargLocs)
+            (varEnvClosuresCapturedRefLocsBounded_update
+              (varEnvClosuresCapturedRefLocsBounded_ofCaptured hcapt) hargClosLocs)
+        try simp [pure, Except.pure] at htc
+        subst htc; unfold normalizeAppResultByProvenance; split <;>
+          exact ⟨trivial, fun tcl hmem => by simp at hmem; subst hmem; exact hUEF⟩))
+      -- Handle remaining simple return goal
+      subst htc; rename_i hRetSpec; revert hRetSpec; unfold returnSpecToQTyp
+      split <;> simp [bind, Except.bind, pure, Except.pure, normalizeAppResultByProvenance]
+        <;> intro h <;> (try rcases h with ⟨rfl, rfl⟩) <;> split <;> exact ⟨trivial, trivial⟩
+
+/-- mapM of applyPFnTClosure gives refLocsResultOutputs for all results -/
+private lemma mapM_applyPFnTClosure_forall_refLocs
+    (fuel_top : Nat)
+    (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → refLocsResultOutputs res')
     (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
     (ctx : TypeContext) (result_fn : TypeResult) (fuel_call : Nat)
     (h_call_lt : fuel_call < fuel_top) (hwf_fn : wfTypeResult result_fn)
     (tcls : List PFnTClosure) (results : List TypeResult)
+    (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
+      | .extern _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+    (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
     (hmapM : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call) tcls = .ok results) :
-    ∀ r ∈ results, wfTypeResult r := by
+    ∀ r ∈ results, refLocsResultOutputs r := by
   induction tcls generalizing results with
   | nil =>
     simp [List.mapM_nil, pure, Except.pure] at hmapM
@@ -12507,257 +13250,593 @@ private lemma mapM_applyPFnTClosure_forall_wfTypeResult
       | ok rs' =>
         simp [h2, pure, Except.pure] at hmapM
         cases hmapM
-        intro r hr
-        simp at hr
+        intro r hr; simp at hr
         cases hr with
         | inl heq =>
           subst heq
-          exact applyPFnTClosure_ioFree_wfTypeResult fuel_top IH st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call h_call_lt tcl _ hwf_fn h1
+          exact applyPFnTClosure_refLocsResultOutputs fuel_top IH st1 st2 p p1 argEtyp argPoison argPred
+            ctx result_fn fuel_call h_call_lt tcl _ hwf_fn (hcaptLocs tcl (.head tcls'))
+            hargLocs hargClosLocs h1
         | inr htail =>
-          exact ih rs' h2 r htail
+          exact ih rs' (fun t ht => hcaptLocs t (.tail tcl ht)) h2 r htail
 
-/-- typecheckApp preserves wfTypeResult.
-    Uses sorry for arrow/parrow mapM + joinTypeResults inline unfolding. -/
-private lemma typecheckApp_wfTypeResult
-    (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
-    (hwf : wfTypeContext ctx)
-    (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
-        wfTypeContext ctx' →
-        typecheck ctx' e m = .ok res' → wfTypeResult res') :
-    typecheckApp ctx e1 e2 fuel = .ok res → wfTypeResult res := by
-  intro htc
-  cases fuel with
-  | zero => simp [typecheckApp] at htc
-  | succ fuel' =>
-    have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-    unfold typecheckApp at htc
-    simp only [bind, Except.bind] at htc
-    cases htc2 : typecheckExpr ctx e2 fuel' with
-    | error _ => simp [htc2] at htc
-    | ok result2 =>
-      simp [htc2] at htc
-      have hwf2 : wfTypeResult result2 :=
-        IH fuel' h_fuel e2 ctx result2 hwf (by simpa [typecheck] using htc2)
-      cases hqt2 : result2.qualType with
-      | mk etyp2 p2 pred2 =>
-        simp [hqt2] at htc
-        cases htc1 : typecheckExpr { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' } e1 fuel' with
-        | error _ => simp [htc1] at htc
-        | ok result1 =>
-          simp [htc1] at htc
-          have hwf_ctx' : wfTypeContext { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' } := by
-            simp only [wfTypeContext]; exact hwf2
-          have hwf1 : wfTypeResult result1 :=
-            IH fuel' h_fuel e1 _ result1 hwf_ctx' (by simpa [typecheck] using htc1)
-          cases hqt1 : result1.qualType with
-          | mk etyp1 p1_val pred1 =>
-            simp [hqt1] at htc
-            cases etyp1 with
-            | arrow st1 st2 p tcls =>
-              simp at htc
-              by_cases hpure : ctx.pureCtx = true
-              · simp [hpure] at htc
-              · simp [hpure] at htc
-                simp [pure, Except.pure] at htc
-                by_cases hempty : tcls = []
-                · simp [hempty] at htc
-                · simp [hempty] at htc
-                  by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
-                  · simp [hsub] at htc
-                  · push_neg at hsub
-                    simp [hsub] at htc
-                    cases hmap : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2 ctx result1 fuel') tcls with
-                    | error _ => simp [hmap] at htc
-                    | ok results =>
-                      simp [hmap] at htc
-                      cases hresults : results with
-                      | nil => subst hresults; simp at htc
-                      | cons firstResult restResults =>
-                        subst hresults; simp at htc
-                        have hwf_all : ∀ r ∈ firstResult :: restResults, wfTypeResult r :=
-                          mapM_applyFnTClosure_forall_wfTypeResult
-                            fuel'.succ IH st1 st2 p p1_val etyp2 p2 pred2
-                            ctx result1 fuel' h_fuel hwf1 tcls _
-                            (by sorry) -- capturedEnvRefLocsBounded: invariant maintenance through typing induction (future work)
-                            (by sorry) -- etypRefLocsBounded for arg: invariant maintenance through typing induction (future work)
-                            hmap
-                        exact joinTypeResults_wfTypeResult ctx firstResult restResults res htc
-                          (hwf_all firstResult (by simp))
-                          (fun r hr => hwf_all r (by simp [hr]))
-            | parrow st1 st2 p tcls_p =>
-              simp at htc
-              by_cases hempty : tcls_p = []
-              · simp [hempty] at htc
-              · simp [hempty] at htc
-                simp [pure, Except.pure] at htc
-                by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
-                · simp [hsub] at htc
-                · push_neg at hsub
-                  simp [hsub] at htc
-                  cases hmap : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2 ctx result1 fuel') tcls_p with
-                  | error _ => simp [hmap] at htc
-                  | ok results =>
-                    simp [hmap] at htc
-                    cases hresults : results with
-                    | nil => subst hresults; simp at htc
-                    | cons firstResult restResults =>
-                      subst hresults; simp at htc
-                      have hwf_all : ∀ r ∈ firstResult :: restResults, wfTypeResult r :=
-                        mapM_applyPFnTClosure_forall_wfTypeResult
-                          fuel'.succ IH st1 st2 p p1_val etyp2 p2 pred2
-                          ctx result1 fuel' h_fuel hwf1 tcls_p _ hmap
-                      exact joinTypeResults_wfTypeResult ctx firstResult restResults res htc
-                        (hwf_all firstResult (by simp))
-                        (fun r hr => hwf_all r (by simp [hr]))
-            | _ => simp at htc
+section refLocs_preservation
 
-/-- Main lemma: typecheckExpr preserves wfTypeResult (strong induction on fuel) -/
-private lemma typecheckExpr_preserves_wfTypeResult_main :
+/-- Abbreviation for the three-part ref-location context inputs. -/
+private abbrev refLocsCtxInputs (ctx : TypeContext) : Prop :=
+  (∀ l, ctx.memEnv.contains l → l < ctx.nextLoc) ∧
+  varEnvRefLocsBounded ctx.varEnv ctx.nextLoc ∧
+  varEnvClosuresCapturedRefLocsBounded ctx.varEnv ctx.nextLoc
+
+/-- Helper: transport refLocsCtxInputs through updateCtxFromResult via monotonicity.
+    seq/op cases: varEnv unchanged, nextLoc goes up. -/
+private lemma refLocsCtxInputs_of_updateCtxFromResult {ctx : TypeContext} {result : TypeResult}
+    (hwf : wfTypeResult result)
+    (hrl : varEnvRefLocsBounded ctx.varEnv ctx.nextLoc)
+    (hcl : varEnvClosuresCapturedRefLocsBounded ctx.varEnv ctx.nextLoc)
+    (hmono : ctx.nextLoc ≤ result.nextLoc') :
+    refLocsCtxInputs (updateCtxFromResult ctx result) := by
+  simp only [refLocsCtxInputs, updateCtxFromResult]
+  exact ⟨hwf, varEnvRefLocsBounded_mono hrl hmono,
+         varEnvClosuresCapturedRefLocsBounded_mono hcl hmono⟩
+
+/-- Convert typecheckExpr to typecheck (they are definitionally equal). -/
+private lemma typecheck_of_typecheckExpr {ctx : TypeContext} {e : Expr} {fuel : Nat} {res : TypeResult}
+    (h : typecheckExpr ctx e fuel = .ok res) : typecheck ctx e fuel = .ok res := h
+
+/-- Main theorem: typechecking preserves ref-location boundedness for result etyp.
+    Strong induction on fuel, parallel to typecheckExpr_preserves_wfTypeResult_main.
+    Hypotheses: the context's memEnv is well-formed, and varEnv entries and their
+    closures have ref-locations bounded by nextLoc.
+    Conclusion: the result etyp's ref-locations and closure captured-env ref-locations
+    are bounded by the result's nextLoc'. -/
+private lemma typecheckExpr_preserves_refLocs_main :
     ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult),
-    wfTypeContext ctx → typecheck ctx e fuel = .ok res → wfTypeResult res := by
+    refLocsCtxInputs ctx →
+    typecheck ctx e fuel = .ok res →
+    refLocsResultOutputs res := by
   intro fuel
   induction fuel using Nat.strong_induction_on with
   | _ fuel IH =>
-    intro ctx e res hwf htc
-    -- IH from strong induction has order (ctx) (e) (res), but case lemmas expect (e) (ctx) (res)
-    have IH' : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
-        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → wfTypeResult res' := by
+    intro ctx e res hwfCtx htc
+    obtain ⟨hwfMem, hrlCtx, hclCtx⟩ := hwfCtx
+    have IH' : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        wfTypeContext ctx' →
+        typecheck ctx' e' m = .ok res' → refLocsResultOutputs res' := by
       intro m hm e' ctx' res'; exact IH m hm ctx' e' res'
+    have hnextLocMono : ctx.nextLoc ≤ res.nextLoc' :=
+      typecheck_nextLoc_mono_main ctx e fuel res htc
     unfold typecheck at htc
     cases fuel with
-    | zero =>
-        unfold typecheckExpr at htc; simp at htc
+    | zero => unfold typecheckExpr at htc; simp at htc
     | succ fuel' =>
-        unfold typecheckExpr at htc
-        have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-        have IH_fuel' : ∀ m < fuel', ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
-            wfTypeContext ctx' → typecheck ctx' e m = .ok res' → wfTypeResult res' := by
-          intro m hm; exact IH' m (Nat.lt_trans hm h_fuel)
-        cases e with
-        | num _n =>
-            unfold typecheckInt at htc; simp [pure, Except.pure] at htc; cases htc; exact hwf
-        | bool _b =>
-            unfold typecheckBool at htc; simp [pure, Except.pure] at htc; cases htc; exact hwf
-        | unit =>
-            unfold typecheckUnit at htc; simp [pure, Except.pure] at htc; cases htc; exact hwf
-        | str _s =>
-            unfold typecheckString at htc; simp [pure, Except.pure] at htc; cases htc; exact hwf
-        | var x =>
-            -- All typecheckVar paths return memEnv' = ctx.memEnv, nextLoc' = ctx.nextLoc
+      unfold typecheckExpr at htc
+      have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
+      cases e with
+      -- ────────────────── Trivial cases: result etyp is int/bool/unit/string ──────────────────
+      | num _ =>
+        unfold typecheckInt at htc; simp [pure, Except.pure] at htc; cases htc
+        exact ⟨hwfMem, trivial, trivial⟩
+      | bool _ =>
+        unfold typecheckBool at htc; simp [pure, Except.pure] at htc; cases htc
+        exact ⟨hwfMem, trivial, trivial⟩
+      | unit =>
+        unfold typecheckUnit at htc; simp [pure, Except.pure] at htc; cases htc
+        exact ⟨hwfMem, trivial, trivial⟩
+      | str _ =>
+        unfold typecheckString at htc; simp [pure, Except.pure] at htc; cases htc
+        exact ⟨hwfMem, trivial, trivial⟩
+
+      -- ────────────────── var: etyp from varEnv lookup ──────────────────
+      | var x =>
+        simp at htc
+        unfold typecheckVar at htc
+        simp only [bind, Except.bind] at htc
+        cases hlookup : ctx.varEnv.lookup x with
+        | none => simp [hlookup] at htc
+        | some qt =>
+          simp [hlookup] at htc
+          -- All typecheckVar paths return memEnv' = ctx.memEnv, nextLoc' = ctx.nextLoc
+          -- and qualType.etyp = qt.etyp (or a subset)
+          -- The key fact: etypRefLocsBounded qt.etyp ctx.nextLoc from hrlCtx
+          have hrl_qt : etypRefLocsBounded qt.etyp ctx.nextLoc := hrlCtx x qt hlookup
+          have hcl_qt : etypClosuresCapturedRefLocsBounded qt.etyp ctx.nextLoc := hclCtx x qt hlookup
+          -- All paths through typecheckVar return nextLoc' = ctx.nextLoc
+          -- and the result etyp is qt.etyp (possibly with pred changed)
+          -- Since nextLoc' = ctx.nextLoc, the bounds transfer directly
+          cases qt with
+          | mk etyp poison pred =>
             simp at htc
-            unfold typecheckVar at htc
-            simp only [bind, Except.bind] at htc
-            cases hlookup : ctx.varEnv.lookup x with
-            | none => simp [hlookup] at htc
-            | some qt =>
-              simp [hlookup] at htc
-              cases qt with
-              | mk etyp poison pred =>
-                simp at htc
-                cases pred with
-                | noPred =>
-                  simp [pure, Except.pure] at htc; cases htc; exact hwf
-                | guardOnly k =>
+            cases pred with
+            | noPred =>
+              simp [pure, Except.pure] at htc; cases htc
+              exact ⟨hwfMem, hrl_qt, hcl_qt⟩
+            | guardOnly k =>
+              simp at htc
+              by_cases hfn : etyp.isFunctionType
+              · simp [hfn] at htc
+              · simp [hfn] at htc
+                revert htc; generalize ctx.tagEnv[k]? = tv
+                cases tv with
+                | none => intro htc; simp at htc; cases htc; exact ⟨hwfMem, hrl_qt, hcl_qt⟩
+                | some tv => cases tv with | mk val deps =>
+                  cases val <;> intro htc <;> simp at htc <;> cases htc <;> exact ⟨hwfMem, hrl_qt, hcl_qt⟩
+            | guardClosure k tcls ptcls body_t =>
+              simp at htc
+              by_cases hfn : etyp.isFunctionType
+              · simp [hfn] at htc
+              · simp [hfn] at htc
+                revert htc; generalize ctx.tagEnv[k]? = tv
+                cases tv with
+                | none => intro htc; simp at htc; cases htc; exact ⟨hwfMem, hrl_qt, hcl_qt⟩
+                | some tv => cases tv with | mk val deps =>
+                  cases val <;> intro htc <;> simp at htc <;> cases htc <;> exact ⟨hwfMem, hrl_qt, hcl_qt⟩
+
+      -- ────────────────── fn: captures varEnv into closure ──────────────────
+      | fn x st1 body st2 =>
+        unfold typecheckFn at htc; simp [pure, Except.pure] at htc; cases htc
+        -- Result etyp = arrow st1 st2 ctx.pc [FnTClosure.regular x body (toCaptured ctx.varEnv)]
+        -- etypRefLocsBounded for arrow is True
+        refine ⟨hwfMem, trivial, ?_⟩
+        -- etypClosuresCapturedRefLocsBounded: one closure, need CapturedEnvRefLocsFullBounded
+        intro tcl hmem
+        simp at hmem; subst hmem
+        exact CapturedEnvRefLocsFullBounded_of_toCaptured hrlCtx hclCtx
+
+      -- ────────────────── pfn: captures varEnv into closure ──────────────────
+      | pfn x st1 body st2 =>
+        unfold typecheckPfn at htc
+        simp [bind, Except.bind] at htc
+        cases h_topexpr : body.toPExpr with
+        | error _ => simp [h_topexpr] at htc
+        | ok pbody =>
+          simp [h_topexpr, pure, Except.pure] at htc; cases htc
+          refine ⟨hwfMem, trivial, ?_⟩
+          intro tcl hmem
+          simp at hmem; subst hmem
+          exact CapturedEnvRefLocsFullBounded_of_toCaptured hrlCtx hclCtx
+
+      -- ────────────────── externFn: captures varEnv into closure ──────────────────
+      | externFn x retSpec effects st =>
+        simp only [typecheckExternFn, pure, Except.pure] at htc; cases htc
+        refine ⟨hwfMem, trivial, ?_⟩
+        intro tcl hmem
+        simp at hmem; subst hmem
+        exact CapturedEnvRefLocsFullBounded_of_toCaptured hrlCtx hclCtx
+
+      -- ────────────────── externPfn: captures varEnv into closure ──────────────────
+      | externPfn x retSpec st =>
+        simp only [typecheckExternPfn, pure, Except.pure] at htc; cases htc
+        refine ⟨hwfMem, trivial, ?_⟩
+        intro tcl hmem
+        simp at hmem; subst hmem
+        exact CapturedEnvRefLocsFullBounded_of_toCaptured hrlCtx hclCtx
+
+      -- ────────────────── externVal: result from surfaceSpecToQTyp ──────────────────
+      | externVal typ poison pred =>
+        -- externVal: result etyp is int, bool, unit, string, or ref with fresh loc
+        -- All have trivial or freshly-bounded ref-locs
+        simp only [typecheckExternVal] at htc
+        simp [Bind.bind, Except.bind, pure, Except.pure] at htc
+        split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+        split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+        split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+        split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+        cases htc
+        rename_i _surf _heqSurf
+        unfold surfaceSpecToQTyp at _heqSurf
+        split at _heqSurf <;> simp [freshTLoc, bind, Except.bind, pure, Except.pure] at _heqSurf
+        · cases _heqSurf; exact ⟨hwfMem, trivial, trivial⟩  -- int
+        · cases _heqSurf; exact ⟨hwfMem, trivial, trivial⟩  -- bool
+        · cases _heqSurf; exact ⟨hwfMem, trivial, trivial⟩  -- unit
+        · cases _heqSurf; exact ⟨hwfMem, trivial, trivial⟩  -- string
+        · -- ref case: fresh location
+          split at _heqSurf <;> simp (config := { failIfUnchanged := false }) at _heqSurf
+          subst _heqSurf
+          rename_i _v _hcond
+          split at _hcond
+          · simp only [Except.ok.injEq] at _hcond; cases _hcond
+            refine ⟨by intro l' hl'
+                       rcases updateMemEnv_contains_eq_or_old ctx.memEnv ctx.nextLoc l' _ hl' with h | h
+                       · rw [h]; exact Nat.lt_succ_self _
+                       · exact Nat.lt_of_lt_of_le (hwfMem l' h) (Nat.le_succ _), ?_, trivial⟩
+            · -- etypRefLocsBounded (ref (singleton ctx.nextLoc)) (ctx.nextLoc + 1)
+              intro l hmem
+              simp [LocSet.singleton] at hmem
+              subst hmem; exact Nat.lt_succ_self _
+          · simp at _hcond
+
+      -- ────────────────── op: result etyp from opEType? (always int or bool) ──────────────────
+      | op e1 oper e2 =>
+        simp at htc
+        have hstruct := typecheckOp_structure ctx e1 e2 oper fuel' res htc
+        rcases hstruct with ⟨r1_op, r2_op, result_etyp, htc1_op, htc2_op, hop,
+          hmem_op, _, hnextloc_op, _, _, hretyp, _, _⟩
+        have hmono1_op := typecheck_nextLoc_mono_main ctx e1 (fuel' - 1) r1_op htc1_op
+        have hIH1_op := IH' (fuel' - 1) (by omega) e1 ctx r1_op ⟨hwfMem, hrlCtx, hclCtx⟩ htc1_op
+        have hwfCtx2 := wfTypeContext_of_wfTypeResult ctx r1_op hIH1_op.1 ⟨hwfMem, hrlCtx, hclCtx⟩ hmono1_op
+        have hwfR2 := (IH' (fuel' - 1) (by omega) e2 _ r2_op hwfCtx2 htc2_op).1
+        refine ⟨by intro l h; rw [hmem_op] at h; rw [hnextloc_op]; exact hwfR2 l h, ?_⟩
+        show etypRefLocsBounded res.qualType.etyp res.nextLoc' ∧
+             etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc'
+        rw [hretyp]
+        cases result_etyp with
+        | int | bool | unit | string => exact ⟨trivial, trivial⟩
+        | ref ls => exact absurd hop (by unfold opEType?; split <;> simp)
+        | arrow _ _ _ _ => exact absurd hop (by unfold opEType?; split <;> simp)
+        | parrow _ _ _ _ => exact absurd hop (by unfold opEType?; split <;> simp)
+
+      -- ────────────────── unaryop: result etyp from opUnaryEType? (always bool) ──────────────────
+      | unaryop oper e1 =>
+        simp at htc
+        have hstruct := typecheckUnaryOp_structure ctx oper e1 fuel' res htc
+        rcases hstruct with ⟨r1_uo, result_etyp, htc1_uo, hop, hmem_uo, _, hnextloc_uo, _, _, hretyp, _, _⟩
+        have hwfR1 := (IH' (fuel' - 1) (by omega) e1 ctx r1_uo ⟨hwfMem, hrlCtx, hclCtx⟩ htc1_uo).1
+        refine ⟨by intro l h; rw [hmem_uo] at h; rw [hnextloc_uo]; exact hwfR1 l h, ?_⟩
+        show etypRefLocsBounded res.qualType.etyp res.nextLoc' ∧
+             etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc'
+        rw [hretyp]
+        cases result_etyp with
+        | int | bool | unit | string => exact ⟨trivial, trivial⟩
+        | ref ls => exact absurd hop (by unfold opUnaryEType?; split <;> simp)
+        | arrow _ _ _ _ => exact absurd hop (by unfold opUnaryEType?; split <;> simp)
+        | parrow _ _ _ _ => exact absurd hop (by unfold opUnaryEType?; split <;> simp)
+
+      -- ────────────────── newRef: result etyp is ref with fresh location ──────────────────
+      | newRef e1 =>
+        simp at htc
+        have hstruct := typecheckNewRef_structure ctx e1 fuel' res htc
+        rcases hstruct with ⟨result1, l, htc1, hl, _, hretyp, _, _, hmem_nr, _, hnextloc, _, _⟩
+        have hwfR1 := (IH' (fuel' - 1) (by omega) e1 ctx result1 ⟨hwfMem, hrlCtx, hclCtx⟩ htc1).1
+        refine ⟨by intro l' hl'; rw [hmem_nr] at hl'; rw [hnextloc]
+                   rcases updateMemEnv_contains_eq_or_old _ _ l' _ hl' with heq | hold
+                   · rw [heq, hl]; exact Nat.lt_succ_self _
+                   · exact Nat.lt_of_lt_of_le (hwfR1 l' hold) (Nat.le_succ _), ?_, ?_⟩
+        · rw [hretyp, hl, hnextloc]
+          intro l' hmem
+          simp [LocSet.singleton] at hmem
+          subst hmem; exact Nat.lt_succ_self _
+        · rw [hretyp]; trivial
+
+      -- ────────────────── assign: result etyp is unit ──────────────────
+      | assign e1 e2 =>
+        simp at htc
+        have IH_wf : ∀ m < fuel', ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+            wfTypeContext ctx' → typecheck ctx' e m = .ok res' → wfTypeResult res' :=
+          fun m hm e' c r' hwfc htc' => (IH' m (by omega) e' c r' hwfc htc').1
+        have hstruct := typecheckAssign_structure ctx e1 e2 fuel' res htc
+        obtain ⟨_, _, _, _, _, _, _, _, _, _, hretyp, -⟩ := hstruct
+        refine ⟨typecheckAssign_wfTypeResult ctx e1 e2 fuel' res ⟨hwfMem, hrlCtx, hclCtx⟩ IH_wf htc, ?_⟩
+        rw [hretyp]; exact ⟨trivial, trivial⟩
+
+      -- ────────────────── deref: result etyp is int ──────────────────
+      | deref e1 =>
+        simp at htc
+        have IH_wf : ∀ m < fuel', ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+            wfTypeContext ctx' → typecheck ctx' e m = .ok res' → wfTypeResult res' :=
+          fun m hm e' c r' hwfc htc' => (IH' m (by omega) e' c r' hwfc htc').1
+        refine ⟨typecheckDeref_wfTypeResult ctx e1 fuel' res ⟨hwfMem, hrlCtx, hclCtx⟩ IH_wf htc, ?_⟩
+        rw [typecheckDeref_etyp_int ctx e1 fuel' res htc]
+        exact ⟨trivial, trivial⟩
+
+      -- ────────────────── seq: result from e2 ──────────────────
+      | seq e1 e2 =>
+        simp at htc
+        have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
+        rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
+        have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+        have hmono1 := typecheck_nextLoc_mono_main ctx e1 (fuel' - 1) result1 htc1'
+        have hwf1 := (IH' (fuel' - 1) (by omega) e1 ctx result1 ⟨hwfMem, hrlCtx, hclCtx⟩ htc1').1
+        have hctx'_inputs : refLocsCtxInputs ctx' := by
+          rw [hctx']; simp only [refLocsCtxInputs, updateCtxFromResult]
+          exact ⟨hwf1, varEnvRefLocsBounded_mono hrlCtx hmono1,
+                 varEnvClosuresCapturedRefLocsBounded_mono hclCtx hmono1⟩
+        have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok res := by simpa using htc2
+        exact IH' (fuel' - 1) (by omega) e2 ctx' res hctx'_inputs htc2'
+
+      -- ────────────────── vlet: bind x to e1 result, then e2 ──────────────────
+      | vlet x e1 e2 =>
+        simp at htc
+        have hstruct := typecheckVlet_structure ctx x e1 e2 fuel' res htc
+        rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, hretyp2,
+          hmem, _, hnextloc, _, _, _, _⟩
+        have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+        have hmono1 := typecheck_nextLoc_mono_main ctx e1 (fuel' - 1) result1 htc1'
+        have hwf1 := (IH' (fuel' - 1) (by omega) e1 ctx result1 ⟨hwfMem, hrlCtx, hclCtx⟩ htc1').1
+        have hIH1 := IH' (fuel' - 1) (by omega) e1 ctx result1 ⟨hwfMem, hrlCtx, hclCtx⟩ htc1'
+        have hctx'_inputs : refLocsCtxInputs ctx' := by
+          rw [hctx']; simp only [refLocsCtxInputs]
+          exact ⟨hwf1,
+                 varEnvRefLocsBounded_update (varEnvRefLocsBounded_mono hrlCtx hmono1) hIH1.2.1,
+                 varEnvClosuresCapturedRefLocsBounded_update
+                   (varEnvClosuresCapturedRefLocsBounded_mono hclCtx hmono1) hIH1.2.2⟩
+        have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok result2 := by simpa using htc2
+        have hIH2 := IH' (fuel' - 1) (by omega) e2 ctx' result2 hctx'_inputs htc2'
+        exact ⟨by intro l h; rw [hmem] at h; rw [hnextloc]; exact hIH2.1 l h,
+               by rw [hretyp2, hnextloc]; exact hIH2.2.1,
+               by rw [hretyp2, hnextloc]; exact hIH2.2.2⟩
+
+      -- ────────────────── ite: three modes ──────────────────
+      | ite e1 e2 e3 =>
+        simp at htc
+        show refLocsResultOutputs res
+        -- Compute wfTypeResult once using per-case helper
+        have IH_wf : ∀ m < fuel', ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+            wfTypeContext ctx' → typecheck ctx' e m = .ok res' → wfTypeResult res' :=
+          fun m hm e' c r' hwfc htc' => (IH' m (by omega) e' c r' hwfc htc').1
+        have hwfRes := typecheckIf_wfTypeResult ctx e1 e2 e3 fuel' res ⟨hwfMem, hrlCtx, hclCtx⟩ IH_wf htc
+        have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
+        rcases hstruct with hmode1 | hmode2 | hmode3
+        · -- Mode 1 (true branch): res.etyp = res2.etyp, nextLoc' = max
+          obtain ⟨k, deps, _, _, _, _, _, res2, _, htc_e2, _, _, _, hnextloc, _, _, -, hretyp⟩ := hmode1
+          let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+          have htc2' : typecheck ctxTrue e2 (fuel' - 1) = .ok res2 := htc_e2
+          have hIH2 := IH' (fuel' - 1) (by omega) e2 ctxTrue res2 ⟨hwfMem, hrlCtx, hclCtx⟩ htc2'
+          refine ⟨hwfRes, ?_, ?_⟩
+          · rw [hretyp, hnextloc]
+            exact etypRefLocsBounded_mono hIH2.2.1 (Nat.le_max_left _ _)
+          · rw [hretyp, hnextloc]
+            exact etypClosuresCapturedRefLocsBounded_mono hIH2.2.2 (Nat.le_max_left _ _)
+        · -- Mode 2 (false branch): res.etyp = res3.etyp, nextLoc' = max
+          obtain ⟨k, deps, _, _, _, _, _, res2, res3, htc_e2, htc_e3, _, _, hnextloc, _, _, -, hretyp⟩ := hmode2
+          let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+          have hmono2 : ctx.nextLoc ≤ res2.nextLoc' :=
+            typecheck_nextLoc_mono_main ctxTrue e2 (fuel' - 1) res2 htc_e2
+          let ctxFalse : TypeContext :=
+            { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
+                       nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+          have hIH3 := IH' (fuel' - 1) (by omega) e3 ctxFalse res3
+            ⟨fun l h => Nat.lt_of_lt_of_le (hwfMem l h) hmono2,
+             varEnvRefLocsBounded_mono hrlCtx hmono2,
+             varEnvClosuresCapturedRefLocsBounded_mono hclCtx hmono2⟩ htc_e3
+          refine ⟨hwfRes, ?_, ?_⟩
+          · rw [hretyp, hnextloc]
+            exact etypRefLocsBounded_mono hIH3.2.1 (Nat.le_max_right _ _)
+          · rw [hretyp, hnextloc]
+            exact etypClosuresCapturedRefLocsBounded_mono hIH3.2.2 (Nat.le_max_right _ _)
+        · -- Mode 3 (conservative): res.etyp = joinETyps res2 res3, nextLoc' = max
+          obtain ⟨_, hmode3_rest⟩ := hmode3
+          obtain ⟨res1, htc_e1, _, res2, htc_e2, res3, htc_e3,
+            _, _, hnextloc, _, _, -, hretyp, -⟩ := hmode3_rest
+          have htc1' := typecheck_of_typecheckExpr htc_e1
+          have hmono1 := typecheck_nextLoc_mono_main ctx e1 (fuel' - 1) res1 htc1'
+          have hwf1 := (IH' (fuel' - 1) (by omega) e1 ctx res1 ⟨hwfMem, hrlCtx, hclCtx⟩ htc1').1
+          -- IH on e2: ctx for e2 has memEnv/nextLoc from res1, varEnv from ctx
+          have hIH2 := IH' (fuel' - 1) (by omega) e2 _ res2 (by
+            exact ⟨hwf1, varEnvRefLocsBounded_mono hrlCtx hmono1,
+              varEnvClosuresCapturedRefLocsBounded_mono hclCtx hmono1⟩)
+            (typecheck_of_typecheckExpr htc_e2)
+          -- IH on e3: ctx has nextLoc = res2.nextLoc'
+          have hmono12 : res1.nextLoc' ≤ res2.nextLoc' :=
+            typecheck_nextLoc_mono_main _ e2 (fuel' - 1) res2 (typecheck_of_typecheckExpr htc_e2)
+          have hIH3 := IH' (fuel' - 1) (by omega) e3 _ res3 (by
+            exact ⟨fun l h => Nat.lt_of_lt_of_le (hwf1 l h) hmono12,
+                   varEnvRefLocsBounded_mono hrlCtx (Nat.le_trans hmono1 hmono12),
+                   varEnvClosuresCapturedRefLocsBounded_mono hclCtx (Nat.le_trans hmono1 hmono12)⟩)
+            (typecheck_of_typecheckExpr htc_e3)
+          refine ⟨hwfRes, ?_, ?_⟩
+          · rw [hretyp, hnextloc]
+            exact etypRefLocsBounded_joinETyps
+                   (etypRefLocsBounded_mono hIH2.2.1 (Nat.le_max_left _ _))
+                   (etypRefLocsBounded_mono hIH3.2.1 (Nat.le_max_right _ _))
+          · rw [hretyp, hnextloc]
+            exact etypClosuresCapturedRefLocsBounded_joinETyps
+                   (etypClosuresCapturedRefLocsBounded_mono hIH2.2.2 (Nat.le_max_left _ _))
+                   (etypClosuresCapturedRefLocsBounded_mono hIH3.2.2 (Nat.le_max_right _ _))
+
+      -- ────────────────── app: closure application + join ──────────────────
+      | app e1 e2 =>
+        simp at htc
+        show refLocsResultOutputs res
+        -- Unfold typecheckApp
+        unfold typecheckApp at htc
+        cases fuel' with
+        | zero => simp at htc
+        | succ fuel'' =>
+          simp at htc
+          simp [bind, Except.bind] at htc
+          -- Step 1: IH on e2 (argument, typechecked first)
+          cases htc2 : typecheckExpr ctx e2 fuel'' with
+          | error _ => simp [htc2] at htc
+          | ok result2 =>
+            simp [htc2] at htc
+            have hmono2 : ctx.nextLoc ≤ result2.nextLoc' :=
+              typecheck_nextLoc_mono_main ctx e2 fuel'' result2 htc2
+            have hIH_e2 := IH' fuel'' (by omega) e2 ctx result2
+              ⟨hwfMem, hrlCtx, hclCtx⟩ htc2
+            -- Case-split on result2.qualType (needed for simp to reduce match in htc)
+            cases hqt2 : result2.qualType with
+            | mk etyp2 p2 pred2 =>
+              simp [hqt2] at htc
+              -- Build context for e1
+              have hwf_ctx' : wfTypeContext (updateCtxFromResult ctx result2) :=
+                ⟨hIH_e2.1, varEnvRefLocsBounded_mono hrlCtx hmono2,
+                 varEnvClosuresCapturedRefLocsBounded_mono hclCtx hmono2⟩
+              cases htc1 : typecheckExpr { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' } e1 fuel'' with
+              | error _ => simp [htc1] at htc
+              | ok result1 =>
+                simp [htc1] at htc
+                have hIH_e1 := IH' fuel'' (by omega) e1 _ result1 hwf_ctx' htc1
+                have hwf1 : wfTypeResult result1 := hIH_e1.1
+                have hmono_e1 : result2.nextLoc' ≤ result1.nextLoc' :=
+                  typecheck_nextLoc_mono_main _ e1 fuel'' result1 htc1
+                have hArgRefLocs : etypRefLocsBounded etyp2 result1.nextLoc' := by
+                  have := hIH_e2.2.1; simp [hqt2] at this
+                  exact etypRefLocsBounded_mono this hmono_e1
+                have hClosRefLocs := hIH_e1.2.2
+                cases hqt1 : result1.qualType with
+                | mk etyp1 p1_val pred1 =>
+                  simp [hqt1] at htc hClosRefLocs
+                  cases etyp1 with
+                | arrow st1 st2 p tcls =>
                   simp at htc
-                  by_cases hfn : etyp.isFunctionType
-                  · simp [hfn] at htc
-                  · simp [hfn] at htc
-                    -- All tag lookup outcomes return memEnv' = ctx.memEnv, nextLoc' = ctx.nextLoc
-                    revert htc; generalize ctx.tagEnv[k]? = tv
-                    cases tv with
-                    | none => intro htc; simp at htc; cases htc; exact hwf
-                    | some tv => cases tv with | mk val deps =>
-                      cases val <;> intro htc <;> simp at htc <;> cases htc <;> exact hwf
-                | guardClosure k tcls ptcls body_t =>
+                  by_cases hpure : ctx.pureCtx = true
+                  · simp [hpure] at htc
+                  · simp [hpure] at htc
+                    by_cases hempty : tcls = []
+                    · simp [hempty] at htc
+                    · simp [hempty] at htc
+                      by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
+                      · simp [hsub] at htc
+                      · push_neg at hsub
+                        simp [hsub] at htc
+                        cases hmap : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2 ctx result1 fuel'') tcls with
+                        | error _ => simp [hmap] at htc
+                        | ok results =>
+                          simp [hmap] at htc
+                          have hcaptLocs : ∀ tcl ∈ tcls, match tcl with
+                              | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
+                              | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc' := by
+                            intro tcl htcl; exact hClosRefLocs tcl htcl
+                          have hArgClosRefLocs : etypClosuresCapturedRefLocsBounded etyp2 result1.nextLoc' := by
+                            have := hIH_e2.2.2; simp [hqt2] at this
+                            exact etypClosuresCapturedRefLocsBounded_mono this hmono_e1
+                          have IH_wf : ∀ m < fuel'' + 1 + 1, ∀ (e : Expr) (ctx' : TypeContext)
+                              (res' : TypeResult), wfTypeContext ctx' →
+                              typecheck ctx' e m = .ok res' → wfTypeResult res' :=
+                            fun m hm e' c r' hwfc htc' => (IH' m (by omega) e' c r' hwfc htc').1
+                          have hall := mapM_applyFnTClosure_forall_refLocs
+                              (fuel'' + 1 + 1) IH' st1 st2 p p1_val etyp2 p2 pred2
+                              ctx result1 fuel'' (by omega) hwf1 tcls results
+                              hcaptLocs hArgRefLocs hArgClosRefLocs hmap
+                          cases hresults : results with
+                          | nil => subst hresults; simp at htc
+                          | cons firstResult restResults =>
+                            subst hresults; simp at htc
+                            -- Each member's refLocsResultOutputs gives bounds at its own nextLoc.
+                            -- joinTypeResults nextLoc = max of member nextLocs → transport via mono.
+                            -- Per-member at res.nextLoc' (join lemma inputs):
+                            have hrl_at_res : ∀ r ∈ firstResult :: restResults,
+                                etypRefLocsBounded r.qualType.etyp res.nextLoc' := by
+                              intro r hr
+                              have hro := hall r hr
+                              exact etypRefLocsBounded_mono hro.2.1
+                                (joinTypeResults_member_nextLoc_le ctx firstResult restResults res htc r hr)
+                            have hcrl_at_res : ∀ r ∈ firstResult :: restResults,
+                                etypClosuresCapturedRefLocsBounded r.qualType.etyp res.nextLoc' := by
+                              intro r hr
+                              have hro := hall r hr
+                              exact etypClosuresCapturedRefLocsBounded_mono hro.2.2
+                                (joinTypeResults_member_nextLoc_le ctx firstResult restResults res htc r hr)
+                            exact ⟨joinTypeResults_wfTypeResult ctx firstResult restResults res htc
+                                    ((hall firstResult (by simp)).1)
+                                    (fun r hr => (hall r (by simp [hr])).1),
+                              joinTypeResults_etypRefLocsBounded ctx firstResult restResults res htc
+                                (hrl_at_res _ (by simp))
+                                (fun r hr => hrl_at_res r (by simp [hr])),
+                              joinTypeResults_etypClosuresCapturedRefLocsBounded ctx firstResult restResults res htc
+                                (hcrl_at_res _ (by simp))
+                                (fun r hr => hcrl_at_res r (by simp [hr]))⟩
+                | parrow st1 st2 p tcls_p =>
                   simp at htc
-                  by_cases hfn : etyp.isFunctionType
-                  · simp [hfn] at htc
-                  · simp [hfn] at htc
-                    -- All tag lookup outcomes return memEnv' = ctx.memEnv, nextLoc' = ctx.nextLoc
-                    revert htc; generalize ctx.tagEnv[k]? = tv
-                    cases tv with
-                    | none => intro htc; simp at htc; cases htc; exact hwf
-                    | some tv => cases tv with | mk val deps =>
-                      cases val <;> intro htc <;> simp at htc <;> cases htc <;> exact hwf
-        | fn x st1 body st2 =>
-            unfold typecheckFn at htc; simp [pure, Except.pure] at htc; cases htc; exact hwf
-        | pfn x st1 body st2 =>
-            unfold typecheckPfn at htc
-            simp [bind, Except.bind] at htc
-            cases h_topexpr : body.toPExpr with
-            | error _ => simp [h_topexpr] at htc
-            | ok _ => simp [h_topexpr, pure, Except.pure] at htc; cases htc; exact hwf
-        | externVal _ _ _ =>
-            simp only [typecheckExternVal] at htc
-            simp [Bind.bind, Except.bind, pure, Except.pure] at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            cases htc
-            rename_i _surf _heqSurf
-            unfold wfTypeResult
-            unfold surfaceSpecToQTyp at _heqSurf
-            split at _heqSurf <;> simp [freshTLoc, bind, Except.bind, pure, Except.pure] at _heqSurf
-            · intro l hl; cases _heqSurf; exact hwf l hl
-            · intro l hl; cases _heqSurf; exact hwf l hl
-            · intro l hl; cases _heqSurf; exact hwf l hl
-            · intro l hl; cases _heqSurf; exact hwf l hl
-            · split at _heqSurf <;> simp (config := { failIfUnchanged := false }) at _heqSurf
-              subst _heqSurf
-              rename_i _v _hcond
-              split at _hcond
-              · simp only [Except.ok.injEq] at _hcond
-                cases _hcond
-                intro l' hl
-                have hor := updateMemEnv_contains_eq_or_old ctx.memEnv ctx.nextLoc l' _ hl
-                cases hor with
-                | inl hEq => rw [hEq]; exact Nat.lt_succ_self ctx.nextLoc
-                | inr hOld => exact Nat.lt_of_lt_of_le (hwf l' hOld) (Nat.le_succ _)
-              · simp at _hcond
-        | externFn _ _ _ _ =>
-            simp only [typecheckExternFn, pure, Except.pure] at htc
-            cases htc
-            exact hwf
-        | externPfn _ _ _ =>
-            simp only [typecheckExternPfn, pure, Except.pure] at htc
-            cases htc
-            exact hwf
-        | op e1 op e2 =>
-            simp at htc
-            exact typecheckOp_wfTypeResult ctx e1 e2 op fuel' res hwf IH_fuel' htc
-        | unaryop op e1 =>
-            simp at htc
-            exact typecheckUnaryOp_wfTypeResult ctx op e1 fuel' res hwf IH_fuel' htc
-        | ite e1 e2 e3 =>
-            simp at htc
-            exact typecheckIf_wfTypeResult ctx e1 e2 e3 fuel' res hwf IH_fuel' htc
-        | newRef e1 =>
-            simp at htc
-            exact typecheckNewRef_wfTypeResult ctx e1 fuel' res hwf IH_fuel' htc
-        | assign e1 e2 =>
-            simp at htc
-            exact typecheckAssign_wfTypeResult ctx e1 e2 fuel' res hwf IH_fuel' htc
-        | deref e1 =>
-            simp at htc
-            exact typecheckDeref_wfTypeResult ctx e1 fuel' res hwf IH_fuel' htc
-        | seq e1 e2 =>
-            simp at htc
-            exact typecheckSeq_wfTypeResult ctx e1 e2 fuel' res hwf IH_fuel' htc
-        | vlet x e1 e2 =>
-            simp at htc
-            exact typecheckVlet_wfTypeResult ctx x e1 e2 fuel' res hwf IH_fuel' htc
-        | app e1 e2 =>
-            simp at htc
-            exact typecheckApp_wfTypeResult ctx e1 e2 fuel' res hwf IH_fuel' htc
+                  by_cases hempty : tcls_p = []
+                  · simp [hempty] at htc
+                  · simp [hempty] at htc
+                    by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
+                    · simp [hsub] at htc
+                    · push_neg at hsub; simp [hsub] at htc
+                      cases hmap : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2 ctx result1 fuel'') tcls_p with
+                      | error _ => simp [hmap] at htc
+                      | ok results =>
+                        simp [hmap] at htc
+                        have hClosRefLocsP := hIH_e1.2.2
+                        simp [hqt1] at hClosRefLocsP
+                        have hcaptLocsP : ∀ tcl ∈ tcls_p, match tcl with
+                            | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
+                            | .extern _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc' :=
+                          fun tcl htcl => hClosRefLocsP tcl htcl
+                        have hArgClosRefLocsP : etypClosuresCapturedRefLocsBounded etyp2 result1.nextLoc' := by
+                          have := hIH_e2.2.2; simp [hqt2] at this
+                          exact etypClosuresCapturedRefLocsBounded_mono this hmono_e1
+                        have hall := mapM_applyPFnTClosure_forall_refLocs
+                            (fuel'' + 1 + 1) IH' st1 st2 p p1_val etyp2 p2 pred2
+                            ctx result1 fuel'' (by omega) hwf1 tcls_p results
+                            hcaptLocsP hArgRefLocs hArgClosRefLocsP hmap
+                        cases hresults : results with
+                        | nil => subst hresults; simp at htc
+                        | cons firstResult restResults =>
+                          subst hresults; simp at htc
+                          have hrl_at_res : ∀ r ∈ firstResult :: restResults,
+                              etypRefLocsBounded r.qualType.etyp res.nextLoc' := by
+                            intro r hr; exact etypRefLocsBounded_mono (hall r hr).2.1
+                              (joinTypeResults_member_nextLoc_le ctx firstResult restResults res htc r hr)
+                          have hcrl_at_res : ∀ r ∈ firstResult :: restResults,
+                              etypClosuresCapturedRefLocsBounded r.qualType.etyp res.nextLoc' := by
+                            intro r hr; exact etypClosuresCapturedRefLocsBounded_mono (hall r hr).2.2
+                              (joinTypeResults_member_nextLoc_le ctx firstResult restResults res htc r hr)
+                          exact ⟨joinTypeResults_wfTypeResult ctx firstResult restResults res htc
+                                  ((hall firstResult (by simp)).1)
+                                  (fun r hr => (hall r (by simp [hr])).1),
+                            joinTypeResults_etypRefLocsBounded ctx firstResult restResults res htc
+                              (hrl_at_res _ (by simp))
+                              (fun r hr => hrl_at_res r (by simp [hr])),
+                            joinTypeResults_etypClosuresCapturedRefLocsBounded ctx firstResult restResults res htc
+                              (hcrl_at_res _ (by simp))
+                              (fun r hr => hcrl_at_res r (by simp [hr]))⟩
+                | _ => simp at htc
+
+end refLocs_preservation
+
+/-- Main lemma: typecheckExpr preserves wfTypeResult (delegates to combined induction). -/
+private lemma typecheckExpr_preserves_wfTypeResult_main :
+    ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult),
+    wfTypeContext ctx → typecheck ctx e fuel = .ok res → wfTypeResult res :=
+  fun fuel ctx e res hwf htc =>
+    (typecheckExpr_preserves_refLocs_main fuel ctx e res hwf htc).1
 
 /-- Public API: successful typechecking preserves wfTypeResult. -/
 lemma typecheckExpr_preserves_wfTypeResult (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (hwf : wfTypeContext ctx) (htc : typecheck ctx e fuel = .ok res) :
     wfTypeResult res :=
-  typecheckExpr_preserves_wfTypeResult_main fuel ctx e res hwf htc
+  (typecheckExpr_preserves_refLocs_main fuel ctx e res hwf htc).1
 
-end wfTypeResult_preservation
+/-- Public API: successful typechecking preserves etypRefLocsBounded for result etyp. -/
+lemma typecheckExpr_preserves_etypRefLocsBounded (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+    (hwf : wfTypeContext ctx) (htc : typecheck ctx e fuel = .ok res) :
+    etypRefLocsBounded res.qualType.etyp res.nextLoc' :=
+  (typecheckExpr_preserves_refLocs_main fuel ctx e res hwf htc).2.1
+
+/-- Public API: successful typechecking preserves etypClosuresCapturedRefLocsBounded for result etyp. -/
+lemma typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+    (hwf : wfTypeContext ctx) (htc : typecheck ctx e fuel = .ok res) :
+    etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc' :=
+  (typecheckExpr_preserves_refLocs_main fuel ctx e res hwf htc).2.2
+
+/-- Build wfTypeContext for a closure body context given the function result's ref-loc properties
+    and the argument's ref-loc properties. Used at FR closure-application sites. -/
+lemma wfTypeContext_closureBody
+    (result_fn : TypeResult) (capturedEnv : CapturedVarEnv) (x : Name)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (pc' : Poison) (ctx : TypeContext)
+    (hwf_fn : wfTypeResult result_fn)
+    (hcaptFull : CapturedEnvRefLocsFullBounded capturedEnv result_fn.nextLoc')
+    (hargRL : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargCRL : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc') :
+    wfTypeContext { ctx with
+      pc := pc', memEnv := result_fn.memEnv',
+      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
+        ⟨argEtyp, argPoison, argPred⟩,
+      tagEnv := result_fn.tagEnv', nextLoc := result_fn.nextLoc',
+      nextTag := result_fn.nextTag', regime := result_fn.regime' } :=
+  ⟨hwf_fn,
+   varEnvRefLocsBounded_update
+     (varEnvRefLocsBounded_ofCaptured (capturedEnvRefLocsBounded_of_fullBounded_refLocs hcaptFull)) hargRL,
+   varEnvClosuresCapturedRefLocsBounded_update
+     (varEnvClosuresCapturedRefLocsBounded_ofCaptured hcaptFull) hargCRL⟩
+
+/-- Combined theorem: typechecking preserves wfTypeResult and ref-location boundedness.
+    This is the target theorem from Step 1 of the extern-axioms plan. -/
+private lemma typecheckExpr_wfTypeResult_and_refLocs :
+    ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult),
+    (∀ l, ctx.memEnv.contains l → l < ctx.nextLoc) →
+    varEnvRefLocsBounded ctx.varEnv ctx.nextLoc →
+    varEnvClosuresCapturedRefLocsBounded ctx.varEnv ctx.nextLoc →
+    typecheck ctx e fuel = .ok res →
+    wfTypeResult res ∧
+    etypRefLocsBounded res.qualType.etyp res.nextLoc' ∧
+    etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc' := by
+  intro fuel ctx e res hwfCtx hrlCtx hclCtx htc
+  exact typecheckExpr_preserves_refLocs_main fuel ctx e res ⟨hwfCtx, hrlCtx, hclCtx⟩ htc
 
 section memEnv_contains_preservation
 

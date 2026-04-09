@@ -406,6 +406,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_newRef_parametric
   have hwf1 : wfTypeContext (ctxAfter ctxᵢ res1) :=
     wfTypeContext_of_wfTypeResult ctxᵢ res1
       (typecheckExpr_preserves_wfTypeResult ctxᵢ e fuel' res1 hwf htc1')
+      hwf (typecheck_nextLoc_mono ctxᵢ e fuel' res1 htc1')
   have hwfcfg1 : wfConfig cfg' := (wfConfig_preserved e _ cfg' (Value.num n) ht_e hwfcfg).1
   have hregime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime := by
     simp [ctxAfter, h_regime]
@@ -517,7 +518,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_newRef_parametric
     · subst l0
       have hcontains_in : ctxᵢ.memEnv.contains l = true :=
         memEnv_contains_of_lookup_some ctxᵢ.memEnv l qt_in hlookup_in
-      have hlt_ctx : l < ctxᵢ.nextLoc := hwf l hcontains_in
+      have hlt_ctx : l < ctxᵢ.nextLoc := hwf.1 l hcontains_in
       have hmono_next : ctxᵢ.nextLoc ≤ res1.nextLoc' :=
         typecheck_nextLoc_mono ctxᵢ e fuel' res1 htc1'
       have hlt_res1 : l < res1.nextLoc' := Nat.lt_of_lt_of_le hlt_ctx hmono_next
@@ -541,7 +542,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_newRef_parametric
       have hlt_mid : l < res1.nextLoc' := by
         have : (ctxAfter ctxᵢ res1).memEnv.contains l = true := by
           simpa [ctxAfter] using hcontains_mid
-        exact hwf1 l this
+        exact hwf1.1 l this
       have : False := by simp [hl] at hlt_mid
       exact this.elim
     · cases hθ1lookup : θ1.lookup l0 with
@@ -698,6 +699,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
   have hwf1 : wfTypeContext (ctxAfter ctxᵢ res1) :=
     wfTypeContext_of_wfTypeResult ctxᵢ res1
       (typecheckExpr_preserves_wfTypeResult ctxᵢ e fuel' res1 hwf htc1')
+      hwf (typecheck_nextLoc_mono ctxᵢ e fuel' res1 htc1')
   have hwfcfg1 : wfConfig cfg' := (wfConfig_preserved e _ cfg' (Value.num n) ht_e hwfcfg).1
   have hregime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime := by
     simp [ctxAfter, h_regime]
@@ -812,7 +814,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
     · subst l0
       have hcontains_in : ctxᵢ.memEnv.contains l = true :=
         memEnv_contains_of_lookup_some ctxᵢ.memEnv l qt_in hlookup_in
-      have hlt_ctx : l < ctxᵢ.nextLoc := hwf l hcontains_in
+      have hlt_ctx : l < ctxᵢ.nextLoc := hwf.1 l hcontains_in
       have hmono_next : ctxᵢ.nextLoc ≤ res1.nextLoc' :=
         typecheck_nextLoc_mono ctxᵢ e fuel' res1 htc1'
       have hlt_res1 : l < res1.nextLoc' := Nat.lt_of_lt_of_le hlt_ctx hmono_next
@@ -836,7 +838,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
       have hlt_mid : l < res1.nextLoc' := by
         have : (ctxAfter ctxᵢ res1).memEnv.contains l = true := by
           simpa [ctxAfter] using hcontains_mid
-        exact hwf1 l this
+        exact hwf1.1 l this
       have : False := by simp [hl] at hlt_mid
       exact this.elim
     · cases hθ1lookup : θ1.lookup l0 with
@@ -1067,8 +1069,12 @@ lemma stepFR_newRef
       exact ExtTreeMap_insert_preserves_injectivity θ₁1 l cfg₁'.nextAddr h_fresh_value' h_inj' l₁ l₂ a hlookup1' hlookup2'
   -- Prove wfTypeContext for result
   have hwf_result : wfTypeContext (ctxAfter ctxᵢ res) := by
+    simp only [wfTypeContext, ctxAfter]
+    have hmono_res : ctxᵢ.nextLoc ≤ res.nextLoc' := by
+      rw [h_loc]; exact Nat.le_trans (typecheck_nextLoc_mono ctxᵢ e fuel' res1 htc1') (Nat.le_succ _)
+    refine ⟨?_, varEnvRefLocsBounded_mono hwf.2.1 hmono_res,
+             varEnvClosuresCapturedRefLocsBounded_mono hwf.2.2 hmono_res⟩
     intro l' hcontains
-    simp [ctxAfter] at hcontains ⊢
     rw [h_mem] at hcontains
     rw [h_loc]
     by_cases h_eq : l' = l
@@ -1085,7 +1091,7 @@ lemma stepFR_newRef
       have hcontains' : res1.memEnv'.contains l' = true := (Std.ExtTreeMap.contains_iff_mem).2 hmem'
       have hlt : l' < res1.nextLoc' := by
         have : (ctxAfter ctxᵢ res1).memEnv.contains l' := by simpa [ctxAfter] using hcontains'
-        exact hwf1 l' this
+        exact hwf1.1 l' this
       exact Nat.lt_succ_of_lt hlt
   -- Prove runtimeInstantiatesCtx for θ₀'
   have hric₀' : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by

@@ -484,14 +484,15 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have hwf_false : wfTypeContext ctxFalse := by
                       simpa [ctxFalse, wfTypeContext] using hwf
                     have hwf_false' : wfTypeContext ctxFalse' := by
-                      intro l hl
-                      simp only [ctxFalse', ctxFalse] at hl ⊢
                       have hle : ctxᵢ.nextLoc ≤ _res2.nextLoc' := by
                         have htc2_tc : typecheck { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' = .ok _res2 := by
                           simpa [typecheck] using _htc2
                         have := typecheck_nextLoc_mono { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' _res2 htc2_tc
                         simpa using this
-                      exact Nat.lt_of_lt_of_le (hwf_false l hl) hle
+                      simp only [ctxFalse', wfTypeContext]
+                      exact ⟨fun l hl => by simp only [ctxFalse] at hl ⊢; exact Nat.lt_of_lt_of_le (hwf_false.1 l hl) hle,
+                             varEnvRefLocsBounded_mono hwf_false.2.1 hle,
+                             varEnvClosuresCapturedRefLocsBounded_mono hwf_false.2.2 hle⟩
                     have htagR_false : regimeConsistentWithCtxMasked masked ctxFalse := by
                       exact
                         tagEnvConsistentWithRegimeMasked_insert_false
@@ -680,7 +681,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have hwf1 : wfTypeResult res1 :=
                       typecheckExpr_preserves_wfTypeResult ctxᵢ e1 fuel' res1 hwf htc1'
                     have hwf_ctx' : wfTypeContext ctx' := by
-                      simpa [ctx'] using wfTypeContext_of_wfTypeResult ctxᵢ res1 hwf1
+                      simpa [ctx'] using wfTypeContext_of_wfTypeResult ctxᵢ res1 hwf1 hwf
+                        (typecheck_nextLoc_mono ctxᵢ e1 fuel' res1 htc1')
                     have hwfTm_ctx'' : wfTagMeaningCtx tm ctx'' := by
                       simpa [ctx'', ctx', pc'] using hwfTm1
                     have hwf_ctx'' : wfTypeContext ctx'' := by
@@ -714,9 +716,10 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have hwfTm_ctxForE3 : wfTagMeaningCtx tm ctxForE3 := by
                       simpa [ctxForE3, ctx'', ctx', pc'] using hwfTm1
                     have hwf_ctxForE3 : wfTypeContext ctxForE3 := by
-                      intro l hl
-                      simp only [ctxForE3, ctx'', ctx', ctxAfter] at hl ⊢
-                      exact Nat.lt_of_lt_of_le (hwf_ctx' l hl) hnextLoc_mono
+                      simp only [ctxForE3, wfTypeContext]
+                      exact ⟨fun l hl => by simp only [ctx'', ctx', ctxAfter] at hl ⊢; exact Nat.lt_of_lt_of_le (hwf_ctx'.1 l hl) hnextLoc_mono,
+                             varEnvRefLocsBounded_mono hwf_ctx'.2.1 hnextLoc_mono,
+                             varEnvClosuresCapturedRefLocsBounded_mono hwf_ctx'.2.2 hnextLoc_mono⟩
                     have hric1_ctxForE3 :
                         runtimeInstantiatesCtx ctxForE3 cfg1.memory cfg1.varEnv θ1 := by
                       simpa [ctxForE3, ctx'', ctx', pc', ctxAfter, runtimeInstantiatesCtx] using hric1

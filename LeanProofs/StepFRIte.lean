@@ -2934,10 +2934,12 @@ private lemma stepFR_ite_true
     simp only [wfTagMeaningCtx] at _hTm2 ⊢
     rwa [hctxAfter_varEnv, hctxAfter_memEnv]
   · -- wfTypeContext: depends on memEnv and nextLoc (monotone in nextLoc)
+    simp only [wfTypeContext, ctxAfter, hnextLoc]
+    refine ⟨?_, varEnvRefLocsBounded_mono hwf2.2.1 (by simp [ctxAfter]),
+             varEnvClosuresCapturedRefLocsBounded_mono hwf2.2.2 (by simp [ctxAfter])⟩
     intro l hl
-    simp only [ctxAfter, hnextLoc]
-    rw [hctxAfter_memEnv] at hl
-    exact Nat.lt_of_lt_of_le (hwf2 l hl) (Nat.le_max_left _ _)
+    rw [hmemEnv] at hl
+    exact Nat.lt_of_lt_of_le (hwf2.1 l (by simpa [ctxAfter] using hl)) (Nat.le_max_left _ _)
   · refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
       (qt := res.qualType) (μ := cf₀.memory) (v := o₀) ?_ ?_
     · simp [qtypGuardTag, hpredNo]
@@ -3077,14 +3079,15 @@ private lemma stepFR_ite_false
   have hwf_false : wfTypeContext ctxFalse := by
     simpa [wfTypeContext, ctxFalse] using hwf
   have hwf_false' : wfTypeContext ctxFalse' := by
-    intro l hl
-    simp only [ctxFalse', ctxFalse] at hl ⊢
+    simp only [wfTypeContext, ctxFalse', ctxFalse]
     have hle : ctxᵢ.nextLoc ≤ _res2.nextLoc' := by
       have htc2_tc : typecheck { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' = .ok _res2 := by
         simpa [typecheck] using _htc2
       have := typecheck_nextLoc_mono { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' _res2 htc2_tc
       simpa using this
-    exact Nat.lt_of_lt_of_le (hwf_false l hl) hle
+    exact ⟨fun l hl => Nat.lt_of_lt_of_le (hwf_false.1 l hl) hle,
+           varEnvRefLocsBounded_mono hwf_false.2.1 hle,
+           varEnvClosuresCapturedRefLocsBounded_mono hwf_false.2.2 hle⟩
   have hric₀1' : runtimeInstantiatesCtx ctxFalse cfg₀1.memory cfg₀1.varEnv θ₀1 := by
     have hsub₀ : ∀ l, res1.memEnv'.contains l → ctxᵢ.memEnv.contains l := by
       rcases matchGuard_ok_toPExpr?_some ctxᵢ e1 k deps hmatch with ⟨pe1, hpe1⟩
@@ -3378,10 +3381,12 @@ private lemma stepFR_ite_false
     simp only [wfTagMeaningCtx] at _hTm3 ⊢
     rwa [hctxAfter_varEnv, hctxAfter_memEnv]
   · -- wfTypeContext: depends on memEnv and nextLoc (monotone in nextLoc)
+    simp only [wfTypeContext, ctxAfter, hnextLoc]
+    refine ⟨?_, varEnvRefLocsBounded_mono hwf3.2.1 (by simp [ctxAfter]),
+             varEnvClosuresCapturedRefLocsBounded_mono hwf3.2.2 (by simp [ctxAfter])⟩
     intro l hl
-    simp only [ctxAfter, hnextLoc]
-    rw [hctxAfter_memEnv] at hl
-    exact Nat.lt_of_lt_of_le (hwf3 l hl) (Nat.le_max_right _ _)
+    rw [hmemEnv] at hl
+    exact Nat.lt_of_lt_of_le (hwf3.1 l (by simpa [ctxAfter] using hl)) (Nat.le_max_right _ _)
   · refine valueConsistentWithRegime.noTag (predSat := predSat) (R := (ctxAfter ctxᵢ res).regime)
       (qt := res.qualType) (μ := cf₀.memory) (v := o₀) ?_ ?_
     · simp [qtypGuardTag, hpredNo]
@@ -3722,9 +3727,10 @@ private lemma stepFR_ite_standard
   have hwfTm_ctxForE3 : wfTagMeaningCtx tm ctxForE3 := by
     simpa [ctxForE3, ctx'', ctx', pc'] using hwfTm1
   have hwf_ctxForE3 : wfTypeContext ctxForE3 := by
-    intro l hl
-    simp only [ctxForE3, ctx'', ctx'] at hl ⊢
-    exact Nat.lt_of_lt_of_le (hwf1 l hl) hnextLoc_mono
+    simp only [wfTypeContext, ctxForE3, ctx'', ctx']
+    exact ⟨fun l hl => Nat.lt_of_lt_of_le (hwf1.1 l hl) hnextLoc_mono,
+           varEnvRefLocsBounded_mono hwf1.2.1 hnextLoc_mono,
+           varEnvClosuresCapturedRefLocsBounded_mono hwf1.2.2 hnextLoc_mono⟩
   have hric₀1_ctxForE3 :
       runtimeInstantiatesCtx ctxForE3 cfg₀1.memory cfg₀1.varEnv θ₀1 := by
     simpa [ctxForE3, ctx'', ctx', pc', ctxAfter, runtimeInstantiatesCtx] using hric₀1
@@ -3973,6 +3979,7 @@ private lemma stepFR_ite_standard
             wfTypeContext_of_wfTypeResult ctxᵢ res
               (typecheckExpr_preserves_wfTypeResult
                 ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwf htc)
+              hwf (typecheck_nextLoc_mono ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res htc)
           have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) :=
             typecheckExpr_preserves_regimeConsistentWithCtx
               ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res htagR htc
@@ -4266,6 +4273,7 @@ private lemma stepFR_ite_standard
             wfTypeContext_of_wfTypeResult ctxᵢ res
               (typecheckExpr_preserves_wfTypeResult
                 ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwf htc)
+              hwf (typecheck_nextLoc_mono ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res htc)
           have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) :=
             typecheckExpr_preserves_regimeConsistentWithCtx
               ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res htagR htc
@@ -4950,6 +4958,7 @@ private lemma stepFR_ite_standard
             wfTypeContext_of_wfTypeResult ctxᵢ res
               (typecheckExpr_preserves_wfTypeResult
                 ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwf htc)
+              hwf (typecheck_nextLoc_mono ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res htc)
           have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) :=
             typecheckExpr_preserves_regimeConsistentWithCtx
               ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res htagR htc
@@ -5751,6 +5760,7 @@ private lemma stepFR_ite_standard
             wfTypeContext_of_wfTypeResult ctxᵢ res
               (typecheckExpr_preserves_wfTypeResult
                 ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwf htc)
+              hwf (typecheck_nextLoc_mono ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res htc)
           have htag_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) :=
             typecheckExpr_preserves_regimeConsistentWithCtx
               ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res htagR htc

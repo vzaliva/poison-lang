@@ -4010,7 +4010,7 @@ lemma deref_foldM_etyp_int
 lemma wfTypeResult_of_wfTypeContext_ctxAfter (ctx : TypeContext) (res : TypeResult) :
   wfTypeContext (ctxAfter ctx res) → wfTypeResult res := by
   simp only [wfTypeContext, ctxAfter, wfTypeResult]
-  exact id
+  exact fun ⟨h, _, _⟩ => h
 
 -- If l is not in ctx.memEnv and runtimeInstantiatesCtx holds, then θ.lookup l = none
 -- (contrapositive of runtimeInstantiatesCtx's first conjunct)
@@ -5836,35 +5836,7 @@ lemma list_mapM_ok_mem_output_exists_input
     ⟨x, hxmem, hxy⟩
   exact ⟨x, hxmem, hxy⟩
 
--- Body typecheck in app context: wfTypeResult for result3 from typecheckExpr_preserves_wfTypeResult.
-lemma applyFnTClosure_regular_body_wfTypeResult
-  (ctx : TypeContext) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuelBody : Nat)
-  (x : Name) (body : Expr) (tenv : CapturedVarEnv)
-  (hwf1 : wfTypeResult result1)
-  (ctx'' : TypeContext)
-  (hctx'' : ctx'' = { ctx with
-      pc := joinPoison p (joinPoison p1 ctx.pc)
-      memEnv := result1.memEnv'
-      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
-        ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-      tagEnv := result1.tagEnv'
-      nextTag := result1.nextTag'
-      nextLoc := result1.nextLoc'
-      regime := result1.regime' })
-  (result3 : TypeResult)
-  (htc : typecheckExpr ctx'' body fuelBody = .ok result3) :
-  wfTypeResult result3 := by
-  have hwf_ctx'' : wfTypeContext ctx'' := by
-    rw [hctx'']
-    simp only [wfTypeContext]
-    exact hwf1
-  exact typecheckExpr_preserves_wfTypeResult ctx'' body fuelBody result3 hwf_ctx''
-    (by simpa [typecheck] using htc)
-
 -- Helper lemmas for wfTagMeaningCtx in closure body contexts.
--- These need to be before applyFnTClosure_ok_wfTypeResult.
 
 lemma QTypRespectsTagMeaning_of_arrow_captured_lookup
   (tm : TagMeaning)
@@ -6597,51 +6569,6 @@ lemma typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded
           -- By hbound, ctx.tagEnv.get? k = none since k ≥ ctx.nextTag.
           show ctx.tagEnv.get? k = none
           exact tagEnvBounded_get_none_of_ge ctx.tagEnv ctx.nextTag k hbound hge
-
--- Layer A (per-member): static facts for successful closure-application typing.
--- wfTypeResult for the body result comes from stepFR IH (StepFR for body → wfTypeResult).
--- These are intentionally isolated so `stepFR_app` can consume them now and we
--- can prove them incrementally.
-lemma applyFnTClosure_ok_wfTypeResult
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (hwf1 : wfTypeResult result1)
-  (tcl : FnTClosure)
-  (r : TypeResult)
-  (happly :
-    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
-  wfTypeResult r := by
-  cases fuel with
-  | zero =>
-    unfold applyFnTClosure at happly
-    simp at happly
-  | succ fuelBody =>
-    cases tcl with
-    | regular x body tenv =>
-      rcases applyFnTClosure_regular_inv ctx st1 st2 p p1 argEtyp argPoison argPred result1 fuelBody
-          x body tenv r (by simpa using happly) with
-        ⟨result3, htc_body, _hsub, hfirst⟩
-      have hwf3 := applyFnTClosure_regular_body_wfTypeResult ctx p p1 argEtyp argPoison argPred
-        result1 fuelBody x body tenv hwf1
-        { ctx with
-          pc := joinPoison p (joinPoison p1 ctx.pc)
-          memEnv := result1.memEnv'
-          varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
-            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-          tagEnv := result1.tagEnv'
-          nextTag := result1.nextTag'
-          nextLoc := result1.nextLoc'
-          regime := result1.regime' }
-        rfl result3 htc_body
-      rw [hfirst]
-      exact hwf3
-    | extern x retSpec effects capturedEnv =>
-      exact applyFnTClosure_extern_wfTypeResult ctx st1 st2 p p1 argEtyp argPoison argPred
-        result1 (fuelBody + 1) x retSpec effects capturedEnv r hwf1
-        (by sorry) -- capturedEnvRefLocsBounded: invariant maintenance (future work)
-        (by sorry) -- etypRefLocsBounded for arg: invariant maintenance (future work)
-        happly
 
 -- ==========================================================================
 -- typecheckExpr preserves regimeConsistentWithCtx

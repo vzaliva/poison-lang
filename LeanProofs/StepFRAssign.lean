@@ -2325,9 +2325,13 @@ lemma stepFR_assign
                     hEnvTm_res2
                     hstored_pred_respects
       exact wfTagMeaningCtx_ctxAfter tm ctxᵢ res hEnvTm_res
-    · intro l hcontains
-      have hcontains' : res.memEnv'.contains l = true := by
-        simpa [ctxAfter] using hcontains
+    · simp only [wfTypeContext, ctxAfter]
+      have hmono_res : ctxᵢ.nextLoc ≤ res.nextLoc' :=
+        typecheck_nextLoc_mono ctxᵢ (Expr.assign e1 e2) (fuel' + 2) res htc
+      refine ⟨?_, varEnvRefLocsBounded_mono hwf.2.1 hmono_res,
+               varEnvClosuresCapturedRefLocsBounded_mono hwf.2.2 hmono_res⟩
+      intro l hcontains
+      have hcontains' : res.memEnv'.contains l = true := hcontains
       have hsplit : res2.memEnv'.contains l = true ∨ l ∈ ls := by
         rw [hmem_res] at hcontains'
         exact assign_memEnv_formula_contains_eq_or_mem
@@ -2339,7 +2343,7 @@ lemma stepFR_assign
       | inl hOld =>
           have hOldCtx : (ctxAfter ctx' res2).memEnv.contains l := by
             simpa [ctxAfter, ctx'] using hOld
-          have hltOld' : l < (ctxAfter ctx' res2).nextLoc := hwf2 l hOldCtx
+          have hltOld' : l < (ctxAfter ctx' res2).nextLoc := hwf2.1 l hOldCtx
           have hltOld : l < res2.nextLoc' := by
             simpa [ctxAfter, ctx'] using hltOld'
           have hbase : res2.nextLoc' ≤ res.nextLoc' := by
@@ -4698,9 +4702,13 @@ private lemma assign_single_run_post_transport_common
                   hEnvTm_res2
                   hstored_pred_respects)
     exact wfTagMeaningCtx_ctxAfter tm ctx res hEnvTm_res
-  · intro l hcontains
-    have hcontains' : res.memEnv'.contains l = true := by
-      simpa [ctxAfter] using hcontains
+  · simp only [wfTypeContext, ctxAfter]
+    have hmono_base : result2.nextLoc' ≤ res.nextLoc' := by
+      rw [hNextLoc]; exact locset_fold_max_ge_init ls result2.nextLoc'
+    refine ⟨?_, varEnvRefLocsBounded_mono hwf2.2.1 (by simp [ctxAfter]; exact hmono_base),
+             varEnvClosuresCapturedRefLocsBounded_mono hwf2.2.2 (by simp [ctxAfter]; exact hmono_base)⟩
+    intro l hcontains
+    have hcontains' : res.memEnv'.contains l = true := hcontains
     have hsplit : result2.memEnv'.contains l = true ∨ l ∈ ls := by
       rw [hmem_res] at hcontains'
       exact
@@ -4715,7 +4723,7 @@ private lemma assign_single_run_post_transport_common
             (ctxAfter (ctxAfter ctx result1) result2).memEnv.contains l := by
           simpa [ctxAfter] using hOld
         have hltOld' : l < (ctxAfter (ctxAfter ctx result1) result2).nextLoc := by
-          exact hwf2 l hOldCtx
+          exact hwf2.1 l hOldCtx
         have hltOld : l < result2.nextLoc' := by
           simpa [ctxAfter] using hltOld'
         have hbase : result2.nextLoc' ≤ res.nextLoc' := by
@@ -4857,9 +4865,13 @@ private lemma assign_single_run_post_transport_common_maskedReg
                   hEnvTm_res2
                   hstored_pred_respects)
     exact wfTagMeaningCtx_ctxAfter tm ctx res hEnvTm_res
-  · intro l hcontains
-    have hcontains' : res.memEnv'.contains l = true := by
-      simpa [ctxAfter] using hcontains
+  · simp only [wfTypeContext, ctxAfter]
+    have hmono_base : result2.nextLoc' ≤ res.nextLoc' := by
+      rw [hNextLoc]; exact locset_fold_max_ge_init ls result2.nextLoc'
+    refine ⟨?_, varEnvRefLocsBounded_mono hwf2.2.1 (by simp [ctxAfter]; exact hmono_base),
+             varEnvClosuresCapturedRefLocsBounded_mono hwf2.2.2 (by simp [ctxAfter]; exact hmono_base)⟩
+    intro l hcontains
+    have hcontains' : res.memEnv'.contains l = true := hcontains
     have hsplit : result2.memEnv'.contains l = true ∨ l ∈ ls := by
       rw [hmem_res] at hcontains'
       exact
@@ -4874,7 +4886,7 @@ private lemma assign_single_run_post_transport_common_maskedReg
             (ctxAfter (ctxAfter ctx result1) result2).memEnv.contains l := by
           simpa [ctxAfter] using hOld
         have hltOld' : l < (ctxAfter (ctxAfter ctx result1) result2).nextLoc := by
-          exact hwf2 l hOldCtx
+          exact hwf2.1 l hOldCtx
         have hltOld : l < result2.nextLoc' := by
           simpa [ctxAfter] using hltOld'
         have hbase : result2.nextLoc' ≤ res.nextLoc' := by
@@ -5035,9 +5047,13 @@ private lemma assign_single_run_post_transport_pc_true
                   hEnvTm_res2
                   hstored_pred_respects)
     exact wfTagMeaningCtx_ctxAfter tm ctx res hEnvTm_res
-  · intro l hcontains
-    have hcontains' : res.memEnv'.contains l = true := by
-      simpa [ctxAfter] using hcontains
+  · simp only [wfTypeContext, ctxAfter]
+    have hmono_base : result2.nextLoc' ≤ res.nextLoc' := by
+      rw [hNextLoc]; exact locset_fold_max_ge_init ls result2.nextLoc'
+    refine ⟨?_, varEnvRefLocsBounded_mono hwf2.2.1 (by simp [ctxAfter]; exact hmono_base),
+             varEnvClosuresCapturedRefLocsBounded_mono hwf2.2.2 (by simp [ctxAfter]; exact hmono_base)⟩
+    intro l hcontains
+    have hcontains' : res.memEnv'.contains l = true := hcontains
     have hsplit : result2.memEnv'.contains l = true ∨ l ∈ ls := by
       rw [hmem_res] at hcontains'
       exact
@@ -5052,7 +5068,7 @@ private lemma assign_single_run_post_transport_pc_true
             (ctxAfter (ctxAfter ctx result1) result2).memEnv.contains l := by
           simpa [ctxAfter] using hOld
         have hltOld' : l < (ctxAfter (ctxAfter ctx result1) result2).nextLoc := by
-          exact hwf2 l hOldCtx
+          exact hwf2.1 l hOldCtx
         have hltOld : l < result2.nextLoc' := by
           simpa [ctxAfter] using hltOld'
         have hbase : result2.nextLoc' ≤ res.nextLoc' := by
@@ -5924,6 +5940,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
   have hwf1 : wfTypeContext (ctxAfter ctx result1) :=
     wfTypeContext_of_wfTypeResult ctx result1
       (typecheckExpr_preserves_wfTypeResult ctx e1 fuel' result1 hwf htc1')
+      hwf (typecheck_nextLoc_mono ctx e1 fuel' result1 htc1')
   have hreg1 : regimeConsistentWithCtx (ctxAfter ctx result1) :=
     typecheckExpr_preserves_regimeConsistentWithCtx ctx e1 fuel' result1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg1 := by
@@ -5997,6 +6014,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
   have hwf2 : wfTypeContext (ctxAfter (ctxAfter ctx result1) result2) :=
     wfTypeContext_of_wfTypeResult (ctxAfter ctx result1) result2
       (typecheckExpr_preserves_wfTypeResult (ctxAfter ctx result1) e2 fuel' result2 hwf1 htc2')
+      hwf1 (typecheck_nextLoc_mono (ctxAfter ctx result1) e2 fuel' result2 htc2')
   have hreg2 : regimeConsistentWithCtx (ctxAfter (ctxAfter ctx result1) result2) :=
     typecheckExpr_preserves_regimeConsistentWithCtx (ctxAfter ctx result1) e2 fuel' result2 hreg1 htc2'
   rcases
@@ -6192,6 +6210,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
   have hwf1 : wfTypeContext (ctxAfter ctx result1) :=
     wfTypeContext_of_wfTypeResult ctx result1
       (typecheckExpr_preserves_wfTypeResult ctx e1 fuel' result1 hwf htc1')
+      hwf (typecheck_nextLoc_mono ctx e1 fuel' result1 htc1')
   have hreg1 : regimeConsistentWithCtxMasked masked (ctxAfter ctx result1) :=
     typecheckExpr_preserves_regimeConsistentWithCtxMasked
       (masked := masked) ctx e1 fuel' result1 hregCtx htc1'
@@ -6272,6 +6291,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
   have hwf2 : wfTypeContext (ctxAfter (ctxAfter ctx result1) result2) :=
     wfTypeContext_of_wfTypeResult (ctxAfter ctx result1) result2
       (typecheckExpr_preserves_wfTypeResult (ctxAfter ctx result1) e2 fuel' result2 hwf1 htc2')
+      hwf1 (typecheck_nextLoc_mono (ctxAfter ctx result1) e2 fuel' result2 htc2')
   have hreg2 : regimeConsistentWithCtxMasked masked (ctxAfter (ctxAfter ctx result1) result2) :=
     typecheckExpr_preserves_regimeConsistentWithCtxMasked
       (masked := masked) (ctxAfter ctx result1) e2 fuel' result2 hreg1 htc2'

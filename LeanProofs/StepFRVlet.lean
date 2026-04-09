@@ -518,7 +518,14 @@ lemma stepFR_vlet
   -- Prepare for IH2
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
-  have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using hwf1
+  have hwf1' : wfTypeContext ctx' := by
+    rw [hctx']; simp only [wfTypeContext]
+    have hmono1 := typecheck_nextLoc_mono ctxᵢ e1 fuel' res1 htc1'
+    exact ⟨hwf1.1,
+           varEnvRefLocsBounded_update (varEnvRefLocsBounded_mono hwf.2.1 hmono1)
+             (typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e1 fuel' res1 hwf htc1'),
+           varEnvClosuresCapturedRefLocsBounded_update (varEnvClosuresCapturedRefLocsBounded_mono hwf.2.2 hmono1)
+             (typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e1 fuel' res1 hwf htc1')⟩
   have hric₀1_mem : runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₀1.memory cfg₀1.varEnv θ₀1 := by
     simpa [ctxAfter] using hric₀1
   have hric₁1_mem : runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₁1.memory cfg₁1.varEnv θ₁1 := by
@@ -1650,9 +1657,12 @@ lemma stepFR_vlet
     intro qt hlookup
     exact wfTagMeaningCtx_var_lookup_qtyp tm ctxᵢ vname qt hwfTm hlookup
   · -- wfTypeContext
-    intro l hcontains
-    simp only [ctxAfter, h_mem, h_loc] at hcontains ⊢
-    exact hwf2 l hcontains
+    simp only [wfTypeContext, ctxAfter, h_mem, h_loc]
+    have hmono_res : ctxᵢ.nextLoc ≤ res.nextLoc' :=
+      typecheck_nextLoc_mono ctxᵢ (Expr.vlet vname e1 e2) (fuel' + 2) res htc
+    exact ⟨fun l hcontains => hwf2.1 l (by simpa [ctxAfter, h_mem, h_loc] using hcontains),
+           varEnvRefLocsBounded_mono hwf.2.1 (h_loc ▸ hmono_res),
+           varEnvClosuresCapturedRefLocsBounded_mono hwf.2.2 (h_loc ▸ hmono_res)⟩
   · -- valueConsistentWithRegime for cf₀
     -- Reuse IH2's value consistency for `res2.qualType`, then transport across
     -- the vlet result's predicate threading and varEnv restoration.
@@ -1762,6 +1772,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_vlet_parametric
   have hwf1 : wfTypeContext (ctxAfter ctxᵢ res1) :=
     wfTypeContext_of_wfTypeResult ctxᵢ res1
       (typecheckExpr_preserves_wfTypeResult ctxᵢ e1 fuel' res1 hwf htc1')
+      hwf (typecheck_nextLoc_mono ctxᵢ e1 fuel' res1 htc1')
   have hreg1 : regimeConsistentWithCtx (ctxAfter ctxᵢ res1) :=
     typecheckExpr_preserves_regimeConsistentWithCtx ctxᵢ e1 fuel' res1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg1 := by
@@ -1787,7 +1798,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_vlet_parametric
     simpa [cfg2, hctx', ctxAfter] using
       hCtxCons_body_start ctxᵢ res1 vname cfg1.memory cfg1.varEnv θ1 v1 hctxCons1 hvalc1
   have hwf1' : wfTypeContext ctx' := by
-    simpa [hctx', ctxAfter] using hwf1
+    rw [hctx']; simp only [wfTypeContext]
+    have hmono1 := typecheck_nextLoc_mono ctxᵢ e1 fuel' res1 htc1'
+    exact ⟨hwf1.1,
+           varEnvRefLocsBounded_update (varEnvRefLocsBounded_mono hwf.2.1 hmono1)
+             (typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e1 fuel' res1 hwf htc1'),
+           varEnvClosuresCapturedRefLocsBounded_update (varEnvClosuresCapturedRefLocsBounded_mono hwf.2.2 hmono1)
+             (typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e1 fuel' res1 hwf htc1')⟩
   have hv1_wf : wfValue cfg1.nextAddr v1 := by
     exact (wfConfig_preserved e1 _ cfg1 _ ht_e1 hwfcfg).2
   have hwfcfg2 : wfConfig cfg2 := by
@@ -1979,6 +1996,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   have hwf1 : wfTypeContext (ctxAfter ctxᵢ res1) :=
     wfTypeContext_of_wfTypeResult ctxᵢ res1
       (typecheckExpr_preserves_wfTypeResult ctxᵢ e1 fuel' res1 hwf htc1')
+      hwf (typecheck_nextLoc_mono ctxᵢ e1 fuel' res1 htc1')
   have hreg1 : regimeConsistentWithCtxMasked masked (ctxAfter ctxᵢ res1) :=
     typecheckExpr_preserves_regimeConsistentWithCtxMasked
       (masked := masked) ctxᵢ e1 fuel' res1 hregCtx htc1'
@@ -2017,7 +2035,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
         masked predSat
         ctxᵢ res1 vname cfg1.memory cfg1.varEnv θ1 v1 hctxCons1 hvalc1
   have hwf1' : wfTypeContext ctx' := by
-    simpa [hctx', ctxAfter] using hwf1
+    rw [hctx']; simp only [wfTypeContext]
+    have hmono1 := typecheck_nextLoc_mono ctxᵢ e1 fuel' res1 htc1'
+    exact ⟨hwf1.1,
+           varEnvRefLocsBounded_update (varEnvRefLocsBounded_mono hwf.2.1 hmono1)
+             (typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e1 fuel' res1 hwf htc1'),
+           varEnvClosuresCapturedRefLocsBounded_update (varEnvClosuresCapturedRefLocsBounded_mono hwf.2.2 hmono1)
+             (typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e1 fuel' res1 hwf htc1')⟩
   have hv1_wf : wfValue cfg1.nextAddr v1 := by
     exact (wfConfig_preserved e1 _ cfg1 _ ht_e1 hwfcfg).2
   have hwfcfg2 : wfConfig cfg2 := by

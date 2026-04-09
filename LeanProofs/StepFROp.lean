@@ -487,6 +487,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
   have hwf1 : wfTypeContext (ctxAfter ctx res1) :=
     wfTypeContext_of_wfTypeResult ctx res1
       (typecheckExpr_preserves_wfTypeResult ctx e1 fuel' res1 hwf htc1')
+      hwf (typecheck_nextLoc_mono ctx e1 fuel' res1 htc1')
   have hreg1 : regimeConsistentWithCtxMasked masked (ctxAfter ctx res1) :=
     typecheckExpr_preserves_regimeConsistentWithCtxMasked masked ctx e1 fuel' res1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg1 := by
