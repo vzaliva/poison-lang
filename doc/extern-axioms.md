@@ -2,14 +2,16 @@
 
 ## CURRENT STEP
 
-Start Step 4 with the guard-tag-absence axioms.
+Execute the guard-tag-absence axiom elimination on top of the completed
+`TagBoundedCtx` pivot.
 
 What remains open now:
 
-- `lake build` succeeds with **0 sorry warnings**
-- the remaining proof debt is the 10 extern axioms in `LeanProofs/StepFR.lean`
-- Step 3 triage is complete; the next task is executing the first
-  high-confidence structural reductions
+- Step 3 triage is complete
+- Step 4a (`TagBoundedCtx` pivot) is complete and the proof chain now carries
+  the boundedness facts needed for guard-tag-absence replacement
+- the next concrete target is to delete the three guard-tag-absence axioms and
+  switch callers to the proved `_of_tagEnvBounded` variants
 
 Required next action:
 
@@ -18,14 +20,12 @@ Required next action:
    - `applyFnTClosure_extern_ok_guardClosure_tag_absent`
    - `applyPFnTClosure_extern_ok_guardClosure_tag_absent`
    - `typecheckExternVal_guardClosure_pred_implies_tag_absent`
-2. thread the needed `tagEnvBounded` premises through the current callers;
-   expect this to be an inductive boundedness-threading pass rather than a
-   one-line caller rewrite
-3. if required by the caller path, thread the companion boundedness hypotheses
-   used by `typecheckExpr_preserves_tagEnvBounded`
-   (`predTagsBoundedInCtx` and `closureEnvBoundedInCtx`) through the same
-   recursive contexts
-4. rebuild and confirm the axiom count decreases without reintroducing `sorry`
+2. switch the current callers, starting from the `ioFree_guardClosure...`
+   path in `StepFRAssign.lean`
+3. rebuild and confirm:
+   - `sorry` count stays at zero
+   - the axiom count decreases by three
+4. only after that, move to the next axiom-reduction target
 
 Critical constraints:
 
@@ -34,6 +34,7 @@ Critical constraints:
 - do **not** change `StepFR`, `StepFR_IH`, `FaultRobustnessSpec`, or the
   top-level FR theorem interface unless the axiom triage exposes a genuine new
   blocker
+- treat the current `TagBoundedCtx` widening as settled for this phase
 - prefer proving a proved alternative and switching callers over editing the
   semantic contract surface blindly
 - do **not** start with the semantic `QTypRespectsTagMeaning` contracts; those
@@ -44,6 +45,7 @@ Done means:
 - the three guard-tag-absence axioms are removed from `StepFR.lean`
 - callers use the proved `_of_tagEnvBounded` lemmas instead
 - the axiom surface is strictly smaller than it is now
+- the branch remains at zero `sorry`
 
 **Current status (2026-04-10, branch `new-iofree`, base commit `f6b3c7f`)**
 
@@ -56,8 +58,8 @@ Done means:
   the strengthened `wfTypeContext`
 - `lake build` succeeds cleanly
 - Step 3 triage is now documented in §2.9
-- no new theorem-interface or semantic blocker has appeared; the remaining debt
-  is entirely the 10 extern axioms in `LeanProofs/StepFR.lean`
+- the approved `TagBoundedCtx` pivot is complete in the worktree
+- the remaining debt is the 10 extern axioms in `LeanProofs/StepFR.lean`
 
 ## 1. Problem
 
@@ -596,6 +598,34 @@ Classification:
 | `typecheckExternVal_preserves_lookup_origin_axiom` | likely provable after statement adjustment | expose freshness precondition, then prove structurally |
 | `typecheckExternVal_guardClosure_pred_implies_tag_absent` | provable now | switch callers to proved `_of_tagEnvBounded` lemma; expect boundedness-threading |
 
+### 2.10 Approved Step 4 pivot
+
+The original Step 4 plan assumed the guard-tag-absence axiom replacement could
+start immediately after Step 3. The current proof work exposed a genuine
+blocker:
+
+- the needed `tagEnvBoundedInCtx` facts are not available anywhere in the
+  existing `StepFR` chain
+- they are not derivable from the prior `StepFR` inputs alone
+- the simplest practical route is to carry a bundled tag-boundedness invariant
+  through the internal `StepFR` proof family
+
+Approved pivot:
+
+- introduce and propagate `TagBoundedCtx` through the internal `StepFR`
+  machinery
+- treat the current worktree propagation of that interface as the completed
+  first half of Step 4
+- finish the remaining local `sorry` sites on that route before returning to
+  axiom elimination
+
+Why this pivot is accepted:
+
+- it matches the plan’s escape clause for genuine blockers
+- it avoids a duplicated side induction just to recover boundedness facts
+- it keeps the work concentrated in the existing `StepFR` induction where the
+  needed intermediate contexts already appear
+
 ## 3. Approach
 
 The active work is now axiom triage and reduction, not proof-architecture
@@ -635,7 +665,8 @@ Guideline:
 High-risk-first. This section is forward-looking only.
 
 **Current plan status:** Step 1, Step 2a, Step 2b, and Step 3 are complete.
-The current step is Step 4 axiom reduction.
+Step 4 has been split to reflect the approved `TagBoundedCtx` pivot. The
+current step is Step 4a completion.
 
 ### Step 3. Do per-axiom triage before any axiom-reduction implementation
 
@@ -676,7 +707,37 @@ Done means:
 - the next execution step can target one concrete axiom or one small axiom
   cluster rather than “reassess”
 
-### Step 4. Execute the axiom-reduction plan from Step 3
+### Step 4a. Finish the approved `TagBoundedCtx` pivot
+
+**Status:** complete
+
+Files:
+
+- `LeanProofs/TypeSafety.lean`
+- `LeanProofs/StepFR.lean`
+- `LeanProofs/StepFRApp.lean`
+- `LeanProofs/StepFRIte.lean`
+- `LeanProofs/FaultRobustnessProofs.lean`
+- supporting `StepFR*` files already touched by the propagation
+
+Changes:
+
+- keep the newly introduced `TagBoundedCtx` input/output threading through the
+  internal `StepFR` family
+- close the initial-context bridge `sorry`s
+- close the closure-body `TagBoundedCtx` `sorry`s in `StepFRApp`
+- close the intermediate-context `TagBoundedCtx` transport `sorry`s in
+  `StepFRIte`
+- do **not** yet start deleting axioms until the widened proof family is clean
+
+Done:
+
+- the `TagBoundedCtx` pivot compiles without `sorry`
+- the internal proof family now carries the boundedness facts needed at the
+  guard-tag-absence call sites
+- the branch is ready for the actual axiom-elimination pass
+
+### Step 4b. Execute the guard-tag-absence axiom elimination
 
 **Status:** current
 
@@ -684,7 +745,7 @@ Targets:
 
 1. finish the `tagEnvBounded` replacement route and switch the three
    guard-tag-absence axioms to their proved `_of_tagEnvBounded` variants
-2. split `applyFnTClosure_extern_ok_wfTagMeaningCtx` if Step 3 still judges the
+2. after that, split `applyFnTClosure_extern_ok_wfTagMeaningCtx` if Step 3 still judges the
    bundled statement too coarse:
    - a smaller effect-predicate interpretation contract
    - proved structural `wfTagMeaningCtx` preservation lemmas
@@ -831,7 +892,28 @@ Done means:
 - The `QTypRespectsTagMeaning` axioms remain the leading candidates for the
   true permanent contract floor.
 
-### 5.11 Why the `wfTypeContext` change is now considered justified
+### 5.11 New blocker found at the start of Step 4
+
+- The attempted guard-tag-absence replacement exposed a genuine missing input:
+  `tagEnvBoundedInCtx` is not available anywhere in the existing `StepFR`
+  chain.
+- That fact is not recoverable from the prior `StepFR` inputs alone.
+- The approved resolution is to propagate a bundled internal invariant,
+  `TagBoundedCtx`, through the `StepFR` proof family.
+- That pivot is now complete and has become the settled foundation for the
+  current axiom-elimination phase.
+
+### 5.12 Step 4a completion
+
+- The `TagBoundedCtx` pivot was fully propagated and brought back to zero
+  `sorry`.
+- This confirms that the boundedness facts needed for the
+  guard-tag-absence replacements can be made available inside the `StepFR`
+  proof chain.
+- The active Step 4 work has therefore moved back to the originally intended
+  target: deleting the three guard-tag-absence axioms.
+
+### 5.13 Why the `wfTypeContext` change is now considered justified
 
 The earlier boundary rule was:
 
@@ -850,7 +932,7 @@ So the recommended pivot is not "leak every useful local invariant into FR".
 It is a single, narrow strengthening of the existing notion of type-context
 well-formedness.
 
-### 5.12 Reference points
+### 5.14 Reference points
 
 Historical references that may still be useful during implementation:
 

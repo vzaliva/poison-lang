@@ -9648,9 +9648,9 @@ lemma stepFR_app
     have htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1 := by
       simp [ctxAfter] at htc1 ⊢
       exact htc1
-    intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+    intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
     -- Phase 2: IH for e2 (e1 IH defined after we have hTm2 from e2)
-    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm result2 htc2'
+    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm htagBounded result2 htc2'
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
     let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
@@ -9664,11 +9664,11 @@ lemma stepFR_app
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
         -- Phase A: Apply IH for e2
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         -- Phase B: Apply IH for e1
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -9681,10 +9681,10 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+        rcases hstep_e1 with ⟨hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
           hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
         -- Phase C: Invert closure typing to extract FnTClosure structure
         have hv₀1_arrow : valueHasETyp θ₀1 (Value.closure x₀ body₀ env₀) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
@@ -10954,8 +10954,38 @@ lemma stepFR_app
                 simpa [bodyCtx, ctxAfter] using hTmBody'
               have htcBody' : typecheck bodyCtx body₀ fuelBody = .ok result3Shared := by
                 simpa [bodyCtx, typecheck] using htcBody
+              have htagBoundedBody : TagBoundedCtx bodyCtx := by
+                obtain ⟨hb_tag1, ⟨hb_predV1, hb_predM1⟩, hb_clos1⟩ := _htagBounded1
+                have hb_predCtx2 := (_htagBounded2 : TagBoundedCtx (ctxAfter ctxᵢ result2)).2.1
+                have hb_closCtx2 := (_htagBounded2 : TagBoundedCtx (ctxAfter ctxᵢ result2)).2.2
+                -- Closure captured env bounds from result1's etyp
+                have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+                  (ctxAfter ctxᵢ result2) e1 fuel' result1
+                  (by simpa [typecheck] using htc1') hb_predCtx2 hb_closCtx2
+                rw [hetyp1] at hClosFull
+                have hCapBound : CapturedEnvFullBounded σcap result1.nextTag' := hClosFull _ hmem
+                have hCapPred := capturedPredTagsBounded_of_fullBounded hCapBound
+                -- Arg pred bounded (pred2 from result2, monotone to result1.nextTag')
+                have hmono_r2_r1 : result2.nextTag' ≤ result1.nextTag' :=
+                  typecheck_normal_nextTag_mono (ctxAfter ctxᵢ result2) e1 fuel' result1
+                    (by simpa [typecheck] using htc1')
+                have hArgPred : qtypPredTagBounded ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ result1.nextTag' := by
+                  have := (typecheckExpr_preserves_predTagsBounded ctxᵢ e2 fuel' result2
+                    (by simpa [typecheck] using htc2') htagBounded.2.1 htagBounded.2.2).2
+                  rw [hqt2] at this
+                  exact qtypPredTagBounded_mono this hmono_r2_r1
+                have hArgClos : etypClosuresFullBounded (⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ : QTyp).etyp result1.nextTag' := by
+                  have := typecheckExpr_preserves_closureCapturedBounded ctxᵢ e2 fuel' result2
+                    (by simpa [typecheck] using htc2') htagBounded.2.1 htagBounded.2.2
+                  rw [hqt2] at this; exact etypClosuresFullBounded_mono this hmono_r2_r1
+                refine ⟨by simpa [bodyCtx] using hb_tag1,
+                  ⟨predTagsBoundedInVarEnv_update
+                    (predTagsBoundedInVarEnv_ofCaptured hCapPred) hArgPred,
+                   by simpa [bodyCtx] using hb_predM1⟩,
+                  varEnvClosuresCapturedBounded_update
+                    (varEnvClosuresCapturedBounded_ofCaptured hCapBound) hArgClos⟩
               have hIH_body :=
-                IH fuelBody hfuel_lt body₀ bodyCtx hTmBody result3Shared htcBody'
+                IH fuelBody hfuel_lt body₀ bodyCtx hTmBody htagBoundedBody result3Shared htcBody'
               have hwfBodyCtx : wfTypeContext bodyCtx := by
                 simp only [bodyCtx, wfTypeContext]
                 have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
@@ -11425,14 +11455,14 @@ lemma stepFR_app
               have hstep_body := hIH_body hpredlaws hTmBody
                 c₁₀.memory c₁₁.memory (env₀.update x₀ v₂₀) (env₁.update x₁ v₂₁) θ₀1 θ₁1
                 evalCfg₀ evalCfg₁ o₀ o₁
-                hθ₀1wf hθ₁1wf hwfBodyCtx hric_body₀ hric_body₁ htagR_body
+                hθ₀1wf hθ₁1wf hwfBodyCtx htagBoundedBody hric_body₀ hric_body₁ htagR_body
                 hcwr_body₀ hcwr_body₁ hagree_body_start
                 c₁₀.nextAddr c₁₁.nextAddr false
                 hwfcfg_body_init₀ hwfcfg_body_init₁ ht₀_body' ht₁_body'
               rcases hstep_body with
                 ⟨_hresTm_body,
                   ⟨θ₀_body, θ₁_body, _hθext₀_body, _hθext₁_body,
-                    _hv_body₀_typed, _hv_body₁_typed, _hTm_body, _hwf_body_after,
+                    _hv_body₀_typed, _hv_body₁_typed, _hTm_body, _hwf_body_after, _htagBounded_body_after,
                     _hwfcfg_body_final₀, _hwfcfg_body_final₁,
                     _hric_body_final₀, _hric_body_final₁, _htagR_body_final,
                     _hcwr_body_final₀, _hcwr_body_final₁, hagree_body_after,
@@ -12167,7 +12197,7 @@ lemma stepFR_app
         refine ⟨?_, θ₀_out, θ₁_out,
           ?_,
           ?_,
-          ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+          ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · -- QTypRespectsTagMeaning tm res.qualType
           exact
             joinTypeResults_QTypRespectsTagMeaning
@@ -12199,6 +12229,8 @@ lemma stepFR_app
                   (mapM_applyFnTClosure_member_nextLoc_mono st1 st2 p p1 etyp2 p2 pred2
                     ctxᵢ result1 fuel' tcls results hmap first hfirst_in_results)))
               h_rest_wf
+        · -- TagBoundedCtx (ctxAfter ctxᵢ res)
+          exact typecheckExpr_preserves_TagBoundedCtx ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res (by simpa [typecheck] using htc) htagBounded
         · -- wfConfig cf₀
           exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
         · -- wfConfig cf₁
@@ -12228,10 +12260,10 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12244,10 +12276,10 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
           hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
         have hv₁1_arrow : valueHasETyp θ₁1 (Value.peClosure x₁ body₁ env₁) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
         cases hv₁1_arrow
@@ -12256,10 +12288,10 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12272,10 +12304,10 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
           hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
         have hv₀1_arrow : valueHasETyp θ₀1 (Value.peClosure x₀ body₀ env₀) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
         cases hv₀1_arrow
@@ -12283,10 +12315,10 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12299,10 +12331,10 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
           hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
         have hv₀1_arrow : valueHasETyp θ₀1 (Value.peClosure x₀ body₀ env₀) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
         cases hv₀1_arrow
@@ -12315,9 +12347,9 @@ lemma stepFR_app
     have htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1 := by
       simp [ctxAfter] at htc1 ⊢
       exact htc1
-    intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+    intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
     -- Phase 2: IH for e2
-    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm result2 htc2'
+    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm htagBounded result2 htc2'
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
     let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
@@ -12330,10 +12362,10 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12346,10 +12378,10 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
           hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
         have hv₀1_parrow : valueHasETyp θ₀1 (Value.closure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
         cases hv₀1_parrow
@@ -12357,10 +12389,10 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12373,10 +12405,10 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
           hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
         have hv₀1_parrow : valueHasETyp θ₀1 (Value.closure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
         cases hv₀1_parrow
@@ -12385,10 +12417,10 @@ lemma stepFR_app
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12401,10 +12433,10 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
           hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
         have hv₁1_parrow : valueHasETyp θ₁1 (Value.closure x₁ body₁ env₁) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
         cases hv₁1_parrow
@@ -12413,11 +12445,11 @@ lemma stepFR_app
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
         -- Phase A: Apply IH for e2
         have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, hwfcf₂₀, hwfcf₂₁,
+          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
           hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
         -- Phase B: Apply IH for e1
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
+        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12430,10 +12462,10 @@ lemma stepFR_app
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
+          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
           c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
           (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, hwfcf₁₀, hwfcf₁₁,
+        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
           hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
         -- Phase C: Invert peClosure typing to extract closure structure
         have hv₀1_parrow : valueHasETyp θ₀1 (Value.peClosure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
@@ -12694,6 +12726,7 @@ lemma stepFR_app
               valueHasETyp θ₁' o₁ res.qualType.etyp ∧
               wfTagMeaningCtx tm (ctxAfter ctxᵢ res) ∧
               wfTypeContext (ctxAfter ctxᵢ res) ∧
+              TagBoundedCtx (ctxAfter ctxᵢ res) ∧
               wfConfig cf₀ ∧
               wfConfig cf₁ ∧
               runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' ∧
@@ -13282,6 +13315,8 @@ lemma stepFR_app
                   (mapM_applyPFnTClosure_member_nextLoc_mono st1 st2 p p1 etyp2 p2 pred2
                     ctxᵢ result1 fuel' tcls results hmap first hfirst_in_results)))
               (fun r hr => hresults_wf r (heq_results ▸ List.mem_cons_of_mem first hr)),
+            -- TagBoundedCtx (ctxAfter ctxᵢ res)
+            typecheckExpr_preserves_TagBoundedCtx ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res (by simpa [typecheck] using htc) htagBounded,
             -- wfConfig cf₀ (after subst heq_cfg₀, cf₀ = c₁₀)
             hwfcf₁₀,
             -- wfConfig cf₁ (after subst heq_cfg₁, cf₁ = c₁₁)
@@ -13752,8 +13787,36 @@ lemma stepFR_app
             have htcBody' : typecheck bodyCtx (PExpr.toExpr pbody) fuelBody = .ok result3Shared := by
               simp only [bodyCtx, typecheck, hx₀]
               exact htcBody
+            have htagBoundedBody : TagBoundedCtx bodyCtx := by
+                obtain ⟨hb_tag1, ⟨hb_predV1, hb_predM1⟩, hb_clos1⟩ := _htagBounded1
+                have hb_predCtx2 := (_htagBounded2 : TagBoundedCtx (ctxAfter ctxᵢ result2)).2.1
+                have hb_closCtx2 := (_htagBounded2 : TagBoundedCtx (ctxAfter ctxᵢ result2)).2.2
+                have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+                  (ctxAfter ctxᵢ result2) e1 fuel' result1
+                  (by simpa [typecheck] using htc1') hb_predCtx2 hb_closCtx2
+                rw [hetyp1] at hClosFull
+                have hCapBound : CapturedEnvFullBounded σcap result1.nextTag' := hClosFull _ hmem
+                have hCapPred := capturedPredTagsBounded_of_fullBounded hCapBound
+                have hmono_r2_r1 : result2.nextTag' ≤ result1.nextTag' :=
+                  typecheck_normal_nextTag_mono (ctxAfter ctxᵢ result2) e1 fuel' result1
+                    (by simpa [typecheck] using htc1')
+                have hArgPred : qtypPredTagBounded ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ result1.nextTag' := by
+                  have := (typecheckExpr_preserves_predTagsBounded ctxᵢ e2 fuel' result2
+                    (by simpa [typecheck] using htc2') htagBounded.2.1 htagBounded.2.2).2
+                  rw [hqt2] at this
+                  exact qtypPredTagBounded_mono this hmono_r2_r1
+                have hArgClos : etypClosuresFullBounded (⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ : QTyp).etyp result1.nextTag' := by
+                  have := typecheckExpr_preserves_closureCapturedBounded ctxᵢ e2 fuel' result2
+                    (by simpa [typecheck] using htc2') htagBounded.2.1 htagBounded.2.2
+                  rw [hqt2] at this; exact etypClosuresFullBounded_mono this hmono_r2_r1
+                refine ⟨by simpa [bodyCtx] using hb_tag1,
+                  ⟨predTagsBoundedInVarEnv_update
+                    (predTagsBoundedInVarEnv_ofCaptured hCapPred) hArgPred,
+                   by simpa [bodyCtx] using hb_predM1⟩,
+                  varEnvClosuresCapturedBounded_update
+                    (varEnvClosuresCapturedBounded_ofCaptured hCapBound) hArgClos⟩
             have hIH_body :=
-              IH fuelBody hfuel_lt (PExpr.toExpr pbody) bodyCtx hTmBody result3Shared htcBody'
+              IH fuelBody hfuel_lt (PExpr.toExpr pbody) bodyCtx hTmBody htagBoundedBody result3Shared htcBody'
             have hwfBodyCtx : wfTypeContext bodyCtx := by
               simp only [bodyCtx, wfTypeContext]
               have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
@@ -14224,14 +14287,14 @@ lemma stepFR_app
             have hstep_body := hIH_body hpredlaws hTmBody
               cf₀.memory cf₁.memory (env₀.update x₀ v₂₀) (env₁.update x₁ v₂₁) θ₀1 θ₁1
               evalCfg₀ evalCfg₁ o₀ o₁
-              hθ₀1wf hθ₁1wf hwfBodyCtx hric_body₀ hric_body₁ htagR_body
+              hθ₀1wf hθ₁1wf hwfBodyCtx htagBoundedBody hric_body₀ hric_body₁ htagR_body
               hcwr_body₀ hcwr_body₁ hagree_body_start
               cf₀.nextAddr cf₁.nextAddr true
               hwfcfg_body_init₀ hwfcfg_body_init₁ ht₀_body' ht₁_body'
             rcases hstep_body with
               ⟨_hresTm_body,
                 ⟨θ₀_body, θ₁_body, _hθext₀_body, _hθext₁_body,
-                  _hv_body₀_typed, _hv_body₁_typed, _hTm_body, _hwf_body_after,
+                  _hv_body₀_typed, _hv_body₁_typed, _hTm_body, _hwf_body_after, _htagBounded_body_after,
                   _hwfcfg_body_final₀, _hwfcfg_body_final₁,
                   _hric_body_final₀, _hric_body_final₁, _htagR_body_final,
                   _hcwr_body_final₀, _hcwr_body_final₁, hagree_body_after,
@@ -14474,6 +14537,7 @@ lemma stepFR_app
                 valueHasETyp θ₁_body o₁ res.qualType.etyp ∧
                 wfTagMeaningCtx tm (ctxAfter ctxᵢ res) ∧
                 wfTypeContext (ctxAfter ctxᵢ res) ∧
+                TagBoundedCtx (ctxAfter ctxᵢ res) ∧
                 wfConfig cf₀ ∧
                 wfConfig cf₁ ∧
                 runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀_body ∧
@@ -14543,7 +14607,7 @@ lemma stepFR_app
                     | inr hnone_src =>
                         rw [hnone_src] at hk_src
                         cases hk_src
-              refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hAgree_out_body, ?_, ?_, ?_⟩
+              refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hAgree_out_body, ?_, ?_, ?_⟩
               · -- shared-member valueHasETyp -> joined valueHasETyp (run 0).
                 have hv_src₀ : valueHasETyp θ₀_body o₀ firstShared.qualType.etyp := by
                   rw [hfirstShared_etyp]
@@ -14579,6 +14643,8 @@ lemma stepFR_app
                   (mapM_applyPFnTClosure_member_nextLoc_mono st1 st2 p p1 etyp2 p2 pred2
                     ctxᵢ result1 fuel' tcls results hmap first hfirst_in_results)))
                     h_rest_wf
+              · -- TagBoundedCtx (ctxAfter ctxᵢ res)
+                exact typecheckExpr_preserves_TagBoundedCtx ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res (by simpa [typecheck] using htc) htagBounded
               · -- wfConfig cf₀ (= c₁₀ after subst)
                 exact hwfcf₁₀
               · -- wfConfig cf₁ (= c₁₁ after subst)

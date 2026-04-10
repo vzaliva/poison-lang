@@ -5606,26 +5606,26 @@ section typecheck_tagEnvBounded_proof
 
 -- predTagBounded helper lemmas and infrastructure
 
-private lemma predTagBounded_mono {nt nt' : Tag} {p : Predicate}
+lemma predTagBounded_mono {nt nt' : Tag} {p : Predicate}
     (hb : predTagBounded nt p) (hle : nt ≤ nt') : predTagBounded nt' p := by
   cases p with
   | guardClosure k _ _ _ => exact Nat.lt_of_lt_of_le hb hle
   | guardOnly k => exact Nat.lt_of_lt_of_le hb hle
   | noPred => trivial
 
-private lemma qtypPredTagBounded_mono {qt : QTyp} {nt nt' : Tag}
+lemma qtypPredTagBounded_mono {qt : QTyp} {nt nt' : Tag}
     (hb : qtypPredTagBounded qt nt) (hle : nt ≤ nt') : qtypPredTagBounded qt nt' :=
   predTagBounded_mono hb hle
 
-private lemma predTagsBoundedInVarEnv_mono {S : VarTypeEnv} {nt nt' : Tag}
+lemma predTagsBoundedInVarEnv_mono {S : VarTypeEnv} {nt nt' : Tag}
     (hb : predTagsBoundedInVarEnv S nt) (hle : nt ≤ nt') : predTagsBoundedInVarEnv S nt' :=
   fun x qt hlookup => qtypPredTagBounded_mono (hb x qt hlookup) hle
 
-private lemma predTagsBoundedInMemEnv_mono {G : MemoryTypeEnv} {nt nt' : Tag}
+lemma predTagsBoundedInMemEnv_mono {G : MemoryTypeEnv} {nt nt' : Tag}
     (hb : predTagsBoundedInMemEnv G nt) (hle : nt ≤ nt') : predTagsBoundedInMemEnv G nt' :=
   fun l qt hlookup => qtypPredTagBounded_mono (hb l qt hlookup) hle
 
-private lemma tagEnvBounded_insert_of_lt (te : TagEnv) (nt : Tag) (k : Tag) (tv : TagVal)
+lemma tagEnvBounded_insert_of_lt (te : TagEnv) (nt : Tag) (k : Tag) (tv : TagVal)
     (hb : tagEnvBounded te nt) (hk : k < nt) :
     tagEnvBounded (te.insert k tv) nt := by
   intro j hj
@@ -5655,7 +5655,7 @@ private lemma predTagBounded_joinPredicates {nt : Tag} {p q : Predicate}
     · trivial  -- noPred/_
     · trivial  -- _/noPred
 
-private lemma predTagsBoundedInVarEnv_update {S : VarTypeEnv} {nt : Tag} {x : Name} {qt : QTyp}
+lemma predTagsBoundedInVarEnv_update {S : VarTypeEnv} {nt : Tag} {x : Name} {qt : QTyp}
     (hb : predTagsBoundedInVarEnv S nt) (hqt : qtypPredTagBounded qt nt) :
     predTagsBoundedInVarEnv (S.update x qt) nt := by
   intro y qt' hlookup
@@ -5800,7 +5800,7 @@ private lemma capturedPredTagsBounded_of_toCaptured {S : VarTypeEnv} {nt : Tag}
   exact hb name qt (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup])
 
 /-- From capturedPredTagsBounded, derive predTagsBoundedInVarEnv for ofCaptured. -/
-private lemma predTagsBoundedInVarEnv_ofCaptured {env : CapturedVarEnv} {nt : Tag}
+lemma predTagsBoundedInVarEnv_ofCaptured {env : CapturedVarEnv} {nt : Tag}
     (hb : capturedPredTagsBounded env nt) :
     predTagsBoundedInVarEnv (VarTypeEnv.ofCaptured env) nt := by
   intro name qt hlookup
@@ -5985,7 +5985,7 @@ private lemma CapturedEnvFullBounded_mono {env : List (Name × QTyp)} {nt nt' : 
   fun n => capturedEnvBoundedN_mono n (h n) hle
 
 /-- Monotonicity for etypClosuresFullBounded. -/
-private lemma etypClosuresFullBounded_mono {etyp : ETyp} {nt nt' : Tag}
+lemma etypClosuresFullBounded_mono {etyp : ETyp} {nt nt' : Tag}
     (h : etypClosuresFullBounded etyp nt) (hle : nt ≤ nt') :
     etypClosuresFullBounded etyp nt' := by
   cases etyp with
@@ -6055,7 +6055,7 @@ private lemma CapturedEnvFullBounded.get {env : List (Name × QTyp)} {nt : Tag}
     | _ => trivial
 
 /-- Extract capturedPredTagsBounded from CapturedEnvFullBounded. -/
-private lemma capturedPredTagsBounded_of_fullBounded
+lemma capturedPredTagsBounded_of_fullBounded
     {env : List (Name × QTyp)} {nt : Tag}
     (h : CapturedEnvFullBounded env nt) : capturedPredTagsBounded env nt :=
   fun name qt hmem => (h 1 name qt hmem).1
@@ -6349,6 +6349,12 @@ private lemma capturedEnvFullBounded_of_toCaptured {S : VarTypeEnv} {nt : Tag}
 def closureEnvBoundedInCtx (ctx : TypeContext) : Prop :=
   varEnvClosuresCapturedBounded ctx.varEnv ctx.nextTag
 
+/-- Bundled tag-boundedness invariant for the typing context.
+    Combines tag-env boundedness, predicate-tag boundedness, and closure-env boundedness.
+    Used as an input hypothesis and output guarantee in StepFR. -/
+def TagBoundedCtx (ctx : TypeContext) : Prop :=
+  tagEnvBoundedInCtx ctx ∧ predTagsBoundedInCtx ctx ∧ closureEnvBoundedInCtx ctx
+
 /-- Dedup fold: every element in the result was in init or xs. -/
 private lemma foldl_dedup_mem {α : Type} [BEq α]
     (init : List α) (xs : List α) (a : α) :
@@ -6513,13 +6519,13 @@ private lemma etypClosuresCapturedPredTagsBounded_joinETyps {e1 e2 : ETyp} {p1 p
   | _ => simp only [joinETyps]; cases e2 <;> exact h1
 
 /-- varEnvClosuresCapturedBounded is monotone in the bound. -/
-private lemma varEnvClosuresCapturedBounded_mono {S : VarTypeEnv} {nt nt' : Tag}
+lemma varEnvClosuresCapturedBounded_mono {S : VarTypeEnv} {nt nt' : Tag}
     (hb : varEnvClosuresCapturedBounded S nt) (hle : nt ≤ nt') :
     varEnvClosuresCapturedBounded S nt' :=
   fun x qt hlookup => etypClosuresFullBounded_mono (hb x qt hlookup) hle
 
 /-- varEnvClosuresCapturedBounded is preserved by VarTypeEnv.update. -/
-private lemma varEnvClosuresCapturedBounded_update {S : VarTypeEnv} {nt : Tag} {x : Name} {qt : QTyp}
+lemma varEnvClosuresCapturedBounded_update {S : VarTypeEnv} {nt : Tag} {x : Name} {qt : QTyp}
     (hb : varEnvClosuresCapturedBounded S nt) (hqt : etypClosuresFullBounded qt.etyp nt) :
     varEnvClosuresCapturedBounded (S.update x qt) nt := by
   intro y qt' hlookup
@@ -6580,7 +6586,7 @@ private lemma capturedClosuresBounded_of_toCaptured {S : VarTypeEnv} {nt : Tag}
     (hb name qt (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup]))
 
 /-- From CapturedEnvFullBounded, derive varEnvClosuresCapturedBounded for ofCaptured. -/
-private lemma varEnvClosuresCapturedBounded_ofCaptured {env : CapturedVarEnv} {nt : Tag}
+lemma varEnvClosuresCapturedBounded_ofCaptured {env : CapturedVarEnv} {nt : Tag}
     (hb : CapturedEnvFullBounded env nt) :
     varEnvClosuresCapturedBounded (VarTypeEnv.ofCaptured env) nt := by
   intro name qt hlookup
@@ -8470,7 +8476,7 @@ private lemma typecheckExpr_preserves_combined_main :
                             | arrow _ _ =>
                               simp [bind, Except.bind] at hsurf
 
-private lemma typecheckExpr_preserves_predTagsBounded
+lemma typecheckExpr_preserves_predTagsBounded
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckExpr ctx e fuel = .ok res)
     (hpred : predTagsBoundedInCtx ctx)
@@ -8493,7 +8499,7 @@ private lemma predTagsBoundedInCtx_of_updateCtxFromResult
 /-- typecheckExpr preserves etypClosuresFullBounded.
     All closures in the result ETyp have fully bounded captured environments.
     Now a simple projection from the combined induction. -/
-private lemma typecheckExpr_preserves_closureCapturedBounded
+lemma typecheckExpr_preserves_closureCapturedBounded
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckExpr ctx e fuel = .ok res)
     (hpred : predTagsBoundedInCtx ctx)
@@ -8502,7 +8508,7 @@ private lemma typecheckExpr_preserves_closureCapturedBounded
   (typecheckExpr_preserves_combined_main ctx e fuel res htc hpred hclosure).2.2
 
 /-- Monotonicity of tagEnvBounded under larger nextTag. -/
-private lemma tagEnvBounded_mono (tagEnv : TagEnv) (nt nt' : Tag)
+lemma tagEnvBounded_mono (tagEnv : TagEnv) (nt nt' : Tag)
     (hb : tagEnvBounded tagEnv nt) (hle : nt ≤ nt') : tagEnvBounded tagEnv nt' := by
   intro k hk
   exact Nat.lt_of_lt_of_le (hb k hk) hle
@@ -9521,6 +9527,46 @@ lemma typecheckExpr_preserves_tagEnvBounded
   typecheckExpr_preserves_tagEnvBounded_main ctx e fuel res htc hbound hpred hclosure
 
 end typecheck_tagEnvBounded_proof
+
+/-- TagBoundedCtx is preserved across typechecking for the ctxAfter pattern. -/
+lemma typecheckExpr_preserves_TagBoundedCtx
+    (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+    (htc : typecheckExpr ctx e fuel = .ok res)
+    (hb : TagBoundedCtx ctx) :
+    TagBoundedCtx (ctxAfter ctx res) := by
+  obtain ⟨hbound, hpred, hclosure⟩ := hb
+  refine ⟨?_, ?_, ?_⟩
+  · exact typecheckExpr_preserves_tagEnvBounded ctx e fuel res htc hbound hpred hclosure
+  · constructor
+    · exact predTagsBoundedInVarEnv_mono hpred.1
+        (typecheck_normal_nextTag_mono ctx e fuel res (by simpa [typecheck] using htc))
+    · exact (typecheckExpr_preserves_predTagsBounded ctx e fuel res htc hpred hclosure).1
+  · exact varEnvClosuresCapturedBounded_mono hclosure
+      (typecheck_normal_nextTag_mono ctx e fuel res (by simpa [typecheck] using htc))
+
+/-- TagBoundedCtx is preserved when the varEnv is updated with the result's qualType.
+    This is used by the vlet case to construct TagBoundedCtx for the intermediate context
+    where the let-bound variable is added. -/
+lemma typecheckExpr_TagBoundedCtx_varEnv_update
+    (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+    (htc : typecheckExpr ctx e fuel = .ok res)
+    (hb : TagBoundedCtx ctx)
+    (x : Name) :
+    TagBoundedCtx
+      { ctxAfter ctx res with varEnv := ctx.varEnv.update x res.qualType } := by
+  obtain ⟨hbound, hpred, hclosure⟩ := hb
+  have hmono := typecheck_normal_nextTag_mono ctx e fuel res (by simpa [typecheck] using htc)
+  have hpredRes := (typecheckExpr_preserves_predTagsBounded ctx e fuel res htc hpred hclosure).2
+  have hclosureRes := typecheckExpr_preserves_closureCapturedBounded ctx e fuel res htc hpred hclosure
+  refine ⟨?_, ?_, ?_⟩
+  · -- tagEnvBoundedInCtx: independent of varEnv
+    exact typecheckExpr_preserves_tagEnvBounded ctx e fuel res htc hbound hpred hclosure
+  · -- predTagsBoundedInCtx: varEnv component needs update
+    constructor
+    · exact predTagsBoundedInVarEnv_update (predTagsBoundedInVarEnv_mono hpred.1 hmono) hpredRes
+    · exact (typecheckExpr_preserves_predTagsBounded ctx e fuel res htc hpred hclosure).1
+  · -- closureEnvBoundedInCtx: varEnv component needs update
+    exact varEnvClosuresCapturedBounded_update (varEnvClosuresCapturedBounded_mono hclosure hmono) hclosureRes
 
 section typecheck_nextLoc_mono_proof
 

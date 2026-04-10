@@ -919,6 +919,7 @@ def StepFR
       (cf₀ cf₁ : Config) (o₀ o₁ : Value),
       wfRealizationMap θ₀ → wfRealizationMap θ₁ →
       wfTypeContext ctx →
+      TagBoundedCtx ctx →
       runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ → runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
       regimeConsistentWithCtx ctx →
       consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀ →
@@ -936,6 +937,7 @@ def StepFR
           valueHasETyp θ₁' o₁ res.qualType.etyp ∧
           wfTagMeaningCtx tm (ctxAfter ctx res) ∧
           wfTypeContext (ctxAfter ctx res) ∧
+          TagBoundedCtx (ctxAfter ctx res) ∧
           wfConfig cf₀ ∧  -- final config₀ well-formed
           wfConfig cf₁ ∧  -- final config₁ well-formed
           runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧  -- preservation
@@ -4148,7 +4150,7 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
     TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm) →
   (∀ e s obs, TypeSystemEnforcesFaultRobustness_spec e s obs) := by
   intro hstep e s obs
-  rintro his _hos ctx hctx _hwf _hpc _hte predSat tm _hwfTm _hps ⟨fuel, res, htc, hobs⟩
+  rintro his _hos ctx hctx _hwf _hpc _hte _htagBoundedInit predSat tm _hwfTm _hps ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
   intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm
   have hstep' := hstep e ctx predSat tm
@@ -4184,12 +4186,13 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
     rw [this] at hlookup
     cases hlookup
   have hreg : regimeConsistentWithCtx ctx := htagR
+  have htagBounded : TagBoundedCtx ctx := _htagBoundedInit
   have hstepFR :=
     hstep' _hps _hwfTm μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂
-      hθ₁ hθ₂ _hwf hric₁ hric₂ hreg hcwr₁ hcwr₂ hagree_clean
+      hθ₁ hθ₂ _hwf htagBounded hric₁ hric₂ hreg hcwr₁ hcwr₂ hagree_clean
       a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
   rcases hstepFR with ⟨_hresTm, hstepFR⟩
-  rcases hstepFR with ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, _hvtyp₁, _hvtyp₂, _hTm', _hwf', _hwfcf₁', _hwfcf₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂, hret_agree⟩
+  rcases hstepFR with ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, _hvtyp₁, _hvtyp₂, _hTm', _hwf', _htagBounded', _hwfcf₁', _hwfcf₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂, hret_agree⟩
   refine ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, ?_⟩
   -- Bridge from post-state agreement to observables.
   simp [observablesEqual]
@@ -5449,6 +5452,7 @@ lemma valueHasETyp_of_evalUnaryOp
 abbrev StepFR_IH (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext),
     wfTagMeaningCtx tm ctxᵢ →
+    TagBoundedCtx ctxᵢ →
     ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res → StepFR ctxᵢ e res predSat tm
 
 abbrev StepFRSingleRunFinalCleanPcTrue_IH
@@ -5482,13 +5486,13 @@ abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
       StepFRSingleRunFinalCleanPcTrueMaskedRegParam
         masked CtxCons ValCons ctx e res predSat tm
 
--- Convert strong-induction IH (no wfTagMeaningCtx) to StepFR_IH; the extra premise is unused
+-- Convert strong-induction IH (no wfTagMeaningCtx/TagBoundedCtx) to StepFR_IH; extra premises are unused
 lemma StepFR_IH_of_induction
   (predSat : PredSat) (tm : TagMeaning) (k : Nat)
   (IH : ∀ m < k, ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
     typecheck ctxᵢ e m = .ok res → StepFR ctxᵢ e res predSat tm) :
   StepFR_IH predSat tm k :=
-  fun m hm e ctxᵢ _hwfTm res htc => IH m hm e ctxᵢ res htc
+  fun m hm e ctxᵢ _hwfTm _htagBounded res htc => IH m hm e ctxᵢ res htc
 
 lemma StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
   (masked : Tag → Prop)

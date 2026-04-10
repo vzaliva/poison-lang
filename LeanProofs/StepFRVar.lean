@@ -604,7 +604,7 @@ lemma stepFR_var
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
   StepFR ctxᵢ (Expr.var name) res predSat tm := by
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv ctxᵢ.regime := hreg
   -- Use inversion lemma to extract config and value
   have hinv₀ := terminatesTo_var_inv' name
@@ -823,7 +823,7 @@ lemma stepFR_var
         (μ := μ) (ρ := ρ) (θ := θ) (v := v)
         htc' hρ hcwr
   refine ⟨hresTm, ?_⟩
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup
@@ -840,6 +840,9 @@ lemma stepFR_var
     simpa [ctxAfter, hmem] using hwfTm
   · -- wfTypeContext (ctxAfter ctxᵢ res): typecheckVar does not change the context
     simpa [ctxAfter, wfTypeContext, hmem, hnextLoc] using hwf
+  · -- TagBoundedCtx (ctxAfter ctxᵢ res)
+    simpa [ctxAfter, TagBoundedCtx, tagEnvBoundedInCtx, predTagsBoundedInCtx, closureEnvBoundedInCtx,
+           hmem, htag, hnextTag, hnextLoc, hregime'] using htagBounded
   · -- wfConfig cf₀ (unchanged since var doesn't modify config)
     exact hwfcfg₀
   · -- wfConfig cf₁ (unchanged since var doesn't modify config)

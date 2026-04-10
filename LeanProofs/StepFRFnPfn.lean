@@ -264,7 +264,7 @@ lemma stepFR_fn
     rfl
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma
   have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -291,7 +291,7 @@ lemma stepFR_fn
     intro qt' k d hinq hqd
     exact hresTm_expected (by simpa [hres] using hinq) (by simpa [hres] using hqd)
   refine ⟨hresTm, ?_⟩
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
   · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
@@ -354,6 +354,8 @@ lemma stepFR_fn
     simpa [hctxAfter] using hwfTm
   · -- wfTypeContext (ctxAfter ctxᵢ res)
     simpa [hctxAfter] using hwf
+  · -- TagBoundedCtx (ctxAfter ctxᵢ res)
+    simpa [hctxAfter] using htagBounded
   · -- runtimeInstantiatesCtx for θ₀' (fn doesn't change context or config)
     simpa [hctxAfter] using hric₀
   · -- runtimeInstantiatesCtx for θ₁'
@@ -518,7 +520,7 @@ lemma stepFR_pfn
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+      intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
       -- Use world-free inversion lemma
       have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -547,7 +549,7 @@ lemma stepFR_pfn
         intro qt' k d hinq hqd
         exact hresTm_expected (by simpa [hres] using hinq) (by simpa [hres] using hqd)
       refine ⟨hresTm, ?_⟩
-      refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
       · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
@@ -610,6 +612,8 @@ lemma stepFR_pfn
         simpa [hctxAfter] using hwfTm
       · -- wfTypeContext (ctxAfter ctxᵢ res)
         simpa [hctxAfter] using hwf
+      · -- TagBoundedCtx (ctxAfter ctxᵢ res)
+        simpa [hctxAfter] using htagBounded
       · -- runtimeInstantiatesCtx for θ₀' (pfn doesn't change context or config)
         simpa [hctxAfter] using hric₀
       · -- runtimeInstantiatesCtx for θ₁'

@@ -721,6 +721,7 @@ def TypeSystemEnforcesFaultRobustness_spec
       wfTypeContext ctx → -- all locations in memEnv are below nextLoc
       ctx.pc = false → -- we start from clean program counter
       ctx.tagEnv = {} → -- we start with empty tag environment
+      TagBoundedCtx ctx → -- all tags in varEnv/memEnv predicates and closures are below nextTag
       ∀ (predSat : PredSat) (tm : TagMeaning),
         wfTagMeaningCtx tm ctx →
         PredSatLaws predSat tm →

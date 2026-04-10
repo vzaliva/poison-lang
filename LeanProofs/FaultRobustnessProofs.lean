@@ -1784,6 +1784,7 @@ def TypeSystemEnforcesFaultRobustness_spec_ioFree
       wfTypeContext ctx →
       ctx.pc = false →
       ctx.tagEnv = {} →
+      TagBoundedCtx ctx →
       ∀ (predSat : PredSat) (tm : TagMeaning),
         wfTagMeaningCtx tm ctx →
         PredSatLaws predSat tm →
@@ -1795,15 +1796,15 @@ def TypeSystemEnforcesFaultRobustness_spec_ioFree
 -- TypeSystemEnforcesFaultRobustness_spec implies TypeSystemEnforcesFaultRobustness_spec_ioFree
 lemma TypeSystemEnforcesFaultRobustness_spec_implies_ioFree (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
     TypeSystemEnforcesFaultRobustness_spec e s obs → TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs := by
-  intro h his hos ctx hctx hwf hpc hte predSat tm hwfTm hps htc
+  intro h his hos ctx hctx hwf hpc hte htagBounded predSat tm hwfTm hps htc
   exact FaultRobustnessSpec_implies_ioFree e s obs ctx predSat tm
-    (h his hos ctx hctx hwf hpc hte predSat tm hwfTm hps htc)
+    (h his hos ctx hctx hwf hpc hte htagBounded predSat tm hwfTm hps htc)
 
 theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
   (∀ e ctxᵢ predSat tm, TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm) →
   (∀ e s obs, TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs) := by
   intro hstep e s obs
-  rintro his _hos ctx hctx hwf _hpc hte predSat tm hwfTm hps ⟨fuel, res, htc, hobs⟩
+  rintro his _hos ctx hctx hwf _hpc hte htagBoundedInit predSat tm hwfTm hps ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
   intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm
   have hstep' := hstep e ctx predSat tm
@@ -1838,14 +1839,15 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
     exact
       consistentRegimeSpec_implies_consistentWithRegime
         predSat R s ctx μ₂ ρ₂ θ₂ hcrs₂' hric₂ (by simpa [hRdef] using htrustedInit₂) his hctx hWfRegime'
+  have htagBounded : TagBoundedCtx ctx := htagBoundedInit
   have hstep_fr :=
     hstep' hps hwfTm μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂
-      hθ₁ hθ₂ hwf hric₁ hric₂ hreg hcwr₁ hcwr₂ hagree_clean
+      hθ₁ hθ₂ hwf htagBounded hric₁ hric₂ hreg hcwr₁ hcwr₂ hagree_clean
       a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
   -- StepFR result structure: ∃ θ₁' θ₂', wfExtendsMap ∧ wfExtendsMap ∧ valueHasETyp ∧ valueHasETyp ∧
-  --   wfTagMeaningCtx ∧ wfTypeContext ∧ wfConfig ∧ wfConfig ∧ ... ∧ agreeOnClean ∧ resultAgreesIfClean
+  --   wfTagMeaningCtx ∧ wfTypeContext ∧ TagBoundedCtx ∧ wfConfig ∧ wfConfig ∧ ... ∧ agreeOnClean ∧ resultAgreesIfClean
   rcases hstep_fr with ⟨_hresTm, hstep_fr⟩
-  rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, _hvtyp₁, _hvtyp₂, _hTm', _hwfctx', _hwfcfg₁', _hwfcfg₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂, hret_agree⟩
+  rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, _hvtyp₁, _hvtyp₂, _hTm', _hwfctx', _htagBounded', _hwfcfg₁', _hwfcfg₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂, hret_agree⟩
   refine ⟨θ₁', θ₂', hwfext₁, hwfext₂, ?_⟩
   -- Bridge from post-state agreement to observables.
   simp [observablesEqual]
