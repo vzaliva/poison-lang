@@ -6217,7 +6217,7 @@ private lemma CapturedEnvRefLocsFullBounded.get {env : List (Name × QTyp)} {nl 
     | _ => trivial
 
 /-- Extract capturedEnvRefLocsBounded from CapturedEnvRefLocsFullBounded. -/
-private lemma capturedEnvRefLocsBounded_of_fullBounded_refLocs
+lemma capturedEnvRefLocsBounded_of_fullBounded_refLocs
     {env : List (Name × QTyp)} {nl : Loc}
     (h : CapturedEnvRefLocsFullBounded env nl) : capturedEnvRefLocsBounded env nl :=
   fun name qt hmem => (h 1 name qt hmem).1
@@ -6271,7 +6271,7 @@ private lemma CapturedEnvRefLocsFullBounded_of_toCaptured {S : VarTypeEnv} {nl :
     exact ⟨hrl name qt hlookup', hcl name qt hlookup'⟩
 
 /-- Bridge: capturedEnvRefLocsBounded → varEnvRefLocsBounded for ofCaptured. -/
-private lemma varEnvRefLocsBounded_ofCaptured {env : CapturedVarEnv} {nl : Loc}
+lemma varEnvRefLocsBounded_ofCaptured {env : CapturedVarEnv} {nl : Loc}
     (h : capturedEnvRefLocsBounded env nl) :
     varEnvRefLocsBounded (VarTypeEnv.ofCaptured env) nl := by
   induction env with
@@ -6304,7 +6304,7 @@ private lemma CapturedEnvRefLocsFullBounded_tail {entry : Name × QTyp}
   | succ n => intro name qt hmem; exact h (n + 1) name qt (List.Mem.tail _ hmem)
 
 /-- Bridge: CapturedEnvRefLocsFullBounded → varEnvClosuresCapturedRefLocsBounded for ofCaptured. -/
-private lemma varEnvClosuresCapturedRefLocsBounded_ofCaptured {env : CapturedVarEnv} {nl : Loc}
+lemma varEnvClosuresCapturedRefLocsBounded_ofCaptured {env : CapturedVarEnv} {nl : Loc}
     (h : CapturedEnvRefLocsFullBounded env nl) :
     varEnvClosuresCapturedRefLocsBounded (VarTypeEnv.ofCaptured env) nl := by
   induction env with
@@ -12803,6 +12803,110 @@ private lemma applyPFnTClosure_ioFree_wfTypeResult
         subst htc; exact hwf_fn
       · simp [pure, Except.pure] at htc
         subst htc; exact hwf_fn
+
+/-- Every result from mapM applyFnTClosure has nextLoc' ≥ result_fn.nextLoc'. -/
+lemma mapM_applyFnTClosure_member_nextLoc_mono
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result_fn : TypeResult) (fuel : Nat)
+    (tcls : List FnTClosure) (results : List TypeResult)
+    (hmapM : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel) tcls = .ok results) :
+    ∀ r ∈ results, result_fn.nextLoc' ≤ r.nextLoc' := by
+  induction tcls generalizing results with
+  | nil => simp [List.mapM_nil, pure, Except.pure] at hmapM; cases hmapM; intro r hr; cases hr
+  | cons tcl tcls' ih =>
+    simp [List.mapM_cons, bind, Except.bind] at hmapM
+    cases h1 : applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel with
+    | error _ => simp [h1] at hmapM
+    | ok r1 =>
+      simp [h1] at hmapM
+      cases h2 : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel) tcls' with
+      | error _ => simp [h2] at hmapM
+      | ok rs' =>
+        simp [h2, pure, Except.pure] at hmapM; cases hmapM
+        intro r hr; simp at hr
+        cases hr with
+        | inl heq => subst heq
+                     exact applyFnTClosure_nextLoc_mono tcl ctx st1 st2 p p1 argEtyp argPoison argPred
+                       result_fn r fuel (fun m hm e' c r' htc' => typecheck_nextLoc_mono c e' m r' htc') h1
+        | inr htail => exact ih rs' h2 r htail
+
+/-- applyPFnTClosure preserves nextLoc monotonicity. -/
+lemma applyPFnTClosure_nextLoc_mono
+    (tcl : PFnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison) (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (fuel : Nat)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          typecheck ctx' e m = .ok res' → ctx'.nextLoc ≤ res'.nextLoc') :
+    applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
+    r1.nextLoc' ≤ r2.nextLoc' := by
+  intro happly
+  unfold applyPFnTClosure at happly
+  cases fuel <;> simp at happly
+  cases tcl <;> simp at happly
+  · -- regular: body typechecked → IH gives nextLoc mono
+    simp [bind, Except.bind] at happly
+    rcases htc : typecheckExpr _ _ _ with _ | ⟨r⟩
+      <;> rw [htc] at happly
+      <;> simp at happly
+    rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
+    simp [hqt] at happly
+    rcases hsub : isSubtype st2 _
+      <;> rw [hsub] at happly
+      <;> simp at happly
+    · simp [Functor.map, Except.map] at happly
+    · simp [pure, Except.pure] at happly
+      subst r2
+      specialize IH _ (lt_add_one _) _ _ _ htc
+      simp at IH; exact IH
+  · -- extern: match retSpec; simple uses returnSpecToQTyp, nested keep r1.nextLoc'
+    simp [bind, Except.bind] at happly
+    split at happly
+    · -- simple: collectAndAllocExternTags → resolveSyntaxPred → returnSpecToQTyp
+      -- collectAndAllocExternTags result
+      split at happly
+      · simp at happly
+      · -- resolveSyntaxPred result
+        split at happly
+        · simp at happly
+        · -- returnSpecToQTyp via Functor.map
+          simp only [Functor.map, Except.map] at happly
+          split at happly
+          · simp at happly
+          · rename_i v hret
+            simp only [Except.ok.injEq] at happly; rw [← happly]
+            have := returnSpecToQTyp_preserves_nextLoc _ _ _ r1.nextLoc' v hret; simp [this]
+    · -- nestedFn: nextLoc' = r1.nextLoc'
+      simp only [pure, Except.pure, Except.ok.injEq] at happly; rw [← happly]
+    · -- nestedPfn: nextLoc' = r1.nextLoc'
+      simp only [pure, Except.pure, Except.ok.injEq] at happly; rw [← happly]
+
+/-- Every result from mapM applyPFnTClosure has nextLoc' ≥ result_fn.nextLoc'. -/
+lemma mapM_applyPFnTClosure_member_nextLoc_mono
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result_fn : TypeResult) (fuel : Nat)
+    (tcls : List PFnTClosure) (results : List TypeResult)
+    (hmapM : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel) tcls = .ok results) :
+    ∀ r ∈ results, result_fn.nextLoc' ≤ r.nextLoc' := by
+  induction tcls generalizing results with
+  | nil => simp [List.mapM_nil, pure, Except.pure] at hmapM; cases hmapM; intro r hr; cases hr
+  | cons tcl tcls' ih =>
+    simp [List.mapM_cons, bind, Except.bind] at hmapM
+    cases h1 : applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel with
+    | error _ => simp [h1] at hmapM
+    | ok r1 =>
+      simp [h1] at hmapM
+      cases h2 : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel) tcls' with
+      | error _ => simp [h2] at hmapM
+      | ok rs' =>
+        simp [h2, pure, Except.pure] at hmapM; cases hmapM
+        intro r hr; simp at hr
+        cases hr with
+        | inl heq => subst heq
+                     exact applyPFnTClosure_nextLoc_mono tcl ctx st1 st2 p p1 argEtyp argPoison argPred
+                       result_fn r fuel (fun m hm e' c r' htc' => typecheck_nextLoc_mono c e' m r' htc') h1
+        | inr htail => exact ih rs' h2 r htail
 
 /-- mapM of applyFnTClosure gives wfTypeResult for all results -/
 lemma mapM_applyFnTClosure_forall_wfTypeResult

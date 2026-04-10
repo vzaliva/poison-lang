@@ -187,7 +187,10 @@ private lemma join_transport_wfTypeContext
   (h_rest_wf : ∀ r ∈ rest, wfTypeResult r) :
   wfTypeContext (ctxAfter ctx res) := by
   simp only [wfTypeContext, ctxAfter]
-  refine ⟨?_, by sorry, by sorry⟩  -- varEnv bounds (future work)
+  have hfirst_le_res : first.nextLoc' ≤ res.nextLoc' :=
+    joinTypeResults_member_nextLoc_le ctx first rest res _h_join first (List.Mem.head _)
+  refine ⟨?_, varEnvRefLocsBounded_mono h_first.2.1 (by simpa [ctxAfter] using hfirst_le_res),
+           varEnvClosuresCapturedRefLocsBounded_mono h_first.2.2 (by simpa [ctxAfter] using hfirst_le_res)⟩
   intro l hcontains
   rcases h_mem l hcontains with hfirst | ⟨r, hr_mem, h_in⟩
   · -- l in first
@@ -1702,6 +1705,9 @@ private lemma applyPFnTClosure_regular_body_wfTypeResult
   (result1 : TypeResult) (fuelBody : Nat)
   (x : Name) (pbody : PExpr) (tenv : CapturedVarEnv)
   (hwf1 : wfTypeResult result1)
+  (hCaptFull : CapturedEnvRefLocsFullBounded tenv result1.nextLoc')
+  (hArgRL : etypRefLocsBounded argEtyp result1.nextLoc')
+  (hArgCRL : etypClosuresCapturedRefLocsBounded argEtyp result1.nextLoc')
   (ctx'' : TypeContext)
   (hctx'' : ctx'' = { ctx with
       pc := joinPoison p (joinPoison ctx.pc p1)
@@ -1719,7 +1725,11 @@ private lemma applyPFnTClosure_regular_body_wfTypeResult
   have hwf_ctx'' : wfTypeContext ctx'' := by
     rw [hctx'']
     simp only [wfTypeContext]
-    exact ⟨hwf1, by sorry, by sorry⟩  -- varEnv bounds (future work)
+    exact ⟨hwf1,
+      varEnvRefLocsBounded_update
+        (varEnvRefLocsBounded_ofCaptured (capturedEnvRefLocsBounded_of_fullBounded_refLocs hCaptFull)) hArgRL,
+      varEnvClosuresCapturedRefLocsBounded_update
+        (varEnvClosuresCapturedRefLocsBounded_ofCaptured hCaptFull) hArgCRL⟩
   exact typecheckExpr_preserves_wfTypeResult ctx'' (PExpr.toExpr pbody) fuelBody result3 hwf_ctx''
     (by simpa [typecheck] using htc)
 
@@ -1729,6 +1739,11 @@ private lemma applyPFnTClosure_ok_wfTypeResult
   (result1 : TypeResult) (fuel : Nat)
   (hwf1 : wfTypeResult result1)
   (tcl : PFnTClosure)
+  (hcaptLocs : match tcl with
+    | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
+    | .extern _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc')
+  (hArgRL : etypRefLocsBounded argEtyp result1.nextLoc')
+  (hArgCRL : etypClosuresCapturedRefLocsBounded argEtyp result1.nextLoc')
   (r : TypeResult)
   (happly :
     applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
@@ -1745,6 +1760,7 @@ private lemma applyPFnTClosure_ok_wfTypeResult
         ⟨result3, htc_body, _hsub, hfirst⟩
       have hwf3 := applyPFnTClosure_regular_body_wfTypeResult ctx p p1 argEtyp argPoison argPred
         result1 fuelBody x pbody tenv hwf1
+        hcaptLocs hArgRL hArgCRL
         { ctx with
           pc := joinPoison p (joinPoison ctx.pc p1)
           memEnv := result1.memEnv'
@@ -2002,6 +2018,11 @@ private lemma mapM_applyPFnTClosure_forall_wfTypeResult'
   (result1 : TypeResult) (fuel : Nat)
   (hwf_result1 : wfTypeResult result1)
   (tcls : List PFnTClosure) (results : List TypeResult)
+  (hcaptAll : ∀ tcl ∈ tcls, match tcl with
+    | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
+    | .extern _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc')
+  (hArgRL : etypRefLocsBounded argEtyp result1.nextLoc')
+  (hArgCRL : etypClosuresCapturedRefLocsBounded argEtyp result1.nextLoc')
   (hmap :
     List.mapM
       (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
@@ -2011,13 +2032,14 @@ private lemma mapM_applyPFnTClosure_forall_wfTypeResult'
   rcases list_mapM_ok_mem_output_exists_input
       (f := fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
       (hmap := hmap) (hmem := hr) with
-    ⟨tcl, _htcl_mem, happly⟩
+    ⟨tcl, htcl_mem, happly⟩
   simpa using
     applyPFnTClosure_ok_wfTypeResult
       (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
       (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
       (result1 := result1) (fuel := fuel)
-      hwf_result1 (tcl := tcl) (r := r) happly
+      hwf_result1 (tcl := tcl) (hcaptLocs := hcaptAll tcl htcl_mem)
+      (hArgRL := hArgRL) (hArgCRL := hArgCRL) (r := r) happly
 
 private lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx
   (tm : TagMeaning)
@@ -7286,7 +7308,19 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
         simpa [bodyCtx, typecheck] using htc_bodyA
       have hwfBody : wfTypeContext bodyCtx := by
         simp only [bodyCtx, wfTypeContext]
-        exact ⟨hwf1.1, by sorry, by sorry⟩  -- varEnv bounds (future work)
+        have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+          (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 htc1'
+        have hmono_e1 := typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
+        exact ⟨hwf1.1,
+          varEnvRefLocsBounded_update
+            (varEnvRefLocsBounded_ofCaptured
+              (capturedEnvRefLocsBounded_of_fullBounded_refLocs (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcap_mem)))
+            (by have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                rw [hqt2] at h; exact etypRefLocsBounded_mono h hmono_e1),
+          varEnvClosuresCapturedRefLocsBounded_update
+            (varEnvClosuresCapturedRefLocsBounded_ofCaptured (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcap_mem))
+            (by have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                rw [hqt2] at h; exact etypClosuresCapturedRefLocsBounded_mono h hmono_e1)⟩
       have harg_typed : valueHasETyp θ1 v₂ etyp2 := by
         simpa [hqt2] using valueHasETyp_extends hθext1.1 hv₂_typed
       have hric_body :
@@ -7846,7 +7880,19 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
         exact htcBody'
       have hwfBody : wfTypeContext bodyCtx := by
         simp only [bodyCtx, wfTypeContext]
-        exact ⟨hwf1.1, by sorry, by sorry⟩  -- varEnv bounds (future work)
+        have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+          (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 htc1'
+        have hmono_e1 := typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
+        exact ⟨hwf1.1,
+          varEnvRefLocsBounded_update
+            (varEnvRefLocsBounded_ofCaptured
+              (capturedEnvRefLocsBounded_of_fullBounded_refLocs (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcap_mem)))
+            (by have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                rw [hqt2] at h; exact etypRefLocsBounded_mono h hmono_e1),
+          varEnvClosuresCapturedRefLocsBounded_update
+            (varEnvClosuresCapturedRefLocsBounded_ofCaptured (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcap_mem))
+            (by have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                rw [hqt2] at h; exact etypClosuresCapturedRefLocsBounded_mono h hmono_e1)⟩
       have harg_typed : valueHasETyp θ1 v₂ etyp2 := by
         simpa [hqt2] using valueHasETyp_extends hθext1.1 hv₂_typed
       have hric_body :
@@ -8512,7 +8558,19 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         simpa [bodyCtx, typecheck] using htc_bodyA
       have hwfBody : wfTypeContext bodyCtx := by
         simp only [bodyCtx, wfTypeContext]
-        exact ⟨hwf1.1, by sorry, by sorry⟩  -- varEnv bounds (future work)
+        have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+          (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 htc1'
+        have hmono_e1 := typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
+        exact ⟨hwf1.1,
+          varEnvRefLocsBounded_update
+            (varEnvRefLocsBounded_ofCaptured
+              (capturedEnvRefLocsBounded_of_fullBounded_refLocs (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcap_mem)))
+            (by have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                rw [hqt2] at h; exact etypRefLocsBounded_mono h hmono_e1),
+          varEnvClosuresCapturedRefLocsBounded_update
+            (varEnvClosuresCapturedRefLocsBounded_ofCaptured (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcap_mem))
+            (by have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                rw [hqt2] at h; exact etypClosuresCapturedRefLocsBounded_mono h hmono_e1)⟩
       have harg_typed : valueHasETyp θ1 v₂ etyp2 := by
         simpa [hqt2] using valueHasETyp_extends hθext1.1 hv₂_typed
       have hric_body :
@@ -9102,7 +9160,19 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         exact htcBody'
       have hwfBody : wfTypeContext bodyCtx := by
         simp only [bodyCtx, wfTypeContext]
-        exact ⟨hwf1.1, by sorry, by sorry⟩  -- varEnv bounds (future work)
+        have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+          (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 htc1'
+        have hmono_e1 := typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
+        exact ⟨hwf1.1,
+          varEnvRefLocsBounded_update
+            (varEnvRefLocsBounded_ofCaptured
+              (capturedEnvRefLocsBounded_of_fullBounded_refLocs (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcap_mem)))
+            (by have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                rw [hqt2] at h; exact etypRefLocsBounded_mono h hmono_e1),
+          varEnvClosuresCapturedRefLocsBounded_update
+            (varEnvClosuresCapturedRefLocsBounded_ofCaptured (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcap_mem))
+            (by have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                rw [hqt2] at h; exact etypClosuresCapturedRefLocsBounded_mono h hmono_e1)⟩
       have harg_typed : valueHasETyp θ1 v₂ etyp2 := by
         simpa [hqt2] using valueHasETyp_extends hθext1.1 hv₂_typed
       have hric_body :
@@ -9921,7 +9991,19 @@ lemma stepFR_app
               simpa [bodyCtxA₀, typecheck] using htc_bodyA₀
             have hwfBodyCtxA₀ : wfTypeContext bodyCtxA₀ := by
               simp only [bodyCtxA₀, wfTypeContext]
-              exact ⟨hwf1.1, by sorry, by sorry⟩  -- varEnv bounds (future work)
+              have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+                (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 htc1'
+              have hmono_e1 := typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
+              exact ⟨hwf1.1,
+                varEnvRefLocsBounded_update
+                  (varEnvRefLocsBounded_ofCaptured
+                    (capturedEnvRefLocsBounded_of_fullBounded_refLocs (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcapA₀_mem)))
+                  (by have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                      rw [hqt2] at h; exact etypRefLocsBounded_mono h hmono_e1),
+                varEnvClosuresCapturedRefLocsBounded_update
+                  (varEnvClosuresCapturedRefLocsBounded_ofCaptured (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcapA₀_mem))
+                  (by have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                      rw [hqt2] at h; exact etypClosuresCapturedRefLocsBounded_mono h hmono_e1)⟩
             have hric_bodyA₀ :
                 runtimeInstantiatesCtx bodyCtxA₀ c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 := by
               have harg₀_typed : valueHasETyp θ₀1 v₂₀ etyp2 := by
@@ -10090,7 +10172,19 @@ lemma stepFR_app
               simpa [bodyCtxA₁, typecheck] using htc_bodyA₁
             have hwfBodyCtxA₁ : wfTypeContext bodyCtxA₁ := by
               simp only [bodyCtxA₁, wfTypeContext]
-              exact ⟨hwf1.1, by sorry, by sorry⟩  -- varEnv bounds (future work)
+              have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+                (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 htc1'
+              have hmono_e1 := typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
+              exact ⟨hwf1.1,
+                varEnvRefLocsBounded_update
+                  (varEnvRefLocsBounded_ofCaptured
+                    (capturedEnvRefLocsBounded_of_fullBounded_refLocs (by rw [hetyp1] at hClosRL; exact hClosRL _ (by assumption))))
+                  (by have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                      rw [hqt2] at h; exact etypRefLocsBounded_mono h hmono_e1),
+                varEnvClosuresCapturedRefLocsBounded_update
+                  (varEnvClosuresCapturedRefLocsBounded_ofCaptured (by rw [hetyp1] at hClosRL; exact hClosRL _ (by assumption)))
+                  (by have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                      rw [hqt2] at h; exact etypClosuresCapturedRefLocsBounded_mono h hmono_e1)⟩
             have hric_bodyA₁ :
                 runtimeInstantiatesCtx bodyCtxA₁ c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 := by
               have harg₁_typed : valueHasETyp θ₁1 v₂₁ etyp2 := by
@@ -10864,7 +10958,19 @@ lemma stepFR_app
                 IH fuelBody hfuel_lt body₀ bodyCtx hTmBody result3Shared htcBody'
               have hwfBodyCtx : wfTypeContext bodyCtx := by
                 simp only [bodyCtx, wfTypeContext]
-                exact ⟨hwf1.1, by sorry, by sorry⟩  -- varEnv bounds (future work)
+                have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+                  (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 htc1'
+                have hmono_e1 := typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
+                exact ⟨hwf1.1,
+                  varEnvRefLocsBounded_update
+                    (varEnvRefLocsBounded_ofCaptured
+                      (capturedEnvRefLocsBounded_of_fullBounded_refLocs (by rw [hetyp1] at hClosRL; exact hClosRL _ (by assumption))))
+                    (by have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                        rw [hqt2] at h; exact etypRefLocsBounded_mono h hmono_e1),
+                  varEnvClosuresCapturedRefLocsBounded_update
+                    (varEnvClosuresCapturedRefLocsBounded_ofCaptured (by rw [hetyp1] at hClosRL; exact hClosRL _ (by assumption)))
+                    (by have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                        rw [hqt2] at h; exact etypClosuresCapturedRefLocsBounded_mono h hmono_e1)⟩
               have hric_body₀ :
                   runtimeInstantiatesCtx bodyCtx c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 := by
                 let ctxCapBase : TypeContext :=
@@ -12086,7 +12192,12 @@ lemma stepFR_app
             join_transport_wfTypeContext
               (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
               h_join h_mem_join
-              (wfTypeContext_of_wfTypeResult ctxᵢ first h_first_wf (by sorry) (by sorry))
+              (wfTypeContext_of_wfTypeResult ctxᵢ first h_first_wf hwf
+                (Nat.le_trans
+                  (Nat.le_trans (typecheck_nextLoc_mono ctxᵢ e2 fuel' result2 htc2')
+                    (typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'))
+                  (mapM_applyFnTClosure_member_nextLoc_mono st1 st2 p p1 etyp2 p2 pred2
+                    ctxᵢ result1 fuel' tcls results hmap first hfirst_in_results)))
               h_rest_wf
         · -- wfConfig cf₀
           exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
@@ -12481,7 +12592,20 @@ lemma stepFR_app
             (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
             (result1 := result1) (fuel := fuel')
             hwf_result1
-            (tcls := tcls) (results := results) hmap
+            (tcls := tcls) (results := results)
+            (by -- CapturedEnvRefLocsFullBounded for each parrow closure
+                have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+                  (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 htc1'
+                rw [hetyp1] at hClosRL; intro tcl htcl; exact hClosRL tcl htcl)
+            (by -- etypRefLocsBounded for arg at result1.nextLoc'
+                have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                rw [hqt2] at h; exact etypRefLocsBounded_mono h
+                  (typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'))
+            (by -- etypClosuresCapturedRefLocsBounded for arg
+                have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                rw [hqt2] at h; exact etypClosuresCapturedRefLocsBounded_mono h
+                  (typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'))
+            hmap
         have hTm1_ctx : wfTagMeaningCtx tm (ctxAfter ctxᵢ result1) := by
           simpa [ctxAfter] using _hTm1
         have hresTm2_arg : QTypRespectsTagMeaning tm ⟨etyp2, p2, pred2⟩ := by
@@ -12702,7 +12826,19 @@ lemma stepFR_app
             rw [← hbody₀_eq]; exact htcBodyA₀'
           have hwfBodyCtxA₀ : wfTypeContext bodyCtxA₀ := by
             simp only [bodyCtxA₀, wfTypeContext]
-            exact ⟨hwf1.1, by sorry, by sorry⟩  -- varEnv bounds (future work)
+            have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+              (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 htc1'
+            have hmono_e1 := typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
+            exact ⟨hwf1.1,
+              varEnvRefLocsBounded_update
+                (varEnvRefLocsBounded_ofCaptured
+                  (capturedEnvRefLocsBounded_of_fullBounded_refLocs (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcapA₀_mem)))
+                (by have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                    rw [hqt2] at h; exact etypRefLocsBounded_mono h hmono_e1),
+              varEnvClosuresCapturedRefLocsBounded_update
+                (varEnvClosuresCapturedRefLocsBounded_ofCaptured (by rw [hetyp1] at hClosRL; exact hClosRL _ hσcapA₀_mem))
+                (by have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                    rw [hqt2] at h; exact etypClosuresCapturedRefLocsBounded_mono h hmono_e1)⟩
           have hric_bodyA₀ :
               runtimeInstantiatesCtx bodyCtxA₀ cf₀.memory (env₀.update x₀ v₂₀) θ₀1 := by
             have harg₀_typed : valueHasETyp θ₀1 v₂₀ etyp2 := by
@@ -12877,7 +13013,19 @@ lemma stepFR_app
             rw [← hbody₁_eq]; exact htcBodyA₁'
           have hwfBodyCtxA₁ : wfTypeContext bodyCtxA₁ := by
             simp only [bodyCtxA₁, wfTypeContext]
-            exact ⟨hwf1.1, by sorry, by sorry⟩  -- varEnv bounds (future work)
+            have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+              (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 htc1'
+            have hmono_e1 := typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
+            exact ⟨hwf1.1,
+              varEnvRefLocsBounded_update
+                (varEnvRefLocsBounded_ofCaptured
+                  (capturedEnvRefLocsBounded_of_fullBounded_refLocs (by rw [hetyp1] at hClosRL; exact hClosRL _ (by assumption))))
+                (by have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                    rw [hqt2] at h; exact etypRefLocsBounded_mono h hmono_e1),
+              varEnvClosuresCapturedRefLocsBounded_update
+                (varEnvClosuresCapturedRefLocsBounded_ofCaptured (by rw [hetyp1] at hClosRL; exact hClosRL _ (by assumption)))
+                (by have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                    rw [hqt2] at h; exact etypClosuresCapturedRefLocsBounded_mono h hmono_e1)⟩
           have hric_bodyA₁ :
               runtimeInstantiatesCtx bodyCtxA₁ cf₁.memory (env₁.update x₁ v₂₁) θ₁1 := by
             have harg₁_typed : valueHasETyp θ₁1 v₂₁ etyp2 := by
@@ -13127,7 +13275,12 @@ lemma stepFR_app
             join_transport_wfTagMeaningCtx tm ctxᵢ first rest res h_join h_first_tm,
             -- wfTypeContext (ctxAfter ctxᵢ res)
             join_transport_wfTypeContext ctxᵢ first rest res h_join h_mem_join
-              (wfTypeContext_of_wfTypeResult ctxᵢ first h_first_wf (by sorry) (by sorry))
+              (wfTypeContext_of_wfTypeResult ctxᵢ first h_first_wf hwf
+                (Nat.le_trans
+                  (Nat.le_trans (typecheck_nextLoc_mono ctxᵢ e2 fuel' result2 htc2')
+                    (typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'))
+                  (mapM_applyPFnTClosure_member_nextLoc_mono st1 st2 p p1 etyp2 p2 pred2
+                    ctxᵢ result1 fuel' tcls results hmap first hfirst_in_results)))
               (fun r hr => hresults_wf r (heq_results ▸ List.mem_cons_of_mem first hr)),
             -- wfConfig cf₀ (after subst heq_cfg₀, cf₀ = c₁₀)
             hwfcf₁₀,
@@ -13603,7 +13756,19 @@ lemma stepFR_app
               IH fuelBody hfuel_lt (PExpr.toExpr pbody) bodyCtx hTmBody result3Shared htcBody'
             have hwfBodyCtx : wfTypeContext bodyCtx := by
               simp only [bodyCtx, wfTypeContext]
-              exact ⟨hwf1.1, by sorry, by sorry⟩  -- varEnv bounds (future work)
+              have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+                (ctxAfter ctxᵢ result2) e1 fuel' result1 hwf2 htc1'
+              have hmono_e1 := typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'
+              exact ⟨hwf1.1,
+                varEnvRefLocsBounded_update
+                  (varEnvRefLocsBounded_ofCaptured
+                    (capturedEnvRefLocsBounded_of_fullBounded_refLocs (by rw [hetyp1] at hClosRL; exact hClosRL _ (by assumption))))
+                  (by have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                      rw [hqt2] at h; exact etypRefLocsBounded_mono h hmono_e1),
+                varEnvClosuresCapturedRefLocsBounded_update
+                  (varEnvClosuresCapturedRefLocsBounded_ofCaptured (by rw [hetyp1] at hClosRL; exact hClosRL _ (by assumption)))
+                  (by have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
+                      rw [hqt2] at h; exact etypClosuresCapturedRefLocsBounded_mono h hmono_e1)⟩
             -- Phase 2: runtimeInstantiatesCtx for both runs
             have hric_body₀ :
                 runtimeInstantiatesCtx bodyCtx cf₀.memory (env₀.update x₀ v₂₀) θ₀1 := by
@@ -14407,7 +14572,12 @@ lemma stepFR_app
                   join_transport_wfTypeContext
                     (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
                     h_join h_mem_join
-                    (wfTypeContext_of_wfTypeResult ctxᵢ first h_first_wf (by sorry) (by sorry))
+                    (wfTypeContext_of_wfTypeResult ctxᵢ first h_first_wf hwf
+                (Nat.le_trans
+                  (Nat.le_trans (typecheck_nextLoc_mono ctxᵢ e2 fuel' result2 htc2')
+                    (typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'))
+                  (mapM_applyPFnTClosure_member_nextLoc_mono st1 st2 p p1 etyp2 p2 pred2
+                    ctxᵢ result1 fuel' tcls results hmap first hfirst_in_results)))
                     h_rest_wf
               · -- wfConfig cf₀ (= c₁₀ after subst)
                 exact hwfcf₁₀
