@@ -6212,18 +6212,8 @@ private lemma returnSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (pred : Predi
   | ref _ => simp at h
   | arrow _ _ => simp at h
 
-/-- Extern contract: FnTClosure.extern guard tag is absent from tagEnv. -/
-axiom applyFnTClosure_extern_ok_guardClosure_tag_absent
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r)
-  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
-  (hpred : r.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
-  r.tagEnv'.get? k = none
+-- REMOVED: applyFnTClosure_extern_ok_guardClosure_tag_absent
+-- Replaced by the proved lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
 
 /-- Proved alternative: FnTClosure.extern guard tag is absent from tagEnv,
     given that the input tagEnv is bounded by nextTag. -/
@@ -6290,18 +6280,8 @@ lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
           simp only [normalizeAppResultByProvenance] at hpred
           split at hpred <;> simp at hpred
 
-/-- Extern contract: PFnTClosure.extern guard tag is absent from tagEnv. -/
-axiom applyPFnTClosure_extern_ok_guardClosure_tag_absent
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (happly : applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r)
-  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
-  (hpred : r.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
-  r.tagEnv'.get? k = none
+-- REMOVED: applyPFnTClosure_extern_ok_guardClosure_tag_absent
+-- Replaced by the proved lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
 
 /-- Proved alternative: PFnTClosure.extern guard tag is absent from tagEnv,
     given that the input tagEnv is bounded by nextTag. -/
@@ -6498,14 +6478,8 @@ private lemma surfaceSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (resolvedPre
     | (simp only [Except.ok.injEq] at hsurf; exact (congrArg (·.1.pred) hsurf.symm))
     | (simp at hsurf)
 
-/-- Extern contract: typecheckExternVal guard tag is absent from tagEnv. -/
-axiom typecheckExternVal_guardClosure_pred_implies_tag_absent
-  (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
-  (res : TypeResult)
-  (htc : typecheckExternVal ctx typ poison pred = .ok res)
-  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
-  (hpred : res.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
-  res.tagEnv'.get? k = none
+-- REMOVED: typecheckExternVal_guardClosure_pred_implies_tag_absent
+-- Replaced by the proved lemma typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded
 
 /-- Proved alternative: typecheckExternVal guard tag is absent from tagEnv,
     given that the input context's tagEnv is bounded by nextTag. -/
