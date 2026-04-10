@@ -2,64 +2,46 @@
 
 ## CURRENT STEP
 
-Execute the guard-tag-absence axiom elimination on top of the completed
-`TagBoundedCtx` pivot.
+Continue Step 4 axiom reduction: next target after guard-tag-absence.
+
+What has been completed:
+
+- Step 4a (`TagBoundedCtx` pivot): `StepFR` now carries `TagBoundedCtx` as
+  input/output; all files compile with 0 sorry, 0 warnings
+- Step 4b (guard-tag-absence elimination): the 3 guard-tag-absence axioms have
+  been deleted; callers switched to proved `_of_tagEnvBounded` variants
+- axiom count reduced from **10 to 7**
 
 What remains open now:
 
-- Step 3 triage is complete
-- Step 4a (`TagBoundedCtx` pivot) is complete and the proof chain now carries
-  the boundedness facts needed for guard-tag-absence replacement
-- the next concrete target is to delete the three guard-tag-absence axioms and
-  switch callers to the proved `_of_tagEnvBounded` variants
+- `lake build` succeeds with **0 sorry, 0 warnings**
+- the remaining proof debt is the **7 extern axioms** in `LeanProofs/StepFR.lean`
+
+Remaining 7 axioms:
+
+| Axiom | Triage |
+|------|--------|
+| `applyFnTClosure_extern_ok_wfTagMeaningCtx` | split required |
+| `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` | likely permanent |
+| `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | likely permanent |
+| `applyFnTClosure_extern_ok_lookup_origin` | likely permanent |
+| `applyFnTClosure_extern_ok_fresh_loc_not_clean` | likely permanent |
+| `typecheckExternVal_QTypRespectsTagMeaning_axiom` | likely permanent |
+| `typecheckExternVal_preserves_lookup_origin_axiom` | likely provable after statement adjustment |
 
 Required next action:
 
-1. replace these three axioms with their already-proved `_of_tagEnvBounded`
-   variants:
-   - `applyFnTClosure_extern_ok_guardClosure_tag_absent`
-   - `applyPFnTClosure_extern_ok_guardClosure_tag_absent`
-   - `typecheckExternVal_guardClosure_pred_implies_tag_absent`
-2. switch the current callers, starting from the `ioFree_guardClosure...`
-   path in `StepFRAssign.lean`
-3. rebuild and confirm:
-   - `sorry` count stays at zero
-   - the axiom count decreases by three
-4. only after that, move to the next axiom-reduction target
+1. split `applyFnTClosure_extern_ok_wfTagMeaningCtx` into a smaller semantic
+   effect-write contract plus proved structural `wfTagMeaningCtx` preservation
+   (see triage §2.9.1)
+2. then revisit `typecheckExternVal_preserves_lookup_origin_axiom` (§2.9.9)
 
 Critical constraints:
 
 - do **not** reintroduce `sorry`
-- do **not** add any new `axiom`
-- do **not** change `StepFR`, `StepFR_IH`, `FaultRobustnessSpec`, or the
-  top-level FR theorem interface unless the axiom triage exposes a genuine new
-  blocker
-- treat the current `TagBoundedCtx` widening as settled for this phase
-- prefer proving a proved alternative and switching callers over editing the
-  semantic contract surface blindly
-- do **not** start with the semantic `QTypRespectsTagMeaning` contracts; those
-  are currently classified as likely permanent
-
-Done means:
-
-- the three guard-tag-absence axioms are removed from `StepFR.lean`
-- callers use the proved `_of_tagEnvBounded` lemmas instead
-- the axiom surface is strictly smaller than it is now
-- the branch remains at zero `sorry`
-
-**Current status (2026-04-10, branch `new-iofree`, base commit `f6b3c7f`)**
-
-- `TypeSafety.lean`: 0 `sorry`; downstream helper APIs and monotonicity lemmas
-  added
-- `StepFR.lean`: 0 `sorry`; dead helper wrappers removed
-- `StepFRApp.lean`: 0 `sorry`; Step 2b propagation complete
-- `StepFRAssign.lean`, `StepFRIte.lean`, `StepFRNewRef.lean`,
-  `StepFRVlet.lean`, and `FaultRobustnessProofs.lean` have been repaired to
-  the strengthened `wfTypeContext`
-- `lake build` succeeds cleanly
-- Step 3 triage is now documented in §2.9
-- the approved `TagBoundedCtx` pivot is complete in the worktree
-- the remaining debt is the 10 extern axioms in `LeanProofs/StepFR.lean`
+- do **not** add any new axiom beyond a focused replacement for the
+  `wfTagMeaningCtx` bundle split
+- the `QTypRespectsTagMeaning` contracts remain classified as likely permanent
 
 ## 1. Problem
 
